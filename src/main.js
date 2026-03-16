@@ -1,30 +1,44 @@
 import { createEditor } from "./editor.js";
 import { createSidebar } from "./sidebar.js";
-import { createSettingsUI, applyAppearance } from "./settings-ui.js";
 import { AppState } from "./state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
+import { applyAppearance } from "./settings-ui.js";
 
 async function init() {
   const state = new AppState();
   await state.init();
 
-  // Apply appearance (sets data-theme) and CSS vars
-  applyAppearance(state.settings.appearance || "dark", state);
+  // Apply appearance and CSS vars
+  applyAppearance(state.settings.appearance || "dark");
   document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
   document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
 
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
 
-  const settingsUI = createSettingsUI(document.getElementById("settings-overlay"), state);
-  createSidebar(document.getElementById("sidebar"), state, settingsUI);
+  createSidebar(document.getElementById("sidebar"), state);
 
   await setupTauriIntegration(state);
 
-  // Listen for system appearance changes when set to auto
+  // Listen for settings updates from the settings window
+  const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+  if (IS_TAURI) {
+    const { listen } = await import("@tauri-apps/api/event");
+    await listen("settings-updated", (event) => {
+      const newSettings = event.payload;
+      Object.assign(state.settings, newSettings);
+      applyAppearance(state.settings.appearance || "dark");
+      document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
+      document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+      state.emit("settings-changed");
+      state.emit("theme-changed");
+    });
+  }
+
+  // System appearance changes
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if (state.settings.appearance === "auto") {
-      applyAppearance("auto", state);
+      applyAppearance("auto");
     }
   });
 }

@@ -1,0 +1,215 @@
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #1a1a1a;
+  --fg: #e0e0e0;
+  --sidebar-fg: #888;
+  --panel-border: #333;
+}
+
+[data-theme="light"] {
+  --bg: #fafafa;
+  --fg: #1a1a1a;
+  --sidebar-fg: #888;
+  --panel-border: #ddd;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#settings-root {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.settings-container {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 30px 30px 50px;
+}
+
+.settings-header {
+  margin-bottom: 30px;
+}
+
+.settings-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.settings-section {
+  margin-bottom: 28px;
+}
+
+.settings-section h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--sidebar-fg);
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+
+.settings-section h3 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 10px;
+  margin-top: 16px;
+  opacity: 0.7;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-row label {
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.settings-row select {
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  min-width: 180px;
+  outline: none;
+}
+
+.settings-row select option {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.settings-slider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.settings-slider-row label {
+  font-size: 14px;
+  color: var(--fg);
+  min-width: 100px;
+}
+
+.settings-slider-row .slider-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-slider-row input[type="range"] {
+  width: 140px;
+  accent-color: var(--fg);
+}
+
+.settings-slider-row .slider-value {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Shortcut recording UI */
+.shortcut-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  min-width: 120px;
+}
+
+.shortcut-keys kbd {
+  background: rgba(128, 128, 128, 0.15);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+}
+
+.shortcut-clear {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--sidebar-fg);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.shortcut-clear:hover {
+  color: var(--fg);
+  background: rgba(128, 128, 128, 0.15);
+}
+
+/* Recording state */
+.shortcut-keys.recording {
+  border-color: rgba(100, 150, 255, 0.5);
+  background: rgba(100, 150, 255, 0.1);
+}
+
+.shortcut-keys.recording::after {
+  content: 'Press keys...';
+  color: var(--sidebar-fg);
+  font-style: italic;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}

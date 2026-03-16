@@ -1,7 +1,9 @@
 /**
  * Sidebar UI — icons, panels, mode toggles (LEFT side)
  */
-export function createSidebar(container, state, settingsUI) {
+import { openSettingsWindow } from "./settings-ui.js";
+
+export function createSidebar(container, state) {
   container.innerHTML = `
     <div class="sidebar-group sidebar-top">
       ${btn("new-file", "New file", icons.newFile)}
@@ -89,7 +91,7 @@ export function createSidebar(container, state, settingsUI) {
 
   container.querySelector('[data-action="settings"]').addEventListener("click", () => {
     hidePanel();
-    settingsUI.open();
+    openSettingsWindow();
   });
 
   function updateActiveStates() {

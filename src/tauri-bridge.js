@@ -1,6 +1,8 @@
 /**
- * Tauri-specific integration: global shortcuts, tray events, theme events
+ * Tauri-specific integration: global shortcuts, tray events
  */
+
+import { openSettingsWindow } from "./settings-ui.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -9,34 +11,38 @@ export async function setupTauriIntegration(state) {
 
   try {
     const { listen } = await import("@tauri-apps/api/event");
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
 
-    await listen("theme-change", (event) => {
-      const theme = event.payload;
-      document.documentElement.setAttribute("data-theme", theme);
-      state.updateSettings({ appearance: theme });
+    // Settings menu item opens settings window
+    await listen("open-settings", () => {
+      openSettingsWindow();
     });
 
     // Register global shortcuts
     try {
       const { register, isRegistered } = await import("@tauri-apps/plugin-global-shortcut");
 
-      const openShortcut = state.settings.shortcutOpenEditor;
-      if (openShortcut && !(await isRegistered(openShortcut))) {
-        await register(openShortcut, async (event) => {
-          // Only fire on key-down, not key-up
+      // Toggle editor visibility
+      const toggleShortcut = state.settings.shortcutOpenEditor;
+      if (toggleShortcut && !(await isRegistered(toggleShortcut))) {
+        await register(toggleShortcut, async (event) => {
           if (event.state === "Released") return;
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
           const win = getCurrentWindow();
-          await win.show();
-          await win.setFocus();
+          const visible = await win.isVisible();
+          if (visible) {
+            await win.hide();
+          } else {
+            await win.show();
+            await win.setFocus();
+          }
         });
       }
 
+      // Open fullscreen
       const fullscreenShortcut = state.settings.shortcutOpenFullscreen;
       if (fullscreenShortcut && !(await isRegistered(fullscreenShortcut))) {
         await register(fullscreenShortcut, async (event) => {
           if (event.state === "Released") return;
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
           const win = getCurrentWindow();
           await win.show();
           await win.setFocus();
@@ -46,10 +52,10 @@ export async function setupTauriIntegration(state) {
         });
       }
 
+      // Toggle private mode
       const privateShortcut = state.settings.shortcutTogglePrivate;
       if (privateShortcut && !(await isRegistered(privateShortcut))) {
         await register(privateShortcut, (event) => {
-          // Only fire on key-down to prevent double toggle
           if (event.state === "Released") return;
           state.togglePrivate();
         });

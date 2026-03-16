@@ -1,9 +1,10 @@
-import { EditorView, keymap, drawSelection, placeholder, ViewPlugin } from "@codemirror/view";
+import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
 import { EditorState, Prec, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "./themes.js";
+import { createPrivateModePlugin } from "./private-mode.js";
 
 const themeCompartment = new Compartment();
 
@@ -78,6 +79,8 @@ export function createEditor(container, state) {
   const activeTheme = getActiveTheme(state.settings);
   const initialCmTheme = activeTheme ? activeTheme.extension : [];
 
+  const privateModePlugin = createPrivateModePlugin(state);
+
   const startState = EditorState.create({
     doc: "",
     extensions: [
@@ -90,6 +93,7 @@ export function createEditor(container, state) {
       updateListener,
       ratchetKeymap,
       ratchetMouseFilter,
+      privateModePlugin,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
@@ -105,6 +109,8 @@ export function createEditor(container, state) {
   state.on("mode-changed", () => {
     applyModes(state);
     updateRatchetTimer(state);
+    // Force private mode decoration rebuild
+    view.dispatch({ effects: [] });
     if (state.typewriterMode) {
       setupTypewriterBoundary(view, state);
     } else {
@@ -155,11 +161,12 @@ function applyFullscreen(state) {
   const app = document.getElementById("app");
   app.classList.toggle("fullscreen-mode", state.isFullscreen);
 
-  // Actually toggle the native window fullscreen via Tauri
+  // Use the Window API directly
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   if (IS_TAURI) {
-    import("@tauri-apps/api/core").then(({ invoke }) => {
-      invoke("set_fullscreen", { fullscreen: state.isFullscreen }).catch(console.error);
+    import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+      const win = getCurrentWindow();
+      win.setFullscreen(state.isFullscreen).catch(console.error);
     });
   }
 
