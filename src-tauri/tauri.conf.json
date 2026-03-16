@@ -48,14 +48,5 @@
       "frameworks": []
     }
   },
-  "plugins": {
-    "fs": {
-      "scope": {
-        "allow": [
-          { "path": "$APPDATA/**" },
-          { "path": "$HOME/**" }
-        ]
-      }
-    }
-  }
+  "plugins": {}
 }
