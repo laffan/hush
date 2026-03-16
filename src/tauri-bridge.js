@@ -18,48 +18,47 @@ export async function setupTauriIntegration(state) {
       openSettingsWindow();
     });
 
-    // Register global shortcuts
+    // Register global shortcuts — always unregister first to clear stale handlers
     try {
-      const { register, isRegistered } = await import("@tauri-apps/plugin-global-shortcut");
+      const { register, unregister, isRegistered } = await import("@tauri-apps/plugin-global-shortcut");
+
+      async function registerShortcut(shortcut, handler) {
+        if (!shortcut) return;
+        try {
+          if (await isRegistered(shortcut)) {
+            await unregister(shortcut);
+          }
+        } catch (_) { /* ignore */ }
+        await register(shortcut, handler);
+      }
 
       // Toggle editor visibility
-      const toggleShortcut = state.settings.shortcutOpenEditor;
-      if (toggleShortcut && !(await isRegistered(toggleShortcut))) {
-        await register(toggleShortcut, async (event) => {
-          if (event.state === "Released") return;
-          const win = getCurrentWindow();
-          const visible = await win.isVisible();
-          if (visible) {
-            await win.hide();
-          } else {
-            await win.show();
-            await win.setFocus();
-          }
-        });
-      }
-
-      // Open fullscreen
-      const fullscreenShortcut = state.settings.shortcutOpenFullscreen;
-      if (fullscreenShortcut && !(await isRegistered(fullscreenShortcut))) {
-        await register(fullscreenShortcut, async (event) => {
-          if (event.state === "Released") return;
-          const win = getCurrentWindow();
+      await registerShortcut(state.settings.shortcutOpenEditor, async (event) => {
+        if (event.state === "Released") return;
+        const win = getCurrentWindow();
+        const visible = await win.isVisible();
+        if (visible) {
+          await win.hide();
+        } else {
           await win.show();
           await win.setFocus();
-          if (!state.isFullscreen) {
-            state.toggleFullscreen();
-          }
-        });
-      }
+        }
+      });
+
+      // Open fullscreen
+      await registerShortcut(state.settings.shortcutOpenFullscreen, async (event) => {
+        if (event.state === "Released") return;
+        const win = getCurrentWindow();
+        await win.show();
+        await win.setFocus();
+        state.toggleFullscreen();
+      });
 
       // Toggle private mode
-      const privateShortcut = state.settings.shortcutTogglePrivate;
-      if (privateShortcut && !(await isRegistered(privateShortcut))) {
-        await register(privateShortcut, (event) => {
-          if (event.state === "Released") return;
-          state.togglePrivate();
-        });
-      }
+      await registerShortcut(state.settings.shortcutTogglePrivate, (event) => {
+        if (event.state === "Released") return;
+        state.togglePrivate();
+      });
     } catch (e) {
       console.warn("Global shortcut registration failed:", e);
     }
