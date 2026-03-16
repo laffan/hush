@@ -7,17 +7,34 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 export class AppState {
   constructor() {
     this.settings = {
-      theme: "dark",
+      // General
+      visibility: "menubar", // menubar | dock | both
+
+      // Editor > Appearance
+      appearance: "dark", // light | dark | auto
+
+      // Editor > Themes
+      lightTheme: "ayuLight",
+      darkTheme: "dracula",
+
+      // Editor > Text
       fontSize: 20,
+      lineHeight: 1.6,
       fontFamily: "EB Garamond",
       padding: 50,
+
+      // File management
       autosaveFolder: null,
       obsidianIntegration: false,
+
+      // Window
       alwaysOnTop: false,
-      showInDock: false,
-      shortcutOpenEditor: "CmdOrCtrl+Shift+H",
-      shortcutTogglePrivate: "CmdOrCtrl+Shift+P",
       columnWidth: 700,
+
+      // Shortcuts
+      shortcutOpenEditor: "CmdOrCtrl+Shift+H",
+      shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",
+      shortcutTogglePrivate: "CmdOrCtrl+Shift+P",
     };
 
     this.currentFileId = null;
@@ -27,10 +44,9 @@ export class AppState {
     // Mode states
     this.ratchetMode = false;
     this.ratchetEndTime = null;
-    this.ratchetTimer = null;
     this.privateMode = false;
     this.typewriterMode = false;
-    this.typewriterPosition = 0.6; // fraction of window height
+    this.typewriterPosition = 0.6;
     this.isFullscreen = false;
 
     // Autosave interval
@@ -45,7 +61,9 @@ export class AppState {
     if (IS_TAURI) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        this.settings = await invoke("get_settings");
+        const saved = await invoke("get_settings");
+        // Merge saved over defaults so new keys have defaults
+        Object.assign(this.settings, saved);
         this.files = await invoke("list_files");
         if (this.files.length > 0) {
           await this.openFile(this.files[0].id);
@@ -152,7 +170,6 @@ export class AppState {
   }
 
   async newFile() {
-    // Save current before switching
     if (this.dirty) await this.saveCurrentFile();
 
     if (IS_TAURI) {
@@ -257,7 +274,7 @@ export class AppState {
   }
 
   toggleTypewriter() {
-    if (this.ratchetMode) return; // unavailable during ratchet
+    if (this.ratchetMode) return;
     this.typewriterMode = !this.typewriterMode;
     this.emit("mode-changed");
   }

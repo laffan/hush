@@ -1,8 +1,11 @@
-import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
-import { EditorState, Prec } from "@codemirror/state";
+import { EditorView, keymap, drawSelection, placeholder, ViewPlugin } from "@codemirror/view";
+import { EditorState, Prec, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { getActiveTheme } from "./themes.js";
+
+const themeCompartment = new Compartment();
 
 /**
  * Creates the CodeMirror 6 editor instance.
@@ -11,6 +14,10 @@ export function createEditor(container, state) {
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       state.markDirty();
+    }
+    // Typewriter: scroll cursor to fixed position on every update
+    if (state.typewriterMode && (update.docChanged || update.selectionSet)) {
+      requestAnimationFrame(() => scrollCursorToTypewriterLine(update.view, state));
     }
   });
 
@@ -23,7 +30,7 @@ export function createEditor(container, state) {
     ".cm-scroller": {
       fontFamily: "var(--font-family)",
       fontSize: "var(--font-size)",
-      lineHeight: "1.6",
+      lineHeight: "var(--line-height)",
     },
     ".cm-content": {
       caretColor: "var(--cursor)",
@@ -51,53 +58,31 @@ export function createEditor(container, state) {
   // Ratchet mode: block backspace/delete/selection/arrow-left
   const ratchetKeymap = Prec.highest(
     keymap.of([
-      {
-        key: "Backspace",
-        run: () => state.ratchetMode,
-      },
-      {
-        key: "Delete",
-        run: () => state.ratchetMode,
-      },
-      {
-        key: "ArrowLeft",
-        run: () => state.ratchetMode,
-      },
-      {
-        key: "ArrowUp",
-        run: () => state.ratchetMode,
-      },
-      {
-        key: "Home",
-        run: () => state.ratchetMode,
-      },
-      {
-        key: "Mod-a",
-        run: () => state.ratchetMode,
-      },
-      {
-        key: "Mod-z",
-        run: () => state.ratchetMode,
-      },
-      {
-        key: "Mod-x",
-        run: () => state.ratchetMode,
-      },
+      { key: "Backspace", run: () => state.ratchetMode },
+      { key: "Delete", run: () => state.ratchetMode },
+      { key: "ArrowLeft", run: () => state.ratchetMode },
+      { key: "ArrowUp", run: () => state.ratchetMode },
+      { key: "Home", run: () => state.ratchetMode },
+      { key: "Mod-a", run: () => state.ratchetMode },
+      { key: "Mod-z", run: () => state.ratchetMode },
+      { key: "Mod-x", run: () => state.ratchetMode },
     ])
   );
 
   // Block mouse selection in ratchet mode
   const ratchetMouseFilter = EditorView.domEventHandlers({
-    mousedown: (_event, _view) => {
-      if (state.ratchetMode) return true;
-      return false;
-    },
+    mousedown: () => state.ratchetMode,
   });
+
+  // Resolve initial CM theme
+  const activeTheme = getActiveTheme(state.settings);
+  const initialCmTheme = activeTheme ? activeTheme.extension : [];
 
   const startState = EditorState.create({
     doc: "",
     extensions: [
       hushTheme,
+      themeCompartment.of(initialCmTheme),
       markdown(),
       history(),
       drawSelection(),
@@ -116,22 +101,15 @@ export function createEditor(container, state) {
     parent: container,
   });
 
-  // Typewriter scroll effect
+  // Mode changes
   state.on("mode-changed", () => {
     applyModes(state);
-    if (state.typewriterMode) {
-      setupTypewriterScroll(view, state);
-    }
-  });
-
-  // Private mode decoration
-  state.on("mode-changed", () => {
-    updatePrivateMode(view, state);
-  });
-
-  // Ratchet timer display
-  state.on("mode-changed", () => {
     updateRatchetTimer(state);
+    if (state.typewriterMode) {
+      setupTypewriterBoundary(view, state);
+    } else {
+      removeTypewriterBoundary();
+    }
   });
 
   // Fullscreen
@@ -139,25 +117,35 @@ export function createEditor(container, state) {
     applyFullscreen(state);
   });
 
+  // Theme changes from settings
+  state.on("theme-changed", () => {
+    const t = getActiveTheme(state.settings);
+    view.dispatch({ effects: themeCompartment.reconfigure(t ? t.extension : []) });
+  });
+
+  state.on("settings-changed", () => {
+    // Apply font size / line height CSS vars
+    document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
+    document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+  });
+
   return {
     view,
     getContent: () => view.state.doc.toString(),
     setContent: (text) => {
       view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: text,
-        },
+        changes: { from: 0, to: view.state.doc.length, insert: text },
       });
     },
     focus: () => view.focus(),
+    reconfigureTheme: (ext) => {
+      view.dispatch({ effects: themeCompartment.reconfigure(ext || []) });
+    },
   };
 }
 
 function applyModes(state) {
   const app = document.getElementById("app");
-
   app.classList.toggle("ratchet-active", state.ratchetMode);
   app.classList.toggle("private-mode", state.privateMode);
   app.classList.toggle("typewriter-mode", state.typewriterMode);
@@ -167,21 +155,19 @@ function applyFullscreen(state) {
   const app = document.getElementById("app");
   app.classList.toggle("fullscreen-mode", state.isFullscreen);
 
+  // Actually toggle the native window fullscreen via Tauri
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   if (IS_TAURI) {
     import("@tauri-apps/api/core").then(({ invoke }) => {
-      invoke("toggle_fullscreen").catch(console.error);
+      invoke("set_fullscreen", { fullscreen: state.isFullscreen }).catch(console.error);
     });
   }
 
-  // Column resizers for fullscreen
   updateColumnResizers(state);
 }
 
 function updateColumnResizers(state) {
-  // Remove existing
   document.querySelectorAll(".column-resizer").forEach((el) => el.remove());
-
   if (!state.isFullscreen) return;
 
   const leftResizer = document.createElement("div");
@@ -203,7 +189,6 @@ function updateColumnResizers(state) {
 
   positionResizers();
 
-  // Drag to resize
   function makeDraggable(el, isLeft) {
     let startX, startWidth;
     el.addEventListener("mousedown", (e) => {
@@ -235,84 +220,30 @@ function updateColumnResizers(state) {
   makeDraggable(rightResizer, false);
 }
 
-function updatePrivateMode(view, state) {
-  if (state.privateMode) {
-    // Apply private mode via CSS class on lines
-    // We'll use a ViewPlugin approach via CSS
-    // The CSS .private-mode already hides text color
-    // But we need per-character boxes for non-space chars
-    applyPrivateDecorations(view);
-  } else {
-    removePrivateDecorations(view);
-  }
-}
+/* ===== Typewriter Mode ===== */
+let typewriterBoundary = null;
 
-function applyPrivateDecorations(view) {
-  // Use MutationObserver to apply spans when content changes
-  const container = view.dom;
+function setupTypewriterBoundary(view, state) {
+  if (typewriterBoundary) return; // already set up
 
-  function decorateLines() {
-    if (!document.getElementById("app").classList.contains("private-mode")) return;
+  typewriterBoundary = document.createElement("div");
+  typewriterBoundary.className = "typewriter-boundary visible";
+  document.body.appendChild(typewriterBoundary);
+  typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
 
-    container.querySelectorAll(".cm-line").forEach((line) => {
-      if (line.dataset.privatized) return;
-      const text = line.textContent;
-      if (!text.trim()) return;
-
-      // Build new content preserving word shapes
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        const span = document.createElement("span");
-        span.textContent = ch;
-        if (ch !== " " && ch !== "\t" && ch !== "\n") {
-          span.className = "private-char";
-        }
-        frag.appendChild(span);
-      }
-
-      // Don't modify CM's internal DOM — let CSS handle it
-      // Instead just ensure the class is applied
-    });
-  }
-
-  // Let CSS handle the visual hiding. The .private-mode class
-  // makes text transparent and we add background to chars via CSS.
-  // This is simpler and doesn't break CodeMirror's DOM.
-}
-
-function removePrivateDecorations(_view) {
-  // CSS class removal handles it
-}
-
-function setupTypewriterScroll(view, state) {
-  if (!state.typewriterMode) return;
-
-  // Show draggable boundary
-  let boundary = document.querySelector(".typewriter-boundary");
-  if (!boundary) {
-    boundary = document.createElement("div");
-    boundary.className = "typewriter-boundary visible";
-    document.body.appendChild(boundary);
-  }
-  boundary.classList.add("visible");
-  boundary.style.top = state.typewriterPosition * window.innerHeight + "px";
-
-  // Drag
-  let startY;
-  boundary.addEventListener("mousedown", (e) => {
+  // Drag to reposition
+  typewriterBoundary.addEventListener("mousedown", (e) => {
     e.preventDefault();
-    startY = e.clientY;
-    boundary.classList.add("dragging");
+    typewriterBoundary.classList.add("dragging");
 
     function onMove(e2) {
-      const newY = Math.max(100, Math.min(window.innerHeight - 100, e2.clientY));
-      boundary.style.top = newY + "px";
+      const newY = Math.max(50, Math.min(window.innerHeight - 50, e2.clientY));
+      typewriterBoundary.style.top = newY + "px";
       state.typewriterPosition = newY / window.innerHeight;
     }
 
     function onUp() {
-      boundary.classList.remove("dragging");
+      typewriterBoundary.classList.remove("dragging");
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     }
@@ -321,30 +252,30 @@ function setupTypewriterScroll(view, state) {
     document.addEventListener("mouseup", onUp);
   });
 
-  // Typewriter: keep cursor at the boundary position
-  const scrollToCursor = () => {
-    if (!state.typewriterMode) return;
-    const cursor = view.dom.querySelector(".cm-cursor");
-    if (cursor) {
-      const cursorRect = cursor.getBoundingClientRect();
-      const targetY = state.typewriterPosition * window.innerHeight;
-      const scroller = view.scrollDOM;
-      const offset = cursorRect.top - targetY;
-      scroller.scrollTop += offset;
-    }
-  };
-
-  // Scroll on every update
-  const interval = setInterval(() => {
-    if (!state.typewriterMode) {
-      clearInterval(interval);
-      boundary.classList.remove("visible");
-      return;
-    }
-    scrollToCursor();
-  }, 100);
+  // Initial scroll
+  requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
 }
 
+function removeTypewriterBoundary() {
+  if (typewriterBoundary) {
+    typewriterBoundary.remove();
+    typewriterBoundary = null;
+  }
+}
+
+function scrollCursorToTypewriterLine(view, state) {
+  if (!state.typewriterMode) return;
+  const cursorEl = view.dom.querySelector(".cm-cursor");
+  if (!cursorEl) return;
+  const cursorRect = cursorEl.getBoundingClientRect();
+  const targetY = state.typewriterPosition * window.innerHeight;
+  const offset = cursorRect.top - targetY;
+  if (Math.abs(offset) > 2) {
+    view.scrollDOM.scrollTop += offset;
+  }
+}
+
+/* ===== Ratchet Timer ===== */
 function updateRatchetTimer(state) {
   let timerEl = document.querySelector(".ratchet-timer");
 

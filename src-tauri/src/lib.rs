@@ -92,10 +92,9 @@ fn set_autosave_folder(state: State<AppState>, path: Option<String>) -> Result<(
 }
 
 #[tauri::command]
-fn toggle_fullscreen(app: AppHandle) -> Result<(), String> {
+fn set_fullscreen(app: AppHandle, fullscreen: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
-        let is_fullscreen = window.is_fullscreen().map_err(|e| e.to_string())?;
-        window.set_fullscreen(!is_fullscreen).map_err(|e| e.to_string())?;
+        window.set_fullscreen(fullscreen).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -239,7 +238,7 @@ pub fn run() {
             delete_file,
             check_obsidian_vault,
             set_autosave_folder,
-            toggle_fullscreen,
+            set_fullscreen,
             set_always_on_top,
         ])
         .run(tauri::generate_context!())

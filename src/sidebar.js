@@ -1,7 +1,7 @@
 /**
- * Sidebar UI — icons, panels, mode toggles
+ * Sidebar UI — icons, panels, mode toggles (LEFT side)
  */
-export function createSidebar(container, state) {
+export function createSidebar(container, state, settingsUI) {
   container.innerHTML = `
     <div class="sidebar-group sidebar-top">
       ${btn("new-file", "New file", icons.newFile)}
@@ -16,6 +16,7 @@ export function createSidebar(container, state) {
     <div class="sidebar-group sidebar-bottom">
       ${btn("autosave", "Save location", icons.folder)}
       ${btn("export", "Export", icons.export)}
+      ${btn("settings", "Settings", icons.settings)}
     </div>
   `;
 
@@ -57,7 +58,6 @@ export function createSidebar(container, state) {
 
   container.querySelector('[data-action="ratchet"]').addEventListener("click", (e) => {
     if (state.ratchetMode) {
-      // Already in ratchet, clicking stops it (or we could show time left)
       state.stopRatchet();
       updateActiveStates();
       return;
@@ -85,6 +85,11 @@ export function createSidebar(container, state) {
   container.querySelector('[data-action="export"]').addEventListener("click", async () => {
     hidePanel();
     await exportCurrentFile(state);
+  });
+
+  container.querySelector('[data-action="settings"]').addEventListener("click", () => {
+    hidePanel();
+    settingsUI.open();
   });
 
   function updateActiveStates() {
@@ -158,6 +163,9 @@ const icons = {
   export: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
     <polyline points="7 10 12 15 17 10"/>
     <line x1="12" y1="15" x2="12" y2="3"/>`,
+
+  settings: `<circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
 };
 
 function renderFilesPanel(state) {
@@ -210,13 +218,11 @@ function bindAutosavePanel(state, panel) {
           const selected = await open({ directory: true, multiple: false });
           if (selected) {
             await state.updateSettings({ autosaveFolder: selected });
-            // Check if Obsidian vault
             const { invoke } = await import("@tauri-apps/api/core");
             const isVault = await invoke("check_obsidian_vault", { path: selected });
             if (!isVault) {
               await state.updateSettings({ obsidianIntegration: false });
             }
-            // Re-render
             panel.innerHTML = renderAutosavePanel(state);
             bindAutosavePanel(state, panel);
           }
@@ -247,13 +253,13 @@ function bindAutosavePanel(state, panel) {
 }
 
 function showRatchetDropdown(anchor, state, onStart) {
-  // Remove existing
   document.querySelectorAll(".ratchet-dropdown").forEach((el) => el.remove());
 
   const dropdown = document.createElement("div");
   dropdown.className = "ratchet-dropdown";
   const rect = anchor.getBoundingClientRect();
-  dropdown.style.right = "60px";
+  // Position to the RIGHT of the left sidebar
+  dropdown.style.left = "60px";
   dropdown.style.top = rect.top + "px";
 
   const durations = [5, 10, 15, 20, 25, 30];
@@ -271,7 +277,6 @@ function showRatchetDropdown(anchor, state, onStart) {
 
   document.body.appendChild(dropdown);
 
-  // Close on outside click
   setTimeout(() => {
     document.addEventListener(
       "mousedown",
@@ -306,7 +311,6 @@ async function exportCurrentFile(state) {
       console.error("Export failed:", e);
     }
   } else {
-    // Browser fallback: download
     const blob = new Blob([content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
