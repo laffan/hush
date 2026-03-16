@@ -1,0 +1,471 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #1a1a1a;
+  --fg: #e0e0e0;
+  --cursor: #e0e0e0;
+  --sidebar-bg: rgba(30, 30, 30, 0.95);
+  --sidebar-fg: #888;
+  --sidebar-hover: #ccc;
+  --panel-bg: rgba(25, 25, 25, 0.98);
+  --panel-border: #333;
+  --accent: #666;
+  --font-family: 'EB Garamond', 'Georgia', 'Times New Roman', serif;
+  --font-size: 20px;
+  --padding: 50px;
+  --column-width: 700px;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg: #fafafa;
+  --fg: #1a1a1a;
+  --cursor: #1a1a1a;
+  --sidebar-bg: rgba(245, 245, 245, 0.95);
+  --sidebar-fg: #888;
+  --sidebar-hover: #333;
+  --panel-bg: rgba(250, 250, 250, 0.98);
+  --panel-border: #ddd;
+  --accent: #999;
+}
+
+/* Sepia theme */
+[data-theme="sepia"] {
+  --bg: #f4ecd8;
+  --fg: #3e3225;
+  --cursor: #3e3225;
+  --sidebar-bg: rgba(235, 225, 205, 0.95);
+  --sidebar-fg: #8a7a65;
+  --sidebar-hover: #3e3225;
+  --panel-bg: rgba(240, 230, 210, 0.98);
+  --panel-border: #c5b99b;
+  --accent: #8a7a65;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Draggable region for frameless window */
+body::before {
+  content: '';
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  -webkit-app-region: drag;
+  z-index: 1000;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ===== Editor ===== */
+#editor-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+#editor-container .cm-editor {
+  height: 100%;
+  background: transparent;
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+}
+
+#editor-container .cm-editor.cm-focused {
+  outline: none;
+}
+
+#editor-container .cm-scroller {
+  padding: var(--padding);
+  overflow-y: auto;
+  font-family: var(--font-family) !important;
+}
+
+#editor-container .cm-content {
+  font-family: var(--font-family) !important;
+  caret-color: var(--cursor);
+  color: var(--fg);
+}
+
+#editor-container .cm-line {
+  font-family: var(--font-family) !important;
+}
+
+#editor-container .cm-cursor {
+  border-left-color: var(--cursor);
+  border-left-width: 2px;
+}
+
+#editor-container .cm-selectionBackground {
+  background: rgba(128, 128, 128, 0.3) !important;
+}
+
+#editor-container .cm-activeLine {
+  background: transparent;
+}
+
+#editor-container .cm-activeLineGutter {
+  background: transparent;
+}
+
+#editor-container .cm-gutters {
+  display: none;
+}
+
+/* Fullscreen centered column */
+.fullscreen-mode #editor-container .cm-scroller {
+  max-width: var(--column-width);
+  margin: 0 auto;
+}
+
+/* Column width resizer */
+.column-resizer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+  background: var(--accent);
+  z-index: 50;
+}
+
+.column-resizer:hover, .column-resizer.dragging {
+  opacity: 0.5;
+}
+
+.column-resizer.left {
+  /* dynamically positioned */
+}
+
+.column-resizer.right {
+  /* dynamically positioned */
+}
+
+/* ===== Sidebar ===== */
+#sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 50px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 0;
+  background: var(--sidebar-bg);
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 100;
+  pointer-events: none;
+}
+
+#sidebar:hover, #sidebar.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Hover trigger zone on right edge */
+#sidebar::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 15px;
+  height: 100%;
+  pointer-events: auto;
+  z-index: 99;
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--sidebar-fg);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+  padding: 0;
+}
+
+.sidebar-btn:hover {
+  color: var(--sidebar-hover);
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.sidebar-btn.active {
+  color: var(--fg);
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.sidebar-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ===== Panels ===== */
+#panel-overlay {
+  position: fixed;
+  top: 0;
+  right: 50px;
+  width: 280px;
+  height: 100%;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  z-index: 90;
+  padding: 20px;
+  overflow-y: auto;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+#panel-overlay.hidden {
+  transform: translateX(20px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-title {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--sidebar-fg);
+  margin-bottom: 16px;
+  font-family: system-ui, sans-serif;
+}
+
+.file-list {
+  list-style: none;
+}
+
+.file-list li {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-list li:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.file-list li.active {
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.file-list li .file-date {
+  display: block;
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  margin-top: 2px;
+}
+
+/* ===== Autosave Panel ===== */
+.autosave-panel {
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.autosave-panel .current-path {
+  padding: 10px 12px;
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  word-break: break-all;
+  font-size: 12px;
+  color: var(--sidebar-fg);
+}
+
+.autosave-panel button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  margin-bottom: 8px;
+  transition: background 0.15s;
+}
+
+.autosave-panel button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.autosave-panel label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--sidebar-fg);
+}
+
+.autosave-panel label input[type="checkbox"] {
+  accent-color: var(--fg);
+}
+
+/* ===== Ratchet Mode ===== */
+.ratchet-dropdown {
+  position: absolute;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px;
+  z-index: 200;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.ratchet-dropdown .ratchet-option {
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: center;
+  color: var(--fg);
+  transition: background 0.1s;
+}
+
+.ratchet-dropdown .ratchet-option:hover {
+  background: rgba(128, 128, 128, 0.2);
+}
+
+/* Ratchet active state */
+.ratchet-active #editor-container .cm-scroller {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--padding);
+}
+
+.ratchet-active #editor-container .cm-content {
+  max-width: 80%;
+}
+
+.ratchet-active #editor-container .cm-line:not(.cm-activeLine) {
+  display: none;
+}
+
+.ratchet-timer {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  z-index: 150;
+  opacity: 0.6;
+}
+
+/* ===== Private Mode ===== */
+.private-mode #editor-container .cm-line {
+  color: transparent;
+}
+
+.private-mode #editor-container .cm-line * {
+  color: transparent;
+}
+
+/* Each character gets a black box, but spaces stay transparent */
+.private-char {
+  background: var(--fg);
+  color: transparent !important;
+  border-radius: 1px;
+}
+
+/* ===== Typewriter Mode ===== */
+.typewriter-mode #editor-container .cm-scroller {
+  padding-bottom: 0;
+}
+
+.typewriter-boundary {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: row-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+  background: var(--accent);
+  z-index: 50;
+}
+
+.typewriter-boundary:hover, .typewriter-boundary.dragging {
+  opacity: 0.5;
+}
+
+.typewriter-boundary.visible {
+  opacity: 0.3;
+}
+
+/* ===== Utility ===== */
+.hidden {
+  display: none !important;
+}
+
+/* scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
