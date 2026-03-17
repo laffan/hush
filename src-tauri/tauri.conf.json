@@ -23,7 +23,8 @@
         "transparent": true,
         "visible": false,
         "skipTaskbar": true,
-        "titleBarStyle": "overlay"
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "trayIcon": {
