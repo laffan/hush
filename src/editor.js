@@ -7,6 +7,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
+import { openSettingsWindow } from "./settings-ui.js";
 
 const themeCompartment = new Compartment();
 
@@ -80,6 +81,14 @@ export function createEditor(container, state) {
     ])
   );
 
+  // Global keyboard shortcuts
+  const globalKeymap = Prec.highest(
+    keymap.of([
+      { key: "Mod-,", run: () => { openSettingsWindow(); return true; } },
+      { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
+    ])
+  );
+
   // Block mouse selection in ratchet mode
   const ratchetMouseFilter = EditorView.domEventHandlers({
     mousedown: () => state.ratchetMode,
@@ -102,6 +111,7 @@ export function createEditor(container, state) {
       drawSelection(),
       closeBrackets(),
       updateListener,
+      globalKeymap,
       ratchetKeymap,
       ratchetMouseFilter,
       privateModePlugin,
@@ -199,9 +209,14 @@ async function applyFullscreen(state) {
         await win.setFullscreen(state.isFullscreen);
       }
 
-      // Switch back to Accessory when exiting fullscreen
+      // Switch back to Accessory when exiting fullscreen and keep on top
       if (!state.isFullscreen) {
         await invoke("set_activation_policy", { policy: "accessory" });
+        await invoke("set_always_on_top", { onTop: true });
+        // Release always-on-top after a short delay so the window doesn't sink
+        setTimeout(async () => {
+          try { await invoke("set_always_on_top", { onTop: false }); } catch (_) {}
+        }, 500);
       }
     } catch (e) {
       console.error("Fullscreen toggle failed:", e);

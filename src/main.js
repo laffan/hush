@@ -45,10 +45,13 @@ async function init() {
   // Hide sidebar when mouse leaves the sidebar area entirely
   function checkSidebarLeave(e) {
     const x = e.clientX;
-    // Still inside sidebar or panel zone
+    // Still inside sidebar zone
     if (x <= 50) return;
+    // Still inside panel zone (if panel is open)
     const panel = document.getElementById("panel-overlay");
     if (panel && !panel.classList.contains("hidden") && x <= 330) return;
+    // Don't hide sidebar if a panel is open — buttons should stay accessible
+    if (panel && !panel.classList.contains("hidden")) return;
     sidebar.classList.remove("visible");
     // Re-enable trigger for next hover
     sidebarTrigger.style.pointerEvents = "auto";
