@@ -1,4 +1,4 @@
-import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
+import { EditorView, keymap, drawSelection, placeholder, highlightActiveLine } from "@codemirror/view";
 import { EditorState, Prec, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -108,6 +108,7 @@ export function createEditor(container, state) {
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
+      highlightActiveLine(),
     ],
   });
 

@@ -365,20 +365,31 @@ html, body {
   background: rgba(128, 128, 128, 0.2);
 }
 
-/* Ratchet active state */
+/* Ratchet active state — show only the active line, centered on screen */
+.ratchet-active #editor-container .cm-editor {
+  height: 100%;
+}
+
 .ratchet-active #editor-container .cm-scroller {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--padding);
 }
 
 .ratchet-active #editor-container .cm-content {
   max-width: 80%;
+  text-align: center;
 }
 
 .ratchet-active #editor-container .cm-line:not(.cm-activeLine) {
-  display: none;
+  height: 0;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+}
+
+.ratchet-active #editor-container .cm-activeLine {
+  text-align: left;
 }
 
 .ratchet-timer {
