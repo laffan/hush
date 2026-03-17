@@ -29,7 +29,7 @@ export class AppState {
 
       // Window
       alwaysOnTop: false,
-      columnWidth: 700,
+      columnWidth: 600,
 
       // Shortcuts
       shortcutOpenEditor: "CmdOrCtrl+Shift+H",

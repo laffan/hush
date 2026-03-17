@@ -20,7 +20,7 @@
   --font-size: 20px;
   --line-height: 1.6;
   --padding: 50px;
-  --column-width: 700px;
+  --column-width: 600px;
 }
 
 /* Light theme */
@@ -127,8 +127,8 @@ html, body {
   display: none;
 }
 
-/* Fullscreen centered column */
-.fullscreen-mode #editor-container .cm-scroller {
+/* Centered column — always active */
+#editor-container .cm-scroller {
   max-width: var(--column-width);
   margin: 0 auto;
 }

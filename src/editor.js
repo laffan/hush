@@ -134,6 +134,9 @@ export function createEditor(container, state) {
     applyFullscreen(state);
   });
 
+  // Initialize column resizers
+  updateColumnResizers(state);
+
   // Theme changes from settings
   state.on("theme-changed", () => {
     const t = getActiveTheme(state.settings);
@@ -204,7 +207,6 @@ async function applyFullscreen(state) {
 
 function updateColumnResizers(state) {
   document.querySelectorAll(".column-resizer").forEach((el) => el.remove());
-  if (!state.isFullscreen) return;
 
   const leftResizer = document.createElement("div");
   leftResizer.className = "column-resizer left";
@@ -217,13 +219,25 @@ function updateColumnResizers(state) {
   function positionResizers() {
     const w = window.innerWidth;
     const colW = state.settings.columnWidth;
-    const left = (w - colW) / 2;
-    leftResizer.style.left = left + "px";
-    rightResizer.style.left = left + colW + "px";
-    document.documentElement.style.setProperty("--column-width", colW + "px");
+    const minPadding = 50;
+
+    // If window is too narrow for the column, hide resizers and use padding fallback
+    if (w <= colW + minPadding * 2) {
+      leftResizer.style.display = "none";
+      rightResizer.style.display = "none";
+      document.documentElement.style.setProperty("--column-width", (w - minPadding * 2) + "px");
+    } else {
+      leftResizer.style.display = "";
+      rightResizer.style.display = "";
+      const left = (w - colW) / 2;
+      leftResizer.style.left = left + "px";
+      rightResizer.style.left = left + colW + "px";
+      document.documentElement.style.setProperty("--column-width", colW + "px");
+    }
   }
 
   positionResizers();
+  window.addEventListener("resize", positionResizers);
 
   function makeDraggable(el, isLeft) {
     let startX, startWidth;
@@ -297,8 +311,8 @@ function setupTypewriterBoundary(view, state) {
 
 function applyTypewriterPadding(view, state) {
   const targetY = state.typewriterPosition * window.innerHeight;
-  // Set top padding so the first line sits at the typewriter boundary
-  view.scrollDOM.style.paddingTop = targetY + "px";
+  // Bottom padding so the last line can scroll up to the typewriter boundary
+  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
 }
 
 function removeTypewriterBoundary(view) {
@@ -307,7 +321,7 @@ function removeTypewriterBoundary(view) {
     typewriterBoundary = null;
   }
   if (view) {
-    view.scrollDOM.style.paddingTop = "";
+    view.scrollDOM.style.paddingBottom = "";
   }
 }
 
@@ -317,7 +331,8 @@ function scrollCursorToTypewriterLine(view, state) {
   const coords = view.coordsAtPos(head);
   if (!coords) return;
   const targetY = state.typewriterPosition * window.innerHeight;
-  const offset = coords.top - targetY;
+  // Align the bottom of the current line with the typewriter boundary
+  const offset = coords.bottom - targetY;
   if (Math.abs(offset) > 1) {
     view.scrollDOM.scrollTop += offset;
   }
