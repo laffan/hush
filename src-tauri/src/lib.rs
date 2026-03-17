@@ -118,11 +118,12 @@ fn setup_tray_menu(app: &AppHandle, shortcut_label: &str) -> Result<(), Box<dyn 
         &format!("Toggle Editor    {}", shortcut_label),
         true, None::<&str>,
     )?;
-    let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+    let fullscreen_item = MenuItem::with_id(app, "fullscreen", "Fullscreen    ⌘⇧F", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", "Settings...    ⌘,", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Hush", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&toggle, &settings_item, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&toggle, &fullscreen_item, &settings_item, &sep, &quit])?;
 
     if let Some(tray) = app.tray_by_id("main-tray") {
         tray.set_menu(Some(menu))?;
@@ -199,6 +200,9 @@ pub fn run() {
                                 let _ = window.set_focus();
                             }
                         }
+                    }
+                    "fullscreen" => {
+                        let _ = handle_clone2.emit("toggle-fullscreen", ());
                     }
                     "settings" => {
                         let _ = handle_clone2.emit("open-settings", ());

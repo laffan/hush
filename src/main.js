@@ -64,6 +64,9 @@ async function init() {
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   if (IS_TAURI) {
     const { listen } = await import("@tauri-apps/api/event");
+    await listen("toggle-fullscreen", () => {
+      state.toggleFullscreen();
+    });
     await listen("settings-updated", (event) => {
       const newSettings = event.payload;
       Object.assign(state.settings, newSettings);

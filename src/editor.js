@@ -86,6 +86,7 @@ export function createEditor(container, state) {
     keymap.of([
       { key: "Mod-,", run: () => { openSettingsWindow(); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
+      { key: "Mod-Shift-f", run: () => { state.toggleFullscreen(); return true; } },
     ])
   );
 

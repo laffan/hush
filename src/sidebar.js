@@ -1,8 +1,6 @@
 /**
  * Sidebar UI — icons, panels, mode toggles (LEFT side)
  */
-import { openSettingsWindow } from "./settings-ui.js";
-
 export function createSidebar(container, state) {
   container.innerHTML = `
     <div class="sidebar-group sidebar-top">
@@ -17,7 +15,6 @@ export function createSidebar(container, state) {
     <div class="sidebar-group sidebar-bottom">
       ${btn("autosave", "Save location", icons.folder)}
       ${btn("export", "Export", icons.export)}
-      ${btn("menu", "Menu", icons.menu)}
     </div>
   `;
 
@@ -50,12 +47,6 @@ export function createSidebar(container, state) {
   container.querySelector('[data-action="files"]').addEventListener("click", () => {
     showPanel("files", renderFilesPanel(state));
     bindFilesPanel(state, panelOverlay, hidePanel);
-  });
-
-  container.querySelector('[data-action="menu"]').addEventListener("click", (e) => {
-    showMenuDropdown(e.target.closest(".sidebar-btn"), state, () => {
-      updateActiveStates();
-    });
   });
 
   container.querySelector('[data-action="ratchet"]').addEventListener("click", (e) => {
@@ -138,11 +129,6 @@ const icons = {
     <line x1="8" y1="13" x2="16" y2="13"/>
     <line x1="8" y1="17" x2="16" y2="17"/>`,
 
-  fullscreen: `<polyline points="15 3 21 3 21 9"/>
-    <polyline points="9 21 3 21 3 15"/>
-    <line x1="21" y1="3" x2="14" y2="10"/>
-    <line x1="3" y1="21" x2="10" y2="14"/>`,
-
   ratchet: `<circle cx="12" cy="12" r="10"/>
     <polyline points="12 6 12 12 16 14"/>`,
 
@@ -160,9 +146,6 @@ const icons = {
     <polyline points="7 10 12 15 17 10"/>
     <line x1="12" y1="15" x2="12" y2="3"/>`,
 
-  menu: `<line x1="4" y1="7" x2="20" y2="7"/>
-    <line x1="4" y1="12" x2="20" y2="12"/>
-    <line x1="4" y1="17" x2="20" y2="17"/>`,
 };
 
 function renderFilesPanel(state) {
@@ -247,49 +230,6 @@ function bindAutosavePanel(state, panel) {
       await state.updateSettings({ obsidianIntegration: obsidianToggle.checked });
     });
   }
-}
-
-function showMenuDropdown(anchor, state, onUpdate) {
-  document.querySelectorAll(".ratchet-dropdown").forEach((el) => el.remove());
-
-  const dropdown = document.createElement("div");
-  dropdown.className = "ratchet-dropdown";
-  const rect = anchor.getBoundingClientRect();
-  dropdown.style.left = "60px";
-  dropdown.style.bottom = (window.innerHeight - rect.bottom) + "px";
-
-  const items = [
-    { label: state.isFullscreen ? "Exit Fullscreen" : "Fullscreen", action: () => { state.toggleFullscreen(); onUpdate(); } },
-    { label: "Settings", shortcut: "\u2318,", action: () => openSettingsWindow() },
-  ];
-
-  items.forEach(({ label, shortcut, action }) => {
-    const opt = document.createElement("div");
-    opt.className = "ratchet-option";
-    opt.style.display = "flex";
-    opt.style.justifyContent = "space-between";
-    opt.style.gap = "16px";
-    opt.innerHTML = `<span>${label}</span>${shortcut ? `<span style="opacity:0.4;font-size:11px">${shortcut}</span>` : ""}`;
-    opt.addEventListener("click", () => {
-      action();
-      dropdown.remove();
-    });
-    dropdown.appendChild(opt);
-  });
-
-  document.body.appendChild(dropdown);
-
-  setTimeout(() => {
-    document.addEventListener(
-      "mousedown",
-      function handler(e) {
-        if (!dropdown.contains(e.target)) {
-          dropdown.remove();
-          document.removeEventListener("mousedown", handler);
-        }
-      }
-    );
-  }, 0);
 }
 
 function showRatchetDropdown(anchor, state, onStart) {
