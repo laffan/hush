@@ -68,6 +68,21 @@ html, body {
   overflow: hidden;
 }
 
+/* ===== Drag Region (title bar area) ===== */
+#drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  z-index: 80;
+  -webkit-app-region: drag;
+}
+
+.fullscreen-mode #drag-region {
+  display: none;
+}
+
 /* ===== Editor ===== */
 #editor-container {
   width: 100%;
@@ -148,10 +163,10 @@ html, body {
   justify-content: space-between;
   align-items: center;
   padding: 50px 0 20px;
-  background: rgba(0, 0, 0, 0.5);
+  background: none;
   opacity: 0;
   transition: opacity 0.2s;
-  z-index: 100;
+  z-index: 200;
   pointer-events: none;
 }
 
@@ -160,16 +175,20 @@ html, body {
   pointer-events: auto;
 }
 
-/* Hover trigger zone on LEFT edge */
+.fullscreen-mode #sidebar {
+  z-index: 200;
+}
+
+/* Hover trigger zone on LEFT edge — always active even when sidebar is hidden */
 #sidebar::before {
   content: '';
   position: fixed;
   top: 0;
   left: 0;
-  width: 15px;
+  width: 20px;
   height: 100%;
   pointer-events: auto;
-  z-index: 99;
+  z-index: 200;
 }
 
 .sidebar-group {
@@ -187,21 +206,24 @@ html, body {
   justify-content: center;
   background: none;
   border: none;
-  color: var(--sidebar-fg);
+  color: white;
+  opacity: 0.5;
   cursor: pointer;
   border-radius: 6px;
-  transition: color 0.15s, background 0.15s;
+  transition: opacity 0.15s;
   padding: 0;
 }
 
+[data-theme="light"] .sidebar-btn {
+  color: black;
+}
+
 .sidebar-btn:hover {
-  color: var(--sidebar-hover);
-  background: rgba(128, 128, 128, 0.15);
+  opacity: 1;
 }
 
 .sidebar-btn.active {
-  color: var(--fg);
-  background: rgba(128, 128, 128, 0.2);
+  opacity: 1;
 }
 
 .sidebar-btn svg {
@@ -383,7 +405,8 @@ html, body {
 .hush-private-char {
   color: transparent !important;
   background: var(--private-box);
-  border-radius: 2px;
+  border-radius: 0;
+  opacity: 0.5;
 }
 
 /* Cursor should still be visible in private mode */

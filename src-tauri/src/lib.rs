@@ -93,6 +93,19 @@ fn set_always_on_top(app: AppHandle, on_top: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn set_activation_policy(_app: AppHandle, _policy: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        match _policy.as_str() {
+            "regular" => _app.set_activation_policy(tauri::ActivationPolicy::Regular),
+            "accessory" => _app.set_activation_policy(tauri::ActivationPolicy::Accessory),
+            _ => return Err(format!("Unknown policy: {}", _policy)),
+        }
+    }
+    Ok(())
+}
+
 fn get_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -226,6 +239,7 @@ pub fn run() {
             delete_file,
             check_obsidian_vault,
             set_always_on_top,
+            set_activation_policy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hush");

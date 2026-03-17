@@ -176,13 +176,23 @@ async function applyFullscreen(state) {
   if (IS_TAURI) {
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const { invoke } = await import("@tauri-apps/api/core");
       const win = getCurrentWindow();
-      // Use setSimpleFullscreen on macOS for better behavior (no new space),
-      // fall back to setFullscreen on other platforms
+
+      // Switch to Regular activation policy so macOS shows our menu bar in fullscreen
+      if (state.isFullscreen) {
+        await invoke("set_activation_policy", { policy: "regular" });
+      }
+
       try {
         await win.setSimpleFullscreen(state.isFullscreen);
       } catch (_) {
         await win.setFullscreen(state.isFullscreen);
+      }
+
+      // Switch back to Accessory when exiting fullscreen
+      if (!state.isFullscreen) {
+        await invoke("set_activation_policy", { policy: "accessory" });
       }
     } catch (e) {
       console.error("Fullscreen toggle failed:", e);
