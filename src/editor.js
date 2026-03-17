@@ -1,13 +1,32 @@
 import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
 import { EditorState, Prec, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
-import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
 
 const themeCompartment = new Compartment();
+
+// Markdown inline rendering styles — makes headings larger, bold bold, italic italic, etc.
+const markdownHighlight = HighlightStyle.define([
+  { tag: tags.heading1, fontSize: "1.8em", fontWeight: "700", lineHeight: "1.3" },
+  { tag: tags.heading2, fontSize: "1.5em", fontWeight: "700", lineHeight: "1.3" },
+  { tag: tags.heading3, fontSize: "1.3em", fontWeight: "600", lineHeight: "1.3" },
+  { tag: tags.heading4, fontSize: "1.15em", fontWeight: "600" },
+  { tag: tags.heading5, fontSize: "1.05em", fontWeight: "600" },
+  { tag: tags.heading6, fontSize: "1em", fontWeight: "600" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: tags.link, textDecoration: "underline" },
+  { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
+  { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "0.9em" },
+  // Dim the markdown syntax characters (# * _ ` etc.)
+  { tag: tags.processingInstruction, opacity: "0.4" },
+]);
 
 /**
  * Creates the CodeMirror 6 editor instance.
@@ -77,7 +96,7 @@ export function createEditor(container, state) {
     extensions: [
       hushTheme,
       themeCompartment.of(initialCmTheme),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      syntaxHighlighting(markdownHighlight),
       markdown(),
       history(),
       drawSelection(),
@@ -106,7 +125,7 @@ export function createEditor(container, state) {
     if (state.typewriterMode) {
       setupTypewriterBoundary(view, state);
     } else {
-      removeTypewriterBoundary();
+      removeTypewriterBoundary(view);
     }
   });
 
@@ -238,6 +257,8 @@ function setupTypewriterBoundary(view, state) {
   document.body.appendChild(typewriterBoundary);
   typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
 
+  applyTypewriterPadding(view, state);
+
   // Drag to reposition
   typewriterBoundary.addEventListener("mousedown", (e) => {
     e.preventDefault();
@@ -247,6 +268,7 @@ function setupTypewriterBoundary(view, state) {
       const newY = Math.max(50, Math.min(window.innerHeight - 50, e2.clientY));
       typewriterBoundary.style.top = newY + "px";
       state.typewriterPosition = newY / window.innerHeight;
+      applyTypewriterPadding(view, state);
     }
 
     function onUp() {
@@ -263,10 +285,19 @@ function setupTypewriterBoundary(view, state) {
   requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
 }
 
-function removeTypewriterBoundary() {
+function applyTypewriterPadding(view, state) {
+  const targetY = state.typewriterPosition * window.innerHeight;
+  // Set top padding so the first line sits at the typewriter boundary
+  view.scrollDOM.style.paddingTop = targetY + "px";
+}
+
+function removeTypewriterBoundary(view) {
   if (typewriterBoundary) {
     typewriterBoundary.remove();
     typewriterBoundary = null;
+  }
+  if (view) {
+    view.scrollDOM.style.paddingTop = "";
   }
 }
 

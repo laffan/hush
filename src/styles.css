@@ -148,7 +148,7 @@ html, body {
   justify-content: space-between;
   align-items: center;
   padding: 50px 0 20px;
-  background: var(--sidebar-bg);
+  background: rgba(0, 0, 0, 0.5);
   opacity: 0;
   transition: opacity 0.2s;
   z-index: 100;
@@ -392,9 +392,6 @@ html, body {
 }
 
 /* ===== Typewriter Mode ===== */
-.typewriter-mode #editor-container .cm-scroller {
-  padding-bottom: 60vh;
-}
 
 .typewriter-boundary {
   position: fixed;
