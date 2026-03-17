@@ -15,14 +15,15 @@
     "windows": [
       {
         "label": "main",
-        "title": "Hush",
+        "title": "",
         "width": 400,
         "height": 600,
         "resizable": true,
         "decorations": true,
         "transparent": true,
         "visible": false,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "titleBarStyle": "overlay"
       }
     ],
     "trayIcon": {

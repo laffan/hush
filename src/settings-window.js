@@ -78,6 +78,16 @@ function render() {
           </select>
         </div>
 
+        <h3>Font</h3>
+        <div class="settings-row">
+          <label>Font family</label>
+          <select id="setting-font-family">
+            <option value="EB Garamond" ${s.fontFamily === "EB Garamond" ? "selected" : ""} style="font-family: 'EB Garamond', serif">EB Garamond</option>
+            <option value="Inter" ${s.fontFamily === "Inter" ? "selected" : ""} style="font-family: 'Inter', sans-serif">Inter</option>
+            <option value="Fira Code" ${s.fontFamily === "Fira Code" ? "selected" : ""} style="font-family: 'Fira Code', monospace">Fira Code</option>
+          </select>
+        </div>
+
         <h3>Text</h3>
         <div class="settings-slider-row">
           <label>Font size</label>
@@ -142,6 +152,7 @@ function bind() {
   bindSelect("setting-appearance", "appearance");
   bindSelect("setting-light-theme", "lightTheme");
   bindSelect("setting-dark-theme", "darkTheme");
+  bindSelect("setting-font-family", "fontFamily");
 
   const fontSlider = document.getElementById("setting-font-size");
   if (fontSlider) {

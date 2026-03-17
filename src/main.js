@@ -4,6 +4,17 @@ import { AppState } from "./state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
 import { applyAppearance } from "./settings-ui.js";
 
+const fontFallbacks = {
+  "EB Garamond": "'EB Garamond', 'Georgia', 'Times New Roman', serif",
+  "Inter": "'Inter', system-ui, -apple-system, sans-serif",
+  "Fira Code": "'Fira Code', 'Fira Mono', 'Consolas', monospace",
+};
+
+function applyFontFamily(family) {
+  const value = fontFallbacks[family] || fontFallbacks["EB Garamond"];
+  document.documentElement.style.setProperty("--font-family", value);
+}
+
 async function init() {
   const state = new AppState();
   await state.init();
@@ -12,6 +23,7 @@ async function init() {
   applyAppearance(state.settings.appearance || "dark");
   document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
   document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+  applyFontFamily(state.settings.fontFamily);
 
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
@@ -30,6 +42,7 @@ async function init() {
       applyAppearance(state.settings.appearance || "dark");
       document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
       document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+      applyFontFamily(state.settings.fontFamily);
       state.emit("settings-changed");
       state.emit("theme-changed");
     });

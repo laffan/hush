@@ -1,6 +1,7 @@
 import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
 import { EditorState, Prec, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
+import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "./themes.js";
@@ -26,7 +27,6 @@ export function createEditor(container, state) {
   const hushTheme = EditorView.theme({
     "&": {
       height: "100%",
-      background: "transparent",
     },
     ".cm-scroller": {
       fontFamily: "var(--font-family)",
@@ -41,15 +41,6 @@ export function createEditor(container, state) {
     ".cm-cursor": {
       borderLeftColor: "var(--cursor)",
       borderLeftWidth: "2px",
-    },
-    ".cm-activeLine": {
-      backgroundColor: "transparent",
-    },
-    ".cm-selectionBackground": {
-      backgroundColor: "rgba(128, 128, 128, 0.3)",
-    },
-    "&.cm-focused .cm-selectionBackground": {
-      backgroundColor: "rgba(128, 128, 128, 0.3)",
     },
     ".cm-gutters": {
       display: "none",
@@ -86,6 +77,7 @@ export function createEditor(container, state) {
     extensions: [
       hushTheme,
       themeCompartment.of(initialCmTheme),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       markdown(),
       history(),
       drawSelection(),
@@ -157,17 +149,25 @@ function applyModes(state) {
   app.classList.toggle("typewriter-mode", state.typewriterMode);
 }
 
-function applyFullscreen(state) {
+async function applyFullscreen(state) {
   const app = document.getElementById("app");
   app.classList.toggle("fullscreen-mode", state.isFullscreen);
 
-  // Use the Window API directly
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   if (IS_TAURI) {
-    import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const win = getCurrentWindow();
-      win.setFullscreen(state.isFullscreen).catch(console.error);
-    });
+      // Use setSimpleFullscreen on macOS for better behavior (no new space),
+      // fall back to setFullscreen on other platforms
+      try {
+        await win.setSimpleFullscreen(state.isFullscreen);
+      } catch (_) {
+        await win.setFullscreen(state.isFullscreen);
+      }
+    } catch (e) {
+      console.error("Fullscreen toggle failed:", e);
+    }
   }
 
   updateColumnResizers(state);
@@ -272,12 +272,12 @@ function removeTypewriterBoundary() {
 
 function scrollCursorToTypewriterLine(view, state) {
   if (!state.typewriterMode) return;
-  const cursorEl = view.dom.querySelector(".cm-cursor");
-  if (!cursorEl) return;
-  const cursorRect = cursorEl.getBoundingClientRect();
+  const head = view.state.selection.main.head;
+  const coords = view.coordsAtPos(head);
+  if (!coords) return;
   const targetY = state.typewriterPosition * window.innerHeight;
-  const offset = cursorRect.top - targetY;
-  if (Math.abs(offset) > 2) {
+  const offset = coords.top - targetY;
+  if (Math.abs(offset) > 1) {
     view.scrollDOM.scrollTop += offset;
   }
 }

@@ -56,7 +56,6 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: transparent;
-  color: var(--fg);
   font-family: var(--font-family);
   font-size: var(--font-size);
   -webkit-font-smoothing: antialiased;
@@ -67,7 +66,6 @@ html, body {
   height: 100%;
   position: relative;
   overflow: hidden;
-  background: var(--bg);
 }
 
 /* ===== Editor ===== */
@@ -79,7 +77,6 @@ html, body {
 
 #editor-container .cm-editor {
   height: 100%;
-  background: transparent;
   font-family: var(--font-family);
   font-size: var(--font-size);
 }
@@ -90,15 +87,13 @@ html, body {
 
 #editor-container .cm-scroller {
   padding: var(--padding);
-  padding-top: calc(var(--padding) + 10px);
+  padding-top: calc(var(--padding) + 30px);
   overflow-y: auto;
   font-family: var(--font-family) !important;
 }
 
 #editor-container .cm-content {
   font-family: var(--font-family) !important;
-  caret-color: var(--cursor);
-  color: var(--fg);
 }
 
 #editor-container .cm-line {
@@ -111,17 +106,7 @@ html, body {
   border-left-width: 2px;
 }
 
-#editor-container .cm-selectionBackground {
-  background: rgba(128, 128, 128, 0.3) !important;
-}
 
-#editor-container .cm-activeLine {
-  background: transparent;
-}
-
-#editor-container .cm-activeLineGutter {
-  background: transparent;
-}
 
 #editor-container .cm-gutters {
   display: none;
@@ -162,7 +147,7 @@ html, body {
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 40px 0 20px;
+  padding: 50px 0 20px;
   background: var(--sidebar-bg);
   opacity: 0;
   transition: opacity 0.2s;
@@ -408,7 +393,7 @@ html, body {
 
 /* ===== Typewriter Mode ===== */
 .typewriter-mode #editor-container .cm-scroller {
-  padding-bottom: 0;
+  padding-bottom: 60vh;
 }
 
 .typewriter-boundary {
