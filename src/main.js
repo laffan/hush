@@ -35,13 +35,14 @@ async function init() {
   // Works more reliably than CSS ::before in fullscreen contexts
   const sidebarTrigger = document.createElement("div");
   sidebarTrigger.style.cssText =
-    "position:fixed;top:0;left:0;width:50px;height:100%;z-index:250;pointer-events:auto;";
+    "position:fixed;top:0;left:0;width:50px;height:100%;z-index:250;";
   document.body.appendChild(sidebarTrigger);
   sidebarTrigger.addEventListener("mouseenter", () => {
     sidebar.classList.add("visible");
+    // Disable trigger so clicks pass through to sidebar buttons
+    sidebarTrigger.style.pointerEvents = "none";
   });
   // Hide sidebar when mouse leaves the sidebar area entirely
-  // (must track leave on the sidebar + trigger combined)
   function checkSidebarLeave(e) {
     const x = e.clientX;
     // Still inside sidebar or panel zone
@@ -49,6 +50,8 @@ async function init() {
     const panel = document.getElementById("panel-overlay");
     if (panel && !panel.classList.contains("hidden") && x <= 330) return;
     sidebar.classList.remove("visible");
+    // Re-enable trigger for next hover
+    sidebarTrigger.style.pointerEvents = "auto";
   }
   document.addEventListener("mousemove", checkSidebarLeave);
 
