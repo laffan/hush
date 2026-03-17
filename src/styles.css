@@ -127,24 +127,21 @@ html, body {
   display: none;
 }
 
-/* Centered column — always active */
-#editor-container .cm-scroller {
-  max-width: var(--column-width);
-  margin: 0 auto;
-}
 
-
-/* Column width resizer */
+/* Column width resizer — wide hit area, thin visible line */
 .column-resizer {
   position: fixed;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: 2px;
+  padding: 0 20px;
+  margin-left: -20px;
   cursor: col-resize;
   opacity: 0;
   transition: opacity 0.2s;
   background: var(--accent);
-  z-index: 50;
+  background-clip: content-box;
+  z-index: 150;
 }
 
 .column-resizer.hover, .column-resizer.dragging {
@@ -175,11 +172,7 @@ html, body {
   pointer-events: auto;
 }
 
-.fullscreen-mode #sidebar {
-  z-index: 200;
-}
-
-/* Hover trigger zone on LEFT edge — always active even when sidebar is hidden */
+/* CSS ::before hover trigger kept as fallback; JS trigger is primary */
 #sidebar::before {
   content: '';
   position: fixed;
@@ -425,7 +418,7 @@ html, body {
   opacity: 0.08;
   transition: opacity 0.2s, height 0.15s;
   background: var(--accent);
-  z-index: 50;
+  z-index: 150;
 }
 
 .typewriter-boundary:hover {

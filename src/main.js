@@ -31,18 +31,26 @@ async function init() {
   const sidebar = document.getElementById("sidebar");
   createSidebar(sidebar, state);
 
-  // JS-based sidebar hover detection (works reliably in fullscreen)
-  document.addEventListener("mousemove", (e) => {
-    if (e.clientX <= 20) {
-      sidebar.classList.add("visible");
-    } else if (e.clientX > 60 && sidebar.classList.contains("visible")) {
-      // Only auto-hide if no panel is open
-      const panel = document.getElementById("panel-overlay");
-      if (!panel || panel.classList.contains("hidden")) {
-        sidebar.classList.remove("visible");
-      }
-    }
+  // Sidebar hover trigger — a fixed invisible zone on the left edge
+  // Works more reliably than CSS ::before in fullscreen contexts
+  const sidebarTrigger = document.createElement("div");
+  sidebarTrigger.style.cssText =
+    "position:fixed;top:0;left:0;width:50px;height:100%;z-index:250;pointer-events:auto;";
+  document.body.appendChild(sidebarTrigger);
+  sidebarTrigger.addEventListener("mouseenter", () => {
+    sidebar.classList.add("visible");
   });
+  // Hide sidebar when mouse leaves the sidebar area entirely
+  // (must track leave on the sidebar + trigger combined)
+  function checkSidebarLeave(e) {
+    const x = e.clientX;
+    // Still inside sidebar or panel zone
+    if (x <= 50) return;
+    const panel = document.getElementById("panel-overlay");
+    if (panel && !panel.classList.contains("hidden") && x <= 330) return;
+    sidebar.classList.remove("visible");
+  }
+  document.addEventListener("mousemove", checkSidebarLeave);
 
   await setupTauriIntegration(state);
 

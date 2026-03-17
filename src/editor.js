@@ -211,9 +211,6 @@ function updateColumnResizers(state) {
   if (state._columnResizeHandler) {
     window.removeEventListener("resize", state._columnResizeHandler);
   }
-  if (state._columnMouseHandler) {
-    document.removeEventListener("mousemove", state._columnMouseHandler);
-  }
 
   const leftResizer = document.createElement("div");
   leftResizer.className = "column-resizer left";
@@ -223,54 +220,54 @@ function updateColumnResizers(state) {
   document.body.appendChild(leftResizer);
   document.body.appendChild(rightResizer);
 
-  let resizersVisible = false;
+  // When either resizer is hovered, show both (with a small delay on leave)
+  let hideTimeout = null;
+  function showBoth() {
+    clearTimeout(hideTimeout);
+    leftResizer.classList.add("hover");
+    rightResizer.classList.add("hover");
+  }
+  function hideBoth() {
+    hideTimeout = setTimeout(() => {
+      leftResizer.classList.remove("hover");
+      rightResizer.classList.remove("hover");
+    }, 200);
+  }
+  leftResizer.addEventListener("mouseenter", showBoth);
+  leftResizer.addEventListener("mouseleave", hideBoth);
+  rightResizer.addEventListener("mouseenter", showBoth);
+  rightResizer.addEventListener("mouseleave", hideBoth);
 
-  function positionResizers() {
+  function applyColumnLayout() {
     const w = window.innerWidth;
     const colW = state.settings.columnWidth;
-    const minPadding = 50;
+    const minPad = 50;
 
-    // If window is too narrow for the column, hide resizers and use padding fallback
-    if (w <= colW + minPadding * 2) {
-      leftResizer.style.display = "none";
-      rightResizer.style.display = "none";
-      document.documentElement.style.setProperty("--column-width", (w - minPadding * 2) + "px");
-    } else {
+    // Calculate side padding to center the column
+    const sidePad = Math.max(minPad, Math.floor((w - colW) / 2));
+    const showResizers = w > colW + minPad * 2;
+
+    // Apply padding to the scroller for centering
+    const scroller = document.querySelector("#editor-container .cm-scroller");
+    if (scroller) {
+      scroller.style.paddingLeft = sidePad + "px";
+      scroller.style.paddingRight = sidePad + "px";
+    }
+
+    if (showResizers) {
       leftResizer.style.display = "";
       rightResizer.style.display = "";
-      const left = (w - colW) / 2;
-      leftResizer.style.left = left + "px";
-      rightResizer.style.left = left + colW + "px";
-      document.documentElement.style.setProperty("--column-width", colW + "px");
+      leftResizer.style.left = sidePad + "px";
+      rightResizer.style.left = (w - sidePad) + "px";
+    } else {
+      leftResizer.style.display = "none";
+      rightResizer.style.display = "none";
     }
   }
 
-  positionResizers();
-  state._columnResizeHandler = positionResizers;
-  window.addEventListener("resize", positionResizers);
-
-  // Show both resizers when mouse is inside the column area
-  state._columnMouseHandler = (e) => {
-    const w = window.innerWidth;
-    const colW = state.settings.columnWidth;
-    const minPadding = 50;
-    if (w <= colW + minPadding * 2) return; // no resizers when window too narrow
-
-    const left = (w - colW) / 2;
-    const right = left + colW;
-    const inside = e.clientX >= left - 30 && e.clientX <= right + 30;
-
-    if (inside && !resizersVisible) {
-      resizersVisible = true;
-      leftResizer.classList.add("hover");
-      rightResizer.classList.add("hover");
-    } else if (!inside && resizersVisible) {
-      resizersVisible = false;
-      leftResizer.classList.remove("hover");
-      rightResizer.classList.remove("hover");
-    }
-  };
-  document.addEventListener("mousemove", state._columnMouseHandler);
+  applyColumnLayout();
+  state._columnResizeHandler = applyColumnLayout;
+  window.addEventListener("resize", applyColumnLayout);
 
   function makeDraggable(el, isLeft) {
     let startX, startWidth;
@@ -284,7 +281,7 @@ function updateColumnResizers(state) {
         const delta = isLeft ? startX - e2.clientX : e2.clientX - startX;
         const newWidth = Math.max(300, Math.min(window.innerWidth - 100, startWidth + delta * 2));
         state.settings.columnWidth = newWidth;
-        positionResizers();
+        applyColumnLayout();
       }
 
       function onUp() {
