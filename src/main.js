@@ -60,20 +60,35 @@ async function init() {
 
   await setupTauriIntegration(state);
 
-  // Listen for settings updates from the settings window
+  // Apply initial always-on-top setting
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+  if (IS_TAURI) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    if (state.settings.alwaysOnTop) {
+      await invoke("set_always_on_top", { onTop: true }).catch(() => {});
+    }
+  }
+
+  // Listen for settings updates from the settings window
   if (IS_TAURI) {
     const { listen } = await import("@tauri-apps/api/event");
     await listen("toggle-fullscreen", () => {
       state.toggleFullscreen();
     });
-    await listen("settings-updated", (event) => {
+    await listen("settings-updated", async (event) => {
       const newSettings = event.payload;
       Object.assign(state.settings, newSettings);
       applyAppearance(state.settings.appearance || "dark");
       document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
       document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
       applyFontFamily(state.settings.fontFamily);
+      // Apply visibility setting
+      const { invoke } = await import("@tauri-apps/api/core");
+      const vis = state.settings.visibility;
+      const policy = (vis === "dock" || vis === "both") ? "regular" : "accessory";
+      await invoke("set_activation_policy", { policy }).catch(() => {});
+      // Apply always-on-top setting
+      await invoke("set_always_on_top", { onTop: !!state.settings.alwaysOnTop }).catch(() => {});
       state.emit("settings-changed");
       state.emit("theme-changed");
     });

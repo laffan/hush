@@ -50,6 +50,10 @@ function render() {
             <option value="both" ${s.visibility === "both" ? "selected" : ""}>Show both</option>
           </select>
         </div>
+        <div class="settings-row">
+          <label>Show app above all other windows</label>
+          <input type="checkbox" id="setting-always-on-top" ${s.alwaysOnTop ? "checked" : ""} />
+        </div>
       </div>
 
       <div class="settings-section">
@@ -153,6 +157,13 @@ function bind() {
   bindSelect("setting-light-theme", "lightTheme");
   bindSelect("setting-dark-theme", "darkTheme");
   bindSelect("setting-font-family", "fontFamily");
+
+  const alwaysOnTopCb = document.getElementById("setting-always-on-top");
+  if (alwaysOnTopCb) {
+    alwaysOnTopCb.addEventListener("change", () => {
+      saveSetting("alwaysOnTop", alwaysOnTopCb.checked);
+    });
+  }
 
   const fontSlider = document.getElementById("setting-font-size");
   if (fontSlider) {

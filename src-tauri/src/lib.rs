@@ -143,6 +143,7 @@ pub fn run() {
         .replace("CmdOrCtrl", "⌘")
         .replace("Shift", "⇧")
         .replace("+", "");
+    let initial_visibility = settings.visibility.clone();
     let file_manager = FileManager::new(data_dir.join("files"));
 
     tauri::Builder::default()
@@ -211,10 +212,14 @@ pub fn run() {
                 }
             });
 
-            // macOS: hide from dock
+            // macOS: apply visibility setting
             #[cfg(target_os = "macos")]
             {
-                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                let policy = match initial_visibility.as_str() {
+                    "dock" | "both" => tauri::ActivationPolicy::Regular,
+                    _ => tauri::ActivationPolicy::Accessory,
+                };
+                let _ = app.set_activation_policy(policy);
             }
 
             // Show the window
