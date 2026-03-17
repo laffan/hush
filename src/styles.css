@@ -172,18 +172,6 @@ html, body {
   pointer-events: auto;
 }
 
-/* CSS ::before hover trigger kept as fallback; JS trigger is primary */
-#sidebar::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 20px;
-  height: 100%;
-  pointer-events: auto;
-  z-index: 200;
-}
-
 .sidebar-group {
   display: flex;
   flex-direction: column;
@@ -365,7 +353,7 @@ html, body {
   background: rgba(128, 128, 128, 0.2);
 }
 
-/* Ratchet active state — show only the active line, centered on screen */
+/* Ratchet active state — show only the last line, centered on screen */
 .ratchet-active #editor-container .cm-editor {
   height: 100%;
 }
@@ -378,18 +366,13 @@ html, body {
 
 .ratchet-active #editor-container .cm-content {
   max-width: 80%;
-  text-align: center;
 }
 
-.ratchet-active #editor-container .cm-line:not(.cm-activeLine) {
+.ratchet-active #editor-container .cm-line:not(:last-child) {
   height: 0;
   overflow: hidden;
   padding: 0;
   margin: 0;
-}
-
-.ratchet-active #editor-container .cm-activeLine {
-  text-align: left;
 }
 
 .ratchet-timer {

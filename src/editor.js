@@ -1,4 +1,4 @@
-import { EditorView, keymap, drawSelection, placeholder, highlightActiveLine } from "@codemirror/view";
+import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
 import { EditorState, Prec, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -108,7 +108,6 @@ export function createEditor(container, state) {
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
-      highlightActiveLine(),
     ],
   });
 
@@ -123,6 +122,12 @@ export function createEditor(container, state) {
     updateRatchetTimer(state);
     // Force private mode decoration rebuild
     view.dispatch({ effects: [] });
+    // When ratchet mode starts, move cursor to end of document
+    if (state.ratchetMode) {
+      const end = view.state.doc.length;
+      view.dispatch({ selection: { anchor: end } });
+      view.focus();
+    }
     if (state.typewriterMode) {
       setupTypewriterBoundary(view, state);
     } else {
