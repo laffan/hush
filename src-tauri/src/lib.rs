@@ -101,7 +101,7 @@ fn set_activation_policy(_app: AppHandle, _policy: String) -> Result<(), String>
             "regular" => _app.set_activation_policy(tauri::ActivationPolicy::Regular),
             "accessory" => _app.set_activation_policy(tauri::ActivationPolicy::Accessory),
             _ => return Err(format!("Unknown policy: {}", _policy)),
-        }
+        }.map_err(|e| e.to_string())?;
     }
     Ok(())
 }
