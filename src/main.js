@@ -28,6 +28,14 @@ async function init() {
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
 
+  // Always focus the editor when the window gains focus
+  // This handles: startup, reveal via shortcut, fullscreen toggle, tray click
+  window.addEventListener("focus", () => {
+    if (state.editor) state.editor.focus();
+  });
+  // Initial focus
+  editor.focus();
+
   const sidebar = document.getElementById("sidebar");
   createSidebar(sidebar, state);
 
