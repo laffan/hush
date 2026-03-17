@@ -147,7 +147,7 @@ html, body {
   z-index: 50;
 }
 
-.column-resizer:hover, .column-resizer.dragging {
+.column-resizer.hover, .column-resizer.dragging {
   opacity: 0.5;
 }
 

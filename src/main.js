@@ -28,7 +28,21 @@ async function init() {
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
 
-  createSidebar(document.getElementById("sidebar"), state);
+  const sidebar = document.getElementById("sidebar");
+  createSidebar(sidebar, state);
+
+  // JS-based sidebar hover detection (works reliably in fullscreen)
+  document.addEventListener("mousemove", (e) => {
+    if (e.clientX <= 20) {
+      sidebar.classList.add("visible");
+    } else if (e.clientX > 60 && sidebar.classList.contains("visible")) {
+      // Only auto-hide if no panel is open
+      const panel = document.getElementById("panel-overlay");
+      if (!panel || panel.classList.contains("hidden")) {
+        sidebar.classList.remove("visible");
+      }
+    }
+  });
 
   await setupTauriIntegration(state);
 
