@@ -221,8 +221,15 @@ async function applyFullscreen(state) {
       }
 
       // Re-focus the window and editor after fullscreen transition
+      // macOS needs time to complete the window animation before focus sticks
       await win.setFocus();
       if (state.editor) state.editor.focus();
+      setTimeout(async () => {
+        try {
+          await win.setFocus();
+          if (state.editor) state.editor.focus();
+        } catch (_) {}
+      }, 300);
     } catch (e) {
       console.error("Fullscreen toggle failed:", e);
     }
