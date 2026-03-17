@@ -1,5 +1,5 @@
 import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
-import { EditorState, Prec, Compartment } from "@codemirror/state";
+import { EditorState, Prec, Compartment, Annotation } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -10,6 +10,7 @@ import { createPrivateModePlugin } from "./private-mode.js";
 import { openSettingsWindow } from "./settings-ui.js";
 
 const themeCompartment = new Compartment();
+const bypassRatchet = Annotation.define();
 
 // Markdown inline rendering styles — makes headings larger, bold bold, italic italic, etc.
 const markdownHighlight = HighlightStyle.define([
@@ -37,9 +38,18 @@ export function createEditor(container, state) {
     if (update.docChanged) {
       state.markDirty();
     }
-    // Typewriter: scroll cursor to fixed position on every update
-    if (state.typewriterMode && (update.docChanged || update.selectionSet)) {
+    // Typewriter / Ratchet: scroll cursor to fixed position on every update
+    const shouldScroll = state.typewriterMode || state.ratchetMode;
+    if (shouldScroll && (update.docChanged || update.selectionSet)) {
       requestAnimationFrame(() => scrollCursorToTypewriterLine(update.view, state));
+    }
+    // Ratchet: ensure cursor stays at end of document
+    if (state.ratchetMode && update.selectionSet) {
+      const end = update.state.doc.length;
+      const main = update.state.selection.main;
+      if (main.anchor !== end || main.head !== end) {
+        update.view.dispatch({ selection: { anchor: end } });
+      }
     }
   });
 
@@ -67,16 +77,42 @@ export function createEditor(container, state) {
     },
   });
 
-  // Ratchet mode: block backspace/delete/selection/arrow-left
+  // Ratchet mode: block deletion, navigation, selection, undo
   const ratchetKeymap = Prec.highest(
     keymap.of([
+      // Deletion
       { key: "Backspace", run: () => state.ratchetMode },
       { key: "Delete", run: () => state.ratchetMode },
+      // All arrow navigation
       { key: "ArrowLeft", run: () => state.ratchetMode },
+      { key: "ArrowRight", run: () => state.ratchetMode },
       { key: "ArrowUp", run: () => state.ratchetMode },
+      { key: "ArrowDown", run: () => state.ratchetMode },
       { key: "Home", run: () => state.ratchetMode },
+      { key: "End", run: () => state.ratchetMode },
+      { key: "PageUp", run: () => state.ratchetMode },
+      { key: "PageDown", run: () => state.ratchetMode },
+      // Cmd+navigation
+      { key: "Mod-ArrowLeft", run: () => state.ratchetMode },
+      { key: "Mod-ArrowRight", run: () => state.ratchetMode },
+      { key: "Mod-ArrowUp", run: () => state.ratchetMode },
+      { key: "Mod-ArrowDown", run: () => state.ratchetMode },
+      // Shift+arrow (selection)
+      { key: "Shift-ArrowLeft", run: () => state.ratchetMode },
+      { key: "Shift-ArrowRight", run: () => state.ratchetMode },
+      { key: "Shift-ArrowUp", run: () => state.ratchetMode },
+      { key: "Shift-ArrowDown", run: () => state.ratchetMode },
+      { key: "Shift-Home", run: () => state.ratchetMode },
+      { key: "Shift-End", run: () => state.ratchetMode },
+      // Cmd+Shift+arrow (word/line selection)
+      { key: "Mod-Shift-ArrowLeft", run: () => state.ratchetMode },
+      { key: "Mod-Shift-ArrowRight", run: () => state.ratchetMode },
+      { key: "Mod-Shift-ArrowUp", run: () => state.ratchetMode },
+      { key: "Mod-Shift-ArrowDown", run: () => state.ratchetMode },
+      // Select all, undo, redo, cut
       { key: "Mod-a", run: () => state.ratchetMode },
       { key: "Mod-z", run: () => state.ratchetMode },
+      { key: "Mod-Shift-z", run: () => state.ratchetMode },
       { key: "Mod-x", run: () => state.ratchetMode },
     ])
   );
@@ -89,6 +125,20 @@ export function createEditor(container, state) {
       { key: "Mod-Shift-f", run: () => { state.toggleFullscreen(); return true; } },
     ])
   );
+
+  // Transaction filter: prevent deletions and non-end insertions in ratchet mode
+  const ratchetFilter = EditorState.transactionFilter.of((tr) => {
+    if (!state.ratchetMode || tr.annotation(bypassRatchet)) return tr;
+    if (tr.docChanged) {
+      let reject = false;
+      tr.changes.iterChanges((fromA, toA) => {
+        if (fromA < toA) reject = true; // deletion
+        if (fromA !== tr.startState.doc.length) reject = true; // not appending at end
+      });
+      if (reject) return [];
+    }
+    return tr;
+  });
 
   // Block mouse selection in ratchet mode
   const ratchetMouseFilter = EditorView.domEventHandlers({
@@ -114,6 +164,7 @@ export function createEditor(container, state) {
       updateListener,
       globalKeymap,
       ratchetKeymap,
+      ratchetFilter,
       ratchetMouseFilter,
       privateModePlugin,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
@@ -133,16 +184,24 @@ export function createEditor(container, state) {
     updateRatchetTimer(state);
     // Force private mode decoration rebuild
     view.dispatch({ effects: [] });
-    // When ratchet mode starts, move cursor to end of document
+    // When ratchet mode starts, move cursor to end and set up typewriter scrolling
     if (state.ratchetMode) {
       const end = view.state.doc.length;
-      view.dispatch({ selection: { anchor: end } });
+      view.dispatch({ selection: { anchor: end }, annotations: bypassRatchet.of(true) });
       view.focus();
+      applyRatchetTypewriterPadding(view);
+      requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+    } else {
+      // Clean up ratchet typewriter padding (unless typewriter mode is on)
+      if (!state.typewriterMode) {
+        view.scrollDOM.style.paddingTop = "";
+        view.scrollDOM.style.paddingBottom = "";
+      }
     }
     if (state.typewriterMode) {
       setupTypewriterBoundary(view, state);
     } else {
-      removeTypewriterBoundary(view);
+      removeTypewriterBoundary(view, state);
     }
   });
 
@@ -172,6 +231,7 @@ export function createEditor(container, state) {
     setContent: (text) => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
+        annotations: bypassRatchet.of(true),
       });
     },
     focus: () => view.focus(),
@@ -370,28 +430,38 @@ function applyTypewriterPadding(view, state) {
   view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
 }
 
-function removeTypewriterBoundary(view) {
+function removeTypewriterBoundary(view, state) {
   if (typewriterBoundary) {
     typewriterBoundary.remove();
     typewriterBoundary = null;
   }
-  if (view) {
+  // Don't clear padding if ratchet mode is using it
+  if (view && !(state && state.ratchetMode)) {
     view.scrollDOM.style.paddingTop = "";
     view.scrollDOM.style.paddingBottom = "";
   }
 }
 
 function scrollCursorToTypewriterLine(view, state) {
-  if (!state.typewriterMode) return;
+  if (!state.typewriterMode && !state.ratchetMode) return;
   const head = view.state.selection.main.head;
   const coords = view.coordsAtPos(head);
   if (!coords) return;
-  const targetY = state.typewriterPosition * window.innerHeight;
+  // Ratchet uses center (0.5), typewriter uses user-configured position
+  const position = state.ratchetMode ? 0.5 : state.typewriterPosition;
+  const targetY = position * window.innerHeight;
   // Align the bottom of the current line with the typewriter boundary
   const offset = coords.bottom - targetY;
   if (Math.abs(offset) > 1) {
     view.scrollDOM.scrollTop += offset;
   }
+}
+
+/* ===== Ratchet Typewriter Padding ===== */
+function applyRatchetTypewriterPadding(view) {
+  const targetY = 0.5 * window.innerHeight;
+  view.scrollDOM.style.paddingTop = targetY + "px";
+  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
 }
 
 /* ===== Ratchet Timer ===== */

@@ -28,6 +28,11 @@ async function init() {
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
 
+  // If ratchet mode was restored from localStorage, activate UI (timer, visual state)
+  if (state.ratchetMode) {
+    state.emit("mode-changed");
+  }
+
   // Always focus the editor when the window gains focus
   // This handles: startup, reveal via shortcut, fullscreen toggle, tray click
   window.addEventListener("focus", () => {

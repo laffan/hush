@@ -6,7 +6,7 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Editor** — A Markdown editor with inline syntax highlighting (headings, bold, italic, links, code), adjustable column width, and 16 color themes across light, dark, and sepia appearances.
 
-**Ratchet Mode** — Forward-only writing. Pick a duration (5–30 minutes) and the editor locks out deletion, selection, and backward navigation. Only the current line is visible, centered on screen. When the timer expires, the full document reappears.
+**Ratchet Mode** — Forward-only writing. Pick a duration (5–30 minutes) and the editor locks out deletion, selection, and all navigation. The current line is pinned to the center of the screen with previous lines scrolling up above it (typewriter-style). The cursor is always at the end of the document. The timer persists across app restarts.
 
 **Private Mode** — Replaces all characters with opaque boxes so you can write without anyone reading over your shoulder. Toggle with `⌘⇧P`.
 
