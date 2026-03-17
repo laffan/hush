@@ -26,6 +26,8 @@ pub struct AppSettings {
     pub line_height: f64,
     #[serde(default = "default_font_family")]
     pub font_family: String,
+    #[serde(default)]
+    pub normalize_headers: bool,
     #[serde(default = "default_padding")]
     pub padding: u32,
 
@@ -75,6 +77,7 @@ impl Default for AppSettings {
             font_size: default_font_size(),
             line_height: default_line_height(),
             font_family: default_font_family(),
+            normalize_headers: false,
             padding: default_padding(),
             autosave_folder: None,
             obsidian_integration: false,

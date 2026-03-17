@@ -167,7 +167,7 @@ html, body {
   pointer-events: none;
 }
 
-#sidebar:hover, #sidebar.visible {
+#sidebar:hover, #sidebar.visible, #sidebar.pinned {
   opacity: 1;
   pointer-events: auto;
 }
@@ -217,6 +217,11 @@ html, body {
   stroke-linejoin: round;
 }
 
+.sidebar-btn.fill-icon svg {
+  fill: currentColor;
+  stroke: none;
+}
+
 /* ===== Panels (LEFT side, next to sidebar) ===== */
 #panel-overlay {
   position: fixed;
@@ -243,6 +248,7 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--sidebar-fg);
+  margin-top: 30px;
   margin-bottom: 16px;
   font-family: system-ui, sans-serif;
 }

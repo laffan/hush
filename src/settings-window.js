@@ -92,6 +92,12 @@ function render() {
           </select>
         </div>
 
+        <h3>Headers</h3>
+        <div class="settings-row">
+          <label>Normalize header sizes</label>
+          <input type="checkbox" id="setting-normalize-headers" ${s.normalizeHeaders ? "checked" : ""} />
+        </div>
+
         <h3>Text</h3>
         <div class="settings-slider-row">
           <label>Font size</label>
@@ -162,6 +168,13 @@ function bind() {
   if (alwaysOnTopCb) {
     alwaysOnTopCb.addEventListener("change", () => {
       saveSetting("alwaysOnTop", alwaysOnTopCb.checked);
+    });
+  }
+
+  const normalizeHeadersCb = document.getElementById("setting-normalize-headers");
+  if (normalizeHeadersCb) {
+    normalizeHeadersCb.addEventListener("change", () => {
+      saveSetting("normalizeHeaders", normalizeHeadersCb.checked);
     });
   }
 

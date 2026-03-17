@@ -8,7 +8,7 @@ export function createSidebar(container, state) {
       ${btn("files", "Files", icons.files)}
     </div>
     <div class="sidebar-group sidebar-middle">
-      ${btn("ratchet", "Ratchet mode", icons.ratchet)}
+      ${btn("ratchet", "Ratchet mode", icons.ratchet, { viewBox: "0 0 300 300", fill: true })}
       ${btn("private", "Private mode", icons.private)}
       ${btn("typewriter", "Typewriter mode", icons.typewriter)}
     </div>
@@ -111,9 +111,11 @@ export function createSidebar(container, state) {
   updateActiveStates();
 }
 
-function btn(action, title, svgContent) {
-  return `<button class="sidebar-btn" data-action="${action}" title="${title}">
-    <svg viewBox="0 0 24 24">${svgContent}</svg>
+function btn(action, title, svgContent, options = {}) {
+  const viewBox = options.viewBox || "0 0 24 24";
+  const cls = options.fill ? "sidebar-btn fill-icon" : "sidebar-btn";
+  return `<button class="${cls}" data-action="${action}" title="${title}">
+    <svg viewBox="${viewBox}">${svgContent}</svg>
   </button>`;
 }
 
@@ -124,13 +126,14 @@ const icons = {
     <line x1="12" y1="18" x2="12" y2="12"/>
     <line x1="9" y1="15" x2="15" y2="15"/>`,
 
-  files: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-    <polyline points="14 2 14 8 20 8"/>
-    <line x1="8" y1="13" x2="16" y2="13"/>
-    <line x1="8" y1="17" x2="16" y2="17"/>`,
+  files: `<line x1="10" y1="7" x2="20" y2="7"/>
+    <line x1="10" y1="12" x2="20" y2="12"/>
+    <line x1="10" y1="17" x2="20" y2="17"/>
+    <circle cx="5" cy="7" r="1.5" fill="currentColor" stroke="none"/>
+    <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+    <circle cx="5" cy="17" r="1.5" fill="currentColor" stroke="none"/>`,
 
-  ratchet: `<circle cx="12" cy="12" r="10"/>
-    <polyline points="12 6 12 12 16 14"/>`,
+  ratchet: `<path d="M241.3,1.3H58.7C27,1.3,1.3,27,1.3,58.7v182.7c0,31.7,25.7,57.4,57.4,57.4h182.7c31.7,0,57.4-25.7,57.4-57.4V58.7c0-31.7-25.7-57.4-57.4-57.4ZM55.4,65.8h75.8v39.2H55.4v-39.2ZM55.4,130.7h91.7v39.2H55.4v-39.2ZM225,234.2H55.4v-39.2h169.6v39.2ZM240.5,169.9h-75.8v-39.2h75.8v39.2ZM244.6,105h-97.4v-39.2h97.4v39.2Z"/>`,
 
   private: `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
     <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>

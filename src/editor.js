@@ -10,25 +10,41 @@ import { createPrivateModePlugin } from "./private-mode.js";
 import { openSettingsWindow } from "./settings-ui.js";
 
 const themeCompartment = new Compartment();
+const highlightCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
-// Markdown inline rendering styles — makes headings larger, bold bold, italic italic, etc.
-const markdownHighlight = HighlightStyle.define([
-  { tag: tags.heading1, fontSize: "1.8em", fontWeight: "700", lineHeight: "1.3" },
-  { tag: tags.heading2, fontSize: "1.5em", fontWeight: "700", lineHeight: "1.3" },
-  { tag: tags.heading3, fontSize: "1.3em", fontWeight: "600", lineHeight: "1.3" },
-  { tag: tags.heading4, fontSize: "1.15em", fontWeight: "600" },
-  { tag: tags.heading5, fontSize: "1.05em", fontWeight: "600" },
-  { tag: tags.heading6, fontSize: "1em", fontWeight: "600" },
-  { tag: tags.strong, fontWeight: "bold" },
-  { tag: tags.emphasis, fontStyle: "italic" },
-  { tag: tags.strikethrough, textDecoration: "line-through" },
-  { tag: tags.link, textDecoration: "underline" },
-  { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
-  { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "0.9em" },
-  // Dim the markdown syntax characters (# * _ ` etc.)
-  { tag: tags.processingInstruction, opacity: "0.4" },
-]);
+// Build the markdown highlight style, optionally normalizing heading sizes
+function getMarkdownHighlight(normalizeHeaders) {
+  const headingStyles = normalizeHeaders
+    ? [
+        { tag: tags.heading1, fontWeight: "700" },
+        { tag: tags.heading2, fontWeight: "700" },
+        { tag: tags.heading3, fontWeight: "600" },
+        { tag: tags.heading4, fontWeight: "600" },
+        { tag: tags.heading5, fontWeight: "600" },
+        { tag: tags.heading6, fontWeight: "600" },
+      ]
+    : [
+        { tag: tags.heading1, fontSize: "1.8em", fontWeight: "700", lineHeight: "1.3" },
+        { tag: tags.heading2, fontSize: "1.5em", fontWeight: "700", lineHeight: "1.3" },
+        { tag: tags.heading3, fontSize: "1.3em", fontWeight: "600", lineHeight: "1.3" },
+        { tag: tags.heading4, fontSize: "1.15em", fontWeight: "600" },
+        { tag: tags.heading5, fontSize: "1.05em", fontWeight: "600" },
+        { tag: tags.heading6, fontSize: "1em", fontWeight: "600" },
+      ];
+
+  return HighlightStyle.define([
+    ...headingStyles,
+    { tag: tags.strong, fontWeight: "bold" },
+    { tag: tags.emphasis, fontStyle: "italic" },
+    { tag: tags.strikethrough, textDecoration: "line-through" },
+    { tag: tags.link, textDecoration: "underline" },
+    { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
+    { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "0.9em" },
+    // Dim the markdown syntax characters (# * _ ` etc.)
+    { tag: tags.processingInstruction, opacity: "0.4" },
+  ]);
+}
 
 /**
  * Creates the CodeMirror 6 editor instance.
@@ -123,6 +139,16 @@ export function createEditor(container, state) {
       { key: "Mod-,", run: () => { openSettingsWindow(); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
       { key: "Mod-Shift-f", run: () => { state.toggleFullscreen(); return true; } },
+      { key: "Mod-/", run: () => {
+        const sidebar = document.getElementById("sidebar");
+        const isPinned = sidebar.classList.toggle("pinned");
+        if (isPinned) {
+          sidebar.classList.add("visible");
+        } else {
+          sidebar.classList.remove("visible");
+        }
+        return true;
+      }},
     ])
   );
 
@@ -156,7 +182,7 @@ export function createEditor(container, state) {
     extensions: [
       hushTheme,
       themeCompartment.of(initialCmTheme),
-      syntaxHighlighting(markdownHighlight),
+      highlightCompartment.of(syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders))),
       markdown(),
       history(),
       drawSelection(),
@@ -223,6 +249,12 @@ export function createEditor(container, state) {
     // Apply font size / line height CSS vars
     document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+    // Reconfigure heading styles if normalizeHeaders changed
+    view.dispatch({
+      effects: highlightCompartment.reconfigure(
+        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders))
+      ),
+    });
   });
 
   return {

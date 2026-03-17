@@ -21,6 +21,7 @@ export class AppState {
       fontSize: 20,
       lineHeight: 1.6,
       fontFamily: "EB Garamond",
+      normalizeHeaders: false,
       padding: 50,
 
       // File management

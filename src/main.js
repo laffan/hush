@@ -28,6 +28,11 @@ async function init() {
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
 
+  // Load current file content into the newly created editor
+  if (state.currentFileId) {
+    await state.openFile(state.currentFileId);
+  }
+
   // If ratchet mode was restored from localStorage, activate UI (timer, visual state)
   if (state.ratchetMode) {
     state.emit("mode-changed");
@@ -57,6 +62,8 @@ async function init() {
   });
   // Hide sidebar when mouse leaves the sidebar area entirely
   function checkSidebarLeave(e) {
+    // Don't auto-hide if pinned via Cmd+/
+    if (sidebar.classList.contains("pinned")) return;
     const x = e.clientX;
     // Still inside sidebar zone
     if (x <= 50) return;
