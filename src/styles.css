@@ -160,7 +160,8 @@ html, body {
   justify-content: space-between;
   align-items: center;
   padding: 50px 0 20px;
-  background: none;
+  background: var(--bg);
+  color: var(--fg);
   opacity: 0;
   transition: opacity 0.2s;
   z-index: 200;
@@ -187,16 +188,12 @@ html, body {
   justify-content: center;
   background: none;
   border: none;
-  color: white;
+  color: var(--fg);
   opacity: 0.5;
   cursor: pointer;
   border-radius: 6px;
   transition: opacity 0.15s;
   padding: 0;
-}
-
-[data-theme="light"] .sidebar-btn {
-  color: black;
 }
 
 .sidebar-btn:hover {
@@ -225,6 +222,7 @@ html, body {
   width: 280px;
   height: 100%;
   background: var(--bg);
+  color: var(--fg);
   border-right: 1px solid var(--panel-border);
   z-index: 90;
   padding: 20px;
@@ -253,6 +251,7 @@ html, body {
 }
 
 .file-list li {
+  position: relative;
   padding: 10px 12px;
   border-radius: 6px;
   cursor: pointer;
@@ -278,6 +277,64 @@ html, body {
   font-size: 11px;
   color: var(--sidebar-fg);
   margin-top: 2px;
+}
+
+.file-list li .file-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.file-list li:hover .file-actions {
+  opacity: 1;
+}
+
+.file-actions button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.15);
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.file-actions button:hover {
+  background: rgba(128, 128, 128, 0.3);
+}
+
+.file-actions svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Inline rename input */
+.file-rename-input {
+  width: 100%;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  color: var(--fg);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  outline: none;
 }
 
 /* ===== Autosave Panel ===== */
@@ -327,6 +384,68 @@ html, body {
 
 .autosave-panel label input[type="checkbox"] {
   accent-color: var(--fg);
+}
+
+/* ===== Styles Panel (Sidebar) ===== */
+.style-list-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.style-sidebar-item {
+  position: relative;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: outline 0.15s;
+  outline: 2px solid transparent;
+  font-family: system-ui, sans-serif;
+}
+
+.style-sidebar-item.active {
+  outline-color: var(--fg);
+}
+
+.style-sidebar-item:hover .style-sidebar-actions {
+  opacity: 1;
+}
+
+.style-sidebar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.style-sidebar-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.style-sidebar-actions button {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.25);
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.style-sidebar-actions button:hover {
+  background: rgba(128, 128, 128, 0.45);
 }
 
 /* ===== Ratchet Mode ===== */
@@ -408,6 +527,166 @@ html, body {
 
 .typewriter-boundary.visible {
   opacity: 0.08;
+}
+
+/* ===== Find / Replace Bar ===== */
+.find-bar {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  z-index: 300;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 340px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.find-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.find-bar .find-input,
+.find-bar .replace-input {
+  flex: 1;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+}
+
+.find-bar .find-input:focus,
+.find-bar .replace-input:focus {
+  border-color: rgba(128, 128, 128, 0.5);
+}
+
+.find-btn {
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.find-btn:hover {
+  background: rgba(128, 128, 128, 0.25);
+}
+
+.find-count {
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  min-width: 60px;
+  text-align: center;
+}
+
+/* ===== Find All Panel ===== */
+.find-all-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 320px;
+  height: 100%;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.find-all-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.find-all-header .find-all-input {
+  flex: 1;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+}
+
+.find-all-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.find-all-file {
+  margin-bottom: 8px;
+}
+
+.find-all-filename {
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--fg);
+  opacity: 0.8;
+}
+
+.find-all-match {
+  display: flex;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.find-all-match:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.find-all-line-num {
+  color: var(--sidebar-fg);
+  min-width: 28px;
+  text-align: right;
+  font-size: 11px;
+}
+
+.find-all-line-text {
+  color: var(--fg);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-all-more {
+  padding: 4px 12px;
+  color: var(--sidebar-fg);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.find-all-empty {
+  padding: 20px 12px;
+  color: var(--sidebar-fg);
+  text-align: center;
 }
 
 /* ===== Utility ===== */

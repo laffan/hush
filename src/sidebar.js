@@ -6,6 +6,7 @@ export function createSidebar(container, state) {
     <div class="sidebar-group sidebar-top">
       ${btn("new-file", "New file", icons.newFile)}
       ${btn("files", "Files", icons.files)}
+      ${btn("styles", "Styles", icons.styles)}
     </div>
     <div class="sidebar-group sidebar-middle">
       ${btn("ratchet", "Ratchet mode", icons.ratchet)}
@@ -47,6 +48,11 @@ export function createSidebar(container, state) {
   container.querySelector('[data-action="files"]').addEventListener("click", () => {
     showPanel("files", renderFilesPanel(state));
     bindFilesPanel(state, panelOverlay, hidePanel);
+  });
+
+  container.querySelector('[data-action="styles"]').addEventListener("click", () => {
+    showPanel("styles", renderStylesPanel(state));
+    bindStylesPanel(state, panelOverlay);
   });
 
   container.querySelector('[data-action="ratchet"]').addEventListener("click", (e) => {
@@ -101,6 +107,12 @@ export function createSidebar(container, state) {
     }
   });
 
+  // Cmd+/ toggle support
+  state.on("toggle-files-panel", () => {
+    showPanel("files", renderFilesPanel(state));
+    bindFilesPanel(state, panelOverlay, hidePanel);
+  });
+
   // Close panel on click outside
   document.addEventListener("mousedown", (e) => {
     if (activePanel && !panelOverlay.contains(e.target) && !container.contains(e.target)) {
@@ -148,6 +160,12 @@ const icons = {
     <polyline points="7 10 12 15 17 10"/>
     <line x1="12" y1="15" x2="12" y2="3"/>`,
 
+  styles: `<circle cx="13.5" cy="6.5" r="2.5"/>
+    <circle cx="17.5" cy="10.5" r="2.5"/>
+    <circle cx="8.5" cy="7.5" r="2.5"/>
+    <circle cx="6.5" cy="12" r="2.5"/>
+    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>`,
+
 };
 
 function renderFilesPanel(state) {
@@ -157,8 +175,19 @@ function renderFilesPanel(state) {
     const date = new Date(f.modified * 1000).toLocaleDateString();
     const active = f.id === state.currentFileId ? " active" : "";
     html += `<li class="${active}" data-id="${f.id}">
-      ${escHtml(f.name)}
+      <span class="file-name-text">${escHtml(f.name)}</span>
       <span class="file-date">${date}</span>
+      <span class="file-actions">
+        <button data-file-action="rename" data-id="${f.id}" title="Rename">
+          <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button data-file-action="duplicate" data-id="${f.id}" title="Duplicate">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button data-file-action="delete" data-id="${f.id}" title="Delete">
+          <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </span>
     </li>`;
   }
   html += `</ul>`;
@@ -167,9 +196,49 @@ function renderFilesPanel(state) {
 
 function bindFilesPanel(state, panel, hidePanel) {
   panel.querySelectorAll(".file-list li").forEach((li) => {
-    li.addEventListener("click", () => {
+    li.addEventListener("click", (e) => {
+      // Don't navigate if clicking an action button
+      if (e.target.closest(".file-actions")) return;
       state.openFile(li.dataset.id);
       hidePanel();
+    });
+  });
+
+  // File action buttons
+  panel.querySelectorAll("[data-file-action]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.fileAction;
+      const fileId = btn.dataset.id;
+
+      if (action === "rename") {
+        const li = btn.closest("li");
+        const nameEl = li.querySelector(".file-name-text");
+        const currentName = nameEl.textContent;
+        nameEl.innerHTML = `<input class="file-rename-input" type="text" value="${currentName}" />`;
+        const input = nameEl.querySelector("input");
+        input.focus();
+        input.select();
+
+        function finishRename() {
+          const newName = input.value.trim();
+          if (newName && newName !== currentName) {
+            state.renameFile(fileId, newName);
+          } else {
+            nameEl.textContent = currentName;
+          }
+        }
+
+        input.addEventListener("blur", finishRename, { once: true });
+        input.addEventListener("keydown", (e2) => {
+          if (e2.key === "Enter") { e2.preventDefault(); input.blur(); }
+          if (e2.key === "Escape") { input.value = currentName; input.blur(); }
+        });
+      } else if (action === "duplicate") {
+        await state.duplicateFile(fileId);
+      } else if (action === "delete") {
+        await state.deleteFile(fileId);
+      }
     });
   });
 }
@@ -232,6 +301,94 @@ function bindAutosavePanel(state, panel) {
       await state.updateSettings({ obsidianIntegration: obsidianToggle.checked });
     });
   }
+}
+
+// ===== Styles Panel =====
+function renderStylesPanel(state) {
+  const styles = state.settings.styles || [];
+  const activeId = state.settings.activeStyleId;
+
+  let html = `<div class="panel-title">Styles</div>`;
+  html += `<div class="style-list-sidebar">`;
+
+  // Default style (always first, cannot be deleted)
+  const isDefault = !activeId;
+  html += `<div class="style-sidebar-item${isDefault ? ' active' : ''}" data-style-id="">
+    <span class="style-sidebar-name" style="font-size:14px;">Default</span>
+  </div>`;
+
+  for (const st of styles) {
+    const isActive = activeId === st.id;
+    const bg = (st.colorOverrides && st.colorOverrides.bg) || "#1a1a1a";
+    const fg = (st.colorOverrides && st.colorOverrides.fg) || "#e0e0e0";
+    const fontSize = st.fontSize || state.settings.fontSize || 20;
+    html += `<div class="style-sidebar-item${isActive ? ' active' : ''}" data-style-id="${st.id}"
+      style="background:${bg}; color:${fg}; font-size:${Math.min(fontSize, 16)}px;${st.fontFamily ? ` font-family:'${st.fontFamily}';` : ''}">
+      <span class="style-sidebar-name">${escHtml(st.name)}</span>
+      <span class="style-sidebar-actions">
+        <button data-action="edit" data-id="${st.id}" title="Edit">&#9998;</button>
+        <button data-action="duplicate" data-id="${st.id}" title="Duplicate">&#10697;</button>
+        <button data-action="delete" data-id="${st.id}" title="Delete">&times;</button>
+      </span>
+    </div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function bindStylesPanel(state, panel) {
+  // Click to activate style
+  panel.querySelectorAll(".style-sidebar-item").forEach(el => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".style-sidebar-actions")) return;
+      const id = el.dataset.styleId;
+      state.updateSettings({ activeStyleId: id || null });
+      state.emit("style-changed");
+      panel.innerHTML = renderStylesPanel(state);
+      bindStylesPanel(state, panel);
+    });
+  });
+
+  // Action buttons
+  panel.querySelectorAll(".style-sidebar-actions button").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+
+      if (action === "edit") {
+        // Open settings window to styles tab
+        openSettingsToStyles();
+      } else if (action === "duplicate") {
+        const source = (state.settings.styles || []).find(s => s.id === id);
+        if (source) {
+          const newStyle = {
+            ...JSON.parse(JSON.stringify(source)),
+            id: "style_" + Date.now(),
+            name: source.name + " copy",
+          };
+          const styles = [...(state.settings.styles || []), newStyle];
+          state.updateSettings({ styles });
+          panel.innerHTML = renderStylesPanel(state);
+          bindStylesPanel(state, panel);
+        }
+      } else if (action === "delete") {
+        const styles = (state.settings.styles || []).filter(s => s.id !== id);
+        const updates = { styles };
+        if (state.settings.activeStyleId === id) updates.activeStyleId = null;
+        state.updateSettings(updates);
+        state.emit("style-changed");
+        panel.innerHTML = renderStylesPanel(state);
+        bindStylesPanel(state, panel);
+      }
+    });
+  });
+}
+
+async function openSettingsToStyles() {
+  const { openSettingsWindow } = await import("./settings-ui.js");
+  openSettingsWindow();
 }
 
 function showRatchetDropdown(anchor, state, onStart) {

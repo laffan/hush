@@ -11,8 +11,61 @@ const fontFallbacks = {
 };
 
 function applyFontFamily(family) {
-  const value = fontFallbacks[family] || fontFallbacks["EB Garamond"];
+  const value = fontFallbacks[family] || `'${family}', system-ui, sans-serif`;
   document.documentElement.style.setProperty("--font-family", value);
+}
+
+function applyActiveStyle(state) {
+  const styleId = state.settings.activeStyleId;
+  if (!styleId) {
+    // Default style — use standard editor settings, remove style overrides
+    document.documentElement.style.removeProperty("--style-bg");
+    document.documentElement.style.removeProperty("--style-fg");
+    document.documentElement.style.removeProperty("--style-cursor");
+    document.body.classList.remove("style-active");
+    // Re-apply standard settings
+    applyAppearance(state.settings.appearance || "dark");
+    applyFontFamily(state.settings.fontFamily);
+    document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
+    document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+    state.emit("theme-changed");
+    return;
+  }
+
+  const style = (state.settings.styles || []).find(s => s.id === styleId);
+  if (!style) return;
+
+  // Apply style overrides
+  document.body.classList.add("style-active");
+
+  if (style.fontFamily) {
+    applyFontFamily(style.fontFamily);
+  }
+  if (style.fontSize) {
+    document.documentElement.style.setProperty("--font-size", style.fontSize + "px");
+  }
+  if (style.lineHeight) {
+    document.documentElement.style.setProperty("--line-height", style.lineHeight);
+  }
+
+  // Color overrides
+  const overrides = style.colorOverrides || {};
+  if (overrides.bg) {
+    document.documentElement.style.setProperty("--bg", overrides.bg);
+    document.documentElement.style.setProperty("--style-bg", overrides.bg);
+  }
+  if (overrides.fg) {
+    document.documentElement.style.setProperty("--fg", overrides.fg);
+    document.documentElement.style.setProperty("--cursor", overrides.fg);
+    document.documentElement.style.setProperty("--style-fg", overrides.fg);
+  }
+  if (overrides.cursor) {
+    document.documentElement.style.setProperty("--cursor", overrides.cursor);
+    document.documentElement.style.setProperty("--style-cursor", overrides.cursor);
+  }
+
+  // Apply the style's theme
+  state.emit("theme-changed");
 }
 
 async function init() {
@@ -98,10 +151,17 @@ async function init() {
     await listen("settings-updated", async (event) => {
       const newSettings = event.payload;
       Object.assign(state.settings, newSettings);
-      applyAppearance(state.settings.appearance || "dark");
-      document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
-      document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
-      applyFontFamily(state.settings.fontFamily);
+
+      // If there's an active style, apply it; otherwise apply standard settings
+      if (state.settings.activeStyleId) {
+        applyActiveStyle(state);
+      } else {
+        applyAppearance(state.settings.appearance || "dark");
+        document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
+        document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+        applyFontFamily(state.settings.fontFamily);
+      }
+
       // Apply visibility setting
       const { invoke } = await import("@tauri-apps/api/core");
       const vis = state.settings.visibility;
@@ -113,6 +173,11 @@ async function init() {
       state.emit("theme-changed");
     });
   }
+
+  // Style changes (from sidebar or settings)
+  state.on("style-changed", () => {
+    applyActiveStyle(state);
+  });
 
   // System appearance changes
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
