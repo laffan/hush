@@ -500,14 +500,12 @@ function updateColumnResizers(state) {
 
     // Check if sidebar/panel is occupying inset space
     const panelEl = document.getElementById("panel-overlay");
-    const sidebarEl = document.getElementById("sidebar");
     const isInset = panelEl && panelEl.classList.contains("panel-inset");
     const panelOpen = panelEl && !panelEl.classList.contains("hidden");
-    const sidebarPinned = sidebarEl && sidebarEl.classList.contains("pinned");
 
     // When panel is inset and visible, center within remaining space
     let insetOffset = 0;
-    if (isInset && panelOpen && sidebarPinned) {
+    if (isInset && panelOpen) {
       insetOffset = 350; // sidebar (50) + panel (300)
     }
 
