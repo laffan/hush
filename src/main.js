@@ -3,6 +3,7 @@ import { createSidebar } from "./sidebar.js";
 import { AppState } from "./state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
 import { applyAppearance } from "./settings-ui.js";
+import { getThemeById } from "./themes.js";
 
 const fontFallbacks = {
   "EB Garamond": "'EB Garamond', 'Georgia', 'Times New Roman', serif",
@@ -10,28 +11,57 @@ const fontFallbacks = {
   "Fira Code": "'Fira Code', 'Fira Mono', 'Consolas', monospace",
 };
 
-function updatePrivateBoxColor() {
-  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
-  // Parse hex or rgb
-  let r = 0, g = 0, b = 0;
-  if (bg.startsWith("#")) {
-    const hex = bg.replace("#", "");
-    if (hex.length === 3) {
-      r = parseInt(hex[0] + hex[0], 16);
-      g = parseInt(hex[1] + hex[1], 16);
-      b = parseInt(hex[2] + hex[2], 16);
-    } else {
-      r = parseInt(hex.slice(0, 2), 16);
-      g = parseInt(hex.slice(2, 4), 16);
-      b = parseInt(hex.slice(4, 6), 16);
+// Known theme background colors for luminance calculation
+const themeBackgrounds = {
+  dracula: "#282a36", ayuLight: "#fafafa", clouds: "#ffffff",
+  noctisLilac: "#f2f1f8", rosePineDawn: "#faf4ed", solarizedLight: "#fdf6e3",
+  smoothy: "#f4e8e1", amy: "#200020", barf: "#1a2b34", bespin: "#28211c",
+  birdsOfParadise: "#3b2627", boysAndGirls: "#1c1d21", cobalt: "#002240",
+  coolGlow: "#060521", espresso: "#2a211c", tomorrow: "#1d1f21",
+};
+
+function hexLuminance(hex) {
+  hex = hex.replace("#", "");
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+function updatePrivateBoxColor(state, overrideBg) {
+  // Determine the actual editor background color
+  let bg = overrideBg || null;
+
+  if (!bg) {
+    // Check active style color override first
+    if (state.settings.activeStyleId && state.settings.styles) {
+      const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
+      if (style) {
+        bg = (style.colorOverrides && style.colorOverrides.bg) || themeBackgrounds[style.themeId];
+      }
     }
-  } else {
-    const match = bg.match(/(\d+)/g);
-    if (match) { r = +match[0]; g = +match[1]; b = +match[2]; }
+
+    // Fall back to current theme's bg
+    if (!bg) {
+      let appearance = state.settings.appearance || "dark";
+      if (appearance === "auto") {
+        appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
+      bg = themeBackgrounds[themeId];
+    }
   }
-  // Relative luminance
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  document.documentElement.style.setProperty("--private-box", luminance > 0.5 ? "#000000" : "#ffffff");
+
+  // Final fallback to CSS var
+  if (!bg) {
+    bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  }
+
+  if (bg && bg.startsWith("#")) {
+    const luminance = hexLuminance(bg);
+    document.documentElement.style.setProperty("--private-box", luminance > 0.5 ? "#000000" : "#ffffff");
+  }
 }
 
 function applyFontFamily(family) {
@@ -53,7 +83,7 @@ function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
     state.emit("theme-changed");
-    updatePrivateBoxColor();
+    updatePrivateBoxColor(state);
     return;
   }
 
@@ -91,7 +121,7 @@ function applyActiveStyle(state) {
 
   // Apply the style's theme
   state.emit("theme-changed");
-  updatePrivateBoxColor();
+  updatePrivateBoxColor(state);
 }
 
 async function init() {
@@ -103,7 +133,7 @@ async function init() {
   document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
   document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
   applyFontFamily(state.settings.fontFamily);
-  updatePrivateBoxColor();
+  updatePrivateBoxColor(state);
 
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
@@ -133,7 +163,7 @@ async function init() {
   // Must live inside #app so it shares the same stacking context in fullscreen
   const sidebarTrigger = document.createElement("div");
   sidebarTrigger.style.cssText =
-    "position:fixed;top:0;left:0;width:100px;height:100%;z-index:250;";
+    "position:fixed;top:0;left:0;width:50px;height:100%;z-index:250;";
   document.getElementById("app").appendChild(sidebarTrigger);
   sidebarTrigger.addEventListener("mouseenter", () => {
     sidebar.classList.add("visible");
@@ -146,10 +176,10 @@ async function init() {
     if (sidebar.classList.contains("pinned")) return;
     const x = e.clientX;
     // Still inside sidebar zone
-    if (x <= 100) return;
+    if (x <= 50) return;
     // Still inside panel zone (if panel is open)
     const panel = document.getElementById("panel-overlay");
-    if (panel && !panel.classList.contains("hidden") && x <= 380) return;
+    if (panel && !panel.classList.contains("hidden") && x <= 610) return;
     // Don't hide sidebar if a panel is open — buttons should stay accessible
     if (panel && !panel.classList.contains("hidden")) return;
     sidebar.classList.remove("visible");
@@ -198,7 +228,7 @@ async function init() {
       await invoke("set_always_on_top", { onTop: !!state.settings.alwaysOnTop }).catch(() => {});
       state.emit("settings-changed");
       state.emit("theme-changed");
-      updatePrivateBoxColor();
+      updatePrivateBoxColor(state);
     });
   }
 
@@ -207,11 +237,42 @@ async function init() {
     applyActiveStyle(state);
   });
 
+  // Style preview (hover or live edit) — temporarily apply a style
+  let previewActive = false;
+  state.on("style-preview", (styleObj) => {
+    previewActive = true;
+    // Temporarily apply style overrides
+    if (styleObj.fontFamily) applyFontFamily(styleObj.fontFamily);
+    if (styleObj.fontSize) document.documentElement.style.setProperty("--font-size", styleObj.fontSize + "px");
+    if (styleObj.lineHeight) document.documentElement.style.setProperty("--line-height", styleObj.lineHeight);
+    const overrides = styleObj.colorOverrides || {};
+    if (overrides.bg) document.documentElement.style.setProperty("--bg", overrides.bg);
+    if (overrides.fg) {
+      document.documentElement.style.setProperty("--fg", overrides.fg);
+      document.documentElement.style.setProperty("--cursor", overrides.fg);
+    }
+    if (overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.cursor);
+    // Apply theme
+    if (styleObj.themeId) {
+      const theme = getThemeById(styleObj.themeId);
+      if (theme && state.editor) state.editor.reconfigureTheme(theme.extension);
+    }
+    // Determine preview bg for private mode
+    const previewBg = overrides.bg || themeBackgrounds[styleObj.themeId] || null;
+    updatePrivateBoxColor(state, previewBg);
+  });
+  state.on("style-preview-end", () => {
+    if (!previewActive) return;
+    previewActive = false;
+    // Restore actual settings
+    applyActiveStyle(state);
+  });
+
   // System appearance changes
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if (state.settings.appearance === "auto") {
       applyAppearance("auto");
-      updatePrivateBoxColor();
+      updatePrivateBoxColor(state);
     }
   });
 }

@@ -461,7 +461,7 @@ function bindStylesPanel(state, panel) {
     });
   }
 
-  // Click to activate style
+  // Click to activate style, hover to preview
   panel.querySelectorAll(".style-sidebar-item").forEach(el => {
     el.addEventListener("click", (e) => {
       if (e.target.closest(".style-sidebar-actions")) return;
@@ -470,6 +470,22 @@ function bindStylesPanel(state, panel) {
       state.emit("style-changed");
       panel.innerHTML = renderStylesPanel(state);
       bindStylesPanel(state, panel);
+    });
+
+    // Hover preview
+    el.addEventListener("mouseenter", () => {
+      const id = el.dataset.styleId;
+      if (!id) {
+        // Default style — restore
+        state.emit("style-preview-end");
+        return;
+      }
+      const style = (state.settings.styles || []).find(s => s.id === id);
+      if (style) state.emit("style-preview", style);
+    });
+
+    el.addEventListener("mouseleave", () => {
+      state.emit("style-preview-end");
     });
   });
 
@@ -514,7 +530,29 @@ function bindStyleEditor(state, panel) {
   const cancelBtn = panel.querySelector("#style-cancel");
   const saveBtn = panel.querySelector("#style-save");
 
+  // Helper: gather current form values as a style object for preview
+  function getFormStyle() {
+    const themeId = panel.querySelector("#style-theme")?.value;
+    const fontFamily = panel.querySelector("#style-font")?.value || null;
+    const fontSize = parseFloat(panel.querySelector("#style-font-size")?.value) || null;
+    const lineHeight = parseFloat(panel.querySelector("#style-line-height")?.value) || null;
+    const colorOverrides = {};
+    panel.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
+      const key = input.dataset.colorKey;
+      if (input.value !== "#888888") colorOverrides[key] = input.value;
+    });
+    return { themeId, fontFamily, fontSize, lineHeight, colorOverrides };
+  }
+
+  function emitLivePreview() {
+    state.emit("style-preview", getFormStyle());
+  }
+
+  // Apply initial preview when editor opens
+  emitLivePreview();
+
   cancelBtn.addEventListener("click", () => {
+    state.emit("style-preview-end");
     editingStyleId = null;
     panel.innerHTML = renderStylesPanel(state);
     bindStylesPanel(state, panel);
@@ -524,22 +562,7 @@ function bindStyleEditor(state, panel) {
     const name = panel.querySelector("#style-name")?.value?.trim();
     if (!name) return;
 
-    const themeId = panel.querySelector("#style-theme")?.value;
-    const fontFamily = panel.querySelector("#style-font")?.value || null;
-    const fontSize = parseFloat(panel.querySelector("#style-font-size")?.value) || null;
-    const lineHeight = parseFloat(panel.querySelector("#style-line-height")?.value) || null;
-
-    const colorOverrides = {};
-    panel.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
-      const key = input.dataset.colorKey;
-      // Only save if user has actively set an override (check for existing override or non-default)
-      const existing = editingStyleId !== "new"
-        ? ((state.settings.styles || []).find(s => s.id === editingStyleId)?.colorOverrides || {})[key]
-        : null;
-      if (existing || input.value !== "#888888") {
-        colorOverrides[key] = input.value;
-      }
-    });
+    const { themeId, fontFamily, fontSize, lineHeight, colorOverrides } = getFormStyle();
 
     if (!state.settings.styles) state.settings.styles = [];
 
@@ -553,6 +576,7 @@ function bindStyleEditor(state, panel) {
       }
     }
 
+    state.emit("style-preview-end");
     state.updateSettings({ styles: state.settings.styles });
     state.emit("style-changed");
     editingStyleId = null;
@@ -560,19 +584,30 @@ function bindStyleEditor(state, panel) {
     bindStylesPanel(state, panel);
   });
 
-  // Slider live updates
+  // Live preview on all input changes
+  panel.querySelector("#style-theme")?.addEventListener("change", emitLivePreview);
+  panel.querySelector("#style-font")?.addEventListener("change", emitLivePreview);
+
+  // Slider live updates + preview
   const fsEl = panel.querySelector("#style-font-size");
   if (fsEl) {
     fsEl.addEventListener("input", () => {
       fsEl.nextElementSibling.textContent = fsEl.value + "px";
+      emitLivePreview();
     });
   }
   const lhEl = panel.querySelector("#style-line-height");
   if (lhEl) {
     lhEl.addEventListener("input", () => {
       lhEl.nextElementSibling.textContent = lhEl.value;
+      emitLivePreview();
     });
   }
+
+  // Color inputs + preview
+  panel.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
+    input.addEventListener("input", emitLivePreview);
+  });
 
   // Color reset buttons
   panel.querySelectorAll(".style-reset-color").forEach(btn => {
@@ -581,6 +616,7 @@ function bindStyleEditor(state, panel) {
       const input = panel.querySelector(`input[type='color'][data-color-key='${key}']`);
       if (input) input.value = "#888888";
       btn.remove();
+      emitLivePreview();
     });
   });
 }
@@ -596,7 +632,7 @@ function showRatchetDropdown(anchor, state, onStart) {
   dropdown.className = "ratchet-dropdown";
   const rect = anchor.getBoundingClientRect();
   // Position to the RIGHT of the left sidebar
-  dropdown.style.left = "110px";
+  dropdown.style.left = "60px";
   dropdown.style.top = rect.top + "px";
 
   const durations = [5, 10, 15, 20, 25, 30];
