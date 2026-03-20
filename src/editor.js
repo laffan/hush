@@ -10,7 +10,7 @@ import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
 import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
-import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd } from "./sentence-navigator.js";
+import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment } from "./formatting.js";
 
 // Custom tags for our extensions
@@ -204,6 +204,8 @@ export function createEditor(container, state) {
       }},
       { key: "Mod-l", run: (view) => selectSentence(view) },
       { key: "Mod-Shift-l", run: (view) => reduceSentenceSelection(view) },
+      { key: "Mod-ArrowRight", run: (view) => jumpToNextSentence(view) },
+      { key: "Mod-ArrowLeft", run: (view) => jumpToPrevSentence(view) },
       { key: "Mod-Shift-ArrowRight", run: (view) => shiftSelectionToNextSentence(view) },
       { key: "Mod-Shift-ArrowLeft", run: (view) => shiftSelectionToPreviousSentence(view) },
       { key: "Alt-Mod-ArrowRight", run: (view) => moveSentenceForward(view) },

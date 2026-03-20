@@ -46,6 +46,8 @@ export class AppState {
       shortcutSelectSentence: "Mod+L",
       shortcutReduceSentence: "Mod+Shift+L",
       shortcutSelectNext: "Mod+D",
+      shortcutJumpNextSentence: "Mod+ArrowRight",
+      shortcutJumpPrevSentence: "Mod+ArrowLeft",
       shortcutNextSentence: "Mod+Shift+ArrowRight",
       shortcutPrevSentence: "Mod+Shift+ArrowLeft",
       shortcutMoveSentenceForward: "Alt+Mod+ArrowRight",

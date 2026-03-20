@@ -67,6 +67,10 @@ pub struct AppSettings {
     pub shortcut_reduce_sentence: String,
     #[serde(default = "default_shortcut_select_next")]
     pub shortcut_select_next: String,
+    #[serde(default = "default_shortcut_jump_next_sentence")]
+    pub shortcut_jump_next_sentence: String,
+    #[serde(default = "default_shortcut_jump_prev_sentence")]
+    pub shortcut_jump_prev_sentence: String,
     #[serde(default = "default_shortcut_next_sentence")]
     pub shortcut_next_sentence: String,
     #[serde(default = "default_shortcut_prev_sentence")]
@@ -137,6 +141,8 @@ fn default_shortcut_find_all() -> String { "Mod+Shift+F".to_string() }
 fn default_shortcut_select_sentence() -> String { "Mod+L".to_string() }
 fn default_shortcut_reduce_sentence() -> String { "Mod+Shift+L".to_string() }
 fn default_shortcut_select_next() -> String { "Mod+D".to_string() }
+fn default_shortcut_jump_next_sentence() -> String { "Mod+ArrowRight".to_string() }
+fn default_shortcut_jump_prev_sentence() -> String { "Mod+ArrowLeft".to_string() }
 fn default_shortcut_next_sentence() -> String { "Mod+Shift+ArrowRight".to_string() }
 fn default_shortcut_prev_sentence() -> String { "Mod+Shift+ArrowLeft".to_string() }
 fn default_shortcut_move_sentence_forward() -> String { "Alt+Mod+ArrowRight".to_string() }
@@ -175,6 +181,8 @@ impl Default for AppSettings {
             shortcut_select_sentence: default_shortcut_select_sentence(),
             shortcut_reduce_sentence: default_shortcut_reduce_sentence(),
             shortcut_select_next: default_shortcut_select_next(),
+            shortcut_jump_next_sentence: default_shortcut_jump_next_sentence(),
+            shortcut_jump_prev_sentence: default_shortcut_jump_prev_sentence(),
             shortcut_next_sentence: default_shortcut_next_sentence(),
             shortcut_prev_sentence: default_shortcut_prev_sentence(),
             shortcut_move_sentence_forward: default_shortcut_move_sentence_forward(),

@@ -31,8 +31,10 @@ const shortcutCategories = [
       { key: "shortcutSelectSentence", label: "Select sentence" },
       { key: "shortcutReduceSentence", label: "Reduce sentence selection" },
       { key: "shortcutSelectNext", label: "Select next instance" },
-      { key: "shortcutNextSentence", label: "Next sentence" },
-      { key: "shortcutPrevSentence", label: "Previous sentence" },
+      { key: "shortcutJumpNextSentence", label: "Jump to next sentence" },
+      { key: "shortcutJumpPrevSentence", label: "Jump to previous sentence" },
+      { key: "shortcutNextSentence", label: "Shift selection to next sentence" },
+      { key: "shortcutPrevSentence", label: "Shift selection to previous sentence" },
       { key: "shortcutMoveSentenceForward", label: "Move sentence forward" },
       { key: "shortcutMoveSentenceBack", label: "Move sentence back" },
       { key: "shortcutSelectPrevious", label: "Select previous instance" },
@@ -78,6 +80,8 @@ async function init() {
   if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
   if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Mod+Shift+L";
   if (!settings.shortcutSelectNext) settings.shortcutSelectNext = "Mod+D";
+  if (!settings.shortcutJumpNextSentence) settings.shortcutJumpNextSentence = "Mod+ArrowRight";
+  if (!settings.shortcutJumpPrevSentence) settings.shortcutJumpPrevSentence = "Mod+ArrowLeft";
   if (!settings.shortcutNextSentence) settings.shortcutNextSentence = "Mod+Shift+ArrowRight";
   if (!settings.shortcutPrevSentence) settings.shortcutPrevSentence = "Mod+Shift+ArrowLeft";
   if (!settings.shortcutMoveSentenceForward) settings.shortcutMoveSentenceForward = "Alt+Mod+ArrowRight";

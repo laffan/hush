@@ -350,23 +350,40 @@ export function moveSentenceBack(view) {
   return true;
 }
 
-/** Select from cursor to end of current sentence. */
-export function selectToSentenceEnd(view) {
+/** Move cursor to the start of the next sentence. */
+export function jumpToNextSentence(view) {
   const doc = view.state.doc;
-  const pos = offsetToPos(doc, view.state.selection.main.head);
+  const head = view.state.selection.main.head;
+  const pos = offsetToPos(doc, head);
   const end = findSentenceEnd(doc, pos);
-  const anchor = view.state.selection.main.head;
-  view.dispatch({ selection: EditorSelection.single(anchor, posToOffset(doc, end)) });
+  let endOff = posToOffset(doc, end);
+  if (endOff <= head && pos.line + 1 < doc.lines) {
+    const nextLine = pos.line + 1;
+    const content = getLine(doc, nextLine);
+    const fw = content.search(/\S/);
+    endOff = posToOffset(doc, { line: nextLine, ch: fw >= 0 ? fw : 0 });
+  }
+  view.dispatch({ selection: EditorSelection.cursor(endOff) });
   return true;
 }
 
-/** Select from cursor to start of current sentence. */
-export function selectToSentenceStart(view) {
+/** Move cursor to the start of the current/previous sentence. */
+export function jumpToPrevSentence(view) {
   const doc = view.state.doc;
-  const pos = offsetToPos(doc, view.state.selection.main.head);
+  const head = view.state.selection.main.head;
+  const pos = offsetToPos(doc, head);
   const start = findSentenceStart(doc, pos);
-  const anchor = view.state.selection.main.head;
-  view.dispatch({ selection: EditorSelection.single(anchor, posToOffset(doc, start)) });
+  let startOff = posToOffset(doc, start);
+  if (startOff >= head && pos.line > 0) {
+    const prevLine = pos.line - 1;
+    const content = getLine(doc, prevLine);
+    if (content.trim().length === 0) {
+      startOff = posToOffset(doc, { line: prevLine, ch: 0 });
+    } else {
+      startOff = posToOffset(doc, findSentenceStart(doc, { line: prevLine, ch: content.length }));
+    }
+  }
+  view.dispatch({ selection: EditorSelection.cursor(startOff) });
   return true;
 }
 
