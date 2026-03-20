@@ -1,6 +1,8 @@
 /**
  * Sidebar UI — icons, panels, mode toggles (LEFT side)
  */
+import { themeList } from "./themes.js";
+
 export function createSidebar(container, state) {
   container.innerHTML = `
     <div class="sidebar-group sidebar-top">
@@ -304,11 +306,18 @@ function bindAutosavePanel(state, panel) {
 }
 
 // ===== Styles Panel =====
+let editingStyleId = null; // null = list view, "new" = new style form, or style id
+
 function renderStylesPanel(state) {
+  if (editingStyleId !== null) {
+    return renderStyleEditor(state);
+  }
+
   const styles = state.settings.styles || [];
   const activeId = state.settings.activeStyleId;
 
   let html = `<div class="panel-title">Styles</div>`;
+  html += `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
   html += `<div class="style-list-sidebar">`;
 
   // Default style (always first, cannot be deleted)
@@ -326,9 +335,15 @@ function renderStylesPanel(state) {
       style="background:${bg}; color:${fg}; font-size:${Math.min(fontSize, 16)}px;${st.fontFamily ? ` font-family:'${st.fontFamily}';` : ''}">
       <span class="style-sidebar-name">${escHtml(st.name)}</span>
       <span class="style-sidebar-actions">
-        <button data-action="edit" data-id="${st.id}" title="Edit">&#9998;</button>
-        <button data-action="duplicate" data-id="${st.id}" title="Duplicate">&#10697;</button>
-        <button data-action="delete" data-id="${st.id}" title="Delete">&times;</button>
+        <button data-action="edit" data-id="${st.id}" title="Edit">
+          <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button data-action="duplicate" data-id="${st.id}" title="Duplicate">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button data-action="delete" data-id="${st.id}" title="Delete">
+          <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
       </span>
     </div>`;
   }
@@ -337,7 +352,115 @@ function renderStylesPanel(state) {
   return html;
 }
 
+function renderStyleEditor(state) {
+  const isNew = editingStyleId === "new";
+  const style = isNew
+    ? { id: "", name: "", themeId: state.settings.darkTheme || "dracula", fontFamily: null, fontSize: null, lineHeight: null, colorOverrides: {} }
+    : (state.settings.styles || []).find(s => s.id === editingStyleId) || {};
+
+  const lightThemes = themeList.filter(t => t.type === "light");
+  const darkThemes = themeList.filter(t => t.type === "dark");
+
+  const builtInFonts = ["EB Garamond", "Inter", "Fira Code"];
+  const systemFonts = [
+    "Arial", "Avenir", "Avenir Next", "Baskerville", "Courier New",
+    "Futura", "Garamond", "Georgia", "Gill Sans", "Helvetica",
+    "Helvetica Neue", "Lucida Grande", "Menlo", "Monaco", "Optima",
+    "Palatino", "SF Mono", "SF Pro", "Times New Roman", "Verdana",
+  ];
+
+  const colorKeys = [
+    { key: "bg", label: "Background" },
+    { key: "fg", label: "Text" },
+    { key: "cursor", label: "Cursor" },
+  ];
+
+  let fontOptions = `<option value="">Default (${state.settings.fontFamily || "EB Garamond"})</option>`;
+  fontOptions += `<optgroup label="Built-in">`;
+  for (const f of builtInFonts) {
+    fontOptions += `<option value="${f}" ${style.fontFamily === f ? "selected" : ""}>${f}</option>`;
+  }
+  fontOptions += `</optgroup><optgroup label="System">`;
+  for (const f of systemFonts) {
+    fontOptions += `<option value="${f}" ${style.fontFamily === f ? "selected" : ""}>${f}</option>`;
+  }
+  fontOptions += `</optgroup>`;
+
+  let themeOptions = `<optgroup label="Light">`;
+  for (const t of lightThemes) {
+    themeOptions += `<option value="${t.id}" ${style.themeId === t.id ? "selected" : ""}>${t.name}</option>`;
+  }
+  themeOptions += `</optgroup><optgroup label="Dark">`;
+  for (const t of darkThemes) {
+    themeOptions += `<option value="${t.id}" ${style.themeId === t.id ? "selected" : ""}>${t.name}</option>`;
+  }
+  themeOptions += `</optgroup>`;
+
+  return `
+    <div class="panel-title">${isNew ? "New Style" : "Edit Style"}</div>
+    <div class="style-editor-sidebar">
+      <div class="style-editor-row">
+        <label>Name</label>
+        <input type="text" id="style-name" value="${escAttr(style.name)}" placeholder="Style name" />
+      </div>
+      <div class="style-editor-row">
+        <label>Theme</label>
+        <select id="style-theme">${themeOptions}</select>
+      </div>
+      <div class="style-editor-row">
+        <label>Font</label>
+        <select id="style-font">${fontOptions}</select>
+      </div>
+      <div class="style-editor-row">
+        <label>Size</label>
+        <div class="style-slider-group">
+          <input type="range" id="style-font-size" min="12" max="36" step="1" value="${style.fontSize || state.settings.fontSize || 20}" />
+          <span class="style-slider-value">${style.fontSize || state.settings.fontSize || 20}px</span>
+        </div>
+      </div>
+      <div class="style-editor-row">
+        <label>Height</label>
+        <div class="style-slider-group">
+          <input type="range" id="style-line-height" min="1.0" max="2.5" step="0.1" value="${style.lineHeight || state.settings.lineHeight || 1.6}" />
+          <span class="style-slider-value">${style.lineHeight || state.settings.lineHeight || 1.6}</span>
+        </div>
+      </div>
+      <div class="style-editor-colors-title">Color Overrides</div>
+      ${colorKeys.map(ck => {
+        const overrideVal = (style.colorOverrides || {})[ck.key];
+        const val = overrideVal || "#888888";
+        return `<div class="style-editor-color-row">
+          <label>${ck.label}</label>
+          <div class="style-color-group">
+            <input type="color" data-color-key="${ck.key}" value="${val}" />
+            ${overrideVal ? `<button class="style-reset-color" data-color-key="${ck.key}" title="Reset">&times;</button>` : ''}
+          </div>
+        </div>`;
+      }).join("")}
+      <div class="style-editor-btns">
+        <button id="style-cancel">Cancel</button>
+        <button id="style-save" class="style-save-btn">${isNew ? "Create" : "Save"}</button>
+      </div>
+    </div>
+  `;
+}
+
 function bindStylesPanel(state, panel) {
+  if (editingStyleId !== null) {
+    bindStyleEditor(state, panel);
+    return;
+  }
+
+  // New style button
+  const newBtn = panel.querySelector("#new-style-btn");
+  if (newBtn) {
+    newBtn.addEventListener("click", () => {
+      editingStyleId = "new";
+      panel.innerHTML = renderStylesPanel(state);
+      bindStylesPanel(state, panel);
+    });
+  }
+
   // Click to activate style
   panel.querySelectorAll(".style-sidebar-item").forEach(el => {
     el.addEventListener("click", (e) => {
@@ -358,8 +481,9 @@ function bindStylesPanel(state, panel) {
       const id = btn.dataset.id;
 
       if (action === "edit") {
-        // Open settings window to styles tab
-        openSettingsToStyles();
+        editingStyleId = id;
+        panel.innerHTML = renderStylesPanel(state);
+        bindStylesPanel(state, panel);
       } else if (action === "duplicate") {
         const source = (state.settings.styles || []).find(s => s.id === id);
         if (source) {
@@ -386,9 +510,83 @@ function bindStylesPanel(state, panel) {
   });
 }
 
-async function openSettingsToStyles() {
-  const { openSettingsWindow } = await import("./settings-ui.js");
-  openSettingsWindow();
+function bindStyleEditor(state, panel) {
+  const cancelBtn = panel.querySelector("#style-cancel");
+  const saveBtn = panel.querySelector("#style-save");
+
+  cancelBtn.addEventListener("click", () => {
+    editingStyleId = null;
+    panel.innerHTML = renderStylesPanel(state);
+    bindStylesPanel(state, panel);
+  });
+
+  saveBtn.addEventListener("click", () => {
+    const name = panel.querySelector("#style-name")?.value?.trim();
+    if (!name) return;
+
+    const themeId = panel.querySelector("#style-theme")?.value;
+    const fontFamily = panel.querySelector("#style-font")?.value || null;
+    const fontSize = parseFloat(panel.querySelector("#style-font-size")?.value) || null;
+    const lineHeight = parseFloat(panel.querySelector("#style-line-height")?.value) || null;
+
+    const colorOverrides = {};
+    panel.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
+      const key = input.dataset.colorKey;
+      // Only save if user has actively set an override (check for existing override or non-default)
+      const existing = editingStyleId !== "new"
+        ? ((state.settings.styles || []).find(s => s.id === editingStyleId)?.colorOverrides || {})[key]
+        : null;
+      if (existing || input.value !== "#888888") {
+        colorOverrides[key] = input.value;
+      }
+    });
+
+    if (!state.settings.styles) state.settings.styles = [];
+
+    if (editingStyleId === "new") {
+      const id = "style_" + Date.now();
+      state.settings.styles.push({ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides });
+    } else {
+      const style = state.settings.styles.find(s => s.id === editingStyleId);
+      if (style) {
+        Object.assign(style, { name, themeId, fontFamily, fontSize, lineHeight, colorOverrides });
+      }
+    }
+
+    state.updateSettings({ styles: state.settings.styles });
+    state.emit("style-changed");
+    editingStyleId = null;
+    panel.innerHTML = renderStylesPanel(state);
+    bindStylesPanel(state, panel);
+  });
+
+  // Slider live updates
+  const fsEl = panel.querySelector("#style-font-size");
+  if (fsEl) {
+    fsEl.addEventListener("input", () => {
+      fsEl.nextElementSibling.textContent = fsEl.value + "px";
+    });
+  }
+  const lhEl = panel.querySelector("#style-line-height");
+  if (lhEl) {
+    lhEl.addEventListener("input", () => {
+      lhEl.nextElementSibling.textContent = lhEl.value;
+    });
+  }
+
+  // Color reset buttons
+  panel.querySelectorAll(".style-reset-color").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.colorKey;
+      const input = panel.querySelector(`input[type='color'][data-color-key='${key}']`);
+      if (input) input.value = "#888888";
+      btn.remove();
+    });
+  });
+}
+
+function escAttr(str) {
+  return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 function showRatchetDropdown(anchor, state, onStart) {
@@ -398,7 +596,7 @@ function showRatchetDropdown(anchor, state, onStart) {
   dropdown.className = "ratchet-dropdown";
   const rect = anchor.getBoundingClientRect();
   // Position to the RIGHT of the left sidebar
-  dropdown.style.left = "60px";
+  dropdown.style.left = "110px";
   dropdown.style.top = rect.top + "px";
 
   const durations = [5, 10, 15, 20, 25, 30];

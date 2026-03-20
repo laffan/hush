@@ -192,10 +192,19 @@ export function createEditor(container, state) {
           // Find next occurrence of current selection and add as multi-cursor
           const selected = view.state.sliceDoc(sel.from, sel.to);
           const docText = view.state.doc.toString();
-          let nextIdx = docText.indexOf(selected, sel.to);
+          const allRanges = view.state.selection.ranges;
+          // Search from the end of the last range (most recently added)
+          const lastRange = allRanges[allRanges.length - 1];
+          const searchFrom = Math.max(lastRange.from, lastRange.to);
+          let nextIdx = docText.indexOf(selected, searchFrom);
           if (nextIdx === -1) nextIdx = docText.indexOf(selected, 0); // wrap
-          if (nextIdx !== -1 && nextIdx !== sel.from) {
-            const ranges = view.state.selection.ranges.map(r =>
+          // Don't add a range that already exists
+          const alreadySelected = allRanges.some(r => {
+            const from = Math.min(r.anchor, r.head);
+            return from === nextIdx;
+          });
+          if (nextIdx !== -1 && !alreadySelected) {
+            const ranges = allRanges.map(r =>
               EditorSelection.range(r.anchor, r.head)
             );
             ranges.push(EditorSelection.range(nextIdx, nextIdx + selected.length));
