@@ -21,6 +21,10 @@ main.js          ←──IPC──→ lib.rs (commands)
 
 The frontend and backend communicate via Tauri's `invoke` IPC for commands (settings, file CRUD) and `emit`/`listen` for events (settings updates, fullscreen toggle).
 
+## Development Rules
+
+There is a STRICT rule that no code file may be longer than 700 lines.  Always begin and end each session confirm that this is the case and refactoring where necessessary to make sure it stays the case. 
+
 ## Frontend
 
 ### Entry Points
@@ -217,3 +221,6 @@ Tauri plugins used:
 - `tauri-plugin-dialog` — Native file/folder dialogs
 - `tauri-plugin-fs` — File system read/write
 - `tauri-plugin-shell` — Shell command execution
+
+## One last thing
+Remember the development rules. 700 lines.
