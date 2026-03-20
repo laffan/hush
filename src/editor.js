@@ -16,6 +16,7 @@ const commentTag = Tag.define();
 const highlightTag = Tag.define();
 
 // Custom inline parser for %% comments %%
+const CommentDelim = { resolve: "Comment", mark: "CommentMark" };
 const CommentExtension = {
   defineNodes: [
     { name: "Comment", style: commentTag },
@@ -27,16 +28,14 @@ const CommentExtension = {
       if (next !== 37 /* % */ || cx.char(pos + 1) !== 37) return -1;
       // Don't match %%%
       if (cx.char(pos + 2) === 37) return -1;
-      return cx.addDelimiter(
-        { resolve: "Comment", mark: "CommentMark" },
-        pos, pos + 2, true, true
-      );
+      return cx.addDelimiter(CommentDelim, pos, pos + 2, true, true);
     },
     after: "Emphasis"
   }]
 };
 
 // Custom inline parser for == highlight ==
+const HighlightDelim = { resolve: "Highlight", mark: "HighlightMark" };
 const HighlightExtension = {
   defineNodes: [
     { name: "Highlight", style: highlightTag },
@@ -48,10 +47,7 @@ const HighlightExtension = {
       if (next !== 61 /* = */ || cx.char(pos + 1) !== 61) return -1;
       // Don't match ===
       if (cx.char(pos + 2) === 61) return -1;
-      return cx.addDelimiter(
-        { resolve: "Highlight", mark: "HighlightMark" },
-        pos, pos + 2, true, true
-      );
+      return cx.addDelimiter(HighlightDelim, pos, pos + 2, true, true);
     },
     after: "Emphasis"
   }]
