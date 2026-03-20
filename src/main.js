@@ -60,7 +60,12 @@ function updatePrivateBoxColor(state, overrideBg) {
 
   if (bg && bg.startsWith("#")) {
     const luminance = hexLuminance(bg);
-    document.documentElement.style.setProperty("--private-box", luminance > 0.5 ? "#000000" : "#ffffff");
+    const isDark = luminance <= 0.5;
+    document.documentElement.style.setProperty("--private-box", isDark ? "#ffffff" : "#000000");
+    // Sidebar uses actual theme bg, icons adapt to luminance
+    document.documentElement.style.setProperty("--theme-bg", bg);
+    document.documentElement.style.setProperty("--sidebar-icon-color", isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.45)");
+    document.documentElement.style.setProperty("--sidebar-icon-hover", isDark ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.85)");
   }
 }
 

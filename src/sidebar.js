@@ -162,11 +162,9 @@ const icons = {
     <polyline points="7 10 12 15 17 10"/>
     <line x1="12" y1="15" x2="12" y2="3"/>`,
 
-  styles: `<circle cx="13.5" cy="6.5" r="2.5"/>
-    <circle cx="17.5" cy="10.5" r="2.5"/>
-    <circle cx="8.5" cy="7.5" r="2.5"/>
-    <circle cx="6.5" cy="12" r="2.5"/>
-    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>`,
+  styles: `<polygon points="3,7 12,12 3,17"/>
+    <polygon points="21,7 12,12 21,17"/>
+    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>`,
 
 };
 
@@ -202,7 +200,10 @@ function bindFilesPanel(state, panel, hidePanel) {
       // Don't navigate if clicking an action button
       if (e.target.closest(".file-actions")) return;
       state.openFile(li.dataset.id);
-      hidePanel();
+      // Keep panel open in inset mode (wide window)
+      if (!panel.classList.contains("panel-inset")) {
+        hidePanel();
+      }
     });
   });
 

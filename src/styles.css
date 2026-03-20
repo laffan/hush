@@ -160,8 +160,8 @@ html, body {
   justify-content: space-between;
   align-items: center;
   padding: 50px 0 20px;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--theme-bg, var(--bg));
+  color: var(--sidebar-icon-color, var(--fg));
   opacity: 0;
   transition: opacity 0.2s;
   z-index: 200;
@@ -188,20 +188,20 @@ html, body {
   justify-content: center;
   background: none;
   border: none;
-  color: var(--fg);
-  opacity: 0.5;
+  color: var(--sidebar-icon-color, var(--fg));
+  opacity: 1;
   cursor: pointer;
   border-radius: 6px;
-  transition: opacity 0.15s;
+  transition: color 0.15s;
   padding: 0;
 }
 
 .sidebar-btn:hover {
-  opacity: 1;
+  color: var(--sidebar-icon-hover, var(--fg));
 }
 
 .sidebar-btn.active {
-  opacity: 1;
+  color: var(--sidebar-icon-hover, var(--fg));
 }
 
 .sidebar-btn svg {
