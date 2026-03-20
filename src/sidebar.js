@@ -33,12 +33,16 @@ export function createSidebar(container, state) {
     panelOverlay.innerHTML = content;
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
+    // Recalculate column centering for inset mode
+    if (state._columnResizeHandler) state._columnResizeHandler();
   }
 
   function hidePanel() {
     activePanel = null;
     panelOverlay.classList.add("hidden");
     container.classList.remove("visible");
+    // Recalculate column centering for inset mode
+    if (state._columnResizeHandler) state._columnResizeHandler();
   }
 
   // Button click handlers

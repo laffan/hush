@@ -199,6 +199,8 @@ export function createEditor(container, state) {
           // Open files panel
           state.emit("toggle-files-panel");
         }
+        // Recalculate column centering for inset mode
+        if (state._columnResizeHandler) state._columnResizeHandler();
         return true;
       }},
       // Cmd+L — extend selection by one line
@@ -496,22 +498,37 @@ function updateColumnResizers(state) {
     const colW = state.settings.columnWidth;
     const minPad = 50;
 
-    // Calculate side padding to center the column
-    const sidePad = Math.max(minPad, Math.floor((w - colW) / 2));
-    const showResizers = w > colW + minPad * 2;
+    // Check if sidebar/panel is occupying inset space
+    const panelEl = document.getElementById("panel-overlay");
+    const sidebarEl = document.getElementById("sidebar");
+    const isInset = panelEl && panelEl.classList.contains("panel-inset");
+    const panelOpen = panelEl && !panelEl.classList.contains("hidden");
+    const sidebarPinned = sidebarEl && sidebarEl.classList.contains("pinned");
+
+    // When panel is inset and visible, center within remaining space
+    let insetOffset = 0;
+    if (isInset && panelOpen && sidebarPinned) {
+      insetOffset = 350; // sidebar (50) + panel (300)
+    }
+
+    const availableWidth = w - insetOffset;
+    const basePad = Math.max(minPad, Math.floor((availableWidth - colW) / 2));
+    const leftPad = basePad + insetOffset;
+    const rightPad = basePad;
+    const showResizers = availableWidth > colW + minPad * 2;
 
     // Apply padding to the scroller for centering
     const scroller = document.querySelector("#editor-container .cm-scroller");
     if (scroller) {
-      scroller.style.paddingLeft = sidePad + "px";
-      scroller.style.paddingRight = sidePad + "px";
+      scroller.style.paddingLeft = leftPad + "px";
+      scroller.style.paddingRight = rightPad + "px";
     }
 
     if (showResizers) {
       leftResizer.style.display = "";
       rightResizer.style.display = "";
-      leftResizer.style.left = sidePad + "px";
-      rightResizer.style.left = (w - sidePad) + "px";
+      leftResizer.style.left = leftPad + "px";
+      rightResizer.style.left = (w - rightPad) + "px";
     } else {
       leftResizer.style.display = "none";
       rightResizer.style.display = "none";
