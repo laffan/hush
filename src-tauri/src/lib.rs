@@ -2,10 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager, State};
+
+#[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconEvent,
-    AppHandle, Emitter, Manager, State, WindowEvent,
+    WindowEvent,
 };
 
 mod settings;
@@ -90,6 +93,7 @@ fn check_obsidian_vault(path: String) -> bool {
     false
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn set_always_on_top(app: AppHandle, on_top: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
@@ -117,6 +121,7 @@ fn get_data_dir() -> PathBuf {
         .join("com.hush.app")
 }
 
+#[cfg(desktop)]
 fn setup_tray_menu(app: &AppHandle, shortcut_label: &str) -> Result<(), Box<dyn std::error::Error>> {
     let toggle = MenuItem::with_id(
         app, "toggle_editor",
@@ -144,16 +149,26 @@ pub fn run() {
     fs::create_dir_all(data_dir.join("files")).ok();
 
     let settings = AppSettings::load(&data_dir).unwrap_or_default();
+
+    #[cfg(desktop)]
     let shortcut_label = settings.shortcut_open_editor.clone()
         .replace("CmdOrCtrl", "⌘")
         .replace("Shift", "⇧")
         .replace("+", "");
+
+    #[cfg(desktop)]
     let initial_visibility = settings.visibility.clone();
+
     let file_manager = FileManager::new(data_dir.join("files"));
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_positioner::init());
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -162,86 +177,91 @@ pub fn run() {
             file_manager: Mutex::new(file_manager),
         })
         .setup(move |app| {
-            let handle = app.handle().clone();
+            #[cfg(desktop)]
+            {
+                let handle = app.handle().clone();
 
-            setup_tray_menu(&handle, &shortcut_label)?;
+                setup_tray_menu(&handle, &shortcut_label)?;
 
-            // Tray icon click: toggle editor
-            let handle_clone = handle.clone();
-            if let Some(tray) = app.tray_by_id("main-tray") {
-                tray.on_tray_icon_event(move |_tray, event| {
-                    match event {
-                        TrayIconEvent::Click { button, button_state, .. } => {
-                            if button == tauri::tray::MouseButton::Left
-                                && button_state == tauri::tray::MouseButtonState::Up
-                            {
-                                if let Some(window) = handle_clone.get_webview_window("main") {
-                                    if window.is_visible().unwrap_or(false) {
-                                        let _ = window.hide();
-                                    } else {
-                                        let _ = window.show();
-                                        let _ = window.set_focus();
+                // Tray icon click: toggle editor
+                let handle_clone = handle.clone();
+                if let Some(tray) = app.tray_by_id("main-tray") {
+                    tray.on_tray_icon_event(move |_tray, event| {
+                        match event {
+                            TrayIconEvent::Click { button, button_state, .. } => {
+                                if button == tauri::tray::MouseButton::Left
+                                    && button_state == tauri::tray::MouseButtonState::Up
+                                {
+                                    if let Some(window) = handle_clone.get_webview_window("main") {
+                                        if window.is_visible().unwrap_or(false) {
+                                            let _ = window.hide();
+                                        } else {
+                                            let _ = window.show();
+                                            let _ = window.set_focus();
+                                        }
                                     }
                                 }
                             }
+                            _ => {}
+                        }
+                    });
+                }
+
+                // Menu events
+                let handle_clone2 = handle.clone();
+                app.on_menu_event(move |app_handle, event| {
+                    match event.id().as_ref() {
+                        "quit" => {
+                            app_handle.exit(0);
+                        }
+                        "toggle_editor" => {
+                            if let Some(window) = handle_clone2.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        "fullscreen" => {
+                            let _ = handle_clone2.emit("toggle-fullscreen", ());
+                        }
+                        "settings" => {
+                            let _ = handle_clone2.emit("open-settings", ());
                         }
                         _ => {}
                     }
                 });
-            }
 
-            // Menu events
-            let handle_clone2 = handle.clone();
-            app.on_menu_event(move |app_handle, event| {
-                match event.id().as_ref() {
-                    "quit" => {
-                        app_handle.exit(0);
-                    }
-                    "toggle_editor" => {
-                        if let Some(window) = handle_clone2.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    }
-                    "fullscreen" => {
-                        let _ = handle_clone2.emit("toggle-fullscreen", ());
-                    }
-                    "settings" => {
-                        let _ = handle_clone2.emit("open-settings", ());
-                    }
-                    _ => {}
+                // macOS: apply visibility setting
+                #[cfg(target_os = "macos")]
+                {
+                    let policy = match initial_visibility.as_str() {
+                        "dock" | "both" => tauri::ActivationPolicy::Regular,
+                        _ => tauri::ActivationPolicy::Accessory,
+                    };
+                    let _ = app.set_activation_policy(policy);
                 }
-            });
 
-            // macOS: apply visibility setting
-            #[cfg(target_os = "macos")]
-            {
-                let policy = match initial_visibility.as_str() {
-                    "dock" | "both" => tauri::ActivationPolicy::Regular,
-                    _ => tauri::ActivationPolicy::Accessory,
-                };
-                let _ = app.set_activation_policy(policy);
-            }
-
-            // Show the window
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
+                // Show the window
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                }
             }
 
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Only hide-on-close for the main window, not settings
+            #[cfg(desktop)]
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
                 }
             }
+            #[cfg(mobile)]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -253,6 +273,7 @@ pub fn run() {
             delete_file,
             rename_file,
             check_obsidian_vault,
+            #[cfg(desktop)]
             set_always_on_top,
             set_activation_policy,
         ])

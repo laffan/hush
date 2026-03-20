@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:macos": "tauri build",
+    "build:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "build:linux": "tauri build --target x86_64-unknown-linux-gnu",
+    "ios:init": "tauri ios init",
+    "build:ios": "tauri ios build --debug && native-run ios --app src-tauri/gen/apple/build/arm64/Hush.ipa"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

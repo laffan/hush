@@ -39,6 +39,21 @@ The built app will be in `src-tauri/target/release/bundle/`.
 npm run tauri dev
 ```
 
+## Building
+
+### macOS
+```sh
+npm run tauri build
+```
+### iOS
+
+```sh
+npm run ios:init
+# Open xcode project and set up signing
+npm run build:ios
+```
+
+
 
 ## Data
 
