@@ -86,7 +86,7 @@ function getMarkdownHighlight(normalizeHeaders) {
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "0.9em" },
     // Custom syntax: %% comments %% — dimmed out
-    { tag: commentTag, opacity: "0.3", fontStyle: "italic" },
+    { tag: commentTag, opacity: "0.4" },
     // Custom syntax: == highlight == — highlighted background
     { tag: highlightTag, backgroundColor: "rgba(255, 208, 0, 0.3)", borderRadius: "2px" },
     // Dim the markdown syntax characters (# * _ ` %% == ~~ etc.)
