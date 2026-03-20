@@ -35,8 +35,7 @@ const shortcutCategories = [
       { key: "shortcutPrevSentence", label: "Previous sentence" },
       { key: "shortcutMoveSentenceForward", label: "Move sentence forward" },
       { key: "shortcutMoveSentenceBack", label: "Move sentence back" },
-      { key: "shortcutSelectToSentenceEnd", label: "Select to sentence end" },
-      { key: "shortcutSelectToSentenceStart", label: "Select to sentence start" },
+      { key: "shortcutSelectPrevious", label: "Select previous instance" },
       { key: "shortcutDeleteToSentenceEnd", label: "Delete to sentence end" },
     ],
   },
@@ -83,8 +82,7 @@ async function init() {
   if (!settings.shortcutPrevSentence) settings.shortcutPrevSentence = "Mod+Shift+ArrowLeft";
   if (!settings.shortcutMoveSentenceForward) settings.shortcutMoveSentenceForward = "Alt+Mod+ArrowRight";
   if (!settings.shortcutMoveSentenceBack) settings.shortcutMoveSentenceBack = "Alt+Mod+ArrowLeft";
-  if (!settings.shortcutSelectToSentenceEnd) settings.shortcutSelectToSentenceEnd = "Alt+Shift+.";
-  if (!settings.shortcutSelectToSentenceStart) settings.shortcutSelectToSentenceStart = "Alt+Shift+,";
+  if (!settings.shortcutSelectPrevious) settings.shortcutSelectPrevious = "Mod+Shift+D";
   if (!settings.shortcutDeleteToSentenceEnd) settings.shortcutDeleteToSentenceEnd = "Alt+Shift+Backspace";
   if (!settings.shortcutBold) settings.shortcutBold = "Mod+B";
   if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";

@@ -10,7 +10,7 @@ import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
 import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
-import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, selectToSentenceEnd, selectToSentenceStart, deleteToSentenceEnd } from "./sentence-navigator.js";
+import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment } from "./formatting.js";
 
 // Custom tags for our extensions
@@ -146,10 +146,8 @@ export function createEditor(container, state) {
   // Ratchet mode: block deletion, navigation, selection, undo
   const ratchetKeymap = Prec.highest(
     keymap.of([
-      // Deletion
       { key: "Backspace", run: () => state.ratchetMode },
       { key: "Delete", run: () => state.ratchetMode },
-      // All arrow navigation
       { key: "ArrowLeft", run: () => state.ratchetMode },
       { key: "ArrowRight", run: () => state.ratchetMode },
       { key: "ArrowUp", run: () => state.ratchetMode },
@@ -158,7 +156,6 @@ export function createEditor(container, state) {
       { key: "End", run: () => state.ratchetMode },
       { key: "PageUp", run: () => state.ratchetMode },
       { key: "PageDown", run: () => state.ratchetMode },
-      // Cmd+navigation
       { key: "Mod-ArrowLeft", run: () => state.ratchetMode },
       { key: "Mod-ArrowRight", run: () => state.ratchetMode },
       { key: "Mod-ArrowUp", run: () => state.ratchetMode },
@@ -205,34 +202,24 @@ export function createEditor(container, state) {
         if (state._columnResizeHandler) state._columnResizeHandler();
         return true;
       }},
-      // Sentence navigation (from obsidian-sentence-navigator)
       { key: "Mod-l", run: (view) => selectSentence(view) },
       { key: "Mod-Shift-l", run: (view) => reduceSentenceSelection(view) },
       { key: "Mod-Shift-ArrowRight", run: (view) => shiftSelectionToNextSentence(view) },
       { key: "Mod-Shift-ArrowLeft", run: (view) => shiftSelectionToPreviousSentence(view) },
       { key: "Alt-Mod-ArrowRight", run: (view) => moveSentenceForward(view) },
       { key: "Alt-Mod-ArrowLeft", run: (view) => moveSentenceBack(view) },
-      { key: "Alt-Shift-.", run: (view) => selectToSentenceEnd(view) },
-      { key: "Alt-Shift-,", run: (view) => selectToSentenceStart(view) },
       { key: "Alt-Shift-Backspace", run: (view) => deleteToSentenceEnd(view) },
-      // Formatting
       { key: "Mod-b", run: (view) => toggleBold(view) },
       { key: "Mod-i", run: (view) => toggleItalic(view) },
       { key: "Mod-=", run: (view) => toggleHighlight(view) },
       { key: "Mod-/", run: (view) => toggleComment(view) },
-      // Cmd+T — toggle typewriter mode
       { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
-      // Cmd+N — new file
       { key: "Mod-n", run: () => { state.newFile(); return true; } },
-      // Cmd+F — find/replace (current file)
       { key: "Mod-f", run: (view) => { openFindReplace(view, state); return true; } },
-      // Cmd+Shift+F — find across all files
       { key: "Mod-Shift-f", run: (view) => { openFindAll(view, state); return true; } },
-      // Cmd+D — select next instance of current selection
       { key: "Mod-d", run: (view) => {
         const sel = view.state.selection.main;
         if (sel.empty) {
-          // Select current word
           const line = view.state.doc.lineAt(sel.head);
           const text = line.text;
           const offset = sel.head - line.from;
@@ -243,16 +230,13 @@ export function createEditor(container, state) {
             view.dispatch({ selection: { anchor: line.from + start, head: line.from + end } });
           }
         } else {
-          // Find next occurrence of current selection and add as multi-cursor
           const selected = view.state.sliceDoc(sel.from, sel.to);
           const docText = view.state.doc.toString();
           const allRanges = view.state.selection.ranges;
-          // Search from the end of the last range (most recently added)
           const lastRange = allRanges[allRanges.length - 1];
           const searchFrom = Math.max(lastRange.from, lastRange.to);
           let nextIdx = docText.indexOf(selected, searchFrom);
-          if (nextIdx === -1) nextIdx = docText.indexOf(selected, 0); // wrap
-          // Don't add a range that already exists
+          if (nextIdx === -1) nextIdx = docText.indexOf(selected, 0);
           const alreadySelected = allRanges.some(r => {
             const from = Math.min(r.anchor, r.head);
             return from === nextIdx;
@@ -266,6 +250,31 @@ export function createEditor(container, state) {
               selection: EditorSelection.create(ranges, ranges.length - 1)
             });
           }
+        }
+        return true;
+      }},
+      { key: "Mod-Shift-d", run: (view) => {
+        const sel = view.state.selection.main;
+        if (sel.empty) return false;
+        const selected = view.state.sliceDoc(sel.from, sel.to);
+        const docText = view.state.doc.toString();
+        const allRanges = view.state.selection.ranges;
+        const firstRange = allRanges[0];
+        const searchBefore = Math.min(firstRange.from, firstRange.to);
+        let prevIdx = docText.lastIndexOf(selected, searchBefore - 1);
+        if (prevIdx === -1) prevIdx = docText.lastIndexOf(selected);
+        const alreadySelected = allRanges.some(r => {
+          const from = Math.min(r.anchor, r.head);
+          return from === prevIdx;
+        });
+        if (prevIdx !== -1 && !alreadySelected) {
+          const ranges = allRanges.map(r =>
+            EditorSelection.range(r.anchor, r.head)
+          );
+          ranges.unshift(EditorSelection.range(prevIdx, prevIdx + selected.length));
+          view.dispatch({
+            selection: EditorSelection.create(ranges, 0)
+          });
         }
         return true;
       }},

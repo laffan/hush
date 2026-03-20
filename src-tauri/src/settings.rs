@@ -75,10 +75,8 @@ pub struct AppSettings {
     pub shortcut_move_sentence_forward: String,
     #[serde(default = "default_shortcut_move_sentence_back")]
     pub shortcut_move_sentence_back: String,
-    #[serde(default = "default_shortcut_select_to_sentence_end")]
-    pub shortcut_select_to_sentence_end: String,
-    #[serde(default = "default_shortcut_select_to_sentence_start")]
-    pub shortcut_select_to_sentence_start: String,
+    #[serde(default = "default_shortcut_select_previous")]
+    pub shortcut_select_previous: String,
     #[serde(default = "default_shortcut_delete_to_sentence_end")]
     pub shortcut_delete_to_sentence_end: String,
 
@@ -143,8 +141,7 @@ fn default_shortcut_next_sentence() -> String { "Mod+Shift+ArrowRight".to_string
 fn default_shortcut_prev_sentence() -> String { "Mod+Shift+ArrowLeft".to_string() }
 fn default_shortcut_move_sentence_forward() -> String { "Alt+Mod+ArrowRight".to_string() }
 fn default_shortcut_move_sentence_back() -> String { "Alt+Mod+ArrowLeft".to_string() }
-fn default_shortcut_select_to_sentence_end() -> String { "Alt+Shift+.".to_string() }
-fn default_shortcut_select_to_sentence_start() -> String { "Alt+Shift+,".to_string() }
+fn default_shortcut_select_previous() -> String { "Mod+Shift+D".to_string() }
 fn default_shortcut_delete_to_sentence_end() -> String { "Alt+Shift+Backspace".to_string() }
 fn default_shortcut_bold() -> String { "Mod+B".to_string() }
 fn default_shortcut_italic() -> String { "Mod+I".to_string() }
@@ -182,8 +179,7 @@ impl Default for AppSettings {
             shortcut_prev_sentence: default_shortcut_prev_sentence(),
             shortcut_move_sentence_forward: default_shortcut_move_sentence_forward(),
             shortcut_move_sentence_back: default_shortcut_move_sentence_back(),
-            shortcut_select_to_sentence_end: default_shortcut_select_to_sentence_end(),
-            shortcut_select_to_sentence_start: default_shortcut_select_to_sentence_start(),
+            shortcut_select_previous: default_shortcut_select_previous(),
             shortcut_delete_to_sentence_end: default_shortcut_delete_to_sentence_end(),
             shortcut_bold: default_shortcut_bold(),
             shortcut_italic: default_shortcut_italic(),

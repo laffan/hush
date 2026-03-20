@@ -50,8 +50,7 @@ export class AppState {
       shortcutPrevSentence: "Mod+Shift+ArrowLeft",
       shortcutMoveSentenceForward: "Alt+Mod+ArrowRight",
       shortcutMoveSentenceBack: "Alt+Mod+ArrowLeft",
-      shortcutSelectToSentenceEnd: "Alt+Shift+.",
-      shortcutSelectToSentenceStart: "Alt+Shift+,",
+      shortcutSelectPrevious: "Mod+Shift+D",
       shortcutDeleteToSentenceEnd: "Alt+Shift+Backspace",
 
       // Shortcuts — Formatting

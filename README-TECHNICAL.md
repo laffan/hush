@@ -112,7 +112,6 @@ Sentence-level navigation and editing commands for CodeMirror 6, ported from the
 - `reduceSentenceSelection` — shrink selection by one sentence from the tail
 - `shiftSelectionToNextSentence` / `shiftSelectionToPreviousSentence` — move the selection window to an adjacent sentence
 - `moveSentenceForward` / `moveSentenceBack` — swap the current sentence with its neighbor (handles paragraph breaks by moving across them without swapping)
-- `selectToSentenceEnd` / `selectToSentenceStart` — extend selection to the sentence boundary
 - `deleteToSentenceEnd` — delete from cursor to the end of the current sentence
 
 ### Formatting (`formatting.js`)
@@ -247,12 +246,11 @@ Sentence-level navigation and editing, ported from [obsidian-sentence-navigator]
 | Select sentence | `Cmd+L` | Editor |
 | Reduce sentence selection | `Cmd+Shift+L` | Editor |
 | Select next instance | `Cmd+D` | Editor |
+| Select previous instance | `Cmd+Shift+D` | Editor |
 | Next sentence | `Cmd+Shift+Right` | Editor |
 | Previous sentence | `Cmd+Shift+Left` | Editor |
 | Move sentence forward | `Alt+Cmd+Right` | Editor |
 | Move sentence back | `Alt+Cmd+Left` | Editor |
-| Select to sentence end | `Alt+Shift+.` | Editor |
-| Select to sentence start | `Alt+Shift+,` | Editor |
 | Delete to sentence end | `Alt+Shift+Backspace` | Editor |
 
 ### Formatting
