@@ -49,9 +49,46 @@ pub struct AppSettings {
     pub shortcut_open_fullscreen: String,
     #[serde(default = "default_shortcut_private")]
     pub shortcut_toggle_private: String,
+    #[serde(default = "default_shortcut_toggle_sidebar")]
+    pub shortcut_toggle_sidebar: String,
+    #[serde(default = "default_shortcut_select_line")]
+    pub shortcut_select_line: String,
+    #[serde(default = "default_shortcut_typewriter")]
+    pub shortcut_typewriter: String,
+    #[serde(default = "default_shortcut_new_file")]
+    pub shortcut_new_file: String,
+    #[serde(default = "default_shortcut_find")]
+    pub shortcut_find: String,
+    #[serde(default = "default_shortcut_find_all")]
+    pub shortcut_find_all: String,
+    #[serde(default = "default_shortcut_select_next")]
+    pub shortcut_select_next: String,
+
+    // Styles
+    #[serde(default)]
+    pub styles: Vec<Style>,
+    #[serde(default)]
+    pub active_style_id: Option<String>,
 
     #[serde(skip)]
     pub data_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Style {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub theme_id: Option<String>,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub font_size: Option<u32>,
+    #[serde(default)]
+    pub line_height: Option<f64>,
+    #[serde(default)]
+    pub color_overrides: std::collections::HashMap<String, String>,
 }
 
 fn default_visibility() -> String { "menubar".to_string() }
@@ -66,6 +103,13 @@ fn default_column_width() -> u32 { 600 }
 fn default_shortcut_open() -> String { "CmdOrCtrl+Shift+H".to_string() }
 fn default_shortcut_fullscreen() -> String { "CmdOrCtrl+Shift+F".to_string() }
 fn default_shortcut_private() -> String { "CmdOrCtrl+Shift+P".to_string() }
+fn default_shortcut_toggle_sidebar() -> String { "Mod+/".to_string() }
+fn default_shortcut_select_line() -> String { "Mod+L".to_string() }
+fn default_shortcut_typewriter() -> String { "Mod+T".to_string() }
+fn default_shortcut_new_file() -> String { "Mod+N".to_string() }
+fn default_shortcut_find() -> String { "Mod+F".to_string() }
+fn default_shortcut_find_all() -> String { "Mod+Shift+F".to_string() }
+fn default_shortcut_select_next() -> String { "Mod+D".to_string() }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -86,6 +130,15 @@ impl Default for AppSettings {
             shortcut_open_editor: default_shortcut_open(),
             shortcut_open_fullscreen: default_shortcut_fullscreen(),
             shortcut_toggle_private: default_shortcut_private(),
+            shortcut_toggle_sidebar: default_shortcut_toggle_sidebar(),
+            shortcut_select_line: default_shortcut_select_line(),
+            shortcut_typewriter: default_shortcut_typewriter(),
+            shortcut_new_file: default_shortcut_new_file(),
+            shortcut_find: default_shortcut_find(),
+            shortcut_find_all: default_shortcut_find_all(),
+            shortcut_select_next: default_shortcut_select_next(),
+            styles: Vec::new(),
+            active_style_id: None,
             data_dir: PathBuf::new(),
         }
     }

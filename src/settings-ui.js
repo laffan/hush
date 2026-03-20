@@ -16,7 +16,7 @@ export async function openSettingsWindow() {
     new WebviewWindow("settings", {
       url: "/settings.html",
       title: "Hush Settings",
-      width: 520,
+      width: 640,
       height: 580,
       resizable: true,
       center: true,

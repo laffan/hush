@@ -1,5 +1,5 @@
 import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
-import { EditorState, Prec, Compartment, Annotation } from "@codemirror/state";
+import { EditorState, EditorSelection, Prec, Compartment, Annotation } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -8,6 +8,7 @@ import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
 import { openSettingsWindow } from "./settings-ui.js";
+import { openFindReplace, openFindAll } from "./find-replace.js";
 
 const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
@@ -138,14 +139,79 @@ export function createEditor(container, state) {
     keymap.of([
       { key: "Mod-,", run: () => { openSettingsWindow(); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
-      { key: "Mod-Shift-f", run: () => { state.toggleFullscreen(); return true; } },
+      // Cmd+/ — toggle sidebar (show/hide files panel)
       { key: "Mod-/", run: () => {
         const sidebar = document.getElementById("sidebar");
-        const isPinned = sidebar.classList.toggle("pinned");
-        if (isPinned) {
-          sidebar.classList.add("visible");
+        const panel = document.getElementById("panel-overlay");
+        const isVisible = sidebar.classList.contains("pinned");
+        if (isVisible) {
+          sidebar.classList.remove("pinned", "visible");
+          panel.classList.add("hidden");
         } else {
-          sidebar.classList.remove("visible");
+          sidebar.classList.add("pinned", "visible");
+          // Open files panel
+          state.emit("toggle-files-panel");
+        }
+        return true;
+      }},
+      // Cmd+L — extend selection by one line
+      { key: "Mod-l", run: (view) => {
+        const sel = view.state.selection.main;
+        const startLine = view.state.doc.lineAt(sel.from);
+        const endLine = view.state.doc.lineAt(sel.to);
+        // Extend to include the next line
+        const nextLineEnd = endLine.number < view.state.doc.lines
+          ? view.state.doc.line(endLine.number + 1).to
+          : endLine.to;
+        view.dispatch({ selection: { anchor: startLine.from, head: nextLineEnd } });
+        return true;
+      }},
+      // Cmd+T — toggle typewriter mode
+      { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
+      // Cmd+N — new file
+      { key: "Mod-n", run: () => { state.newFile(); return true; } },
+      // Cmd+F — find/replace (current file)
+      { key: "Mod-f", run: (view) => { openFindReplace(view, state); return true; } },
+      // Cmd+Shift+F — find across all files
+      { key: "Mod-Shift-f", run: (view) => { openFindAll(view, state); return true; } },
+      // Cmd+D — select next instance of current selection
+      { key: "Mod-d", run: (view) => {
+        const sel = view.state.selection.main;
+        if (sel.empty) {
+          // Select current word
+          const line = view.state.doc.lineAt(sel.head);
+          const text = line.text;
+          const offset = sel.head - line.from;
+          let start = offset, end = offset;
+          while (start > 0 && /\w/.test(text[start - 1])) start--;
+          while (end < text.length && /\w/.test(text[end])) end++;
+          if (start !== end) {
+            view.dispatch({ selection: { anchor: line.from + start, head: line.from + end } });
+          }
+        } else {
+          // Find next occurrence of current selection and add as multi-cursor
+          const selected = view.state.sliceDoc(sel.from, sel.to);
+          const docText = view.state.doc.toString();
+          const allRanges = view.state.selection.ranges;
+          // Search from the end of the last range (most recently added)
+          const lastRange = allRanges[allRanges.length - 1];
+          const searchFrom = Math.max(lastRange.from, lastRange.to);
+          let nextIdx = docText.indexOf(selected, searchFrom);
+          if (nextIdx === -1) nextIdx = docText.indexOf(selected, 0); // wrap
+          // Don't add a range that already exists
+          const alreadySelected = allRanges.some(r => {
+            const from = Math.min(r.anchor, r.head);
+            return from === nextIdx;
+          });
+          if (nextIdx !== -1 && !alreadySelected) {
+            const ranges = allRanges.map(r =>
+              EditorSelection.range(r.anchor, r.head)
+            );
+            ranges.push(EditorSelection.range(nextIdx, nextIdx + selected.length));
+            view.dispatch({
+              selection: EditorSelection.create(ranges, ranges.length - 1)
+            });
+          }
         }
         return true;
       }},

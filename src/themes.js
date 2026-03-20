@@ -47,6 +47,14 @@ export function getThemeById(id) {
 }
 
 export function getActiveTheme(settings) {
+  // If a style is active and has a theme, use that
+  if (settings.activeStyleId && settings.styles) {
+    const style = settings.styles.find(s => s.id === settings.activeStyleId);
+    if (style && style.themeId) {
+      return getThemeById(style.themeId);
+    }
+  }
+
   let appearance = settings.appearance || "dark";
   if (appearance === "auto") {
     appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

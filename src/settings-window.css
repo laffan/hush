@@ -9,6 +9,9 @@
   --fg: #e0e0e0;
   --sidebar-fg: #888;
   --panel-border: #333;
+  --tab-bg: #111;
+  --tab-hover: rgba(128, 128, 128, 0.15);
+  --tab-active: rgba(128, 128, 128, 0.25);
 }
 
 [data-theme="light"] {
@@ -16,6 +19,9 @@
   --fg: #1a1a1a;
   --sidebar-fg: #888;
   --panel-border: #ddd;
+  --tab-bg: #f0f0f0;
+  --tab-hover: rgba(128, 128, 128, 0.1);
+  --tab-active: rgba(128, 128, 128, 0.2);
 }
 
 html, body {
@@ -32,27 +38,83 @@ html, body {
 #settings-root {
   width: 100%;
   height: 100%;
+}
+
+/* ===== Tabbed Layout ===== */
+.settings-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.settings-tabs {
+  width: 140px;
+  min-width: 140px;
+  background: var(--tab-bg);
+  border-right: 1px solid var(--panel-border);
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--sidebar-fg);
+  border: none;
+  background: none;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  transition: background 0.1s, color 0.1s;
+  border-left: 2px solid transparent;
+}
+
+.settings-tab:hover {
+  background: var(--tab-hover);
+  color: var(--fg);
+}
+
+.settings-tab.active {
+  background: var(--tab-active);
+  color: var(--fg);
+  border-left-color: var(--fg);
+}
+
+.settings-tab svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* ===== Content Area ===== */
+.settings-content {
+  flex: 1;
   overflow-y: auto;
+  padding: 24px 28px 50px;
 }
 
-.settings-container {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 30px 30px 50px;
+.settings-panel {
+  display: none;
+  max-width: 440px;
 }
 
-.settings-header {
-  margin-bottom: 30px;
-}
-
-.settings-header h1 {
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.3px;
+.settings-panel.active {
+  display: block;
 }
 
 .settings-section {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .settings-section h2 {
@@ -90,7 +152,8 @@ html, body {
   color: var(--fg);
 }
 
-.settings-row select {
+.settings-row select,
+.settings-row input[type="text"] {
   background: rgba(128, 128, 128, 0.1);
   border: 1px solid rgba(128, 128, 128, 0.2);
   color: var(--fg);
@@ -139,7 +202,7 @@ html, body {
   text-align: right;
 }
 
-/* Shortcut recording UI */
+/* ===== Shortcut Editor ===== */
 .shortcut-display {
   display: flex;
   align-items: center;
@@ -158,6 +221,12 @@ html, body {
   font-family: system-ui, sans-serif;
   color: var(--fg);
   min-width: 120px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.shortcut-keys:hover {
+  border-color: rgba(128, 128, 128, 0.4);
 }
 
 .shortcut-keys kbd {
@@ -167,26 +236,6 @@ html, body {
   padding: 1px 5px;
   font-size: 11px;
   font-family: system-ui, sans-serif;
-}
-
-.shortcut-clear {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--sidebar-fg);
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.shortcut-clear:hover {
-  color: var(--fg);
-  background: rgba(128, 128, 128, 0.15);
 }
 
 /* Recording state */
@@ -201,6 +250,214 @@ html, body {
   font-style: italic;
 }
 
+/* Conflict warning */
+.shortcut-conflict {
+  font-size: 11px;
+  color: #e55;
+  margin-top: 4px;
+}
+
+.shortcut-row-wrap {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.shortcut-row-wrap:last-child {
+  border-bottom: none;
+}
+
+.shortcut-row-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shortcut-row-inner label {
+  font-size: 14px;
+  color: var(--fg);
+}
+
+/* ===== Style Editor ===== */
+.style-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.style-item {
+  position: relative;
+  padding: 12px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: outline 0.15s;
+  outline: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.style-item.active {
+  outline-color: var(--fg);
+}
+
+.style-item:hover .style-actions {
+  opacity: 1;
+}
+
+.style-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.style-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.style-actions button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.2);
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.style-actions button:hover {
+  background: rgba(128, 128, 128, 0.4);
+}
+
+.new-style-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed rgba(128, 128, 128, 0.3);
+  background: transparent;
+  color: var(--sidebar-fg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  margin-bottom: 16px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.new-style-btn:hover {
+  background: rgba(128, 128, 128, 0.1);
+  color: var(--fg);
+}
+
+/* Style editor form */
+.style-editor {
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.style-editor h3 {
+  margin-top: 0 !important;
+  margin-bottom: 12px !important;
+  opacity: 1 !important;
+  font-size: 14px !important;
+}
+
+.style-editor .settings-row:first-child {
+  padding-top: 0;
+}
+
+.style-editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.style-editor-actions button {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  transition: background 0.15s;
+}
+
+.style-editor-actions button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.style-editor-actions button.primary {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.style-editor-actions button.primary:hover {
+  background: rgba(128, 128, 128, 0.3);
+}
+
+/* Color override row */
+.color-override-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.color-override-row label {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.color-override-row .color-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-override-row input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-override-row .reset-color {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--sidebar-fg);
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.color-override-row .reset-color:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+/* ===== Scrollbar ===== */
 ::-webkit-scrollbar {
   width: 6px;
 }

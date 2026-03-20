@@ -73,6 +73,11 @@ fn delete_file(state: State<AppState>, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn rename_file(state: State<AppState>, id: String, name: String) -> Result<(), String> {
+    state.file_manager.lock().unwrap().rename_file(&id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn check_obsidian_vault(path: String) -> bool {
     let path = PathBuf::from(&path);
     let mut current = Some(path.as_path());
@@ -246,6 +251,7 @@ pub fn run() {
             save_file,
             create_file,
             delete_file,
+            rename_file,
             check_obsidian_vault,
             set_always_on_top,
             set_activation_policy,

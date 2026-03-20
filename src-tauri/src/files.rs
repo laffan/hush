@@ -90,6 +90,15 @@ impl FileManager {
         fs::remove_file(&path)?;
         Ok(())
     }
+
+    pub fn rename_file(&self, id: &str, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let path = self.files_dir.join(format!("{}.json", id));
+        let content = fs::read_to_string(&path)?;
+        let mut entry: FileEntry = serde_json::from_str(&content)?;
+        entry.name = name.to_string();
+        fs::write(&path, serde_json::to_string(&entry)?)?;
+        Ok(())
+    }
 }
 
 fn derive_name(content: &str) -> String {

@@ -36,6 +36,17 @@ export class AppState {
       shortcutOpenEditor: "CmdOrCtrl+Shift+H",
       shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",
       shortcutTogglePrivate: "CmdOrCtrl+Shift+P",
+      shortcutToggleSidebar: "Mod+/",
+      shortcutSelectLine: "Mod+L",
+      shortcutTypewriter: "Mod+T",
+      shortcutNewFile: "Mod+N",
+      shortcutFind: "Mod+F",
+      shortcutFindAll: "Mod+Shift+F",
+      shortcutSelectNext: "Mod+D",
+
+      // Styles
+      styles: [],
+      activeStyleId: null,
     };
 
     this.currentFileId = null;
@@ -236,6 +247,56 @@ export class AppState {
       }
     }
     this.emit("files-changed");
+  }
+
+  async renameFile(id, newName) {
+    if (IS_TAURI) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("rename_file", { id, name: newName });
+        this.files = await invoke("list_files");
+      } catch (e) {
+        console.error("Rename failed:", e);
+      }
+    } else {
+      const file = this.files.find((f) => f.id === id);
+      if (file) {
+        file.name = newName;
+        this._saveFilesLocal();
+      }
+    }
+    this.emit("files-changed");
+  }
+
+  async duplicateFile(id) {
+    if (IS_TAURI) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const source = await invoke("load_file", { id });
+        const newFile = await invoke("create_file");
+        await invoke("save_file", { id: newFile.id, content: source.content });
+        this.files = await invoke("list_files");
+        this.emit("files-changed");
+        return newFile.id;
+      } catch (e) {
+        console.error("Duplicate failed:", e);
+      }
+    } else {
+      const source = this.files.find((f) => f.id === id);
+      if (source) {
+        const newId = crypto.randomUUID();
+        const file = {
+          id: newId,
+          name: source.name + " copy",
+          content: source.content,
+          modified: Math.floor(Date.now() / 1000),
+        };
+        this.files.unshift(file);
+        this._saveFilesLocal();
+        this.emit("files-changed");
+        return newId;
+      }
+    }
   }
 
   async updateSettings(partial) {
