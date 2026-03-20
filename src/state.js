@@ -39,6 +39,7 @@ export class AppState {
       shortcutToggleSidebar: "Mod+\\",
       shortcutTypewriter: "Mod+T",
       shortcutNewFile: "Mod+N",
+      shortcutToggleDry: "Mod+Shift+R",
       shortcutFind: "Mod+F",
       shortcutFindAll: "Mod+Shift+F",
 
@@ -61,6 +62,12 @@ export class AppState {
       shortcutHighlight: "Mod+=",
       shortcutComment: "Mod+/",
 
+      // D.R.Y. highlighting
+      dryRange: "paragraph",
+      dryStopwords: [],
+      dryIgnoreProperNouns: false,
+      dryIncludeBaseWords: false,
+
       // Styles
       styles: [],
       activeStyleId: null,
@@ -76,6 +83,7 @@ export class AppState {
     this.privateMode = false;
     this.typewriterMode = false;
     this.typewriterPosition = 0.6;
+    this.dryMode = false;
     this.isFullscreen = false;
 
     // Autosave interval
@@ -355,6 +363,11 @@ export class AppState {
   toggleTypewriter() {
     if (this.ratchetMode) return;
     this.typewriterMode = !this.typewriterMode;
+    this.emit("mode-changed");
+  }
+
+  toggleDry() {
+    this.dryMode = !this.dryMode;
     this.emit("mode-changed");
   }
 

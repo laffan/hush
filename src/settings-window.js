@@ -4,6 +4,7 @@
  * Tabbed layout: General, Editor, Styles, Shortcuts.
  */
 import { themeList } from "./themes.js";
+import { DEFAULT_STOPWORDS } from "./dry-highlight.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -20,6 +21,7 @@ const shortcutCategories = [
       { key: "shortcutTogglePrivate", label: "Toggle private mode" },
       { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
       { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
+      { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutFind", label: "Find / replace" },
       { key: "shortcutFindAll", label: "Find across files" },
@@ -72,6 +74,8 @@ async function init() {
 
   // Ensure defaults
   if (!settings.styles) settings.styles = [];
+  if (!settings.dryRange) settings.dryRange = "paragraph";
+  if (!settings.dryStopwords || settings.dryStopwords.length === 0) settings.dryStopwords = [...DEFAULT_STOPWORDS];
   if (!settings.shortcutToggleSidebar) settings.shortcutToggleSidebar = "Mod+\\";
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
@@ -88,6 +92,7 @@ async function init() {
   if (!settings.shortcutMoveSentenceBack) settings.shortcutMoveSentenceBack = "Alt+Mod+ArrowLeft";
   if (!settings.shortcutSelectPrevious) settings.shortcutSelectPrevious = "Mod+Shift+D";
   if (!settings.shortcutDeleteToSentenceEnd) settings.shortcutDeleteToSentenceEnd = "Alt+Shift+Backspace";
+  if (!settings.shortcutToggleDry) settings.shortcutToggleDry = "Mod+Shift+R";
   if (!settings.shortcutBold) settings.shortcutBold = "Mod+B";
   if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";
   if (!settings.shortcutHighlight) settings.shortcutHighlight = "Mod+=";
@@ -103,6 +108,7 @@ function render() {
         ${tabBtn("general", "General", tabIcons.general)}
         ${tabBtn("editor", "Editor", tabIcons.editor)}
         ${tabBtn("shortcuts", "Shortcuts", tabIcons.shortcuts)}
+        ${tabBtn("dry", "D.R.Y.", tabIcons.dry)}
       </div>
       <div class="settings-content">
         <div class="settings-panel${activeTab === 'general' ? ' active' : ''}" id="panel-general">
@@ -113,6 +119,9 @@ function render() {
         </div>
         <div class="settings-panel${activeTab === 'shortcuts' ? ' active' : ''}" id="panel-shortcuts">
           ${renderShortcutsTab()}
+        </div>
+        <div class="settings-panel${activeTab === 'dry' ? ' active' : ''}" id="panel-dry">
+          ${renderDryTab()}
         </div>
       </div>
     </div>
@@ -125,6 +134,7 @@ const tabIcons = {
   general: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`,
   editor: `<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   shortcuts: `<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
+  dry: `<svg viewBox="0 0 24 24"><path d="M12 2L4 7v10l8 5 8-5V7l-8-5z"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="7" x2="20" y2="7"/></svg>`,
 };
 
 function tabBtn(id, label, icon) {
@@ -321,6 +331,64 @@ function renderShortcutKeys(shortcut) {
   return `<span class="shortcut-keys">${parts.join("")}</span>`;
 }
 
+// ===== D.R.Y. Tab =====
+let drySearchQuery = '';
+
+function renderDryTab() {
+  const s = settings;
+  const stopwords = s.dryStopwords || DEFAULT_STOPWORDS;
+  const filtered = stopwords
+    .filter(w => w.includes(drySearchQuery.toLowerCase()))
+    .sort();
+
+  return `
+    <div class="settings-section">
+      <h2>Detection</h2>
+      <div class="settings-row">
+        <label>Detection range</label>
+        <select id="setting-dry-range">
+          <option value="paragraph" ${s.dryRange === "paragraph" ? "selected" : ""}>Current paragraph</option>
+          <option value="two-paragraphs" ${s.dryRange === "two-paragraphs" ? "selected" : ""}>Two paragraphs</option>
+          <option value="document" ${s.dryRange === "document" ? "selected" : ""}>Full document</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label>Ignore proper nouns</label>
+        <input type="checkbox" id="setting-dry-proper-nouns" ${s.dryIgnoreProperNouns ? "checked" : ""} />
+      </div>
+      <div class="settings-row">
+        <label>Include base word repeats</label>
+        <input type="checkbox" id="setting-dry-base-words" ${s.dryIncludeBaseWords ? "checked" : ""} />
+      </div>
+    </div>
+    <div class="settings-section">
+      <h2>Stopwords</h2>
+      <p class="settings-help">Common words to ignore when detecting repeats.</p>
+      <div class="dry-add-row">
+        <input type="text" id="dry-add-input" placeholder="Add stopword…" />
+        <button id="dry-add-btn">Add</button>
+      </div>
+      <div class="dry-search-row">
+        <input type="text" id="dry-search-input" placeholder="Search stopwords…" value="${escAttr(drySearchQuery)}" />
+      </div>
+      <div class="dry-stopwords-list">
+        <div class="dry-stopwords-grid">
+          ${filtered.map(word => `
+            <div class="dry-stopword-item">
+              <span>${escHtml(word)}</span>
+              <button class="dry-stopword-remove" data-word="${escAttr(word)}">✕</button>
+            </div>
+          `).join("")}
+        </div>
+        <p class="dry-stopwords-count">${filtered.length} stopword${filtered.length !== 1 ? "s" : ""} ${drySearchQuery ? "found" : "total"}</p>
+      </div>
+      <div class="dry-reset-row">
+        <button id="dry-reset-btn" class="dry-reset-button">Reset to defaults</button>
+      </div>
+    </div>
+  `;
+}
+
 // ===== Bindings =====
 function bindAll() {
   // Tab switching
@@ -343,6 +411,65 @@ function bindAll() {
   bindCheckbox("setting-normalize-headers", "normalizeHeaders");
   bindSlider("setting-font-size", "fontSize", "px");
   bindSlider("setting-line-height", "lineHeight", "");
+
+  // D.R.Y. tab
+  bindSelect("setting-dry-range", "dryRange");
+  bindCheckbox("setting-dry-proper-nouns", "dryIgnoreProperNouns");
+  bindCheckbox("setting-dry-base-words", "dryIncludeBaseWords");
+
+  const drySearchInput = document.getElementById("dry-search-input");
+  if (drySearchInput) {
+    drySearchInput.addEventListener("input", () => {
+      drySearchQuery = drySearchInput.value;
+      render();
+    });
+  }
+
+  const dryAddBtn = document.getElementById("dry-add-btn");
+  if (dryAddBtn) {
+    dryAddBtn.addEventListener("click", () => {
+      const input = document.getElementById("dry-add-input");
+      if (!input) return;
+      const word = input.value.trim().toLowerCase();
+      if (!word) return;
+      const list = settings.dryStopwords || [];
+      if (!list.includes(word)) {
+        list.push(word);
+        list.sort();
+        saveSetting("dryStopwords", list);
+        render();
+      }
+    });
+  }
+  const dryAddInput = document.getElementById("dry-add-input");
+  if (dryAddInput) {
+    dryAddInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const btn = document.getElementById("dry-add-btn");
+        if (btn) btn.click();
+      }
+    });
+  }
+
+  document.querySelectorAll(".dry-stopword-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const word = btn.dataset.word;
+      settings.dryStopwords = (settings.dryStopwords || []).filter(w => w !== word);
+      saveSetting("dryStopwords", settings.dryStopwords);
+      render();
+    });
+  });
+
+  const dryResetBtn = document.getElementById("dry-reset-btn");
+  if (dryResetBtn) {
+    dryResetBtn.addEventListener("click", () => {
+      settings.dryStopwords = [...DEFAULT_STOPWORDS];
+      saveSetting("dryStopwords", settings.dryStopwords);
+      drySearchQuery = "";
+      render();
+    });
+  }
 
   // Shortcuts tab — click on shortcut-keys to record
   document.querySelectorAll(".shortcut-display .shortcut-keys").forEach(el => {

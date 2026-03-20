@@ -55,6 +55,8 @@ pub struct AppSettings {
     pub shortcut_typewriter: String,
     #[serde(default = "default_shortcut_new_file")]
     pub shortcut_new_file: String,
+    #[serde(default = "default_shortcut_toggle_dry")]
+    pub shortcut_toggle_dry: String,
     #[serde(default = "default_shortcut_find")]
     pub shortcut_find: String,
     #[serde(default = "default_shortcut_find_all")]
@@ -94,6 +96,16 @@ pub struct AppSettings {
     #[serde(default = "default_shortcut_comment")]
     pub shortcut_comment: String,
 
+    // D.R.Y. highlighting
+    #[serde(default = "default_dry_range")]
+    pub dry_range: String,
+    #[serde(default = "default_dry_stopwords")]
+    pub dry_stopwords: Vec<String>,
+    #[serde(default)]
+    pub dry_ignore_proper_nouns: bool,
+    #[serde(default)]
+    pub dry_include_base_words: bool,
+
     // Styles
     #[serde(default)]
     pub styles: Vec<Style>,
@@ -121,6 +133,24 @@ pub struct Style {
     pub color_overrides: std::collections::HashMap<String, String>,
 }
 
+fn default_dry_range() -> String { "paragraph".to_string() }
+fn default_dry_stopwords() -> Vec<String> {
+    vec![
+        "a","an","the","in","on","at","to","for","of","with","from","by","about","as",
+        "into","through","during","before","after","above","below","between","under","over",
+        "against","among","upon","without","within","and","or","but","nor","yet","so","if",
+        "because","while","although","though","unless","until","when","where","whether",
+        "i","you","he","she","it","we","they","me","him","her","us","them","my","your",
+        "his","its","our","their","mine","yours","hers","ours","theirs","this","that",
+        "these","those","who","whom","whose","which","what","whoever","whatever","whichever",
+        "is","are","was","were","be","been","being","have","has","had","do","does","did",
+        "will","would","should","could","may","might","must","can","shall",
+        "not","no","yes","all","any","some","more","most","much","many","such","very",
+        "too","also","just","only","even","still","again","here","there","now","then",
+        "than","how","why","well","up","down","out","off","own","same","other","another",
+        "each","every","both","few","several","either","neither",
+    ].into_iter().map(String::from).collect()
+}
 fn default_visibility() -> String { "menubar".to_string() }
 fn default_appearance() -> String { "dark".to_string() }
 fn default_light_theme() -> String { "ayuLight".to_string() }
@@ -136,6 +166,7 @@ fn default_shortcut_private() -> String { "CmdOrCtrl+Shift+P".to_string() }
 fn default_shortcut_toggle_sidebar() -> String { "Mod+\\".to_string() }
 fn default_shortcut_typewriter() -> String { "Mod+T".to_string() }
 fn default_shortcut_new_file() -> String { "Mod+N".to_string() }
+fn default_shortcut_toggle_dry() -> String { "Mod+Shift+R".to_string() }
 fn default_shortcut_find() -> String { "Mod+F".to_string() }
 fn default_shortcut_find_all() -> String { "Mod+Shift+F".to_string() }
 fn default_shortcut_select_sentence() -> String { "Mod+L".to_string() }
@@ -176,6 +207,7 @@ impl Default for AppSettings {
             shortcut_toggle_sidebar: default_shortcut_toggle_sidebar(),
             shortcut_typewriter: default_shortcut_typewriter(),
             shortcut_new_file: default_shortcut_new_file(),
+            shortcut_toggle_dry: default_shortcut_toggle_dry(),
             shortcut_find: default_shortcut_find(),
             shortcut_find_all: default_shortcut_find_all(),
             shortcut_select_sentence: default_shortcut_select_sentence(),
@@ -193,6 +225,10 @@ impl Default for AppSettings {
             shortcut_italic: default_shortcut_italic(),
             shortcut_highlight: default_shortcut_highlight(),
             shortcut_comment: default_shortcut_comment(),
+            dry_range: default_dry_range(),
+            dry_stopwords: default_dry_stopwords(),
+            dry_ignore_proper_nouns: false,
+            dry_include_base_words: false,
             styles: Vec::new(),
             active_style_id: None,
             data_dir: PathBuf::new(),

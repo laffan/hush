@@ -8,6 +8,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
+import { createDryHighlightPlugin } from "./dry-highlight.js";
 import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
 import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence } from "./sentence-navigator.js";
@@ -144,40 +145,17 @@ export function createEditor(container, state) {
   });
 
   // Ratchet mode: block deletion, navigation, selection, undo
+  const ratchetBlockedKeys = [
+    "Backspace", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+    "Home", "End", "PageUp", "PageDown",
+    "Mod-ArrowLeft", "Mod-ArrowRight", "Mod-ArrowUp", "Mod-ArrowDown",
+    "Shift-ArrowLeft", "Shift-ArrowRight", "Shift-ArrowUp", "Shift-ArrowDown",
+    "Shift-Home", "Shift-End",
+    "Mod-Shift-ArrowLeft", "Mod-Shift-ArrowRight", "Mod-Shift-ArrowUp", "Mod-Shift-ArrowDown",
+    "Mod-a", "Mod-z", "Mod-Shift-z", "Mod-x",
+  ];
   const ratchetKeymap = Prec.highest(
-    keymap.of([
-      { key: "Backspace", run: () => state.ratchetMode },
-      { key: "Delete", run: () => state.ratchetMode },
-      { key: "ArrowLeft", run: () => state.ratchetMode },
-      { key: "ArrowRight", run: () => state.ratchetMode },
-      { key: "ArrowUp", run: () => state.ratchetMode },
-      { key: "ArrowDown", run: () => state.ratchetMode },
-      { key: "Home", run: () => state.ratchetMode },
-      { key: "End", run: () => state.ratchetMode },
-      { key: "PageUp", run: () => state.ratchetMode },
-      { key: "PageDown", run: () => state.ratchetMode },
-      { key: "Mod-ArrowLeft", run: () => state.ratchetMode },
-      { key: "Mod-ArrowRight", run: () => state.ratchetMode },
-      { key: "Mod-ArrowUp", run: () => state.ratchetMode },
-      { key: "Mod-ArrowDown", run: () => state.ratchetMode },
-      // Shift+arrow (selection)
-      { key: "Shift-ArrowLeft", run: () => state.ratchetMode },
-      { key: "Shift-ArrowRight", run: () => state.ratchetMode },
-      { key: "Shift-ArrowUp", run: () => state.ratchetMode },
-      { key: "Shift-ArrowDown", run: () => state.ratchetMode },
-      { key: "Shift-Home", run: () => state.ratchetMode },
-      { key: "Shift-End", run: () => state.ratchetMode },
-      // Cmd+Shift+arrow (word/line selection)
-      { key: "Mod-Shift-ArrowLeft", run: () => state.ratchetMode },
-      { key: "Mod-Shift-ArrowRight", run: () => state.ratchetMode },
-      { key: "Mod-Shift-ArrowUp", run: () => state.ratchetMode },
-      { key: "Mod-Shift-ArrowDown", run: () => state.ratchetMode },
-      // Select all, undo, redo, cut
-      { key: "Mod-a", run: () => state.ratchetMode },
-      { key: "Mod-z", run: () => state.ratchetMode },
-      { key: "Mod-Shift-z", run: () => state.ratchetMode },
-      { key: "Mod-x", run: () => state.ratchetMode },
-    ])
+    keymap.of(ratchetBlockedKeys.map(key => ({ key, run: () => state.ratchetMode })))
   );
 
   // Global keyboard shortcuts
@@ -216,6 +194,7 @@ export function createEditor(container, state) {
       { key: "Mod-=", run: (view) => toggleHighlight(view) },
       { key: "Mod-/", run: (view) => toggleComment(view) },
       { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
+      { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },
       { key: "Mod-n", run: () => { state.newFile(); return true; } },
       { key: "Mod-f", run: (view) => { openFindReplace(view, state); return true; } },
       { key: "Mod-Shift-f", run: (view) => { openFindAll(view, state); return true; } },
@@ -307,6 +286,7 @@ export function createEditor(container, state) {
   const initialCmTheme = activeTheme ? activeTheme.extension : [];
 
   const privateModePlugin = createPrivateModePlugin(state);
+  const dryHighlightPlugin = createDryHighlightPlugin(state);
 
   const startState = EditorState.create({
     doc: "",
@@ -324,6 +304,7 @@ export function createEditor(container, state) {
       ratchetFilter,
       ratchetMouseFilter,
       privateModePlugin,
+      dryHighlightPlugin,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
