@@ -15,6 +15,7 @@ main.js          ←──IPC──→ lib.rs (commands)
 ├── settings-ui.js
 ├── settings-window.js
 ├── themes.js
+├── find-replace.js
 └── private-mode.js
 ```
 
@@ -33,7 +34,7 @@ Both are built by Vite as separate Rollup inputs.
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. It uses a simple event emitter pattern (`on`/`off`/`emit`) to notify the UI of changes.
 
-Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`.
+Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `toggle-files-panel`.
 
 On Tauri, state loads from the Rust backend via `invoke("get_settings")` and `invoke("list_files")`. In the browser (dev without Tauri), it falls back to localStorage.
 
@@ -42,19 +43,57 @@ On Tauri, state loads from the Rust backend via `invoke("get_settings")` and `in
 The CodeMirror 6 instance is configured with:
 
 - **Markdown language** with inline syntax highlighting via `HighlightStyle` (headings get scaled font sizes, syntax characters are dimmed to 40% opacity)
+- **Custom inline parsers** for `%%comments%%` (dimmed to 40% opacity) and `==highlighted text==` (yellow background)
+- **Heading normalization** — `normalizeHeaders` setting removes scaled heading sizes, keeping only font weight
 - **Theme compartment** for live theme swapping without recreating the editor
-- **Ratchet keymap** (`Prec.highest`) that intercepts Backspace, Delete, ArrowLeft, ArrowUp, Home, Cmd+A, Cmd+Z, Cmd+X when ratchet mode is active
-- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+Shift+F
+- **Highlight compartment** for reconfiguring heading styles on settings change
+- **Ratchet keymap** (`Prec.highest`) that intercepts all deletion, navigation, selection, undo, redo, and cut keys when ratchet mode is active
+- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+\, Cmd+L, Cmd+T, Cmd+N, Cmd+F, Cmd+Shift+F, Cmd+D
+- **Transaction filter** that blocks deletions and non-end insertions in ratchet mode
 - **Mouse filter** that blocks mousedown in ratchet mode
 - **Private mode plugin** (ViewPlugin) that decorates every non-whitespace character with a CSS class
+- **Typewriter mode** — locks cursor to a fixed screen position (default 60% from top). A draggable boundary line lets the user reposition. Extra padding is added so the first/last line can reach the boundary.
+- **Ratchet scroll** — pins the current (always last) line to vertical center (50%) of the window
 
-Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements are positioned at the column edges.
+Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements are positioned at the column edges. When the sidebar panel is open in inset mode, the column re-centers within the remaining space.
 
 ### Sidebar (`sidebar.js`)
 
-The sidebar is a fixed 50px column on the left edge with icon buttons. It's hidden by default (`opacity: 0; pointer-events: none`) and revealed by a JS hover trigger element appended inside `#app`.
+The sidebar is a fixed 50px column on the left edge with icon buttons. It's hidden by default (`opacity: 0; pointer-events: none`) and revealed by a JS hover trigger element appended inside `#app`. It can be pinned open with Cmd+\.
 
-Panels (file list, autosave settings) render into `#panel-overlay`, a fixed div to the right of the sidebar. The sidebar stays visible while any panel is open.
+**Buttons (top to bottom):**
+- New file — creates a file and closes any open panel
+- Files — opens the file list panel
+- Styles — opens the styles panel
+- Ratchet mode — shows a duration dropdown (5–30 min), toggles off if active
+- Private mode — toggles private mode
+- Typewriter mode — toggles typewriter mode
+- Save location — opens the autosave/Obsidian panel
+- Export — exports the current file as `.md` via native save dialog
+
+Panels (file list, styles, autosave settings) render into `#panel-overlay`, a fixed div to the right of the sidebar. The panel layout is responsive: when the window is wide enough (sidebar + panel ≤ available padding), the panel insets beside the content; otherwise it overlays as a modal.
+
+### Styles (`sidebar.js`, `main.js`)
+
+Styles are named presets that combine a theme, font, font size, line height, and optional color overrides (background, text, cursor) into a single switchable configuration. They are managed entirely through the sidebar's Styles panel.
+
+**Style data model:**
+```
+{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides: { bg, fg, cursor } }
+```
+
+- **List view** — shows all saved styles plus a "Default" option. Click to activate, hover to live-preview.
+- **Inline editor** — accordion-style form that opens below the "New Style" button or below the style being edited. Includes custom dropdowns for theme and font selection, sliders for size/height, and color pickers with reset buttons.
+- **Live preview** — every form change emits a `style-preview` event that temporarily applies the style to the editor. On cancel or mouse-leave, `style-preview-end` restores the actual settings.
+- **Color overrides** take precedence over theme colors. They're applied directly to CSS variables (`--bg`, `--fg`, `--cursor`) and the `.cm-editor` background.
+- **`applyActiveStyle()`** in `main.js` handles applying/removing style overrides, including theme switching, font changes, and color variable updates.
+
+### Find & Replace (`find-replace.js`)
+
+Two search modes, both triggered from the editor keymap:
+
+- **`Cmd+F`** — find/replace within the current file. Opens a floating bar with find input, prev/next buttons, match count, replace input, and replace one/all buttons. Pre-fills with current selection. Enter advances to next match, Escape closes.
+- **`Cmd+Shift+F`** — find across all files. Opens a panel that searches all files (loading each via IPC), showing results grouped by file with line numbers. Clicking a result opens that file and navigates to the line. Search is debounced (200ms).
 
 ### Tauri Bridge (`tauri-bridge.js`)
 
@@ -64,11 +103,17 @@ Handles global shortcut registration via `@tauri-apps/plugin-global-shortcut`. S
 
 Runs in a separate Tauri WebviewWindow. Loads settings via `invoke("get_settings")`, saves via `invoke("save_settings")`, and notifies the main window via `emit("settings-updated", settings)`.
 
-Shortcut recording captures keydown events, builds a `CmdOrCtrl+Shift+Key` string, and saves it. The main window re-registers the global shortcut on the next `settings-changed` event.
+**Tabs:**
+- **General** — visibility (menu bar / dock / both), always-on-top
+- **Editor** — appearance (light/dark/auto), default light and dark themes, font family (3 built-in + system fonts), normalize headers toggle, font size (12–36px), line height (1.0–2.5)
+- **Shortcuts** — all 10 customizable shortcuts with conflict detection. Click a shortcut to record a new one; conflicts auto-swap.
 
 ### Themes (`themes.js`)
 
-Wraps the [thememirror](https://github.com/vadimdemedes/thememirror) library. Exports a `themeList` array of `{ id, name, type, extension }` objects. `getActiveTheme(settings)` resolves the current theme based on appearance (light/dark/auto) and the user's theme selection.
+Wraps the [thememirror](https://github.com/vadimdemedes/thememirror) library. Exports a `themeList` array of `{ id, name, type, extension }` objects — 6 light themes and 10 dark themes. `getActiveTheme(settings)` resolves the current theme: if a style is active and has a `themeId`, that takes priority; otherwise it resolves based on appearance (light/dark/auto) and the user's default theme selection.
+
+**Light:** Ayu Light, Clouds, Noctis Lilac, Rosé Pine Dawn, Solarized Light, Smoothy
+**Dark:** Amy, Barf, Bespin, Birds of Paradise, Boys and Girls, Cobalt, Cool Glow, Dracula, Espresso, Tomorrow
 
 ## Backend (Rust)
 
@@ -77,7 +122,7 @@ Wraps the [thememirror](https://github.com/vadimdemedes/thememirror) library. Ex
 Defines the Tauri app setup:
 
 - **AppState** — `Mutex<AppSettings>` + `Mutex<FileManager>`, managed by Tauri's state system
-- **Tauri commands** — `get_settings`, `save_settings`, `list_files`, `load_file`, `save_file`, `create_file`, `delete_file`, `check_obsidian_vault`, `set_always_on_top`, `set_activation_policy`
+- **Tauri commands** — `get_settings`, `save_settings`, `list_files`, `load_file`, `save_file`, `create_file`, `delete_file`, `rename_file`, `check_obsidian_vault`, `set_always_on_top`, `set_activation_policy`
 - **System tray** — Menu with Toggle Editor, Fullscreen, Settings, Quit. Tray icon click toggles window visibility.
 - **macOS activation policy** — Applied on startup based on the `visibility` setting. `Regular` shows in dock, `Accessory` hides from dock.
 - **Window close behavior** — Main window hides on close (prevented via `CloseRequested`); settings window closes normally.
@@ -85,6 +130,21 @@ Defines the Tauri app setup:
 ### `settings.rs`
 
 `AppSettings` struct with serde `rename_all = "camelCase"` for JS interop. All fields have `#[serde(default)]` with named default functions for backward compatibility when new fields are added. Persisted as pretty-printed JSON at `{data_dir}/settings.json`.
+
+`Style` struct stores style presets:
+```rust
+struct Style {
+    id: String,
+    name: String,
+    theme_id: Option<String>,
+    font_family: Option<String>,
+    font_size: Option<u32>,
+    line_height: Option<f64>,
+    color_overrides: HashMap<String, String>,  // keys: "bg", "fg", "cursor"
+}
+```
+
+`AppSettings` includes `styles: Vec<Style>` and `active_style_id: Option<String>` to track the user's style presets and current selection.
 
 ### `files.rs`
 
@@ -121,7 +181,7 @@ Vite builds to `dist/` (esbuild minification, ES2021 target, Safari 15+). Tauri 
 
 ```
 {data_dir}/com.hush.app/
-├── settings.json          # App settings
+├── settings.json          # App settings (including styles array)
 └── files/
     ├── {uuid}.json        # File entries (id, name, content, modified)
     └── .hush/             # External sync ID mappings
@@ -130,6 +190,24 @@ Vite builds to `dist/` (esbuild minification, ES2021 target, Safari 15+). Tauri 
 Platform paths:
 - **macOS**: `~/Library/Application Support/com.hush.app/`
 - **Linux**: `$XDG_DATA_HOME/com.hush.app/`
+
+## Keyboard Shortcuts
+
+All shortcuts are customizable in Settings > Shortcuts tab.
+
+| Action | Default | Scope |
+|--------|---------|-------|
+| Toggle editor | `Cmd+Shift+H` | Global (system-wide) |
+| Open fullscreen | `Cmd+Shift+F` | Global |
+| Toggle private mode | `Cmd+Shift+P` | Global / Editor |
+| Toggle sidebar | `Cmd+\` | Editor |
+| Extend selection by line | `Cmd+L` | Editor |
+| Toggle typewriter mode | `Cmd+T` | Editor |
+| New file | `Cmd+N` | Editor |
+| Find / replace | `Cmd+F` | Editor |
+| Find across files | `Cmd+Shift+F` | Editor |
+| Select next instance | `Cmd+D` | Editor |
+| Open settings | `Cmd+,` | Editor |
 
 ## Plugins
 
