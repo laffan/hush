@@ -20,7 +20,7 @@ const CommentDelim = { resolve: "Comment", mark: "CommentMark" };
 const CommentExtension = {
   defineNodes: [
     { name: "Comment", style: commentTag },
-    { name: "CommentMark", style: tags.processingInstruction },
+    { name: "CommentMark", style: commentTag },
   ],
   parseInline: [{
     name: "Comment",
