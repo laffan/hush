@@ -42,7 +42,7 @@ pub struct AppSettings {
     #[serde(default = "default_column_width")]
     pub column_width: u32,
 
-    // Shortcuts
+    // Shortcuts — General
     #[serde(default = "default_shortcut_open")]
     pub shortcut_open_editor: String,
     #[serde(default = "default_shortcut_fullscreen")]
@@ -51,8 +51,6 @@ pub struct AppSettings {
     pub shortcut_toggle_private: String,
     #[serde(default = "default_shortcut_toggle_sidebar")]
     pub shortcut_toggle_sidebar: String,
-    #[serde(default = "default_shortcut_select_line")]
-    pub shortcut_select_line: String,
     #[serde(default = "default_shortcut_typewriter")]
     pub shortcut_typewriter: String,
     #[serde(default = "default_shortcut_new_file")]
@@ -61,8 +59,38 @@ pub struct AppSettings {
     pub shortcut_find: String,
     #[serde(default = "default_shortcut_find_all")]
     pub shortcut_find_all: String,
+
+    // Shortcuts — Editing (sentence navigation)
+    #[serde(default = "default_shortcut_select_sentence")]
+    pub shortcut_select_sentence: String,
+    #[serde(default = "default_shortcut_reduce_sentence")]
+    pub shortcut_reduce_sentence: String,
     #[serde(default = "default_shortcut_select_next")]
     pub shortcut_select_next: String,
+    #[serde(default = "default_shortcut_next_sentence")]
+    pub shortcut_next_sentence: String,
+    #[serde(default = "default_shortcut_prev_sentence")]
+    pub shortcut_prev_sentence: String,
+    #[serde(default = "default_shortcut_move_sentence_forward")]
+    pub shortcut_move_sentence_forward: String,
+    #[serde(default = "default_shortcut_move_sentence_back")]
+    pub shortcut_move_sentence_back: String,
+    #[serde(default = "default_shortcut_select_to_sentence_end")]
+    pub shortcut_select_to_sentence_end: String,
+    #[serde(default = "default_shortcut_select_to_sentence_start")]
+    pub shortcut_select_to_sentence_start: String,
+    #[serde(default = "default_shortcut_delete_to_sentence_end")]
+    pub shortcut_delete_to_sentence_end: String,
+
+    // Shortcuts — Formatting
+    #[serde(default = "default_shortcut_bold")]
+    pub shortcut_bold: String,
+    #[serde(default = "default_shortcut_italic")]
+    pub shortcut_italic: String,
+    #[serde(default = "default_shortcut_highlight")]
+    pub shortcut_highlight: String,
+    #[serde(default = "default_shortcut_comment")]
+    pub shortcut_comment: String,
 
     // Styles
     #[serde(default)]
@@ -103,13 +131,25 @@ fn default_column_width() -> u32 { 600 }
 fn default_shortcut_open() -> String { "CmdOrCtrl+Shift+H".to_string() }
 fn default_shortcut_fullscreen() -> String { "CmdOrCtrl+Shift+F".to_string() }
 fn default_shortcut_private() -> String { "CmdOrCtrl+Shift+P".to_string() }
-fn default_shortcut_toggle_sidebar() -> String { "Mod+/".to_string() }
-fn default_shortcut_select_line() -> String { "Mod+L".to_string() }
+fn default_shortcut_toggle_sidebar() -> String { "Mod+\\".to_string() }
 fn default_shortcut_typewriter() -> String { "Mod+T".to_string() }
 fn default_shortcut_new_file() -> String { "Mod+N".to_string() }
 fn default_shortcut_find() -> String { "Mod+F".to_string() }
 fn default_shortcut_find_all() -> String { "Mod+Shift+F".to_string() }
+fn default_shortcut_select_sentence() -> String { "Mod+L".to_string() }
+fn default_shortcut_reduce_sentence() -> String { "Mod+Shift+L".to_string() }
 fn default_shortcut_select_next() -> String { "Mod+D".to_string() }
+fn default_shortcut_next_sentence() -> String { "Mod+Shift+ArrowRight".to_string() }
+fn default_shortcut_prev_sentence() -> String { "Mod+Shift+ArrowLeft".to_string() }
+fn default_shortcut_move_sentence_forward() -> String { "Alt+Mod+ArrowRight".to_string() }
+fn default_shortcut_move_sentence_back() -> String { "Alt+Mod+ArrowLeft".to_string() }
+fn default_shortcut_select_to_sentence_end() -> String { "Alt+Shift+.".to_string() }
+fn default_shortcut_select_to_sentence_start() -> String { "Alt+Shift+,".to_string() }
+fn default_shortcut_delete_to_sentence_end() -> String { "Alt+Shift+Backspace".to_string() }
+fn default_shortcut_bold() -> String { "Mod+B".to_string() }
+fn default_shortcut_italic() -> String { "Mod+I".to_string() }
+fn default_shortcut_highlight() -> String { "Mod+=".to_string() }
+fn default_shortcut_comment() -> String { "Mod+/".to_string() }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -131,12 +171,24 @@ impl Default for AppSettings {
             shortcut_open_fullscreen: default_shortcut_fullscreen(),
             shortcut_toggle_private: default_shortcut_private(),
             shortcut_toggle_sidebar: default_shortcut_toggle_sidebar(),
-            shortcut_select_line: default_shortcut_select_line(),
             shortcut_typewriter: default_shortcut_typewriter(),
             shortcut_new_file: default_shortcut_new_file(),
             shortcut_find: default_shortcut_find(),
             shortcut_find_all: default_shortcut_find_all(),
+            shortcut_select_sentence: default_shortcut_select_sentence(),
+            shortcut_reduce_sentence: default_shortcut_reduce_sentence(),
             shortcut_select_next: default_shortcut_select_next(),
+            shortcut_next_sentence: default_shortcut_next_sentence(),
+            shortcut_prev_sentence: default_shortcut_prev_sentence(),
+            shortcut_move_sentence_forward: default_shortcut_move_sentence_forward(),
+            shortcut_move_sentence_back: default_shortcut_move_sentence_back(),
+            shortcut_select_to_sentence_end: default_shortcut_select_to_sentence_end(),
+            shortcut_select_to_sentence_start: default_shortcut_select_to_sentence_start(),
+            shortcut_delete_to_sentence_end: default_shortcut_delete_to_sentence_end(),
+            shortcut_bold: default_shortcut_bold(),
+            shortcut_italic: default_shortcut_italic(),
+            shortcut_highlight: default_shortcut_highlight(),
+            shortcut_comment: default_shortcut_comment(),
             styles: Vec::new(),
             active_style_id: None,
             data_dir: PathBuf::new(),

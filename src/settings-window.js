@@ -9,19 +9,50 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 let settings = {};
 let activeTab = "general";
-// All shortcut setting keys and their labels
-const shortcutDefs = [
-  { key: "shortcutOpenEditor", label: "Toggle editor" },
-  { key: "shortcutOpenFullscreen", label: "Open fullscreen" },
-  { key: "shortcutTogglePrivate", label: "Toggle private mode" },
-  { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
-  { key: "shortcutSelectLine", label: "Extend selection by line" },
-  { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
-  { key: "shortcutNewFile", label: "New file" },
-  { key: "shortcutFind", label: "Find / replace" },
-  { key: "shortcutFindAll", label: "Find across files" },
-  { key: "shortcutSelectNext", label: "Select next instance" },
+
+// Shortcuts organized by category
+const shortcutCategories = [
+  {
+    name: "General",
+    shortcuts: [
+      { key: "shortcutOpenEditor", label: "Toggle editor" },
+      { key: "shortcutOpenFullscreen", label: "Open fullscreen" },
+      { key: "shortcutTogglePrivate", label: "Toggle private mode" },
+      { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
+      { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
+      { key: "shortcutNewFile", label: "New file" },
+      { key: "shortcutFind", label: "Find / replace" },
+      { key: "shortcutFindAll", label: "Find across files" },
+    ],
+  },
+  {
+    name: "Editing",
+    shortcuts: [
+      { key: "shortcutSelectSentence", label: "Select sentence" },
+      { key: "shortcutReduceSentence", label: "Reduce sentence selection" },
+      { key: "shortcutSelectNext", label: "Select next instance" },
+      { key: "shortcutNextSentence", label: "Next sentence" },
+      { key: "shortcutPrevSentence", label: "Previous sentence" },
+      { key: "shortcutMoveSentenceForward", label: "Move sentence forward" },
+      { key: "shortcutMoveSentenceBack", label: "Move sentence back" },
+      { key: "shortcutSelectToSentenceEnd", label: "Select to sentence end" },
+      { key: "shortcutSelectToSentenceStart", label: "Select to sentence start" },
+      { key: "shortcutDeleteToSentenceEnd", label: "Delete to sentence end" },
+    ],
+  },
+  {
+    name: "Formatting",
+    shortcuts: [
+      { key: "shortcutBold", label: "Bold" },
+      { key: "shortcutItalic", label: "Italic" },
+      { key: "shortcutHighlight", label: "Highlight" },
+      { key: "shortcutComment", label: "Comment" },
+    ],
+  },
 ];
+
+// Flat list for conflict detection
+const shortcutDefs = shortcutCategories.flatMap(cat => cat.shortcuts);
 
 async function init() {
   if (IS_TAURI) {
@@ -40,13 +71,25 @@ async function init() {
 
   // Ensure defaults
   if (!settings.styles) settings.styles = [];
-  if (!settings.shortcutToggleSidebar) settings.shortcutToggleSidebar = "Mod+/";
-  if (!settings.shortcutSelectLine) settings.shortcutSelectLine = "Mod+L";
+  if (!settings.shortcutToggleSidebar) settings.shortcutToggleSidebar = "Mod+\\";
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";
   if (!settings.shortcutFindAll) settings.shortcutFindAll = "Mod+Shift+F";
+  if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
+  if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Mod+Shift+L";
   if (!settings.shortcutSelectNext) settings.shortcutSelectNext = "Mod+D";
+  if (!settings.shortcutNextSentence) settings.shortcutNextSentence = "Mod+Shift+ArrowRight";
+  if (!settings.shortcutPrevSentence) settings.shortcutPrevSentence = "Mod+Shift+ArrowLeft";
+  if (!settings.shortcutMoveSentenceForward) settings.shortcutMoveSentenceForward = "Alt+Mod+ArrowRight";
+  if (!settings.shortcutMoveSentenceBack) settings.shortcutMoveSentenceBack = "Alt+Mod+ArrowLeft";
+  if (!settings.shortcutSelectToSentenceEnd) settings.shortcutSelectToSentenceEnd = "Alt+Shift+.";
+  if (!settings.shortcutSelectToSentenceStart) settings.shortcutSelectToSentenceStart = "Alt+Shift+,";
+  if (!settings.shortcutDeleteToSentenceEnd) settings.shortcutDeleteToSentenceEnd = "Alt+Shift+Backspace";
+  if (!settings.shortcutBold) settings.shortcutBold = "Mod+B";
+  if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";
+  if (!settings.shortcutHighlight) settings.shortcutHighlight = "Mod+=";
+  if (!settings.shortcutComment) settings.shortcutComment = "Mod+/";
 
   render();
 }
@@ -225,20 +268,23 @@ function getSystemFonts() {
 
 // ===== Shortcuts Tab =====
 function renderShortcutsTab() {
-  let html = `<div class="settings-section"><h2>Keyboard Shortcuts</h2>`;
-  for (const def of shortcutDefs) {
-    const conflict = findConflict(def.key);
-    html += `<div class="shortcut-row-wrap">
-      <div class="shortcut-row-inner">
-        <label>${def.label}</label>
-        <div class="shortcut-display">
-          ${renderShortcutKeys(settings[def.key])}
+  let html = '';
+  for (const category of shortcutCategories) {
+    html += `<div class="settings-section"><h2>${category.name}</h2>`;
+    for (const def of category.shortcuts) {
+      const conflict = findConflict(def.key);
+      html += `<div class="shortcut-row-wrap">
+        <div class="shortcut-row-inner">
+          <label>${def.label}</label>
+          <div class="shortcut-display">
+            ${renderShortcutKeys(settings[def.key])}
+          </div>
         </div>
-      </div>
-      ${conflict ? `<div class="shortcut-conflict">Conflicts with "${conflict}"</div>` : ''}
-    </div>`;
+        ${conflict ? `<div class="shortcut-conflict">Conflicts with "${conflict}"</div>` : ''}
+      </div>`;
+    }
+    html += `</div>`;
   }
-  html += `</div>`;
   return html;
 }
 

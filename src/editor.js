@@ -10,6 +10,8 @@ import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
 import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
+import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, selectToSentenceEnd, selectToSentenceStart, deleteToSentenceEnd } from "./sentence-navigator.js";
+import { toggleBold, toggleItalic, toggleHighlight, toggleComment } from "./formatting.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -203,18 +205,21 @@ export function createEditor(container, state) {
         if (state._columnResizeHandler) state._columnResizeHandler();
         return true;
       }},
-      // Cmd+L — extend selection by one line
-      { key: "Mod-l", run: (view) => {
-        const sel = view.state.selection.main;
-        const startLine = view.state.doc.lineAt(sel.from);
-        const endLine = view.state.doc.lineAt(sel.to);
-        // Extend to include the next line
-        const nextLineEnd = endLine.number < view.state.doc.lines
-          ? view.state.doc.line(endLine.number + 1).to
-          : endLine.to;
-        view.dispatch({ selection: { anchor: startLine.from, head: nextLineEnd } });
-        return true;
-      }},
+      // Sentence navigation (from obsidian-sentence-navigator)
+      { key: "Mod-l", run: (view) => selectSentence(view) },
+      { key: "Mod-Shift-l", run: (view) => reduceSentenceSelection(view) },
+      { key: "Mod-Shift-ArrowRight", run: (view) => shiftSelectionToNextSentence(view) },
+      { key: "Mod-Shift-ArrowLeft", run: (view) => shiftSelectionToPreviousSentence(view) },
+      { key: "!Alt-Mod-ArrowRight", run: (view) => moveSentenceForward(view) },
+      { key: "!Alt-Mod-ArrowLeft", run: (view) => moveSentenceBack(view) },
+      { key: "!Alt-Shift-.", run: (view) => selectToSentenceEnd(view) },
+      { key: "!Alt-Shift-,", run: (view) => selectToSentenceStart(view) },
+      { key: "!Alt-Shift-Backspace", run: (view) => deleteToSentenceEnd(view) },
+      // Formatting
+      { key: "Mod-b", run: (view) => toggleBold(view) },
+      { key: "Mod-i", run: (view) => toggleItalic(view) },
+      { key: "Mod-=", run: (view) => toggleHighlight(view) },
+      { key: "Mod-/", run: (view) => toggleComment(view) },
       // Cmd+T — toggle typewriter mode
       { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
       // Cmd+N — new file

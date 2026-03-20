@@ -32,17 +32,33 @@ export class AppState {
       alwaysOnTop: false,
       columnWidth: 600,
 
-      // Shortcuts
+      // Shortcuts — General
       shortcutOpenEditor: "CmdOrCtrl+Shift+H",
       shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",
       shortcutTogglePrivate: "CmdOrCtrl+Shift+P",
-      shortcutToggleSidebar: "Mod+/",
-      shortcutSelectLine: "Mod+L",
+      shortcutToggleSidebar: "Mod+\\",
       shortcutTypewriter: "Mod+T",
       shortcutNewFile: "Mod+N",
       shortcutFind: "Mod+F",
       shortcutFindAll: "Mod+Shift+F",
+
+      // Shortcuts — Editing (sentence navigation)
+      shortcutSelectSentence: "Mod+L",
+      shortcutReduceSentence: "Mod+Shift+L",
       shortcutSelectNext: "Mod+D",
+      shortcutNextSentence: "Mod+Shift+ArrowRight",
+      shortcutPrevSentence: "Mod+Shift+ArrowLeft",
+      shortcutMoveSentenceForward: "Alt+Mod+ArrowRight",
+      shortcutMoveSentenceBack: "Alt+Mod+ArrowLeft",
+      shortcutSelectToSentenceEnd: "Alt+Shift+.",
+      shortcutSelectToSentenceStart: "Alt+Shift+,",
+      shortcutDeleteToSentenceEnd: "Alt+Shift+Backspace",
+
+      // Shortcuts — Formatting
+      shortcutBold: "Mod+B",
+      shortcutItalic: "Mod+I",
+      shortcutHighlight: "Mod+=",
+      shortcutComment: "Mod+/",
 
       // Styles
       styles: [],

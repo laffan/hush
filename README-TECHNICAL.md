@@ -16,7 +16,9 @@ main.js          ←──IPC──→ lib.rs (commands)
 ├── settings-window.js
 ├── themes.js
 ├── find-replace.js
-└── private-mode.js
+├── private-mode.js
+├── sentence-navigator.js
+└── formatting.js
 ```
 
 The frontend and backend communicate via Tauri's `invoke` IPC for commands (settings, file CRUD) and `emit`/`listen` for events (settings updates, fullscreen toggle).
@@ -52,7 +54,7 @@ The CodeMirror 6 instance is configured with:
 - **Theme compartment** for live theme swapping without recreating the editor
 - **Highlight compartment** for reconfiguring heading styles on settings change
 - **Ratchet keymap** (`Prec.highest`) that intercepts all deletion, navigation, selection, undo, redo, and cut keys when ratchet mode is active
-- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+\, Cmd+L, Cmd+T, Cmd+N, Cmd+F, Cmd+Shift+F, Cmd+D
+- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+\, Cmd+T, Cmd+N, Cmd+F, Cmd+Shift+F, Cmd+D, plus sentence navigation and formatting shortcuts (see below)
 - **Transaction filter** that blocks deletions and non-end insertions in ratchet mode
 - **Mouse filter** that blocks mousedown in ratchet mode
 - **Private mode plugin** (ViewPlugin) that decorates every non-whitespace character with a CSS class
@@ -99,6 +101,29 @@ Two search modes, both triggered from the editor keymap:
 - **`Cmd+F`** — find/replace within the current file. Opens a floating bar with find input, prev/next buttons, match count, replace input, and replace one/all buttons. Pre-fills with current selection. Enter advances to next match, Escape closes.
 - **`Cmd+Shift+F`** — find across all files. Opens a panel that searches all files (loading each via IPC), showing results grouped by file with line numbers. Clicking a result opens that file and navigates to the line. Search is debounced (200ms).
 
+### Sentence Navigator (`sentence-navigator.js`)
+
+Sentence-level navigation and editing commands for CodeMirror 6, ported from the [obsidian-sentence-navigator](https://github.com/laffan/obsidian-sentence-navigator) Obsidian plugin. The module is self-contained with no Obsidian dependencies.
+
+**Core logic:** `findSentenceStart()` and `findSentenceEnd()` detect sentence boundaries within a single line using punctuation rules (`.` `!` `?`) and handle closing delimiters (`"` `)` `]` etc.) and trailing whitespace. Line/ch positions are used internally and converted to CM6 offsets at the API boundary.
+
+**Exported commands** (each takes an `EditorView` and returns `true`):
+- `selectSentence` — select the current sentence; repeat to expand by one sentence
+- `reduceSentenceSelection` — shrink selection by one sentence from the tail
+- `shiftSelectionToNextSentence` / `shiftSelectionToPreviousSentence` — move the selection window to an adjacent sentence
+- `moveSentenceForward` / `moveSentenceBack` — swap the current sentence with its neighbor (handles paragraph breaks by moving across them without swapping)
+- `selectToSentenceEnd` / `selectToSentenceStart` — extend selection to the sentence boundary
+- `deleteToSentenceEnd` — delete from cursor to the end of the current sentence
+
+### Formatting (`formatting.js`)
+
+Markdown formatting toggle commands. Uses a generic `toggleWrap(view, marker)` function that handles three cases:
+1. **No selection** — inserts `marker + marker` with cursor between them
+2. **Already wrapped** — detects markers immediately outside the selection (or inside if the selection includes them) and removes them
+3. **Wrap** — wraps the selection with the marker on both sides
+
+Exports: `toggleBold` (`**`), `toggleItalic` (`*`), `toggleHighlight` (`==`), `toggleComment` (`%%`).
+
 ### Tauri Bridge (`tauri-bridge.js`)
 
 Handles global shortcut registration via `@tauri-apps/plugin-global-shortcut`. Shortcuts are registered on startup and re-registered whenever settings change. Old shortcuts are unregistered first to avoid stale handlers.
@@ -110,7 +135,7 @@ Runs in a separate Tauri WebviewWindow. Loads settings via `invoke("get_settings
 **Tabs:**
 - **General** — visibility (menu bar / dock / both), always-on-top
 - **Editor** — appearance (light/dark/auto), default light and dark themes, font family (3 built-in + system fonts), normalize headers toggle, font size (12–36px), line height (1.0–2.5)
-- **Shortcuts** — all 10 customizable shortcuts with conflict detection. Click a shortcut to record a new one; conflicts auto-swap.
+- **Shortcuts** — all customizable shortcuts organized into three categories (General, Editing, Formatting) with conflict detection. Click a shortcut to record a new one; conflicts auto-swap.
 
 ### Themes (`themes.js`)
 
@@ -197,7 +222,9 @@ Platform paths:
 
 ## Keyboard Shortcuts
 
-All shortcuts are customizable in Settings > Shortcuts tab.
+All shortcuts are customizable in Settings > Shortcuts tab. Shortcuts are organized into three categories.
+
+### General
 
 | Action | Default | Scope |
 |--------|---------|-------|
@@ -205,13 +232,41 @@ All shortcuts are customizable in Settings > Shortcuts tab.
 | Open fullscreen | `Cmd+Shift+F` | Global |
 | Toggle private mode | `Cmd+Shift+P` | Global / Editor |
 | Toggle sidebar | `Cmd+\` | Editor |
-| Extend selection by line | `Cmd+L` | Editor |
 | Toggle typewriter mode | `Cmd+T` | Editor |
 | New file | `Cmd+N` | Editor |
 | Find / replace | `Cmd+F` | Editor |
 | Find across files | `Cmd+Shift+F` | Editor |
+| Open settings | `Cmd+,` | Editor (hardcoded) |
+
+### Editing
+
+Sentence-level navigation and editing, ported from [obsidian-sentence-navigator](https://github.com/laffan/obsidian-sentence-navigator). Sentence boundaries are detected within individual lines using punctuation rules (`.` `!` `?` followed by optional closing delimiters and whitespace).
+
+| Action | Default | Scope |
+|--------|---------|-------|
+| Select sentence | `Cmd+L` | Editor |
+| Reduce sentence selection | `Cmd+Shift+L` | Editor |
 | Select next instance | `Cmd+D` | Editor |
-| Open settings | `Cmd+,` | Editor |
+| Next sentence | `Cmd+Shift+Right` | Editor |
+| Previous sentence | `Cmd+Shift+Left` | Editor |
+| Move sentence forward | `Alt+Cmd+Right` | Editor |
+| Move sentence back | `Alt+Cmd+Left` | Editor |
+| Select to sentence end | `Alt+Shift+.` | Editor |
+| Select to sentence start | `Alt+Shift+,` | Editor |
+| Delete to sentence end | `Alt+Shift+Backspace` | Editor |
+
+### Formatting
+
+Markdown formatting toggles. Each command wraps the current selection in the corresponding markdown syntax. If the selection is already wrapped, the markers are removed (toggle behavior). With no selection, inserts marker pairs with the cursor between them.
+
+| Action | Default | Scope |
+|--------|---------|-------|
+| Bold | `Cmd+B` | Editor |
+| Italic | `Cmd+I` | Editor |
+| Highlight | `Cmd+=` | Editor |
+| Comment | `Cmd+/` | Editor |
+
+The Comment shortcut overrides CodeMirror's default HTML comment toggle, wrapping text in Obsidian-flavored markdown comments (`%%text%%`) instead.
 
 ## Plugins
 
