@@ -179,7 +179,7 @@ async function init() {
     if (x <= 50) return;
     // Still inside panel zone (if panel is open)
     const panel = document.getElementById("panel-overlay");
-    if (panel && !panel.classList.contains("hidden") && x <= 610) return;
+    if (panel && !panel.classList.contains("hidden") && x <= 350) return;
     // Don't hide sidebar if a panel is open — buttons should stay accessible
     if (panel && !panel.classList.contains("hidden")) return;
     sidebar.classList.remove("visible");
