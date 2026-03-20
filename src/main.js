@@ -61,11 +61,25 @@ function updatePrivateBoxColor(state, overrideBg) {
   if (bg && bg.startsWith("#")) {
     const luminance = hexLuminance(bg);
     const isDark = luminance <= 0.5;
-    document.documentElement.style.setProperty("--private-box", isDark ? "#ffffff" : "#000000");
-    // Sidebar uses actual theme bg, icons adapt to luminance
-    document.documentElement.style.setProperty("--theme-bg", bg);
-    document.documentElement.style.setProperty("--sidebar-icon-color", isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.45)");
-    document.documentElement.style.setProperty("--sidebar-icon-hover", isDark ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.85)");
+    const root = document.documentElement.style;
+
+    // Private mode
+    root.setProperty("--private-box", isDark ? "#ffffff" : "#000000");
+
+    // Theme-derived colors for sidebar + panels
+    root.setProperty("--theme-bg", bg);
+    root.setProperty("--fg", isDark ? "#e0e0e0" : "#1a1a1a");
+    root.setProperty("--cursor", isDark ? "#e0e0e0" : "#1a1a1a");
+    root.setProperty("--sidebar-icon-color", isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.45)");
+    root.setProperty("--sidebar-icon-hover", isDark ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.85)");
+    root.setProperty("--sidebar-fg", isDark ? "#888" : "#888");
+
+    // Panel colors derived from actual theme bg
+    const r = parseInt(bg.slice(1, 3), 16);
+    const g = parseInt(bg.slice(3, 5), 16);
+    const b = parseInt(bg.slice(5, 7), 16);
+    root.setProperty("--panel-bg", `rgba(${r}, ${g}, ${b}, 0.98)`);
+    root.setProperty("--panel-border", isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)");
   }
 }
 
