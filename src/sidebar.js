@@ -162,9 +162,11 @@ const icons = {
     <polyline points="7 10 12 15 17 10"/>
     <line x1="12" y1="15" x2="12" y2="3"/>`,
 
-  styles: `<polygon points="3,7 12,12 3,17"/>
-    <polygon points="21,7 12,12 21,17"/>
-    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>`,
+  styles: `<polygon points="2,6 11,12 2,18"/>
+    <polygon points="22,6 13,12 22,18"/>
+    <rect x="10.5" y="9.5" width="3" height="5" rx="1" fill="currentColor" stroke="none"/>
+    <line x1="12" y1="9.5" x2="12" y2="7" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="12" y1="14.5" x2="12" y2="17" stroke-width="1.2" stroke-linecap="round"/>`,
 
 };
 
