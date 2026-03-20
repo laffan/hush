@@ -2,13 +2,60 @@ import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view
 import { EditorState, EditorSelection, Prec, Compartment, Annotation } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags } from "@lezer/highlight";
+import { tags, Tag } from "@lezer/highlight";
+import { Strikethrough } from "@lezer/markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
 import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
+
+// Custom tags for our extensions
+const commentTag = Tag.define();
+const highlightTag = Tag.define();
+
+// Custom inline parser for %% comments %%
+const CommentExtension = {
+  defineNodes: [
+    { name: "Comment", style: commentTag },
+    { name: "CommentMark", style: tags.processingInstruction },
+  ],
+  parseInline: [{
+    name: "Comment",
+    parse(cx, next, pos) {
+      if (next !== 37 /* % */ || cx.char(pos + 1) !== 37) return -1;
+      // Don't match %%%
+      if (cx.char(pos + 2) === 37) return -1;
+      return cx.addDelimiter(
+        { resolve: "Comment", mark: "CommentMark" },
+        pos, pos + 2, true, true
+      );
+    },
+    after: "Emphasis"
+  }]
+};
+
+// Custom inline parser for == highlight ==
+const HighlightExtension = {
+  defineNodes: [
+    { name: "Highlight", style: highlightTag },
+    { name: "HighlightMark", style: tags.processingInstruction },
+  ],
+  parseInline: [{
+    name: "Highlight",
+    parse(cx, next, pos) {
+      if (next !== 61 /* = */ || cx.char(pos + 1) !== 61) return -1;
+      // Don't match ===
+      if (cx.char(pos + 2) === 61) return -1;
+      return cx.addDelimiter(
+        { resolve: "Highlight", mark: "HighlightMark" },
+        pos, pos + 2, true, true
+      );
+    },
+    after: "Emphasis"
+  }]
+};
 
 const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
@@ -42,7 +89,11 @@ function getMarkdownHighlight(normalizeHeaders) {
     { tag: tags.link, textDecoration: "underline" },
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "0.9em" },
-    // Dim the markdown syntax characters (# * _ ` etc.)
+    // Custom syntax: %% comments %% — dimmed out
+    { tag: commentTag, opacity: "0.3", fontStyle: "italic" },
+    // Custom syntax: == highlight == — highlighted background
+    { tag: highlightTag, backgroundColor: "rgba(255, 208, 0, 0.3)", borderRadius: "2px" },
+    // Dim the markdown syntax characters (# * _ ` %% == ~~ etc.)
     { tag: tags.processingInstruction, opacity: "0.4" },
   ]);
 }
@@ -139,8 +190,8 @@ export function createEditor(container, state) {
     keymap.of([
       { key: "Mod-,", run: () => { openSettingsWindow(); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
-      // Cmd+/ — toggle sidebar (show/hide files panel)
-      { key: "Mod-/", run: () => {
+      // Cmd+\ — toggle sidebar (show/hide files panel)
+      { key: "Mod-\\", run: () => {
         const sidebar = document.getElementById("sidebar");
         const panel = document.getElementById("panel-overlay");
         const isVisible = sidebar.classList.contains("pinned");
@@ -249,7 +300,7 @@ export function createEditor(container, state) {
       hushTheme,
       themeCompartment.of(initialCmTheme),
       highlightCompartment.of(syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders))),
-      markdown(),
+      markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
       history(),
       drawSelection(),
       closeBrackets(),
@@ -300,6 +351,32 @@ export function createEditor(container, state) {
   // Fullscreen
   state.on("fullscreen-changed", () => {
     applyFullscreen(state);
+    // After fullscreen change, recalculate typewriter/ratchet positioning
+    // Use a small delay to let the window resize complete
+    setTimeout(() => {
+      if (state.typewriterMode && typewriterBoundary) {
+        typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
+        applyTypewriterPadding(view, state);
+        requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+      }
+      if (state.ratchetMode) {
+        applyRatchetTypewriterPadding(view);
+        requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+      }
+    }, 100);
+  });
+
+  // Also handle general window resizes for typewriter mode
+  window.addEventListener("resize", () => {
+    if (state.typewriterMode && typewriterBoundary) {
+      typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
+      applyTypewriterPadding(view, state);
+      requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+    }
+    if (state.ratchetMode) {
+      applyRatchetTypewriterPadding(view);
+      requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+    }
   });
 
   // Initialize column resizers

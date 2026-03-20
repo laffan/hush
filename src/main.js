@@ -96,6 +96,9 @@ function applyActiveStyle(state) {
     document.documentElement.style.removeProperty("--style-fg");
     document.documentElement.style.removeProperty("--style-cursor");
     document.body.classList.remove("style-active");
+    // Clear editor bg override
+    const cmEditor = document.querySelector('.cm-editor');
+    if (cmEditor) cmEditor.style.backgroundColor = '';
     // Re-apply standard settings
     applyAppearance(state.settings.appearance || "dark");
     applyFontFamily(state.settings.fontFamily);
@@ -122,11 +125,23 @@ function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--line-height", style.lineHeight);
   }
 
-  // Color overrides
+  // Apply the style's theme first, then color overrides on top
+  state.emit("theme-changed");
+
+  // Color overrides — applied AFTER theme and updatePrivateBoxColor
+  // so they take precedence over theme-derived values
   const overrides = style.colorOverrides || {};
+  updatePrivateBoxColor(state);
+
   if (overrides.bg) {
     document.documentElement.style.setProperty("--bg", overrides.bg);
     document.documentElement.style.setProperty("--style-bg", overrides.bg);
+    // Override CodeMirror theme background directly
+    const cmEditor = document.querySelector('.cm-editor');
+    if (cmEditor) cmEditor.style.backgroundColor = overrides.bg;
+  } else {
+    const cmEditor = document.querySelector('.cm-editor');
+    if (cmEditor) cmEditor.style.backgroundColor = '';
   }
   if (overrides.fg) {
     document.documentElement.style.setProperty("--fg", overrides.fg);
@@ -137,10 +152,6 @@ function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--cursor", overrides.cursor);
     document.documentElement.style.setProperty("--style-cursor", overrides.cursor);
   }
-
-  // Apply the style's theme
-  state.emit("theme-changed");
-  updatePrivateBoxColor(state);
 }
 
 async function init() {
@@ -284,25 +295,33 @@ async function init() {
     if (styleObj.fontFamily) applyFontFamily(styleObj.fontFamily);
     if (styleObj.fontSize) document.documentElement.style.setProperty("--font-size", styleObj.fontSize + "px");
     if (styleObj.lineHeight) document.documentElement.style.setProperty("--line-height", styleObj.lineHeight);
-    const overrides = styleObj.colorOverrides || {};
-    if (overrides.bg) document.documentElement.style.setProperty("--bg", overrides.bg);
-    if (overrides.fg) {
-      document.documentElement.style.setProperty("--fg", overrides.fg);
-      document.documentElement.style.setProperty("--cursor", overrides.fg);
-    }
-    if (overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.cursor);
-    // Apply theme
+    // Apply theme first
     if (styleObj.themeId) {
       const theme = getThemeById(styleObj.themeId);
       if (theme && state.editor) state.editor.reconfigureTheme(theme.extension);
     }
     // Determine preview bg for private mode
+    const overrides = styleObj.colorOverrides || {};
     const previewBg = overrides.bg || themeBackgrounds[styleObj.themeId] || null;
     updatePrivateBoxColor(state, previewBg);
+    // Apply color overrides AFTER updatePrivateBoxColor so they take precedence
+    if (overrides.bg) {
+      document.documentElement.style.setProperty("--bg", overrides.bg);
+      const cmEditor = document.querySelector('.cm-editor');
+      if (cmEditor) cmEditor.style.backgroundColor = overrides.bg;
+    }
+    if (overrides.fg) {
+      document.documentElement.style.setProperty("--fg", overrides.fg);
+      document.documentElement.style.setProperty("--cursor", overrides.fg);
+    }
+    if (overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.cursor);
   });
   state.on("style-preview-end", () => {
     if (!previewActive) return;
     previewActive = false;
+    // Clear editor bg override before restoring
+    const cmEditor = document.querySelector('.cm-editor');
+    if (cmEditor) cmEditor.style.backgroundColor = '';
     // Restore actual settings
     applyActiveStyle(state);
   });

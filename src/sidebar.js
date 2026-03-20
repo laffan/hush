@@ -109,7 +109,7 @@ export function createSidebar(container, state) {
     }
   });
 
-  // Cmd+/ toggle support
+  // Cmd+\ toggle support
   state.on("toggle-files-panel", () => {
     showPanel("files", renderFilesPanel(state));
     bindFilesPanel(state, panelOverlay, hidePanel);
@@ -385,26 +385,12 @@ function renderStyleEditorInline(state) {
     { key: "cursor", label: "Cursor" },
   ];
 
-  let fontOptions = `<option value="">Default (${state.settings.fontFamily || "EB Garamond"})</option>`;
-  fontOptions += `<optgroup label="Built-in">`;
-  for (const f of builtInFonts) {
-    fontOptions += `<option value="${f}" ${style.fontFamily === f ? "selected" : ""}>${f}</option>`;
-  }
-  fontOptions += `</optgroup><optgroup label="System">`;
-  for (const f of systemFonts) {
-    fontOptions += `<option value="${f}" ${style.fontFamily === f ? "selected" : ""}>${f}</option>`;
-  }
-  fontOptions += `</optgroup>`;
+  const selectedFont = style.fontFamily || "";
+  const selectedFontLabel = selectedFont || `Default (${state.settings.fontFamily || "EB Garamond"})`;
 
-  let themeOptions = `<optgroup label="Light">`;
-  for (const t of lightThemes) {
-    themeOptions += `<option value="${t.id}" ${style.themeId === t.id ? "selected" : ""}>${t.name}</option>`;
-  }
-  themeOptions += `</optgroup><optgroup label="Dark">`;
-  for (const t of darkThemes) {
-    themeOptions += `<option value="${t.id}" ${style.themeId === t.id ? "selected" : ""}>${t.name}</option>`;
-  }
-  themeOptions += `</optgroup>`;
+  const selectedTheme = style.themeId || "";
+  const selectedThemeObj = themeList.find(t => t.id === selectedTheme);
+  const selectedThemeLabel = selectedThemeObj ? selectedThemeObj.name : (selectedTheme || "Select theme");
 
   return `
     <div class="style-editor-sidebar style-editor-accordion">
@@ -414,11 +400,28 @@ function renderStyleEditorInline(state) {
       </div>
       <div class="style-editor-row">
         <label>Theme</label>
-        <select id="style-theme">${themeOptions}</select>
+        <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(selectedTheme)}">
+          <div class="custom-dropdown-selected">${escHtml(selectedThemeLabel)}</div>
+          <div class="custom-dropdown-options">
+            <div class="custom-dropdown-group-label">Light</div>
+            ${lightThemes.map(t => `<div class="custom-dropdown-option${t.id === selectedTheme ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`).join('')}
+            <div class="custom-dropdown-group-label">Dark</div>
+            ${darkThemes.map(t => `<div class="custom-dropdown-option${t.id === selectedTheme ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`).join('')}
+          </div>
+        </div>
       </div>
       <div class="style-editor-row">
         <label>Font</label>
-        <select id="style-font">${fontOptions}</select>
+        <div class="custom-dropdown" id="style-font-dropdown" data-value="${escAttr(selectedFont)}">
+          <div class="custom-dropdown-selected">${escHtml(selectedFontLabel)}</div>
+          <div class="custom-dropdown-options">
+            <div class="custom-dropdown-option${!selectedFont ? ' selected' : ''}" data-value="">Default (${escHtml(state.settings.fontFamily || "EB Garamond")})</div>
+            <div class="custom-dropdown-group-label">Built-in</div>
+            ${builtInFonts.map(f => `<div class="custom-dropdown-option${style.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+            <div class="custom-dropdown-group-label">System</div>
+            ${systemFonts.map(f => `<div class="custom-dropdown-option${style.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+          </div>
+        </div>
       </div>
       <div class="style-editor-row">
         <label>Size</label>
@@ -541,8 +544,8 @@ function bindStyleEditor(state, panel) {
 
   // Helper: gather current form values as a style object for preview
   function getFormStyle() {
-    const themeId = panel.querySelector("#style-theme")?.value;
-    const fontFamily = panel.querySelector("#style-font")?.value || null;
+    const themeId = panel.querySelector("#style-theme-dropdown")?.dataset.value || "";
+    const fontFamily = panel.querySelector("#style-font-dropdown")?.dataset.value || null;
     const fontSize = parseFloat(panel.querySelector("#style-font-size")?.value) || null;
     const lineHeight = parseFloat(panel.querySelector("#style-line-height")?.value) || null;
     const colorOverrides = {};
@@ -593,9 +596,31 @@ function bindStyleEditor(state, panel) {
     bindStylesPanel(state, panel);
   });
 
-  // Live preview on all input changes
-  panel.querySelector("#style-theme")?.addEventListener("change", emitLivePreview);
-  panel.querySelector("#style-font")?.addEventListener("change", emitLivePreview);
+  // Custom dropdown binding — theme
+  bindCustomDropdown(panel.querySelector("#style-theme-dropdown"), (value) => {
+    emitLivePreview();
+  }, (value) => {
+    // Hover preview: temporarily preview this theme
+    const formStyle = getFormStyle();
+    formStyle.themeId = value;
+    state.emit("style-preview", formStyle);
+  }, () => {
+    // Mouse leave: restore form's current values
+    emitLivePreview();
+  });
+
+  // Custom dropdown binding — font
+  bindCustomDropdown(panel.querySelector("#style-font-dropdown"), (value) => {
+    emitLivePreview();
+  }, (value) => {
+    // Hover preview: temporarily preview this font
+    const formStyle = getFormStyle();
+    formStyle.fontFamily = value || null;
+    state.emit("style-preview", formStyle);
+  }, () => {
+    // Mouse leave: restore form's current values
+    emitLivePreview();
+  });
 
   // Slider live updates + preview
   const fsEl = panel.querySelector("#style-font-size");
@@ -701,6 +726,54 @@ async function exportCurrentFile(state) {
     a.click();
     URL.revokeObjectURL(url);
   }
+}
+
+function bindCustomDropdown(dropdown, onSelect, onHover, onLeave) {
+  if (!dropdown) return;
+
+  const selected = dropdown.querySelector(".custom-dropdown-selected");
+  const optionsList = dropdown.querySelector(".custom-dropdown-options");
+
+  selected.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = dropdown.classList.contains("open");
+    // Close all other dropdowns
+    document.querySelectorAll(".custom-dropdown.open").forEach(d => d.classList.remove("open"));
+    if (!isOpen) {
+      dropdown.classList.add("open");
+      // Close on outside click
+      setTimeout(() => {
+        document.addEventListener("mousedown", function handler(e2) {
+          if (!dropdown.contains(e2.target)) {
+            dropdown.classList.remove("open");
+            document.removeEventListener("mousedown", handler);
+          }
+        });
+      }, 0);
+    }
+  });
+
+  optionsList.querySelectorAll(".custom-dropdown-option").forEach(opt => {
+    opt.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const value = opt.dataset.value;
+      dropdown.dataset.value = value;
+      selected.textContent = opt.textContent;
+      // Update selected state
+      optionsList.querySelectorAll(".custom-dropdown-option").forEach(o => o.classList.remove("selected"));
+      opt.classList.add("selected");
+      dropdown.classList.remove("open");
+      if (onSelect) onSelect(value);
+    });
+
+    opt.addEventListener("mouseenter", () => {
+      if (onHover) onHover(opt.dataset.value);
+    });
+  });
+
+  optionsList.addEventListener("mouseleave", () => {
+    if (onLeave) onLeave();
+  });
 }
 
 function escHtml(str) {
