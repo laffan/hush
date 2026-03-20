@@ -6,6 +6,8 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Editor** — A Markdown editor with inline syntax highlighting (headings, bold, italic, links, code), adjustable column width, and 16 color themes across light, dark, and sepia appearances.
 
+**Styles** — Combine theme, font, font size and line height in to specific "styles" that you can easily create and move between using sidebar controls.
+
 **Ratchet Mode** — Forward-only writing. Pick a duration (5–30 minutes) and the editor locks out deletion, selection, and all navigation. The current line is pinned to the center of the screen with previous lines scrolling up above it (typewriter-style). The cursor is always at the end of the document. The timer persists across app restarts.
 
 **Private Mode** — Replaces all characters with opaque boxes so you can write without anyone reading over your shoulder. Toggle with `⌘⇧P`.
@@ -15,10 +17,6 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 **File Management** — Multiple files with automatic 2-second autosave. Optionally save to an external folder or Obsidian vault.
 
 **Keyboard-First** — Global shortcuts work even when the app is hidden:
-- `⌘⇧H` — Toggle editor visibility
-- `⌘⇧F` — Toggle fullscreen
-- `⌘⇧P` — Toggle private mode
-- `⌘,` — Open settings
 
 All shortcuts are customizable in Settings.
 
@@ -41,20 +39,6 @@ The built app will be in `src-tauri/target/release/bundle/`.
 npm run tauri dev
 ```
 
-This starts Vite on port 5173 and launches the Tauri dev window with hot reload.
-
-## Settings
-
-Access via `⌘,` or the system tray menu. Options include:
-
-- **Appearance** — Light, dark, or automatic (follows system)
-- **Themes** — Separate light and dark theme selection
-- **Font** — EB Garamond (serif), Inter (sans), or Fira Code (mono)
-- **Font size** — 12–36px
-- **Line height** — 1.0–2.5
-- **Visibility** — Menu bar only, dock, or both
-- **Always on top** — Keep window above all others
-- **Shortcuts** — Rebind all global shortcuts
 
 ## Data
 
