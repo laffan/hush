@@ -141,7 +141,7 @@ html, body {
   transition: opacity 0.2s;
   background: var(--accent);
   background-clip: content-box;
-  z-index: 150;
+  z-index: 50;
 }
 
 .column-resizer.hover, .column-resizer.dragging {
@@ -228,6 +228,13 @@ html, body {
   padding: 20px;
   overflow-y: auto;
   transition: transform 0.2s, opacity 0.2s;
+}
+
+/* Inset mode: panel sits in the editor's left margin, no overlay */
+#panel-overlay.panel-inset {
+  background: transparent;
+  border-right: none;
+  z-index: 90;
 }
 
 #panel-overlay.hidden {
@@ -478,6 +485,21 @@ html, body {
 
 .new-style-sidebar-btn:hover {
   background: rgba(128, 128, 128, 0.15);
+}
+
+/* Style editor accordion (inline within style list) */
+.style-editor-accordion {
+  margin: 8px 0;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.05);
+}
+
+.style-sidebar-item.editing {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 /* Style editor (inline in sidebar panel) */

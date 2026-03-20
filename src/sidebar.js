@@ -309,15 +309,17 @@ function bindAutosavePanel(state, panel) {
 let editingStyleId = null; // null = list view, "new" = new style form, or style id
 
 function renderStylesPanel(state) {
-  if (editingStyleId !== null) {
-    return renderStyleEditor(state);
-  }
-
   const styles = state.settings.styles || [];
   const activeId = state.settings.activeStyleId;
 
   let html = `<div class="panel-title">Styles</div>`;
   html += `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
+
+  // New style editor accordion (at top)
+  if (editingStyleId === "new") {
+    html += renderStyleEditorInline(state);
+  }
+
   html += `<div class="style-list-sidebar">`;
 
   // Default style (always first, cannot be deleted)
@@ -328,10 +330,11 @@ function renderStylesPanel(state) {
 
   for (const st of styles) {
     const isActive = activeId === st.id;
+    const isEditing = editingStyleId === st.id;
     const bg = (st.colorOverrides && st.colorOverrides.bg) || "#1a1a1a";
     const fg = (st.colorOverrides && st.colorOverrides.fg) || "#e0e0e0";
     const fontSize = st.fontSize || state.settings.fontSize || 20;
-    html += `<div class="style-sidebar-item${isActive ? ' active' : ''}" data-style-id="${st.id}"
+    html += `<div class="style-sidebar-item${isActive ? ' active' : ''}${isEditing ? ' editing' : ''}" data-style-id="${st.id}"
       style="background:${bg}; color:${fg}; font-size:${Math.min(fontSize, 16)}px;${st.fontFamily ? ` font-family:'${st.fontFamily}';` : ''}">
       <span class="style-sidebar-name">${escHtml(st.name)}</span>
       <span class="style-sidebar-actions">
@@ -346,13 +349,17 @@ function renderStylesPanel(state) {
         </button>
       </span>
     </div>`;
+    // Inline editor accordion for this style
+    if (isEditing) {
+      html += renderStyleEditorInline(state);
+    }
   }
 
   html += `</div>`;
   return html;
 }
 
-function renderStyleEditor(state) {
+function renderStyleEditorInline(state) {
   const isNew = editingStyleId === "new";
   const style = isNew
     ? { id: "", name: "", themeId: state.settings.darkTheme || "dracula", fontFamily: null, fontSize: null, lineHeight: null, colorOverrides: {} }
@@ -397,8 +404,7 @@ function renderStyleEditor(state) {
   themeOptions += `</optgroup>`;
 
   return `
-    <div class="panel-title">${isNew ? "New Style" : "Edit Style"}</div>
-    <div class="style-editor-sidebar">
+    <div class="style-editor-sidebar style-editor-accordion">
       <div class="style-editor-row">
         <label>Name</label>
         <input type="text" id="style-name" value="${escAttr(style.name)}" placeholder="Style name" />
@@ -446,9 +452,9 @@ function renderStyleEditor(state) {
 }
 
 function bindStylesPanel(state, panel) {
+  // Bind inline editor if one is open
   if (editingStyleId !== null) {
     bindStyleEditor(state, panel);
-    return;
   }
 
   // New style button

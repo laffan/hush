@@ -159,6 +159,26 @@ async function init() {
   const sidebar = document.getElementById("sidebar");
   createSidebar(sidebar, state);
 
+  // Panel inset mode — push into editor margin when there's enough space
+  const panelOverlay = document.getElementById("panel-overlay");
+  function updatePanelMode() {
+    const w = window.innerWidth;
+    const colW = state.settings.columnWidth || 600;
+    const sidePad = Math.max(50, Math.floor((w - colW) / 2));
+    // Panel (300px) + sidebar (50px) = 350px; fits if sidePad >= 350
+    if (sidePad >= 350) {
+      panelOverlay.classList.add("panel-inset");
+      panelOverlay.classList.remove("panel-overlay-mode");
+    } else {
+      panelOverlay.classList.remove("panel-inset");
+      panelOverlay.classList.add("panel-overlay-mode");
+    }
+  }
+  updatePanelMode();
+  window.addEventListener("resize", updatePanelMode);
+  // Also update when column width changes
+  state.on("settings-changed", updatePanelMode);
+
   // Sidebar hover trigger — a fixed invisible zone on the left edge
   // Must live inside #app so it shares the same stacking context in fullscreen
   const sidebarTrigger = document.createElement("div");
