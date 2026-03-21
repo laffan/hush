@@ -21,8 +21,9 @@ export function deepClone(items, getChildren, setChildren) {
   return items.map((item) => {
     const cloned = { ...item };
     const children = getChildren(item);
-    if (children && children.length) {
-      setChildren(cloned, deepClone(children, getChildren, setChildren));
+    // Always clone the children array — even empty ones — to avoid shared references
+    if (children) {
+      setChildren(cloned, children.length ? deepClone(children, getChildren, setChildren) : []);
     }
     return cloned;
   });

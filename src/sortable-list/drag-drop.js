@@ -317,8 +317,19 @@ function finishDrag() {
   }
 
   const { getChildren, setChildren, getId } = this.config;
+
+  // Resolve destination BEFORE any splicing — path indices are only valid now
   const sourceParent = getChildrenAtPath(this.state.items, originParentPath, getChildren, setChildren);
   const destination = getChildrenAtPath(this.state.items, dropTarget.parentPath, getChildren, setChildren);
+
+  // Also find the destination container item by ID (for expand-after-drop),
+  // BEFORE the splice shifts indices
+  let destContainerId = null;
+  if (dropTarget.parentPath.length > 0) {
+    const destItem = getItemAtPath(this.state.items, dropTarget.parentPath, getChildren);
+    if (destItem) destContainerId = getId(destItem);
+  }
+
   const [moved] = sourceParent.splice(originIndex, 1);
 
   let adjustedIndex = dropTarget.index;
@@ -329,11 +340,8 @@ function finishDrag() {
   destination.splice(bounded, 0, moved);
 
   // Ensure the drop target container is expanded so the dropped item is visible
-  if (dropTarget.parentPath.length > 0) {
-    const parentItem = getItemAtPath(this.state.items, dropTarget.parentPath, getChildren);
-    if (parentItem) {
-      this.state.collapsedIds.delete(getId(parentItem));
-    }
+  if (destContainerId) {
+    this.state.collapsedIds.delete(destContainerId);
   }
 
   this.dragSession = null;
