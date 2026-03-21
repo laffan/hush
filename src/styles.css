@@ -1162,3 +1162,335 @@ html.ios, html.ios body {
   opacity: 1;
   background: rgba(128, 128, 128, 0.15);
 }
+
+/* ===== Sortable List (tree file browser) ===== */
+.sl-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.sl-list .sl-list {
+  padding-left: 14px;
+}
+
+.sl-item {
+  margin: 1px 0;
+  padding: 4px 6px;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.sl-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.sl-item.dragging {
+  opacity: 0.2;
+}
+
+.sl-item.selected {
+  text-decoration: underline;
+}
+
+.sl-item.moving {
+  color: #ff6600;
+}
+
+.sl-list.sl-drop-target-list {
+  border-left: 2px solid var(--fg);
+  padding-left: 12px;
+}
+
+.sl-item-content {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.sl-item-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sl-item-main-label {
+  display: block;
+}
+
+.sl-fold-arrow {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  margin: 0;
+  margin-left: -4px;
+  margin-right: 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  opacity: 0.5;
+}
+
+.sl-fold-arrow:hover {
+  background: rgba(128, 128, 128, 0.15);
+  opacity: 1;
+}
+
+.sl-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--fg);
+  opacity: 0.9;
+  border-radius: 4px;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 1000;
+}
+
+.sl-drop-indicator {
+  list-style: none;
+  height: 0;
+  margin: 0;
+  position: relative;
+  transition: height 0.15s ease, margin 0.15s ease;
+}
+
+.sl-drop-indicator.active {
+  height: 12px;
+  margin: 2px 0;
+}
+
+.sl-drop-indicator.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--fg);
+  opacity: 0.6;
+}
+
+/* ===== Tree File Browser ===== */
+.tree-create-btns {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.tree-create-btns button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+  transition: background 0.15s;
+}
+
+.tree-create-btns button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.tree-type-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tree-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  position: relative;
+}
+
+.tree-item-row.active {
+  font-weight: 600;
+}
+
+.tree-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tree-actions {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.sl-item:hover .tree-actions {
+  opacity: 1;
+}
+
+.tree-actions button {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0;
+  opacity: 0.45;
+}
+
+.tree-actions button:hover {
+  opacity: 1;
+}
+
+.tree-actions svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tree-rename-input {
+  width: 100%;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  color: var(--fg);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+}
+
+.tree-list-root {
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+
+/* ===== Delete Confirmation Modal ===== */
+.tree-delete-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-delete-modal {
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 380px;
+  width: 90%;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.tree-delete-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.tree-delete-modal-message {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  white-space: pre-wrap;
+  font-family: system-ui, sans-serif;
+  margin-bottom: 16px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tree-delete-modal-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.tree-delete-modal-btns button {
+  padding: 6px 16px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+}
+
+.tree-delete-modal-btns button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.tree-delete-confirm {
+  background: rgba(220, 50, 50, 0.15) !important;
+  border-color: rgba(220, 50, 50, 0.3) !important;
+  color: #dc3232 !important;
+}
+
+.tree-delete-confirm:hover {
+  background: rgba(220, 50, 50, 0.25) !important;
+}
+
+/* ===== Project View Separator ===== */
+.project-separator {
+  width: 100%;
+  height: 1px;
+  margin: 24px 0;
+  border: none;
+  border-top: 2px dashed rgba(128, 128, 128, 0.3);
+  pointer-events: none;
+  user-select: none;
+}

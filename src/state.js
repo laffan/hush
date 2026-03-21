@@ -4,6 +4,11 @@
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
+async function tauriInvoke(cmd, args) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke(cmd, args);
+}
+
 export class AppState {
   constructor() {
     this.settings = {
@@ -81,8 +86,13 @@ export class AppState {
     };
 
     this.currentFileId = null;
+    this.currentProjectId = null; // When viewing a project
     this.files = [];
+    this.fileTree = []; // Tree of TreeNode objects
     this.editor = null;
+
+    // Project view state
+    this.projectDocIds = []; // Ordered doc fileIds when viewing a project
 
     // Mode states
     this.ratchetMode = false;
@@ -104,11 +114,9 @@ export class AppState {
   async init() {
     if (IS_TAURI) {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const saved = await invoke("get_settings");
-        // Merge saved over defaults so new keys have defaults
-        Object.assign(this.settings, saved);
-        this.files = await invoke("list_files");
+        Object.assign(this.settings, await tauriInvoke("get_settings"));
+        this.files = await tauriInvoke("list_files");
+        this.fileTree = await tauriInvoke("get_file_tree");
         if (this.files.length > 0) {
           await this.openFile(this.files[0].id);
         } else {
@@ -142,6 +150,22 @@ export class AppState {
     if (savedFiles) {
       this.files = JSON.parse(savedFiles);
     }
+
+    const savedTree = localStorage.getItem("hush_file_tree");
+    if (savedTree) {
+      this.fileTree = JSON.parse(savedTree);
+    } else if (this.files.length > 0) {
+      // Migrate flat files to tree
+      this.fileTree = this.files.map((f) => ({
+        id: crypto.randomUUID(),
+        type: "document",
+        name: f.name,
+        fileId: f.id,
+        children: [],
+      }));
+      this._saveTreeLocal();
+    }
+
     if (this.files.length > 0) {
       this.currentFileId = this.files[0].id;
     } else {
@@ -172,6 +196,10 @@ export class AppState {
     localStorage.setItem("hush_files", JSON.stringify(this.files));
   }
 
+  _saveTreeLocal() {
+    localStorage.setItem("hush_file_tree", JSON.stringify(this.fileTree));
+  }
+
   _startAutosave() {
     this.autosaveInterval = setInterval(() => {
       if (this.dirty) {
@@ -188,114 +216,299 @@ export class AppState {
     this.dirty = true;
   }
 
-  async saveCurrentFile() {
-    if (!this.currentFileId || !this.editor) return;
-    const content = this.editor.getContent();
-    this.dirty = false;
+  // ===== File Tree Operations =====
 
+  async saveFileTree() {
+    if (IS_TAURI) {
+      try { await tauriInvoke("save_file_tree", { tree: this.fileTree }); }
+      catch (e) { console.error("Save tree failed:", e); }
+    } else { this._saveTreeLocal(); }
+    this.emit("files-changed");
+  }
+
+  async createFolder(name, parentId = null) {
     if (IS_TAURI) {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("save_file", { id: this.currentFileId, content });
-        this.files = await invoke("list_files");
-      } catch (e) {
-        console.error("Save failed:", e);
-      }
+        const created = await tauriInvoke("create_folder", { name, parentId });
+        this.fileTree = await tauriInvoke("get_file_tree");
+        this.emit("files-changed");
+        return created;
+      } catch (e) { console.error("Create folder failed:", e); }
     } else {
-      const file = this.files.find((f) => f.id === this.currentFileId);
-      if (file) {
-        file.content = content;
-        file.modified = Math.floor(Date.now() / 1000);
-        file.name = this._deriveName(content);
-        this._saveFilesLocal();
+      const node = { id: crypto.randomUUID(), type: "folder", name, children: [] };
+      this._insertNode(node, parentId);
+      this._saveTreeLocal();
+      this.emit("files-changed");
+      return node;
+    }
+  }
+
+  async createProject(name, parentId = null) {
+    if (IS_TAURI) {
+      try {
+        const created = await tauriInvoke("create_project", { name, parentId });
+        this.fileTree = await tauriInvoke("get_file_tree");
+        this.emit("files-changed");
+        return created;
+      } catch (e) { console.error("Create project failed:", e); }
+    } else {
+      const node = { id: crypto.randomUUID(), type: "project", name, children: [] };
+      this._insertNode(node, parentId);
+      this._saveTreeLocal();
+      this.emit("files-changed");
+      return node;
+    }
+  }
+
+  _insertNode(node, parentId) {
+    if (!parentId) {
+      this.fileTree.push(node);
+      return;
+    }
+    const parent = this._findNode(this.fileTree, parentId);
+    if (parent) {
+      if (!parent.children) parent.children = [];
+      parent.children.push(node);
+    } else {
+      this.fileTree.push(node);
+    }
+  }
+
+  _findNode(nodes, id) {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      if (n.children) {
+        const found = this._findNode(n.children, id);
+        if (found) return found;
       }
+    }
+    return null;
+  }
+
+  _removeNode(nodes, id) {
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].id === id) {
+        return nodes.splice(i, 1)[0];
+      }
+      if (nodes[i].children) {
+        const removed = this._removeNode(nodes[i].children, id);
+        if (removed) return removed;
+      }
+    }
+    return null;
+  }
+
+  _collectDocumentIds(nodes) {
+    const ids = [];
+    for (const n of nodes) {
+      if (n.type === "document" && n.fileId) {
+        ids.push(n.fileId);
+      }
+      if (n.children) {
+        ids.push(...this._collectDocumentIds(n.children));
+      }
+    }
+    return ids;
+  }
+
+  async deleteTreeNode(nodeId) {
+    const node = this._findNode(this.fileTree, nodeId);
+    if (!node) return;
+    const fileIds = [];
+    if (node.type === "document" && node.fileId) fileIds.push(node.fileId);
+    if (node.children) fileIds.push(...this._collectDocumentIds(node.children));
+
+    for (const fid of fileIds) {
+      if (IS_TAURI) {
+        try { await tauriInvoke("delete_file", { id: fid }); }
+        catch (e) { console.error("Delete file failed:", e); }
+      } else { this.files = this.files.filter((f) => f.id !== fid); }
+    }
+
+    this._removeNode(this.fileTree, nodeId);
+    await this.saveFileTree();
+    if (IS_TAURI) { this.files = await tauriInvoke("list_files"); }
+    else { this._saveFilesLocal(); }
+
+    if (fileIds.includes(this.currentFileId)) {
+      this.currentProjectId = null;
+      this.projectDocIds = [];
+      if (this.files.length > 0) await this.openFile(this.files[0].id);
+      else await this.newFile();
     }
     this.emit("files-changed");
   }
 
-  async newFile() {
-    if (this.dirty) await this.saveCurrentFile();
-
-    if (IS_TAURI) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const file = await invoke("create_file");
-        this.currentFileId = file.id;
-        this.files = await invoke("list_files");
-        if (this.editor) this.editor.setContent("");
-      } catch (e) {
-        console.error("Create file failed:", e);
+  async renameTreeNode(nodeId, newName) {
+    const node = this._findNode(this.fileTree, nodeId);
+    if (!node) return;
+    node.name = newName;
+    if (node.type === "document" && node.fileId) {
+      if (IS_TAURI) {
+        try { await tauriInvoke("rename_file", { id: node.fileId, name: newName }); this.files = await tauriInvoke("list_files"); }
+        catch (e) { console.error("Rename failed:", e); }
+      } else {
+        const file = this.files.find((f) => f.id === node.fileId);
+        if (file) file.name = newName;
+        this._saveFilesLocal();
       }
-    } else {
-      const file = this._createLocalFile();
-      this.currentFileId = file.id;
-      if (this.editor) this.editor.setContent("");
     }
+    await this.saveFileTree();
+  }
+
+  async duplicateTreeNode(nodeId) {
+    const node = this._findNode(this.fileTree, nodeId);
+    if (!node || node.type !== "document" || !node.fileId) return;
+    const newFileId = await this.duplicateFile(node.fileId);
+    if (!newFileId) return;
+    const newNode = { id: crypto.randomUUID(), type: "document", name: node.name + " copy", fileId: newFileId, children: [] };
+    this._insertAfter(this.fileTree, nodeId, newNode);
+    await this.saveFileTree();
+  }
+
+  _insertAfter(nodes, afterId, newNode) {
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].id === afterId) {
+        nodes.splice(i + 1, 0, newNode);
+        return true;
+      }
+      if (nodes[i].children && this._insertAfter(nodes[i].children, afterId, newNode)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ===== Project View =====
+
+  async openProject(projectId) {
+    if (this.dirty) await this.saveCurrentFile();
+    const node = this._findNode(this.fileTree, projectId);
+    if (!node || node.type !== "project") return;
+    this.currentProjectId = projectId;
+    this.currentFileId = null;
+    this.projectDocIds = this._collectDocumentIds(node.children);
+
+    let entries;
+    if (IS_TAURI) {
+      try { entries = await tauriInvoke("load_project_content", { projectId }); }
+      catch (e) { console.error("Load project failed:", e); return; }
+    } else { entries = this.files; }
+    const ordered = this.projectDocIds.map((fid) => entries.find((e) => e.id === fid)).filter(Boolean);
+    const combined = ordered.map((e) => e.content).join("\n\n---hush-separator---\n\n");
+    if (this.editor) this.editor.setContent(combined);
+    this.emit("file-opened");
+  }
+
+  async saveProjectContent() {
+    if (!this.currentProjectId || !this.editor || this.projectDocIds.length === 0) return;
+    const parts = this.editor.getContent().split("\n\n---hush-separator---\n\n");
+    for (let i = 0; i < this.projectDocIds.length && i < parts.length; i++) {
+      const fileId = this.projectDocIds[i];
+      if (IS_TAURI) {
+        try { await tauriInvoke("save_file", { id: fileId, content: parts[i] || "" }); }
+        catch (e) { console.error("Save project part failed:", e); }
+      } else {
+        const file = this.files.find((f) => f.id === fileId);
+        if (file) { file.content = parts[i] || ""; file.modified = Math.floor(Date.now() / 1000); file.name = this._deriveName(file.content); }
+      }
+    }
+    this.dirty = false;
+    if (IS_TAURI) { this.files = await tauriInvoke("list_files"); }
+    else { this._saveFilesLocal(); }
+    this.emit("files-changed");
+  }
+
+  // ===== File Operations =====
+
+  async saveCurrentFile() {
+    if (this.currentProjectId) return this.saveProjectContent();
+    if (!this.currentFileId || !this.editor) return;
+    const content = this.editor.getContent();
+    this.dirty = false;
+    if (IS_TAURI) {
+      try { await tauriInvoke("save_file", { id: this.currentFileId, content }); this.files = await tauriInvoke("list_files"); }
+      catch (e) { console.error("Save failed:", e); }
+    } else {
+      const file = this.files.find((f) => f.id === this.currentFileId);
+      if (file) { file.content = content; file.modified = Math.floor(Date.now() / 1000); file.name = this._deriveName(content); this._saveFilesLocal(); }
+    }
+    this._updateTreeNodeNameByFileId(this.currentFileId);
+    this.emit("files-changed");
+  }
+
+  _updateTreeNodeNameByFileId(fileId) {
+    const file = this.files.find((f) => f.id === fileId);
+    if (!file) return;
+    const node = this._findNodeByFileId(this.fileTree, fileId);
+    if (node) {
+      node.name = file.name;
+      // Don't save tree on every autosave — too expensive
+    }
+  }
+
+  _findNodeByFileId(nodes, fileId) {
+    for (const n of nodes) {
+      if (n.type === "document" && n.fileId === fileId) return n;
+      if (n.children) {
+        const found = this._findNodeByFileId(n.children, fileId);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  async newFile(parentId = null) {
+    if (this.dirty) await this.saveCurrentFile();
+    let fileId;
+    if (IS_TAURI) {
+      try { const file = await tauriInvoke("create_file"); fileId = file.id; this.files = await tauriInvoke("list_files"); }
+      catch (e) { console.error("Create file failed:", e); return; }
+    } else { fileId = this._createLocalFile().id; }
+    const treeNode = { id: crypto.randomUUID(), type: "document", name: "Untitled", fileId, children: [] };
+    this._insertNode(treeNode, parentId);
+    await this.saveFileTree();
+    this.currentFileId = fileId;
+    this.currentProjectId = null;
+    this.projectDocIds = [];
+    if (this.editor) this.editor.setContent("");
     this.emit("files-changed");
     this.emit("file-opened");
   }
 
   async openFile(id) {
     if (this.dirty) await this.saveCurrentFile();
-
+    this.currentProjectId = null;
+    this.projectDocIds = [];
     if (IS_TAURI) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const file = await invoke("load_file", { id });
-        this.currentFileId = file.id;
-        if (this.editor) this.editor.setContent(file.content);
-      } catch (e) {
-        console.error("Load file failed:", e);
-      }
+      try { const file = await tauriInvoke("load_file", { id }); this.currentFileId = file.id; if (this.editor) this.editor.setContent(file.content); }
+      catch (e) { console.error("Load file failed:", e); }
     } else {
       const file = this.files.find((f) => f.id === id);
-      if (file) {
-        this.currentFileId = file.id;
-        if (this.editor) this.editor.setContent(file.content);
-      }
+      if (file) { this.currentFileId = file.id; if (this.editor) this.editor.setContent(file.content); }
     }
     this.emit("file-opened");
   }
 
   async deleteFile(id) {
     if (IS_TAURI) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("delete_file", { id });
-        this.files = await invoke("list_files");
-      } catch (e) {
-        console.error("Delete failed:", e);
-      }
-    } else {
-      this.files = this.files.filter((f) => f.id !== id);
-      this._saveFilesLocal();
-    }
-
+      try { await tauriInvoke("delete_file", { id }); this.files = await tauriInvoke("list_files"); }
+      catch (e) { console.error("Delete failed:", e); }
+    } else { this.files = this.files.filter((f) => f.id !== id); this._saveFilesLocal(); }
     if (this.currentFileId === id) {
-      if (this.files.length > 0) {
-        await this.openFile(this.files[0].id);
-      } else {
-        await this.newFile();
-      }
+      if (this.files.length > 0) await this.openFile(this.files[0].id);
+      else await this.newFile();
     }
     this.emit("files-changed");
   }
 
   async renameFile(id, newName) {
     if (IS_TAURI) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("rename_file", { id, name: newName });
-        this.files = await invoke("list_files");
-      } catch (e) {
-        console.error("Rename failed:", e);
-      }
+      try { await tauriInvoke("rename_file", { id, name: newName }); this.files = await tauriInvoke("list_files"); }
+      catch (e) { console.error("Rename failed:", e); }
     } else {
       const file = this.files.find((f) => f.id === id);
-      if (file) {
-        file.name = newName;
-        this._saveFilesLocal();
-      }
+      if (file) { file.name = newName; this._saveFilesLocal(); }
     }
     this.emit("files-changed");
   }
@@ -303,27 +516,18 @@ export class AppState {
   async duplicateFile(id) {
     if (IS_TAURI) {
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const source = await invoke("load_file", { id });
-        const newFile = await invoke("create_file");
-        await invoke("save_file", { id: newFile.id, content: source.content });
-        this.files = await invoke("list_files");
+        const source = await tauriInvoke("load_file", { id });
+        const newFile = await tauriInvoke("create_file");
+        await tauriInvoke("save_file", { id: newFile.id, content: source.content });
+        this.files = await tauriInvoke("list_files");
         this.emit("files-changed");
         return newFile.id;
-      } catch (e) {
-        console.error("Duplicate failed:", e);
-      }
+      } catch (e) { console.error("Duplicate failed:", e); }
     } else {
       const source = this.files.find((f) => f.id === id);
       if (source) {
         const newId = crypto.randomUUID();
-        const file = {
-          id: newId,
-          name: source.name + " copy",
-          content: source.content,
-          modified: Math.floor(Date.now() / 1000),
-        };
-        this.files.unshift(file);
+        this.files.unshift({ id: newId, name: source.name + " copy", content: source.content, modified: Math.floor(Date.now() / 1000) });
         this._saveFilesLocal();
         this.emit("files-changed");
         return newId;
@@ -334,15 +538,9 @@ export class AppState {
   async updateSettings(partial) {
     Object.assign(this.settings, partial);
     if (IS_TAURI) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("save_settings", { settings: this.settings });
-      } catch (e) {
-        console.error("Settings save failed:", e);
-      }
-    } else {
-      localStorage.setItem("hush_settings", JSON.stringify(this.settings));
-    }
+      try { await tauriInvoke("save_settings", { settings: this.settings }); }
+      catch (e) { console.error("Settings save failed:", e); }
+    } else { localStorage.setItem("hush_settings", JSON.stringify(this.settings)); }
     this.emit("settings-changed");
   }
 

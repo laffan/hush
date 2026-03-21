@@ -12,6 +12,14 @@ main.js          ←──IPC──→ lib.rs (commands)
 ├── sidebar.js             └── files.rs
 ├── state.js
 ├── tauri-bridge.js
+├── files-panel.js
+├── project-view.js
+├── sortable-list/
+│   ├── sortable-list.js
+│   ├── rendering.js
+│   ├── drag-drop.js
+│   ├── keyboard-nav.js
+│   └── utils.js
 ├── settings-ui.js
 ├── settings-window.js
 ├── themes.js
@@ -42,7 +50,11 @@ Both are built by Vite as separate Rollup inputs.
 
 Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `toggle-files-panel`.
 
-On Tauri, state loads from the Rust backend via `invoke("get_settings")` and `invoke("list_files")`. In the browser (dev without Tauri), it falls back to localStorage.
+On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invoke("list_files")`, and `invoke("get_file_tree")`. In the browser (dev without Tauri), it falls back to localStorage.
+
+**File tree state:** `AppState.fileTree` holds the nested tree of documents, folders, and projects. Each node has `{ id, type, name, fileId?, children[] }`. The tree is persisted via `file_tree.json` (backend) or `localStorage` (web). Methods: `createFolder()`, `createProject()`, `deleteTreeNode()`, `renameTreeNode()`, `duplicateTreeNode()`, `saveFileTree()`.
+
+**Project state:** When a project is selected (`currentProjectId` is set), the editor shows all documents in the project joined by separator markers. `projectDocIds` tracks the ordered document file IDs. `openProject()` loads and concatenates content; `saveProjectContent()` splits on separators and saves each part back to its file.
 
 ### Editor (`editor.js`)
 
@@ -69,15 +81,44 @@ The sidebar is a fixed 50px column on the left edge with icon buttons. It's hidd
 
 **Buttons (top to bottom):**
 - New file — creates a file and closes any open panel
-- Files — opens the file list panel
+- Files — opens the file tree panel
 - Styles — opens the styles panel
 - Ratchet mode — shows a duration dropdown (5–30 min), toggles off if active
 - Private mode — toggles private mode
 - Typewriter mode — toggles typewriter mode
 - Save location — opens the autosave/Obsidian panel
-- Export — exports the current file as `.md` via native save dialog
+- Export — exports the current file/project as `.md` via native save dialog. For projects, separator markers are replaced with `---` for a clean export.
 
-Panels (file list, styles, autosave settings) render into `#panel-overlay`, a fixed div to the right of the sidebar. The panel layout is responsive: when the window is wide enough (sidebar + panel ≤ available padding), the panel insets beside the content; otherwise it overlays as a modal.
+Panels (file tree, styles, autosave settings) render into `#panel-overlay`, a fixed div to the right of the sidebar. The panel layout is responsive: when the window is wide enough (sidebar + panel ≤ available padding), the panel insets beside the content; otherwise it overlays as a modal.
+
+### Files Panel (`files-panel.js`)
+
+Replaces the former flat file list with a nested tree view supporting three node types:
+
+- **Documents** (portrait rectangle icon) — Markdown files, same as before. Click to open in editor.
+- **Folders** (circle icon) — Containers for organizing documents, projects, and other folders. Drag-and-drop to reorder. Deleting shows a confirmation modal listing all contents.
+- **Projects** (triangle icon) — Opinionated folders with ordered contents. Click to open in the editor, which shows all child documents as a single document with dashed separators between them. The project tracks document ordering. Export treats the project as one file.
+
+The panel has three "New" buttons (Doc, Folder, Project) at the top. All three types share the same hover menu (rename, duplicate, delete). The tree is rendered via the `SortableList` component, enabling drag-and-drop reordering and nesting.
+
+### Sortable List (`sortable-list/`)
+
+A drag-and-drop nested list engine adapted from [ratchet-list-sort](https://github.com/laffan/ratchet-list-sort) and broken into sub-modules:
+
+- **`sortable-list.js`** — Main `SortableList` class. Constructor accepts `data`, `renderItem`, `canNest`, `onChange`, `onClick` and other config. Public API: `setData()`, `getData()`, `destroy()`, `render()`.
+- **`rendering.js`** — Recursive DOM rendering. Builds `<li>` elements with fold arrows, item labels, and nested `<ul>` children.
+- **`drag-drop.js`** — Pointer event handlers. Implements hold-to-drag (200ms delay), ghost element, hysteresis-based drop zone detection (before/inside/after), auto-expand of collapsed containers, and parent highlighting.
+- **`keyboard-nav.js`** — Arrow key selection, M to enter/confirm move mode, Q to cancel. Collapse/expand with Left/Right.
+- **`utils.js`** — Path parsing, comparison, ancestor checks, deep clone, tree traversal.
+
+### Project View (`project-view.js`)
+
+CodeMirror 6 plugin for project mode. When `state.currentProjectId` is set:
+
+- **`createProjectViewPlugin`** — `ViewPlugin` that finds `---hush-separator---` lines and replaces them with a `SeparatorWidget` (a non-editable dashed horizontal line).
+- **`createSeparatorFilter`** — `EditorState.transactionFilter` that blocks any edit that touches a separator line, preventing users from deleting or modifying separators.
+
+Footnotes remain at the bottom of their respective sections (above the separator), preserving per-document footnote isolation.
 
 ### Styles (`sidebar.js`, `main.js`)
 
@@ -151,7 +192,7 @@ Wraps the [thememirror](https://github.com/vadimdemedes/thememirror) library. Ex
 Defines the Tauri app setup:
 
 - **AppState** — `Mutex<AppSettings>` + `Mutex<FileManager>`, managed by Tauri's state system
-- **Tauri commands** — `get_settings`, `save_settings`, `list_files`, `load_file`, `save_file`, `create_file`, `delete_file`, `rename_file`, `check_obsidian_vault`, `set_always_on_top`, `set_activation_policy`
+- **Tauri commands** — `get_settings`, `save_settings`, `list_files`, `load_file`, `save_file`, `create_file`, `delete_file`, `rename_file`, `get_file_tree`, `save_file_tree`, `create_folder`, `create_project`, `load_project_content`, `check_obsidian_vault`, `set_always_on_top`, `set_activation_policy`
 - **System tray** — Menu with Toggle Editor, Fullscreen, Settings, Quit. Tray icon click toggles window visibility.
 - **macOS activation policy** — Applied on startup based on the `visibility` setting. `Regular` shows in dock, `Accessory` hides from dock.
 - **Window close behavior** — Main window hides on close (prevented via `CloseRequested`); settings window closes normally.
@@ -178,6 +219,12 @@ struct Style {
 ### `files.rs`
 
 `FileManager` stores files as individual JSON files (`{uuid}.json`) in `{data_dir}/files/`. Each file contains id, name, content, and modified timestamp.
+
+**File tree:** The tree structure (folders, projects, documents) is stored in `{data_dir}/file_tree.json`. Each `TreeNode` has `{ id, name, type, fileId?, children[] }` where `type` is `"document"`, `"folder"`, or `"project"`. On first load, if no tree exists, it auto-migrates from the flat file list.
+
+**Tree operations:** `get_file_tree()`, `save_file_tree()`, `create_folder()`, `create_project()`. Tree helpers handle recursive insertion, lookup, and document collection.
+
+**Project content:** `load_project_content()` finds a project node by ID, collects all descendant document file IDs in order, loads each, and returns them as an ordered `Vec<FileEntry>`.
 
 `save_to_external()` writes a `.md` file to a user-chosen folder and tracks the ID mapping in a `.hush/` subdirectory. This enables Obsidian vault integration.
 
@@ -211,6 +258,7 @@ Vite builds to `dist/` (esbuild minification, ES2021 target, Safari 15+). Tauri 
 ```
 {data_dir}/com.hush.app/
 ├── settings.json          # App settings (including styles array)
+├── file_tree.json         # Tree structure (folders, projects, documents)
 └── files/
     ├── {uuid}.json        # File entries (id, name, content, modified)
     └── .hush/             # External sync ID mappings

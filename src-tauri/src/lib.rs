@@ -30,6 +30,19 @@ pub struct FileEntry {
     pub modified: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeNode {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub node_type: String, // "document" | "folder" | "project"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<String>, // only for documents — points to files/{uuid}.json
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<TreeNode>,
+}
+
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> AppSettings {
     state.settings.lock().unwrap().clone()
@@ -78,6 +91,31 @@ fn delete_file(state: State<AppState>, id: String) -> Result<(), String> {
 #[tauri::command]
 fn rename_file(state: State<AppState>, id: String, name: String) -> Result<(), String> {
     state.file_manager.lock().unwrap().rename_file(&id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_file_tree(state: State<AppState>) -> Result<Vec<TreeNode>, String> {
+    state.file_manager.lock().unwrap().get_file_tree().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_file_tree(state: State<AppState>, tree: Vec<TreeNode>) -> Result<(), String> {
+    state.file_manager.lock().unwrap().save_file_tree(&tree).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_folder(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<TreeNode, String> {
+    state.file_manager.lock().unwrap().create_folder(&name, parent_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_project(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<TreeNode, String> {
+    state.file_manager.lock().unwrap().create_project(&name, parent_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_project_content(state: State<AppState>, project_id: String) -> Result<Vec<FileEntry>, String> {
+    state.file_manager.lock().unwrap().load_project_content(&project_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -272,6 +310,11 @@ pub fn run() {
             create_file,
             delete_file,
             rename_file,
+            get_file_tree,
+            save_file_tree,
+            create_folder,
+            create_project,
+            load_project_content,
             check_obsidian_vault,
             #[cfg(desktop)]
             set_always_on_top,
