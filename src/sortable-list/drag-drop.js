@@ -136,11 +136,19 @@ function updateDropTarget(clientX, clientY) {
     const textHeight =
       parseFloat(cs.fontSize) * this.config.lineHeightMultiplier +
       parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    const boundary = Math.max(this.config.dropZoneBoundaryMin, textHeight * this.config.dropZoneBoundaryFraction);
+    const isNestable = hoveredItem.dataset.canNest === "true";
 
-    let zone = "before";
-    if (offsetY > textHeight - boundary) zone = "after";
-    else if (offsetY >= boundary) zone = "inside";
+    let zone;
+    if (isNestable) {
+      // Nestable items: small before/after strips (5px), rest is "inside"
+      const edge = Math.min(5, textHeight * 0.15);
+      if (offsetY < edge) zone = "before";
+      else if (offsetY > textHeight - edge) zone = "after";
+      else zone = "inside";
+    } else {
+      // Non-nestable items: no inside zone, just before/after split at midpoint
+      zone = offsetY < textHeight / 2 ? "before" : "after";
+    }
 
     if (zone === "inside") {
       if (hoveredItem.dataset.canNest !== "true") { clearDropTarget.call(this); return; }
