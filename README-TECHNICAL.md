@@ -25,7 +25,7 @@ The frontend and backend communicate via Tauri's `invoke` IPC for commands (sett
 
 ## Development Rules
 
-There is a STRICT rule that no code file may be longer than 700 lines.  Always begin and end each session confirm that this is the case and refactoring where necessessary to make sure it stays the case. 
+There is a STRICT rule that no code file may be longer than 700 lines.  
 
 ## Frontend
 
@@ -278,5 +278,3 @@ Tauri plugins used:
 - `tauri-plugin-fs` — File system read/write
 - `tauri-plugin-shell` — Shell command execution
 
-## One last thing
-Remember the development rules. 700 lines.
