@@ -526,11 +526,16 @@ function updateColumnResizers(state) {
       scroller.style.paddingRight = rightPad + "px";
     }
 
+    // Tell CodeMirror to re-measure so all lines reflow correctly
+    if (state.editor && state.editor.view) {
+      state.editor.view.requestMeasure();
+    }
+
     if (showResizers) {
       leftResizer.style.display = "";
       rightResizer.style.display = "";
-      leftResizer.style.left = leftPad + "px";
-      rightResizer.style.left = (w - rightPad) + "px";
+      leftResizer.style.left = (leftPad - 10) + "px";
+      rightResizer.style.left = (w - rightPad + 10) + "px";
     } else {
       leftResizer.style.display = "none";
       rightResizer.style.display = "none";

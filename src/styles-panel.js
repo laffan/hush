@@ -10,8 +10,7 @@ export function renderStylesPanel(state) {
   const styles = state.settings.styles || [];
   const activeId = state.settings.activeStyleId;
 
-  let html = `<div class="panel-title">Styles</div>`;
-  html += `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
+  let html = `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
 
   if (editingStyleId === "new") {
     html += renderStyleEditorInline(state);

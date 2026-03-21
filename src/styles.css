@@ -1354,6 +1354,7 @@ body.sl-dragging {
 
 .tree-item-row.active {
   font-weight: 600;
+  text-decoration: underline;
 }
 
 .tree-item-name {

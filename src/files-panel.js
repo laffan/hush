@@ -35,12 +35,6 @@ function actionButtons(nodeId) {
 export function createFilesPanel(container, state, hidePanel) {
   container.innerHTML = "";
 
-  // Header
-  const header = document.createElement("div");
-  header.className = "panel-title";
-  header.textContent = "Files";
-  container.appendChild(header);
-
   // Create buttons row
   const btnRow = document.createElement("div");
   btnRow.className = "tree-create-btns";
@@ -106,6 +100,10 @@ export function createFilesPanel(container, state, hidePanel) {
     onChange: (newData) => {
       state.fileTree = newData;
       state.saveFileTree();
+      // If a project is open, refresh the editor to reflect new doc order
+      if (state.currentProjectId) {
+        state.openProject(state.currentProjectId);
+      }
     },
   });
 
