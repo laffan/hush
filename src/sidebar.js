@@ -133,6 +133,12 @@ export function createSidebar(container, state) {
     }
   });
 
+  state.on("file-opened", () => {
+    if (activePanel === "files") {
+      refreshFilesPanel(state);
+    }
+  });
+
   // Cmd+\ toggle support — force-show files (not toggle)
   state.on("show-files-panel", () => {
     activePanel = "files";

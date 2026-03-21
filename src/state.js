@@ -384,19 +384,31 @@ export class AppState {
   async openProject(projectId) {
     if (this.dirty) await this.saveCurrentFile();
     const node = this._findNode(this.fileTree, projectId);
+    console.log("[openProject] node:", node);
     if (!node || node.type !== "project") return;
     this.currentProjectId = projectId;
     this.currentFileId = null;
-    this.projectDocIds = this._collectDocumentIds(node.children);
+    this.projectDocIds = this._collectDocumentIds(node.children || []);
+    console.log("[openProject] projectDocIds:", this.projectDocIds);
 
-    let entries;
+    let ordered = [];
     if (IS_TAURI) {
-      try { entries = await tauriInvoke("load_project_content", { projectId }); }
-      catch (e) { console.error("Load project failed:", e); return; }
-    } else { entries = this.files; }
-    const ordered = this.projectDocIds.map((fid) => entries.find((e) => e.id === fid)).filter(Boolean);
+      for (const fid of this.projectDocIds) {
+        try { ordered.push(await tauriInvoke("load_file", { id: fid })); }
+        catch (e) { console.error("[openProject] Failed to load file:", fid, e); }
+      }
+    } else {
+      ordered = this.projectDocIds.map((fid) => this.files.find((e) => e.id === fid)).filter(Boolean);
+    }
+    console.log("[openProject] ordered count:", ordered.length, "docIds:", this.projectDocIds);
     const combined = ordered.map((e) => e.content).join("\n\n---hush-separator---\n\n");
-    if (this.editor) this.editor.setContent(combined);
+    console.log("[openProject] combined length:", combined.length, "preview:", combined.slice(0, 200));
+    if (this.editor) {
+      this.editor.setContent(combined);
+      console.log("[openProject] setContent called");
+    } else {
+      console.log("[openProject] NO EDITOR");
+    }
     this.emit("file-opened");
   }
 
@@ -433,18 +445,20 @@ export class AppState {
       const file = this.files.find((f) => f.id === this.currentFileId);
       if (file) { file.content = content; file.modified = Math.floor(Date.now() / 1000); file.name = this._deriveName(content); this._saveFilesLocal(); }
     }
-    this._updateTreeNodeNameByFileId(this.currentFileId);
-    this.emit("files-changed");
+    if (this._updateTreeNodeNameByFileId(this.currentFileId)) {
+      this.emit("files-changed");
+    }
   }
 
   _updateTreeNodeNameByFileId(fileId) {
     const file = this.files.find((f) => f.id === fileId);
-    if (!file) return;
+    if (!file) return false;
     const node = this._findNodeByFileId(this.fileTree, fileId);
-    if (node) {
+    if (node && node.name !== file.name) {
       node.name = file.name;
-      // Don't save tree on every autosave — too expensive
+      return true;
     }
+    return false;
   }
 
   _findNodeByFileId(nodes, fileId) {
