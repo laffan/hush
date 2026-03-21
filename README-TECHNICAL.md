@@ -73,7 +73,7 @@ The CodeMirror 6 instance is configured with:
 - **Typewriter mode** — locks cursor to a fixed screen position (default 60% from top). A draggable boundary line lets the user reposition. Extra padding is added so the first/last line can reach the boundary.
 - **Ratchet scroll** — pins the current (always last) line to vertical center (50%) of the window
 
-Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements are positioned at the column edges. When the sidebar panel is open in inset mode, the column re-centers within the remaining space.
+Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements are positioned 10px outside the column edges. After any padding change, `view.requestMeasure()` is called so CodeMirror reflows all lines. When the sidebar panel is open in inset mode, the column re-centers within the remaining space.
 
 ### Sidebar (`sidebar.js`)
 
@@ -99,7 +99,7 @@ Replaces the former flat file list with a nested tree view supporting three node
 - **Folders** (circle icon) — Containers for organizing documents, projects, and other folders. Drag-and-drop to reorder. Deleting shows a confirmation modal listing all contents.
 - **Projects** (triangle icon) — Opinionated folders with ordered contents. Click to open in the editor, which shows all child documents as a single document with dashed separators between them. The project tracks document ordering. Export treats the project as one file.
 
-The panel has three "New" buttons (Doc, Folder, Project) at the top. All three types share the same hover menu (rename, duplicate, delete). The tree is rendered via the `SortableList` component, enabling drag-and-drop reordering and nesting.
+The panel has three "New" buttons (Doc, Folder, Project) at the top. All three types share the same hover menu (rename, duplicate, delete). The active item is displayed bold and underlined. The tree is rendered via the `SortableList` component, enabling drag-and-drop reordering and nesting. Reordering documents within a project refreshes the editor to reflect the new order.
 
 ### Sortable List (`sortable-list/`)
 
@@ -107,7 +107,7 @@ A drag-and-drop nested list engine adapted from [ratchet-list-sort](https://gith
 
 - **`sortable-list.js`** — Main `SortableList` class. Constructor accepts `data`, `renderItem`, `canNest`, `onChange`, `onClick` and other config. Public API: `setData()`, `getData()`, `destroy()`, `render()`.
 - **`rendering.js`** — Recursive DOM rendering. Builds `<li>` elements with fold arrows, item labels, and nested `<ul>` children.
-- **`drag-drop.js`** — Pointer event handlers. Implements hold-to-drag (200ms delay), ghost element, hysteresis-based drop zone detection (before/inside/after), auto-expand of collapsed containers, and parent highlighting.
+- **`drag-drop.js`** — Pointer event handlers. Implements hold-to-drag (200ms delay), ghost element, hysteresis-based drop zone detection (before/inside/after), auto-expand of collapsed containers, and parent highlighting. Clicks on interactive elements (buttons, inputs, links) inside items do not trigger `onClick`.
 - **`keyboard-nav.js`** — Arrow key selection, M to enter/confirm move mode, Q to cancel. Collapse/expand with Left/Right.
 - **`utils.js`** — Path parsing, comparison, ancestor checks, deep clone, tree traversal.
 
@@ -115,7 +115,7 @@ A drag-and-drop nested list engine adapted from [ratchet-list-sort](https://gith
 
 CodeMirror 6 plugin for project mode. When `state.currentProjectId` is set:
 
-- **`createProjectViewPlugin`** — `ViewPlugin` that finds `---hush-separator---` lines and replaces them with a `SeparatorWidget` (a non-editable dashed horizontal line).
+- **`createProjectViewField`** — `StateField` that finds `---hush-separator---` lines and replaces them with a `SeparatorWidget` (a non-editable dashed horizontal line). Uses `EditorView.decorations.from(field)` because block-level decorations require a `StateField`, not a `ViewPlugin`.
 - **`createSeparatorFilter`** — `EditorState.transactionFilter` that blocks any edit that touches a separator line, preventing users from deleting or modifying separators.
 
 Footnotes remain at the bottom of their respective sections (above the separator), preserving per-document footnote isolation.
