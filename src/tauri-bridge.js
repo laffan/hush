@@ -18,7 +18,7 @@ export async function setupTauriIntegration(state) {
 
     // Settings menu item opens settings window
     await listen("open-settings", () => {
-      openSettingsWindow();
+      openSettingsWindow(state);
     });
 
     async function registerAllShortcuts() {

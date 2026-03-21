@@ -1,13 +1,26 @@
 /**
- * Settings helpers — opens settings in a separate native window
+ * Settings helpers — opens settings in a separate native window (desktop)
+ * or as a modal overlay (iOS/iPadOS).
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-export async function openSettingsWindow() {
+/** Detect iOS/iPadOS (includes iPad reporting as "MacIntel" with touch) */
+export function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+let settingsModal = null;
+
+export async function openSettingsWindow(state) {
+  if (isIOS()) {
+    openSettingsModal(state);
+    return;
+  }
+
   if (IS_TAURI) {
     const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-    // Check if already open
     const existing = await WebviewWindow.getByLabel("settings");
     if (existing) {
       await existing.setFocus();
@@ -23,9 +36,65 @@ export async function openSettingsWindow() {
       decorations: true,
     });
   } else {
-    // Browser fallback: open in new tab
     window.open("/settings.html", "_blank");
   }
+}
+
+async function openSettingsModal(state) {
+  // If already open, focus it
+  if (settingsModal) {
+    settingsModal.remove();
+    settingsModal = null;
+    return;
+  }
+
+  // Load settings-window CSS if not already loaded
+  if (!document.getElementById("settings-modal-css")) {
+    const link = document.createElement("link");
+    link.id = "settings-modal-css";
+    link.rel = "stylesheet";
+    link.href = "/src/settings-window.css";
+    document.head.appendChild(link);
+  }
+
+  // Create modal overlay
+  const modal = document.createElement("div");
+  modal.className = "settings-modal-backdrop";
+  modal.innerHTML = `
+    <div class="settings-modal">
+      <button class="settings-modal-close">\u00d7</button>
+      <div class="settings-modal-root"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  settingsModal = modal;
+
+  // Close button
+  modal.querySelector(".settings-modal-close").addEventListener("click", () => {
+    modal.remove();
+    settingsModal = null;
+  });
+
+  // Close on backdrop click
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.remove();
+      settingsModal = null;
+    }
+  });
+
+  // Render settings into the modal root
+  const { initSettingsInto } = await import("./settings-window.js");
+  const root = modal.querySelector(".settings-modal-root");
+
+  await initSettingsInto(root, (newSettings) => {
+    // Directly apply settings to state (same window, no cross-window emit)
+    if (state) {
+      Object.assign(state.settings, newSettings);
+      state.emit("settings-changed");
+      state.emit("theme-changed");
+    }
+  });
 }
 
 export function applyAppearance(appearance) {

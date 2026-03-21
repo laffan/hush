@@ -2,8 +2,10 @@
  * Sidebar UI — icons, panels, mode toggles (LEFT side)
  */
 import { themeList } from "./themes.js";
+import { isIOS, openSettingsWindow } from "./settings-ui.js";
 
 export function createSidebar(container, state) {
+  const settingsBtn = isIOS() ? btn("settings", "Settings", icons.settings) : "";
   container.innerHTML = `
     <div class="sidebar-group sidebar-top">
       ${btn("new-file", "New file", icons.newFile)}
@@ -18,6 +20,7 @@ export function createSidebar(container, state) {
     <div class="sidebar-group sidebar-bottom">
       ${btn("autosave", "Save location", icons.folder)}
       ${btn("export", "Export", icons.export)}
+      ${settingsBtn}
     </div>
   `;
 
@@ -92,6 +95,15 @@ export function createSidebar(container, state) {
     await exportCurrentFile(state);
   });
 
+  // Settings button (iOS only)
+  const settingsBtnEl = container.querySelector('[data-action="settings"]');
+  if (settingsBtnEl) {
+    settingsBtnEl.addEventListener("click", () => {
+      hidePanel();
+      openSettingsWindow(state);
+    });
+  }
+
   function updateActiveStates() {
     setActive("ratchet", state.ratchetMode);
     setActive("private", state.privateMode);
@@ -165,6 +177,9 @@ const icons = {
   export: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
     <polyline points="7 10 12 15 17 10"/>
     <line x1="12" y1="15" x2="12" y2="3"/>`,
+
+  settings: `<circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
 
   styles: `<polygon points="2,6 11,12 2,18"/>
     <polygon points="22,6 13,12 22,18"/>

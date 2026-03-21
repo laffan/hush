@@ -10,6 +10,8 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 let settings = {};
 let activeTab = "general";
+let settingsRootEl = null;
+let onSaveCallback = null;
 
 // Shortcuts organized by category
 const shortcutCategories = [
@@ -58,7 +60,15 @@ const shortcutCategories = [
 // Flat list for conflict detection
 const shortcutDefs = shortcutCategories.flatMap(cat => cat.shortcuts);
 
-async function init() {
+/**
+ * Initialize the settings UI into a given root element.
+ * Called automatically when #settings-root exists (standalone window),
+ * or manually via renderSettingsModal() for the iOS modal.
+ */
+export async function initSettingsInto(rootEl, saveCallback) {
+  settingsRootEl = rootEl;
+  onSaveCallback = saveCallback || null;
+
   if (IS_TAURI) {
     const { invoke } = await import("@tauri-apps/api/core");
     settings = await invoke("get_settings");
@@ -104,7 +114,9 @@ async function init() {
 }
 
 function render() {
-  document.getElementById("settings-root").innerHTML = `
+  const root = settingsRootEl || document.getElementById("settings-root");
+  if (!root) return;
+  root.innerHTML = `
     <div class="settings-layout">
       <div class="settings-tabs">
         ${tabBtn("general", "General", tabIcons.general)}
@@ -591,10 +603,16 @@ async function saveSetting(key, value) {
   if (IS_TAURI) {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("save_settings", { settings });
-    const { emit } = await import("@tauri-apps/api/event");
-    await emit("settings-updated", settings);
+    // In modal mode, use the callback instead of cross-window emit
+    if (onSaveCallback) {
+      onSaveCallback(settings);
+    } else {
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit("settings-updated", settings);
+    }
   } else {
     localStorage.setItem("hush_settings", JSON.stringify(settings));
+    if (onSaveCallback) onSaveCallback(settings);
   }
 }
 
@@ -609,4 +627,9 @@ function escAttr(str) {
   return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
+// Auto-init only when running in the standalone settings window
+async function init() {
+  const root = document.getElementById("settings-root");
+  if (root) await initSettingsInto(root);
+}
 init().catch(console.error);

@@ -2,7 +2,7 @@ import { createEditor } from "./editor.js";
 import { createSidebar } from "./sidebar.js";
 import { AppState } from "./state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
-import { applyAppearance } from "./settings-ui.js";
+import { applyAppearance, isIOS } from "./settings-ui.js";
 import { getThemeById } from "./themes.js";
 
 const fontFallbacks = {
@@ -157,6 +157,11 @@ function applyActiveStyle(state) {
 async function init() {
   const state = new AppState();
   await state.init();
+
+  // On iOS, set html background to prevent black bars behind the webview
+  if (isIOS()) {
+    document.documentElement.classList.add("ios");
+  }
 
   // Apply appearance and CSS vars
   applyAppearance(state.settings.appearance || "dark");

@@ -162,7 +162,7 @@ export function createEditor(container, state) {
   // Global keyboard shortcuts
   const globalKeymap = Prec.highest(
     keymap.of([
-      { key: "Mod-,", run: () => { openSettingsWindow(); return true; } },
+      { key: "Mod-,", run: () => { openSettingsWindow(state); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
       // Cmd+\ — toggle sidebar (show/hide files panel)
       { key: "Mod-\\", run: () => {
