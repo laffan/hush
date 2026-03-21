@@ -2,7 +2,7 @@
  * Sortable list drag & drop — pointer event handlers, ghost element, drop targets
  */
 
-import { parsePath, pathsEqual, isAncestorPath, getChildrenAtPath } from "./utils.js";
+import { parsePath, pathsEqual, isAncestorPath, getChildrenAtPath, getItemAtPath } from "./utils.js";
 
 export function initDragHandlers(instance) {
   instance._onPointerDown = onPointerDown.bind(instance);
@@ -316,7 +316,7 @@ function finishDrag() {
     return;
   }
 
-  const { getChildren, setChildren } = this.config;
+  const { getChildren, setChildren, getId } = this.config;
   const sourceParent = getChildrenAtPath(this.state.items, originParentPath, getChildren, setChildren);
   const destination = getChildrenAtPath(this.state.items, dropTarget.parentPath, getChildren, setChildren);
   const [moved] = sourceParent.splice(originIndex, 1);
@@ -327,6 +327,14 @@ function finishDrag() {
   }
   const bounded = Math.max(0, Math.min(adjustedIndex, destination.length));
   destination.splice(bounded, 0, moved);
+
+  // Ensure the drop target container is expanded so the dropped item is visible
+  if (dropTarget.parentPath.length > 0) {
+    const parentItem = getItemAtPath(this.state.items, dropTarget.parentPath, getChildren);
+    if (parentItem) {
+      this.state.collapsedIds.delete(getId(parentItem));
+    }
+  }
 
   this.dragSession = null;
   this.render();

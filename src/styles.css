@@ -1252,8 +1252,7 @@ html.ios, html.ios body {
 
 .sl-fold-empty {
   visibility: hidden;
-  width: 20px;
-  min-width: 20px;
+  pointer-events: none;
 }
 
 .sl-drag-ghost {

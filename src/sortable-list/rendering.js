@@ -33,26 +33,22 @@ export function renderList(items, container, path, ctx) {
     const contentWrapper = document.createElement("div");
     contentWrapper.className = "sl-item-content";
 
-    // Fold arrow for nestable items (even when empty, to show they're containers)
-    if (isNestable) {
-      const foldArrow = document.createElement("button");
-      foldArrow.className = "sl-fold-arrow";
-      foldArrow.type = "button";
-      if (!hasChildren) {
-        foldArrow.textContent = "";
-        foldArrow.classList.add("sl-fold-empty");
-      } else {
-        foldArrow.textContent = isCollapsed ? "\u25B6\uFE0E" : "\u25BC";
-      }
+    // Fold arrow — all items get consistent spacing; only show arrow when there are children
+    const foldArrow = document.createElement("button");
+    foldArrow.className = "sl-fold-arrow";
+    foldArrow.type = "button";
+    if (hasChildren) {
+      foldArrow.textContent = isCollapsed ? "\u25B6\uFE0E" : "\u25BC";
       foldArrow.dataset.itemId = itemId;
       foldArrow.setAttribute("aria-label", isCollapsed ? "Expand" : "Collapse");
       foldArrow.addEventListener("click", onFoldToggle);
-      contentWrapper.appendChild(foldArrow);
-      if (hasChildren) {
-        li.classList.add("has-children");
-        if (isCollapsed) li.classList.add("collapsed");
-      }
+      li.classList.add("has-children");
+      if (isCollapsed) li.classList.add("collapsed");
+    } else {
+      foldArrow.classList.add("sl-fold-empty");
+      foldArrow.tabIndex = -1;
     }
+    contentWrapper.appendChild(foldArrow);
 
     // Render item content via callback
     const content = config.renderItem(item, {
