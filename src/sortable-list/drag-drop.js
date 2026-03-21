@@ -82,10 +82,12 @@ function startDrag(target, event, options = {}) {
   ghost.style.transform = `translate3d(${event.clientX - offsetX}px, ${event.clientY - offsetY}px, 0)`;
   document.body.appendChild(ghost);
 
+  const draggedItem = this._getItemAtPath(originPath);
+
   this.dragSession = {
     pointerId: event.pointerId,
     originElement: target, originPath, originParentPath, originIndex,
-    offsetX, offsetY, ghost, dropTarget: null,
+    offsetX, offsetY, ghost, dropTarget: null, draggedItem,
     lastDropUpdateX: event.clientX, lastDropUpdateY: event.clientY,
     autoExpandedIds: new Set(), highlightedParent: null,
   };
@@ -143,6 +145,12 @@ function updateDropTarget(clientX, clientY) {
     if (zone === "inside") {
       if (hoveredItem.dataset.canNest !== "true") { clearDropTarget.call(this); return; }
       if (isAncestorPath(this.dragSession.originPath, itemPath)) { clearDropTarget.call(this); return; }
+
+      // Check canDrop: is this dragged item allowed inside this target?
+      const targetItem = this._getItemAtPath(itemPath);
+      if (targetItem && this.dragSession.draggedItem && !this.config.canDrop(this.dragSession.draggedItem, targetItem)) {
+        clearDropTarget.call(this); return;
+      }
 
       const item = this._getItemAtPath(itemPath);
       if (item) {

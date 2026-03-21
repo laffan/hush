@@ -68,6 +68,14 @@ export function createFilesPanel(container, state, hidePanel) {
     getChildren: (item) => item.children || [],
     setChildren: (item, children) => { item.children = children; },
     canNest: (item) => item.type === "folder" || item.type === "project",
+    canDrop: (draggedItem, targetItem) => {
+      // Folders accept anything
+      if (targetItem.type === "folder") return true;
+      // Projects accept documents and projects only (not folders)
+      if (targetItem.type === "project") return draggedItem.type === "document" || draggedItem.type === "project";
+      // Documents accept nothing
+      return false;
+    },
     enableKeyboard: false, // Conflicts with editor; use drag only
     dragStartDelay: 180,
 

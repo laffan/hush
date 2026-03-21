@@ -15,6 +15,7 @@ export function renderList(items, container, path, ctx) {
     const itemId = config.getId(item);
     const children = config.getChildren(item);
     const hasChildren = children && children.length > 0;
+    const isNestable = config.canNest(item);
     const isCollapsed = state.collapsedIds.has(itemId);
 
     const li = document.createElement("li");
@@ -22,7 +23,7 @@ export function renderList(items, container, path, ctx) {
     li.dataset.id = itemId;
     li.dataset.path = itemPath.join("/");
     li.dataset.depth = String(path.length);
-    li.dataset.canNest = String(config.canNest(item));
+    li.dataset.canNest = String(isNestable);
 
     if (state.selectedPath && pathsEqual(itemPath, state.selectedPath)) {
       li.classList.add("selected");
@@ -32,18 +33,25 @@ export function renderList(items, container, path, ctx) {
     const contentWrapper = document.createElement("div");
     contentWrapper.className = "sl-item-content";
 
-    // Fold arrow for expandable items
-    if (hasChildren) {
+    // Fold arrow for nestable items (even when empty, to show they're containers)
+    if (isNestable) {
       const foldArrow = document.createElement("button");
       foldArrow.className = "sl-fold-arrow";
       foldArrow.type = "button";
-      foldArrow.textContent = isCollapsed ? "\u25B6\uFE0E" : "\u25BC";
+      if (!hasChildren) {
+        foldArrow.textContent = "";
+        foldArrow.classList.add("sl-fold-empty");
+      } else {
+        foldArrow.textContent = isCollapsed ? "\u25B6\uFE0E" : "\u25BC";
+      }
       foldArrow.dataset.itemId = itemId;
       foldArrow.setAttribute("aria-label", isCollapsed ? "Expand" : "Collapse");
       foldArrow.addEventListener("click", onFoldToggle);
       contentWrapper.appendChild(foldArrow);
-      li.classList.add("has-children");
-      if (isCollapsed) li.classList.add("collapsed");
+      if (hasChildren) {
+        li.classList.add("has-children");
+        if (isCollapsed) li.classList.add("collapsed");
+      }
     }
 
     // Render item content via callback

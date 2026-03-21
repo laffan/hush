@@ -19,6 +19,7 @@ export class SortableList {
       setChildren: options.setChildren || ((item, children) => { item.children = children; }),
       renderItem: options.renderItem || ((item) => String(item.label || item.id || "")),
       canNest: options.canNest || (() => true),
+      canDrop: options.canDrop || (() => true),
       hysteresisThreshold: options.hysteresisThreshold ?? 16,
       dropZoneBoundaryMin: options.dropZoneBoundaryMin ?? 12,
       dropZoneBoundaryFraction: options.dropZoneBoundaryFraction ?? 0.25,

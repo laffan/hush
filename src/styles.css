@@ -1250,6 +1250,12 @@ html.ios, html.ios body {
   opacity: 1;
 }
 
+.sl-fold-empty {
+  visibility: hidden;
+  width: 20px;
+  min-width: 20px;
+}
+
 .sl-drag-ghost {
   position: fixed;
   top: 0;
@@ -1307,7 +1313,7 @@ html.ios, html.ios body {
   justify-content: center;
   gap: 4px;
   padding: 6px 4px;
-  border: 1px solid var(--panel-border);
+  border: none;
   background: transparent;
   color: var(--fg);
   border-radius: 5px;
