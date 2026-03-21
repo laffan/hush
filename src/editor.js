@@ -13,7 +13,7 @@ import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
 import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment } from "./formatting.js";
-import { createFootnotePlugin } from "./footnotes.js";
+import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -194,6 +194,7 @@ export function createEditor(container, state) {
       { key: "Mod-i", run: (view) => toggleItalic(view) },
       { key: "Mod-=", run: (view) => toggleHighlight(view) },
       { key: "Mod-/", run: (view) => toggleComment(view) },
+      { key: "Mod-Shift-m", run: (view) => insertFootnote(view) },
       { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
       { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },
       { key: "Mod-n", run: () => { state.newFile(); return true; } },

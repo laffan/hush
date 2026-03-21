@@ -61,12 +61,18 @@ export class AppState {
       shortcutItalic: "Mod+I",
       shortcutHighlight: "Mod+=",
       shortcutComment: "Mod+/",
+      shortcutInsertFootnote: "Mod+Shift+M",
 
       // D.R.Y. highlighting
       dryRange: "paragraph",
       dryStopwords: [],
       dryIgnoreProperNouns: false,
       dryIncludeBaseWords: false,
+
+      // Footnotes
+      footnoteFontSize: 100,
+      footnoteFontFamily: "sans-serif",
+      footnoteUseColors: true,
 
       // Styles
       styles: [],

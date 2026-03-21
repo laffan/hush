@@ -1085,3 +1085,13 @@ html, body {
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
+
+/* Underline style for text-ID footnotes */
+.footnote-underline {
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.footnote-underline:hover {
+  opacity: 0.8;
+}

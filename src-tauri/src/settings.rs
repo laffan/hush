@@ -95,6 +95,8 @@ pub struct AppSettings {
     pub shortcut_highlight: String,
     #[serde(default = "default_shortcut_comment")]
     pub shortcut_comment: String,
+    #[serde(default = "default_shortcut_insert_footnote")]
+    pub shortcut_insert_footnote: String,
 
     // D.R.Y. highlighting
     #[serde(default = "default_dry_range")]
@@ -105,6 +107,14 @@ pub struct AppSettings {
     pub dry_ignore_proper_nouns: bool,
     #[serde(default)]
     pub dry_include_base_words: bool,
+
+    // Footnotes
+    #[serde(default = "default_footnote_font_size")]
+    pub footnote_font_size: u32,
+    #[serde(default = "default_footnote_font_family")]
+    pub footnote_font_family: String,
+    #[serde(default = "default_footnote_use_colors")]
+    pub footnote_use_colors: bool,
 
     // Styles
     #[serde(default)]
@@ -133,6 +143,9 @@ pub struct Style {
     pub color_overrides: std::collections::HashMap<String, String>,
 }
 
+fn default_footnote_font_size() -> u32 { 100 }
+fn default_footnote_font_family() -> String { "sans-serif".to_string() }
+fn default_footnote_use_colors() -> bool { true }
 fn default_dry_range() -> String { "paragraph".to_string() }
 fn default_dry_stopwords() -> Vec<String> {
     vec![
@@ -184,6 +197,7 @@ fn default_shortcut_bold() -> String { "Mod+B".to_string() }
 fn default_shortcut_italic() -> String { "Mod+I".to_string() }
 fn default_shortcut_highlight() -> String { "Mod+=".to_string() }
 fn default_shortcut_comment() -> String { "Mod+/".to_string() }
+fn default_shortcut_insert_footnote() -> String { "Mod+Shift+M".to_string() }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -225,10 +239,14 @@ impl Default for AppSettings {
             shortcut_italic: default_shortcut_italic(),
             shortcut_highlight: default_shortcut_highlight(),
             shortcut_comment: default_shortcut_comment(),
+            shortcut_insert_footnote: default_shortcut_insert_footnote(),
             dry_range: default_dry_range(),
             dry_stopwords: default_dry_stopwords(),
             dry_ignore_proper_nouns: false,
             dry_include_base_words: false,
+            footnote_font_size: default_footnote_font_size(),
+            footnote_font_family: default_footnote_font_family(),
+            footnote_use_colors: default_footnote_use_colors(),
             styles: Vec::new(),
             active_style_id: None,
             data_dir: PathBuf::new(),

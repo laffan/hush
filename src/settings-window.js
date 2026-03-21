@@ -50,6 +50,7 @@ const shortcutCategories = [
       { key: "shortcutItalic", label: "Italic" },
       { key: "shortcutHighlight", label: "Highlight" },
       { key: "shortcutComment", label: "Comment" },
+      { key: "shortcutInsertFootnote", label: "Insert footnote" },
     ],
   },
 ];
@@ -97,6 +98,7 @@ async function init() {
   if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";
   if (!settings.shortcutHighlight) settings.shortcutHighlight = "Mod+=";
   if (!settings.shortcutComment) settings.shortcutComment = "Mod+/";
+  if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
 
   render();
 }
@@ -215,6 +217,29 @@ function renderEditorTab() {
       <div class="settings-row">
         <label>Normalize header sizes</label>
         <input type="checkbox" id="setting-normalize-headers" ${s.normalizeHeaders ? "checked" : ""} />
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>Footnotes</h2>
+      <div class="settings-slider-row">
+        <label>Font size</label>
+        <div class="slider-group">
+          <input type="range" id="setting-footnote-font-size" min="50" max="150" step="5" value="${s.footnoteFontSize || 100}" />
+          <span class="slider-value">${s.footnoteFontSize || 100}%</span>
+        </div>
+      </div>
+      <div class="settings-row">
+        <label>Font family</label>
+        <select id="setting-footnote-font-family">
+          <option value="sans-serif" ${(s.footnoteFontFamily || "sans-serif") === "sans-serif" ? "selected" : ""}>Sans-serif</option>
+          <option value="serif" ${s.footnoteFontFamily === "serif" ? "selected" : ""}>Serif</option>
+          <option value="match" ${s.footnoteFontFamily === "match" ? "selected" : ""}>Match main text</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label>Use colors</label>
+        <input type="checkbox" id="setting-footnote-use-colors" ${s.footnoteUseColors !== false ? "checked" : ""} />
       </div>
     </div>
 
@@ -409,6 +434,9 @@ function bindAll() {
   bindSelect("setting-dark-theme", "darkTheme");
   bindSelect("setting-font-family", "fontFamily");
   bindCheckbox("setting-normalize-headers", "normalizeHeaders");
+  bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");
+  bindSelect("setting-footnote-font-family", "footnoteFontFamily");
+  bindCheckbox("setting-footnote-use-colors", "footnoteUseColors");
   bindSlider("setting-font-size", "fontSize", "px");
   bindSlider("setting-line-height", "lineHeight", "");
 
