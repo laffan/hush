@@ -34,8 +34,12 @@ function onPointerDown(event) {
       clearTimeout(this.pendingDrag.timeoutId);
     }
     if (this.pendingDrag && !this.dragSession) {
-      const item = this._getItemAtPath(targetPath);
-      if (item) this.config.onClick(item);
+      // Don't fire onClick when user clicked an interactive element (button, input, link)
+      const isInteractive = event.target.closest("button:not(.sl-fold-arrow)") || event.target.closest("input") || event.target.closest("a");
+      if (!isInteractive) {
+        const item = this._getItemAtPath(targetPath);
+        if (item) this.config.onClick(item);
+      }
     }
     this.pendingDrag = null;
     window.removeEventListener("pointerup", handlePointerUp);

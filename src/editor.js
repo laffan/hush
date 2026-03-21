@@ -14,7 +14,7 @@ import { openFindReplace, openFindAll } from "./find-replace.js";
 import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment } from "./formatting.js";
 import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
-import { createProjectViewPlugin, createSeparatorFilter, bypassSeparatorFilter } from "./project-view.js";
+import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./project-view.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -289,7 +289,7 @@ export function createEditor(container, state) {
   const privateModePlugin = createPrivateModePlugin(state);
   const dryHighlightPlugin = createDryHighlightPlugin(state);
   const footnotePlugin = createFootnotePlugin(state);
-  const projectViewPlugin = createProjectViewPlugin(state);
+  const projectViewField = createProjectViewField(state);
   const separatorFilter = createSeparatorFilter(state);
 
   const startState = EditorState.create({
@@ -310,7 +310,7 @@ export function createEditor(container, state) {
       privateModePlugin,
       dryHighlightPlugin,
       footnotePlugin,
-      projectViewPlugin,
+      projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
       placeholder("Start writing..."),
