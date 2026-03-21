@@ -17,10 +17,10 @@ export const bypassSeparatorFilter = Annotation.define();
 export const SEPARATOR = "\n\n---hush-separator---\n\n";
 const SEPARATOR_LINE = "---hush-separator---";
 
-// Widget that renders a dashed horizontal line
+// Widget that renders a dashed horizontal line (inline, styled as block via CSS)
 class SeparatorWidget extends WidgetType {
   toDOM() {
-    const el = document.createElement("div");
+    const el = document.createElement("span");
     el.className = "project-separator";
     el.setAttribute("contenteditable", "false");
     return el;
@@ -43,7 +43,6 @@ function buildDecorations(editorState, appState) {
       builder.push(
         Decoration.replace({
           widget: new SeparatorWidget(),
-          block: true,
         }).range(line.from, line.to)
       );
     }

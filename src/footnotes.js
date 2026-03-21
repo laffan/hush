@@ -148,6 +148,28 @@ function getThemeColors() {
 }
 
 /**
+ * Sync footnote text back to the document. If no definition line exists,
+ * creates one at the end of the document.
+ */
+function syncFootnoteText(view, id, newText) {
+  const doc = view.state.doc;
+  const range = findDefinitionRange(doc, id);
+  if (range) {
+    view.dispatch({
+      changes: { from: range.from, to: range.to, insert: newText },
+      scrollIntoView: false,
+    });
+  } else {
+    // No definition line exists — create one at document end
+    const defLine = `\n[^${id}]: ${newText}`;
+    view.dispatch({
+      changes: { from: doc.length, insert: defLine },
+      scrollIntoView: false,
+    });
+  }
+}
+
+/**
  * Create a contenteditable text element that syncs changes back to the
  * markdown definition in the CodeMirror document.
  */
@@ -171,15 +193,7 @@ function createEditableContent(id, defText, view, stateRef) {
 
   // Sync edits back to the document on input (without scrolling)
   content.addEventListener("input", () => {
-    const newText = content.textContent;
-    const doc = view.state.doc;
-    const range = findDefinitionRange(doc, id);
-    if (range) {
-      view.dispatch({
-        changes: { from: range.from, to: range.to, insert: newText },
-        scrollIntoView: false,
-      });
-    }
+    syncFootnoteText(view, id, content.textContent);
   });
 
   return content;
@@ -234,8 +248,6 @@ class FootnoteDotWidget extends WidgetType {
     dot.addEventListener("mousedown", (e) => {
       e.preventDefault();
       e.stopPropagation();
-
-      if (isWideMargin()) return;
 
       if (activeOverlay && activeOverlay.dataset.footnoteId === self.id) {
         closeOverlay();
@@ -374,7 +386,7 @@ function updateMarginalia(view, stateRef) {
     while ((match = FOOTNOTE_REF_RE.exec(lineText)) !== null) {
       const id = match[1];
       const defText = defs.get(id);
-      if (!defText) continue;
+      if (defText == null) continue; // skip only if no definition line exists at all
 
       const from = line.from + match.index;
       const coords = view.coordsAtPos(from);
@@ -455,15 +467,7 @@ function createMarginaliaText(id, defText, view, stateRef) {
   text.addEventListener("blur", () => { editingOverlay = false; });
   text.addEventListener("input", () => {
     editingOverlay = true;
-    const newText = text.textContent;
-    const docNow = view.state.doc;
-    const range = findDefinitionRange(docNow, id);
-    if (range) {
-      view.dispatch({
-        changes: { from: range.from, to: range.to, insert: newText },
-        scrollIntoView: false,
-      });
-    }
+    syncFootnoteText(view, id, text.textContent);
   });
   return text;
 }
@@ -560,7 +564,7 @@ export function createFootnotePlugin(stateRef) {
   // Handle clicks on underline-style footnotes (text IDs) for overlay
   document.addEventListener("click", (e) => {
     const el = e.target.closest(".footnote-underline");
-    if (!el || isWideMargin()) return;
+    if (!el) return;
     const id = el.dataset.footnoteId;
     if (!id) return;
 
