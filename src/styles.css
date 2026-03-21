@@ -1053,6 +1053,8 @@ html, body {
 
 .footnote-overlay-content {
   word-wrap: break-word;
+  outline: none;
+  cursor: text;
 }
 
 /* Marginalia (wide margin mode) — positioned in left or right margin */
@@ -1084,6 +1086,10 @@ html, body {
 .footnote-marginalia-text {
   word-wrap: break-word;
   overflow-wrap: break-word;
+  outline: none;
+  cursor: text;
+  min-width: 0;
+  flex: 1;
 }
 
 /* Underline style for text-ID footnotes */

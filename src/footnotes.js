@@ -3,8 +3,8 @@
  * clickable colored dots (or underlines for text IDs) and shows footnote
  * definitions as overlays or marginalia depending on margin width.
  *
- * Decorations are skipped when the cursor is inside a footnote reference,
- * allowing normal editing of the raw markdown.
+ * Overlay and marginalia text is contenteditable — edits sync back to
+ * the markdown definition in the document.
  */
 import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
@@ -31,27 +31,26 @@ function getColorForId(id) {
   return colorMap.get(id);
 }
 
-/** Returns true if id is purely numeric */
 function isNumericId(id) {
   return /^\d+$/.test(id);
 }
 
-/** Margin mode threshold — each side must be >= 200px for marginalia */
 const MARGIN_THRESHOLD = 200;
 
-/** Currently open overlay element (narrow mode) */
 let activeOverlay = null;
+/** Flag to prevent overlay close during editable content interaction */
+let editingOverlay = false;
 
 function closeOverlay() {
   if (activeOverlay) {
     activeOverlay.remove();
     activeOverlay = null;
+    editingOverlay = false;
   }
 }
 
 /**
  * Parse all footnote definitions from the full document text.
- * Supports multi-line definitions (continuation lines indented with 2+ spaces).
  */
 function parseDefinitions(doc) {
   const defs = new Map();
@@ -84,6 +83,34 @@ function parseDefinitions(doc) {
   return defs;
 }
 
+/**
+ * Find the range of the definition text for a given footnote id.
+ * Returns { from, to } of just the text after "[^id]: ", or null.
+ */
+function findDefinitionRange(doc, id) {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^\\[\\^${escapedId}\\]:\\s*`);
+  for (let i = 1; i <= doc.lines; i++) {
+    const line = doc.line(i);
+    const m = line.text.match(re);
+    if (m) {
+      const textFrom = line.from + m[0].length;
+      // Include continuation lines (indented with 2+ spaces)
+      let textTo = line.to;
+      for (let j = i + 1; j <= doc.lines; j++) {
+        const nextLine = doc.line(j);
+        if (/^  /.test(nextLine.text)) {
+          textTo = nextLine.to;
+        } else {
+          break;
+        }
+      }
+      return { from: textFrom, to: textTo };
+    }
+  }
+  return null;
+}
+
 function getMargins() {
   const scroller = document.querySelector("#editor-container .cm-scroller");
   if (!scroller) return { left: 0, right: 0 };
@@ -97,36 +124,64 @@ function isWideMargin() {
   return m.left >= MARGIN_THRESHOLD && m.right >= MARGIN_THRESHOLD;
 }
 
-/**
- * Get settings for footnote display.
- */
 function getFootnoteSettings(stateRef) {
   const s = stateRef.settings || {};
   return {
     fontSize: s.footnoteFontSize || 100,
     fontFamily: s.footnoteFontFamily || "sans-serif",
-    useColors: s.footnoteUseColors !== false, // default true
+    useColors: s.footnoteUseColors !== false,
   };
 }
 
-/**
- * Resolve the font-family CSS value for footnotes.
- */
 function resolveFootnoteFont(fontFamily) {
   if (fontFamily === "match") return "var(--font-family)";
   if (fontFamily === "serif") return "'Georgia', 'Times New Roman', serif";
   return "system-ui, -apple-system, sans-serif";
 }
 
-/**
- * Get theme background color for no-color mode.
- */
 function getThemeColors() {
   const style = getComputedStyle(document.documentElement);
   return {
     fg: style.getPropertyValue("--fg").trim() || "#e0e0e0",
     bg: style.getPropertyValue("--bg").trim() || "#1a1a1a",
   };
+}
+
+/**
+ * Create a contenteditable text element that syncs changes back to the
+ * markdown definition in the CodeMirror document.
+ */
+function createEditableContent(id, defText, view, stateRef) {
+  const fsettings = getFootnoteSettings(stateRef);
+  const content = document.createElement("div");
+  content.className = "footnote-overlay-content";
+  content.contentEditable = "true";
+  content.spellcheck = false;
+  content.textContent = defText || "";
+  content.style.fontFamily = resolveFootnoteFont(fsettings.fontFamily);
+  content.dataset.footnoteId = id;
+
+  // Prevent CodeMirror from stealing focus/events
+  content.addEventListener("mousedown", (e) => {
+    e.stopPropagation();
+    editingOverlay = true;
+  });
+  content.addEventListener("keydown", (e) => e.stopPropagation());
+  content.addEventListener("keypress", (e) => e.stopPropagation());
+
+  // Sync edits back to the document on input
+  content.addEventListener("input", () => {
+    const newText = content.textContent;
+    const doc = view.state.doc;
+    const range = findDefinitionRange(doc, id);
+    if (range) {
+      view.dispatch({
+        changes: { from: range.from, to: range.to, insert: newText },
+      });
+    }
+  });
+
+  return content;
 }
 
 /**
@@ -141,11 +196,15 @@ class FootnoteDotWidget extends WidgetType {
     this.from = from;
     this.to = to;
     this.stateRef = stateRef;
+    this.useColors = getFootnoteSettings(stateRef).useColors;
+    this.fontFamily = getFootnoteSettings(stateRef).fontFamily;
+    this.fontSizePct = getFootnoteSettings(stateRef).fontSize;
   }
 
   eq(other) {
     return this.id === other.id && this.defText === other.defText &&
-           this.color === other.color;
+           this.color === other.color && this.useColors === other.useColors &&
+           this.fontFamily === other.fontFamily && this.fontSizePct === other.fontSizePct;
   }
 
   toDOM(view) {
@@ -156,7 +215,6 @@ class FootnoteDotWidget extends WidgetType {
     dot.dataset.footnoteId = this.id;
     dot.title = this.defText || `Footnote ${this.id}`;
 
-    // Apply settings
     const fontCss = resolveFootnoteFont(fsettings.fontFamily);
     dot.style.fontFamily = fontCss;
     const baseFontSize = 9;
@@ -176,15 +234,6 @@ class FootnoteDotWidget extends WidgetType {
       e.preventDefault();
       e.stopPropagation();
 
-      // On double-click, place cursor inside the footnote ref for editing
-      if (e.detail >= 2) {
-        view.dispatch({
-          selection: { anchor: self.from + 2, head: self.to - 1 },
-        });
-        view.focus();
-        return;
-      }
-
       if (isWideMargin()) return;
 
       if (activeOverlay && activeOverlay.dataset.footnoteId === self.id) {
@@ -199,7 +248,6 @@ class FootnoteDotWidget extends WidgetType {
   }
 
   _showOverlay(dot, view) {
-    const fsettings = getFootnoteSettings(this.stateRef);
     const overlay = document.createElement("div");
     overlay.className = "footnote-overlay";
     overlay.dataset.footnoteId = this.id;
@@ -213,10 +261,7 @@ class FootnoteDotWidget extends WidgetType {
       closeOverlay();
     });
 
-    const content = document.createElement("div");
-    content.className = "footnote-overlay-content";
-    content.textContent = this.defText || `Footnote ${this.id} (undefined)`;
-    content.style.fontFamily = resolveFootnoteFont(fsettings.fontFamily);
+    const content = createEditableContent(this.id, this.defText, view, this.stateRef);
 
     overlay.appendChild(closeBtn);
     overlay.appendChild(content);
@@ -250,7 +295,6 @@ function buildDecorations(view, stateRef) {
   const defs = parseDefinitions(doc);
   const fsettings = getFootnoteSettings(stateRef);
 
-  // Get all cursor positions to check for editability
   const cursors = view.state.selection.ranges.map(r => ({
     from: r.from, to: r.to,
   }));
@@ -270,19 +314,16 @@ function buildDecorations(view, stateRef) {
       const defText = defs.get(id) || "";
       const color = getColorForId(id);
 
-      // If any cursor intersects this range, skip decoration to allow editing
       const cursorInside = cursors.some(c =>
-        c.from >= from && c.from <= to || c.to >= from && c.to <= to
+        (c.from >= from && c.from <= to) || (c.to >= from && c.to <= to)
       );
       if (cursorInside) continue;
 
       if (isNumericId(id)) {
-        // Numeric ID → dot widget replaces the full [^N] text
         builder.add(from, to, Decoration.replace({
           widget: new FootnoteDotWidget(id, defText, color, from, to, stateRef),
         }));
       } else {
-        // Text ID → colored underline on the [^text] range
         const underlineColor = fsettings.useColors ? color : getThemeColors().fg;
         builder.add(from, to, Decoration.mark({
           class: "footnote-underline",
@@ -301,6 +342,7 @@ function buildDecorations(view, stateRef) {
 
 /**
  * Create or update marginalia elements for wide-margin mode.
+ * Marginalia text is contenteditable.
  */
 function updateMarginalia(view, stateRef) {
   document.querySelectorAll(".footnote-marginalia").forEach(el => el.remove());
@@ -354,28 +396,54 @@ function updateMarginalia(view, stateRef) {
         label.style.color = colors.bg;
       }
 
+      // Editable text element
       const text = document.createElement("span");
       text.className = "footnote-marginalia-text";
+      text.contentEditable = "true";
+      text.spellcheck = false;
       text.textContent = defText;
+      text.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        editingOverlay = true;
+      });
+      text.addEventListener("keydown", (e) => e.stopPropagation());
+      text.addEventListener("keypress", (e) => e.stopPropagation());
+      text.addEventListener("focus", () => { editingOverlay = true; });
+      text.addEventListener("blur", () => { editingOverlay = false; });
+      text.addEventListener("input", () => {
+        editingOverlay = true;
+        const newText = text.textContent;
+        const docNow = view.state.doc;
+        const range = findDefinitionRange(docNow, id);
+        if (range) {
+          view.dispatch({
+            changes: { from: range.from, to: range.to, insert: newText },
+          });
+        }
+      });
 
       marg.appendChild(label);
       marg.appendChild(text);
 
-      // Determine which side is closer to the reference position
+      // Position: right-align in left margin, left-align in right margin,
+      // both ~10px from column edge
       const refX = coords.left - scrollerRect.left;
       const distLeft = refX;
       const distRight = scrollerRect.width - refX;
-
-      if (distLeft <= distRight) {
-        marg.style.left = "10px";
-        marg.style.width = Math.min(paddingLeft - 20, 200) + "px";
-      } else {
-        marg.style.left = (colRight + 10) + "px";
-        marg.style.width = Math.min(paddingRight - 20, 200) + "px";
-      }
+      const margWidth = Math.min(200, (distLeft <= distRight ? paddingLeft : paddingRight) - 20);
 
       marg.style.position = "absolute";
+      marg.style.width = margWidth + "px";
       marg.style.top = (coords.top - scrollerRect.top + scroller.scrollTop) + "px";
+
+      if (distLeft <= distRight) {
+        // Left margin: right-align so it ends 10px from column edge
+        marg.style.left = (paddingLeft - margWidth - 10) + "px";
+        marg.style.textAlign = "right";
+      } else {
+        // Right margin: left-align starting 10px from column edge
+        marg.style.left = (colRight + 10) + "px";
+      }
 
       scroller.appendChild(marg);
     }
@@ -390,8 +458,6 @@ function debouncedUpdateMarginalia(view, stateRef) {
 
 /**
  * Insert a footnote at the current cursor position.
- * If text is selected, use selection as the footnote ID.
- * Otherwise, auto-increment a numeric ID.
  */
 export function insertFootnote(view) {
   const state = view.state;
@@ -401,10 +467,8 @@ export function insertFootnote(view) {
 
   let id;
   if (!sel.empty) {
-    // Use selected text as ID
     id = state.sliceDoc(sel.from, sel.to);
   } else {
-    // Find the next available numeric ID
     let maxNum = 0;
     FOOTNOTE_REF_RE.lastIndex = 0;
     let m;
@@ -417,16 +481,13 @@ export function insertFootnote(view) {
 
   const ref = `[^${id}]`;
   const defLine = `\n[^${id}]: `;
-
-  // Check if a definition already exists
-  const defExists = new RegExp(`^\\[\\^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]:`, "m").test(docText);
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const defExists = new RegExp(`^\\[\\^${escapedId}\\]:`, "m").test(docText);
 
   let changes;
   if (defExists) {
-    // Just insert the reference at cursor
     changes = [{ from: sel.from, to: sel.to, insert: ref }];
   } else {
-    // Insert reference at cursor + definition at end of document
     const docEnd = doc.length;
     changes = [
       { from: sel.from, to: sel.to, insert: ref },
@@ -445,14 +506,19 @@ export function insertFootnote(view) {
 }
 
 export function createFootnotePlugin(stateRef) {
+  // Close overlay on click outside (but not when editing inside it)
   document.addEventListener("mousedown", (e) => {
     if (activeOverlay && !activeOverlay.contains(e.target) &&
-        !e.target.classList.contains("footnote-dot")) {
+        !e.target.classList.contains("footnote-dot") && !editingOverlay) {
       closeOverlay();
+    }
+    // Reset editing flag on next tick (after the click resolves)
+    if (editingOverlay) {
+      setTimeout(() => { editingOverlay = false; }, 0);
     }
   });
 
-  // Handle clicks on underline-style footnotes (text IDs)
+  // Handle clicks on underline-style footnotes (text IDs) for overlay
   document.addEventListener("click", (e) => {
     const el = e.target.closest(".footnote-underline");
     if (!el || isWideMargin()) return;
@@ -465,15 +531,12 @@ export function createFootnotePlugin(stateRef) {
     }
     closeOverlay();
 
-    // Show overlay below the underlined element
-    const fsettings = getFootnoteSettings(stateRef);
     const scroller = document.querySelector("#editor-container .cm-scroller");
-    if (!scroller) return;
+    if (!scroller || !currentView) return;
 
-    const doc = currentView?.state?.doc;
-    if (!doc) return;
+    const doc = currentView.state.doc;
     const defs = parseDefinitions(doc);
-    const defText = defs.get(id) || `Footnote ${id} (undefined)`;
+    const defText = defs.get(id) || "";
 
     const overlay = document.createElement("div");
     overlay.className = "footnote-overlay";
@@ -488,10 +551,7 @@ export function createFootnotePlugin(stateRef) {
       closeOverlay();
     });
 
-    const content = document.createElement("div");
-    content.className = "footnote-overlay-content";
-    content.textContent = defText;
-    content.style.fontFamily = resolveFootnoteFont(fsettings.fontFamily);
+    const content = createEditableContent(id, defText, currentView, stateRef);
 
     overlay.appendChild(closeBtn);
     overlay.appendChild(content);
@@ -527,10 +587,18 @@ export function createFootnotePlugin(stateRef) {
 
       update(update) {
         currentView = update.view;
+        // Don't rebuild decorations or close overlay while user is editing
+        // inside an overlay/marginalia — the input handler syncs changes
+        if (editingOverlay && !update.viewportChanged) return;
+
         if (update.docChanged || update.viewportChanged || update.selectionSet) {
-          closeOverlay();
+          // Don't close overlay on doc changes triggered by our own edits
+          if (!editingOverlay) closeOverlay();
           this.decorations = buildDecorations(update.view, stateRef);
-          debouncedUpdateMarginalia(update.view, stateRef);
+          // Don't rebuild marginalia while editing one
+          if (!editingOverlay) {
+            debouncedUpdateMarginalia(update.view, stateRef);
+          }
         }
       }
 
