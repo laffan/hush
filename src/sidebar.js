@@ -125,10 +125,22 @@ export function createSidebar(container, state) {
     }
   });
 
-  // Cmd+\ toggle support
-  state.on("toggle-files-panel", () => {
-    showPanel("files", renderFilesPanel(state));
+  // Cmd+\ toggle support — force-show files (not toggle)
+  state.on("show-files-panel", () => {
+    activePanel = "files";
+    panelOverlay.innerHTML = renderFilesPanel(state);
+    panelOverlay.classList.remove("hidden");
+    container.classList.add("visible");
     bindFilesPanel(state, panelOverlay, hidePanel);
+    if (state._columnResizeHandler) state._columnResizeHandler();
+  });
+
+  // Cmd+\ hide support — reset internal state
+  state.on("hide-panel", () => {
+    activePanel = null;
+    panelOverlay.classList.add("hidden");
+    container.classList.remove("visible", "pinned");
+    if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
   // Close panel on click outside
