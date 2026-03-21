@@ -94,6 +94,7 @@ function startDrag(target, event, options = {}) {
 
   target.classList.add("dragging");
   target.setPointerCapture(event.pointerId);
+  document.body.classList.add("sl-dragging");
   window.addEventListener("pointermove", this._onPointerMove);
   window.addEventListener("pointerup", this._onPointerUp, { once: true });
   this.config.onDragStart(this._getItemAtPath(originPath));
@@ -299,6 +300,7 @@ function finishDrag() {
   if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
   ghost.remove();
   originElement.classList.remove("dragging");
+  document.body.classList.remove("sl-dragging");
 
   if (!dropTarget) {
     autoExpandedIds.forEach((id) => this.state.collapsedIds.add(id));

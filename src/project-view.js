@@ -7,7 +7,9 @@
  */
 
 import { ViewPlugin, Decoration, WidgetType } from "@codemirror/view";
-import { EditorState, StateField, StateEffect } from "@codemirror/state";
+import { EditorState, StateField, StateEffect, Annotation } from "@codemirror/state";
+
+export const bypassSeparatorFilter = Annotation.define();
 
 export const SEPARATOR = "\n\n---hush-separator---\n\n";
 const SEPARATOR_LINE = "---hush-separator---";
@@ -75,6 +77,7 @@ export function createSeparatorFilter(state) {
   return EditorState.transactionFilter.of((tr) => {
     if (!state.currentProjectId) return tr;
     if (!tr.docChanged) return tr;
+    if (tr.annotation(bypassSeparatorFilter)) return tr;
 
     // Check if any change touches a separator line
     let dominated = false;

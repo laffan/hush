@@ -1257,6 +1257,11 @@ html.ios, html.ios body {
   pointer-events: none;
 }
 
+body.sl-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .sl-drag-ghost {
   position: fixed;
   top: 0;
@@ -1367,7 +1372,7 @@ html.ios, html.ios body {
   flex-shrink: 0;
 }
 
-.sl-item:hover .tree-actions {
+.sl-item:hover > .sl-item-content .tree-actions {
   opacity: 1;
 }
 

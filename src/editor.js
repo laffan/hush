@@ -14,7 +14,7 @@ import { openFindReplace, openFindAll } from "./find-replace.js";
 import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment } from "./formatting.js";
 import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
-import { createProjectViewPlugin, createSeparatorFilter } from "./project-view.js";
+import { createProjectViewPlugin, createSeparatorFilter, bypassSeparatorFilter } from "./project-view.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -408,7 +408,7 @@ export function createEditor(container, state) {
     setContent: (text) => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
-        annotations: bypassRatchet.of(true),
+        annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true)],
       });
     },
     focus: () => view.focus(),
