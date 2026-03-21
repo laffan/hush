@@ -73,6 +73,7 @@ export class AppState {
       footnoteFontSize: 100,
       footnoteFontFamily: "sans-serif",
       footnoteUseColors: true,
+      footnoteBothMargins: true,
 
       // Styles
       styles: [],

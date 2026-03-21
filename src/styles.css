@@ -1071,6 +1071,7 @@ html.ios, html.ios body {
   display: flex;
   align-items: flex-start;
   gap: 6px;
+  text-align: left;
 }
 
 .footnote-marginalia-label {

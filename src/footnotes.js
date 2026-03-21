@@ -169,7 +169,7 @@ function createEditableContent(id, defText, view, stateRef) {
   content.addEventListener("keydown", (e) => e.stopPropagation());
   content.addEventListener("keypress", (e) => e.stopPropagation());
 
-  // Sync edits back to the document on input
+  // Sync edits back to the document on input (without scrolling)
   content.addEventListener("input", () => {
     const newText = content.textContent;
     const doc = view.state.doc;
@@ -177,6 +177,7 @@ function createEditableContent(id, defText, view, stateRef) {
     if (range) {
       view.dispatch({
         changes: { from: range.from, to: range.to, insert: newText },
+        scrollIntoView: false,
       });
     }
   });
@@ -342,7 +343,7 @@ function buildDecorations(view, stateRef) {
 
 /**
  * Create or update marginalia elements for wide-margin mode.
- * Marginalia text is contenteditable.
+ * Marginalia text is contenteditable. Overlapping notes are pushed down.
  */
 function updateMarginalia(view, stateRef) {
   document.querySelectorAll(".footnote-marginalia").forEach(el => el.remove());
@@ -358,6 +359,10 @@ function updateMarginalia(view, stateRef) {
   const paddingRight = parseInt(scroller.style.paddingRight) || 50;
   const colRight = scrollerRect.width - paddingRight;
   const fontCss = resolveFootnoteFont(fsettings.fontFamily);
+  const useBothMargins = stateRef.settings.footnoteBothMargins !== false;
+
+  // Collect all marginalia entries first, then resolve overlaps
+  const entries = [];
 
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
@@ -375,77 +380,110 @@ function updateMarginalia(view, stateRef) {
       const coords = view.coordsAtPos(from);
       if (!coords) continue;
 
-      const color = getColorForId(id);
-      const marg = document.createElement("div");
-      marg.className = "footnote-marginalia";
-      marg.dataset.footnoteId = id;
-      marg.style.fontFamily = fontCss;
-      const margFontSize = 12 * fsettings.fontSize / 100;
-      marg.style.fontSize = margFontSize + "px";
-
-      const label = document.createElement("span");
-      label.className = "footnote-marginalia-label";
-      label.textContent = id;
-
-      if (fsettings.useColors) {
-        label.style.backgroundColor = color;
-        label.style.color = "#fff";
-      } else {
-        const colors = getThemeColors();
-        label.style.backgroundColor = colors.fg;
-        label.style.color = colors.bg;
-      }
-
-      // Editable text element
-      const text = document.createElement("span");
-      text.className = "footnote-marginalia-text";
-      text.contentEditable = "true";
-      text.spellcheck = false;
-      text.textContent = defText;
-      text.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-        editingOverlay = true;
-      });
-      text.addEventListener("keydown", (e) => e.stopPropagation());
-      text.addEventListener("keypress", (e) => e.stopPropagation());
-      text.addEventListener("focus", () => { editingOverlay = true; });
-      text.addEventListener("blur", () => { editingOverlay = false; });
-      text.addEventListener("input", () => {
-        editingOverlay = true;
-        const newText = text.textContent;
-        const docNow = view.state.doc;
-        const range = findDefinitionRange(docNow, id);
-        if (range) {
-          view.dispatch({
-            changes: { from: range.from, to: range.to, insert: newText },
-          });
-        }
-      });
-
-      marg.appendChild(label);
-      marg.appendChild(text);
-
-      // Position: right-align in left margin, left-align in right margin,
-      // both ~10px from column edge
       const refX = coords.left - scrollerRect.left;
-      const distLeft = refX;
-      const distRight = scrollerRect.width - refX;
-      const margWidth = Math.min(200, (distLeft <= distRight ? paddingLeft : paddingRight) - 20);
+      const placeLeft = useBothMargins && refX <= scrollerRect.width - refX;
+      const naturalTop = coords.top - scrollerRect.top + scroller.scrollTop;
 
-      marg.style.position = "absolute";
-      marg.style.width = margWidth + "px";
-      marg.style.top = (coords.top - scrollerRect.top + scroller.scrollTop) + "px";
+      entries.push({ id, defText, placeLeft, naturalTop });
+    }
+  }
 
-      if (distLeft <= distRight) {
-        // Left margin: right-align so it ends 10px from column edge
-        marg.style.left = (paddingLeft - margWidth - 10) + "px";
-        marg.style.textAlign = "right";
-      } else {
-        // Right margin: left-align starting 10px from column edge
-        marg.style.left = (colRight + 10) + "px";
-      }
+  // Separate left and right, resolve overlaps per side
+  const leftEntries = entries.filter(e => e.placeLeft);
+  const rightEntries = entries.filter(e => !e.placeLeft);
+  resolveOverlaps(leftEntries);
+  resolveOverlaps(rightEntries);
 
-      scroller.appendChild(marg);
+  for (const entry of entries) {
+    const color = getColorForId(entry.id);
+    const marg = document.createElement("div");
+    marg.className = "footnote-marginalia";
+    marg.dataset.footnoteId = entry.id;
+    marg.style.fontFamily = fontCss;
+    const margFontSize = 12 * fsettings.fontSize / 100;
+    marg.style.fontSize = margFontSize + "px";
+
+    const label = document.createElement("span");
+    label.className = "footnote-marginalia-label";
+    label.textContent = entry.id;
+
+    if (fsettings.useColors) {
+      label.style.backgroundColor = color;
+      label.style.color = "#fff";
+    } else {
+      const colors = getThemeColors();
+      label.style.backgroundColor = colors.fg;
+      label.style.color = colors.bg;
+    }
+
+    const text = createMarginaliaText(entry.id, entry.defText, view, stateRef);
+
+    marg.appendChild(label);
+    marg.appendChild(text);
+
+    const margWidth = Math.min(200, (entry.placeLeft ? paddingLeft : paddingRight) - 40);
+    marg.style.position = "absolute";
+    marg.style.width = margWidth + "px";
+    marg.style.top = entry.top + "px";
+
+    if (entry.placeLeft) {
+      marg.style.left = (paddingLeft - margWidth - 30) + "px";
+    } else {
+      marg.style.left = (colRight + 30) + "px";
+    }
+
+    scroller.appendChild(marg);
+  }
+}
+
+/**
+ * Create an editable text span for marginalia.
+ */
+function createMarginaliaText(id, defText, view, stateRef) {
+  const text = document.createElement("span");
+  text.className = "footnote-marginalia-text";
+  text.contentEditable = "true";
+  text.spellcheck = false;
+  text.textContent = defText;
+  text.addEventListener("mousedown", (e) => {
+    e.stopPropagation();
+    editingOverlay = true;
+  });
+  text.addEventListener("keydown", (e) => e.stopPropagation());
+  text.addEventListener("keypress", (e) => e.stopPropagation());
+  text.addEventListener("focus", () => { editingOverlay = true; });
+  text.addEventListener("blur", () => { editingOverlay = false; });
+  text.addEventListener("input", () => {
+    editingOverlay = true;
+    const newText = text.textContent;
+    const docNow = view.state.doc;
+    const range = findDefinitionRange(docNow, id);
+    if (range) {
+      view.dispatch({
+        changes: { from: range.from, to: range.to, insert: newText },
+        scrollIntoView: false,
+      });
+    }
+  });
+  return text;
+}
+
+/**
+ * Resolve overlapping marginalia on one side. Each entry gets a `top`
+ * property. If two entries would overlap, the later one is pushed
+ * 20px below the previous one's bottom (estimated).
+ */
+function resolveOverlaps(entries) {
+  // Sort by natural top position
+  entries.sort((a, b) => a.naturalTop - b.naturalTop);
+  const EST_HEIGHT = 24; // estimated minimum height per marginalia
+  for (let i = 0; i < entries.length; i++) {
+    const prev = i > 0 ? entries[i - 1] : null;
+    const desired = entries[i].naturalTop;
+    if (prev && desired < prev.top + EST_HEIGHT + 20) {
+      entries[i].top = prev.top + EST_HEIGHT + 20;
+    } else {
+      entries[i].top = desired;
     }
   }
 }
@@ -495,11 +533,12 @@ export function insertFootnote(view) {
     ];
   }
 
+  // Keep cursor at the reference position (don't jump to definition)
+  const cursorPos = sel.from + ref.length;
   view.dispatch({
     changes,
-    selection: defExists
-      ? { anchor: sel.from + ref.length }
-      : { anchor: doc.length + defLine.length + (ref.length - (sel.to - sel.from)) },
+    selection: { anchor: cursorPos },
+    scrollIntoView: false,
   });
   view.focus();
   return true;

@@ -253,6 +253,10 @@ function renderEditorTab() {
         <label>Use colors</label>
         <input type="checkbox" id="setting-footnote-use-colors" ${s.footnoteUseColors !== false ? "checked" : ""} />
       </div>
+      <div class="settings-row">
+        <label>Use both margins</label>
+        <input type="checkbox" id="setting-footnote-both-margins" ${s.footnoteBothMargins !== false ? "checked" : ""} />
+      </div>
     </div>
 
     <div class="settings-section">
@@ -449,6 +453,7 @@ function bindAll() {
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");
   bindSelect("setting-footnote-font-family", "footnoteFontFamily");
   bindCheckbox("setting-footnote-use-colors", "footnoteUseColors");
+  bindCheckbox("setting-footnote-both-margins", "footnoteBothMargins");
   bindSlider("setting-font-size", "fontSize", "px");
   bindSlider("setting-line-height", "lineHeight", "");
 
