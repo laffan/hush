@@ -168,13 +168,15 @@ export function createEditor(container, state) {
       { key: "Mod-\\", run: () => {
         const sidebar = document.getElementById("sidebar");
         const panel = document.getElementById("panel-overlay");
-        const isVisible = sidebar.classList.contains("pinned");
-        if (isVisible) {
+        const sidebarVisible = sidebar.classList.contains("pinned") || sidebar.classList.contains("visible");
+        const panelVisible = !panel.classList.contains("hidden");
+        // If either is visible, hide both; otherwise show both
+        if (sidebarVisible || panelVisible) {
           sidebar.classList.remove("pinned", "visible");
           panel.classList.add("hidden");
         } else {
           sidebar.classList.add("pinned", "visible");
-          // Open files panel
+          panel.classList.remove("hidden");
           state.emit("toggle-files-panel");
         }
         // Recalculate column centering for inset mode
