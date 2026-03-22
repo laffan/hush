@@ -64,6 +64,11 @@ html, body {
 /* iOS: fill html bg to prevent black bars behind the webview */
 html.ios, html.ios body {
   background: var(--theme-bg, var(--bg));
+  /* Extend into safe areas (notch, home indicator) */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 #app {
@@ -754,6 +759,12 @@ html.ios, html.ios body {
 /* Cursor should still be visible in private mode */
 .private-mode #editor-container .cm-cursor {
   border-left-color: var(--cursor);
+}
+
+/* Hide footnote overlays and marginalia in private mode */
+.private-mode .footnote-overlay,
+.private-mode .footnote-marginalia {
+  display: none;
 }
 
 /* ===== Typewriter Mode ===== */

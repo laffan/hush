@@ -303,6 +303,9 @@ class FootnoteDotWidget extends WidgetType {
  * Skips decoration when the cursor is inside a reference range.
  */
 function buildDecorations(view, stateRef) {
+  // Hide footnote decorations in private mode
+  if (stateRef.privateMode) return Decoration.none;
+
   const builder = new RangeSetBuilder();
   const doc = view.state.doc;
   const defs = parseDefinitions(doc);
@@ -359,6 +362,9 @@ function buildDecorations(view, stateRef) {
  */
 function updateMarginalia(view, stateRef) {
   document.querySelectorAll(".footnote-marginalia").forEach(el => el.remove());
+
+  // Hide marginalia in private mode
+  if (stateRef.privateMode) return;
 
   if (!isWideMargin()) return;
 

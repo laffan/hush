@@ -2,6 +2,7 @@
  * Settings helpers — opens settings in a separate native window (desktop)
  * or as a modal overlay (iOS/iPadOS).
  */
+import settingsCssUrl from "./settings-window.css?url";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -53,7 +54,7 @@ async function openSettingsModal(state) {
     const link = document.createElement("link");
     link.id = "settings-modal-css";
     link.rel = "stylesheet";
-    link.href = "/src/settings-window.css";
+    link.href = settingsCssUrl;
     document.head.appendChild(link);
   }
 
