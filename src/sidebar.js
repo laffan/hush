@@ -194,18 +194,16 @@ const icons = {
     <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
     <circle cx="5" cy="17" r="1.5" fill="currentColor" stroke="none"/>`,
 
-  ratchet: `<path d="M8.5 3 C8.5 3 7 5.5 7 8 C7 10.5 8.5 12 12 12 C15.5 12 17 10.5 17 8 C17 5.5 15.5 3 15.5 3" fill="none"/>
-    <line x1="7.5" y1="8" x2="16.5" y2="8"/>
-    <rect x="9" y="12" width="6" height="3" rx="0.5"/>
-    <line x1="12" y1="15" x2="12" y2="21"/>`,
+  ratchet: `<path d="M10.5 3 L8 5.5 C6 7.5 6 10.5 8 12.5 C10 14.5 13 14.5 15 12.5 L17.5 10 L15 10 L13.5 11.5 C12.5 12.5 10.5 12.5 9.5 11.5 C8.5 10.5 8.5 8.5 9.5 7.5 L11 6 Z" fill="none"/>
+    <line x1="7" y1="13.5" x2="3" y2="21" stroke-linecap="round"/>`,
 
   private: `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
     <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
     <line x1="1" y1="1" x2="23" y2="23"/>`,
 
-  typewriter: `<line x1="4" y1="9" x2="20" y2="9"/>
-    <line x1="4" y1="15" x2="20" y2="15"/>
-    <line x1="12" y1="3" x2="12" y2="21"/>`,
+  typewriter: `<line x1="4" y1="16" x2="20" y2="16"/>
+    <line x1="12" y1="4" x2="12" y2="13"/>
+    <polyline points="8,10 12,14 16,10"/>`,
 
   dry: `<rect x="3" y="3" width="12" height="12" rx="2"/>
     <rect x="9" y="9" width="12" height="12" rx="2"/>`,
