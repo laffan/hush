@@ -415,6 +415,39 @@ export function deleteToSentenceEnd(view) {
   return true;
 }
 
+// ===== Paragraph navigation =====
+
+/** Jump cursor to the first word of the previous paragraph. */
+export function jumpToPrevParagraph(view) {
+  const doc = view.state.doc;
+  const curLine = doc.lineAt(view.state.selection.main.head);
+  let ln = curLine.number;
+  if (curLine.text.trim().length > 0) {
+    while (ln > 1 && doc.line(ln - 1).text.trim().length > 0) ln--;
+  }
+  while (ln > 1 && doc.line(ln - 1).text.trim().length === 0) ln--;
+  while (ln > 1 && doc.line(ln - 1).text.trim().length > 0) ln--;
+  const line = doc.line(ln);
+  const fw = line.text.search(/\S/);
+  view.dispatch({ selection: EditorSelection.cursor(line.from + (fw >= 0 ? fw : 0)) });
+  return true;
+}
+
+/** Jump cursor to the first word of the next paragraph. */
+export function jumpToNextParagraph(view) {
+  const doc = view.state.doc;
+  const curLine = doc.lineAt(view.state.selection.main.head);
+  let ln = curLine.number;
+  while (ln < doc.lines && doc.line(ln).text.trim().length > 0) ln++;
+  while (ln < doc.lines && doc.line(ln).text.trim().length === 0) ln++;
+  if (ln <= doc.lines) {
+    const line = doc.line(ln);
+    const fw = line.text.search(/\S/);
+    view.dispatch({ selection: EditorSelection.cursor(line.from + (fw >= 0 ? fw : 0)) });
+  }
+  return true;
+}
+
 // ===== Internal helpers =====
 
 function dispatch(view, fromPos, toPos) {

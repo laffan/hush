@@ -53,6 +53,14 @@
 
 
 
+#editor-container .cm-selectionBackground {
+  background: var(--selection, rgba(128, 128, 128, 0.3)) !important;
+}
+
+#editor-container ::selection {
+  background: var(--selection, rgba(128, 128, 128, 0.3));
+}
+
 #editor-container .cm-gutters {
   display: none;
 }

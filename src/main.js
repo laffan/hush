@@ -4,12 +4,19 @@ import { AppState } from "./state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
 import { applyAppearance, isIOS } from "./settings-ui.js";
 import { getThemeById } from "./themes.js";
+import { setupFileDrop } from "./file-drop.js";
 
 const fontFallbacks = {
   "Helvetica": "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
   "EB Garamond": "'EB Garamond', 'Georgia', 'Times New Roman', serif",
   "Inter": "'Inter', system-ui, -apple-system, sans-serif",
   "Fira Code": "'Fira Code', 'Fira Mono', 'Consolas', monospace",
+  "Source Sans Pro": "'Source Sans Pro', 'Helvetica Neue', 'Arial', sans-serif",
+  "Source Serif Pro": "'Source Serif Pro', 'Georgia', 'Times New Roman', serif",
+  "Libre Franklin": "'Libre Franklin', 'Helvetica Neue', 'Arial', sans-serif",
+  "Libre Baskerville": "'Libre Baskerville', 'Georgia', 'Times New Roman', serif",
+  "Karla": "'Karla', 'Helvetica Neue', 'Arial', sans-serif",
+  "Lora": "'Lora', 'Georgia', 'Times New Roman', serif",
 };
 
 // Known theme background colors — must match thememirror's actual settings.background
@@ -96,6 +103,7 @@ function applyActiveStyle(state) {
     document.documentElement.style.removeProperty("--style-bg");
     document.documentElement.style.removeProperty("--style-fg");
     document.documentElement.style.removeProperty("--style-cursor");
+    document.documentElement.style.removeProperty("--selection");
     document.body.classList.remove("style-active");
     // Clear editor bg override
     const cmEditor = document.querySelector('.cm-editor');
@@ -152,6 +160,11 @@ function applyActiveStyle(state) {
   if (overrides.cursor) {
     document.documentElement.style.setProperty("--cursor", overrides.cursor);
     document.documentElement.style.setProperty("--style-cursor", overrides.cursor);
+  }
+  if (overrides.selection) {
+    document.documentElement.style.setProperty("--selection", overrides.selection);
+  } else {
+    document.documentElement.style.removeProperty("--selection");
   }
 }
 
@@ -210,6 +223,7 @@ async function init() {
 
   const sidebar = document.getElementById("sidebar");
   createSidebar(sidebar, state);
+  setupFileDrop(state);
 
   // Panel inset mode — push into editor margin when there's enough space
   const panelOverlay = document.getElementById("panel-overlay");
@@ -355,6 +369,11 @@ async function init() {
       document.documentElement.style.setProperty("--cursor", overrides.fg);
     }
     if (overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.cursor);
+    if (overrides.selection) {
+      document.documentElement.style.setProperty("--selection", overrides.selection);
+    } else {
+      document.documentElement.style.removeProperty("--selection");
+    }
   });
   state.on("style-preview-end", () => {
     if (!previewActive) return;

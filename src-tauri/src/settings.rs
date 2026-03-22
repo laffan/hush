@@ -57,6 +57,8 @@ pub struct AppSettings {
     pub shortcut_new_file: String,
     #[serde(default = "default_shortcut_toggle_dry")]
     pub shortcut_toggle_dry: String,
+    #[serde(default = "default_shortcut_toggle_focus")]
+    pub shortcut_toggle_focus: String,
     #[serde(default = "default_shortcut_find")]
     pub shortcut_find: String,
     #[serde(default = "default_shortcut_find_all")]
@@ -193,7 +195,7 @@ fn default_light_theme() -> String { "ayuLight".to_string() }
 fn default_dark_theme() -> String { "dracula".to_string() }
 fn default_font_size() -> u32 { 20 }
 fn default_line_height() -> f64 { 1.6 }
-fn default_font_family() -> String { "Helvetica".to_string() }
+fn default_font_family() -> String { "Source Sans Pro".to_string() }
 fn default_padding() -> u32 { 50 }
 fn default_column_width() -> u32 { 600 }
 fn default_shortcut_open() -> String { "CmdOrCtrl+Shift+H".to_string() }
@@ -203,6 +205,7 @@ fn default_shortcut_toggle_sidebar() -> String { "Mod+\\".to_string() }
 fn default_shortcut_typewriter() -> String { "Mod+T".to_string() }
 fn default_shortcut_new_file() -> String { "Mod+N".to_string() }
 fn default_shortcut_toggle_dry() -> String { "Mod+Shift+R".to_string() }
+fn default_shortcut_toggle_focus() -> String { "Mod+Shift+Y".to_string() }
 fn default_shortcut_find() -> String { "Mod+F".to_string() }
 fn default_shortcut_find_all() -> String { "Mod+Shift+F".to_string() }
 fn default_shortcut_select_sentence() -> String { "Mod+L".to_string() }
@@ -245,6 +248,7 @@ impl Default for AppSettings {
             shortcut_typewriter: default_shortcut_typewriter(),
             shortcut_new_file: default_shortcut_new_file(),
             shortcut_toggle_dry: default_shortcut_toggle_dry(),
+            shortcut_toggle_focus: default_shortcut_toggle_focus(),
             shortcut_find: default_shortcut_find(),
             shortcut_find_all: default_shortcut_find_all(),
             shortcut_select_sentence: default_shortcut_select_sentence(),

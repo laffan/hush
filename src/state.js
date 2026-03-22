@@ -25,7 +25,7 @@ export class AppState {
       // Editor > Text
       fontSize: 20,
       lineHeight: 1.6,
-      fontFamily: "EB Garamond",
+      fontFamily: "Source Sans Pro",
       normalizeHeaders: false,
       padding: 50,
 
@@ -45,6 +45,7 @@ export class AppState {
       shortcutTypewriter: "Mod+T",
       shortcutNewFile: "Mod+N",
       shortcutToggleDry: "Mod+Shift+R",
+      shortcutToggleFocus: "Mod+Shift+Y",
       shortcutFind: "Mod+F",
       shortcutFindAll: "Mod+Shift+F",
 
@@ -108,6 +109,7 @@ export class AppState {
     this.typewriterMode = false;
     this.typewriterPosition = 0.6;
     this.dryMode = false;
+    this.focusMode = false;
     this.isFullscreen = false;
 
     // Autosave interval
@@ -626,6 +628,11 @@ export class AppState {
     this.dryMode = !this.dryMode;
     this.emit("mode-changed");
     this.updateSettings({ dryMode: this.dryMode });
+  }
+
+  toggleFocus() {
+    this.focusMode = !this.focusMode;
+    this.emit("mode-changed");
   }
 
   toggleFullscreen() {

@@ -61,7 +61,7 @@ function renderStyleEditorInline(state) {
 
   const lightThemes = themeList.filter(t => t.type === "light");
   const darkThemes = themeList.filter(t => t.type === "dark");
-  const builtInFonts = ["EB Garamond", "Inter", "Fira Code"];
+  const builtInFonts = ["Source Sans Pro", "Source Serif Pro", "Libre Franklin", "Libre Baskerville", "Karla", "Lora", "EB Garamond", "Inter", "Fira Code"];
   const systemFonts = [
     "Arial", "Avenir", "Avenir Next", "Baskerville", "Courier New",
     "Futura", "Garamond", "Georgia", "Gill Sans", "Helvetica",
@@ -72,6 +72,7 @@ function renderStyleEditorInline(state) {
     { key: "bg", label: "Background" },
     { key: "fg", label: "Text" },
     { key: "cursor", label: "Cursor" },
+    { key: "selection", label: "Selection" },
   ];
 
   const selectedFont = style.fontFamily || "";

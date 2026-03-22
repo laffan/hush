@@ -1,3 +1,4 @@
+@import './fonts.css';
 @import './base.css';
 @import './editor.css';
 @import './sidebar.css';
@@ -13,3 +14,5 @@
 @import './settings-modal.css';
 @import './sortable-list.css';
 @import './project-view.css';
+@import './focus-mode.css';
+@import './file-drop.css';

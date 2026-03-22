@@ -11,10 +11,11 @@ import { createPrivateModePlugin } from "./private-mode.js";
 import { createDryHighlightPlugin } from "./dry-highlight.js";
 import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
-import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence } from "./sentence-navigator.js";
+import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence, jumpToPrevParagraph, jumpToNextParagraph } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough } from "./formatting.js";
 import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./project-view.js";
+import { createFocusModePlugin } from "./focus-mode.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -147,15 +148,7 @@ export function createEditor(container, state) {
   });
 
   // Ratchet mode: block deletion, navigation, selection, undo
-  const ratchetBlockedKeys = [
-    "Backspace", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
-    "Home", "End", "PageUp", "PageDown",
-    "Mod-ArrowLeft", "Mod-ArrowRight", "Mod-ArrowUp", "Mod-ArrowDown",
-    "Shift-ArrowLeft", "Shift-ArrowRight", "Shift-ArrowUp", "Shift-ArrowDown",
-    "Shift-Home", "Shift-End",
-    "Mod-Shift-ArrowLeft", "Mod-Shift-ArrowRight", "Mod-Shift-ArrowUp", "Mod-Shift-ArrowDown",
-    "Mod-a", "Mod-z", "Mod-Shift-z", "Mod-x",
-  ];
+  const ratchetBlockedKeys = "Backspace Delete ArrowLeft ArrowRight ArrowUp ArrowDown Home End PageUp PageDown Mod-ArrowLeft Mod-ArrowRight Mod-ArrowUp Mod-ArrowDown Shift-ArrowLeft Shift-ArrowRight Shift-ArrowUp Shift-ArrowDown Shift-Home Shift-End Mod-Shift-ArrowLeft Mod-Shift-ArrowRight Mod-Shift-ArrowUp Mod-Shift-ArrowDown Mod-a Mod-z Mod-Shift-z Mod-x".split(" ");
   const ratchetKeymap = Prec.highest(
     keymap.of(ratchetBlockedKeys.map(key => ({ key, run: () => state.ratchetMode })))
   );
@@ -197,6 +190,9 @@ export function createEditor(container, state) {
       { key: "Mod-Shift-m", run: (view) => insertFootnote(view) },
       { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
       { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },
+      { key: "Mod-Shift-y", run: () => { state.toggleFocus(); return true; } },
+      { key: "Mod-ArrowUp", run: (view) => jumpToPrevParagraph(view) },
+      { key: "Mod-ArrowDown", run: (view) => jumpToNextParagraph(view) },
       { key: "Mod-n", run: () => { state.newFile(); return true; } },
       { key: "Mod-f", run: (view) => { openFindReplace(view, state); return true; } },
       { key: "Mod-Shift-f", run: (view) => { openFindAll(view, state); return true; } },
@@ -290,6 +286,7 @@ export function createEditor(container, state) {
   const privateModePlugin = createPrivateModePlugin(state);
   const dryHighlightPlugin = createDryHighlightPlugin(state);
   const footnotePlugin = createFootnotePlugin(state);
+  const focusModePlugin = createFocusModePlugin(state);
   const projectViewField = createProjectViewField(state);
   const separatorFilter = createSeparatorFilter(state);
 
@@ -310,6 +307,7 @@ export function createEditor(container, state) {
       ratchetMouseFilter,
       privateModePlugin,
       dryHighlightPlugin,
+      focusModePlugin,
       footnotePlugin,
       projectViewField,
       separatorFilter,
@@ -456,6 +454,8 @@ async function applyFullscreen(state) {
         }
         // Apply always-on-top based on user setting
         await invoke("set_always_on_top", { onTop: !!state.settings.alwaysOnTop });
+        // Re-focus window so it stays on top after exiting fullscreen
+        await win.setFocus();
       }
     } catch (e) {
       console.error("Fullscreen toggle failed:", e);

@@ -10,6 +10,7 @@ import ratchetRaw from "./sidebar_icons/ratchet.svg?raw";
 import privateRaw from "./sidebar_icons/private.svg?raw";
 import typewriterRaw from "./sidebar_icons/typewriter.svg?raw";
 import dryRaw from "./sidebar_icons/dry.svg?raw";
+import focusRaw from "./sidebar_icons/focus.svg?raw";
 import folderRaw from "./sidebar_icons/folder.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
@@ -32,6 +33,7 @@ export function createSidebar(container, state) {
       ${btn("private", "Private mode", icons.private)}
       ${btn("typewriter", "Typewriter mode", icons.typewriter)}
       ${btn("dry", "D.R.Y. highlighting", icons.dry)}
+      ${btn("focus", "Focus mode", icons.focus)}
     </div>
     <div class="sidebar-group sidebar-bottom">
       ${btn("autosave", "Save location", icons.folder)}
@@ -157,6 +159,11 @@ export function createSidebar(container, state) {
     updateActiveStates();
   });
 
+  container.querySelector('[data-action="focus"]').addEventListener("click", () => {
+    state.toggleFocus();
+    updateActiveStates();
+  });
+
   container.querySelector('[data-action="autosave"]').addEventListener("click", () => {
     showPanel("autosave", renderAutosavePanel(state));
     bindAutosavePanel(state, panelOverlay);
@@ -181,6 +188,7 @@ export function createSidebar(container, state) {
     setActive("private", state.privateMode);
     setActive("typewriter", state.typewriterMode);
     setActive("dry", state.dryMode);
+    setActive("focus", state.focusMode);
   }
 
   function setActive(action, isActive) {
@@ -262,6 +270,7 @@ const icons = {
   private: svgInner(privateRaw),
   typewriter: svgInner(typewriterRaw),
   dry: svgInner(dryRaw),
+  focus: svgInner(focusRaw),
   folder: svgInner(folderRaw),
   export: svgInner(exportRaw),
   settings: svgInner(settingsRaw),

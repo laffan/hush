@@ -24,6 +24,7 @@ const shortcutCategories = [
       { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
       { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
+      { key: "shortcutToggleFocus", label: "Toggle focus mode" },
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutFind", label: "Find / replace" },
       { key: "shortcutFindAll", label: "Find across files" },
@@ -105,6 +106,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutSelectPrevious) settings.shortcutSelectPrevious = "Mod+Shift+D";
   if (!settings.shortcutDeleteToSentenceEnd) settings.shortcutDeleteToSentenceEnd = "Alt+Shift+Backspace";
   if (!settings.shortcutToggleDry) settings.shortcutToggleDry = "Mod+Shift+R";
+  if (!settings.shortcutToggleFocus) settings.shortcutToggleFocus = "Mod+Shift+Y";
   if (!settings.shortcutBold) settings.shortcutBold = "Mod+B";
   if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";
   if (!settings.shortcutHighlight) settings.shortcutHighlight = "Mod+=";
@@ -284,6 +286,12 @@ function renderEditorTab() {
 // System font options
 function renderFontOptions(currentFamily) {
   const builtIn = [
+    { name: "Source Sans Pro", family: "Source Sans Pro" },
+    { name: "Source Serif Pro", family: "Source Serif Pro" },
+    { name: "Libre Franklin", family: "Libre Franklin" },
+    { name: "Libre Baskerville", family: "Libre Baskerville" },
+    { name: "Karla", family: "Karla" },
+    { name: "Lora", family: "Lora" },
     { name: "Helvetica", family: "Helvetica" },
     { name: "EB Garamond", family: "EB Garamond" },
     { name: "Inter", family: "Inter" },
