@@ -44,17 +44,45 @@ export function createSidebar(container, state) {
   let activePanel = null;
   let panelPinned = false;
 
-  // Pin toggle button — lives inside panel-overlay, shown on hover in inset mode
+  // Pin toggle button — fixed position, shown when hovering panel zone in inset mode
   const pinBtn = document.createElement("button");
   pinBtn.className = "panel-pin-btn";
   pinBtn.innerHTML = `<svg viewBox="0 0 12 12" width="12" height="12"><polygon points="0,0 12,12 12,0" fill="currentColor"/></svg>`;
   pinBtn.title = "Pin panel open";
-  panelOverlay.appendChild(pinBtn);
+  document.body.appendChild(pinBtn);
+
+  function updatePinBtnVisibility() {
+    const isInset = panelOverlay.classList.contains("panel-inset");
+    const isOpen = !panelOverlay.classList.contains("hidden");
+    if (panelPinned && isInset && isOpen) {
+      pinBtn.className = "panel-pin-btn pin-active";
+    } else {
+      pinBtn.classList.remove("pin-active", "pin-visible");
+    }
+  }
+
+  // Show pin button when mouse is in the panel-overlay zone (x: 50-350) and panel is open in inset mode
+  document.addEventListener("mousemove", (e) => {
+    const isInset = panelOverlay.classList.contains("panel-inset");
+    const isOpen = !panelOverlay.classList.contains("hidden");
+    if (!isInset || !isOpen) {
+      pinBtn.classList.remove("pin-visible");
+      if (!panelPinned) pinBtn.classList.remove("pin-active");
+      return;
+    }
+    if (panelPinned) return; // already showing via pin-active
+    if (e.clientX >= 50 && e.clientX <= 350) {
+      pinBtn.classList.add("pin-visible");
+    } else {
+      pinBtn.classList.remove("pin-visible");
+    }
+  });
 
   pinBtn.addEventListener("click", () => {
     panelPinned = !panelPinned;
     panelOverlay.classList.toggle("panel-pinned", panelPinned);
     pinBtn.title = panelPinned ? "Unpin panel" : "Pin panel open";
+    updatePinBtnVisibility();
   });
 
   function showPanel(name, content) {
@@ -64,7 +92,6 @@ export function createSidebar(container, state) {
     }
     activePanel = name;
     panelOverlay.innerHTML = content;
-    panelOverlay.appendChild(pinBtn);
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     // Recalculate column centering for inset mode
@@ -93,7 +120,6 @@ export function createSidebar(container, state) {
     }
     activePanel = "files";
     panelOverlay.innerHTML = "";
-    panelOverlay.appendChild(pinBtn);
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createFilesPanel(panelOverlay, state, hidePanel);
@@ -181,7 +207,6 @@ export function createSidebar(container, state) {
   state.on("show-files-panel", () => {
     activePanel = "files";
     panelOverlay.innerHTML = "";
-    panelOverlay.appendChild(pinBtn);
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createFilesPanel(panelOverlay, state, hidePanel);
@@ -193,6 +218,7 @@ export function createSidebar(container, state) {
     activePanel = null;
     panelPinned = false;
     panelOverlay.classList.remove("panel-pinned");
+    pinBtn.classList.remove("pin-active", "pin-visible");
     panelOverlay.classList.add("hidden");
     container.classList.remove("visible", "pinned");
     if (state._columnResizeHandler) state._columnResizeHandler();
@@ -201,7 +227,7 @@ export function createSidebar(container, state) {
   // Close panel on click outside (unless pinned in inset mode)
   document.addEventListener("mousedown", (e) => {
     const pinActive = panelPinned && panelOverlay.classList.contains("panel-inset");
-    if (activePanel && !pinActive && !panelOverlay.contains(e.target) && !container.contains(e.target)) {
+    if (activePanel && !pinActive && !panelOverlay.contains(e.target) && !container.contains(e.target) && !pinBtn.contains(e.target)) {
       hidePanel();
     }
   });
