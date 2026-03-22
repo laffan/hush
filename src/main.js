@@ -174,14 +174,30 @@ async function init() {
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
 
+  // Apply active style if one was persisted — must happen after editor creation
+  if (state.settings.activeStyleId) {
+    applyActiveStyle(state);
+  }
+
   // Load current file content into the newly created editor
-  if (state.currentFileId) {
+  // (init() already opened the last file/project — re-open only if editor wasn't set yet)
+  if (state.currentProjectId) {
+    await state.openProject(state.currentProjectId);
+  } else if (state.currentFileId) {
     await state.openFile(state.currentFileId);
   }
 
-  // If ratchet mode was restored from localStorage, activate UI (timer, visual state)
-  if (state.ratchetMode) {
+  // Restore mode states (typewriter, DRY) that were loaded from settings
+  if (state.typewriterMode || state.dryMode || state.ratchetMode) {
     state.emit("mode-changed");
+  }
+
+  // Restore scroll position after content is loaded
+  if (state._pendingScrollPosition != null && state.editor) {
+    requestAnimationFrame(() => {
+      state.editor.view.scrollDOM.scrollTop = state._pendingScrollPosition;
+      state._pendingScrollPosition = null;
+    });
   }
 
   // Always focus the editor when the window gains focus
@@ -243,6 +259,24 @@ async function init() {
     sidebarTrigger.style.pointerEvents = "auto";
   }
   document.addEventListener("mousemove", checkSidebarLeave);
+
+  // Save scroll position periodically (debounced on scroll)
+  let scrollSaveTimer = null;
+  if (state.editor) {
+    state.editor.view.scrollDOM.addEventListener("scroll", () => {
+      clearTimeout(scrollSaveTimer);
+      scrollSaveTimer = setTimeout(() => {
+        const scrollTop = state.editor.view.scrollDOM.scrollTop;
+        state.updateSettings({ scrollPosition: scrollTop });
+      }, 1000);
+    });
+  }
+  // Also save session state when the window becomes hidden
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      state.saveSessionState();
+    }
+  });
 
   await setupTauriIntegration(state);
 

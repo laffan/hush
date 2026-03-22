@@ -83,6 +83,13 @@ export class AppState {
       // Styles
       styles: [],
       activeStyleId: null,
+
+      // Session state
+      lastFileId: null,
+      lastProjectId: null,
+      typewriterMode: false,
+      dryMode: false,
+      scrollPosition: null,
     };
 
     this.currentFileId = null;
@@ -117,7 +124,20 @@ export class AppState {
         Object.assign(this.settings, await tauriInvoke("get_settings"));
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
-        if (this.files.length > 0) {
+
+        // Restore session state from settings
+        this.typewriterMode = !!this.settings.typewriterMode;
+        this.dryMode = !!this.settings.dryMode;
+        this._pendingScrollPosition = this.settings.scrollPosition || null;
+
+        // Restore last open file/project
+        const lastProjectId = this.settings.lastProjectId;
+        const lastFileId = this.settings.lastFileId;
+        if (lastProjectId && this._findNode(this.fileTree, lastProjectId)) {
+          await this.openProject(lastProjectId);
+        } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
+          await this.openFile(lastFileId);
+        } else if (this.files.length > 0) {
           await this.openFile(this.files[0].id);
         } else {
           await this.newFile();
@@ -410,6 +430,7 @@ export class AppState {
       console.log("[openProject] NO EDITOR");
     }
     this.emit("file-opened");
+    this.updateSettings({ lastProjectId: projectId, lastFileId: null });
   }
 
   async saveProjectContent() {
@@ -502,6 +523,7 @@ export class AppState {
       if (file) { this.currentFileId = file.id; if (this.editor) this.editor.setContent(file.content); }
     }
     this.emit("file-opened");
+    this.updateSettings({ lastFileId: this.currentFileId, lastProjectId: null });
   }
 
   async deleteFile(id) {
@@ -558,6 +580,20 @@ export class AppState {
     this.emit("settings-changed");
   }
 
+  // Session state persistence
+  async saveSessionState() {
+    const scrollTop = this.editor
+      ? this.editor.view.scrollDOM.scrollTop
+      : null;
+    await this.updateSettings({
+      lastFileId: this.currentFileId || null,
+      lastProjectId: this.currentProjectId || null,
+      typewriterMode: this.typewriterMode,
+      dryMode: this.dryMode,
+      scrollPosition: scrollTop,
+    });
+  }
+
   // Ratchet mode
   startRatchet(minutes) {
     const endTime = Date.now() + minutes * 60 * 1000;
@@ -583,11 +619,13 @@ export class AppState {
     if (this.ratchetMode) return;
     this.typewriterMode = !this.typewriterMode;
     this.emit("mode-changed");
+    this.updateSettings({ typewriterMode: this.typewriterMode });
   }
 
   toggleDry() {
     this.dryMode = !this.dryMode;
     this.emit("mode-changed");
+    this.updateSettings({ dryMode: this.dryMode });
   }
 
   toggleFullscreen() {

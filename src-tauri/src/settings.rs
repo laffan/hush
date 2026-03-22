@@ -124,6 +124,26 @@ pub struct AppSettings {
     #[serde(default)]
     pub active_style_id: Option<String>,
 
+    // Session state (persisted across restarts)
+    #[serde(default)]
+    pub window_width: Option<f64>,
+    #[serde(default)]
+    pub window_height: Option<f64>,
+    #[serde(default)]
+    pub window_x: Option<f64>,
+    #[serde(default)]
+    pub window_y: Option<f64>,
+    #[serde(default)]
+    pub last_file_id: Option<String>,
+    #[serde(default)]
+    pub last_project_id: Option<String>,
+    #[serde(default)]
+    pub typewriter_mode: bool,
+    #[serde(default)]
+    pub dry_mode: bool,
+    #[serde(default)]
+    pub scroll_position: Option<f64>,
+
     #[serde(skip)]
     pub data_dir: PathBuf,
 }
@@ -253,6 +273,15 @@ impl Default for AppSettings {
             footnote_both_margins: default_footnote_both_margins(),
             styles: Vec::new(),
             active_style_id: None,
+            window_width: None,
+            window_height: None,
+            window_x: None,
+            window_y: None,
+            last_file_id: None,
+            last_project_id: None,
+            typewriter_mode: false,
+            dry_mode: false,
+            scroll_position: None,
             data_dir: PathBuf::new(),
         }
     }

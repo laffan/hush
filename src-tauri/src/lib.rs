@@ -160,6 +160,21 @@ fn get_data_dir() -> PathBuf {
 }
 
 #[cfg(desktop)]
+fn save_window_geometry(window: &tauri::WebviewWindow, state: &AppState) {
+    if let Ok(mut settings) = state.settings.lock() {
+        if let Ok(size) = window.inner_size() {
+            settings.window_width = Some(size.width as f64);
+            settings.window_height = Some(size.height as f64);
+        }
+        if let Ok(pos) = window.outer_position() {
+            settings.window_x = Some(pos.x as f64);
+            settings.window_y = Some(pos.y as f64);
+        }
+        let _ = settings.save();
+    }
+}
+
+#[cfg(desktop)]
 fn setup_tray_menu(app: &AppHandle, shortcut_label: &str) -> Result<(), Box<dyn std::error::Error>> {
     let toggle = MenuItem::with_id(
         app, "toggle_editor",
@@ -250,6 +265,11 @@ pub fn run() {
                 app.on_menu_event(move |app_handle, event| {
                     match event.id().as_ref() {
                         "quit" => {
+                            if let Some(window) = handle_clone2.get_webview_window("main") {
+                                if let Some(state) = window.try_state::<AppState>() {
+                                    save_window_geometry(&window, &state);
+                                }
+                            }
                             app_handle.exit(0);
                         }
                         "toggle_editor" => {
@@ -282,8 +302,17 @@ pub fn run() {
                     let _ = app.set_activation_policy(policy);
                 }
 
-                // Show the window
+                // Restore window geometry and show the window
                 if let Some(window) = app.get_webview_window("main") {
+                    let app_state: State<AppState> = app.state();
+                    let settings = app_state.settings.lock().unwrap();
+                    if let (Some(w), Some(h)) = (settings.window_width, settings.window_height) {
+                        let _ = window.set_size(tauri::LogicalSize::new(w, h));
+                    }
+                    if let (Some(x), Some(y)) = (settings.window_x, settings.window_y) {
+                        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+                    }
+                    drop(settings);
                     let _ = window.show();
                 }
             }
@@ -295,6 +324,9 @@ pub fn run() {
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
+                    if let Some(state) = window.try_state::<AppState>() {
+                        save_window_geometry(window, &state);
+                    }
                     let _ = window.hide();
                 }
             }
