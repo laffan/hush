@@ -267,7 +267,9 @@ pub fn run() {
                         "quit" => {
                             if let Some(window) = handle_clone2.get_webview_window("main") {
                                 if let Some(state) = window.try_state::<AppState>() {
-                                    save_window_geometry(window.as_ref(), &state);
+                                    if let Some(win) = handle_clone2.get_window("main") {
+                                        save_window_geometry(&win, &state);
+                                    }
                                 }
                             }
                             app_handle.exit(0);
