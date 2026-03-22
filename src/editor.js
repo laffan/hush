@@ -12,7 +12,7 @@ import { createDryHighlightPlugin } from "./dry-highlight.js";
 import { openSettingsWindow } from "./settings-ui.js";
 import { openFindReplace, openFindAll } from "./find-replace.js";
 import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence } from "./sentence-navigator.js";
-import { toggleBold, toggleItalic, toggleHighlight, toggleComment } from "./formatting.js";
+import { toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough } from "./formatting.js";
 import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./project-view.js";
 
@@ -193,6 +193,7 @@ export function createEditor(container, state) {
       { key: "Mod-i", run: (view) => toggleItalic(view) },
       { key: "Mod-=", run: (view) => toggleHighlight(view) },
       { key: "Mod-/", run: (view) => toggleComment(view) },
+      { key: "Mod-`", run: (view) => toggleStrikethrough(view) },
       { key: "Mod-Shift-m", run: (view) => insertFootnote(view) },
       { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
       { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },

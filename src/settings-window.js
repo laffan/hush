@@ -52,6 +52,7 @@ const shortcutCategories = [
       { key: "shortcutItalic", label: "Italic" },
       { key: "shortcutHighlight", label: "Highlight" },
       { key: "shortcutComment", label: "Comment" },
+      { key: "shortcutStrikethrough", label: "Strikethrough" },
       { key: "shortcutInsertFootnote", label: "Insert footnote" },
     ],
   },
@@ -108,6 +109,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";
   if (!settings.shortcutHighlight) settings.shortcutHighlight = "Mod+=";
   if (!settings.shortcutComment) settings.shortcutComment = "Mod+/";
+  if (!settings.shortcutStrikethrough) settings.shortcutStrikethrough = "Mod+`";
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
 
   render();

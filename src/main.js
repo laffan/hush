@@ -12,13 +12,13 @@ const fontFallbacks = {
   "Fira Code": "'Fira Code', 'Fira Mono', 'Consolas', monospace",
 };
 
-// Known theme background colors for luminance calculation
+// Known theme background colors — must match thememirror's actual settings.background
 const themeBackgrounds = {
-  dracula: "#282a36", ayuLight: "#fafafa", clouds: "#ffffff",
-  noctisLilac: "#f2f1f8", rosePineDawn: "#faf4ed", solarizedLight: "#fdf6e3",
-  smoothy: "#f4e8e1", amy: "#200020", barf: "#1a2b34", bespin: "#28211c",
-  birdsOfParadise: "#3b2627", boysAndGirls: "#1c1d21", cobalt: "#002240",
-  coolGlow: "#060521", espresso: "#2a211c", tomorrow: "#1d1f21",
+  dracula: "#2d2f3f", ayuLight: "#fcfcfc", clouds: "#ffffff",
+  noctisLilac: "#f2f1f8", rosePineDawn: "#faf4ed", solarizedLight: "#fef7e5",
+  smoothy: "#ffffff", amy: "#200020", barf: "#15191e", bespin: "#2e241d",
+  birdsOfParadise: "#3b2627", boysAndGirls: "#000205", cobalt: "#00254b",
+  coolGlow: "#060521", espresso: "#ffffff", tomorrow: "#ffffff",
 };
 
 function hexLuminance(hex) {

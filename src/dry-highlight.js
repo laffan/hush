@@ -213,11 +213,14 @@ export function createDryHighlightPlugin(stateRef) {
   return ViewPlugin.fromClass(
     class {
       constructor(view) {
+        this._wasDry = stateRef.dryMode;
         this.decorations = this.buildDecorations(view);
       }
 
       update(update) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        const modeChanged = stateRef.dryMode !== this._wasDry;
+        this._wasDry = stateRef.dryMode;
+        if (modeChanged || update.docChanged || update.viewportChanged || update.selectionSet) {
           this.decorations = this.buildDecorations(update.view);
         }
       }

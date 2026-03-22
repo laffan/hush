@@ -17,6 +17,7 @@ export function createSidebar(container, state) {
       ${btn("ratchet", "Ratchet mode", icons.ratchet)}
       ${btn("private", "Private mode", icons.private)}
       ${btn("typewriter", "Typewriter mode", icons.typewriter)}
+      ${btn("dry", "D.R.Y. highlighting", icons.dry)}
     </div>
     <div class="sidebar-group sidebar-bottom">
       ${btn("autosave", "Save location", icons.folder)}
@@ -94,6 +95,11 @@ export function createSidebar(container, state) {
     updateActiveStates();
   });
 
+  container.querySelector('[data-action="dry"]').addEventListener("click", () => {
+    state.toggleDry();
+    updateActiveStates();
+  });
+
   container.querySelector('[data-action="autosave"]').addEventListener("click", () => {
     showPanel("autosave", renderAutosavePanel(state));
     bindAutosavePanel(state, panelOverlay);
@@ -117,6 +123,7 @@ export function createSidebar(container, state) {
     setActive("ratchet", state.ratchetMode);
     setActive("private", state.privateMode);
     setActive("typewriter", state.typewriterMode);
+    setActive("dry", state.dryMode);
   }
 
   function setActive(action, isActive) {
@@ -197,6 +204,11 @@ const icons = {
   typewriter: `<line x1="4" y1="9" x2="20" y2="9"/>
     <line x1="4" y1="15" x2="20" y2="15"/>
     <line x1="12" y1="3" x2="12" y2="21"/>`,
+
+  dry: `<line x1="5" y1="7" x2="19" y2="7"/>
+    <line x1="5" y1="9" x2="14" y2="9" stroke-width="0.8"/>
+    <line x1="5" y1="15" x2="19" y2="15"/>
+    <line x1="5" y1="17" x2="14" y2="17" stroke-width="0.8"/>`,
 
   folder: `<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>`,
 

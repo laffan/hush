@@ -74,3 +74,8 @@ export function toggleHighlight(view) {
 export function toggleComment(view) {
   return toggleWrap(view, "%%");
 }
+
+/** Toggle ~~strikethrough~~ on the selection. */
+export function toggleStrikethrough(view) {
+  return toggleWrap(view, "~~");
+}
