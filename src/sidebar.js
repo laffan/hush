@@ -194,8 +194,10 @@ const icons = {
     <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
     <circle cx="5" cy="17" r="1.5" fill="currentColor" stroke="none"/>`,
 
-  ratchet: `<circle cx="12" cy="12" r="10"/>
-    <polyline points="12 6 12 12 16 14"/>`,
+  ratchet: `<path d="M8.5 3 C8.5 3 7 5.5 7 8 C7 10.5 8.5 12 12 12 C15.5 12 17 10.5 17 8 C17 5.5 15.5 3 15.5 3" fill="none"/>
+    <line x1="7.5" y1="8" x2="16.5" y2="8"/>
+    <rect x="9" y="12" width="6" height="3" rx="0.5"/>
+    <line x1="12" y1="15" x2="12" y2="21"/>`,
 
   private: `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
     <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
@@ -205,10 +207,8 @@ const icons = {
     <line x1="4" y1="15" x2="20" y2="15"/>
     <line x1="12" y1="3" x2="12" y2="21"/>`,
 
-  dry: `<line x1="5" y1="7" x2="19" y2="7"/>
-    <line x1="5" y1="9" x2="14" y2="9" stroke-width="0.8"/>
-    <line x1="5" y1="15" x2="19" y2="15"/>
-    <line x1="5" y1="17" x2="14" y2="17" stroke-width="0.8"/>`,
+  dry: `<rect x="3" y="3" width="12" height="12" rx="2"/>
+    <rect x="9" y="9" width="12" height="12" rx="2"/>`,
 
   folder: `<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>`,
 
@@ -219,11 +219,11 @@ const icons = {
   settings: `<circle cx="12" cy="12" r="3"/>
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
 
-  styles: `<polygon points="2,6 11,12 2,18"/>
-    <polygon points="22,6 13,12 22,18"/>
-    <rect x="10.5" y="9.5" width="3" height="5" rx="1" fill="currentColor" stroke="none"/>
-    <line x1="12" y1="9.5" x2="12" y2="7" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="12" y1="14.5" x2="12" y2="17" stroke-width="1.2" stroke-linecap="round"/>`,
+  styles: `<path d="M3,7.5 Q2,7 2,7.8 L2,16.2 Q2,17 3,16.5 L10,12 Z" />
+    <path d="M21,7.5 Q22,7 22,7.8 L22,16.2 Q22,17 21,16.5 L14,12 Z" />
+    <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+    <line x1="12" y1="9.8" x2="12" y2="7" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="12" y1="14.2" x2="12" y2="17" stroke-width="1.2" stroke-linecap="round"/>`,
 
 };
 
