@@ -253,6 +253,43 @@ html.ios, html.ios body {
   pointer-events: none;
 }
 
+/* Pin button — bottom-right of panel, visible on hover in inset mode only */
+.panel-pin-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--sidebar-fg);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Only show in inset (push-in) mode, on hover */
+#panel-overlay.panel-inset:hover .panel-pin-btn {
+  opacity: 0.4;
+}
+#panel-overlay.panel-inset:hover .panel-pin-btn:hover {
+  opacity: 0.8;
+}
+
+/* When pinned, always show */
+#panel-overlay.panel-pinned .panel-pin-btn {
+  opacity: 0.8;
+}
+
+/* Hide in overlay mode */
+#panel-overlay.panel-overlay-mode .panel-pin-btn {
+  display: none;
+}
+
 .panel-title {
   font-size: 14px;
   text-transform: uppercase;

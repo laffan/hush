@@ -42,6 +42,20 @@ export function createSidebar(container, state) {
 
   const panelOverlay = document.getElementById("panel-overlay");
   let activePanel = null;
+  let panelPinned = false;
+
+  // Pin toggle button — lives inside panel-overlay, shown on hover in inset mode
+  const pinBtn = document.createElement("button");
+  pinBtn.className = "panel-pin-btn";
+  pinBtn.innerHTML = `<svg viewBox="0 0 12 12" width="12" height="12"><polygon points="0,0 12,12 12,0" fill="currentColor"/></svg>`;
+  pinBtn.title = "Pin panel open";
+  panelOverlay.appendChild(pinBtn);
+
+  pinBtn.addEventListener("click", () => {
+    panelPinned = !panelPinned;
+    panelOverlay.classList.toggle("panel-pinned", panelPinned);
+    pinBtn.title = panelPinned ? "Unpin panel" : "Pin panel open";
+  });
 
   function showPanel(name, content) {
     if (activePanel === name) {
@@ -50,6 +64,7 @@ export function createSidebar(container, state) {
     }
     activePanel = name;
     panelOverlay.innerHTML = content;
+    panelOverlay.appendChild(pinBtn);
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     // Recalculate column centering for inset mode
@@ -57,6 +72,7 @@ export function createSidebar(container, state) {
   }
 
   function hidePanel() {
+    if (panelPinned && panelOverlay.classList.contains("panel-inset")) return;
     activePanel = null;
     panelOverlay.classList.add("hidden");
     container.classList.remove("visible");
@@ -77,6 +93,7 @@ export function createSidebar(container, state) {
     }
     activePanel = "files";
     panelOverlay.innerHTML = "";
+    panelOverlay.appendChild(pinBtn);
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createFilesPanel(panelOverlay, state, hidePanel);
@@ -164,6 +181,7 @@ export function createSidebar(container, state) {
   state.on("show-files-panel", () => {
     activePanel = "files";
     panelOverlay.innerHTML = "";
+    panelOverlay.appendChild(pinBtn);
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createFilesPanel(panelOverlay, state, hidePanel);
@@ -173,14 +191,17 @@ export function createSidebar(container, state) {
   // Cmd+\ hide support — reset internal state
   state.on("hide-panel", () => {
     activePanel = null;
+    panelPinned = false;
+    panelOverlay.classList.remove("panel-pinned");
     panelOverlay.classList.add("hidden");
     container.classList.remove("visible", "pinned");
     if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
-  // Close panel on click outside
+  // Close panel on click outside (unless pinned in inset mode)
   document.addEventListener("mousedown", (e) => {
-    if (activePanel && !panelOverlay.contains(e.target) && !container.contains(e.target)) {
+    const pinActive = panelPinned && panelOverlay.classList.contains("panel-inset");
+    if (activePanel && !pinActive && !panelOverlay.contains(e.target) && !container.contains(e.target)) {
       hidePanel();
     }
   });

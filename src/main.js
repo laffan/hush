@@ -244,16 +244,16 @@ async function init() {
   });
   // Hide sidebar when mouse leaves the sidebar area entirely
   function checkSidebarLeave(e) {
-    // Don't auto-hide if pinned via Cmd+/
+    // Don't auto-hide if pinned via Cmd+\ or panel is pinned (inset mode only)
     if (sidebar.classList.contains("pinned")) return;
+    if (panelOverlay.classList.contains("panel-pinned") && panelOverlay.classList.contains("panel-inset")) return;
     const x = e.clientX;
     // Still inside sidebar zone
     if (x <= 50) return;
     // Still inside panel zone (if panel is open)
-    const panel = document.getElementById("panel-overlay");
-    if (panel && !panel.classList.contains("hidden") && x <= 350) return;
+    if (!panelOverlay.classList.contains("hidden") && x <= 350) return;
     // Don't hide sidebar if a panel is open — buttons should stay accessible
-    if (panel && !panel.classList.contains("hidden")) return;
+    if (!panelOverlay.classList.contains("hidden")) return;
     sidebar.classList.remove("visible");
     // Re-enable trigger for next hover
     sidebarTrigger.style.pointerEvents = "auto";
