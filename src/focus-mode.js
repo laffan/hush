@@ -71,11 +71,15 @@ export function createFocusModePlugin(state) {
   return ViewPlugin.fromClass(
     class {
       constructor(view) {
+        this.lastFocusMode = state.focusMode;
         this.decorations = this.buildDecorations(view);
       }
 
       update(update) {
+        const focusChanged = state.focusMode !== this.lastFocusMode;
+        this.lastFocusMode = state.focusMode;
         if (
+          focusChanged ||
           update.docChanged ||
           update.selectionSet ||
           update.viewportChanged
