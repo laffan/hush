@@ -25,7 +25,9 @@ main.js          ←──IPC──→ lib.rs (commands)
 ├── themes.js
 ├── find-replace.js
 ├── private-mode.js
+├── dry-highlight.js
 ├── sentence-navigator.js
+├── footnotes.js
 └── formatting.js
 ```
 
@@ -66,10 +68,12 @@ The CodeMirror 6 instance is configured with:
 - **Theme compartment** for live theme swapping without recreating the editor
 - **Highlight compartment** for reconfiguring heading styles on settings change
 - **Ratchet keymap** (`Prec.highest`) that intercepts all deletion, navigation, selection, undo, redo, and cut keys when ratchet mode is active
-- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+\, Cmd+T, Cmd+N, Cmd+F, Cmd+Shift+F, Cmd+D, plus sentence navigation and formatting shortcuts (see below)
+- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+\, Cmd+T, Cmd+Shift+R, Cmd+N, Cmd+F, Cmd+Shift+F, Cmd+D, plus sentence navigation and formatting shortcuts (see below)
 - **Transaction filter** that blocks deletions and non-end insertions in ratchet mode
 - **Mouse filter** that blocks mousedown in ratchet mode
-- **Private mode plugin** (ViewPlugin) that decorates every non-whitespace character with a CSS class
+- **Private mode plugin** (ViewPlugin) that decorates every non-whitespace character with a CSS class. Also hides footnote decorations and marginalia.
+- **D.R.Y. highlighting plugin** (ViewPlugin) that highlights repeated words/phrases within a configurable range
+- **Footnote plugin** (ViewPlugin) that decorates `[^id]` references with colored dots or underlines, and shows definitions as overlays or marginalia
 - **Typewriter mode** — locks cursor to a fixed screen position (default 60% from top). A draggable boundary line lets the user reposition. Extra padding is added so the first/last line can reach the boundary.
 - **Ratchet scroll** — pins the current (always last) line to vertical center (50%) of the window
 
@@ -86,8 +90,10 @@ The sidebar is a fixed 50px column on the left edge with icon buttons. It's hidd
 - Ratchet mode — shows a duration dropdown (5–30 min), toggles off if active
 - Private mode — toggles private mode
 - Typewriter mode — toggles typewriter mode
+- D.R.Y. highlighting — toggles repeated-word highlighting
 - Save location — opens the autosave/Obsidian panel
 - Export — exports the current file/project as `.md` via native save dialog. For projects, separator markers are replaced with `---` for a clean export.
+- Settings — (iOS only) opens settings as a modal overlay
 
 Panels (file tree, styles, autosave settings) render into `#panel-overlay`, a fixed div to the right of the sidebar. The panel layout is responsive: when the window is wide enough (sidebar + panel ≤ available padding), the panel insets beside the content; otherwise it overlays as a modal.
 
@@ -163,7 +169,7 @@ Markdown formatting toggle commands. Uses a generic `toggleWrap(view, marker)` f
 2. **Already wrapped** — detects markers immediately outside the selection (or inside if the selection includes them) and removes them
 3. **Wrap** — wraps the selection with the marker on both sides
 
-Exports: `toggleBold` (`**`), `toggleItalic` (`*`), `toggleHighlight` (`==`), `toggleComment` (`%%`).
+Exports: `toggleBold` (`**`), `toggleItalic` (`*`), `toggleHighlight` (`==`), `toggleComment` (`%%`), `toggleStrikethrough` (`~~`).
 
 ### Tauri Bridge (`tauri-bridge.js`)
 
@@ -171,12 +177,13 @@ Handles global shortcut registration via `@tauri-apps/plugin-global-shortcut`. S
 
 ### Settings Window (`settings-window.js`)
 
-Runs in a separate Tauri WebviewWindow. Loads settings via `invoke("get_settings")`, saves via `invoke("save_settings")`, and notifies the main window via `emit("settings-updated", settings)`.
+Runs in a separate Tauri WebviewWindow (desktop) or as a modal overlay (iOS/iPadOS). Loads settings via `invoke("get_settings")`, saves via `invoke("save_settings")`, and notifies the main window via `emit("settings-updated", settings)`. On iOS, the modal uses a direct callback instead of cross-window emit.
 
 **Tabs:**
 - **General** — visibility (menu bar / dock / both), always-on-top
-- **Editor** — appearance (light/dark/auto), default light and dark themes, font family (3 built-in + system fonts), normalize headers toggle, font size (12–36px), line height (1.0–2.5)
+- **Editor** — appearance (light/dark/auto), default light and dark themes, font family (4 built-in + system fonts), normalize headers toggle, footnote settings (font size, font family, colors, margin placement), font size (12–36px), line height (1.0–2.5)
 - **Shortcuts** — all customizable shortcuts organized into three categories (General, Editing, Formatting) with conflict detection. Click a shortcut to record a new one; conflicts auto-swap.
+- **D.R.Y.** — detection range (paragraph/two paragraphs/document), ignore proper nouns, include base word repeats, customizable stopwords list with search/add/remove/reset
 
 ### Themes (`themes.js`)
 
@@ -281,6 +288,7 @@ All shortcuts are customizable in Settings > Shortcuts tab. Shortcuts are organi
 | Toggle private mode | `Cmd+Shift+P` | Global / Editor |
 | Toggle sidebar | `Cmd+\` | Editor |
 | Toggle typewriter mode | `Cmd+T` | Editor |
+| Toggle D.R.Y. highlighting | `Cmd+Shift+R` | Editor |
 | New file | `Cmd+N` | Editor |
 | Find / replace | `Cmd+F` | Editor |
 | Find across files | `Cmd+Shift+F` | Editor |
@@ -314,6 +322,8 @@ Markdown formatting toggles. Each command wraps the current selection in the cor
 | Italic | `Cmd+I` | Editor |
 | Highlight | `Cmd+=` | Editor |
 | Comment | `Cmd+/` | Editor |
+| Strikethrough | `` Cmd+` `` | Editor |
+| Insert footnote | `Cmd+Shift+M` | Editor |
 
 The Comment shortcut overrides CodeMirror's default HTML comment toggle, wrapping text in Obsidian-flavored markdown comments (`%%text%%`) instead.
 
