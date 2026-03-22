@@ -160,7 +160,7 @@ fn get_data_dir() -> PathBuf {
 }
 
 #[cfg(desktop)]
-fn save_window_geometry(window: &tauri::Window, state: &AppState) {
+fn save_window_geometry(window: &tauri::WebviewWindow, state: &AppState) {
     if let Ok(mut settings) = state.settings.lock() {
         if let Ok(size) = window.inner_size() {
             settings.window_width = Some(size.width as f64);
@@ -267,9 +267,7 @@ pub fn run() {
                         "quit" => {
                             if let Some(window) = handle_clone2.get_webview_window("main") {
                                 if let Some(state) = window.try_state::<AppState>() {
-                                    if let Some(win) = handle_clone2.get_window("main") {
-                                        save_window_geometry(&win, &state);
-                                    }
+                                    save_window_geometry(&window, &state);
                                 }
                             }
                             app_handle.exit(0);
@@ -326,8 +324,10 @@ pub fn run() {
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    if let Some(state) = window.try_state::<AppState>() {
-                        save_window_geometry(window, &state);
+                    if let Some(ww) = window.app_handle().get_webview_window("main") {
+                        if let Some(state) = ww.try_state::<AppState>() {
+                            save_window_geometry(&ww, &state);
+                        }
                     }
                     let _ = window.hide();
                 }
