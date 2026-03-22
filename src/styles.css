@@ -16,7 +16,7 @@
   --panel-border: #333;
   --accent: #666;
   --private-box: #e0e0e0;
-  --font-family: 'EB Garamond', 'Georgia', 'Times New Roman', serif;
+  --font-family: 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
   --font-size: 20px;
   --line-height: 1.6;
   --padding: 50px;
@@ -1143,6 +1143,8 @@ html.ios, html.ios body {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  /* Use the same darkened theme color as the main sidebar */
+  --tab-bg: var(--sidebar-bg);
 }
 
 .settings-modal-root {

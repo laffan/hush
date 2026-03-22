@@ -6,6 +6,7 @@ import { applyAppearance, isIOS } from "./settings-ui.js";
 import { getThemeById } from "./themes.js";
 
 const fontFallbacks = {
+  "Helvetica": "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
   "EB Garamond": "'EB Garamond', 'Georgia', 'Times New Roman', serif",
   "Inter": "'Inter', system-ui, -apple-system, sans-serif",
   "Fira Code": "'Fira Code', 'Fira Mono', 'Consolas', monospace",

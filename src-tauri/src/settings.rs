@@ -173,7 +173,7 @@ fn default_light_theme() -> String { "ayuLight".to_string() }
 fn default_dark_theme() -> String { "dracula".to_string() }
 fn default_font_size() -> u32 { 20 }
 fn default_line_height() -> f64 { 1.6 }
-fn default_font_family() -> String { "EB Garamond".to_string() }
+fn default_font_family() -> String { "Helvetica".to_string() }
 fn default_padding() -> u32 { 50 }
 fn default_column_width() -> u32 { 600 }
 fn default_shortcut_open() -> String { "CmdOrCtrl+Shift+H".to_string() }

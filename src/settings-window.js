@@ -282,6 +282,7 @@ function renderEditorTab() {
 // System font options
 function renderFontOptions(currentFamily) {
   const builtIn = [
+    { name: "Helvetica", family: "Helvetica" },
     { name: "EB Garamond", family: "EB Garamond" },
     { name: "Inter", family: "Inter" },
     { name: "Fira Code", family: "Fira Code" },
@@ -311,7 +312,7 @@ function getSystemFonts() {
   const common = [
     "Arial", "Avenir", "Avenir Next", "Baskerville", "Bookman Old Style",
     "Courier New", "Didot", "Futura", "Garamond", "Geneva", "Georgia",
-    "Gill Sans", "Helvetica", "Helvetica Neue", "Hoefler Text",
+    "Gill Sans", "Hoefler Text",
     "Lucida Grande", "Menlo", "Monaco", "Optima", "Palatino",
     "SF Mono", "SF Pro", "SF Pro Display", "SF Pro Rounded", "SF Pro Text",
     "System UI", "Times New Roman", "Trebuchet MS", "Verdana",
