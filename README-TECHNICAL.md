@@ -25,17 +25,19 @@ main.js          ←──IPC──→ lib.rs (commands)
 ├── themes.js
 ├── find-replace.js
 ├── private-mode.js
+├── focus-mode.js
 ├── dry-highlight.js
 ├── sentence-navigator.js
 ├── footnotes.js
-└── formatting.js
+├── formatting.js
+└── file-drop.js
 ```
 
 The frontend and backend communicate via Tauri's `invoke` IPC for commands (settings, file CRUD) and `emit`/`listen` for events (settings updates, fullscreen toggle).
 
 ## Development Rules
 
-There is a STRICT rule that no code file may be longer than 700 lines.  
+There is a STRICT rule that no code file may be longer than 700 lines.
 
 ## Frontend
 
@@ -45,6 +47,14 @@ There is a STRICT rule that no code file may be longer than 700 lines.
 - **`settings.html`** — Settings window (separate Tauri WebviewWindow). Loads `src/settings-window.js`.
 
 Both are built by Vite as separate Rollup inputs.
+
+### Fonts
+
+Google Fonts are bundled locally via `@fontsource` npm packages for offline use. Font CSS is imported from `main.js` (JS imports, not CSS `@import`) so Vite can resolve npm package paths correctly.
+
+**Built-in fonts:** Source Sans Pro (default), Source Serif Pro, Libre Franklin, Libre Baskerville, Karla, Lora, EB Garamond, Inter, Fira Code, Helvetica (system).
+
+Font fallback chains are defined in `main.js` via the `fontFallbacks` object.
 
 ### State Management (`state.js`)
 
@@ -68,11 +78,12 @@ The CodeMirror 6 instance is configured with:
 - **Theme compartment** for live theme swapping without recreating the editor
 - **Highlight compartment** for reconfiguring heading styles on settings change
 - **Ratchet keymap** (`Prec.highest`) that intercepts all deletion, navigation, selection, undo, redo, and cut keys when ratchet mode is active
-- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+\, Cmd+T, Cmd+Shift+R, Cmd+N, Cmd+F, Cmd+Shift+F, Cmd+D, plus sentence navigation and formatting shortcuts (see below)
+- **Global keymap** for Cmd+,, Cmd+Shift+P, Cmd+\, Cmd+T, Cmd+Shift+R, Cmd+Shift+Y, Cmd+Up/Down, Cmd+N, Cmd+F, Cmd+Shift+F, Cmd+D, plus sentence navigation and formatting shortcuts (see below)
 - **Transaction filter** that blocks deletions and non-end insertions in ratchet mode
 - **Mouse filter** that blocks mousedown in ratchet mode
 - **Private mode plugin** (ViewPlugin) that decorates every non-whitespace character with a CSS class. Also hides footnote decorations and marginalia.
 - **D.R.Y. highlighting plugin** (ViewPlugin) that highlights repeated words/phrases within a configurable range
+- **Focus mode plugin** (ViewPlugin) that dims all text except the current sentence to 50% opacity
 - **Footnote plugin** (ViewPlugin) that decorates `[^id]` references with colored dots or underlines, and shows definitions as overlays or marginalia
 - **Typewriter mode** — locks cursor to a fixed screen position (default 60% from top). A draggable boundary line lets the user reposition. Extra padding is added so the first/last line can reach the boundary.
 - **Ratchet scroll** — pins the current (always last) line to vertical center (50%) of the window
@@ -91,6 +102,7 @@ The sidebar is a fixed 50px column on the left edge with icon buttons. It's hidd
 - Private mode — toggles private mode
 - Typewriter mode — toggles typewriter mode
 - D.R.Y. highlighting — toggles repeated-word highlighting
+- Focus mode — toggles focus mode (crosshair icon)
 - Save location — opens the autosave/Obsidian panel
 - Export — exports the current file/project as `.md` via native save dialog. For projects, separator markers are replaced with `---` for a clean export.
 - Settings — (iOS only) opens settings as a modal overlay
@@ -128,18 +140,23 @@ Footnotes remain at the bottom of their respective sections (above the separator
 
 ### Styles (`sidebar.js`, `main.js`)
 
-Styles are named presets that combine a theme, font, font size, line height, and optional color overrides (background, text, cursor) into a single switchable configuration. They are managed entirely through the sidebar's Styles panel.
+Styles are named presets that combine a theme, font, font size, line height, and optional color overrides (background, text, cursor, selection) into a single switchable configuration. They are managed entirely through the sidebar's Styles panel.
 
 **Style data model:**
 ```
-{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides: { bg, fg, cursor } }
+{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides: { bg, fg, cursor, selection } }
 ```
 
 - **List view** — shows all saved styles plus a "Default" option. Click to activate, hover to live-preview.
 - **Inline editor** — accordion-style form that opens below the "New Style" button or below the style being edited. Includes custom dropdowns for theme and font selection, sliders for size/height, and color pickers with reset buttons.
 - **Live preview** — every form change emits a `style-preview` event that temporarily applies the style to the editor. On cancel or mouse-leave, `style-preview-end` restores the actual settings.
-- **Color overrides** take precedence over theme colors. They're applied directly to CSS variables (`--bg`, `--fg`, `--cursor`) and the `.cm-editor` background.
+- **Color overrides** take precedence over theme colors. They're applied directly to CSS variables (`--bg`, `--fg`, `--cursor`, `--selection`) and the `.cm-editor` background.
+- **Selection color** override controls both `::selection` and `.cm-selectionBackground` via the `--selection` CSS variable.
 - **`applyActiveStyle()`** in `main.js` handles applying/removing style overrides, including theme switching, font changes, and color variable updates.
+
+### Focus Mode (`focus-mode.js`)
+
+A CodeMirror ViewPlugin that dims all text except the current sentence to 50% opacity. Uses the same sentence-boundary detection logic as `sentence-navigator.js`. Toggled via `Cmd+Shift+Y` or the crosshair sidebar icon. When the cursor is on an empty line, all text is dimmed.
 
 ### Find & Replace (`find-replace.js`)
 
@@ -161,6 +178,16 @@ Sentence-level navigation and editing commands for CodeMirror 6, ported from the
 - `shiftSelectionToNextSentence` / `shiftSelectionToPreviousSentence` — move the selection window to an adjacent sentence
 - `moveSentenceForward` / `moveSentenceBack` — swap the current sentence with its neighbor (handles paragraph breaks by moving across them without swapping)
 - `deleteToSentenceEnd` — delete from cursor to the end of the current sentence
+- `jumpToNextParagraph` / `jumpToPrevParagraph` — jump cursor to the first word of the next/previous paragraph
+
+### File Drop (`file-drop.js`)
+
+Handles `.md` and `.txt` files dragged into the app window. When a valid file is dragged over the app, two drop zone overlays appear:
+
+- **Import File** (left zone, 200px) — creates a new document with the file's content
+- **Append Text** (right zone, fills remaining space) — appends the file's text to the current document
+
+Uses standard HTML5 drag-and-drop events. Works on macOS and iOS.
 
 ### Formatting (`formatting.js`)
 
@@ -181,7 +208,7 @@ Runs in a separate Tauri WebviewWindow (desktop) or as a modal overlay (iOS/iPad
 
 **Tabs:**
 - **General** — visibility (menu bar / dock / both), always-on-top
-- **Editor** — appearance (light/dark/auto), default light and dark themes, font family (4 built-in + system fonts), normalize headers toggle, footnote settings (font size, font family, colors, margin placement), font size (12–36px), line height (1.0–2.5)
+- **Editor** — appearance (light/dark/auto), default light and dark themes, font family (10 built-in + system fonts), normalize headers toggle, footnote settings (font size, font family, colors, margin placement), font size (12–36px), line height (1.0–2.5)
 - **Shortcuts** — all customizable shortcuts organized into three categories (General, Editing, Formatting) with conflict detection. Click a shortcut to record a new one; conflicts auto-swap.
 - **D.R.Y.** — detection range (paragraph/two paragraphs/document), ignore proper nouns, include base word repeats, customizable stopwords list with search/add/remove/reset
 
@@ -191,6 +218,28 @@ Wraps the [thememirror](https://github.com/vadimdemedes/thememirror) library. Ex
 
 **Light:** Ayu Light, Clouds, Noctis Lilac, Rosé Pine Dawn, Solarized Light, Smoothy
 **Dark:** Amy, Barf, Bespin, Birds of Paradise, Boys and Girls, Cobalt, Cool Glow, Dracula, Espresso, Tomorrow
+
+### CSS Structure
+
+CSS is organized into per-module files under `src/styles/`, imported via `src/styles/main.css`:
+
+- `base.css` — reset, CSS variables, root theme definitions (light/dark/sepia)
+- `editor.css` — CodeMirror editor styling, selection color, column resizers
+- `sidebar.css` — sidebar and panel layout
+- `files-panel.css` — files tree panel
+- `styles-panel.css` — styles editor panel
+- `ratchet.css` — ratchet mode timer and dropdown
+- `private-mode.css` — private mode decorations
+- `typewriter.css` — typewriter boundary line
+- `find-replace.css` — find/replace dialog
+- `utility.css` — utility classes
+- `dry-highlight.css` — D.R.Y. highlighting styles
+- `footnotes.css` — footnote styling
+- `settings-modal.css` — settings modal (iOS)
+- `sortable-list.css` — draggable list
+- `project-view.css` — project view styling
+- `focus-mode.css` — focus mode dim effect
+- `file-drop.css` — file drag-and-drop overlay zones
 
 ## Backend (Rust)
 
@@ -217,7 +266,7 @@ struct Style {
     font_family: Option<String>,
     font_size: Option<u32>,
     line_height: Option<f64>,
-    color_overrides: HashMap<String, String>,  // keys: "bg", "fg", "cursor"
+    color_overrides: HashMap<String, String>,  // keys: "bg", "fg", "cursor", "selection"
 }
 ```
 
@@ -289,6 +338,7 @@ All shortcuts are customizable in Settings > Shortcuts tab. Shortcuts are organi
 | Toggle sidebar | `Cmd+\` | Editor |
 | Toggle typewriter mode | `Cmd+T` | Editor |
 | Toggle D.R.Y. highlighting | `Cmd+Shift+R` | Editor |
+| Toggle focus mode | `Cmd+Shift+Y` | Editor |
 | New file | `Cmd+N` | Editor |
 | Find / replace | `Cmd+F` | Editor |
 | Find across files | `Cmd+Shift+F` | Editor |
@@ -306,6 +356,8 @@ Sentence-level navigation and editing, ported from [obsidian-sentence-navigator]
 | Select previous instance | `Cmd+Shift+D` | Editor |
 | Jump to next sentence | `Cmd+Right` | Editor |
 | Jump to previous sentence | `Cmd+Left` | Editor |
+| Jump to next paragraph | `Cmd+Down` | Editor |
+| Jump to previous paragraph | `Cmd+Up` | Editor |
 | Shift selection to next sentence | `Cmd+Shift+Right` | Editor |
 | Shift selection to previous sentence | `Cmd+Shift+Left` | Editor |
 | Move sentence forward | `Alt+Cmd+Right` | Editor |
@@ -335,4 +387,3 @@ Tauri plugins used:
 - `tauri-plugin-dialog` — Native file/folder dialogs
 - `tauri-plugin-fs` — File system read/write
 - `tauri-plugin-shell` — Shell command execution
-
