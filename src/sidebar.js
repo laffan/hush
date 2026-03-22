@@ -47,7 +47,7 @@ export function createSidebar(container, state) {
   // Pin toggle button — fixed position, shown when hovering panel zone in inset mode
   const pinBtn = document.createElement("button");
   pinBtn.className = "panel-pin-btn";
-  pinBtn.innerHTML = `<svg viewBox="0 0 12 12" width="12" height="12"><polygon points="0,0 12,12 12,0" fill="currentColor"/></svg>`;
+  pinBtn.innerHTML = `<svg viewBox="0 0 12 12" width="12" height="12" style="transform:rotate(90deg)"><polygon points="0,0 12,12 12,0" fill="currentColor"/></svg>`;
   pinBtn.title = "Pin panel open";
   document.body.appendChild(pinBtn);
 
@@ -190,6 +190,19 @@ export function createSidebar(container, state) {
 
   state.on("mode-changed", updateActiveStates);
   state.on("fullscreen-changed", updateActiveStates);
+
+  // Hide pin button when panel mode changes (e.g. window narrows to overlay)
+  function syncPinBtn() {
+    const isInset = panelOverlay.classList.contains("panel-inset");
+    const isOpen = !panelOverlay.classList.contains("hidden");
+    if (!isInset || !isOpen) {
+      pinBtn.classList.remove("pin-visible", "pin-active");
+    } else if (panelPinned) {
+      pinBtn.classList.add("pin-active");
+    }
+  }
+  window.addEventListener("resize", syncPinBtn);
+  state.on("settings-changed", syncPinBtn);
 
   state.on("files-changed", () => {
     if (activePanel === "files") {
