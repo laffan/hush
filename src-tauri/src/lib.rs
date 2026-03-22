@@ -160,15 +160,16 @@ fn get_data_dir() -> PathBuf {
 }
 
 #[cfg(desktop)]
-fn save_window_geometry(window: &tauri::WebviewWindow, state: &AppState) {
+fn save_window_geometry(window: &tauri::Window, state: &AppState) {
+    let scale = window.scale_factor().unwrap_or(1.0);
     if let Ok(mut settings) = state.settings.lock() {
         if let Ok(size) = window.inner_size() {
-            settings.window_width = Some(size.width as f64);
-            settings.window_height = Some(size.height as f64);
+            settings.window_width = Some(size.width as f64 / scale);
+            settings.window_height = Some(size.height as f64 / scale);
         }
         if let Ok(pos) = window.outer_position() {
-            settings.window_x = Some(pos.x as f64);
-            settings.window_y = Some(pos.y as f64);
+            settings.window_x = Some(pos.x as f64 / scale);
+            settings.window_y = Some(pos.y as f64 / scale);
         }
         let _ = settings.save();
     }
@@ -265,11 +266,6 @@ pub fn run() {
                 app.on_menu_event(move |app_handle, event| {
                     match event.id().as_ref() {
                         "quit" => {
-                            if let Some(window) = handle_clone2.get_webview_window("main") {
-                                if let Some(state) = window.try_state::<AppState>() {
-                                    save_window_geometry(&window, &state);
-                                }
-                            }
                             app_handle.exit(0);
                         }
                         "toggle_editor" => {
@@ -322,14 +318,20 @@ pub fn run() {
         .on_window_event(|window, event| {
             #[cfg(desktop)]
             if window.label() == "main" {
-                if let WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    if let Some(ww) = window.app_handle().get_webview_window("main") {
-                        if let Some(state) = ww.try_state::<AppState>() {
-                            save_window_geometry(&ww, &state);
+                match event {
+                    WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        if let Some(state) = window.try_state::<AppState>() {
+                            save_window_geometry(window, &state);
+                        }
+                        let _ = window.hide();
+                    }
+                    WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                        if let Some(state) = window.try_state::<AppState>() {
+                            save_window_geometry(window, &state);
                         }
                     }
-                    let _ = window.hide();
+                    _ => {}
                 }
             }
             #[cfg(mobile)]
