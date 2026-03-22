@@ -1,7 +1,7 @@
 /**
  * Settings window — runs in a separate Tauri WebviewWindow.
  * Communicates with main window via Tauri events.
- * Tabbed layout: General, Editor, Styles, Shortcuts.
+ * Tabbed layout: General, Editor, Shortcuts, D.R.Y.
  */
 import { themeList } from "./themes.js";
 import { DEFAULT_STOPWORDS } from "./dry-highlight.js";

@@ -22,6 +22,7 @@ main.js          ←──IPC──→ lib.rs (commands)
 │   └── utils.js
 ├── settings-ui.js
 ├── settings-window.js
+├── settings-window.css
 ├── themes.js
 ├── find-replace.js
 ├── private-mode.js
@@ -60,7 +61,7 @@ Font fallback chains are defined in `main.js` via the `fontFallbacks` object.
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. It uses a simple event emitter pattern (`on`/`off`/`emit`) to notify the UI of changes.
 
-Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `toggle-files-panel`.
+Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`.
 
 On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invoke("list_files")`, and `invoke("get_file_tree")`. In the browser (dev without Tauri), it falls back to localStorage.
 
@@ -182,12 +183,12 @@ Sentence-level navigation and editing commands for CodeMirror 6, ported from the
 
 ### File Drop (`file-drop.js`)
 
-Handles `.md` and `.txt` files dragged into the app window. When a valid file is dragged over the app, two drop zone overlays appear:
+Handles `.md` and `.txt` files dragged into the app window. When a file is dragged over the app, a full-screen overlay appears with two drop zones:
 
-- **Import File** (left zone, 200px) — creates a new document with the file's content
-- **Append Text** (right zone, fills remaining space) — appends the file's text to the current document
+- **Import file** (left zone, 40%) — creates a new document with the file's content
+- **Copy file into current** (right zone, fills remaining space) — inserts the file's text into the active document
 
-Uses standard HTML5 drag-and-drop events. Works on macOS and iOS.
+Uses standard HTML5 drag-and-drop events. Tauri's built-in drag-drop handler is disabled (`dragDropEnabled: false` in `tauri.conf.json`) so that DOM events reach the webview. Global `dragover` and `drop` listeners on the document (capture phase) call `preventDefault()` to ensure the browser never navigates to a dropped file — which would replace the app content and look like a crash. The overlay is appended to `document.body` (not `#app`) so it renders above all app layers including the sidebar panel-overlay.
 
 ### Formatting (`formatting.js`)
 
@@ -240,6 +241,8 @@ CSS is organized into per-module files under `src/styles/`, imported via `src/st
 - `project-view.css` — project view styling
 - `focus-mode.css` — focus mode dim effect
 - `file-drop.css` — file drag-and-drop overlay zones
+
+The settings window has its own standalone stylesheet at `src/settings-window.css` (outside the `styles/` directory) since it runs in a separate WebviewWindow with its own DOM.
 
 ## Backend (Rust)
 
@@ -307,7 +310,7 @@ Vite builds to `dist/` (esbuild minification, ES2021 target, Safari 15+). Tauri 
 ### Configuration
 
 - **`vite.config.js`** — Two Rollup inputs (`index.html`, `settings.html`), port 5173
-- **`src-tauri/tauri.conf.json`** — App identifier `com.hush.app`, transparent window, hidden title bar overlay, system tray icon, macOS private API enabled
+- **`src-tauri/tauri.conf.json`** — App identifier `com.hushwriter.app`, transparent window, hidden title bar overlay, system tray icon, macOS private API enabled, `dragDropEnabled: false` for HTML5 file drop support
 
 ## Data Storage
 
