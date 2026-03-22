@@ -1,0 +1,303 @@
+/* ===== Styles Panel (Sidebar) ===== */
+.style-list-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.style-sidebar-item {
+  position: relative;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: outline 0.15s;
+  outline: 2px solid transparent;
+  font-family: system-ui, sans-serif;
+}
+
+.style-sidebar-item.active {
+  outline-color: var(--fg);
+}
+
+.style-sidebar-item:hover .style-sidebar-actions {
+  opacity: 1;
+}
+
+.style-sidebar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.style-sidebar-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.style-sidebar-actions button {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.5;
+}
+
+.style-sidebar-actions button:hover {
+  opacity: 1;
+}
+
+.style-sidebar-actions svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* New style button */
+.new-style-sidebar-btn {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  transition: background 0.15s;
+}
+
+.new-style-sidebar-btn:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+/* Style editor accordion (inline within style list) */
+.style-editor-accordion {
+  margin: 8px 0;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.05);
+}
+
+.style-sidebar-item.editing {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Style editor (inline in sidebar panel) */
+.style-editor-sidebar {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.style-editor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.style-editor-row label {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  flex-shrink: 0;
+  width: 50px;
+}
+
+.style-editor-row input[type="text"],
+.style-editor-row select {
+  flex: 1;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+}
+
+.style-slider-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.style-slider-group input[type="range"] {
+  flex: 1;
+}
+
+.style-slider-value {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Custom dropdown (for theme/font hover preview) */
+.custom-dropdown {
+  flex: 1;
+  position: relative;
+}
+
+.custom-dropdown-selected {
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.custom-dropdown.open .custom-dropdown-selected {
+  border-color: rgba(128, 128, 128, 0.5);
+}
+
+.custom-dropdown-options {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  margin-top: 2px;
+  z-index: 400;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.custom-dropdown.open .custom-dropdown-options {
+  display: block;
+}
+
+.custom-dropdown-option {
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  transition: background 0.1s;
+}
+
+.custom-dropdown-option:hover {
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.custom-dropdown-option.selected {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.custom-dropdown-group-label {
+  padding: 5px 8px 2px;
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.style-editor-colors-title {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  margin: 12px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.style-editor-color-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.style-editor-color-row label {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+}
+
+.style-color-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.style-color-group input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+  padding: 1px;
+}
+
+.style-reset-color {
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.5;
+  padding: 0 2px;
+}
+
+.style-reset-color:hover {
+  opacity: 1;
+}
+
+.style-editor-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.style-editor-btns button {
+  flex: 1;
+  padding: 7px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+}
+
+.style-editor-btns button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.style-save-btn {
+  background: rgba(128, 128, 128, 0.15) !important;
+}

@@ -1,0 +1,79 @@
+/* ===== Drag Region (title bar area) ===== */
+#drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  z-index: 80;
+  -webkit-app-region: drag;
+}
+
+.fullscreen-mode #drag-region {
+  display: none;
+}
+
+/* ===== Editor ===== */
+#editor-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+#editor-container .cm-editor {
+  height: 100%;
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+}
+
+#editor-container .cm-editor.cm-focused {
+  outline: none;
+}
+
+#editor-container .cm-scroller {
+  padding: var(--padding);
+  padding-top: calc(var(--padding) + 30px);
+  overflow-y: auto;
+  font-family: var(--font-family) !important;
+}
+
+#editor-container .cm-content {
+  font-family: var(--font-family) !important;
+}
+
+#editor-container .cm-line {
+  font-family: var(--font-family) !important;
+  line-height: var(--line-height);
+}
+
+#editor-container .cm-cursor {
+  border-left-color: var(--cursor);
+  border-left-width: 2px;
+}
+
+
+
+#editor-container .cm-gutters {
+  display: none;
+}
+
+
+/* Column width resizer — wide hit area, thin visible line */
+.column-resizer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  padding: 0 20px;
+  margin-left: -20px;
+  cursor: col-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+  background: var(--accent);
+  background-clip: content-box;
+  z-index: 50;
+}
+
+.column-resizer.hover, .column-resizer.dragging {
+  opacity: 0.5;
+}

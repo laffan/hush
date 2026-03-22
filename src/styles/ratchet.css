@@ -1,0 +1,38 @@
+/* ===== Ratchet Mode ===== */
+.ratchet-dropdown {
+  position: absolute;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px;
+  z-index: 200;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.ratchet-dropdown .ratchet-option {
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: center;
+  color: var(--fg);
+  transition: background 0.1s;
+}
+
+.ratchet-dropdown .ratchet-option:hover {
+  background: rgba(128, 128, 128, 0.2);
+}
+
+/* Ratchet active state — typewriter-like scrolling, current line centered */
+
+.ratchet-timer {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  z-index: 150;
+  opacity: 0.6;
+}

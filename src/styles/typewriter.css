@@ -1,0 +1,27 @@
+/* ===== Typewriter Mode ===== */
+
+.typewriter-boundary {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 2px;
+  cursor: row-resize;
+  opacity: 0.08;
+  transition: opacity 0.2s, height 0.15s;
+  background: var(--accent);
+  z-index: 150;
+}
+
+.typewriter-boundary:hover {
+  opacity: 0.5;
+  height: 4px;
+}
+
+.typewriter-boundary.dragging {
+  opacity: 0.5;
+  height: 4px;
+}
+
+.typewriter-boundary.visible {
+  opacity: 0.08;
+}

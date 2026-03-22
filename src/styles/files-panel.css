@@ -1,0 +1,332 @@
+.file-list {
+  list-style: none;
+}
+
+.file-list li {
+  position: relative;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-list li:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.file-list li.active {
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.file-list li .file-date {
+  display: block;
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  margin-top: 2px;
+}
+
+.file-list li .file-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.file-list li:hover .file-actions {
+  opacity: 1;
+}
+
+.file-actions button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.5;
+}
+
+.file-actions button:hover {
+  opacity: 1;
+}
+
+.file-actions svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Inline rename input */
+.file-rename-input {
+  width: 100%;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  color: var(--fg);
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+}
+
+/* ===== Autosave Panel ===== */
+.autosave-panel {
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.autosave-panel .current-path {
+  padding: 10px 12px;
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  word-break: break-all;
+  font-size: 12px;
+  color: var(--sidebar-fg);
+}
+
+.autosave-panel button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  margin-bottom: 8px;
+  transition: background 0.15s;
+}
+
+.autosave-panel button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.autosave-panel label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--sidebar-fg);
+}
+
+.autosave-panel label input[type="checkbox"] {
+  accent-color: var(--fg);
+}
+
+/* ===== Tree File Browser ===== */
+.tree-create-btns {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.tree-create-btns button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+  transition: background 0.15s;
+}
+
+.tree-create-btns button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.tree-type-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tree-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  position: relative;
+}
+
+.tree-item-row.active {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.tree-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tree-actions {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.sl-item:hover > .sl-item-content .tree-actions {
+  opacity: 1;
+}
+
+.tree-actions button {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0;
+  opacity: 0.45;
+}
+
+.tree-actions button:hover {
+  opacity: 1;
+}
+
+.tree-actions svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tree-rename-input {
+  width: 100%;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  color: var(--fg);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+}
+
+.tree-list-root {
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+
+/* ===== Delete Confirmation Modal ===== */
+.tree-delete-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-delete-modal {
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 380px;
+  width: 90%;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.tree-delete-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.tree-delete-modal-message {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  white-space: pre-wrap;
+  font-family: system-ui, sans-serif;
+  margin-bottom: 16px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tree-delete-modal-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.tree-delete-modal-btns button {
+  padding: 6px 16px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+}
+
+.tree-delete-modal-btns button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.tree-delete-confirm {
+  background: rgba(220, 50, 50, 0.15) !important;
+  border-color: rgba(220, 50, 50, 0.3) !important;
+  color: #dc3232 !important;
+}
+
+.tree-delete-confirm:hover {
+  background: rgba(220, 50, 50, 0.25) !important;
+}

@@ -1,0 +1,141 @@
+/* ===== Sortable List (tree file browser) ===== */
+.sl-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.sl-list .sl-list {
+  padding-left: 18px;
+  margin-left: 4px;
+  border-left: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.sl-item {
+  margin: 1px 0;
+  padding: 4px 6px;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.sl-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.sl-item.dragging {
+  opacity: 0.2;
+}
+
+.sl-item.selected {
+  text-decoration: underline;
+}
+
+.sl-item.moving {
+  color: #ff6600;
+}
+
+.sl-list.sl-drop-target-list {
+  border-left: 2px solid var(--fg);
+  padding-left: 12px;
+}
+
+.sl-item-content {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.sl-item-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sl-item-main-label {
+  display: block;
+}
+
+.sl-fold-arrow {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  margin: 0;
+  margin-left: -4px;
+  margin-right: 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  opacity: 0.5;
+}
+
+.sl-fold-arrow:hover {
+  background: rgba(128, 128, 128, 0.15);
+  opacity: 1;
+}
+
+.sl-fold-empty {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body.sl-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sl-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--fg);
+  opacity: 0.9;
+  border-radius: 4px;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 1000;
+}
+
+.sl-drop-indicator {
+  list-style: none;
+  height: 0;
+  margin: 0;
+  position: relative;
+  transition: height 0.15s ease, margin 0.15s ease;
+}
+
+.sl-drop-indicator.active {
+  height: 12px;
+  margin: 2px 0;
+}
+
+.sl-drop-indicator.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--fg);
+  opacity: 0.6;
+}

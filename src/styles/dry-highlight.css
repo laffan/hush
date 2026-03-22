@@ -1,0 +1,22 @@
+/* ===== D.R.Y. Repeated Word Highlights ===== */
+.dry-repeat-1 { background-color: rgba(255, 200, 87, 0.4); border-bottom: 2px solid rgba(255, 193, 7, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-2 { background-color: rgba(129, 212, 250, 0.4); border-bottom: 2px solid rgba(3, 169, 244, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-3 { background-color: rgba(255, 138, 128, 0.4); border-bottom: 2px solid rgba(244, 67, 54, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-4 { background-color: rgba(165, 214, 167, 0.4); border-bottom: 2px solid rgba(76, 175, 80, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-5 { background-color: rgba(206, 147, 216, 0.4); border-bottom: 2px solid rgba(156, 39, 176, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-6 { background-color: rgba(255, 171, 145, 0.4); border-bottom: 2px solid rgba(255, 87, 34, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-7 { background-color: rgba(144, 202, 249, 0.4); border-bottom: 2px solid rgba(33, 150, 243, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-8 { background-color: rgba(255, 245, 157, 0.4); border-bottom: 2px solid rgba(255, 235, 59, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-9 { background-color: rgba(178, 223, 219, 0.4); border-bottom: 2px solid rgba(0, 150, 136, 0.8); padding: 1px 0; border-radius: 2px; }
+.dry-repeat-10 { background-color: rgba(248, 187, 208, 0.4); border-bottom: 2px solid rgba(233, 30, 99, 0.8); padding: 1px 0; border-radius: 2px; }
+
+[data-theme="dark"] .dry-repeat-1 { background-color: rgba(255, 193, 7, 0.25); border-bottom-color: rgba(255, 193, 7, 0.6); }
+[data-theme="dark"] .dry-repeat-2 { background-color: rgba(3, 169, 244, 0.25); border-bottom-color: rgba(3, 169, 244, 0.6); }
+[data-theme="dark"] .dry-repeat-3 { background-color: rgba(244, 67, 54, 0.25); border-bottom-color: rgba(244, 67, 54, 0.6); }
+[data-theme="dark"] .dry-repeat-4 { background-color: rgba(76, 175, 80, 0.25); border-bottom-color: rgba(76, 175, 80, 0.6); }
+[data-theme="dark"] .dry-repeat-5 { background-color: rgba(156, 39, 176, 0.25); border-bottom-color: rgba(156, 39, 176, 0.6); }
+[data-theme="dark"] .dry-repeat-6 { background-color: rgba(255, 87, 34, 0.25); border-bottom-color: rgba(255, 87, 34, 0.6); }
+[data-theme="dark"] .dry-repeat-7 { background-color: rgba(33, 150, 243, 0.25); border-bottom-color: rgba(33, 150, 243, 0.6); }
+[data-theme="dark"] .dry-repeat-8 { background-color: rgba(255, 235, 59, 0.25); border-bottom-color: rgba(255, 235, 59, 0.6); }
+[data-theme="dark"] .dry-repeat-9 { background-color: rgba(0, 150, 136, 0.25); border-bottom-color: rgba(0, 150, 136, 0.6); }
+[data-theme="dark"] .dry-repeat-10 { background-color: rgba(233, 30, 99, 0.25); border-bottom-color: rgba(233, 30, 99, 0.6); }

@@ -1,0 +1,19 @@
+/* ===== Private Mode ===== */
+/* Handled by CodeMirror decoration plugin — .hush-private-char marks */
+.hush-private-char {
+  color: transparent !important;
+  background: var(--private-box);
+  border-radius: 0;
+  opacity: 0.5;
+}
+
+/* Cursor should still be visible in private mode */
+.private-mode #editor-container .cm-cursor {
+  border-left-color: var(--cursor);
+}
+
+/* Hide footnote overlays and marginalia in private mode */
+.private-mode .footnote-overlay,
+.private-mode .footnote-marginalia {
+  display: none;
+}
