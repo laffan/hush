@@ -196,8 +196,33 @@ export function createSidebar(container, state) {
     if (el) el.classList.toggle("active", isActive);
   }
 
+  // Map sidebar actions to their shortcut setting keys and base labels
+  const shortcutMap = {
+    "new-file":   { label: "New file",            key: "shortcutNewFile" },
+    "files":      { label: "Files",               key: "shortcutToggleSidebar" },
+    "private":    { label: "Private mode",         key: "shortcutTogglePrivate" },
+    "typewriter": { label: "Typewriter mode",      key: "shortcutTypewriter" },
+    "dry":        { label: "D.R.Y. highlighting",  key: "shortcutToggleDry" },
+    "focus":      { label: "Focus mode",           key: "shortcutToggleFocus" },
+  };
+
+  function updateButtonTitles() {
+    for (const [action, info] of Object.entries(shortcutMap)) {
+      const el = container.querySelector(`[data-action="${action}"]`);
+      if (!el) continue;
+      const raw = state.settings[info.key];
+      if (raw) {
+        el.title = `${info.label}  (${formatShortcut(raw)})`;
+      } else {
+        el.title = info.label;
+      }
+    }
+  }
+
+  updateButtonTitles();
   state.on("mode-changed", updateActiveStates);
   state.on("fullscreen-changed", updateActiveStates);
+  state.on("settings-changed", updateButtonTitles);
 
   // Hide pin button when panel mode changes (e.g. window narrows to overlay)
   function syncPinBtn() {
@@ -417,4 +442,22 @@ function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+/** Format a shortcut string like "Mod+Shift+P" into "⌘⇧P" (Mac) or "Ctrl+Shift+P". */
+function formatShortcut(raw) {
+  const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
+  let s = raw;
+  if (isMac) {
+    s = s.replace(/CmdOrCtrl\+/gi, "\u2318").replace(/Mod\+/gi, "\u2318")
+         .replace(/Shift\+/gi, "\u21e7").replace(/Alt\+/gi, "\u2325")
+         .replace(/ArrowUp/gi, "\u2191").replace(/ArrowDown/gi, "\u2193")
+         .replace(/ArrowLeft/gi, "\u2190").replace(/ArrowRight/gi, "\u2192")
+         .replace(/\\\\/g, "\\");
+  } else {
+    s = s.replace(/CmdOrCtrl\+/gi, "Ctrl+").replace(/Mod\+/gi, "Ctrl+")
+         .replace(/ArrowUp/gi, "Up").replace(/ArrowDown/gi, "Down")
+         .replace(/ArrowLeft/gi, "Left").replace(/ArrowRight/gi, "Right");
+  }
+  return s;
 }

@@ -112,10 +112,14 @@ export function updateMarginalia(view, stateRef, deps) {
   const paddingRight = parseInt(scroller.style.paddingRight) || 50;
   const colRight = scrollerRect.width - paddingRight;
   const fontCss = resolveFootnoteFont(fsettings.fontFamily);
-  const marginSide = stateRef.settings.footnoteMarginSide ||
-    (stateRef.settings.footnoteBothMargins !== false ? "both" : "right");
+  // "closest" = nearest side, "split" = alternate L/R, "left"/"right" = single side
+  // Backwards compat: "both" maps to "closest"
+  let marginSide = stateRef.settings.footnoteMarginSide || "closest";
+  if (marginSide === "both") marginSide = "closest";
 
   const entries = [];
+  let splitIndex = 0; // counter for "split" mode alternation
+
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
     if (FOOTNOTE_DEF_RE.test(line.text)) continue;
@@ -132,7 +136,8 @@ export function updateMarginalia(view, stateRef, deps) {
       let placeLeft;
       if (marginSide === "left") placeLeft = true;
       else if (marginSide === "right") placeLeft = false;
-      else placeLeft = refX <= scrollerRect.width - refX;
+      else if (marginSide === "split") { placeLeft = splitIndex % 2 === 0; splitIndex++; }
+      else placeLeft = refX <= scrollerRect.width - refX; // "closest"
       entries.push({ id, defText, placeLeft, naturalTop: coords.top - scrollerRect.top + scroller.scrollTop });
     }
   }
@@ -293,10 +298,23 @@ export function setupFootnoteHandlers(stateRef, getCurrentView, deps, insertFoot
     const pr = parseInt(scroller.style.paddingRight) || 50;
     const relX = e.clientX - sr.left;
     if (relX >= pl - 10 && relX <= sr.width - pr + 10) return;
-    const pos = cv.posAtCoords({ x: pl + 20 + sr.left, y: e.clientY });
+
+    // Find the nearest position in the text column at the click's Y coordinate
+    // Use the edge of the text column closest to the click
+    const textX = relX < pl ? pl + 5 + sr.left : sr.width - pr - 5 + sr.left;
+    const pos = cv.posAtCoords({ x: textX, y: e.clientY });
     if (pos == null) return;
-    const line = cv.state.doc.lineAt(pos);
-    cv.dispatch({ selection: { anchor: line.to } });
+
+    // Walk forward to the end of the current word to insert after it
+    const doc = cv.state.doc;
+    const line = doc.lineAt(pos);
+    const lineText = line.text;
+    const offsetInLine = pos - line.from;
+    let insertOffset = offsetInLine;
+    // Advance past the current word (non-whitespace characters)
+    while (insertOffset < lineText.length && /\S/.test(lineText[insertOffset])) insertOffset++;
+
+    cv.dispatch({ selection: { anchor: line.from + insertOffset } });
     insertFootnote(cv);
   });
 }

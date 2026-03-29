@@ -260,7 +260,8 @@ function renderEditorTab() {
       <div class="settings-row">
         <label>Margin placement</label>
         <select id="setting-footnote-margin-side">
-          <option value="both" ${(s.footnoteMarginSide || "both") === "both" ? "selected" : ""}>Both margins</option>
+          <option value="closest" ${(s.footnoteMarginSide || "closest") === "closest" ? "selected" : ""}>Use closest</option>
+          <option value="split" ${s.footnoteMarginSide === "split" ? "selected" : ""}>Split</option>
           <option value="left" ${s.footnoteMarginSide === "left" ? "selected" : ""}>Left only</option>
           <option value="right" ${s.footnoteMarginSide === "right" ? "selected" : ""}>Right only</option>
         </select>

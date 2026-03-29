@@ -173,7 +173,7 @@ fn default_footnote_font_size() -> u32 { 100 }
 fn default_footnote_font_family() -> String { "sans-serif".to_string() }
 fn default_footnote_use_colors() -> bool { true }
 fn default_footnote_both_margins() -> bool { true }
-fn default_footnote_margin_side() -> String { "both".to_string() }
+fn default_footnote_margin_side() -> String { "closest".to_string() }
 fn default_dry_range() -> String { "paragraph".to_string() }
 fn default_dry_stopwords() -> Vec<String> {
     vec![

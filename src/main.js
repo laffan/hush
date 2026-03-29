@@ -5,6 +5,7 @@ import { setupTauriIntegration } from "./tauri-bridge.js";
 import { applyAppearance, isIOS } from "./settings-ui.js";
 import { getThemeById } from "./themes.js";
 import { setupFileDrop } from "./file-drop.js";
+import { findNext, findPrev } from "./find-replace.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -266,8 +267,9 @@ async function init() {
 
   // Global keyboard shortcuts that work even when editor doesn't have focus
   window.addEventListener("keydown", (e) => {
-    // Cmd+\ (or Ctrl+\ on non-Mac) — toggle sidebar
-    if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+    const mod = e.metaKey || e.ctrlKey;
+    // Cmd+\ — toggle sidebar
+    if (mod && e.key === "\\") {
       e.preventDefault();
       const sb = document.getElementById("sidebar");
       const po = document.getElementById("panel-overlay");
@@ -280,6 +282,14 @@ async function init() {
         sb.classList.add("pinned");
         state.emit("show-files-panel");
       }
+    }
+    // Cmd+G — next find match
+    if (mod && !e.shiftKey && e.key === "g") {
+      if (findNext()) e.preventDefault();
+    }
+    // Cmd+Shift+G — previous find match
+    if (mod && e.shiftKey && e.key === "G") {
+      if (findPrev()) e.preventDefault();
     }
   });
 
