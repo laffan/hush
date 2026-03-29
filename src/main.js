@@ -143,9 +143,12 @@ function applyActiveStyle(state) {
     document.documentElement.style.removeProperty("--style-cursor");
     document.documentElement.style.removeProperty("--selection");
     document.body.classList.remove("style-active");
-    // Clear editor bg override
+    // Clear editor overrides
     const cmEditor = document.querySelector('.cm-editor');
-    if (cmEditor) cmEditor.style.backgroundColor = '';
+    if (cmEditor) {
+      cmEditor.style.backgroundColor = '';
+      cmEditor.style.color = '';
+    }
     // Re-apply standard settings
     applyAppearance(state.settings.appearance || "dark");
     applyFontFamily(state.settings.fontFamily);
@@ -180,20 +183,24 @@ function applyActiveStyle(state) {
   const overrides = style.colorOverrides || {};
   updatePrivateBoxColor(state);
 
+  const cmEditorEl = document.querySelector('.cm-editor');
   if (overrides.bg) {
     document.documentElement.style.setProperty("--bg", overrides.bg);
     document.documentElement.style.setProperty("--style-bg", overrides.bg);
-    // Override CodeMirror theme background directly
-    const cmEditor = document.querySelector('.cm-editor');
-    if (cmEditor) cmEditor.style.backgroundColor = overrides.bg;
+    if (cmEditorEl) cmEditorEl.style.backgroundColor = overrides.bg;
   } else {
-    const cmEditor = document.querySelector('.cm-editor');
-    if (cmEditor) cmEditor.style.backgroundColor = '';
+    if (cmEditorEl) cmEditorEl.style.backgroundColor = '';
   }
   if (overrides.fg) {
-    document.documentElement.style.setProperty("--fg", overrides.fg);
-    document.documentElement.style.setProperty("--cursor", overrides.fg);
+    // Apply text color to editor only, not sidebar/panels (--fg is global)
     document.documentElement.style.setProperty("--style-fg", overrides.fg);
+    if (cmEditorEl) cmEditorEl.style.color = overrides.fg;
+    if (!overrides.cursor) {
+      document.documentElement.style.setProperty("--cursor", overrides.fg);
+    }
+  } else {
+    document.documentElement.style.removeProperty("--style-fg");
+    if (cmEditorEl) cmEditorEl.style.color = '';
   }
   if (overrides.cursor) {
     document.documentElement.style.setProperty("--cursor", overrides.cursor);
@@ -256,6 +263,26 @@ async function init() {
   window.addEventListener("focus", () => {
     if (state.editor) state.editor.focus();
   });
+
+  // Global keyboard shortcuts that work even when editor doesn't have focus
+  window.addEventListener("keydown", (e) => {
+    // Cmd+\ (or Ctrl+\ on non-Mac) — toggle sidebar
+    if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+      e.preventDefault();
+      const sb = document.getElementById("sidebar");
+      const po = document.getElementById("panel-overlay");
+      const isVisible = sb.classList.contains("pinned") ||
+                        sb.classList.contains("visible") ||
+                        !po.classList.contains("hidden");
+      if (isVisible) {
+        state.emit("hide-panel");
+      } else {
+        sb.classList.add("pinned");
+        state.emit("show-files-panel");
+      }
+    }
+  });
+
   // Initial focus
   editor.focus();
 
@@ -403,8 +430,10 @@ async function init() {
       if (cmEditor) cmEditor.style.backgroundColor = overrides.bg;
     }
     if (overrides.fg) {
-      document.documentElement.style.setProperty("--fg", overrides.fg);
-      document.documentElement.style.setProperty("--cursor", overrides.fg);
+      document.documentElement.style.setProperty("--style-fg", overrides.fg);
+      const cmEd = document.querySelector('.cm-editor');
+      if (cmEd) cmEd.style.color = overrides.fg;
+      if (!overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.fg);
     }
     if (overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.cursor);
     if (overrides.selection) {
@@ -416,9 +445,13 @@ async function init() {
   state.on("style-preview-end", () => {
     if (!previewActive) return;
     previewActive = false;
-    // Clear editor bg override before restoring
+    // Clear editor overrides before restoring
     const cmEditor = document.querySelector('.cm-editor');
-    if (cmEditor) cmEditor.style.backgroundColor = '';
+    if (cmEditor) {
+      cmEditor.style.backgroundColor = '';
+      cmEditor.style.color = '';
+    }
+    document.documentElement.style.removeProperty("--style-fg");
     // Restore actual settings
     applyActiveStyle(state);
   });

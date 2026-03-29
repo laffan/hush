@@ -1,67 +1,107 @@
 /* ===== Find / Replace Bar ===== */
 .find-bar {
   position: fixed;
-  top: 8px;
-  right: 8px;
+  top: 12px;
+  right: 12px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 12px;
   z-index: 300;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 340px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  min-width: 360px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .find-bar-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .find-bar .find-input,
 .find-bar .replace-input {
   flex: 1;
-  background: rgba(128, 128, 128, 0.1);
-  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.15);
   color: var(--fg);
-  padding: 5px 8px;
-  border-radius: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
   font-size: 13px;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   outline: none;
+  transition: border-color 0.15s;
 }
 
 .find-bar .find-input:focus,
 .find-bar .replace-input:focus {
-  border-color: rgba(128, 128, 128, 0.5);
+  border-color: rgba(128, 128, 128, 0.4);
+}
+
+/* Toggle buttons for case-sensitive and regex */
+.find-toggle-group {
+  display: flex;
+  gap: 2px;
+}
+
+.find-toggle {
+  background: rgba(128, 128, 128, 0.06);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  color: var(--sidebar-fg);
+  padding: 4px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 600;
+  line-height: 1;
+  transition: all 0.15s;
+  opacity: 0.5;
+}
+
+.find-toggle:hover {
+  opacity: 0.8;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.find-toggle.active {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  border-color: rgba(128, 128, 128, 0.35);
 }
 
 .find-btn {
-  background: rgba(128, 128, 128, 0.1);
-  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.06);
+  border: 1px solid rgba(128, 128, 128, 0.15);
   color: var(--fg);
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   white-space: nowrap;
+  transition: background 0.15s;
+  opacity: 0.7;
 }
 
 .find-btn:hover {
-  background: rgba(128, 128, 128, 0.25);
+  background: rgba(128, 128, 128, 0.2);
+  opacity: 1;
 }
 
 .find-count {
   font-size: 11px;
   color: var(--sidebar-fg);
-  min-width: 60px;
+  min-width: 54px;
   text-align: center;
+  opacity: 0.7;
 }
 
 /* ===== Find All Panel ===== */
@@ -76,8 +116,10 @@
   z-index: 300;
   display: flex;
   flex-direction: column;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .find-all-header {
@@ -90,14 +132,19 @@
 
 .find-all-header .find-all-input {
   flex: 1;
-  background: rgba(128, 128, 128, 0.1);
-  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.15);
   color: var(--fg);
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
   font-size: 13px;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   outline: none;
+  transition: border-color 0.15s;
+}
+
+.find-all-header .find-all-input:focus {
+  border-color: rgba(128, 128, 128, 0.4);
 }
 
 .find-all-results {
@@ -127,7 +174,7 @@
 }
 
 .find-all-match:hover {
-  background: rgba(128, 128, 128, 0.15);
+  background: rgba(128, 128, 128, 0.12);
 }
 
 .find-all-line-num {
@@ -135,6 +182,7 @@
   min-width: 28px;
   text-align: right;
   font-size: 11px;
+  opacity: 0.6;
 }
 
 .find-all-line-text {
@@ -150,10 +198,12 @@
   color: var(--sidebar-fg);
   font-size: 11px;
   font-style: italic;
+  opacity: 0.6;
 }
 
 .find-all-empty {
   padding: 20px 12px;
   color: var(--sidebar-fg);
   text-align: center;
+  opacity: 0.6;
 }

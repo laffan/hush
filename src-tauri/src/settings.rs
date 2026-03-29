@@ -119,6 +119,8 @@ pub struct AppSettings {
     pub footnote_use_colors: bool,
     #[serde(default = "default_footnote_both_margins")]
     pub footnote_both_margins: bool,
+    #[serde(default = "default_footnote_margin_side")]
+    pub footnote_margin_side: String,
 
     // Styles
     #[serde(default)]
@@ -171,6 +173,7 @@ fn default_footnote_font_size() -> u32 { 100 }
 fn default_footnote_font_family() -> String { "sans-serif".to_string() }
 fn default_footnote_use_colors() -> bool { true }
 fn default_footnote_both_margins() -> bool { true }
+fn default_footnote_margin_side() -> String { "both".to_string() }
 fn default_dry_range() -> String { "paragraph".to_string() }
 fn default_dry_stopwords() -> Vec<String> {
     vec![
@@ -275,6 +278,7 @@ impl Default for AppSettings {
             footnote_font_family: default_footnote_font_family(),
             footnote_use_colors: default_footnote_use_colors(),
             footnote_both_margins: default_footnote_both_margins(),
+            footnote_margin_side: default_footnote_margin_side(),
             styles: Vec::new(),
             active_style_id: None,
             window_width: None,

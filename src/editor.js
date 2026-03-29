@@ -10,7 +10,7 @@ import { getActiveTheme } from "./themes.js";
 import { createPrivateModePlugin } from "./private-mode.js";
 import { createDryHighlightPlugin } from "./dry-highlight.js";
 import { openSettingsWindow } from "./settings-ui.js";
-import { openFindReplace, openFindAll } from "./find-replace.js";
+import { openFindReplace, openFindAll, findNext, findPrev } from "./find-replace.js";
 import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence, jumpToPrevParagraph, jumpToNextParagraph } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough } from "./formatting.js";
 import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
@@ -63,8 +63,9 @@ const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
-// Build the markdown highlight style, optionally normalizing heading sizes
-function getMarkdownHighlight(normalizeHeaders) {
+// Build the markdown highlight style, optionally normalizing heading sizes/colors
+function getMarkdownHighlight(normalizeHeaders, headingColor) {
+  const color = headingColor || undefined;
   const headingStyles = normalizeHeaders
     ? [
         { tag: tags.heading1, fontWeight: "700" },
@@ -75,12 +76,12 @@ function getMarkdownHighlight(normalizeHeaders) {
         { tag: tags.heading6, fontWeight: "600" },
       ]
     : [
-        { tag: tags.heading1, fontSize: "1.8em", fontWeight: "700", lineHeight: "1.3" },
-        { tag: tags.heading2, fontSize: "1.5em", fontWeight: "700", lineHeight: "1.3" },
-        { tag: tags.heading3, fontSize: "1.3em", fontWeight: "600", lineHeight: "1.3" },
-        { tag: tags.heading4, fontSize: "1.15em", fontWeight: "600" },
-        { tag: tags.heading5, fontSize: "1.05em", fontWeight: "600" },
-        { tag: tags.heading6, fontSize: "1em", fontWeight: "600" },
+        { tag: tags.heading1, fontSize: "1.8em", fontWeight: "700", lineHeight: "1.3", color },
+        { tag: tags.heading2, fontSize: "1.5em", fontWeight: "700", lineHeight: "1.3", color },
+        { tag: tags.heading3, fontSize: "1.3em", fontWeight: "600", lineHeight: "1.3", color },
+        { tag: tags.heading4, fontSize: "1.15em", fontWeight: "600", color },
+        { tag: tags.heading5, fontSize: "1.05em", fontWeight: "600", color },
+        { tag: tags.heading6, fontSize: "1em", fontWeight: "600", color },
       ];
 
   return HighlightStyle.define([
@@ -196,6 +197,8 @@ export function createEditor(container, state) {
       { key: "Mod-n", run: () => { state.newFile(); return true; } },
       { key: "Mod-f", run: (view) => { openFindReplace(view, state); return true; } },
       { key: "Mod-Shift-f", run: (view) => { openFindAll(view, state); return true; } },
+      { key: "Mod-g", run: () => findNext() },
+      { key: "Mod-Shift-g", run: () => findPrev() },
       { key: "Mod-d", run: (view) => {
         const sel = view.state.selection.main;
         if (sel.empty) {
@@ -260,7 +263,6 @@ export function createEditor(container, state) {
     ])
   );
 
-  // Transaction filter: prevent deletions and non-end insertions in ratchet mode
   const ratchetFilter = EditorState.transactionFilter.of((tr) => {
     if (!state.ratchetMode || tr.annotation(bypassRatchet)) return tr;
     if (tr.docChanged) {
@@ -274,12 +276,10 @@ export function createEditor(container, state) {
     return tr;
   });
 
-  // Block mouse selection in ratchet mode
   const ratchetMouseFilter = EditorView.domEventHandlers({
     mousedown: () => state.ratchetMode,
   });
 
-  // Resolve initial CM theme
   const activeTheme = getActiveTheme(state.settings);
   const initialCmTheme = activeTheme ? activeTheme.extension : [];
 
@@ -295,7 +295,7 @@ export function createEditor(container, state) {
     extensions: [
       hushTheme,
       themeCompartment.of(initialCmTheme),
-      highlightCompartment.of(syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders))),
+      highlightCompartment.of(syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, getActiveTheme(state.settings)?.headingColor))),
       markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
       history(),
       drawSelection(),
@@ -386,7 +386,12 @@ export function createEditor(container, state) {
   // Theme changes from settings
   state.on("theme-changed", () => {
     const t = getActiveTheme(state.settings);
-    view.dispatch({ effects: themeCompartment.reconfigure(t ? t.extension : []) });
+    view.dispatch({ effects: [
+      themeCompartment.reconfigure(t ? t.extension : []),
+      highlightCompartment.reconfigure(
+        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, t?.headingColor))
+      ),
+    ] });
   });
 
   state.on("settings-changed", () => {
@@ -396,7 +401,7 @@ export function createEditor(container, state) {
     // Reconfigure heading styles if normalizeHeaders changed
     view.dispatch({
       effects: highlightCompartment.reconfigure(
-        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders))
+        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, getActiveTheme(state.settings)?.headingColor))
       ),
     });
   });
@@ -466,7 +471,6 @@ async function applyFullscreen(state) {
 }
 
 function updateColumnResizers(state) {
-  // Clean up previous resizers and listeners
   document.querySelectorAll(".column-resizer").forEach((el) => el.remove());
   if (state._columnResizeHandler) {
     window.removeEventListener("resize", state._columnResizeHandler);
@@ -532,6 +536,9 @@ function updateColumnResizers(state) {
       state.editor.view.requestMeasure();
     }
 
+    // Notify plugins (e.g. footnotes marginalia) that layout changed
+    state.emit("layout-changed");
+
     if (showResizers) {
       leftResizer.style.display = "";
       rightResizer.style.display = "";
@@ -578,7 +585,6 @@ function updateColumnResizers(state) {
   makeDraggable(rightResizer, false);
 }
 
-/* ===== Typewriter Mode ===== */
 let typewriterBoundary = null;
 
 function setupTypewriterBoundary(view, state) {
@@ -653,14 +659,12 @@ function scrollCursorToTypewriterLine(view, state) {
   }
 }
 
-/* ===== Ratchet Typewriter Padding ===== */
 function applyRatchetTypewriterPadding(view) {
   const targetY = 0.5 * window.innerHeight;
   view.scrollDOM.style.paddingTop = targetY + "px";
   view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
 }
 
-/* ===== Ratchet Timer ===== */
 function updateRatchetTimer(state) {
   let timerEl = document.querySelector(".ratchet-timer");
 

@@ -21,25 +21,25 @@ import {
 } from "thememirror";
 
 export const themeList = [
-  // Light themes
-  { id: "ayuLight", name: "Ayu Light", type: "light", extension: ayuLight },
-  { id: "clouds", name: "Clouds", type: "light", extension: clouds },
-  { id: "noctisLilac", name: "Noctis Lilac", type: "light", extension: noctisLilac },
-  { id: "rosePineDawn", name: "Ros\u00e9 Pine Dawn", type: "light", extension: rosePineDawn },
-  { id: "solarizedLight", name: "Solarized Light", type: "light", extension: solarizedLight },
-  { id: "smoothy", name: "Smoothy", type: "light", extension: smoothy },
+  // Light themes — headingColor matches each theme's accent/keyword tones
+  { id: "ayuLight", name: "Ayu Light", type: "light", extension: ayuLight, headingColor: "#ff9940" },
+  { id: "clouds", name: "Clouds", type: "light", extension: clouds, headingColor: "#af582a" },
+  { id: "noctisLilac", name: "Noctis Lilac", type: "light", extension: noctisLilac, headingColor: "#8c4aff" },
+  { id: "rosePineDawn", name: "Ros\u00e9 Pine Dawn", type: "light", extension: rosePineDawn, headingColor: "#907aa9" },
+  { id: "solarizedLight", name: "Solarized Light", type: "light", extension: solarizedLight, headingColor: "#268bd2" },
+  { id: "smoothy", name: "Smoothy", type: "light", extension: smoothy, headingColor: "#5a67d8" },
 
   // Dark themes
-  { id: "amy", name: "Amy", type: "dark", extension: amy },
-  { id: "barf", name: "Barf", type: "dark", extension: barf },
-  { id: "bespin", name: "Bespin", type: "dark", extension: bespin },
-  { id: "birdsOfParadise", name: "Birds of Paradise", type: "dark", extension: birdsOfParadise },
-  { id: "boysAndGirls", name: "Boys and Girls", type: "dark", extension: boysAndGirls },
-  { id: "cobalt", name: "Cobalt", type: "dark", extension: cobalt },
-  { id: "coolGlow", name: "Cool Glow", type: "dark", extension: coolGlow },
-  { id: "dracula", name: "Dracula", type: "dark", extension: dracula },
-  { id: "espresso", name: "Espresso", type: "dark", extension: espresso },
-  { id: "tomorrow", name: "Tomorrow", type: "dark", extension: tomorrow },
+  { id: "amy", name: "Amy", type: "dark", extension: amy, headingColor: "#ff6600" },
+  { id: "barf", name: "Barf", type: "dark", extension: barf, headingColor: "#5ccfe6" },
+  { id: "bespin", name: "Bespin", type: "dark", extension: bespin, headingColor: "#cf7d34" },
+  { id: "birdsOfParadise", name: "Birds of Paradise", type: "dark", extension: birdsOfParadise, headingColor: "#ef5d32" },
+  { id: "boysAndGirls", name: "Boys and Girls", type: "dark", extension: boysAndGirls, headingColor: "#ff69b4" },
+  { id: "cobalt", name: "Cobalt", type: "dark", extension: cobalt, headingColor: "#ffc600" },
+  { id: "coolGlow", name: "Cool Glow", type: "dark", extension: coolGlow, headingColor: "#7cb7ff" },
+  { id: "dracula", name: "Dracula", type: "dark", extension: dracula, headingColor: "#bd93f9" },
+  { id: "espresso", name: "Espresso", type: "dark", extension: espresso, headingColor: "#c5956b" },
+  { id: "tomorrow", name: "Tomorrow", type: "dark", extension: tomorrow, headingColor: "#7aa6da" },
 ];
 
 export function getThemeById(id) {

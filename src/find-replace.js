@@ -2,31 +2,38 @@
  * Find & Replace UI for the editor.
  * - Cmd+F: find/replace within current file
  * - Cmd+Shift+F: find across all files
+ * - Cmd+G / Cmd+Shift+G: next/prev match (when find bar is open)
  */
 
 let findBar = null;
+let findState = { matches: [], currentMatch: -1, goNext: null, goPrev: null };
 
 export function openFindReplace(view, state) {
   if (findBar) {
-    // If already open, focus the search field
     const input = findBar.querySelector(".find-input");
     if (input) input.focus();
     return;
   }
 
-  // Pre-fill with current selection
   const sel = view.state.selection.main;
   const initialQuery = sel.empty ? "" : view.state.sliceDoc(sel.from, sel.to);
+
+  let caseSensitive = false;
+  let useRegex = false;
 
   findBar = document.createElement("div");
   findBar.className = "find-bar";
   findBar.innerHTML = `
     <div class="find-bar-row">
       <input type="text" class="find-input" placeholder="Find..." value="${escAttr(initialQuery)}" />
-      <button class="find-btn find-prev" title="Previous">&#9650;</button>
-      <button class="find-btn find-next" title="Next">&#9660;</button>
+      <div class="find-toggle-group">
+        <button class="find-toggle" data-mode="case" title="Match Case">Aa</button>
+        <button class="find-toggle" data-mode="regex" title="Use Regular Expression">.*</button>
+      </div>
+      <button class="find-btn find-prev" title="Previous (${modKey}+Shift+G)">&#9650;</button>
+      <button class="find-btn find-next" title="Next (${modKey}+G)">&#9660;</button>
       <span class="find-count"></span>
-      <button class="find-btn find-close" title="Close">&times;</button>
+      <button class="find-btn find-close" title="Close (Esc)">&times;</button>
     </div>
     <div class="find-bar-row">
       <input type="text" class="replace-input" placeholder="Replace..." />
@@ -40,28 +47,52 @@ export function openFindReplace(view, state) {
   const findInput = findBar.querySelector(".find-input");
   const replaceInput = findBar.querySelector(".replace-input");
   const countEl = findBar.querySelector(".find-count");
+  const caseSensitiveBtn = findBar.querySelector('[data-mode="case"]');
+  const regexBtn = findBar.querySelector('[data-mode="regex"]');
   let matches = [];
   let currentMatch = -1;
-  let decorations = [];
 
   function search() {
     const query = findInput.value;
     matches = [];
-    clearHighlights(view);
     if (!query) {
       countEl.textContent = "";
       currentMatch = -1;
+      updateFindState();
       return;
     }
     const doc = view.state.doc.toString();
-    let idx = 0;
-    while ((idx = doc.indexOf(query, idx)) !== -1) {
-      matches.push({ from: idx, to: idx + query.length });
-      idx += 1;
+    try {
+      if (useRegex) {
+        const flags = caseSensitive ? "g" : "gi";
+        const re = new RegExp(query, flags);
+        let m;
+        while ((m = re.exec(doc)) !== null) {
+          if (m[0].length === 0) { re.lastIndex++; continue; }
+          matches.push({ from: m.index, to: m.index + m[0].length });
+        }
+      } else {
+        if (caseSensitive) {
+          let idx = 0;
+          while ((idx = doc.indexOf(query, idx)) !== -1) {
+            matches.push({ from: idx, to: idx + query.length });
+            idx += 1;
+          }
+        } else {
+          const lowerDoc = doc.toLowerCase();
+          const lowerQuery = query.toLowerCase();
+          let idx = 0;
+          while ((idx = lowerDoc.indexOf(lowerQuery, idx)) !== -1) {
+            matches.push({ from: idx, to: idx + lowerQuery.length });
+            idx += 1;
+          }
+        }
+      }
+    } catch (_) {
+      // Invalid regex — show no results
     }
     countEl.textContent = matches.length > 0 ? `${matches.length} found` : "No results";
     if (matches.length > 0) {
-      // Find match nearest to cursor
       const cursorPos = view.state.selection.main.head;
       currentMatch = 0;
       for (let i = 0; i < matches.length; i++) {
@@ -71,48 +102,67 @@ export function openFindReplace(view, state) {
     } else {
       currentMatch = -1;
     }
+    updateFindState();
   }
 
-  function goToMatch(view) {
+  function goToMatch(v) {
     if (currentMatch < 0 || currentMatch >= matches.length) return;
     const m = matches[currentMatch];
-    view.dispatch({
+    v.dispatch({
       selection: { anchor: m.from, head: m.to },
       scrollIntoView: true,
     });
     countEl.textContent = `${currentMatch + 1} / ${matches.length}`;
   }
 
-  function clearHighlights() {
-    // Highlighting is handled by selection, no extra decorations needed
-  }
-
-  findInput.addEventListener("input", search);
-
-  findBar.querySelector(".find-next").addEventListener("click", () => {
+  function goNext() {
     if (matches.length === 0) return;
     currentMatch = (currentMatch + 1) % matches.length;
     goToMatch(view);
-  });
+  }
 
-  findBar.querySelector(".find-prev").addEventListener("click", () => {
+  function goPrev() {
     if (matches.length === 0) return;
     currentMatch = (currentMatch - 1 + matches.length) % matches.length;
     goToMatch(view);
+  }
+
+  function updateFindState() {
+    findState.matches = matches;
+    findState.currentMatch = currentMatch;
+    findState.goNext = goNext;
+    findState.goPrev = goPrev;
+  }
+
+  // Toggle buttons
+  caseSensitiveBtn.addEventListener("click", () => {
+    caseSensitive = !caseSensitive;
+    caseSensitiveBtn.classList.toggle("active", caseSensitive);
+    search();
   });
+
+  regexBtn.addEventListener("click", () => {
+    useRegex = !useRegex;
+    regexBtn.classList.toggle("active", useRegex);
+    search();
+  });
+
+  findInput.addEventListener("input", search);
+
+  findBar.querySelector(".find-next").addEventListener("click", goNext);
+  findBar.querySelector(".find-prev").addEventListener("click", goPrev);
 
   findBar.querySelector(".replace-one").addEventListener("click", () => {
     if (currentMatch < 0 || currentMatch >= matches.length) return;
     const m = matches[currentMatch];
     const replacement = replaceInput.value;
     view.dispatch({ changes: { from: m.from, to: m.to, insert: replacement } });
-    search(); // re-search after replacement
+    search();
   });
 
   findBar.querySelector(".replace-all").addEventListener("click", () => {
     if (matches.length === 0) return;
     const replacement = replaceInput.value;
-    // Apply all replacements in reverse order to maintain positions
     const changes = matches.slice().reverse().map(m => ({
       from: m.from, to: m.to, insert: replacement,
     }));
@@ -122,15 +172,11 @@ export function openFindReplace(view, state) {
 
   findBar.querySelector(".find-close").addEventListener("click", closeFindBar);
 
-  // Escape closes find bar
   findInput.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeFindBar();
     if (e.key === "Enter") {
       e.preventDefault();
-      if (matches.length > 0) {
-        currentMatch = (currentMatch + 1) % matches.length;
-        goToMatch(view);
-      }
+      if (e.shiftKey) goPrev(); else goNext();
     }
   });
 
@@ -142,12 +188,34 @@ export function openFindReplace(view, state) {
   if (initialQuery) search();
 }
 
+/** Navigate to next match via Cmd+G (called from editor keymap) */
+export function findNext() {
+  if (findBar && findState.goNext) {
+    findState.goNext();
+    return true;
+  }
+  return false;
+}
+
+/** Navigate to prev match via Cmd+Shift+G (called from editor keymap) */
+export function findPrev() {
+  if (findBar && findState.goPrev) {
+    findState.goPrev();
+    return true;
+  }
+  return false;
+}
+
 function closeFindBar() {
   if (findBar) {
     findBar.remove();
     findBar = null;
+    findState = { matches: [], currentMatch: -1, goNext: null, goPrev: null };
   }
 }
+
+// Platform-aware modifier key label
+const modKey = navigator.platform?.includes("Mac") ? "\u2318" : "Ctrl";
 
 // ===== Find Across Files =====
 let findAllPanel = null;
@@ -186,7 +254,6 @@ export function openFindAll(view, state) {
 
     let html = "";
     for (const file of state.files) {
-      // Load file content
       let content = "";
       if (file.id === state.currentFileId && state.editor) {
         content = state.editor.getContent();
@@ -228,7 +295,6 @@ export function openFindAll(view, state) {
 
     resultsEl.innerHTML = html || `<div class="find-all-empty">No results</div>`;
 
-    // Bind result clicks
     resultsEl.querySelectorAll(".find-all-match").forEach(el => {
       el.addEventListener("click", async () => {
         const fileId = el.dataset.id;
@@ -236,7 +302,6 @@ export function openFindAll(view, state) {
         if (fileId !== state.currentFileId) {
           await state.openFile(fileId);
         }
-        // Navigate to line
         setTimeout(() => {
           if (state.editor) {
             const v = state.editor.view;

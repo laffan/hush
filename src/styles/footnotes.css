@@ -12,7 +12,7 @@
   font-size: 9px;
   line-height: 1;
   color: #fff;
-  cursor: pointer;
+  cursor: grab;
   vertical-align: middle;
   margin: 0 1px;
   position: relative;
@@ -24,6 +24,10 @@
 .footnote-dot:hover {
   transform: scale(1.15);
   box-shadow: 0 0 0 2px rgba(128, 128, 128, 0.3);
+}
+
+.footnote-dot:active {
+  cursor: grabbing;
 }
 
 /* Overlay (narrow margin mode) — full column width below the dot */
@@ -80,6 +84,8 @@
   align-items: flex-start;
   gap: 6px;
   text-align: left;
+  z-index: 1;
+  pointer-events: auto;
 }
 
 .footnote-marginalia-label {
@@ -108,8 +114,12 @@
 
 /* Underline style for text-ID footnotes */
 .footnote-underline {
-  cursor: pointer;
+  cursor: grab;
   transition: opacity 0.1s;
+}
+
+.footnote-underline:active {
+  cursor: grabbing;
 }
 
 .footnote-underline:hover {
