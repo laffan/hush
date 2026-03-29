@@ -128,6 +128,30 @@ pub struct AppSettings {
     #[serde(default)]
     pub active_style_id: Option<String>,
 
+    // LongView (right sidebar minimap)
+    #[serde(default = "default_true")]
+    pub longview_show_paragraphs: bool,
+    #[serde(default = "default_true")]
+    pub longview_show_numbers: bool,
+    #[serde(default)]
+    pub longview_show_comments: bool,
+    #[serde(default = "default_true")]
+    pub longview_show_flags: bool,
+    #[serde(default)]
+    pub longview_show_flag_types: bool,
+    #[serde(default = "default_true")]
+    pub longview_wrap_flag_text: bool,
+    #[serde(default = "default_longview_body_font_size")]
+    pub longview_body_font_size: u32,
+    #[serde(default = "default_longview_heading_font_size")]
+    pub longview_heading_font_size: u32,
+    #[serde(default = "default_longview_flag_font_size")]
+    pub longview_flag_font_size: u32,
+    #[serde(default = "default_longview_line_gap")]
+    pub longview_line_gap: u32,
+    #[serde(default = "default_longview_current_position_color")]
+    pub longview_current_position_color: String,
+
     // Session state (persisted across restarts)
     #[serde(default)]
     pub window_width: Option<f64>,
@@ -192,6 +216,12 @@ fn default_dry_stopwords() -> Vec<String> {
         "each","every","both","few","several","either","neither",
     ].into_iter().map(String::from).collect()
 }
+fn default_true() -> bool { true }
+fn default_longview_body_font_size() -> u32 { 3 }
+fn default_longview_heading_font_size() -> u32 { 12 }
+fn default_longview_flag_font_size() -> u32 { 12 }
+fn default_longview_line_gap() -> u32 { 2 }
+fn default_longview_current_position_color() -> String { "#ff0000".to_string() }
 fn default_visibility() -> String { "menubar".to_string() }
 fn default_appearance() -> String { "dark".to_string() }
 fn default_light_theme() -> String { "ayuLight".to_string() }
@@ -281,6 +311,17 @@ impl Default for AppSettings {
             footnote_margin_side: default_footnote_margin_side(),
             styles: Vec::new(),
             active_style_id: None,
+            longview_show_paragraphs: true,
+            longview_show_numbers: true,
+            longview_show_comments: false,
+            longview_show_flags: true,
+            longview_show_flag_types: false,
+            longview_wrap_flag_text: true,
+            longview_body_font_size: default_longview_body_font_size(),
+            longview_heading_font_size: default_longview_heading_font_size(),
+            longview_flag_font_size: default_longview_flag_font_size(),
+            longview_line_gap: default_longview_line_gap(),
+            longview_current_position_color: default_longview_current_position_color(),
             window_width: None,
             window_height: None,
             window_x: None,

@@ -6,6 +6,7 @@ import { applyAppearance, isIOS } from "./settings-ui.js";
 import { getThemeById } from "./themes.js";
 import { setupFileDrop } from "./file-drop.js";
 import { findNext, findPrev } from "./find-replace.js";
+import { createLongView } from "./longview.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -268,8 +269,19 @@ async function init() {
   // Global keyboard shortcuts that work even when editor doesn't have focus
   window.addEventListener("keydown", (e) => {
     const mod = e.metaKey || e.ctrlKey;
-    // Cmd+\ — toggle sidebar
-    if (mod && e.key === "\\") {
+    // Cmd+Shift+\ — toggle right sidebar (LongView) — check BEFORE Cmd+\
+    if (mod && e.shiftKey && e.key === "\\") {
+      e.preventDefault();
+      const rp = document.getElementById("right-panel-overlay");
+      if (rp.classList.contains("hidden")) {
+        state.emit("show-longview");
+      } else {
+        state.emit("hide-longview");
+      }
+      return;
+    }
+    // Cmd+\ — toggle left sidebar
+    if (mod && !e.shiftKey && e.key === "\\") {
       e.preventDefault();
       const sb = document.getElementById("sidebar");
       const po = document.getElementById("panel-overlay");
@@ -348,6 +360,108 @@ async function init() {
     sidebarTrigger.style.pointerEvents = "auto";
   }
   document.addEventListener("mousemove", checkSidebarLeave);
+
+  // ===== Right sidebar (LongView) =====
+  const rightPanelOverlay = document.getElementById("right-panel-overlay");
+  let longViewInstance = null;
+  let rightPanelPinned = false;
+
+  // Right panel inset mode — mirror left panel logic
+  function updateRightPanelMode() {
+    const w = window.innerWidth;
+    const colW = state.settings.columnWidth || 600;
+    const rightPad = Math.max(50, Math.floor((w - colW) / 2));
+    if (rightPad >= 300) {
+      rightPanelOverlay.classList.add("panel-inset");
+      rightPanelOverlay.classList.remove("panel-overlay-mode");
+    } else {
+      rightPanelOverlay.classList.remove("panel-inset");
+      rightPanelOverlay.classList.add("panel-overlay-mode");
+    }
+  }
+  updateRightPanelMode();
+  window.addEventListener("resize", updateRightPanelMode);
+  state.on("settings-changed", updateRightPanelMode);
+
+  // Right panel pin button
+  const rightPinBtn = document.createElement("button");
+  rightPinBtn.className = "right-panel-pin-btn";
+  rightPinBtn.innerHTML = `<svg viewBox="0 0 12 12" width="12" height="12" style="transform:rotate(-90deg)"><polygon points="0,0 12,12 12,0" fill="currentColor"/></svg>`;
+  rightPinBtn.title = "Pin panel open";
+  document.body.appendChild(rightPinBtn);
+
+  rightPinBtn.addEventListener("click", () => {
+    rightPanelPinned = !rightPanelPinned;
+    rightPanelOverlay.classList.toggle("panel-pinned", rightPanelPinned);
+    rightPinBtn.title = rightPanelPinned ? "Unpin panel" : "Pin panel open";
+    syncRightPinBtn();
+  });
+
+  function syncRightPinBtn() {
+    const isInset = rightPanelOverlay.classList.contains("panel-inset");
+    const isOpen = !rightPanelOverlay.classList.contains("hidden");
+    if (!isInset || !isOpen) {
+      rightPinBtn.classList.remove("pin-visible", "pin-active");
+    } else if (rightPanelPinned) {
+      rightPinBtn.className = "right-panel-pin-btn pin-active";
+    }
+  }
+
+  document.addEventListener("mousemove", (e) => {
+    const isInset = rightPanelOverlay.classList.contains("panel-inset");
+    const isOpen = !rightPanelOverlay.classList.contains("hidden");
+    if (!isInset || !isOpen || rightPanelPinned) return;
+    const w = window.innerWidth;
+    if (e.clientX >= w - 300) {
+      rightPinBtn.classList.add("pin-visible");
+    } else {
+      rightPinBtn.classList.remove("pin-visible");
+    }
+  });
+
+  // Show/hide LongView
+  state.on("show-longview", () => {
+    rightPanelOverlay.classList.remove("hidden");
+    if (!longViewInstance) {
+      longViewInstance = createLongView(rightPanelOverlay, state);
+    }
+    longViewInstance.render();
+    if (state._columnResizeHandler) state._columnResizeHandler();
+    syncRightPinBtn();
+  });
+
+  state.on("hide-longview", () => {
+    if (rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset")) return;
+    rightPanelOverlay.classList.add("hidden");
+    rightPanelPinned = false;
+    rightPanelOverlay.classList.remove("panel-pinned");
+    rightPinBtn.classList.remove("pin-active", "pin-visible");
+    if (state._columnResizeHandler) state._columnResizeHandler();
+  });
+
+  // Close right panel on click outside (unless pinned in inset mode)
+  document.addEventListener("mousedown", (e) => {
+    const pinActive = rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset");
+    if (!rightPanelOverlay.classList.contains("hidden") && !pinActive &&
+        !rightPanelOverlay.contains(e.target) && !rightPinBtn.contains(e.target)) {
+      state.emit("hide-longview");
+    }
+  });
+
+  // Right sidebar trigger zone — invisible zone on right edge
+  const rightTrigger = document.createElement("div");
+  rightTrigger.style.cssText = "position:fixed;top:0;right:0;width:20px;height:100%;z-index:250;";
+  document.getElementById("app").appendChild(rightTrigger);
+  rightTrigger.addEventListener("mouseenter", () => {
+    state.emit("show-longview");
+  });
+
+  // Refresh LongView on file open
+  state.on("file-opened", () => {
+    if (longViewInstance && !rightPanelOverlay.classList.contains("hidden")) {
+      longViewInstance.render();
+    }
+  });
 
   // Save scroll position periodically (debounced on scroll)
   let scrollSaveTimer = null;

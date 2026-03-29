@@ -86,6 +86,19 @@ export class AppState {
       styles: [],
       activeStyleId: null,
 
+      // LongView (right sidebar minimap)
+      longviewShowParagraphs: true,
+      longviewShowNumbers: true,
+      longviewShowComments: false,
+      longviewShowFlags: true,
+      longviewShowFlagTypes: false,
+      longviewWrapFlagText: true,
+      longviewBodyFontSize: 3,
+      longviewHeadingFontSize: 12,
+      longviewFlagFontSize: 12,
+      longviewLineGap: 2,
+      longviewCurrentPositionColor: "#ff0000",
+
       // Session state
       lastFileId: null,
       lastProjectId: null,

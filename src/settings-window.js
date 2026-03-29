@@ -5,6 +5,7 @@
  */
 import { themeList } from "./themes.js";
 import { DEFAULT_STOPWORDS } from "./dry-highlight.js";
+import { renderLongViewTab as renderLVTab, bindLongViewTab } from "./longview-settings.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -127,6 +128,7 @@ function render() {
         ${tabBtn("editor", "Editor", tabIcons.editor)}
         ${tabBtn("shortcuts", "Shortcuts", tabIcons.shortcuts)}
         ${tabBtn("dry", "D.R.Y.", tabIcons.dry)}
+        ${tabBtn("longview", "Long View", tabIcons.longview)}
       </div>
       <div class="settings-content">
         <div class="settings-panel${activeTab === 'general' ? ' active' : ''}" id="panel-general">
@@ -141,6 +143,9 @@ function render() {
         <div class="settings-panel${activeTab === 'dry' ? ' active' : ''}" id="panel-dry">
           ${renderDryTab()}
         </div>
+        <div class="settings-panel${activeTab === 'longview' ? ' active' : ''}" id="panel-longview">
+          ${renderLongViewTab()}
+        </div>
       </div>
     </div>
   `;
@@ -153,6 +158,7 @@ const tabIcons = {
   editor: `<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   shortcuts: `<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
   dry: `<svg viewBox="0 0 24 24"><path d="M12 2L4 7v10l8 5 8-5V7l-8-5z"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="7" x2="20" y2="7"/></svg>`,
+  longview: `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="9" y1="11" x2="17" y2="11"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="7" y1="17" x2="13" y2="17"/></svg>`,
 };
 
 function tabBtn(id, label, icon) {
@@ -446,6 +452,11 @@ function renderDryTab() {
   `;
 }
 
+// ===== Long View Tab =====
+function renderLongViewTab() {
+  return renderLVTab(settings);
+}
+
 // ===== Bindings =====
 function bindAll() {
   // Tab switching
@@ -472,6 +483,9 @@ function bindAll() {
   bindSelect("setting-footnote-margin-side", "footnoteMarginSide");
   bindSlider("setting-font-size", "fontSize", "px");
   bindSlider("setting-line-height", "lineHeight", "");
+
+  // Long View tab
+  bindLongViewTab(bindCheckbox, bindSlider, saveSetting);
 
   // D.R.Y. tab
   bindSelect("setting-dry-range", "dryRange");

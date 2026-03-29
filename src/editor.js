@@ -16,6 +16,7 @@ import { toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStriket
 import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./project-view.js";
 import { createFocusModePlugin } from "./focus-mode.js";
+import { createCalloutPlugin } from "./callouts.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -159,7 +160,7 @@ export function createEditor(container, state) {
     keymap.of([
       { key: "Mod-,", run: () => { openSettingsWindow(state); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
-      // Cmd+\ — toggle sidebar (show/hide files panel)
+      // Cmd+\ — toggle left sidebar (show/hide files panel)
       { key: "Mod-\\", run: () => {
         const sidebar = document.getElementById("sidebar");
         const panel = document.getElementById("panel-overlay");
@@ -171,6 +172,16 @@ export function createEditor(container, state) {
         } else {
           sidebar.classList.add("pinned");
           state.emit("show-files-panel");
+        }
+        return true;
+      }},
+      // Cmd+Shift+\ — toggle right sidebar (LongView)
+      { key: "Mod-Shift-\\", run: () => {
+        const rPanel = document.getElementById("right-panel-overlay");
+        if (rPanel.classList.contains("hidden")) {
+          state.emit("show-longview");
+        } else {
+          state.emit("hide-longview");
         }
         return true;
       }},
@@ -287,6 +298,7 @@ export function createEditor(container, state) {
   const dryHighlightPlugin = createDryHighlightPlugin(state);
   const footnotePlugin = createFootnotePlugin(state);
   const focusModePlugin = createFocusModePlugin(state);
+  const calloutPlugin = createCalloutPlugin();
   const projectViewField = createProjectViewField(state);
   const separatorFilter = createSeparatorFilter(state);
 
@@ -308,6 +320,7 @@ export function createEditor(container, state) {
       privateModePlugin,
       dryHighlightPlugin,
       focusModePlugin,
+      calloutPlugin,
       footnotePlugin,
       projectViewField,
       separatorFilter,
@@ -322,13 +335,10 @@ export function createEditor(container, state) {
     parent: container,
   });
 
-  // Mode changes
   state.on("mode-changed", () => {
     applyModes(state);
     updateRatchetTimer(state);
-    // Force private mode decoration rebuild
     view.dispatch({ effects: [] });
-    // When ratchet mode starts, move cursor to end and set up typewriter scrolling
     if (state.ratchetMode) {
       const end = view.state.doc.length;
       view.dispatch({ selection: { anchor: end }, annotations: bypassRatchet.of(true) });
@@ -336,7 +346,6 @@ export function createEditor(container, state) {
       applyRatchetTypewriterPadding(view);
       requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
     } else {
-      // Clean up ratchet typewriter padding (unless typewriter mode is on)
       if (!state.typewriterMode) {
         view.scrollDOM.style.paddingTop = "";
         view.scrollDOM.style.paddingBottom = "";
@@ -349,11 +358,8 @@ export function createEditor(container, state) {
     }
   });
 
-  // Fullscreen
   state.on("fullscreen-changed", () => {
     applyFullscreen(state);
-    // After fullscreen change, recalculate typewriter/ratchet positioning
-    // Use a small delay to let the window resize complete
     setTimeout(() => {
       if (state.typewriterMode && typewriterBoundary) {
         typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
@@ -367,7 +373,6 @@ export function createEditor(container, state) {
     }, 100);
   });
 
-  // Also handle general window resizes for typewriter mode
   window.addEventListener("resize", () => {
     if (state.typewriterMode && typewriterBoundary) {
       typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
@@ -380,10 +385,8 @@ export function createEditor(container, state) {
     }
   });
 
-  // Initialize column resizers
   updateColumnResizers(state);
 
-  // Theme changes from settings
   state.on("theme-changed", () => {
     const t = getActiveTheme(state.settings);
     view.dispatch({ effects: [
@@ -395,10 +398,8 @@ export function createEditor(container, state) {
   });
 
   state.on("settings-changed", () => {
-    // Apply font size / line height CSS vars
     document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
-    // Reconfigure heading styles if normalizeHeaders changed
     view.dispatch({
       effects: highlightCompartment.reconfigure(
         syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, getActiveTheme(state.settings)?.headingColor))
@@ -483,8 +484,6 @@ function updateColumnResizers(state) {
 
   document.body.appendChild(leftResizer);
   document.body.appendChild(rightResizer);
-
-  // When either resizer is hovered, show both (with a small delay on leave)
   let hideTimeout = null;
   function showBoth() {
     clearTimeout(hideTimeout);
@@ -507,36 +506,37 @@ function updateColumnResizers(state) {
     const colW = state.settings.columnWidth;
     const minPad = 50;
 
-    // Check if sidebar/panel is occupying inset space
+    // Check if left sidebar/panel is occupying inset space
     const panelEl = document.getElementById("panel-overlay");
     const isInset = panelEl && panelEl.classList.contains("panel-inset");
     const panelOpen = panelEl && !panelEl.classList.contains("hidden");
 
-    // When panel is inset and visible, center within remaining space
-    let insetOffset = 0;
+    // Check if right panel is occupying inset space
+    const rightPanelEl = document.getElementById("right-panel-overlay");
+    const rightInset = rightPanelEl && rightPanelEl.classList.contains("panel-inset");
+    const rightOpen = rightPanelEl && !rightPanelEl.classList.contains("hidden");
+
+    // When panels are inset and visible, center within remaining space
+    let leftInsetOffset = 0;
     if (isInset && panelOpen) {
-      insetOffset = 350; // sidebar (50) + panel (300)
+      leftInsetOffset = 350; // sidebar (50) + panel (300)
+    }
+    let rightInsetOffset = 0;
+    if (rightInset && rightOpen) {
+      rightInsetOffset = 300; // right panel (300)
     }
 
-    const availableWidth = w - insetOffset;
+    const availableWidth = w - leftInsetOffset - rightInsetOffset;
     const basePad = Math.max(minPad, Math.floor((availableWidth - colW) / 2));
-    const leftPad = basePad + insetOffset;
-    const rightPad = basePad;
+    const leftPad = basePad + leftInsetOffset;
+    const rightPad = basePad + rightInsetOffset;
     const showResizers = availableWidth > colW + minPad * 2;
-
-    // Apply padding to the scroller for centering
     const scroller = document.querySelector("#editor-container .cm-scroller");
     if (scroller) {
       scroller.style.paddingLeft = leftPad + "px";
       scroller.style.paddingRight = rightPad + "px";
     }
-
-    // Tell CodeMirror to re-measure so all lines reflow correctly
-    if (state.editor && state.editor.view) {
-      state.editor.view.requestMeasure();
-    }
-
-    // Notify plugins (e.g. footnotes marginalia) that layout changed
+    if (state.editor && state.editor.view) state.editor.view.requestMeasure();
     state.emit("layout-changed");
 
     if (showResizers) {

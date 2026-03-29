@@ -1,0 +1,19 @@
+/* ===== Obsidian-style Callout Block Styling ===== */
+
+/* Base callout line styling is applied inline via the plugin.
+   These styles handle the callout title formatting. */
+
+.cm-callout-first .cm-line,
+.cm-line.cm-callout-first {
+  /* First line contains the [!type] Title — style the type indicator */
+}
+
+/* Hide the [!type] syntax and style the title */
+.cm-callout-line {
+  border-radius: 0;
+}
+
+.cm-callout-first {
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+}
