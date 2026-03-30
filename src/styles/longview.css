@@ -152,9 +152,13 @@
   width: 100%;
 }
 .longview-options-toggle:hover { opacity: 0.8; }
+.longview-options-toggle.is-open {
+  opacity: 1;
+  text-decoration: underline;
+}
 
 .longview-options-panel {
-  padding: 0 12px 8px;
+  padding: 20px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -199,6 +203,8 @@
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
+  margin-top: 3px;
+  margin-bottom: 5px;
 }
 .longview-option-row-top {
   display: flex;

@@ -78,6 +78,7 @@ export function createLongView(container, state) {
       const isOpen = !panel.classList.contains("collapsed");
       panel.classList.toggle("collapsed", isOpen);
       optionsToggle.textContent = isOpen ? "Options ▸" : "Options ▾";
+      optionsToggle.classList.toggle("is-open", !isOpen);
     });
     wrapper.appendChild(optionsToggle);
 
@@ -96,7 +97,7 @@ export function createLongView(container, state) {
     const filters = document.createElement("div");
     filters.className = "longview-filters";
     filters.appendChild(makeToggle("Text", s.longviewShowParagraphs, "longviewShowParagraphs"));
-    filters.appendChild(makeToggle("#", s.longviewShowNumbers, "longviewShowNumbers"));
+    filters.appendChild(makeToggle("Numbers", s.longviewShowNumbers, "longviewShowNumbers"));
     filters.appendChild(makeToggle("Comments", s.longviewShowComments, "longviewShowComments"));
     filters.appendChild(makeToggle("Flags", s.longviewShowFlags, "longviewShowFlags"));
     optionsPanel.appendChild(filters);
@@ -123,7 +124,7 @@ export function createLongView(container, state) {
   function buildContent(s) {
     const text = state.editor ? state.editor.getContent() : "";
     const { headings, flags } = parseDocument(text);
-    const sectionColors = { ...CALLOUT_COLORS, ...(s.longviewSectionColors || {}) };
+    const sectionColors = { ...CALLOUT_COLORS, ...(s.flagColors || {}), ...(s.longviewSectionColors || {}) };
     const calloutStacks = computeHeadingCalloutStacks(headings, sectionColors);
 
     const content = document.createElement("div");
