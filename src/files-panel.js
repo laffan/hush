@@ -9,8 +9,9 @@ import { AppState } from "./state.js";
 import { findNode, collectFlaggedItems, findAncestorIds } from "./tree-helpers.js";
 
 let sortableInstance = null;
-let flaggedSectionEl = null;
+let flaggedContainerEl = null;
 let storedHidePanel = null;
+let storedState = null;
 
 // SVG icons for the three types
 const typeIcons = {
@@ -34,14 +35,14 @@ function getIcon(item) {
   return typeIcons[item.type] || typeIcons.document;
 }
 
-// Hover action buttons — no rename for documents, no actions for special nodes
-function actionButtons(nodeId, nodeType) {
+// Hover action buttons — no rename for docs, no actions for special nodes, no flag in trash
+function actionButtons(nodeId, nodeType, inTrash) {
   const isSpecial = nodeId === AppState.INBOX_ID || nodeId === AppState.TRASH_ID;
   const isDoc = nodeType === "document";
   const renameBtn = (isDoc || isSpecial) ? "" : `<button data-tree-action="rename" title="Rename">
       <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     </button>`;
-  const flagBtn = isSpecial ? "" : `<button data-tree-action="flag" title="Toggle flag">
+  const flagBtn = (isSpecial || inTrash) ? "" : `<button data-tree-action="flag" title="Toggle flag">
       <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
     </button>`;
   const dupBtn = isSpecial ? "" : `<button data-tree-action="duplicate" title="Duplicate">
@@ -66,6 +67,7 @@ function flagOnlyButton(nodeId) {
 
 export function createFilesPanel(container, state, hidePanel) {
   storedHidePanel = hidePanel;
+  storedState = state;
   container.innerHTML = "";
 
   // Create buttons row
@@ -77,6 +79,11 @@ export function createFilesPanel(container, state, hidePanel) {
     <button id="tree-new-project" title="New Project">${typeIcons.project} Project</button>
   `;
   container.appendChild(btnRow);
+
+  // Flagged section — its own container, separate from SortableList
+  flaggedContainerEl = document.createElement("ul");
+  flaggedContainerEl.className = "tree-list-root flagged-section-root";
+  container.appendChild(flaggedContainerEl);
 
   // Sortable list container
   const listContainer = document.createElement("ul");
@@ -111,9 +118,10 @@ export function createFilesPanel(container, state, hidePanel) {
     renderItem: (item, context) => {
       const icon = getIcon(item);
       const isActive = isItemActive(item, state);
+      const inTrash = state.isInTrash(item.id);
       const el = document.createElement("span");
       el.className = "tree-item-row" + (isActive ? " active" : "");
-      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${actionButtons(item.id, item.type)}`;
+      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${actionButtons(item.id, item.type, inTrash)}`;
       return el;
     },
 
@@ -141,7 +149,7 @@ export function createFilesPanel(container, state, hidePanel) {
   }
 
   // Render the virtual Flagged folder
-  renderFlaggedSection(listContainer, state, hidePanel);
+  renderFlaggedSection(state);
 
   // Bind create buttons
   btnRow.querySelector("#tree-new-doc").addEventListener("click", () => state.newFile());
@@ -154,47 +162,49 @@ export function createFilesPanel(container, state, hidePanel) {
     refreshList(state);
   });
 
-  // Bind action buttons (delegated) — covers both sortable list and flagged section
-  listContainer.addEventListener("click", (e) => {
-    const actionBtn = e.target.closest("[data-tree-action]");
-    if (!actionBtn) return;
-    e.stopPropagation();
+  // Delegated action handler for the sortable list
+  listContainer.addEventListener("click", onActionClick);
 
-    const action = actionBtn.dataset.treeAction;
-    const actionsEl = actionBtn.closest(".tree-actions");
-    const nodeId = actionsEl?.dataset.nodeId;
-    if (!nodeId) return;
+  // Delegated action handler for the flagged section
+  flaggedContainerEl.addEventListener("click", onActionClick);
+}
 
-    if (action === "rename") {
-      handleRename(nodeId, actionBtn, state);
-    } else if (action === "duplicate") {
-      state.duplicateTreeNode(nodeId).then(() => refreshList(state));
-    } else if (action === "delete") {
-      handleDelete(nodeId, state);
-    } else if (action === "flag") {
-      state.toggleFlagged(nodeId).then(() => refreshList(state));
-    }
-  });
+function onActionClick(e) {
+  const actionBtn = e.target.closest("[data-tree-action]");
+  if (!actionBtn) return;
+  e.stopPropagation();
+
+  const action = actionBtn.dataset.treeAction;
+  const actionsEl = actionBtn.closest(".tree-actions");
+  const nodeId = actionsEl?.dataset.nodeId;
+  if (!nodeId || !storedState) return;
+
+  if (action === "rename") {
+    handleRename(nodeId, actionBtn, storedState);
+  } else if (action === "duplicate") {
+    storedState.duplicateTreeNode(nodeId).then(() => refreshList(storedState));
+  } else if (action === "delete") {
+    handleDelete(nodeId, storedState);
+  } else if (action === "flag") {
+    storedState.toggleFlagged(nodeId).then(() => refreshList(storedState));
+  }
 }
 
 // ===== Virtual Flagged Folder =====
 
 let flaggedCollapsed = false;
 
-function renderFlaggedSection(listContainer, state, hidePanel) {
-  // Remove old section if present
-  if (flaggedSectionEl) {
-    flaggedSectionEl.remove();
-    flaggedSectionEl = null;
-  }
+function renderFlaggedSection(state) {
+  if (!flaggedContainerEl) return;
+  flaggedContainerEl.innerHTML = "";
 
   const flaggedItems = collectFlaggedItems(state.fileTree);
   if (flaggedItems.length === 0) return;
 
   // Create the flagged folder as a regular li that looks like a folder
-  flaggedSectionEl = document.createElement("li");
-  flaggedSectionEl.className = "sl-item flagged-virtual-folder";
-  flaggedSectionEl.dataset.id = "__flagged__";
+  const folderLi = document.createElement("li");
+  folderLi.className = "sl-item flagged-virtual-folder";
+  folderLi.dataset.id = "__flagged__";
 
   const contentWrapper = document.createElement("div");
   contentWrapper.className = "sl-item-content";
@@ -208,7 +218,7 @@ function renderFlaggedSection(listContainer, state, hidePanel) {
   foldArrow.addEventListener("click", (e) => {
     e.stopPropagation();
     flaggedCollapsed = !flaggedCollapsed;
-    renderFlaggedSection(listContainer, state, hidePanel);
+    renderFlaggedSection(state);
   });
   contentWrapper.appendChild(foldArrow);
 
@@ -223,7 +233,7 @@ function renderFlaggedSection(listContainer, state, hidePanel) {
   mainLabel.appendChild(row);
   label.appendChild(mainLabel);
   contentWrapper.appendChild(label);
-  flaggedSectionEl.appendChild(contentWrapper);
+  folderLi.appendChild(contentWrapper);
 
   // Render children if not collapsed
   if (!flaggedCollapsed) {
@@ -268,16 +278,10 @@ function renderFlaggedSection(listContainer, state, hidePanel) {
 
       childList.appendChild(li);
     }
-    flaggedSectionEl.appendChild(childList);
+    folderLi.appendChild(childList);
   }
 
-  // Insert after Inbox (first sl-item in the list)
-  const firstItem = listContainer.querySelector(".sl-item");
-  if (firstItem && firstItem.nextSibling) {
-    listContainer.insertBefore(flaggedSectionEl, firstItem.nextSibling);
-  } else {
-    listContainer.appendChild(flaggedSectionEl);
-  }
+  flaggedContainerEl.appendChild(folderLi);
 }
 
 function revealAndOpen(item, state) {
@@ -288,6 +292,7 @@ function revealAndOpen(item, state) {
       sortableInstance.state.collapsedIds.delete(aid);
     }
     sortableInstance.render();
+    renderFlaggedSection(state);
   }
 
   // Open the item
@@ -298,11 +303,6 @@ function revealAndOpen(item, state) {
   } else if (item.type === "project") {
     state.openProject(item.id);
     if (!isInset && storedHidePanel) storedHidePanel();
-  }
-
-  // Re-render the flagged section to reflect new state
-  if (sortableInstance?.container) {
-    renderFlaggedSection(sortableInstance.container, state, storedHidePanel);
   }
 }
 
@@ -346,8 +346,8 @@ function refreshList(state) {
   if (sortableInstance) {
     const sorted = sortFlaggedItems(state.fileTree);
     sortableInstance.setData(sorted);
-    renderFlaggedSection(sortableInstance.container, state, storedHidePanel);
   }
+  renderFlaggedSection(state);
 }
 
 function handleRename(nodeId, triggerEl, state) {
