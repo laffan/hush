@@ -3,6 +3,7 @@
  */
 import { isIOS, openSettingsWindow } from "./settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
+import { findNode } from "./tree-helpers.js";
 import { renderStylesPanel, bindStylesPanel } from "./styles-panel.js";
 import newFileRaw from "./sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar_icons/files.svg?raw";
@@ -409,7 +410,7 @@ async function exportCurrentFile(state) {
     content = content.replace(/\n\n---hush-separator---\n\n/g, "\n\n");
   }
   const name = state.currentProjectId
-    ? (state._findNode(state.fileTree, state.currentProjectId)?.name || "project-export")
+    ? (findNode(state.fileTree, state.currentProjectId)?.name || "project-export")
     : (state._deriveName(content) || "hush-export");
 
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;

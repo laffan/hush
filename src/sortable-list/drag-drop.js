@@ -16,11 +16,16 @@ function onPointerDown(event) {
   const target = event.target.closest(".sl-item");
   if (!target || target.classList.contains("dragging")) return;
 
+  // Check canDrag before starting
+  const targetPathForCheck = parsePath(target.dataset.path);
+  const itemForCheck = this._getItemAtPath(targetPathForCheck);
+  if (itemForCheck && !this.config.canDrag(itemForCheck)) return;
+
   const rect = target.getBoundingClientRect();
   const offsetX = event.clientX - rect.left;
   const offsetY = event.clientY - rect.top;
   const targetId = target.dataset.id ?? "";
-  const targetPath = parsePath(target.dataset.path);
+  const targetPath = targetPathForCheck;
   const wasMoving = this.state.isMoving;
 
   this.pendingDrag = {

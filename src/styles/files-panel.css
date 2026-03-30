@@ -207,7 +207,7 @@
   flex-shrink: 0;
 }
 
-.sl-item:hover > .sl-item-content .tree-actions {
+.sl-item.sl-hovered > .sl-item-content .tree-actions {
   opacity: 1;
 }
 
@@ -238,6 +238,11 @@
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* Flagged items have filled icons */
+.tree-type-icon.flagged-icon {
+  fill: currentColor;
 }
 
 .tree-rename-input {

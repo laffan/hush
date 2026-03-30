@@ -79,8 +79,23 @@ export function renderList(items, container, path, ctx) {
     contentWrapper.appendChild(labelContainer);
     li.appendChild(contentWrapper);
 
-    li.addEventListener("mouseenter", onItemMouseEnter);
-    li.addEventListener("mouseleave", onItemMouseLeave);
+    li.addEventListener("mouseenter", (e) => {
+      // Remove sl-hovered from any ancestor sl-items to prevent parent hover leak
+      let ancestor = li.parentElement?.closest(".sl-item");
+      while (ancestor) {
+        ancestor.classList.remove("sl-hovered");
+        ancestor = ancestor.parentElement?.closest(".sl-item");
+      }
+      li.classList.add("sl-hovered");
+      onItemMouseEnter(e);
+    });
+    li.addEventListener("mouseleave", (e) => {
+      li.classList.remove("sl-hovered");
+      // Re-add sl-hovered to immediate parent sl-item if mouse is still over it
+      const parentItem = li.parentElement?.closest(".sl-item");
+      if (parentItem) parentItem.classList.add("sl-hovered");
+      onItemMouseLeave(e);
+    });
 
     // Render children if not collapsed
     if (hasChildren && !isCollapsed) {

@@ -41,6 +41,8 @@ pub struct TreeNode {
     pub file_id: Option<String>, // only for documents — points to files/{uuid}.json
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<TreeNode>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub flagged: bool,
 }
 
 #[tauri::command]

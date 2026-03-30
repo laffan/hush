@@ -160,31 +160,6 @@ export function createEditor(container, state) {
     keymap.of([
       { key: "Mod-,", run: () => { openSettingsWindow(state); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
-      // Cmd+\ — toggle left sidebar (show/hide files panel)
-      { key: "Mod-\\", run: () => {
-        const sidebar = document.getElementById("sidebar");
-        const panel = document.getElementById("panel-overlay");
-        const isVisible = sidebar.classList.contains("pinned") ||
-                          sidebar.classList.contains("visible") ||
-                          !panel.classList.contains("hidden");
-        if (isVisible) {
-          state.emit("hide-panel");
-        } else {
-          sidebar.classList.add("pinned");
-          state.emit("show-files-panel");
-        }
-        return true;
-      }},
-      // Cmd+Shift+\ — toggle right sidebar (Outline View)
-      { key: "Mod-Shift-\\", run: () => {
-        const rPanel = document.getElementById("right-panel-overlay");
-        if (rPanel.classList.contains("hidden")) {
-          state.emit("show-outline");
-        } else {
-          state.emit("hide-outline");
-        }
-        return true;
-      }},
       { key: "Mod-l", run: (view) => selectSentence(view) },
       { key: "Mod-Shift-l", run: (view) => reduceSentenceSelection(view) },
       { key: "Mod-ArrowRight", run: (view) => jumpToNextSentence(view) },

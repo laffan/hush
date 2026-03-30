@@ -2,6 +2,8 @@
  * Central application state management
  */
 
+import { findNode, removeNode, collectDocumentIds, findNodeByFileId, insertAfter, insertNode } from "./tree-helpers.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function tauriInvoke(cmd, args) {
@@ -154,6 +156,8 @@ export class AppState {
         Object.assign(this.settings, await tauriInvoke("get_settings"));
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
+        this.ensureSpecialNodes();
+        await this.saveFileTree();
 
         // Restore session state from settings
         this.typewriterMode = !!this.settings.typewriterMode;
@@ -163,7 +167,7 @@ export class AppState {
         // Restore last open file/project
         const lastProjectId = this.settings.lastProjectId;
         const lastFileId = this.settings.lastFileId;
-        if (lastProjectId && this._findNode(this.fileTree, lastProjectId)) {
+        if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
           await this.openProject(lastProjectId);
         } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
           await this.openFile(lastFileId);
@@ -212,9 +216,13 @@ export class AppState {
         name: f.name,
         fileId: f.id,
         children: [],
+        flagged: false,
       }));
       this._saveTreeLocal();
     }
+
+    this.ensureSpecialNodes();
+    this._saveTreeLocal();
 
     if (this.files.length > 0) {
       this.currentFileId = this.files[0].id;
@@ -266,6 +274,45 @@ export class AppState {
     this.dirty = true;
   }
 
+  // ===== Special Nodes =====
+
+  static INBOX_ID = "__inbox__";
+  static TRASH_ID = "__trash__";
+
+  ensureSpecialNodes() {
+    const hasInbox = this.fileTree.some(n => n.id === AppState.INBOX_ID);
+    if (!hasInbox) {
+      this.fileTree.unshift({
+        id: AppState.INBOX_ID, type: "project", name: "Inbox",
+        children: [], flagged: false,
+      });
+    }
+    const hasTrash = this.fileTree.some(n => n.id === AppState.TRASH_ID);
+    if (!hasTrash) {
+      this.fileTree.push({
+        id: AppState.TRASH_ID, type: "folder", name: "Trash",
+        children: [], flagged: false,
+      });
+    }
+    // Enforce positions: Inbox first, Trash last
+    const inboxIdx = this.fileTree.findIndex(n => n.id === AppState.INBOX_ID);
+    if (inboxIdx > 0) {
+      const [inbox] = this.fileTree.splice(inboxIdx, 1);
+      this.fileTree.unshift(inbox);
+    }
+    const trashIdx = this.fileTree.findIndex(n => n.id === AppState.TRASH_ID);
+    if (trashIdx >= 0 && trashIdx < this.fileTree.length - 1) {
+      const [trash] = this.fileTree.splice(trashIdx, 1);
+      this.fileTree.push(trash);
+    }
+  }
+
+  isInTrash(nodeId) {
+    const trash = findNode(this.fileTree, AppState.TRASH_ID);
+    if (!trash || !trash.children) return false;
+    return !!findNode(trash.children, nodeId);
+  }
+
   // ===== File Tree Operations =====
 
   async saveFileTree() {
@@ -285,8 +332,8 @@ export class AppState {
         return created;
       } catch (e) { console.error("Create folder failed:", e); }
     } else {
-      const node = { id: crypto.randomUUID(), type: "folder", name, children: [] };
-      this._insertNode(node, parentId);
+      const node = { id: crypto.randomUUID(), type: "folder", name, children: [], flagged: false };
+      insertNode(this.fileTree, node, parentId, findNode);
       this._saveTreeLocal();
       this.emit("files-changed");
       return node;
@@ -302,84 +349,80 @@ export class AppState {
         return created;
       } catch (e) { console.error("Create project failed:", e); }
     } else {
-      const node = { id: crypto.randomUUID(), type: "project", name, children: [] };
-      this._insertNode(node, parentId);
+      const node = { id: crypto.randomUUID(), type: "project", name, children: [], flagged: false };
+      insertNode(this.fileTree, node, parentId, findNode);
       this._saveTreeLocal();
       this.emit("files-changed");
       return node;
     }
   }
 
-  _insertNode(node, parentId) {
-    if (!parentId) {
-      this.fileTree.push(node);
-      return;
+  async deleteTreeNode(nodeId) {
+    // Don't allow deleting Inbox or Trash themselves
+    if (nodeId === AppState.INBOX_ID || nodeId === AppState.TRASH_ID) return;
+
+    const node = findNode(this.fileTree, nodeId);
+    if (!node) return;
+
+    // If item is already in trash, permanently delete
+    if (this.isInTrash(nodeId)) {
+      return this._permanentDeleteNode(nodeId);
     }
-    const parent = this._findNode(this.fileTree, parentId);
-    if (parent) {
-      if (!parent.children) parent.children = [];
-      parent.children.push(node);
-    } else {
-      this.fileTree.push(node);
+
+    // Move to trash
+    const removed = removeNode(this.fileTree, nodeId);
+    if (removed) {
+      const trash = findNode(this.fileTree, AppState.TRASH_ID);
+      if (trash) { (trash.children || (trash.children = [])).push(removed); }
     }
+    await this.saveFileTree();
+    const fileIds = this._collectNodeFileIds(node);
+    if (fileIds.includes(this.currentFileId) || nodeId === this.currentProjectId) {
+      this.currentProjectId = null; this.projectDocIds = [];
+      if (this.files.length > 0) await this.openFile(this.files[0].id);
+      else await this.newFile();
+    }
+    this.emit("files-changed");
   }
 
-  _findNode(nodes, id) {
-    for (const n of nodes) {
-      if (n.id === id) return n;
-      if (n.children) {
-        const found = this._findNode(n.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
+  async _permanentDeleteNode(nodeId) {
+    const node = findNode(this.fileTree, nodeId);
+    if (!node) return;
+    const fileIds = this._collectNodeFileIds(node);
+    await this._deleteFilesByIds(fileIds);
+    removeNode(this.fileTree, nodeId);
+    await this._finalizeFileDeletion(fileIds);
   }
 
-  _removeNode(nodes, id) {
-    for (let i = 0; i < nodes.length; i++) {
-      if (nodes[i].id === id) {
-        return nodes.splice(i, 1)[0];
-      }
-      if (nodes[i].children) {
-        const removed = this._removeNode(nodes[i].children, id);
-        if (removed) return removed;
-      }
-    }
-    return null;
+  async emptyTrash() {
+    const trash = findNode(this.fileTree, AppState.TRASH_ID);
+    if (!trash || !trash.children || trash.children.length === 0) return;
+    const fileIds = collectDocumentIds(trash.children);
+    await this._deleteFilesByIds(fileIds);
+    trash.children = [];
+    await this._finalizeFileDeletion(fileIds);
   }
 
-  _collectDocumentIds(nodes) {
+  _collectNodeFileIds(node) {
     const ids = [];
-    for (const n of nodes) {
-      if (n.type === "document" && n.fileId) {
-        ids.push(n.fileId);
-      }
-      if (n.children) {
-        ids.push(...this._collectDocumentIds(n.children));
-      }
-    }
+    if (node.type === "document" && node.fileId) ids.push(node.fileId);
+    if (node.children) ids.push(...collectDocumentIds(node.children));
     return ids;
   }
 
-  async deleteTreeNode(nodeId) {
-    const node = this._findNode(this.fileTree, nodeId);
-    if (!node) return;
-    const fileIds = [];
-    if (node.type === "document" && node.fileId) fileIds.push(node.fileId);
-    if (node.children) fileIds.push(...this._collectDocumentIds(node.children));
-
+  async _deleteFilesByIds(fileIds) {
     for (const fid of fileIds) {
       if (IS_TAURI) {
         try { await tauriInvoke("delete_file", { id: fid }); }
         catch (e) { console.error("Delete file failed:", e); }
       } else { this.files = this.files.filter((f) => f.id !== fid); }
     }
+  }
 
-    this._removeNode(this.fileTree, nodeId);
+  async _finalizeFileDeletion(fileIds) {
     await this.saveFileTree();
     if (IS_TAURI) { this.files = await tauriInvoke("list_files"); }
     else { this._saveFilesLocal(); }
-
     if (fileIds.includes(this.currentFileId)) {
       this.currentProjectId = null;
       this.projectDocIds = [];
@@ -390,7 +433,7 @@ export class AppState {
   }
 
   async renameTreeNode(nodeId, newName) {
-    const node = this._findNode(this.fileTree, nodeId);
+    const node = findNode(this.fileTree, nodeId);
     if (!node) return;
     node.name = newName;
     if (node.type === "document" && node.fileId) {
@@ -406,59 +449,43 @@ export class AppState {
     await this.saveFileTree();
   }
 
-  async duplicateTreeNode(nodeId) {
-    const node = this._findNode(this.fileTree, nodeId);
-    if (!node || node.type !== "document" || !node.fileId) return;
-    const newFileId = await this.duplicateFile(node.fileId);
-    if (!newFileId) return;
-    const newNode = { id: crypto.randomUUID(), type: "document", name: node.name + " copy", fileId: newFileId, children: [] };
-    this._insertAfter(this.fileTree, nodeId, newNode);
+  async toggleFlagged(nodeId) {
+    const node = findNode(this.fileTree, nodeId);
+    if (!node) return;
+    node.flagged = !node.flagged;
     await this.saveFileTree();
   }
 
-  _insertAfter(nodes, afterId, newNode) {
-    for (let i = 0; i < nodes.length; i++) {
-      if (nodes[i].id === afterId) {
-        nodes.splice(i + 1, 0, newNode);
-        return true;
-      }
-      if (nodes[i].children && this._insertAfter(nodes[i].children, afterId, newNode)) {
-        return true;
-      }
-    }
-    return false;
+  async duplicateTreeNode(nodeId) {
+    const node = findNode(this.fileTree, nodeId);
+    if (!node || node.type !== "document" || !node.fileId) return;
+    const newFileId = await this.duplicateFile(node.fileId);
+    if (!newFileId) return;
+    const newNode = { id: crypto.randomUUID(), type: "document", name: node.name + " copy", fileId: newFileId, children: [], flagged: false };
+    insertAfter(this.fileTree, nodeId, newNode);
+    await this.saveFileTree();
   }
 
   // ===== Project View =====
 
   async openProject(projectId) {
     if (this.dirty) await this.saveCurrentFile();
-    const node = this._findNode(this.fileTree, projectId);
-    console.log("[openProject] node:", node);
+    const node = findNode(this.fileTree, projectId);
     if (!node || node.type !== "project") return;
     this.currentProjectId = projectId;
     this.currentFileId = null;
-    this.projectDocIds = this._collectDocumentIds(node.children || []);
-    console.log("[openProject] projectDocIds:", this.projectDocIds);
-
+    this.projectDocIds = collectDocumentIds(node.children || []);
     let ordered = [];
     if (IS_TAURI) {
       for (const fid of this.projectDocIds) {
         try { ordered.push(await tauriInvoke("load_file", { id: fid })); }
-        catch (e) { console.error("[openProject] Failed to load file:", fid, e); }
+        catch (e) { console.error("Failed to load file:", fid, e); }
       }
     } else {
       ordered = this.projectDocIds.map((fid) => this.files.find((e) => e.id === fid)).filter(Boolean);
     }
-    console.log("[openProject] ordered count:", ordered.length, "docIds:", this.projectDocIds);
     const combined = ordered.map((e) => e.content).join("\n\n---hush-separator---\n\n");
-    console.log("[openProject] combined length:", combined.length, "preview:", combined.slice(0, 200));
-    if (this.editor) {
-      this.editor.setContent(combined);
-      console.log("[openProject] setContent called");
-    } else {
-      console.log("[openProject] NO EDITOR");
-    }
+    if (this.editor) this.editor.setContent(combined);
     this.emit("file-opened");
     this.updateSettings({ lastProjectId: projectId, lastFileId: null });
   }
@@ -504,7 +531,7 @@ export class AppState {
   _updateTreeNodeNameByFileId(fileId) {
     const file = this.files.find((f) => f.id === fileId);
     if (!file) return false;
-    const node = this._findNodeByFileId(this.fileTree, fileId);
+    const node = findNodeByFileId(this.fileTree, fileId);
     if (node && node.name !== file.name) {
       node.name = file.name;
       return true;
@@ -512,26 +539,19 @@ export class AppState {
     return false;
   }
 
-  _findNodeByFileId(nodes, fileId) {
-    for (const n of nodes) {
-      if (n.type === "document" && n.fileId === fileId) return n;
-      if (n.children) {
-        const found = this._findNodeByFileId(n.children, fileId);
-        if (found) return found;
-      }
-    }
-    return null;
-  }
+
 
   async newFile(parentId = null) {
     if (this.dirty) await this.saveCurrentFile();
+    // Default new files go into the Inbox
+    const targetParent = parentId || AppState.INBOX_ID;
     let fileId;
     if (IS_TAURI) {
       try { const file = await tauriInvoke("create_file"); fileId = file.id; this.files = await tauriInvoke("list_files"); }
       catch (e) { console.error("Create file failed:", e); return; }
     } else { fileId = this._createLocalFile().id; }
-    const treeNode = { id: crypto.randomUUID(), type: "document", name: "Untitled", fileId, children: [] };
-    this._insertNode(treeNode, parentId);
+    const treeNode = { id: crypto.randomUUID(), type: "document", name: "Untitled", fileId, children: [], flagged: false };
+    insertNode(this.fileTree, treeNode, targetParent, findNode);
     await this.saveFileTree();
     this.currentFileId = fileId;
     this.currentProjectId = null;
