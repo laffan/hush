@@ -1,8 +1,8 @@
 /**
- * LongView — right sidebar minimap for document navigation.
+ * Outline View — right sidebar for document navigation.
  * Ported from obsidian-long-view for Hush.
  *
- * Renders a minimap with headings, condensed text, flags, and callout tinting.
+ * Renders an outline with headings, condensed text, flags, and callout tinting.
  * Clicking headings/flags navigates the editor. The current heading is highlighted.
  */
 import {
@@ -13,7 +13,16 @@ import {
 } from "./longview-parser.js";
 import { CALLOUT_COLORS, getCalloutColor } from "./callouts.js";
 
-/** Default LongView settings */
+/** Default flag colors */
+const DEFAULT_FLAG_COLORS = {
+  TODO: "#ffd700",
+  MISSING: "#ff4444",
+  COMMENT: "#888888",
+  REWRITE: "#ff66aa",
+  RESEARCH: "#66aaff",
+};
+
+/** Default Outline View settings */
 export const LONGVIEW_DEFAULTS = {
   longviewShowParagraphs: true,
   longviewShowNumbers: true,
@@ -54,13 +63,13 @@ export function createLongView(container, state) {
     header.className = "longview-header";
     const title = document.createElement("span");
     title.className = "longview-title";
-    title.textContent = "Long View";
+    title.textContent = "Outline";
     header.appendChild(title);
 
     const refreshBtn = document.createElement("button");
     refreshBtn.className = "longview-refresh-btn";
     refreshBtn.textContent = "↻";
-    refreshBtn.title = "Refresh minimap";
+    refreshBtn.title = "Refresh outline";
     refreshBtn.addEventListener("click", render);
     header.appendChild(refreshBtn);
     wrapper.appendChild(header);
@@ -73,6 +82,29 @@ export function createLongView(container, state) {
     filters.appendChild(makeToggle("Comments", s.longviewShowComments, "longviewShowComments"));
     filters.appendChild(makeToggle("Flags", s.longviewShowFlags, "longviewShowFlags"));
     wrapper.appendChild(filters);
+
+    // Options panel (collapsible)
+    const optionsToggle = document.createElement("button");
+    optionsToggle.className = "longview-options-toggle";
+    optionsToggle.textContent = "Options ▾";
+    optionsToggle.addEventListener("click", () => {
+      const panel = wrapper.querySelector(".longview-options-panel");
+      const isOpen = !panel.classList.contains("collapsed");
+      panel.classList.toggle("collapsed", isOpen);
+      optionsToggle.textContent = isOpen ? "Options ▸" : "Options ▾";
+    });
+    wrapper.appendChild(optionsToggle);
+
+    const optionsPanel = document.createElement("div");
+    optionsPanel.className = "longview-options-panel collapsed";
+    optionsPanel.appendChild(makeCheckboxRow("Show flag type labels", s.longviewShowFlagTypes, "longviewShowFlagTypes"));
+    optionsPanel.appendChild(makeCheckboxRow("Wrap flag text", s.longviewWrapFlagText, "longviewWrapFlagText"));
+    optionsPanel.appendChild(makeSliderRow("Paragraph size", s.longviewBodyFontSize, 1, 8, 0.5, "longviewBodyFontSize", "px"));
+    optionsPanel.appendChild(makeSliderRow("Heading size", s.longviewHeadingFontSize, 8, 20, 1, "longviewHeadingFontSize", "px"));
+    optionsPanel.appendChild(makeSliderRow("Flag size", s.longviewFlagFontSize, 8, 18, 1, "longviewFlagFontSize", "px"));
+    optionsPanel.appendChild(makeSliderRow("Line gap", s.longviewLineGap, 0, 8, 0.5, "longviewLineGap", "px"));
+    optionsPanel.appendChild(makeColorRow("Position color", s.longviewCurrentPositionColor, "longviewCurrentPositionColor"));
+    wrapper.appendChild(optionsPanel);
 
     // Get content from editor
     const text = state.editor ? state.editor.getContent() : "";
@@ -192,6 +224,67 @@ export function createLongView(container, state) {
       render();
     });
     return btn;
+  }
+
+  function makeCheckboxRow(label, value, key) {
+    const row = document.createElement("div");
+    row.className = "longview-option-row";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!value;
+    cb.addEventListener("change", () => {
+      state.settings[key] = cb.checked;
+      state.updateSettings({ [key]: cb.checked });
+      render();
+    });
+    row.appendChild(lbl);
+    row.appendChild(cb);
+    return row;
+  }
+
+  function makeSliderRow(label, value, min, max, step, key, unit) {
+    const row = document.createElement("div");
+    row.className = "longview-option-row";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = min;
+    slider.max = max;
+    slider.step = step;
+    slider.value = value;
+    const val = document.createElement("span");
+    val.className = "longview-option-value";
+    val.textContent = value + unit;
+    slider.addEventListener("input", () => {
+      const v = parseFloat(slider.value);
+      val.textContent = v + unit;
+      state.settings[key] = v;
+      state.updateSettings({ [key]: v });
+    });
+    row.appendChild(lbl);
+    row.appendChild(slider);
+    row.appendChild(val);
+    return row;
+  }
+
+  function makeColorRow(label, value, key) {
+    const row = document.createElement("div");
+    row.className = "longview-option-row";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = value || "#ff0000";
+    input.addEventListener("input", () => {
+      state.settings[key] = input.value;
+      state.updateSettings({ [key]: input.value });
+    });
+    row.appendChild(lbl);
+    row.appendChild(input);
+    return row;
   }
 
   function setupScrollTracking(state) {
@@ -355,13 +448,24 @@ function updateCalloutWrappers(contentEl, wrappers, activeStack, newStack, secti
 function createFlagElement(flag, settings, state) {
   const el = document.createElement("div");
   el.className = "longview-flag";
-  const typeLower = flag.type.toLowerCase();
-  el.classList.add(`longview-flag-type-${typeLower}`);
-  if (flag.type === "MISSING") el.classList.add("is-missing-flag");
   if (settings.longviewWrapFlagText) el.classList.add("wrap-flag-text");
 
+  // Apply color from settings (flagColors map) or fall back to defaults
+  const flagColors = settings.flagColors || {};
+  const color = flagColors[flag.type] || DEFAULT_FLAG_COLORS[flag.type] || "#4488ff";
+  const isMissing = flag.type === "MISSING";
+
+  if (isMissing) {
+    el.style.border = `1px dashed ${color}`;
+    el.style.color = color;
+    el.style.background = "transparent";
+  } else {
+    el.style.backgroundColor = color;
+    el.style.color = getFgForBg(color);
+  }
+
   const baseMessage = flag.message.split("|")[0]?.trim() ?? flag.message;
-  const messageText = flag.type === "MISSING"
+  const messageText = isMissing
     ? (baseMessage || "Missing")
     : getFirstWords(baseMessage, 10);
 
@@ -375,6 +479,7 @@ function createFlagElement(flag, settings, state) {
 
   const msgSpan = document.createElement("span");
   msgSpan.className = "longview-flag-message";
+  if (isMissing) msgSpan.style.color = color;
   msgSpan.textContent = messageText;
   el.appendChild(msgSpan);
 
@@ -411,4 +516,10 @@ function hexToRgb(hex) {
     g: parseInt(hex.slice(2, 4), 16),
     b: parseInt(hex.slice(4, 6), 16),
   };
+}
+
+function getFgForBg(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.5 ? "#1a1a1a" : "#f0f0f0";
 }

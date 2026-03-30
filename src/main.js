@@ -269,14 +269,14 @@ async function init() {
   // Global keyboard shortcuts that work even when editor doesn't have focus
   window.addEventListener("keydown", (e) => {
     const mod = e.metaKey || e.ctrlKey;
-    // Cmd+Shift+\ — toggle right sidebar (LongView) — check BEFORE Cmd+\
+    // Cmd+Shift+\ — toggle right sidebar (Outline View) — check BEFORE Cmd+\
     if (mod && e.shiftKey && e.key === "\\") {
       e.preventDefault();
       const rp = document.getElementById("right-panel-overlay");
       if (rp.classList.contains("hidden")) {
-        state.emit("show-longview");
+        state.emit("show-outline");
       } else {
-        state.emit("hide-longview");
+        state.emit("hide-outline");
       }
       return;
     }
@@ -361,7 +361,7 @@ async function init() {
   }
   document.addEventListener("mousemove", checkSidebarLeave);
 
-  // ===== Right sidebar (LongView) =====
+  // ===== Right sidebar (Outline View) =====
   const rightPanelOverlay = document.getElementById("right-panel-overlay");
   let longViewInstance = null;
   let rightPanelPinned = false;
@@ -371,7 +371,7 @@ async function init() {
     const w = window.innerWidth;
     const colW = state.settings.columnWidth || 600;
     const rightPad = Math.max(50, Math.floor((w - colW) / 2));
-    if (rightPad >= 300) {
+    if (rightPad >= 200) {
       rightPanelOverlay.classList.add("panel-inset");
       rightPanelOverlay.classList.remove("panel-overlay-mode");
     } else {
@@ -412,15 +412,15 @@ async function init() {
     const isOpen = !rightPanelOverlay.classList.contains("hidden");
     if (!isInset || !isOpen || rightPanelPinned) return;
     const w = window.innerWidth;
-    if (e.clientX >= w - 300) {
+    if (e.clientX >= w - 200) {
       rightPinBtn.classList.add("pin-visible");
     } else {
       rightPinBtn.classList.remove("pin-visible");
     }
   });
 
-  // Show/hide LongView
-  state.on("show-longview", () => {
+  // Show/hide Outline View
+  state.on("show-outline", () => {
     rightPanelOverlay.classList.remove("hidden");
     if (!longViewInstance) {
       longViewInstance = createLongView(rightPanelOverlay, state);
@@ -430,7 +430,7 @@ async function init() {
     syncRightPinBtn();
   });
 
-  state.on("hide-longview", () => {
+  state.on("hide-outline", () => {
     if (rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset")) return;
     rightPanelOverlay.classList.add("hidden");
     rightPanelPinned = false;
@@ -444,7 +444,7 @@ async function init() {
     const pinActive = rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset");
     if (!rightPanelOverlay.classList.contains("hidden") && !pinActive &&
         !rightPanelOverlay.contains(e.target) && !rightPinBtn.contains(e.target)) {
-      state.emit("hide-longview");
+      state.emit("hide-outline");
     }
   });
 
@@ -453,10 +453,10 @@ async function init() {
   rightTrigger.style.cssText = "position:fixed;top:0;right:0;width:20px;height:100%;z-index:250;";
   document.getElementById("app").appendChild(rightTrigger);
   rightTrigger.addEventListener("mouseenter", () => {
-    state.emit("show-longview");
+    state.emit("show-outline");
   });
 
-  // Refresh LongView on file open
+  // Refresh Outline View on file open
   state.on("file-opened", () => {
     if (longViewInstance && !rightPanelOverlay.classList.contains("hidden")) {
       longViewInstance.render();

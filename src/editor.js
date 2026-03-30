@@ -175,13 +175,13 @@ export function createEditor(container, state) {
         }
         return true;
       }},
-      // Cmd+Shift+\ — toggle right sidebar (LongView)
+      // Cmd+Shift+\ — toggle right sidebar (Outline View)
       { key: "Mod-Shift-\\", run: () => {
         const rPanel = document.getElementById("right-panel-overlay");
         if (rPanel.classList.contains("hidden")) {
-          state.emit("show-longview");
+          state.emit("show-outline");
         } else {
-          state.emit("hide-longview");
+          state.emit("hide-outline");
         }
         return true;
       }},

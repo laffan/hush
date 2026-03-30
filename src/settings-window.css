@@ -583,3 +583,88 @@ html, body {
 .dry-reset-button:hover {
   background: rgba(229, 57, 53, 0.2);
 }
+
+/* ===== Flags Tab ===== */
+.settings-hint {
+  font-size: 12px;
+  color: var(--fg);
+  opacity: 0.5;
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+.settings-hint code {
+  background: rgba(128, 128, 128, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.flag-row {
+  gap: 8px;
+}
+.flag-name-fixed {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  min-width: 80px;
+}
+.flag-name-input {
+  min-width: 80px !important;
+  max-width: 100px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.flag-preview {
+  font-family: system-ui, sans-serif;
+  white-space: nowrap;
+}
+.flag-color-input,
+.flag-color-input-custom {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+}
+.flag-delete-btn {
+  background: none;
+  border: none;
+  color: #e53935;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.flag-delete-btn:hover {
+  opacity: 1;
+}
+.flag-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.flag-action-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.1);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+  transition: background 0.15s;
+}
+.flag-action-btn:hover {
+  background: rgba(128, 128, 128, 0.2);
+}
+.flag-action-btn.flag-reset {
+  border-color: rgba(229, 57, 53, 0.4);
+  color: #e53935;
+  background: rgba(229, 57, 53, 0.1);
+}
+.flag-action-btn.flag-reset:hover {
+  background: rgba(229, 57, 53, 0.2);
+}

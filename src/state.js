@@ -86,7 +86,7 @@ export class AppState {
       styles: [],
       activeStyleId: null,
 
-      // LongView (right sidebar minimap)
+      // Outline View (right sidebar)
       longviewShowParagraphs: true,
       longviewShowNumbers: true,
       longviewShowComments: false,
@@ -98,6 +98,19 @@ export class AppState {
       longviewFlagFontSize: 12,
       longviewLineGap: 2,
       longviewCurrentPositionColor: "#ff0000",
+
+      // Flags (custom flag types and colors)
+      flagColors: {
+        TODO: "#ffd700",
+        MISSING: "#ff4444",
+        COMMENT: "#888888",
+        REWRITE: "#ff66aa",
+        RESEARCH: "#66aaff",
+      },
+      customFlags: [
+        { name: "REWRITE", color: "#ff66aa" },
+        { name: "RESEARCH", color: "#66aaff" },
+      ],
 
       // Session state
       lastFileId: null,

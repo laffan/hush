@@ -128,7 +128,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub active_style_id: Option<String>,
 
-    // LongView (right sidebar minimap)
+    // Outline View (right sidebar)
     #[serde(default = "default_true")]
     pub longview_show_paragraphs: bool,
     #[serde(default = "default_true")]
@@ -151,6 +151,12 @@ pub struct AppSettings {
     pub longview_line_gap: u32,
     #[serde(default = "default_longview_current_position_color")]
     pub longview_current_position_color: String,
+
+    // Flags (custom flag types and colors)
+    #[serde(default = "default_flag_colors")]
+    pub flag_colors: std::collections::HashMap<String, String>,
+    #[serde(default = "default_custom_flags")]
+    pub custom_flags: Vec<CustomFlag>,
 
     // Session state (persisted across restarts)
     #[serde(default)]
@@ -193,70 +199,328 @@ pub struct Style {
     pub color_overrides: std::collections::HashMap<String, String>,
 }
 
-fn default_footnote_font_size() -> u32 { 100 }
-fn default_footnote_font_family() -> String { "sans-serif".to_string() }
-fn default_footnote_use_colors() -> bool { true }
-fn default_footnote_both_margins() -> bool { true }
-fn default_footnote_margin_side() -> String { "closest".to_string() }
-fn default_dry_range() -> String { "paragraph".to_string() }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomFlag {
+    pub name: String,
+    pub color: String,
+}
+
+fn default_flag_colors() -> std::collections::HashMap<String, String> {
+    let mut m = std::collections::HashMap::new();
+    m.insert("TODO".to_string(), "#ffd700".to_string());
+    m.insert("MISSING".to_string(), "#ff4444".to_string());
+    m.insert("COMMENT".to_string(), "#888888".to_string());
+    m.insert("REWRITE".to_string(), "#ff66aa".to_string());
+    m.insert("RESEARCH".to_string(), "#66aaff".to_string());
+    m
+}
+
+fn default_custom_flags() -> Vec<CustomFlag> {
+    vec![
+        CustomFlag {
+            name: "REWRITE".to_string(),
+            color: "#ff66aa".to_string(),
+        },
+        CustomFlag {
+            name: "RESEARCH".to_string(),
+            color: "#66aaff".to_string(),
+        },
+    ]
+}
+
+fn default_footnote_font_size() -> u32 {
+    100
+}
+fn default_footnote_font_family() -> String {
+    "sans-serif".to_string()
+}
+fn default_footnote_use_colors() -> bool {
+    true
+}
+fn default_footnote_both_margins() -> bool {
+    true
+}
+fn default_footnote_margin_side() -> String {
+    "closest".to_string()
+}
+fn default_dry_range() -> String {
+    "paragraph".to_string()
+}
 fn default_dry_stopwords() -> Vec<String> {
     vec![
-        "a","an","the","in","on","at","to","for","of","with","from","by","about","as",
-        "into","through","during","before","after","above","below","between","under","over",
-        "against","among","upon","without","within","and","or","but","nor","yet","so","if",
-        "because","while","although","though","unless","until","when","where","whether",
-        "i","you","he","she","it","we","they","me","him","her","us","them","my","your",
-        "his","its","our","their","mine","yours","hers","ours","theirs","this","that",
-        "these","those","who","whom","whose","which","what","whoever","whatever","whichever",
-        "is","are","was","were","be","been","being","have","has","had","do","does","did",
-        "will","would","should","could","may","might","must","can","shall",
-        "not","no","yes","all","any","some","more","most","much","many","such","very",
-        "too","also","just","only","even","still","again","here","there","now","then",
-        "than","how","why","well","up","down","out","off","own","same","other","another",
-        "each","every","both","few","several","either","neither",
-    ].into_iter().map(String::from).collect()
+        "a",
+        "an",
+        "the",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "from",
+        "by",
+        "about",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "under",
+        "over",
+        "against",
+        "among",
+        "upon",
+        "without",
+        "within",
+        "and",
+        "or",
+        "but",
+        "nor",
+        "yet",
+        "so",
+        "if",
+        "because",
+        "while",
+        "although",
+        "though",
+        "unless",
+        "until",
+        "when",
+        "where",
+        "whether",
+        "i",
+        "you",
+        "he",
+        "she",
+        "it",
+        "we",
+        "they",
+        "me",
+        "him",
+        "her",
+        "us",
+        "them",
+        "my",
+        "your",
+        "his",
+        "its",
+        "our",
+        "their",
+        "mine",
+        "yours",
+        "hers",
+        "ours",
+        "theirs",
+        "this",
+        "that",
+        "these",
+        "those",
+        "who",
+        "whom",
+        "whose",
+        "which",
+        "what",
+        "whoever",
+        "whatever",
+        "whichever",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "should",
+        "could",
+        "may",
+        "might",
+        "must",
+        "can",
+        "shall",
+        "not",
+        "no",
+        "yes",
+        "all",
+        "any",
+        "some",
+        "more",
+        "most",
+        "much",
+        "many",
+        "such",
+        "very",
+        "too",
+        "also",
+        "just",
+        "only",
+        "even",
+        "still",
+        "again",
+        "here",
+        "there",
+        "now",
+        "then",
+        "than",
+        "how",
+        "why",
+        "well",
+        "up",
+        "down",
+        "out",
+        "off",
+        "own",
+        "same",
+        "other",
+        "another",
+        "each",
+        "every",
+        "both",
+        "few",
+        "several",
+        "either",
+        "neither",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
-fn default_true() -> bool { true }
-fn default_longview_body_font_size() -> u32 { 3 }
-fn default_longview_heading_font_size() -> u32 { 12 }
-fn default_longview_flag_font_size() -> u32 { 12 }
-fn default_longview_line_gap() -> u32 { 2 }
-fn default_longview_current_position_color() -> String { "#ff0000".to_string() }
-fn default_visibility() -> String { "menubar".to_string() }
-fn default_appearance() -> String { "dark".to_string() }
-fn default_light_theme() -> String { "ayuLight".to_string() }
-fn default_dark_theme() -> String { "dracula".to_string() }
-fn default_font_size() -> u32 { 20 }
-fn default_line_height() -> f64 { 1.6 }
-fn default_font_family() -> String { "Source Sans Pro".to_string() }
-fn default_padding() -> u32 { 50 }
-fn default_column_width() -> u32 { 600 }
-fn default_shortcut_open() -> String { "CmdOrCtrl+Shift+H".to_string() }
-fn default_shortcut_fullscreen() -> String { "CmdOrCtrl+Shift+F".to_string() }
-fn default_shortcut_private() -> String { "CmdOrCtrl+Shift+P".to_string() }
-fn default_shortcut_toggle_sidebar() -> String { "Mod+\\".to_string() }
-fn default_shortcut_typewriter() -> String { "Mod+T".to_string() }
-fn default_shortcut_new_file() -> String { "Mod+N".to_string() }
-fn default_shortcut_toggle_dry() -> String { "Mod+Shift+R".to_string() }
-fn default_shortcut_toggle_focus() -> String { "Mod+Shift+Y".to_string() }
-fn default_shortcut_find() -> String { "Mod+F".to_string() }
-fn default_shortcut_find_all() -> String { "Mod+Shift+F".to_string() }
-fn default_shortcut_select_sentence() -> String { "Mod+L".to_string() }
-fn default_shortcut_reduce_sentence() -> String { "Mod+Shift+L".to_string() }
-fn default_shortcut_select_next() -> String { "Mod+D".to_string() }
-fn default_shortcut_jump_next_sentence() -> String { "Mod+ArrowRight".to_string() }
-fn default_shortcut_jump_prev_sentence() -> String { "Mod+ArrowLeft".to_string() }
-fn default_shortcut_next_sentence() -> String { "Mod+Shift+ArrowRight".to_string() }
-fn default_shortcut_prev_sentence() -> String { "Mod+Shift+ArrowLeft".to_string() }
-fn default_shortcut_move_sentence_forward() -> String { "Alt+Mod+ArrowRight".to_string() }
-fn default_shortcut_move_sentence_back() -> String { "Alt+Mod+ArrowLeft".to_string() }
-fn default_shortcut_select_previous() -> String { "Mod+Shift+D".to_string() }
-fn default_shortcut_delete_to_sentence_end() -> String { "Alt+Shift+Backspace".to_string() }
-fn default_shortcut_bold() -> String { "Mod+B".to_string() }
-fn default_shortcut_italic() -> String { "Mod+I".to_string() }
-fn default_shortcut_highlight() -> String { "Mod+=".to_string() }
-fn default_shortcut_comment() -> String { "Mod+/".to_string() }
-fn default_shortcut_insert_footnote() -> String { "Mod+Shift+M".to_string() }
+fn default_true() -> bool {
+    true
+}
+fn default_longview_body_font_size() -> u32 {
+    3
+}
+fn default_longview_heading_font_size() -> u32 {
+    12
+}
+fn default_longview_flag_font_size() -> u32 {
+    12
+}
+fn default_longview_line_gap() -> u32 {
+    2
+}
+fn default_longview_current_position_color() -> String {
+    "#ff0000".to_string()
+}
+fn default_visibility() -> String {
+    "menubar".to_string()
+}
+fn default_appearance() -> String {
+    "dark".to_string()
+}
+fn default_light_theme() -> String {
+    "ayuLight".to_string()
+}
+fn default_dark_theme() -> String {
+    "dracula".to_string()
+}
+fn default_font_size() -> u32 {
+    20
+}
+fn default_line_height() -> f64 {
+    1.6
+}
+fn default_font_family() -> String {
+    "Source Sans Pro".to_string()
+}
+fn default_padding() -> u32 {
+    50
+}
+fn default_column_width() -> u32 {
+    600
+}
+fn default_shortcut_open() -> String {
+    "CmdOrCtrl+Shift+H".to_string()
+}
+fn default_shortcut_fullscreen() -> String {
+    "CmdOrCtrl+Shift+F".to_string()
+}
+fn default_shortcut_private() -> String {
+    "CmdOrCtrl+Shift+P".to_string()
+}
+fn default_shortcut_toggle_sidebar() -> String {
+    "Mod+\\".to_string()
+}
+fn default_shortcut_typewriter() -> String {
+    "Mod+T".to_string()
+}
+fn default_shortcut_new_file() -> String {
+    "Mod+N".to_string()
+}
+fn default_shortcut_toggle_dry() -> String {
+    "Mod+Shift+R".to_string()
+}
+fn default_shortcut_toggle_focus() -> String {
+    "Mod+Shift+Y".to_string()
+}
+fn default_shortcut_find() -> String {
+    "Mod+F".to_string()
+}
+fn default_shortcut_find_all() -> String {
+    "Mod+Shift+F".to_string()
+}
+fn default_shortcut_select_sentence() -> String {
+    "Mod+L".to_string()
+}
+fn default_shortcut_reduce_sentence() -> String {
+    "Mod+Shift+L".to_string()
+}
+fn default_shortcut_select_next() -> String {
+    "Mod+D".to_string()
+}
+fn default_shortcut_jump_next_sentence() -> String {
+    "Mod+ArrowRight".to_string()
+}
+fn default_shortcut_jump_prev_sentence() -> String {
+    "Mod+ArrowLeft".to_string()
+}
+fn default_shortcut_next_sentence() -> String {
+    "Mod+Shift+ArrowRight".to_string()
+}
+fn default_shortcut_prev_sentence() -> String {
+    "Mod+Shift+ArrowLeft".to_string()
+}
+fn default_shortcut_move_sentence_forward() -> String {
+    "Alt+Mod+ArrowRight".to_string()
+}
+fn default_shortcut_move_sentence_back() -> String {
+    "Alt+Mod+ArrowLeft".to_string()
+}
+fn default_shortcut_select_previous() -> String {
+    "Mod+Shift+D".to_string()
+}
+fn default_shortcut_delete_to_sentence_end() -> String {
+    "Alt+Shift+Backspace".to_string()
+}
+fn default_shortcut_bold() -> String {
+    "Mod+B".to_string()
+}
+fn default_shortcut_italic() -> String {
+    "Mod+I".to_string()
+}
+fn default_shortcut_highlight() -> String {
+    "Mod+=".to_string()
+}
+fn default_shortcut_comment() -> String {
+    "Mod+/".to_string()
+}
+fn default_shortcut_insert_footnote() -> String {
+    "Mod+Shift+M".to_string()
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
