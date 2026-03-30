@@ -586,6 +586,8 @@ impl Default for AppSettings {
             longview_flag_font_size: default_longview_flag_font_size(),
             longview_line_gap: default_longview_line_gap(),
             longview_current_position_color: default_longview_current_position_color(),
+            flag_colors: default_flag_colors(),
+            custom_flags: default_custom_flags(),
             window_width: None,
             window_height: None,
             window_x: None,
