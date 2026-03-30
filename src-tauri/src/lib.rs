@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, State};
 
 #[cfg(desktop)]
 use tauri::{
+    Emitter, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconEvent,
     WindowEvent,
@@ -232,7 +233,9 @@ pub fn run() {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
         })
-        .setup(move |app| {
+        .setup(move |_app| {
+            #[cfg(desktop)]
+            let app = _app;
             #[cfg(desktop)]
             {
                 let handle = app.handle().clone();
