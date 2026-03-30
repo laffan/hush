@@ -453,7 +453,10 @@ async function init() {
   rightTrigger.style.cssText = "position:fixed;top:0;right:0;width:20px;height:100%;z-index:250;";
   document.getElementById("app").appendChild(rightTrigger);
   rightTrigger.addEventListener("mouseenter", () => {
-    state.emit("show-outline");
+    // Only trigger when panel is hidden — avoid re-rendering when already open
+    if (rightPanelOverlay.classList.contains("hidden")) {
+      state.emit("show-outline");
+    }
   });
 
   // Refresh Outline View on file open
