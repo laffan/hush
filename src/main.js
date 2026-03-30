@@ -422,6 +422,7 @@ async function init() {
   // Show/hide Outline View
   state.on("show-outline", () => {
     rightPanelOverlay.classList.remove("hidden");
+    rightTrigger.style.pointerEvents = "none";
     if (!longViewInstance) {
       longViewInstance = createLongView(rightPanelOverlay, state);
     }
@@ -433,6 +434,7 @@ async function init() {
   state.on("hide-outline", () => {
     if (rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset")) return;
     rightPanelOverlay.classList.add("hidden");
+    rightTrigger.style.pointerEvents = "auto";
     rightPanelPinned = false;
     rightPanelOverlay.classList.remove("panel-pinned");
     rightPinBtn.classList.remove("pin-active", "pin-visible");
