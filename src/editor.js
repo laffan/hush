@@ -523,7 +523,7 @@ function updateColumnResizers(state) {
     }
     let rightInsetOffset = 0;
     if (rightInset && rightOpen) {
-      rightInsetOffset = 300; // right panel (300)
+      rightInsetOffset = 200; // right panel (200)
     }
 
     const availableWidth = w - leftInsetOffset - rightInsetOffset;

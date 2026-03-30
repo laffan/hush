@@ -30,9 +30,9 @@
 .right-panel-pin-btn {
   position: fixed;
   bottom: 12px;
-  right: 168px; /* 200px panel - 24px btn - 8px margin */
-  width: 24px;
-  height: 24px;
+  right: 172px; /* 200px panel - 15px btn - 13px margin */
+  width: 15px;
+  height: 15px;
   padding: 0;
   border: none;
   background: transparent;
@@ -43,6 +43,9 @@
   transition: opacity 0.15s;
   z-index: 91;
 }
+.right-panel-pin-btn svg circle {
+  transition: fill 0.15s;
+}
 
 .right-panel-pin-btn.pin-visible {
   opacity: 0.4;
@@ -51,9 +54,15 @@
 .right-panel-pin-btn.pin-visible:hover {
   opacity: 0.8;
 }
+.right-panel-pin-btn.pin-visible:hover svg circle {
+  fill: currentColor;
+}
 .right-panel-pin-btn.pin-active {
   opacity: 0.8;
   pointer-events: auto;
+}
+.right-panel-pin-btn.pin-active svg circle {
+  fill: currentColor;
 }
 
 /* ===== Outline View Container ===== */
@@ -67,17 +76,9 @@
 .longview-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20px 20px 8px;
+  justify-content: flex-end;
+  padding: 8px 12px 4px;
   flex-shrink: 0;
-}
-
-.longview-title {
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--sidebar-fg);
-  font-family: system-ui, sans-serif;
 }
 
 .longview-refresh-btn {
@@ -95,25 +96,25 @@
   opacity: 1;
 }
 
-/* ===== Filters ===== */
+/* ===== Toggle Filters (grid inside options) ===== */
 .longview-filters {
-  display: flex;
-  gap: 4px;
-  padding: 4px 20px 12px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin-bottom: 8px;
 }
 
 .longview-filter-btn {
   background: none;
   border: 1px solid var(--panel-border);
   color: var(--sidebar-fg);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
+  font-size: 10px;
+  padding: 4px 0;
+  border-radius: 3px;
   cursor: pointer;
   transition: all 0.15s;
   font-family: system-ui, sans-serif;
+  text-align: center;
 }
 .longview-filter-btn:hover {
   color: var(--fg);
@@ -125,13 +126,24 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
+/* Section label inside options */
+.longview-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--sidebar-fg);
+  opacity: 0.5;
+  margin-bottom: 4px;
+  font-family: system-ui, sans-serif;
+}
+
 /* ===== Inline Options Panel ===== */
 .longview-options-toggle {
   background: none;
   border: none;
   color: var(--sidebar-fg);
   font-size: 11px;
-  padding: 2px 20px 6px;
+  padding: 2px 12px 6px;
   cursor: pointer;
   opacity: 0.5;
   transition: opacity 0.15s;
@@ -142,7 +154,7 @@
 .longview-options-toggle:hover { opacity: 0.8; }
 
 .longview-options-panel {
-  padding: 0 20px 8px;
+  padding: 0 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -197,7 +209,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 20px 20px;
+  padding: 0 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -242,12 +254,12 @@
   text-decoration: underline;
 }
 .longview-heading.is-active {
-  color: var(--lv-position-color, #ff0000);
+  font-weight: 700;
 }
 
-/* Active heading border highlight */
-.longview-hierarchy-level:has(> .longview-section-body > .longview-heading.is-active) {
-  border-left-color: var(--lv-position-color, #ff0000);
+/* Active section border highlight — dark high-contrast border */
+.longview-hierarchy-level:has(.longview-heading.is-active) {
+  border-left-color: var(--fg, #e0e0e0);
 }
 
 /* Paragraph text */

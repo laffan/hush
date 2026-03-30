@@ -49,7 +49,7 @@ export function createSidebar(container, state) {
   // Pin toggle button — fixed position, shown when hovering panel zone in inset mode
   const pinBtn = document.createElement("button");
   pinBtn.className = "panel-pin-btn";
-  pinBtn.innerHTML = `<svg viewBox="0 0 12 12" width="12" height="12" style="transform:rotate(90deg)"><polygon points="0,0 12,12 12,0" fill="currentColor"/></svg>`;
+  pinBtn.innerHTML = `<svg viewBox="0 0 15 15" width="15" height="15"><circle cx="7.5" cy="7.5" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
   pinBtn.title = "Pin panel open";
   document.body.appendChild(pinBtn);
 

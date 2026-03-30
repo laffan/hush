@@ -58,14 +58,9 @@ export function createLongView(container, state) {
     const wrapper = document.createElement("div");
     wrapper.className = "longview-container";
 
-    // Header with refresh button
+    // Header with refresh button only (no title)
     const header = document.createElement("div");
     header.className = "longview-header";
-    const title = document.createElement("span");
-    title.className = "longview-title";
-    title.textContent = "Outline";
-    header.appendChild(title);
-
     const refreshBtn = document.createElement("button");
     refreshBtn.className = "longview-refresh-btn";
     refreshBtn.textContent = "↻";
@@ -74,16 +69,7 @@ export function createLongView(container, state) {
     header.appendChild(refreshBtn);
     wrapper.appendChild(header);
 
-    // Filter bar
-    const filters = document.createElement("div");
-    filters.className = "longview-filters";
-    filters.appendChild(makeToggle("Text", s.longviewShowParagraphs, "longviewShowParagraphs"));
-    filters.appendChild(makeToggle("Numbers", s.longviewShowNumbers, "longviewShowNumbers"));
-    filters.appendChild(makeToggle("Comments", s.longviewShowComments, "longviewShowComments"));
-    filters.appendChild(makeToggle("Flags", s.longviewShowFlags, "longviewShowFlags"));
-    wrapper.appendChild(filters);
-
-    // Options panel (collapsible)
+    // Options toggle button (collapsible)
     const optionsToggle = document.createElement("button");
     optionsToggle.className = "longview-options-toggle";
     optionsToggle.textContent = "Options ▾";
@@ -97,6 +83,21 @@ export function createLongView(container, state) {
 
     const optionsPanel = document.createElement("div");
     optionsPanel.className = "longview-options-panel collapsed";
+
+    // Toggle buttons grid (squared off)
+    const filters = document.createElement("div");
+    filters.className = "longview-filters";
+    filters.appendChild(makeToggle("Text", s.longviewShowParagraphs, "longviewShowParagraphs"));
+    filters.appendChild(makeToggle("#", s.longviewShowNumbers, "longviewShowNumbers"));
+    filters.appendChild(makeToggle("Comments", s.longviewShowComments, "longviewShowComments"));
+    filters.appendChild(makeToggle("Flags", s.longviewShowFlags, "longviewShowFlags"));
+    optionsPanel.appendChild(filters);
+
+    // Appearance section
+    const appearLabel = document.createElement("div");
+    appearLabel.className = "longview-section-label";
+    appearLabel.textContent = "Appearance";
+    optionsPanel.appendChild(appearLabel);
     optionsPanel.appendChild(makeCheckboxRow("Show flag type labels", s.longviewShowFlagTypes, "longviewShowFlagTypes"));
     optionsPanel.appendChild(makeCheckboxRow("Wrap flag text", s.longviewWrapFlagText, "longviewWrapFlagText"));
     optionsPanel.appendChild(makeSliderRow("Paragraph size", s.longviewBodyFontSize, 1, 8, 0.5, "longviewBodyFontSize", "px"));
@@ -106,15 +107,18 @@ export function createLongView(container, state) {
     optionsPanel.appendChild(makeColorRow("Position color", s.longviewCurrentPositionColor, "longviewCurrentPositionColor"));
     wrapper.appendChild(optionsPanel);
 
-    // Get content from editor
-    const text = state.editor ? state.editor.getContent() : "";
-    const { headings, flags, callouts } = parseDocument(text);
+    wrapper.appendChild(buildContent(s));
+    container.appendChild(wrapper);
+    setupScrollTracking(state);
+  }
 
-    // Compute callout stacks for each heading
+  /** Build (or rebuild) just the outline content area */
+  function buildContent(s) {
+    const text = state.editor ? state.editor.getContent() : "";
+    const { headings, flags } = parseDocument(text);
     const sectionColors = { ...CALLOUT_COLORS, ...(s.longviewSectionColors || {}) };
     const calloutStacks = computeHeadingCalloutStacks(headings, sectionColors);
 
-    // Build minimap content
     const content = document.createElement("div");
     content.className = "longview-content";
     content.style.setProperty("--lv-body-font", s.longviewBodyFontSize + "px");
@@ -126,10 +130,7 @@ export function createLongView(container, state) {
     headingEntries = [];
     let currentLevel = 0;
     let flowEl = null;
-
-    // Tokenize text into fragments
     const fragments = tokenizeContent(text, headings, flags);
-
     let openCalloutWrappers = [];
     let activeCalloutStack = [];
 
@@ -137,17 +138,11 @@ export function createLongView(container, state) {
       if (frag.type === "heading") {
         const h = frag.heading;
         const stack = calloutStacks.get(h.startOffset) || [];
-
-        // Update callout wrappers
         const result = updateCalloutWrappers(content, openCalloutWrappers, activeCalloutStack, stack, sectionColors);
         openCalloutWrappers = result.wrappers;
         activeCalloutStack = result.stack;
-        const parentEl = result.container;
-
         currentLevel = h.level;
-        flowEl = createSectionStructure(parentEl, currentLevel);
-
-        // Heading numbering
+        flowEl = createSectionStructure(result.container, currentLevel);
         const numbering = s.longviewShowNumbers ? computeNumbering(headings, h) : "";
         const headingEl = document.createElement("div");
         headingEl.className = "longview-heading";
@@ -160,8 +155,6 @@ export function createLongView(container, state) {
         });
         flowEl.appendChild(headingEl);
         headingEntries.push({ offset: h.startOffset, element: headingEl });
-
-        // Callout title
         if (h.callout) {
           const calloutTitle = document.createElement("div");
           calloutTitle.className = "longview-callout-title";
@@ -171,9 +164,7 @@ export function createLongView(container, state) {
             typeSpan.className = "longview-flag-type";
             typeSpan.textContent = h.callout.type;
             calloutTitle.appendChild(typeSpan);
-            if (h.callout.title) {
-              calloutTitle.appendChild(document.createTextNode(" — " + h.callout.title));
-            }
+            if (h.callout.title) calloutTitle.appendChild(document.createTextNode(" — " + h.callout.title));
           } else {
             calloutTitle.textContent = h.callout.title || "";
           }
@@ -186,8 +177,7 @@ export function createLongView(container, state) {
           flowEl = createSectionStructure(result.container, currentLevel);
         }
         if (s.longviewShowParagraphs) {
-          const lines = tokenizeLines(frag.text);
-          for (const line of lines) {
+          for (const line of tokenizeLines(frag.text)) {
             const p = document.createElement("p");
             p.className = "longview-line";
             p.textContent = line;
@@ -202,16 +192,33 @@ export function createLongView(container, state) {
           openCalloutWrappers = result.wrappers;
           flowEl = createSectionStructure(result.container, currentLevel);
         }
-        const flagEl = createFlagElement(frag.flag, s, state);
-        flowEl.appendChild(flagEl);
+        flowEl.appendChild(createFlagElement(frag.flag, s, state));
       }
     }
+    return content;
+  }
 
-    wrapper.appendChild(content);
-    container.appendChild(wrapper);
-
-    // Set up scroll tracking
+  /** Re-render only the content area (preserves options panel state) */
+  function renderContent() {
+    const wrapper = container.querySelector(".longview-container");
+    if (!wrapper) return render();
+    const oldContent = wrapper.querySelector(".longview-content");
+    const newContent = buildContent(getSettings());
+    if (oldContent) wrapper.replaceChild(newContent, oldContent);
+    else wrapper.appendChild(newContent);
     setupScrollTracking(state);
+  }
+
+  /** Apply CSS variable changes live without rebuilding DOM */
+  function applyLiveStyles() {
+    const s = getSettings();
+    const content = container.querySelector(".longview-content");
+    if (!content) return;
+    content.style.setProperty("--lv-body-font", s.longviewBodyFontSize + "px");
+    content.style.setProperty("--lv-heading-font", s.longviewHeadingFontSize + "px");
+    content.style.setProperty("--lv-flag-font", s.longviewFlagFontSize + "px");
+    content.style.setProperty("--lv-line-gap", s.longviewLineGap + "px");
+    content.style.setProperty("--lv-position-color", s.longviewCurrentPositionColor);
   }
 
   function makeToggle(label, value, key) {
@@ -221,7 +228,8 @@ export function createLongView(container, state) {
     btn.addEventListener("click", () => {
       state.settings[key] = !state.settings[key];
       state.updateSettings({ [key]: state.settings[key] });
-      render();
+      btn.classList.toggle("active", state.settings[key]);
+      renderContent();
     });
     return btn;
   }
@@ -237,7 +245,7 @@ export function createLongView(container, state) {
     cb.addEventListener("change", () => {
       state.settings[key] = cb.checked;
       state.updateSettings({ [key]: cb.checked });
-      render();
+      renderContent();
     });
     row.appendChild(lbl);
     row.appendChild(cb);
@@ -263,6 +271,7 @@ export function createLongView(container, state) {
       val.textContent = v + unit;
       state.settings[key] = v;
       state.updateSettings({ [key]: v });
+      applyLiveStyles();
     });
     row.appendChild(lbl);
     row.appendChild(slider);
@@ -281,6 +290,7 @@ export function createLongView(container, state) {
     input.addEventListener("input", () => {
       state.settings[key] = input.value;
       state.updateSettings({ [key]: input.value });
+      applyLiveStyles();
     });
     row.appendChild(lbl);
     row.appendChild(input);
@@ -354,10 +364,15 @@ export function createLongView(container, state) {
 function scrollToOffset(state, offset) {
   if (!state.editor) return;
   const view = state.editor.view;
-  view.dispatch({
-    selection: { anchor: offset },
-    scrollIntoView: true,
-  });
+  view.dispatch({ selection: { anchor: offset } });
+  // Scroll so the target lands 1/3 down the viewport
+  const coords = view.coordsAtPos(offset);
+  if (coords) {
+    const scrollDOM = view.scrollDOM;
+    const viewportH = scrollDOM.clientHeight;
+    const targetY = coords.top - scrollDOM.getBoundingClientRect().top + scrollDOM.scrollTop;
+    scrollDOM.scrollTop = targetY - viewportH / 3;
+  }
   view.focus();
 }
 

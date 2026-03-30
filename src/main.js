@@ -386,7 +386,7 @@ async function init() {
   // Right panel pin button
   const rightPinBtn = document.createElement("button");
   rightPinBtn.className = "right-panel-pin-btn";
-  rightPinBtn.innerHTML = `<svg viewBox="0 0 12 12" width="12" height="12" style="transform:rotate(-90deg)"><polygon points="0,0 12,12 12,0" fill="currentColor"/></svg>`;
+  rightPinBtn.innerHTML = `<svg viewBox="0 0 15 15" width="15" height="15"><circle cx="7.5" cy="7.5" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
   rightPinBtn.title = "Pin panel open";
   document.body.appendChild(rightPinBtn);
 

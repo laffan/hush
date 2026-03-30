@@ -97,9 +97,9 @@
 .panel-pin-btn {
   position: fixed;
   bottom: 12px;
-  left: 318px; /* 50px sidebar + 300px panel - 24px btn - 8px margin */
-  width: 24px;
-  height: 24px;
+  left: 322px; /* 50px sidebar + 300px panel - 15px btn - 13px margin */
+  width: 15px;
+  height: 15px;
   padding: 0;
   border: none;
   background: transparent;
@@ -110,6 +110,9 @@
   transition: opacity 0.15s;
   z-index: 91;
 }
+.panel-pin-btn svg circle {
+  transition: fill 0.15s;
+}
 
 .panel-pin-btn.pin-visible {
   opacity: 0.4;
@@ -118,11 +121,17 @@
 .panel-pin-btn.pin-visible:hover {
   opacity: 0.8;
 }
+.panel-pin-btn.pin-visible:hover svg circle {
+  fill: currentColor;
+}
 
-/* When pinned, always show (in inset mode) */
+/* When pinned, always show filled (in inset mode) */
 .panel-pin-btn.pin-active {
   opacity: 0.8;
   pointer-events: auto;
+}
+.panel-pin-btn.pin-active svg circle {
+  fill: currentColor;
 }
 
 .panel-title {
