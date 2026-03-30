@@ -1,33 +1,28 @@
 /**
  * Files panel — nested tree view with folders, projects and documents
  * Uses SortableList for drag-and-drop reordering
- * Special nodes: Inbox (pinned top, project), Trash (pinned bottom, folder)
+ * Special nodes: Inbox (pinned top), Trash (pinned bottom), Flagged (virtual)
  */
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "./state.js";
-import { findNode } from "./tree-helpers.js";
+import { findNode, collectFlaggedItems, findAncestorIds } from "./tree-helpers.js";
 
 let sortableInstance = null;
+let flaggedSectionEl = null;
+let storedHidePanel = null;
 
 // SVG icons for the three types
 const typeIcons = {
-  // Portrait-oriented rectangle for document
   document: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
-  // Filled rectangle for flagged document
   documentFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
-  // Circle for folder
   folder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /></svg>`,
-  // Filled circle for flagged folder
   folderFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><circle cx="8" cy="8" r="6" /></svg>`,
-  // Triangle for project
   project: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
-  // Filled triangle for flagged project
   projectFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
-  // Inbox icon
   inbox: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 9 5 9 6.5 11 9.5 11 11 9 14 9" /><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" /></svg>`,
-  // Trash icon
   trash: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
+  flaggedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
 };
 
 function getIcon(item) {
@@ -39,7 +34,7 @@ function getIcon(item) {
   return typeIcons[item.type] || typeIcons.document;
 }
 
-// Hover action buttons HTML — no rename for documents
+// Hover action buttons — no rename for documents, no actions for special nodes
 function actionButtons(nodeId, nodeType) {
   const isSpecial = nodeId === AppState.INBOX_ID || nodeId === AppState.TRASH_ID;
   const isDoc = nodeType === "document";
@@ -60,7 +55,17 @@ function actionButtons(nodeId, nodeType) {
   </span>`;
 }
 
+// Flag-only action button for the virtual Flagged folder items
+function flagOnlyButton(nodeId) {
+  return `<span class="tree-actions" data-node-id="${nodeId}">
+    <button data-tree-action="flag" title="Unflag">
+      <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+    </button>
+  </span>`;
+}
+
 export function createFilesPanel(container, state, hidePanel) {
+  storedHidePanel = hidePanel;
   container.innerHTML = "";
 
   // Create buttons row
@@ -84,7 +89,6 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance = null;
   }
 
-  // Sort flagged items to top within folders
   const sortedTree = sortFlaggedItems(state.fileTree);
 
   sortableInstance = new SortableList(listContainer, {
@@ -94,18 +98,14 @@ export function createFilesPanel(container, state, hidePanel) {
     setChildren: (item, children) => { item.children = children; },
     canNest: (item) => item.type === "folder" || item.type === "project",
     canDrop: (draggedItem, targetItem) => {
-      // Folders accept anything
       if (targetItem.type === "folder") return true;
-      // Projects accept documents and projects only (not folders)
       if (targetItem.type === "project") return draggedItem.type === "document" || draggedItem.type === "project";
-      // Documents accept nothing
       return false;
     },
     canDrag: (item) => {
-      // Inbox and Trash can't be dragged
       return item.id !== AppState.INBOX_ID && item.id !== AppState.TRASH_ID;
     },
-    enableKeyboard: false, // Conflicts with editor; use drag only
+    enableKeyboard: false,
     dragStartDelay: 180,
 
     renderItem: (item, context) => {
@@ -120,27 +120,18 @@ export function createFilesPanel(container, state, hidePanel) {
     onClick: (item) => {
       if (item.type === "document" && item.fileId) {
         state.openFile(item.fileId);
-        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) {
-          hidePanel();
-        }
+        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
       } else if (item.type === "project") {
         state.openProject(item.id);
-        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) {
-          hidePanel();
-        }
+        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
       }
-      // Folders: just toggle expand (handled by fold arrow)
     },
 
     onChange: (newData) => {
-      // Enforce Inbox at top, Trash at bottom
       enforceSpecialPositions(newData);
       state.fileTree = newData;
       state.saveFileTree();
-      // If a project is open, refresh the editor to reflect new doc order
-      if (state.currentProjectId) {
-        state.openProject(state.currentProjectId);
-      }
+      if (state.currentProjectId) state.openProject(state.currentProjectId);
     },
   });
 
@@ -149,22 +140,21 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance.state.collapsedIds.delete(AppState.INBOX_ID);
   }
 
-  // Bind create buttons
-  btnRow.querySelector("#tree-new-doc").addEventListener("click", () => {
-    state.newFile();
-  });
+  // Render the virtual Flagged folder
+  renderFlaggedSection(listContainer, state, hidePanel);
 
+  // Bind create buttons
+  btnRow.querySelector("#tree-new-doc").addEventListener("click", () => state.newFile());
   btnRow.querySelector("#tree-new-folder").addEventListener("click", async () => {
     await state.createFolder("New Folder");
     refreshList(state);
   });
-
   btnRow.querySelector("#tree-new-project").addEventListener("click", async () => {
     await state.createProject("New Project");
     refreshList(state);
   });
 
-  // Bind action buttons (delegated)
+  // Bind action buttons (delegated) — covers both sortable list and flagged section
   listContainer.addEventListener("click", (e) => {
     const actionBtn = e.target.closest("[data-tree-action]");
     if (!actionBtn) return;
@@ -187,6 +177,137 @@ export function createFilesPanel(container, state, hidePanel) {
   });
 }
 
+// ===== Virtual Flagged Folder =====
+
+let flaggedCollapsed = false;
+
+function renderFlaggedSection(listContainer, state, hidePanel) {
+  // Remove old section if present
+  if (flaggedSectionEl) {
+    flaggedSectionEl.remove();
+    flaggedSectionEl = null;
+  }
+
+  const flaggedItems = collectFlaggedItems(state.fileTree);
+  if (flaggedItems.length === 0) return;
+
+  // Create the flagged folder as a regular li that looks like a folder
+  flaggedSectionEl = document.createElement("li");
+  flaggedSectionEl.className = "sl-item flagged-virtual-folder";
+  flaggedSectionEl.dataset.id = "__flagged__";
+
+  const contentWrapper = document.createElement("div");
+  contentWrapper.className = "sl-item-content";
+
+  // Fold arrow
+  const foldArrow = document.createElement("button");
+  foldArrow.className = "sl-fold-arrow";
+  foldArrow.type = "button";
+  foldArrow.textContent = flaggedCollapsed ? "\u25B6\uFE0E" : "\u25BC";
+  foldArrow.setAttribute("aria-label", flaggedCollapsed ? "Expand" : "Collapse");
+  foldArrow.addEventListener("click", (e) => {
+    e.stopPropagation();
+    flaggedCollapsed = !flaggedCollapsed;
+    renderFlaggedSection(listContainer, state, hidePanel);
+  });
+  contentWrapper.appendChild(foldArrow);
+
+  // Label
+  const label = document.createElement("span");
+  label.className = "sl-item-label";
+  const mainLabel = document.createElement("span");
+  mainLabel.className = "sl-item-main-label";
+  const row = document.createElement("span");
+  row.className = "tree-item-row";
+  row.innerHTML = `${typeIcons.flaggedFolder}<span class="tree-item-name">Flagged</span>`;
+  mainLabel.appendChild(row);
+  label.appendChild(mainLabel);
+  contentWrapper.appendChild(label);
+  flaggedSectionEl.appendChild(contentWrapper);
+
+  // Render children if not collapsed
+  if (!flaggedCollapsed) {
+    const childList = document.createElement("ul");
+    childList.className = "sl-list";
+
+    for (const item of flaggedItems) {
+      const li = document.createElement("li");
+      li.className = "sl-item flagged-link-item";
+      li.dataset.id = item.id;
+
+      const itemContent = document.createElement("div");
+      itemContent.className = "sl-item-content";
+
+      // Empty fold spacer
+      const spacer = document.createElement("button");
+      spacer.className = "sl-fold-arrow sl-fold-empty";
+      spacer.tabIndex = -1;
+      itemContent.appendChild(spacer);
+
+      const itemLabel = document.createElement("span");
+      itemLabel.className = "sl-item-label";
+      const itemMain = document.createElement("span");
+      itemMain.className = "sl-item-main-label";
+      const itemRow = document.createElement("span");
+      itemRow.className = "tree-item-row";
+      itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(item.name)}</span>${flagOnlyButton(item.id)}`;
+      itemMain.appendChild(itemRow);
+      itemLabel.appendChild(itemMain);
+      itemContent.appendChild(itemLabel);
+      li.appendChild(itemContent);
+
+      // Hover handling
+      li.addEventListener("mouseenter", () => li.classList.add("sl-hovered"));
+      li.addEventListener("mouseleave", () => li.classList.remove("sl-hovered"));
+
+      // Click: open the actual item and reveal it in the tree
+      li.addEventListener("click", (e) => {
+        if (e.target.closest("[data-tree-action]")) return;
+        revealAndOpen(item, state);
+      });
+
+      childList.appendChild(li);
+    }
+    flaggedSectionEl.appendChild(childList);
+  }
+
+  // Insert after Inbox (first sl-item in the list)
+  const firstItem = listContainer.querySelector(".sl-item");
+  if (firstItem && firstItem.nextSibling) {
+    listContainer.insertBefore(flaggedSectionEl, firstItem.nextSibling);
+  } else {
+    listContainer.appendChild(flaggedSectionEl);
+  }
+}
+
+function revealAndOpen(item, state) {
+  // Expand all ancestors in the sortable list so the item is visible
+  const ancestors = findAncestorIds(state.fileTree, item.id);
+  if (ancestors && sortableInstance) {
+    for (const aid of ancestors) {
+      sortableInstance.state.collapsedIds.delete(aid);
+    }
+    sortableInstance.render();
+  }
+
+  // Open the item
+  const isInset = document.querySelector("#panel-overlay")?.classList.contains("panel-inset");
+  if (item.type === "document" && item.fileId) {
+    state.openFile(item.fileId);
+    if (!isInset && storedHidePanel) storedHidePanel();
+  } else if (item.type === "project") {
+    state.openProject(item.id);
+    if (!isInset && storedHidePanel) storedHidePanel();
+  }
+
+  // Re-render the flagged section to reflect new state
+  if (sortableInstance?.container) {
+    renderFlaggedSection(sortableInstance.container, state, storedHidePanel);
+  }
+}
+
+// ===== Tree Helpers =====
+
 function enforceSpecialPositions(data) {
   const inboxIdx = data.findIndex(n => n.id === AppState.INBOX_ID);
   if (inboxIdx > 0) {
@@ -204,7 +325,6 @@ function sortFlaggedItems(tree) {
   return tree.map(node => {
     if (!node.children || node.children.length === 0) return node;
     const sortedChildren = sortFlaggedItems(node.children);
-    // In folders, flagged items rise to top
     if (node.type === "folder") {
       const flagged = sortedChildren.filter(c => c.flagged);
       const unflagged = sortedChildren.filter(c => !c.flagged);
@@ -218,9 +338,7 @@ function isItemActive(item, state) {
   if (item.type === "document" && item.fileId) {
     return item.fileId === state.currentFileId && !state.currentProjectId;
   }
-  if (item.type === "project") {
-    return item.id === state.currentProjectId;
-  }
+  if (item.type === "project") return item.id === state.currentProjectId;
   return false;
 }
 
@@ -228,16 +346,15 @@ function refreshList(state) {
   if (sortableInstance) {
     const sorted = sortFlaggedItems(state.fileTree);
     sortableInstance.setData(sorted);
+    renderFlaggedSection(sortableInstance.container, state, storedHidePanel);
   }
 }
 
 function handleRename(nodeId, triggerEl, state) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
-
   const li = triggerEl.closest(".sl-item");
   if (!li) return;
-
   const nameEl = li.querySelector(".tree-item-name");
   if (!nameEl) return;
 
@@ -266,10 +383,8 @@ function handleRename(nodeId, triggerEl, state) {
 function handleDelete(nodeId, state) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
-
   const inTrash = state.isInTrash(nodeId);
 
-  // For folders/projects (or items in trash), show confirmation
   if (node.type === "folder" || node.type === "project" || inTrash) {
     const items = collectAllNames(node.children || []);
     const itemList = items.length > 0
@@ -288,7 +403,6 @@ function handleDelete(nodeId, state) {
       state.deleteTreeNode(nodeId).then(() => refreshList(state));
     });
   } else {
-    // Simple documents not in trash — move to trash without confirmation
     state.deleteTreeNode(nodeId).then(() => refreshList(state));
   }
 }
@@ -303,12 +417,10 @@ function collectAllNames(nodes) {
 }
 
 function showDeleteConfirmModal(title, message, onConfirm) {
-  // Remove any existing modal
   document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
 
   const backdrop = document.createElement("div");
   backdrop.className = "tree-delete-modal-backdrop";
-
   const modal = document.createElement("div");
   modal.className = "tree-delete-modal";
   modal.innerHTML = `
@@ -319,10 +431,8 @@ function showDeleteConfirmModal(title, message, onConfirm) {
       <button class="tree-delete-confirm">Delete</button>
     </div>
   `;
-
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
-
   modal.querySelector(".tree-delete-cancel").addEventListener("click", () => backdrop.remove());
   modal.querySelector(".tree-delete-confirm").addEventListener("click", () => {
     backdrop.remove();

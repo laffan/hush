@@ -245,6 +245,15 @@
   fill: currentColor;
 }
 
+/* Virtual Flagged folder — not draggable, styled like a regular folder */
+.flagged-virtual-folder {
+  cursor: default;
+}
+
+.flagged-link-item {
+  cursor: pointer;
+}
+
 .tree-rename-input {
   width: 100%;
   background: rgba(128, 128, 128, 0.1);

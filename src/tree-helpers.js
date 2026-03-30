@@ -52,6 +52,26 @@ export function insertAfter(nodes, afterId, newNode) {
   return false;
 }
 
+export function collectFlaggedItems(nodes) {
+  const result = [];
+  for (const n of nodes) {
+    if (n.flagged) result.push(n);
+    if (n.children) result.push(...collectFlaggedItems(n.children));
+  }
+  return result;
+}
+
+export function findAncestorIds(nodes, targetId, path = []) {
+  for (const n of nodes) {
+    if (n.id === targetId) return path;
+    if (n.children) {
+      const found = findAncestorIds(n.children, targetId, [...path, n.id]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export function insertNode(tree, node, parentId, findNodeFn) {
   if (!parentId) { tree.push(node); return; }
   const parent = findNodeFn(tree, parentId);
