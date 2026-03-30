@@ -108,7 +108,7 @@
   background: none;
   border: 1px solid var(--panel-border);
   color: var(--sidebar-fg);
-  font-size: 10px;
+  font-size: 12px;
   padding: 4px 0;
   border-radius: 3px;
   cursor: pointer;
@@ -128,7 +128,7 @@
 
 /* Section label inside options */
 .longview-section-label {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--sidebar-fg);
@@ -142,7 +142,7 @@
   background: none;
   border: none;
   color: var(--sidebar-fg);
-  font-size: 11px;
+  font-size: 13px;
   padding: 2px 12px 6px;
   cursor: pointer;
   opacity: 0.5;
@@ -170,7 +170,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--sidebar-fg);
   font-family: system-ui, sans-serif;
 }
@@ -180,10 +180,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.longview-option-row input[type="range"] {
-  width: 50px;
-  flex-shrink: 0;
 }
 .longview-option-row input[type="checkbox"] {
   flex-shrink: 0;
@@ -197,11 +193,54 @@
   cursor: pointer;
   flex-shrink: 0;
 }
+
+/* Stacked layout: label+value on top, slider full-width below */
+.longview-option-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.longview-option-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 .longview-option-value {
-  font-size: 10px;
+  font-size: 11px;
   opacity: 0.6;
-  min-width: 24px;
-  text-align: right;
+}
+
+/* Custom slider: 3px track line */
+.longview-option-row input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  background: var(--sidebar-fg);
+  opacity: 0.3;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.longview-option-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg);
+  cursor: pointer;
+}
+.longview-option-row input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg);
+  border: none;
+  cursor: pointer;
+}
+.longview-option-row input[type="range"]:active {
+  opacity: 1;
 }
 
 /* ===== Outline Content ===== */

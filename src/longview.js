@@ -83,6 +83,14 @@ export function createLongView(container, state) {
 
     const optionsPanel = document.createElement("div");
     optionsPanel.className = "longview-options-panel collapsed";
+    // Prevent interactions inside options from closing the panel
+    optionsPanel.addEventListener("mousedown", (e) => e.stopPropagation());
+
+    // Visibility section label
+    const visLabel = document.createElement("div");
+    visLabel.className = "longview-section-label";
+    visLabel.textContent = "Visibility";
+    optionsPanel.appendChild(visLabel);
 
     // Toggle buttons grid (squared off)
     const filters = document.createElement("div");
@@ -104,7 +112,6 @@ export function createLongView(container, state) {
     optionsPanel.appendChild(makeSliderRow("Heading size", s.longviewHeadingFontSize, 8, 20, 1, "longviewHeadingFontSize", "px"));
     optionsPanel.appendChild(makeSliderRow("Flag size", s.longviewFlagFontSize, 8, 18, 1, "longviewFlagFontSize", "px"));
     optionsPanel.appendChild(makeSliderRow("Line gap", s.longviewLineGap, 0, 8, 0.5, "longviewLineGap", "px"));
-    optionsPanel.appendChild(makeColorRow("Position color", s.longviewCurrentPositionColor, "longviewCurrentPositionColor"));
     wrapper.appendChild(optionsPanel);
 
     wrapper.appendChild(buildContent(s));
@@ -254,18 +261,23 @@ export function createLongView(container, state) {
 
   function makeSliderRow(label, value, min, max, step, key, unit) {
     const row = document.createElement("div");
-    row.className = "longview-option-row";
+    row.className = "longview-option-row longview-option-stacked";
+    const top = document.createElement("div");
+    top.className = "longview-option-row-top";
     const lbl = document.createElement("label");
     lbl.textContent = label;
+    const val = document.createElement("span");
+    val.className = "longview-option-value";
+    val.textContent = value + unit;
+    top.appendChild(lbl);
+    top.appendChild(val);
+    row.appendChild(top);
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = min;
     slider.max = max;
     slider.step = step;
     slider.value = value;
-    const val = document.createElement("span");
-    val.className = "longview-option-value";
-    val.textContent = value + unit;
     slider.addEventListener("input", () => {
       const v = parseFloat(slider.value);
       val.textContent = v + unit;
@@ -273,9 +285,7 @@ export function createLongView(container, state) {
       state.updateSettings({ [key]: v });
       applyLiveStyles();
     });
-    row.appendChild(lbl);
     row.appendChild(slider);
-    row.appendChild(val);
     return row;
   }
 
@@ -304,10 +314,12 @@ export function createLongView(container, state) {
     scrollHandler = () => {
       if (!state.editor) return;
       const view = state.editor.view;
-      const scrollTop = view.scrollDOM.scrollTop;
-      const visibleTop = scrollTop + 50; // small offset from top
-      // Find the offset at the visible top position
-      const pos = view.posAtCoords({ x: 0, y: visibleTop });
+      const rect = view.scrollDOM.getBoundingClientRect();
+      const contentEl = view.contentDOM;
+      const contentRect = contentEl.getBoundingClientRect();
+      const x = contentRect.left + 10; // inside actual content area
+      const y = rect.top + rect.height / 3; // 1/3 down viewport
+      const pos = view.posAtCoords({ x, y });
       if (pos != null) {
         highlightHeadingForOffset(pos);
       }
