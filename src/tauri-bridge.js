@@ -71,6 +71,37 @@ export async function setupTauriIntegration(state) {
           if (event.state === "Released") return;
           state.togglePrivate();
         });
+
+        // Toggle left sidebar (files panel)
+        await registerShortcut(state.settings.shortcutToggleSidebar, async (event) => {
+          if (event.state === "Released") return;
+          const win = getCurrentWindow();
+          if (!(await win.isVisible())) return;
+          const sidebar = document.getElementById("sidebar");
+          const panel = document.getElementById("panel-overlay");
+          const isVisible = sidebar.classList.contains("pinned") ||
+                            sidebar.classList.contains("visible") ||
+                            !panel.classList.contains("hidden");
+          if (isVisible) {
+            state.emit("hide-panel");
+          } else {
+            sidebar.classList.add("pinned");
+            state.emit("show-files-panel");
+          }
+        });
+
+        // Toggle right sidebar (outline view)
+        await registerShortcut(state.settings.shortcutToggleOutline, async (event) => {
+          if (event.state === "Released") return;
+          const win = getCurrentWindow();
+          if (!(await win.isVisible())) return;
+          const rPanel = document.getElementById("right-panel-overlay");
+          if (rPanel.classList.contains("hidden")) {
+            state.emit("show-outline");
+          } else {
+            state.emit("hide-outline");
+          }
+        });
       } catch (e) {
         console.warn("Global shortcut registration failed:", e);
       }

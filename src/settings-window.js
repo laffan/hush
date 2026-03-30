@@ -23,6 +23,7 @@ const shortcutCategories = [
       { key: "shortcutOpenFullscreen", label: "Open fullscreen" },
       { key: "shortcutTogglePrivate", label: "Toggle private mode" },
       { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
+      { key: "shortcutToggleOutline", label: "Toggle outline view" },
       { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },
@@ -90,7 +91,8 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.styles) settings.styles = [];
   if (!settings.dryRange) settings.dryRange = "paragraph";
   if (!settings.dryStopwords || settings.dryStopwords.length === 0) settings.dryStopwords = [...DEFAULT_STOPWORDS];
-  if (!settings.shortcutToggleSidebar) settings.shortcutToggleSidebar = "Mod+\\";
+  if (!settings.shortcutToggleSidebar) settings.shortcutToggleSidebar = "CmdOrCtrl+\\";
+  if (!settings.shortcutToggleOutline) settings.shortcutToggleOutline = "CmdOrCtrl+Shift+\\";
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";

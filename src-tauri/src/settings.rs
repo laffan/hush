@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub shortcut_toggle_private: String,
     #[serde(default = "default_shortcut_toggle_sidebar")]
     pub shortcut_toggle_sidebar: String,
+    #[serde(default = "default_shortcut_toggle_outline")]
+    pub shortcut_toggle_outline: String,
     #[serde(default = "default_shortcut_typewriter")]
     pub shortcut_typewriter: String,
     #[serde(default = "default_shortcut_new_file")]
@@ -453,7 +455,10 @@ fn default_shortcut_private() -> String {
     "CmdOrCtrl+Shift+P".to_string()
 }
 fn default_shortcut_toggle_sidebar() -> String {
-    "Mod+\\".to_string()
+    "CmdOrCtrl+\\".to_string()
+}
+fn default_shortcut_toggle_outline() -> String {
+    "CmdOrCtrl+Shift+\\".to_string()
 }
 fn default_shortcut_typewriter() -> String {
     "Mod+T".to_string()
@@ -542,6 +547,7 @@ impl Default for AppSettings {
             shortcut_open_fullscreen: default_shortcut_fullscreen(),
             shortcut_toggle_private: default_shortcut_private(),
             shortcut_toggle_sidebar: default_shortcut_toggle_sidebar(),
+            shortcut_toggle_outline: default_shortcut_toggle_outline(),
             shortcut_typewriter: default_shortcut_typewriter(),
             shortcut_new_file: default_shortcut_new_file(),
             shortcut_toggle_dry: default_shortcut_toggle_dry(),
