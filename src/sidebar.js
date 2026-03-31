@@ -94,6 +94,7 @@ export function createSidebar(container, state) {
       hidePanel();
       return;
     }
+    if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = name;
     panelOverlay.innerHTML = content;
     panelOverlay.classList.remove("hidden");
@@ -114,6 +115,7 @@ export function createSidebar(container, state) {
 
   // Button click handlers
   container.querySelector('[data-action="new-file"]').addEventListener("click", () => {
+    if (activePanel === "versions") cleanupVersionsPanel();
     state.newFile();
     hidePanel();
   });
@@ -123,6 +125,7 @@ export function createSidebar(container, state) {
       hidePanel();
       return;
     }
+    if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = "files";
     panelOverlay.innerHTML = "";
     panelOverlay.classList.remove("hidden");
@@ -263,6 +266,7 @@ export function createSidebar(container, state) {
 
   // Cmd+\ toggle support — force-show files (not toggle)
   state.on("show-files-panel", () => {
+    if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = "files";
     panelOverlay.innerHTML = "";
     panelOverlay.classList.remove("hidden");

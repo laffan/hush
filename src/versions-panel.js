@@ -12,6 +12,9 @@ async function tauriInvoke(cmd, args) {
 let currentSnapshots = [];
 let selectedSnapshotId = null;
 let previewOverlay = null;
+let panelContainer = null;
+let panelState = null;
+let keyHandler = null;
 
 /**
  * Creates the versions panel inside the given container.
@@ -19,6 +22,8 @@ let previewOverlay = null;
 export function createVersionsPanel(container, state, hidePanel) {
   currentSnapshots = [];
   selectedSnapshotId = null;
+  panelContainer = container;
+  panelState = state;
 
   const fileName = getActiveFileName(state) || "Versions";
 
@@ -30,6 +35,30 @@ export function createVersionsPanel(container, state, hidePanel) {
       </div>
     </div>
   `;
+
+  // Arrow key navigation
+  keyHandler = (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    if (currentSnapshots.length === 0) return;
+    e.preventDefault();
+
+    const currentIdx = currentSnapshots.findIndex((s) => s.id === selectedSnapshotId);
+    let nextIdx;
+    if (currentIdx === -1) {
+      nextIdx = 0;
+    } else if (e.key === "ArrowUp") {
+      nextIdx = Math.max(0, currentIdx - 1);
+    } else {
+      nextIdx = Math.min(currentSnapshots.length - 1, currentIdx + 1);
+    }
+
+    selectSnapshot(currentSnapshots[nextIdx], container, state);
+
+    // Scroll the active item into view
+    const activeLi = container.querySelector(".versions-list li.active");
+    if (activeLi) activeLi.scrollIntoView({ block: "nearest" });
+  };
+  document.addEventListener("keydown", keyHandler);
 
   loadSnapshots(container, state);
 }
@@ -180,9 +209,8 @@ async function restoreSnapshot(snap, state) {
     }
   }
 
-  // Clean up preview
-  removePreview();
-  selectedSnapshotId = null;
+  // Close the entire versions panel and return to editing
+  if (panelState) panelState.emit("hide-panel");
 }
 
 /**
@@ -190,8 +218,14 @@ async function restoreSnapshot(snap, state) {
  */
 export function cleanupVersionsPanel() {
   removePreview();
+  if (keyHandler) {
+    document.removeEventListener("keydown", keyHandler);
+    keyHandler = null;
+  }
   currentSnapshots = [];
   selectedSnapshotId = null;
+  panelContainer = null;
+  panelState = null;
 }
 
 // ===== Time Formatting =====
