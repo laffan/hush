@@ -188,29 +188,29 @@ function removePreview() {
 }
 
 async function restoreSnapshot(snap, state) {
-  if (!state.editor || !state.currentFileId) return;
+  if (!state.currentFileId) return;
 
-  // Set editor content to the snapshot
-  state.editor.setContent(snap.content);
+  const content = snap.content;
+  const fileId = state.currentFileId;
 
-  // Save the file
-  state.dirty = true;
-  await state.saveCurrentFile();
-
-  // Create a new snapshot of the restored state
+  // Save the snapshot content directly to the backend first
   if (IS_TAURI) {
     try {
-      await tauriInvoke("create_snapshot", {
-        documentId: state.currentFileId,
-        content: snap.content,
-      });
+      await tauriInvoke("save_file", { id: fileId, content });
+      await tauriInvoke("create_snapshot", { documentId: fileId, content });
     } catch (e) {
-      console.error("Failed to create restore snapshot:", e);
+      console.error("Restore failed:", e);
     }
   }
 
-  // Close the entire versions panel and return to editing
+  // Close the versions panel, then update the editor
   if (panelState) panelState.emit("hide-panel");
+
+  // Now set the editor content after the panel is closed
+  if (state.editor) {
+    state.editor.setContent(content);
+    state.dirty = false;
+  }
 }
 
 /**
