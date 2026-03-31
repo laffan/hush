@@ -31,9 +31,9 @@ export class AppState {
       normalizeHeaders: false,
       padding: 50,
 
-      // File management
-      autosaveFolder: null,
-      obsidianIntegration: false,
+      // Sync folders
+      syncFolders: [],
+      dropboxToken: null,
 
       // Window
       alwaysOnTop: false,

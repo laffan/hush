@@ -31,10 +31,11 @@ pub struct AppSettings {
     #[serde(default = "default_padding")]
     pub padding: u32,
 
-    // File management
-    pub autosave_folder: Option<String>,
+    // Sync folders
     #[serde(default)]
-    pub obsidian_integration: bool,
+    pub sync_folders: Vec<SyncFolder>,
+    #[serde(default)]
+    pub dropbox_token: Option<String>,
 
     // Window
     #[serde(default)]
@@ -206,6 +207,15 @@ pub struct Style {
 pub struct CustomFlag {
     pub name: String,
     pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncFolder {
+    pub id: String,
+    pub path: String,
+    pub sync_type: String, // "local" or "dropbox"
+    pub name: String,
 }
 
 fn default_flag_colors() -> std::collections::HashMap<String, String> {
@@ -539,8 +549,8 @@ impl Default for AppSettings {
             font_family: default_font_family(),
             normalize_headers: false,
             padding: default_padding(),
-            autosave_folder: None,
-            obsidian_integration: false,
+            sync_folders: Vec::new(),
+            dropbox_token: None,
             always_on_top: false,
             column_width: default_column_width(),
             shortcut_open_editor: default_shortcut_open(),

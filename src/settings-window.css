@@ -668,3 +668,32 @@ html, body {
 .flag-action-btn.flag-reset:hover {
   background: rgba(229, 57, 53, 0.2);
 }
+
+/* ===== Sync Tab ===== */
+.sync-folder-list { margin: 12px 0; }
+.sync-folder-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: 6px; margin-bottom: 4px;
+  background: rgba(128,128,128,0.08);
+}
+.sync-folder-name { font-size: 13px; font-weight: 500; }
+.sync-folder-path { display: block; font-size: 11px; color: var(--sidebar-fg); word-break: break-all; }
+.sync-folder-remove {
+  background: none; border: none; color: var(--sidebar-fg); cursor: pointer;
+  font-size: 14px; padding: 4px 6px; border-radius: 4px;
+}
+.sync-folder-remove:hover { color: #e53935; background: rgba(229,57,53,0.1); }
+.sync-empty { padding: 16px 0; text-align: center; font-size: 13px; color: var(--sidebar-fg); }
+.sync-add-btn {
+  display: block; width: 100%; padding: 10px; margin-top: 8px;
+  border: 1px dashed var(--panel-border); background: transparent; color: var(--fg);
+  border-radius: 6px; cursor: pointer; font-size: 13px; font-family: system-ui, sans-serif;
+}
+.sync-add-btn:hover { background: rgba(128,128,128,0.1); }
+.sync-token-row { display: flex; gap: 8px; margin: 8px 0; }
+.sync-token-row input { flex: 1; padding: 8px; background: rgba(128,128,128,0.1); border: 1px solid var(--panel-border); color: var(--fg); border-radius: 6px; font-size: 13px; }
+.sync-token-row button { padding: 8px 14px; border: 1px solid var(--panel-border); background: transparent; color: var(--fg); border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.sync-token-row button:hover { background: rgba(128,128,128,0.15); }
+.sync-status { font-size: 12px; padding: 4px 0; }
+.sync-status.success { color: #4caf50; }
+.sync-status.error { color: #e53935; }

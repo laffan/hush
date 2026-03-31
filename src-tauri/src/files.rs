@@ -139,24 +139,6 @@ impl FileManager {
         Ok(())
     }
 
-    pub fn save_to_external(
-        &self,
-        id: &str,
-        content: &str,
-        folder: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let folder_path = PathBuf::from(folder);
-        fs::create_dir_all(&folder_path)?;
-        let name = derive_name(content);
-        let filename = sanitize_filename(&name);
-        let path = folder_path.join(format!("{}.md", filename));
-        fs::write(&path, content)?;
-        let meta_dir = folder_path.join(".hush");
-        fs::create_dir_all(&meta_dir)?;
-        fs::write(meta_dir.join(format!("{}.id", filename)), id)?;
-        Ok(())
-    }
-
     pub fn load_file(&self, id: &str) -> Result<FileEntry, Box<dyn std::error::Error>> {
         let path = self.files_dir.join(format!("{}.json", id));
         let content = fs::read_to_string(&path)?;
@@ -260,16 +242,3 @@ fn derive_name(content: &str) -> String {
     }
 }
 
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .trim()
-        .to_string()
-}

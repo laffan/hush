@@ -77,10 +77,6 @@ fn load_file(state: State<AppState>, id: String) -> Result<FileEntry, String> {
 fn save_file(state: State<AppState>, id: String, content: String) -> Result<(), String> {
     let fm = state.file_manager.lock().unwrap();
     fm.save_file(&id, &content).map_err(|e| e.to_string())?;
-    let settings = state.settings.lock().unwrap();
-    if let Some(ref folder) = settings.autosave_folder {
-        fm.save_to_external(&id, &content, folder).map_err(|e| e.to_string())?;
-    }
     Ok(())
 }
 
@@ -160,19 +156,6 @@ fn delete_document_snapshots(
     state.snapshot_manager.lock().unwrap()
         .delete_document_snapshots(&document_id)
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn check_obsidian_vault(path: String) -> bool {
-    let path = PathBuf::from(&path);
-    let mut current = Some(path.as_path());
-    while let Some(dir) = current {
-        if dir.join(".obsidian").is_dir() {
-            return true;
-        }
-        current = dir.parent();
-    }
-    false
 }
 
 #[cfg(desktop)]
@@ -408,7 +391,6 @@ pub fn run() {
             get_snapshots,
             get_snapshot,
             delete_document_snapshots,
-            check_obsidian_vault,
             #[cfg(desktop)]
             set_always_on_top,
             set_activation_policy,

@@ -131,6 +131,7 @@ function render() {
         ${tabBtn("shortcuts", "Shortcuts", tabIcons.shortcuts)}
         ${tabBtn("dry", "D.R.Y.", tabIcons.dry)}
         ${tabBtn("flags", "Flags", tabIcons.flags)}
+        ${tabBtn("sync", "Sync", tabIcons.sync)}
       </div>
       <div class="settings-content">
         <div class="settings-panel${activeTab === 'general' ? ' active' : ''}" id="panel-general">
@@ -148,6 +149,9 @@ function render() {
         <div class="settings-panel${activeTab === 'flags' ? ' active' : ''}" id="panel-flags">
           ${renderFlagsSettingsTab()}
         </div>
+        <div class="settings-panel${activeTab === 'sync' ? ' active' : ''}" id="panel-sync">
+          ${renderSyncTab()}
+        </div>
       </div>
     </div>
   `;
@@ -161,6 +165,7 @@ const tabIcons = {
   shortcuts: `<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
   dry: `<svg viewBox="0 0 24 24"><path d="M12 2L4 7v10l8 5 8-5V7l-8-5z"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="7" x2="20" y2="7"/></svg>`,
   flags: `<svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
+  sync: `<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
 };
 
 function tabBtn(id, label, icon) {
@@ -459,6 +464,58 @@ function renderFlagsSettingsTab() {
   return renderFlagsTab(settings);
 }
 
+// ===== Sync Tab =====
+function isIOSSettings() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function renderSyncTab() {
+  const folders = settings.syncFolders || [];
+  const isIpad = isIOSSettings();
+
+  let html = `<div class="settings-section"><h2>Sync Folders</h2>`;
+  html += `<p class="settings-help">Add folders to sync with Hush. Files in synced folders are managed internally with version control.</p>`;
+
+  if (isIpad) {
+    // Dropbox token section
+    const hasToken = !!settings.dropboxToken;
+    html += `
+      <div class="settings-section">
+        <h3>Dropbox Connection</h3>
+        <div class="sync-token-row">
+          <input type="password" id="sync-dropbox-token"
+            placeholder="Dropbox Personal Access Token"
+            value="${escAttr(settings.dropboxToken || "")}" />
+          <button id="sync-test-token">${hasToken ? "Re-test" : "Test"}</button>
+        </div>
+        <div id="sync-token-status" class="sync-status"></div>
+      </div>
+    `;
+  }
+
+  if (folders.length > 0) {
+    html += `<div class="sync-folder-list">`;
+    for (const f of folders) {
+      html += `
+        <div class="sync-folder-item" data-folder-id="${f.id}">
+          <div class="sync-folder-info">
+            <span class="sync-folder-name">${escHtml(f.name)}</span>
+            <span class="sync-folder-path">${escHtml(f.path)}</span>
+          </div>
+          <button class="sync-folder-remove" data-folder-id="${f.id}" title="Remove folder">✕</button>
+        </div>`;
+    }
+    html += `</div>`;
+  } else {
+    html += `<div class="sync-empty">No folders synced yet.</div>`;
+  }
+
+  html += `<button id="sync-add-folder" class="sync-add-btn">Add Folder</button>`;
+  html += `</div>`;
+  return html;
+}
+
 // ===== Bindings =====
 function bindAll() {
   // Tab switching
@@ -545,6 +602,74 @@ function bindAll() {
       saveSetting("dryStopwords", settings.dryStopwords);
       drySearchQuery = "";
       render();
+    });
+  }
+
+  // Sync tab
+  const syncAddBtn = document.getElementById("sync-add-folder");
+  if (syncAddBtn) {
+    syncAddBtn.addEventListener("click", async () => {
+      if (isIOSSettings()) {
+        // iPad: Dropbox folder browser (placeholder — implemented in Stage 5)
+        alert("Dropbox folder selection coming soon.");
+      } else {
+        // Desktop: native folder picker
+        if (!IS_TAURI) { alert("Folder selection requires the desktop app."); return; }
+        try {
+          const { open } = await import("@tauri-apps/plugin-dialog");
+          const selected = await open({ directory: true, multiple: false });
+          if (selected) {
+            const folders = settings.syncFolders || [];
+            const name = selected.split(/[\\/]/).filter(Boolean).pop() || "Folder";
+            const id = crypto.randomUUID();
+            folders.push({ id, path: selected, syncType: "local", name });
+            saveSetting("syncFolders", folders);
+            render();
+          }
+        } catch (e) {
+          console.error("Folder selection failed:", e);
+        }
+      }
+    });
+  }
+
+  document.querySelectorAll(".sync-folder-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const folderId = btn.dataset.folderId;
+      settings.syncFolders = (settings.syncFolders || []).filter(f => f.id !== folderId);
+      saveSetting("syncFolders", settings.syncFolders);
+      render();
+    });
+  });
+
+  const syncTestBtn = document.getElementById("sync-test-token");
+  if (syncTestBtn) {
+    syncTestBtn.addEventListener("click", async () => {
+      const tokenInput = document.getElementById("sync-dropbox-token");
+      const status = document.getElementById("sync-token-status");
+      if (!tokenInput || !status) return;
+      const token = tokenInput.value.trim();
+      if (!token) { status.textContent = "Please enter a token."; status.className = "sync-status error"; return; }
+      status.textContent = "Testing...";
+      status.className = "sync-status";
+      try {
+        const resp = await fetch("https://api.dropboxapi.com/2/users/get_current_account", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          status.textContent = `Connected as ${data.name?.display_name || "unknown"}`;
+          status.className = "sync-status success";
+          saveSetting("dropboxToken", token);
+        } else {
+          status.textContent = "Invalid token.";
+          status.className = "sync-status error";
+        }
+      } catch (e) {
+        status.textContent = "Connection failed.";
+        status.className = "sync-status error";
+      }
     });
   }
 

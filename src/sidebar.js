@@ -14,7 +14,6 @@ import typewriterRaw from "./sidebar_icons/typewriter.svg?raw";
 import dryRaw from "./sidebar_icons/dry.svg?raw";
 import focusRaw from "./sidebar_icons/focus.svg?raw";
 import versionsRaw from "./sidebar_icons/versions.svg?raw";
-import folderRaw from "./sidebar_icons/folder.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 import stylesRaw from "./sidebar_icons/styles.svg?raw";
@@ -311,72 +310,10 @@ const icons = {
   dry: svgInner(dryRaw),
   focus: svgInner(focusRaw),
   versions: svgInner(versionsRaw),
-  folder: svgInner(folderRaw),
   export: svgInner(exportRaw),
   settings: svgInner(settingsRaw),
   styles: svgInner(stylesRaw),
 };
-
-function renderAutosavePanel(state) {
-  const folder = state.settings.autosaveFolder;
-  const hasFolder = !!folder;
-  return `<div class="autosave-panel">
-    <div class="panel-title">Save Location</div>
-    ${hasFolder ? `<div class="current-path">${escHtml(folder)}</div>` : `<div class="current-path">App data (default)</div>`}
-    <button id="choose-folder">Choose Folder</button>
-    ${hasFolder ? `<button id="reset-folder">Reset to Default</button>` : ""}
-    ${hasFolder ? `<label>
-      <input type="checkbox" id="obsidian-toggle" ${state.settings.obsidianIntegration ? "checked" : ""} />
-      Integrate with Obsidian
-    </label>` : ""}
-  </div>`;
-}
-
-function bindAutosavePanel(state, panel) {
-  const chooseBtn = panel.querySelector("#choose-folder");
-  if (chooseBtn) {
-    chooseBtn.addEventListener("click", async () => {
-      const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-      if (IS_TAURI) {
-        try {
-          const { open } = await import("@tauri-apps/plugin-dialog");
-          const selected = await open({ directory: true, multiple: false });
-          if (selected) {
-            await state.updateSettings({ autosaveFolder: selected });
-            const { invoke } = await import("@tauri-apps/api/core");
-            const isVault = await invoke("check_obsidian_vault", { path: selected });
-            if (!isVault) {
-              await state.updateSettings({ obsidianIntegration: false });
-            }
-            panel.innerHTML = renderAutosavePanel(state);
-            bindAutosavePanel(state, panel);
-          }
-        } catch (e) {
-          console.error("Folder selection failed:", e);
-        }
-      } else {
-        alert("Folder selection requires the desktop app.");
-      }
-    });
-  }
-
-  const resetBtn = panel.querySelector("#reset-folder");
-  if (resetBtn) {
-    resetBtn.addEventListener("click", async () => {
-      await state.updateSettings({ autosaveFolder: null, obsidianIntegration: false });
-      panel.innerHTML = renderAutosavePanel(state);
-      bindAutosavePanel(state, panel);
-    });
-  }
-
-  const obsidianToggle = panel.querySelector("#obsidian-toggle");
-  if (obsidianToggle) {
-    obsidianToggle.addEventListener("change", async () => {
-      await state.updateSettings({ obsidianIntegration: obsidianToggle.checked });
-    });
-  }
-}
-
 
 function showRatchetDropdown(anchor, state, onStart) {
   document.querySelectorAll(".ratchet-dropdown").forEach((el) => el.remove());
