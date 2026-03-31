@@ -186,12 +186,21 @@ impl FileManager {
 
 fn insert_into_tree(tree: &mut Vec<TreeNode>, parent_id: Option<&str>, node: TreeNode) {
     match parent_id {
-        None => tree.push(node),
+        None => insert_before_trash(tree, node),
         Some(pid) => {
             if !insert_into_children(tree, pid, node.clone()) {
-                tree.push(node);
+                insert_before_trash(tree, node);
             }
         }
+    }
+}
+
+/// Insert at root level but before the Trash node so Trash stays last.
+fn insert_before_trash(tree: &mut Vec<TreeNode>, node: TreeNode) {
+    if let Some(idx) = tree.iter().position(|n| n.id == "__trash__") {
+        tree.insert(idx, node);
+    } else {
+        tree.push(node);
     }
 }
 

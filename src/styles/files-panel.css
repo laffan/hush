@@ -205,6 +205,27 @@
   cursor: pointer;
 }
 
+/* Trash — dimmed appearance */
+.sl-item[data-id="__trash__"] {
+  opacity: 0.5;
+}
+
+/* "Empty" text button on Trash hover */
+.tree-action-text {
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+.tree-action-text:hover {
+  opacity: 1;
+}
+
 .tree-rename-input {
   width: 100%;
   background: rgba(128, 128, 128, 0.1);

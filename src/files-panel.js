@@ -39,7 +39,12 @@ function getIcon(item) {
 
 // Hover action buttons — no rename for docs, no actions for special nodes, no flag in trash
 function actionButtons(nodeId, nodeType, inTrash) {
-  const isSpecial = nodeId === AppState.INBOX_ID || nodeId === AppState.TRASH_ID;
+  if (nodeId === AppState.TRASH_ID) {
+    return `<span class="tree-actions" data-node-id="${nodeId}">
+      <button data-tree-action="empty-trash" class="tree-action-text" title="Empty Trash">Empty</button>
+    </span>`;
+  }
+  const isSpecial = nodeId === AppState.INBOX_ID;
   const isDoc = nodeType === "document";
   const renameBtn = (isDoc || isSpecial) ? "" : `<button data-tree-action="rename" title="Rename">
       <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -189,6 +194,8 @@ function onActionClick(e) {
     handleDelete(nodeId, storedState);
   } else if (action === "flag") {
     storedState.toggleFlagged(nodeId).then(() => refreshList(storedState));
+  } else if (action === "empty-trash") {
+    handleEmptyTrash(storedState);
   }
 }
 
@@ -407,6 +414,18 @@ function handleDelete(nodeId, state) {
   } else {
     state.deleteTreeNode(nodeId).then(() => refreshList(state));
   }
+}
+
+function handleEmptyTrash(state) {
+  const trash = findNode(state.fileTree, AppState.TRASH_ID);
+  if (!trash?.children?.length) return;
+  const items = collectAllNames(trash.children);
+  const itemList = items.map(n => `  \u2022 ${n}`).join("\n");
+  showDeleteConfirmModal(
+    "Empty Trash?",
+    `This will permanently delete all items and cannot be undone.\n\nContents:\n${itemList}`,
+    () => { state.emptyTrash().then(() => refreshList(state)); },
+  );
 }
 
 function collectAllNames(nodes) {

@@ -102,8 +102,14 @@ export function findSyncContext(nodes, targetId) {
 }
 
 export function insertNode(tree, node, parentId, findNodeFn) {
-  if (!parentId) { tree.push(node); return; }
+  if (!parentId) { insertBeforeTrash(tree, node); return; }
   const parent = findNodeFn(tree, parentId);
   if (parent) { (parent.children || (parent.children = [])).push(node); }
-  else { tree.push(node); }
+  else { insertBeforeTrash(tree, node); }
+}
+
+function insertBeforeTrash(tree, node) {
+  const idx = tree.findIndex(n => n.id === "__trash__");
+  if (idx >= 0) tree.splice(idx, 0, node);
+  else tree.push(node);
 }
