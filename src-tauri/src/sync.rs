@@ -224,6 +224,165 @@ impl SyncManager {
         }
     }
 
+    /// Rename an external file and update the mapping's relative path.
+    pub fn rename_external_file(
+        &mut self,
+        folder_path: &str,
+        old_relative: &str,
+        new_relative: &str,
+        internal_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let old_full = PathBuf::from(folder_path).join(old_relative);
+        let new_full = PathBuf::from(folder_path).join(new_relative);
+        if old_full.exists() {
+            if let Some(parent) = new_full.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::rename(&old_full, &new_full)?;
+        }
+        if let Some(info) = self.file_map.get_mut(internal_id) {
+            info.relative_path = new_relative.to_string();
+            self.save_map();
+        }
+        Ok(())
+    }
+
+    /// Delete an external file and remove its sync mapping.
+    pub fn delete_external_file(
+        &mut self,
+        folder_path: &str,
+        internal_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(info) = self.file_map.get(internal_id) {
+            let full = PathBuf::from(folder_path).join(&info.relative_path);
+            if full.exists() {
+                fs::remove_file(&full)?;
+            }
+        }
+        self.file_map.remove(internal_id);
+        self.save_map();
+        Ok(())
+    }
+
+    /// Create an external directory.
+    pub fn create_external_directory(
+        folder_path: &str,
+        relative_path: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let full = PathBuf::from(folder_path).join(relative_path);
+        fs::create_dir_all(&full)?;
+        Ok(())
+    }
+
+    /// Rename an external directory and update all child mappings.
+    pub fn rename_external_directory(
+        &mut self,
+        folder_path: &str,
+        old_relative: &str,
+        new_relative: &str,
+        sync_folder_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let old_full = PathBuf::from(folder_path).join(old_relative);
+        let new_full = PathBuf::from(folder_path).join(new_relative);
+        if old_full.exists() {
+            if let Some(parent) = new_full.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::rename(&old_full, &new_full)?;
+        }
+        // Update all mappings whose relative_path starts with old_relative/
+        let old_prefix = format!("{}/", old_relative.trim_end_matches('/'));
+        let new_prefix = format!("{}/", new_relative.trim_end_matches('/'));
+        for info in self.file_map.values_mut() {
+            if info.sync_folder_id == sync_folder_id
+                && info.relative_path.starts_with(&old_prefix)
+            {
+                info.relative_path = format!(
+                    "{}{}",
+                    new_prefix,
+                    &info.relative_path[old_prefix.len()..]
+                );
+            }
+        }
+        self.save_map();
+        Ok(())
+    }
+
+    /// Delete an external directory and all its contents.
+    pub fn delete_external_directory(
+        &mut self,
+        folder_path: &str,
+        relative_path: &str,
+        sync_folder_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let full = PathBuf::from(folder_path).join(relative_path);
+        if full.exists() {
+            fs::remove_dir_all(&full)?;
+        }
+        // Remove all mappings for files inside this directory
+        let prefix = format!("{}/", relative_path.trim_end_matches('/'));
+        self.file_map.retain(|_, info| {
+            !(info.sync_folder_id == sync_folder_id
+                && info.relative_path.starts_with(&prefix))
+        });
+        self.save_map();
+        Ok(())
+    }
+
+    /// Create an external file and register it.
+    pub fn create_external_file(
+        &mut self,
+        folder_path: &str,
+        relative_path: &str,
+        content: &str,
+        internal_id: &str,
+        sync_folder_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Self::write_external(folder_path, relative_path, content)?;
+        self.register_file(internal_id, sync_folder_id, relative_path, content);
+        Ok(())
+    }
+
+    /// Write a project ordering JSON file alongside the project directory.
+    pub fn write_project_json(
+        folder_path: &str,
+        relative_path: &str,
+        doc_names: &[String],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let dir = PathBuf::from(folder_path).join(relative_path);
+        fs::create_dir_all(&dir)?;
+        let json_path = dir.join(".hush-project.json");
+        let data = serde_json::json!({ "ordering": doc_names });
+        fs::write(&json_path, serde_json::to_string_pretty(&data)?)?;
+        Ok(())
+    }
+
+    /// Check all files in a sync folder for external changes.
+    pub fn check_all_external_changes(
+        &self,
+        folder: &SyncFolder,
+    ) -> Vec<ExternalChange> {
+        let mut changes = Vec::new();
+        for info in self.file_map.values() {
+            if info.sync_folder_id != folder.id {
+                continue;
+            }
+            let path = PathBuf::from(&folder.path).join(&info.relative_path);
+            if let Ok(external_content) = fs::read_to_string(&path) {
+                let hash = Self::hash_content(&external_content);
+                if hash != info.last_synced_hash {
+                    changes.push(ExternalChange {
+                        internal_id: info.internal_id.clone(),
+                        relative_path: info.relative_path.clone(),
+                        external_content,
+                        internal_content: String::new(), // filled by caller
+                    });
+                }
+            }
+        }
+        changes
+    }
+
     fn hash_content(content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());

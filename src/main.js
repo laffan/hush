@@ -616,6 +616,19 @@ async function init() {
       updatePrivateBoxColor(state);
     }
   });
+
+  // Sync: poll for external changes every 30 seconds
+  if (IS_TAURI && state.settings.syncFolders?.length) {
+    import("./sync-polling.js").then(m => m.startSyncPolling(state));
+  }
+  state.on("settings-changed", async () => {
+    const sp = await import("./sync-polling.js");
+    if (IS_TAURI && state.settings.syncFolders?.length) {
+      sp.startSyncPolling(state);
+    } else {
+      sp.stopSyncPolling();
+    }
+  });
 }
 
 init().catch(console.error);

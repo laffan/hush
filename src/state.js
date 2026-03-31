@@ -14,31 +14,19 @@ async function tauriInvoke(cmd, args) {
 export class AppState {
   constructor() {
     this.settings = {
-      // General
-      visibility: "menubar", // menubar | dock | both
-
-      // Editor > Appearance
-      appearance: "dark", // light | dark | auto
-
-      // Editor > Themes
+      visibility: "menubar",
+      appearance: "dark",
       lightTheme: "ayuLight",
       darkTheme: "dracula",
-
-      // Editor > Text
       fontSize: 20,
       lineHeight: 1.6,
       fontFamily: "Source Sans Pro",
       normalizeHeaders: false,
       padding: 50,
-
-      // Sync folders
       syncFolders: [],
       dropboxToken: null,
-
-      // Window
       alwaysOnTop: false,
       columnWidth: 600,
-
       // Shortcuts — General
       shortcutOpenEditor: "CmdOrCtrl+Shift+H",
       shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",
@@ -332,6 +320,8 @@ export class AppState {
         const created = await tauriInvoke(command, { name, parentId });
         this.fileTree = await tauriInvoke("get_file_tree");
         this.emit("files-changed");
+        // Propagate folder/project creation to external filesystem
+        this.syncCreateNode(created.id, type);
         return created;
       } catch (e) { console.error(`Create ${type} failed:`, e); }
     } else {
@@ -348,6 +338,8 @@ export class AppState {
     const node = findNode(this.fileTree, nodeId);
     if (!node) return;
     if (this.isInTrash(nodeId)) return this._permanentDeleteNode(nodeId);
+    // Propagate deletion to external filesystem BEFORE removing from tree
+    await this.syncDeleteNode(nodeId);
     const removed = removeNode(this.fileTree, nodeId);
     if (removed) {
       const trash = findNode(this.fileTree, AppState.TRASH_ID);
@@ -412,6 +404,7 @@ export class AppState {
   async renameTreeNode(nodeId, newName) {
     const node = findNode(this.fileTree, nodeId);
     if (!node) return;
+    const oldName = node.name;
     node.name = newName;
     if (node.type === "document" && node.fileId) {
       if (IS_TAURI) {
@@ -424,6 +417,10 @@ export class AppState {
       }
     }
     await this.saveFileTree();
+    // Propagate rename to external filesystem
+    if (oldName !== newName) {
+      this.syncRenameNode(nodeId, oldName, node.type);
+    }
   }
 
   async toggleFlagged(nodeId) {
@@ -468,13 +465,20 @@ export class AppState {
     const parts = this.editor.getContent().split("\n\n---hush-separator---\n\n");
     for (let i = 0; i < this.projectDocIds.length && i < parts.length; i++) {
       const fid = this.projectDocIds[i], content = parts[i] || "";
-      if (IS_TAURI) { try { await tauriInvoke("save_file", { id: fid, content }); } catch (e) { /* skip */ } }
+      if (IS_TAURI) {
+        try {
+          await tauriInvoke("save_file", { id: fid, content });
+          this.syncFileToExternal(fid, content);
+        } catch (e) { /* skip */ }
+      }
       else { const f = this.files.find(f => f.id === fid); if (f) { f.content = content; f.modified = Math.floor(Date.now()/1000); f.name = this._deriveName(f.content); } }
     }
     this.dirty = false;
     if (IS_TAURI) this.files = await tauriInvoke("list_files");
     else this._saveFilesLocal();
     this.emit("files-changed");
+    // Update project ordering JSON
+    this.syncProjectOrdering(this.currentProjectId);
   }
 
   // ===== File Operations =====
@@ -510,8 +514,6 @@ export class AppState {
     return false;
   }
 
-
-
   async newFile(parentId = null) {
     if (this.dirty) await this.saveCurrentFile();
     // Default new files go into the Inbox
@@ -524,6 +526,8 @@ export class AppState {
     const treeNode = { id: crypto.randomUUID(), type: "document", name: "Untitled", fileId, children: [], flagged: false };
     insertNode(this.fileTree, treeNode, targetParent, findNode);
     await this.saveFileTree();
+    // Propagate new file to external filesystem if inside a synced folder
+    this.syncCreateFile(treeNode.id, fileId, "");
     this.currentFileId = fileId;
     this.currentProjectId = null;
     this.projectDocIds = [];
@@ -593,16 +597,14 @@ export class AppState {
   }
 
   // ===== Sync Operations (delegated to sync-state.js) =====
-
-  async importSyncFolder(syncFolder) {
-    const { importSyncFolder } = await import("./sync-state.js");
-    return importSyncFolder(this, syncFolder);
-  }
-
-  async syncFileToExternal(fileId, content) {
-    const { syncFileToExternal } = await import("./sync-state.js");
-    return syncFileToExternal(this, fileId, content);
-  }
+  async _syncOp(fn, ...args) { const m = await import("./sync-state.js"); return m[fn](this, ...args); }
+  async importSyncFolder(f) { return this._syncOp("importSyncFolder", f); }
+  async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
+  async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }
+  async syncDeleteNode(nid) { return this._syncOp("syncDeleteNode", nid); }
+  async syncCreateNode(nid, t) { return this._syncOp("syncCreateNode", nid, t); }
+  async syncCreateFile(nid, fid, c) { return this._syncOp("syncCreateFile", nid, fid, c); }
+  async syncProjectOrdering(pid) { return this._syncOp("syncProjectOrdering", pid); }
 
   async updateSettings(partial) {
     Object.assign(this.settings, partial);

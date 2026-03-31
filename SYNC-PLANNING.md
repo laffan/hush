@@ -494,9 +494,9 @@ Files to modify:
 | Stage | Status | Date | Notes |
 |-------|--------|------|-------|
 | Planning | ✅ Complete | 2026-03-31 | Initial plan created |
-| Stage 1 | ⬜ Pending | | |
-| Stage 2 | ⬜ Pending | | |
-| Stage 3 | ⬜ Pending | | |
-| Stage 4 | ⬜ Pending | | |
-| Stage 5 | ⬜ Pending | | |
-| Stage 6 | ⬜ Pending | | |
+| Stage 1 | ✅ Complete | 2026-03-31 | SQLite snapshots backend |
+| Stage 2 | ✅ Complete | 2026-03-31 | Versions UI |
+| Stage 3 | ✅ Complete | 2026-03-31 | Save location removed, Sync tab added |
+| Stage 4 | ✅ Complete | 2026-03-31 | Desktop sync: add folders, import files, rename/delete propagation, create folder/project/file propagation, project JSON ordering, inbound change detection with 30s polling + conflict banners |
+| Stage 5 | ⬜ Pending | | iPad Dropbox sync |
+| Stage 6 | ✅ Complete | 2026-03-31 | Conflict resolution via banner UI (Keep Local / Accept External / Dismiss) |

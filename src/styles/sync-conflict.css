@@ -1,0 +1,63 @@
+/* Sync conflict notification banner */
+.sync-conflict-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  animation: sync-slide-down 0.25s ease-out;
+}
+
+@keyframes sync-slide-down {
+  from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.sync-conflict-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.sync-conflict-path {
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  margin-bottom: 10px;
+  opacity: 0.7;
+}
+
+.sync-conflict-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.sync-conflict-btns button {
+  padding: 5px 14px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.sync-conflict-btns button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.sync-conflict-btns .sync-btn-accept {
+  background: rgba(50, 120, 220, 0.15);
+  border-color: rgba(50, 120, 220, 0.4);
+}
+
+.sync-conflict-btns .sync-btn-accept:hover {
+  background: rgba(50, 120, 220, 0.3);
+}

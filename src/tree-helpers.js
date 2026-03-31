@@ -72,6 +72,35 @@ export function findAncestorIds(nodes, targetId, path = []) {
   return null;
 }
 
+/**
+ * Find the sync context for a node — returns { syncFolderId, relativePath }
+ * or null if the node is not inside a synced folder.
+ * relativePath is the path from the sync folder root to the node (using node names).
+ */
+export function findSyncContext(nodes, targetId) {
+  function search(nodes, syncFolderId, pathParts) {
+    for (const node of nodes) {
+      const curSyncId = node.syncFolderId || syncFolderId;
+      // If this node IS the synced folder root, path resets to empty
+      const curPath = node.syncFolderId ? [] : (syncFolderId ? [...pathParts, node.name] : []);
+
+      if (node.id === targetId) {
+        if (node.syncFolderId) return { syncFolderId: node.syncFolderId, relativePath: "" };
+        if (curSyncId) return { syncFolderId: curSyncId, relativePath: curPath.join("/") };
+        return null;
+      }
+
+      if (node.children?.length) {
+        const result = search(node.children, curSyncId, curPath);
+        if (result !== undefined) return result;
+      }
+    }
+    return undefined; // not found in this branch
+  }
+  const result = search(nodes, null, []);
+  return result === undefined ? null : result;
+}
+
 export function insertNode(tree, node, parentId, findNodeFn) {
   if (!parentId) { tree.push(node); return; }
   const parent = findNodeFn(tree, parentId);

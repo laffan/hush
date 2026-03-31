@@ -20,7 +20,7 @@ mod sync;
 use settings::AppSettings;
 use files::FileManager;
 use snapshots::{SnapshotManager, SnapshotEntry};
-use sync::{SyncManager, ImportEntry, SyncedFileInfo};
+use sync::{SyncManager, ImportEntry, SyncedFileInfo, ExternalChange};
 
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
@@ -225,6 +225,147 @@ fn get_sync_file_info(
     state.sync_manager.lock().unwrap()
         .get_file_info(&internal_id)
         .cloned()
+}
+
+#[tauri::command]
+fn rename_sync_file(
+    state: State<AppState>,
+    folder_path: String,
+    old_relative: String,
+    new_relative: String,
+    internal_id: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .rename_external_file(&folder_path, &old_relative, &new_relative, &internal_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_sync_file(
+    state: State<AppState>,
+    folder_path: String,
+    internal_id: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .delete_external_file(&folder_path, &internal_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_sync_directory(
+    folder_path: String,
+    relative_path: String,
+) -> Result<(), String> {
+    SyncManager::create_external_directory(&folder_path, &relative_path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_sync_directory(
+    state: State<AppState>,
+    folder_path: String,
+    old_relative: String,
+    new_relative: String,
+    sync_folder_id: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .rename_external_directory(&folder_path, &old_relative, &new_relative, &sync_folder_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_sync_directory(
+    state: State<AppState>,
+    folder_path: String,
+    relative_path: String,
+    sync_folder_id: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .delete_external_directory(&folder_path, &relative_path, &sync_folder_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_sync_file(
+    state: State<AppState>,
+    folder_path: String,
+    relative_path: String,
+    content: String,
+    internal_id: String,
+    sync_folder_id: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .create_external_file(&folder_path, &relative_path, &content, &internal_id, &sync_folder_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_project_json(
+    folder_path: String,
+    relative_path: String,
+    doc_names: Vec<String>,
+) -> Result<(), String> {
+    SyncManager::write_project_json(&folder_path, &relative_path, &doc_names)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn check_sync_changes(
+    state: State<AppState>,
+) -> Result<Vec<sync::ExternalChange>, String> {
+    let settings = state.settings.lock().unwrap();
+    let sync_mgr = state.sync_manager.lock().unwrap();
+    let file_mgr = state.file_manager.lock().unwrap();
+    let mut all_changes = Vec::new();
+    for folder in &settings.sync_folders {
+        if folder.sync_type == "local" {
+            let mut changes = sync_mgr.check_all_external_changes(folder);
+            // Fill in internal content
+            for change in &mut changes {
+                if let Ok(entry) = file_mgr.load_file(&change.internal_id) {
+                    change.internal_content = entry.content;
+                }
+            }
+            all_changes.extend(changes);
+        }
+    }
+    Ok(all_changes)
+}
+
+#[tauri::command]
+fn accept_external_change(
+    state: State<AppState>,
+    internal_id: String,
+    content: String,
+) -> Result<(), String> {
+    // Save the external content as the new internal content and update hash
+    state.file_manager.lock().unwrap()
+        .save_file(&internal_id, &content)
+        .map_err(|e| e.to_string())?;
+    state.sync_manager.lock().unwrap()
+        .update_hash(&internal_id, &content);
+    Ok(())
+}
+
+#[tauri::command]
+fn reject_external_change(
+    state: State<AppState>,
+    internal_id: String,
+    folder_path: String,
+) -> Result<(), String> {
+    // Overwrite external file with internal content and update hash
+    let content = {
+        let fm = state.file_manager.lock().unwrap();
+        fm.load_file(&internal_id).map_err(|e| e.to_string())?.content
+    };
+    let sync_mgr = state.sync_manager.lock().unwrap();
+    let info = sync_mgr.get_file_info(&internal_id)
+        .ok_or("File not synced")?;
+    SyncManager::write_external(&folder_path, &info.relative_path, &content)
+        .map_err(|e| e.to_string())?;
+    drop(sync_mgr);
+    state.sync_manager.lock().unwrap().update_hash(&internal_id, &content);
+    Ok(())
 }
 
 #[cfg(desktop)]
@@ -468,6 +609,16 @@ pub fn run() {
             write_sync_file,
             get_synced_files,
             get_sync_file_info,
+            rename_sync_file,
+            delete_sync_file,
+            create_sync_directory,
+            rename_sync_directory,
+            delete_sync_directory,
+            create_sync_file,
+            write_project_json,
+            check_sync_changes,
+            accept_external_change,
+            reject_external_change,
             #[cfg(desktop)]
             set_always_on_top,
             set_activation_policy,
