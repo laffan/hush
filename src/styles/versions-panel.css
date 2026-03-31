@@ -9,7 +9,25 @@
 }
 
 .versions-panel .panel-title {
+  text-transform: none;
+  letter-spacing: normal;
+  text-align: center;
   margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.versions-panel .panel-title-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--sidebar-fg);
+}
+
+.versions-panel .panel-title-filename {
+  display: block;
+  font-size: 14px;
+  color: var(--fg);
 }
 
 .versions-empty {
@@ -68,7 +86,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  left: 50px;
+  left: 350px; /* 50px sidebar + 300px panel */
   z-index: 90;
   pointer-events: none;
 }
@@ -100,7 +118,7 @@
 .version-restore-bar {
   position: fixed;
   bottom: 0;
-  left: 50px;
+  left: 350px; /* 50px sidebar + 300px panel */
   right: 0;
   height: 50px;
   display: flex;

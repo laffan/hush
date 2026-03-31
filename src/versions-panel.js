@@ -24,7 +24,7 @@ export function createVersionsPanel(container, state, hidePanel) {
 
   container.innerHTML = `
     <div class="versions-panel">
-      <div class="panel-title">${escHtml(fileName)}</div>
+      <div class="panel-title"><span class="panel-title-label">Snapshots of</span><span class="panel-title-filename">${escHtml(fileName)}</span></div>
       <div class="versions-list-container">
         <div class="versions-empty">Loading...</div>
       </div>
