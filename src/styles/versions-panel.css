@@ -30,6 +30,41 @@
   color: var(--fg);
 }
 
+/* ===== Search Bar ===== */
+.versions-search-wrap {
+  padding: 0 4px 8px;
+}
+
+.versions-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+}
+
+.versions-search:focus {
+  border-color: var(--sidebar-fg);
+}
+
+.versions-search::placeholder {
+  color: var(--sidebar-fg);
+  opacity: 0.6;
+}
+
+/* ===== Search Highlight ===== */
+.version-search-match {
+  background: rgba(255, 200, 0, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .versions-empty {
   padding: 20px 12px;
   text-align: center;

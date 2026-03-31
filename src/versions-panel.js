@@ -10,6 +10,8 @@ async function tauriInvoke(cmd, args) {
 }
 
 let currentSnapshots = [];
+let filteredSnapshots = [];
+let searchQuery = "";
 let selectedSnapshotId = null;
 let previewOverlay = null;
 let panelContainer = null;
@@ -30,29 +32,38 @@ export function createVersionsPanel(container, state, hidePanel) {
   container.innerHTML = `
     <div class="versions-panel">
       <div class="panel-title"><span class="panel-title-label">Snapshots of</span><span class="panel-title-filename">${escHtml(fileName)}</span></div>
+      <div class="versions-search-wrap">
+        <input type="text" class="versions-search" placeholder="Search snapshots..." />
+      </div>
       <div class="versions-list-container">
         <div class="versions-empty">Loading...</div>
       </div>
     </div>
   `;
 
+  const searchInput = container.querySelector(".versions-search");
+  searchInput.addEventListener("input", () => {
+    searchQuery = searchInput.value;
+    applyFilter(container, state);
+  });
+
   // Arrow key navigation
   keyHandler = (e) => {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    if (currentSnapshots.length === 0) return;
+    if (filteredSnapshots.length === 0) return;
     e.preventDefault();
 
-    const currentIdx = currentSnapshots.findIndex((s) => s.id === selectedSnapshotId);
+    const currentIdx = filteredSnapshots.findIndex((s) => s.id === selectedSnapshotId);
     let nextIdx;
     if (currentIdx === -1) {
       nextIdx = 0;
     } else if (e.key === "ArrowUp") {
       nextIdx = Math.max(0, currentIdx - 1);
     } else {
-      nextIdx = Math.min(currentSnapshots.length - 1, currentIdx + 1);
+      nextIdx = Math.min(filteredSnapshots.length - 1, currentIdx + 1);
     }
 
-    selectSnapshot(currentSnapshots[nextIdx], container, state);
+    selectSnapshot(filteredSnapshots[nextIdx], container, state);
 
     // Scroll the active item into view
     const activeLi = container.querySelector(".versions-list li.active");
@@ -87,6 +98,7 @@ async function loadSnapshots(container, state) {
     return;
   }
 
+  filteredSnapshots = currentSnapshots;
   renderSnapshotList(container, state);
 }
 
@@ -102,14 +114,33 @@ function renderEmpty(container, message) {
   }
 }
 
+function applyFilter(container, state) {
+  const q = searchQuery.trim().toLowerCase();
+  if (!q) {
+    filteredSnapshots = currentSnapshots;
+  } else {
+    filteredSnapshots = currentSnapshots.filter(
+      (s) => s.content && s.content.toLowerCase().includes(q)
+    );
+  }
+  selectedSnapshotId = null;
+  removePreview();
+  renderSnapshotList(container, state);
+}
+
 function renderSnapshotList(container, state) {
   const listContainer = container.querySelector(".versions-list-container");
   if (!listContainer) return;
 
+  if (filteredSnapshots.length === 0) {
+    listContainer.innerHTML = `<div class="versions-empty">${searchQuery ? "No matching snapshots" : "No versions yet"}</div>`;
+    return;
+  }
+
   const ul = document.createElement("ul");
   ul.className = "versions-list";
 
-  for (const snap of currentSnapshots) {
+  for (const snap of filteredSnapshots) {
     const li = document.createElement("li");
     li.dataset.snapshotId = snap.id;
 
@@ -158,7 +189,11 @@ function showPreview(snap, state) {
 
   const content = document.createElement("div");
   content.className = "version-preview-content";
-  content.textContent = snap.content;
+  if (searchQuery.trim()) {
+    content.innerHTML = highlightMatches(snap.content, searchQuery.trim());
+  } else {
+    content.textContent = snap.content;
+  }
 
   previewContainer.appendChild(content);
   previewOverlay.appendChild(previewContainer);
@@ -223,6 +258,8 @@ export function cleanupVersionsPanel() {
     keyHandler = null;
   }
   currentSnapshots = [];
+  filteredSnapshots = [];
+  searchQuery = "";
   selectedSnapshotId = null;
   panelContainer = null;
   panelState = null;
@@ -271,6 +308,13 @@ function getActiveFileName(state) {
     return null;
   }
   return searchTree(state.fileTree);
+}
+
+function highlightMatches(text, query) {
+  const escaped = escHtml(text);
+  const queryEscaped = escHtml(query);
+  const regex = new RegExp(`(${queryEscaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+  return escaped.replace(regex, `<mark class="version-search-match">$1</mark>`);
 }
 
 function escHtml(str) {
