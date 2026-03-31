@@ -14,13 +14,16 @@ use tauri::{
 
 mod settings;
 mod files;
+mod snapshots;
 
 use settings::AppSettings;
 use files::FileManager;
+use snapshots::{SnapshotManager, SnapshotEntry};
 
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub file_manager: Mutex<FileManager>,
+    pub snapshot_manager: Mutex<SnapshotManager>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -122,6 +125,44 @@ fn load_project_content(state: State<AppState>, project_id: String) -> Result<Ve
 }
 
 #[tauri::command]
+fn create_snapshot(
+    state: State<AppState>,
+    document_id: String,
+    content: String,
+) -> Result<i64, String> {
+    state.snapshot_manager.lock().unwrap()
+        .create_snapshot(&document_id, &content)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_snapshots(
+    state: State<AppState>,
+    document_id: String,
+) -> Result<Vec<SnapshotEntry>, String> {
+    state.snapshot_manager.lock().unwrap()
+        .get_snapshots(&document_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_snapshot(state: State<AppState>, id: i64) -> Result<SnapshotEntry, String> {
+    state.snapshot_manager.lock().unwrap()
+        .get_snapshot(id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_document_snapshots(
+    state: State<AppState>,
+    document_id: String,
+) -> Result<(), String> {
+    state.snapshot_manager.lock().unwrap()
+        .delete_document_snapshots(&document_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn check_obsidian_vault(path: String) -> bool {
     let path = PathBuf::from(&path);
     let mut current = Some(path.as_path());
@@ -217,6 +258,12 @@ pub fn run() {
     let initial_visibility = settings.visibility.clone();
 
     let file_manager = FileManager::new(data_dir.join("files"));
+    let snapshot_manager = SnapshotManager::new(&data_dir);
+
+    // Run snapshot cleanup on startup
+    if let Err(e) = snapshot_manager.cleanup_all() {
+        eprintln!("Snapshot cleanup error: {}", e);
+    }
 
     let builder = tauri::Builder::default();
 
@@ -232,6 +279,7 @@ pub fn run() {
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
+            snapshot_manager: Mutex::new(snapshot_manager),
         })
         .setup(move |_app| {
             #[cfg(desktop)]
@@ -356,6 +404,10 @@ pub fn run() {
             create_folder,
             create_project,
             load_project_content,
+            create_snapshot,
+            get_snapshots,
+            get_snapshot,
+            delete_document_snapshots,
             check_obsidian_vault,
             #[cfg(desktop)]
             set_always_on_top,
