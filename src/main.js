@@ -528,6 +528,30 @@ async function init() {
       state.emit("theme-changed");
       updatePrivateBoxColor(state);
     });
+
+    // Listen for sync folder added/removed from settings window
+    await listen("sync-folder-added", async (event) => {
+      const syncFolder = event.payload;
+      if (syncFolder) {
+        await state.importSyncFolder(syncFolder);
+      }
+    });
+
+    await listen("sync-folder-removed", async (event) => {
+      const { id } = event.payload || {};
+      if (id) {
+        // Remove the synced folder node from the file tree
+        const idx = state.fileTree.findIndex(n => n.syncFolderId === id);
+        if (idx >= 0) {
+          state.fileTree.splice(idx, 1);
+          await state.saveFileTree();
+          state.emit("files-changed");
+        }
+        // Clean up backend sync mappings
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("unregister_sync_folder", { syncFolderId: id }).catch(() => {});
+      }
+    });
   }
 
   // Style changes (from sidebar or settings)

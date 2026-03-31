@@ -622,8 +622,12 @@ function bindAll() {
             const folders = settings.syncFolders || [];
             const name = selected.split(/[\\/]/).filter(Boolean).pop() || "Folder";
             const id = crypto.randomUUID();
-            folders.push({ id, path: selected, syncType: "local", name });
+            const newFolder = { id, path: selected, syncType: "local", name };
+            folders.push(newFolder);
             saveSetting("syncFolders", folders);
+            // Notify main window to import the folder contents
+            const { emit } = await import("@tauri-apps/api/event");
+            await emit("sync-folder-added", newFolder);
             render();
           }
         } catch (e) {
@@ -634,10 +638,15 @@ function bindAll() {
   }
 
   document.querySelectorAll(".sync-folder-remove").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const folderId = btn.dataset.folderId;
       settings.syncFolders = (settings.syncFolders || []).filter(f => f.id !== folderId);
       saveSetting("syncFolders", settings.syncFolders);
+      // Notify main window to remove the folder from the file tree
+      if (IS_TAURI) {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("sync-folder-removed", { id: folderId });
+      }
       render();
     });
   });
