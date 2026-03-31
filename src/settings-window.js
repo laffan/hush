@@ -610,8 +610,32 @@ function bindAll() {
   if (syncAddBtn) {
     syncAddBtn.addEventListener("click", async () => {
       if (isIOSSettings()) {
-        // iPad: Dropbox folder browser (placeholder — implemented in Stage 5)
-        alert("Dropbox folder selection coming soon.");
+        // iPad: open Dropbox folder browser
+        if (!settings.dropboxToken) {
+          alert("Please set up your Dropbox token first.");
+          return;
+        }
+        try {
+          const { setToken } = await import("./dropbox.js");
+          setToken(settings.dropboxToken);
+          const { openDropboxBrowser } = await import("./dropbox-browser.js");
+          const result = await openDropboxBrowser();
+          if (result) {
+            const folders = settings.syncFolders || [];
+            const id = crypto.randomUUID();
+            const newFolder = { id, path: result.path, syncType: "dropbox", name: result.name };
+            folders.push(newFolder);
+            saveSetting("syncFolders", folders);
+            if (IS_TAURI) {
+              const { emit } = await import("@tauri-apps/api/event");
+              await emit("sync-folder-added", newFolder);
+            }
+            render();
+          }
+        } catch (e) {
+          console.error("Dropbox folder selection failed:", e);
+          alert("Failed to browse Dropbox: " + e.message);
+        }
       } else {
         // Desktop: native folder picker
         if (!IS_TAURI) { alert("Folder selection requires the desktop app."); return; }

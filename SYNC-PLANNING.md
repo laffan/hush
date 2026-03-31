@@ -498,5 +498,5 @@ Files to modify:
 | Stage 2 | ✅ Complete | 2026-03-31 | Versions UI |
 | Stage 3 | ✅ Complete | 2026-03-31 | Save location removed, Sync tab added |
 | Stage 4 | ✅ Complete | 2026-03-31 | Desktop sync: add folders, import files, rename/delete propagation, create folder/project/file propagation, project JSON ordering, inbound change detection with 30s polling + conflict banners |
-| Stage 5 | ⬜ Pending | | iPad Dropbox sync |
+| Stage 5 | ✅ Complete | 2026-03-31 | Dropbox API client, folder browser modal, import flow, bidirectional sync (upload on save, 30s polling for changes), rename/delete/create propagation via Dropbox API |
 | Stage 6 | ✅ Complete | 2026-03-31 | Conflict resolution via banner UI (Keep Local / Accept External / Dismiss) |

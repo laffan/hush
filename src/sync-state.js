@@ -12,20 +12,25 @@ async function tauriInvoke(cmd, args) {
 
 /**
  * Import a sync folder's contents into the internal file system.
+ * Handles both local (desktop) and dropbox (iPad) sync types.
  */
 export async function importSyncFolder(state, syncFolder) {
   if (!IS_TAURI) return;
-  const { findNode } = await import("./tree-helpers.js");
   const { AppState } = await import("./state.js");
 
   try {
-    const entries = await tauriInvoke("scan_sync_folder", { folderPath: syncFolder.path });
+    let entries;
+    if (syncFolder.syncType === "dropbox") {
+      entries = await scanDropboxFolder(state, syncFolder);
+    } else {
+      entries = await tauriInvoke("scan_sync_folder", { folderPath: syncFolder.path });
+    }
+
     const folderNode = {
       id: crypto.randomUUID(), type: "folder", name: syncFolder.name,
       children: [], flagged: false, syncFolderId: syncFolder.id,
     };
 
-    // Build nested structure from flat entries
     const dirMap = { "": folderNode };
     for (const entry of entries) {
       const parts = entry.relativePath.split(/[\\/]/);
@@ -54,7 +59,6 @@ export async function importSyncFolder(state, syncFolder) {
       }
     }
 
-    // Insert before Trash
     const trashIdx = state.fileTree.findIndex(n => n.id === AppState.TRASH_ID);
     if (trashIdx >= 0) state.fileTree.splice(trashIdx, 0, folderNode);
     else state.fileTree.push(folderNode);
@@ -67,30 +71,60 @@ export async function importSyncFolder(state, syncFolder) {
   }
 }
 
+/** Scan a Dropbox folder and download all .md file contents. */
+async function scanDropboxFolder(state, syncFolder) {
+  const dbx = await import("./dropbox.js");
+  dbx.setToken(state.settings.dropboxToken);
+  const rawEntries = await dbx.listFolderRecursive(syncFolder.path === "/" ? "" : syncFolder.path);
+  // Download content for each .md file
+  for (const entry of rawEntries) {
+    if (!entry.isDirectory && entry.dropboxPath) {
+      entry.content = await dbx.downloadFile(entry.dropboxPath);
+    }
+  }
+  return rawEntries;
+}
+
 /**
- * Write file content to its external synced location.
+ * Write file content to its external synced location (local or Dropbox).
  */
 export async function syncFileToExternal(state, fileId, content) {
   if (!IS_TAURI) return;
   try {
     const info = await tauriInvoke("get_sync_file_info", { internalId: fileId });
     if (!info) return;
-    const folder = (state.settings.syncFolders || []).find(f => f.id === info.syncFolderId);
+    const folder = getSyncFolder(state, info.syncFolderId);
     if (!folder) return;
-    await tauriInvoke("write_sync_file", {
-      folderPath: folder.path, relativePath: info.relativePath,
-      content, internalId: fileId,
-    });
+
+    if (folder.syncType === "dropbox") {
+      const dbx = await import("./dropbox.js");
+      dbx.setToken(state.settings.dropboxToken);
+      const dropboxPath = folder.path === "/" ? `/${info.relativePath}` : `${folder.path}/${info.relativePath}`;
+      await dbx.uploadFile(dropboxPath, content);
+      await tauriInvoke("update_sync_hash", { internalId: fileId, content });
+    } else {
+      await tauriInvoke("write_sync_file", {
+        folderPath: folder.path, relativePath: info.relativePath,
+        content, internalId: fileId,
+      });
+    }
   } catch (e) {
     console.error("Sync write failed:", e);
   }
 }
 
-/**
- * Get the sync folder path for a given syncFolderId from settings.
- */
 function getSyncFolder(state, syncFolderId) {
   return (state.settings.syncFolders || []).find(f => f.id === syncFolderId);
+}
+
+function dropboxFullPath(folder, relativePath) {
+  return folder.path === "/" ? `/${relativePath}` : `${folder.path}/${relativePath}`;
+}
+
+async function getDropbox(state) {
+  const dbx = await import("./dropbox.js");
+  dbx.setToken(state.settings.dropboxToken);
+  return dbx;
 }
 
 /**
@@ -107,27 +141,38 @@ export async function syncRenameNode(state, nodeId, oldName, nodeType) {
 
   try {
     if (nodeType === "document") {
-      // For documents, use the sync map to get the current external path
       const node = findNode(state.fileTree, nodeId);
       if (!node?.fileId) return;
       const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
       if (!info) return;
-      // Build new relative path by replacing the filename
       const pathParts = info.relativePath.split("/");
       pathParts[pathParts.length - 1] = node.name + ".md";
       const newRelPath = pathParts.join("/");
-      await tauriInvoke("rename_sync_file", {
-        folderPath: folder.path, oldRelative: info.relativePath,
-        newRelative: newRelPath, internalId: node.fileId,
-      });
+      if (folder.syncType === "dropbox") {
+        const dbx = await getDropbox(state);
+        await dbx.moveEntry(dropboxFullPath(folder, info.relativePath), dropboxFullPath(folder, newRelPath));
+        // Update mapping locally
+        await tauriInvoke("rename_sync_file", {
+          folderPath: "__dropbox__", oldRelative: info.relativePath,
+          newRelative: newRelPath, internalId: node.fileId,
+        });
+      } else {
+        await tauriInvoke("rename_sync_file", {
+          folderPath: folder.path, oldRelative: info.relativePath,
+          newRelative: newRelPath, internalId: node.fileId,
+        });
+      }
     } else {
-      // For folders/projects, compute old path from ctx (which has new name) by swapping last segment
       const parts = ctx.relativePath.split("/");
       parts[parts.length - 1] = oldName;
       const oldRelPath = parts.join("/");
+      if (folder.syncType === "dropbox") {
+        const dbx = await getDropbox(state);
+        await dbx.moveEntry(dropboxFullPath(folder, oldRelPath), dropboxFullPath(folder, ctx.relativePath));
+      }
       await tauriInvoke("rename_sync_directory", {
-        folderPath: folder.path, oldRelative: oldRelPath,
-        newRelative: ctx.relativePath, syncFolderId: ctx.syncFolderId,
+        folderPath: folder.syncType === "dropbox" ? "__dropbox__" : folder.path,
+        oldRelative: oldRelPath, newRelative: ctx.relativePath, syncFolderId: ctx.syncFolderId,
       });
     }
   } catch (e) {
@@ -151,15 +196,16 @@ export async function syncDeleteNode(state, nodeId) {
   if (!node) return;
 
   try {
+    if (folder.syncType === "dropbox") {
+      const dbx = await getDropbox(state);
+      await dbx.deleteEntry(dropboxFullPath(folder, ctx.relativePath)).catch(() => {});
+    }
+    const fp = folder.syncType === "dropbox" ? "__dropbox__" : folder.path;
     if (node.type === "document" && node.fileId) {
-      await tauriInvoke("delete_sync_file", {
-        folderPath: folder.path, internalId: node.fileId,
-      });
+      await tauriInvoke("delete_sync_file", { folderPath: fp, internalId: node.fileId });
     } else {
-      // folder or project — delete directory and all child mappings
       await tauriInvoke("delete_sync_directory", {
-        folderPath: folder.path, relativePath: ctx.relativePath,
-        syncFolderId: ctx.syncFolderId,
+        folderPath: fp, relativePath: ctx.relativePath, syncFolderId: ctx.syncFolderId,
       });
     }
   } catch (e) {
@@ -179,13 +225,22 @@ export async function syncCreateNode(state, nodeId, nodeType) {
   if (!folder) return;
 
   try {
-    await tauriInvoke("create_sync_directory", {
-      folderPath: folder.path, relativePath: ctx.relativePath,
-    });
-    if (nodeType === "project") {
-      await tauriInvoke("write_project_json", {
-        folderPath: folder.path, relativePath: ctx.relativePath, docNames: [],
+    if (folder.syncType === "dropbox") {
+      const dbx = await getDropbox(state);
+      await dbx.createFolder(dropboxFullPath(folder, ctx.relativePath));
+      if (nodeType === "project") {
+        const data = JSON.stringify({ ordering: [] }, null, 2);
+        await dbx.uploadFile(dropboxFullPath(folder, ctx.relativePath + "/.hush-project.json"), data);
+      }
+    } else {
+      await tauriInvoke("create_sync_directory", {
+        folderPath: folder.path, relativePath: ctx.relativePath,
       });
+      if (nodeType === "project") {
+        await tauriInvoke("write_project_json", {
+          folderPath: folder.path, relativePath: ctx.relativePath, docNames: [],
+        });
+      }
     }
   } catch (e) {
     console.error("Sync create dir failed:", e);
@@ -203,14 +258,23 @@ export async function syncCreateFile(state, nodeId, fileId, content) {
   const folder = getSyncFolder(state, ctx.syncFolderId);
   if (!folder) return;
 
-  const node = findNode(state.fileTree, nodeId);
   const relPath = ctx.relativePath + ".md";
 
   try {
-    await tauriInvoke("create_sync_file", {
-      folderPath: folder.path, relativePath: relPath, content,
-      internalId: fileId, syncFolderId: ctx.syncFolderId,
-    });
+    if (folder.syncType === "dropbox") {
+      const dbx = await getDropbox(state);
+      await dbx.uploadFile(dropboxFullPath(folder, relPath), content);
+      // Register in sync map (no local file write)
+      await tauriInvoke("register_synced_file", {
+        internalId: fileId, syncFolderId: ctx.syncFolderId,
+        relativePath: relPath, content,
+      });
+    } else {
+      await tauriInvoke("create_sync_file", {
+        folderPath: folder.path, relativePath: relPath, content,
+        internalId: fileId, syncFolderId: ctx.syncFolderId,
+      });
+    }
   } catch (e) {
     console.error("Sync create file failed:", e);
   }
@@ -236,9 +300,15 @@ export async function syncProjectOrdering(state, projectNodeId) {
     .map(c => c.name + ".md");
 
   try {
-    await tauriInvoke("write_project_json", {
-      folderPath: folder.path, relativePath: ctx.relativePath, docNames,
-    });
+    if (folder.syncType === "dropbox") {
+      const dbx = await getDropbox(state);
+      const data = JSON.stringify({ ordering: docNames }, null, 2);
+      await dbx.uploadFile(dropboxFullPath(folder, ctx.relativePath + "/.hush-project.json"), data);
+    } else {
+      await tauriInvoke("write_project_json", {
+        folderPath: folder.path, relativePath: ctx.relativePath, docNames,
+      });
+    }
   } catch (e) {
     console.error("Sync project JSON failed:", e);
   }

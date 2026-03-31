@@ -1,16 +1,13 @@
 /**
  * Sync polling — periodically checks for external changes to synced files
- * and shows conflict notification banners.
+ * and shows conflict notification banners. Handles both local and Dropbox sync.
  */
-
-const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 let syncPollTimer = null;
 
 export function startSyncPolling(state) {
   if (syncPollTimer) return;
   syncPollTimer = setInterval(() => pollSyncChanges(state), 30000);
-  // Check shortly after start
   setTimeout(() => pollSyncChanges(state), 2000);
 }
 
@@ -20,13 +17,57 @@ export function stopSyncPolling() {
 
 async function pollSyncChanges(state) {
   try {
+    // Check local sync folders via Rust backend
     const { checkSyncChanges } = await import("./sync-state.js");
-    const changes = await checkSyncChanges();
-    for (const change of changes) {
+    const localChanges = await checkSyncChanges();
+    for (const change of localChanges) {
       showSyncConflictBanner(state, change);
+    }
+    // Check Dropbox sync folders via API
+    const dropboxFolders = (state.settings.syncFolders || []).filter(f => f.syncType === "dropbox");
+    if (dropboxFolders.length > 0 && state.settings.dropboxToken) {
+      await pollDropboxChanges(state, dropboxFolders);
     }
   } catch (e) {
     console.error("Sync poll error:", e);
+  }
+}
+
+async function pollDropboxChanges(state, folders) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const dbx = await import("./dropbox.js");
+  dbx.setToken(state.settings.dropboxToken);
+
+  for (const folder of folders) {
+    try {
+      const syncedFiles = await invoke("get_synced_files", { syncFolderId: folder.id });
+      for (const info of syncedFiles) {
+        const dropboxPath = folder.path === "/"
+          ? `/${info.relativePath}`
+          : `${folder.path}/${info.relativePath}`;
+        try {
+          const externalContent = await dbx.downloadFile(dropboxPath);
+          // Compute hash to compare — use simple string comparison since we
+          // can't easily call Rust's SHA256 from JS. Instead, compare against
+          // the stored hash by asking the backend.
+          const internalFile = await invoke("load_file", { id: info.internalId });
+          if (externalContent !== internalFile.content) {
+            showSyncConflictBanner(state, {
+              internalId: info.internalId,
+              relativePath: info.relativePath,
+              externalContent,
+              internalContent: internalFile.content,
+              syncType: "dropbox",
+              syncFolderId: folder.id,
+            });
+          }
+        } catch (e) {
+          // File may have been deleted externally — skip
+        }
+      }
+    } catch (e) {
+      console.error(`Dropbox poll failed for ${folder.name}:`, e);
+    }
   }
 }
 
@@ -54,14 +95,25 @@ function showSyncConflictBanner(state, change) {
   });
 
   banner.querySelector(".sync-btn-reject").addEventListener("click", async () => {
-    const { rejectExternalChange } = await import("./sync-state.js");
     const { invoke } = await import("@tauri-apps/api/core");
     const info = await invoke("get_sync_file_info", { internalId: change.internalId });
-    if (info) {
-      const syncFolder = (state.settings.syncFolders || []).find(f => f.id === info.syncFolderId);
-      if (syncFolder) {
-        await rejectExternalChange(state, change.internalId, syncFolder.path);
-      }
+    if (!info) { banner.remove(); return; }
+    const syncFolder = (state.settings.syncFolders || []).find(f => f.id === info.syncFolderId);
+    if (!syncFolder) { banner.remove(); return; }
+
+    if (syncFolder.syncType === "dropbox") {
+      // Upload local content to Dropbox
+      const dbx = await import("./dropbox.js");
+      dbx.setToken(state.settings.dropboxToken);
+      const internalFile = await invoke("load_file", { id: change.internalId });
+      const dropboxPath = syncFolder.path === "/"
+        ? `/${info.relativePath}`
+        : `${syncFolder.path}/${info.relativePath}`;
+      await dbx.uploadFile(dropboxPath, internalFile.content);
+      await invoke("update_sync_hash", { internalId: change.internalId, content: internalFile.content });
+    } else {
+      const { rejectExternalChange } = await import("./sync-state.js");
+      await rejectExternalChange(state, change.internalId, syncFolder.path);
     }
     banner.remove();
   });

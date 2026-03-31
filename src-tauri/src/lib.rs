@@ -209,6 +209,17 @@ fn write_sync_file(
 }
 
 #[tauri::command]
+fn update_sync_hash(
+    state: State<AppState>,
+    internal_id: String,
+    content: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .update_hash(&internal_id, &content);
+    Ok(())
+}
+
+#[tauri::command]
 fn get_synced_files(
     state: State<AppState>,
     sync_folder_id: String,
@@ -607,6 +618,7 @@ pub fn run() {
             register_synced_file,
             unregister_sync_folder,
             write_sync_file,
+            update_sync_hash,
             get_synced_files,
             get_sync_file_info,
             rename_sync_file,
