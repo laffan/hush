@@ -20,9 +20,11 @@ export function createVersionsPanel(container, state, hidePanel) {
   currentSnapshots = [];
   selectedSnapshotId = null;
 
+  const fileName = getActiveFileName(state) || "Versions";
+
   container.innerHTML = `
     <div class="versions-panel">
-      <div class="panel-title">Versions</div>
+      <div class="panel-title">${escHtml(fileName)}</div>
       <div class="versions-list-container">
         <div class="versions-empty">Loading...</div>
       </div>
@@ -138,7 +140,7 @@ function showPreview(snap, state) {
 
   const restoreBtn = document.createElement("button");
   restoreBtn.className = "version-restore-btn";
-  restoreBtn.textContent = "Restore this version";
+  restoreBtn.textContent = `Restore current with ${formatTimestamp(snap.createdAt)} Snapshot`;
   restoreBtn.addEventListener("click", () => {
     restoreSnapshot(snap, state);
   });
@@ -219,6 +221,28 @@ function formatTimestamp(unixSeconds) {
   }
 
   return `${dateStr}, ${timeStr}`;
+}
+
+function getActiveFileName(state) {
+  if (!state.currentFileId || !state.fileTree) return null;
+  // Search tree for a node with matching fileId
+  function searchTree(nodes) {
+    for (const node of nodes) {
+      if (node.fileId === state.currentFileId) return node.name;
+      if (node.children) {
+        const found = searchTree(node.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  return searchTree(state.fileTree);
+}
+
+function escHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 function formatRelativeTime(unixSeconds) {
