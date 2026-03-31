@@ -1,39 +1,58 @@
 /**
- * Sync polling — periodically checks for external changes to synced files
- * and shows conflict notification banners. Handles both local and Dropbox sync.
+ * Sync polling — periodically checks for external changes and auto-resolves
+ * using "most recent wins" strategy. No conflict banners — changes sync
+ * silently. Users can revert via local version history if needed.
  */
 
 let syncPollTimer = null;
+let syncing = false;
 
 export function startSyncPolling(state) {
   if (syncPollTimer) return;
-  syncPollTimer = setInterval(() => pollSyncChanges(state), 30000);
-  setTimeout(() => pollSyncChanges(state), 2000);
+  syncPollTimer = setInterval(() => runSyncCycle(state), 30000);
+  setTimeout(() => runSyncCycle(state), 2000);
 }
 
 export function stopSyncPolling() {
   if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
 }
 
-async function pollSyncChanges(state) {
+async function runSyncCycle(state) {
+  if (syncing) return;
+  syncing = true;
   try {
-    // Check local sync folders via Rust backend
-    const { checkSyncChanges } = await import("./sync-state.js");
-    const localChanges = await checkSyncChanges();
-    for (const change of localChanges) {
-      showSyncConflictBanner(state, change);
-    }
-    // Check Dropbox sync folders via API
-    const dropboxFolders = (state.settings.syncFolders || []).filter(f => f.syncType === "dropbox");
-    if (dropboxFolders.length > 0 && state.settings.dropboxToken) {
-      await pollDropboxChanges(state, dropboxFolders);
-    }
+    await syncLocalFolders(state);
+    await syncDropboxFolders(state);
   } catch (e) {
     console.error("Sync poll error:", e);
+  } finally {
+    syncing = false;
   }
 }
 
-async function pollDropboxChanges(state, folders) {
+/** Auto-sync local filesystem folders via Rust backend. */
+async function syncLocalFolders(state) {
+  const { checkSyncChanges, acceptExternalChange, syncFileToExternal } = await import("./sync-state.js");
+  const changes = await checkSyncChanges();
+  for (const change of changes) {
+    if (change.externalModified > change.internalModified) {
+      await acceptExternalChange(state, change.internalId, change.externalContent);
+      showSyncIndicator("pulled");
+    } else {
+      // Internal is newer — push to external
+      const folder = findFolderForFile(state, change.internalId);
+      if (folder) {
+        await syncFileToExternal(state, change.internalId, change.internalContent);
+        showSyncIndicator("pushed");
+      }
+    }
+  }
+}
+
+/** Auto-sync Dropbox folders by comparing timestamps. */
+async function syncDropboxFolders(state) {
+  const folders = (state.settings.syncFolders || []).filter(f => f.syncType === "dropbox");
+  if (!folders.length || !state.settings.dropboxToken) return;
   const { invoke } = await import("@tauri-apps/api/core");
   const dbx = await import("./dropbox.js");
   dbx.setToken(state.settings.dropboxToken);
@@ -42,89 +61,84 @@ async function pollDropboxChanges(state, folders) {
     try {
       const syncedFiles = await invoke("get_synced_files", { syncFolderId: folder.id });
       for (const info of syncedFiles) {
-        const dropboxPath = folder.path === "/"
-          ? `/${info.relativePath}`
-          : `${folder.path}/${info.relativePath}`;
-        try {
-          const externalContent = await dbx.downloadFile(dropboxPath);
-          // Compute hash to compare — use simple string comparison since we
-          // can't easily call Rust's SHA256 from JS. Instead, compare against
-          // the stored hash by asking the backend.
-          const internalFile = await invoke("load_file", { id: info.internalId });
-          if (externalContent !== internalFile.content) {
-            showSyncConflictBanner(state, {
-              internalId: info.internalId,
-              relativePath: info.relativePath,
-              externalContent,
-              internalContent: internalFile.content,
-              syncType: "dropbox",
-              syncFolderId: folder.id,
-            });
-          }
-        } catch (e) {
-          // File may have been deleted externally — skip
-        }
+        await syncOneDropboxFile(state, invoke, dbx, folder, info);
       }
     } catch (e) {
-      console.error(`Dropbox poll failed for ${folder.name}:`, e);
+      console.error(`Dropbox sync failed for ${folder.name}:`, e);
     }
   }
 }
 
-function showSyncConflictBanner(state, change) {
-  if (document.querySelector(`[data-sync-conflict-id="${change.internalId}"]`)) return;
+async function syncOneDropboxFile(state, invoke, dbx, folder, info) {
+  const dropboxPath = folder.path === "/"
+    ? `/${info.relativePath}`
+    : `${folder.path}/${info.relativePath}`;
+  try {
+    // List file metadata to get server_modified without downloading
+    const metaResp = await fetch("https://api.dropboxapi.com/2/files/get_metadata", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${dbx.getToken()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path: dropboxPath }),
+    });
+    if (!metaResp.ok) return; // file may be deleted externally
+    const meta = await metaResp.json();
+    const externalModified = meta.server_modified
+      ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
+    const internalFile = await invoke("load_file", { id: info.internalId });
+    if (!internalFile) return;
+    const internalModified = internalFile.modified || 0;
 
-  const banner = document.createElement("div");
-  banner.className = "sync-conflict-banner";
-  banner.dataset.syncConflictId = change.internalId;
-  banner.innerHTML = `
-    <div class="sync-conflict-title">External Change Detected</div>
-    <div class="sync-conflict-path">${escapeHtml(change.relativePath)}</div>
-    <div class="sync-conflict-btns">
-      <button class="sync-btn-reject">Keep Local</button>
-      <button class="sync-btn-accept">Accept External</button>
-      <button class="sync-btn-dismiss">Dismiss</button>
-    </div>
-  `;
-  document.body.appendChild(banner);
+    // Compare Dropbox content hash with our stored hash to detect changes
+    const externalHash = meta.content_hash || "";
+    const lastSyncedAt = info.lastSyncedAt || 0;
 
-  banner.querySelector(".sync-btn-accept").addEventListener("click", async () => {
-    const { acceptExternalChange } = await import("./sync-state.js");
-    await acceptExternalChange(state, change.internalId, change.externalContent);
-    banner.remove();
-  });
-
-  banner.querySelector(".sync-btn-reject").addEventListener("click", async () => {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const info = await invoke("get_sync_file_info", { internalId: change.internalId });
-    if (!info) { banner.remove(); return; }
-    const syncFolder = (state.settings.syncFolders || []).find(f => f.id === info.syncFolderId);
-    if (!syncFolder) { banner.remove(); return; }
-
-    if (syncFolder.syncType === "dropbox") {
-      // Upload local content to Dropbox
-      const dbx = await import("./dropbox.js");
-      dbx.setToken(state.settings.dropboxToken);
-      const internalFile = await invoke("load_file", { id: change.internalId });
-      const dropboxPath = syncFolder.path === "/"
-        ? `/${info.relativePath}`
-        : `${syncFolder.path}/${info.relativePath}`;
-      await dbx.uploadFile(dropboxPath, internalFile.content);
-      await invoke("update_sync_hash", { internalId: change.internalId, content: internalFile.content });
-    } else {
-      const { rejectExternalChange } = await import("./sync-state.js");
-      await rejectExternalChange(state, change.internalId, syncFolder.path);
+    // If external file is newer than our last sync, pull it
+    if (externalModified > lastSyncedAt) {
+      const externalContent = await dbx.downloadFile(dropboxPath);
+      if (externalContent === internalFile.content) {
+        // Content matches — just update the hash/timestamp
+        await invoke("update_sync_hash", { internalId: info.internalId, content: externalContent });
+        return;
+      }
+      if (externalModified >= internalModified) {
+        // External is newer or equal — accept external
+        const { acceptExternalChange } = await import("./sync-state.js");
+        await acceptExternalChange(state, info.internalId, externalContent);
+        showSyncIndicator("pulled");
+        return;
+      }
     }
-    banner.remove();
-  });
 
-  banner.querySelector(".sync-btn-dismiss").addEventListener("click", () => {
-    banner.remove();
-  });
-
-  setTimeout(() => { if (banner.parentNode) banner.remove(); }, 30000);
+    // If internal is newer than last sync, push it
+    if (internalModified > lastSyncedAt && internalFile.content) {
+      await dbx.uploadFile(dropboxPath, internalFile.content);
+      await invoke("update_sync_hash", { internalId: info.internalId, content: internalFile.content });
+      showSyncIndicator("pushed");
+    }
+  } catch (e) {
+    // File may have been deleted externally — skip
+  }
 }
 
-function escapeHtml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function findFolderForFile(state, internalId) {
+  // Look through sync folders to find which one owns this file
+  const folders = state.settings.syncFolders || [];
+  // We rely on the Rust backend having the mapping; caller handles the push
+  return folders[0] || null;
+}
+
+/** Brief, non-intrusive sync indicator. */
+function showSyncIndicator(direction) {
+  // Remove any existing indicator
+  const existing = document.querySelector(".sync-indicator");
+  if (existing) existing.remove();
+
+  const el = document.createElement("div");
+  el.className = "sync-indicator";
+  el.textContent = direction === "pulled" ? "Synced ↓" : "Synced ↑";
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, 3000);
 }

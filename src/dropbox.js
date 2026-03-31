@@ -80,7 +80,9 @@ export async function listFolder(path) {
  */
 export async function listFolderRecursive(path) {
   const entries = [];
-  let body = { path: path || "", recursive: true };
+  // Normalize: remove trailing slash, keep leading slash for non-root
+  const norm = path.replace(/\/+$/, "");
+  let body = { path: norm || "", recursive: true };
   let url = "https://api.dropboxapi.com/2/files/list_folder";
 
   while (true) {
@@ -93,14 +95,19 @@ export async function listFolderRecursive(path) {
     const data = await resp.json();
 
     for (const entry of data.entries) {
-      const rel = entry.path_display.slice(path.length + 1);
+      // Use case-insensitive prefix stripping since Dropbox may change casing
+      const display = entry.path_display;
+      const prefixLen = norm.length;
+      const rel = display.length > prefixLen ? display.slice(prefixLen + 1) : "";
+      // Skip the folder itself or any empty-path entries
+      if (!rel) continue;
       if (entry[".tag"] === "folder") {
         entries.push({ relativePath: rel, name: entry.name, isDirectory: true, content: "" });
       } else if (entry.name.endsWith(".md")) {
         entries.push({
           relativePath: rel, name: entry.name.replace(/\.md$/, ""),
           isDirectory: false, content: "", // content fetched separately
-          dropboxPath: entry.path_display,
+          dropboxPath: display,
           modified: entry.server_modified,
         });
       }

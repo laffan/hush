@@ -409,40 +409,40 @@ Use existing `isIOS()` helper to conditionally render:
 
 ---
 
-## Stage 6: External Change Detection & Conflict Resolution
+## Stage 6: Seamless Auto-Sync ("Most Recent Wins")
 
-**Goal**: Detect external modifications and let user choose which version to keep.
+**Goal**: Silently sync changes using timestamp comparison — no user intervention needed.
 
-### 6.1 Change Detection
+### 6.1 Timestamp Infrastructure
 
-**Desktop**: `notify` watcher events trigger comparison.
-**iPad**: 30-second polling detects timestamp/hash mismatches.
+- `SyncedFileInfo` tracks `last_synced_at` (Unix timestamp of last successful sync)
+- `ExternalChange` includes `external_modified` (filesystem mtime or Dropbox `server_modified`) and `internal_modified` (from `FileEntry.modified`)
+- Rust backend fills both timestamps when checking for changes
 
-When a mismatch is found:
-1. Load internal content
-2. Load external content
-3. If they differ, emit `sync-conflict` event to frontend
+### 6.2 Auto-Resolution Logic
 
-### 6.2 Conflict Resolution Modal
+**File**: `src/sync-polling.js`
 
-**New file**: `src/sync-conflict.js`
+Every 30 seconds, for each synced file with detected changes:
+- **Local folders**: Compare `external_modified` vs `internal_modified` — newer wins
+- **Dropbox folders**: Fetch metadata for `server_modified`, compare with `last_synced_at` and `internal_modified`
+- If external is newer → silently accept (pull content, update editor if file is open)
+- If internal is newer → silently push (write to external/upload to Dropbox)
+- Update hash and timestamp after each sync
 
-Modal UI:
-- Title: "External Change Detected"
-- Subtitle: file name and path
-- Two-column diff view:
-  - Left: "Local Version" with content
-  - Right: "External Version" with content
-  - Simple line-by-line diff highlighting (added/removed lines)
-- Two buttons at bottom:
-  - "Keep Local" — overwrites external file with internal content
-  - "Keep External" — replaces internal content with external, creates snapshot, syncs
+### 6.3 Subtle Sync Indicator
 
-### 6.3 Conflict Resolution CSS
+**File**: `src/styles/sync-conflict.css` (repurposed)
 
-**New file**: `src/styles/sync-conflict.css`
+Non-intrusive indicator in bottom-right corner:
+- "Synced ↓" for pulled changes, "Synced ↑" for pushed changes
+- Fades in/out over 3 seconds, no user action needed
 
-**Deliverables**: Conflicts detected and presented to user, resolution works in both directions.
+### 6.4 Safety Net
+
+Users can always revert via the Versions panel (Stage 2) if auto-sync overwrites something unintended.
+
+**Deliverables**: Seamless multi-device sync — changes appear automatically when switching devices.
 
 ---
 
@@ -499,4 +499,4 @@ Files to modify:
 | Stage 3 | ✅ Complete | 2026-03-31 | Save location removed, Sync tab added |
 | Stage 4 | ✅ Complete | 2026-03-31 | Desktop sync: add folders, import files, rename/delete propagation, create folder/project/file propagation, project JSON ordering, inbound change detection with 30s polling + conflict banners |
 | Stage 5 | ✅ Complete | 2026-03-31 | Dropbox API client, folder browser modal, import flow, bidirectional sync (upload on save, 30s polling for changes), rename/delete/create propagation via Dropbox API |
-| Stage 6 | ✅ Complete | 2026-03-31 | Conflict resolution via banner UI (Keep Local / Accept External / Dismiss) |
+| Stage 6 | ✅ Complete | 2026-03-31 | Auto-sync with "most recent wins" — no conflict banners, timestamps compared silently, subtle indicator shows sync direction. Users can revert via version history. |

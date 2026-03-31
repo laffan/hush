@@ -1,63 +1,27 @@
-/* Sync conflict notification banner */
-.sync-conflict-banner {
+/* Sync status indicator — subtle, non-intrusive */
+.sync-indicator {
   position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 12px;
+  right: 12px;
   z-index: 10000;
   background: var(--panel-bg, var(--bg));
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  padding: 12px 20px;
-  max-width: 500px;
-  width: 90%;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  animation: sync-slide-down 0.25s ease-out;
-}
-
-@keyframes sync-slide-down {
-  from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-.sync-conflict-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.sync-conflict-path {
+  border-radius: 6px;
+  padding: 6px 14px;
   font-size: 11px;
   color: var(--sidebar-fg);
-  margin-bottom: 10px;
-  opacity: 0.7;
+  opacity: 0.8;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  animation: sync-fade-in 0.2s ease-out, sync-fade-out 0.5s ease-in 2.5s forwards;
+  pointer-events: none;
 }
 
-.sync-conflict-btns {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+@keyframes sync-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 0.8; transform: translateY(0); }
 }
 
-.sync-conflict-btns button {
-  padding: 5px 14px;
-  border: 1px solid var(--panel-border);
-  background: transparent;
-  color: var(--fg);
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.sync-conflict-btns button:hover {
-  background: rgba(128, 128, 128, 0.15);
-}
-
-.sync-conflict-btns .sync-btn-accept {
-  background: rgba(50, 120, 220, 0.15);
-  border-color: rgba(50, 120, 220, 0.4);
-}
-
-.sync-conflict-btns .sync-btn-accept:hover {
-  background: rgba(50, 120, 220, 0.3);
+@keyframes sync-fade-out {
+  from { opacity: 0.8; }
+  to { opacity: 0; }
 }

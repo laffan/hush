@@ -13,6 +13,8 @@ pub struct SyncedFileInfo {
     pub sync_folder_id: String,
     pub relative_path: String,
     pub last_synced_hash: String,
+    #[serde(default)]
+    pub last_synced_at: i64, // Unix timestamp of last successful sync
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -31,6 +33,8 @@ pub struct ExternalChange {
     pub relative_path: String,
     pub external_content: String,
     pub internal_content: String,
+    pub external_modified: i64,  // Unix timestamp of external file
+    pub internal_modified: i64,  // Unix timestamp of internal file
 }
 
 pub struct SyncManager {
@@ -137,6 +141,10 @@ impl SyncManager {
         content: &str,
     ) {
         let hash = Self::hash_content(content);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
         self.file_map.insert(
             internal_id.to_string(),
             SyncedFileInfo {
@@ -144,6 +152,7 @@ impl SyncManager {
                 sync_folder_id: sync_folder_id.to_string(),
                 relative_path: relative_path.to_string(),
                 last_synced_hash: hash,
+                last_synced_at: now,
             },
         );
         self.save_map();
@@ -189,6 +198,10 @@ impl SyncManager {
     pub fn update_hash(&mut self, internal_id: &str, content: &str) {
         if let Some(info) = self.file_map.get_mut(internal_id) {
             info.last_synced_hash = Self::hash_content(content);
+            info.last_synced_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
             self.save_map();
         }
     }
@@ -371,11 +384,18 @@ impl SyncManager {
             if let Ok(external_content) = fs::read_to_string(&path) {
                 let hash = Self::hash_content(&external_content);
                 if hash != info.last_synced_hash {
+                    // Get external file modification time
+                    let external_modified = fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+                        .unwrap_or(0);
                     changes.push(ExternalChange {
                         internal_id: info.internal_id.clone(),
                         relative_path: info.relative_path.clone(),
                         external_content,
                         internal_content: String::new(), // filled by caller
+                        external_modified,
+                        internal_modified: 0, // filled by caller
                     });
                 }
             }

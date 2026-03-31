@@ -331,10 +331,11 @@ fn check_sync_changes(
     for folder in &settings.sync_folders {
         if folder.sync_type == "local" {
             let mut changes = sync_mgr.check_all_external_changes(folder);
-            // Fill in internal content
+            // Fill in internal content and modification time
             for change in &mut changes {
                 if let Ok(entry) = file_mgr.load_file(&change.internal_id) {
                     change.internal_content = entry.content;
+                    change.internal_modified = entry.modified as i64;
                 }
             }
             all_changes.extend(changes);
