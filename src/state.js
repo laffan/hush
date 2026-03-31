@@ -146,6 +146,10 @@ export class AppState {
     this.autosaveInterval = null;
     this.dirty = false;
 
+    // Snapshot keystroke tracking
+    this._keystrokeCount = 0;
+    this._snapshotPending = false;
+
     // Listeners
     this._listeners = {};
   }
@@ -272,6 +276,50 @@ export class AppState {
 
   markDirty() {
     this.dirty = true;
+  }
+
+  /**
+   * Called on each doc change. Increments keystroke counter and
+   * triggers a snapshot every 30 keystrokes.
+   */
+  trackKeystroke() {
+    this._keystrokeCount++;
+    if (this._keystrokeCount >= 30 && this.dirty) {
+      this._keystrokeCount = 0;
+      this._triggerSnapshot();
+    }
+  }
+
+  async _triggerSnapshot() {
+    const docId = this.currentProjectId ? null : this.currentFileId;
+    if (!docId || !this.editor || this._snapshotPending) return;
+    this._snapshotPending = true;
+    try {
+      if (IS_TAURI) {
+        const content = this.editor.getContent();
+        await tauriInvoke("create_snapshot", { documentId: docId, content });
+      }
+    } catch (e) {
+      console.error("Snapshot failed:", e);
+    } finally {
+      this._snapshotPending = false;
+    }
+  }
+
+  /**
+   * Creates a manual snapshot (e.g., on Cmd+S).
+   */
+  async createManualSnapshot() {
+    const docId = this.currentProjectId ? null : this.currentFileId;
+    if (!docId || !this.editor) return;
+    try {
+      if (IS_TAURI) {
+        const content = this.editor.getContent();
+        await tauriInvoke("create_snapshot", { documentId: docId, content });
+      }
+    } catch (e) {
+      console.error("Manual snapshot failed:", e);
+    }
   }
 
   // ===== Special Nodes =====
@@ -415,6 +463,8 @@ export class AppState {
       if (IS_TAURI) {
         try { await tauriInvoke("delete_file", { id: fid }); }
         catch (e) { console.error("Delete file failed:", e); }
+        try { await tauriInvoke("delete_document_snapshots", { documentId: fid }); }
+        catch (e) { console.error("Delete snapshots failed:", e); }
       } else { this.files = this.files.filter((f) => f.id !== fid); }
     }
   }

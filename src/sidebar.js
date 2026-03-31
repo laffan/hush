@@ -5,6 +5,7 @@ import { isIOS, openSettingsWindow } from "./settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
 import { findNode } from "./tree-helpers.js";
 import { renderStylesPanel, bindStylesPanel } from "./styles-panel.js";
+import { createVersionsPanel, cleanupVersionsPanel } from "./versions-panel.js";
 import newFileRaw from "./sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar_icons/files.svg?raw";
 import ratchetRaw from "./sidebar_icons/ratchet.svg?raw";
@@ -12,6 +13,7 @@ import privateRaw from "./sidebar_icons/private.svg?raw";
 import typewriterRaw from "./sidebar_icons/typewriter.svg?raw";
 import dryRaw from "./sidebar_icons/dry.svg?raw";
 import focusRaw from "./sidebar_icons/focus.svg?raw";
+import versionsRaw from "./sidebar_icons/versions.svg?raw";
 import folderRaw from "./sidebar_icons/folder.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
@@ -37,7 +39,7 @@ export function createSidebar(container, state) {
       ${btn("focus", "Focus mode", icons.focus)}
     </div>
     <div class="sidebar-group sidebar-bottom">
-      ${btn("autosave", "Save location", icons.folder)}
+      ${btn("versions", "Versions", icons.versions)}
       ${btn("export", "Export", icons.export)}
       ${settingsBtn}
     </div>
@@ -103,6 +105,7 @@ export function createSidebar(container, state) {
 
   function hidePanel() {
     if (panelPinned && panelOverlay.classList.contains("panel-inset")) return;
+    if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = null;
     panelOverlay.classList.add("hidden");
     container.classList.remove("visible");
@@ -165,9 +168,18 @@ export function createSidebar(container, state) {
     updateActiveStates();
   });
 
-  container.querySelector('[data-action="autosave"]').addEventListener("click", () => {
-    showPanel("autosave", renderAutosavePanel(state));
-    bindAutosavePanel(state, panelOverlay);
+  container.querySelector('[data-action="versions"]').addEventListener("click", () => {
+    if (activePanel === "versions") {
+      cleanupVersionsPanel();
+      hidePanel();
+      return;
+    }
+    activePanel = "versions";
+    panelOverlay.innerHTML = "";
+    panelOverlay.classList.remove("hidden");
+    container.classList.add("visible");
+    createVersionsPanel(panelOverlay, state, hidePanel);
+    if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
   container.querySelector('[data-action="export"]').addEventListener("click", async () => {
@@ -262,6 +274,7 @@ export function createSidebar(container, state) {
 
   // Cmd+\ hide support — reset internal state
   state.on("hide-panel", () => {
+    if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = null;
     panelPinned = false;
     panelOverlay.classList.remove("panel-pinned");
@@ -297,6 +310,7 @@ const icons = {
   typewriter: svgInner(typewriterRaw),
   dry: svgInner(dryRaw),
   focus: svgInner(focusRaw),
+  versions: svgInner(versionsRaw),
   folder: svgInner(folderRaw),
   export: svgInner(exportRaw),
   settings: svgInner(settingsRaw),

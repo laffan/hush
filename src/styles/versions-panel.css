@@ -1,0 +1,133 @@
+/* ===== Versions Panel ===== */
+.versions-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.versions-panel .panel-title {
+  margin-bottom: 8px;
+}
+
+.versions-empty {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--sidebar-fg);
+}
+
+/* ===== Version List (left pane in the panel) ===== */
+.versions-list-container {
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(100vh - 130px);
+}
+
+.versions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.versions-list li {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.versions-list li:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.versions-list li.active {
+  background: rgba(128, 128, 128, 0.2);
+  font-weight: 600;
+}
+
+.version-time-primary {
+  display: block;
+  font-size: 13px;
+  color: var(--fg);
+  line-height: 1.4;
+}
+
+.version-time-relative {
+  display: block;
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  margin-top: 1px;
+}
+
+/* ===== Version Preview (right side, in the content area) ===== */
+.version-preview-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+
+.version-preview-container {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 50px;
+  left: 0;
+  overflow-y: auto;
+  padding: 40px;
+  pointer-events: auto;
+  background: var(--bg);
+}
+
+.version-preview-content {
+  max-width: 600px;
+  margin: 0 auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: var(--font-family, "Source Sans Pro", sans-serif);
+  font-size: var(--font-size, 20px);
+  line-height: var(--line-height, 1.6);
+  color: var(--fg);
+}
+
+/* ===== Restore Bar (fixed bottom) ===== */
+.version-restore-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg, var(--bg));
+  border-top: 1px solid var(--panel-border);
+  z-index: 95;
+  pointer-events: auto;
+}
+
+.version-restore-btn {
+  padding: 8px 24px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  transition: background 0.15s;
+}
+
+.version-restore-btn:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.version-restore-btn:active {
+  background: rgba(128, 128, 128, 0.25);
+}

@@ -109,6 +109,7 @@ export function createEditor(container, state) {
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       state.markDirty();
+      state.trackKeystroke();
     }
     // Typewriter / Ratchet: scroll cursor to fixed position on every update
     const shouldScroll = state.typewriterMode || state.ratchetMode;
@@ -158,6 +159,7 @@ export function createEditor(container, state) {
   // Global keyboard shortcuts
   const globalKeymap = Prec.highest(
     keymap.of([
+      { key: "Mod-s", run: () => { state.saveCurrentFile(); state.createManualSnapshot(); return true; } },
       { key: "Mod-,", run: () => { openSettingsWindow(state); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
       { key: "Mod-l", run: (view) => selectSentence(view) },
