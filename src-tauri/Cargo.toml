@@ -23,3 +23,5 @@ dirs = "6"
 uuid = { version = "1", features = ["v4"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 chrono = "0.4"
+notify = { version = "6", features = ["macos_fsevent"] }
+sha2 = "0.10"

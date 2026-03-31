@@ -15,15 +15,18 @@ use tauri::{
 mod settings;
 mod files;
 mod snapshots;
+mod sync;
 
 use settings::AppSettings;
 use files::FileManager;
 use snapshots::{SnapshotManager, SnapshotEntry};
+use sync::{SyncManager, ImportEntry, SyncedFileInfo};
 
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub file_manager: Mutex<FileManager>,
     pub snapshot_manager: Mutex<SnapshotManager>,
+    pub sync_manager: Mutex<SyncManager>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -47,6 +50,8 @@ pub struct TreeNode {
     pub children: Vec<TreeNode>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub flagged: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_folder_id: Option<String>,
 }
 
 #[tauri::command]
@@ -158,6 +163,70 @@ fn delete_document_snapshots(
         .map_err(|e| e.to_string())
 }
 
+// ===== Sync Commands =====
+
+#[tauri::command]
+fn scan_sync_folder(folder_path: String) -> Result<Vec<ImportEntry>, String> {
+    SyncManager::scan_folder(&folder_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn register_synced_file(
+    state: State<AppState>,
+    internal_id: String,
+    sync_folder_id: String,
+    relative_path: String,
+    content: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .register_file(&internal_id, &sync_folder_id, &relative_path, &content);
+    Ok(())
+}
+
+#[tauri::command]
+fn unregister_sync_folder(
+    state: State<AppState>,
+    sync_folder_id: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .unregister_folder(&sync_folder_id);
+    Ok(())
+}
+
+#[tauri::command]
+fn write_sync_file(
+    state: State<AppState>,
+    folder_path: String,
+    relative_path: String,
+    content: String,
+    internal_id: String,
+) -> Result<(), String> {
+    SyncManager::write_external(&folder_path, &relative_path, &content)
+        .map_err(|e| e.to_string())?;
+    state.sync_manager.lock().unwrap()
+        .update_hash(&internal_id, &content);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_synced_files(
+    state: State<AppState>,
+    sync_folder_id: String,
+) -> Vec<SyncedFileInfo> {
+    state.sync_manager.lock().unwrap()
+        .get_folder_files(&sync_folder_id)
+}
+
+#[tauri::command]
+fn get_sync_file_info(
+    state: State<AppState>,
+    internal_id: String,
+) -> Option<SyncedFileInfo> {
+    state.sync_manager.lock().unwrap()
+        .get_file_info(&internal_id)
+        .cloned()
+}
+
 #[cfg(desktop)]
 #[tauri::command]
 fn set_always_on_top(app: AppHandle, on_top: bool) -> Result<(), String> {
@@ -242,6 +311,7 @@ pub fn run() {
 
     let file_manager = FileManager::new(data_dir.join("files"));
     let snapshot_manager = SnapshotManager::new(&data_dir);
+    let sync_manager = SyncManager::new(&data_dir);
 
     // Run snapshot cleanup on startup
     if let Err(e) = snapshot_manager.cleanup_all() {
@@ -263,6 +333,7 @@ pub fn run() {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
             snapshot_manager: Mutex::new(snapshot_manager),
+            sync_manager: Mutex::new(sync_manager),
         })
         .setup(move |_app| {
             #[cfg(desktop)]
@@ -391,6 +462,12 @@ pub fn run() {
             get_snapshots,
             get_snapshot,
             delete_document_snapshots,
+            scan_sync_folder,
+            register_synced_file,
+            unregister_sync_folder,
+            write_sync_file,
+            get_synced_files,
+            get_sync_file_info,
             #[cfg(desktop)]
             set_always_on_top,
             set_activation_policy,

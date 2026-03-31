@@ -205,39 +205,19 @@ export class AppState {
 
   _initLocal() {
     const savedFiles = localStorage.getItem("hush_files");
-    if (savedFiles) {
-      this.files = JSON.parse(savedFiles);
-    }
-
+    if (savedFiles) this.files = JSON.parse(savedFiles);
     const savedTree = localStorage.getItem("hush_file_tree");
-    if (savedTree) {
-      this.fileTree = JSON.parse(savedTree);
-    } else if (this.files.length > 0) {
-      // Migrate flat files to tree
-      this.fileTree = this.files.map((f) => ({
-        id: crypto.randomUUID(),
-        type: "document",
-        name: f.name,
-        fileId: f.id,
-        children: [],
-        flagged: false,
-      }));
+    if (savedTree) this.fileTree = JSON.parse(savedTree);
+    else if (this.files.length > 0) {
+      this.fileTree = this.files.map(f => ({ id: crypto.randomUUID(), type: "document", name: f.name, fileId: f.id, children: [], flagged: false }));
       this._saveTreeLocal();
     }
-
     this.ensureSpecialNodes();
     this._saveTreeLocal();
-
-    if (this.files.length > 0) {
-      this.currentFileId = this.files[0].id;
-    } else {
-      this._createLocalFile();
-    }
-
+    if (this.files.length > 0) this.currentFileId = this.files[0].id;
+    else this._createLocalFile();
     const savedSettings = localStorage.getItem("hush_settings");
-    if (savedSettings) {
-      Object.assign(this.settings, JSON.parse(savedSettings));
-    }
+    if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
   }
 
   _createLocalFile() {
@@ -278,47 +258,30 @@ export class AppState {
     this.dirty = true;
   }
 
-  /**
-   * Called on each doc change. Increments keystroke counter and
-   * triggers a snapshot every 30 keystrokes.
-   */
   trackKeystroke() {
     this._keystrokeCount++;
     if (this._keystrokeCount >= 30 && this.dirty) {
       this._keystrokeCount = 0;
-      this._triggerSnapshot();
+      this._createSnapshot();
     }
   }
 
-  async _triggerSnapshot() {
+  async _createSnapshot() {
     const docId = this.currentProjectId ? null : this.currentFileId;
     if (!docId || !this.editor || this._snapshotPending) return;
     this._snapshotPending = true;
     try {
-      if (IS_TAURI) {
-        const content = this.editor.getContent();
-        await tauriInvoke("create_snapshot", { documentId: docId, content });
-      }
-    } catch (e) {
-      console.error("Snapshot failed:", e);
-    } finally {
-      this._snapshotPending = false;
-    }
+      if (IS_TAURI) await tauriInvoke("create_snapshot", { documentId: docId, content: this.editor.getContent() });
+    } catch (e) { console.error("Snapshot failed:", e); }
+    finally { this._snapshotPending = false; }
   }
 
-  /**
-   * Creates a manual snapshot (e.g., on Cmd+S).
-   */
   async createManualSnapshot() {
     const docId = this.currentProjectId ? null : this.currentFileId;
     if (!docId || !this.editor) return;
-    try {
-      if (IS_TAURI) {
-        const content = this.editor.getContent();
-        await tauriInvoke("create_snapshot", { documentId: docId, content });
-      }
-    } catch (e) {
-      console.error("Manual snapshot failed:", e);
+    if (IS_TAURI) {
+      try { await tauriInvoke("create_snapshot", { documentId: docId, content: this.editor.getContent() }); }
+      catch (e) { console.error("Manual snapshot failed:", e); }
     }
   }
 
@@ -328,31 +291,15 @@ export class AppState {
   static TRASH_ID = "__trash__";
 
   ensureSpecialNodes() {
-    const hasInbox = this.fileTree.some(n => n.id === AppState.INBOX_ID);
-    if (!hasInbox) {
-      this.fileTree.unshift({
-        id: AppState.INBOX_ID, type: "project", name: "Inbox",
-        children: [], flagged: false,
-      });
-    }
-    const hasTrash = this.fileTree.some(n => n.id === AppState.TRASH_ID);
-    if (!hasTrash) {
-      this.fileTree.push({
-        id: AppState.TRASH_ID, type: "folder", name: "Trash",
-        children: [], flagged: false,
-      });
-    }
+    if (!this.fileTree.some(n => n.id === AppState.INBOX_ID))
+      this.fileTree.unshift({ id: AppState.INBOX_ID, type: "project", name: "Inbox", children: [], flagged: false });
+    if (!this.fileTree.some(n => n.id === AppState.TRASH_ID))
+      this.fileTree.push({ id: AppState.TRASH_ID, type: "folder", name: "Trash", children: [], flagged: false });
     // Enforce positions: Inbox first, Trash last
-    const inboxIdx = this.fileTree.findIndex(n => n.id === AppState.INBOX_ID);
-    if (inboxIdx > 0) {
-      const [inbox] = this.fileTree.splice(inboxIdx, 1);
-      this.fileTree.unshift(inbox);
-    }
-    const trashIdx = this.fileTree.findIndex(n => n.id === AppState.TRASH_ID);
-    if (trashIdx >= 0 && trashIdx < this.fileTree.length - 1) {
-      const [trash] = this.fileTree.splice(trashIdx, 1);
-      this.fileTree.push(trash);
-    }
+    const iIdx = this.fileTree.findIndex(n => n.id === AppState.INBOX_ID);
+    if (iIdx > 0) { const [n] = this.fileTree.splice(iIdx, 1); this.fileTree.unshift(n); }
+    const tIdx = this.fileTree.findIndex(n => n.id === AppState.TRASH_ID);
+    if (tIdx >= 0 && tIdx < this.fileTree.length - 1) { const [n] = this.fileTree.splice(tIdx, 1); this.fileTree.push(n); }
   }
 
   isInTrash(nodeId) {
@@ -372,32 +319,23 @@ export class AppState {
   }
 
   async createFolder(name, parentId = null) {
-    if (IS_TAURI) {
-      try {
-        const created = await tauriInvoke("create_folder", { name, parentId });
-        this.fileTree = await tauriInvoke("get_file_tree");
-        this.emit("files-changed");
-        return created;
-      } catch (e) { console.error("Create folder failed:", e); }
-    } else {
-      const node = { id: crypto.randomUUID(), type: "folder", name, children: [], flagged: false };
-      insertNode(this.fileTree, node, parentId, findNode);
-      this._saveTreeLocal();
-      this.emit("files-changed");
-      return node;
-    }
+    return this._createTreeNode("create_folder", "folder", name, parentId);
   }
 
   async createProject(name, parentId = null) {
+    return this._createTreeNode("create_project", "project", name, parentId);
+  }
+
+  async _createTreeNode(command, type, name, parentId) {
     if (IS_TAURI) {
       try {
-        const created = await tauriInvoke("create_project", { name, parentId });
+        const created = await tauriInvoke(command, { name, parentId });
         this.fileTree = await tauriInvoke("get_file_tree");
         this.emit("files-changed");
         return created;
-      } catch (e) { console.error("Create project failed:", e); }
+      } catch (e) { console.error(`Create ${type} failed:`, e); }
     } else {
-      const node = { id: crypto.randomUUID(), type: "project", name, children: [], flagged: false };
+      const node = { id: crypto.randomUUID(), type, name, children: [], flagged: false };
       insertNode(this.fileTree, node, parentId, findNode);
       this._saveTreeLocal();
       this.emit("files-changed");
@@ -406,22 +344,14 @@ export class AppState {
   }
 
   async deleteTreeNode(nodeId) {
-    // Don't allow deleting Inbox or Trash themselves
     if (nodeId === AppState.INBOX_ID || nodeId === AppState.TRASH_ID) return;
-
     const node = findNode(this.fileTree, nodeId);
     if (!node) return;
-
-    // If item is already in trash, permanently delete
-    if (this.isInTrash(nodeId)) {
-      return this._permanentDeleteNode(nodeId);
-    }
-
-    // Move to trash
+    if (this.isInTrash(nodeId)) return this._permanentDeleteNode(nodeId);
     const removed = removeNode(this.fileTree, nodeId);
     if (removed) {
       const trash = findNode(this.fileTree, AppState.TRASH_ID);
-      if (trash) { (trash.children || (trash.children = [])).push(removed); }
+      if (trash) (trash.children || (trash.children = [])).push(removed);
     }
     await this.saveFileTree();
     const fileIds = this._collectNodeFileIds(node);
@@ -444,7 +374,7 @@ export class AppState {
 
   async emptyTrash() {
     const trash = findNode(this.fileTree, AppState.TRASH_ID);
-    if (!trash || !trash.children || trash.children.length === 0) return;
+    if (!trash?.children?.length) return;
     const fileIds = collectDocumentIds(trash.children);
     await this._deleteFilesByIds(fileIds);
     trash.children = [];
@@ -461,21 +391,18 @@ export class AppState {
   async _deleteFilesByIds(fileIds) {
     for (const fid of fileIds) {
       if (IS_TAURI) {
-        try { await tauriInvoke("delete_file", { id: fid }); }
-        catch (e) { console.error("Delete file failed:", e); }
-        try { await tauriInvoke("delete_document_snapshots", { documentId: fid }); }
-        catch (e) { console.error("Delete snapshots failed:", e); }
-      } else { this.files = this.files.filter((f) => f.id !== fid); }
+        try { await tauriInvoke("delete_file", { id: fid }); } catch (e) { console.error("Delete file:", e); }
+        try { await tauriInvoke("delete_document_snapshots", { documentId: fid }); } catch (e) { console.error("Delete snapshots:", e); }
+      } else { this.files = this.files.filter(f => f.id !== fid); }
     }
   }
 
   async _finalizeFileDeletion(fileIds) {
     await this.saveFileTree();
-    if (IS_TAURI) { this.files = await tauriInvoke("list_files"); }
-    else { this._saveFilesLocal(); }
+    if (IS_TAURI) this.files = await tauriInvoke("list_files");
+    else this._saveFilesLocal();
     if (fileIds.includes(this.currentFileId)) {
-      this.currentProjectId = null;
-      this.projectDocIds = [];
+      this.currentProjectId = null; this.projectDocIds = [];
       if (this.files.length > 0) await this.openFile(this.files[0].id);
       else await this.newFile();
     }
@@ -528,34 +455,25 @@ export class AppState {
     let ordered = [];
     if (IS_TAURI) {
       for (const fid of this.projectDocIds) {
-        try { ordered.push(await tauriInvoke("load_file", { id: fid })); }
-        catch (e) { console.error("Failed to load file:", fid, e); }
+        try { ordered.push(await tauriInvoke("load_file", { id: fid })); } catch (e) { /* skip */ }
       }
-    } else {
-      ordered = this.projectDocIds.map((fid) => this.files.find((e) => e.id === fid)).filter(Boolean);
-    }
-    const combined = ordered.map((e) => e.content).join("\n\n---hush-separator---\n\n");
-    if (this.editor) this.editor.setContent(combined);
+    } else { ordered = this.projectDocIds.map(fid => this.files.find(e => e.id === fid)).filter(Boolean); }
+    if (this.editor) this.editor.setContent(ordered.map(e => e.content).join("\n\n---hush-separator---\n\n"));
     this.emit("file-opened");
     this.updateSettings({ lastProjectId: projectId, lastFileId: null });
   }
 
   async saveProjectContent() {
-    if (!this.currentProjectId || !this.editor || this.projectDocIds.length === 0) return;
+    if (!this.currentProjectId || !this.editor || !this.projectDocIds.length) return;
     const parts = this.editor.getContent().split("\n\n---hush-separator---\n\n");
     for (let i = 0; i < this.projectDocIds.length && i < parts.length; i++) {
-      const fileId = this.projectDocIds[i];
-      if (IS_TAURI) {
-        try { await tauriInvoke("save_file", { id: fileId, content: parts[i] || "" }); }
-        catch (e) { console.error("Save project part failed:", e); }
-      } else {
-        const file = this.files.find((f) => f.id === fileId);
-        if (file) { file.content = parts[i] || ""; file.modified = Math.floor(Date.now() / 1000); file.name = this._deriveName(file.content); }
-      }
+      const fid = this.projectDocIds[i], content = parts[i] || "";
+      if (IS_TAURI) { try { await tauriInvoke("save_file", { id: fid, content }); } catch (e) { /* skip */ } }
+      else { const f = this.files.find(f => f.id === fid); if (f) { f.content = content; f.modified = Math.floor(Date.now()/1000); f.name = this._deriveName(f.content); } }
     }
     this.dirty = false;
-    if (IS_TAURI) { this.files = await tauriInvoke("list_files"); }
-    else { this._saveFilesLocal(); }
+    if (IS_TAURI) this.files = await tauriInvoke("list_files");
+    else this._saveFilesLocal();
     this.emit("files-changed");
   }
 
@@ -567,8 +485,11 @@ export class AppState {
     const content = this.editor.getContent();
     this.dirty = false;
     if (IS_TAURI) {
-      try { await tauriInvoke("save_file", { id: this.currentFileId, content }); this.files = await tauriInvoke("list_files"); }
-      catch (e) { console.error("Save failed:", e); }
+      try {
+        await tauriInvoke("save_file", { id: this.currentFileId, content });
+        this.files = await tauriInvoke("list_files");
+        this.syncFileToExternal(this.currentFileId, content);
+      } catch (e) { console.error("Save failed:", e); }
     } else {
       const file = this.files.find((f) => f.id === this.currentFileId);
       if (file) { file.content = content; file.modified = Math.floor(Date.now() / 1000); file.name = this._deriveName(content); this._saveFilesLocal(); }
@@ -669,6 +590,18 @@ export class AppState {
         return newId;
       }
     }
+  }
+
+  // ===== Sync Operations (delegated to sync-state.js) =====
+
+  async importSyncFolder(syncFolder) {
+    const { importSyncFolder } = await import("./sync-state.js");
+    return importSyncFolder(this, syncFolder);
+  }
+
+  async syncFileToExternal(fileId, content) {
+    const { syncFileToExternal } = await import("./sync-state.js");
+    return syncFileToExternal(this, fileId, content);
   }
 
   async updateSettings(partial) {

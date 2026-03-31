@@ -1,0 +1,232 @@
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use crate::settings::SyncFolder;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncedFileInfo {
+    pub internal_id: String,
+    pub sync_folder_id: String,
+    pub relative_path: String,
+    pub last_synced_hash: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportEntry {
+    pub relative_path: String,
+    pub name: String,
+    pub content: String,
+    pub is_directory: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalChange {
+    pub internal_id: String,
+    pub relative_path: String,
+    pub external_content: String,
+    pub internal_content: String,
+}
+
+pub struct SyncManager {
+    sync_data_path: PathBuf,
+    file_map: HashMap<String, SyncedFileInfo>, // internal_id -> SyncedFileInfo
+}
+
+impl SyncManager {
+    pub fn new(data_dir: &Path) -> Self {
+        let sync_data_path = data_dir.join("sync_map.json");
+        let file_map = Self::load_map(&sync_data_path);
+        Self {
+            sync_data_path,
+            file_map,
+        }
+    }
+
+    fn load_map(path: &Path) -> HashMap<String, SyncedFileInfo> {
+        if path.exists() {
+            if let Ok(content) = fs::read_to_string(path) {
+                if let Ok(map) = serde_json::from_str(&content) {
+                    return map;
+                }
+            }
+        }
+        HashMap::new()
+    }
+
+    fn save_map(&self) {
+        if let Ok(content) = serde_json::to_string_pretty(&self.file_map) {
+            let _ = fs::write(&self.sync_data_path, content);
+        }
+    }
+
+    /// Scan a folder for .md files, returning entries to import.
+    pub fn scan_folder(folder_path: &str) -> Result<Vec<ImportEntry>, Box<dyn std::error::Error>> {
+        let root = PathBuf::from(folder_path);
+        if !root.is_dir() {
+            return Err(format!("Not a directory: {}", folder_path).into());
+        }
+        let mut entries = Vec::new();
+        Self::scan_recursive(&root, &root, &mut entries)?;
+        entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        Ok(entries)
+    }
+
+    fn scan_recursive(
+        root: &Path,
+        dir: &Path,
+        entries: &mut Vec<ImportEntry>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+
+            // Skip hidden files/dirs
+            if let Some(name) = path.file_name() {
+                if name.to_string_lossy().starts_with('.') {
+                    continue;
+                }
+            }
+
+            if path.is_dir() {
+                entries.push(ImportEntry {
+                    relative_path: relative.clone(),
+                    name: path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                    content: String::new(),
+                    is_directory: true,
+                });
+                Self::scan_recursive(root, &path, entries)?;
+            } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                let content = fs::read_to_string(&path).unwrap_or_default();
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                entries.push(ImportEntry {
+                    relative_path: relative,
+                    name,
+                    content,
+                    is_directory: false,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Register a synced file mapping.
+    pub fn register_file(
+        &mut self,
+        internal_id: &str,
+        sync_folder_id: &str,
+        relative_path: &str,
+        content: &str,
+    ) {
+        let hash = Self::hash_content(content);
+        self.file_map.insert(
+            internal_id.to_string(),
+            SyncedFileInfo {
+                internal_id: internal_id.to_string(),
+                sync_folder_id: sync_folder_id.to_string(),
+                relative_path: relative_path.to_string(),
+                last_synced_hash: hash,
+            },
+        );
+        self.save_map();
+    }
+
+    /// Remove a synced file mapping.
+    pub fn unregister_file(&mut self, internal_id: &str) {
+        self.file_map.remove(internal_id);
+        self.save_map();
+    }
+
+    /// Remove all mappings for a sync folder.
+    pub fn unregister_folder(&mut self, sync_folder_id: &str) {
+        self.file_map
+            .retain(|_, info| info.sync_folder_id != sync_folder_id);
+        self.save_map();
+    }
+
+    /// Write content to external file.
+    pub fn write_external(
+        folder_path: &str,
+        relative_path: &str,
+        content: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let path = PathBuf::from(folder_path).join(relative_path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, content)?;
+        Ok(())
+    }
+
+    /// Read external file content.
+    pub fn read_external(
+        folder_path: &str,
+        relative_path: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let path = PathBuf::from(folder_path).join(relative_path);
+        Ok(fs::read_to_string(&path)?)
+    }
+
+    /// Update the hash after a successful sync.
+    pub fn update_hash(&mut self, internal_id: &str, content: &str) {
+        if let Some(info) = self.file_map.get_mut(internal_id) {
+            info.last_synced_hash = Self::hash_content(content);
+            self.save_map();
+        }
+    }
+
+    /// Get all synced file infos for a given sync folder.
+    pub fn get_folder_files(&self, sync_folder_id: &str) -> Vec<SyncedFileInfo> {
+        self.file_map
+            .values()
+            .filter(|info| info.sync_folder_id == sync_folder_id)
+            .cloned()
+            .collect()
+    }
+
+    /// Get sync info for a specific internal file.
+    pub fn get_file_info(&self, internal_id: &str) -> Option<&SyncedFileInfo> {
+        self.file_map.get(internal_id)
+    }
+
+    /// Check if an external file has changed since last sync.
+    pub fn check_external_change(
+        &self,
+        folder: &SyncFolder,
+        internal_id: &str,
+    ) -> Option<String> {
+        let info = self.file_map.get(internal_id)?;
+        let path = PathBuf::from(&folder.path).join(&info.relative_path);
+        let content = fs::read_to_string(&path).ok()?;
+        let hash = Self::hash_content(&content);
+        if hash != info.last_synced_hash {
+            Some(content)
+        } else {
+            None
+        }
+    }
+
+    fn hash_content(content: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+}

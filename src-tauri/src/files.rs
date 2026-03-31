@@ -38,6 +38,7 @@ impl FileManager {
                     file_id: Some(f.id.clone()),
                     children: Vec::new(),
                     flagged: false,
+                    sync_folder_id: None,
                 })
                 .collect();
             self.save_file_tree(&tree)?;
@@ -64,6 +65,7 @@ impl FileManager {
             file_id: None,
             children: Vec::new(),
             flagged: false,
+            sync_folder_id: None,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());
@@ -83,6 +85,7 @@ impl FileManager {
             file_id: None,
             children: Vec::new(),
             flagged: false,
+            sync_folder_id: None,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());
