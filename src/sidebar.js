@@ -290,7 +290,10 @@ export function createSidebar(container, state) {
   // Close panel on click outside (unless pinned in inset mode)
   document.addEventListener("mousedown", (e) => {
     const pinActive = panelPinned && panelOverlay.classList.contains("panel-inset");
-    if (activePanel && !pinActive && !panelOverlay.contains(e.target) && !container.contains(e.target) && !pinBtn.contains(e.target)) {
+    // The version preview overlay is appended to document.body, not inside panelOverlay,
+    // so check for it explicitly to avoid closing the panel when clicking restore.
+    const versionOverlay = document.querySelector(".version-preview-overlay");
+    if (activePanel && !pinActive && !panelOverlay.contains(e.target) && !container.contains(e.target) && !pinBtn.contains(e.target) && !(versionOverlay && versionOverlay.contains(e.target))) {
       hidePanel();
     }
   });

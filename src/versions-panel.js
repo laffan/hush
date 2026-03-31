@@ -188,9 +188,7 @@ function removePreview() {
 }
 
 async function restoreSnapshot(snap, state) {
-  console.log("[restore] called", { hasEditor: !!state.editor, fileId: state.currentFileId, contentLength: snap.content?.length, contentPreview: snap.content?.slice(0, 80) });
-
-  if (!state.currentFileId) { console.log("[restore] bail: no currentFileId"); return; }
+  if (!state.currentFileId) return;
 
   const content = snap.content;
   const fileId = state.currentFileId;
@@ -200,23 +198,18 @@ async function restoreSnapshot(snap, state) {
     try {
       await tauriInvoke("save_file", { id: fileId, content });
       await tauriInvoke("create_snapshot", { documentId: fileId, content });
-      console.log("[restore] backend save OK");
     } catch (e) {
-      console.error("[restore] backend save FAILED:", e);
+      console.error("Restore failed:", e);
     }
-  } else {
-    console.log("[restore] not Tauri, skipping backend save");
   }
 
   // Close the versions panel, then update the editor
   if (panelState) panelState.emit("hide-panel");
 
   // Now set the editor content after the panel is closed
-  console.log("[restore] about to setContent, editor exists:", !!state.editor);
   if (state.editor) {
     state.editor.setContent(content);
     state.dirty = false;
-    console.log("[restore] setContent done, editor now has:", state.editor.getContent()?.slice(0, 80));
   }
 }
 
