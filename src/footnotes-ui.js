@@ -65,7 +65,17 @@ export function createEditableContent(id, defText, view, stateRef) {
   content.style.fontFamily = resolveFootnoteFont(fsettings.fontFamily);
   content.dataset.footnoteId = id;
   content.addEventListener("mousedown", (e) => { e.stopPropagation(); ui.editingOverlay = true; });
-  content.addEventListener("keydown", (e) => e.stopPropagation());
+  content.addEventListener("keydown", (e) => {
+    // Cmd+Shift+M inside the overlay → save and close, return focus to editor
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "m") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeOverlay();
+      view.focus();
+      return;
+    }
+    e.stopPropagation();
+  });
   content.addEventListener("keypress", (e) => e.stopPropagation());
   content.addEventListener("input", () => syncFootnoteText(view, id, content.textContent));
   return content;
@@ -234,6 +244,18 @@ function _mountOverlay(id, defText, view, stateRef, scroller, scrollerRect, padd
 
   scroller.appendChild(overlay);
   ui.activeOverlay = overlay;
+
+  // Focus the editable and place cursor at end for immediate keyboard editing
+  const editable = overlay.querySelector(".footnote-overlay-content");
+  if (editable) {
+    editable.focus();
+    const range = document.createRange();
+    range.selectNodeContents(editable);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
 }
 
 /**
