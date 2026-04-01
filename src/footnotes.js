@@ -221,30 +221,42 @@ export function insertFootnote(view) {
   const sel = state.selection.main;
   const docText = state.doc.toString();
 
-  let id;
-  if (!sel.empty) {
-    id = state.sliceDoc(sel.from, sel.to);
-  } else {
-    let maxNum = 0;
-    FOOTNOTE_REF_RE.lastIndex = 0;
-    let m;
-    while ((m = FOOTNOTE_REF_RE.exec(docText)) !== null) {
-      const n = parseInt(m[1], 10);
-      if (!isNaN(n) && n > maxNum) maxNum = n;
-    }
-    id = String(maxNum + 1);
+  // Find next available numeric id
+  let maxNum = 0;
+  FOOTNOTE_REF_RE.lastIndex = 0;
+  let m;
+  while ((m = FOOTNOTE_REF_RE.exec(docText)) !== null) {
+    const n = parseInt(m[1], 10);
+    if (!isNaN(n) && n > maxNum) maxNum = n;
   }
+  const id = String(maxNum + 1);
 
   const ref = `[^${id}]`;
-  const defLine = `\n[^${id}]: `;
-  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const defExists = new RegExp(`^\\[\\^${escapedId}\\]:`, "m").test(docText);
 
-  const changes = defExists
-    ? [{ from: sel.from, to: sel.to, insert: ref }]
-    : [{ from: sel.from, to: sel.to, insert: ref }, { from: state.doc.length, insert: defLine }];
+  if (!sel.empty) {
+    // Move selected text into the footnote definition
+    const selectedText = state.sliceDoc(sel.from, sel.to);
+    const defLine = `\n[^${id}]: ${selectedText}`;
+    view.dispatch({
+      changes: [
+        { from: sel.from, to: sel.to, insert: ref },
+        { from: state.doc.length, insert: defLine },
+      ],
+      selection: { anchor: sel.from + ref.length },
+      scrollIntoView: false,
+    });
+  } else {
+    const defLine = `\n[^${id}]: `;
+    view.dispatch({
+      changes: [
+        { from: sel.from, insert: ref },
+        { from: state.doc.length, insert: defLine },
+      ],
+      selection: { anchor: sel.from + ref.length },
+      scrollIntoView: false,
+    });
+  }
 
-  view.dispatch({ changes, selection: { anchor: sel.from + ref.length }, scrollIntoView: false });
   view.focus();
   return true;
 }
