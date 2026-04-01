@@ -90,14 +90,6 @@ export async function setupTauriIntegration(state) {
           }
         });
 
-        // Cmd+Q — hide instead of quit when running as menu-bar-only app
-        if (state.settings.visibility === "menubar") {
-          await registerShortcut("CmdOrCtrl+Q", async (event) => {
-            if (event.state === "Released") return;
-            await getCurrentWindow().hide();
-          });
-        }
-
         // Toggle right sidebar (outline view)
         await registerShortcut(state.settings.shortcutToggleOutline, async (event) => {
           if (event.state === "Released") return;
@@ -121,6 +113,16 @@ export async function setupTauriIntegration(state) {
     // Re-register when settings change
     state.on("settings-changed", () => {
       registerAllShortcuts();
+    });
+
+    // Cmd+Q — hide instead of quit when running as menu-bar-only app.
+    // Uses a DOM keydown listener (not a global shortcut) so it only fires
+    // when a Hush window is focused, allowing other apps to quit normally.
+    document.addEventListener("keydown", async (e) => {
+      if (state.settings.visibility === "menubar" && e.key === "q" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        await getCurrentWindow().hide();
+      }
     });
   } catch (e) {
     console.warn("Tauri integration setup failed:", e);

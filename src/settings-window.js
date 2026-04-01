@@ -117,6 +117,18 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutStrikethrough) settings.shortcutStrikethrough = "Mod+`";
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
 
+  // Cmd+Q — hide the main window instead of quitting when in menu-bar-only mode.
+  // DOM-level listener so it only fires when this settings window is focused.
+  if (IS_TAURI && settings.visibility === "menubar") {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    document.addEventListener("keydown", async (e) => {
+      if (e.key === "q" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        await getCurrentWindow().hide();
+      }
+    });
+  }
+
   render();
 }
 
