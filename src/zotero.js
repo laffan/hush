@@ -168,6 +168,8 @@ function fuzzySearch(refs, query) {
 
 export async function openZoteroModal(view, state) {
   if (zoteroModal) { closeZoteroModal(); return; }
+  // Always reload from disk — references may have been updated in the settings window
+  cachedReferences = null;
   const refs = await loadReferences();
   if (!refs || refs.length === 0) {
     // No references — prompt user to set up in Settings

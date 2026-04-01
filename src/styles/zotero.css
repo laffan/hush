@@ -205,58 +205,63 @@
 .zotero-credentials {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
-.zotero-credentials input[type="text"],
-.zotero-credentials input[type="password"] {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--panel-border, #444);
-  border-radius: 4px;
-  background: var(--input-bg, rgba(255,255,255,0.06));
-  color: inherit;
+
+.zotero-test-btn {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
   font-size: 13px;
-  box-sizing: border-box;
+  font-family: system-ui, sans-serif;
+  white-space: nowrap;
+  align-self: flex-start;
 }
-.zotero-credentials input:focus {
-  border-color: var(--fg, #888);
-  outline: none;
-}
+.zotero-test-btn:hover { background: rgba(128,128,128,0.15); }
 
 .zotero-status {
   font-size: 12px;
-  margin-top: 4px;
+  padding: 4px 0;
   min-height: 18px;
 }
 .zotero-status.success { color: #4caf50; }
 .zotero-status.error { color: #f44336; }
 
 .zotero-ref-info {
-  padding: 10px 12px;
-  border: 1px solid var(--panel-border, #444);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  font-size: 12px;
-  margin-bottom: 10px;
-  line-height: 1.6;
+  padding: 12px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.06);
+  font-size: 13px;
+  margin: 12px 0;
+  line-height: 1.7;
+  color: var(--fg);
 }
 .zotero-ref-info strong {
   font-weight: 600;
 }
+.zotero-ref-info .zotero-ref-detail {
+  opacity: 0.6;
+  font-size: 12px;
+}
 
 .zotero-progress {
-  margin-top: 8px;
+  margin: 10px 0;
 }
 .zotero-progress-bar {
   height: 4px;
-  background: var(--panel-border, #444);
+  background: rgba(128, 128, 128, 0.2);
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 6px;
 }
 .zotero-progress-fill {
   height: 100%;
-  background: var(--fg, #888);
+  background: var(--fg);
   border-radius: 2px;
   transition: width 0.3s ease;
   width: 0%;
@@ -267,17 +272,20 @@
 }
 
 .zotero-download-btn {
-  padding: 8px 16px;
-  border: 1px solid var(--panel-border, #444);
-  border-radius: 4px;
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  border: 1px dashed var(--panel-border);
   background: transparent;
-  color: inherit;
+  color: var(--fg);
+  border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
-  width: 100%;
+  font-family: system-ui, sans-serif;
 }
 .zotero-download-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(128, 128, 128, 0.1);
 }
 .zotero-download-btn:disabled {
   opacity: 0.4;

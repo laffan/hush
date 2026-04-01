@@ -557,22 +557,23 @@ function renderZoteroTab() {
           <label>API Key</label>
           <input type="password" id="zotero-api-key" placeholder="Zotero API key" value="${escAttr(s.zoteroApiKey || "")}" />
         </div>
-        <button id="zotero-test-btn" style="margin-top: 4px; padding: 6px 14px; border: 1px solid var(--panel-border, #444); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font-size: 13px;">Test Connection</button>
+        <button id="zotero-test-btn" class="zotero-test-btn">Test Connection</button>
         <div id="zotero-test-status" class="zotero-status"></div>
       </div>
     </div>
     <div class="settings-section">
       <h2>References</h2>
-      ${hasRefs ? `
-        <div class="zotero-ref-info">
-          <strong>${s.zoteroReferenceCount}</strong> reference${s.zoteroReferenceCount !== 1 ? "s" : ""}
-          ${s.zoteroLastUpdate ? `<br/>Last updated: ${s.zoteroLastUpdate}` : ""}
-        </div>
-      ` : ""}
       <div id="zotero-progress" class="zotero-progress" style="display:none;">
         <div class="zotero-progress-bar"><div id="zotero-progress-fill" class="zotero-progress-fill"></div></div>
         <div id="zotero-progress-text" class="zotero-progress-text"></div>
       </div>
+      ${hasRefs ? `
+        <div class="zotero-ref-info">
+          <strong>${s.zoteroReferenceCount}</strong> reference${s.zoteroReferenceCount !== 1 ? "s" : ""}
+          ${s.zoteroLastUpdate ? `<br/><span class="zotero-ref-detail">Last updated: ${s.zoteroLastUpdate}</span>` : ""}
+          ${s.zoteroFileSize ? `<br/><span class="zotero-ref-detail">File size: ${s.zoteroFileSize}</span>` : ""}
+        </div>
+      ` : ""}
       <button id="zotero-download-btn" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
         ${hasRefs ? "Update References" : "Download References"}
       </button>
@@ -810,17 +811,24 @@ function bindAll() {
           if (textEl) textEl.textContent = msg;
         });
         // Save references via Tauri command
+        const jsonStr = JSON.stringify(refs);
         const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
         if (IS_TAURI) {
           const { invoke } = await import("@tauri-apps/api/core");
-          await invoke("save_zotero_references", { data: JSON.stringify(refs) });
+          await invoke("save_zotero_references", { data: jsonStr });
         } else {
-          localStorage.setItem("hush_zotero_refs", JSON.stringify(refs));
+          localStorage.setItem("hush_zotero_refs", jsonStr);
         }
         clearZoteroCache();
+        // Compute human-readable file size
+        const bytes = new Blob([jsonStr]).size;
+        const fileSize = bytes < 1024 * 1024
+          ? (bytes / 1024).toFixed(1) + " KB"
+          : (bytes / (1024 * 1024)).toFixed(1) + " MB";
         const timestamp = new Date().toLocaleString();
         saveSetting("zoteroLastUpdate", timestamp);
         saveSetting("zoteroReferenceCount", refs.length);
+        saveSetting("zoteroFileSize", fileSize);
         saveSetting("zoteroUserId", userId);
         saveSetting("zoteroApiKey", apiKey);
         render();

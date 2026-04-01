@@ -108,6 +108,7 @@ export class AppState {
       zoteroUserId: null,
       zoteroLastUpdate: null,
       zoteroReferenceCount: 0,
+      zoteroFileSize: null,
       shortcutZotero: "Mod+Shift+L",
 
       // Session state

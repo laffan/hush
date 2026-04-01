@@ -170,6 +170,8 @@ pub struct AppSettings {
     pub zotero_last_update: Option<String>,
     #[serde(default)]
     pub zotero_reference_count: u32,
+    #[serde(default)]
+    pub zotero_file_size: Option<String>,
     #[serde(default = "default_shortcut_zotero")]
     pub shortcut_zotero: String,
 
@@ -623,6 +625,7 @@ impl Default for AppSettings {
             zotero_user_id: None,
             zotero_last_update: None,
             zotero_reference_count: 0,
+            zotero_file_size: None,
             shortcut_zotero: default_shortcut_zotero(),
             window_width: None,
             window_height: None,

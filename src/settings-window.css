@@ -153,7 +153,8 @@ html, body {
 }
 
 .settings-row select,
-.settings-row input[type="text"] {
+.settings-row input[type="text"],
+.settings-row input[type="password"] {
   background: rgba(128, 128, 128, 0.1);
   border: 1px solid rgba(128, 128, 128, 0.2);
   color: var(--fg);
