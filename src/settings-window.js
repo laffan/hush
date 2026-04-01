@@ -6,6 +6,7 @@
 import { themeList } from "./themes.js";
 import { DEFAULT_STOPWORDS } from "./dry-highlight.js";
 import { renderFlagsTab, bindFlagsTab } from "./longview-settings.js";
+import { testZoteroConnection, downloadZoteroReferences, clearCache as clearZoteroCache } from "./zotero.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -30,6 +31,7 @@ const shortcutCategories = [
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutFind", label: "Find / replace" },
       { key: "shortcutFindAll", label: "Find across files" },
+      { key: "shortcutZotero", label: "Zotero search" },
     ],
   },
   {
@@ -98,7 +100,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";
   if (!settings.shortcutFindAll) settings.shortcutFindAll = "Mod+Shift+F";
   if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
-  if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Mod+Shift+L";
+  if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Alt+Shift+L";
   if (!settings.shortcutSelectNext) settings.shortcutSelectNext = "Mod+D";
   if (!settings.shortcutJumpNextSentence) settings.shortcutJumpNextSentence = "Mod+ArrowRight";
   if (!settings.shortcutJumpPrevSentence) settings.shortcutJumpPrevSentence = "Mod+ArrowLeft";
@@ -116,6 +118,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutComment) settings.shortcutComment = "Mod+/";
   if (!settings.shortcutStrikethrough) settings.shortcutStrikethrough = "Mod+`";
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
+  if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+L";
 
   // Cmd+Q — hide the main window instead of quitting when in menu-bar-only mode.
   // DOM-level listener so it only fires when this settings window is focused.
@@ -144,6 +147,7 @@ function render() {
         ${tabBtn("dry", "D.R.Y.", tabIcons.dry)}
         ${tabBtn("flags", "Flags", tabIcons.flags)}
         ${tabBtn("sync", "Sync", tabIcons.sync)}
+        ${tabBtn("zotero", "Zotero", tabIcons.zotero)}
       </div>
       <div class="settings-content">
         <div class="settings-panel${activeTab === 'general' ? ' active' : ''}" id="panel-general">
@@ -164,6 +168,9 @@ function render() {
         <div class="settings-panel${activeTab === 'sync' ? ' active' : ''}" id="panel-sync">
           ${renderSyncTab()}
         </div>
+        <div class="settings-panel${activeTab === 'zotero' ? ' active' : ''}" id="panel-zotero">
+          ${renderZoteroTab()}
+        </div>
       </div>
     </div>
   `;
@@ -178,6 +185,7 @@ const tabIcons = {
   dry: `<svg viewBox="0 0 24 24"><path d="M12 2L4 7v10l8 5 8-5V7l-8-5z"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="7" x2="20" y2="7"/></svg>`,
   flags: `<svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
   sync: `<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
+  zotero: `<svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
 };
 
 function tabBtn(id, label, icon) {
@@ -528,6 +536,50 @@ function renderSyncTab() {
   return html;
 }
 
+// ===== Zotero Tab =====
+function renderZoteroTab() {
+  const s = settings;
+  const hasCredentials = s.zoteroApiKey && s.zoteroUserId;
+  const hasRefs = s.zoteroReferenceCount > 0;
+  return `
+    <div class="settings-section">
+      <h2>Zotero API</h2>
+      <p class="settings-help">
+        Enter your Zotero User ID and API Key to connect your library.
+        Create an API key at <a href="https://www.zotero.org/settings/keys" target="_blank" style="color: inherit; text-decoration: underline;">zotero.org/settings/keys</a>.
+      </p>
+      <div class="zotero-credentials">
+        <div class="settings-row">
+          <label>User ID</label>
+          <input type="text" id="zotero-user-id" placeholder="e.g. 12345678" value="${escAttr(s.zoteroUserId || "")}" />
+        </div>
+        <div class="settings-row">
+          <label>API Key</label>
+          <input type="password" id="zotero-api-key" placeholder="Zotero API key" value="${escAttr(s.zoteroApiKey || "")}" />
+        </div>
+        <button id="zotero-test-btn" style="margin-top: 4px; padding: 6px 14px; border: 1px solid var(--panel-border, #444); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font-size: 13px;">Test Connection</button>
+        <div id="zotero-test-status" class="zotero-status"></div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <h2>References</h2>
+      ${hasRefs ? `
+        <div class="zotero-ref-info">
+          <strong>${s.zoteroReferenceCount}</strong> reference${s.zoteroReferenceCount !== 1 ? "s" : ""}
+          ${s.zoteroLastUpdate ? `<br/>Last updated: ${s.zoteroLastUpdate}` : ""}
+        </div>
+      ` : ""}
+      <div id="zotero-progress" class="zotero-progress" style="display:none;">
+        <div class="zotero-progress-bar"><div id="zotero-progress-fill" class="zotero-progress-fill"></div></div>
+        <div id="zotero-progress-text" class="zotero-progress-text"></div>
+      </div>
+      <button id="zotero-download-btn" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
+        ${hasRefs ? "Update References" : "Download References"}
+      </button>
+    </div>
+  `;
+}
+
 // ===== Bindings =====
 function bindAll() {
   // Tab switching
@@ -714,6 +766,67 @@ function bindAll() {
       } catch (e) {
         status.textContent = "Connection failed.";
         status.className = "sync-status error";
+      }
+    });
+  }
+
+  // Zotero tab
+  const zoteroTestBtn = document.getElementById("zotero-test-btn");
+  if (zoteroTestBtn) {
+    zoteroTestBtn.addEventListener("click", async () => {
+      const userIdInput = document.getElementById("zotero-user-id");
+      const apiKeyInput = document.getElementById("zotero-api-key");
+      const status = document.getElementById("zotero-test-status");
+      const userId = userIdInput?.value?.trim();
+      const apiKey = apiKeyInput?.value?.trim();
+      if (!userId || !apiKey) { status.textContent = "Please enter both User ID and API Key."; status.className = "zotero-status error"; return; }
+      status.textContent = "Testing..."; status.className = "zotero-status";
+      try {
+        await testZoteroConnection(userId, apiKey);
+        status.textContent = "Connected successfully!"; status.className = "zotero-status success";
+        saveSetting("zoteroUserId", userId); saveSetting("zoteroApiKey", apiKey);
+        const dlBtn = document.getElementById("zotero-download-btn");
+        if (dlBtn) dlBtn.disabled = false;
+      } catch (e) {
+        status.textContent = "Connection failed: " + e.message; status.className = "zotero-status error";
+      }
+    });
+  }
+
+  const zoteroDownloadBtn = document.getElementById("zotero-download-btn");
+  if (zoteroDownloadBtn) {
+    zoteroDownloadBtn.addEventListener("click", async () => {
+      const userId = settings.zoteroUserId || document.getElementById("zotero-user-id")?.value?.trim();
+      const apiKey = settings.zoteroApiKey || document.getElementById("zotero-api-key")?.value?.trim();
+      if (!userId || !apiKey) return;
+      zoteroDownloadBtn.disabled = true;
+      const progressEl = document.getElementById("zotero-progress");
+      const fillEl = document.getElementById("zotero-progress-fill");
+      const textEl = document.getElementById("zotero-progress-text");
+      if (progressEl) progressEl.style.display = "";
+      try {
+        const refs = await downloadZoteroReferences(userId, apiKey, (msg, pct) => {
+          if (fillEl) fillEl.style.width = Math.round(pct * 100) + "%";
+          if (textEl) textEl.textContent = msg;
+        });
+        // Save references via Tauri command
+        const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+        if (IS_TAURI) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("save_zotero_references", { data: JSON.stringify(refs) });
+        } else {
+          localStorage.setItem("hush_zotero_refs", JSON.stringify(refs));
+        }
+        clearZoteroCache();
+        const timestamp = new Date().toLocaleString();
+        saveSetting("zoteroLastUpdate", timestamp);
+        saveSetting("zoteroReferenceCount", refs.length);
+        saveSetting("zoteroUserId", userId);
+        saveSetting("zoteroApiKey", apiKey);
+        render();
+      } catch (e) {
+        if (textEl) textEl.textContent = "Download failed: " + e.message;
+        zoteroDownloadBtn.disabled = false;
       }
     });
   }

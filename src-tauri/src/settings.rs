@@ -161,6 +161,18 @@ pub struct AppSettings {
     #[serde(default = "default_custom_flags")]
     pub custom_flags: Vec<CustomFlag>,
 
+    // Zotero integration
+    #[serde(default)]
+    pub zotero_api_key: Option<String>,
+    #[serde(default)]
+    pub zotero_user_id: Option<String>,
+    #[serde(default)]
+    pub zotero_last_update: Option<String>,
+    #[serde(default)]
+    pub zotero_reference_count: u32,
+    #[serde(default = "default_shortcut_zotero")]
+    pub shortcut_zotero: String,
+
     // Session state (persisted across restarts)
     #[serde(default)]
     pub window_width: Option<f64>,
@@ -492,7 +504,7 @@ fn default_shortcut_select_sentence() -> String {
     "Mod+L".to_string()
 }
 fn default_shortcut_reduce_sentence() -> String {
-    "Mod+Shift+L".to_string()
+    "Alt+Shift+L".to_string()
 }
 fn default_shortcut_select_next() -> String {
     "Mod+D".to_string()
@@ -535,6 +547,9 @@ fn default_shortcut_comment() -> String {
 }
 fn default_shortcut_insert_footnote() -> String {
     "Mod+Shift+M".to_string()
+}
+fn default_shortcut_zotero() -> String {
+    "Mod+Shift+L".to_string()
 }
 
 impl Default for AppSettings {
@@ -604,6 +619,11 @@ impl Default for AppSettings {
             longview_current_position_color: default_longview_current_position_color(),
             flag_colors: default_flag_colors(),
             custom_flags: default_custom_flags(),
+            zotero_api_key: None,
+            zotero_user_id: None,
+            zotero_last_update: None,
+            zotero_reference_count: 0,
+            shortcut_zotero: default_shortcut_zotero(),
             window_width: None,
             window_height: None,
             window_x: None,

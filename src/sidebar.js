@@ -17,6 +17,7 @@ import versionsRaw from "./sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 import stylesRaw from "./sidebar_icons/styles.svg?raw";
+import zoteroRaw from "./sidebar_icons/zotero.svg?raw";
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
@@ -38,6 +39,7 @@ export function createSidebar(container, state) {
       ${btn("focus", "Focus mode", icons.focus)}
     </div>
     <div class="sidebar-group sidebar-bottom">
+      ${btn("zotero", "Zotero search", icons.zotero)}
       ${btn("versions", "Versions", icons.versions)}
       ${btn("export", "Export", icons.export)}
       ${settingsBtn}
@@ -184,6 +186,14 @@ export function createSidebar(container, state) {
     if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
+  container.querySelector('[data-action="zotero"]').addEventListener("click", async () => {
+    hidePanel();
+    if (state.editor) {
+      const { openZoteroModal } = await import("./zotero.js");
+      openZoteroModal(state.editor.view, state);
+    }
+  });
+
   container.querySelector('[data-action="export"]').addEventListener("click", async () => {
     hidePanel();
     await exportCurrentFile(state);
@@ -219,6 +229,7 @@ export function createSidebar(container, state) {
     "typewriter": { label: "Typewriter mode",      key: "shortcutTypewriter" },
     "dry":        { label: "D.R.Y. highlighting",  key: "shortcutToggleDry" },
     "focus":      { label: "Focus mode",           key: "shortcutToggleFocus" },
+    "zotero":     { label: "Zotero search",        key: "shortcutZotero" },
   };
 
   function updateButtonTitles() {
@@ -320,6 +331,7 @@ const icons = {
   export: svgInner(exportRaw),
   settings: svgInner(settingsRaw),
   styles: svgInner(stylesRaw),
+  zotero: svgInner(zoteroRaw),
 };
 
 function showRatchetDropdown(anchor, state, onStart) {

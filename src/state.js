@@ -42,7 +42,7 @@ export class AppState {
 
       // Shortcuts — Editing (sentence navigation)
       shortcutSelectSentence: "Mod+L",
-      shortcutReduceSentence: "Mod+Shift+L",
+      shortcutReduceSentence: "Alt+Shift+L",
       shortcutSelectNext: "Mod+D",
       shortcutJumpNextSentence: "Mod+ArrowRight",
       shortcutJumpPrevSentence: "Mod+ArrowLeft",
@@ -102,6 +102,13 @@ export class AppState {
         { name: "REWRITE", color: "#ff66aa" },
         { name: "RESEARCH", color: "#66aaff" },
       ],
+
+      // Zotero
+      zoteroApiKey: null,
+      zoteroUserId: null,
+      zoteroLastUpdate: null,
+      zoteroReferenceCount: 0,
+      shortcutZotero: "Mod+Shift+L",
 
       // Session state
       lastFileId: null,

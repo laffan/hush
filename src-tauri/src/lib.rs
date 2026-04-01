@@ -16,17 +16,20 @@ mod settings;
 mod files;
 mod snapshots;
 mod sync;
+mod zotero;
 
 use settings::AppSettings;
 use files::FileManager;
 use snapshots::{SnapshotManager, SnapshotEntry};
 use sync::{SyncManager, ImportEntry, SyncedFileInfo, ExternalChange};
+use zotero::ZoteroManager;
 
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub file_manager: Mutex<FileManager>,
     pub snapshot_manager: Mutex<SnapshotManager>,
     pub sync_manager: Mutex<SyncManager>,
+    pub zotero_manager: Mutex<ZoteroManager>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -380,6 +383,22 @@ fn reject_external_change(
     Ok(())
 }
 
+// ===== Zotero Commands =====
+
+#[tauri::command]
+fn save_zotero_references(state: State<AppState>, data: String) -> Result<(), String> {
+    state.zotero_manager.lock().unwrap()
+        .save_references(&data)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_zotero_references(state: State<AppState>) -> Result<String, String> {
+    state.zotero_manager.lock().unwrap()
+        .load_references()
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(desktop)]
 #[tauri::command]
 fn set_always_on_top(app: AppHandle, on_top: bool) -> Result<(), String> {
@@ -465,6 +484,7 @@ pub fn run() {
     let file_manager = FileManager::new(data_dir.join("files"));
     let snapshot_manager = SnapshotManager::new(&data_dir);
     let sync_manager = SyncManager::new(&data_dir);
+    let zotero_manager = ZoteroManager::new(&data_dir);
 
     // Run snapshot cleanup on startup
     if let Err(e) = snapshot_manager.cleanup_all() {
@@ -487,6 +507,7 @@ pub fn run() {
             file_manager: Mutex::new(file_manager),
             snapshot_manager: Mutex::new(snapshot_manager),
             sync_manager: Mutex::new(sync_manager),
+            zotero_manager: Mutex::new(zotero_manager),
         })
         .setup(move |_app| {
             #[cfg(desktop)]
@@ -632,6 +653,8 @@ pub fn run() {
             check_sync_changes,
             accept_external_change,
             reject_external_change,
+            save_zotero_references,
+            load_zotero_references,
             #[cfg(desktop)]
             set_always_on_top,
             set_activation_policy,

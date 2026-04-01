@@ -17,6 +17,7 @@ import { createFootnotePlugin, insertFootnote } from "./footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./project-view.js";
 import { createFocusModePlugin } from "./focus-mode.js";
 import { createCalloutPlugin } from "./callouts.js";
+import { openZoteroModal } from "./zotero.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -210,7 +211,8 @@ export function createEditor(container, state) {
       { key: "Mod-,", run: () => { openSettingsWindow(state); return true; } },
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
       { key: "Mod-l", run: (view) => selectSentence(view) },
-      { key: "Mod-Shift-l", run: (view) => reduceSentenceSelection(view) },
+      { key: "Alt-Shift-l", run: (view) => reduceSentenceSelection(view) },
+      { key: "Mod-Shift-l", run: (view) => { openZoteroModal(view, state); return true; } },
       { key: "Mod-ArrowRight", run: (view) => jumpToNextSentence(view) },
       { key: "Mod-ArrowLeft", run: (view) => jumpToPrevSentence(view) },
       { key: "Mod-Shift-ArrowRight", run: (view) => shiftSelectionToNextSentence(view) },

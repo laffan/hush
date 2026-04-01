@@ -1,0 +1,285 @@
+/* Zotero search modal */
+.zotero-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 480px;
+  max-height: 500px;
+  background: var(--bg, #1e1e1e);
+  border: 1px solid var(--panel-border, #444);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--ui-font, system-ui, sans-serif);
+  color: var(--fg, #ccc);
+}
+
+.zotero-search-row {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  gap: 8px;
+  border-bottom: 1px solid var(--panel-border, #444);
+}
+
+.zotero-search-input {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--panel-border, #444);
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.zotero-search-input:focus {
+  border-color: var(--fg, #888);
+}
+
+.zotero-close-btn {
+  background: none;
+  border: none;
+  color: var(--fg, #888);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.6;
+}
+.zotero-close-btn:hover { opacity: 1; }
+
+.zotero-results {
+  overflow-y: auto;
+  max-height: 350px;
+  padding: 4px 0;
+}
+.zotero-results.hidden { display: none; }
+
+.zotero-result {
+  padding: 8px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.zotero-result:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.zotero-result-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.zotero-result-meta {
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.zotero-empty {
+  padding: 20px 14px;
+  text-align: center;
+  opacity: 0.5;
+  font-size: 13px;
+}
+
+/* Detail panel */
+.zotero-detail {
+  padding: 14px;
+  overflow-y: auto;
+  max-height: 400px;
+}
+.zotero-detail.hidden { display: none; }
+
+.zotero-detail-header {
+  margin-bottom: 12px;
+}
+.zotero-detail-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.zotero-detail-meta {
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.zotero-link-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.zotero-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.zotero-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.zotero-option input[type="radio"] {
+  margin: 0;
+}
+
+.zotero-preview-link {
+  margin-left: auto;
+  color: var(--fg, #888);
+  opacity: 0.4;
+  text-decoration: none;
+  font-size: 12px;
+}
+.zotero-preview-link:hover { opacity: 1; }
+
+.zotero-page-row {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.zotero-page-row.hidden { display: none; }
+.zotero-page-input {
+  width: 60px;
+  background: transparent;
+  border: 1px solid var(--panel-border, #444);
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: inherit;
+  font-size: 13px;
+  margin-left: 6px;
+}
+
+.zotero-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.zotero-actions button {
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--panel-border, #444);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.zotero-actions button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.zotero-insert-btn {
+  background: rgba(255, 255, 255, 0.1) !important;
+  font-weight: 500;
+}
+
+/* No refs message */
+.zotero-no-refs {
+  padding: 24px;
+  text-align: center;
+  width: 360px;
+}
+.zotero-no-refs p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.zotero-dismiss-btn {
+  padding: 6px 20px;
+  border-radius: 4px;
+  border: 1px solid var(--panel-border, #444);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+}
+.zotero-dismiss-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Settings tab styles */
+.zotero-credentials {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.zotero-credentials input[type="text"],
+.zotero-credentials input[type="password"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border, #444);
+  border-radius: 4px;
+  background: var(--input-bg, rgba(255,255,255,0.06));
+  color: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.zotero-credentials input:focus {
+  border-color: var(--fg, #888);
+  outline: none;
+}
+
+.zotero-status {
+  font-size: 12px;
+  margin-top: 4px;
+  min-height: 18px;
+}
+.zotero-status.success { color: #4caf50; }
+.zotero-status.error { color: #f44336; }
+
+.zotero-ref-info {
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border, #444);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+.zotero-ref-info strong {
+  font-weight: 600;
+}
+
+.zotero-progress {
+  margin-top: 8px;
+}
+.zotero-progress-bar {
+  height: 4px;
+  background: var(--panel-border, #444);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.zotero-progress-fill {
+  height: 100%;
+  background: var(--fg, #888);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+.zotero-progress-text {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.zotero-download-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--panel-border, #444);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  width: 100%;
+}
+.zotero-download-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.zotero-download-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
