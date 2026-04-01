@@ -108,7 +108,7 @@ export function createSidebar(container, state) {
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = null;
     panelOverlay.classList.add("hidden");
-    container.classList.remove("visible");
+    container.classList.remove("visible", "pinned");
     // Recalculate column centering for inset mode
     if (state._columnResizeHandler) state._columnResizeHandler();
   }
