@@ -1,4 +1,4 @@
-/* Zotero search modal */
+/* Zotero search modal (rendered in the main editor window) */
 .zotero-modal {
   position: fixed;
   top: 50%;
@@ -6,16 +6,16 @@
   transform: translate(-50%, -50%);
   width: 480px;
   max-height: 500px;
-  background: var(--bg, #1e1e1e);
-  border: 1px solid var(--panel-border, #444);
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
   border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   z-index: 10000;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: var(--ui-font, system-ui, sans-serif);
-  color: var(--fg, #ccc);
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--fg);
 }
 
 .zotero-search-row {
@@ -23,31 +23,31 @@
   align-items: center;
   padding: 12px;
   gap: 8px;
-  border-bottom: 1px solid var(--panel-border, #444);
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .zotero-search-input {
   flex: 1;
-  background: transparent;
-  border: 1px solid var(--panel-border, #444);
-  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
   padding: 8px 10px;
-  color: inherit;
+  color: var(--fg);
   font-size: 14px;
   outline: none;
 }
 .zotero-search-input:focus {
-  border-color: var(--fg, #888);
+  border-color: var(--fg);
 }
 
 .zotero-close-btn {
   background: none;
   border: none;
-  color: var(--fg, #888);
+  color: var(--fg);
   font-size: 20px;
   cursor: pointer;
   padding: 0 4px;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 .zotero-close-btn:hover { opacity: 1; }
 
@@ -66,7 +66,7 @@
   gap: 2px;
 }
 .zotero-result:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(128, 128, 128, 0.12);
 }
 
 .zotero-result-title {
@@ -124,7 +124,7 @@
   font-size: 13px;
 }
 .zotero-option:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(128, 128, 128, 0.12);
 }
 .zotero-option input[type="radio"] {
   margin: 0;
@@ -132,7 +132,7 @@
 
 .zotero-preview-link {
   margin-left: auto;
-  color: var(--fg, #888);
+  color: var(--fg);
   opacity: 0.4;
   text-decoration: none;
   font-size: 12px;
@@ -146,11 +146,11 @@
 .zotero-page-row.hidden { display: none; }
 .zotero-page-input {
   width: 60px;
-  background: transparent;
-  border: 1px solid var(--panel-border, #444);
-  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
   padding: 4px 6px;
-  color: inherit;
+  color: var(--fg);
   font-size: 13px;
   margin-left: 6px;
 }
@@ -162,18 +162,18 @@
 }
 .zotero-actions button {
   padding: 6px 14px;
-  border-radius: 4px;
-  border: 1px solid var(--panel-border, #444);
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
   background: transparent;
-  color: inherit;
+  color: var(--fg);
   font-size: 13px;
   cursor: pointer;
 }
 .zotero-actions button:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(128, 128, 128, 0.12);
 }
 .zotero-insert-btn {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(128, 128, 128, 0.1) !important;
   font-weight: 500;
 }
 
@@ -190,18 +190,18 @@
 }
 .zotero-dismiss-btn {
   padding: 6px 20px;
-  border-radius: 4px;
-  border: 1px solid var(--panel-border, #444);
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
   background: transparent;
-  color: inherit;
+  color: var(--fg);
   cursor: pointer;
   font-size: 13px;
 }
 .zotero-dismiss-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(128, 128, 128, 0.12);
 }
 
-/* Settings tab styles */
+/* ===== Settings tab styles ===== */
 .zotero-credentials {
   display: flex;
   flex-direction: column;
@@ -221,7 +221,7 @@
   white-space: nowrap;
   align-self: flex-start;
 }
-.zotero-test-btn:hover { background: rgba(128,128,128,0.15); }
+.zotero-test-btn:hover { background: rgba(128, 128, 128, 0.15); }
 
 .zotero-status {
   font-size: 12px;
