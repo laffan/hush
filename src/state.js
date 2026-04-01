@@ -33,7 +33,7 @@ export class AppState {
       shortcutTogglePrivate: "CmdOrCtrl+Shift+P",
       shortcutToggleSidebar: "CmdOrCtrl+\\",
       shortcutToggleOutline: "CmdOrCtrl+Shift+\\",
-      shortcutTypewriter: "Mod+T",
+      shortcutTypewriter: "Mod+Shift+T",
       shortcutNewFile: "Mod+N",
       shortcutToggleDry: "Mod+Shift+R",
       shortcutToggleFocus: "Mod+Shift+Y",

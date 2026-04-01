@@ -224,7 +224,7 @@ export function createEditor(container, state) {
       { key: "Mod-/", run: (view) => toggleComment(view) },
       { key: "Mod-`", run: (view) => toggleStrikethrough(view) },
       { key: "Mod-Shift-m", run: (view) => insertFootnote(view) },
-      { key: "Mod-t", run: () => { state.toggleTypewriter(); return true; } },
+      { key: "Mod-Shift-T", run: () => { state.toggleTypewriter(); return true; } },
       { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },
       { key: "Mod-Shift-y", run: () => { state.toggleFocus(); return true; } },
       { key: "Mod-ArrowUp", run: (view) => jumpToPrevParagraph(view) },
@@ -392,6 +392,7 @@ export function createEditor(container, state) {
   state.on("fullscreen-changed", () => {
     applyFullscreen(state);
     setTimeout(() => {
+      view.focus();
       if (state.typewriterMode && typewriterBoundary) {
         typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
         applyTypewriterPadding(view, state);
@@ -429,8 +430,13 @@ export function createEditor(container, state) {
   });
 
   state.on("settings-changed", () => {
-    document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
-    document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
+    const _activeStyle = state.settings.activeStyleId
+      ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId)
+      : null;
+    const _fs = _activeStyle?.fontSize || state.settings.fontSize;
+    document.documentElement.style.setProperty("--font-size", _fs + "px");
+    const _lh = _activeStyle?.lineHeight || state.settings.lineHeight;
+    document.documentElement.style.setProperty("--line-height", _lh);
     view.dispatch({
       effects: highlightCompartment.reconfigure(
         syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, getActiveTheme(state.settings)?.headingColor))

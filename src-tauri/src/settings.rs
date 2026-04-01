@@ -471,7 +471,7 @@ fn default_shortcut_toggle_outline() -> String {
     "CmdOrCtrl+Shift+\\".to_string()
 }
 fn default_shortcut_typewriter() -> String {
-    "Mod+T".to_string()
+    "Mod+Shift+T".to_string()
 }
 fn default_shortcut_new_file() -> String {
     "Mod+N".to_string()
