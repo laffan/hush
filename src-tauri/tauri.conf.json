@@ -52,5 +52,9 @@
       "frameworks": []
     }
   },
-  "plugins": {}
+  "plugins": {
+    "shell": {
+      "open": "^((mailto:\\w+)|(tel:\\w+)|(https?://\\w+)|(zotero://\\w+)|(obsidian://\\w+)).+"
+    }
+  }
 }

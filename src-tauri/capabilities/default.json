@@ -28,16 +28,7 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "shell:default",
-    {
-      "identifier": "shell:allow-open",
-      "allow": [
-        { "url": "https://*" },
-        { "url": "http://*" },
-        { "url": "zotero://*" },
-        { "url": "obsidian://*" },
-        { "url": "mailto:*" }
-      ]
-    },
+    "shell:allow-open",
     "positioner:default",
     {
       "identifier": "fs:default",
