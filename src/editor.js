@@ -95,8 +95,8 @@ function getMarkdownHighlight(normalizeHeaders, headingColor) {
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "0.9em" },
     // Custom syntax: %% comments %% — dimmed out
     { tag: commentTag, opacity: "0.4" },
-    // Custom syntax: == highlight == — highlighted background
-    { tag: highlightTag, backgroundColor: "rgba(255, 208, 0, 0.3)", borderRadius: "2px" },
+    // Custom syntax: == highlight == — highlighted background (flag-typed highlights get per-flag color from plugin)
+    { tag: highlightTag, borderRadius: "2px" },
     // Dim the markdown syntax characters (# * _ ` %% == ~~ etc.)
     { tag: tags.processingInstruction, opacity: "0.4" },
   ]);
@@ -110,7 +110,9 @@ function hexToRgba(hex, alpha) {
 }
 
 function createFlagHighlightPlugin(stateRef) {
-  const flagRegex = /==([A-Za-z][A-Za-z0-9_-]{0,24}):\s*[^=]+==/g;
+  const highlightRegex = /==[^=]+==/g;
+  const flagRegex = /^==([A-Za-z][A-Za-z0-9_-]{0,24}):\s*[^=]+==$/;
+  const defaultColor = "rgba(255, 208, 0, 0.3)";
   return ViewPlugin.fromClass(
     class {
       constructor(view) {
@@ -126,17 +128,19 @@ function createFlagHighlightPlugin(stateRef) {
         const doc = view.state.doc.toString();
         const colors = stateRef.settings.flagColors || {};
         let match;
-        flagRegex.lastIndex = 0;
-        while ((match = flagRegex.exec(doc)) !== null) {
-          const flagType = match[1].toUpperCase();
-          const color = colors[flagType];
-          if (color) {
-            builder.add(
-              match.index,
-              match.index + match[0].length,
-              Decoration.mark({ attributes: { style: `background-color: ${hexToRgba(color, 0.3)}; border-radius: 2px` } })
-            );
+        highlightRegex.lastIndex = 0;
+        while ((match = highlightRegex.exec(doc)) !== null) {
+          const flagMatch = match[0].match(flagRegex);
+          let bg = defaultColor;
+          if (flagMatch) {
+            const color = colors[flagMatch[1].toUpperCase()];
+            if (color) bg = hexToRgba(color, 0.3);
           }
+          builder.add(
+            match.index,
+            match.index + match[0].length,
+            Decoration.mark({ attributes: { style: `background-color: ${bg}; border-radius: 2px` } })
+          );
         }
         return builder.finish();
       }
