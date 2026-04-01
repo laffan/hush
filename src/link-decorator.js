@@ -1,8 +1,10 @@
 /**
  * Markdown link decorator — hides URL portion of [text](url) links
  * when the cursor is not inside them, and makes rendered links clickable.
+ *
+ * Cmd+click (Ctrl+click on non-Mac) opens the link URL.
  */
-import { ViewPlugin, Decoration, WidgetType } from "@codemirror/view";
+import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 
 // Matches [text](url) but not ![alt](img)
@@ -24,24 +26,26 @@ class LinkWidget extends WidgetType {
     span.className = "cm-link-rendered";
     span.textContent = this.text;
     span.title = this.url;
-    span.addEventListener("mousedown", (e) => {
-      if (e.metaKey || e.ctrlKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        window.open(this.url, "_blank");
-      }
-    });
+    span.dataset.linkUrl = this.url;
     return span;
   }
 
-  ignoreEvent(e) {
-    // true = CM ignores the event (our DOM handler still fires)
-    // false = CM processes the event (cursor moves into link, widget removed)
-    if (e.type === "mousedown" && (e.metaKey || e.ctrlKey)) {
-      return true; // CM ignores → widget stays, our handler opens URL
+  ignoreEvent() { return false; }
+}
+
+/** Find the link at a given document position, or null. */
+function linkAtPos(doc, pos) {
+  const line = doc.lineAt(pos);
+  LINK_RE.lastIndex = 0;
+  let match;
+  while ((match = LINK_RE.exec(line.text)) !== null) {
+    const from = line.from + match.index;
+    const to = from + match[0].length;
+    if (pos >= from && pos <= to) {
+      return { from, to, text: match[1], url: match[2] };
     }
-    return false; // CM processes → cursor enters link, raw markdown shown
   }
+  return null;
 }
 
 function buildDecorations(view) {
@@ -77,8 +81,39 @@ function buildDecorations(view) {
   return builder.finish();
 }
 
+/**
+ * Editor-level Cmd+click handler. Checks if the click lands on a
+ * rendered link widget OR inside raw link syntax, and opens the URL.
+ */
+const linkClickHandler = EditorView.domEventHandlers({
+  mousedown(e, view) {
+    if (!(e.metaKey || e.ctrlKey)) return false;
+
+    // Case 1: clicked on a rendered widget
+    const target = e.target.closest(".cm-link-rendered");
+    if (target && target.dataset.linkUrl) {
+      e.preventDefault();
+      window.open(target.dataset.linkUrl, "_blank");
+      return true;
+    }
+
+    // Case 2: cursor is inside raw link text (widget not shown)
+    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (pos != null) {
+      const link = linkAtPos(view.state.doc, pos);
+      if (link) {
+        e.preventDefault();
+        window.open(link.url, "_blank");
+        return true;
+      }
+    }
+
+    return false;
+  },
+});
+
 export function createLinkDecoratorPlugin() {
-  return ViewPlugin.fromClass(
+  const plugin = ViewPlugin.fromClass(
     class {
       constructor(view) {
         this.decorations = buildDecorations(view);
@@ -91,4 +126,5 @@ export function createLinkDecoratorPlugin() {
     },
     { decorations: (v) => v.decorations }
   );
+  return [plugin, linkClickHandler];
 }
