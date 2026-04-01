@@ -18,6 +18,7 @@ import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } 
 import { createFocusModePlugin } from "./focus-mode.js";
 import { createCalloutPlugin } from "./callouts.js";
 import { openZoteroModal } from "./zotero.js";
+import { createLinkDecoratorPlugin } from "./link-decorator.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -333,6 +334,7 @@ export function createEditor(container, state) {
   const projectViewField = createProjectViewField(state);
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
+  const linkDecoratorPlugin = createLinkDecoratorPlugin();
 
   const startState = EditorState.create({
     doc: "",
@@ -355,6 +357,7 @@ export function createEditor(container, state) {
       calloutPlugin,
       footnotePlugin,
       flagHighlightPlugin,
+      linkDecoratorPlugin,
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),

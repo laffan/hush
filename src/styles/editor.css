@@ -86,3 +86,15 @@
 .column-resizer.hover, .column-resizer.dragging {
   opacity: 0.5;
 }
+
+/* Rendered markdown links (when cursor is outside) */
+.cm-link-rendered {
+  text-decoration: underline;
+  text-decoration-color: var(--accent, rgba(128, 128, 128, 0.4));
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: text-decoration-color 0.15s;
+}
+.cm-link-rendered:hover {
+  text-decoration-color: var(--fg);
+}
