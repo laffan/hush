@@ -1,5 +1,5 @@
-import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
-import { EditorState, EditorSelection, Prec, Compartment, Annotation } from "@codemirror/state";
+import { EditorView, keymap, drawSelection, placeholder, ViewPlugin, Decoration } from "@codemirror/view";
+import { EditorState, EditorSelection, Prec, Compartment, Annotation, RangeSetBuilder } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags, Tag } from "@lezer/highlight";
@@ -102,6 +102,49 @@ function getMarkdownHighlight(normalizeHeaders, headingColor) {
   ]);
 }
 
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function createFlagHighlightPlugin(stateRef) {
+  const flagRegex = /==([A-Za-z][A-Za-z0-9_-]{0,24}):\s*[^=]+==/g;
+  return ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.decorations = this.buildDecorations(view);
+      }
+      update(update) {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+      buildDecorations(view) {
+        const builder = new RangeSetBuilder();
+        const doc = view.state.doc.toString();
+        const colors = stateRef.settings.flagColors || {};
+        let match;
+        flagRegex.lastIndex = 0;
+        while ((match = flagRegex.exec(doc)) !== null) {
+          const flagType = match[1].toUpperCase();
+          const color = colors[flagType];
+          if (color) {
+            builder.add(
+              match.index,
+              match.index + match[0].length,
+              Decoration.mark({ attributes: { style: `background-color: ${hexToRgba(color, 0.3)}; border-radius: 2px` } })
+            );
+          }
+        }
+        return builder.finish();
+      }
+    },
+    { decorations: (v) => v.decorations }
+  );
+}
+
 /**
  * Creates the CodeMirror 6 editor instance.
  */
@@ -151,7 +194,7 @@ export function createEditor(container, state) {
   });
 
   // Ratchet mode: block deletion, navigation, selection, undo
-  const ratchetBlockedKeys = "Backspace Delete ArrowLeft ArrowRight ArrowUp ArrowDown Home End PageUp PageDown Mod-ArrowLeft Mod-ArrowRight Mod-ArrowUp Mod-ArrowDown Shift-ArrowLeft Shift-ArrowRight Shift-ArrowUp Shift-ArrowDown Shift-Home Shift-End Mod-Shift-ArrowLeft Mod-Shift-ArrowRight Mod-Shift-ArrowUp Mod-Shift-ArrowDown Mod-a Mod-z Mod-Shift-z Mod-x".split(" ");
+  const ratchetBlockedKeys = "Delete ArrowLeft ArrowRight ArrowUp ArrowDown Home End PageUp PageDown Mod-ArrowLeft Mod-ArrowRight Mod-ArrowUp Mod-ArrowDown Shift-ArrowLeft Shift-ArrowRight Shift-ArrowUp Shift-ArrowDown Shift-Home Shift-End Mod-Shift-ArrowLeft Mod-Shift-ArrowRight Mod-Shift-ArrowUp Mod-Shift-ArrowDown Mod-a Mod-z Mod-Shift-z Mod-x".split(" ");
   const ratchetKeymap = Prec.highest(
     keymap.of(ratchetBlockedKeys.map(key => ({ key, run: () => state.ratchetMode })))
   );
@@ -254,10 +297,15 @@ export function createEditor(container, state) {
   const ratchetFilter = EditorState.transactionFilter.of((tr) => {
     if (!state.ratchetMode || tr.annotation(bypassRatchet)) return tr;
     if (tr.docChanged) {
+      // Find the lock point: position after the last space or newline.
+      // Content before the lock point is permanently locked.
+      const doc = tr.startState.doc.toString();
+      const lastSpaceIdx = Math.max(doc.lastIndexOf(" "), doc.lastIndexOf("\n"));
+      const lockPoint = lastSpaceIdx + 1;
+
       let reject = false;
       tr.changes.iterChanges((fromA, toA) => {
-        if (fromA < toA) reject = true; // deletion
-        if (fromA !== tr.startState.doc.length) reject = true; // not appending at end
+        if (fromA < lockPoint) reject = true;
       });
       if (reject) return [];
     }
@@ -278,6 +326,7 @@ export function createEditor(container, state) {
   const calloutPlugin = createCalloutPlugin();
   const projectViewField = createProjectViewField(state);
   const separatorFilter = createSeparatorFilter(state);
+  const flagHighlightPlugin = createFlagHighlightPlugin(state);
 
   const startState = EditorState.create({
     doc: "",
@@ -299,6 +348,7 @@ export function createEditor(container, state) {
       focusModePlugin,
       calloutPlugin,
       footnotePlugin,
+      flagHighlightPlugin,
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),

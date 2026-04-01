@@ -357,6 +357,57 @@ export async function rejectExternalChange(state, internalId, folderPath) {
   }
 }
 
+/**
+ * Reconcile sync state after a tree reorganization (e.g. drag-and-drop).
+ * Finds documents that are now inside a synced folder but don't have
+ * a sync registration, and creates the external file for them.
+ * Also removes sync registrations for documents moved out of synced folders.
+ */
+export async function reconcileSync(state) {
+  if (!IS_TAURI) return;
+  const { findSyncContext } = await import("./tree-helpers.js");
+
+  // Collect all document nodes from the tree
+  function collectDocs(nodes) {
+    const docs = [];
+    for (const n of nodes) {
+      if (n.type === "document" && n.fileId) docs.push(n);
+      if (n.children) docs.push(...collectDocs(n.children));
+    }
+    return docs;
+  }
+
+  const docs = collectDocs(state.fileTree);
+
+  for (const doc of docs) {
+    const ctx = findSyncContext(state.fileTree, doc.id);
+    let info = null;
+    try {
+      info = await tauriInvoke("get_sync_file_info", { internalId: doc.fileId });
+    } catch (_) {}
+
+    if (ctx && !info) {
+      // Document is in a synced folder but has no registration — create external file
+      const folder = getSyncFolder(state, ctx.syncFolderId);
+      if (!folder) continue;
+      let content = "";
+      try {
+        const file = await tauriInvoke("load_file", { id: doc.fileId });
+        content = file.content || "";
+      } catch (_) {}
+      await syncCreateFile(state, doc.id, doc.fileId, content);
+    } else if (!ctx && info) {
+      // Document was moved out of a synced folder — remove sync registration
+      const folder = getSyncFolder(state, info.syncFolderId);
+      if (!folder) continue;
+      try {
+        const fp = folder.syncType === "dropbox" ? "__dropbox__" : folder.path;
+        await tauriInvoke("delete_sync_file", { folderPath: fp, internalId: doc.fileId });
+      } catch (_) {}
+    }
+  }
+}
+
 /** Helper to get fileId from a document tree node by nodeId */
 async function getFileIdForNode(state, nodeId) {
   const { findNode } = await import("./tree-helpers.js");

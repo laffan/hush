@@ -146,6 +146,7 @@ export function createFilesPanel(container, state, hidePanel) {
       enforceSpecialPositions(newData);
       state.fileTree = newData;
       state.saveFileTree();
+      state.reconcileSync();
       if (state.currentProjectId) state.openProject(state.currentProjectId);
     },
   });

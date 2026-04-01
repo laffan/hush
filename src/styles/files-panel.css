@@ -221,6 +221,7 @@
   border-radius: 3px;
   opacity: 0.6;
   white-space: nowrap;
+  margin-left: -10px;
 }
 .tree-action-text:hover {
   opacity: 1;

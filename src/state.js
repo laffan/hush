@@ -342,6 +342,8 @@ export class AppState {
     await this.syncDeleteNode(nodeId);
     const removed = removeNode(this.fileTree, nodeId);
     if (removed) {
+      // Clear flagged status when moving to trash
+      this._clearFlaggedRecursive(removed);
       const trash = findNode(this.fileTree, AppState.TRASH_ID);
       if (trash) (trash.children || (trash.children = [])).push(removed);
     }
@@ -371,6 +373,11 @@ export class AppState {
     await this._deleteFilesByIds(fileIds);
     trash.children = [];
     await this._finalizeFileDeletion(fileIds);
+  }
+
+  _clearFlaggedRecursive(node) {
+    node.flagged = false;
+    if (node.children) node.children.forEach(c => this._clearFlaggedRecursive(c));
   }
 
   _collectNodeFileIds(node) {
@@ -605,6 +612,7 @@ export class AppState {
   async syncCreateNode(nid, t) { return this._syncOp("syncCreateNode", nid, t); }
   async syncCreateFile(nid, fid, c) { return this._syncOp("syncCreateFile", nid, fid, c); }
   async syncProjectOrdering(pid) { return this._syncOp("syncProjectOrdering", pid); }
+  async reconcileSync() { return this._syncOp("reconcileSync"); }
 
   async updateSettings(partial) {
     Object.assign(this.settings, partial);
