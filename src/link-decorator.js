@@ -6,6 +6,7 @@
  */
 import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
+import { isIOS } from "./settings-ui.js";
 
 // Matches [text](url) but not ![alt](img)
 const LINK_RE = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
@@ -96,34 +97,46 @@ async function openUrl(url) {
   }
 }
 
+/** Try to find and open a link at the event coordinates. */
+function tryOpenLinkAt(e, view) {
+  // Case 1: clicked on a rendered widget
+  const target = e.target.closest(".cm-link-rendered");
+  if (target && target.dataset.linkUrl) {
+    e.preventDefault();
+    openUrl(target.dataset.linkUrl);
+    return true;
+  }
+
+  // Case 2: cursor is inside raw link text (widget not shown)
+  const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+  if (pos != null) {
+    const link = linkAtPos(view.state.doc, pos);
+    if (link) {
+      e.preventDefault();
+      openUrl(link.url);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Editor-level Cmd+click handler. Checks if the click lands on a
  * rendered link widget OR inside raw link syntax, and opens the URL.
+ *
+ * On iPadOS, Ctrl+tap is converted to a contextmenu event by the OS
+ * (it never arrives as a mousedown with ctrlKey), so we also handle
+ * contextmenu there.
  */
 const linkClickHandler = EditorView.domEventHandlers({
   mousedown(e, view) {
     if (!(e.metaKey || e.ctrlKey)) return false;
-
-    // Case 1: clicked on a rendered widget
-    const target = e.target.closest(".cm-link-rendered");
-    if (target && target.dataset.linkUrl) {
-      e.preventDefault();
-      openUrl(target.dataset.linkUrl);
-      return true;
-    }
-
-    // Case 2: cursor is inside raw link text (widget not shown)
-    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-    if (pos != null) {
-      const link = linkAtPos(view.state.doc, pos);
-      if (link) {
-        e.preventDefault();
-        openUrl(link.url);
-        return true;
-      }
-    }
-
-    return false;
+    return tryOpenLinkAt(e, view);
+  },
+  contextmenu(e, view) {
+    if (!isIOS()) return false;
+    return tryOpenLinkAt(e, view);
   },
 });
 
