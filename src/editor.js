@@ -391,15 +391,19 @@ export function createEditor(container, state) {
 
   state.on("fullscreen-changed", async () => {
     await applyFullscreen(state);
-    view.focus();
-    // macOS fullscreen animation takes ~500ms and can steal focus;
-    // re-focus both the window and editor after it settles
-    setTimeout(async () => {
+    // macOS fullscreen animation steals focus; re-grab window + editor
+    // focus at staggered intervals to cover the full animation
+    async function refocusEditor() {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         await getCurrentWindow().setFocus();
       } catch (_) { /* browser/non-Tauri */ }
       view.focus();
+    }
+    refocusEditor();
+    setTimeout(refocusEditor, 250);
+    setTimeout(() => {
+      refocusEditor();
       if (state.typewriterMode && typewriterBoundary) {
         typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
         applyTypewriterPadding(view, state);
@@ -409,7 +413,7 @@ export function createEditor(container, state) {
         applyRatchetTypewriterPadding(view);
         requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       }
-    }, 500);
+    }, 750);
   });
 
   window.addEventListener("resize", () => {
