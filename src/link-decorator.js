@@ -24,7 +24,7 @@ class LinkWidget extends WidgetType {
     span.className = "cm-link-rendered";
     span.textContent = this.text;
     span.title = this.url;
-    span.addEventListener("click", (e) => {
+    span.addEventListener("mousedown", (e) => {
       if (e.metaKey || e.ctrlKey) {
         e.preventDefault();
         e.stopPropagation();
@@ -35,8 +35,12 @@ class LinkWidget extends WidgetType {
   }
 
   ignoreEvent(e) {
-    // Let click events through so our handler fires
-    return e.type === "mousedown";
+    // true = CM ignores the event (our DOM handler still fires)
+    // false = CM processes the event (cursor moves into link, widget removed)
+    if (e.type === "mousedown" && (e.metaKey || e.ctrlKey)) {
+      return true; // CM ignores → widget stays, our handler opens URL
+    }
+    return false; // CM processes → cursor enters link, raw markdown shown
   }
 }
 
