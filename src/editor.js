@@ -391,17 +391,14 @@ export function createEditor(container, state) {
 
   state.on("fullscreen-changed", async () => {
     await applyFullscreen(state);
-    // macOS fullscreen animation steals focus; re-grab window + editor
-    // focus at staggered intervals to cover the full animation
-    async function refocusEditor() {
-      try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        await getCurrentWindow().setFocus();
-      } catch (_) { /* browser/non-Tauri */ }
+    // macOS fullscreen transition desynchronises CodeMirror's internal
+    // focus state from the DOM: activeElement stays on cm-content and
+    // hasFocus() recovers, but CM still ignores key events.  Blur then
+    // re-focus forces CM to re-run its focusin handler.
+    function refocusEditor() {
+      view.contentDOM.blur();
       view.focus();
     }
-    refocusEditor();
-    setTimeout(refocusEditor, 250);
     setTimeout(() => {
       refocusEditor();
       if (state.typewriterMode && typewriterBoundary) {
@@ -413,7 +410,7 @@ export function createEditor(container, state) {
         applyRatchetTypewriterPadding(view);
         requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       }
-    }, 750);
+    }, 100);
   });
 
   window.addEventListener("resize", () => {
