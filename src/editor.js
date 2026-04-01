@@ -224,7 +224,7 @@ export function createEditor(container, state) {
       { key: "Mod-/", run: (view) => toggleComment(view) },
       { key: "Mod-`", run: (view) => toggleStrikethrough(view) },
       { key: "Mod-Shift-m", run: (view) => insertFootnote(view) },
-      { key: "Mod-Shift-T", run: () => { state.toggleTypewriter(); return true; } },
+      { key: "Mod-Shift-t", run: () => { state.toggleTypewriter(); return true; } },
       { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },
       { key: "Mod-Shift-y", run: () => { state.toggleFocus(); return true; } },
       { key: "Mod-ArrowUp", run: (view) => jumpToPrevParagraph(view) },
@@ -389,8 +389,9 @@ export function createEditor(container, state) {
     }
   });
 
-  state.on("fullscreen-changed", () => {
-    applyFullscreen(state);
+  state.on("fullscreen-changed", async () => {
+    await applyFullscreen(state);
+    view.focus();
     setTimeout(() => {
       view.focus();
       if (state.typewriterMode && typewriterBoundary) {
