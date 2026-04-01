@@ -188,7 +188,33 @@ export function showOverlayAt(el, id, view, stateRef, deps) {
   const scroller = view.scrollDOM;
   const defs = parseDefinitions(view.state.doc);
   const defText = defs.get(id) || "";
+  const elRect = el.getBoundingClientRect();
+  const scrollerRect = scroller.getBoundingClientRect();
+  const paddingLeft = parseInt(scroller.style.paddingLeft) || 50;
+  const paddingRight = parseInt(scroller.style.paddingRight) || 50;
+  const top = elRect.bottom - scrollerRect.top + scroller.scrollTop + 4;
 
+  _mountOverlay(id, defText, view, stateRef, scroller, scrollerRect, paddingLeft, paddingRight, top);
+}
+
+export function openFootnoteOverlayByPos(docPos, id, view, stateRef, deps) {
+  const { parseDefinitions } = deps;
+  if (ui.activeOverlay && ui.activeOverlay.dataset.footnoteId === id) { closeOverlay(); return; }
+  closeOverlay();
+
+  const scroller = view.scrollDOM;
+  const defs = parseDefinitions(view.state.doc);
+  const defText = defs.get(id) || "";
+  const scrollerRect = scroller.getBoundingClientRect();
+  const paddingLeft = parseInt(scroller.style.paddingLeft) || 50;
+  const paddingRight = parseInt(scroller.style.paddingRight) || 50;
+  const coords = view.coordsAtPos(docPos);
+  const top = coords ? (coords.bottom - scrollerRect.top + scroller.scrollTop + 4) : 100;
+
+  _mountOverlay(id, defText, view, stateRef, scroller, scrollerRect, paddingLeft, paddingRight, top);
+}
+
+function _mountOverlay(id, defText, view, stateRef, scroller, scrollerRect, paddingLeft, paddingRight, top) {
   const overlay = document.createElement("div");
   overlay.className = "footnote-overlay";
   overlay.dataset.footnoteId = id;
@@ -201,15 +227,10 @@ export function showOverlayAt(el, id, view, stateRef, deps) {
   overlay.appendChild(closeBtn);
   overlay.appendChild(createEditableContent(id, defText, view, stateRef));
 
-  const elRect = el.getBoundingClientRect();
-  const scrollerRect = scroller.getBoundingClientRect();
-  const paddingLeft = parseInt(scroller.style.paddingLeft) || 50;
-  const paddingRight = parseInt(scroller.style.paddingRight) || 50;
-
   overlay.style.position = "absolute";
   overlay.style.left = paddingLeft + "px";
   overlay.style.width = (scrollerRect.width - paddingLeft - paddingRight) + "px";
-  overlay.style.top = (elRect.bottom - scrollerRect.top + scroller.scrollTop + 4) + "px";
+  overlay.style.top = top + "px";
 
   scroller.appendChild(overlay);
   ui.activeOverlay = overlay;

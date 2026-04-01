@@ -8,7 +8,7 @@ import { RangeSetBuilder } from "@codemirror/state";
 import {
   isEditing, closeOverlay, getActiveOverlay,
   getFootnoteSettings, resolveFootnoteFont, getThemeColors,
-  createEditableContent, showOverlayAt,
+  createEditableContent, showOverlayAt, openFootnoteOverlayByPos,
   updateMarginalia, debouncedUpdateMarginalia,
   setupFootnoteHandlers, setFindDefRange,
 } from "./footnotes-ui.js";
@@ -95,6 +95,27 @@ setFindDefRange(findDefinitionRange);
 
 // Deps object shared with UI functions
 const uiDeps = { FOOTNOTE_REF_RE, FOOTNOTE_DEF_RE, parseDefinitions, getColorForId, isWideMargin };
+
+// Module-level stateRef — set when the plugin is created
+let _stateRef = null;
+
+function getFootnoteRefAtCursor(state) {
+  const cursorPos = state.selection.main.head;
+  for (let i = 1; i <= state.doc.lines; i++) {
+    const line = state.doc.line(i);
+    if (line.from > cursorPos) break;
+    if (line.to < cursorPos) continue;
+    if (FOOTNOTE_DEF_RE.test(line.text)) continue;
+    FOOTNOTE_REF_RE.lastIndex = 0;
+    let m;
+    while ((m = FOOTNOTE_REF_RE.exec(line.text)) !== null) {
+      const from = line.from + m.index;
+      const to = from + m[0].length;
+      if (cursorPos >= from && cursorPos <= to) return { id: m[1], from, to };
+    }
+  }
+  return null;
+}
 
 class FootnoteDotWidget extends WidgetType {
   constructor(id, defText, color, from, to, stateRef) {
@@ -219,9 +240,25 @@ function buildDecorations(view, stateRef) {
 export function insertFootnote(view) {
   const state = view.state;
   const sel = state.selection.main;
-  const docText = state.doc.toString();
 
-  // Find next available numeric id
+  // Case 1: overlay is open → save and close it
+  if (getActiveOverlay()) {
+    closeOverlay();
+    view.focus();
+    return true;
+  }
+
+  // Case 2: cursor is inside a footnote ref (no selection) → open its overlay
+  if (sel.empty) {
+    const ref = getFootnoteRefAtCursor(state);
+    if (ref) {
+      openFootnoteOverlayByPos(ref.from, ref.id, view, _stateRef, uiDeps);
+      return true;
+    }
+  }
+
+  // Find next available numeric id for cases 3 & 4
+  const docText = state.doc.toString();
   let maxNum = 0;
   FOOTNOTE_REF_RE.lastIndex = 0;
   let m;
@@ -230,29 +267,27 @@ export function insertFootnote(view) {
     if (!isNaN(n) && n > maxNum) maxNum = n;
   }
   const id = String(maxNum + 1);
-
-  const ref = `[^${id}]`;
+  const refText = `[^${id}]`;
 
   if (!sel.empty) {
-    // Move selected text into the footnote definition
+    // Case 3: text selected → move it into the footnote definition
     const selectedText = state.sliceDoc(sel.from, sel.to);
-    const defLine = `\n[^${id}]: ${selectedText}`;
     view.dispatch({
       changes: [
-        { from: sel.from, to: sel.to, insert: ref },
-        { from: state.doc.length, insert: defLine },
+        { from: sel.from, to: sel.to, insert: refText },
+        { from: state.doc.length, insert: `\n[^${id}]: ${selectedText}` },
       ],
-      selection: { anchor: sel.from + ref.length },
+      selection: { anchor: sel.from + refText.length },
       scrollIntoView: false,
     });
   } else {
-    const defLine = `\n[^${id}]: `;
+    // Case 4: no selection, cursor not in ref → insert blank footnote
     view.dispatch({
       changes: [
-        { from: sel.from, insert: ref },
-        { from: state.doc.length, insert: defLine },
+        { from: sel.from, insert: refText },
+        { from: state.doc.length, insert: `\n[^${id}]: ` },
       ],
-      selection: { anchor: sel.from + ref.length },
+      selection: { anchor: sel.from + refText.length },
       scrollIntoView: false,
     });
   }
@@ -262,6 +297,7 @@ export function insertFootnote(view) {
 }
 
 export function createFootnotePlugin(stateRef) {
+  _stateRef = stateRef;
   let currentView = null;
   setupFootnoteHandlers(stateRef, () => currentView, uiDeps, insertFootnote);
 
