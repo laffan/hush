@@ -122,20 +122,33 @@ function tryOpenLinkAt(e, view) {
 }
 
 /**
+ * On iPadOS, modifier key state from an external keyboard is not
+ * reliably propagated into touch-synthesized mouse events. We track
+ * Ctrl/Cmd state independently via keydown/keyup so we can check it
+ * when a tap occurs.
+ */
+let _modifierHeld = false;
+if (isIOS()) {
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Meta" || e.key === "Control") _modifierHeld = true;
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.key === "Meta" || e.key === "Control") _modifierHeld = false;
+  });
+  window.addEventListener("blur", () => { _modifierHeld = false; });
+}
+
+function hasModifier(e) {
+  return e.metaKey || e.ctrlKey || _modifierHeld;
+}
+
+/**
  * Editor-level Cmd+click handler. Checks if the click lands on a
  * rendered link widget OR inside raw link syntax, and opens the URL.
- *
- * On iPadOS, Ctrl+tap is converted to a contextmenu event by the OS
- * (it never arrives as a mousedown with ctrlKey), so we also handle
- * contextmenu there.
  */
 const linkClickHandler = EditorView.domEventHandlers({
   mousedown(e, view) {
-    if (!(e.metaKey || e.ctrlKey)) return false;
-    return tryOpenLinkAt(e, view);
-  },
-  contextmenu(e, view) {
-    if (!isIOS()) return false;
+    if (!hasModifier(e)) return false;
     return tryOpenLinkAt(e, view);
   },
 });
