@@ -65,6 +65,8 @@ export function createEditableContent(id, defText, view, stateRef) {
   content.style.fontFamily = resolveFootnoteFont(fsettings.fontFamily);
   content.dataset.footnoteId = id;
   content.addEventListener("mousedown", (e) => { e.stopPropagation(); ui.editingOverlay = true; });
+  content.addEventListener("focus", () => { ui.editingOverlay = true; });
+  content.addEventListener("blur", () => { ui.editingOverlay = false; });
   content.addEventListener("keydown", (e) => {
     // Cmd+Shift+M inside the overlay → save and close, return focus to editor
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "m") {
