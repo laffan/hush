@@ -636,6 +636,22 @@ pub fn run() {
             set_always_on_top,
             set_activation_policy,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Hush");
+        .build(tauri::generate_context!())
+        .expect("error while running Hush")
+        .run(|app_handle, event| {
+            // On macOS, intercept Cmd+Q when running as a menu-bar-only app:
+            // hide the window instead of quitting (user can still quit via tray menu).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let state: State<AppState> = app_handle.state();
+                let settings = state.settings.lock().unwrap();
+                if settings.visibility == "menubar" {
+                    api.prevent_exit();
+                    drop(settings);
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                }
+            }
+        });
 }
