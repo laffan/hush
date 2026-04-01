@@ -81,6 +81,21 @@ function buildDecorations(view) {
   return builder.finish();
 }
 
+const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+
+async function openUrl(url) {
+  if (IS_TAURI) {
+    try {
+      const shell = await import("@tauri-apps/plugin-shell");
+      await shell.open(url);
+    } catch (_) {
+      window.open(url, "_blank");
+    }
+  } else {
+    window.open(url, "_blank");
+  }
+}
+
 /**
  * Editor-level Cmd+click handler. Checks if the click lands on a
  * rendered link widget OR inside raw link syntax, and opens the URL.
@@ -93,7 +108,7 @@ const linkClickHandler = EditorView.domEventHandlers({
     const target = e.target.closest(".cm-link-rendered");
     if (target && target.dataset.linkUrl) {
       e.preventDefault();
-      window.open(target.dataset.linkUrl, "_blank");
+      openUrl(target.dataset.linkUrl);
       return true;
     }
 
@@ -103,7 +118,7 @@ const linkClickHandler = EditorView.domEventHandlers({
       const link = linkAtPos(view.state.doc, pos);
       if (link) {
         e.preventDefault();
-        window.open(link.url, "_blank");
+        openUrl(link.url);
         return true;
       }
     }
