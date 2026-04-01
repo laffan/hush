@@ -90,6 +90,14 @@ export async function setupTauriIntegration(state) {
           }
         });
 
+        // Cmd+Q — hide instead of quit when running as menu-bar-only app
+        if (state.settings.visibility === "menubar") {
+          await registerShortcut("CmdOrCtrl+Q", async (event) => {
+            if (event.state === "Released") return;
+            await getCurrentWindow().hide();
+          });
+        }
+
         // Toggle right sidebar (outline view)
         await registerShortcut(state.settings.shortcutToggleOutline, async (event) => {
           if (event.state === "Released") return;
