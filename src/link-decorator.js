@@ -85,23 +85,13 @@ function buildDecorations(view) {
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function openUrl(url) {
-  _debugShow(`openUrl: "${url}"`);
   if (IS_TAURI) {
     try {
-      // tauri-plugin-opener works on iOS; plugin-shell does not
+      // tauri-plugin-opener works on both macOS and iOS
       const opener = await import("@tauri-apps/plugin-opener");
       await opener.openUrl(url);
-      _debugShow(`opener.openUrl OK`);
-    } catch (err) {
-      _debugShow(`opener FAIL: ${err}`);
-      try {
-        const shell = await import("@tauri-apps/plugin-shell");
-        await shell.open(url);
-        _debugShow(`shell.open OK`);
-      } catch (err2) {
-        _debugShow(`shell FAIL: ${err2}`);
-        window.open(url, "_blank");
-      }
+    } catch (_) {
+      window.open(url, "_blank");
     }
   } else {
     window.open(url, "_blank");
@@ -152,52 +142,6 @@ if (isIOS()) {
 function hasModifier(e) {
   return e.metaKey || e.ctrlKey || _modifierHeld;
 }
-
-/* ── DEBUG: temporary overlay to diagnose iPadOS event behavior ── */
-const _debugLog = [];
-function _debugShow(msg) {
-  _debugLog.unshift(msg);
-  if (_debugLog.length > 30) _debugLog.pop();
-  let el = document.getElementById("__link-debug");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "__link-debug";
-    Object.assign(el.style, {
-      position: "fixed", top: "0", right: "0", bottom: "0",
-      width: "340px",
-      background: "rgba(0,0,0,0.92)", color: "#0f0",
-      font: "13px/1.5 monospace", padding: "12px 14px",
-      zIndex: "99999", whiteSpace: "pre-wrap",
-      overflowY: "auto", userSelect: "text", WebkitUserSelect: "text",
-    });
-    el._text = document.createElement("div");
-    el.appendChild(el._text);
-    document.body.appendChild(el);
-  }
-  el._text.textContent = _debugLog.join("\n");
-}
-// Log modifier keydown/keyup
-document.addEventListener("keydown", (e) => {
-  if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) {
-    _debugShow(`keydown: ${e.key}  _mod=${_modifierHeld}`);
-  }
-}, true);
-document.addEventListener("keyup", (e) => {
-  if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) {
-    _debugShow(`keyup: ${e.key}  _mod=${_modifierHeld}`);
-  }
-}, true);
-// Log all pointer/mouse/touch/context events on the editor
-for (const evt of ["mousedown", "pointerdown", "touchstart", "click", "contextmenu"]) {
-  document.addEventListener(evt, (e) => {
-    const onLink = !!e.target.closest(".cm-link-rendered");
-    _debugShow(
-      `${evt}: meta=${e.metaKey} ctrl=${e.ctrlKey} _mod=${_modifierHeld} link=${onLink}`
-    );
-  }, true);
-}
-_debugShow(`isIOS=${isIOS()}  init`);
-/* ── END DEBUG ── */
 
 /**
  * Editor-level Cmd+click handler. Checks if the click lands on a
