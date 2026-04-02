@@ -32,6 +32,7 @@
       "identifier": "shell:allow-open",
       "allow": [{ "url": ".*" }]
     },
+    "opener:default",
     "positioner:default",
     {
       "identifier": "fs:default",

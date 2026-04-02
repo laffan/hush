@@ -88,12 +88,20 @@ async function openUrl(url) {
   _debugShow(`openUrl: "${url}"`);
   if (IS_TAURI) {
     try {
-      const shell = await import("@tauri-apps/plugin-shell");
-      await shell.open(url);
-      _debugShow(`shell.open OK`);
+      // tauri-plugin-opener works on iOS; plugin-shell does not
+      const opener = await import("@tauri-apps/plugin-opener");
+      await opener.openUrl(url);
+      _debugShow(`opener.openUrl OK`);
     } catch (err) {
-      _debugShow(`shell.open FAIL: ${err}`);
-      window.open(url, "_blank");
+      _debugShow(`opener FAIL: ${err}`);
+      try {
+        const shell = await import("@tauri-apps/plugin-shell");
+        await shell.open(url);
+        _debugShow(`shell.open OK`);
+      } catch (err2) {
+        _debugShow(`shell FAIL: ${err2}`);
+        window.open(url, "_blank");
+      }
     }
   } else {
     window.open(url, "_blank");
