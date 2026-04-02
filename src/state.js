@@ -3,6 +3,7 @@
  */
 
 import { findNode, removeNode, collectDocumentIds, findNodeByFileId, insertAfter, insertNode } from "./tree-helpers.js";
+import { openProject as _openProject, saveProjectContent as _saveProjectContent } from "./state-project.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -460,46 +461,10 @@ export class AppState {
     await this.saveFileTree();
   }
 
-  // ===== Project View =====
+  // ===== Project View (delegated to state-project.js) =====
 
-  async openProject(projectId) {
-    if (this.dirty) await this.saveCurrentFile();
-    const node = findNode(this.fileTree, projectId);
-    if (!node || node.type !== "project") return;
-    this.currentProjectId = projectId;
-    this.currentFileId = null;
-    this.projectDocIds = collectDocumentIds(node.children || []);
-    let ordered = [];
-    if (IS_TAURI) {
-      for (const fid of this.projectDocIds) {
-        try { ordered.push(await tauriInvoke("load_file", { id: fid })); } catch (e) { /* skip */ }
-      }
-    } else { ordered = this.projectDocIds.map(fid => this.files.find(e => e.id === fid)).filter(Boolean); }
-    if (this.editor) this.editor.setContent(ordered.map(e => e.content).join("\n\n---hush-separator---\n\n"));
-    this.emit("file-opened");
-    this.updateSettings({ lastProjectId: projectId, lastFileId: null });
-  }
-
-  async saveProjectContent() {
-    if (!this.currentProjectId || !this.editor || !this.projectDocIds.length) return;
-    const parts = this.editor.getContent().split("\n\n---hush-separator---\n\n");
-    for (let i = 0; i < this.projectDocIds.length && i < parts.length; i++) {
-      const fid = this.projectDocIds[i], content = parts[i] || "";
-      if (IS_TAURI) {
-        try {
-          await tauriInvoke("save_file", { id: fid, content });
-          this.syncFileToExternal(fid, content);
-        } catch (e) { /* skip */ }
-      }
-      else { const f = this.files.find(f => f.id === fid); if (f) { f.content = content; f.modified = Math.floor(Date.now()/1000); f.name = this._deriveName(f.content); } }
-    }
-    this.dirty = false;
-    if (IS_TAURI) this.files = await tauriInvoke("list_files");
-    else this._saveFilesLocal();
-    this.emit("files-changed");
-    // Update project ordering JSON
-    this.syncProjectOrdering(this.currentProjectId);
-  }
+  async openProject(projectId) { return _openProject(this, projectId); }
+  async saveProjectContent() { return _saveProjectContent(this); }
 
   // ===== File Operations =====
 
