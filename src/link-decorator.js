@@ -146,33 +146,19 @@ function hasModifier(e) {
 const _debugLog = [];
 function _debugShow(msg) {
   _debugLog.unshift(msg);
-  if (_debugLog.length > 12) _debugLog.pop();
+  if (_debugLog.length > 30) _debugLog.pop();
   let el = document.getElementById("__link-debug");
   if (!el) {
     el = document.createElement("div");
     el.id = "__link-debug";
     Object.assign(el.style, {
-      position: "fixed", bottom: "10px", right: "10px",
-      background: "rgba(0,0,0,0.85)", color: "#0f0",
-      font: "11px/1.4 monospace", padding: "8px 10px",
-      borderRadius: "6px", zIndex: "99999", maxWidth: "360px",
-      whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text",
+      position: "fixed", top: "0", right: "0", bottom: "0",
+      width: "340px",
+      background: "rgba(0,0,0,0.92)", color: "#0f0",
+      font: "13px/1.5 monospace", padding: "12px 14px",
+      zIndex: "99999", whiteSpace: "pre-wrap",
+      overflowY: "auto", userSelect: "text", WebkitUserSelect: "text",
     });
-    const copyBtn = document.createElement("button");
-    copyBtn.textContent = "Copy";
-    Object.assign(copyBtn.style, {
-      display: "block", margin: "6px 0 4px", padding: "4px 10px",
-      background: "#0f0", color: "#000", border: "none",
-      borderRadius: "3px", font: "bold 11px monospace", cursor: "pointer",
-    });
-    copyBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      navigator.clipboard.writeText(_debugLog.join("\n")).then(
-        () => { copyBtn.textContent = "Copied!"; setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500); },
-        () => { copyBtn.textContent = "Failed"; }
-      );
-    });
-    el.appendChild(copyBtn);
     el._text = document.createElement("div");
     el.appendChild(el._text);
     document.body.appendChild(el);
