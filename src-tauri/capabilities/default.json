@@ -34,7 +34,14 @@
     },
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": ".*" }]
+      "allow": [
+        { "url": "https://*" },
+        { "url": "http://*" },
+        { "url": "mailto:*" },
+        { "url": "tel:*" },
+        { "url": "zotero://*" },
+        { "url": "obsidian://*" }
+      ]
     },
     "positioner:default",
     {
