@@ -125,3 +125,19 @@
 .footnote-underline:hover {
   opacity: 0.8;
 }
+
+/* Drop zone indicator — a blinking cursor line showing where the footnote will land */
+.footnote-drop-indicator {
+  position: fixed;
+  width: 2px;
+  height: 1.4em;
+  background: var(--accent, var(--fg));
+  z-index: 10001;
+  pointer-events: none;
+  animation: footnote-drop-blink 0.8s step-end infinite;
+  border-radius: 1px;
+}
+
+@keyframes footnote-drop-blink {
+  50% { opacity: 0; }
+}

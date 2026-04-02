@@ -22,6 +22,8 @@ export class AppState {
       lineHeight: 1.6,
       fontFamily: "Source Sans Pro",
       normalizeHeaders: false,
+      normalizeHeaderColor: false,
+      typewriterLineOpacity: 0.08,
       padding: 50,
       syncFolders: [],
       dropboxToken: null,
@@ -102,6 +104,9 @@ export class AppState {
         { name: "REWRITE", color: "#ff66aa" },
         { name: "RESEARCH", color: "#66aaff" },
       ],
+
+      // Ratchet
+      ratchetEncourageTyping: false,
 
       // Zotero
       zoteroApiKey: null,

@@ -6,11 +6,18 @@
 
 let syncPollTimer = null;
 let syncing = false;
+let _state = null;
 
 export function startSyncPolling(state) {
   if (syncPollTimer) return;
+  _state = state;
   syncPollTimer = setInterval(() => runSyncCycle(state), 30000);
   setTimeout(() => runSyncCycle(state), 2000);
+}
+
+/** Trigger an immediate sync cycle (e.g. after a file save). */
+export function triggerImmediateSync() {
+  if (_state) runSyncCycle(_state);
 }
 
 export function stopSyncPolling() {

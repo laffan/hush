@@ -10,7 +10,7 @@ import {
   getFootnoteSettings, resolveFootnoteFont, getThemeColors,
   createEditableContent, showOverlayAt, openFootnoteOverlayByPos,
   updateMarginalia, debouncedUpdateMarginalia,
-  setupFootnoteHandlers, setFindDefRange,
+  setupFootnoteHandlers, setFindDefRange, setDropIndicatorFns,
 } from "./footnotes-ui.js";
 
 const FOOTNOTE_REF_RE = /\[\^([^\]]+)\]/g;
@@ -48,6 +48,28 @@ function getMargins() {
 function isWideMargin() {
   const m = getMargins();
   return m.left >= MARGIN_THRESHOLD && m.right >= MARGIN_THRESHOLD;
+}
+
+// Drop zone indicator for footnote dragging
+let _dropIndicator = null;
+
+function showDropIndicator(view, x, y) {
+  const pos = view.posAtCoords({ x, y });
+  if (pos == null) { hideDropIndicator(); return; }
+  const coords = view.coordsAtPos(pos);
+  if (!coords) { hideDropIndicator(); return; }
+  if (!_dropIndicator) {
+    _dropIndicator = document.createElement("div");
+    _dropIndicator.className = "footnote-drop-indicator";
+    document.body.appendChild(_dropIndicator);
+  }
+  _dropIndicator.style.left = coords.left + "px";
+  _dropIndicator.style.top = coords.top + "px";
+  _dropIndicator.style.height = (coords.bottom - coords.top) + "px";
+}
+
+function hideDropIndicator() {
+  if (_dropIndicator) { _dropIndicator.remove(); _dropIndicator = null; }
 }
 
 function parseDefinitions(doc) {
@@ -160,12 +182,17 @@ class FootnoteDotWidget extends WidgetType {
           ghost.style.cssText = "position:fixed;pointer-events:none;opacity:0.7;z-index:10000;transform:scale(1.3);";
           document.body.appendChild(ghost);
         }
-        if (ghost) { ghost.style.left = (e2.clientX - 8) + "px"; ghost.style.top = (e2.clientY - 8) + "px"; }
+        if (ghost) {
+          ghost.style.left = (e2.clientX - 8) + "px";
+          ghost.style.top = (e2.clientY - 8) + "px";
+          showDropIndicator(view, e2.clientX, e2.clientY);
+        }
       }
       function onUp(e2) {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         if (ghost) { ghost.remove(); ghost = null; }
+        hideDropIndicator();
         if (isDragging) {
           const dropPos = view.posAtCoords({ x: e2.clientX, y: e2.clientY });
           if (dropPos != null && self.from != null) {
@@ -237,6 +264,8 @@ function buildDecorations(view, stateRef) {
   return builder.finish();
 }
 
+export { showDropIndicator, hideDropIndicator };
+
 export function insertFootnote(view) {
   const state = view.state;
   const sel = state.selection.main;
@@ -299,7 +328,8 @@ export function insertFootnote(view) {
 export function createFootnotePlugin(stateRef) {
   _stateRef = stateRef;
   let currentView = null;
-  setupFootnoteHandlers(stateRef, () => currentView, uiDeps, insertFootnote);
+  setupFootnoteHandlers(stateRef, () => currentView, uiDeps);
+  setDropIndicatorFns(showDropIndicator, hideDropIndicator);
 
   return ViewPlugin.fromClass(
     class {

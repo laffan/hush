@@ -28,6 +28,10 @@ pub struct AppSettings {
     pub font_family: String,
     #[serde(default)]
     pub normalize_headers: bool,
+    #[serde(default)]
+    pub normalize_header_color: bool,
+    #[serde(default = "default_typewriter_line_opacity")]
+    pub typewriter_line_opacity: f64,
     #[serde(default = "default_padding")]
     pub padding: u32,
 
@@ -174,6 +178,10 @@ pub struct AppSettings {
     pub zotero_file_size: Option<String>,
     #[serde(default = "default_shortcut_zotero")]
     pub shortcut_zotero: String,
+
+    // Ratchet mode
+    #[serde(default)]
+    pub ratchet_encourage_typing: bool,
 
     // Session state (persisted across restarts)
     #[serde(default)]
@@ -550,6 +558,9 @@ fn default_shortcut_comment() -> String {
 fn default_shortcut_insert_footnote() -> String {
     "Mod+Shift+M".to_string()
 }
+fn default_typewriter_line_opacity() -> f64 {
+    0.08
+}
 fn default_shortcut_zotero() -> String {
     "Mod+Shift+L".to_string()
 }
@@ -565,6 +576,8 @@ impl Default for AppSettings {
             line_height: default_line_height(),
             font_family: default_font_family(),
             normalize_headers: false,
+            normalize_header_color: false,
+            typewriter_line_opacity: default_typewriter_line_opacity(),
             padding: default_padding(),
             sync_folders: Vec::new(),
             dropbox_token: None,
@@ -627,6 +640,7 @@ impl Default for AppSettings {
             zotero_reference_count: 0,
             zotero_file_size: None,
             shortcut_zotero: default_shortcut_zotero(),
+            ratchet_encourage_typing: false,
             window_width: None,
             window_height: None,
             window_x: None,

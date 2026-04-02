@@ -19,6 +19,8 @@ import { createFocusModePlugin } from "./focus-mode.js";
 import { createCalloutPlugin } from "./callouts.js";
 import { openZoteroModal } from "./zotero.js";
 import { createLinkDecoratorPlugin } from "./link-decorator.js";
+import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke } from "./encourage-typing.js";
+import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, applyRatchetTypewriterPadding, getTypewriterBoundary } from "./typewriter.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -66,17 +68,43 @@ const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
+// Plugin that adds negative text-indent to heading lines so # markers sit in the margin
+const headingIndentPlugin = ViewPlugin.fromClass(
+  class {
+    constructor(view) { this.decorations = this.build(view); }
+    update(update) {
+      if (update.docChanged || update.viewportChanged) this.decorations = this.build(update.view);
+    }
+    build(view) {
+      const builder = new RangeSetBuilder();
+      const { from, to } = view.viewport;
+      const doc = view.state.doc;
+      for (let pos = from; pos <= to;) {
+        const line = doc.lineAt(pos);
+        const match = line.text.match(/^(#{1,6})\s/);
+        if (match) {
+          const level = match[1].length;
+          builder.add(line.from, line.from, Decoration.line({ class: `cm-heading-indent-${level}` }));
+        }
+        pos = line.to + 1;
+      }
+      return builder.finish();
+    }
+  },
+  { decorations: (v) => v.decorations }
+);
+
 // Build the markdown highlight style, optionally normalizing heading sizes/colors
 function getMarkdownHighlight(normalizeHeaders, headingColor) {
   const color = headingColor || undefined;
   const headingStyles = normalizeHeaders
     ? [
-        { tag: tags.heading1, fontWeight: "700" },
-        { tag: tags.heading2, fontWeight: "700" },
-        { tag: tags.heading3, fontWeight: "600" },
-        { tag: tags.heading4, fontWeight: "600" },
-        { tag: tags.heading5, fontWeight: "600" },
-        { tag: tags.heading6, fontWeight: "600" },
+        { tag: tags.heading1, fontWeight: "700", color },
+        { tag: tags.heading2, fontWeight: "700", color },
+        { tag: tags.heading3, fontWeight: "600", color },
+        { tag: tags.heading4, fontWeight: "600", color },
+        { tag: tags.heading5, fontWeight: "600", color },
+        { tag: tags.heading6, fontWeight: "600", color },
       ]
     : [
         { tag: tags.heading1, fontSize: "1.8em", fontWeight: "700", lineHeight: "1.3", color },
@@ -159,10 +187,11 @@ export function createEditor(container, state) {
     if (update.docChanged) {
       state.markDirty();
       state.trackKeystroke();
+      if (state.ratchetMode) onEncourageKeystroke(update.view, state);
     }
     // Typewriter / Ratchet: scroll cursor to fixed position on every update
     const shouldScroll = state.typewriterMode || state.ratchetMode;
-    if (shouldScroll && (update.docChanged || update.selectionSet)) {
+    if (shouldScroll && (update.docChanged || update.selectionSet || update.focusChanged)) {
       requestAnimationFrame(() => scrollCursorToTypewriterLine(update.view, state));
     }
     // Ratchet: ensure cursor stays at end of document
@@ -341,7 +370,7 @@ export function createEditor(container, state) {
     extensions: [
       hushTheme,
       themeCompartment.of(initialCmTheme),
-      highlightCompartment.of(syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, getActiveTheme(state.settings)?.headingColor))),
+      highlightCompartment.of(syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, state.settings.normalizeHeaderColor ? undefined : getActiveTheme(state.settings)?.headingColor))),
       markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
       history(),
       drawSelection(),
@@ -358,6 +387,7 @@ export function createEditor(container, state) {
       footnotePlugin,
       flagHighlightPlugin,
       linkDecoratorPlugin,
+      headingIndentPlugin,
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
@@ -381,7 +411,9 @@ export function createEditor(container, state) {
       view.focus();
       applyRatchetTypewriterPadding(view);
       requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+      initEncourageTyping(view, state, bypassRatchet);
     } else {
+      clearEncourageTyping();
       if (!state.typewriterMode) {
         view.scrollDOM.style.paddingTop = "";
         view.scrollDOM.style.paddingBottom = "";
@@ -406,8 +438,8 @@ export function createEditor(container, state) {
     }
     setTimeout(() => {
       refocusEditor();
-      if (state.typewriterMode && typewriterBoundary) {
-        typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
+      if (state.typewriterMode && getTypewriterBoundary()) {
+        getTypewriterBoundary().style.top = state.typewriterPosition * window.innerHeight + "px";
         applyTypewriterPadding(view, state);
         requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       }
@@ -430,14 +462,24 @@ export function createEditor(container, state) {
     }
   });
 
+  // iPad: visualViewport resize (keyboard show/hide) triggers typewriter repositioning
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => {
+      if (state.typewriterMode || state.ratchetMode) {
+        requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+      }
+    });
+  }
+
   updateColumnResizers(state);
 
   state.on("theme-changed", () => {
     const t = getActiveTheme(state.settings);
+    const headingColor = state.settings.normalizeHeaderColor ? undefined : t?.headingColor;
     view.dispatch({ effects: [
       themeCompartment.reconfigure(t ? t.extension : []),
       highlightCompartment.reconfigure(
-        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, t?.headingColor))
+        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, headingColor))
       ),
     ] });
   });
@@ -450,11 +492,17 @@ export function createEditor(container, state) {
     document.documentElement.style.setProperty("--font-size", _fs + "px");
     const _lh = _activeStyle?.lineHeight || state.settings.lineHeight;
     document.documentElement.style.setProperty("--line-height", _lh);
+    const t = getActiveTheme(state.settings);
+    const headingColor = state.settings.normalizeHeaderColor ? undefined : t?.headingColor;
     view.dispatch({
       effects: highlightCompartment.reconfigure(
-        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, getActiveTheme(state.settings)?.headingColor))
+        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, headingColor))
       ),
     });
+    // Update typewriter line opacity
+    if (getTypewriterBoundary()) {
+      getTypewriterBoundary().style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
+    }
   });
 
   return {
@@ -633,86 +681,6 @@ function updateColumnResizers(state) {
 
   makeDraggable(leftResizer, true);
   makeDraggable(rightResizer, false);
-}
-
-let typewriterBoundary = null;
-
-function setupTypewriterBoundary(view, state) {
-  if (typewriterBoundary) return; // already set up
-
-  typewriterBoundary = document.createElement("div");
-  typewriterBoundary.className = "typewriter-boundary visible";
-  document.body.appendChild(typewriterBoundary);
-  typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
-
-  applyTypewriterPadding(view, state);
-
-  // Drag to reposition
-  typewriterBoundary.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    typewriterBoundary.classList.add("dragging");
-
-    function onMove(e2) {
-      const newY = Math.max(50, Math.min(window.innerHeight - 50, e2.clientY));
-      typewriterBoundary.style.top = newY + "px";
-      state.typewriterPosition = newY / window.innerHeight;
-      applyTypewriterPadding(view, state);
-      scrollCursorToTypewriterLine(view, state);
-    }
-
-    function onUp() {
-      typewriterBoundary.classList.remove("dragging");
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    }
-
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  });
-
-  // Initial scroll
-  requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
-}
-
-function applyTypewriterPadding(view, state) {
-  const targetY = state.typewriterPosition * window.innerHeight;
-  // Top padding so the first line can be scrolled down to the boundary
-  view.scrollDOM.style.paddingTop = targetY + "px";
-  // Bottom padding so the last line can scroll up to the boundary
-  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
-}
-
-function removeTypewriterBoundary(view, state) {
-  if (typewriterBoundary) {
-    typewriterBoundary.remove();
-    typewriterBoundary = null;
-  }
-  // Don't clear padding if ratchet mode is using it
-  if (view && !(state && state.ratchetMode)) {
-    view.scrollDOM.style.paddingTop = "";
-    view.scrollDOM.style.paddingBottom = "";
-  }
-}
-
-function scrollCursorToTypewriterLine(view, state) {
-  if (!state.typewriterMode && !state.ratchetMode) return;
-  const head = view.state.selection.main.head;
-  const coords = view.coordsAtPos(head);
-  if (!coords) return;
-  // Ratchet uses center (0.5), typewriter uses user-configured position
-  const position = state.ratchetMode ? 0.5 : state.typewriterPosition;
-  const targetY = position * window.innerHeight;
-  // Align the bottom of the current line with the typewriter boundary
-  const offset = coords.bottom - targetY;
-  if (Math.abs(offset) > 1) {
-    view.scrollDOM.scrollTop += offset;
-  }
-}
-
-function applyRatchetTypewriterPadding(view) {
-  const targetY = 0.5 * window.innerHeight;
-  view.scrollDOM.style.paddingTop = targetY + "px";
-  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
 }
 
 function updateRatchetTimer(state) {

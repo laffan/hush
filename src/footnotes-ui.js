@@ -263,7 +263,14 @@ function _mountOverlay(id, defText, view, stateRef, scroller, scrollerRect, padd
 /**
  * Set up document-level event handlers for footnotes.
  */
-export function setupFootnoteHandlers(stateRef, getCurrentView, deps, insertFootnote) {
+let _showDropIndicator = null;
+let _hideDropIndicator = null;
+export function setDropIndicatorFns(show, hide) {
+  _showDropIndicator = show;
+  _hideDropIndicator = hide;
+}
+
+export function setupFootnoteHandlers(stateRef, getCurrentView, deps) {
   const { isWideMargin } = deps;
 
   document.addEventListener("mousedown", (e) => {
@@ -300,12 +307,17 @@ export function setupFootnoteHandlers(stateRef, getCurrentView, deps, insertFoot
         ghost.style.cssText = "position:fixed;pointer-events:none;opacity:0.7;z-index:10000;transform:scale(1.1);padding:2px 6px;border-radius:4px;font-size:12px;background:var(--fg);color:var(--bg);";
         document.body.appendChild(ghost);
       }
-      if (ghost) { ghost.style.left = (e2.clientX - 8) + "px"; ghost.style.top = (e2.clientY - 8) + "px"; }
+      if (ghost) {
+        ghost.style.left = (e2.clientX - 8) + "px";
+        ghost.style.top = (e2.clientY - 8) + "px";
+        if (_showDropIndicator) _showDropIndicator(cv, e2.clientX, e2.clientY);
+      }
     }
     function onUp(e2) {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       if (ghost) { ghost.remove(); ghost = null; }
+      if (_hideDropIndicator) _hideDropIndicator();
       if (isDragging && refFrom >= 0) {
         const dropPos = cv.posAtCoords({ x: e2.clientX, y: e2.clientY });
         if (dropPos != null) {
@@ -332,34 +344,4 @@ export function setupFootnoteHandlers(stateRef, getCurrentView, deps, insertFoot
     if (v) debouncedUpdateMarginalia(v, stateRef, deps);
   });
 
-  document.addEventListener("dblclick", (e) => {
-    const cv = getCurrentView();
-    if (!cv || !isWideMargin()) return;
-    if (stateRef.privateMode) return;
-    if (e.target.closest(".footnote-marginalia, .footnote-overlay")) return;
-    const scroller = cv.scrollDOM;
-    const sr = scroller.getBoundingClientRect();
-    const pl = parseInt(scroller.style.paddingLeft) || 50;
-    const pr = parseInt(scroller.style.paddingRight) || 50;
-    const relX = e.clientX - sr.left;
-    if (relX >= pl - 10 && relX <= sr.width - pr + 10) return;
-
-    // Find the nearest position in the text column at the click's Y coordinate
-    // Use the edge of the text column closest to the click
-    const textX = relX < pl ? pl + 5 + sr.left : sr.width - pr - 5 + sr.left;
-    const pos = cv.posAtCoords({ x: textX, y: e.clientY });
-    if (pos == null) return;
-
-    // Walk forward to the end of the current word to insert after it
-    const doc = cv.state.doc;
-    const line = doc.lineAt(pos);
-    const lineText = line.text;
-    const offsetInLine = pos - line.from;
-    let insertOffset = offsetInLine;
-    // Advance past the current word (non-whitespace characters)
-    while (insertOffset < lineText.length && /\S/.test(lineText[insertOffset])) insertOffset++;
-
-    cv.dispatch({ selection: { anchor: line.from + insertOffset } });
-    insertFootnote(cv);
-  });
 }

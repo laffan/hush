@@ -23,6 +23,17 @@
   background: rgba(128, 128, 128, 0.2);
 }
 
+/* Encourage typing — fades new text when user stops typing */
+.encourage-fade-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg, #1a1a1a);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 100;
+  transition: opacity 0.3s ease-out;
+}
+
 /* Ratchet active state — typewriter-like scrolling, current line centered */
 
 .ratchet-timer {

@@ -67,6 +67,14 @@
 }
 
 
+/* Pull heading markers (# ## ### etc.) into the left margin so text aligns */
+.cm-heading-indent-1 { text-indent: -1.2em; }
+.cm-heading-indent-2 { text-indent: -1.8em; }
+.cm-heading-indent-3 { text-indent: -2.4em; }
+.cm-heading-indent-4 { text-indent: -3.0em; }
+.cm-heading-indent-5 { text-indent: -3.6em; }
+.cm-heading-indent-6 { text-indent: -4.2em; }
+
 /* Column width resizer — wide hit area, thin visible line */
 .column-resizer {
   position: fixed;

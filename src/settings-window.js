@@ -267,6 +267,29 @@ function renderEditorTab() {
         <label>Normalize header sizes</label>
         <input type="checkbox" id="setting-normalize-headers" ${s.normalizeHeaders ? "checked" : ""} />
       </div>
+      <div class="settings-row">
+        <label>Normalize header color</label>
+        <input type="checkbox" id="setting-normalize-header-color" ${s.normalizeHeaderColor ? "checked" : ""} />
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>Typewriter</h2>
+      <div class="settings-slider-row">
+        <label>Line opacity</label>
+        <div class="slider-group">
+          <input type="range" id="setting-typewriter-line-opacity" min="0" max="0.5" step="0.01" value="${s.typewriterLineOpacity ?? 0.08}" />
+          <span class="slider-value">${((s.typewriterLineOpacity ?? 0.08) * 100).toFixed(0)}%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>Ratchet Mode</h2>
+      <div class="settings-row">
+        <label>Encourage typing</label>
+        <input type="checkbox" id="setting-ratchet-encourage" ${s.ratchetEncourageTyping ? "checked" : ""} />
+      </div>
     </div>
 
     <div class="settings-section">
@@ -601,6 +624,9 @@ function bindAll() {
   bindSelect("setting-dark-theme", "darkTheme");
   bindSelect("setting-font-family", "fontFamily");
   bindCheckbox("setting-normalize-headers", "normalizeHeaders");
+  bindCheckbox("setting-normalize-header-color", "normalizeHeaderColor");
+  bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
+  bindCheckbox("setting-ratchet-encourage", "ratchetEncourageTyping");
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");
   bindSelect("setting-footnote-font-family", "footnoteFontFamily");
   bindCheckbox("setting-footnote-use-colors", "footnoteUseColors");
@@ -865,12 +891,12 @@ function bindCheckbox(id, key) {
   el.addEventListener("change", () => saveSetting(key, el.checked));
 }
 
-function bindSlider(id, key, suffix) {
+function bindSlider(id, key, suffix, formatter) {
   const el = document.getElementById(id);
   if (!el) return;
   el.addEventListener("input", () => {
     const val = parseFloat(el.value);
-    el.nextElementSibling.textContent = val + suffix;
+    el.nextElementSibling.textContent = formatter ? formatter(val) + suffix : val + suffix;
     saveSetting(key, val);
   });
 }

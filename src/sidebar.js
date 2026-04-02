@@ -37,9 +37,9 @@ export function createSidebar(container, state) {
       ${btn("typewriter", "Typewriter mode", icons.typewriter)}
       ${btn("dry", "D.R.Y. highlighting", icons.dry)}
       ${btn("focus", "Focus mode", icons.focus)}
+      ${btn("zotero", "Zotero search", icons.zotero)}
     </div>
     <div class="sidebar-group sidebar-bottom">
-      ${btn("zotero", "Zotero search", icons.zotero)}
       ${btn("versions", "Versions", icons.versions)}
       ${btn("export", "Export", icons.export)}
       ${settingsBtn}
@@ -344,11 +344,11 @@ function showRatchetDropdown(anchor, state, onStart) {
   dropdown.style.left = "60px";
   dropdown.style.top = rect.top + "px";
 
-  const durations = [5, 10, 15, 20, 25, 30];
+  const durations = [5, 10, 15, 20, 25, 30, 45, 60];
   durations.forEach((min) => {
     const opt = document.createElement("div");
     opt.className = "ratchet-option";
-    opt.textContent = `${min} min`;
+    opt.textContent = min === 60 ? "1 hr" : `${min} min`;
     opt.addEventListener("click", () => {
       state.startRatchet(min);
       dropdown.remove();
