@@ -11,7 +11,7 @@ let _state = null;
 export function startSyncPolling(state) {
   if (syncPollTimer) return;
   _state = state;
-  syncPollTimer = setInterval(() => runSyncCycle(state), 30000);
+  syncPollTimer = setInterval(() => runSyncCycle(state), 10000);
   setTimeout(() => runSyncCycle(state), 2000);
 }
 

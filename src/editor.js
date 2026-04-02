@@ -19,8 +19,8 @@ import { createFocusModePlugin } from "./focus-mode.js";
 import { createCalloutPlugin } from "./callouts.js";
 import { openZoteroModal } from "./zotero.js";
 import { createLinkDecoratorPlugin } from "./link-decorator.js";
-import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke } from "./encourage-typing.js";
-import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, applyRatchetTypewriterPadding, getTypewriterBoundary } from "./typewriter.js";
+import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./encourage-typing.js";
+import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, applyRatchetTypewriterPadding, getTypewriterBoundary, repositionTypewriterBoundary } from "./typewriter.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -365,6 +365,15 @@ export function createEditor(container, state) {
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin();
 
+  // Encourage typing decorations — fades new text when user stops typing in ratchet mode
+  const encouragePlugin = ViewPlugin.fromClass(
+    class {
+      constructor(view) { this.decorations = getEncourageDecorations(view); }
+      update(update) { this.decorations = getEncourageDecorations(update.view); }
+    },
+    { decorations: (v) => v.decorations }
+  );
+
   const startState = EditorState.create({
     doc: "",
     extensions: [
@@ -388,6 +397,7 @@ export function createEditor(container, state) {
       flagHighlightPlugin,
       linkDecoratorPlugin,
       headingIndentPlugin,
+      encouragePlugin,
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
@@ -439,7 +449,7 @@ export function createEditor(container, state) {
     setTimeout(() => {
       refocusEditor();
       if (state.typewriterMode && getTypewriterBoundary()) {
-        getTypewriterBoundary().style.top = state.typewriterPosition * window.innerHeight + "px";
+        repositionTypewriterBoundary(state);
         applyTypewriterPadding(view, state);
         requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       }
@@ -451,8 +461,8 @@ export function createEditor(container, state) {
   });
 
   window.addEventListener("resize", () => {
-    if (state.typewriterMode && typewriterBoundary) {
-      typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
+    if (state.typewriterMode && getTypewriterBoundary()) {
+      repositionTypewriterBoundary(state);
       applyTypewriterPadding(view, state);
       requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
     }
@@ -465,6 +475,10 @@ export function createEditor(container, state) {
   // iPad: visualViewport resize (keyboard show/hide) triggers typewriter repositioning
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => {
+      if (state.typewriterMode && getTypewriterBoundary()) {
+        repositionTypewriterBoundary(state);
+        applyTypewriterPadding(view, state);
+      }
       if (state.typewriterMode || state.ratchetMode) {
         requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       }
