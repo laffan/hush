@@ -85,12 +85,21 @@ function buildDecorations(view) {
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function openUrl(url) {
+  _debugShow(`openUrl: "${url}" TAURI=${IS_TAURI}`);
   if (IS_TAURI) {
     try {
       const shell = await import("@tauri-apps/plugin-shell");
+      _debugShow(`shell.open calling...`);
       await shell.open(url);
-    } catch (_) {
-      window.open(url, "_blank");
+      _debugShow(`shell.open OK`);
+    } catch (err) {
+      _debugShow(`shell.open FAIL: ${err}`);
+      try {
+        window.open(url, "_blank");
+        _debugShow(`window.open called`);
+      } catch (err2) {
+        _debugShow(`window.open FAIL: ${err2}`);
+      }
     }
   } else {
     window.open(url, "_blank");
