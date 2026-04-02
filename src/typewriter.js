@@ -76,8 +76,14 @@ export function setupTypewriterBoundary(view, state) {
 
 export function applyTypewriterPadding(view, state) {
   const targetY = state.typewriterPosition * window.innerHeight;
+  // On iPad, safe-area insets (padding on html.ios) reduce the editor's
+  // actual visible height below window.innerHeight. We must add extra
+  // bottom padding so the very last line can still scroll up to the boundary.
+  const htmlEl = document.documentElement;
+  const safeAreaExtra = (parseInt(getComputedStyle(htmlEl).paddingTop) || 0)
+                      + (parseInt(getComputedStyle(htmlEl).paddingBottom) || 0);
   view.scrollDOM.style.paddingTop = targetY + "px";
-  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
+  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY + safeAreaExtra) + "px";
 }
 
 export function removeTypewriterBoundary(view, state) {
@@ -106,8 +112,11 @@ export function scrollCursorToTypewriterLine(view, state) {
 
 export function applyRatchetTypewriterPadding(view) {
   const targetY = 0.5 * window.innerHeight;
+  const htmlEl = document.documentElement;
+  const safeAreaExtra = (parseInt(getComputedStyle(htmlEl).paddingTop) || 0)
+                      + (parseInt(getComputedStyle(htmlEl).paddingBottom) || 0);
   view.scrollDOM.style.paddingTop = targetY + "px";
-  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
+  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY + safeAreaExtra) + "px";
 }
 
 /** Reposition the boundary line after a viewport change (resize, fullscreen). */

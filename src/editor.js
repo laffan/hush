@@ -68,30 +68,58 @@ const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
-// Plugin that adds negative text-indent to heading lines so # markers sit in the margin
+// Plugin that measures the actual width of heading markers (# ## etc.) and
+// applies a precise negative text-indent so heading text aligns with body text.
+// Uses DOM measurement instead of CSS approximation for cross-platform accuracy.
 const headingIndentPlugin = ViewPlugin.fromClass(
   class {
-    constructor(view) { this.decorations = this.build(view); }
+    constructor(view) { this.applied = new Set(); this.applyIndents(view); }
     update(update) {
-      if (update.docChanged || update.viewportChanged) this.decorations = this.build(update.view);
+      if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+        this.applyIndents(update.view);
+      }
     }
-    build(view) {
-      const builder = new RangeSetBuilder();
+    applyIndents(view) {
       const { from, to } = view.viewport;
       const doc = view.state.doc;
+      const seen = new Set();
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
+        seen.add(line.from);
         const match = line.text.match(/^(#{1,6})\s/);
         if (match) {
-          const level = match[1].length;
-          builder.add(line.from, line.from, Decoration.line({ class: `cm-heading-indent-${level}` }));
+          // Find the .cm-line DOM element for this line
+          const domPos = view.domAtPos(line.from);
+          const lineEl = domPos?.node?.nodeType === 1
+            ? domPos.node.closest(".cm-line")
+            : domPos?.node?.parentElement?.closest(".cm-line");
+          if (lineEl) {
+            // The first child span contains the # marks (styled as processingInstruction)
+            const firstSpan = lineEl.querySelector("span");
+            if (firstSpan) {
+              const markWidth = firstSpan.getBoundingClientRect().width;
+              if (markWidth > 0) {
+                lineEl.style.textIndent = `-${Math.round(markWidth)}px`;
+                this.applied.add(line.from);
+              }
+            }
+          }
+        } else {
+          // Clear indent from non-heading lines that previously had it
+          if (this.applied.has(line.from)) {
+            const domPos = view.domAtPos(line.from);
+            const lineEl = domPos?.node?.nodeType === 1
+              ? domPos.node.closest(".cm-line")
+              : domPos?.node?.parentElement?.closest(".cm-line");
+            if (lineEl) lineEl.style.textIndent = "";
+            this.applied.delete(line.from);
+          }
         }
         pos = line.to + 1;
       }
-      return builder.finish();
     }
-  },
-  { decorations: (v) => v.decorations }
+    destroy() { this.applied.clear(); }
+  }
 );
 
 // Build the markdown highlight style, optionally normalizing heading sizes/colors

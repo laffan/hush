@@ -67,16 +67,6 @@
 }
 
 
-/* Pull heading markers (# ## ### etc.) into the left margin so text aligns.
-   Uses margin-left + padding-left (hanging indent) instead of text-indent,
-   which iOS WebKit clips at the content box edge. Values are in base font-size
-   pixels so they don't scale with the heading's own font-size multiplier. */
-.cm-heading-indent-1 { margin-left: calc(var(--font-size) * -1.1); padding-left: calc(var(--font-size) * 1.1); }
-.cm-heading-indent-2 { margin-left: calc(var(--font-size) * -1.7); padding-left: calc(var(--font-size) * 1.7); }
-.cm-heading-indent-3 { margin-left: calc(var(--font-size) * -2.3); padding-left: calc(var(--font-size) * 2.3); }
-.cm-heading-indent-4 { margin-left: calc(var(--font-size) * -2.9); padding-left: calc(var(--font-size) * 2.9); }
-.cm-heading-indent-5 { margin-left: calc(var(--font-size) * -3.5); padding-left: calc(var(--font-size) * 3.5); }
-.cm-heading-indent-6 { margin-left: calc(var(--font-size) * -4.1); padding-left: calc(var(--font-size) * 4.1); }
 
 /* Column width resizer — wide hit area, thin visible line */
 .column-resizer {
