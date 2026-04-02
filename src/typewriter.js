@@ -8,16 +8,6 @@ export function getTypewriterBoundary() {
   return typewriterBoundary;
 }
 
-/** Get the effective viewport height, accounting for iPad safe areas. */
-function getViewportHeight() {
-  return window.visualViewport?.height ?? window.innerHeight;
-}
-
-/** Get the vertical offset of the visual viewport from the layout viewport. */
-function getViewportOffset() {
-  return window.visualViewport?.offsetTop ?? 0;
-}
-
 export function setupTypewriterBoundary(view, state) {
   if (typewriterBoundary) return;
 
@@ -25,10 +15,7 @@ export function setupTypewriterBoundary(view, state) {
   typewriterBoundary.className = "typewriter-boundary visible";
   typewriterBoundary.style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
   document.body.appendChild(typewriterBoundary);
-
-  const vh = getViewportHeight();
-  const vOff = getViewportOffset();
-  typewriterBoundary.style.top = (vOff + state.typewriterPosition * vh) + "px";
+  typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
 
   applyTypewriterPadding(view, state);
 
@@ -38,11 +25,9 @@ export function setupTypewriterBoundary(view, state) {
     typewriterBoundary.classList.add("dragging");
 
     function onMove(e2) {
-      const vh2 = getViewportHeight();
-      const vOff2 = getViewportOffset();
-      const newY = Math.max(vOff2 + 50, Math.min(vOff2 + vh2 - 50, e2.clientY));
+      const newY = Math.max(50, Math.min(window.innerHeight - 50, e2.clientY));
       typewriterBoundary.style.top = newY + "px";
-      state.typewriterPosition = (newY - vOff2) / vh2;
+      state.typewriterPosition = newY / window.innerHeight;
       applyTypewriterPadding(view, state);
       scrollCursorToTypewriterLine(view, state);
     }
@@ -64,11 +49,9 @@ export function setupTypewriterBoundary(view, state) {
 
     function onTouchMove(e2) {
       const touch = e2.touches[0];
-      const vh2 = getViewportHeight();
-      const vOff2 = getViewportOffset();
-      const newY = Math.max(vOff2 + 50, Math.min(vOff2 + vh2 - 50, touch.clientY));
+      const newY = Math.max(50, Math.min(window.innerHeight - 50, touch.clientY));
       typewriterBoundary.style.top = newY + "px";
-      state.typewriterPosition = (newY - vOff2) / vh2;
+      state.typewriterPosition = newY / window.innerHeight;
       applyTypewriterPadding(view, state);
       scrollCursorToTypewriterLine(view, state);
     }
@@ -83,15 +66,18 @@ export function setupTypewriterBoundary(view, state) {
     document.addEventListener("touchend", onTouchEnd);
   }, { passive: false });
 
-  // Initial scroll
+  // Initial scroll — use escalating delays for iPad where layout may not
+  // be settled when typewriter mode is first enabled.
+  scrollCursorToTypewriterLine(view, state);
   requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
+  setTimeout(() => scrollCursorToTypewriterLine(view, state), 100);
+  setTimeout(() => scrollCursorToTypewriterLine(view, state), 300);
 }
 
 export function applyTypewriterPadding(view, state) {
-  const vh = getViewportHeight();
-  const targetY = state.typewriterPosition * vh;
+  const targetY = state.typewriterPosition * window.innerHeight;
   view.scrollDOM.style.paddingTop = targetY + "px";
-  view.scrollDOM.style.paddingBottom = (vh - targetY) + "px";
+  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
 }
 
 export function removeTypewriterBoundary(view, state) {
@@ -111,10 +97,7 @@ export function scrollCursorToTypewriterLine(view, state) {
   const coords = view.coordsAtPos(head);
   if (!coords) return;
   const position = state.ratchetMode ? 0.5 : state.typewriterPosition;
-  const vh = getViewportHeight();
-  const vOff = getViewportOffset();
-  // Target Y in screen coordinates (same coordinate space as coords.bottom)
-  const targetY = vOff + position * vh;
+  const targetY = position * window.innerHeight;
   const offset = coords.bottom - targetY;
   if (Math.abs(offset) > 1) {
     view.scrollDOM.scrollTop += offset;
@@ -122,16 +105,13 @@ export function scrollCursorToTypewriterLine(view, state) {
 }
 
 export function applyRatchetTypewriterPadding(view) {
-  const vh = getViewportHeight();
-  const targetY = 0.5 * vh;
+  const targetY = 0.5 * window.innerHeight;
   view.scrollDOM.style.paddingTop = targetY + "px";
-  view.scrollDOM.style.paddingBottom = (vh - targetY) + "px";
+  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY) + "px";
 }
 
 /** Reposition the boundary line after a viewport change (resize, fullscreen). */
 export function repositionTypewriterBoundary(state) {
   if (!typewriterBoundary) return;
-  const vh = getViewportHeight();
-  const vOff = getViewportOffset();
-  typewriterBoundary.style.top = (vOff + state.typewriterPosition * vh) + "px";
+  typewriterBoundary.style.top = state.typewriterPosition * window.innerHeight + "px";
 }
