@@ -142,6 +142,49 @@ function hasModifier(e) {
   return e.metaKey || e.ctrlKey || _modifierHeld;
 }
 
+/* ── DEBUG: temporary overlay to diagnose iPadOS event behavior ── */
+const _debugLog = [];
+function _debugShow(msg) {
+  _debugLog.unshift(msg);
+  if (_debugLog.length > 12) _debugLog.pop();
+  let el = document.getElementById("__link-debug");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "__link-debug";
+    Object.assign(el.style, {
+      position: "fixed", bottom: "10px", right: "10px",
+      background: "rgba(0,0,0,0.85)", color: "#0f0",
+      font: "11px/1.4 monospace", padding: "8px 10px",
+      borderRadius: "6px", zIndex: "99999", maxWidth: "360px",
+      pointerEvents: "none", whiteSpace: "pre-wrap",
+    });
+    document.body.appendChild(el);
+  }
+  el.textContent = _debugLog.join("\n");
+}
+// Log modifier keydown/keyup
+document.addEventListener("keydown", (e) => {
+  if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) {
+    _debugShow(`keydown: ${e.key}  _mod=${_modifierHeld}`);
+  }
+}, true);
+document.addEventListener("keyup", (e) => {
+  if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) {
+    _debugShow(`keyup: ${e.key}  _mod=${_modifierHeld}`);
+  }
+}, true);
+// Log all pointer/mouse/touch/context events on the editor
+for (const evt of ["mousedown", "pointerdown", "touchstart", "click", "contextmenu"]) {
+  document.addEventListener(evt, (e) => {
+    const onLink = !!e.target.closest(".cm-link-rendered");
+    _debugShow(
+      `${evt}: meta=${e.metaKey} ctrl=${e.ctrlKey} _mod=${_modifierHeld} link=${onLink}`
+    );
+  }, true);
+}
+_debugShow(`isIOS=${isIOS()}  init`);
+/* ── END DEBUG ── */
+
 /**
  * Editor-level Cmd+click handler. Checks if the click lands on a
  * rendered link widget OR inside raw link syntax, and opens the URL.
