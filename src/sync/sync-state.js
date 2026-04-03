@@ -16,7 +16,7 @@ async function tauriInvoke(cmd, args) {
  */
 export async function importSyncFolder(state, syncFolder) {
   if (!IS_TAURI) return;
-  const { AppState } = await import("./state.js");
+  const { AppState } = await import("../state/state.js");
 
   try {
     let entries;
@@ -133,7 +133,7 @@ async function getDropbox(state) {
  */
 export async function syncRenameNode(state, nodeId, oldName, nodeType) {
   if (!IS_TAURI) return;
-  const { findSyncContext, findNode } = await import("./tree-helpers.js");
+  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
   const ctx = findSyncContext(state.fileTree, nodeId);
   if (!ctx) return;
   const folder = getSyncFolder(state, ctx.syncFolderId);
@@ -186,7 +186,7 @@ export async function syncRenameNode(state, nodeId, oldName, nodeType) {
  */
 export async function syncDeleteNode(state, nodeId) {
   if (!IS_TAURI) return;
-  const { findSyncContext, findNode } = await import("./tree-helpers.js");
+  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
   const ctx = findSyncContext(state.fileTree, nodeId);
   if (!ctx || !ctx.relativePath) return; // Don't delete the sync folder root itself
   const folder = getSyncFolder(state, ctx.syncFolderId);
@@ -218,7 +218,7 @@ export async function syncDeleteNode(state, nodeId) {
  */
 export async function syncCreateNode(state, nodeId, nodeType) {
   if (!IS_TAURI) return;
-  const { findSyncContext } = await import("./tree-helpers.js");
+  const { findSyncContext } = await import("../state/tree-helpers.js");
   const ctx = findSyncContext(state.fileTree, nodeId);
   if (!ctx) return;
   const folder = getSyncFolder(state, ctx.syncFolderId);
@@ -252,7 +252,7 @@ export async function syncCreateNode(state, nodeId, nodeType) {
  */
 export async function syncCreateFile(state, nodeId, fileId, content) {
   if (!IS_TAURI) return;
-  const { findSyncContext, findNode } = await import("./tree-helpers.js");
+  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
   const ctx = findSyncContext(state.fileTree, nodeId);
   if (!ctx) return;
   const folder = getSyncFolder(state, ctx.syncFolderId);
@@ -285,7 +285,7 @@ export async function syncCreateFile(state, nodeId, fileId, content) {
  */
 export async function syncProjectOrdering(state, projectNodeId) {
   if (!IS_TAURI) return;
-  const { findSyncContext, findNode, collectDocumentIds } = await import("./tree-helpers.js");
+  const { findSyncContext, findNode, collectDocumentIds } = await import("../state/tree-helpers.js");
   const ctx = findSyncContext(state.fileTree, projectNodeId);
   if (!ctx) return;
   const folder = getSyncFolder(state, ctx.syncFolderId);
@@ -365,7 +365,7 @@ export async function rejectExternalChange(state, internalId, folderPath) {
  */
 export async function reconcileSync(state) {
   if (!IS_TAURI) return;
-  const { findSyncContext } = await import("./tree-helpers.js");
+  const { findSyncContext } = await import("../state/tree-helpers.js");
 
   // Collect all document nodes from the tree
   function collectDocs(nodes) {
@@ -410,7 +410,7 @@ export async function reconcileSync(state) {
 
 /** Helper to get fileId from a document tree node by nodeId */
 async function getFileIdForNode(state, nodeId) {
-  const { findNode } = await import("./tree-helpers.js");
+  const { findNode } = await import("../state/tree-helpers.js");
   const node = findNode(state.fileTree, nodeId);
   return node?.fileId || "";
 }

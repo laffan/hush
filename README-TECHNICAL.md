@@ -5,51 +5,66 @@
 Hush is a [Tauri v2](https://v2.tauri.app/) desktop app with a vanilla JavaScript frontend and Rust backend. The editor is built on [CodeMirror 6](https://codemirror.net/) — no framework.
 
 ```
-Frontend (JS/CSS)              Backend (Rust/Tauri)
-─────────────────              ────────────────────
-main.js              ←──IPC──→ lib.rs (commands)
-├── editor.js                  ├── settings.rs
-├── editor-modes.js            ├── files.rs
-├── state.js                   ├── snapshots.rs
-├── sidebar.js                 ├── sync.rs
-├── files-panel.js             └── zotero.rs
-├── styles-panel.js
-├── longview.js
-├── longview-parser.js
-├── longview-settings.js
-├── versions-panel.js
-├── settings-window.js
-├── settings-tabs.js
-├── settings-ui.js
-├── tauri-bridge.js
-├── find-replace.js
-├── sentence-navigator.js
-├── footnotes.js
-├── footnotes-ui.js
-├── project-view.js
-├── formatting.js
-├── focus-mode.js
-├── typewriter.js
-├── private-mode.js
-├── dry-highlight.js
-├── callouts.js
-├── link-decorator.js
-├── encourage-typing.js
-├── file-drop.js
-├── zotero.js
-├── dropbox.js
-├── dropbox-browser.js
-├── sync-state.js
-├── sync-polling.js
-├── state-project.js
-├── themes.js
-├── tree-helpers.js
-└── sortable-list/
-    ├── sortable-list.js
-    ├── rendering.js
-    ├── drag-drop.js
-    ├── keyboard-nav.js
-    └── utils.js
+Frontend (src/)                        Backend (src-tauri/src/)
+───────────                            ────────────────────
+main.js                  ←──IPC──→     lib.rs (commands)
+├── themes.js                          ├── settings.rs
+├── tauri-bridge.js                    ├── files.rs
+├── zotero.js                          ├── snapshots.rs
+│                                      ├── sync.rs
+├── editor/                            └── zotero.rs
+│   ├── editor.js
+│   ├── modes.js
+│   ├── formatting.js
+│   ├── sentence-navigator.js
+│   ├── find-replace.js
+│   ├── file-drop.js
+│   └── plugins/
+│       ├── callouts.js
+│       ├── dry-highlight.js
+│       ├── encourage-typing.js
+│       ├── focus-mode.js
+│       ├── footnotes.js
+│       ├── footnotes-ui.js
+│       ├── link-decorator.js
+│       ├── private-mode.js
+│       ├── project-view.js
+│       └── typewriter.js
+│
+├── sidebar/
+│   ├── sidebar.js
+│   ├── files-panel.js
+│   ├── styles-panel.js
+│   ├── versions-panel.js
+│   └── sortable-list/
+│       ├── sortable-list.js
+│       ├── rendering.js
+│       ├── drag-drop.js
+│       ├── keyboard-nav.js
+│       └── utils.js
+│
+├── longview/
+│   ├── longview.js
+│   ├── longview-parser.js
+│   └── longview-settings.js
+│
+├── settings/
+│   ├── settings-window.js
+│   ├── settings-tabs.js
+│   └── settings-ui.js
+│
+├── state/
+│   ├── state.js
+│   ├── state-project.js
+│   └── tree-helpers.js
+│
+├── sync/
+│   ├── sync-state.js
+│   ├── sync-polling.js
+│   ├── dropbox.js
+│   └── dropbox-browser.js
+│
+└── styles/                            (CSS, per-module)
 ```
 
 Communication: `invoke` IPC for commands (settings, file CRUD) and `emit`/`listen` for events (settings updates, fullscreen toggle).
@@ -63,7 +78,7 @@ Communication: `invoke` IPC for commands (settings, file CRUD) and `emit`/`liste
 ### Entry Points
 
 - **`index.html`** — Main editor window. Loads `src/main.js`.
-- **`settings.html`** — Settings window (separate Tauri WebviewWindow). Loads `src/settings-window.js`.
+- **`settings.html`** — Settings window (separate Tauri WebviewWindow). Loads `src/settings/settings-window.js`.
 
 Both are built by Vite as separate Rollup inputs.
 
@@ -73,7 +88,7 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Font CSS is imp
 
 **Built-in fonts:** Source Sans Pro (default), Source Serif Pro, Libre Franklin, Libre Baskerville, Karla, Lora, EB Garamond, Inter, Fira Code, Helvetica (system).
 
-### State Management (`state.js`)
+### State Management (`state/state.js`)
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes.
 
@@ -85,9 +100,9 @@ On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invok
 
 **Project state:** When a project is selected (`currentProjectId`), the editor shows all child documents joined by separator markers. `openProject()` loads and concatenates content; `saveProjectContent()` splits on separators and saves each part back.
 
-Tree traversal utilities live in `tree-helpers.js` (`findNode`, `removeNode`, `collectDocumentIds`, `insertAfter`, etc.).
+Tree traversal utilities live in `state/tree-helpers.js` (`findNode`, `removeNode`, `collectDocumentIds`, `insertAfter`, etc.).
 
-### Editor (`editor.js`, `editor-modes.js`)
+### Editor (`editor/editor.js`, `editor/modes.js`)
 
 The CodeMirror 6 instance is configured with:
 
@@ -101,11 +116,11 @@ The CodeMirror 6 instance is configured with:
 
 **Plugins loaded:** private mode, D.R.Y. highlighting, footnotes, focus mode, callouts, project view (separators), flag highlighting, link decorator, encourage typing.
 
-**`editor-modes.js`** contains mode application (`applyModes`, `applyFullscreen`), column width/resizer management (`updateColumnResizers`), and ratchet timer display (`updateRatchetTimer`).
+**`editor/modes.js`** contains mode application (`applyModes`, `applyFullscreen`), column width/resizer management (`updateColumnResizers`), and ratchet timer display (`updateRatchetTimer`).
 
 Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements sit 10px outside the column edges. When the sidebar panel is open in inset mode, the column re-centers within remaining space.
 
-### Sidebar (`sidebar.js`)
+### Sidebar (`sidebar/sidebar.js`)
 
 Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity 0, pointer-events none), revealed by a JS hover trigger. Can be pinned open.
 
@@ -113,7 +128,7 @@ Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity
 
 Panels render into `#panel-overlay`. Layout is responsive: when wide enough, panels inset beside content; otherwise they overlay as a modal.
 
-### Files Panel (`files-panel.js`)
+### Files Panel (`sidebar/files-panel.js`)
 
 Nested tree view with three node types:
 
@@ -123,7 +138,7 @@ Nested tree view with three node types:
 
 Three "New" buttons (Doc, Folder, Project) at the top. All types share a hover menu (rename, duplicate, delete). Active item shown bold and underlined. Rendered via the `SortableList` component.
 
-### Sortable List (`sortable-list/`)
+### Sortable List (`sidebar/sortable-list/`)
 
 Drag-and-drop nested list engine (5 modules):
 
@@ -133,7 +148,7 @@ Drag-and-drop nested list engine (5 modules):
 - **`keyboard-nav.js`** — Arrow key selection, M to enter/confirm move, Q to cancel.
 - **`utils.js`** — Path parsing, comparison, ancestor checks, tree traversal.
 
-### Styles Panel (`styles-panel.js`)
+### Styles Panel (`sidebar/styles-panel.js`)
 
 Named presets combining theme, font, font size, line height, and color overrides (bg, fg, cursor, selection). Managed through the sidebar's Styles panel.
 
@@ -141,64 +156,64 @@ Style data: `{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrid
 
 Live preview on hover/edit via `style-preview` / `style-preview-end` events. Color overrides take precedence over theme colors, applied directly to CSS variables.
 
-### Outline View / Longview (`longview.js`, `longview-parser.js`, `longview-settings.js`)
+### Outline View / Longview (`longview/`)
 
 Right-side panel showing document structure. Parses headings and flagged items from the document. Features: heading hierarchy navigation, flag detection, callout tinting, paragraph preview tooltips, customizable display options via a dedicated settings tab (Flags).
 
-### Versions Panel (`versions-panel.js`)
+### Versions Panel (`sidebar/versions-panel.js`)
 
 Document snapshot history viewer. Shows timestamped snapshots with content preview. One-click restore to revert to a previous version. Backend storage via `snapshots.rs`.
 
-### Focus Mode (`focus-mode.js`)
+### Focus Mode (`editor/plugins/focus-mode.js`)
 
 CodeMirror ViewPlugin that dims all text except the current sentence to 50% opacity. Uses sentence-boundary detection from `sentence-navigator.js`. On empty lines, all text is dimmed.
 
-### Find & Replace (`find-replace.js`)
+### Find & Replace (`editor/find-replace.js`)
 
 Two modes:
 
 - **`Cmd+F`** — Find/replace in current file. Floating bar with match count, prev/next, replace one/all. Pre-fills with selection.
 - **`Cmd+Shift+F`** — Search across all files. Results grouped by file with line numbers, click to navigate. Debounced (200ms).
 
-### Sentence Navigator (`sentence-navigator.js`)
+### Sentence Navigator (`editor/sentence-navigator.js`)
 
 Sentence-level navigation and editing, ported from [obsidian-sentence-navigator](https://github.com/laffan/obsidian-sentence-navigator). Detects boundaries using punctuation rules (`.` `!` `?`) with closing delimiter handling.
 
 Commands: `selectSentence`, `reduceSentenceSelection`, `jumpToNextSentence`, `jumpToPrevSentence`, `shiftSelectionToNextSentence`, `shiftSelectionToPreviousSentence`, `moveSentenceForward`, `moveSentenceBack`, `deleteToSentenceEnd`, `jumpToNextParagraph`, `jumpToPrevParagraph`.
 
-### Footnotes (`footnotes.js`, `footnotes-ui.js`)
+### Footnotes (`editor/plugins/footnotes.js`, `editor/plugins/footnotes-ui.js`)
 
 CodeMirror plugin that decorates `[^id]` references with colored dots or underlines. `footnotes.js` handles parsing and the CodeMirror plugin. `footnotes-ui.js` renders overlays, marginalia, and the insertion command. Configurable font, size, colors, and margin placement.
 
-### Callouts (`callouts.js`)
+### Callouts (`editor/plugins/callouts.js`)
 
 Obsidian-style blockquote callouts (`> [!note]`, `> [!warning]`, etc.) with colored left borders. 25+ callout types with default colors.
 
-### Formatting (`formatting.js`)
+### Formatting (`editor/formatting.js`)
 
 Markdown toggle commands using a generic `toggleWrap(view, marker)`: `toggleBold` (`**`), `toggleItalic` (`*`), `toggleHighlight` (`==`), `toggleComment` (`%%`), `toggleStrikethrough` (`~~`).
 
-### Link Decorator (`link-decorator.js`)
+### Link Decorator (`editor/plugins/link-decorator.js`)
 
 Makes URLs in the editor clickable. Decorates detected links with click handlers.
 
-### Encourage Typing (`encourage-typing.js`)
+### Encourage Typing (`editor/plugins/encourage-typing.js`)
 
 Break timer that periodically nudges the user to keep writing. Configurable intervals and messages.
 
-### Private Mode (`private-mode.js`)
+### Private Mode (`editor/plugins/private-mode.js`)
 
 ViewPlugin that replaces every non-whitespace character with an opaque box via CSS class. Also hides footnote decorations and marginalia.
 
-### Typewriter Mode (`typewriter.js`)
+### Typewriter Mode (`editor/plugins/typewriter.js`)
 
 Locks cursor to a fixed screen position (default 60% from top). Draggable boundary line for repositioning. Extra padding so first/last lines can reach the boundary. Also handles ratchet scroll (pins last line to 50% center).
 
-### Project View (`project-view.js`)
+### Project View (`editor/plugins/project-view.js`)
 
 CodeMirror plugin for project mode. `createProjectViewField` (StateField) replaces `---hush-separator---` lines with non-editable dashed widgets. `createSeparatorFilter` (transactionFilter) blocks edits touching separator lines.
 
-### File Drop (`file-drop.js`)
+### File Drop (`editor/file-drop.js`)
 
 Handles `.md`/`.txt` files dragged into the app. Full-screen overlay with two zones: "Import file" (creates new document) and "Copy into current" (inserts text). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
 
@@ -206,11 +221,11 @@ Handles `.md`/`.txt` files dragged into the app. Full-screen overlay with two zo
 
 Citation management. Connects to Zotero API with user key, downloads references with progress tracking, caches locally. Search modal for finding and inserting citations.
 
-### Dropbox Integration (`dropbox.js`, `dropbox-browser.js`)
+### Dropbox Integration (`sync/dropbox.js`, `sync/dropbox-browser.js`)
 
 Dropbox OAuth integration for syncing files. `dropbox-browser.js` provides a file/folder browser modal for selecting sync targets.
 
-### Sync (`sync-state.js`, `sync-polling.js`)
+### Sync (`sync/`)
 
 External folder synchronization (Obsidian vaults, custom folders). Uses SHA256 hashing + timestamps for change detection. File system watcher polling. Conflict detection with resolution modal UI.
 
@@ -218,7 +233,7 @@ External folder synchronization (Obsidian vaults, custom folders). Uses SHA256 h
 
 Global shortcut registration via `@tauri-apps/plugin-global-shortcut`. Shortcuts registered on startup and re-registered on settings change. Old shortcuts unregistered first.
 
-### Settings Window (`settings-window.js`, `settings-tabs.js`)
+### Settings Window (`settings/`)
 
 Runs in a separate Tauri WebviewWindow (desktop) or modal overlay (iOS). Loads/saves settings via IPC, notifies main window via events.
 
@@ -239,7 +254,7 @@ Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
 `base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `utility.css`.
 
-The settings window has its own standalone `src/settings-window.css` since it runs in a separate WebviewWindow.
+The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 
 ## Backend (Rust)
 

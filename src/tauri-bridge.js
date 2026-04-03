@@ -2,7 +2,7 @@
  * Tauri-specific integration: global shortcuts, tray events
  */
 
-import { openSettingsWindow } from "./settings-ui.js";
+import { openSettingsWindow } from "./settings/settings-ui.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 

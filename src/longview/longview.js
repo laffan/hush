@@ -11,7 +11,7 @@ import {
   sanitizeLine,
   getFirstWords,
 } from "./longview-parser.js";
-import { CALLOUT_COLORS, getCalloutColor } from "./callouts.js";
+import { CALLOUT_COLORS, getCalloutColor } from "../editor/plugins/callouts.js";
 
 /** Default flag colors */
 const DEFAULT_FLAG_COLORS = {

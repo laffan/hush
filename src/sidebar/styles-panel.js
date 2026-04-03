@@ -2,7 +2,7 @@
  * Styles panel — create, edit, preview, and switch between named style presets
  */
 
-import { themeList } from "./themes.js";
+import { themeList } from "../themes.js";
 
 let editingStyleId = null; // null = list view, "new" = new style form, or style id
 

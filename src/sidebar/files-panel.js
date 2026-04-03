@@ -5,8 +5,8 @@
  */
 
 import { SortableList } from "./sortable-list/sortable-list.js";
-import { AppState } from "./state.js";
-import { findNode, collectFlaggedItems, findAncestorIds } from "./tree-helpers.js";
+import { AppState } from "../state/state.js";
+import { findNode, collectFlaggedItems, findAncestorIds } from "../state/tree-helpers.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;

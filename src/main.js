@@ -1,12 +1,12 @@
-import { createEditor } from "./editor.js";
-import { createSidebar } from "./sidebar.js";
-import { AppState } from "./state.js";
+import { createEditor } from "./editor/editor.js";
+import { createSidebar } from "./sidebar/sidebar.js";
+import { AppState } from "./state/state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
-import { applyAppearance, isIOS } from "./settings-ui.js";
+import { applyAppearance, isIOS } from "./settings/settings-ui.js";
 import { getThemeById } from "./themes.js";
-import { setupFileDrop } from "./file-drop.js";
-import { findNext, findPrev } from "./find-replace.js";
-import { createLongView } from "./longview.js";
+import { setupFileDrop } from "./editor/file-drop.js";
+import { findNext, findPrev } from "./editor/find-replace.js";
+import { createLongView } from "./longview/longview.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -619,10 +619,10 @@ async function init() {
 
   // Sync: poll for external changes every 30 seconds
   if (IS_TAURI && state.settings.syncFolders?.length) {
-    import("./sync-polling.js").then(m => m.startSyncPolling(state));
+    import("./sync/sync-polling.js").then(m => m.startSyncPolling(state));
   }
   state.on("settings-changed", async () => {
-    const sp = await import("./sync-polling.js");
+    const sp = await import("./sync/sync-polling.js");
     if (IS_TAURI && state.settings.syncFolders?.length) {
       sp.startSyncPolling(state);
     } else {

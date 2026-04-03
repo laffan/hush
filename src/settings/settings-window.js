@@ -3,9 +3,9 @@
  * Communicates with main window via Tauri events.
  * Tabbed layout: General, Editor, Shortcuts, D.R.Y., Flags
  */
-import { DEFAULT_STOPWORDS } from "./dry-highlight.js";
-import { bindFlagsTab } from "./longview-settings.js";
-import { testZoteroConnection, downloadZoteroReferences, clearCache as clearZoteroCache } from "./zotero.js";
+import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
+import { bindFlagsTab } from "../longview/longview-settings.js";
+import { testZoteroConnection, downloadZoteroReferences, clearCache as clearZoteroCache } from "../zotero.js";
 import {
   shortcutDefs, normalizeShortcut, isIOSSettings,
   renderGeneralTab, renderEditorTab, renderShortcutsTab,
@@ -251,9 +251,9 @@ function bindAll() {
           return;
         }
         try {
-          const { setToken } = await import("./dropbox.js");
+          const { setToken } = await import("../sync/dropbox.js");
           setToken(settings.dropboxToken);
-          const { openDropboxBrowser } = await import("./dropbox-browser.js");
+          const { openDropboxBrowser } = await import("../sync/dropbox-browser.js");
           const result = await openDropboxBrowser();
           if (result) {
             const folders = settings.syncFolders || [];

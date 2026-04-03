@@ -6,7 +6,7 @@
  */
 import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
-import { isIOS } from "./settings-ui.js";
+import { isIOS } from "../../settings/settings-ui.js";
 
 // Matches [text](url) but not ![alt](img)
 const LINK_RE = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;

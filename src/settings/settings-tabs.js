@@ -2,9 +2,9 @@
  * Settings tab rendering functions — extracted from settings-window.js.
  * Each render function accepts a context object { settings, drySearchQuery }.
  */
-import { themeList } from "./themes.js";
-import { DEFAULT_STOPWORDS } from "./dry-highlight.js";
-import { renderFlagsTab } from "./longview-settings.js";
+import { themeList } from "../themes.js";
+import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
+import { renderFlagsTab } from "../longview/longview-settings.js";
 
 // Shortcuts organized by category
 export const shortcutCategories = [

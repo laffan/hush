@@ -1,9 +1,9 @@
 /**
  * Sidebar UI — icons, panels, mode toggles (LEFT side)
  */
-import { isIOS, openSettingsWindow } from "./settings-ui.js";
+import { isIOS, openSettingsWindow } from "../settings/settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
-import { findNode } from "./tree-helpers.js";
+import { findNode } from "../state/tree-helpers.js";
 import { renderStylesPanel, bindStylesPanel } from "./styles-panel.js";
 import { createVersionsPanel, cleanupVersionsPanel } from "./versions-panel.js";
 import newFileRaw from "./sidebar_icons/newFile.svg?raw";
@@ -189,7 +189,7 @@ export function createSidebar(container, state) {
   container.querySelector('[data-action="zotero"]').addEventListener("click", async () => {
     hidePanel();
     if (state.editor) {
-      const { openZoteroModal } = await import("./zotero.js");
+      const { openZoteroModal } = await import("../zotero.js");
       openZoteroModal(state.editor.view, state);
     }
   });

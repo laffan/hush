@@ -582,7 +582,7 @@ export class AppState {
   }
 
   // ===== Sync Operations (delegated to sync-state.js) =====
-  async _syncOp(fn, ...args) { const m = await import("./sync-state.js"); return m[fn](this, ...args); }
+  async _syncOp(fn, ...args) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...args); }
   async importSyncFolder(f) { return this._syncOp("importSyncFolder", f); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
   async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }
