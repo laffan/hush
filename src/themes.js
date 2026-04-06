@@ -47,11 +47,23 @@ export function getThemeById(id) {
 }
 
 export function getActiveTheme(settings) {
-  // If a style is active and has a theme, use that
+  // If a style is active and has a theme, use the appropriate one for current appearance
   if (settings.activeStyleId && settings.styles) {
     const style = settings.styles.find(s => s.id === settings.activeStyleId);
-    if (style && style.themeId) {
-      return getThemeById(style.themeId);
+    if (style) {
+      // New dual-mode style format
+      if (style.lightThemeId || style.darkThemeId) {
+        let appearance = settings.appearance || "dark";
+        if (appearance === "auto") {
+          appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        const themeId = appearance === "dark" ? style.darkThemeId : style.lightThemeId;
+        if (themeId) return getThemeById(themeId);
+      }
+      // Legacy single-mode format
+      if (style.themeId) {
+        return getThemeById(style.themeId);
+      }
     }
   }
 

@@ -1,21 +1,81 @@
 /**
- * Styles panel — create, edit, preview, and switch between named style presets
+ * Styles panel — create, edit, preview, and switch between named style presets.
+ *
+ * Editing uses a two-column modal: settings on the left, live preview on the
+ * right.  Color overrides are split into Light / Dark tabs so every style can
+ * carry both palettes.
  */
 
-import { themeList } from "../themes.js";
+import { themeList, getThemeById } from "../themes.js";
 
-let editingStyleId = null; // null = list view, "new" = new style form, or style id
+// ── helpers ────────────────────────────────────────────────────────────────────
+function escAttr(str) {
+  return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+function escHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
 
+/** Migrate old single-mode styles to dual light/dark format. */
+function migrateStyle(st) {
+  if (!st._migrated && st.themeId && !st.lightThemeId && !st.darkThemeId) {
+    const theme = getThemeById(st.themeId);
+    if (theme) {
+      if (theme.type === "dark") { st.darkThemeId = st.themeId; st.darkColors = st.colorOverrides || {}; }
+      else { st.lightThemeId = st.themeId; st.lightColors = st.colorOverrides || {}; }
+    }
+    delete st.themeId;
+    delete st.colorOverrides;
+    st._migrated = true;
+  }
+  if (!st.lightThemeId) st.lightThemeId = "";
+  if (!st.darkThemeId) st.darkThemeId = "";
+  if (!st.lightColors) st.lightColors = {};
+  if (!st.darkColors) st.darkColors = {};
+  return st;
+}
+
+/** Get the appearance-appropriate theme/colors from a style. */
+export function resolveStyleForAppearance(style, appearance) {
+  const s = migrateStyle(style);
+  let mode = appearance || "dark";
+  if (mode === "auto") mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return {
+    themeId: mode === "dark" ? s.darkThemeId : s.lightThemeId,
+    colors: mode === "dark" ? (s.darkColors || {}) : (s.lightColors || {}),
+  };
+}
+
+// ── lorem ipsum preview text ───────────────────────────────────────────────────
+const PREVIEW_MD = `# The Art of Writing
+
+## Finding Your Voice
+
+Every writer begins with a blank page and a spark of
+intention. The words that follow are shaped by years of
+reading, thinking, and living.
+
+### On Simplicity
+
+Good prose is like a window pane — clear, direct, and
+invisible. **Bold ideas** need not hide behind *ornate
+language*. Strip away the excess until only the
+essential remains.
+
+> "Write drunk, edit sober." — Ernest Hemingway
+
+The best sentences carry weight without effort, landing
+softly in the reader's mind. ~~Perfection~~ is not the
+goal — clarity is.`;
+
+// ── sidebar list ───────────────────────────────────────────────────────────────
 export function renderStylesPanel(state) {
   const styles = state.settings.styles || [];
   const activeId = state.settings.activeStyleId;
 
   let html = `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
-
-  if (editingStyleId === "new") {
-    html += renderStyleEditorInline(state);
-  }
-
   html += `<div class="style-list-sidebar">`;
 
   const isDefault = !activeId;
@@ -24,12 +84,14 @@ export function renderStylesPanel(state) {
   </div>`;
 
   for (const st of styles) {
+    migrateStyle(st);
     const isActive = activeId === st.id;
-    const isEditing = editingStyleId === st.id;
-    const bg = (st.colorOverrides && st.colorOverrides.bg) || "#1a1a1a";
-    const fg = (st.colorOverrides && st.colorOverrides.fg) || "#e0e0e0";
+    const appearance = state.settings.appearance || "dark";
+    const { colors } = resolveStyleForAppearance(st, appearance);
+    const bg = colors.bg || "#1a1a1a";
+    const fg = colors.fg || "#e0e0e0";
     const fontSize = st.fontSize || state.settings.fontSize || 20;
-    html += `<div class="style-sidebar-item${isActive ? ' active' : ''}${isEditing ? ' editing' : ''}" data-style-id="${st.id}"
+    html += `<div class="style-sidebar-item${isActive ? ' active' : ''}" data-style-id="${st.id}"
       style="background:${bg}; color:${fg}; font-size:${Math.min(fontSize, 16)}px;${st.fontFamily ? ` font-family:'${st.fontFamily}';` : ''}">
       <span class="style-sidebar-name">${escHtml(st.name)}</span>
       <span class="style-sidebar-actions">
@@ -44,120 +106,19 @@ export function renderStylesPanel(state) {
         </button>
       </span>
     </div>`;
-    if (isEditing) {
-      html += renderStyleEditorInline(state);
-    }
   }
 
   html += `</div>`;
   return html;
 }
 
-function renderStyleEditorInline(state) {
-  const isNew = editingStyleId === "new";
-  const style = isNew
-    ? { id: "", name: "", themeId: state.settings.darkTheme || "dracula", fontFamily: null, fontSize: null, lineHeight: null, colorOverrides: {} }
-    : (state.settings.styles || []).find(s => s.id === editingStyleId) || {};
-
-  const lightThemes = themeList.filter(t => t.type === "light");
-  const darkThemes = themeList.filter(t => t.type === "dark");
-  const builtInFonts = ["Source Sans Pro", "Source Serif Pro", "Libre Franklin", "Libre Baskerville", "Karla", "Lora", "EB Garamond", "Inter", "Fira Code"];
-  const systemFonts = [
-    "Arial", "Avenir", "Avenir Next", "Baskerville", "Courier New",
-    "Futura", "Garamond", "Georgia", "Gill Sans", "Helvetica",
-    "Helvetica Neue", "Lucida Grande", "Menlo", "Monaco", "Optima",
-    "Palatino", "SF Mono", "SF Pro", "Times New Roman", "Verdana",
-  ];
-  const colorKeys = [
-    { key: "bg", label: "Background" },
-    { key: "fg", label: "Text" },
-    { key: "cursor", label: "Cursor" },
-    { key: "selection", label: "Selection" },
-  ];
-
-  const selectedFont = style.fontFamily || "";
-  const selectedFontLabel = selectedFont || `Default (${state.settings.fontFamily || "EB Garamond"})`;
-  const selectedTheme = style.themeId || "";
-  const selectedThemeObj = themeList.find(t => t.id === selectedTheme);
-  const selectedThemeLabel = selectedThemeObj ? selectedThemeObj.name : (selectedTheme || "Select theme");
-
-  return `
-    <div class="style-editor-sidebar style-editor-accordion">
-      <div class="style-editor-row">
-        <label>Name</label>
-        <input type="text" id="style-name" value="${escAttr(style.name)}" placeholder="Style name" />
-      </div>
-      <div class="style-editor-row">
-        <label>Theme</label>
-        <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(selectedTheme)}">
-          <div class="custom-dropdown-selected">${escHtml(selectedThemeLabel)}</div>
-          <div class="custom-dropdown-options">
-            <div class="custom-dropdown-group-label">Light</div>
-            ${lightThemes.map(t => `<div class="custom-dropdown-option${t.id === selectedTheme ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`).join('')}
-            <div class="custom-dropdown-group-label">Dark</div>
-            ${darkThemes.map(t => `<div class="custom-dropdown-option${t.id === selectedTheme ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`).join('')}
-          </div>
-        </div>
-      </div>
-      <div class="style-editor-row">
-        <label>Font</label>
-        <div class="custom-dropdown" id="style-font-dropdown" data-value="${escAttr(selectedFont)}">
-          <div class="custom-dropdown-selected">${escHtml(selectedFontLabel)}</div>
-          <div class="custom-dropdown-options">
-            <div class="custom-dropdown-option${!selectedFont ? ' selected' : ''}" data-value="">Default (${escHtml(state.settings.fontFamily || "EB Garamond")})</div>
-            <div class="custom-dropdown-group-label">Built-in</div>
-            ${builtInFonts.map(f => `<div class="custom-dropdown-option${style.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
-            <div class="custom-dropdown-group-label">System</div>
-            ${systemFonts.map(f => `<div class="custom-dropdown-option${style.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
-          </div>
-        </div>
-      </div>
-      <div class="style-editor-row">
-        <label>Size</label>
-        <div class="style-slider-group">
-          <input type="range" id="style-font-size" min="12" max="36" step="1" value="${style.fontSize || state.settings.fontSize || 20}" />
-          <span class="style-slider-value">${style.fontSize || state.settings.fontSize || 20}px</span>
-        </div>
-      </div>
-      <div class="style-editor-row">
-        <label>Height</label>
-        <div class="style-slider-group">
-          <input type="range" id="style-line-height" min="1.0" max="2.5" step="0.1" value="${style.lineHeight || state.settings.lineHeight || 1.6}" />
-          <span class="style-slider-value">${style.lineHeight || state.settings.lineHeight || 1.6}</span>
-        </div>
-      </div>
-      <div class="style-editor-colors-title">Color Overrides</div>
-      ${colorKeys.map(ck => {
-        const overrideVal = (style.colorOverrides || {})[ck.key];
-        const val = overrideVal || "#888888";
-        return `<div class="style-editor-color-row">
-          <label>${ck.label}</label>
-          <div class="style-color-group">
-            <input type="color" data-color-key="${ck.key}" value="${val}" />
-            ${overrideVal ? `<button class="style-reset-color" data-color-key="${ck.key}" title="Reset">&times;</button>` : ''}
-          </div>
-        </div>`;
-      }).join("")}
-      <div class="style-editor-btns">
-        <button id="style-cancel">Cancel</button>
-        <button id="style-save" class="style-save-btn">${isNew ? "Create" : "Save"}</button>
-      </div>
-    </div>
-  `;
-}
-
 export function bindStylesPanel(state, panel) {
-  if (editingStyleId !== null) {
-    bindStyleEditor(state, panel);
-  }
-
   const newBtn = panel.querySelector("#new-style-btn");
   if (newBtn) {
-    newBtn.addEventListener("click", () => {
-      editingStyleId = "new";
+    newBtn.addEventListener("click", () => openStyleModal(state, null, () => {
       panel.innerHTML = renderStylesPanel(state);
       bindStylesPanel(state, panel);
-    });
+    }));
   }
 
   panel.querySelectorAll(".style-sidebar-item").forEach(el => {
@@ -174,7 +135,10 @@ export function bindStylesPanel(state, panel) {
       const id = el.dataset.styleId;
       if (!id) { state.emit("style-preview-end"); return; }
       const style = (state.settings.styles || []).find(s => s.id === id);
-      if (style) state.emit("style-preview", style);
+      if (style) {
+        const { themeId, colors } = resolveStyleForAppearance(style, state.settings.appearance);
+        state.emit("style-preview", { ...style, themeId, colorOverrides: colors });
+      }
     });
 
     el.addEventListener("mouseleave", () => {
@@ -189,9 +153,11 @@ export function bindStylesPanel(state, panel) {
       const id = btn.dataset.id;
 
       if (action === "edit") {
-        editingStyleId = id;
-        panel.innerHTML = renderStylesPanel(state);
-        bindStylesPanel(state, panel);
+        const style = (state.settings.styles || []).find(s => s.id === id);
+        if (style) openStyleModal(state, style, () => {
+          panel.innerHTML = renderStylesPanel(state);
+          bindStylesPanel(state, panel);
+        });
       } else if (action === "duplicate") {
         const source = (state.settings.styles || []).find(s => s.id === id);
         if (source) {
@@ -214,81 +180,323 @@ export function bindStylesPanel(state, panel) {
   });
 }
 
-function bindStyleEditor(state, panel) {
-  const cancelBtn = panel.querySelector("#style-cancel");
-  const saveBtn = panel.querySelector("#style-save");
+// ── two-column editor modal ────────────────────────────────────────────────────
+const lightThemes = themeList.filter(t => t.type === "light");
+const darkThemes = themeList.filter(t => t.type === "dark");
+const builtInFonts = ["Source Sans Pro", "Source Serif Pro", "Libre Franklin", "Libre Baskerville", "Karla", "Lora", "EB Garamond", "Inter", "Fira Code"];
+const systemFonts = [
+  "Arial", "Avenir", "Avenir Next", "Baskerville", "Courier New",
+  "Futura", "Garamond", "Georgia", "Gill Sans", "Helvetica",
+  "Helvetica Neue", "Lucida Grande", "Menlo", "Monaco", "Optima",
+  "Palatino", "SF Mono", "SF Pro", "Times New Roman", "Verdana",
+];
+const colorKeys = [
+  { key: "bg", label: "Background" },
+  { key: "fg", label: "Text" },
+  { key: "cursor", label: "Cursor" },
+  { key: "selection", label: "Selection" },
+];
 
-  function getFormStyle() {
-    const themeId = panel.querySelector("#style-theme-dropdown")?.dataset.value || "";
-    const fontFamily = panel.querySelector("#style-font-dropdown")?.dataset.value || null;
-    const fontSize = parseFloat(panel.querySelector("#style-font-size")?.value) || null;
-    const lineHeight = parseFloat(panel.querySelector("#style-line-height")?.value) || null;
-    const colorOverrides = {};
-    panel.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
-      const key = input.dataset.colorKey;
-      if (input.value !== "#888888") colorOverrides[key] = input.value;
-    });
-    return { themeId, fontFamily, fontSize, lineHeight, colorOverrides };
-  }
+// Known theme background colors (duplicated from main.js for preview)
+const themeBackgrounds = {
+  dracula: "#2d2f3f", ayuLight: "#fcfcfc", clouds: "#ffffff",
+  noctisLilac: "#f2f1f8", rosePineDawn: "#faf4ed", solarizedLight: "#fef7e5",
+  smoothy: "#ffffff", amy: "#200020", barf: "#15191e", bespin: "#2e241d",
+  birdsOfParadise: "#3b2627", boysAndGirls: "#000205", cobalt: "#00254b",
+  coolGlow: "#060521", espresso: "#ffffff", tomorrow: "#ffffff",
+};
 
-  function emitLivePreview() { state.emit("style-preview", getFormStyle()); }
-  emitLivePreview();
+// Known theme foreground colors
+const themeForegrounds = {
+  dracula: "#f8f8f2", ayuLight: "#5c6166", clouds: "#000000",
+  noctisLilac: "#4a4a6a", rosePineDawn: "#575279", solarizedLight: "#657b83",
+  smoothy: "#333333", amy: "#d0d0ff", barf: "#d4d4d4", bespin: "#baae9e",
+  birdsOfParadise: "#e6e1c4", boysAndGirls: "#e0e0e0", cobalt: "#e1efff",
+  coolGlow: "#aebbc5", espresso: "#535353", tomorrow: "#4d4d4c",
+};
 
-  cancelBtn.addEventListener("click", () => {
-    state.emit("style-preview-end");
-    editingStyleId = null;
-    panel.innerHTML = renderStylesPanel(state);
-    bindStylesPanel(state, panel);
-  });
-
-  saveBtn.addEventListener("click", () => {
-    const name = panel.querySelector("#style-name")?.value?.trim();
-    if (!name) return;
-    const { themeId, fontFamily, fontSize, lineHeight, colorOverrides } = getFormStyle();
-    if (!state.settings.styles) state.settings.styles = [];
-    if (editingStyleId === "new") {
-      const id = "style_" + Date.now();
-      state.settings.styles.push({ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides });
-    } else {
-      const style = state.settings.styles.find(s => s.id === editingStyleId);
-      if (style) Object.assign(style, { name, themeId, fontFamily, fontSize, lineHeight, colorOverrides });
-    }
-    state.emit("style-preview-end");
-    state.updateSettings({ styles: state.settings.styles });
-    state.emit("style-changed");
-    editingStyleId = null;
-    panel.innerHTML = renderStylesPanel(state);
-    bindStylesPanel(state, panel);
-  });
-
-  bindCustomDropdown(panel.querySelector("#style-theme-dropdown"), () => emitLivePreview(),
-    (value) => { const fs = getFormStyle(); fs.themeId = value; state.emit("style-preview", fs); },
-    () => emitLivePreview());
-
-  bindCustomDropdown(panel.querySelector("#style-font-dropdown"), () => emitLivePreview(),
-    (value) => { const fs = getFormStyle(); fs.fontFamily = value || null; state.emit("style-preview", fs); },
-    () => emitLivePreview());
-
-  const fsEl = panel.querySelector("#style-font-size");
-  if (fsEl) fsEl.addEventListener("input", () => { fsEl.nextElementSibling.textContent = fsEl.value + "px"; emitLivePreview(); });
-  const lhEl = panel.querySelector("#style-line-height");
-  if (lhEl) lhEl.addEventListener("input", () => { lhEl.nextElementSibling.textContent = lhEl.value; emitLivePreview(); });
-
-  panel.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
-    input.addEventListener("input", emitLivePreview);
-  });
-  panel.querySelectorAll(".style-reset-color").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const key = btn.dataset.colorKey;
-      const input = panel.querySelector(`input[type='color'][data-color-key='${key}']`);
-      if (input) input.value = "#888888";
-      btn.remove();
-      emitLivePreview();
-    });
-  });
+function fontFallback(family) {
+  const map = {
+    "Helvetica": "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
+    "EB Garamond": "'EB Garamond', 'Georgia', 'Times New Roman', serif",
+    "Inter": "'Inter', system-ui, -apple-system, sans-serif",
+    "Fira Code": "'Fira Code', 'Fira Mono', 'Consolas', monospace",
+    "Source Sans Pro": "'Source Sans Pro', 'Helvetica Neue', 'Arial', sans-serif",
+    "Source Serif Pro": "'Source Serif Pro', 'Georgia', 'Times New Roman', serif",
+    "Libre Franklin": "'Libre Franklin', 'Helvetica Neue', 'Arial', sans-serif",
+    "Libre Baskerville": "'Libre Baskerville', 'Georgia', 'Times New Roman', serif",
+    "Karla": "'Karla', 'Helvetica Neue', 'Arial', sans-serif",
+    "Lora": "'Lora', 'Georgia', 'Times New Roman', serif",
+  };
+  return map[family] || `'${family}', system-ui, sans-serif`;
 }
 
-function bindCustomDropdown(dropdown, onSelect, onHover, onLeave) {
+function openStyleModal(state, existingStyle, onDone) {
+  const isNew = !existingStyle;
+  const draft = existingStyle
+    ? JSON.parse(JSON.stringify(migrateStyle(existingStyle)))
+    : {
+        id: "", name: "", fontFamily: null, fontSize: null, lineHeight: null,
+        lightThemeId: state.settings.lightTheme || "ayuLight",
+        darkThemeId: state.settings.darkTheme || "dracula",
+        lightColors: {}, darkColors: {},
+      };
+
+  let colorTab = "light"; // which tab is shown in the color section
+
+  // ── build the backdrop ───────────────────────────────────────────────────
+  const backdrop = document.createElement("div");
+  backdrop.className = "style-modal-backdrop";
+  document.body.appendChild(backdrop);
+
+  function close() { backdrop.remove(); }
+
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+
+  function render() {
+    const selectedFont = draft.fontFamily || "";
+    const selectedFontLabel = selectedFont || `Default (${state.settings.fontFamily || "EB Garamond"})`;
+    const ltId = draft.lightThemeId || "";
+    const dtId = draft.darkThemeId || "";
+    const ltObj = getThemeById(ltId);
+    const dtObj = getThemeById(dtId);
+    const ltLabel = ltObj ? ltObj.name : "Select theme";
+    const dtLabel = dtObj ? dtObj.name : "Select theme";
+
+    const activeColors = colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {});
+
+    backdrop.innerHTML = `
+      <div class="style-modal">
+        <button class="style-modal-close">&times;</button>
+        <div class="style-modal-body">
+
+          <!-- LEFT: settings column -->
+          <div class="style-modal-settings">
+            <h2 class="style-modal-title">${isNew ? "New Style" : "Edit Style"}</h2>
+
+            <div class="style-editor-row">
+              <label>Name</label>
+              <input type="text" id="style-name" value="${escAttr(draft.name)}" placeholder="Style name" />
+            </div>
+
+            <div class="style-editor-row">
+              <label>Font</label>
+              <div class="custom-dropdown" id="style-font-dropdown" data-value="${escAttr(selectedFont)}">
+                <div class="custom-dropdown-selected">${escHtml(selectedFontLabel)}</div>
+                <div class="custom-dropdown-options">
+                  <div class="custom-dropdown-option${!selectedFont ? ' selected' : ''}" data-value="">Default (${escHtml(state.settings.fontFamily || "EB Garamond")})</div>
+                  <div class="custom-dropdown-group-label">Built-in</div>
+                  ${builtInFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+                  <div class="custom-dropdown-group-label">System</div>
+                  ${systemFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+                </div>
+              </div>
+            </div>
+
+            <div class="style-editor-row">
+              <label>Size</label>
+              <div class="style-slider-group">
+                <input type="range" id="style-font-size" min="12" max="36" step="1" value="${draft.fontSize || state.settings.fontSize || 20}" />
+                <span class="style-slider-value">${draft.fontSize || state.settings.fontSize || 20}px</span>
+              </div>
+            </div>
+
+            <div class="style-editor-row">
+              <label>Height</label>
+              <div class="style-slider-group">
+                <input type="range" id="style-line-height" min="1.0" max="2.5" step="0.1" value="${draft.lineHeight || state.settings.lineHeight || 1.6}" />
+                <span class="style-slider-value">${draft.lineHeight || state.settings.lineHeight || 1.6}</span>
+              </div>
+            </div>
+
+            <!-- Color mode tabs -->
+            <div class="style-color-tabs">
+              <button class="style-color-tab${colorTab === 'light' ? ' active' : ''}" data-mode="light">Light</button>
+              <button class="style-color-tab${colorTab === 'dark' ? ' active' : ''}" data-mode="dark">Dark</button>
+            </div>
+
+            <div class="style-editor-row">
+              <label>Theme</label>
+              <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(colorTab === 'light' ? ltId : dtId)}">
+                <div class="custom-dropdown-selected">${escHtml(colorTab === 'light' ? ltLabel : dtLabel)}</div>
+                <div class="custom-dropdown-options">
+                  ${(colorTab === 'light' ? lightThemes : darkThemes).map(t => {
+                    const selId = colorTab === 'light' ? ltId : dtId;
+                    return `<div class="custom-dropdown-option${t.id === selId ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`;
+                  }).join('')}
+                </div>
+              </div>
+            </div>
+
+            ${colorKeys.map(ck => {
+              const overrideVal = activeColors[ck.key];
+              const val = overrideVal || "#888888";
+              return `<div class="style-editor-color-row">
+                <label>${ck.label}</label>
+                <div class="style-color-group">
+                  <input type="color" data-color-key="${ck.key}" value="${val}" />
+                  ${overrideVal ? `<button class="style-reset-color" data-color-key="${ck.key}" title="Reset">&times;</button>` : ''}
+                </div>
+              </div>`;
+            }).join("")}
+
+            <div class="style-editor-btns">
+              <button id="style-cancel">Cancel</button>
+              <button id="style-save" class="style-save-btn">${isNew ? "Create" : "Save"}</button>
+            </div>
+          </div>
+
+          <!-- RIGHT: preview pane -->
+          <div class="style-modal-preview" id="style-preview-pane">
+            <div class="style-preview-content">${formatPreviewHtml(PREVIEW_MD)}</div>
+          </div>
+
+        </div>
+      </div>`;
+    bind();
+    updatePreview();
+  }
+
+  // ── preview rendering ────────────────────────────────────────────────────
+  function updatePreview() {
+    const pane = backdrop.querySelector("#style-preview-pane");
+    if (!pane) return;
+
+    // Determine which theme/colors to show based on the active color tab
+    const themeId = colorTab === "light" ? draft.lightThemeId : draft.darkThemeId;
+    const colors = colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {});
+
+    const bg = colors.bg || themeBackgrounds[themeId] || (colorTab === "light" ? "#fafafa" : "#1a1a1a");
+    const fg = colors.fg || themeForegrounds[themeId] || (colorTab === "light" ? "#1a1a1a" : "#e0e0e0");
+    const cursor = colors.cursor || fg;
+    const selection = colors.selection || "rgba(128, 128, 128, 0.3)";
+    const font = draft.fontFamily ? fontFallback(draft.fontFamily) : fontFallback(state.settings.fontFamily || "EB Garamond");
+    const size = (draft.fontSize || state.settings.fontSize || 20) + "px";
+    const lh = draft.lineHeight || state.settings.lineHeight || 1.6;
+
+    pane.style.background = bg;
+    pane.style.color = fg;
+    pane.style.fontFamily = font;
+    pane.style.fontSize = size;
+    pane.style.lineHeight = lh;
+    pane.style.setProperty("--preview-cursor", cursor);
+    pane.style.setProperty("--preview-selection", selection);
+    pane.style.caretColor = cursor;
+
+    // Give headings the theme heading color if available
+    const theme = getThemeById(themeId);
+    const headingColor = theme ? theme.headingColor : fg;
+    pane.querySelectorAll(".preview-h1, .preview-h2, .preview-h3").forEach(el => {
+      el.style.color = headingColor;
+    });
+  }
+
+  // ── event bindings ───────────────────────────────────────────────────────
+  function bind() {
+    // Close button
+    backdrop.querySelector(".style-modal-close").addEventListener("click", close);
+
+    // Color mode tabs
+    backdrop.querySelectorAll(".style-color-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        colorTab = btn.dataset.mode;
+        render();
+      });
+    });
+
+    // Font dropdown
+    bindCustomDropdown(backdrop.querySelector("#style-font-dropdown"), (val) => {
+      draft.fontFamily = val || null;
+      updatePreview();
+    });
+
+    // Theme dropdown
+    bindCustomDropdown(backdrop.querySelector("#style-theme-dropdown"), (val) => {
+      if (colorTab === "light") draft.lightThemeId = val;
+      else draft.darkThemeId = val;
+      updatePreview();
+    });
+
+    // Sliders
+    const fsEl = backdrop.querySelector("#style-font-size");
+    if (fsEl) fsEl.addEventListener("input", () => {
+      fsEl.nextElementSibling.textContent = fsEl.value + "px";
+      draft.fontSize = parseFloat(fsEl.value);
+      updatePreview();
+    });
+    const lhEl = backdrop.querySelector("#style-line-height");
+    if (lhEl) lhEl.addEventListener("input", () => {
+      lhEl.nextElementSibling.textContent = lhEl.value;
+      draft.lineHeight = parseFloat(lhEl.value);
+      updatePreview();
+    });
+
+    // Color pickers
+    backdrop.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
+      input.addEventListener("input", () => {
+        const key = input.dataset.colorKey;
+        const target = colorTab === "light" ? draft.lightColors : draft.darkColors;
+        target[key] = input.value;
+        updatePreview();
+      });
+    });
+    backdrop.querySelectorAll(".style-reset-color").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.colorKey;
+        const target = colorTab === "light" ? draft.lightColors : draft.darkColors;
+        delete target[key];
+        render(); // re-render to remove the reset button
+      });
+    });
+
+    // Cancel / Save
+    backdrop.querySelector("#style-cancel").addEventListener("click", close);
+    backdrop.querySelector("#style-save").addEventListener("click", () => {
+      const name = backdrop.querySelector("#style-name")?.value?.trim();
+      if (!name) return;
+      draft.name = name;
+      // Clean up internal migration flag
+      delete draft._migrated;
+
+      if (!state.settings.styles) state.settings.styles = [];
+      if (isNew) {
+        draft.id = "style_" + Date.now();
+        state.settings.styles.push(draft);
+      } else {
+        const idx = state.settings.styles.findIndex(s => s.id === draft.id);
+        if (idx >= 0) state.settings.styles[idx] = draft;
+      }
+      state.updateSettings({ styles: state.settings.styles });
+      state.emit("style-changed");
+      close();
+      if (onDone) onDone();
+    });
+  }
+
+  render();
+}
+
+// ── simple markdown→HTML for the preview pane ──────────────────────────────────
+function formatPreviewHtml(md) {
+  return md.split("\n").map(line => {
+    if (line.startsWith("### ")) return `<div class="preview-h3">${fmtInline(line.slice(4))}</div>`;
+    if (line.startsWith("## ")) return `<div class="preview-h2">${fmtInline(line.slice(3))}</div>`;
+    if (line.startsWith("# ")) return `<div class="preview-h1">${fmtInline(line.slice(2))}</div>`;
+    if (line.startsWith("> ")) return `<div class="preview-bq">${fmtInline(line.slice(2))}</div>`;
+    if (line.trim() === "") return `<div class="preview-blank">&nbsp;</div>`;
+    return `<div>${fmtInline(line)}</div>`;
+  }).join("");
+}
+
+function fmtInline(text) {
+  return escHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/~~(.+?)~~/g, '<del>$1</del>');
+}
+
+// ── shared custom dropdown ─────────────────────────────────────────────────────
+function bindCustomDropdown(dropdown, onSelect) {
   if (!dropdown) return;
   const selected = dropdown.querySelector(".custom-dropdown-selected");
   const optionsList = dropdown.querySelector(".custom-dropdown-options");
@@ -318,17 +526,5 @@ function bindCustomDropdown(dropdown, onSelect, onHover, onLeave) {
       dropdown.classList.remove("open");
       if (onSelect) onSelect(value);
     });
-    opt.addEventListener("mouseenter", () => { if (onHover) onHover(opt.dataset.value); });
   });
-  optionsList.addEventListener("mouseleave", () => { if (onLeave) onLeave(); });
-}
-
-function escAttr(str) {
-  return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
-function escHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }

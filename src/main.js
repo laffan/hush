@@ -4,6 +4,7 @@ import { AppState } from "./state/state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
 import { applyAppearance, isIOS } from "./settings/settings-ui.js";
 import { getThemeById } from "./themes.js";
+import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
 import { findNext, findPrev } from "./editor/find-replace.js";
 import { createLongView } from "./longview/longview.js";
@@ -86,7 +87,8 @@ function updatePrivateBoxColor(state, overrideBg) {
     if (state.settings.activeStyleId && state.settings.styles) {
       const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
       if (style) {
-        bg = (style.colorOverrides && style.colorOverrides.bg) || themeBackgrounds[style.themeId];
+        const { themeId, colors } = resolveStyleForAppearance(style, state.settings.appearance);
+        bg = (colors && colors.bg) || themeBackgrounds[themeId] || (style.colorOverrides && style.colorOverrides.bg) || themeBackgrounds[style.themeId];
       }
     }
 
@@ -180,9 +182,10 @@ function applyActiveStyle(state) {
   // Apply the style's theme first, then color overrides on top
   state.emit("theme-changed");
 
-  // Color overrides — applied AFTER theme and updatePrivateBoxColor
-  // so they take precedence over theme-derived values
-  const overrides = style.colorOverrides || {};
+  // Resolve the correct color set for current appearance (light vs dark)
+  const { colors: resolvedColors } = resolveStyleForAppearance(style, state.settings.appearance);
+  // Also support legacy single-mode colorOverrides
+  const overrides = resolvedColors || style.colorOverrides || {};
   updatePrivateBoxColor(state);
 
   const cmEditorEl = document.querySelector('.cm-editor');
