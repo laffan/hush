@@ -136,6 +136,7 @@ export function updateColumnResizers(state) {
       startX = e.clientX;
       startWidth = state.settings.columnWidth;
       el.classList.add("dragging");
+      showBoth();
 
       function onMove(e2) {
         const delta = isLeft ? startX - e2.clientX : e2.clientX - startX;
@@ -146,6 +147,7 @@ export function updateColumnResizers(state) {
 
       function onUp() {
         el.classList.remove("dragging");
+        hideBoth();
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         state.updateSettings({ columnWidth: state.settings.columnWidth });

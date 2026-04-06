@@ -168,6 +168,10 @@ export function renderEditorTab(settings) {
         <label>Normalize header color</label>
         <input type="checkbox" id="setting-normalize-header-color" ${s.normalizeHeaderColor ? "checked" : ""} />
       </div>
+      <div class="settings-row">
+        <label>Sticky headers</label>
+        <input type="checkbox" id="setting-sticky-headers" ${s.stickyHeaders ? "checked" : ""} />
+      </div>
     </div>
 
     <div class="settings-section">

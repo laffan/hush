@@ -22,6 +22,7 @@ import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, applyRatchetTypewriterPadding, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
 import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
+import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -71,55 +72,87 @@ const bypassRatchet = Annotation.define();
 
 // Plugin that measures the actual width of heading markers (# ## etc.) and
 // applies a precise negative text-indent so heading text aligns with body text.
-// Uses DOM measurement instead of CSS approximation for cross-platform accuracy.
+// Caches measurements per heading level (1-6) to avoid per-keystroke DOM
+// measurement which causes the indent to jump back and forth during typing.
 const headingIndentPlugin = ViewPlugin.fromClass(
   class {
-    constructor(view) { this.applied = new Set(); this.applyIndents(view); }
+    constructor(view) {
+      // Cache: heading level (1-6) → measured pixel width of "# " / "## " etc.
+      this.widthCache = new Map();
+      this.applyIndents(view);
+    }
     update(update) {
+      if (update.geometryChanged) {
+        // Font / size / layout changed — invalidate cache so we re-measure
+        this.widthCache.clear();
+      }
       if (update.docChanged || update.viewportChanged || update.geometryChanged) {
         this.applyIndents(update.view);
       }
     }
-    applyIndents(view) {
+    measureLevel(view, level) {
+      if (this.widthCache.has(level)) return this.widthCache.get(level);
+      // Find any visible heading of this level and measure its marker span
       const { from, to } = view.viewport;
       const doc = view.state.doc;
-      const seen = new Set();
+      const prefix = "#".repeat(level) + " ";
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
-        seen.add(line.from);
-        const match = line.text.match(/^(#{1,6})\s/);
-        if (match) {
-          // Find the .cm-line DOM element for this line
+        if (line.text.startsWith(prefix)) {
           const domPos = view.domAtPos(line.from);
           const lineEl = domPos?.node?.nodeType === 1
             ? domPos.node.closest(".cm-line")
             : domPos?.node?.parentElement?.closest(".cm-line");
           if (lineEl) {
-            // The first child span contains the # marks (styled as processingInstruction)
             const firstSpan = lineEl.querySelector("span");
             if (firstSpan) {
-              const markWidth = firstSpan.getBoundingClientRect().width;
-              if (markWidth > 0) {
-                lineEl.style.textIndent = `-${Math.round(markWidth)}px`;
-                this.applied.add(line.from);
+              const w = firstSpan.getBoundingClientRect().width;
+              if (w > 0) {
+                this.widthCache.set(level, w);
+                return w;
               }
             }
           }
-        } else {
-          // Clear indent from non-heading lines that previously had it
-          if (this.applied.has(line.from)) {
-            const domPos = view.domAtPos(line.from);
-            const lineEl = domPos?.node?.nodeType === 1
-              ? domPos.node.closest(".cm-line")
-              : domPos?.node?.parentElement?.closest(".cm-line");
-            if (lineEl) lineEl.style.textIndent = "";
-            this.applied.delete(line.from);
+        }
+        pos = line.to + 1;
+      }
+      return null;
+    }
+    applyIndents(view) {
+      const { from, to } = view.viewport;
+      const doc = view.state.doc;
+      // First pass: measure any uncached heading levels
+      for (let pos = from; pos <= to;) {
+        const line = doc.lineAt(pos);
+        const match = line.text.match(/^(#{1,6})\s/);
+        if (match && !this.widthCache.has(match[1].length)) {
+          this.measureLevel(view, match[1].length);
+        }
+        pos = line.to + 1;
+      }
+      // Second pass: apply cached indents (no per-line DOM measurement)
+      for (let pos = from; pos <= to;) {
+        const line = doc.lineAt(pos);
+        const match = line.text.match(/^(#{1,6})\s/);
+        const domPos = view.domAtPos(line.from);
+        const lineEl = domPos?.node?.nodeType === 1
+          ? domPos.node.closest(".cm-line")
+          : domPos?.node?.parentElement?.closest(".cm-line");
+        if (lineEl) {
+          if (match) {
+            const cached = this.widthCache.get(match[1].length);
+            if (cached) {
+              lineEl.style.textIndent = `-${Math.round(cached)}px`;
+            }
+          } else {
+            // Clear indent from non-heading lines
+            if (lineEl.style.textIndent) lineEl.style.textIndent = "";
           }
         }
         pos = line.to + 1;
       }
     }
-    destroy() { this.applied.clear(); }
+    destroy() { this.widthCache.clear(); }
   }
 );
 
@@ -393,6 +426,7 @@ export function createEditor(container, state) {
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin();
+  const stickyHeadersPlugin = createStickyHeadersPlugin(state);
 
   // Encourage typing decorations — fades new text when user stops typing in ratchet mode
   const encouragePlugin = ViewPlugin.fromClass(
@@ -426,6 +460,7 @@ export function createEditor(container, state) {
       flagHighlightPlugin,
       linkDecoratorPlugin,
       headingIndentPlugin,
+      stickyHeadersPlugin,
       encouragePlugin,
       projectViewField,
       separatorFilter,
@@ -546,6 +581,8 @@ export function createEditor(container, state) {
     if (getTypewriterBoundary()) {
       getTypewriterBoundary().style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
     }
+    // Toggle sticky headers
+    updateStickyHeaders(view, state);
   });
 
   return {

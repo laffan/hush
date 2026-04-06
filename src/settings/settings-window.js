@@ -169,6 +169,7 @@ function bindAll() {
   bindSelect("setting-font-family", "fontFamily");
   bindCheckbox("setting-normalize-headers", "normalizeHeaders");
   bindCheckbox("setting-normalize-header-color", "normalizeHeaderColor");
+  bindCheckbox("setting-sticky-headers", "stickyHeaders");
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
   bindCheckbox("setting-ratchet-encourage", "ratchetEncourageTyping");
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");

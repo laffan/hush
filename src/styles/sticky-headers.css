@@ -1,0 +1,56 @@
+/* Sticky Headers — shows heading hierarchy pinned to top of editor */
+.sticky-headers {
+  position: absolute;
+  top: 30px; /* below drag region */
+  left: 0;
+  right: 0;
+  z-index: 10;
+  pointer-events: none;
+  padding: 8px 0 6px;
+  background: linear-gradient(to bottom, var(--bg) 60%, transparent);
+}
+
+.fullscreen-mode .sticky-headers {
+  top: 0;
+}
+
+.sticky-header {
+  padding: 1px 0;
+  font-family: var(--font-family);
+  color: var(--fg);
+  opacity: 0.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.sticky-header-h1 {
+  font-size: calc(var(--font-size) * 0.85);
+  font-weight: 700;
+}
+
+.sticky-header-h2 {
+  font-size: calc(var(--font-size) * 0.78);
+  font-weight: 700;
+}
+
+.sticky-header-h3 {
+  font-size: calc(var(--font-size) * 0.72);
+  font-weight: 600;
+}
+
+.sticky-header-h4 {
+  font-size: calc(var(--font-size) * 0.68);
+  font-weight: 600;
+}
+
+.sticky-header-h5 {
+  font-size: calc(var(--font-size) * 0.65);
+  font-weight: 600;
+}
+
+.sticky-header-h6 {
+  font-size: calc(var(--font-size) * 0.62);
+  font-weight: 600;
+}

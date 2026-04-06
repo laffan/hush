@@ -24,6 +24,7 @@ export class AppState {
       fontFamily: "Source Sans Pro",
       normalizeHeaders: false,
       normalizeHeaderColor: false,
+      stickyHeaders: false,
       typewriterLineOpacity: 0.08,
       padding: 50,
       syncFolders: [],
