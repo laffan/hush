@@ -170,7 +170,26 @@ function bindAll() {
   bindCheckbox("setting-normalize-headers", "normalizeHeaders");
   bindCheckbox("setting-normalize-header-color", "normalizeHeaderColor");
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
-  bindCheckbox("setting-block-cursor", "blockCursor");
+  const blockCursorEl = document.getElementById("setting-block-cursor");
+  if (blockCursorEl) {
+    blockCursorEl.addEventListener("change", () => {
+      saveSetting("blockCursor", blockCursorEl.checked);
+      render(); // re-render to show/hide color picker
+    });
+  }
+  const blockCursorColorEl = document.getElementById("setting-block-cursor-color");
+  if (blockCursorColorEl) {
+    blockCursorColorEl.addEventListener("input", () => {
+      saveSetting("blockCursorColor", blockCursorColorEl.value);
+    });
+  }
+  const blockCursorResetEl = document.getElementById("setting-block-cursor-color-reset");
+  if (blockCursorResetEl) {
+    blockCursorResetEl.addEventListener("click", () => {
+      saveSetting("blockCursorColor", null);
+      render();
+    });
+  }
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
   bindCheckbox("setting-ratchet-encourage", "ratchetEncourageTyping");
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");

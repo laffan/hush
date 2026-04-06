@@ -55,7 +55,7 @@
 /* Block cursor mode */
 #editor-container.block-cursor .cm-cursor {
   border-left: none;
-  background: var(--cursor);
+  background: var(--block-cursor-color, var(--cursor));
   opacity: 0.55;
   width: 0.6em !important;
 }

@@ -458,6 +458,37 @@ html, body {
   background: rgba(128, 128, 128, 0.15);
 }
 
+/* Inline group — checkbox + color picker on same row */
+.settings-inline-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-inline-group input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+  padding: 1px;
+}
+
+.settings-inline-reset {
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.5;
+  padding: 0 2px;
+}
+
+.settings-inline-reset:hover {
+  opacity: 1;
+}
+
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar {
   width: 6px;

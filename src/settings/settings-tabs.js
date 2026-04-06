@@ -174,7 +174,11 @@ export function renderEditorTab(settings) {
       </div>
       <div class="settings-row">
         <label>Block cursor</label>
-        <input type="checkbox" id="setting-block-cursor" ${s.blockCursor ? "checked" : ""} />
+        <div class="settings-inline-group">
+          <input type="checkbox" id="setting-block-cursor" ${s.blockCursor ? "checked" : ""} />
+          ${s.blockCursor ? `<input type="color" id="setting-block-cursor-color" value="${s.blockCursorColor || '#888888'}" title="Block cursor color" />
+          ${s.blockCursorColor ? `<button class="settings-inline-reset" id="setting-block-cursor-color-reset" title="Reset">&times;</button>` : ''}` : ''}
+        </div>
       </div>
     </div>
 

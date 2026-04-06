@@ -241,17 +241,24 @@ function createFlagHighlightPlugin(stateRef) {
   );
 }
 
-/** Toggle block cursor class based on settings (or active style override). */
+/** Toggle block cursor class and color based on settings (or active style override). */
 function applyBlockCursor(state) {
   const container = document.getElementById("editor-container");
   if (!container) return;
   let block = !!state.settings.blockCursor;
+  let color = state.settings.blockCursorColor || null;
   // Active style can override
   if (state.settings.activeStyleId && state.settings.styles) {
     const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
     if (style && style.blockCursor != null) block = style.blockCursor;
+    if (style && style.blockCursorColor) color = style.blockCursorColor;
   }
   container.classList.toggle("block-cursor", block);
+  if (color) {
+    container.style.setProperty("--block-cursor-color", color);
+  } else {
+    container.style.removeProperty("--block-cursor-color");
+  }
 }
 
 /**
