@@ -72,18 +72,19 @@ const bypassRatchet = Annotation.define();
 
 // Plugin that measures the actual width of heading markers (# ## etc.) and
 // applies a precise negative text-indent so heading text aligns with body text.
-// Caches measurements per heading level (1-6) to avoid per-keystroke DOM
-// measurement which causes the indent to jump back and forth during typing.
+// Uses coordsAtPos for accurate measurement regardless of how CodeMirror
+// splits DOM nodes.  Caches measurements per heading level (1-6).
 const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
-      // Cache: heading level (1-6) → measured pixel width of "# " / "## " etc.
       this.widthCache = new Map();
-      this.applyIndents(view);
+      // Defer initial measurement to ensure DOM is fully rendered
+      requestAnimationFrame(() => {
+        if (view.dom.isConnected) this.applyIndents(view);
+      });
     }
     update(update) {
       if (update.geometryChanged) {
-        // Font / size / layout changed — invalidate cache so we re-measure
         this.widthCache.clear();
       }
       if (update.docChanged || update.viewportChanged || update.geometryChanged) {
@@ -92,25 +93,20 @@ const headingIndentPlugin = ViewPlugin.fromClass(
     }
     measureLevel(view, level) {
       if (this.widthCache.has(level)) return this.widthCache.get(level);
-      // Find any visible heading of this level and measure its marker span
       const { from, to } = view.viewport;
       const doc = view.state.doc;
       const prefix = "#".repeat(level) + " ";
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         if (line.text.startsWith(prefix)) {
-          const domPos = view.domAtPos(line.from);
-          const lineEl = domPos?.node?.nodeType === 1
-            ? domPos.node.closest(".cm-line")
-            : domPos?.node?.parentElement?.closest(".cm-line");
-          if (lineEl) {
-            const firstSpan = lineEl.querySelector("span");
-            if (firstSpan) {
-              const w = firstSpan.getBoundingClientRect().width;
-              if (w > 0) {
-                this.widthCache.set(level, w);
-                return w;
-              }
+          // Use coordsAtPos for accurate measurement
+          const startCoords = view.coordsAtPos(line.from);
+          const textCoords = view.coordsAtPos(line.from + prefix.length);
+          if (startCoords && textCoords) {
+            const w = textCoords.left - startCoords.left;
+            if (w > 0) {
+              this.widthCache.set(level, w);
+              return w;
             }
           }
         }
@@ -130,7 +126,7 @@ const headingIndentPlugin = ViewPlugin.fromClass(
         }
         pos = line.to + 1;
       }
-      // Second pass: apply cached indents (no per-line DOM measurement)
+      // Second pass: apply cached indents
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         const match = line.text.match(/^(#{1,6})\s/);
@@ -142,11 +138,13 @@ const headingIndentPlugin = ViewPlugin.fromClass(
           if (match) {
             const cached = this.widthCache.get(match[1].length);
             if (cached) {
-              lineEl.style.textIndent = `-${Math.round(cached)}px`;
+              const px = Math.round(cached);
+              lineEl.style.textIndent = `-${px}px`;
+              lineEl.style.paddingLeft = `${px}px`;
             }
           } else {
-            // Clear indent from non-heading lines
             if (lineEl.style.textIndent) lineEl.style.textIndent = "";
+            if (lineEl.style.paddingLeft) lineEl.style.paddingLeft = "";
           }
         }
         pos = line.to + 1;
@@ -169,12 +167,12 @@ function getMarkdownHighlight(normalizeHeaders, headingColor) {
         { tag: tags.heading6, fontWeight: "600", color },
       ]
     : [
-        { tag: tags.heading1, fontSize: "1.8em", fontWeight: "700", lineHeight: "1.3", color },
-        { tag: tags.heading2, fontSize: "1.5em", fontWeight: "700", lineHeight: "1.3", color },
-        { tag: tags.heading3, fontSize: "1.3em", fontWeight: "600", lineHeight: "1.3", color },
-        { tag: tags.heading4, fontSize: "1.15em", fontWeight: "600", color },
-        { tag: tags.heading5, fontSize: "1.05em", fontWeight: "600", color },
-        { tag: tags.heading6, fontSize: "1em", fontWeight: "600", color },
+        { tag: tags.heading1, fontSize: "calc(var(--font-size) * 1.8)", fontWeight: "700", lineHeight: "1.3", color },
+        { tag: tags.heading2, fontSize: "calc(var(--font-size) * 1.5)", fontWeight: "700", lineHeight: "1.3", color },
+        { tag: tags.heading3, fontSize: "calc(var(--font-size) * 1.3)", fontWeight: "600", lineHeight: "1.3", color },
+        { tag: tags.heading4, fontSize: "calc(var(--font-size) * 1.15)", fontWeight: "600", color },
+        { tag: tags.heading5, fontSize: "calc(var(--font-size) * 1.05)", fontWeight: "600", color },
+        { tag: tags.heading6, fontSize: "var(--font-size)", fontWeight: "600", color },
       ];
 
   return HighlightStyle.define([
@@ -184,7 +182,7 @@ function getMarkdownHighlight(normalizeHeaders, headingColor) {
     { tag: tags.strikethrough, textDecoration: "line-through" },
     { tag: tags.link, textDecoration: "underline" },
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
-    { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "0.9em" },
+    { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "calc(var(--font-size) * 0.9)" },
     // Custom syntax: %% comments %% — dimmed out
     { tag: commentTag, opacity: "0.4" },
     // Custom syntax: == highlight == — highlighted background (flag-typed highlights get per-flag color from plugin)
@@ -462,7 +460,12 @@ export function createEditor(container, state) {
     extensions: [
       hushTheme,
       themeCompartment.of(initialCmTheme),
-      highlightCompartment.of(syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, state.settings.normalizeHeaderColor ? undefined : getActiveTheme(state.settings)?.headingColor))),
+      highlightCompartment.of(syntaxHighlighting((() => {
+        const _s = state.settings.activeStyleId ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId) : null;
+        const nh = _s?.suppressHeaderSize ?? state.settings.normalizeHeaders;
+        const nhc = _s?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
+        return getMarkdownHighlight(nh, nhc ? undefined : getActiveTheme(state.settings)?.headingColor);
+      })())),
       markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
       history(),
       drawSelection(),
@@ -576,11 +579,16 @@ export function createEditor(container, state) {
 
   state.on("theme-changed", () => {
     const t = getActiveTheme(state.settings);
-    const headingColor = state.settings.normalizeHeaderColor ? undefined : t?.headingColor;
+    const _activeStyle = state.settings.activeStyleId
+      ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId)
+      : null;
+    const normalizeHeaders = _activeStyle?.suppressHeaderSize ?? state.settings.normalizeHeaders;
+    const normalizeHeaderColor = _activeStyle?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
+    const headingColor = normalizeHeaderColor ? undefined : t?.headingColor;
     view.dispatch({ effects: [
       themeCompartment.reconfigure(t ? t.extension : []),
       highlightCompartment.reconfigure(
-        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, headingColor))
+        syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor))
       ),
     ] });
   });
@@ -594,10 +602,13 @@ export function createEditor(container, state) {
     const _lh = _activeStyle?.lineHeight || state.settings.lineHeight;
     document.documentElement.style.setProperty("--line-height", _lh);
     const t = getActiveTheme(state.settings);
-    const headingColor = state.settings.normalizeHeaderColor ? undefined : t?.headingColor;
+    // Style-level overrides take precedence over global settings
+    const normalizeHeaders = _activeStyle?.suppressHeaderSize ?? state.settings.normalizeHeaders;
+    const normalizeHeaderColor = _activeStyle?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
+    const headingColor = normalizeHeaderColor ? undefined : t?.headingColor;
     view.dispatch({
       effects: highlightCompartment.reconfigure(
-        syntaxHighlighting(getMarkdownHighlight(state.settings.normalizeHeaders, headingColor))
+        syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor))
       ),
     });
     // Update typewriter line opacity

@@ -189,11 +189,17 @@ function applyActiveStyle(state) {
   updatePrivateBoxColor(state);
 
   const cmEditorEl = document.querySelector('.cm-editor');
+  // Always update --bg to match the actual background (override or theme)
+  const { themeId: resolvedThemeId } = resolveStyleForAppearance(style, state.settings.appearance);
+  const effectiveBg = overrides.bg || themeBackgrounds[resolvedThemeId] || null;
   if (overrides.bg) {
     document.documentElement.style.setProperty("--bg", overrides.bg);
     document.documentElement.style.setProperty("--style-bg", overrides.bg);
     if (cmEditorEl) cmEditorEl.style.backgroundColor = overrides.bg;
   } else {
+    if (effectiveBg) {
+      document.documentElement.style.setProperty("--bg", effectiveBg);
+    }
     if (cmEditorEl) cmEditorEl.style.backgroundColor = '';
   }
   if (overrides.fg) {
@@ -557,6 +563,26 @@ async function init() {
     });
   }
 
+  // Auto-apply locked style when opening a document
+  state.on("file-opened", () => {
+    if (!state.currentFileId || !state.fileTree) return;
+    function findLockedStyle(nodes) {
+      for (const n of nodes) {
+        if (n.fileId === state.currentFileId) return n.lockedStyleId || null;
+        if (n.children) { const r = findLockedStyle(n.children); if (r) return r; }
+      }
+      return null;
+    }
+    const lockedId = findLockedStyle(state.fileTree);
+    if (lockedId) {
+      const styleExists = (state.settings.styles || []).some(s => s.id === lockedId);
+      if (styleExists && state.settings.activeStyleId !== lockedId) {
+        state.updateSettings({ activeStyleId: lockedId });
+        state.emit("style-changed");
+      }
+    }
+  });
+
   // Style changes (from sidebar or settings)
   state.on("style-changed", () => {
     applyActiveStyle(state);
@@ -579,11 +605,11 @@ async function init() {
     const overrides = styleObj.colorOverrides || {};
     const previewBg = overrides.bg || themeBackgrounds[styleObj.themeId] || null;
     updatePrivateBoxColor(state, previewBg);
-    // Apply color overrides AFTER updatePrivateBoxColor so they take precedence
-    if (overrides.bg) {
-      document.documentElement.style.setProperty("--bg", overrides.bg);
+    // Always update --bg to match the actual background (theme or override)
+    if (previewBg) {
+      document.documentElement.style.setProperty("--bg", previewBg);
       const cmEditor = document.querySelector('.cm-editor');
-      if (cmEditor) cmEditor.style.backgroundColor = overrides.bg;
+      if (cmEditor) cmEditor.style.backgroundColor = previewBg;
     }
     if (overrides.fg) {
       document.documentElement.style.setProperty("--style-fg", overrides.fg);

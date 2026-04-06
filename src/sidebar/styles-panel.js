@@ -119,7 +119,50 @@ export function renderStylesPanel(state) {
   }
 
   html += `</div>`;
+
+  // Show "Lock Style to Document" toggle below the active style
+  if (activeId) {
+    const lockedId = getLockedStyleId(state);
+    const isLocked = lockedId === activeId;
+    html += `<div class="style-lock-toggle">
+      <label class="style-lock-label">
+        <span class="style-lock-text">Lock Style to Document</span>
+        <span class="style-lock-switch${isLocked ? ' active' : ''}" id="style-lock-switch">
+          <span class="style-lock-knob"></span>
+        </span>
+      </label>
+    </div>`;
+  }
+
   return html;
+}
+
+/** Check if the current document has a locked style. */
+function getLockedStyleId(state) {
+  if (!state.currentFileId || !state.fileTree) return null;
+  function search(nodes) {
+    for (const n of nodes) {
+      if (n.fileId === state.currentFileId) return n.lockedStyleId || null;
+      if (n.children) { const r = search(n.children); if (r) return r; }
+    }
+    return null;
+  }
+  return search(state.fileTree);
+}
+
+/** Set or clear the locked style on the current document's tree node. */
+async function setLockedStyleId(state, styleId) {
+  if (!state.currentFileId || !state.fileTree) return;
+  function search(nodes) {
+    for (const n of nodes) {
+      if (n.fileId === state.currentFileId) { n.lockedStyleId = styleId || undefined; return true; }
+      if (n.children && search(n.children)) return true;
+    }
+    return false;
+  }
+  if (search(state.fileTree)) {
+    await state.saveFileTree();
+  }
 }
 
 export function bindStylesPanel(state, panel) {
@@ -155,6 +198,20 @@ export function bindStylesPanel(state, panel) {
       state.emit("style-preview-end");
     });
   });
+
+  // Lock toggle
+  const lockSwitch = panel.querySelector("#style-lock-switch");
+  if (lockSwitch) {
+    lockSwitch.addEventListener("click", async () => {
+      const activeId = state.settings.activeStyleId;
+      if (!activeId) return;
+      const lockedId = getLockedStyleId(state);
+      const newVal = lockedId === activeId ? null : activeId;
+      await setLockedStyleId(state, newVal);
+      panel.innerHTML = renderStylesPanel(state);
+      bindStylesPanel(state, panel);
+    });
+  }
 
   panel.querySelectorAll(".style-sidebar-actions button").forEach(btn => {
     btn.addEventListener("click", (e) => {
@@ -298,6 +355,16 @@ function openStyleModal(state, existingStyle, onDone) {
               <div class="style-slider-group">
                 <input type="range" id="style-line-height" min="1.0" max="2.5" step="0.1" value="${draft.lineHeight || state.settings.lineHeight || 1.6}" />
                 <span class="style-slider-value">${draft.lineHeight || state.settings.lineHeight || 1.6}</span>
+              </div>
+            </div>
+
+            <div class="style-editor-row">
+              <label>Headers</label>
+              <div class="style-checkbox-group">
+                <input type="checkbox" id="style-suppress-header-size" ${draft.suppressHeaderSize ? 'checked' : ''} />
+                <span class="style-checkbox-label">Suppress size</span>
+                <input type="checkbox" id="style-suppress-header-color" ${draft.suppressHeaderColor ? 'checked' : ''} />
+                <span class="style-checkbox-label">Suppress color</span>
               </div>
             </div>
 
@@ -455,6 +522,16 @@ function openStyleModal(state, existingStyle, onDone) {
       lhEl.nextElementSibling.textContent = lhEl.value;
       draft.lineHeight = parseFloat(lhEl.value);
       updatePreview();
+    });
+
+    // Suppress header overrides
+    const shsEl = backdrop.querySelector("#style-suppress-header-size");
+    if (shsEl) shsEl.addEventListener("change", () => {
+      draft.suppressHeaderSize = shsEl.checked;
+    });
+    const shcEl = backdrop.querySelector("#style-suppress-header-color");
+    if (shcEl) shcEl.addEventListener("change", () => {
+      draft.suppressHeaderColor = shcEl.checked;
     });
 
     // Block cursor — re-render to show/hide color picker

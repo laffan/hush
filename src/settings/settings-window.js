@@ -161,6 +161,7 @@ function bindAll() {
   // General tab
   bindSelect("setting-visibility", "visibility");
   bindCheckbox("setting-always-on-top", "alwaysOnTop");
+  bindCheckbox("setting-hide-sidebar-tooltips", "hideSidebarTooltips");
 
   // Editor tab
   bindSelect("setting-appearance", "appearance");

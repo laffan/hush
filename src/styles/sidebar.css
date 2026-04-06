@@ -134,6 +134,56 @@
   fill: currentColor;
 }
 
+/* ===== Sidebar Tooltips ===== */
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;
+  background: var(--panel-bg, rgba(30, 30, 30, 0.95));
+  border: 1px solid var(--panel-border, rgba(255,255,255,0.12));
+  border-radius: 6px;
+  padding: 6px 10px;
+  opacity: 0;
+  transform: translateY(-50%) translateX(-4px);
+  transition: opacity 0.15s, transform 0.15s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  font-family: system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.sidebar-tooltip.visible {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.sidebar-tooltip-name {
+  font-size: 11px;
+  color: var(--fg);
+  line-height: 1.4;
+}
+
+.sidebar-tooltip-shortcut {
+  margin-top: 2px;
+  display: flex;
+  gap: 2px;
+  line-height: 1;
+}
+
+.sidebar-tooltip-shortcut kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  background: rgba(128, 128, 128, 0.2);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+  font-family: system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--sidebar-fg);
+}
+
 .panel-title {
   font-size: 14px;
   text-transform: uppercase;

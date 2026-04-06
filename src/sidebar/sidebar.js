@@ -232,20 +232,101 @@ export function createSidebar(container, state) {
     "zotero":     { label: "Zotero search",        key: "shortcutZotero" },
   };
 
+  // Custom graphical tooltips
+  let tooltipEl = null;
+  let tooltipTimeout = null;
+
+  function createTooltipEl() {
+    if (tooltipEl) return;
+    tooltipEl = document.createElement("div");
+    tooltipEl.className = "sidebar-tooltip";
+    tooltipEl.innerHTML = `<div class="sidebar-tooltip-name"></div><div class="sidebar-tooltip-shortcut"></div>`;
+    document.body.appendChild(tooltipEl);
+  }
+
+  function showTooltip(btn, name, shortcutRaw) {
+    if (state.settings.hideSidebarTooltips) return;
+    createTooltipEl();
+    clearTimeout(tooltipTimeout);
+    tooltipEl.querySelector(".sidebar-tooltip-name").textContent = name;
+    const shortcutLine = tooltipEl.querySelector(".sidebar-tooltip-shortcut");
+    if (shortcutRaw) {
+      shortcutLine.innerHTML = formatShortcutDiagram(shortcutRaw);
+      shortcutLine.style.display = "";
+    } else {
+      shortcutLine.style.display = "none";
+    }
+    const rect = btn.getBoundingClientRect();
+    tooltipEl.style.top = (rect.top + rect.height / 2) + "px";
+    tooltipEl.style.left = (rect.right + 8) + "px";
+    tooltipEl.classList.add("visible");
+  }
+
+  function hideTooltip() {
+    if (!tooltipEl) return;
+    tooltipEl.classList.remove("visible");
+  }
+
+  /** Render a shortcut as minimalist key caps. */
+  function formatShortcutDiagram(raw) {
+    const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
+    const parts = raw.split("+");
+    return parts.map(p => {
+      let label = p;
+      if (isMac) {
+        if (/^(CmdOrCtrl|Mod)$/i.test(p)) label = "\u2318";
+        else if (/^Shift$/i.test(p)) label = "\u21e7";
+        else if (/^Alt$/i.test(p)) label = "\u2325";
+        else if (/^ArrowUp$/i.test(p)) label = "\u2191";
+        else if (/^ArrowDown$/i.test(p)) label = "\u2193";
+        else if (/^ArrowLeft$/i.test(p)) label = "\u2190";
+        else if (/^ArrowRight$/i.test(p)) label = "\u2192";
+        else if (p === "\\\\") label = "\\";
+        else label = p.length === 1 ? p.toUpperCase() : p;
+      } else {
+        if (/^(CmdOrCtrl|Mod)$/i.test(p)) label = "Ctrl";
+        else if (/^ArrowUp$/i.test(p)) label = "\u2191";
+        else if (/^ArrowDown$/i.test(p)) label = "\u2193";
+        else if (/^ArrowLeft$/i.test(p)) label = "\u2190";
+        else if (/^ArrowRight$/i.test(p)) label = "\u2192";
+        else label = p.length === 1 ? p.toUpperCase() : p;
+      }
+      return `<kbd>${escHtml(label)}</kbd>`;
+    }).join("");
+  }
+
   function updateButtonTitles() {
     for (const [action, info] of Object.entries(shortcutMap)) {
       const el = container.querySelector(`[data-action="${action}"]`);
       if (!el) continue;
-      const raw = state.settings[info.key];
-      if (raw) {
-        el.title = `${info.label}  (${formatShortcut(raw)})`;
-      } else {
-        el.title = info.label;
-      }
+      // Store shortcut key for tooltip use but don't set title attr
+      el.dataset.shortcutKey = info.key;
     }
   }
 
+  // Attach tooltip hover handlers to all sidebar buttons
+  function bindTooltips() {
+    container.querySelectorAll(".sidebar-btn").forEach(btn => {
+      btn.addEventListener("mouseenter", () => {
+        const action = btn.dataset.action;
+        const name = btn.dataset.tooltipName || "";
+        const info = shortcutMap[action];
+        const shortcutRaw = info ? state.settings[info.key] : null;
+        tooltipTimeout = setTimeout(() => showTooltip(btn, name, shortcutRaw), 400);
+      });
+      btn.addEventListener("mouseleave", () => {
+        clearTimeout(tooltipTimeout);
+        hideTooltip();
+      });
+      btn.addEventListener("click", () => {
+        clearTimeout(tooltipTimeout);
+        hideTooltip();
+      });
+    });
+  }
+
   updateButtonTitles();
+  bindTooltips();
   state.on("mode-changed", updateActiveStates);
   state.on("fullscreen-changed", updateActiveStates);
   state.on("settings-changed", updateButtonTitles);
@@ -313,7 +394,7 @@ export function createSidebar(container, state) {
 }
 
 function btn(action, title, svgContent) {
-  return `<button class="sidebar-btn" data-action="${action}" title="${title}">
+  return `<button class="sidebar-btn" data-action="${action}" data-tooltip-name="${title}">
     <svg viewBox="0 0 24 24">${svgContent}</svg>
   </button>`;
 }

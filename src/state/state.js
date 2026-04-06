@@ -83,6 +83,9 @@ export class AppState {
       styles: [],
       activeStyleId: null,
 
+      // Sidebar
+      hideSidebarTooltips: false,
+
       // Outline View (right sidebar)
       longviewShowParagraphs: true,
       longviewShowNumbers: true,

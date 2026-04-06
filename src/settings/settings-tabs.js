@@ -109,6 +109,10 @@ export function renderGeneralTab(settings) {
         <label>Show app above all other windows</label>
         <input type="checkbox" id="setting-always-on-top" ${s.alwaysOnTop ? "checked" : ""} />
       </div>
+      <div class="settings-row">
+        <label>Hide sidebar tooltips</label>
+        <input type="checkbox" id="setting-hide-sidebar-tooltips" ${s.hideSidebarTooltips ? "checked" : ""} />
+      </div>
     </div>
   `;
 }

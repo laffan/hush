@@ -129,6 +129,12 @@ pub struct AppSettings {
     #[serde(default = "default_footnote_margin_side")]
     pub footnote_margin_side: String,
 
+    // Sidebar
+    #[serde(default)]
+    pub hide_sidebar_tooltips: bool,
+    #[serde(default)]
+    pub sticky_headers: bool,
+
     // Styles
     #[serde(default)]
     pub styles: Vec<Style>,
@@ -222,6 +228,22 @@ pub struct Style {
     pub line_height: Option<f64>,
     #[serde(default)]
     pub color_overrides: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub light_theme_id: Option<String>,
+    #[serde(default)]
+    pub dark_theme_id: Option<String>,
+    #[serde(default)]
+    pub light_colors: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub dark_colors: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub block_cursor: Option<bool>,
+    #[serde(default)]
+    pub block_cursor_color: Option<String>,
+    #[serde(default)]
+    pub suppress_header_size: Option<bool>,
+    #[serde(default)]
+    pub suppress_header_color: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -619,6 +641,8 @@ impl Default for AppSettings {
             footnote_use_colors: default_footnote_use_colors(),
             footnote_both_margins: default_footnote_both_margins(),
             footnote_margin_side: default_footnote_margin_side(),
+            hide_sidebar_tooltips: false,
+            sticky_headers: false,
             styles: Vec::new(),
             active_style_id: None,
             longview_show_paragraphs: true,
