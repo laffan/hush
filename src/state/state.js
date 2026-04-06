@@ -25,6 +25,7 @@ export class AppState {
       normalizeHeaders: false,
       normalizeHeaderColor: false,
       stickyHeaders: false,
+      blockCursor: false,
       typewriterLineOpacity: 0.08,
       padding: 50,
       syncFolders: [],

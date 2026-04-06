@@ -172,6 +172,10 @@ export function renderEditorTab(settings) {
         <label>Sticky headers</label>
         <input type="checkbox" id="setting-sticky-headers" ${s.stickyHeaders ? "checked" : ""} />
       </div>
+      <div class="settings-row">
+        <label>Block cursor</label>
+        <input type="checkbox" id="setting-block-cursor" ${s.blockCursor ? "checked" : ""} />
+      </div>
     </div>
 
     <div class="settings-section">

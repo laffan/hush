@@ -213,6 +213,30 @@
   height: 0.6em;
 }
 
+/* Cursor & selection demo line */
+.style-preview-cursor-demo {
+  margin-top: 0.8em;
+  position: relative;
+}
+
+.preview-cursor {
+  display: inline-block;
+  height: 1.15em;
+  vertical-align: text-bottom;
+  border-left: 2px solid currentColor;
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.preview-selected {
+  border-radius: 2px;
+  padding: 1px 0;
+}
+
 /* ===== Shared form elements (used inside modal) ===== */
 .style-editor-row {
   display: flex;
@@ -257,6 +281,25 @@
   color: var(--sidebar-fg);
   min-width: 36px;
   text-align: right;
+}
+
+/* Block cursor checkbox */
+.style-checkbox-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.style-checkbox-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.style-checkbox-label {
+  font-size: 12px;
+  color: var(--sidebar-fg);
 }
 
 /* Light / Dark color tabs */

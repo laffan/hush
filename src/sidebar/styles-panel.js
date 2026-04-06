@@ -48,27 +48,37 @@ export function resolveStyleForAppearance(style, appearance) {
   };
 }
 
+// ── theme color maps ───────────────────────────────────────────────────────────
+const themeBackgrounds = {
+  dracula: "#2d2f3f", ayuLight: "#fcfcfc", clouds: "#ffffff",
+  noctisLilac: "#f2f1f8", rosePineDawn: "#faf4ed", solarizedLight: "#fef7e5",
+  smoothy: "#ffffff", amy: "#200020", barf: "#15191e", bespin: "#2e241d",
+  birdsOfParadise: "#3b2627", boysAndGirls: "#000205", cobalt: "#00254b",
+  coolGlow: "#060521", espresso: "#ffffff", tomorrow: "#ffffff",
+};
+
+const themeForegrounds = {
+  dracula: "#f8f8f2", ayuLight: "#5c6166", clouds: "#000000",
+  noctisLilac: "#4a4a6a", rosePineDawn: "#575279", solarizedLight: "#657b83",
+  smoothy: "#333333", amy: "#d0d0ff", barf: "#d4d4d4", bespin: "#baae9e",
+  birdsOfParadise: "#e6e1c4", boysAndGirls: "#e0e0e0", cobalt: "#e1efff",
+  coolGlow: "#aebbc5", espresso: "#535353", tomorrow: "#4d4d4c",
+};
+
 // ── lorem ipsum preview text ───────────────────────────────────────────────────
 const PREVIEW_MD = `# The Art of Writing
 
 ## Finding Your Voice
 
-Every writer begins with a blank page and a spark of
-intention. The words that follow are shaped by years of
-reading, thinking, and living.
+Every writer begins with a blank page and a spark of intention. The words that follow are shaped by years of reading, thinking, and living.
 
 ### On Simplicity
 
-Good prose is like a window pane — clear, direct, and
-invisible. **Bold ideas** need not hide behind *ornate
-language*. Strip away the excess until only the
-essential remains.
+Good prose is like a window pane — clear, direct, and invisible. **Bold ideas** need not hide behind *ornate language*. Strip away the excess until only the essential remains.
 
 > "Write drunk, edit sober." — Ernest Hemingway
 
-The best sentences carry weight without effort, landing
-softly in the reader's mind. ~~Perfection~~ is not the
-goal — clarity is.`;
+The best sentences carry weight without effort, landing softly in the reader's mind. ~~Perfection~~ is not the goal — clarity is.`;
 
 // ── sidebar list ───────────────────────────────────────────────────────────────
 export function renderStylesPanel(state) {
@@ -87,9 +97,9 @@ export function renderStylesPanel(state) {
     migrateStyle(st);
     const isActive = activeId === st.id;
     const appearance = state.settings.appearance || "dark";
-    const { colors } = resolveStyleForAppearance(st, appearance);
-    const bg = colors.bg || "#1a1a1a";
-    const fg = colors.fg || "#e0e0e0";
+    const { themeId, colors } = resolveStyleForAppearance(st, appearance);
+    const bg = colors.bg || themeBackgrounds[themeId] || (appearance === "light" ? "#fafafa" : "#1a1a1a");
+    const fg = colors.fg || themeForegrounds[themeId] || (appearance === "light" ? "#1a1a1a" : "#e0e0e0");
     const fontSize = st.fontSize || state.settings.fontSize || 20;
     html += `<div class="style-sidebar-item${isActive ? ' active' : ''}" data-style-id="${st.id}"
       style="background:${bg}; color:${fg}; font-size:${Math.min(fontSize, 16)}px;${st.fontFamily ? ` font-family:'${st.fontFamily}';` : ''}">
@@ -197,24 +207,6 @@ const colorKeys = [
   { key: "selection", label: "Selection" },
 ];
 
-// Known theme background colors (duplicated from main.js for preview)
-const themeBackgrounds = {
-  dracula: "#2d2f3f", ayuLight: "#fcfcfc", clouds: "#ffffff",
-  noctisLilac: "#f2f1f8", rosePineDawn: "#faf4ed", solarizedLight: "#fef7e5",
-  smoothy: "#ffffff", amy: "#200020", barf: "#15191e", bespin: "#2e241d",
-  birdsOfParadise: "#3b2627", boysAndGirls: "#000205", cobalt: "#00254b",
-  coolGlow: "#060521", espresso: "#ffffff", tomorrow: "#ffffff",
-};
-
-// Known theme foreground colors
-const themeForegrounds = {
-  dracula: "#f8f8f2", ayuLight: "#5c6166", clouds: "#000000",
-  noctisLilac: "#4a4a6a", rosePineDawn: "#575279", solarizedLight: "#657b83",
-  smoothy: "#333333", amy: "#d0d0ff", barf: "#d4d4d4", bespin: "#baae9e",
-  birdsOfParadise: "#e6e1c4", boysAndGirls: "#e0e0e0", cobalt: "#e1efff",
-  coolGlow: "#aebbc5", espresso: "#535353", tomorrow: "#4d4d4c",
-};
-
 function fontFallback(family) {
   const map = {
     "Helvetica": "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
@@ -309,6 +301,14 @@ function openStyleModal(state, existingStyle, onDone) {
               </div>
             </div>
 
+            <div class="style-editor-row">
+              <label>Cursor</label>
+              <div class="style-checkbox-group">
+                <input type="checkbox" id="style-block-cursor" ${(draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor) ? 'checked' : ''} />
+                <span class="style-checkbox-label">Block cursor</span>
+              </div>
+            </div>
+
             <!-- Color mode tabs -->
             <div class="style-color-tabs">
               <button class="style-color-tab${colorTab === 'light' ? ' active' : ''}" data-mode="light">Light</button>
@@ -349,6 +349,9 @@ function openStyleModal(state, existingStyle, onDone) {
           <!-- RIGHT: preview pane -->
           <div class="style-modal-preview" id="style-preview-pane">
             <div class="style-preview-content">${formatPreviewHtml(PREVIEW_MD)}</div>
+            <div class="style-preview-cursor-demo">
+              <span class="preview-selected">clarity</span><span class="preview-cursor"></span> is.
+            </div>
           </div>
 
         </div>
@@ -373,15 +376,35 @@ function openStyleModal(state, existingStyle, onDone) {
     const font = draft.fontFamily ? fontFallback(draft.fontFamily) : fontFallback(state.settings.fontFamily || "EB Garamond");
     const size = (draft.fontSize || state.settings.fontSize || 20) + "px";
     const lh = draft.lineHeight || state.settings.lineHeight || 1.6;
+    const isBlock = draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor;
 
     pane.style.background = bg;
     pane.style.color = fg;
     pane.style.fontFamily = font;
     pane.style.fontSize = size;
     pane.style.lineHeight = lh;
-    pane.style.setProperty("--preview-cursor", cursor);
-    pane.style.setProperty("--preview-selection", selection);
-    pane.style.caretColor = cursor;
+
+    // Cursor demo
+    const cursorEl = pane.querySelector(".preview-cursor");
+    if (cursorEl) {
+      if (isBlock) {
+        cursorEl.style.borderLeft = "none";
+        cursorEl.style.background = cursor;
+        cursorEl.style.opacity = "0.55";
+        cursorEl.style.width = "0.6em";
+      } else {
+        cursorEl.style.borderLeft = `2px solid ${cursor}`;
+        cursorEl.style.background = "none";
+        cursorEl.style.opacity = "1";
+        cursorEl.style.width = "0";
+      }
+    }
+
+    // Selection demo
+    const selEl = pane.querySelector(".preview-selected");
+    if (selEl) {
+      selEl.style.background = selection;
+    }
 
     // Give headings the theme heading color if available
     const theme = getThemeById(themeId);
@@ -428,6 +451,13 @@ function openStyleModal(state, existingStyle, onDone) {
     if (lhEl) lhEl.addEventListener("input", () => {
       lhEl.nextElementSibling.textContent = lhEl.value;
       draft.lineHeight = parseFloat(lhEl.value);
+      updatePreview();
+    });
+
+    // Block cursor
+    const bcEl = backdrop.querySelector("#style-block-cursor");
+    if (bcEl) bcEl.addEventListener("change", () => {
+      draft.blockCursor = bcEl.checked;
       updatePreview();
     });
 

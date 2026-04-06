@@ -241,6 +241,19 @@ function createFlagHighlightPlugin(stateRef) {
   );
 }
 
+/** Toggle block cursor class based on settings (or active style override). */
+function applyBlockCursor(state) {
+  const container = document.getElementById("editor-container");
+  if (!container) return;
+  let block = !!state.settings.blockCursor;
+  // Active style can override
+  if (state.settings.activeStyleId && state.settings.styles) {
+    const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
+    if (style && style.blockCursor != null) block = style.blockCursor;
+  }
+  container.classList.toggle("block-cursor", block);
+}
+
 /**
  * Creates the CodeMirror 6 editor instance.
  */
@@ -550,6 +563,9 @@ export function createEditor(container, state) {
   }
 
   updateColumnResizers(state);
+  applyBlockCursor(state);
+
+  state.on("style-changed", () => applyBlockCursor(state));
 
   state.on("theme-changed", () => {
     const t = getActiveTheme(state.settings);
@@ -583,6 +599,8 @@ export function createEditor(container, state) {
     }
     // Toggle sticky headers
     updateStickyHeaders(view, state);
+    // Toggle block cursor
+    applyBlockCursor(state);
   });
 
   return {

@@ -52,6 +52,14 @@
   border-left-width: 2px;
 }
 
+/* Block cursor mode */
+#editor-container.block-cursor .cm-cursor {
+  border-left: none;
+  background: var(--cursor);
+  opacity: 0.55;
+  width: 0.6em !important;
+}
+
 
 
 #editor-container .cm-selectionBackground {
