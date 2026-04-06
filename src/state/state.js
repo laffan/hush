@@ -82,6 +82,7 @@ export class AppState {
       // Styles
       styles: [],
       activeStyleId: null,
+      globalStyleId: null,
 
       // Sidebar
       hideSidebarTooltips: false,

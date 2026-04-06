@@ -243,6 +243,11 @@ async function init() {
   const editor = createEditor(document.getElementById("editor-container"), state);
   state.setEditor(editor);
 
+  // Seed globalStyleId for existing users who have an activeStyleId but no globalStyleId yet
+  if (state.settings.activeStyleId && !state.settings.globalStyleId) {
+    state.settings.globalStyleId = state.settings.activeStyleId;
+  }
+
   // Apply active style if one was persisted — must happen after editor creation
   if (state.settings.activeStyleId) {
     applyActiveStyle(state);
@@ -563,7 +568,7 @@ async function init() {
     });
   }
 
-  // Auto-apply locked style when opening a document
+  // Auto-apply locked style when opening a document, or revert to global style
   state.on("file-opened", () => {
     if (!state.currentFileId || !state.fileTree) return;
     function findLockedStyle(nodes) {
@@ -575,9 +580,17 @@ async function init() {
     }
     const lockedId = findLockedStyle(state.fileTree);
     if (lockedId) {
+      // This document has a locked style — apply it
       const styleExists = (state.settings.styles || []).some(s => s.id === lockedId);
       if (styleExists && state.settings.activeStyleId !== lockedId) {
         state.updateSettings({ activeStyleId: lockedId });
+        state.emit("style-changed");
+      }
+    } else {
+      // No lock — revert to the user's global style choice
+      const globalId = state.settings.globalStyleId || null;
+      if (state.settings.activeStyleId !== globalId) {
+        state.updateSettings({ activeStyleId: globalId });
         state.emit("style-changed");
       }
     }

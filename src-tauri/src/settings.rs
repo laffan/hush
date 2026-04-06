@@ -140,6 +140,8 @@ pub struct AppSettings {
     pub styles: Vec<Style>,
     #[serde(default)]
     pub active_style_id: Option<String>,
+    #[serde(default)]
+    pub global_style_id: Option<String>,
 
     // Outline View (right sidebar)
     #[serde(default = "default_true")]
@@ -645,6 +647,7 @@ impl Default for AppSettings {
             sticky_headers: false,
             styles: Vec::new(),
             active_style_id: None,
+            global_style_id: None,
             longview_show_paragraphs: true,
             longview_show_numbers: true,
             longview_show_comments: false,

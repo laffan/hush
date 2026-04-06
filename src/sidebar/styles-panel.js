@@ -178,7 +178,7 @@ export function bindStylesPanel(state, panel) {
     el.addEventListener("click", (e) => {
       if (e.target.closest(".style-sidebar-actions")) return;
       const id = el.dataset.styleId;
-      state.updateSettings({ activeStyleId: id || null });
+      state.updateSettings({ activeStyleId: id || null, globalStyleId: id || null });
       state.emit("style-changed");
       panel.innerHTML = renderStylesPanel(state);
       bindStylesPanel(state, panel);
@@ -238,6 +238,7 @@ export function bindStylesPanel(state, panel) {
         const styles = (state.settings.styles || []).filter(s => s.id !== id);
         const updates = { styles };
         if (state.settings.activeStyleId === id) updates.activeStyleId = null;
+        if (state.settings.globalStyleId === id) updates.globalStyleId = null;
         state.updateSettings(updates);
         state.emit("style-changed");
         panel.innerHTML = renderStylesPanel(state);
