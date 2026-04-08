@@ -55,6 +55,8 @@ pub struct TreeNode {
     pub flagged: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_folder_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locked_style_id: Option<String>,
 }
 
 #[tauri::command]

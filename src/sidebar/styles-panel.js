@@ -84,8 +84,21 @@ The best sentences carry weight without effort, landing softly in the reader's m
 export function renderStylesPanel(state) {
   const styles = state.settings.styles || [];
   const activeId = state.settings.activeStyleId;
+  const lockedId = getLockedStyleId(state);
+  const isLocked = !!lockedId;
 
   let html = `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
+
+  // Lock toggle — always visible, above the style list
+  html += `<div class="style-lock-toggle">
+    <label class="style-lock-label">
+      <span class="style-lock-text">Lock Style to Document</span>
+      <span class="style-lock-switch${isLocked ? ' active' : ''}" id="style-lock-switch">
+        <span class="style-lock-knob"></span>
+      </span>
+    </label>
+  </div>`;
+
   html += `<div class="style-list-sidebar">`;
 
   const isDefault = !activeId;
@@ -119,20 +132,6 @@ export function renderStylesPanel(state) {
   }
 
   html += `</div>`;
-
-  // Show "Lock Style to Document" toggle below the active style
-  if (activeId) {
-    const lockedId = getLockedStyleId(state);
-    const isLocked = lockedId === activeId;
-    html += `<div class="style-lock-toggle">
-      <label class="style-lock-label">
-        <span class="style-lock-text">Lock Style to Document</span>
-        <span class="style-lock-switch${isLocked ? ' active' : ''}" id="style-lock-switch">
-          <span class="style-lock-knob"></span>
-        </span>
-      </label>
-    </div>`;
-  }
 
   return html;
 }
@@ -176,13 +175,14 @@ export function bindStylesPanel(state, panel) {
   }
 
   panel.querySelectorAll(".style-sidebar-item").forEach(el => {
-    el.addEventListener("click", (e) => {
+    el.addEventListener("click", async (e) => {
       if (e.target.closest(".style-sidebar-actions")) return;
       const id = el.dataset.styleId;
       const lockedId = getLockedStyleId(state);
       if (lockedId) {
-        // On a locked document — only change the active style, not the global default
+        // Lock is ON — change active style and update the lock to match
         state.updateSettings({ activeStyleId: id || null });
+        await setLockedStyleId(state, id || null);
       } else {
         state.updateSettings({ activeStyleId: id || null, globalStyleId: id || null });
       }
@@ -206,15 +206,19 @@ export function bindStylesPanel(state, panel) {
     });
   });
 
-  // Lock toggle
+  // Lock toggle — always visible; toggles lock for the current document
   const lockSwitch = panel.querySelector("#style-lock-switch");
   if (lockSwitch) {
     lockSwitch.addEventListener("click", async () => {
-      const activeId = state.settings.activeStyleId;
-      if (!activeId) return;
       const lockedId = getLockedStyleId(state);
-      const newVal = lockedId === activeId ? null : activeId;
-      await setLockedStyleId(state, newVal);
+      if (lockedId) {
+        // Turn OFF — clear the lock
+        await setLockedStyleId(state, null);
+      } else {
+        // Turn ON — lock the currently active style (even if null/default)
+        const activeId = state.settings.activeStyleId || null;
+        await setLockedStyleId(state, activeId || "__default__");
+      }
       panel.innerHTML = renderStylesPanel(state);
       bindStylesPanel(state, panel);
     });

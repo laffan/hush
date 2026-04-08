@@ -96,19 +96,27 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 20px;
-  width: 1px;
+  left: 19px;
+  width: 3px;
+  border-radius: 1.5px;
   background: var(--fg, currentColor);
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.5s ease-in;
 }
 
 .column-resizer.hover::after {
   opacity: 0.15;
+  transition: opacity 0.5s ease-in;
 }
 
 .column-resizer.dragging::after {
   opacity: 0.35;
+  transition: opacity 0s;
+}
+
+/* Fade out instantly when hover/dragging classes are removed */
+.column-resizer:not(.hover):not(.dragging)::after {
+  transition: opacity 0s;
 }
 
 /* Rendered markdown links (when cursor is outside) */

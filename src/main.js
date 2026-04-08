@@ -597,10 +597,18 @@ async function init() {
     const lockedId = findLockedStyle(state.fileTree);
     if (lockedId) {
       // This document has a locked style — apply it
-      const styleExists = (state.settings.styles || []).some(s => s.id === lockedId);
-      if (styleExists && state.settings.activeStyleId !== lockedId) {
-        state.updateSettings({ activeStyleId: lockedId });
-        state.emit("style-changed");
+      if (lockedId === "__default__") {
+        // Locked to "Default" (no style)
+        if (state.settings.activeStyleId) {
+          state.updateSettings({ activeStyleId: null });
+          state.emit("style-changed");
+        }
+      } else {
+        const styleExists = (state.settings.styles || []).some(s => s.id === lockedId);
+        if (styleExists && state.settings.activeStyleId !== lockedId) {
+          state.updateSettings({ activeStyleId: lockedId });
+          state.emit("style-changed");
+        }
       }
     } else {
       // No lock — revert to the user's global style choice

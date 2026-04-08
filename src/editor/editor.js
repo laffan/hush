@@ -74,36 +74,41 @@ const bypassRatchet = Annotation.define();
 // applies a precise negative text-indent so heading text aligns with body text.
 // Uses coordsAtPos for accurate measurement regardless of how CodeMirror
 // splits DOM nodes.  Caches measurements per heading level (1-6).
+// Heading indent via CodeMirror Decoration.line — survives CM re-renders.
+// Measures marker width using a hidden span with the heading's actual font,
+// then applies negative text-indent via line decorations.
 const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.widthCache = new Map();
-      this.view = view;
-      // Defer initial measurement to ensure DOM is fully rendered
-      requestAnimationFrame(() => {
-        if (view.dom.isConnected) this.remeasureAndApply(view);
-      });
+      this.measureEl = null;
+      this.decorations = this.buildDecorations(view);
       // Re-measure when fonts finish loading
       document.fonts?.ready?.then(() => {
         this.widthCache.clear();
         if (view.dom.isConnected) {
-          requestAnimationFrame(() => this.remeasureAndApply(view));
+          this.decorations = this.buildDecorations(view);
+          view.requestMeasure();
         }
       });
     }
     update(update) {
-      // Clear cache on any geometry or configuration change
+      // Clear cache on geometry or configuration changes (theme, font, size)
       if (update.geometryChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         this.widthCache.clear();
       }
-      // Always re-apply — CM can re-render lines at any time, losing inline styles
-      this.applyIndents(update.view);
+      if (update.docChanged || update.viewportChanged || update.geometryChanged
+          || update.transactions.some(tr => tr.effects.length > 0)) {
+        this.decorations = this.buildDecorations(update.view);
+      }
     }
-    measureLevel(view, level) {
+    measureMarkerWidth(view, level) {
       if (this.widthCache.has(level)) return this.widthCache.get(level);
+      // Find a visible heading line of this level to sample its computed font
       const { from, to } = view.viewport;
       const doc = view.state.doc;
       const prefix = "#".repeat(level) + " ";
+      let font = null;
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         if (line.text.startsWith(prefix)) {
@@ -112,74 +117,67 @@ const headingIndentPlugin = ViewPlugin.fromClass(
             ? domPos.node.closest(".cm-line")
             : domPos?.node?.parentElement?.closest(".cm-line");
           if (lineEl) {
-            // Temporarily clear indent so measurement is accurate
-            const prevIndent = lineEl.style.textIndent;
-            const prevPadding = lineEl.style.paddingLeft;
-            lineEl.style.textIndent = "";
-            lineEl.style.paddingLeft = "";
-            const startCoords = view.coordsAtPos(line.from);
-            const textCoords = view.coordsAtPos(line.from + prefix.length);
-            if (startCoords && textCoords) {
-              const w = textCoords.left - startCoords.left;
-              if (w > 0) {
-                this.widthCache.set(level, w);
-                // Restore (applyIndents will set correct values right after)
-                lineEl.style.textIndent = prevIndent;
-                lineEl.style.paddingLeft = prevPadding;
-                return w;
-              }
-            }
-            // Restore on measurement failure
-            lineEl.style.textIndent = prevIndent;
-            lineEl.style.paddingLeft = prevPadding;
+            const cs = getComputedStyle(lineEl);
+            font = cs.font;
+            break;
           }
         }
         pos = line.to + 1;
+      }
+      if (!font) return null;
+      // Measure using a hidden span with the same font
+      if (!this.measureEl) {
+        this.measureEl = document.createElement("span");
+        this.measureEl.style.cssText = "position:absolute;visibility:hidden;white-space:pre;pointer-events:none;";
+        document.body.appendChild(this.measureEl);
+      }
+      this.measureEl.style.font = font;
+      this.measureEl.textContent = prefix;
+      const w = this.measureEl.getBoundingClientRect().width;
+      if (w > 0) {
+        this.widthCache.set(level, w);
+        return w;
       }
       return null;
     }
-    remeasureAndApply(view) {
-      this.widthCache.clear();
-      this.applyIndents(view);
-    }
-    applyIndents(view) {
+    buildDecorations(view) {
+      const builder = new RangeSetBuilder();
       const { from, to } = view.viewport;
       const doc = view.state.doc;
-      // First pass: measure any uncached heading levels
+      // First pass: ensure all visible heading levels are measured
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
-        const match = line.text.match(/^(#{1,6})\s/);
-        if (match && !this.widthCache.has(match[1].length)) {
-          this.measureLevel(view, match[1].length);
+        const m = line.text.match(/^(#{1,6})\s/);
+        if (m && !this.widthCache.has(m[1].length)) {
+          this.measureMarkerWidth(view, m[1].length);
         }
         pos = line.to + 1;
       }
-      // Second pass: apply cached indents
+      // Second pass: create line decorations with the indent
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
-        const match = line.text.match(/^(#{1,6})\s/);
-        const domPos = view.domAtPos(line.from);
-        const lineEl = domPos?.node?.nodeType === 1
-          ? domPos.node.closest(".cm-line")
-          : domPos?.node?.parentElement?.closest(".cm-line");
-        if (lineEl) {
-          if (match) {
-            const cached = this.widthCache.get(match[1].length);
-            if (cached) {
-              const px = Math.round(cached);
-              lineEl.style.textIndent = `-${px}px`;
-              lineEl.style.paddingLeft = `${px}px`;
-            }
-          } else {
-            if (lineEl.style.textIndent) lineEl.style.textIndent = "";
-            if (lineEl.style.paddingLeft) lineEl.style.paddingLeft = "";
+        const m = line.text.match(/^(#{1,6})\s/);
+        if (m) {
+          const w = this.widthCache.get(m[1].length);
+          if (w) {
+            const px = Math.round(w);
+            builder.add(line.from, line.from, Decoration.line({
+              attributes: {
+                style: `text-indent: -${px}px; padding-inline-start: ${px}px;`
+              }
+            }));
           }
         }
         pos = line.to + 1;
       }
+      return builder.finish();
     }
-    destroy() { this.widthCache.clear(); }
-  }
+    destroy() {
+      this.widthCache.clear();
+      if (this.measureEl) { this.measureEl.remove(); this.measureEl = null; }
+    }
+  },
+  { decorations: (v) => v.decorations }
 );
 
 // Build the markdown highlight style, optionally normalizing heading sizes/colors
@@ -207,7 +205,7 @@ function getMarkdownHighlight(normalizeHeaders, headingColor) {
     ...headingStyles,
     { tag: tags.strong, fontWeight: "bold" },
     { tag: tags.emphasis, fontStyle: "italic" },
-    { tag: tags.quote, fontStyle: "italic" },
+    { tag: tags.quote, fontStyle: "italic", opacity: "0.8" },
     { tag: tags.strikethrough, textDecoration: "line-through" },
     { tag: tags.link, textDecoration: "underline" },
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
