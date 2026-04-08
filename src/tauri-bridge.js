@@ -44,7 +44,9 @@ export async function setupTauriIntegration(state) {
           registeredShortcuts.push(shortcut);
         }
 
-        // Toggle editor visibility
+        // Toggle editor visibility — the ONLY global shortcut that should work
+        // when the window is not focused, so the user can summon/hide the editor
+        // from any app.
         await registerShortcut(state.settings.shortcutOpenEditor, async (event) => {
           if (event.state === "Released") return;
           const win = getCurrentWindow();
@@ -57,51 +59,9 @@ export async function setupTauriIntegration(state) {
           }
         });
 
-        // Open fullscreen
-        await registerShortcut(state.settings.shortcutOpenFullscreen, async (event) => {
-          if (event.state === "Released") return;
-          const win = getCurrentWindow();
-          await win.show();
-          await win.setFocus();
-          state.toggleFullscreen();
-        });
-
-        // Toggle private mode
-        await registerShortcut(state.settings.shortcutTogglePrivate, (event) => {
-          if (event.state === "Released") return;
-          state.togglePrivate();
-        });
-
-        // Toggle left sidebar (files panel)
-        await registerShortcut(state.settings.shortcutToggleSidebar, async (event) => {
-          if (event.state === "Released") return;
-          const win = getCurrentWindow();
-          if (!(await win.isVisible())) return;
-          const sidebar = document.getElementById("sidebar");
-          const panel = document.getElementById("panel-overlay");
-          const isVisible = sidebar.classList.contains("pinned") ||
-                            sidebar.classList.contains("visible") ||
-                            !panel.classList.contains("hidden");
-          if (isVisible) {
-            state.emit("hide-panel");
-          } else {
-            sidebar.classList.add("pinned");
-            state.emit("show-files-panel");
-          }
-        });
-
-        // Toggle right sidebar (outline view)
-        await registerShortcut(state.settings.shortcutToggleOutline, async (event) => {
-          if (event.state === "Released") return;
-          const win = getCurrentWindow();
-          if (!(await win.isVisible())) return;
-          const rPanel = document.getElementById("right-panel-overlay");
-          if (rPanel.classList.contains("hidden")) {
-            state.emit("show-outline");
-          } else {
-            state.emit("hide-outline");
-          }
-        });
+        // All other shortcuts (fullscreen, private mode, sidebar, outline) are
+        // handled via in-window keydown listeners so they don't capture keys
+        // when the app is in the background.
       } catch (e) {
         console.warn("Global shortcut registration failed:", e);
       }

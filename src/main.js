@@ -280,9 +280,21 @@ async function init() {
     if (state.editor) state.editor.focus();
   });
 
-  // Global keyboard shortcuts that work even when editor doesn't have focus
+  // Window-level keyboard shortcuts — active when ANY part of the window is focused
   window.addEventListener("keydown", (e) => {
     const mod = e.metaKey || e.ctrlKey;
+    // Cmd+Shift+F — toggle fullscreen
+    if (mod && e.shiftKey && e.key === "F") {
+      e.preventDefault();
+      state.toggleFullscreen();
+      return;
+    }
+    // Cmd+Shift+P — toggle private mode
+    if (mod && e.shiftKey && (e.key === "p" || e.key === "P")) {
+      e.preventDefault();
+      state.togglePrivate();
+      return;
+    }
     // Cmd+Shift+\ — toggle right sidebar (Outline View) — check BEFORE Cmd+\
     if (mod && e.shiftKey && e.key === "\\") {
       e.preventDefault();
