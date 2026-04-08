@@ -16,6 +16,7 @@ let storedState = null;
 // SVG icons for the three types
 const typeIcons = {
   document: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
+  documentLocked: `<svg viewBox="0 0 16 16" class="tree-type-icon locked-style-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><circle cx="8" cy="8" r="2.5" /></svg>`,
   documentFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
   folder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /></svg>`,
   folderFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><circle cx="8" cy="8" r="6" /></svg>`,
@@ -34,6 +35,7 @@ function getIcon(item) {
   if (item.flagged) {
     return typeIcons[item.type + "Flagged"] || typeIcons[item.type] || typeIcons.document;
   }
+  if (item.lockedStyleId && item.type === "document") return typeIcons.documentLocked;
   return typeIcons[item.type] || typeIcons.document;
 }
 

@@ -78,18 +78,26 @@ const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.widthCache = new Map();
+      this.view = view;
       // Defer initial measurement to ensure DOM is fully rendered
       requestAnimationFrame(() => {
-        if (view.dom.isConnected) this.applyIndents(view);
+        if (view.dom.isConnected) this.remeasureAndApply(view);
+      });
+      // Re-measure when fonts finish loading
+      document.fonts?.ready?.then(() => {
+        this.widthCache.clear();
+        if (view.dom.isConnected) {
+          requestAnimationFrame(() => this.remeasureAndApply(view));
+        }
       });
     }
     update(update) {
-      if (update.geometryChanged) {
+      // Clear cache on any geometry or configuration change
+      if (update.geometryChanged || update.transactions.some(tr => tr.effects.length > 0)) {
         this.widthCache.clear();
       }
-      if (update.docChanged || update.viewportChanged || update.geometryChanged) {
-        this.applyIndents(update.view);
-      }
+      // Always re-apply — CM can re-render lines at any time, losing inline styles
+      this.applyIndents(update.view);
     }
     measureLevel(view, level) {
       if (this.widthCache.has(level)) return this.widthCache.get(level);
@@ -99,20 +107,40 @@ const headingIndentPlugin = ViewPlugin.fromClass(
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         if (line.text.startsWith(prefix)) {
-          // Use coordsAtPos for accurate measurement
-          const startCoords = view.coordsAtPos(line.from);
-          const textCoords = view.coordsAtPos(line.from + prefix.length);
-          if (startCoords && textCoords) {
-            const w = textCoords.left - startCoords.left;
-            if (w > 0) {
-              this.widthCache.set(level, w);
-              return w;
+          const domPos = view.domAtPos(line.from);
+          const lineEl = domPos?.node?.nodeType === 1
+            ? domPos.node.closest(".cm-line")
+            : domPos?.node?.parentElement?.closest(".cm-line");
+          if (lineEl) {
+            // Temporarily clear indent so measurement is accurate
+            const prevIndent = lineEl.style.textIndent;
+            const prevPadding = lineEl.style.paddingLeft;
+            lineEl.style.textIndent = "";
+            lineEl.style.paddingLeft = "";
+            const startCoords = view.coordsAtPos(line.from);
+            const textCoords = view.coordsAtPos(line.from + prefix.length);
+            if (startCoords && textCoords) {
+              const w = textCoords.left - startCoords.left;
+              if (w > 0) {
+                this.widthCache.set(level, w);
+                // Restore (applyIndents will set correct values right after)
+                lineEl.style.textIndent = prevIndent;
+                lineEl.style.paddingLeft = prevPadding;
+                return w;
+              }
             }
+            // Restore on measurement failure
+            lineEl.style.textIndent = prevIndent;
+            lineEl.style.paddingLeft = prevPadding;
           }
         }
         pos = line.to + 1;
       }
       return null;
+    }
+    remeasureAndApply(view) {
+      this.widthCache.clear();
+      this.applyIndents(view);
     }
     applyIndents(view) {
       const { from, to } = view.viewport;
@@ -179,6 +207,7 @@ function getMarkdownHighlight(normalizeHeaders, headingColor) {
     ...headingStyles,
     { tag: tags.strong, fontWeight: "bold" },
     { tag: tags.emphasis, fontStyle: "italic" },
+    { tag: tags.quote, fontStyle: "italic" },
     { tag: tags.strikethrough, textDecoration: "line-through" },
     { tag: tags.link, textDecoration: "underline" },
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
@@ -231,6 +260,77 @@ function createFlagHighlightPlugin(stateRef) {
             match.index + match[0].length,
             Decoration.mark({ attributes: { style: `background-color: ${bg}; border-radius: 2px` } })
           );
+        }
+        return builder.finish();
+      }
+    },
+    { decorations: (v) => v.decorations }
+  );
+}
+
+// Plugin that handles multi-line %% comment %% blocks (the inline parser only works within a single line)
+function createMultiLineCommentPlugin() {
+  const commentRegex = /%%/g;
+  return ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.decorations = this.buildDecorations(view);
+      }
+      update(update) {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+      buildDecorations(view) {
+        const builder = new RangeSetBuilder();
+        const doc = view.state.doc.toString();
+        const positions = [];
+        let m;
+        commentRegex.lastIndex = 0;
+        while ((m = commentRegex.exec(doc)) !== null) {
+          // Skip %%% (triple percent)
+          if (doc[m.index + 2] === "%" || (m.index > 0 && doc[m.index - 1] === "%")) continue;
+          positions.push(m.index);
+        }
+        // Pair up delimiters — only decorate pairs that span multiple lines
+        for (let i = 0; i + 1 < positions.length; i += 2) {
+          const open = positions[i];
+          const close = positions[i + 1];
+          const openLine = view.state.doc.lineAt(open).number;
+          const closeLine = view.state.doc.lineAt(close).number;
+          if (openLine !== closeLine) {
+            builder.add(open, close + 2, Decoration.mark({ attributes: { style: "opacity: 0.4" } }));
+          }
+        }
+        return builder.finish();
+      }
+    },
+    { decorations: (v) => v.decorations }
+  );
+}
+
+// Plugin that handles the "comment after" marker: ---% makes everything after it semi-gray
+function createCommentAfterPlugin() {
+  return ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.decorations = this.buildDecorations(view);
+      }
+      update(update) {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+      buildDecorations(view) {
+        const builder = new RangeSetBuilder();
+        const doc = view.state.doc;
+        const text = doc.toString();
+        const marker = "---%";
+        const idx = text.indexOf(marker);
+        if (idx !== -1) {
+          // Apply dim styling from the marker to end of document
+          const markerLine = doc.lineAt(idx);
+          builder.add(markerLine.from, doc.length, Decoration.mark({ attributes: { style: "opacity: 0.35" } }));
         }
         return builder.finish();
       }
@@ -445,6 +545,8 @@ export function createEditor(container, state) {
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin();
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
+  const multiLineCommentPlugin = createMultiLineCommentPlugin();
+  const commentAfterPlugin = createCommentAfterPlugin();
 
   // Encourage typing decorations — fades new text when user stops typing in ratchet mode
   const encouragePlugin = ViewPlugin.fromClass(
@@ -484,6 +586,8 @@ export function createEditor(container, state) {
       linkDecoratorPlugin,
       headingIndentPlugin,
       stickyHeadersPlugin,
+      multiLineCommentPlugin,
+      commentAfterPlugin,
       encouragePlugin,
       projectViewField,
       separatorFilter,

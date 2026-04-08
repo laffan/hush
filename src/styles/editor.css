@@ -85,19 +85,30 @@
   padding: 0 20px;
   margin-left: -20px;
   cursor: col-resize;
-  opacity: 0;
-  transition: opacity 0.15s;
-  background: var(--accent);
   background-clip: content-box;
   z-index: 50;
+  background: transparent;
+  transition: background 0.15s;
 }
 
-.column-resizer.hover {
-  opacity: 0.4;
+.column-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 20px;
+  width: 1px;
+  background: var(--fg, currentColor);
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
-.column-resizer.dragging {
-  opacity: 0.7;
+.column-resizer.hover::after {
+  opacity: 0.15;
+}
+
+.column-resizer.dragging::after {
+  opacity: 0.35;
 }
 
 /* Rendered markdown links (when cursor is outside) */

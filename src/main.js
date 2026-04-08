@@ -498,6 +498,22 @@ async function init() {
     if (document.visibilityState === "hidden") {
       state.saveSessionState();
     }
+    // iPad: reset zoom level when returning from another app
+    if (document.visibilityState === "visible" && isIOS()) {
+      const viewport = document.querySelector('meta[name="viewport"]');
+      if (viewport) {
+        // Force viewport reset by toggling the meta tag
+        const content = viewport.getAttribute("content");
+        viewport.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover");
+        // Ensure visualViewport scale is reset
+        if (window.visualViewport && window.visualViewport.scale !== 1) {
+          viewport.setAttribute("content", content);
+          requestAnimationFrame(() => {
+            viewport.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover");
+          });
+        }
+      }
+    }
   });
 
   await setupTauriIntegration(state);

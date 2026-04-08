@@ -162,6 +162,7 @@ async function setLockedStyleId(state, styleId) {
   }
   if (search(state.fileTree)) {
     await state.saveFileTree();
+    state.emit("files-changed");
   }
 }
 
@@ -178,7 +179,13 @@ export function bindStylesPanel(state, panel) {
     el.addEventListener("click", (e) => {
       if (e.target.closest(".style-sidebar-actions")) return;
       const id = el.dataset.styleId;
-      state.updateSettings({ activeStyleId: id || null, globalStyleId: id || null });
+      const lockedId = getLockedStyleId(state);
+      if (lockedId) {
+        // On a locked document — only change the active style, not the global default
+        state.updateSettings({ activeStyleId: id || null });
+      } else {
+        state.updateSettings({ activeStyleId: id || null, globalStyleId: id || null });
+      }
       state.emit("style-changed");
       panel.innerHTML = renderStylesPanel(state);
       bindStylesPanel(state, panel);

@@ -196,6 +196,12 @@
   fill: currentColor;
 }
 
+/* Locked-style documents show a dot inside the document icon */
+.tree-type-icon.locked-style-icon circle {
+  fill: currentColor;
+  stroke: none;
+}
+
 /* Virtual Flagged folder — not draggable, styled like a regular folder */
 .flagged-virtual-folder {
   cursor: default;
