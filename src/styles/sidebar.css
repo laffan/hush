@@ -27,7 +27,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 17px;
 }
 
 .sidebar-btn {
@@ -163,7 +163,7 @@
 }
 
 .sidebar-tooltip-shortcut {
-  margin-top: 2px;
+  margin-top: 10px;
   display: flex;
   gap: 2px;
   line-height: 1;

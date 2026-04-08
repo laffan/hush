@@ -35,9 +35,9 @@ export function createSidebar(container, state) {
       ${btn("ratchet", "Ratchet mode", icons.ratchet)}
       ${btn("private", "Private mode", icons.private)}
       ${btn("typewriter", "Typewriter mode", icons.typewriter)}
-      ${btn("dry", "D.R.Y. highlighting", icons.dry)}
-      ${btn("focus", "Focus mode", icons.focus)}
-      ${btn("zotero", "Zotero search", icons.zotero)}
+      ${btn("dry", "Show repeats", icons.dry)}
+      ${btn("focus", "Highlight sentence", icons.focus)}
+      ${btn("zotero", "Insert reference", icons.zotero)}
     </div>
     <div class="sidebar-group sidebar-bottom">
       ${btn("versions", "Versions", icons.versions)}
@@ -227,9 +227,9 @@ export function createSidebar(container, state) {
     "files":      { label: "Files",               key: "shortcutToggleSidebar" },
     "private":    { label: "Private mode",         key: "shortcutTogglePrivate" },
     "typewriter": { label: "Typewriter mode",      key: "shortcutTypewriter" },
-    "dry":        { label: "D.R.Y. highlighting",  key: "shortcutToggleDry" },
-    "focus":      { label: "Focus mode",           key: "shortcutToggleFocus" },
-    "zotero":     { label: "Zotero search",        key: "shortcutZotero" },
+    "dry":        { label: "Show repeats",           key: "shortcutToggleDry" },
+    "focus":      { label: "Highlight sentence",    key: "shortcutToggleFocus" },
+    "zotero":     { label: "Insert reference",      key: "shortcutZotero" },
   };
 
   // Custom graphical tooltips
@@ -312,7 +312,7 @@ export function createSidebar(container, state) {
         const name = btn.dataset.tooltipName || "";
         const info = shortcutMap[action];
         const shortcutRaw = info ? state.settings[info.key] : null;
-        tooltipTimeout = setTimeout(() => showTooltip(btn, name, shortcutRaw), 400);
+        tooltipTimeout = setTimeout(() => showTooltip(btn, name, shortcutRaw), 900);
       });
       btn.addEventListener("mouseleave", () => {
         clearTimeout(tooltipTimeout);
