@@ -49,10 +49,23 @@ function getIcon(item) {
 }
 
 // Hover action buttons — no rename for docs, no actions for special nodes, no flag in trash
-function actionButtons(nodeId, nodeType, inTrash) {
+function actionButtons(nodeId, nodeType, inTrash, item) {
   if (nodeId === AppState.TRASH_ID) {
     return `<span class="tree-actions" data-node-id="${nodeId}">
       <button data-tree-action="empty-trash" class="tree-action-text" title="Empty Trash">Empty</button>
+    </span>`;
+  }
+  // Synced folder root — show "Reveal in Finder" on desktop, nothing on iPad
+  if (item?.syncFolderId && item.type === "folder") {
+    const isIpad = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (isIpad) return "";
+    const folder = (storedState?.settings?.syncFolders || []).find(f => f.id === item.syncFolderId);
+    if (folder?.syncType === "dropbox") return ""; // no local folder to reveal
+    return `<span class="tree-actions" data-node-id="${nodeId}">
+      <button data-tree-action="reveal-in-finder" title="Show in Finder">
+        <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </button>
     </span>`;
   }
   const isSpecial = nodeId === AppState.INBOX_ID;
@@ -139,7 +152,7 @@ export function createFilesPanel(container, state, hidePanel) {
       const inTrash = state.isInTrash(item.id);
       const el = document.createElement("span");
       el.className = "tree-item-row" + (isActive ? " active" : "");
-      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${actionButtons(item.id, item.type, inTrash)}`;
+      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${actionButtons(item.id, item.type, inTrash, item)}`;
       return el;
     },
 
@@ -206,6 +219,8 @@ function onActionClick(e) {
     handleDelete(nodeId, storedState);
   } else if (action === "flag") {
     storedState.toggleFlagged(nodeId).then(() => refreshList(storedState));
+  } else if (action === "reveal-in-finder") {
+    handleRevealInFinder(nodeId, storedState);
   } else if (action === "empty-trash") {
     handleEmptyTrash(storedState);
   }
@@ -399,6 +414,19 @@ function handleRename(nodeId, triggerEl, state) {
     if (e.key === "Enter") { e.preventDefault(); input.blur(); }
     if (e.key === "Escape") { input.value = currentName; input.blur(); }
   });
+}
+
+async function handleRevealInFinder(nodeId, state) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node?.syncFolderId) return;
+  const folder = (state.settings.syncFolders || []).find(f => f.id === node.syncFolderId);
+  if (!folder?.path) return;
+  try {
+    const opener = await import("@tauri-apps/plugin-opener");
+    await opener.revealItemInDir(folder.path);
+  } catch (e) {
+    console.error("Failed to reveal in Finder:", e);
+  }
 }
 
 function handleDelete(nodeId, state) {

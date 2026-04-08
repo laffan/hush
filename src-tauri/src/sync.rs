@@ -46,6 +46,13 @@ pub struct ExternalChange {
     pub internal_modified: i64,  // Unix timestamp of internal file
 }
 
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncFolderDiff {
+    pub new_files: Vec<ImportEntry>,
+    pub deleted_file_ids: Vec<String>, // internal_ids of files no longer on disk
+}
+
 pub struct SyncManager {
     sync_data_path: PathBuf,
     file_map: HashMap<String, SyncedFileInfo>, // internal_id -> SyncedFileInfo
@@ -458,6 +465,50 @@ impl SyncManager {
             }
         }
         changes
+    }
+
+    /// Compare the filesystem contents of a local sync folder against the
+    /// sync map. Returns new files (on disk but not registered) and deleted
+    /// files (registered but no longer on disk).
+    pub fn diff_sync_folder(&self, folder: &SyncFolder) -> SyncFolderDiff {
+        use std::collections::HashSet;
+
+        // Collect all relative paths currently registered for this folder
+        let registered: HashSet<String> = self
+            .file_map
+            .values()
+            .filter(|info| info.sync_folder_id == folder.id)
+            .map(|info| info.relative_path.clone())
+            .collect();
+
+        let mut disk_files: HashSet<String> = HashSet::new();
+        let mut new_files = Vec::new();
+
+        if let Ok(entries) = Self::scan_folder(&folder.path) {
+            for entry in entries {
+                if !entry.is_directory {
+                    disk_files.insert(entry.relative_path.clone());
+                    if !registered.contains(&entry.relative_path) {
+                        new_files.push(entry);
+                    }
+                }
+            }
+        }
+
+        // Find registered files that are no longer on disk
+        let deleted_file_ids: Vec<String> = self
+            .file_map
+            .values()
+            .filter(|info| {
+                info.sync_folder_id == folder.id && !disk_files.contains(&info.relative_path)
+            })
+            .map(|info| info.internal_id.clone())
+            .collect();
+
+        SyncFolderDiff {
+            new_files,
+            deleted_file_ids,
+        }
     }
 
     fn hash_content(content: &str) -> String {

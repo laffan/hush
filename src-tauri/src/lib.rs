@@ -21,7 +21,7 @@ mod zotero;
 use settings::AppSettings;
 use files::FileManager;
 use snapshots::{SnapshotManager, SnapshotEntry};
-use sync::{SyncManager, SyncWriteResult, ImportEntry, SyncedFileInfo, ExternalChange};
+use sync::{SyncManager, SyncWriteResult, SyncFolderDiff, ImportEntry, SyncedFileInfo, ExternalChange};
 use zotero::ZoteroManager;
 
 pub struct AppState {
@@ -355,6 +355,19 @@ fn check_sync_changes(
 }
 
 #[tauri::command]
+fn diff_sync_folder(
+    state: State<AppState>,
+    sync_folder_id: String,
+) -> Result<SyncFolderDiff, String> {
+    let settings = state.settings.lock().unwrap();
+    let sync_mgr = state.sync_manager.lock().unwrap();
+    let folder = settings.sync_folders.iter()
+        .find(|f| f.id == sync_folder_id)
+        .ok_or("Sync folder not found")?;
+    Ok(sync_mgr.diff_sync_folder(folder))
+}
+
+#[tauri::command]
 fn accept_external_change(
     state: State<AppState>,
     internal_id: String,
@@ -669,6 +682,7 @@ pub fn run() {
             create_sync_file,
             write_project_json,
             check_sync_changes,
+            diff_sync_folder,
             accept_external_change,
             reject_external_change,
             save_zotero_references,

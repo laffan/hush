@@ -449,6 +449,147 @@ export async function reconcileSync(state) {
   }
 }
 
+/**
+ * Diff a sync folder against its filesystem contents.
+ * Detects new files (created externally) and deleted files (removed externally).
+ * Creates/removes internal files and tree nodes accordingly.
+ * Returns true if any changes were made.
+ */
+export async function diffSyncFolder(state, syncFolder) {
+  if (!IS_TAURI) return false;
+  const { findNode, findNodeByFileId, removeNode } = await import("../state/tree-helpers.js");
+
+  try {
+    let diff;
+    if (syncFolder.syncType === "dropbox") {
+      diff = await diffDropboxFolder(state, syncFolder);
+    } else {
+      diff = await tauriInvoke("diff_sync_folder", { syncFolderId: syncFolder.id });
+    }
+
+    if (!diff) return false;
+    const hasChanges = (diff.newFiles?.length > 0) || (diff.deletedFileIds?.length > 0);
+    if (!hasChanges) return false;
+
+    // Find the sync folder root node in the tree
+    const syncRoot = findSyncFolderNode(state.fileTree, syncFolder.id);
+    if (!syncRoot) return false;
+
+    // Handle new external files — create internal files + tree nodes
+    for (const entry of (diff.newFiles || [])) {
+      if (entry.isDirectory) continue; // only handle files
+      const file = await tauriInvoke("create_file");
+      await tauriInvoke("save_file", { id: file.id, content: entry.content });
+      await tauriInvoke("register_synced_file", {
+        internalId: file.id, syncFolderId: syncFolder.id,
+        relativePath: entry.relativePath, content: entry.content,
+      });
+      // Add tree node in the correct subdirectory
+      const parts = entry.relativePath.split(/[\\/]/);
+      const fileName = parts.pop().replace(/\.md$/, "");
+      const parentNode = ensureSubdirectories(syncRoot, parts);
+      const docNode = {
+        id: crypto.randomUUID(), type: "document", name: fileName || entry.name,
+        fileId: file.id, children: [], flagged: false,
+      };
+      parentNode.children.push(docNode);
+    }
+
+    // Handle externally deleted files — remove tree nodes + unregister
+    for (const internalId of (diff.deletedFileIds || [])) {
+      const treeNode = findNodeByFileId(state.fileTree, internalId);
+      if (treeNode) {
+        removeNode(state.fileTree, treeNode.id);
+      }
+      try {
+        const fp = syncFolder.syncType === "dropbox" ? "__dropbox__" : syncFolder.path;
+        await tauriInvoke("delete_sync_file", { folderPath: fp, internalId });
+      } catch (_) {}
+    }
+
+    await state.saveFileTree();
+    state.files = await tauriInvoke("list_files");
+    state.emit("files-changed");
+    return true;
+  } catch (e) {
+    console.error("Sync folder diff failed:", e);
+    return false;
+  }
+}
+
+/**
+ * Diff a Dropbox folder by listing all files and comparing against registered ones.
+ * Returns a diff object with newFiles and deletedFileIds.
+ */
+async function diffDropboxFolder(state, syncFolder) {
+  if (!state.settings.dropboxToken) return null;
+  const dbx = await import("./dropbox.js");
+  dbx.setToken(state.settings.dropboxToken);
+  const { invoke } = await import("@tauri-apps/api/core");
+
+  // List all .md files on Dropbox
+  const rawEntries = await dbx.listFolderRecursive(
+    syncFolder.path === "/" ? "" : syncFolder.path
+  );
+  const dropboxPaths = new Set();
+  const newFiles = [];
+
+  // Get all registered files for this folder
+  const syncedFiles = await invoke("get_synced_files", { syncFolderId: syncFolder.id });
+  const registeredPaths = new Set(syncedFiles.map(f => f.relativePath));
+
+  for (const entry of rawEntries) {
+    if (entry.isDirectory) continue;
+    dropboxPaths.add(entry.relativePath);
+    if (!registeredPaths.has(entry.relativePath)) {
+      // New file on Dropbox — download its content
+      if (entry.dropboxPath) {
+        entry.content = await dbx.downloadFile(entry.dropboxPath);
+      }
+      newFiles.push(entry);
+    }
+  }
+
+  // Find registered files no longer on Dropbox
+  const deletedFileIds = syncedFiles
+    .filter(f => !dropboxPaths.has(f.relativePath))
+    .map(f => f.internalId);
+
+  return { newFiles, deletedFileIds };
+}
+
+/** Find the sync folder root node in the tree by syncFolderId. */
+function findSyncFolderNode(nodes, syncFolderId) {
+  for (const n of nodes) {
+    if (n.syncFolderId === syncFolderId) return n;
+    if (n.children) {
+      const found = findSyncFolderNode(n.children, syncFolderId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** Ensure subdirectory nodes exist in the tree, creating them if needed. */
+function ensureSubdirectories(root, pathParts) {
+  let current = root;
+  for (const dirName of pathParts) {
+    if (!dirName) continue;
+    let child = current.children.find(
+      c => c.type === "folder" && c.name === dirName
+    );
+    if (!child) {
+      child = {
+        id: crypto.randomUUID(), type: "folder", name: dirName,
+        children: [], flagged: false,
+      };
+      current.children.push(child);
+    }
+    current = child;
+  }
+  return current;
+}
+
 /** Helper to get fileId from a document tree node by nodeId */
 async function getFileIdForNode(state, nodeId) {
   const { findNode } = await import("../state/tree-helpers.js");

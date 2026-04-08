@@ -13,6 +13,10 @@ let _dropboxConnected = true;
 let _healthCheckCounter = 0;
 const HEALTH_CHECK_INTERVAL = 6; // check every 6 poll cycles (60 seconds)
 
+/** Folder diff counter — full scan every 3 poll cycles (30 seconds). */
+let _diffCounter = 0;
+const DIFF_INTERVAL = 3;
+
 export function isDropboxConnected() {
   return _dropboxConnected;
 }
@@ -54,7 +58,10 @@ async function runSyncCycle(state) {
 
 /** Auto-sync local filesystem folders via Rust backend. */
 async function syncLocalFolders(state) {
-  const { checkSyncChanges, acceptExternalChange, syncFileToExternal } = await import("./sync-state.js");
+  const { checkSyncChanges, acceptExternalChange, syncFileToExternal,
+          diffSyncFolder } = await import("./sync-state.js");
+
+  // Check content changes on registered files
   const changes = await checkSyncChanges();
   for (const change of changes) {
     if (change.externalModified > change.internalModified) {
@@ -67,6 +74,17 @@ async function syncLocalFolders(state) {
         await syncFileToExternal(state, change.internalId, change.internalContent);
         showSyncIndicator("pushed");
       }
+    }
+  }
+
+  // Periodically diff folder contents to detect new/deleted external files
+  _diffCounter++;
+  if (_diffCounter >= DIFF_INTERVAL) {
+    _diffCounter = 0;
+    const localFolders = (state.settings.syncFolders || []).filter(f => f.syncType === "local");
+    for (const folder of localFolders) {
+      const changed = await diffSyncFolder(state, folder);
+      if (changed) showSyncIndicator("pulled");
     }
   }
 }
@@ -90,6 +108,20 @@ async function syncDropboxFolders(state) {
     } catch (e) {
       console.error(`Dropbox sync failed for ${folder.name}:`, e);
       updateDropboxStatus(state, false);
+    }
+  }
+
+  // Periodically diff Dropbox folder contents (uses HEALTH_CHECK_INTERVAL
+  // since listing is expensive — same cadence as the health check, ~60s)
+  if (_healthCheckCounter === 0) {
+    const { diffSyncFolder } = await import("./sync-state.js");
+    for (const folder of folders) {
+      try {
+        const changed = await diffSyncFolder(state, folder);
+        if (changed) showSyncIndicator("pulled");
+      } catch (e) {
+        console.error(`Dropbox diff failed for ${folder.name}:`, e);
+      }
     }
   }
 }
