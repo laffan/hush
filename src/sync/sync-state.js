@@ -400,9 +400,10 @@ export async function rejectExternalChange(state, internalId, folderPath) {
 
 /**
  * Reconcile sync state after a tree reorganization (e.g. drag-and-drop).
- * Finds documents that are now inside a synced folder but don't have
- * a sync registration, and creates the external file for them.
- * Also removes sync registrations for documents moved out of synced folders.
+ * Handles three cases:
+ * 1. Document moved INTO a synced folder — create external file
+ * 2. Document moved OUT of a synced folder — remove registration
+ * 3. Document moved WITHIN a synced folder — move file on disk to match
  */
 export async function reconcileSync(state) {
   if (!IS_TAURI) return;
@@ -445,6 +446,40 @@ export async function reconcileSync(state) {
         const fp = folder.syncType === "dropbox" ? "__dropbox__" : folder.path;
         await tauriInvoke("delete_sync_file", { folderPath: fp, internalId: doc.fileId });
       } catch (_) {}
+    } else if (ctx && info) {
+      // Document is in a synced folder AND has a registration —
+      // check if its path changed (moved within the synced folder)
+      const newRelPath = ctx.relativePath
+        ? ctx.relativePath + ".md"
+        : doc.name + ".md";
+      if (newRelPath !== info.relativePath) {
+        const folder = getSyncFolder(state, ctx.syncFolderId);
+        if (!folder) continue;
+        try {
+          if (folder.syncType === "dropbox") {
+            const dbx = await getDropbox(state);
+            await dbx.moveEntry(
+              dropboxFullPath(folder, info.relativePath),
+              dropboxFullPath(folder, newRelPath)
+            );
+            await tauriInvoke("rename_sync_file", {
+              folderPath: "__dropbox__",
+              oldRelative: info.relativePath,
+              newRelative: newRelPath,
+              internalId: doc.fileId,
+            });
+          } else {
+            await tauriInvoke("rename_sync_file", {
+              folderPath: folder.path,
+              oldRelative: info.relativePath,
+              newRelative: newRelPath,
+              internalId: doc.fileId,
+            });
+          }
+        } catch (e) {
+          console.error("Sync move failed:", e);
+        }
+      }
     }
   }
 }

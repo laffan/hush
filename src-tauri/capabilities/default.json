@@ -43,6 +43,7 @@
         { "url": "obsidian://*" }
       ]
     },
+    "opener:allow-reveal-item-in-dir",
     "positioner:default",
     {
       "identifier": "fs:default",
