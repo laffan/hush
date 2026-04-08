@@ -87,6 +87,8 @@ async function scanDropboxFolder(state, syncFolder) {
 
 /**
  * Write file content to its external synced location (local or Dropbox).
+ * Checks external timestamps first — if the external file is newer,
+ * accepts the external version instead of overwriting it.
  */
 export async function syncFileToExternal(state, fileId, content) {
   if (!IS_TAURI) return;
@@ -100,13 +102,47 @@ export async function syncFileToExternal(state, fileId, content) {
       const dbx = await import("./dropbox.js");
       dbx.setToken(state.settings.dropboxToken);
       const dropboxPath = folder.path === "/" ? `/${info.relativePath}` : `${folder.path}/${info.relativePath}`;
+      // Check Dropbox metadata before uploading — don't overwrite newer external edits
+      try {
+        const metaResp = await fetch("https://api.dropboxapi.com/2/files/get_metadata", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${dbx.getToken()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ path: dropboxPath }),
+        });
+        if (metaResp.ok) {
+          const meta = await metaResp.json();
+          const externalModified = meta.server_modified
+            ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
+          if (externalModified > (info.lastSyncedAt || 0)) {
+            // External is newer — pull it instead of pushing
+            const externalContent = await dbx.downloadFile(dropboxPath);
+            if (externalContent !== content) {
+              await acceptExternalChange(state, fileId, externalContent);
+            } else {
+              await tauriInvoke("update_sync_hash", { internalId: fileId, content: externalContent });
+            }
+            return;
+          }
+        }
+      } catch (_) {
+        // Metadata check failed — skip push to be safe, let polling handle it
+        return;
+      }
       await dbx.uploadFile(dropboxPath, content);
       await tauriInvoke("update_sync_hash", { internalId: fileId, content });
     } else {
-      await tauriInvoke("write_sync_file", {
+      // Local sync — backend checks external mtime before writing
+      const result = await tauriInvoke("write_sync_file", {
         folderPath: folder.path, relativePath: info.relativePath,
         content, internalId: fileId,
       });
+      if (result && result.externalIsNewer && result.externalContent) {
+        // External file was modified outside the app — accept it instead
+        await acceptExternalChange(state, fileId, result.externalContent);
+      }
     }
   } catch (e) {
     console.error("Sync write failed:", e);
@@ -329,18 +365,23 @@ export async function checkSyncChanges() {
 
 /**
  * Accept an external change — replace internal content with external.
+ * A snapshot of the current internal content is created by the backend
+ * before overwriting, preserving it in version history.
  */
 export async function acceptExternalChange(state, internalId, content) {
   if (!IS_TAURI) return;
   try {
     await tauriInvoke("accept_external_change", { internalId, content });
     state.files = await tauriInvoke("list_files");
-    // If the changed file is currently open, reload it
+    // If the changed file is currently open, reload it without marking dirty
     if (state.currentFileId === internalId && state.editor) {
+      state._syncPulling = true;
       state.editor.setContent(content);
+      state._syncPulling = false;
     }
     state.emit("files-changed");
   } catch (e) {
+    state._syncPulling = false;
     console.error("Accept external change failed:", e);
   }
 }

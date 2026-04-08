@@ -356,6 +356,12 @@ export function createSidebar(container, state) {
     }
   });
 
+  state.on("dropbox-status-changed", () => {
+    if (activePanel === "files") {
+      refreshFilesPanel(state);
+    }
+  });
+
   // Cmd+\ toggle support — force-show files (not toggle)
   state.on("show-files-panel", () => {
     if (activePanel === "versions") cleanupVersionsPanel();

@@ -8,6 +8,15 @@ let syncPollTimer = null;
 let syncing = false;
 let _state = null;
 
+/** Dropbox connection health state. */
+let _dropboxConnected = true;
+let _healthCheckCounter = 0;
+const HEALTH_CHECK_INTERVAL = 6; // check every 6 poll cycles (60 seconds)
+
+export function isDropboxConnected() {
+  return _dropboxConnected;
+}
+
 export function startSyncPolling(state) {
   if (syncPollTimer) return;
   _state = state;
@@ -30,6 +39,12 @@ async function runSyncCycle(state) {
   try {
     await syncLocalFolders(state);
     await syncDropboxFolders(state);
+    // Periodic Dropbox connection health check
+    _healthCheckCounter++;
+    if (_healthCheckCounter >= HEALTH_CHECK_INTERVAL) {
+      _healthCheckCounter = 0;
+      await checkDropboxHealth(state);
+    }
   } catch (e) {
     console.error("Sync poll error:", e);
   } finally {
@@ -70,8 +85,11 @@ async function syncDropboxFolders(state) {
       for (const info of syncedFiles) {
         await syncOneDropboxFile(state, invoke, dbx, folder, info);
       }
+      // If we got here without error, connection is good
+      updateDropboxStatus(state, true);
     } catch (e) {
       console.error(`Dropbox sync failed for ${folder.name}:`, e);
+      updateDropboxStatus(state, false);
     }
   }
 }
@@ -127,6 +145,28 @@ async function syncOneDropboxFile(state, invoke, dbx, folder, info) {
     }
   } catch (e) {
     // File may have been deleted externally — skip
+  }
+}
+
+/** Periodic Dropbox connection health check via lightweight API call. */
+async function checkDropboxHealth(state) {
+  const folders = (state.settings.syncFolders || []).filter(f => f.syncType === "dropbox");
+  if (!folders.length || !state.settings.dropboxToken) return;
+  try {
+    const dbx = await import("./dropbox.js");
+    dbx.setToken(state.settings.dropboxToken);
+    const result = await dbx.testConnection();
+    updateDropboxStatus(state, result.ok);
+  } catch (_) {
+    updateDropboxStatus(state, false);
+  }
+}
+
+/** Update Dropbox connection status and emit event if changed. */
+function updateDropboxStatus(state, connected) {
+  if (_dropboxConnected !== connected) {
+    _dropboxConnected = connected;
+    state.emit("dropbox-status-changed", { connected });
   }
 }
 

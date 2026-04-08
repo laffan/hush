@@ -21,7 +21,7 @@ mod zotero;
 use settings::AppSettings;
 use files::FileManager;
 use snapshots::{SnapshotManager, SnapshotEntry};
-use sync::{SyncManager, ImportEntry, SyncedFileInfo, ExternalChange};
+use sync::{SyncManager, SyncWriteResult, ImportEntry, SyncedFileInfo, ExternalChange};
 use zotero::ZoteroManager;
 
 pub struct AppState {
@@ -205,12 +205,17 @@ fn write_sync_file(
     relative_path: String,
     content: String,
     internal_id: String,
-) -> Result<(), String> {
-    SyncManager::write_external(&folder_path, &relative_path, &content)
+) -> Result<SyncWriteResult, String> {
+    let sync_mgr = state.sync_manager.lock().unwrap();
+    let result = sync_mgr
+        .write_external_if_current(&folder_path, &relative_path, &content, &internal_id)
         .map_err(|e| e.to_string())?;
-    state.sync_manager.lock().unwrap()
-        .update_hash(&internal_id, &content);
-    Ok(())
+    if result.written {
+        drop(sync_mgr);
+        state.sync_manager.lock().unwrap()
+            .update_hash(&internal_id, &content);
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -355,6 +360,16 @@ fn accept_external_change(
     internal_id: String,
     content: String,
 ) -> Result<(), String> {
+    // Snapshot the current internal content before overwriting (version history)
+    {
+        let fm = state.file_manager.lock().unwrap();
+        if let Ok(existing) = fm.load_file(&internal_id) {
+            if !existing.content.is_empty() && existing.content != content {
+                let _ = state.snapshot_manager.lock().unwrap()
+                    .create_snapshot(&internal_id, &existing.content);
+            }
+        }
+    }
     // Save the external content as the new internal content and update hash
     state.file_manager.lock().unwrap()
         .save_file(&internal_id, &content)

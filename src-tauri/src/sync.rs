@@ -6,6 +6,15 @@ use std::path::{Path, PathBuf};
 
 use crate::settings::SyncFolder;
 
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncWriteResult {
+    pub written: bool,
+    pub external_is_newer: bool,
+    pub external_content: Option<String>,
+    pub external_modified: Option<i64>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncedFileInfo {
@@ -183,6 +192,54 @@ impl SyncManager {
         }
         fs::write(&path, content)?;
         Ok(())
+    }
+
+    /// Write content to external file only if the external file hasn't been
+    /// modified since the last sync. Returns a result indicating what happened.
+    pub fn write_external_if_current(
+        &self,
+        folder_path: &str,
+        relative_path: &str,
+        content: &str,
+        internal_id: &str,
+    ) -> Result<SyncWriteResult, Box<dyn std::error::Error>> {
+        let path = PathBuf::from(folder_path).join(relative_path);
+        if path.exists() {
+            let last_synced_at = self
+                .file_map
+                .get(internal_id)
+                .map(|info| info.last_synced_at)
+                .unwrap_or(0);
+            let external_mtime = fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64
+                })
+                .unwrap_or(0);
+            if external_mtime > last_synced_at {
+                // External file is newer — don't overwrite
+                let external_content = fs::read_to_string(&path).ok();
+                return Ok(SyncWriteResult {
+                    written: false,
+                    external_is_newer: true,
+                    external_content,
+                    external_modified: Some(external_mtime),
+                });
+            }
+        }
+        // Safe to write — external hasn't changed since last sync
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, content)?;
+        Ok(SyncWriteResult {
+            written: true,
+            external_is_newer: false,
+            external_content: None,
+            external_modified: None,
+        })
     }
 
     /// Read external file content.

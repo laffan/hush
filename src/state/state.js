@@ -154,6 +154,7 @@ export class AppState {
     // Autosave interval
     this.autosaveInterval = null;
     this.dirty = false;
+    this._syncPulling = false; // suppress markDirty during sync pull
 
     // Snapshot keystroke tracking
     this._keystrokeCount = 0;
@@ -264,6 +265,7 @@ export class AppState {
   }
 
   markDirty() {
+    if (this._syncPulling) return;
     this.dirty = true;
   }
 

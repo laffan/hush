@@ -28,3 +28,14 @@
   from { opacity: 0.9; }
   to { opacity: 0; }
 }
+
+/* Broken sync icon — jagged line through circle */
+.sync-broken-icon polyline {
+  stroke: var(--fg);
+  fill: none;
+  stroke-width: 1.2;
+  opacity: 0.7;
+}
+.sync-broken-icon circle {
+  opacity: 0.5;
+}
