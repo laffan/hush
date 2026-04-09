@@ -1,4 +1,13 @@
 /* ===== Private Mode ===== */
+
+/* Force private mode char spans to base font-size so heading font-sizes
+   (1.8x, 1.5x etc.) don't create oversized boxes or misaligned dummy text. */
+.private-mode #editor-container .cm-line,
+.private-mode #editor-container .cm-line span {
+  font-size: var(--font-size) !important;
+  line-height: var(--line-height) !important;
+}
+
 .hush-private-char {
   color: transparent !important;
   background: var(--private-box);
@@ -32,11 +41,8 @@
   pointer-events: none;
 }
 
-/* Normalize heading font-size in dummy mode so text looks like plain prose,
-   but keep font-weight so bold headings still look natural. */
-.dummy-mode #editor-container .cm-line,
+/* Also normalize font-style / decoration in dummy mode */
 .dummy-mode #editor-container .cm-line span {
-  font-size: var(--font-size) !important;
   font-style: normal !important;
   text-decoration: none !important;
   opacity: 1 !important;

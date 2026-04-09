@@ -58,6 +58,7 @@
 /* Privacy tab — dummy text textarea (shared between standalone + modal) */
 #setting-dummy-text {
   width: 100%;
+  box-sizing: border-box;
   min-height: 200px;
   background: rgba(128, 128, 128, 0.1);
   border: 1px solid rgba(128, 128, 128, 0.2);

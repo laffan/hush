@@ -220,7 +220,7 @@ function bindAll() {
         saveSetting("dummyText", dummyTextEl.value);
       }, 500);
     });
-    // Strip line breaks and extra whitespace on paste
+    // Strip line breaks and extra whitespace on paste, save immediately
     dummyTextEl.addEventListener("paste", (e) => {
       e.preventDefault();
       const raw = (e.clipboardData || window.clipboardData).getData("text");
@@ -231,7 +231,9 @@ function bindAll() {
       const after = dummyTextEl.value.slice(end);
       dummyTextEl.value = before + cleaned + after;
       dummyTextEl.selectionStart = dummyTextEl.selectionEnd = start + cleaned.length;
-      dummyTextEl.dispatchEvent(new Event("input"));
+      clearTimeout(dummyTimer);
+      saveSetting("dummyText", dummyTextEl.value);
+      render();
     });
   }
 
