@@ -1,13 +1,22 @@
 /* Sticky Headers — shows heading hierarchy pinned to top of editor */
 .sticky-headers {
-  position: absolute;
+  position: fixed;
   top: 30px; /* below drag region */
   left: 0;
   right: 0;
   z-index: 10;
   pointer-events: none;
-  padding: 8px 0 6px;
-  background: linear-gradient(to bottom, var(--theme-bg, var(--bg)) 60%, transparent);
+  padding: 8px 0 4px;
+  background: var(--theme-bg, var(--bg));
+}
+
+/* Fade-out edge below the headers */
+.sticky-headers::after {
+  content: "";
+  display: block;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--theme-bg, var(--bg)), transparent);
+  pointer-events: none;
 }
 
 .fullscreen-mode .sticky-headers {
@@ -25,32 +34,9 @@
   line-height: 1.4;
 }
 
-.sticky-header-h1 {
-  font-size: calc(var(--font-size) * 0.85);
-  font-weight: 700;
-}
-
-.sticky-header-h2 {
-  font-size: calc(var(--font-size) * 0.78);
-  font-weight: 700;
-}
-
-.sticky-header-h3 {
-  font-size: calc(var(--font-size) * 0.72);
-  font-weight: 600;
-}
-
-.sticky-header-h4 {
-  font-size: calc(var(--font-size) * 0.68);
-  font-weight: 600;
-}
-
-.sticky-header-h5 {
-  font-size: calc(var(--font-size) * 0.65);
-  font-weight: 600;
-}
-
-.sticky-header-h6 {
-  font-size: calc(var(--font-size) * 0.62);
-  font-weight: 600;
-}
+.sticky-header-h1 { font-size: calc(var(--font-size) * 0.85); font-weight: 700; }
+.sticky-header-h2 { font-size: calc(var(--font-size) * 0.78); font-weight: 700; }
+.sticky-header-h3 { font-size: calc(var(--font-size) * 0.72); font-weight: 600; }
+.sticky-header-h4 { font-size: calc(var(--font-size) * 0.68); font-weight: 600; }
+.sticky-header-h5 { font-size: calc(var(--font-size) * 0.65); font-weight: 600; }
+.sticky-header-h6 { font-size: calc(var(--font-size) * 0.62); font-weight: 600; }

@@ -1,5 +1,4 @@
 /* ===== Private Mode ===== */
-/* Handled by CodeMirror decoration plugin — .hush-private-char marks */
 .hush-private-char {
   color: transparent !important;
   background: var(--private-box);
@@ -12,14 +11,14 @@
   border-left-color: var(--cursor);
 }
 
-/* Hide footnote overlays and marginalia in private mode */
+/* Hide footnote overlays, marginalia, and heading markers in private mode */
 .private-mode .footnote-overlay,
-.private-mode .footnote-marginalia {
+.private-mode .footnote-marginalia,
+.private-mode .heading-marker {
   display: none;
 }
 
 /* ===== Decoy Text Mode ===== */
-/* Original character made invisible; ::after shows the decoy char */
 .hush-decoy-char {
   color: transparent !important;
   position: relative;
@@ -33,17 +32,12 @@
   pointer-events: none;
 }
 
-/* Neutralize heading sizes/weights so decoy text looks like plain prose */
+/* Normalize heading font-size in decoy mode so text looks like plain prose,
+   but keep font-weight so bold headings still look natural. */
 .decoy-mode #editor-container .cm-line,
 .decoy-mode #editor-container .cm-line span {
   font-size: var(--font-size) !important;
-  font-weight: normal !important;
   font-style: normal !important;
   text-decoration: none !important;
   opacity: 1 !important;
-}
-
-/* Hide heading indent markers in decoy mode */
-.decoy-mode .heading-marker {
-  display: none;
 }

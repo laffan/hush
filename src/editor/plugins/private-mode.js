@@ -32,25 +32,41 @@ function buildDecorations(view, stateRef) {
 }
 
 /**
- * Decoy mode: each document position maps to a fixed decoy character
- * via (position % decoyLength).  This means editing in the middle only
- * shifts the new character's mapping — surrounding text stays stable.
- * ALL non-newline characters (including spaces) are replaced.
+ * Decoy mode: each LINE gets a stable offset into the decoy text based
+ * on its line number (lineNum * 997, a large prime).  Within the line,
+ * characters advance sequentially from that offset.
+ *
+ * This means editing on line N only shifts decoy chars on line N.
+ * All other lines stay completely stable.  The only disruption is when
+ * inserting/deleting entire lines (changing line numbers), which is
+ * much rarer than character edits.
  */
 function buildDecoyDecorations(view, decoyText) {
   const builder = new RangeSetBuilder();
   const decoyLen = decoyText.length;
   if (decoyLen === 0) return Decoration.none;
+  const doc = view.state.doc;
 
   for (const { from, to } of view.visibleRanges) {
-    const text = view.state.sliceDoc(from, to);
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === "\n") continue;
-      const decoyChar = decoyText[(from + i) % decoyLen];
-      builder.add(from + i, from + i + 1, Decoration.mark({
-        class: "hush-decoy-char",
-        attributes: { "data-decoy": decoyChar },
-      }));
+    let pos = from;
+    while (pos <= to) {
+      const line = doc.lineAt(pos);
+      const lineStart = Math.max(line.from, from);
+      const lineEnd = Math.min(line.to, to);
+      // Stable per-line offset: line number * large prime
+      const lineOffset = (line.number * 997) % decoyLen;
+
+      for (let i = lineStart; i <= lineEnd; i++) {
+        const ch = doc.sliceDoc(i, i + 1);
+        if (ch === "\n" || ch === "") continue;
+        const charInLine = i - line.from;
+        const decoyChar = decoyText[(lineOffset + charInLine) % decoyLen];
+        builder.add(i, i + 1, Decoration.mark({
+          class: "hush-decoy-char",
+          attributes: { "data-decoy": decoyChar },
+        }));
+      }
+      pos = line.to + 1;
     }
   }
   return builder.finish();
