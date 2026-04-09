@@ -187,6 +187,24 @@ pub struct AppSettings {
     #[serde(default = "default_shortcut_zotero")]
     pub shortcut_zotero: String,
 
+    // Privacy mode
+    #[serde(default = "default_privacy_mode")]
+    pub privacy_mode: String,
+    #[serde(default)]
+    pub dummy_text: String,
+
+    // Block cursor
+    #[serde(default)]
+    pub block_cursor: bool,
+    #[serde(default)]
+    pub block_cursor_color: Option<String>,
+
+    // Extra shortcuts
+    #[serde(default = "default_shortcut_strikethrough")]
+    pub shortcut_strikethrough: String,
+    #[serde(default = "default_shortcut_select_paragraph")]
+    pub shortcut_select_paragraph: String,
+
     // Ratchet mode
     #[serde(default)]
     pub ratchet_encourage_typing: bool,
@@ -306,155 +324,18 @@ fn default_dry_range() -> String {
     "paragraph".to_string()
 }
 fn default_dry_stopwords() -> Vec<String> {
-    vec![
-        "a",
-        "an",
-        "the",
-        "in",
-        "on",
-        "at",
-        "to",
-        "for",
-        "of",
-        "with",
-        "from",
-        "by",
-        "about",
-        "as",
-        "into",
-        "through",
-        "during",
-        "before",
-        "after",
-        "above",
-        "below",
-        "between",
-        "under",
-        "over",
-        "against",
-        "among",
-        "upon",
-        "without",
-        "within",
-        "and",
-        "or",
-        "but",
-        "nor",
-        "yet",
-        "so",
-        "if",
-        "because",
-        "while",
-        "although",
-        "though",
-        "unless",
-        "until",
-        "when",
-        "where",
-        "whether",
-        "i",
-        "you",
-        "he",
-        "she",
-        "it",
-        "we",
-        "they",
-        "me",
-        "him",
-        "her",
-        "us",
-        "them",
-        "my",
-        "your",
-        "his",
-        "its",
-        "our",
-        "their",
-        "mine",
-        "yours",
-        "hers",
-        "ours",
-        "theirs",
-        "this",
-        "that",
-        "these",
-        "those",
-        "who",
-        "whom",
-        "whose",
-        "which",
-        "what",
-        "whoever",
-        "whatever",
-        "whichever",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "being",
-        "have",
-        "has",
-        "had",
-        "do",
-        "does",
-        "did",
-        "will",
-        "would",
-        "should",
-        "could",
-        "may",
-        "might",
-        "must",
-        "can",
-        "shall",
-        "not",
-        "no",
-        "yes",
-        "all",
-        "any",
-        "some",
-        "more",
-        "most",
-        "much",
-        "many",
-        "such",
-        "very",
-        "too",
-        "also",
-        "just",
-        "only",
-        "even",
-        "still",
-        "again",
-        "here",
-        "there",
-        "now",
-        "then",
-        "than",
-        "how",
-        "why",
-        "well",
-        "up",
-        "down",
-        "out",
-        "off",
-        "own",
-        "same",
-        "other",
-        "another",
-        "each",
-        "every",
-        "both",
-        "few",
-        "several",
-        "either",
-        "neither",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect()
+    "a an the in on at to for of with from by about as into through during before after \
+     above below between under over against among upon without within and or but nor yet \
+     so if because while although though unless until when where whether i you he she it \
+     we they me him her us them my your his its our their mine yours hers ours theirs \
+     this that these those who whom whose which what whoever whatever whichever is are \
+     was were be been being have has had do does did will would should could may might \
+     must can shall not no yes all any some more most much many such very too also just \
+     only even still again here there now then than how why well up down out off own \
+     same other another each every both few several either neither"
+        .split_whitespace()
+        .map(String::from)
+        .collect()
 }
 fn default_true() -> bool {
     true
@@ -586,7 +467,16 @@ fn default_typewriter_line_opacity() -> f64 {
     0.08
 }
 fn default_shortcut_zotero() -> String {
+    "Mod+Shift+I".to_string()
+}
+fn default_shortcut_strikethrough() -> String {
+    "Mod+`".to_string()
+}
+fn default_shortcut_select_paragraph() -> String {
     "Mod+Shift+L".to_string()
+}
+fn default_privacy_mode() -> String {
+    "blackout".to_string()
 }
 
 impl Default for AppSettings {
@@ -667,6 +557,12 @@ impl Default for AppSettings {
             zotero_reference_count: 0,
             zotero_file_size: None,
             shortcut_zotero: default_shortcut_zotero(),
+            shortcut_strikethrough: default_shortcut_strikethrough(),
+            shortcut_select_paragraph: default_shortcut_select_paragraph(),
+            privacy_mode: default_privacy_mode(),
+            dummy_text: String::new(),
+            block_cursor: false,
+            block_cursor_color: None,
             ratchet_encourage_typing: false,
             window_width: None,
             window_height: None,
