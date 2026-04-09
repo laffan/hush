@@ -282,6 +282,8 @@ async function init() {
 
   // Window-level keyboard shortcuts — active when ANY part of the window is focused
   window.addEventListener("keydown", (e) => {
+    // Skip shortcuts already consumed by CodeMirror's keymap (prevents double-toggle)
+    if (e.defaultPrevented) return;
     const mod = e.metaKey || e.ctrlKey;
     // Cmd+Shift+F — toggle fullscreen
     if (mod && e.shiftKey && e.key === "F") {

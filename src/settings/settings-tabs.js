@@ -460,7 +460,7 @@ export function renderPrivacyTab(settings) {
   return `
     <div class="settings-section">
       <h2>Privacy Mode Style</h2>
-      <p class="settings-help">Choose what happens when you toggle private mode (${renderShortcutKeys("CmdOrCtrl+Shift+P")}).</p>
+      <p class="settings-help">Choose what happens when you toggle private mode.</p>
       <div class="settings-row">
         <label>Mode</label>
         <select id="setting-privacy-mode">
