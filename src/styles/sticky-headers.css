@@ -7,7 +7,7 @@
   z-index: 10;
   pointer-events: none;
   padding: 8px 0 6px;
-  background: linear-gradient(to bottom, var(--bg) 60%, transparent);
+  background: linear-gradient(to bottom, var(--theme-bg, var(--bg)) 60%, transparent);
 }
 
 .fullscreen-mode .sticky-headers {

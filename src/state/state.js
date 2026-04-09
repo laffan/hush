@@ -122,7 +122,12 @@ export class AppState {
       zoteroLastUpdate: null,
       zoteroReferenceCount: 0,
       zoteroFileSize: null,
-      shortcutZotero: "Mod+Shift+L",
+      shortcutSelectParagraph: "Mod+Shift+L",
+      shortcutZotero: "Mod+Shift+I",
+
+      // Privacy — decoy text mode
+      privacyMode: "blackout", // "blackout" or "decoy"
+      decoyText: "",
 
       // Session state
       lastFileId: null,

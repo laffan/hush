@@ -9,7 +9,7 @@ import { testZoteroConnection, downloadZoteroReferences, clearCache as clearZote
 import {
   shortcutDefs, normalizeShortcut, isIOSSettings,
   renderGeneralTab, renderEditorTab, renderShortcutsTab,
-  renderDryTab, renderFlagsSettingsTab, renderSyncTab, renderZoteroTab,
+  renderDryTab, renderFlagsSettingsTab, renderSyncTab, renderPrivacyTab, renderZoteroTab,
 } from "./settings-tabs.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -72,7 +72,8 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutComment) settings.shortcutComment = "Mod+/";
   if (!settings.shortcutStrikethrough) settings.shortcutStrikethrough = "Mod+`";
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
-  if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+L";
+  if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Mod+Shift+L";
+  if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";
 
   // Cmd+Q — hide the main window instead of quitting when in menu-bar-only mode.
   // DOM-level listener so it only fires when this settings window is focused.
@@ -100,6 +101,7 @@ function render() {
         ${tabBtn("shortcuts", "Shortcuts", tabIcons.shortcuts)}
         ${tabBtn("dry", "D.R.Y.", tabIcons.dry)}
         ${tabBtn("flags", "Flags", tabIcons.flags)}
+        ${tabBtn("privacy", "Privacy", tabIcons.privacy)}
         ${tabBtn("sync", "Sync", tabIcons.sync)}
         ${tabBtn("zotero", "Zotero", tabIcons.zotero)}
       </div>
@@ -118,6 +120,9 @@ function render() {
         </div>
         <div class="settings-panel${activeTab === 'flags' ? ' active' : ''}" id="panel-flags">
           ${renderFlagsSettingsTab(settings)}
+        </div>
+        <div class="settings-panel${activeTab === 'privacy' ? ' active' : ''}" id="panel-privacy">
+          ${renderPrivacyTab(settings)}
         </div>
         <div class="settings-panel${activeTab === 'sync' ? ' active' : ''}" id="panel-sync">
           ${renderSyncTab(settings)}
@@ -138,6 +143,7 @@ const tabIcons = {
   shortcuts: `<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
   dry: `<svg viewBox="0 0 24 24"><path d="M12 2L4 7v10l8 5 8-5V7l-8-5z"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="4" y1="7" x2="20" y2="7"/></svg>`,
   flags: `<svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
+  privacy: `<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="1" y1="1" x2="23" y2="23" stroke-width="2"/></svg>`,
   sync: `<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
   zotero: `<svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
 };
@@ -199,6 +205,19 @@ function bindAll() {
   bindSelect("setting-footnote-margin-side", "footnoteMarginSide");
   bindSlider("setting-font-size", "fontSize", "px");
   bindSlider("setting-line-height", "lineHeight", "");
+
+  // Privacy tab
+  bindSelect("setting-privacy-mode", "privacyMode");
+  const decoyTextEl = document.getElementById("setting-decoy-text");
+  if (decoyTextEl) {
+    let decoyTimer = null;
+    decoyTextEl.addEventListener("input", () => {
+      clearTimeout(decoyTimer);
+      decoyTimer = setTimeout(() => {
+        saveSetting("decoyText", decoyTextEl.value);
+      }, 500);
+    });
+  }
 
   // Flags tab
   bindFlagsTab(saveSetting, settings, render);

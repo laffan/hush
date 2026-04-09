@@ -750,3 +750,22 @@ html, body {
 .dbx-browser-select { padding: 8px 18px; border: 1px solid var(--panel-border); background: rgba(50,120,220,0.15); color: var(--fg); border-radius: 6px; cursor: pointer; font-size: 13px; }
 .dbx-browser-select:hover { background: rgba(50,120,220,0.3); }
 
+/* Privacy tab — decoy textarea */
+#setting-decoy-text {
+  width: 100%;
+  min-height: 200px;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+#setting-decoy-text:focus {
+  border-color: rgba(128, 128, 128, 0.4);
+}
+

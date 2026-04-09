@@ -374,15 +374,32 @@ export function jumpToPrevSentence(view) {
   const pos = offsetToPos(doc, head);
   const start = findSentenceStart(doc, pos);
   let startOff = posToOffset(doc, start);
-  if (startOff >= head && pos.line > 0) {
-    const prevLine = pos.line - 1;
-    const content = getLine(doc, prevLine);
-    if (content.trim().length === 0) {
-      startOff = posToOffset(doc, { line: prevLine, ch: 0 });
-    } else {
-      startOff = posToOffset(doc, findSentenceStart(doc, { line: prevLine, ch: content.length }));
+
+  if (startOff >= head) {
+    // Already at sentence start — look for the previous sentence.
+    // First try the same line: step back past the boundary punctuation.
+    const lineText = getLine(doc, start.line);
+    let backCh = start.ch;
+    while (backCh > 0 && /\s/.test(lineText.charAt(backCh - 1))) backCh--;
+    while (backCh > 0 && /["')\]}*_`]/.test(lineText.charAt(backCh - 1))) backCh--;
+    while (backCh > 0 && /[.!?]/.test(lineText.charAt(backCh - 1))) backCh--;
+
+    if (backCh > 0) {
+      // Found content before the boundary on this line — get its sentence start
+      const prevStart = findSentenceStart(doc, { line: start.line, ch: backCh });
+      startOff = posToOffset(doc, prevStart);
+    } else if (start.line > 0) {
+      // Nothing before on this line — go to the previous line
+      const prevLine = start.line - 1;
+      const content = getLine(doc, prevLine);
+      if (content.trim().length === 0) {
+        startOff = posToOffset(doc, { line: prevLine, ch: 0 });
+      } else {
+        startOff = posToOffset(doc, findSentenceStart(doc, { line: prevLine, ch: content.length }));
+      }
     }
   }
+
   view.dispatch({ selection: EditorSelection.cursor(startOff) });
   return true;
 }
@@ -445,6 +462,48 @@ export function jumpToNextParagraph(view) {
     const fw = line.text.search(/\S/);
     view.dispatch({ selection: EditorSelection.cursor(line.from + (fw >= 0 ? fw : 0)) });
   }
+  return true;
+}
+
+// ===== Select paragraph =====
+
+/** Select the current paragraph (text block between blank lines). */
+export function selectParagraph(view) {
+  const doc = view.state.doc;
+  const head = view.state.selection.main.head;
+  const curLine = doc.lineAt(head);
+  let startLn = curLine.number;
+  let endLn = curLine.number;
+
+  // Expand upward to find paragraph start (stop at blank line or doc start)
+  while (startLn > 1 && doc.line(startLn - 1).text.trim().length > 0) startLn--;
+  // Expand downward to find paragraph end (stop at blank line or doc end)
+  while (endLn < doc.lines && doc.line(endLn + 1).text.trim().length > 0) endLn++;
+
+  const from = doc.line(startLn).from;
+  const to = doc.line(endLn).to;
+  view.dispatch({ selection: EditorSelection.single(from, to) });
+  return true;
+}
+
+// ===== Join lines (pull up) =====
+
+/** Remove the next line break, joining the current line with the line below. */
+export function joinLines(view) {
+  const doc = view.state.doc;
+  const head = view.state.selection.main.head;
+  const line = doc.lineAt(head);
+  if (line.number >= doc.lines) return true; // already last line
+  const nextLine = doc.line(line.number + 1);
+  // Replace the newline + any leading whitespace on the next line with a single space
+  const leadingWs = nextLine.text.match(/^\s*/)[0].length;
+  const from = line.to;            // end of current line (before \n)
+  const to = nextLine.from + leadingWs; // start of next line content
+  const insert = nextLine.text.trim().length > 0 ? " " : "";
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: EditorSelection.cursor(from + insert.length),
+  });
   return true;
 }
 

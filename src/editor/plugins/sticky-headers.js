@@ -20,9 +20,10 @@ export function createStickyHeadersPlugin(stateRef) {
       }
 
       update(update) {
-        if (update.docChanged || update.viewportChanged) {
-          this.refresh();
-        }
+        // Always re-check: refresh() is cheap (caches HTML, early-returns when
+        // disabled) and must run on settings-toggle transactions that don't
+        // change the doc or viewport.
+        this.refresh();
       }
 
       setupIfNeeded() {

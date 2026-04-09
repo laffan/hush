@@ -29,6 +29,7 @@ export const shortcutCategories = [
     name: "Editing",
     shortcuts: [
       { key: "shortcutSelectSentence", label: "Select sentence" },
+      { key: "shortcutSelectParagraph", label: "Select paragraph" },
       { key: "shortcutReduceSentence", label: "Reduce sentence selection" },
       { key: "shortcutSelectNext", label: "Select next instance" },
       { key: "shortcutJumpNextSentence", label: "Jump to next sentence" },
@@ -445,6 +446,36 @@ export function renderSyncTab(settings) {
   html += `<button id="sync-add-folder" class="sync-add-btn">Add Folder</button>`;
   html += `</div>`;
   return html;
+}
+
+// ===== Privacy Tab =====
+export function renderPrivacyTab(settings) {
+  const s = settings;
+  const mode = s.privacyMode || "blackout";
+  const hasDecoy = !!(s.decoyText && s.decoyText.trim());
+  const preview = hasDecoy
+    ? escHtml(s.decoyText.slice(0, 120)) + (s.decoyText.length > 120 ? "..." : "")
+    : "";
+
+  return `
+    <div class="settings-section">
+      <h2>Privacy Mode Style</h2>
+      <p class="settings-help">Choose what happens when you toggle private mode (${renderShortcutKeys("CmdOrCtrl+Shift+P")}).</p>
+      <div class="settings-row">
+        <label>Mode</label>
+        <select id="setting-privacy-mode">
+          <option value="blackout" ${mode === "blackout" ? "selected" : ""}>Blackout (opaque boxes)</option>
+          <option value="decoy" ${mode === "decoy" ? "selected" : ""}>Decoy document</option>
+        </select>
+      </div>
+    </div>
+    <div class="settings-section">
+      <h2>Decoy Document</h2>
+      <p class="settings-help">Paste the text of a decoy document below. When decoy mode is active, your writing will appear to be this text instead.</p>
+      <textarea id="setting-decoy-text" rows="12" placeholder="Paste your decoy document text here... e.g. a boring quarterly report, meeting notes, etc.">${escHtml(s.decoyText || "")}</textarea>
+      ${hasDecoy ? `<p class="settings-help" style="margin-top: 8px;">${s.decoyText.length.toLocaleString()} characters loaded</p>` : ""}
+    </div>
+  `;
 }
 
 // ===== Zotero Tab =====

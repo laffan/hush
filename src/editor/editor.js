@@ -11,7 +11,7 @@ import { createPrivateModePlugin } from "./plugins/private-mode.js";
 import { createDryHighlightPlugin } from "./plugins/dry-highlight.js";
 import { openSettingsWindow } from "../settings/settings-ui.js";
 import { openFindReplace, openFindAll, findNext, findPrev } from "./find-replace.js";
-import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence, jumpToPrevParagraph, jumpToNextParagraph } from "./sentence-navigator.js";
+import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence, jumpToPrevParagraph, jumpToNextParagraph, joinLines, selectParagraph } from "./sentence-navigator.js";
 import { toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough } from "./formatting.js";
 import { createFootnotePlugin, insertFootnote } from "./plugins/footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./plugins/project-view.js";
@@ -163,7 +163,7 @@ const headingIndentPlugin = ViewPlugin.fromClass(
             const px = Math.round(w);
             builder.add(line.from, line.from, Decoration.line({
               attributes: {
-                style: `text-indent: -${px}px; padding-inline-start: ${px}px;`
+                style: `text-indent: -${px}px;`
               }
             }));
           }
@@ -420,7 +420,8 @@ export function createEditor(container, state) {
       { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
       { key: "Mod-l", run: (view) => selectSentence(view) },
       { key: "Alt-Shift-l", run: (view) => reduceSentenceSelection(view) },
-      { key: "Mod-Shift-l", run: (view) => { openZoteroModal(view, state); return true; } },
+      { key: "Mod-Shift-i", run: (view) => { openZoteroModal(view, state); return true; } },
+      { key: "Mod-Shift-l", run: (view) => selectParagraph(view) },
       { key: "Mod-ArrowRight", run: (view) => jumpToNextSentence(view) },
       { key: "Mod-ArrowLeft", run: (view) => jumpToPrevSentence(view) },
       { key: "Mod-Shift-ArrowRight", run: (view) => shiftSelectionToNextSentence(view) },
@@ -434,6 +435,7 @@ export function createEditor(container, state) {
       { key: "Mod-/", run: (view) => toggleComment(view) },
       { key: "Mod-`", run: (view) => toggleStrikethrough(view) },
       { key: "Mod-Shift-m", run: (view) => insertFootnote(view) },
+      { key: "Mod-j", run: (view) => joinLines(view) },
       { key: "Mod-Shift-t", run: () => { state.toggleTypewriter(); return true; } },
       { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },
       { key: "Mod-Shift-y", run: () => { state.toggleFocus(); return true; } },
