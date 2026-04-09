@@ -1,7 +1,7 @@
 /**
  * Private mode — CodeMirror ViewPlugin that either:
  * 1. "blackout" — wraps each non-whitespace character with opaque boxes
- * 2. "decoy"   — replaces ALL visible characters with a streaming decoy document
+ * 2. "decoy"   — replaces ALL visible characters with a decoy document
  */
 import { ViewPlugin, Decoration } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
@@ -32,38 +32,24 @@ function buildDecorations(view, stateRef) {
 }
 
 /**
- * Decoy mode: walk through every non-newline character in the visible ranges
- * and replace it with the next character from the decoy text (cycling).
- * Keystrokes act as momentum — no whitespace-matching, just a straight stream.
+ * Decoy mode: each document position maps to a fixed decoy character
+ * via (position % decoyLength).  This means editing in the middle only
+ * shifts the new character's mapping — surrounding text stays stable.
+ * ALL non-newline characters (including spaces) are replaced.
  */
 function buildDecoyDecorations(view, decoyText) {
   const builder = new RangeSetBuilder();
   const decoyLen = decoyText.length;
   if (decoyLen === 0) return Decoration.none;
 
-  // Count non-newline chars from doc start to the first visible range
-  // so we know where we are in the decoy stream.
-  const firstVisible = view.visibleRanges[0]?.from ?? 0;
-  let decoyIdx = 0;
-
-  // Count chars before the visible area to keep the decoy stream consistent
-  if (firstVisible > 0) {
-    const preText = view.state.sliceDoc(0, firstVisible);
-    for (let i = 0; i < preText.length; i++) {
-      if (preText[i] !== "\n") decoyIdx++;
-    }
-    decoyIdx = decoyIdx % decoyLen;
-  }
-
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.sliceDoc(from, to);
     for (let i = 0; i < text.length; i++) {
-      if (text[i] === "\n") continue; // keep line breaks as-is
-      const decoyChar = decoyText[decoyIdx % decoyLen];
-      decoyIdx++;
+      if (text[i] === "\n") continue;
+      const decoyChar = decoyText[(from + i) % decoyLen];
       builder.add(from + i, from + i + 1, Decoration.mark({
         class: "hush-decoy-char",
-        attributes: { "data-decoy": decoyChar }
+        attributes: { "data-decoy": decoyChar },
       }));
     }
   }

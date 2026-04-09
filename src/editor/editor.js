@@ -70,111 +70,38 @@ const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
-// Plugin that measures the actual width of heading markers (# ## etc.) and
-// applies a precise negative text-indent so heading text aligns with body text.
-// Uses coordsAtPos for accurate measurement regardless of how CodeMirror
-// splits DOM nodes.  Caches measurements per heading level (1-6).
-// Heading indent via CodeMirror Decoration.line — survives CM re-renders.
-// Measures marker width using a hidden span with the heading's actual font,
-// then applies negative text-indent via line decorations.
+// Plugin that pulls heading markers (# ## etc.) into the left margin so
+// heading text aligns with body text.  Uses mark decorations with absolute
+// positioning — no measurement needed, works at any font size.
+const headingMarkerDeco = Decoration.mark({ class: "heading-marker" });
+
 const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
-      this.widthCache = new Map();
-      this.measureEl = null;
       this.decorations = this.buildDecorations(view);
-      // Re-measure when fonts finish loading
-      document.fonts?.ready?.then(() => {
-        this.widthCache.clear();
-        if (view.dom.isConnected) {
-          this.decorations = this.buildDecorations(view);
-          view.requestMeasure();
-        }
-      });
     }
     update(update) {
-      // Clear cache on geometry or configuration changes (theme, font, size)
-      if (update.geometryChanged || update.transactions.some(tr => tr.effects.length > 0)) {
-        this.widthCache.clear();
-      }
       if (update.docChanged || update.viewportChanged || update.geometryChanged
           || update.transactions.some(tr => tr.effects.length > 0)) {
         this.decorations = this.buildDecorations(update.view);
       }
     }
-    measureMarkerWidth(view, level) {
-      if (this.widthCache.has(level)) return this.widthCache.get(level);
-      // Find a visible heading line of this level to sample its computed font
-      const { from, to } = view.viewport;
-      const doc = view.state.doc;
-      const prefix = "#".repeat(level) + " ";
-      let font = null;
-      for (let pos = from; pos <= to;) {
-        const line = doc.lineAt(pos);
-        if (line.text.startsWith(prefix)) {
-          const domPos = view.domAtPos(line.from);
-          const lineEl = domPos?.node?.nodeType === 1
-            ? domPos.node.closest(".cm-line")
-            : domPos?.node?.parentElement?.closest(".cm-line");
-          if (lineEl) {
-            const cs = getComputedStyle(lineEl);
-            font = cs.font;
-            break;
-          }
-        }
-        pos = line.to + 1;
-      }
-      if (!font) return null;
-      // Measure using a hidden span with the same font
-      if (!this.measureEl) {
-        this.measureEl = document.createElement("span");
-        this.measureEl.style.cssText = "position:absolute;visibility:hidden;white-space:pre;pointer-events:none;";
-        document.body.appendChild(this.measureEl);
-      }
-      this.measureEl.style.font = font;
-      this.measureEl.textContent = prefix;
-      const w = this.measureEl.getBoundingClientRect().width;
-      if (w > 0) {
-        this.widthCache.set(level, w);
-        return w;
-      }
-      return null;
-    }
     buildDecorations(view) {
       const builder = new RangeSetBuilder();
       const { from, to } = view.viewport;
       const doc = view.state.doc;
-      // First pass: ensure all visible heading levels are measured
-      for (let pos = from; pos <= to;) {
-        const line = doc.lineAt(pos);
-        const m = line.text.match(/^(#{1,6})\s/);
-        if (m && !this.widthCache.has(m[1].length)) {
-          this.measureMarkerWidth(view, m[1].length);
-        }
-        pos = line.to + 1;
-      }
-      // Second pass: create line decorations with the indent
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         const m = line.text.match(/^(#{1,6})\s/);
         if (m) {
-          const w = this.widthCache.get(m[1].length);
-          if (w) {
-            const px = Math.round(w);
-            builder.add(line.from, line.from, Decoration.line({
-              attributes: {
-                style: `text-indent: -${px}px;`
-              }
-            }));
-          }
+          // Line decoration: position:relative so the marker can be absolute
+          builder.add(line.from, line.from, Decoration.line({ class: "heading-indent" }));
+          // Mark decoration: wrap the "## " prefix
+          builder.add(line.from, line.from + m[0].length, headingMarkerDeco);
         }
         pos = line.to + 1;
       }
       return builder.finish();
-    }
-    destroy() {
-      this.widthCache.clear();
-      if (this.measureEl) { this.measureEl.remove(); this.measureEl = null; }
     }
   },
   { decorations: (v) => v.decorations }

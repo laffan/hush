@@ -74,6 +74,17 @@
   display: none;
 }
 
+/* Heading indent — pull # markers into the left margin */
+.heading-indent {
+  position: relative;
+}
+.heading-marker {
+  position: absolute;
+  right: 100%;
+  white-space: pre;
+  pointer-events: none;
+}
+
 
 
 /* Column width resizer — wide hit area, thin visible line */

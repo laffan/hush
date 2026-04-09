@@ -54,3 +54,22 @@
   opacity: 1;
   background: rgba(128, 128, 128, 0.15);
 }
+
+/* Privacy tab — decoy textarea (shared between standalone + modal) */
+#setting-decoy-text {
+  width: 100%;
+  min-height: 200px;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+#setting-decoy-text:focus {
+  border-color: rgba(128, 128, 128, 0.4);
+}

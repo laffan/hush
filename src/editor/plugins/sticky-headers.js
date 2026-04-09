@@ -20,9 +20,8 @@ export function createStickyHeadersPlugin(stateRef) {
       }
 
       update(update) {
-        // Always re-check: refresh() is cheap (caches HTML, early-returns when
-        // disabled) and must run on settings-toggle transactions that don't
-        // change the doc or viewport.
+        // Always re-check: refresh() is cheap (caches HTML, early-returns
+        // when disabled) and must run on settings-toggle transactions.
         this.refresh();
       }
 
@@ -35,14 +34,18 @@ export function createStickyHeadersPlugin(stateRef) {
           containerEl = document.createElement("div");
           containerEl.className = "sticky-headers";
           const editorContainer = document.getElementById("editor-container");
-          if (editorContainer) editorContainer.appendChild(containerEl);
+          if (editorContainer) {
+            // Insert as first child so it's on top of .cm-editor
+            editorContainer.insertBefore(containerEl, editorContainer.firstChild);
+          }
         }
         if (!this.scrollHandler) {
           const scroller = this.view.scrollDOM;
           this.scrollHandler = () => this.refresh();
-          scroller.addEventListener("scroll", this.scrollHandler, { passive: true });
+          scroller.addEventListener("scroll", this.scrollHandler, {
+            passive: true,
+          });
         }
-        // Listen for layout changes to sync padding
         if (!layoutHandler) {
           layoutHandler = () => this.syncPadding();
           stateRef.on("layout-changed", layoutHandler);
@@ -53,7 +56,9 @@ export function createStickyHeadersPlugin(stateRef) {
 
       syncPadding() {
         if (!containerEl) return;
-        const scroller = document.querySelector("#editor-container .cm-scroller");
+        const scroller = document.querySelector(
+          "#editor-container .cm-scroller"
+        );
         if (scroller) {
           containerEl.style.paddingLeft = scroller.style.paddingLeft || "";
           containerEl.style.paddingRight = scroller.style.paddingRight || "";
@@ -70,59 +75,49 @@ export function createStickyHeadersPlugin(stateRef) {
           return;
         }
 
-        const scroller = this.view.scrollDOM;
-        const doc = this.view.state.doc;
-        const editorRect = scroller.getBoundingClientRect();
+        const view = this.view;
+        const doc = view.state.doc;
 
-        // Find the top-most visible line position (below the sticky header area)
-        const stickyHeight = containerEl.offsetHeight || 0;
-        const topPos = this.view.posAtCoords({
-          x: editorRect.left + editorRect.width / 2,
-          y: editorRect.top + stickyHeight + 5,
-        });
-        if (topPos === null) {
-          if (this.lastHtml !== "") { containerEl.innerHTML = ""; this.lastHtml = ""; }
-          return;
-        }
+        // Determine the document position at the top of the visible area.
+        // Use the viewport start (reliable) instead of posAtCoords (which
+        // returns null when the probe lands in the scroller's padding).
+        const topPos = view.viewport.from;
 
-        // Collect all headings in the document
-        const headings = [];
+        // Collect all headings in the document up to the viewport start
+        const stack = [];
         for (let i = 1; i <= doc.lines; i++) {
           const line = doc.line(i);
+          if (line.from > topPos) break;
           const match = line.text.match(/^(#{1,6})\s+(.+)/);
           if (match) {
-            headings.push({
+            const h = {
               level: match[1].length,
               text: match[2].trim(),
               from: line.from,
-            });
+            };
+            while (
+              stack.length > 0 &&
+              stack[stack.length - 1].level >= h.level
+            ) {
+              stack.pop();
+            }
+            stack.push(h);
           }
-        }
-
-        if (headings.length === 0) {
-          if (this.lastHtml !== "") { containerEl.innerHTML = ""; this.lastHtml = ""; }
-          return;
-        }
-
-        // Find the heading hierarchy above the current scroll position.
-        const stack = [];
-        for (const h of headings) {
-          if (h.from > topPos) break;
-          // Pop any headings at the same level or deeper
-          while (stack.length > 0 && stack[stack.length - 1].level >= h.level) {
-            stack.pop();
-          }
-          stack.push(h);
         }
 
         if (stack.length === 0) {
-          if (this.lastHtml !== "") { containerEl.innerHTML = ""; this.lastHtml = ""; }
+          if (this.lastHtml !== "") {
+            containerEl.innerHTML = "";
+            this.lastHtml = "";
+          }
           return;
         }
 
-        // Only update DOM if content changed (avoid thrashing during scroll)
         const html = stack
-          .map(h => `<div class="sticky-header sticky-header-h${h.level}">${escapeHtml(h.text)}</div>`)
+          .map(
+            (h) =>
+              `<div class="sticky-header sticky-header-h${h.level}">${escapeHtml(h.text)}</div>`
+          )
           .join("");
         if (html !== this.lastHtml) {
           containerEl.innerHTML = html;
@@ -132,7 +127,10 @@ export function createStickyHeadersPlugin(stateRef) {
 
       teardown() {
         if (this.scrollHandler && this.view) {
-          this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
+          this.view.scrollDOM.removeEventListener(
+            "scroll",
+            this.scrollHandler
+          );
           this.scrollHandler = null;
         }
         if (layoutHandler) {
@@ -154,10 +152,9 @@ export function createStickyHeadersPlugin(stateRef) {
 }
 
 /**
- * Call this when the stickyHeaders setting changes to toggle the feature.
+ * Call when the stickyHeaders setting changes to toggle the feature.
  */
 export function updateStickyHeaders(view, state) {
-  // Force the plugin to re-evaluate by dispatching an empty transaction
   if (view) view.dispatch({ effects: [] });
 }
 

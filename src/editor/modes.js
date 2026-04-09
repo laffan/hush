@@ -3,6 +3,9 @@ export function applyModes(state) {
   app.classList.toggle("ratchet-active", state.ratchetMode);
   app.classList.toggle("private-mode", state.privateMode);
   app.classList.toggle("typewriter-mode", state.typewriterMode);
+  // Decoy mode neutralizes heading styles so the decoy text looks like plain prose
+  const isDecoy = state.privateMode && (state.settings.privacyMode === "decoy");
+  app.classList.toggle("decoy-mode", isDecoy);
 }
 
 export async function applyFullscreen(state) {
