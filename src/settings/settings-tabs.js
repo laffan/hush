@@ -452,10 +452,7 @@ export function renderSyncTab(settings) {
 export function renderPrivacyTab(settings) {
   const s = settings;
   const mode = s.privacyMode || "blackout";
-  const hasDecoy = !!(s.decoyText && s.decoyText.trim());
-  const preview = hasDecoy
-    ? escHtml(s.decoyText.slice(0, 120)) + (s.decoyText.length > 120 ? "..." : "")
-    : "";
+  const hasDummy = !!(s.dummyText && s.dummyText.trim());
 
   return `
     <div class="settings-section">
@@ -465,15 +462,15 @@ export function renderPrivacyTab(settings) {
         <label>Mode</label>
         <select id="setting-privacy-mode">
           <option value="blackout" ${mode === "blackout" ? "selected" : ""}>Blackout (opaque boxes)</option>
-          <option value="decoy" ${mode === "decoy" ? "selected" : ""}>Decoy document</option>
+          <option value="dummy" ${mode === "dummy" ? "selected" : ""}>Dummy document</option>
         </select>
       </div>
     </div>
     <div class="settings-section">
-      <h2>Decoy Document</h2>
-      <p class="settings-help">Paste the text of a decoy document below. When decoy mode is active, your writing will appear to be this text instead.</p>
-      <textarea id="setting-decoy-text" rows="12" placeholder="Paste your decoy document text here... e.g. a boring quarterly report, meeting notes, etc.">${escHtml(s.decoyText || "")}</textarea>
-      ${hasDecoy ? `<p class="settings-help" style="margin-top: 8px;">${s.decoyText.length.toLocaleString()} characters loaded</p>` : ""}
+      <h2>Dummy Document</h2>
+      <p class="settings-help">Paste the text of a dummy document below. When dummy mode is active, your writing will appear to be this text instead. Line breaks and formatting are stripped on paste.</p>
+      <textarea id="setting-dummy-text" rows="12" placeholder="Paste your dummy document text here... e.g. a boring quarterly report, meeting notes, etc.">${escHtml(s.dummyText || "")}</textarea>
+      ${hasDummy ? `<p class="settings-help" style="margin-top: 8px;">${s.dummyText.length.toLocaleString()} characters loaded</p>` : ""}
     </div>
   `;
 }

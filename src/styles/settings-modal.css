@@ -55,8 +55,8 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Privacy tab — decoy textarea (shared between standalone + modal) */
-#setting-decoy-text {
+/* Privacy tab — dummy text textarea (shared between standalone + modal) */
+#setting-dummy-text {
   width: 100%;
   min-height: 200px;
   background: rgba(128, 128, 128, 0.1);
@@ -70,6 +70,6 @@
   resize: vertical;
   outline: none;
 }
-#setting-decoy-text:focus {
+#setting-dummy-text:focus {
   border-color: rgba(128, 128, 128, 0.4);
 }

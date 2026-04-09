@@ -1,7 +1,7 @@
 /**
  * Private mode — CodeMirror ViewPlugin that either:
  * 1. "blackout" — wraps each non-whitespace character with opaque boxes
- * 2. "decoy"   — replaces ALL visible characters with a decoy document
+ * 2. "dummy"    — replaces ALL visible characters with a dummy document
  */
 import { ViewPlugin, Decoration } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
@@ -13,8 +13,8 @@ function buildDecorations(view, stateRef) {
 
   const mode = stateRef.settings.privacyMode || "blackout";
 
-  if (mode === "decoy" && stateRef.settings.decoyText) {
-    return buildDecoyDecorations(view, stateRef.settings.decoyText);
+  if (mode === "dummy" && stateRef.settings.dummyText) {
+    return buildDummyDecorations(view, stateRef.settings.dummyText);
   }
 
   // Default: blackout mode
@@ -32,19 +32,17 @@ function buildDecorations(view, stateRef) {
 }
 
 /**
- * Decoy mode: each LINE gets a stable offset into the decoy text based
+ * Dummy mode: each LINE gets a stable offset into the dummy text based
  * on its line number (lineNum * 997, a large prime).  Within the line,
  * characters advance sequentially from that offset.
  *
- * This means editing on line N only shifts decoy chars on line N.
- * All other lines stay completely stable.  The only disruption is when
- * inserting/deleting entire lines (changing line numbers), which is
- * much rarer than character edits.
+ * Editing on line N only shifts dummy chars on line N.
+ * All other lines stay completely stable.
  */
-function buildDecoyDecorations(view, decoyText) {
+function buildDummyDecorations(view, dummyText) {
   const builder = new RangeSetBuilder();
-  const decoyLen = decoyText.length;
-  if (decoyLen === 0) return Decoration.none;
+  const dummyLen = dummyText.length;
+  if (dummyLen === 0) return Decoration.none;
   const doc = view.state.doc;
 
   for (const { from, to } of view.visibleRanges) {
@@ -53,17 +51,17 @@ function buildDecoyDecorations(view, decoyText) {
       const line = doc.lineAt(pos);
       const lineStart = Math.max(line.from, from);
       const lineEnd = Math.min(line.to, to);
-      // Stable per-line offset: line number * large prime
-      const lineOffset = (line.number * 997) % decoyLen;
+      const lineOffset = (line.number * 997) % dummyLen;
+      const lineText = line.text;
 
       for (let i = lineStart; i <= lineEnd; i++) {
-        const ch = doc.sliceDoc(i, i + 1);
-        if (ch === "\n" || ch === "") continue;
-        const charInLine = i - line.from;
-        const decoyChar = decoyText[(lineOffset + charInLine) % decoyLen];
+        const chIdx = i - line.from;
+        if (chIdx >= lineText.length) break;
+        if (lineText[chIdx] === "\n") continue;
+        const dummyChar = dummyText[(lineOffset + chIdx) % dummyLen];
         builder.add(i, i + 1, Decoration.mark({
-          class: "hush-decoy-char",
-          attributes: { "data-decoy": decoyChar },
+          class: "hush-dummy-char",
+          attributes: { "data-dummy": dummyChar },
         }));
       }
       pos = line.to + 1;

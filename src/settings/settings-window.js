@@ -74,6 +74,9 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
   if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Mod+Shift+L";
   if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";
+  // Migrate old "decoy" → "dummy" naming
+  if (settings.privacyMode === "decoy") settings.privacyMode = "dummy";
+  if (settings.decoyText && !settings.dummyText) settings.dummyText = settings.decoyText;
 
   // Cmd+Q — hide the main window instead of quitting when in menu-bar-only mode.
   // DOM-level listener so it only fires when this settings window is focused.
@@ -208,14 +211,27 @@ function bindAll() {
 
   // Privacy tab
   bindSelect("setting-privacy-mode", "privacyMode");
-  const decoyTextEl = document.getElementById("setting-decoy-text");
-  if (decoyTextEl) {
-    let decoyTimer = null;
-    decoyTextEl.addEventListener("input", () => {
-      clearTimeout(decoyTimer);
-      decoyTimer = setTimeout(() => {
-        saveSetting("decoyText", decoyTextEl.value);
+  const dummyTextEl = document.getElementById("setting-dummy-text");
+  if (dummyTextEl) {
+    let dummyTimer = null;
+    dummyTextEl.addEventListener("input", () => {
+      clearTimeout(dummyTimer);
+      dummyTimer = setTimeout(() => {
+        saveSetting("dummyText", dummyTextEl.value);
       }, 500);
+    });
+    // Strip line breaks and extra whitespace on paste
+    dummyTextEl.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const raw = (e.clipboardData || window.clipboardData).getData("text");
+      const cleaned = raw.replace(/[\r\n]+/g, " ").replace(/\s{2,}/g, " ");
+      const start = dummyTextEl.selectionStart;
+      const end = dummyTextEl.selectionEnd;
+      const before = dummyTextEl.value.slice(0, start);
+      const after = dummyTextEl.value.slice(end);
+      dummyTextEl.value = before + cleaned + after;
+      dummyTextEl.selectionStart = dummyTextEl.selectionEnd = start + cleaned.length;
+      dummyTextEl.dispatchEvent(new Event("input"));
     });
   }
 

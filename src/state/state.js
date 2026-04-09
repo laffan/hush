@@ -125,9 +125,9 @@ export class AppState {
       shortcutSelectParagraph: "Mod+Shift+L",
       shortcutZotero: "Mod+Shift+I",
 
-      // Privacy — decoy text mode
-      privacyMode: "blackout", // "blackout" or "decoy"
-      decoyText: "",
+      // Privacy — dummy text mode
+      privacyMode: "blackout", // "blackout" or "dummy"
+      dummyText: "",
 
       // Session state
       lastFileId: null,

@@ -18,24 +18,24 @@
   display: none;
 }
 
-/* ===== Decoy Text Mode ===== */
-.hush-decoy-char {
+/* ===== Dummy Text Mode ===== */
+.hush-dummy-char {
   color: transparent !important;
   position: relative;
 }
 
-.hush-decoy-char::after {
-  content: attr(data-decoy);
+.hush-dummy-char::after {
+  content: attr(data-dummy);
   position: absolute;
   left: 0;
   color: var(--fg);
   pointer-events: none;
 }
 
-/* Normalize heading font-size in decoy mode so text looks like plain prose,
+/* Normalize heading font-size in dummy mode so text looks like plain prose,
    but keep font-weight so bold headings still look natural. */
-.decoy-mode #editor-container .cm-line,
-.decoy-mode #editor-container .cm-line span {
+.dummy-mode #editor-container .cm-line,
+.dummy-mode #editor-container .cm-line span {
   font-size: var(--font-size) !important;
   font-style: normal !important;
   text-decoration: none !important;
