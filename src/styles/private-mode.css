@@ -1,15 +1,21 @@
 /* ===== Private Mode ===== */
 
-/* Force private mode char spans to base font-size so heading font-sizes
-   (1.8x, 1.5x etc.) don't create oversized boxes or misaligned dummy text. */
+/* Force ALL text in the editor to be transparent when private mode is active.
+   This is necessary because CodeMirror's syntax highlighting creates inner
+   spans with explicit colors (heading color, link color, etc.) that override
+   the color:transparent on the .hush-private-char wrapper via CSS inheritance
+   rules (a child's explicit color beats a parent's inherited !important).
+   The blackout boxes remain visible via background on .hush-private-char.
+   The dummy text remains visible via ::after on .hush-dummy-char. */
 .private-mode #editor-container .cm-line,
 .private-mode #editor-container .cm-line span {
+  color: transparent !important;
   font-size: var(--font-size) !important;
   line-height: var(--line-height) !important;
+  text-decoration: none !important;
 }
 
 .hush-private-char {
-  color: transparent !important;
   background: var(--private-box);
   border-radius: 0;
   opacity: 0.5;
@@ -29,10 +35,11 @@
 
 /* ===== Dummy Text Mode ===== */
 .hush-dummy-char {
-  color: transparent !important;
   position: relative;
 }
 
+/* The dummy char is rendered via ::after with an explicit color,
+   so it stays visible even though the parent text is transparent. */
 .hush-dummy-char::after {
   content: attr(data-dummy);
   position: absolute;
@@ -41,9 +48,8 @@
   pointer-events: none;
 }
 
-/* Also normalize font-style / decoration in dummy mode */
+/* Normalize font-style and decoration in dummy mode */
 .dummy-mode #editor-container .cm-line span {
   font-style: normal !important;
-  text-decoration: none !important;
   opacity: 1 !important;
 }
