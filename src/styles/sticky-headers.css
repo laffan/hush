@@ -1,22 +1,19 @@
 /* Sticky Headers — shows heading hierarchy pinned to top of editor */
 .sticky-headers {
   position: fixed;
-  top: 30px; /* below drag region */
+  top: 0;
   left: 0;
   right: 0;
   z-index: 10;
-  pointer-events: none;
   padding: 8px 0 4px;
   background: var(--theme-bg, var(--bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
-/* Fade-out edge below the headers */
 .sticky-headers::after {
   content: "";
   display: block;
-  height: 16px;
-  background: linear-gradient(to bottom, var(--theme-bg, var(--bg)), transparent);
-  pointer-events: none;
+  height: 0;
 }
 
 .fullscreen-mode .sticky-headers {
@@ -32,6 +29,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.4;
+  cursor: pointer;
+}
+
+.sticky-header:hover {
+  opacity: 0.7;
 }
 
 .sticky-header-h1 { font-size: calc(var(--font-size) * 0.85); font-weight: 700; }
