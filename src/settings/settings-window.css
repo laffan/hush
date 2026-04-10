@@ -75,26 +75,11 @@ html, body {
   border-left: 2px solid transparent;
 }
 
-.settings-tab:hover {
-  background: var(--tab-hover);
-  color: var(--fg);
-}
-
-.settings-tab.active {
-  background: var(--tab-active);
-  color: var(--fg);
-  border-left-color: var(--fg);
-}
-
+.settings-tab:hover { background: var(--tab-hover); color: var(--fg); }
+.settings-tab.active { background: var(--tab-active); color: var(--fg); border-left-color: var(--fg); }
 .settings-tab svg {
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  flex-shrink: 0;
+  width: 16px; height: 16px; stroke: currentColor; fill: none;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0;
 }
 
 /* ===== Content Area ===== */
@@ -688,4 +673,19 @@ html, body {
 .dbx-browser-select { padding: 8px 18px; border: 1px solid var(--panel-border); background: rgba(50,120,220,0.15); color: var(--fg); border-radius: 6px; cursor: pointer; font-size: 13px; }
 .dbx-browser-select:hover { background: rgba(50,120,220,0.3); }
 
-
+/* Privacy tab — wider panel, styled textarea */
+#panel-privacy { max-width: 600px; }
+#setting-dummy-text {
+  width: 100%; box-sizing: border-box; min-height: 280px;
+  background: rgba(128, 128, 128, 0.06);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  color: var(--fg); padding: 16px 18px; border-radius: 8px;
+  font-size: 13px; font-family: system-ui, sans-serif;
+  line-height: 1.7; resize: vertical; outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+#setting-dummy-text:focus {
+  border-color: rgba(128, 128, 128, 0.35);
+  background: rgba(128, 128, 128, 0.09);
+}
+#setting-dummy-text::placeholder { color: var(--sidebar-fg, #888); opacity: 0.6; }
