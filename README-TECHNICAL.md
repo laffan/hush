@@ -8,11 +8,12 @@ Hush is a [Tauri v2](https://v2.tauri.app/) desktop app with a vanilla JavaScrip
 Frontend (src/)                        Backend (src-tauri/src/)
 ───────────                            ────────────────────
 main.js                  ←──IPC──→     lib.rs (commands)
-├── themes.js                          ├── settings.rs
-├── tauri-bridge.js                    ├── files.rs
-├── zotero.js                          ├── snapshots.rs
-│                                      ├── sync.rs
-├── editor/                            └── zotero.rs
+├── theme-colors.js                    ├── settings.rs
+├── themes.js                          ├── files.rs
+├── tauri-bridge.js                    ├── snapshots.rs
+├── zotero.js                          ├── sync.rs
+│                                      └── zotero.rs
+├── editor/
 │   ├── editor.js
 │   ├── modes.js
 │   ├── formatting.js
@@ -29,6 +30,7 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │       ├── link-decorator.js
 │       ├── private-mode.js
 │       ├── project-view.js
+│       ├── sticky-headers.js
 │       └── typewriter.js
 │
 ├── sidebar/
@@ -102,21 +104,26 @@ On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invok
 
 Tree traversal utilities live in `state/tree-helpers.js` (`findNode`, `removeNode`, `collectDocumentIds`, `insertAfter`, etc.).
 
+### Theme Colors (`theme-colors.js`)
+
+Extracted from `main.js`. Contains `fontFallbacks` map, `themeBackgrounds` color table, `hexLuminance()`, `updatePrivateBoxColor()` (derives `--private-box`, `--theme-bg`, `--fg`, `--cursor`, panel colors from the active theme background), and `applyFontFamily()`.
+
 ### Editor (`editor/editor.js`, `editor/modes.js`)
 
 The CodeMirror 6 instance is configured with:
 
 - **Markdown language** with inline syntax highlighting (headings get scaled font sizes, syntax characters dimmed to 40% opacity)
 - **Custom inline parsers** for `%%comments%%` and `==highlighted text==`
+- **Heading indent plugin** — pulls `#` markers into the left margin via mark decorations (`position: absolute; right: 100%`) so heading text aligns with body text
 - **Heading normalization** — optional setting to remove scaled heading sizes
 - **Theme/highlight compartments** for live reconfiguration
 - **Ratchet keymap** (`Prec.highest`) intercepting all deletion/navigation/selection keys when ratchet mode is active
 - **Transaction filter** blocking deletions and non-end insertions in ratchet mode
 - **Mouse filter** blocking mousedown in ratchet mode
 
-**Plugins loaded:** private mode, D.R.Y. highlighting, footnotes, focus mode, callouts, project view (separators), flag highlighting, link decorator, encourage typing.
+**Plugins loaded:** private mode, D.R.Y. highlighting, footnotes, focus mode, callouts, project view (separators), flag highlighting, link decorator, heading indent, sticky headers, encourage typing.
 
-**`editor/modes.js`** contains mode application (`applyModes`, `applyFullscreen`), column width/resizer management (`updateColumnResizers`), and ratchet timer display (`updateRatchetTimer`).
+**`editor/modes.js`** contains mode application (`applyModes`, `applyFullscreen`), column width/resizer management (`updateColumnResizers`), and ratchet timer display (`updateRatchetTimer`). `applyModes` toggles CSS classes on `#app`: `ratchet-active`, `private-mode`, `typewriter-mode`, and `dummy-mode` (when private mode + dummy text is active).
 
 Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements sit 10px outside the column edges. When the sidebar panel is open in inset mode, the column re-centers within remaining space.
 
@@ -179,7 +186,7 @@ Two modes:
 
 Sentence-level navigation and editing, ported from [obsidian-sentence-navigator](https://github.com/laffan/obsidian-sentence-navigator). Detects boundaries using punctuation rules (`.` `!` `?`) with closing delimiter handling.
 
-Commands: `selectSentence`, `reduceSentenceSelection`, `jumpToNextSentence`, `jumpToPrevSentence`, `shiftSelectionToNextSentence`, `shiftSelectionToPreviousSentence`, `moveSentenceForward`, `moveSentenceBack`, `deleteToSentenceEnd`, `jumpToNextParagraph`, `jumpToPrevParagraph`.
+Commands: `selectSentence`, `reduceSentenceSelection`, `jumpToNextSentence`, `jumpToPrevSentence`, `shiftSelectionToNextSentence`, `shiftSelectionToPreviousSentence`, `moveSentenceForward`, `moveSentenceBack`, `deleteToSentenceEnd`, `jumpToNextParagraph`, `jumpToPrevParagraph`, `selectParagraph`, `joinLines`.
 
 ### Footnotes (`editor/plugins/footnotes.js`, `editor/plugins/footnotes-ui.js`)
 
@@ -203,7 +210,16 @@ Break timer that periodically nudges the user to keep writing. Configurable inte
 
 ### Private Mode (`editor/plugins/private-mode.js`)
 
-ViewPlugin that replaces every non-whitespace character with an opaque box via CSS class. Also hides footnote decorations and marginalia.
+ViewPlugin with two modes, controlled by the `privacyMode` setting:
+
+- **Blackout** (default) — Wraps every non-whitespace character in a `.hush-private-char` span with `color: transparent` and a solid `background` box. CSS forces all text in `.cm-line` to `color: transparent !important` so CodeMirror's inner syntax spans (heading colors, link colors) can't show through.
+- **Dummy text** — Wraps every non-newline character in a `.hush-dummy-char` span. Each line gets a stable offset into the user-provided dummy text (`lineNumber * 997 % dummyLen`), so editing on one line doesn't shift other lines' dummy characters. The real text is invisible; a `::after` pseudo-element renders the dummy character.
+
+When private mode is active, `applyModes()` adds `.private-mode` to `#app` (both modes) and `.dummy-mode` (dummy only). CSS hides footnotes, marginalia, and heading indent markers.
+
+### Sticky Headers (`editor/plugins/sticky-headers.js`)
+
+ViewPlugin that shows the current heading hierarchy pinned to the top of the editor (`position: fixed; top: 0`). Collects all headings above `viewport.from` and builds a nested stack. Clicking a header smooth-scrolls to that heading. Syncs left/right padding with the editor scroller. Controlled by the `stickyHeaders` setting.
 
 ### Typewriter Mode (`editor/plugins/typewriter.js`)
 
@@ -237,7 +253,7 @@ Global shortcut registration via `@tauri-apps/plugin-global-shortcut`. Shortcuts
 
 Runs in a separate Tauri WebviewWindow (desktop) or modal overlay (iOS). Loads/saves settings via IPC, notifies main window via events.
 
-**Tabs:** General (visibility, always-on-top), Editor (appearance, themes, fonts, headers, footnotes, typewriter, sizes), Shortcuts (customizable with conflict detection), D.R.Y. (detection range, stopwords), Flags (outline view settings), Sync (folder sync, Dropbox), Zotero (API credentials, reference management).
+**Tabs:** General (visibility, always-on-top), Editor (appearance, themes, fonts, headers, footnotes, typewriter, sizes), Shortcuts (customizable with conflict detection), D.R.Y. (detection range, stopwords), Flags (outline view settings), Privacy (blackout vs dummy mode, dummy text input), Sync (folder sync, Dropbox), Zotero (API credentials, reference management).
 
 Tab rendering is split into `settings-tabs.js` to keep file sizes under 700 lines.
 
@@ -252,7 +268,7 @@ Wraps [thememirror](https://github.com/vadimdemedes/thememirror). Exports `theme
 
 Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
-`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `utility.css`.
+`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `utility.css`.
 
 The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 
@@ -272,7 +288,11 @@ Defines the Tauri app setup:
 
 `AppSettings` struct with `serde rename_all = "camelCase"` for JS interop. All fields use `#[serde(default)]` for backward compatibility. Persisted as JSON at `{data_dir}/settings.json`.
 
-`Style` struct: `{ id, name, theme_id, font_family, font_size, line_height, color_overrides }`.
+**Important:** Every setting used by the JS frontend must have a corresponding field in `AppSettings`. Serde silently drops unknown fields during deserialization, so missing fields cause settings to be lost on save/load round-trips.
+
+Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy_text` (String), `block_cursor` (bool), `block_cursor_color` (Option), `sticky_headers` (bool), shortcut fields for all customizable bindings.
+
+`Style` struct: `{ id, name, theme_id, font_family, font_size, line_height, color_overrides, light/dark variants, block_cursor overrides, header suppression flags }`.
 
 ### `files.rs`
 
@@ -362,7 +382,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | New file | `Cmd+N` |
 | Find / replace | `Cmd+F` |
 | Find across files | `Cmd+Shift+F` |
-| Zotero search | `Cmd+Shift+Z` |
+| Zotero search | `Cmd+Shift+I` |
 | Open settings | `Cmd+,` (hardcoded) |
 
 ### Editing
@@ -370,6 +390,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Action | Default |
 |--------|---------|
 | Select sentence | `Cmd+L` |
+| Select paragraph | `Cmd+Shift+L` |
 | Reduce sentence selection | `Alt+Shift+L` |
 | Select next instance | `Cmd+D` |
 | Select previous instance | `Cmd+Shift+D` |
@@ -382,6 +403,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Move sentence forward | `Alt+Cmd+Right` |
 | Move sentence back | `Alt+Cmd+Left` |
 | Delete to sentence end | `Alt+Shift+Backspace` |
+| Join lines (pull up) | `Cmd+J` |
 
 ### Formatting
 
