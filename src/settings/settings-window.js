@@ -75,6 +75,12 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
   if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Mod+Shift+L";
   if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";
+  if (!settings.shortcutSave) settings.shortcutSave = "Mod+S";
+  if (!settings.shortcutFindNext) settings.shortcutFindNext = "Mod+G";
+  if (!settings.shortcutFindPrev) settings.shortcutFindPrev = "Mod+Shift+G";
+  if (!settings.shortcutJoinLines) settings.shortcutJoinLines = "Mod+J";
+  if (!settings.shortcutJumpNextParagraph) settings.shortcutJumpNextParagraph = "Mod+ArrowDown";
+  if (!settings.shortcutJumpPrevParagraph) settings.shortcutJumpPrevParagraph = "Mod+ArrowUp";
   // Migrate old "decoy" → "dummy" naming
   if (settings.privacyMode === "decoy") settings.privacyMode = "dummy";
   if (settings.decoyText && !settings.dummyText) settings.dummyText = settings.decoyText;

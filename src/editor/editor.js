@@ -1,5 +1,5 @@
 import { EditorView, keymap, drawSelection, placeholder, ViewPlugin, Decoration } from "@codemirror/view";
-import { EditorState, EditorSelection, Prec, Compartment, Annotation, RangeSetBuilder } from "@codemirror/state";
+import { EditorState, Prec, Compartment, Annotation, RangeSetBuilder } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags, Tag } from "@lezer/highlight";
@@ -9,20 +9,17 @@ import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { getActiveTheme } from "../themes.js";
 import { createPrivateModePlugin } from "./plugins/private-mode.js";
 import { createDryHighlightPlugin } from "./plugins/dry-highlight.js";
-import { openSettingsWindow } from "../settings/settings-ui.js";
-import { openFindReplace, openFindAll, findNext, findPrev } from "./find-replace.js";
-import { selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence, shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack, deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence, jumpToPrevParagraph, jumpToNextParagraph, joinLines, selectParagraph } from "./sentence-navigator.js";
-import { toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough } from "./formatting.js";
-import { createFootnotePlugin, insertFootnote } from "./plugins/footnotes.js";
+import { createFootnotePlugin } from "./plugins/footnotes.js";
 import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } from "./plugins/project-view.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
-import { openZoteroModal } from "../zotero.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, applyRatchetTypewriterPadding, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
 import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
+import { buildCodeMirrorKeymap } from "../shortcuts.js";
+import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 
 // Custom tags for our extensions
 const commentTag = Tag.define();
@@ -68,7 +65,20 @@ const HighlightExtension = {
 
 const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
+const shortcutCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
+
+/**
+ * Build the shortcut extension for the current settings.  This is wrapped
+ * in `Prec.highest` so it wins against CodeMirror's defaults and any
+ * plugin keymaps.  Called on startup and again whenever settings change.
+ */
+function buildShortcutExtension(state) {
+  const commands = buildEditorCommands();
+  const userBindings = buildCodeMirrorKeymap(state, commands);
+  const fixed = buildFixedKeymap(state);
+  return Prec.highest(keymap.of([...userBindings, ...fixed]));
+}
 
 // Plugin that pulls heading markers (# ## etc.) into the left margin so
 // heading text aligns with body text.  Uses mark decorations with absolute
@@ -339,103 +349,9 @@ export function createEditor(container, state) {
     keymap.of(ratchetBlockedKeys.map(key => ({ key, run: () => state.ratchetMode })))
   );
 
-  // Global keyboard shortcuts
-  const globalKeymap = Prec.highest(
-    keymap.of([
-      { key: "Mod-s", run: () => { state.saveCurrentFile(); state.createManualSnapshot(); return true; } },
-      { key: "Mod-,", run: () => { openSettingsWindow(state); return true; } },
-      { key: "Mod-Shift-p", run: () => { state.togglePrivate(); return true; } },
-      { key: "Mod-l", run: (view) => selectSentence(view) },
-      { key: "Alt-Shift-l", run: (view) => reduceSentenceSelection(view) },
-      { key: "Mod-Shift-i", run: (view) => { openZoteroModal(view, state); return true; } },
-      { key: "Mod-Shift-l", run: (view) => selectParagraph(view) },
-      { key: "Mod-ArrowRight", run: (view) => jumpToNextSentence(view) },
-      { key: "Mod-ArrowLeft", run: (view) => jumpToPrevSentence(view) },
-      { key: "Mod-Shift-ArrowRight", run: (view) => shiftSelectionToNextSentence(view) },
-      { key: "Mod-Shift-ArrowLeft", run: (view) => shiftSelectionToPreviousSentence(view) },
-      { key: "Alt-Mod-ArrowRight", run: (view) => moveSentenceForward(view) },
-      { key: "Alt-Mod-ArrowLeft", run: (view) => moveSentenceBack(view) },
-      { key: "Alt-Shift-Backspace", run: (view) => deleteToSentenceEnd(view) },
-      { key: "Mod-b", run: (view) => toggleBold(view) },
-      { key: "Mod-i", run: (view) => toggleItalic(view) },
-      { key: "Mod-=", run: (view) => toggleHighlight(view) },
-      { key: "Mod-/", run: (view) => toggleComment(view) },
-      { key: "Mod-`", run: (view) => toggleStrikethrough(view) },
-      { key: "Mod-Shift-m", run: (view) => insertFootnote(view) },
-      { key: "Mod-j", run: (view) => joinLines(view) },
-      { key: "Mod-Shift-t", run: () => { state.toggleTypewriter(); return true; } },
-      { key: "Mod-Shift-r", run: () => { state.toggleDry(); return true; } },
-      { key: "Mod-Shift-y", run: () => { state.toggleFocus(); return true; } },
-      { key: "Mod-ArrowUp", run: (view) => jumpToPrevParagraph(view) },
-      { key: "Mod-ArrowDown", run: (view) => jumpToNextParagraph(view) },
-      { key: "Mod-n", run: () => { state.newFile(); return true; } },
-      { key: "Mod-f", run: (view) => { openFindReplace(view, state); return true; } },
-      { key: "Mod-Shift-f", run: (view) => { openFindAll(view, state); return true; } },
-      { key: "Mod-g", run: () => findNext() },
-      { key: "Mod-Shift-g", run: () => findPrev() },
-      { key: "Mod-d", run: (view) => {
-        const sel = view.state.selection.main;
-        if (sel.empty) {
-          const line = view.state.doc.lineAt(sel.head);
-          const text = line.text;
-          const offset = sel.head - line.from;
-          let start = offset, end = offset;
-          while (start > 0 && /\w/.test(text[start - 1])) start--;
-          while (end < text.length && /\w/.test(text[end])) end++;
-          if (start !== end) {
-            view.dispatch({ selection: { anchor: line.from + start, head: line.from + end } });
-          }
-        } else {
-          const selected = view.state.sliceDoc(sel.from, sel.to);
-          const docText = view.state.doc.toString();
-          const allRanges = view.state.selection.ranges;
-          const lastRange = allRanges[allRanges.length - 1];
-          const searchFrom = Math.max(lastRange.from, lastRange.to);
-          let nextIdx = docText.indexOf(selected, searchFrom);
-          if (nextIdx === -1) nextIdx = docText.indexOf(selected, 0);
-          const alreadySelected = allRanges.some(r => {
-            const from = Math.min(r.anchor, r.head);
-            return from === nextIdx;
-          });
-          if (nextIdx !== -1 && !alreadySelected) {
-            const ranges = allRanges.map(r =>
-              EditorSelection.range(r.anchor, r.head)
-            );
-            ranges.push(EditorSelection.range(nextIdx, nextIdx + selected.length));
-            view.dispatch({
-              selection: EditorSelection.create(ranges, ranges.length - 1)
-            });
-          }
-        }
-        return true;
-      }},
-      { key: "Mod-Shift-d", run: (view) => {
-        const sel = view.state.selection.main;
-        if (sel.empty) return false;
-        const selected = view.state.sliceDoc(sel.from, sel.to);
-        const docText = view.state.doc.toString();
-        const allRanges = view.state.selection.ranges;
-        const firstRange = allRanges[0];
-        const searchBefore = Math.min(firstRange.from, firstRange.to);
-        let prevIdx = docText.lastIndexOf(selected, searchBefore - 1);
-        if (prevIdx === -1) prevIdx = docText.lastIndexOf(selected);
-        const alreadySelected = allRanges.some(r => {
-          const from = Math.min(r.anchor, r.head);
-          return from === prevIdx;
-        });
-        if (prevIdx !== -1 && !alreadySelected) {
-          const ranges = allRanges.map(r =>
-            EditorSelection.range(r.anchor, r.head)
-          );
-          ranges.unshift(EditorSelection.range(prevIdx, prevIdx + selected.length));
-          view.dispatch({
-            selection: EditorSelection.create(ranges, 0)
-          });
-        }
-        return true;
-      }},
-    ])
-  );
+  // Global keyboard shortcuts — built from `state.settings` so the settings
+  // panel can change bindings at runtime via the shortcut compartment.
+  const initialShortcuts = buildShortcutExtension(state);
 
   const ratchetFilter = EditorState.transactionFilter.of((tr) => {
     if (!state.ratchetMode || tr.annotation(bypassRatchet)) return tr;
@@ -500,7 +416,7 @@ export function createEditor(container, state) {
       drawSelection(),
       closeBrackets(),
       updateListener,
-      globalKeymap,
+      shortcutCompartment.of(initialShortcuts),
       ratchetKeymap,
       ratchetFilter,
       ratchetMouseFilter,
@@ -638,9 +554,15 @@ export function createEditor(container, state) {
     const normalizeHeaderColor = _activeStyle?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
     const headingColor = normalizeHeaderColor ? undefined : t?.headingColor;
     view.dispatch({
-      effects: highlightCompartment.reconfigure(
-        syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor))
-      ),
+      effects: [
+        highlightCompartment.reconfigure(
+          syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor))
+        ),
+        // Rebuild the shortcut keymap from the freshly-saved settings so
+        // edits in the Settings > Shortcuts panel take effect immediately
+        // (no restart needed).
+        shortcutCompartment.reconfigure(buildShortcutExtension(state)),
+      ],
     });
     // Update typewriter line opacity
     if (getTypewriterBoundary()) {

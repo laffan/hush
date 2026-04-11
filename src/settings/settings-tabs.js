@@ -6,7 +6,11 @@ import { themeList } from "../themes.js";
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
 import { renderFlagsTab } from "../longview/longview-settings.js";
 
-// Shortcuts organized by category
+// Shortcuts organized by category.  This list is the exhaustive inventory
+// of every user-customizable shortcut in the app — every entry here must
+// have a matching field in `AppSettings` (Rust) and a handler registered
+// in `editor/editor.js` via `buildCodeMirrorKeymap` so that edits in the
+// settings UI actually take effect.
 export const shortcutCategories = [
   {
     name: "General",
@@ -20,8 +24,11 @@ export const shortcutCategories = [
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },
       { key: "shortcutNewFile", label: "New file" },
+      { key: "shortcutSave", label: "Save file" },
       { key: "shortcutFind", label: "Find / replace" },
       { key: "shortcutFindAll", label: "Find across files" },
+      { key: "shortcutFindNext", label: "Find next match" },
+      { key: "shortcutFindPrev", label: "Find previous match" },
       { key: "shortcutZotero", label: "Zotero search" },
     ],
   },
@@ -32,14 +39,17 @@ export const shortcutCategories = [
       { key: "shortcutSelectParagraph", label: "Select paragraph" },
       { key: "shortcutReduceSentence", label: "Reduce sentence selection" },
       { key: "shortcutSelectNext", label: "Select next instance" },
+      { key: "shortcutSelectPrevious", label: "Select previous instance" },
       { key: "shortcutJumpNextSentence", label: "Jump to next sentence" },
       { key: "shortcutJumpPrevSentence", label: "Jump to previous sentence" },
+      { key: "shortcutJumpNextParagraph", label: "Jump to next paragraph" },
+      { key: "shortcutJumpPrevParagraph", label: "Jump to previous paragraph" },
       { key: "shortcutNextSentence", label: "Shift selection to next sentence" },
       { key: "shortcutPrevSentence", label: "Shift selection to previous sentence" },
       { key: "shortcutMoveSentenceForward", label: "Move sentence forward" },
       { key: "shortcutMoveSentenceBack", label: "Move sentence back" },
-      { key: "shortcutSelectPrevious", label: "Select previous instance" },
       { key: "shortcutDeleteToSentenceEnd", label: "Delete to sentence end" },
+      { key: "shortcutJoinLines", label: "Join lines (pull up)" },
     ],
   },
   {

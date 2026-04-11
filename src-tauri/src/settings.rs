@@ -204,6 +204,18 @@ pub struct AppSettings {
     pub shortcut_strikethrough: String,
     #[serde(default = "default_shortcut_select_paragraph")]
     pub shortcut_select_paragraph: String,
+    #[serde(default = "default_shortcut_save")]
+    pub shortcut_save: String,
+    #[serde(default = "default_shortcut_find_next")]
+    pub shortcut_find_next: String,
+    #[serde(default = "default_shortcut_find_prev")]
+    pub shortcut_find_prev: String,
+    #[serde(default = "default_shortcut_join_lines")]
+    pub shortcut_join_lines: String,
+    #[serde(default = "default_shortcut_jump_next_paragraph")]
+    pub shortcut_jump_next_paragraph: String,
+    #[serde(default = "default_shortcut_jump_prev_paragraph")]
+    pub shortcut_jump_prev_paragraph: String,
 
     // Ratchet mode
     #[serde(default)]
@@ -475,6 +487,24 @@ fn default_shortcut_strikethrough() -> String {
 fn default_shortcut_select_paragraph() -> String {
     "Mod+Shift+L".to_string()
 }
+fn default_shortcut_save() -> String {
+    "Mod+S".to_string()
+}
+fn default_shortcut_find_next() -> String {
+    "Mod+G".to_string()
+}
+fn default_shortcut_find_prev() -> String {
+    "Mod+Shift+G".to_string()
+}
+fn default_shortcut_join_lines() -> String {
+    "Mod+J".to_string()
+}
+fn default_shortcut_jump_next_paragraph() -> String {
+    "Mod+ArrowDown".to_string()
+}
+fn default_shortcut_jump_prev_paragraph() -> String {
+    "Mod+ArrowUp".to_string()
+}
 fn default_privacy_mode() -> String {
     "blackout".to_string()
 }
@@ -559,6 +589,12 @@ impl Default for AppSettings {
             shortcut_zotero: default_shortcut_zotero(),
             shortcut_strikethrough: default_shortcut_strikethrough(),
             shortcut_select_paragraph: default_shortcut_select_paragraph(),
+            shortcut_save: default_shortcut_save(),
+            shortcut_find_next: default_shortcut_find_next(),
+            shortcut_find_prev: default_shortcut_find_prev(),
+            shortcut_join_lines: default_shortcut_join_lines(),
+            shortcut_jump_next_paragraph: default_shortcut_jump_next_paragraph(),
+            shortcut_jump_prev_paragraph: default_shortcut_jump_prev_paragraph(),
             privacy_mode: default_privacy_mode(),
             dummy_text: String::new(),
             block_cursor: false,

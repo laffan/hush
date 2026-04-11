@@ -6,8 +6,9 @@ import { applyAppearance, isIOS } from "./settings/settings-ui.js";
 import { getThemeById } from "./themes.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
-import { findNext, findPrev } from "./editor/find-replace.js";
 import { createLongView } from "./longview/longview.js";
+import { dispatchDomShortcut } from "./shortcuts.js";
+import { buildEditorCommands } from "./editor/commands.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
@@ -190,56 +191,64 @@ async function init() {
     if (state.editor) state.editor.focus();
   });
 
-  // Window-level keyboard shortcuts — active when ANY part of the window is focused
+  // Window-level keyboard shortcuts — the CodeMirror keymap handles every
+  // shortcut while the editor has focus (which is >99% of the time).  This
+  // listener is a fallback for when focus is outside the editor (e.g. right
+  // after closing a modal, before focus is returned to the editor).  It
+  // reads from the exact same shortcut settings + commands map as the
+  // editor keymap, so behaviour stays in sync and changes in the settings
+  // panel take effect instantly.
+  const windowCommands = buildEditorCommands();
   window.addEventListener("keydown", (e) => {
-    // Skip shortcuts already consumed by CodeMirror's keymap (prevents double-toggle)
+    // Skip shortcuts already consumed by CodeMirror's keymap.  When the
+    // editor is focused, CM calls `preventDefault()` as soon as it handles
+    // a binding, so we avoid double-firing here.
     if (e.defaultPrevented) return;
-    const mod = e.metaKey || e.ctrlKey;
-    // Cmd+Shift+F — toggle fullscreen
-    if (mod && e.shiftKey && e.key === "F") {
-      e.preventDefault();
-      state.toggleFullscreen();
-      return;
-    }
-    // Cmd+Shift+P — toggle private mode
-    if (mod && e.shiftKey && (e.key === "p" || e.key === "P")) {
-      e.preventDefault();
-      state.togglePrivate();
-      return;
-    }
-    // Cmd+Shift+\ — toggle right sidebar (Outline View) — check BEFORE Cmd+\
-    if (mod && e.shiftKey && e.key === "\\") {
-      e.preventDefault();
-      const rp = document.getElementById("right-panel-overlay");
-      if (rp.classList.contains("hidden")) {
-        state.emit("show-outline");
-      } else {
-        state.emit("hide-outline");
-      }
-      return;
-    }
-    // Cmd+\ — toggle left sidebar
-    if (mod && !e.shiftKey && e.key === "\\") {
-      e.preventDefault();
-      const sb = document.getElementById("sidebar");
-      const po = document.getElementById("panel-overlay");
-      const isVisible = sb.classList.contains("pinned") ||
-                        sb.classList.contains("visible") ||
-                        !po.classList.contains("hidden");
-      if (isVisible) {
-        state.emit("hide-panel");
-      } else {
-        sb.classList.add("pinned");
-        state.emit("show-files-panel");
+
+    // Don't hijack keystrokes while the user is typing into some other
+    // input (e.g. a sidebar search box, a settings field).  The editor
+    // itself uses CodeMirror's contentDOM, which never matches these
+    // selectors — so the fallback still works when focus is on body/etc.
+    const t = e.target;
+    if (t && t !== document.body) {
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) {
+        return;
       }
     }
-    // Cmd+G — next find match
-    if (mod && !e.shiftKey && e.key === "g") {
-      if (findNext()) e.preventDefault();
+
+    const view = state.editor ? state.editor.view : null;
+    if (dispatchDomShortcut(e, state, windowCommands, view)) {
+      e.preventDefault();
     }
-    // Cmd+Shift+G — previous find match
-    if (mod && e.shiftKey && e.key === "G") {
-      if (findPrev()) e.preventDefault();
+  });
+
+  // Sidebar toggle (left panel) — emitted by the centralised shortcut
+  // dispatcher via `state.emit("toggle-left-panel")`.  The DOM-touching
+  // logic lives here where the sidebar/panel elements are created.
+  state.on("toggle-left-panel", () => {
+    const sb = document.getElementById("sidebar");
+    const po = document.getElementById("panel-overlay");
+    if (!sb || !po) return;
+    const isVisible = sb.classList.contains("pinned") ||
+                      sb.classList.contains("visible") ||
+                      !po.classList.contains("hidden");
+    if (isVisible) {
+      state.emit("hide-panel");
+    } else {
+      sb.classList.add("pinned");
+      state.emit("show-files-panel");
+    }
+  });
+
+  // Outline toggle (right panel) — emitted by the shortcut dispatcher.
+  state.on("toggle-outline-panel", () => {
+    const rp = document.getElementById("right-panel-overlay");
+    if (!rp) return;
+    if (rp.classList.contains("hidden")) {
+      state.emit("show-outline");
+    } else {
+      state.emit("hide-outline");
     }
   });
 

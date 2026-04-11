@@ -64,7 +64,18 @@ export class AppState {
       shortcutItalic: "Mod+I",
       shortcutHighlight: "Mod+=",
       shortcutComment: "Mod+/",
+      shortcutStrikethrough: "Mod+`",
       shortcutInsertFootnote: "Mod+Shift+M",
+
+      // Shortcuts — Additional editing actions
+      shortcutSelectParagraph: "Mod+Shift+L",
+      shortcutSave: "Mod+S",
+      shortcutFindNext: "Mod+G",
+      shortcutFindPrev: "Mod+Shift+G",
+      shortcutJoinLines: "Mod+J",
+      shortcutJumpNextParagraph: "Mod+ArrowDown",
+      shortcutJumpPrevParagraph: "Mod+ArrowUp",
+      shortcutZotero: "Mod+Shift+I",
 
       // D.R.Y. highlighting
       dryRange: "paragraph",
