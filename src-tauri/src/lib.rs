@@ -49,7 +49,10 @@ pub struct TreeNode {
     pub node_type: String, // "document" | "folder" | "project"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_id: Option<String>, // only for documents — points to files/{uuid}.json
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // Always serialized (even when empty) so the JS frontend always
+    // receives a real array — skipping empty children broke sync-folder
+    // reconciliation when inserting files into previously-empty folders.
+    #[serde(default)]
     pub children: Vec<TreeNode>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub flagged: bool,

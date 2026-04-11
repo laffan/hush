@@ -663,9 +663,13 @@ function findSyncFolderNode(nodes, syncFolderId) {
   return null;
 }
 
-/** Ensure subdirectory nodes exist in the tree, creating them if needed. */
+/** Ensure subdirectory nodes exist in the tree, creating them if needed.
+ * Also ensures every folder node walked through has a real `children`
+ * array — legacy trees persisted before the Rust TreeNode serde fix may
+ * have missing children fields on empty folders. */
 function ensureSubdirectories(root, pathParts) {
   let current = root;
+  if (!Array.isArray(current.children)) current.children = [];
   for (const dirName of pathParts) {
     if (!dirName) continue;
     let child = current.children.find(
@@ -677,6 +681,8 @@ function ensureSubdirectories(root, pathParts) {
         children: [], flagged: false,
       };
       current.children.push(child);
+    } else if (!Array.isArray(child.children)) {
+      child.children = [];
     }
     current = child;
   }
