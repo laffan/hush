@@ -607,7 +607,11 @@ async function init() {
     }
   });
 
-  // Sync: poll for external changes every 30 seconds
+  // Sync: poll for external changes every 10 seconds. A full folder diff
+  // (detects external renames, moves, deletes, new files, stale folders)
+  // runs on the first cycle after startup and again whenever the window
+  // regains focus — so the tree reflects filesystem state immediately on
+  // return from Finder/Dropbox/Obsidian/etc.
   if (IS_TAURI && state.settings.syncFolders?.length) {
     import("./sync/sync-polling.js").then(m => m.startSyncPolling(state));
   }
@@ -619,6 +623,31 @@ async function init() {
       sp.stopSyncPolling();
     }
   });
+
+  // Reconcile sync folders against the filesystem whenever the window
+  // regains focus. Users typically move/rename/delete files in Finder or
+  // Dropbox and then switch back to Hush — without this they'd have to
+  // wait a full poll cycle to see the changes.
+  if (IS_TAURI) {
+    let lastFocusReconcile = 0;
+    const maybeReconcile = async () => {
+      if (!state.settings.syncFolders?.length) return;
+      // Debounce — ignore rapid focus/visibility flaps.
+      const now = Date.now();
+      if (now - lastFocusReconcile < 2000) return;
+      lastFocusReconcile = now;
+      try {
+        const sp = await import("./sync/sync-polling.js");
+        sp.triggerFullReconcile();
+      } catch (e) {
+        console.error("Focus reconcile failed:", e);
+      }
+    };
+    window.addEventListener("focus", maybeReconcile);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") maybeReconcile();
+    });
+  }
 }
 
 init().catch(console.error);

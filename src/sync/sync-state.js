@@ -486,13 +486,14 @@ export async function reconcileSync(state) {
 
 /**
  * Diff a sync folder against its filesystem contents.
- * Detects new files (created externally) and deleted files (removed externally).
- * Creates/removes internal files and tree nodes accordingly.
+ * Detects new files (created externally), deleted files (removed externally),
+ * and folders that no longer exist on disk. Creates/removes internal files
+ * and tree nodes so the in-memory tree reflects the filesystem.
  * Returns true if any changes were made.
  */
 export async function diffSyncFolder(state, syncFolder) {
   if (!IS_TAURI) return false;
-  const { findNode, findNodeByFileId, removeNode } = await import("../state/tree-helpers.js");
+  const { findNodeByFileId, removeNode } = await import("../state/tree-helpers.js");
 
   try {
     let diff;
@@ -503,12 +504,12 @@ export async function diffSyncFolder(state, syncFolder) {
     }
 
     if (!diff) return false;
-    const hasChanges = (diff.newFiles?.length > 0) || (diff.deletedFileIds?.length > 0);
-    if (!hasChanges) return false;
 
     // Find the sync folder root node in the tree
     const syncRoot = findSyncFolderNode(state.fileTree, syncFolder.id);
     if (!syncRoot) return false;
+
+    let changed = false;
 
     // Handle new external files — create internal files + tree nodes
     for (const entry of (diff.newFiles || [])) {
@@ -528,6 +529,7 @@ export async function diffSyncFolder(state, syncFolder) {
         fileId: file.id, children: [], flagged: false,
       };
       parentNode.children.push(docNode);
+      changed = true;
     }
 
     // Handle externally deleted files — remove tree nodes + unregister
@@ -535,12 +537,25 @@ export async function diffSyncFolder(state, syncFolder) {
       const treeNode = findNodeByFileId(state.fileTree, internalId);
       if (treeNode) {
         removeNode(state.fileTree, treeNode.id);
+        changed = true;
       }
       try {
         const fp = syncFolder.syncType === "dropbox" ? "__dropbox__" : syncFolder.path;
         await tauriInvoke("delete_sync_file", { folderPath: fp, internalId });
       } catch (_) {}
     }
+
+    // Prune folder nodes whose path no longer exists on disk. This catches
+    // folders that were renamed, moved, or deleted externally — without
+    // this, the old empty folder nodes would linger in the tree forever.
+    if (Array.isArray(diff.diskDirectories)) {
+      const diskDirs = new Set(diff.diskDirectories.map(normalizeRelPath));
+      if (pruneStaleFolders(syncRoot, diskDirs)) {
+        changed = true;
+      }
+    }
+
+    if (!changed) return false;
 
     await state.saveFileTree();
     state.files = await tauriInvoke("list_files");
@@ -550,6 +565,45 @@ export async function diffSyncFolder(state, syncFolder) {
     console.error("Sync folder diff failed:", e);
     return false;
   }
+}
+
+/** Normalize a relative path: forward slashes, no trailing slash. */
+function normalizeRelPath(p) {
+  return String(p || "").replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/**
+ * Recursively remove folder descendants of `syncRoot` whose relative path
+ * (built from node names) is not in `diskDirs`. Documents, projects, and
+ * folders that are themselves sync-folder roots are left alone.
+ * Returns true if any nodes were removed.
+ */
+function pruneStaleFolders(syncRoot, diskDirs) {
+  let removed = false;
+  function walk(node, parentPath) {
+    if (!node.children) return;
+    // Iterate in reverse so splice is safe
+    for (let i = node.children.length - 1; i >= 0; i--) {
+      const child = node.children[i];
+      if (child.type !== "folder") continue;
+      if (child.syncFolderId) continue; // don't touch nested sync roots
+      const childPath = parentPath ? `${parentPath}/${child.name}` : child.name;
+      // Recurse first so we clean up deeper stale folders before deciding
+      walk(child, childPath);
+      if (!diskDirs.has(normalizeRelPath(childPath))) {
+        // Only remove if it now has no children — avoids nuking a folder that
+        // currently holds documents the diff didn't flag as deleted (e.g.
+        // because of an error). New-file handling may also have added
+        // children we want to keep.
+        if (!child.children || child.children.length === 0) {
+          node.children.splice(i, 1);
+          removed = true;
+        }
+      }
+    }
+  }
+  walk(syncRoot, "");
+  return removed;
 }
 
 /**
@@ -562,11 +616,12 @@ async function diffDropboxFolder(state, syncFolder) {
   dbx.setToken(state.settings.dropboxToken);
   const { invoke } = await import("@tauri-apps/api/core");
 
-  // List all .md files on Dropbox
+  // List all entries on Dropbox
   const rawEntries = await dbx.listFolderRecursive(
     syncFolder.path === "/" ? "" : syncFolder.path
   );
   const dropboxPaths = new Set();
+  const diskDirectories = [];
   const newFiles = [];
 
   // Get all registered files for this folder
@@ -574,7 +629,10 @@ async function diffDropboxFolder(state, syncFolder) {
   const registeredPaths = new Set(syncedFiles.map(f => f.relativePath));
 
   for (const entry of rawEntries) {
-    if (entry.isDirectory) continue;
+    if (entry.isDirectory) {
+      diskDirectories.push(entry.relativePath);
+      continue;
+    }
     dropboxPaths.add(entry.relativePath);
     if (!registeredPaths.has(entry.relativePath)) {
       // New file on Dropbox — download its content
@@ -590,7 +648,7 @@ async function diffDropboxFolder(state, syncFolder) {
     .filter(f => !dropboxPaths.has(f.relativePath))
     .map(f => f.internalId);
 
-  return { newFiles, deletedFileIds };
+  return { newFiles, deletedFileIds, diskDirectories };
 }
 
 /** Find the sync folder root node in the tree by syncFolderId. */

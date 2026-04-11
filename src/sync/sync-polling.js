@@ -16,6 +16,8 @@ const HEALTH_CHECK_INTERVAL = 6; // check every 6 poll cycles (60 seconds)
 /** Folder diff counter — full scan every 3 poll cycles (30 seconds). */
 let _diffCounter = 0;
 const DIFF_INTERVAL = 3;
+/** Set by triggerFullReconcile — forces a folder diff on the next cycle. */
+let _forceDiffNextCycle = false;
 
 export function isDropboxConnected() {
   return _dropboxConnected;
@@ -24,13 +26,28 @@ export function isDropboxConnected() {
 export function startSyncPolling(state) {
   if (syncPollTimer) return;
   _state = state;
+  // Force the very first cycle to run the full folder diff so that any
+  // external changes made while the app was closed are reconciled
+  // immediately, rather than waiting ~22s for the counter to tick over.
+  _forceDiffNextCycle = true;
   syncPollTimer = setInterval(() => runSyncCycle(state), 10000);
-  setTimeout(() => runSyncCycle(state), 2000);
+  setTimeout(() => runSyncCycle(state), 500);
 }
 
 /** Trigger an immediate sync cycle (e.g. after a file save). */
 export function triggerImmediateSync() {
   if (_state) runSyncCycle(_state);
+}
+
+/**
+ * Trigger an immediate full reconciliation (content check + folder diff).
+ * Use this on window focus or after the user returns from another app —
+ * files may have been moved, renamed, added, or deleted externally.
+ */
+export function triggerFullReconcile() {
+  if (!_state) return;
+  _forceDiffNextCycle = true;
+  runSyncCycle(_state);
 }
 
 export function stopSyncPolling() {
@@ -40,9 +57,13 @@ export function stopSyncPolling() {
 async function runSyncCycle(state) {
   if (syncing) return;
   syncing = true;
+  // Capture and clear the force-diff flag once per cycle so both local and
+  // Dropbox passes observe the same value.
+  const forceDiff = _forceDiffNextCycle;
+  _forceDiffNextCycle = false;
   try {
-    await syncLocalFolders(state);
-    await syncDropboxFolders(state);
+    await syncLocalFolders(state, forceDiff);
+    await syncDropboxFolders(state, forceDiff);
     // Periodic Dropbox connection health check
     _healthCheckCounter++;
     if (_healthCheckCounter >= HEALTH_CHECK_INTERVAL) {
@@ -57,7 +78,7 @@ async function runSyncCycle(state) {
 }
 
 /** Auto-sync local filesystem folders via Rust backend. */
-async function syncLocalFolders(state) {
+async function syncLocalFolders(state, forceDiff) {
   const { checkSyncChanges, acceptExternalChange, syncFileToExternal,
           diffSyncFolder } = await import("./sync-state.js");
 
@@ -77,9 +98,11 @@ async function syncLocalFolders(state) {
     }
   }
 
-  // Periodically diff folder contents to detect new/deleted external files
+  // Periodically diff folder contents to detect new/deleted/moved external
+  // files and stale folders. Normally runs every DIFF_INTERVAL cycles, but
+  // can be forced for startup or window-focus reconciliation.
   _diffCounter++;
-  if (_diffCounter >= DIFF_INTERVAL) {
+  if (forceDiff || _diffCounter >= DIFF_INTERVAL) {
     _diffCounter = 0;
     const localFolders = (state.settings.syncFolders || []).filter(f => f.syncType === "local");
     for (const folder of localFolders) {
@@ -90,7 +113,7 @@ async function syncLocalFolders(state) {
 }
 
 /** Auto-sync Dropbox folders by comparing timestamps. */
-async function syncDropboxFolders(state) {
+async function syncDropboxFolders(state, forceDiff) {
   const folders = (state.settings.syncFolders || []).filter(f => f.syncType === "dropbox");
   if (!folders.length || !state.settings.dropboxToken) return;
   const { invoke } = await import("@tauri-apps/api/core");
@@ -112,8 +135,9 @@ async function syncDropboxFolders(state) {
   }
 
   // Periodically diff Dropbox folder contents (uses HEALTH_CHECK_INTERVAL
-  // since listing is expensive — same cadence as the health check, ~60s)
-  if (_healthCheckCounter === 0) {
+  // since listing is expensive — same cadence as the health check, ~60s).
+  // Also run immediately if a full reconcile was requested (startup, focus).
+  if (_healthCheckCounter === 0 || forceDiff) {
     const { diffSyncFolder } = await import("./sync-state.js");
     for (const folder of folders) {
       try {

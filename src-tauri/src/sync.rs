@@ -51,6 +51,9 @@ pub struct ExternalChange {
 pub struct SyncFolderDiff {
     pub new_files: Vec<ImportEntry>,
     pub deleted_file_ids: Vec<String>, // internal_ids of files no longer on disk
+    /// All subdirectory relative paths currently on disk. Used by the
+    /// frontend to prune stale empty folder nodes from the tree.
+    pub disk_directories: Vec<String>,
 }
 
 pub struct SyncManager {
@@ -468,8 +471,9 @@ impl SyncManager {
     }
 
     /// Compare the filesystem contents of a local sync folder against the
-    /// sync map. Returns new files (on disk but not registered) and deleted
-    /// files (registered but no longer on disk).
+    /// sync map. Returns new files (on disk but not registered), deleted
+    /// files (registered but no longer on disk), and the full set of
+    /// directory paths currently on disk (for pruning stale folder nodes).
     pub fn diff_sync_folder(&self, folder: &SyncFolder) -> SyncFolderDiff {
         use std::collections::HashSet;
 
@@ -482,11 +486,14 @@ impl SyncManager {
             .collect();
 
         let mut disk_files: HashSet<String> = HashSet::new();
+        let mut disk_directories: Vec<String> = Vec::new();
         let mut new_files = Vec::new();
 
         if let Ok(entries) = Self::scan_folder(&folder.path) {
             for entry in entries {
-                if !entry.is_directory {
+                if entry.is_directory {
+                    disk_directories.push(entry.relative_path.clone());
+                } else {
                     disk_files.insert(entry.relative_path.clone());
                     if !registered.contains(&entry.relative_path) {
                         new_files.push(entry);
@@ -508,6 +515,7 @@ impl SyncManager {
         SyncFolderDiff {
             new_files,
             deleted_file_ids,
+            disk_directories,
         }
     }
 
