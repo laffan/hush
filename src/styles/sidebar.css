@@ -71,10 +71,10 @@
   left: 50px;
   width: 300px;
   height: 100%;
-  background: var(--panel-bg, var(--bg));
+  background: var(--theme-bg, var(--bg));
   color: var(--fg);
   border-right: 1px solid var(--panel-border);
-  z-index: 90;
+  z-index: 100;
   padding: 20px;
   overflow-y: auto;
   transition: transform 0.2s, opacity 0.2s;
@@ -82,9 +82,9 @@
 
 /* Inset mode: panel sits in the editor's left margin, no overlay */
 #panel-overlay.panel-inset {
-  background: transparent;
+  background: var(--theme-bg, var(--bg));
   border-right: none;
-  z-index: 90;
+  z-index: 100;
 }
 
 #panel-overlay.hidden {
@@ -108,7 +108,7 @@
   pointer-events: none;
   cursor: pointer;
   transition: opacity 0.15s;
-  z-index: 91;
+  z-index: 101;
 }
 .panel-pin-btn svg circle {
   transition: fill 0.15s;
