@@ -19,6 +19,7 @@ let activeTab = "general";
 let settingsRootEl = null;
 let onSaveCallback = null;
 let drySearchQuery = '';
+let shortcutSearchQuery = '';
 
 /**
  * Initialize the settings UI into a given root element.
@@ -116,7 +117,7 @@ function render() {
           ${renderEditorTab(settings)}
         </div>
         <div class="settings-panel${activeTab === 'shortcuts' ? ' active' : ''}" id="panel-shortcuts">
-          ${renderShortcutsTab(settings)}
+          ${renderShortcutsTab(settings, shortcutSearchQuery)}
         </div>
         <div class="settings-panel${activeTab === 'dry' ? ' active' : ''}" id="panel-dry">
           ${renderDryTab(settings, drySearchQuery)}
@@ -471,14 +472,29 @@ function bindAll() {
   // Shortcuts tab — click on shortcut-keys to record
   document.querySelectorAll(".shortcut-display .shortcut-keys").forEach(el => {
     el.addEventListener("click", () => {
-      // Find the parent row to get the shortcut key
       const wrap = el.closest(".shortcut-row-wrap");
-      const idx = Array.from(document.querySelectorAll(".shortcut-row-wrap")).indexOf(wrap);
-      if (idx >= 0 && idx < shortcutDefs.length) {
-        startShortcutRecording(el, shortcutDefs[idx].key);
+      const settingKey = wrap?.dataset?.shortcutKey;
+      if (settingKey) {
+        startShortcutRecording(el, settingKey);
       }
     });
   });
+
+  // Shortcuts tab — search input
+  const shortcutSearchInput = document.getElementById("shortcut-search-input");
+  if (shortcutSearchInput) {
+    shortcutSearchInput.addEventListener("input", () => {
+      shortcutSearchQuery = shortcutSearchInput.value;
+      const pos = shortcutSearchInput.selectionStart;
+      render();
+      // Restore focus + caret after re-render so typing is seamless.
+      const newInput = document.getElementById("shortcut-search-input");
+      if (newInput) {
+        newInput.focus();
+        try { newInput.setSelectionRange(pos, pos); } catch (e) { /* noop */ }
+      }
+    });
+  }
 
 }
 

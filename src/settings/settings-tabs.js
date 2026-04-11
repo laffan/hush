@@ -306,25 +306,98 @@ function getSystemFonts() {
 }
 
 // ===== Shortcuts Tab =====
-export function renderShortcutsTab(settings) {
-  let html = '';
+export function renderShortcutsTab(settings, searchQuery = "") {
+  const q = (searchQuery || "").trim().toLowerCase();
+
+  // Collect all shortcuts with conflict + category info
+  const all = [];
   for (const category of shortcutCategories) {
-    html += `<div class="settings-section"><h2>${category.name}</h2>`;
     for (const def of category.shortcuts) {
-      const conflict = findConflict(settings, def.key);
-      html += `<div class="shortcut-row-wrap">
-        <div class="shortcut-row-inner">
-          <label>${def.label}</label>
-          <div class="shortcut-display">
-            ${renderShortcutKeys(settings[def.key])}
-          </div>
-        </div>
-        ${conflict ? `<div class="shortcut-conflict">Conflicts with "${conflict}"</div>` : ''}
-      </div>`;
+      all.push({
+        ...def,
+        categoryName: category.name,
+        conflict: findConflict(settings, def.key),
+      });
+    }
+  }
+
+  const matchesQuery = (item) => {
+    if (!q) return true;
+    if (item.label.toLowerCase().includes(q)) return true;
+    const val = settings[item.key];
+    if (val && val.toLowerCase().includes(q)) return true;
+    return false;
+  };
+
+  const conflictItems = all.filter((s) => s.conflict);
+  const conflictKeys = new Set(conflictItems.map((s) => s.key));
+
+  let html = `
+    <div class="settings-section shortcut-search-section">
+      <div class="shortcut-search-row">
+        <input type="text" id="shortcut-search-input" placeholder="Search shortcuts…" value="${escAttr(searchQuery)}" autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+  `;
+
+  // Pinned conflicts — always visible at the top when any exist.
+  if (conflictItems.length > 0) {
+    html += `<div class="settings-section shortcut-conflicts-section"><h2>Conflicts</h2>`;
+    for (const item of conflictItems) {
+      html += renderShortcutRow(settings, item, q, item.categoryName);
     }
     html += `</div>`;
   }
+
+  // Regular categories — exclude items already shown in the Conflicts section
+  // and filter by search query.
+  let anyMatches = false;
+  for (const category of shortcutCategories) {
+    const items = category.shortcuts
+      .filter((def) => !conflictKeys.has(def.key))
+      .map((def) => ({ ...def, conflict: null }))
+      .filter(matchesQuery);
+    if (items.length === 0) continue;
+    anyMatches = true;
+    html += `<div class="settings-section"><h2>${category.name}</h2>`;
+    for (const item of items) {
+      html += renderShortcutRow(settings, item, q);
+    }
+    html += `</div>`;
+  }
+
+  if (q && !anyMatches && conflictItems.filter(matchesQuery).length === 0) {
+    html += `<div class="settings-section"><p class="settings-help">No shortcuts match "${escHtml(searchQuery)}".</p></div>`;
+  }
+
   return html;
+}
+
+function renderShortcutRow(settings, def, query, categoryLabel) {
+  const labelHtml = highlightMatch(def.label, query);
+  const categoryTag = categoryLabel
+    ? ` <span class="shortcut-category-tag">${escHtml(categoryLabel)}</span>`
+    : "";
+  return `<div class="shortcut-row-wrap" data-shortcut-key="${escAttr(def.key)}">
+    <div class="shortcut-row-inner">
+      <label>${labelHtml}${categoryTag}</label>
+      <div class="shortcut-display">
+        ${renderShortcutKeys(settings[def.key])}
+      </div>
+    </div>
+    ${def.conflict ? `<div class="shortcut-conflict">Conflicts with "${escHtml(def.conflict)}"</div>` : ""}
+  </div>`;
+}
+
+function highlightMatch(text, query) {
+  if (!query) return escHtml(text);
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(query);
+  if (idx < 0) return escHtml(text);
+  const before = text.slice(0, idx);
+  const match = text.slice(idx, idx + query.length);
+  const after = text.slice(idx + query.length);
+  return `${escHtml(before)}<mark class="shortcut-search-hit">${escHtml(match)}</mark>${escHtml(after)}`;
 }
 
 export function renderShortcutKeys(shortcut) {

@@ -1,3 +1,5 @@
+@import "./shortcut-editor.css";
+
 *, *::before, *::after {
   margin: 0;
   padding: 0;
@@ -172,81 +174,6 @@ html, body {
   color: var(--sidebar-fg);
   min-width: 36px;
   text-align: right;
-}
-
-/* ===== Shortcut Editor ===== */
-.shortcut-display {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.shortcut-keys {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  background: rgba(128, 128, 128, 0.1);
-  border: 1px solid rgba(128, 128, 128, 0.2);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-family: system-ui, sans-serif;
-  color: var(--fg);
-  min-width: 120px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.shortcut-keys:hover {
-  border-color: rgba(128, 128, 128, 0.4);
-}
-
-.shortcut-keys kbd {
-  background: rgba(128, 128, 128, 0.15);
-  border: 1px solid rgba(128, 128, 128, 0.2);
-  border-radius: 3px;
-  padding: 1px 5px;
-  font-size: 11px;
-  font-family: system-ui, sans-serif;
-}
-
-/* Recording state */
-.shortcut-keys.recording {
-  border-color: rgba(100, 150, 255, 0.5);
-  background: rgba(100, 150, 255, 0.1);
-}
-
-.shortcut-keys.recording::after {
-  content: 'Press keys...';
-  color: var(--sidebar-fg);
-  font-style: italic;
-}
-
-/* Conflict warning */
-.shortcut-conflict {
-  font-size: 11px;
-  color: #e55;
-  margin-top: 4px;
-}
-
-.shortcut-row-wrap {
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
-}
-
-.shortcut-row-wrap:last-child {
-  border-bottom: none;
-}
-
-.shortcut-row-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.shortcut-row-inner label {
-  font-size: 14px;
-  color: var(--fg);
 }
 
 /* ===== Style Editor ===== */

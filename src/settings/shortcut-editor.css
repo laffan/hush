@@ -1,0 +1,132 @@
+/* ===== Shortcut Editor ===== */
+.shortcut-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  min-width: 120px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.shortcut-keys:hover {
+  border-color: rgba(128, 128, 128, 0.4);
+}
+
+.shortcut-keys kbd {
+  background: rgba(128, 128, 128, 0.15);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+}
+
+/* Recording state */
+.shortcut-keys.recording {
+  border-color: rgba(100, 150, 255, 0.5);
+  background: rgba(100, 150, 255, 0.1);
+}
+
+.shortcut-keys.recording::after {
+  content: 'Press keys...';
+  color: var(--sidebar-fg);
+  font-style: italic;
+}
+
+/* Conflict warning */
+.shortcut-conflict {
+  font-size: 11px;
+  color: #e55;
+  margin-top: 4px;
+}
+
+.shortcut-row-wrap {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.shortcut-row-wrap:last-child {
+  border-bottom: none;
+}
+
+.shortcut-row-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shortcut-row-inner label {
+  font-size: 14px;
+  color: var(--fg);
+}
+
+/* Shortcut search */
+.shortcut-search-section {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 2;
+  padding-top: 4px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.shortcut-search-row input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--tab-bg);
+  color: var(--fg);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.shortcut-search-row input:focus {
+  outline: none;
+  border-color: rgba(100, 150, 255, 0.5);
+}
+
+.shortcut-search-hit {
+  background: rgba(255, 220, 80, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Pinned conflicts section */
+.shortcut-conflicts-section {
+  border: 1px solid rgba(229, 85, 85, 0.35);
+  border-radius: 8px;
+  padding: 4px 14px 8px;
+  background: rgba(229, 85, 85, 0.06);
+}
+
+.shortcut-conflicts-section h2 {
+  color: #e55;
+}
+
+.shortcut-category-tag {
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  font-weight: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
