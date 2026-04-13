@@ -431,6 +431,27 @@ function showRatchetDropdown(anchor, state, onStart) {
   dropdown.style.left = "60px";
   dropdown.style.top = rect.top + "px";
 
+  // Options section (checkboxes)
+  const optionsSection = document.createElement("div");
+  optionsSection.className = "ratchet-options-section";
+
+  const encourageLabel = document.createElement("label");
+  encourageLabel.className = "ratchet-checkbox-label";
+  const encourageCheckbox = document.createElement("input");
+  encourageCheckbox.type = "checkbox";
+  encourageCheckbox.checked = !!state.settings.ratchetEncourageTyping;
+  encourageCheckbox.addEventListener("change", () => {
+    state.updateSettings({ ratchetEncourageTyping: encourageCheckbox.checked });
+  });
+  encourageLabel.appendChild(encourageCheckbox);
+  encourageLabel.appendChild(document.createTextNode(" Encourage typing"));
+  optionsSection.appendChild(encourageLabel);
+  dropdown.appendChild(optionsSection);
+
+  // Duration grid (two columns)
+  const grid = document.createElement("div");
+  grid.className = "ratchet-duration-grid";
+
   const durations = [5, 10, 15, 20, 25, 30, 45, 60];
   durations.forEach((min) => {
     const opt = document.createElement("div");
@@ -441,9 +462,10 @@ function showRatchetDropdown(anchor, state, onStart) {
       dropdown.remove();
       onStart();
     });
-    dropdown.appendChild(opt);
+    grid.appendChild(opt);
   });
 
+  dropdown.appendChild(grid);
   document.body.appendChild(dropdown);
 
   setTimeout(() => {

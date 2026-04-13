@@ -209,14 +209,6 @@ export function renderEditorTab(settings) {
     </div>
 
     <div class="settings-section">
-      <h2>Ratchet Mode</h2>
-      <div class="settings-row">
-        <label>Encourage typing</label>
-        <input type="checkbox" id="setting-ratchet-encourage" ${s.ratchetEncourageTyping ? "checked" : ""} />
-      </div>
-    </div>
-
-    <div class="settings-section">
       <h2>Footnotes</h2>
       <div class="settings-slider-row">
         <label>Font size</label>

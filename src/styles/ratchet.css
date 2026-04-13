@@ -8,10 +8,40 @@
   z-index: 200;
   font-family: system-ui, sans-serif;
   font-size: 13px;
+  width: 180px;
+}
+
+/* Options section (checkboxes) — full-width above duration grid */
+.ratchet-options-section {
+  padding: 4px 8px 8px;
+  border-bottom: 1px solid var(--panel-border);
+  margin-bottom: 6px;
+}
+
+.ratchet-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+
+.ratchet-checkbox-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Duration grid — two columns */
+.ratchet-duration-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
 }
 
 .ratchet-dropdown .ratchet-option {
-  padding: 8px 16px;
+  padding: 7px 8px;
   cursor: pointer;
   border-radius: 4px;
   text-align: center;

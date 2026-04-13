@@ -208,7 +208,6 @@ function bindAll() {
     });
   }
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
-  bindCheckbox("setting-ratchet-encourage", "ratchetEncourageTyping");
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");
   bindSelect("setting-footnote-font-family", "footnoteFontFamily");
   bindCheckbox("setting-footnote-use-colors", "footnoteUseColors");
