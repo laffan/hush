@@ -80,6 +80,13 @@ export function updatePrivateBoxColor(state, overrideBg) {
     const b = parseInt(bg.slice(5, 7), 16);
     root.setProperty("--panel-bg", `rgba(${r}, ${g}, ${b}, 0.98)`);
     root.setProperty("--panel-border", isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)");
+
+    // iOS: set background color directly on html/body to avoid safe-area
+    // black bars caused by CSS variable resolution lag during transitions
+    if (document.documentElement.classList.contains("ios")) {
+      document.documentElement.style.backgroundColor = bg;
+      document.body.style.backgroundColor = bg;
+    }
   }
 }
 

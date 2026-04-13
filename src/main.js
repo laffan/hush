@@ -431,7 +431,7 @@ async function init() {
     if (document.visibilityState === "hidden") {
       state.saveSessionState();
     }
-    // iPad: reset zoom level when returning from another app
+    // iPad: reset zoom level and refresh background when returning from another app
     if (document.visibilityState === "visible" && isIOS()) {
       const viewport = document.querySelector('meta[name="viewport"]');
       if (viewport) {
@@ -446,6 +446,8 @@ async function init() {
           });
         }
       }
+      // Re-apply background color to prevent black safe-area bars
+      updatePrivateBoxColor(state);
     }
   });
 
