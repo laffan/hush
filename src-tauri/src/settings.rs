@@ -217,6 +217,18 @@ pub struct AppSettings {
     #[serde(default = "default_shortcut_jump_prev_paragraph")]
     pub shortcut_jump_prev_paragraph: String,
 
+    // Style shortcuts (Cmd+1 = Default, Cmd+2..5 = first 4 user styles)
+    #[serde(default = "default_shortcut_style_default")]
+    pub shortcut_style_default: String,
+    #[serde(default = "default_shortcut_style_1")]
+    pub shortcut_style1: String,
+    #[serde(default = "default_shortcut_style_2")]
+    pub shortcut_style2: String,
+    #[serde(default = "default_shortcut_style_3")]
+    pub shortcut_style3: String,
+    #[serde(default = "default_shortcut_style_4")]
+    pub shortcut_style4: String,
+
     // Ratchet mode
     #[serde(default)]
     pub ratchet_encourage_typing: bool,
@@ -505,6 +517,21 @@ fn default_shortcut_jump_next_paragraph() -> String {
 fn default_shortcut_jump_prev_paragraph() -> String {
     "Mod+ArrowUp".to_string()
 }
+fn default_shortcut_style_default() -> String {
+    "Mod+1".to_string()
+}
+fn default_shortcut_style_1() -> String {
+    "Mod+2".to_string()
+}
+fn default_shortcut_style_2() -> String {
+    "Mod+3".to_string()
+}
+fn default_shortcut_style_3() -> String {
+    "Mod+4".to_string()
+}
+fn default_shortcut_style_4() -> String {
+    "Mod+5".to_string()
+}
 fn default_privacy_mode() -> String {
     "blackout".to_string()
 }
@@ -595,6 +622,11 @@ impl Default for AppSettings {
             shortcut_join_lines: default_shortcut_join_lines(),
             shortcut_jump_next_paragraph: default_shortcut_jump_next_paragraph(),
             shortcut_jump_prev_paragraph: default_shortcut_jump_prev_paragraph(),
+            shortcut_style_default: default_shortcut_style_default(),
+            shortcut_style1: default_shortcut_style_1(),
+            shortcut_style2: default_shortcut_style_2(),
+            shortcut_style3: default_shortcut_style_3(),
+            shortcut_style4: default_shortcut_style_4(),
             privacy_mode: default_privacy_mode(),
             dummy_text: String::new(),
             block_cursor: false,

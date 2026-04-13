@@ -77,6 +77,13 @@ export class AppState {
       shortcutJumpPrevParagraph: "Mod+ArrowUp",
       shortcutZotero: "Mod+Shift+I",
 
+      // Shortcuts — Styles
+      shortcutStyleDefault: "Mod+1",
+      shortcutStyle1: "Mod+2",
+      shortcutStyle2: "Mod+3",
+      shortcutStyle3: "Mod+4",
+      shortcutStyle4: "Mod+5",
+
       // D.R.Y. highlighting
       dryRange: "paragraph",
       dryStopwords: [],

@@ -7,6 +7,7 @@
  */
 
 import { themeList, getThemeById } from "../themes.js";
+import { parseShortcut } from "../shortcuts.js";
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function escAttr(str) {
@@ -16,6 +17,19 @@ function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+/** Format a shortcut string for inline display (e.g. "Mod+1" → "⌘1"). */
+function formatShortcutBadge(raw) {
+  const p = parseShortcut(raw);
+  if (!p) return "";
+  const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
+  const parts = [];
+  if (p.mod) parts.push(isMac ? "\u2318" : "Ctrl+");
+  if (p.shift) parts.push(isMac ? "\u21e7" : "Shift+");
+  if (p.alt) parts.push(isMac ? "\u2325" : "Alt+");
+  parts.push(p.key.length === 1 ? p.key.toUpperCase() : p.key);
+  return parts.join("");
 }
 
 /** Migrate old single-mode styles to dual light/dark format. */
@@ -101,12 +115,18 @@ export function renderStylesPanel(state) {
 
   html += `<div class="style-list-sidebar">`;
 
+  // Shortcut setting keys for style slots (Default + first 4 styles)
+  const styleShortcutKeys = ["shortcutStyleDefault", "shortcutStyle1", "shortcutStyle2", "shortcutStyle3", "shortcutStyle4"];
+
   const isDefault = !activeId;
+  const defaultBadge = formatShortcutBadge(state.settings[styleShortcutKeys[0]]);
   html += `<div class="style-sidebar-item${isDefault ? ' active' : ''}" data-style-id="">
     <span class="style-sidebar-name" style="font-size:14px;">Default</span>
+    ${defaultBadge ? `<span class="style-shortcut-badge">${escHtml(defaultBadge)}</span>` : ""}
   </div>`;
 
-  for (const st of styles) {
+  for (let i = 0; i < styles.length; i++) {
+    const st = styles[i];
     migrateStyle(st);
     const isActive = activeId === st.id;
     const appearance = state.settings.appearance || "dark";
@@ -114,9 +134,11 @@ export function renderStylesPanel(state) {
     const bg = colors.bg || themeBackgrounds[themeId] || (appearance === "light" ? "#fafafa" : "#1a1a1a");
     const fg = colors.fg || themeForegrounds[themeId] || (appearance === "light" ? "#1a1a1a" : "#e0e0e0");
     const fontSize = st.fontSize || state.settings.fontSize || 20;
+    const badge = i < 4 ? formatShortcutBadge(state.settings[styleShortcutKeys[i + 1]]) : "";
     html += `<div class="style-sidebar-item${isActive ? ' active' : ''}" data-style-id="${st.id}"
       style="background:${bg}; color:${fg}; font-size:${Math.min(fontSize, 16)}px;${st.fontFamily ? ` font-family:'${st.fontFamily}';` : ''}">
       <span class="style-sidebar-name">${escHtml(st.name)}</span>
+      ${badge ? `<span class="style-shortcut-badge">${escHtml(badge)}</span>` : ""}
       <span class="style-sidebar-actions">
         <button data-action="edit" data-id="${st.id}" title="Edit">
           <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -137,7 +159,7 @@ export function renderStylesPanel(state) {
 }
 
 /** Check if the current document has a locked style. */
-function getLockedStyleId(state) {
+export function getLockedStyleId(state) {
   if (!state.currentFileId || !state.fileTree) return null;
   function search(nodes) {
     for (const n of nodes) {
