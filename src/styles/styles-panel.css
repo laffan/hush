@@ -558,4 +558,10 @@
   opacity: 0.45;
   margin-left: auto;
   flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.style-sidebar-item:hover .style-shortcut-badge {
+  opacity: 0;
+  pointer-events: none;
 }
