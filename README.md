@@ -18,6 +18,8 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Keyboard-First** — Global shortcuts work even when the app is hidden:
 
+**Command Palette** — Press `⌘P` to open a searchable command palette with quick access to all modes and major actions. Active modes appear at the top as "Turn off" entries for fast toggling.
+
 All shortcuts are customizable in Settings.
 
 **Window Behavior** — Floating window that stays out of the dock by default. Options to show in dock, menu bar, or both. Optional always-on-top. Fullscreen mode for immersive writing.

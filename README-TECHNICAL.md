@@ -8,11 +8,12 @@ Hush is a [Tauri v2](https://v2.tauri.app/) desktop app with a vanilla JavaScrip
 Frontend (src/)                        Backend (src-tauri/src/)
 ───────────                            ────────────────────
 main.js                  ←──IPC──→     lib.rs (commands)
-├── theme-colors.js                    ├── settings.rs
-├── themes.js                          ├── files.rs
-├── tauri-bridge.js                    ├── snapshots.rs
-├── zotero.js                          ├── sync.rs
-│                                      └── zotero.rs
+├── command-palette.js                 ├── settings.rs
+├── theme-colors.js                    ├── files.rs
+├── themes.js                          ├── snapshots.rs
+├── tauri-bridge.js                    ├── sync.rs
+├── zotero.js                          └── zotero.rs
+│
 ├── editor/
 │   ├── editor.js
 │   ├── modes.js
@@ -94,7 +95,7 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Font CSS is imp
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes.
 
-Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`.
+Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`.
 
 On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invoke("list_files")`, and `invoke("get_file_tree")`. In the browser (dev without Tauri), it falls back to localStorage.
 
@@ -127,11 +128,19 @@ The CodeMirror 6 instance is configured with:
 
 Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements sit 10px outside the column edges. When the sidebar panel is open in inset mode, the column re-centers within remaining space.
 
+### Command Palette (`command-palette.js`)
+
+Centered overlay activated by `Cmd+P` (hardcoded in the fixed keymap). Lists all major commands with icons, labels, and keyboard shortcut keycaps. Supports arrow-key navigation, Enter to execute, Escape to dismiss, and text filtering.
+
+When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Turn off X" entries are prepended at the top of the list. Mouse hover selection is suppressed while keyboard-navigating to prevent conflicts.
+
+Commands that need sidebar panels (`show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`) emit events that the sidebar listens for.
+
 ### Sidebar (`sidebar/sidebar.js`)
 
 Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity 0, pointer-events none), revealed by a JS hover trigger. Can be pinned open.
 
-**Buttons:** New file, Files panel, Styles panel, Ratchet mode (duration dropdown), Private mode, Typewriter mode, D.R.Y. highlighting, Focus mode, Save location, Export, Outline view, Zotero search, Settings (iOS only).
+**Buttons:** Files panel, Styles panel, Versions, Export, Settings (iOS only). Mode toggles (ratchet, private, typewriter, D.R.Y., focus, zotero) are accessed via the command palette (`Cmd+P`).
 
 Panels render into `#panel-overlay`. Layout is responsive: when wide enough, panels inset beside content; otherwise they overlay as a modal.
 
@@ -268,7 +277,7 @@ Wraps [thememirror](https://github.com/vadimdemedes/thememirror). Exports `theme
 
 Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
-`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `utility.css`.
+`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `utility.css`.
 
 The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 
@@ -374,6 +383,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Toggle editor | `Cmd+Shift+H` (global) |
 | Open fullscreen | `Cmd+Shift+F` (global) |
 | Toggle private mode | `Cmd+Shift+P` (global) |
+| Command palette | `Cmd+P` (hardcoded) |
 | Toggle sidebar | `Cmd+\` |
 | Toggle outline view | `Cmd+Shift+\` |
 | Toggle typewriter mode | `Cmd+Shift+T` |
