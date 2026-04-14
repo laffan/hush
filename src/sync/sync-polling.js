@@ -129,25 +129,35 @@ async function syncDropboxDiff(state) {
         relativePath: entry.relativePath, content: entry.content || "",
       });
 
-      // Insert tree node
+      // Insert tree node — merge with existing folders/projects
       const parts = entry.relativePath.split("/");
       const fileName = parts.pop().replace(/\.md$/, "");
       let current = state.fileTree;
       for (const dirName of parts) {
         if (!dirName) continue;
-        let folder = current.find(n => n.type === "folder" && n.name === dirName);
+        let folder = current.find(n =>
+          (n.type === "folder" || n.type === "project") && n.name === dirName
+        );
         if (!folder) {
           folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
-          current.push(folder);
+          const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
+          if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
+          else current.push(folder);
         }
         if (!Array.isArray(folder.children)) folder.children = [];
         current = folder.children;
       }
-      current.push({
-        id: crypto.randomUUID(), type: "document",
-        name: entry.name || fileName, fileId: file.id,
-        children: [], flagged: false,
-      });
+      // Avoid duplicates
+      if (!current.some(n => n.fileId === file.id)) {
+        const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
+        const docNode = {
+          id: crypto.randomUUID(), type: "document",
+          name: entry.name || fileName, fileId: file.id,
+          children: [], flagged: false,
+        };
+        if (trashIdx >= 0) current.splice(trashIdx, 0, docNode);
+        else current.push(docNode);
+      }
       changed = true;
     }
 

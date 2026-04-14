@@ -375,9 +375,9 @@ function bindAll() {
         }
       }
 
-      // Save path, enable sync, and start
-      saveSetting("dropboxSyncPath", path);
-      saveSetting("dropboxEnabled", true);
+      // Save path, enable sync, and start — await saves to prevent race condition
+      await saveSetting("dropboxSyncPath", path);
+      await saveSetting("dropboxEnabled", true);
       addSyncLogEntry(`Sync started to ${path}`);
 
       if (status) { status.textContent = "Starting sync..."; status.className = "sync-status"; }

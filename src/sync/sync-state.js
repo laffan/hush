@@ -175,7 +175,10 @@ export async function performInitialSync(state, dropboxPath) {
 }
 
 /**
- * Insert a downloaded file into the file tree, creating intermediate folders.
+ * Insert a downloaded file into the file tree, merging with existing
+ * folders/projects (including special nodes like Inbox and Trash).
+ * Creates intermediate folder nodes only if no match exists.
+ * Trash is always kept as the last item.
  */
 function insertIntoTree(fileTree, relativePath, fileId, displayName) {
   const parts = relativePath.split("/");
@@ -184,13 +187,17 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
 
   for (const dirName of parts) {
     if (!dirName) continue;
-    let folder = current.find(n => n.type === "folder" && n.name === dirName);
+    // Match by name against folders AND projects (Inbox is type "project")
+    let folder = current.find(n =>
+      (n.type === "folder" || n.type === "project") && n.name === dirName
+    );
     if (!folder) {
       folder = {
         id: crypto.randomUUID(), type: "folder", name: dirName,
         children: [], flagged: false,
       };
-      const trashIdx = current.findIndex(n => n.id === "__trash__");
+      // Insert before Trash to keep Trash last
+      const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
       if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
       else current.push(folder);
     }
@@ -198,11 +205,18 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
     current = folder.children;
   }
 
-  current.push({
+  // Check if a document with this fileId already exists to avoid duplicates
+  if (current.some(n => n.fileId === fileId)) return;
+
+  // Insert before Trash if we're at the top level
+  const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
+  const docNode = {
     id: crypto.randomUUID(), type: "document",
     name: displayName || fileName, fileId,
     children: [], flagged: false,
-  });
+  };
+  if (trashIdx >= 0) current.splice(trashIdx, 0, docNode);
+  else current.push(docNode);
 }
 
 // ===== Ongoing Sync Operations =====
