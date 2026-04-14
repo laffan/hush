@@ -32,24 +32,31 @@
     <h1 id="title">Connecting to Dropbox...</h1>
     <p id="message">Please wait while we complete the authorization.</p>
   </div>
-  <script type="module">
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    const error = params.get("error");
-    const titleEl = document.getElementById("title");
-    const msgEl = document.getElementById("message");
+  <script>
+    var params = new URLSearchParams(window.location.search);
+    var code = params.get("code");
+    var error = params.get("error");
+    var titleEl = document.getElementById("title");
+    var msgEl = document.getElementById("message");
 
     if (error) {
       titleEl.textContent = "Authorization Failed";
       msgEl.textContent = error === "access_denied"
         ? "You declined the Dropbox authorization. You can close this window."
-        : `Error: ${error}. You can close this window.`;
+        : "Error: " + error + ". You can close this window.";
       msgEl.classList.add("error");
     } else if (code) {
-      // Store the code so the Hush settings window can pick it up
-      localStorage.setItem("hush_oauth_code", code);
+      // Relay the code to the Hush app via the custom URL scheme.
+      // This triggers the Tauri deep-link handler which emits an event
+      // that the settings window is listening for.
       titleEl.textContent = "Connected!";
-      msgEl.textContent = "You can close this window and return to Hush.";
+      msgEl.textContent = "Returning to Hush...";
+      window.location.href = "hushwriter://auth/callback?code=" + encodeURIComponent(code);
+
+      // If the redirect doesn't work (scheme not registered), show fallback
+      setTimeout(function() {
+        msgEl.textContent = "You can close this window and return to Hush.";
+      }, 2000);
     } else {
       titleEl.textContent = "No Authorization Code";
       msgEl.textContent = "Something went wrong. Please try again from Hush settings.";

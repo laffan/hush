@@ -299,41 +299,40 @@ function bindAll() {
       if (status) { status.textContent = "Opening Dropbox login..."; status.className = "sync-status"; }
       try {
         const dbx = await import("../sync/dropbox.js");
-        // Clear any stale code from a previous attempt
-        localStorage.removeItem("hush_oauth_code");
         const { codeVerifier, redirectUri } = await dbx.startOAuthFlow();
         sessionStorage.setItem("hush_oauth_verifier", codeVerifier);
         sessionStorage.setItem("hush_oauth_redirect", redirectUri);
         if (status) { status.textContent = "Waiting for Dropbox authorization..."; status.className = "sync-status"; }
 
-        // Poll for the auth code (set by oauth-callback.html via localStorage)
-        const pollInterval = setInterval(async () => {
-          const code = localStorage.getItem("hush_oauth_code");
-          if (!code) return;
-          clearInterval(pollInterval);
-          localStorage.removeItem("hush_oauth_code");
-          if (status) { status.textContent = "Completing authorization..."; status.className = "sync-status"; }
-          try {
-            const storedVerifier = sessionStorage.getItem("hush_oauth_verifier");
-            const storedRedirect = sessionStorage.getItem("hush_oauth_redirect") || dbx.getRedirectUri();
-            sessionStorage.removeItem("hush_oauth_verifier");
-            sessionStorage.removeItem("hush_oauth_redirect");
-            await dbx.completeOAuthFlow(code, storedVerifier, storedRedirect);
-            // Reload settings to pick up new tokens
-            if (IS_TAURI) {
+        // Listen for the oauth-callback Tauri event (fired by the Rust
+        // deep-link handler when hushwriter://auth/callback?code=xxx arrives).
+        // The settings window has the verifier in its own sessionStorage.
+        if (IS_TAURI) {
+          const { listen } = await import("@tauri-apps/api/event");
+          const unlisten = await listen("oauth-callback", async (event) => {
+            const { code } = event.payload || {};
+            if (!code) return;
+            unlisten();
+            if (status) { status.textContent = "Completing authorization..."; status.className = "sync-status"; }
+            try {
+              const storedVerifier = sessionStorage.getItem("hush_oauth_verifier");
+              const storedRedirect = sessionStorage.getItem("hush_oauth_redirect") || dbx.getRedirectUri();
+              sessionStorage.removeItem("hush_oauth_verifier");
+              sessionStorage.removeItem("hush_oauth_redirect");
+              await dbx.completeOAuthFlow(code, storedVerifier, storedRedirect);
               const { invoke } = await import("@tauri-apps/api/core");
               const newSettings = await invoke("get_settings");
               Object.assign(settings, newSettings);
+              if (status) { status.textContent = "Connected!"; status.className = "sync-status success"; }
+              setTimeout(() => render(), 1000);
+            } catch (err) {
+              console.error("OAuth completion failed:", err);
+              if (status) { status.textContent = "Authorization failed: " + err.message; status.className = "sync-status error"; }
             }
-            if (status) { status.textContent = "Connected!"; status.className = "sync-status success"; }
-            setTimeout(() => render(), 1000);
-          } catch (err) {
-            console.error("OAuth completion failed:", err);
-            if (status) { status.textContent = "Authorization failed: " + err.message; status.className = "sync-status error"; }
-          }
-        }, 500);
-        // Stop polling after 5 minutes
-        setTimeout(() => clearInterval(pollInterval), 300000);
+          });
+          // Auto-cleanup after 5 minutes
+          setTimeout(() => unlisten(), 300000);
+        }
       } catch (e) {
         console.error("OAuth start failed:", e);
         if (status) { status.textContent = "Failed to start authorization: " + e.message; status.className = "sync-status error"; }
