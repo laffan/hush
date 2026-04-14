@@ -135,9 +135,9 @@ async function syncDropboxDiff(state) {
       let current = state.fileTree;
       for (const dirName of parts) {
         if (!dirName) continue;
-        let folder = current.find(n =>
-          (n.type === "folder" || n.type === "project") && n.name === dirName
-        );
+        let folder = current.find(n => n.type !== "document" && n.name === dirName)
+          || (dirName === "Inbox" && current.find(n => n.id === "__inbox__"))
+          || (dirName === "Trash" && current.find(n => n.id === "__trash__"));
         if (!folder) {
           folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
           const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");

@@ -187,10 +187,11 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
 
   for (const dirName of parts) {
     if (!dirName) continue;
-    // Match by name against folders AND projects (Inbox is type "project")
-    let folder = current.find(n =>
-      (n.type === "folder" || n.type === "project") && n.name === dirName
-    );
+    // Match any container node by name (folder, project, or any non-document).
+    // Also match special nodes by ID as fallback (Inbox = __inbox__, Trash = __trash__).
+    let folder = current.find(n => n.type !== "document" && n.name === dirName)
+      || (dirName === "Inbox" && current.find(n => n.id === "__inbox__"))
+      || (dirName === "Trash" && current.find(n => n.id === "__trash__"));
     if (!folder) {
       folder = {
         id: crypto.randomUUID(), type: "folder", name: dirName,
