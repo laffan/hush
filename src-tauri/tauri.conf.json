@@ -59,9 +59,6 @@
     "deep-link": {
       "desktop": {
         "schemes": ["hushwriter"]
-      },
-      "mobile": {
-        "schemes": ["hushwriter"]
       }
     }
   }

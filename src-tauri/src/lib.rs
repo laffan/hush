@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Listener, State};
 
 #[cfg(desktop)]
 use tauri::{
-    Emitter, Manager,
+    Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconEvent,
     WindowEvent,
@@ -635,6 +635,28 @@ pub fn run() {
             zotero_manager: Mutex::new(zotero_manager),
         })
         .setup(move |_app| {
+            // Handle deep-link URLs (e.g. hushwriter://auth/callback?code=xxx)
+            // Must be set up before the desktop block borrows _app.
+            {
+                let handle = _app.handle().clone();
+                _app.listen("deep-link://new-url", move |event| {
+                    if let Some(urls) = event.payload().strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+                        for url_str in urls.split(',') {
+                            let url_str = url_str.trim().trim_matches('"');
+                            if url_str.starts_with("hushwriter://auth/callback") {
+                                if let Some(query) = url_str.split('?').nth(1) {
+                                    for param in query.split('&') {
+                                        if let Some(code) = param.strip_prefix("code=") {
+                                            let _ = handle.emit("oauth-callback", serde_json::json!({ "code": code }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             #[cfg(desktop)]
             let app = _app;
             #[cfg(desktop)]
@@ -717,28 +739,6 @@ pub fn run() {
                     drop(settings);
                     let _ = window.show();
                 }
-            }
-
-            // Handle deep-link URLs (e.g. hushwriter://auth/callback?code=xxx)
-            {
-                let handle = _app.handle().clone();
-                _app.listen("deep-link://new-url", move |event| {
-                    if let Some(urls) = event.payload().strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-                        // Parse the URL to extract the auth code
-                        for url_str in urls.split(',') {
-                            let url_str = url_str.trim().trim_matches('"');
-                            if url_str.starts_with("hushwriter://auth/callback") {
-                                if let Some(query) = url_str.split('?').nth(1) {
-                                    for param in query.split('&') {
-                                        if let Some(code) = param.strip_prefix("code=") {
-                                            let _ = handle.emit("oauth-callback", serde_json::json!({ "code": code }));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
             }
 
             Ok(())

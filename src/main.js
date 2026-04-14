@@ -136,6 +136,24 @@ function applyActiveStyle(state) {
   }
 }
 
+/** Handle an OAuth authorization code from a deep-link callback. */
+async function handleOAuthCode(state, invoke, code) {
+  try {
+    const verifier = sessionStorage.getItem("hush_oauth_verifier");
+    const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || "hushwriter://auth/callback";
+    if (verifier) {
+      const dbx = await import("./sync/dropbox.js");
+      await dbx.completeOAuthFlow(code, verifier, redirectUri);
+      sessionStorage.removeItem("hush_oauth_verifier");
+      sessionStorage.removeItem("hush_oauth_redirect");
+      state.settings = await invoke("get_settings");
+      state.emit("settings-changed");
+    }
+  } catch (e) {
+    console.error("OAuth callback failed:", e);
+  }
+}
+
 async function init() {
   const state = new AppState();
   await state.init();
@@ -537,26 +555,26 @@ async function init() {
       }
     });
 
-    // Listen for OAuth callback (deep link with auth code)
+    // Listen for OAuth callback via deep-link plugin
+    try {
+      const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+      await onOpenUrl(async (urls) => {
+        for (const url of urls) {
+          if (url.startsWith("hushwriter://auth/callback")) {
+            const params = new URLSearchParams(url.split("?")[1] || "");
+            const code = params.get("code");
+            if (code) await handleOAuthCode(state, invoke, code);
+          }
+        }
+      });
+    } catch (e) {
+      console.error("Deep-link setup failed:", e);
+    }
+
+    // Also listen for oauth-callback event (from Rust deep-link handler)
     await listen("oauth-callback", async (event) => {
       const { code } = event.payload || {};
-      if (code) {
-        try {
-          const verifier = sessionStorage.getItem("hush_oauth_verifier");
-          const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || "hushwriter://auth/callback";
-          if (verifier) {
-            const dbx = await import("./sync/dropbox.js");
-            await dbx.completeOAuthFlow(code, verifier, redirectUri);
-            sessionStorage.removeItem("hush_oauth_verifier");
-            sessionStorage.removeItem("hush_oauth_redirect");
-            // Reload settings
-            state.settings = await invoke("get_settings");
-            state.emit("settings-changed");
-          }
-        } catch (e) {
-          console.error("OAuth callback failed:", e);
-        }
-      }
+      if (code) await handleOAuthCode(state, invoke, code);
     });
   }
 
