@@ -21,6 +21,7 @@ import { EditorSelection } from "@codemirror/state";
 import { openSettingsWindow } from "../settings/settings-ui.js";
 import { openFindReplace, openFindAll, findNext, findPrev } from "./find-replace.js";
 import { getLockedStyleId } from "../sidebar/styles-panel.js";
+import { toggleCommandPalette } from "../command-palette.js";
 import {
   selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence,
   shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack,
@@ -234,5 +235,6 @@ export function buildEditorCommands() {
 export function buildFixedKeymap(state) {
   return [
     { key: "Mod-,", run: () => { openSettingsWindow(state); return true; } },
+    { key: "Mod-p", run: () => { toggleCommandPalette(state); return true; } },
   ];
 }

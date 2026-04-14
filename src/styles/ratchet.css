@@ -55,6 +55,15 @@
 
 /* Ratchet active state — typewriter-like scrolling, current line centered */
 
+/* Centered variant (launched from command palette) */
+.ratchet-dropdown.ratchet-dropdown-centered {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 500;
+}
+
 .ratchet-timer {
   position: fixed;
   top: 10px;

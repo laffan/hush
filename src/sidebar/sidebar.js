@@ -8,16 +8,10 @@ import { renderStylesPanel, bindStylesPanel } from "./styles-panel.js";
 import { createVersionsPanel, cleanupVersionsPanel } from "./versions-panel.js";
 import newFileRaw from "./sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar_icons/files.svg?raw";
-import ratchetRaw from "./sidebar_icons/ratchet.svg?raw";
-import privateRaw from "./sidebar_icons/private.svg?raw";
-import typewriterRaw from "./sidebar_icons/typewriter.svg?raw";
-import dryRaw from "./sidebar_icons/dry.svg?raw";
-import focusRaw from "./sidebar_icons/focus.svg?raw";
 import versionsRaw from "./sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 import stylesRaw from "./sidebar_icons/styles.svg?raw";
-import zoteroRaw from "./sidebar_icons/zotero.svg?raw";
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
@@ -30,14 +24,6 @@ export function createSidebar(container, state) {
       ${btn("new-file", "New file", icons.newFile)}
       ${btn("files", "Files", icons.files)}
       ${btn("styles", "Styles", icons.styles)}
-    </div>
-    <div class="sidebar-group sidebar-middle">
-      ${btn("ratchet", "Ratchet mode", icons.ratchet)}
-      ${btn("private", "Private mode", icons.private)}
-      ${btn("typewriter", "Typewriter mode", icons.typewriter)}
-      ${btn("dry", "Show repeats", icons.dry)}
-      ${btn("focus", "Highlight sentence", icons.focus)}
-      ${btn("zotero", "Insert reference", icons.zotero)}
     </div>
     <div class="sidebar-group sidebar-bottom">
       ${btn("versions", "Versions", icons.versions)}
@@ -141,37 +127,6 @@ export function createSidebar(container, state) {
     bindStylesPanel(state, panelOverlay);
   });
 
-  container.querySelector('[data-action="ratchet"]').addEventListener("click", (e) => {
-    if (state.ratchetMode) {
-      state.stopRatchet();
-      updateActiveStates();
-      return;
-    }
-    showRatchetDropdown(e.target.closest(".sidebar-btn"), state, () => {
-      updateActiveStates();
-    });
-  });
-
-  container.querySelector('[data-action="private"]').addEventListener("click", () => {
-    state.togglePrivate();
-    updateActiveStates();
-  });
-
-  container.querySelector('[data-action="typewriter"]').addEventListener("click", () => {
-    state.toggleTypewriter();
-    updateActiveStates();
-  });
-
-  container.querySelector('[data-action="dry"]').addEventListener("click", () => {
-    state.toggleDry();
-    updateActiveStates();
-  });
-
-  container.querySelector('[data-action="focus"]').addEventListener("click", () => {
-    state.toggleFocus();
-    updateActiveStates();
-  });
-
   container.querySelector('[data-action="versions"]').addEventListener("click", () => {
     if (activePanel === "versions") {
       cleanupVersionsPanel();
@@ -184,14 +139,6 @@ export function createSidebar(container, state) {
     container.classList.add("visible");
     createVersionsPanel(panelOverlay, state, hidePanel);
     if (state._columnResizeHandler) state._columnResizeHandler();
-  });
-
-  container.querySelector('[data-action="zotero"]').addEventListener("click", async () => {
-    hidePanel();
-    if (state.editor) {
-      const { openZoteroModal } = await import("../zotero.js");
-      openZoteroModal(state.editor.view, state);
-    }
   });
 
   container.querySelector('[data-action="export"]').addEventListener("click", async () => {
@@ -209,27 +156,14 @@ export function createSidebar(container, state) {
   }
 
   function updateActiveStates() {
-    setActive("ratchet", state.ratchetMode);
-    setActive("private", state.privateMode);
-    setActive("typewriter", state.typewriterMode);
-    setActive("dry", state.dryMode);
-    setActive("focus", state.focusMode);
-  }
-
-  function setActive(action, isActive) {
-    const el = container.querySelector(`[data-action="${action}"]`);
-    if (el) el.classList.toggle("active", isActive);
+    // Mode-active states are no longer shown in the sidebar (moved to
+    // command palette), but we keep the function for event compatibility.
   }
 
   // Map sidebar actions to their shortcut setting keys and base labels
   const shortcutMap = {
     "new-file":   { label: "New file",            key: "shortcutNewFile" },
     "files":      { label: "Files",               key: "shortcutToggleSidebar" },
-    "private":    { label: "Private mode",         key: "shortcutTogglePrivate" },
-    "typewriter": { label: "Typewriter mode",      key: "shortcutTypewriter" },
-    "dry":        { label: "Show repeats",           key: "shortcutToggleDry" },
-    "focus":      { label: "Highlight sentence",    key: "shortcutToggleFocus" },
-    "zotero":     { label: "Insert reference",      key: "shortcutZotero" },
   };
 
   // Custom graphical tooltips
@@ -396,6 +330,41 @@ export function createSidebar(container, state) {
     }
   });
 
+  // --- Command palette events ---
+  state.on("show-styles-panel", () => {
+    showPanel("styles", renderStylesPanel(state));
+    bindStylesPanel(state, panelOverlay);
+    container.classList.add("visible");
+  });
+
+  state.on("show-ratchet-dropdown", () => {
+    if (state.ratchetMode) {
+      state.stopRatchet();
+      updateActiveStates();
+      return;
+    }
+    showRatchetDropdownCentered(state, () => updateActiveStates());
+  });
+
+  state.on("show-versions-panel", () => {
+    if (activePanel === "versions") {
+      cleanupVersionsPanel();
+      hidePanel();
+      return;
+    }
+    activePanel = "versions";
+    panelOverlay.innerHTML = "";
+    panelOverlay.classList.remove("hidden");
+    container.classList.add("visible");
+    createVersionsPanel(panelOverlay, state, hidePanel);
+    if (state._columnResizeHandler) state._columnResizeHandler();
+  });
+
+  state.on("export-current-file", () => {
+    hidePanel();
+    exportCurrentFile(state);
+  });
+
   updateActiveStates();
 }
 
@@ -409,27 +378,18 @@ function btn(action, title, svgContent) {
 const icons = {
   newFile: svgInner(newFileRaw),
   files: svgInner(filesRaw),
-  ratchet: svgInner(ratchetRaw),
-  private: svgInner(privateRaw),
-  typewriter: svgInner(typewriterRaw),
-  dry: svgInner(dryRaw),
-  focus: svgInner(focusRaw),
   versions: svgInner(versionsRaw),
   export: svgInner(exportRaw),
   settings: svgInner(settingsRaw),
   styles: svgInner(stylesRaw),
-  zotero: svgInner(zoteroRaw),
 };
 
-function showRatchetDropdown(anchor, state, onStart) {
+/** Ratchet dropdown positioned center-screen (used by command palette). */
+function showRatchetDropdownCentered(state, onStart) {
   document.querySelectorAll(".ratchet-dropdown").forEach((el) => el.remove());
 
   const dropdown = document.createElement("div");
-  dropdown.className = "ratchet-dropdown";
-  const rect = anchor.getBoundingClientRect();
-  // Position to the RIGHT of the left sidebar
-  dropdown.style.left = "60px";
-  dropdown.style.top = rect.top + "px";
+  dropdown.className = "ratchet-dropdown ratchet-dropdown-centered";
 
   // Options section (checkboxes)
   const optionsSection = document.createElement("div");
@@ -448,10 +408,8 @@ function showRatchetDropdown(anchor, state, onStart) {
   optionsSection.appendChild(encourageLabel);
   dropdown.appendChild(optionsSection);
 
-  // Duration grid (two columns)
   const grid = document.createElement("div");
   grid.className = "ratchet-duration-grid";
-
   const durations = [5, 10, 15, 20, 25, 30, 45, 60];
   durations.forEach((min) => {
     const opt = document.createElement("div");
@@ -464,20 +422,16 @@ function showRatchetDropdown(anchor, state, onStart) {
     });
     grid.appendChild(opt);
   });
-
   dropdown.appendChild(grid);
   document.body.appendChild(dropdown);
 
   setTimeout(() => {
-    document.addEventListener(
-      "mousedown",
-      function handler(e) {
-        if (!dropdown.contains(e.target)) {
-          dropdown.remove();
-          document.removeEventListener("mousedown", handler);
-        }
+    document.addEventListener("mousedown", function handler(e) {
+      if (!dropdown.contains(e.target)) {
+        dropdown.remove();
+        document.removeEventListener("mousedown", handler);
       }
-    );
+    });
   }, 0);
 }
 
@@ -522,22 +476,4 @@ function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
-}
-
-/** Format a shortcut string like "Mod+Shift+P" into "⌘⇧P" (Mac) or "Ctrl+Shift+P". */
-function formatShortcut(raw) {
-  const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
-  let s = raw;
-  if (isMac) {
-    s = s.replace(/CmdOrCtrl\+/gi, "\u2318").replace(/Mod\+/gi, "\u2318")
-         .replace(/Shift\+/gi, "\u21e7").replace(/Alt\+/gi, "\u2325")
-         .replace(/ArrowUp/gi, "\u2191").replace(/ArrowDown/gi, "\u2193")
-         .replace(/ArrowLeft/gi, "\u2190").replace(/ArrowRight/gi, "\u2192")
-         .replace(/\\\\/g, "\\");
-  } else {
-    s = s.replace(/CmdOrCtrl\+/gi, "Ctrl+").replace(/Mod\+/gi, "Ctrl+")
-         .replace(/ArrowUp/gi, "Up").replace(/ArrowDown/gi, "Down")
-         .replace(/ArrowLeft/gi, "Left").replace(/ArrowRight/gi, "Right");
-  }
-  return s;
 }

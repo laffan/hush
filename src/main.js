@@ -9,6 +9,7 @@ import { setupFileDrop } from "./editor/file-drop.js";
 import { createLongView } from "./longview/longview.js";
 import { dispatchDomShortcut } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
+import { toggleCommandPalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
@@ -204,6 +205,13 @@ async function init() {
     // editor is focused, CM calls `preventDefault()` as soon as it handles
     // a binding, so we avoid double-firing here.
     if (e.defaultPrevented) return;
+
+    // Cmd+P — toggle command palette (works even from input fields)
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === "p") {
+      e.preventDefault();
+      toggleCommandPalette(state);
+      return;
+    }
 
     // Don't hijack keystrokes while the user is typing into some other
     // input (e.g. a sidebar search box, a settings field).  The editor
