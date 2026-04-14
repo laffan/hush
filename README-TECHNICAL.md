@@ -248,11 +248,11 @@ Citation management. Connects to Zotero API with user key, downloads references 
 
 ### Dropbox Integration (`sync/dropbox.js`, `sync/dropbox-browser.js`)
 
-Dropbox OAuth PKCE integration for syncing files. `dropbox.js` handles the full OAuth flow (authorize → token exchange → auto-refresh) and all Dropbox API operations. `dropbox-browser.js` provides a folder browser modal for selecting the sync target folder. App Key is injected at build time via `VITE_DROPBOX_APP_KEY` env var. The `hushwriter://auth/callback` deep-link scheme handles OAuth redirects on both macOS and iOS.
+Dropbox OAuth PKCE integration for syncing files. `dropbox.js` handles the full OAuth flow (authorize → token exchange → auto-refresh) and all Dropbox API operations via direct `fetch` calls (no SDK). `dropbox-browser.js` provides a folder browser modal for selecting the sync target folder. Build-time config via env vars: `VITE_DROPBOX_APP_KEY` (required) and `VITE_DROPBOX_REDIRECT_URI` (defaults to `hushwriter://auth/callback`, set to `http://localhost:5173/oauth-callback.html` for dev). The `oauth-callback.html` page relays the auth code to the `hushwriter://` deep-link scheme. Tokens are loaded on demand from settings (`ensureTokens()`) so they survive across window contexts.
 
 ### Sync (`sync/`)
 
-Full-library Dropbox synchronization. All documents, folders, and projects are mirrored to a single Dropbox folder. Documents sync as `.md` files, projects include a `.hushproject` metadata file (JSON with ordering). Uses SHA256 hashing + timestamps for change detection with "most recent wins" conflict resolution. Polling runs every 10 seconds for content changes and every 60 seconds for structural diffs (new/deleted files). Sync is optional — users connect via OAuth in Settings > Sync and can disconnect at any time, choosing to keep or remove Dropbox files.
+Full-library Dropbox synchronization. All documents, folders, and projects are mirrored to a single Dropbox folder. Documents sync as `.md` files (named from document's first line, max 50 chars, special chars stripped). Projects sync as directories containing their child documents plus a `.hushproject` JSON metadata file with ordering. Folder merging handles special nodes (Inbox, Trash) by matching name and ID. Uses SHA256 hashing + timestamps for change detection with "most recent wins" conflict resolution. Polling runs every 10 seconds for content changes and every 60 seconds for structural diffs (new/deleted files). Sync log persists recent activity in settings. Sync is optional — users connect via OAuth in Settings > Sync and can disconnect at any time, choosing to keep or remove Dropbox files.
 
 ### Tauri Bridge (`tauri-bridge.js`)
 

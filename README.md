@@ -14,7 +14,9 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Typewriter Mode** — Locks the cursor to a fixed line on screen. Drag the boundary to reposition it. The document scrolls to keep the cursor in place.
 
-**File Management** — Multiple files with automatic 2-second autosave. Optionally save to an external folder or Obsidian vault.
+**File Management** — Multiple files with automatic 2-second autosave. Organize documents in folders and projects with drag-and-drop reordering.
+
+**Dropbox Sync** — Optional full-library sync to Dropbox. Connect via OAuth in Settings > Sync, choose a folder, and all documents, projects, and folders are mirrored automatically. Works across macOS and iOS. Documents sync as `.md` files, projects as `.hushproject` metadata. Sync is bidirectional with automatic conflict resolution.
 
 **Keyboard-First** — Global shortcuts work even when the app is hidden:
 
@@ -38,8 +40,18 @@ The built app will be in `src-tauri/target/release/bundle/`.
 ## Development
 
 ```sh
+cp .env.example .env   # Configure Dropbox App Key (optional)
 npm run tauri dev
 ```
+
+### Dropbox Sync Setup
+
+To enable Dropbox sync during development:
+
+1. Create a Dropbox app at [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps)
+2. Add `http://localhost:5173/oauth-callback.html` as a redirect URI in the app settings
+3. Copy the App Key to your `.env` file as `VITE_DROPBOX_APP_KEY`
+4. For production builds, also add `hushwriter://auth/callback` as a redirect URI and set `VITE_DROPBOX_REDIRECT_URI` accordingly
 
 ## Building
 
