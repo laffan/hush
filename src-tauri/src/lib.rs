@@ -171,6 +171,96 @@ fn delete_document_snapshots(
         .map_err(|e| e.to_string())
 }
 
+// ===== Dropbox OAuth =====
+
+#[tauri::command]
+async fn exchange_dropbox_token(
+    state: State<'_, AppState>,
+    code: String,
+    code_verifier: String,
+    redirect_uri: String,
+    app_key: String,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://api.dropboxapi.com/oauth2/token")
+        .form(&[
+            ("code", code.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code_verifier", code_verifier.as_str()),
+            ("redirect_uri", redirect_uri.as_str()),
+            ("client_id", app_key.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Token exchange failed: {}", body));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    // Store tokens in settings
+    {
+        let mut settings = state.settings.lock().unwrap();
+        if let Some(at) = json.get("access_token").and_then(|v| v.as_str()) {
+            settings.dropbox_access_token = Some(at.to_string());
+        }
+        if let Some(rt) = json.get("refresh_token").and_then(|v| v.as_str()) {
+            settings.dropbox_refresh_token = Some(rt.to_string());
+        }
+        settings.dropbox_enabled = true;
+        let _ = settings.save();
+    }
+
+    Ok(json)
+}
+
+#[tauri::command]
+async fn refresh_dropbox_token(
+    state: State<'_, AppState>,
+    app_key: String,
+) -> Result<String, String> {
+    let refresh_token = {
+        let settings = state.settings.lock().unwrap();
+        settings.dropbox_refresh_token.clone()
+            .ok_or("No refresh token stored")?
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://api.dropboxapi.com/oauth2/token")
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token.as_str()),
+            ("client_id", app_key.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Token refresh failed: {}", body));
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let new_token = json.get("access_token")
+        .and_then(|v| v.as_str())
+        .ok_or("No access_token in response")?
+        .to_string();
+
+    // Update stored access token
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.dropbox_access_token = Some(new_token.clone());
+        let _ = settings.save();
+    }
+
+    Ok(new_token)
+}
+
 // ===== Sync Commands =====
 
 #[tauri::command]
@@ -536,6 +626,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
@@ -628,6 +719,28 @@ pub fn run() {
                 }
             }
 
+            // Handle deep-link URLs (e.g. hushwriter://auth/callback?code=xxx)
+            {
+                let handle = _app.handle().clone();
+                _app.listen("deep-link://new-url", move |event| {
+                    if let Some(urls) = event.payload().strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+                        // Parse the URL to extract the auth code
+                        for url_str in urls.split(',') {
+                            let url_str = url_str.trim().trim_matches('"');
+                            if url_str.starts_with("hushwriter://auth/callback") {
+                                if let Some(query) = url_str.split('?').nth(1) {
+                                    for param in query.split('&') {
+                                        if let Some(code) = param.strip_prefix("code=") {
+                                            let _ = handle.emit("oauth-callback", serde_json::json!({ "code": code }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -670,6 +783,8 @@ pub fn run() {
             get_snapshots,
             get_snapshot,
             delete_document_snapshots,
+            exchange_dropbox_token,
+            refresh_dropbox_token,
             scan_sync_folder,
             register_synced_file,
             unregister_sync_folder,

@@ -484,48 +484,68 @@ export function renderFlagsSettingsTab(settings) {
 
 // ===== Sync Tab =====
 export function renderSyncTab(settings) {
-  const folders = settings.syncFolders || [];
-  const isIpad = isIOSSettings();
+  const isConnected = !!settings.dropboxAccessToken;
+  const isEnabled = !!settings.dropboxEnabled;
+  const syncPath = settings.dropboxSyncPath || "";
 
-  let html = `<div class="settings-section"><h2>Sync Folders</h2>`;
-  html += `<p class="settings-help">Add folders to sync with Hush. Files in synced folders are managed internally with version control.</p>`;
+  let html = "";
 
-  if (isIpad) {
-    // Dropbox token section
-    const hasToken = !!settings.dropboxToken;
+  if (!isConnected) {
+    // Not connected — show Connect button
     html += `
       <div class="settings-section">
-        <h3>Dropbox Connection</h3>
-        <div class="sync-token-row">
-          <input type="password" id="sync-dropbox-token"
-            placeholder="Dropbox Personal Access Token"
-            value="${escAttr(settings.dropboxToken || "")}" />
-          <button id="sync-test-token">${hasToken ? "Re-test" : "Test"}</button>
+        <h2>Dropbox Sync</h2>
+        <p class="settings-help">
+          Connect your Dropbox account to sync all your documents, projects, and folders
+          across devices. Hush will mirror your entire library to a Dropbox folder as a backup.
+        </p>
+        <button id="sync-connect-dropbox" class="sync-connect-btn">Connect to Dropbox</button>
+        <div id="sync-auth-status" class="sync-status"></div>
+      </div>
+    `;
+  } else if (!isEnabled || !syncPath) {
+    // Connected but not yet syncing — show folder selection + preview
+    html += `
+      <div class="settings-section">
+        <h2>Dropbox Sync</h2>
+        <p class="settings-help sync-connected-msg">
+          Connected to Dropbox. Choose a folder to sync your Hush library to.
+        </p>
+        <div class="sync-folder-picker">
+          <label>Sync folder</label>
+          <div class="sync-folder-picker-row">
+            <span id="sync-selected-path" class="sync-selected-path">${syncPath ? escHtml(syncPath) : "No folder selected"}</span>
+            <button id="sync-browse-folder" class="sync-browse-btn">Browse</button>
+          </div>
         </div>
-        <div id="sync-token-status" class="sync-status"></div>
+        <div id="sync-preview" class="sync-preview" style="display:none;"></div>
+        <button id="sync-start" class="sync-start-btn" ${!syncPath ? "disabled" : ""}>Start Syncing</button>
+        <div id="sync-auth-status" class="sync-status"></div>
+      </div>
+      <div class="settings-section">
+        <button id="sync-disconnect" class="sync-disconnect-btn">Disconnect Dropbox</button>
+      </div>
+    `;
+  } else {
+    // Fully connected and syncing — show status + unsync option
+    html += `
+      <div class="settings-section">
+        <h2>Dropbox Sync</h2>
+        <p class="settings-help sync-active-msg">
+          Syncing to <strong>${escHtml(syncPath)}</strong>. All documents, folders, and projects
+          are backed up automatically.
+        </p>
+        <div id="sync-auth-status" class="sync-status"></div>
+        <button id="sync-test-connection" class="sync-test-btn">Test Connection</button>
+      </div>
+      <div class="settings-section">
+        <h2>Stop Syncing</h2>
+        <p class="settings-help">Disconnect from Dropbox and return to local-only mode.</p>
+        <button id="sync-unsync" class="sync-disconnect-btn">Stop Syncing</button>
       </div>
     `;
   }
 
-  if (folders.length > 0) {
-    html += `<div class="sync-folder-list">`;
-    for (const f of folders) {
-      html += `
-        <div class="sync-folder-item" data-folder-id="${f.id}">
-          <div class="sync-folder-info">
-            <span class="sync-folder-name">${escHtml(f.name)}</span>
-            <span class="sync-folder-path">${escHtml(f.path)}</span>
-          </div>
-          <button class="sync-folder-remove" data-folder-id="${f.id}" title="Remove folder">✕</button>
-        </div>`;
-    }
-    html += `</div>`;
-  } else {
-    html += `<div class="sync-empty">No folders synced yet.</div>`;
-  }
-
-  html += `<button id="sync-add-folder" class="sync-add-btn">Add Folder</button>`;
-  html += `</div>`;
   return html;
 }
 

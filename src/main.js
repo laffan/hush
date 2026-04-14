@@ -502,27 +502,60 @@ async function init() {
       updatePrivateBoxColor(state);
     });
 
-    // Listen for sync folder added/removed from settings window
-    await listen("sync-folder-added", async (event) => {
-      const syncFolder = event.payload;
-      if (syncFolder) {
-        await state.importSyncFolder(syncFolder);
+    // Listen for Dropbox sync start from settings window
+    await listen("dropbox-sync-start", async (event) => {
+      const { path } = event.payload || {};
+      if (path) {
+        try {
+          // Initialize tokens from settings
+          const dbx = await import("./sync/dropbox.js");
+          if (state.settings.dropboxAccessToken) {
+            dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
+          }
+          // Perform initial full sync
+          const { performInitialSync } = await import("./sync/sync-state.js");
+          await performInitialSync(state, path);
+          // Start polling
+          const sp = await import("./sync/sync-polling.js");
+          sp.startSyncPolling(state);
+        } catch (e) {
+          console.error("Initial sync failed:", e);
+        }
       }
     });
 
-    await listen("sync-folder-removed", async (event) => {
-      const { id } = event.payload || {};
-      if (id) {
-        // Remove the synced folder node from the file tree
-        const idx = state.fileTree.findIndex(n => n.syncFolderId === id);
-        if (idx >= 0) {
-          state.fileTree.splice(idx, 1);
-          await state.saveFileTree();
-          state.emit("files-changed");
+    // Listen for Dropbox sync stop from settings window
+    await listen("dropbox-sync-stop", async (event) => {
+      const { removeFromDropbox } = event.payload || {};
+      try {
+        const sp = await import("./sync/sync-polling.js");
+        sp.stopSyncPolling();
+        const { disconnectSync } = await import("./sync/sync-state.js");
+        await disconnectSync(state, removeFromDropbox);
+      } catch (e) {
+        console.error("Sync disconnect failed:", e);
+      }
+    });
+
+    // Listen for OAuth callback (deep link with auth code)
+    await listen("oauth-callback", async (event) => {
+      const { code } = event.payload || {};
+      if (code) {
+        try {
+          const verifier = sessionStorage.getItem("hush_oauth_verifier");
+          const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || "hushwriter://auth/callback";
+          if (verifier) {
+            const dbx = await import("./sync/dropbox.js");
+            await dbx.completeOAuthFlow(code, verifier, redirectUri);
+            sessionStorage.removeItem("hush_oauth_verifier");
+            sessionStorage.removeItem("hush_oauth_redirect");
+            // Reload settings
+            state.settings = await invoke("get_settings");
+            state.emit("settings-changed");
+          }
+        } catch (e) {
+          console.error("OAuth callback failed:", e);
         }
-        // Clean up backend sync mappings
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("unregister_sync_folder", { syncFolderId: id }).catch(() => {});
       }
     });
   }
@@ -626,32 +659,41 @@ async function init() {
     }
   });
 
-  // Sync: poll for external changes every 10 seconds. A full folder diff
-  // (detects external renames, moves, deletes, new files, stale folders)
-  // runs on the first cycle after startup and again whenever the window
-  // regains focus — so the tree reflects filesystem state immediately on
-  // return from Finder/Dropbox/Obsidian/etc.
-  if (IS_TAURI && state.settings.syncFolders?.length) {
-    import("./sync/sync-polling.js").then(m => m.startSyncPolling(state));
+  // Dropbox sync: start polling if sync is enabled.
+  // Initialize tokens from settings on startup.
+  if (IS_TAURI && state.settings.dropboxEnabled && state.settings.dropboxSyncPath) {
+    (async () => {
+      try {
+        const dbx = await import("./sync/dropbox.js");
+        if (state.settings.dropboxAccessToken) {
+          dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
+        }
+        const sp = await import("./sync/sync-polling.js");
+        sp.startSyncPolling(state);
+      } catch (e) {
+        console.error("Sync startup failed:", e);
+      }
+    })();
   }
   state.on("settings-changed", async () => {
     const sp = await import("./sync/sync-polling.js");
-    if (IS_TAURI && state.settings.syncFolders?.length) {
+    if (IS_TAURI && state.settings.dropboxEnabled && state.settings.dropboxSyncPath) {
+      // Re-initialize tokens in case they changed
+      const dbx = await import("./sync/dropbox.js");
+      if (state.settings.dropboxAccessToken) {
+        dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
+      }
       sp.startSyncPolling(state);
     } else {
       sp.stopSyncPolling();
     }
   });
 
-  // Reconcile sync folders against the filesystem whenever the window
-  // regains focus. Users typically move/rename/delete files in Finder or
-  // Dropbox and then switch back to Hush — without this they'd have to
-  // wait a full poll cycle to see the changes.
+  // Reconcile Dropbox sync when the window regains focus.
   if (IS_TAURI) {
     let lastFocusReconcile = 0;
     const maybeReconcile = async () => {
-      if (!state.settings.syncFolders?.length) return;
-      // Debounce — ignore rapid focus/visibility flaps.
+      if (!state.settings.dropboxEnabled || !state.settings.dropboxSyncPath) return;
       const now = Date.now();
       if (now - lastFocusReconcile < 2000) return;
       lastFocusReconcile = now;

@@ -291,105 +291,198 @@ function bindAll() {
     });
   }
 
-  // Sync tab
-  const syncAddBtn = document.getElementById("sync-add-folder");
-  if (syncAddBtn) {
-    syncAddBtn.addEventListener("click", async () => {
-      if (isIOSSettings()) {
-        // iPad: open Dropbox folder browser
-        if (!settings.dropboxToken) {
-          alert("Please set up your Dropbox token first.");
-          return;
-        }
-        try {
-          const { setToken } = await import("../sync/dropbox.js");
-          setToken(settings.dropboxToken);
-          const { openDropboxBrowser } = await import("../sync/dropbox-browser.js");
-          const result = await openDropboxBrowser();
-          if (result) {
-            const folders = settings.syncFolders || [];
-            const id = crypto.randomUUID();
-            const newFolder = { id, path: result.path, syncType: "dropbox", name: result.name };
-            folders.push(newFolder);
-            saveSetting("syncFolders", folders);
-            if (IS_TAURI) {
-              const { emit } = await import("@tauri-apps/api/event");
-              await emit("sync-folder-added", newFolder);
-            }
-            render();
-          }
-        } catch (e) {
-          console.error("Dropbox folder selection failed:", e);
-          alert("Failed to browse Dropbox: " + e.message);
-        }
-      } else {
-        // Desktop: native folder picker
-        if (!IS_TAURI) { alert("Folder selection requires the desktop app."); return; }
-        try {
-          const { open } = await import("@tauri-apps/plugin-dialog");
-          const selected = await open({ directory: true, multiple: false });
-          if (selected) {
-            const folders = settings.syncFolders || [];
-            const name = selected.split(/[\\/]/).filter(Boolean).pop() || "Folder";
-            const id = crypto.randomUUID();
-            const newFolder = { id, path: selected, syncType: "local", name };
-            folders.push(newFolder);
-            saveSetting("syncFolders", folders);
-            // Notify main window to import the folder contents
-            const { emit } = await import("@tauri-apps/api/event");
-            await emit("sync-folder-added", newFolder);
-            render();
-          }
-        } catch (e) {
-          console.error("Folder selection failed:", e);
-        }
+  // Sync tab — OAuth connect
+  const syncConnectBtn = document.getElementById("sync-connect-dropbox");
+  if (syncConnectBtn) {
+    syncConnectBtn.addEventListener("click", async () => {
+      const status = document.getElementById("sync-auth-status");
+      if (status) { status.textContent = "Opening Dropbox login..."; status.className = "sync-status"; }
+      try {
+        const dbx = await import("../sync/dropbox.js");
+        const redirectUri = "hushwriter://auth/callback";
+        const { codeVerifier } = await dbx.startOAuthFlow(redirectUri);
+        // Store verifier in sessionStorage so we can complete the flow when redirected back
+        sessionStorage.setItem("hush_oauth_verifier", codeVerifier);
+        sessionStorage.setItem("hush_oauth_redirect", redirectUri);
+        if (status) { status.textContent = "Waiting for Dropbox authorization..."; status.className = "sync-status"; }
+      } catch (e) {
+        console.error("OAuth start failed:", e);
+        if (status) { status.textContent = "Failed to start authorization: " + e.message; status.className = "sync-status error"; }
       }
     });
   }
 
-  document.querySelectorAll(".sync-folder-remove").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const folderId = btn.dataset.folderId;
-      settings.syncFolders = (settings.syncFolders || []).filter(f => f.id !== folderId);
-      saveSetting("syncFolders", settings.syncFolders);
-      // Notify main window to remove the folder from the file tree
-      if (IS_TAURI) {
-        const { emit } = await import("@tauri-apps/api/event");
-        await emit("sync-folder-removed", { id: folderId });
-      }
-      render();
-    });
-  });
-
-  const syncTestBtn = document.getElementById("sync-test-token");
-  if (syncTestBtn) {
-    syncTestBtn.addEventListener("click", async () => {
-      const tokenInput = document.getElementById("sync-dropbox-token");
-      const status = document.getElementById("sync-token-status");
-      if (!tokenInput || !status) return;
-      const token = tokenInput.value.trim();
-      if (!token) { status.textContent = "Please enter a token."; status.className = "sync-status error"; return; }
-      status.textContent = "Testing...";
-      status.className = "sync-status";
+  // Sync tab — Browse folder on Dropbox
+  const syncBrowseBtn = document.getElementById("sync-browse-folder");
+  if (syncBrowseBtn) {
+    syncBrowseBtn.addEventListener("click", async () => {
       try {
-        const resp = await fetch("https://api.dropboxapi.com/2/users/get_current_account", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          status.textContent = `Connected as ${data.name?.display_name || "unknown"}`;
-          status.className = "sync-status success";
-          saveSetting("dropboxToken", token);
-        } else {
-          status.textContent = "Invalid token.";
-          status.className = "sync-status error";
+        const { openDropboxBrowser } = await import("../sync/dropbox-browser.js");
+        const result = await openDropboxBrowser();
+        if (result) {
+          settings.dropboxSyncPath = result.path;
+          saveSetting("dropboxSyncPath", result.path);
+          const pathEl = document.getElementById("sync-selected-path");
+          if (pathEl) pathEl.textContent = result.path;
+          const startBtn = document.getElementById("sync-start");
+          if (startBtn) startBtn.disabled = false;
+          // Generate and show preview
+          await showSyncPreview(result.path);
         }
       } catch (e) {
-        status.textContent = "Connection failed.";
-        status.className = "sync-status error";
+        console.error("Dropbox browse failed:", e);
       }
     });
+  }
+
+  // Sync tab — Start syncing
+  const syncStartBtn = document.getElementById("sync-start");
+  if (syncStartBtn) {
+    syncStartBtn.addEventListener("click", async () => {
+      const status = document.getElementById("sync-auth-status");
+      const path = settings.dropboxSyncPath;
+      if (!path) return;
+      syncStartBtn.disabled = true;
+      syncStartBtn.textContent = "Syncing...";
+      if (status) { status.textContent = "Starting initial sync..."; status.className = "sync-status"; }
+      try {
+        saveSetting("dropboxEnabled", true);
+        if (IS_TAURI) {
+          const { emit } = await import("@tauri-apps/api/event");
+          await emit("dropbox-sync-start", { path });
+        }
+        if (status) { status.textContent = "Sync started successfully!"; status.className = "sync-status success"; }
+        setTimeout(() => render(), 1500);
+      } catch (e) {
+        syncStartBtn.disabled = false;
+        syncStartBtn.textContent = "Start Syncing";
+        if (status) { status.textContent = "Sync failed: " + e.message; status.className = "sync-status error"; }
+      }
+    });
+  }
+
+  // Sync tab — Test connection
+  const syncTestConnectionBtn = document.getElementById("sync-test-connection");
+  if (syncTestConnectionBtn) {
+    syncTestConnectionBtn.addEventListener("click", async () => {
+      const status = document.getElementById("sync-auth-status");
+      if (status) { status.textContent = "Testing..."; status.className = "sync-status"; }
+      try {
+        const dbx = await import("../sync/dropbox.js");
+        const result = await dbx.testConnection();
+        if (result.ok) {
+          if (status) { status.textContent = `Connected as ${result.displayName}`; status.className = "sync-status success"; }
+        } else {
+          if (status) { status.textContent = "Connection failed: " + result.error; status.className = "sync-status error"; }
+        }
+      } catch (e) {
+        if (status) { status.textContent = "Connection failed."; status.className = "sync-status error"; }
+      }
+    });
+  }
+
+  // Sync tab — Disconnect (before sync started)
+  const syncDisconnectBtn = document.getElementById("sync-disconnect");
+  if (syncDisconnectBtn) {
+    syncDisconnectBtn.addEventListener("click", async () => {
+      saveSetting("dropboxAccessToken", null);
+      saveSetting("dropboxRefreshToken", null);
+      saveSetting("dropboxSyncPath", null);
+      saveSetting("dropboxEnabled", false);
+      const dbx = await import("../sync/dropbox.js");
+      dbx.clearTokens();
+      render();
+    });
+  }
+
+  // Sync tab — Stop syncing (unsync)
+  const syncUnsyncBtn = document.getElementById("sync-unsync");
+  if (syncUnsyncBtn) {
+    syncUnsyncBtn.addEventListener("click", async () => {
+      // Show confirmation with keep/remove option
+      const choice = await showUnsyncConfirmation();
+      if (choice === null) return; // cancelled
+
+      const status = document.getElementById("sync-auth-status");
+      if (status) { status.textContent = "Disconnecting..."; status.className = "sync-status"; }
+
+      try {
+        if (IS_TAURI) {
+          const { emit } = await import("@tauri-apps/api/event");
+          await emit("dropbox-sync-stop", { removeFromDropbox: choice === "remove" });
+        }
+        saveSetting("dropboxAccessToken", null);
+        saveSetting("dropboxRefreshToken", null);
+        saveSetting("dropboxSyncPath", null);
+        saveSetting("dropboxEnabled", false);
+        const dbx = await import("../sync/dropbox.js");
+        dbx.clearTokens();
+        render();
+      } catch (e) {
+        if (status) { status.textContent = "Disconnect failed: " + e.message; status.className = "sync-status error"; }
+      }
+    });
+  }
+
+  async function showSyncPreview(dropboxPath) {
+    const previewEl = document.getElementById("sync-preview");
+    if (!previewEl) return;
+    previewEl.style.display = "";
+    previewEl.innerHTML = `<p class="sync-preview-loading">Scanning...</p>`;
+    try {
+      const { generateSyncPreview } = await import("../sync/sync-state.js");
+      // We need state — get it via invoke on Tauri
+      const { invoke } = await import("@tauri-apps/api/core");
+      const fileTree = await invoke("get_file_tree");
+      const fakeState = { fileTree, settings };
+      const preview = await generateSyncPreview(fakeState, dropboxPath);
+      let html = `<div class="sync-preview-content">`;
+      html += `<h3>Sync Preview</h3>`;
+      if (preview.toUpload.length > 0) {
+        html += `<p><strong>${preview.toUpload.length}</strong> file${preview.toUpload.length !== 1 ? "s" : ""} will be uploaded to Dropbox</p>`;
+      }
+      if (preview.toDownload.length > 0) {
+        html += `<p><strong>${preview.toDownload.length}</strong> file${preview.toDownload.length !== 1 ? "s" : ""} will be downloaded from Dropbox</p>`;
+      }
+      if (preview.unchanged > 0) {
+        html += `<p><strong>${preview.unchanged}</strong> file${preview.unchanged !== 1 ? "s" : ""} already in sync</p>`;
+      }
+      if (preview.toUpload.length === 0 && preview.toDownload.length === 0 && preview.unchanged === 0) {
+        html += `<p>No files to sync yet. Your library will be uploaded when syncing starts.</p>`;
+      }
+      html += `</div>`;
+      previewEl.innerHTML = html;
+    } catch (e) {
+      previewEl.innerHTML = `<p class="sync-preview-error">Preview failed: ${e.message}</p>`;
+    }
+  }
+
+  // Sync tab — handle OAuth callback (deep link returns with auth code)
+  if (IS_TAURI) {
+    const verifier = sessionStorage.getItem("hush_oauth_verifier");
+    if (verifier) {
+      // Check if URL has auth code (from deep link redirect)
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get("code");
+      if (code) {
+        sessionStorage.removeItem("hush_oauth_verifier");
+        const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || "hushwriter://auth/callback";
+        sessionStorage.removeItem("hush_oauth_redirect");
+        (async () => {
+          try {
+            const dbx = await import("../sync/dropbox.js");
+            await dbx.completeOAuthFlow(code, verifier, redirectUri);
+            // Reload settings to get new tokens
+            const { invoke } = await import("@tauri-apps/api/core");
+            const newSettings = await invoke("get_settings");
+            Object.assign(settings, newSettings);
+            render();
+          } catch (e) {
+            console.error("OAuth completion failed:", e);
+          }
+        })();
+      }
+    }
   }
 
   // Zotero tab
@@ -580,6 +673,49 @@ async function saveSetting(key, value) {
   }
 }
 
+
+/**
+ * Show a confirmation dialog for unsyncing, with options to keep or remove Dropbox files.
+ * Returns "keep", "remove", or null (cancelled).
+ */
+function showUnsyncConfirmation() {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "dbx-browser-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "dbx-browser-modal";
+    modal.style.maxWidth = "400px";
+    modal.innerHTML = `
+      <div class="dbx-browser-header">
+        <span class="dbx-browser-path">Stop Syncing</span>
+        <button class="dbx-browser-close">\u2715</button>
+      </div>
+      <div style="padding: 16px;">
+        <p style="margin: 0 0 16px 0; line-height: 1.5;">
+          Would you like to keep or remove the files that were synced to Dropbox?
+        </p>
+        <p style="margin: 0 0 16px 0; opacity: 0.7; font-size: 0.9em;">
+          Your local files in Hush will not be affected either way.
+        </p>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button id="unsync-cancel" style="padding: 8px 16px; cursor: pointer;">Cancel</button>
+          <button id="unsync-remove" style="padding: 8px 16px; cursor: pointer; color: #ff4444;">Remove from Dropbox</button>
+          <button id="unsync-keep" style="padding: 8px 16px; cursor: pointer;">Keep on Dropbox</button>
+        </div>
+      </div>
+    `;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    function close(result) { backdrop.remove(); resolve(result); }
+
+    modal.querySelector(".dbx-browser-close").addEventListener("click", () => close(null));
+    modal.querySelector("#unsync-cancel").addEventListener("click", () => close(null));
+    modal.querySelector("#unsync-keep").addEventListener("click", () => close("keep"));
+    modal.querySelector("#unsync-remove").addEventListener("click", () => close("remove"));
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(null); });
+  });
+}
 
 // Auto-init only when running in the standalone settings window
 async function init() {

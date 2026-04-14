@@ -34,11 +34,8 @@ function getIcon(item) {
   if (item.id === AppState.INBOX_ID) return typeIcons.inbox;
   if (item.id === AppState.TRASH_ID) return typeIcons.trash;
   if (item.syncFolderId && item.type === "folder") {
-    // Show broken icon if Dropbox sync is disconnected
-    const folder = (storedState?.settings?.syncFolders || []).find(f => f.id === item.syncFolderId);
-    if (folder?.syncType === "dropbox" && !isDropboxConnected()) {
-      return typeIcons.syncedFolderBroken;
-    }
+    // Legacy synced folder nodes — show broken icon if Dropbox disconnected
+    if (!isDropboxConnected()) return typeIcons.syncedFolderBroken;
     return typeIcons.syncedFolder;
   }
   if (item.flagged) {
@@ -55,18 +52,9 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
       <button data-tree-action="empty-trash" class="tree-action-text" title="Empty Trash">Empty</button>
     </span>`;
   }
-  // Synced folder root — show "Reveal in Finder" on desktop, nothing on iPad
+  // Legacy synced folder root
   if (item?.syncFolderId && item.type === "folder") {
-    const isIpad = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    if (isIpad) return "";
-    const folder = (storedState?.settings?.syncFolders || []).find(f => f.id === item.syncFolderId);
-    if (folder?.syncType === "dropbox") return ""; // no local folder to reveal
-    return `<span class="tree-actions" data-node-id="${nodeId}">
-      <button data-tree-action="reveal-in-finder" title="Show in Finder">
-        <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-      </button>
-    </span>`;
+    return "";
   }
   const isSpecial = nodeId === AppState.INBOX_ID;
   const isDoc = nodeType === "document";

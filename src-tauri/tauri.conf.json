@@ -54,7 +54,15 @@
   },
   "plugins": {
     "shell": {
-      "open": "^((mailto:\\w+)|(tel:\\w+)|(https?://\\w+)|(zotero://\\w+)|(obsidian://\\w+)).+"
+      "open": "^((mailto:\\w+)|(tel:\\w+)|(https?://\\w+)|(zotero://\\w+)|(obsidian://\\w+)|(hushwriter://\\w+)).+"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["hushwriter"]
+      },
+      "mobile": {
+        "schemes": ["hushwriter"]
+      }
     }
   }
 }

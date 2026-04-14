@@ -74,20 +74,22 @@ export function findAncestorIds(nodes, targetId, path = []) {
 
 /**
  * Find the sync context for a node — returns { syncFolderId, relativePath }
- * or null if the node is not inside a synced folder.
- * relativePath is the path from the sync folder root to the node (using node names).
+ * or null if the node is not found.
+ * In the new full-tree sync model, every node has a sync context.
+ * relativePath is built from the node's position in the tree using node names.
+ * For legacy synced folders (with syncFolderId), the old behavior is preserved.
  */
 export function findSyncContext(nodes, targetId) {
   function search(nodes, syncFolderId, pathParts) {
     for (const node of nodes) {
       const curSyncId = node.syncFolderId || syncFolderId;
-      // If this node IS the synced folder root, path resets to empty
-      const curPath = node.syncFolderId ? [] : (syncFolderId ? [...pathParts, node.name] : []);
+      // If this node IS a legacy synced folder root, path resets to empty
+      const curPath = node.syncFolderId ? [] : [...pathParts, node.name];
 
       if (node.id === targetId) {
         if (node.syncFolderId) return { syncFolderId: node.syncFolderId, relativePath: "" };
-        if (curSyncId) return { syncFolderId: curSyncId, relativePath: curPath.join("/") };
-        return null;
+        // In full-tree sync mode, return the path from tree root
+        return { syncFolderId: curSyncId || "__dropbox_sync__", relativePath: curPath.join("/") };
       }
 
       if (node.children?.length) {

@@ -7,5 +7,16 @@
     <string>zotero</string>
     <string>obsidian</string>
   </array>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>hushwriter</string>
+      </array>
+      <key>CFBundleURLName</key>
+      <string>com.hushwriter.app</string>
+    </dict>
+  </array>
 </dict>
 </plist>

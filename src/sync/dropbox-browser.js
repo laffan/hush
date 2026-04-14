@@ -1,8 +1,8 @@
 /**
- * Dropbox folder browser modal — opens from the settings Sync tab on iPad.
- * Lets the user navigate Dropbox folders and select one to sync.
+ * Dropbox folder browser modal.
+ * Used for selecting the sync target folder on Dropbox.
  */
-import { listFolder, getToken } from "./dropbox.js";
+import { listFolder } from "./dropbox.js";
 
 /**
  * Open a Dropbox folder browser modal.
@@ -14,15 +14,15 @@ export function openDropboxBrowser() {
     backdrop.className = "dbx-browser-backdrop";
 
     let currentPath = "";
-    let pathStack = []; // for back navigation
+    let pathStack = [];
 
     const modal = document.createElement("div");
     modal.className = "dbx-browser-modal";
     modal.innerHTML = `
       <div class="dbx-browser-header">
-        <button class="dbx-browser-back" disabled>←</button>
+        <button class="dbx-browser-back" disabled>\u2190</button>
         <span class="dbx-browser-path">/</span>
-        <button class="dbx-browser-close">✕</button>
+        <button class="dbx-browser-close">\u2715</button>
       </div>
       <div class="dbx-browser-list"></div>
       <div class="dbx-browser-footer">
@@ -68,9 +68,8 @@ export function openDropboxBrowser() {
       try {
         const entries = await listFolder(path);
         const folders = entries.filter(e => e.isFolder).sort((a, b) => a.name.localeCompare(b.name));
-        const files = entries.filter(e => !e.isFolder && e.name.endsWith(".md"));
 
-        if (folders.length === 0 && files.length === 0) {
+        if (folders.length === 0) {
           listEl.innerHTML = `<div class="dbx-browser-empty">Empty folder</div>`;
           return;
         }
@@ -79,18 +78,12 @@ export function openDropboxBrowser() {
         for (const folder of folders) {
           const row = document.createElement("div");
           row.className = "dbx-browser-item dbx-browser-folder";
-          row.innerHTML = `<span class="dbx-browser-icon">📁</span><span>${escHtml(folder.name)}</span>`;
+          row.textContent = folder.name;
           row.addEventListener("click", () => {
             pathStack.push(currentPath);
             currentPath = folder.pathDisplay;
             loadFolder(currentPath);
           });
-          listEl.appendChild(row);
-        }
-        for (const file of files) {
-          const row = document.createElement("div");
-          row.className = "dbx-browser-item dbx-browser-file";
-          row.innerHTML = `<span class="dbx-browser-icon">📄</span><span>${escHtml(file.name)}</span>`;
           listEl.appendChild(row);
         }
       } catch (e) {

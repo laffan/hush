@@ -35,7 +35,17 @@ pub struct AppSettings {
     #[serde(default = "default_padding")]
     pub padding: u32,
 
-    // Sync folders
+    // Dropbox sync (OAuth PKCE)
+    #[serde(default)]
+    pub dropbox_access_token: Option<String>,
+    #[serde(default)]
+    pub dropbox_refresh_token: Option<String>,
+    #[serde(default)]
+    pub dropbox_sync_path: Option<String>, // Dropbox folder path to sync to
+    #[serde(default)]
+    pub dropbox_enabled: bool,
+
+    // Legacy fields — kept for serde backward-compat (ignored)
     #[serde(default)]
     pub sync_folders: Vec<SyncFolder>,
     #[serde(default)]
@@ -550,6 +560,10 @@ impl Default for AppSettings {
             normalize_header_color: false,
             typewriter_line_opacity: default_typewriter_line_opacity(),
             padding: default_padding(),
+            dropbox_access_token: None,
+            dropbox_refresh_token: None,
+            dropbox_sync_path: None,
+            dropbox_enabled: false,
             sync_folders: Vec::new(),
             dropbox_token: None,
             always_on_top: false,

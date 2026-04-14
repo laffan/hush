@@ -1,379 +1,243 @@
 /**
- * Sync state operations — extracted from state.js to keep under 700 lines.
- * These methods are mixed into AppState via initSyncMethods().
+ * Sync state operations — full tree sync to Dropbox.
+ * Syncs all documents, folders, and projects as a mirror backup.
+ * Documents → .md files, Projects → .hushproject (JSON) files.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+const SYNC_FOLDER_ID = "__dropbox_sync__";
 
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);
 }
 
+// ===== Tree → Dropbox Path Helpers =====
+
 /**
- * Import a sync folder's contents into the internal file system.
- * Handles both local (desktop) and dropbox (iPad) sync types.
+ * Build a flat map of files and directories from the file tree.
+ * Documents become "Name.md", Projects get a ".hushproject" metadata file,
+ * Folders become directories.
  */
-export async function importSyncFolder(state, syncFolder) {
-  if (!IS_TAURI) return;
-  const { AppState } = await import("../state/state.js");
+export function buildSyncManifest(fileTree) {
+  const manifest = { files: [], directories: [] };
 
-  try {
-    let entries;
-    if (syncFolder.syncType === "dropbox") {
-      entries = await scanDropboxFolder(state, syncFolder);
-    } else {
-      entries = await tauriInvoke("scan_sync_folder", { folderPath: syncFolder.path });
-    }
-
-    const folderNode = {
-      id: crypto.randomUUID(), type: "folder", name: syncFolder.name,
-      children: [], flagged: false, syncFolderId: syncFolder.id,
-    };
-
-    const dirMap = { "": folderNode };
-    for (const entry of entries) {
-      const parts = entry.relativePath.split(/[\\/]/);
-      const parentPath = parts.slice(0, -1).join("/");
-      const parent = dirMap[parentPath] || folderNode;
-
-      if (entry.isDirectory) {
-        const node = {
-          id: crypto.randomUUID(), type: "folder", name: entry.name,
-          children: [], flagged: false,
-        };
-        parent.children.push(node);
-        dirMap[entry.relativePath] = node;
-      } else {
-        const file = await tauriInvoke("create_file");
-        await tauriInvoke("save_file", { id: file.id, content: entry.content });
-        await tauriInvoke("register_synced_file", {
-          internalId: file.id, syncFolderId: syncFolder.id,
-          relativePath: entry.relativePath, content: entry.content,
+  function walk(nodes, parentPath) {
+    for (const node of nodes) {
+      const name = node.name || "Untitled";
+      if (node.type === "document" && node.fileId) {
+        const relPath = parentPath ? `${parentPath}/${name}.md` : `${name}.md`;
+        manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: "md" });
+      } else if (node.type === "project") {
+        const dirPath = parentPath ? `${parentPath}/${name}` : name;
+        manifest.directories.push(dirPath);
+        const childDocs = (node.children || [])
+          .filter(c => c.type === "document")
+          .map(c => c.name + ".md");
+        manifest.files.push({
+          nodeId: node.id, fileId: null, relativePath: `${dirPath}/.hushproject`,
+          type: "hushproject", content: JSON.stringify({ ordering: childDocs }, null, 2),
         });
-        const node = {
-          id: crypto.randomUUID(), type: "document", name: entry.name,
-          fileId: file.id, children: [], flagged: false,
-        };
-        parent.children.push(node);
+        if (node.children) walk(node.children, dirPath);
+      } else if (node.type === "folder") {
+        const dirPath = parentPath ? `${parentPath}/${name}` : name;
+        manifest.directories.push(dirPath);
+        if (node.children) walk(node.children, dirPath);
       }
     }
-
-    const trashIdx = state.fileTree.findIndex(n => n.id === AppState.TRASH_ID);
-    if (trashIdx >= 0) state.fileTree.splice(trashIdx, 0, folderNode);
-    else state.fileTree.push(folderNode);
-
-    await state.saveFileTree();
-    state.files = await tauriInvoke("list_files");
-    state.emit("files-changed");
-  } catch (e) {
-    console.error("Sync import failed:", e);
   }
-}
 
-/** Scan a Dropbox folder and download all .md file contents. */
-async function scanDropboxFolder(state, syncFolder) {
-  const dbx = await import("./dropbox.js");
-  dbx.setToken(state.settings.dropboxToken);
-  const rawEntries = await dbx.listFolderRecursive(syncFolder.path === "/" ? "" : syncFolder.path);
-  // Download content for each .md file
-  for (const entry of rawEntries) {
-    if (!entry.isDirectory && entry.dropboxPath) {
-      entry.content = await dbx.downloadFile(entry.dropboxPath);
-    }
-  }
-  return rawEntries;
+  walk(fileTree, "");
+  return manifest;
 }
 
 /**
- * Write file content to its external synced location (local or Dropbox).
- * Checks external timestamps first — if the external file is newer,
- * accepts the external version instead of overwriting it.
+ * Generate a sync preview: what will be uploaded and what will be downloaded.
+ */
+export async function generateSyncPreview(state, dropboxPath) {
+  if (!IS_TAURI) return { toUpload: [], toDownload: [], unchanged: 0 };
+
+  const dbx = await import("./dropbox.js");
+  const manifest = buildSyncManifest(state.fileTree);
+
+  let remoteEntries = [];
+  try {
+    remoteEntries = await dbx.listFolderRecursive(dropboxPath === "/" ? "" : dropboxPath);
+  } catch (e) {
+    if (!String(e).includes("not_found")) throw e;
+  }
+
+  const remotePaths = new Set(remoteEntries.filter(e => !e.isDirectory).map(e => e.relativePath));
+  const localPaths = new Set(manifest.files.map(f => f.relativePath));
+
+  const toUpload = manifest.files
+    .filter(f => !remotePaths.has(f.relativePath))
+    .map(f => ({ relativePath: f.relativePath, type: f.type }));
+
+  const toDownload = remoteEntries
+    .filter(e => !e.isDirectory && !localPaths.has(e.relativePath) && e.tag !== "hushproject")
+    .map(e => ({ relativePath: e.relativePath, tag: e.tag || "md" }));
+
+  const unchanged = manifest.files.filter(f => remotePaths.has(f.relativePath)).length;
+
+  return { toUpload, toDownload, unchanged };
+}
+
+/**
+ * Perform initial full sync — push local to Dropbox, pull new Dropbox files.
+ */
+export async function performInitialSync(state, dropboxPath) {
+  if (!IS_TAURI) return;
+  const dbx = await import("./dropbox.js");
+
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+  const manifest = buildSyncManifest(state.fileTree);
+
+  // Ensure the root sync folder exists
+  if (basePath) {
+    await dbx.createFolder(basePath).catch(() => {});
+  }
+
+  // Create all directories first
+  for (const dir of manifest.directories) {
+    const fullDir = basePath ? `${basePath}/${dir}` : `/${dir}`;
+    await dbx.createFolder(fullDir).catch(() => {});
+  }
+
+  // Upload all files
+  for (const file of manifest.files) {
+    const fullPath = basePath ? `${basePath}/${file.relativePath}` : `/${file.relativePath}`;
+    let content = file.content || "";
+    if (file.type === "md" && file.fileId) {
+      try {
+        const fileData = await tauriInvoke("load_file", { id: file.fileId });
+        content = fileData.content || "";
+      } catch (_) { continue; }
+    }
+    try {
+      await dbx.uploadFile(fullPath, content);
+      if (file.fileId) {
+        await tauriInvoke("register_synced_file", {
+          internalId: file.fileId, syncFolderId: SYNC_FOLDER_ID,
+          relativePath: file.relativePath, content,
+        });
+      }
+    } catch (e) {
+      console.error(`Upload failed for ${file.relativePath}:`, e);
+    }
+  }
+
+  // Pull files from Dropbox that aren't in our tree
+  let remoteEntries = [];
+  try {
+    remoteEntries = await dbx.listFolderRecursive(basePath || "");
+  } catch (_) {}
+
+  const localPaths = new Set(manifest.files.map(f => f.relativePath));
+
+  for (const entry of remoteEntries) {
+    if (entry.isDirectory || localPaths.has(entry.relativePath)) continue;
+    if (entry.tag === "hushproject") continue;
+    if (!entry.dropboxPath) continue;
+
+    try {
+      const content = await dbx.downloadFile(entry.dropboxPath);
+      const file = await tauriInvoke("create_file");
+      await tauriInvoke("save_file", { id: file.id, content });
+      await tauriInvoke("register_synced_file", {
+        internalId: file.id, syncFolderId: SYNC_FOLDER_ID,
+        relativePath: entry.relativePath, content,
+      });
+      insertIntoTree(state.fileTree, entry.relativePath, file.id, entry.name);
+    } catch (e) {
+      console.error(`Download failed for ${entry.relativePath}:`, e);
+    }
+  }
+
+  await state.saveFileTree();
+  state.files = await tauriInvoke("list_files");
+  state.emit("files-changed");
+}
+
+/**
+ * Insert a downloaded file into the file tree, creating intermediate folders.
+ */
+function insertIntoTree(fileTree, relativePath, fileId, displayName) {
+  const parts = relativePath.split("/");
+  const fileName = parts.pop().replace(/\.md$/, "");
+  let current = fileTree;
+
+  for (const dirName of parts) {
+    if (!dirName) continue;
+    let folder = current.find(n => n.type === "folder" && n.name === dirName);
+    if (!folder) {
+      folder = {
+        id: crypto.randomUUID(), type: "folder", name: dirName,
+        children: [], flagged: false,
+      };
+      const trashIdx = current.findIndex(n => n.id === "__trash__");
+      if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
+      else current.push(folder);
+    }
+    if (!Array.isArray(folder.children)) folder.children = [];
+    current = folder.children;
+  }
+
+  current.push({
+    id: crypto.randomUUID(), type: "document",
+    name: displayName || fileName, fileId,
+    children: [], flagged: false,
+  });
+}
+
+// ===== Ongoing Sync Operations =====
+
+/**
+ * Push a single file's content to Dropbox after an edit.
  */
 export async function syncFileToExternal(state, fileId, content) {
-  if (!IS_TAURI) return;
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return;
+
   try {
     const info = await tauriInvoke("get_sync_file_info", { internalId: fileId });
     if (!info) return;
-    const folder = getSyncFolder(state, info.syncFolderId);
-    if (!folder) return;
 
-    if (folder.syncType === "dropbox") {
-      const dbx = await import("./dropbox.js");
-      dbx.setToken(state.settings.dropboxToken);
-      const dropboxPath = folder.path === "/" ? `/${info.relativePath}` : `${folder.path}/${info.relativePath}`;
-      // Check Dropbox metadata before uploading — don't overwrite newer external edits
-      try {
-        const metaResp = await fetch("https://api.dropboxapi.com/2/files/get_metadata", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${dbx.getToken()}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ path: dropboxPath }),
-        });
-        if (metaResp.ok) {
-          const meta = await metaResp.json();
-          const externalModified = meta.server_modified
-            ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
-          if (externalModified > (info.lastSyncedAt || 0)) {
-            // External is newer — pull it instead of pushing
-            const externalContent = await dbx.downloadFile(dropboxPath);
-            if (externalContent !== content) {
-              await acceptExternalChange(state, fileId, externalContent);
-            } else {
-              await tauriInvoke("update_sync_hash", { internalId: fileId, content: externalContent });
-            }
-            return;
-          }
+    const dbx = await import("./dropbox.js");
+    const basePath = dropboxPath === "/" ? "" : dropboxPath;
+    const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
+
+    const meta = await dbx.getMetadata(fullPath);
+    if (meta) {
+      const externalModified = meta.server_modified
+        ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
+      if (externalModified > (info.lastSyncedAt || 0)) {
+        const externalContent = await dbx.downloadFile(fullPath);
+        if (externalContent !== content) {
+          await acceptExternalChange(state, fileId, externalContent);
+        } else {
+          await tauriInvoke("update_sync_hash", { internalId: fileId, content: externalContent });
         }
-      } catch (_) {
-        // Metadata check failed — skip push to be safe, let polling handle it
         return;
       }
-      await dbx.uploadFile(dropboxPath, content);
-      await tauriInvoke("update_sync_hash", { internalId: fileId, content });
-    } else {
-      // Local sync — backend checks external mtime before writing
-      const result = await tauriInvoke("write_sync_file", {
-        folderPath: folder.path, relativePath: info.relativePath,
-        content, internalId: fileId,
-      });
-      if (result && result.externalIsNewer && result.externalContent) {
-        // External file was modified outside the app — accept it instead
-        await acceptExternalChange(state, fileId, result.externalContent);
-      }
     }
+
+    await dbx.uploadFile(fullPath, content);
+    await tauriInvoke("update_sync_hash", { internalId: fileId, content });
   } catch (e) {
     console.error("Sync write failed:", e);
   }
 }
 
-function getSyncFolder(state, syncFolderId) {
-  return (state.settings.syncFolders || []).find(f => f.id === syncFolderId);
-}
-
-function dropboxFullPath(folder, relativePath) {
-  return folder.path === "/" ? `/${relativePath}` : `${folder.path}/${relativePath}`;
-}
-
-async function getDropbox(state) {
-  const dbx = await import("./dropbox.js");
-  dbx.setToken(state.settings.dropboxToken);
-  return dbx;
-}
-
-/**
- * Propagate a rename to the external filesystem.
- * Called AFTER the tree node has already been renamed (so ctx.relativePath has the new name).
- */
-export async function syncRenameNode(state, nodeId, oldName, nodeType) {
-  if (!IS_TAURI) return;
-  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
-  const ctx = findSyncContext(state.fileTree, nodeId);
-  if (!ctx) return;
-  const folder = getSyncFolder(state, ctx.syncFolderId);
-  if (!folder) return;
-
-  try {
-    if (nodeType === "document") {
-      const node = findNode(state.fileTree, nodeId);
-      if (!node?.fileId) return;
-      const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
-      if (!info) return;
-      const pathParts = info.relativePath.split("/");
-      pathParts[pathParts.length - 1] = node.name + ".md";
-      const newRelPath = pathParts.join("/");
-      if (folder.syncType === "dropbox") {
-        const dbx = await getDropbox(state);
-        await dbx.moveEntry(dropboxFullPath(folder, info.relativePath), dropboxFullPath(folder, newRelPath));
-        // Update mapping locally
-        await tauriInvoke("rename_sync_file", {
-          folderPath: "__dropbox__", oldRelative: info.relativePath,
-          newRelative: newRelPath, internalId: node.fileId,
-        });
-      } else {
-        await tauriInvoke("rename_sync_file", {
-          folderPath: folder.path, oldRelative: info.relativePath,
-          newRelative: newRelPath, internalId: node.fileId,
-        });
-      }
-    } else {
-      const parts = ctx.relativePath.split("/");
-      parts[parts.length - 1] = oldName;
-      const oldRelPath = parts.join("/");
-      if (folder.syncType === "dropbox") {
-        const dbx = await getDropbox(state);
-        await dbx.moveEntry(dropboxFullPath(folder, oldRelPath), dropboxFullPath(folder, ctx.relativePath));
-      }
-      await tauriInvoke("rename_sync_directory", {
-        folderPath: folder.syncType === "dropbox" ? "__dropbox__" : folder.path,
-        oldRelative: oldRelPath, newRelative: ctx.relativePath, syncFolderId: ctx.syncFolderId,
-      });
-    }
-  } catch (e) {
-    console.error("Sync rename failed:", e);
-  }
-}
-
-/**
- * Propagate a delete to the external filesystem.
- * Called BEFORE the node is removed from the tree (so we can still find its context).
- */
-export async function syncDeleteNode(state, nodeId) {
-  if (!IS_TAURI) return;
-  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
-  const ctx = findSyncContext(state.fileTree, nodeId);
-  if (!ctx || !ctx.relativePath) return; // Don't delete the sync folder root itself
-  const folder = getSyncFolder(state, ctx.syncFolderId);
-  if (!folder) return;
-
-  const node = findNode(state.fileTree, nodeId);
-  if (!node) return;
-
-  try {
-    if (folder.syncType === "dropbox") {
-      const dbx = await getDropbox(state);
-      await dbx.deleteEntry(dropboxFullPath(folder, ctx.relativePath)).catch(() => {});
-    }
-    const fp = folder.syncType === "dropbox" ? "__dropbox__" : folder.path;
-    if (node.type === "document" && node.fileId) {
-      await tauriInvoke("delete_sync_file", { folderPath: fp, internalId: node.fileId });
-    } else {
-      await tauriInvoke("delete_sync_directory", {
-        folderPath: fp, relativePath: ctx.relativePath, syncFolderId: ctx.syncFolderId,
-      });
-    }
-  } catch (e) {
-    console.error("Sync delete failed:", e);
-  }
-}
-
-/**
- * Propagate a new folder/project creation to the external filesystem.
- */
-export async function syncCreateNode(state, nodeId, nodeType) {
-  if (!IS_TAURI) return;
-  const { findSyncContext } = await import("../state/tree-helpers.js");
-  const ctx = findSyncContext(state.fileTree, nodeId);
-  if (!ctx) return;
-  const folder = getSyncFolder(state, ctx.syncFolderId);
-  if (!folder) return;
-
-  try {
-    if (folder.syncType === "dropbox") {
-      const dbx = await getDropbox(state);
-      await dbx.createFolder(dropboxFullPath(folder, ctx.relativePath));
-      if (nodeType === "project") {
-        const data = JSON.stringify({ ordering: [] }, null, 2);
-        await dbx.uploadFile(dropboxFullPath(folder, ctx.relativePath + "/.hush-project.json"), data);
-      }
-    } else {
-      await tauriInvoke("create_sync_directory", {
-        folderPath: folder.path, relativePath: ctx.relativePath,
-      });
-      if (nodeType === "project") {
-        await tauriInvoke("write_project_json", {
-          folderPath: folder.path, relativePath: ctx.relativePath, docNames: [],
-        });
-      }
-    }
-  } catch (e) {
-    console.error("Sync create dir failed:", e);
-  }
-}
-
-/**
- * Propagate a new file creation to the external filesystem.
- */
-export async function syncCreateFile(state, nodeId, fileId, content) {
-  if (!IS_TAURI) return;
-  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
-  const ctx = findSyncContext(state.fileTree, nodeId);
-  if (!ctx) return;
-  const folder = getSyncFolder(state, ctx.syncFolderId);
-  if (!folder) return;
-
-  const relPath = ctx.relativePath + ".md";
-
-  try {
-    if (folder.syncType === "dropbox") {
-      const dbx = await getDropbox(state);
-      await dbx.uploadFile(dropboxFullPath(folder, relPath), content);
-      // Register in sync map (no local file write)
-      await tauriInvoke("register_synced_file", {
-        internalId: fileId, syncFolderId: ctx.syncFolderId,
-        relativePath: relPath, content,
-      });
-    } else {
-      await tauriInvoke("create_sync_file", {
-        folderPath: folder.path, relativePath: relPath, content,
-        internalId: fileId, syncFolderId: ctx.syncFolderId,
-      });
-    }
-  } catch (e) {
-    console.error("Sync create file failed:", e);
-  }
-}
-
-/**
- * Update a project's .hush-project.json ordering file.
- */
-export async function syncProjectOrdering(state, projectNodeId) {
-  if (!IS_TAURI) return;
-  const { findSyncContext, findNode, collectDocumentIds } = await import("../state/tree-helpers.js");
-  const ctx = findSyncContext(state.fileTree, projectNodeId);
-  if (!ctx) return;
-  const folder = getSyncFolder(state, ctx.syncFolderId);
-  if (!folder) return;
-
-  const node = findNode(state.fileTree, projectNodeId);
-  if (!node || node.type !== "project") return;
-
-  // Build ordered list of document names
-  const docNames = (node.children || [])
-    .filter(c => c.type === "document")
-    .map(c => c.name + ".md");
-
-  try {
-    if (folder.syncType === "dropbox") {
-      const dbx = await getDropbox(state);
-      const data = JSON.stringify({ ordering: docNames }, null, 2);
-      await dbx.uploadFile(dropboxFullPath(folder, ctx.relativePath + "/.hush-project.json"), data);
-    } else {
-      await tauriInvoke("write_project_json", {
-        folderPath: folder.path, relativePath: ctx.relativePath, docNames,
-      });
-    }
-  } catch (e) {
-    console.error("Sync project JSON failed:", e);
-  }
-}
-
-/**
- * Check all sync folders for external changes. Returns array of ExternalChange.
- */
-export async function checkSyncChanges() {
-  if (!IS_TAURI) return [];
-  try {
-    return await tauriInvoke("check_sync_changes");
-  } catch (e) {
-    console.error("Sync change check failed:", e);
-    return [];
-  }
-}
-
 /**
  * Accept an external change — replace internal content with external.
- * A snapshot of the current internal content is created by the backend
- * before overwriting, preserving it in version history.
  */
 export async function acceptExternalChange(state, internalId, content) {
   if (!IS_TAURI) return;
   try {
     await tauriInvoke("accept_external_change", { internalId, content });
     state.files = await tauriInvoke("list_files");
-    // If the changed file is currently open, reload it without marking dirty
     if (state.currentFileId === internalId && state.editor) {
       state._syncPulling = true;
       state.editor.setContent(content);
@@ -387,29 +251,187 @@ export async function acceptExternalChange(state, internalId, content) {
 }
 
 /**
- * Reject an external change — overwrite external with internal.
+ * Propagate a rename to Dropbox.
  */
-export async function rejectExternalChange(state, internalId, folderPath) {
-  if (!IS_TAURI) return;
+export async function syncRenameNode(state, nodeId, oldName, nodeType) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return;
+
+  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
+  const dbx = await import("./dropbox.js");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+
   try {
-    await tauriInvoke("reject_external_change", { internalId, folderPath });
+    if (nodeType === "document") {
+      const node = findNode(state.fileTree, nodeId);
+      if (!node?.fileId) return;
+      const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
+      if (!info) return;
+      const pathParts = info.relativePath.split("/");
+      pathParts[pathParts.length - 1] = node.name + ".md";
+      const newRelPath = pathParts.join("/");
+      const oldFull = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
+      const newFull = basePath ? `${basePath}/${newRelPath}` : `/${newRelPath}`;
+      await dbx.moveEntry(oldFull, newFull);
+      await tauriInvoke("rename_sync_file", {
+        folderPath: "__dropbox__", oldRelative: info.relativePath,
+        newRelative: newRelPath, internalId: node.fileId,
+      });
+    } else {
+      const ctx = findSyncContext(state.fileTree, nodeId);
+      if (!ctx || !ctx.relativePath) return;
+      const parts = ctx.relativePath.split("/");
+      parts[parts.length - 1] = oldName;
+      const oldRelPath = parts.join("/");
+      const oldFull = basePath ? `${basePath}/${oldRelPath}` : `/${oldRelPath}`;
+      const newFull = basePath ? `${basePath}/${ctx.relativePath}` : `/${ctx.relativePath}`;
+      await dbx.moveEntry(oldFull, newFull);
+      await tauriInvoke("rename_sync_directory", {
+        folderPath: "__dropbox__", oldRelative: oldRelPath,
+        newRelative: ctx.relativePath, syncFolderId: SYNC_FOLDER_ID,
+      });
+    }
   } catch (e) {
-    console.error("Reject external change failed:", e);
+    console.error("Sync rename failed:", e);
   }
 }
 
 /**
- * Reconcile sync state after a tree reorganization (e.g. drag-and-drop).
- * Handles three cases:
- * 1. Document moved INTO a synced folder — create external file
- * 2. Document moved OUT of a synced folder — remove registration
- * 3. Document moved WITHIN a synced folder — move file on disk to match
+ * Propagate a delete to Dropbox.
+ */
+export async function syncDeleteNode(state, nodeId) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return;
+
+  const { findNode, findSyncContext } = await import("../state/tree-helpers.js");
+  const dbx = await import("./dropbox.js");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+
+  try {
+    if (node.type === "document" && node.fileId) {
+      const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
+      if (info) {
+        const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
+        await dbx.deleteEntry(fullPath).catch(() => {});
+        await tauriInvoke("delete_sync_file", { folderPath: "__dropbox__", internalId: node.fileId });
+      }
+    } else {
+      const ctx = findSyncContext(state.fileTree, nodeId);
+      if (ctx && ctx.relativePath) {
+        const fullPath = basePath ? `${basePath}/${ctx.relativePath}` : `/${ctx.relativePath}`;
+        await dbx.deleteEntry(fullPath).catch(() => {});
+        await tauriInvoke("delete_sync_directory", {
+          folderPath: "__dropbox__", relativePath: ctx.relativePath,
+          syncFolderId: SYNC_FOLDER_ID,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Sync delete failed:", e);
+  }
+}
+
+/**
+ * Propagate a new folder/project creation to Dropbox.
+ */
+export async function syncCreateNode(state, nodeId, nodeType) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return;
+
+  const { findSyncContext } = await import("../state/tree-helpers.js");
+  const dbx = await import("./dropbox.js");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+  const ctx = findSyncContext(state.fileTree, nodeId);
+  if (!ctx || !ctx.relativePath) return;
+
+  try {
+    const fullPath = basePath ? `${basePath}/${ctx.relativePath}` : `/${ctx.relativePath}`;
+    await dbx.createFolder(fullPath);
+    if (nodeType === "project") {
+      const data = JSON.stringify({ ordering: [] }, null, 2);
+      await dbx.uploadFile(`${fullPath}/.hushproject`, data);
+    }
+  } catch (e) {
+    console.error("Sync create dir failed:", e);
+  }
+}
+
+/**
+ * Propagate a new file creation to Dropbox.
+ */
+export async function syncCreateFile(state, nodeId, fileId, content) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return;
+
+  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
+  const dbx = await import("./dropbox.js");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+  const ctx = findSyncContext(state.fileTree, nodeId);
+  if (!ctx) return;
+
+  const nodeName = findNode(state.fileTree, nodeId)?.name || "Untitled";
+  const relPath = ctx.relativePath ? `${ctx.relativePath}.md` : `${nodeName}.md`;
+
+  try {
+    const fullPath = basePath ? `${basePath}/${relPath}` : `/${relPath}`;
+    await dbx.uploadFile(fullPath, content);
+    await tauriInvoke("register_synced_file", {
+      internalId: fileId, syncFolderId: SYNC_FOLDER_ID,
+      relativePath: relPath, content,
+    });
+  } catch (e) {
+    console.error("Sync create file failed:", e);
+  }
+}
+
+/**
+ * Update a project's .hushproject ordering file on Dropbox.
+ */
+export async function syncProjectOrdering(state, projectNodeId) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return;
+
+  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
+  const dbx = await import("./dropbox.js");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+  const ctx = findSyncContext(state.fileTree, projectNodeId);
+  if (!ctx) return;
+  const node = findNode(state.fileTree, projectNodeId);
+  if (!node || node.type !== "project") return;
+
+  const docNames = (node.children || [])
+    .filter(c => c.type === "document")
+    .map(c => c.name + ".md");
+
+  try {
+    const data = JSON.stringify({ ordering: docNames }, null, 2);
+    const fullPath = basePath
+      ? `${basePath}/${ctx.relativePath}/.hushproject`
+      : `/${ctx.relativePath}/.hushproject`;
+    await dbx.uploadFile(fullPath, data);
+  } catch (e) {
+    console.error("Sync project ordering failed:", e);
+  }
+}
+
+/**
+ * Reconcile sync state after a tree reorganization (drag-and-drop).
  */
 export async function reconcileSync(state) {
-  if (!IS_TAURI) return;
-  const { findSyncContext } = await import("../state/tree-helpers.js");
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return;
 
-  // Collect all document nodes from the tree
+  const dbx = await import("./dropbox.js");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+
   function collectDocs(nodes) {
     const docs = [];
     for (const n of nodes) {
@@ -420,278 +442,146 @@ export async function reconcileSync(state) {
   }
 
   const docs = collectDocs(state.fileTree);
+  const manifest = buildSyncManifest(state.fileTree);
+  const expectedPaths = new Map(manifest.files.filter(f => f.fileId).map(f => [f.fileId, f.relativePath]));
 
   for (const doc of docs) {
-    const ctx = findSyncContext(state.fileTree, doc.id);
+    const expectedPath = expectedPaths.get(doc.fileId);
+    if (!expectedPath) continue;
+
     let info = null;
-    try {
-      info = await tauriInvoke("get_sync_file_info", { internalId: doc.fileId });
-    } catch (_) {}
+    try { info = await tauriInvoke("get_sync_file_info", { internalId: doc.fileId }); } catch (_) {}
 
-    if (ctx && !info) {
-      // Document is in a synced folder but has no registration — create external file
-      const folder = getSyncFolder(state, ctx.syncFolderId);
-      if (!folder) continue;
+    if (!info) {
       let content = "";
+      try { const file = await tauriInvoke("load_file", { id: doc.fileId }); content = file.content || ""; } catch (_) {}
+      const fullPath = basePath ? `${basePath}/${expectedPath}` : `/${expectedPath}`;
       try {
-        const file = await tauriInvoke("load_file", { id: doc.fileId });
-        content = file.content || "";
+        await dbx.uploadFile(fullPath, content);
+        await tauriInvoke("register_synced_file", {
+          internalId: doc.fileId, syncFolderId: SYNC_FOLDER_ID,
+          relativePath: expectedPath, content,
+        });
       } catch (_) {}
-      await syncCreateFile(state, doc.id, doc.fileId, content);
-    } else if (!ctx && info) {
-      // Document was moved out of a synced folder — remove sync registration
-      const folder = getSyncFolder(state, info.syncFolderId);
-      if (!folder) continue;
+    } else if (info.relativePath !== expectedPath) {
+      const oldFull = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
+      const newFull = basePath ? `${basePath}/${expectedPath}` : `/${expectedPath}`;
       try {
-        const fp = folder.syncType === "dropbox" ? "__dropbox__" : folder.path;
-        await tauriInvoke("delete_sync_file", { folderPath: fp, internalId: doc.fileId });
-      } catch (_) {}
-    } else if (ctx && info) {
-      // Document is in a synced folder AND has a registration —
-      // check if its path changed (moved within the synced folder)
-      const newRelPath = ctx.relativePath
-        ? ctx.relativePath + ".md"
-        : doc.name + ".md";
-      if (newRelPath !== info.relativePath) {
-        const folder = getSyncFolder(state, ctx.syncFolderId);
-        if (!folder) continue;
-        try {
-          if (folder.syncType === "dropbox") {
-            const dbx = await getDropbox(state);
-            await dbx.moveEntry(
-              dropboxFullPath(folder, info.relativePath),
-              dropboxFullPath(folder, newRelPath)
-            );
-            await tauriInvoke("rename_sync_file", {
-              folderPath: "__dropbox__",
-              oldRelative: info.relativePath,
-              newRelative: newRelPath,
-              internalId: doc.fileId,
-            });
-          } else {
-            await tauriInvoke("rename_sync_file", {
-              folderPath: folder.path,
-              oldRelative: info.relativePath,
-              newRelative: newRelPath,
-              internalId: doc.fileId,
-            });
-          }
-        } catch (e) {
-          console.error("Sync move failed:", e);
-        }
+        await dbx.moveEntry(oldFull, newFull);
+        await tauriInvoke("rename_sync_file", {
+          folderPath: "__dropbox__", oldRelative: info.relativePath,
+          newRelative: expectedPath, internalId: doc.fileId,
+        });
+      } catch (e) {
+        console.error("Sync move failed:", e);
       }
     }
   }
 }
 
 /**
- * Diff a sync folder against its filesystem contents.
- * Detects new files (created externally), deleted files (removed externally),
- * and folders that no longer exist on disk. Creates/removes internal files
- * and tree nodes so the in-memory tree reflects the filesystem.
- * Returns true if any changes were made.
+ * Check all synced files for content changes on Dropbox.
  */
-export async function diffSyncFolder(state, syncFolder) {
-  if (!IS_TAURI) return false;
-  const { findNodeByFileId, removeNode } = await import("../state/tree-helpers.js");
+export async function checkDropboxChanges(state) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return [];
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return [];
 
-  try {
-    let diff;
-    if (syncFolder.syncType === "dropbox") {
-      diff = await diffDropboxFolder(state, syncFolder);
-    } else {
-      diff = await tauriInvoke("diff_sync_folder", { syncFolderId: syncFolder.id });
-    }
-
-    if (!diff) return false;
-
-    // Find the sync folder root node in the tree
-    const syncRoot = findSyncFolderNode(state.fileTree, syncFolder.id);
-    if (!syncRoot) return false;
-
-    let changed = false;
-
-    // Handle new external files — create internal files + tree nodes
-    for (const entry of (diff.newFiles || [])) {
-      if (entry.isDirectory) continue; // only handle files
-      const file = await tauriInvoke("create_file");
-      await tauriInvoke("save_file", { id: file.id, content: entry.content });
-      await tauriInvoke("register_synced_file", {
-        internalId: file.id, syncFolderId: syncFolder.id,
-        relativePath: entry.relativePath, content: entry.content,
-      });
-      // Add tree node in the correct subdirectory
-      const parts = entry.relativePath.split(/[\\/]/);
-      const fileName = parts.pop().replace(/\.md$/, "");
-      const parentNode = ensureSubdirectories(syncRoot, parts);
-      const docNode = {
-        id: crypto.randomUUID(), type: "document", name: fileName || entry.name,
-        fileId: file.id, children: [], flagged: false,
-      };
-      parentNode.children.push(docNode);
-      changed = true;
-    }
-
-    // Handle externally deleted files — remove tree nodes + unregister
-    for (const internalId of (diff.deletedFileIds || [])) {
-      const treeNode = findNodeByFileId(state.fileTree, internalId);
-      if (treeNode) {
-        removeNode(state.fileTree, treeNode.id);
-        changed = true;
-      }
-      try {
-        const fp = syncFolder.syncType === "dropbox" ? "__dropbox__" : syncFolder.path;
-        await tauriInvoke("delete_sync_file", { folderPath: fp, internalId });
-      } catch (_) {}
-    }
-
-    // Prune folder nodes whose path no longer exists on disk. This catches
-    // folders that were renamed, moved, or deleted externally — without
-    // this, the old empty folder nodes would linger in the tree forever.
-    if (Array.isArray(diff.diskDirectories)) {
-      const diskDirs = new Set(diff.diskDirectories.map(normalizeRelPath));
-      if (pruneStaleFolders(syncRoot, diskDirs)) {
-        changed = true;
-      }
-    }
-
-    if (!changed) return false;
-
-    await state.saveFileTree();
-    state.files = await tauriInvoke("list_files");
-    state.emit("files-changed");
-    return true;
-  } catch (e) {
-    console.error("Sync folder diff failed:", e);
-    return false;
-  }
-}
-
-/** Normalize a relative path: forward slashes, no trailing slash. */
-function normalizeRelPath(p) {
-  return String(p || "").replace(/\\/g, "/").replace(/\/+$/, "");
-}
-
-/**
- * Recursively remove folder descendants of `syncRoot` whose relative path
- * (built from node names) is not in `diskDirs`. Documents, projects, and
- * folders that are themselves sync-folder roots are left alone.
- * Returns true if any nodes were removed.
- */
-function pruneStaleFolders(syncRoot, diskDirs) {
-  let removed = false;
-  function walk(node, parentPath) {
-    if (!node.children) return;
-    // Iterate in reverse so splice is safe
-    for (let i = node.children.length - 1; i >= 0; i--) {
-      const child = node.children[i];
-      if (child.type !== "folder") continue;
-      if (child.syncFolderId) continue; // don't touch nested sync roots
-      const childPath = parentPath ? `${parentPath}/${child.name}` : child.name;
-      // Recurse first so we clean up deeper stale folders before deciding
-      walk(child, childPath);
-      if (!diskDirs.has(normalizeRelPath(childPath))) {
-        // Only remove if it now has no children — avoids nuking a folder that
-        // currently holds documents the diff didn't flag as deleted (e.g.
-        // because of an error). New-file handling may also have added
-        // children we want to keep.
-        if (!child.children || child.children.length === 0) {
-          node.children.splice(i, 1);
-          removed = true;
-        }
-      }
-    }
-  }
-  walk(syncRoot, "");
-  return removed;
-}
-
-/**
- * Diff a Dropbox folder by listing all files and comparing against registered ones.
- * Returns a diff object with newFiles and deletedFileIds.
- */
-async function diffDropboxFolder(state, syncFolder) {
-  if (!state.settings.dropboxToken) return null;
-  const dbx = await import("./dropbox.js");
-  dbx.setToken(state.settings.dropboxToken);
   const { invoke } = await import("@tauri-apps/api/core");
+  const dbx = await import("./dropbox.js");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+  const syncedFiles = await invoke("get_synced_files", { syncFolderId: SYNC_FOLDER_ID });
+  const changes = [];
 
-  // List all entries on Dropbox
-  const rawEntries = await dbx.listFolderRecursive(
-    syncFolder.path === "/" ? "" : syncFolder.path
-  );
-  const dropboxPaths = new Set();
-  const diskDirectories = [];
+  for (const info of syncedFiles) {
+    try {
+      const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
+      const meta = await dbx.getMetadata(fullPath);
+      if (!meta) continue;
+
+      const externalModified = meta.server_modified
+        ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
+      const internalFile = await invoke("load_file", { id: info.internalId });
+      if (!internalFile) continue;
+      const internalModified = internalFile.modified || 0;
+
+      if (externalModified > (info.lastSyncedAt || 0)) {
+        const externalContent = await dbx.downloadFile(fullPath);
+        if (externalContent === internalFile.content) {
+          await invoke("update_sync_hash", { internalId: info.internalId, content: externalContent });
+          continue;
+        }
+        if (externalModified >= internalModified) {
+          changes.push({ type: "pull", internalId: info.internalId, content: externalContent });
+          continue;
+        }
+      }
+
+      if (internalModified > (info.lastSyncedAt || 0) && internalFile.content) {
+        changes.push({
+          type: "push", internalId: info.internalId,
+          content: internalFile.content, relativePath: info.relativePath,
+        });
+      }
+    } catch (_) {}
+  }
+
+  return changes;
+}
+
+/**
+ * Diff Dropbox against local: detect new remote files and deleted remote files.
+ */
+export async function diffDropboxSync(state) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return null;
+  const dropboxPath = state.settings.dropboxSyncPath;
+  if (!dropboxPath) return null;
+
+  const dbx = await import("./dropbox.js");
+  const { invoke } = await import("@tauri-apps/api/core");
+  const basePath = dropboxPath === "/" ? "" : dropboxPath;
+
+  let remoteEntries;
+  try { remoteEntries = await dbx.listFolderRecursive(basePath); } catch (_) { return null; }
+
+  const syncedFiles = await invoke("get_synced_files", { syncFolderId: SYNC_FOLDER_ID });
+  const registeredPaths = new Set(syncedFiles.map(f => f.relativePath));
+  const remotePaths = new Set();
   const newFiles = [];
 
-  // Get all registered files for this folder
-  const syncedFiles = await invoke("get_synced_files", { syncFolderId: syncFolder.id });
-  const registeredPaths = new Set(syncedFiles.map(f => f.relativePath));
-
-  for (const entry of rawEntries) {
-    if (entry.isDirectory) {
-      diskDirectories.push(entry.relativePath);
-      continue;
-    }
-    dropboxPaths.add(entry.relativePath);
-    if (!registeredPaths.has(entry.relativePath)) {
-      // New file on Dropbox — download its content
-      if (entry.dropboxPath) {
-        entry.content = await dbx.downloadFile(entry.dropboxPath);
-      }
+  for (const entry of remoteEntries) {
+    if (entry.isDirectory || entry.tag === "hushproject") continue;
+    remotePaths.add(entry.relativePath);
+    if (!registeredPaths.has(entry.relativePath) && entry.dropboxPath) {
+      entry.content = await dbx.downloadFile(entry.dropboxPath);
       newFiles.push(entry);
     }
   }
 
-  // Find registered files no longer on Dropbox
   const deletedFileIds = syncedFiles
-    .filter(f => !dropboxPaths.has(f.relativePath))
+    .filter(f => !remotePaths.has(f.relativePath))
     .map(f => f.internalId);
 
-  return { newFiles, deletedFileIds, diskDirectories };
+  return { newFiles, deletedFileIds };
 }
 
-/** Find the sync folder root node in the tree by syncFolderId. */
-function findSyncFolderNode(nodes, syncFolderId) {
-  for (const n of nodes) {
-    if (n.syncFolderId === syncFolderId) return n;
-    if (n.children) {
-      const found = findSyncFolderNode(n.children, syncFolderId);
-      if (found) return found;
-    }
+/**
+ * Disconnect Dropbox sync. Optionally removes data from Dropbox.
+ */
+export async function disconnectSync(state, removeFromDropbox) {
+  if (!IS_TAURI) return;
+
+  if (removeFromDropbox && state.settings.dropboxSyncPath) {
+    try {
+      const dbx = await import("./dropbox.js");
+      const basePath = state.settings.dropboxSyncPath === "/" ? "" : state.settings.dropboxSyncPath;
+      if (basePath) await dbx.deleteEntry(basePath).catch(() => {});
+    } catch (_) {}
   }
-  return null;
+
+  await tauriInvoke("unregister_sync_folder", { syncFolderId: SYNC_FOLDER_ID }).catch(() => {});
+  const dbx = await import("./dropbox.js");
+  dbx.clearTokens();
 }
 
-/** Ensure subdirectory nodes exist in the tree, creating them if needed.
- * Also ensures every folder node walked through has a real `children`
- * array — legacy trees persisted before the Rust TreeNode serde fix may
- * have missing children fields on empty folders. */
-function ensureSubdirectories(root, pathParts) {
-  let current = root;
-  if (!Array.isArray(current.children)) current.children = [];
-  for (const dirName of pathParts) {
-    if (!dirName) continue;
-    let child = current.children.find(
-      c => c.type === "folder" && c.name === dirName
-    );
-    if (!child) {
-      child = {
-        id: crypto.randomUUID(), type: "folder", name: dirName,
-        children: [], flagged: false,
-      };
-      current.children.push(child);
-    } else if (!Array.isArray(child.children)) {
-      child.children = [];
-    }
-    current = child;
-  }
-  return current;
-}
-
-/** Helper to get fileId from a document tree node by nodeId */
-async function getFileIdForNode(state, nodeId) {
-  const { findNode } = await import("../state/tree-helpers.js");
-  const node = findNode(state.fileTree, nodeId);
-  return node?.fileId || "";
-}
+export { SYNC_FOLDER_ID };

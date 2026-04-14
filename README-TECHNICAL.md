@@ -248,11 +248,11 @@ Citation management. Connects to Zotero API with user key, downloads references 
 
 ### Dropbox Integration (`sync/dropbox.js`, `sync/dropbox-browser.js`)
 
-Dropbox OAuth integration for syncing files. `dropbox-browser.js` provides a file/folder browser modal for selecting sync targets.
+Dropbox OAuth PKCE integration for syncing files. `dropbox.js` handles the full OAuth flow (authorize → token exchange → auto-refresh) and all Dropbox API operations. `dropbox-browser.js` provides a folder browser modal for selecting the sync target folder. App Key is injected at build time via `VITE_DROPBOX_APP_KEY` env var. The `hushwriter://auth/callback` deep-link scheme handles OAuth redirects on both macOS and iOS.
 
 ### Sync (`sync/`)
 
-External folder synchronization (Obsidian vaults, custom folders). Uses SHA256 hashing + timestamps for change detection. File system watcher polling. Conflict detection with resolution modal UI.
+Full-library Dropbox synchronization. All documents, folders, and projects are mirrored to a single Dropbox folder. Documents sync as `.md` files, projects include a `.hushproject` metadata file (JSON with ordering). Uses SHA256 hashing + timestamps for change detection with "most recent wins" conflict resolution. Polling runs every 10 seconds for content changes and every 60 seconds for structural diffs (new/deleted files). Sync is optional — users connect via OAuth in Settings > Sync and can disconnect at any time, choosing to keep or remove Dropbox files.
 
 ### Tauri Bridge (`tauri-bridge.js`)
 
@@ -262,7 +262,7 @@ Global shortcut registration via `@tauri-apps/plugin-global-shortcut`. Shortcuts
 
 Runs in a separate Tauri WebviewWindow (desktop) or modal overlay (iOS). Loads/saves settings via IPC, notifies main window via events.
 
-**Tabs:** General (visibility, always-on-top), Editor (appearance, themes, fonts, headers, footnotes, typewriter, sizes), Shortcuts (customizable with conflict detection), D.R.Y. (detection range, stopwords), Flags (outline view settings), Privacy (blackout vs dummy mode, dummy text input), Sync (folder sync, Dropbox), Zotero (API credentials, reference management).
+**Tabs:** General (visibility, always-on-top), Editor (appearance, themes, fonts, headers, footnotes, typewriter, sizes), Shortcuts (customizable with conflict detection), D.R.Y. (detection range, stopwords), Flags (outline view settings), Privacy (blackout vs dummy mode, dummy text input), Sync (Dropbox OAuth connect/disconnect, folder selection, sync preview, unsync with keep/remove), Zotero (API credentials, reference management).
 
 Tab rendering is split into `settings-tabs.js` to keep file sizes under 700 lines.
 
@@ -434,3 +434,4 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 - `tauri-plugin-fs` — File system read/write
 - `tauri-plugin-shell` — Shell commands and URL opening (mailto, https, zotero://, obsidian://)
 - `tauri-plugin-opener` — OS file/URL opener
+- `tauri-plugin-deep-link` — Custom URL scheme handling (`hushwriter://`) for OAuth callbacks
