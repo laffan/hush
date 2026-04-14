@@ -18,12 +18,29 @@
   max-width: 640px;
   height: 85%;
   max-height: 580px;
-  background: var(--panel-bg, var(--bg));
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  /* Use the same darkened theme color as the main sidebar */
-  --tab-bg: var(--sidebar-bg);
+  /* Neutral dark/light palette matching desktop settings window */
+  --bg: #1a1a1a;
+  --fg: #e0e0e0;
+  --sidebar-fg: #888;
+  --panel-border: #333;
+  --tab-bg: #111;
+  --tab-hover: rgba(128, 128, 128, 0.15);
+  --tab-active: rgba(128, 128, 128, 0.25);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+[data-theme="light"] .settings-modal {
+  --bg: #fafafa;
+  --fg: #1a1a1a;
+  --sidebar-fg: #888;
+  --panel-border: #ddd;
+  --tab-bg: #f0f0f0;
+  --tab-hover: rgba(128, 128, 128, 0.1);
+  --tab-active: rgba(128, 128, 128, 0.2);
 }
 
 .settings-modal-root {

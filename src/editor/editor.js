@@ -15,7 +15,7 @@ import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
-import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, applyRatchetTypewriterPadding, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
+import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
 import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
 import { buildCodeMirrorKeymap } from "../shortcuts.js";
@@ -274,21 +274,20 @@ function createCommentAfterPlugin() {
   );
 }
 
-/** Toggle block cursor class and color based on settings (or active style override). */
+/** Toggle block cursor class and set color to heading color. */
 function applyBlockCursor(state) {
   const container = document.getElementById("editor-container");
   if (!container) return;
   let block = !!state.settings.blockCursor;
-  let color = state.settings.blockCursorColor || null;
   // Active style can override
   if (state.settings.activeStyleId && state.settings.styles) {
     const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
     if (style && style.blockCursor != null) block = style.blockCursor;
-    if (style && style.blockCursorColor) color = style.blockCursorColor;
   }
   container.classList.toggle("block-cursor", block);
-  if (color) {
-    container.style.setProperty("--block-cursor-color", color);
+  const theme = getActiveTheme(state.settings);
+  if (theme && theme.headingColor) {
+    container.style.setProperty("--block-cursor-color", theme.headingColor);
   } else {
     container.style.removeProperty("--block-cursor-color");
   }
@@ -304,9 +303,8 @@ export function createEditor(container, state) {
       state.trackKeystroke();
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
     }
-    // Typewriter / Ratchet: scroll cursor to fixed position on every update
-    const shouldScroll = state.typewriterMode || state.ratchetMode;
-    if (shouldScroll && (update.docChanged || update.selectionSet || update.focusChanged)) {
+    // Typewriter: scroll cursor to fixed position on every update
+    if (state.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
       requestAnimationFrame(() => scrollCursorToTypewriterLine(update.view, state));
     }
     // Ratchet: ensure cursor stays at end of document
@@ -453,15 +451,9 @@ export function createEditor(container, state) {
       const end = view.state.doc.length;
       view.dispatch({ selection: { anchor: end }, annotations: bypassRatchet.of(true) });
       view.focus();
-      applyRatchetTypewriterPadding(view);
-      requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       initEncourageTyping(view, state, bypassRatchet);
     } else {
       clearEncourageTyping();
-      if (!state.typewriterMode) {
-        view.scrollDOM.style.paddingTop = "";
-        view.scrollDOM.style.paddingBottom = "";
-      }
     }
     if (state.typewriterMode) {
       setupTypewriterBoundary(view, state);
@@ -487,10 +479,6 @@ export function createEditor(container, state) {
         applyTypewriterPadding(view, state);
         requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       }
-      if (state.ratchetMode) {
-        applyRatchetTypewriterPadding(view);
-        requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
-      }
     }, 100);
   });
 
@@ -498,10 +486,6 @@ export function createEditor(container, state) {
     if (state.typewriterMode && getTypewriterBoundary()) {
       repositionTypewriterBoundary(state);
       applyTypewriterPadding(view, state);
-      requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
-    }
-    if (state.ratchetMode) {
-      applyRatchetTypewriterPadding(view);
       requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
     }
   });
@@ -513,7 +497,7 @@ export function createEditor(container, state) {
         repositionTypewriterBoundary(state);
         applyTypewriterPadding(view, state);
       }
-      if (state.typewriterMode || state.ratchetMode) {
+      if (state.typewriterMode) {
         requestAnimationFrame(() => scrollCursorToTypewriterLine(view, state));
       }
     });

@@ -1,5 +1,5 @@
 /**
- * Typewriter Mode — boundary line, scroll-locking, and ratchet centering.
+ * Typewriter Mode — boundary line and scroll-locking.
  */
 
 let typewriterBoundary = null;
@@ -91,32 +91,22 @@ export function removeTypewriterBoundary(view, state) {
     typewriterBoundary.remove();
     typewriterBoundary = null;
   }
-  if (view && !(state && state.ratchetMode)) {
+  if (view) {
     view.scrollDOM.style.paddingTop = "";
     view.scrollDOM.style.paddingBottom = "";
   }
 }
 
 export function scrollCursorToTypewriterLine(view, state) {
-  if (!state.typewriterMode && !state.ratchetMode) return;
+  if (!state.typewriterMode) return;
   const head = view.state.selection.main.head;
   const coords = view.coordsAtPos(head);
   if (!coords) return;
-  const position = state.ratchetMode ? 0.5 : state.typewriterPosition;
-  const targetY = position * window.innerHeight;
+  const targetY = state.typewriterPosition * window.innerHeight;
   const offset = coords.bottom - targetY;
   if (Math.abs(offset) > 1) {
     view.scrollDOM.scrollTop += offset;
   }
-}
-
-export function applyRatchetTypewriterPadding(view) {
-  const targetY = 0.5 * window.innerHeight;
-  const htmlEl = document.documentElement;
-  const safeAreaExtra = (parseInt(getComputedStyle(htmlEl).paddingTop) || 0)
-                      + (parseInt(getComputedStyle(htmlEl).paddingBottom) || 0);
-  view.scrollDOM.style.paddingTop = targetY + "px";
-  view.scrollDOM.style.paddingBottom = (window.innerHeight - targetY + safeAreaExtra) + "px";
 }
 
 /** Reposition the boundary line after a viewport change (resize, fullscreen). */

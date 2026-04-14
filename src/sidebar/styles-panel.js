@@ -407,8 +407,6 @@ function openStyleModal(state, existingStyle, onDone) {
               <div class="style-checkbox-group">
                 <input type="checkbox" id="style-block-cursor" ${(draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor) ? 'checked' : ''} />
                 <span class="style-checkbox-label">Block</span>
-                ${(draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor) ? `<input type="color" id="style-block-cursor-color" value="${draft.blockCursorColor || state.settings.blockCursorColor || '#888888'}" title="Block cursor color" />
-                ${draft.blockCursorColor ? `<button class="style-reset-color" id="style-block-cursor-color-reset" title="Reset">&times;</button>` : ''}` : ''}
               </div>
             </div>
 
@@ -490,7 +488,8 @@ function openStyleModal(state, existingStyle, onDone) {
     // Cursor demo
     const cursorEl = pane.querySelector(".preview-cursor");
     if (cursorEl) {
-      const blockColor = draft.blockCursorColor || state.settings.blockCursorColor || cursor;
+      const themeObj = getThemeById(themeId);
+      const blockColor = (themeObj && themeObj.headingColor) || cursor;
       if (isBlock) {
         cursorEl.style.borderLeft = "none";
         cursorEl.style.background = blockColor;
@@ -568,21 +567,10 @@ function openStyleModal(state, existingStyle, onDone) {
       draft.suppressHeaderColor = shcEl.checked;
     });
 
-    // Block cursor — re-render to show/hide color picker
+    // Block cursor
     const bcEl = backdrop.querySelector("#style-block-cursor");
     if (bcEl) bcEl.addEventListener("change", () => {
       draft.blockCursor = bcEl.checked;
-      render();
-    });
-    const bccEl = backdrop.querySelector("#style-block-cursor-color");
-    if (bccEl) bccEl.addEventListener("input", () => {
-      draft.blockCursorColor = bccEl.value;
-      updatePreview();
-    });
-    const bccResetEl = backdrop.querySelector("#style-block-cursor-color-reset");
-    if (bccResetEl) bccResetEl.addEventListener("click", () => {
-      delete draft.blockCursorColor;
-      render();
     });
 
     // Color pickers
