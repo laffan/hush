@@ -6,7 +6,6 @@ import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
 import { findNode } from "../state/tree-helpers.js";
 import { renderStylesPanel, bindStylesPanel } from "./styles-panel.js";
 import { createVersionsPanel, cleanupVersionsPanel } from "./versions-panel.js";
-import newFileRaw from "./sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar_icons/files.svg?raw";
 import versionsRaw from "./sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
@@ -21,7 +20,6 @@ export function createSidebar(container, state) {
   const settingsBtn = isIOS() ? btn("settings", "Settings", icons.settings) : "";
   container.innerHTML = `
     <div class="sidebar-group sidebar-top">
-      ${btn("new-file", "New file", icons.newFile)}
       ${btn("files", "Files", icons.files)}
       ${btn("styles", "Styles", icons.styles)}
     </div>
@@ -102,12 +100,6 @@ export function createSidebar(container, state) {
   }
 
   // Button click handlers
-  container.querySelector('[data-action="new-file"]').addEventListener("click", () => {
-    if (activePanel === "versions") cleanupVersionsPanel();
-    state.newFile();
-    hidePanel();
-  });
-
   container.querySelector('[data-action="files"]').addEventListener("click", () => {
     if (activePanel === "files") {
       hidePanel();
@@ -162,7 +154,6 @@ export function createSidebar(container, state) {
 
   // Map sidebar actions to their shortcut setting keys and base labels
   const shortcutMap = {
-    "new-file":   { label: "New file",            key: "shortcutNewFile" },
     "files":      { label: "Files",               key: "shortcutToggleSidebar" },
   };
 
@@ -376,7 +367,6 @@ function btn(action, title, svgContent) {
 
 // Minimalist SVG icons (loaded from src/sidebar_icons/)
 const icons = {
-  newFile: svgInner(newFileRaw),
   files: svgInner(filesRaw),
   versions: svgInner(versionsRaw),
   export: svgInner(exportRaw),
