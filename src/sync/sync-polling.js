@@ -4,6 +4,8 @@
  * Users can revert via local version history if needed.
  */
 
+const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+
 let syncPollTimer = null;
 let syncing = false;
 let _state = null;
@@ -188,8 +190,8 @@ function updateDropboxStatus(state, connected) {
   }
 }
 
-/** Brief, non-intrusive sync indicator. */
-function showSyncIndicator(direction) {
+/** Brief, non-intrusive sync indicator + log entry. */
+function showSyncIndicator(direction, detail) {
   const existing = document.querySelector(".sync-indicator");
   if (existing) existing.remove();
 
@@ -198,4 +200,24 @@ function showSyncIndicator(direction) {
   el.textContent = direction === "pulled" ? "Synced \u2193" : "Synced \u2191";
   document.body.appendChild(el);
   setTimeout(() => { if (el.parentNode) el.remove(); }, 3000);
+
+  // Append to persistent sync log
+  appendSyncLog(direction === "pulled" ? `Downloaded ${detail || "changes"}` : `Uploaded ${detail || "changes"}`);
 }
+
+/** Append a message to the sync log stored in settings. */
+async function appendSyncLog(message) {
+  if (!IS_TAURI) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const s = await invoke("get_settings");
+    const log = s.dropboxSyncLog || [];
+    const now = new Date();
+    const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    log.push(`${ts}  ${message}`);
+    if (log.length > 50) log.splice(0, log.length - 50);
+    s.dropboxSyncLog = log;
+    await invoke("save_settings", { settings: s });
+  } catch (_) {}
+}
+

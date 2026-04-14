@@ -44,6 +44,8 @@ pub struct AppSettings {
     pub dropbox_sync_path: Option<String>, // Dropbox folder path to sync to
     #[serde(default)]
     pub dropbox_enabled: bool,
+    #[serde(default)]
+    pub dropbox_sync_log: Vec<String>, // Recent sync events for display
 
     // Legacy fields — kept for serde backward-compat (ignored)
     #[serde(default)]
@@ -564,6 +566,7 @@ impl Default for AppSettings {
             dropbox_refresh_token: None,
             dropbox_sync_path: None,
             dropbox_enabled: false,
+            dropbox_sync_log: Vec::new(),
             sync_folders: Vec::new(),
             dropbox_token: None,
             always_on_top: false,

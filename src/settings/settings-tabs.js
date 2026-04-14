@@ -487,61 +487,80 @@ export function renderSyncTab(settings) {
   const isConnected = !!settings.dropboxAccessToken;
   const isEnabled = !!settings.dropboxEnabled;
   const syncPath = settings.dropboxSyncPath || "";
+  const syncLog = settings.dropboxSyncLog || [];
 
   let html = "";
 
   if (!isConnected) {
-    // Not connected — show Connect button
+    // ---- Not connected ----
     html += `
       <div class="settings-section">
         <h2>Dropbox Sync</h2>
         <p class="settings-help">
           Connect your Dropbox account to sync all your documents, projects, and folders
-          across devices. Hush will mirror your entire library to a Dropbox folder as a backup.
+          across devices. Hush mirrors your entire library to a Dropbox folder as a backup.
         </p>
-        <button id="sync-connect-dropbox" class="sync-connect-btn">Connect to Dropbox</button>
+        <button id="sync-connect-dropbox" class="sync-action-btn">Connect to Dropbox</button>
         <div id="sync-auth-status" class="sync-status"></div>
       </div>
     `;
   } else if (!isEnabled || !syncPath) {
-    // Connected but not yet syncing — show folder selection + preview
+    // ---- Connected, choosing folder ----
     html += `
       <div class="settings-section">
         <h2>Dropbox Sync</h2>
-        <p class="settings-help sync-connected-msg">
-          Connected to Dropbox. Choose a folder to sync your Hush library to.
+        <p class="settings-help">
+          Connected to Dropbox. Select a folder to sync your library to.
+          All documents, projects, and folders will be mirrored automatically.
         </p>
-        <div class="sync-folder-picker">
+        <div class="settings-row">
           <label>Sync folder</label>
-          <div class="sync-folder-picker-row">
-            <span id="sync-selected-path" class="sync-selected-path">${syncPath ? escHtml(syncPath) : "No folder selected"}</span>
-            <button id="sync-browse-folder" class="sync-browse-btn">Browse</button>
+          <div class="sync-path-row">
+            <span id="sync-selected-path" class="sync-path-display">${syncPath ? escHtml(syncPath) : "None"}</span>
+            <button id="sync-browse-folder" class="sync-inline-btn">Browse</button>
           </div>
         </div>
-        <div id="sync-preview" class="sync-preview" style="display:none;"></div>
-        <button id="sync-start" class="sync-start-btn" ${!syncPath ? "disabled" : ""}>Start Syncing</button>
+        <div id="sync-preview" class="sync-preview-box" style="display:none;"></div>
         <div id="sync-auth-status" class="sync-status"></div>
       </div>
       <div class="settings-section">
-        <button id="sync-disconnect" class="sync-disconnect-btn">Disconnect Dropbox</button>
+        <button id="sync-disconnect" class="sync-danger-btn">Disconnect Dropbox</button>
       </div>
     `;
   } else {
-    // Fully connected and syncing — show status + unsync option
+    // ---- Actively syncing ----
     html += `
       <div class="settings-section">
         <h2>Dropbox Sync</h2>
-        <p class="settings-help sync-active-msg">
-          Syncing to <strong>${escHtml(syncPath)}</strong>. All documents, folders, and projects
-          are backed up automatically.
-        </p>
+        <div class="sync-info-box">
+          <div class="sync-info-row">
+            <span class="sync-info-label">Status</span>
+            <span class="sync-info-value" id="sync-connection-status">Active</span>
+          </div>
+          <div class="sync-info-row">
+            <span class="sync-info-label">Folder</span>
+            <span class="sync-info-value">${escHtml(syncPath)}</span>
+          </div>
+        </div>
+        <div class="sync-btn-row">
+          <button id="sync-test-connection" class="sync-inline-btn">Test Connection</button>
+          <button id="sync-change-folder" class="sync-inline-btn">Change Folder</button>
+        </div>
         <div id="sync-auth-status" class="sync-status"></div>
-        <button id="sync-test-connection" class="sync-test-btn">Test Connection</button>
       </div>
       <div class="settings-section">
-        <h2>Stop Syncing</h2>
-        <p class="settings-help">Disconnect from Dropbox and return to local-only mode.</p>
-        <button id="sync-unsync" class="sync-disconnect-btn">Stop Syncing</button>
+        <h2>Sync Log</h2>
+        <div class="sync-log-box" id="sync-log-box">
+          ${syncLog.length > 0
+            ? syncLog.slice(-20).reverse().map(entry => `<div class="sync-log-entry">${escHtml(entry)}</div>`).join("")
+            : `<div class="sync-log-empty">No sync activity yet.</div>`
+          }
+        </div>
+      </div>
+      <div class="settings-section">
+        <h2>Disconnect</h2>
+        <p class="settings-help">Stop syncing and return to local-only mode.</p>
+        <button id="sync-unsync" class="sync-danger-btn">Stop Syncing</button>
       </div>
     `;
   }

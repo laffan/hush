@@ -552,33 +552,94 @@ html, body {
 .flag-action-btn.flag-reset:hover { background: rgba(229, 57, 53, 0.2); }
 
 /* ===== Sync Tab ===== */
-.sync-folder-list { margin: 12px 0; }
-.sync-folder-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 10px; border-radius: 6px; margin-bottom: 4px;
-  background: rgba(128,128,128,0.08);
-}
-.sync-folder-name { font-size: 13px; font-weight: 500; }
-.sync-folder-path { display: block; font-size: 11px; color: var(--sidebar-fg); word-break: break-all; }
-.sync-folder-remove {
-  background: none; border: none; color: var(--sidebar-fg); cursor: pointer;
-  font-size: 14px; padding: 4px 6px; border-radius: 4px;
-}
-.sync-folder-remove:hover { color: #e53935; background: rgba(229,57,53,0.1); }
-.sync-empty { padding: 16px 0; text-align: center; font-size: 13px; color: var(--sidebar-fg); }
-.sync-add-btn {
-  display: block; width: 100%; padding: 10px; margin-top: 8px;
-  border: 1px dashed var(--panel-border); background: transparent; color: var(--fg);
-  border-radius: 6px; cursor: pointer; font-size: 13px; font-family: system-ui, sans-serif;
-}
-.sync-add-btn:hover { background: rgba(128,128,128,0.1); }
-.sync-token-row { display: flex; gap: 8px; margin: 8px 0; }
-.sync-token-row input { flex: 1; padding: 8px; background: rgba(128,128,128,0.1); border: 1px solid var(--panel-border); color: var(--fg); border-radius: 6px; font-size: 13px; }
-.sync-token-row button { padding: 8px 14px; border: 1px solid var(--panel-border); background: transparent; color: var(--fg); border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
-.sync-token-row button:hover { background: rgba(128,128,128,0.15); }
-.sync-status { font-size: 12px; padding: 4px 0; }
+/* Sync tab — shared */
+.sync-status { font-size: 12px; padding: 4px 0; min-height: 18px; }
 .sync-status.success { color: #4caf50; }
 .sync-status.error { color: #e53935; }
+
+/* Primary action button (Connect, etc.) */
+.sync-action-btn {
+  margin-top: 8px; padding: 8px 18px;
+  border: 1px solid var(--panel-border); background: transparent;
+  color: var(--fg); border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-family: system-ui, sans-serif;
+  white-space: nowrap; align-self: flex-start;
+}
+.sync-action-btn:hover { background: rgba(128,128,128,0.15); }
+
+/* Inline buttons (Browse, Test, Change Folder) */
+.sync-inline-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--panel-border); background: transparent;
+  color: var(--fg); border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-family: system-ui, sans-serif; white-space: nowrap;
+}
+.sync-inline-btn:hover { background: rgba(128,128,128,0.15); }
+
+/* Danger / destructive button (Stop Syncing, Disconnect) */
+.sync-danger-btn {
+  padding: 8px 18px;
+  border: 1px solid rgba(229,57,53,0.4); background: rgba(229,57,53,0.08);
+  color: #e53935; border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-family: system-ui, sans-serif;
+}
+.sync-danger-btn:hover { background: rgba(229,57,53,0.18); }
+
+/* Folder picker row */
+.sync-path-row {
+  display: flex; align-items: center; gap: 8px; flex: 1;
+}
+.sync-path-display {
+  flex: 1; font-size: 13px; padding: 6px 10px;
+  background: rgba(128,128,128,0.08); border: 1px solid var(--panel-border);
+  border-radius: 6px; color: var(--sidebar-fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Preview box */
+.sync-preview-box {
+  margin: 12px 0; padding: 12px 14px;
+  border: 1px solid var(--panel-border); border-radius: 6px;
+  background: rgba(128,128,128,0.06); font-size: 13px; line-height: 1.7;
+}
+.sync-preview-box h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  opacity: 0.6; margin: 0 0 6px; font-weight: 500;
+}
+.sync-preview-box p { margin: 2px 0; }
+
+/* Info box (active sync status) */
+.sync-info-box {
+  padding: 12px 14px; border: 1px solid var(--panel-border);
+  border-radius: 6px; background: rgba(128,128,128,0.06);
+  font-size: 13px; margin-bottom: 10px;
+}
+.sync-info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 3px 0;
+}
+.sync-info-label { color: var(--sidebar-fg); font-size: 12px; }
+.sync-info-value { font-weight: 500; }
+
+/* Button row */
+.sync-btn-row { display: flex; gap: 8px; margin-bottom: 4px; }
+
+/* Sync log */
+.sync-log-box {
+  max-height: 200px; overflow-y: auto;
+  border: 1px solid var(--panel-border); border-radius: 6px;
+  background: rgba(128,128,128,0.04); font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.sync-log-entry {
+  padding: 5px 12px; border-bottom: 1px solid rgba(128,128,128,0.08);
+  color: var(--sidebar-fg); line-height: 1.5;
+}
+.sync-log-entry:last-child { border-bottom: none; }
+.sync-log-empty {
+  padding: 20px 12px; text-align: center;
+  color: var(--sidebar-fg); font-family: system-ui, sans-serif;
+}
 
 /* Dropbox folder browser modal */
 .dbx-browser-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center; }
