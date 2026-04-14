@@ -490,19 +490,16 @@ function bindAll() {
   if (IS_TAURI) {
     const verifier = sessionStorage.getItem("hush_oauth_verifier");
     if (verifier) {
-      // Check if URL has auth code (from deep link redirect)
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get("code");
       if (code) {
         sessionStorage.removeItem("hush_oauth_verifier");
-        const { getRedirectUri } = await import("../sync/dropbox.js");
-        const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || getRedirectUri();
-        sessionStorage.removeItem("hush_oauth_redirect");
         (async () => {
           try {
             const dbx = await import("../sync/dropbox.js");
+            const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || dbx.getRedirectUri();
+            sessionStorage.removeItem("hush_oauth_redirect");
             await dbx.completeOAuthFlow(code, verifier, redirectUri);
-            // Reload settings to get new tokens
             const { invoke } = await import("@tauri-apps/api/core");
             const newSettings = await invoke("get_settings");
             Object.assign(settings, newSettings);
