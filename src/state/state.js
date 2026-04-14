@@ -352,146 +352,18 @@ export class AppState {
     this.emit("files-changed");
   }
 
+  // ===== Tree Operations (delegated to state-tree.js) =====
   async createFolder(name, parentId = null) {
-    return this._createTreeNode("create_folder", "folder", name, parentId);
+    const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_folder", "folder", name, parentId);
   }
-
   async createProject(name, parentId = null) {
-    return this._createTreeNode("create_project", "project", name, parentId);
+    const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_project", "project", name, parentId);
   }
-
-  async _createTreeNode(command, type, name, parentId) {
-    if (IS_TAURI) {
-      try {
-        const created = await tauriInvoke(command, { name, parentId });
-        this.fileTree = await tauriInvoke("get_file_tree");
-        this.emit("files-changed");
-        // Propagate folder/project creation to external filesystem
-        this.syncCreateNode(created.id, type);
-        return created;
-      } catch (e) { console.error(`Create ${type} failed:`, e); }
-    } else {
-      const node = { id: crypto.randomUUID(), type, name, children: [], flagged: false };
-      insertNode(this.fileTree, node, parentId, findNode);
-      this._saveTreeLocal();
-      this.emit("files-changed");
-      return node;
-    }
-  }
-
-  async deleteTreeNode(nodeId) {
-    if (nodeId === AppState.INBOX_ID || nodeId === AppState.TRASH_ID) return;
-    const node = findNode(this.fileTree, nodeId);
-    if (!node) return;
-    if (this.isInTrash(nodeId)) return this._permanentDeleteNode(nodeId);
-    // Propagate deletion to external filesystem BEFORE removing from tree
-    await this.syncDeleteNode(nodeId);
-    const removed = removeNode(this.fileTree, nodeId);
-    if (removed) {
-      // Clear flagged status when moving to trash
-      this._clearFlaggedRecursive(removed);
-      const trash = findNode(this.fileTree, AppState.TRASH_ID);
-      if (trash) (trash.children || (trash.children = [])).push(removed);
-    }
-    await this.saveFileTree();
-    const fileIds = this._collectNodeFileIds(node);
-    if (fileIds.includes(this.currentFileId) || nodeId === this.currentProjectId) {
-      this.currentProjectId = null; this.projectDocIds = [];
-      if (this.files.length > 0) await this.openFile(this.files[0].id);
-      else await this.newFile();
-    }
-    this.emit("files-changed");
-  }
-
-  async _permanentDeleteNode(nodeId) {
-    const node = findNode(this.fileTree, nodeId);
-    if (!node) return;
-    const fileIds = this._collectNodeFileIds(node);
-    await this._deleteFilesByIds(fileIds);
-    removeNode(this.fileTree, nodeId);
-    await this._finalizeFileDeletion(fileIds);
-  }
-
-  async emptyTrash() {
-    const trash = findNode(this.fileTree, AppState.TRASH_ID);
-    if (!trash?.children?.length) return;
-    const fileIds = collectDocumentIds(trash.children);
-    await this._deleteFilesByIds(fileIds);
-    trash.children = [];
-    await this._finalizeFileDeletion(fileIds);
-  }
-
-  _clearFlaggedRecursive(node) {
-    node.flagged = false;
-    if (node.children) node.children.forEach(c => this._clearFlaggedRecursive(c));
-  }
-
-  _collectNodeFileIds(node) {
-    const ids = [];
-    if (node.type === "document" && node.fileId) ids.push(node.fileId);
-    if (node.children) ids.push(...collectDocumentIds(node.children));
-    return ids;
-  }
-
-  async _deleteFilesByIds(fileIds) {
-    for (const fid of fileIds) {
-      if (IS_TAURI) {
-        try { await tauriInvoke("delete_file", { id: fid }); } catch (e) { console.error("Delete file:", e); }
-        try { await tauriInvoke("delete_document_snapshots", { documentId: fid }); } catch (e) { console.error("Delete snapshots:", e); }
-      } else { this.files = this.files.filter(f => f.id !== fid); }
-    }
-  }
-
-  async _finalizeFileDeletion(fileIds) {
-    await this.saveFileTree();
-    if (IS_TAURI) this.files = await tauriInvoke("list_files");
-    else this._saveFilesLocal();
-    if (fileIds.includes(this.currentFileId)) {
-      this.currentProjectId = null; this.projectDocIds = [];
-      if (this.files.length > 0) await this.openFile(this.files[0].id);
-      else await this.newFile();
-    }
-    this.emit("files-changed");
-  }
-
-  async renameTreeNode(nodeId, newName) {
-    const node = findNode(this.fileTree, nodeId);
-    if (!node) return;
-    const oldName = node.name;
-    node.name = newName;
-    if (node.type === "document" && node.fileId) {
-      if (IS_TAURI) {
-        try { await tauriInvoke("rename_file", { id: node.fileId, name: newName }); this.files = await tauriInvoke("list_files"); }
-        catch (e) { console.error("Rename failed:", e); }
-      } else {
-        const file = this.files.find((f) => f.id === node.fileId);
-        if (file) file.name = newName;
-        this._saveFilesLocal();
-      }
-    }
-    await this.saveFileTree();
-    // Propagate rename to external filesystem
-    if (oldName !== newName) {
-      this.syncRenameNode(nodeId, oldName, node.type);
-    }
-  }
-
-  async toggleFlagged(nodeId) {
-    const node = findNode(this.fileTree, nodeId);
-    if (!node) return;
-    node.flagged = !node.flagged;
-    await this.saveFileTree();
-  }
-
-  async duplicateTreeNode(nodeId) {
-    const node = findNode(this.fileTree, nodeId);
-    if (!node || node.type !== "document" || !node.fileId) return;
-    const newFileId = await this.duplicateFile(node.fileId);
-    if (!newFileId) return;
-    const newNode = { id: crypto.randomUUID(), type: "document", name: node.name + " copy", fileId: newFileId, children: [], flagged: false };
-    insertAfter(this.fileTree, nodeId, newNode);
-    await this.saveFileTree();
-  }
+  async deleteTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.deleteTreeNode(this, nodeId); }
+  async emptyTrash() { const m = await import("./state-tree.js"); return m.emptyTrash(this); }
+  async renameTreeNode(nodeId, newName) { const m = await import("./state-tree.js"); return m.renameTreeNode(this, nodeId, newName); }
+  async toggleFlagged(nodeId) { const m = await import("./state-tree.js"); return m.toggleFlagged(this, nodeId); }
+  async duplicateTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.duplicateTreeNode(this, nodeId); }
 
   // ===== Project View (delegated to state-project.js) =====
 

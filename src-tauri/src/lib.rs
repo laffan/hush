@@ -16,12 +16,13 @@ mod settings;
 mod files;
 mod snapshots;
 mod sync;
+mod sync_commands;
 mod zotero;
 
 use settings::AppSettings;
 use files::FileManager;
 use snapshots::{SnapshotManager, SnapshotEntry};
-use sync::{SyncManager, SyncWriteResult, SyncFolderDiff, ImportEntry, SyncedFileInfo, ExternalChange};
+use sync::SyncManager;
 use zotero::ZoteroManager;
 
 pub struct AppState {
@@ -169,341 +170,6 @@ fn delete_document_snapshots(
     state.snapshot_manager.lock().unwrap()
         .delete_document_snapshots(&document_id)
         .map_err(|e| e.to_string())
-}
-
-// ===== Dropbox OAuth =====
-
-#[tauri::command]
-async fn exchange_dropbox_token(
-    state: State<'_, AppState>,
-    code: String,
-    code_verifier: String,
-    redirect_uri: String,
-    app_key: String,
-) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.dropboxapi.com/oauth2/token")
-        .form(&[
-            ("code", code.as_str()),
-            ("grant_type", "authorization_code"),
-            ("code_verifier", code_verifier.as_str()),
-            ("redirect_uri", redirect_uri.as_str()),
-            ("client_id", app_key.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Token exchange failed: {}", body));
-    }
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    // Store tokens in settings
-    {
-        let mut settings = state.settings.lock().unwrap();
-        if let Some(at) = json.get("access_token").and_then(|v| v.as_str()) {
-            settings.dropbox_access_token = Some(at.to_string());
-        }
-        if let Some(rt) = json.get("refresh_token").and_then(|v| v.as_str()) {
-            settings.dropbox_refresh_token = Some(rt.to_string());
-        }
-        settings.dropbox_enabled = true;
-        let _ = settings.save();
-    }
-
-    Ok(json)
-}
-
-#[tauri::command]
-async fn refresh_dropbox_token(
-    state: State<'_, AppState>,
-    app_key: String,
-) -> Result<String, String> {
-    let refresh_token = {
-        let settings = state.settings.lock().unwrap();
-        settings.dropbox_refresh_token.clone()
-            .ok_or("No refresh token stored")?
-    };
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.dropboxapi.com/oauth2/token")
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token.as_str()),
-            ("client_id", app_key.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Token refresh failed: {}", body));
-    }
-
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let new_token = json.get("access_token")
-        .and_then(|v| v.as_str())
-        .ok_or("No access_token in response")?
-        .to_string();
-
-    // Update stored access token
-    {
-        let mut settings = state.settings.lock().unwrap();
-        settings.dropbox_access_token = Some(new_token.clone());
-        let _ = settings.save();
-    }
-
-    Ok(new_token)
-}
-
-// ===== Sync Commands =====
-
-#[tauri::command]
-fn scan_sync_folder(folder_path: String) -> Result<Vec<ImportEntry>, String> {
-    SyncManager::scan_folder(&folder_path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn register_synced_file(
-    state: State<AppState>,
-    internal_id: String,
-    sync_folder_id: String,
-    relative_path: String,
-    content: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .register_file(&internal_id, &sync_folder_id, &relative_path, &content);
-    Ok(())
-}
-
-#[tauri::command]
-fn unregister_sync_folder(
-    state: State<AppState>,
-    sync_folder_id: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .unregister_folder(&sync_folder_id);
-    Ok(())
-}
-
-#[tauri::command]
-fn write_sync_file(
-    state: State<AppState>,
-    folder_path: String,
-    relative_path: String,
-    content: String,
-    internal_id: String,
-) -> Result<SyncWriteResult, String> {
-    let sync_mgr = state.sync_manager.lock().unwrap();
-    let result = sync_mgr
-        .write_external_if_current(&folder_path, &relative_path, &content, &internal_id)
-        .map_err(|e| e.to_string())?;
-    if result.written {
-        drop(sync_mgr);
-        state.sync_manager.lock().unwrap()
-            .update_hash(&internal_id, &content);
-    }
-    Ok(result)
-}
-
-#[tauri::command]
-fn update_sync_hash(
-    state: State<AppState>,
-    internal_id: String,
-    content: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .update_hash(&internal_id, &content);
-    Ok(())
-}
-
-#[tauri::command]
-fn get_synced_files(
-    state: State<AppState>,
-    sync_folder_id: String,
-) -> Vec<SyncedFileInfo> {
-    state.sync_manager.lock().unwrap()
-        .get_folder_files(&sync_folder_id)
-}
-
-#[tauri::command]
-fn get_sync_file_info(
-    state: State<AppState>,
-    internal_id: String,
-) -> Option<SyncedFileInfo> {
-    state.sync_manager.lock().unwrap()
-        .get_file_info(&internal_id)
-        .cloned()
-}
-
-#[tauri::command]
-fn rename_sync_file(
-    state: State<AppState>,
-    folder_path: String,
-    old_relative: String,
-    new_relative: String,
-    internal_id: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .rename_external_file(&folder_path, &old_relative, &new_relative, &internal_id)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn delete_sync_file(
-    state: State<AppState>,
-    folder_path: String,
-    internal_id: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .delete_external_file(&folder_path, &internal_id)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn create_sync_directory(
-    folder_path: String,
-    relative_path: String,
-) -> Result<(), String> {
-    SyncManager::create_external_directory(&folder_path, &relative_path)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn rename_sync_directory(
-    state: State<AppState>,
-    folder_path: String,
-    old_relative: String,
-    new_relative: String,
-    sync_folder_id: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .rename_external_directory(&folder_path, &old_relative, &new_relative, &sync_folder_id)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn delete_sync_directory(
-    state: State<AppState>,
-    folder_path: String,
-    relative_path: String,
-    sync_folder_id: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .delete_external_directory(&folder_path, &relative_path, &sync_folder_id)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn create_sync_file(
-    state: State<AppState>,
-    folder_path: String,
-    relative_path: String,
-    content: String,
-    internal_id: String,
-    sync_folder_id: String,
-) -> Result<(), String> {
-    state.sync_manager.lock().unwrap()
-        .create_external_file(&folder_path, &relative_path, &content, &internal_id, &sync_folder_id)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn write_project_json(
-    folder_path: String,
-    relative_path: String,
-    doc_names: Vec<String>,
-) -> Result<(), String> {
-    SyncManager::write_project_json(&folder_path, &relative_path, &doc_names)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn check_sync_changes(
-    state: State<AppState>,
-) -> Result<Vec<sync::ExternalChange>, String> {
-    let settings = state.settings.lock().unwrap();
-    let sync_mgr = state.sync_manager.lock().unwrap();
-    let file_mgr = state.file_manager.lock().unwrap();
-    let mut all_changes = Vec::new();
-    for folder in &settings.sync_folders {
-        if folder.sync_type == "local" {
-            let mut changes = sync_mgr.check_all_external_changes(folder);
-            // Fill in internal content and modification time
-            for change in &mut changes {
-                if let Ok(entry) = file_mgr.load_file(&change.internal_id) {
-                    change.internal_content = entry.content;
-                    change.internal_modified = entry.modified as i64;
-                }
-            }
-            all_changes.extend(changes);
-        }
-    }
-    Ok(all_changes)
-}
-
-#[tauri::command]
-fn diff_sync_folder(
-    state: State<AppState>,
-    sync_folder_id: String,
-) -> Result<SyncFolderDiff, String> {
-    let settings = state.settings.lock().unwrap();
-    let sync_mgr = state.sync_manager.lock().unwrap();
-    let folder = settings.sync_folders.iter()
-        .find(|f| f.id == sync_folder_id)
-        .ok_or("Sync folder not found")?;
-    Ok(sync_mgr.diff_sync_folder(folder))
-}
-
-#[tauri::command]
-fn accept_external_change(
-    state: State<AppState>,
-    internal_id: String,
-    content: String,
-) -> Result<(), String> {
-    // Snapshot the current internal content before overwriting (version history)
-    {
-        let fm = state.file_manager.lock().unwrap();
-        if let Ok(existing) = fm.load_file(&internal_id) {
-            if !existing.content.is_empty() && existing.content != content {
-                let _ = state.snapshot_manager.lock().unwrap()
-                    .create_snapshot(&internal_id, &existing.content);
-            }
-        }
-    }
-    // Save the external content as the new internal content and update hash
-    state.file_manager.lock().unwrap()
-        .save_file(&internal_id, &content)
-        .map_err(|e| e.to_string())?;
-    state.sync_manager.lock().unwrap()
-        .update_hash(&internal_id, &content);
-    Ok(())
-}
-
-#[tauri::command]
-fn reject_external_change(
-    state: State<AppState>,
-    internal_id: String,
-    folder_path: String,
-) -> Result<(), String> {
-    // Overwrite external file with internal content and update hash
-    let content = {
-        let fm = state.file_manager.lock().unwrap();
-        fm.load_file(&internal_id).map_err(|e| e.to_string())?.content
-    };
-    let sync_mgr = state.sync_manager.lock().unwrap();
-    let info = sync_mgr.get_file_info(&internal_id)
-        .ok_or("File not synced")?;
-    SyncManager::write_external(&folder_path, &info.relative_path, &content)
-        .map_err(|e| e.to_string())?;
-    drop(sync_mgr);
-    state.sync_manager.lock().unwrap().update_hash(&internal_id, &content);
-    Ok(())
 }
 
 // ===== Zotero Commands =====
@@ -783,26 +449,26 @@ pub fn run() {
             get_snapshots,
             get_snapshot,
             delete_document_snapshots,
-            exchange_dropbox_token,
-            refresh_dropbox_token,
-            scan_sync_folder,
-            register_synced_file,
-            unregister_sync_folder,
-            write_sync_file,
-            update_sync_hash,
-            get_synced_files,
-            get_sync_file_info,
-            rename_sync_file,
-            delete_sync_file,
-            create_sync_directory,
-            rename_sync_directory,
-            delete_sync_directory,
-            create_sync_file,
-            write_project_json,
-            check_sync_changes,
-            diff_sync_folder,
-            accept_external_change,
-            reject_external_change,
+            sync_commands::exchange_dropbox_token,
+            sync_commands::refresh_dropbox_token,
+            sync_commands::scan_sync_folder,
+            sync_commands::register_synced_file,
+            sync_commands::unregister_sync_folder,
+            sync_commands::write_sync_file,
+            sync_commands::update_sync_hash,
+            sync_commands::get_synced_files,
+            sync_commands::get_sync_file_info,
+            sync_commands::rename_sync_file,
+            sync_commands::delete_sync_file,
+            sync_commands::create_sync_directory,
+            sync_commands::rename_sync_directory,
+            sync_commands::delete_sync_directory,
+            sync_commands::create_sync_file,
+            sync_commands::write_project_json,
+            sync_commands::check_sync_changes,
+            sync_commands::diff_sync_folder,
+            sync_commands::accept_external_change,
+            sync_commands::reject_external_change,
             save_zotero_references,
             load_zotero_references,
             #[cfg(desktop)]
