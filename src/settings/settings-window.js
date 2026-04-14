@@ -299,12 +299,41 @@ function bindAll() {
       if (status) { status.textContent = "Opening Dropbox login..."; status.className = "sync-status"; }
       try {
         const dbx = await import("../sync/dropbox.js");
-        const redirectUri = "hushwriter://auth/callback";
-        const { codeVerifier } = await dbx.startOAuthFlow(redirectUri);
-        // Store verifier in sessionStorage so we can complete the flow when redirected back
+        // Clear any stale code from a previous attempt
+        localStorage.removeItem("hush_oauth_code");
+        const { codeVerifier, redirectUri } = await dbx.startOAuthFlow();
         sessionStorage.setItem("hush_oauth_verifier", codeVerifier);
         sessionStorage.setItem("hush_oauth_redirect", redirectUri);
         if (status) { status.textContent = "Waiting for Dropbox authorization..."; status.className = "sync-status"; }
+
+        // Poll for the auth code (set by oauth-callback.html via localStorage)
+        const pollInterval = setInterval(async () => {
+          const code = localStorage.getItem("hush_oauth_code");
+          if (!code) return;
+          clearInterval(pollInterval);
+          localStorage.removeItem("hush_oauth_code");
+          if (status) { status.textContent = "Completing authorization..."; status.className = "sync-status"; }
+          try {
+            const storedVerifier = sessionStorage.getItem("hush_oauth_verifier");
+            const storedRedirect = sessionStorage.getItem("hush_oauth_redirect") || dbx.getRedirectUri();
+            sessionStorage.removeItem("hush_oauth_verifier");
+            sessionStorage.removeItem("hush_oauth_redirect");
+            await dbx.completeOAuthFlow(code, storedVerifier, storedRedirect);
+            // Reload settings to pick up new tokens
+            if (IS_TAURI) {
+              const { invoke } = await import("@tauri-apps/api/core");
+              const newSettings = await invoke("get_settings");
+              Object.assign(settings, newSettings);
+            }
+            if (status) { status.textContent = "Connected!"; status.className = "sync-status success"; }
+            setTimeout(() => render(), 1000);
+          } catch (err) {
+            console.error("OAuth completion failed:", err);
+            if (status) { status.textContent = "Authorization failed: " + err.message; status.className = "sync-status error"; }
+          }
+        }, 500);
+        // Stop polling after 5 minutes
+        setTimeout(() => clearInterval(pollInterval), 300000);
       } catch (e) {
         console.error("OAuth start failed:", e);
         if (status) { status.textContent = "Failed to start authorization: " + e.message; status.className = "sync-status error"; }
@@ -466,7 +495,8 @@ function bindAll() {
       const code = urlParams.get("code");
       if (code) {
         sessionStorage.removeItem("hush_oauth_verifier");
-        const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || "hushwriter://auth/callback";
+        const { getRedirectUri } = await import("../sync/dropbox.js");
+        const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || getRedirectUri();
         sessionStorage.removeItem("hush_oauth_redirect");
         (async () => {
           try {

@@ -6,10 +6,14 @@
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-// The Dropbox App Key is injected at build time via Vite env variable
+// Build-time config via Vite env variables
 const APP_KEY = typeof import.meta !== "undefined"
   ? import.meta.env.VITE_DROPBOX_APP_KEY || ""
   : "";
+
+const REDIRECT_URI = typeof import.meta !== "undefined"
+  ? import.meta.env.VITE_DROPBOX_REDIRECT_URI || "hushwriter://auth/callback"
+  : "hushwriter://auth/callback";
 
 let _accessToken = null;
 let _refreshToken = null;
@@ -109,9 +113,9 @@ function base64UrlEncode(bytes) {
 
 /**
  * Start the OAuth PKCE flow. Opens the Dropbox auth page in the system browser.
- * Returns { codeVerifier } — the caller must store it to complete the flow.
+ * Returns { codeVerifier, redirectUri } — stored by caller to complete the flow.
  */
-export async function startOAuthFlow(redirectUri) {
+export async function startOAuthFlow() {
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
 
@@ -120,7 +124,7 @@ export async function startOAuthFlow(redirectUri) {
     response_type: "code",
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
-    redirect_uri: redirectUri,
+    redirect_uri: REDIRECT_URI,
     token_access_type: "offline", // gives us a refresh token
   });
 
@@ -134,7 +138,11 @@ export async function startOAuthFlow(redirectUri) {
     window.open(authUrl, "_blank");
   }
 
-  return { codeVerifier };
+  return { codeVerifier, redirectUri: REDIRECT_URI };
+}
+
+export function getRedirectUri() {
+  return REDIRECT_URI;
 }
 
 /**

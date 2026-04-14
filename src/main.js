@@ -140,7 +140,8 @@ function applyActiveStyle(state) {
 async function handleOAuthCode(state, invoke, code) {
   try {
     const verifier = sessionStorage.getItem("hush_oauth_verifier");
-    const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || "hushwriter://auth/callback";
+    const { getRedirectUri } = await import("./sync/dropbox.js");
+    const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || getRedirectUri();
     if (verifier) {
       const dbx = await import("./sync/dropbox.js");
       await dbx.completeOAuthFlow(code, verifier, redirectUri);
