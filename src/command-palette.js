@@ -196,6 +196,7 @@ let overlay = null;
 let activeIndex = 0;
 let filteredCommands = [];
 let allCommands = [];
+let keyboardNav = false; // true after arrow keys, suppresses mouseenter
 
 function isOpen() {
   return overlay !== null;
@@ -217,10 +218,36 @@ export function toggleCommandPalette(state) {
   open(state);
 }
 
+/**
+ * Build "Turn off X" entries for any currently active toggle modes.
+ * These are prepended to the command list so they appear first.
+ */
+function buildActiveModeTurnoffs(state) {
+  const modes = [
+    { flag: "ratchetMode", label: "Turn off Ratchet mode", icon: icons.ratchet, action: (s) => s.stopRatchet() },
+    { flag: "privateMode", label: "Turn off Private mode", icon: icons.private, shortcutKey: "shortcutTogglePrivate", action: (s) => s.togglePrivate() },
+    { flag: "typewriterMode", label: "Turn off Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", action: (s) => s.toggleTypewriter() },
+    { flag: "dryMode", label: "Turn off Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", action: (s) => s.toggleDry() },
+    { flag: "focusMode", label: "Turn off Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
+  ];
+  return modes
+    .filter(m => state[m.flag])
+    .map(m => ({
+      id: `turnoff-${m.flag}`,
+      label: m.label,
+      icon: m.icon,
+      shortcutKey: m.shortcutKey || null,
+      action: m.action,
+    }));
+}
+
 function open(state) {
-  allCommands = buildCommands(state);
+  const baseCommands = buildCommands(state);
+  const turnoffs = buildActiveModeTurnoffs(state);
+  allCommands = [...turnoffs, ...baseCommands];
   filteredCommands = [...allCommands];
   activeIndex = 0;
+  keyboardNav = false;
 
   // Build DOM
   overlay = document.createElement("div");
@@ -249,6 +276,9 @@ function open(state) {
 
   // --- Event handlers ---
 
+  // Re-enable mouse selection after actual mouse movement
+  overlay.addEventListener("mousemove", () => { keyboardNav = false; });
+
   input.addEventListener("input", () => {
     const q = input.value.trim().toLowerCase();
     if (!q) {
@@ -269,6 +299,7 @@ function open(state) {
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      keyboardNav = true;
       if (filteredCommands.length) {
         activeIndex = (activeIndex + 1) % filteredCommands.length;
         renderList(list, state);
@@ -277,6 +308,7 @@ function open(state) {
     }
     if (e.key === "ArrowUp") {
       e.preventDefault();
+      keyboardNav = true;
       if (filteredCommands.length) {
         activeIndex = (activeIndex - 1 + filteredCommands.length) % filteredCommands.length;
         renderList(list, state);
@@ -338,6 +370,7 @@ function renderList(listEl, state) {
     });
 
     row.addEventListener("mouseenter", () => {
+      if (keyboardNav) return; // ignore until mouse actually moves
       activeIndex = i;
       listEl.querySelectorAll(".cmd-palette-item").forEach((el, j) => {
         el.classList.toggle("active", j === i);
