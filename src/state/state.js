@@ -525,7 +525,10 @@ export class AppState {
     if (!file) return false;
     const node = findNodeByFileId(this.fileTree, fileId);
     if (node && node.name !== file.name) {
+      const oldName = node.name;
       node.name = file.name;
+      // Propagate rename to Dropbox sync
+      this.syncRenameNode(node.id, oldName, node.type);
       return true;
     }
     return false;
@@ -693,8 +696,8 @@ export class AppState {
   _deriveName(content) {
     const trimmed = content.trim();
     if (!trimmed) return "Untitled";
-    const firstLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").trim();
-    return firstLine.length <= 20 ? firstLine : firstLine.slice(0, 20) + "...";
+    const firstLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").replace(/[<>:"/\\|?*]/g, "").trim();
+    return firstLine.length <= 50 ? firstLine : firstLine.slice(0, 50);
   }
 
   // Event system

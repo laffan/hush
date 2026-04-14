@@ -15,6 +15,15 @@ async function tauriInvoke(cmd, args) {
 // ===== Tree → Dropbox Path Helpers =====
 
 /**
+ * Derive a filesystem-safe name from a document's tree name.
+ * Strips characters illegal in filenames. Max 50 chars.
+ */
+function safeName(name) {
+  if (!name || name === "Untitled") return "Untitled";
+  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().slice(0, 50) || "Untitled";
+}
+
+/**
  * Build a flat map of files and directories from the file tree.
  * Documents become "Name.md", Projects get a ".hushproject" metadata file,
  * Folders become directories.
@@ -24,7 +33,7 @@ export function buildSyncManifest(fileTree) {
 
   function walk(nodes, parentPath) {
     for (const node of nodes) {
-      const name = node.name || "Untitled";
+      const name = safeName(node.name) || "Untitled";
       if (node.type === "document" && node.fileId) {
         const relPath = parentPath ? `${parentPath}/${name}.md` : `${name}.md`;
         manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: "md" });
@@ -85,13 +94,16 @@ export async function generateSyncPreview(state, dropboxPath) {
 
 /**
  * Perform initial full sync — push local to Dropbox, pull new Dropbox files.
+ * Returns { uploaded: string[], downloaded: string[] } with filenames.
  */
 export async function performInitialSync(state, dropboxPath) {
-  if (!IS_TAURI) return;
+  if (!IS_TAURI) return { uploaded: [], downloaded: [] };
   const dbx = await import("./dropbox.js");
 
   const basePath = dropboxPath === "/" ? "" : dropboxPath;
   const manifest = buildSyncManifest(state.fileTree);
+  const uploaded = [];
+  const downloaded = [];
 
   // Ensure the root sync folder exists
   if (basePath) {
@@ -116,6 +128,7 @@ export async function performInitialSync(state, dropboxPath) {
     }
     try {
       await dbx.uploadFile(fullPath, content);
+      uploaded.push(file.relativePath);
       if (file.fileId) {
         await tauriInvoke("register_synced_file", {
           internalId: file.fileId, syncFolderId: SYNC_FOLDER_ID,
@@ -149,6 +162,7 @@ export async function performInitialSync(state, dropboxPath) {
         relativePath: entry.relativePath, content,
       });
       insertIntoTree(state.fileTree, entry.relativePath, file.id, entry.name);
+      downloaded.push(entry.relativePath);
     } catch (e) {
       console.error(`Download failed for ${entry.relativePath}:`, e);
     }
@@ -157,6 +171,7 @@ export async function performInitialSync(state, dropboxPath) {
   await state.saveFileTree();
   state.files = await tauriInvoke("list_files");
   state.emit("files-changed");
+  return { uploaded, downloaded };
 }
 
 /**

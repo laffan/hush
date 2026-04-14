@@ -84,16 +84,20 @@ async function runSyncCycle(state) {
 async function syncDropboxContent(state) {
   const { checkDropboxChanges, acceptExternalChange, syncFileToExternal } =
     await import("./sync-state.js");
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
 
   try {
     const changes = await checkDropboxChanges(state);
     for (const change of changes) {
+      // Resolve a display name for logging
+      const node = findNodeByFileId(state.fileTree, change.internalId);
+      const fileName = node?.name || change.relativePath || change.internalId;
       if (change.type === "pull") {
         await acceptExternalChange(state, change.internalId, change.content);
-        showSyncIndicator("pulled");
+        showSyncIndicator("pulled", fileName);
       } else if (change.type === "push") {
         await syncFileToExternal(state, change.internalId, change.content);
-        showSyncIndicator("pushed");
+        showSyncIndicator("pushed", fileName);
       }
     }
     updateDropboxStatus(state, true);
@@ -163,7 +167,8 @@ async function syncDropboxDiff(state) {
       await state.saveFileTree();
       state.files = await invoke("list_files");
       state.emit("files-changed");
-      showSyncIndicator("pulled");
+      const newNames = (diff.newFiles || []).map(e => e.name || e.relativePath).join(", ");
+      showSyncIndicator("pulled", newNames || "structural changes");
     }
   } catch (e) {
     console.error("Dropbox diff failed:", e);

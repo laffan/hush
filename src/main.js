@@ -526,14 +526,33 @@ async function init() {
       const { path } = event.payload || {};
       if (path) {
         try {
-          // Initialize tokens from settings
+          // Reload settings from backend to ensure tokens are current
+          state.settings = await invoke("get_settings");
           const dbx = await import("./sync/dropbox.js");
           if (state.settings.dropboxAccessToken) {
             dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
           }
-          // Perform initial full sync
+          // Perform initial full sync and log results
           const { performInitialSync } = await import("./sync/sync-state.js");
-          await performInitialSync(state, path);
+          const result = await performInitialSync(state, path);
+          // Write sync log entries
+          const logEntries = [];
+          if (result.uploaded.length > 0) {
+            for (const f of result.uploaded) logEntries.push(`Uploaded ${f}`);
+          }
+          if (result.downloaded.length > 0) {
+            for (const f of result.downloaded) logEntries.push(`Downloaded ${f}`);
+          }
+          if (logEntries.length > 0) {
+            const s = await invoke("get_settings");
+            const log = s.dropboxSyncLog || [];
+            const now = new Date();
+            const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+            for (const entry of logEntries) log.push(`${ts}  ${entry}`);
+            if (log.length > 50) log.splice(0, log.length - 50);
+            s.dropboxSyncLog = log;
+            await invoke("save_settings", { settings: s });
+          }
           // Start polling
           const sp = await import("./sync/sync-polling.js");
           sp.startSyncPolling(state);
