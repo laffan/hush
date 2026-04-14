@@ -40,6 +40,23 @@ export function clearTokens() {
 }
 
 /**
+ * Load tokens from the Rust backend settings if not already in memory.
+ * This ensures tokens survive across window contexts and re-renders.
+ */
+async function ensureTokens() {
+  if (_accessToken) return;
+  if (!IS_TAURI) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const settings = await invoke("get_settings");
+    if (settings.dropboxAccessToken) {
+      _accessToken = settings.dropboxAccessToken;
+      _refreshToken = settings.dropboxRefreshToken || null;
+    }
+  } catch (_) {}
+}
+
+/**
  * Refresh the access token using the stored refresh token.
  * Deduplicates concurrent calls.
  */
@@ -47,7 +64,9 @@ async function refreshAccessToken() {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
     try {
-      if (IS_TAURI) {
+      // Make sure we have a refresh token loaded
+      if (!_refreshToken) await ensureTokens();
+      if (IS_TAURI && _refreshToken) {
         const { invoke } = await import("@tauri-apps/api/core");
         const newToken = await invoke("refresh_dropbox_token", { appKey: APP_KEY });
         _accessToken = newToken;
@@ -67,9 +86,10 @@ function authHeaders() {
 }
 
 /**
- * Fetch wrapper that auto-refreshes on 401 and retries once.
+ * Fetch wrapper that loads tokens on demand, auto-refreshes on 401.
  */
 async function dbxFetch(url, options = {}) {
+  await ensureTokens();
   let resp = await fetch(url, {
     ...options,
     headers: { ...authHeaders(), ...options.headers },
