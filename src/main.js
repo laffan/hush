@@ -341,6 +341,7 @@ async function init() {
   // Sidebar hover trigger — a fixed invisible zone on the left edge
   // Must live inside #app so it shares the same stacking context in fullscreen
   const sidebarTrigger = document.createElement("div");
+  sidebarTrigger.className = "sidebar-trigger";
   sidebarTrigger.style.cssText =
     "position:fixed;top:0;left:0;width:50px;height:100%;z-index:250;";
   document.getElementById("app").appendChild(sidebarTrigger);
