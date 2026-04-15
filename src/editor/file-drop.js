@@ -12,8 +12,6 @@
  * a missed drop never causes the webview to navigate away.
  */
 
-import { getCanvasInstance } from "../notebook/notebook-bridge.js";
-
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
@@ -40,15 +38,22 @@ export function setupFileDrop(state) {
     if (!e.defaultPrevented) e.preventDefault();
   }, true);
 
-  // ── Build import overlay (shown over sidebar panel) ─────────────
+  // ── Build drop overlay ────────────────────────────────────────────
   const overlay = document.createElement("div");
   overlay.className = "drop-overlay hidden";
 
   const importZone = document.createElement("div");
   importZone.className = "drop-zone drop-zone-import";
-  importZone.innerHTML = `<span class="drop-zone-label">Import file</span>`;
-  overlay.appendChild(importZone);
+  const importLabel = document.createElement("span");
+  importLabel.className = "drop-zone-label";
+  importZone.appendChild(importLabel);
 
+  const insertZone = document.createElement("div");
+  insertZone.className = "drop-zone drop-zone-copy";
+  insertZone.innerHTML = `<span class="drop-zone-label">Insert into current document</span>`;
+
+  overlay.appendChild(importZone);
+  overlay.appendChild(insertZone);
   document.body.appendChild(overlay);
 
   // ── Drag enter / leave tracking ──────────────────────────────────
@@ -58,15 +63,23 @@ export function setupFileDrop(state) {
     if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
     dragCounter++;
     if (dragCounter === 1) {
-      // In notebook mode, only show overlay if sidebar panel is open
+      // In notebook mode, only show overlay if sidebar panel is open —
+      // otherwise let the canvas handle the drop natively.
       if (state.currentNotebookFileId) {
         const panel = document.getElementById("panel-overlay");
         if (panel && !panel.classList.contains("hidden")) {
+          importLabel.textContent = "Import file";
+          importZone.style.display = "";
+          insertZone.style.display = "none";
           overlay.classList.remove("hidden");
         }
-        // Otherwise let the notebook canvas handle the drop natively
         return;
       }
+      // In doc mode, always show the overlay so we can capture the drop.
+      // Show both zones: "Import file" + "Insert into current document".
+      importLabel.textContent = "Import file";
+      importZone.style.display = "";
+      insertZone.style.display = "";
       overlay.classList.remove("hidden");
     }
   });
@@ -79,42 +92,40 @@ export function setupFileDrop(state) {
   // ── Zone hover highlights ────────────────────────────────────────
   importZone.addEventListener("dragenter", () => importZone.classList.add("drop-zone-active"));
   importZone.addEventListener("dragleave", () => importZone.classList.remove("drop-zone-active"));
+  insertZone.addEventListener("dragenter", () => insertZone.classList.add("drop-zone-active"));
+  insertZone.addEventListener("dragleave", () => insertZone.classList.remove("drop-zone-active"));
 
-  // ── Import zone drop handler ─────────────────────────────────────
+  // ── Import zone: create a new document ───────────────────────────
   importZone.addEventListener("drop", async (e) => {
     e.stopPropagation();
     hideOverlay();
-    const file = findDroppedFile(e, [...TEXT_EXTENSIONS, ...IMAGE_EXTENSIONS]);
+    const file = findDroppedFile(e, TEXT_EXTENSIONS);
     if (!file) return;
-    if (isTextFile(file)) {
-      const content = await file.text();
-      await importAsNewDocument(state, content);
-    }
-    // Image import as new document isn't supported yet — just ignore
+    const content = await file.text();
+    await importAsNewDocument(state, content);
   });
 
-  // ── Overlay background drop (fallback) ───────────────────────────
-  overlay.addEventListener("drop", async (e) => {
+  // ── Insert zone: append to current document ──────────────────────
+  insertZone.addEventListener("drop", async (e) => {
     e.stopPropagation();
     hideOverlay();
-
-    if (state.currentNotebookFileId) {
-      // In notebook mode, forward file drops to the canvas
-      await handleNotebookDrop(e);
-      return;
-    }
-
-    // In doc mode, insert text into editor
     const file = findDroppedFile(e, TEXT_EXTENSIONS);
     if (!file) return;
     const content = await file.text();
     appendToEditor(state, content);
   });
 
+  // ── Overlay background drop (fallback) ───────────────────────────
+  overlay.addEventListener("drop", async (e) => {
+    e.stopPropagation();
+    hideOverlay();
+  });
+
   function hideOverlay() {
     dragCounter = 0;
     overlay.classList.add("hidden");
     importZone.classList.remove("drop-zone-active");
+    insertZone.classList.remove("drop-zone-active");
   }
 }
 
@@ -146,41 +157,4 @@ function appendToEditor(state, text) {
   const prefix = end > 0 ? "\n\n" : "";
   view.dispatch({ changes: { from: end, insert: prefix + text } });
   state.markDirty();
-}
-
-async function handleNotebookDrop(e) {
-  const canvas = getCanvasInstance();
-  if (!canvas) return;
-  const files = e.dataTransfer?.files;
-  if (!files || files.length === 0) return;
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    if (isImageFile(file)) {
-      const dataUrl = await fileToDataUrl(file);
-      const dims = await getImageDimensions(dataUrl);
-      canvas.state.addImageShape(dataUrl, file.name, dims.width, dims.height);
-    } else if (isTextFile(file)) {
-      const text = await file.text();
-      if (text.trim()) canvas.state.addTextShapeAtCenter(text);
-    }
-  }
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-function getImageDimensions(dataUrl) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = () => resolve({ width: 200, height: 200 });
-    img.src = dataUrl;
-  });
 }
