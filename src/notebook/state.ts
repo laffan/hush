@@ -55,6 +55,10 @@ export class DrawingState extends EventTarget {
   /** Shape ID currently being cropped, or null */
   croppingImageId: string | null = null;
 
+  /** Pixel offset from the left edge for the sidebar/panel. The pocket
+   *  tray and toolbar center themselves relative to this value. */
+  leftInset = 0;
+
   // Appearance
   appearanceMode: AppearanceMode = "light";
   themeId = "default";
@@ -281,8 +285,9 @@ export class DrawingState extends EventTarget {
         return;
       }
 
-      // Check pocketed shapes first (screen-space hit test)
-      const pocketHit = findPocketedShapeAtScreen(screenPt, this.shapes, canvas.clientWidth, this.fontFamily);
+      // Check pocketed shapes first (screen-space hit test, offset by sidebar inset)
+      const pocketPt = { x: screenPt.x - this.leftInset, y: screenPt.y };
+      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily);
       if (pocketHit) {
         const next = e.shiftKey ? new Set(this.selectedIds) : new Set<string>();
         const allSel = e.shiftKey && pocketHit.every((id) => next.has(id));
@@ -492,7 +497,7 @@ export class DrawingState extends EventTarget {
       if (trayWasVisible && canvas) {
         const rect = canvas.getBoundingClientRect();
         const screenX = e.clientX - rect.left;
-        if (screenX < POCKET_ZONE_WIDTH) {
+        if (screenX < POCKET_ZONE_WIDTH + this.leftInset) {
           this.shapes = this.shapes.map((s) =>
             this.selectedIds.has(s.id) ? { ...s, pocketed: true } : s,
           );

@@ -20,6 +20,7 @@ export interface RenderState {
   gridOpacity: number;
   fontFamily: string;
   isDragging: boolean;
+  leftInset: number;
 }
 
 export function render(canvas: HTMLCanvasElement, state: RenderState): void {
@@ -122,15 +123,19 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
 
   ctx.restore();
 
-  // Draw pocket tray on left edge (always visible when items are pocketed, or during drag)
+  // Draw pocket tray on left edge, offset by sidebar inset
   const hasPocketed = pocketLayout.entries.length > 0;
+  const leftInset = state.leftInset || 0;
   if (hasPocketed || state.isDragging) {
-    drawPocketTray(ctx, w, h, state.isDragging, hasPocketed);
+    drawPocketTray(ctx, w, h, state.isDragging, hasPocketed, leftInset);
   }
 
-  // Draw pocketed shapes at fixed screen positions (outside camera transform)
+  // Draw pocketed shapes at fixed screen positions, offset by sidebar inset
   if (hasPocketed) {
+    ctx.save();
+    ctx.translate(leftInset, 0);
     drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache);
+    ctx.restore();
   }
 
   if (selectionBox) drawSelectionBox(ctx, selectionBox, camera);
@@ -399,25 +404,23 @@ function drawCropOverlay(ctx: CanvasRenderingContext2D, shape: ImageShape, zoom:
 const POCKET_BLUE = "rgba(66, 153, 225, 0.18)";
 const POCKET_BLUE_HIGHLIGHT = "rgba(66, 153, 225, 0.30)";
 
-function drawPocketTray(ctx: CanvasRenderingContext2D, _w: number, h: number, isDragging: boolean, hasPocketed: boolean) {
+function drawPocketTray(ctx: CanvasRenderingContext2D, _w: number, h: number, isDragging: boolean, hasPocketed: boolean, leftInset = 0) {
   ctx.save();
-  // 20px light blue strip on the left edge
+  const x = leftInset;
   ctx.fillStyle = isDragging ? POCKET_BLUE_HIGHLIGHT : POCKET_BLUE;
-  ctx.fillRect(0, 0, POCKET_TRAY_WIDTH, h);
-  // Softer extended highlight during drags so users see the drop zone
+  ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
   if (isDragging) {
-    const gradient = ctx.createLinearGradient(POCKET_TRAY_WIDTH, 0, POCKET_ZONE_WIDTH, 0);
+    const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_ZONE_WIDTH, 0);
     gradient.addColorStop(0, "rgba(66, 153, 225, 0.10)");
     gradient.addColorStop(1, "transparent");
     ctx.fillStyle = gradient;
-    ctx.fillRect(POCKET_TRAY_WIDTH, 0, POCKET_ZONE_WIDTH - POCKET_TRAY_WIDTH, h);
+    ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, POCKET_ZONE_WIDTH - POCKET_TRAY_WIDTH, h);
   } else if (hasPocketed) {
-    // Subtle fade when items are present
-    const gradient = ctx.createLinearGradient(POCKET_TRAY_WIDTH, 0, POCKET_TRAY_WIDTH + 6, 0);
+    const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_TRAY_WIDTH + 6, 0);
     gradient.addColorStop(0, "rgba(66, 153, 225, 0.06)");
     gradient.addColorStop(1, "transparent");
     ctx.fillStyle = gradient;
-    ctx.fillRect(POCKET_TRAY_WIDTH, 0, 6, h);
+    ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, 6, h);
   }
   ctx.restore();
 }

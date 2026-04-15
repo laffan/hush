@@ -10,7 +10,7 @@ import { dispatchDomShortcut } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
-import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance } from "./notebook/notebook-bridge.js";
+import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance, setNotebookLeftInset } from "./notebook/notebook-bridge.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -323,6 +323,17 @@ async function init() {
   createSidebar(sidebar, state);
   setupFileDrop(state);
 
+  // Sync notebook left inset when sidebar/panel visibility changes
+  function syncNotebookInset() {
+    if (!state.currentNotebookFileId) return;
+    const po = document.getElementById("panel-overlay");
+    const panelOpen = po && !po.classList.contains("hidden");
+    const sbVisible = sidebar.classList.contains("pinned") || sidebar.classList.contains("visible");
+    setNotebookLeftInset(panelOpen ? 350 : sbVisible ? 50 : 0);
+  }
+  new MutationObserver(syncNotebookInset).observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
+  new MutationObserver(syncNotebookInset).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
+
   // Panel inset mode — push into editor margin when there's enough space
   const panelOverlay = document.getElementById("panel-overlay");
   function updatePanelMode() {
@@ -340,11 +351,8 @@ async function init() {
   }
   updatePanelMode();
   window.addEventListener("resize", updatePanelMode);
-  // Also update when column width changes
   state.on("settings-changed", updatePanelMode);
 
-  // Sidebar hover trigger — a fixed invisible zone on the left edge
-  // Must live inside #app so it shares the same stacking context in fullscreen
   const sidebarTrigger = document.createElement("div");
   sidebarTrigger.className = "sidebar-trigger";
   sidebarTrigger.style.cssText =
@@ -355,9 +363,7 @@ async function init() {
     // Disable trigger so clicks pass through to sidebar buttons
     sidebarTrigger.style.pointerEvents = "none";
   });
-  // Hide sidebar when mouse leaves the sidebar area entirely
   function checkSidebarLeave(e) {
-    // Don't auto-hide if pinned via Cmd+\ or panel is pinned (inset mode only)
     if (sidebar.classList.contains("pinned")) return;
     if (panelOverlay.classList.contains("panel-pinned") && panelOverlay.classList.contains("panel-inset")) return;
     const x = e.clientX;
@@ -373,7 +379,6 @@ async function init() {
   }
   document.addEventListener("mousemove", checkSidebarLeave);
 
-  // Right sidebar (Outline View) — delegated to ui/right-panel-setup.js
   import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
 
   // Save scroll position periodically (debounced on scroll)

@@ -149,6 +149,12 @@ export class NotesCanvas {
     if (opts.fontSize !== undefined) { this.state.fontSize = opts.fontSize; this.state.notify("fontSize"); }
   }
 
+  /** Update the left inset (sidebar width) so pocket tray and toolbar adjust. */
+  setLeftInset(px: number) {
+    this.state.leftInset = px;
+    this.state.notify("theme"); // triggers re-render
+  }
+
   on(event: string, handler: (detail: unknown) => void) {
     this.state.addEventListener(event, ((e: CustomEvent) => handler(e.detail)) as EventListener);
   }
@@ -178,6 +184,7 @@ export class NotesCanvas {
         gridSpacing: this.state.gridSpacing,
         gridOpacity: this.state.gridOpacity,
         isDragging: this.state.isActiveDrag,
+        leftInset: this.state.leftInset,
       });
       this._rafId = requestAnimationFrame(loop);
     };

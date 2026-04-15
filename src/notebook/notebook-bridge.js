@@ -194,6 +194,13 @@ export async function unmountNotebook() {
 }
 
 /**
+ * Update the left inset for the notebook (sidebar/panel width).
+ */
+export function setNotebookLeftInset(px) {
+  if (canvasInstance) canvasInstance.setLeftInset(px);
+}
+
+/**
  * Check if the notebook has unsaved changes.
  */
 export function isNotebookDirty() {

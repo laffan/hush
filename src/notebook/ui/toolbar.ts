@@ -160,7 +160,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
 
   const container = h("div", {
     style: {
-      position: "absolute", bottom: "calc(16px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)",
+      position: "absolute", bottom: "calc(16px + env(safe-area-inset-bottom))",
       display: "flex", alignItems: "center", gap: "4px", padding: "6px 8px",
       borderRadius: "12px",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)", zIndex: "100", userSelect: "none",
@@ -182,6 +182,12 @@ export function createToolbar(state: DrawingState): HTMLElement {
   function update() {
     const theme = state.theme;
     container.style.background = theme.uiBackground;
+
+    // Center toolbar between sidebar inset and right edge
+    const inset = state.leftInset || 0;
+    const center = inset + (window.innerWidth - inset) / 2;
+    container.style.left = center + "px";
+    container.style.transform = "translateX(-50%)";
 
     const fg = theme.foreground;
     const accent = theme.accent;
