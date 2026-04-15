@@ -180,20 +180,26 @@ export function bindInputEvents(
     if (text && text.trim()) state.addTextShapeAtCenter(cleanLineBreaks(text));
   }) as unknown as (e: HTMLElementEventMap["paste"]) => void);
 
-  // Drag/drop
-  on(window as unknown as HTMLElement, "dragover", ((e: DragEvent) => {
+  // Drag/drop — only handle shelf drags and direct canvas drops.
+  // External file drops are handled by Hush's file-drop.js which
+  // forwards to the canvas via notebook-bridge when appropriate.
+  on(canvas, "dragover", ((e: DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = e.dataTransfer.types.includes("application/x-shelf-index") ? "move" : "copy";
-  }) as unknown as (e: HTMLElementEventMap["dragover"]) => void, { capture: true });
+  }) as unknown as (e: HTMLElementEventMap["dragover"]) => void);
 
-  on(window as unknown as HTMLElement, "drop", (async (e: DragEvent) => {
+  on(canvas, "drop", (async (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!e.dataTransfer) return;
     const rect = canvas.getBoundingClientRect();
     const dropPos = screenToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, state.camera);
+
+    // Shelf item drag-to-restore
     const shelfIdx = e.dataTransfer.getData("application/x-shelf-index");
     if (shelfIdx !== "") { inputOpts?.onShelfDrop?.(parseInt(shelfIdx, 10), dropPos.x, dropPos.y); return; }
+
+    // File drops (images, text) — direct canvas drops
     const files = Array.from(e.dataTransfer.files);
     let handledFile = false;
     for (const file of files) {
@@ -201,9 +207,11 @@ export function bindInputEvents(
       else if (isTextFile(file)) { const text = await file.text(); if (text.trim()) state.addTextShapeAtPosition(cleanLineBreaks(text), dropPos); handledFile = true; }
     }
     if (handledFile) return;
+
+    // Plain text drops
     const text = await extractDroppedText(e.dataTransfer);
     if (text && text.trim()) state.addTextShapeAtPosition(cleanLineBreaks(text), dropPos);
-  }) as unknown as (e: HTMLElementEventMap["drop"]) => void, { capture: true });
+  }) as unknown as (e: HTMLElementEventMap["drop"]) => void);
 
   return () => { for (const fn of cleanups) fn(); };
 }

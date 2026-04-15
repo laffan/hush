@@ -1,4 +1,4 @@
-/* ===== File Drop Zones ===== */
+/* ===== File Drop Overlay ===== */
 .drop-overlay {
   position: fixed;
   top: 0;
@@ -7,8 +7,6 @@
   bottom: 0;
   z-index: 99999;
   display: flex;
-  flex-direction: row;
-  gap: 8px;
   padding: 12px;
   background: var(--panel-bg, rgba(25, 25, 25, 0.85));
   pointer-events: auto;
@@ -26,13 +24,6 @@
   border-radius: 8px;
   background: transparent;
   transition: border-color 0.15s, background 0.15s;
-}
-
-.drop-zone-import {
-  flex: 0 0 40%;
-}
-
-.drop-zone-copy {
   flex: 1;
 }
 
