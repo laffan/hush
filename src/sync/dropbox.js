@@ -244,7 +244,7 @@ export async function listFolder(path) {
 /**
  * Recursively list all files in a folder. Returns flat array of
  * { relativePath, name, isDirectory, content, dropboxPath, modified, tag }.
- * Includes .md files, .hushproject files, and directories.
+ * Includes .md files, .hushnb (notebook) files, .hushproject files, and directories.
  */
 export async function listFolderRecursive(path) {
   const entries = [];
@@ -268,15 +268,17 @@ export async function listFolderRecursive(path) {
       if (!rel) continue;
       if (entry[".tag"] === "folder") {
         entries.push({ relativePath: rel, name: entry.name, isDirectory: true, content: "" });
-      } else if (entry.name.endsWith(".md") || entry.name.endsWith(".hushproject")) {
+      } else if (entry.name.endsWith(".md") || entry.name.endsWith(".hushnb") || entry.name.endsWith(".hushproject")) {
+        const tag = entry.name.endsWith(".hushproject") ? "hushproject"
+          : entry.name.endsWith(".hushnb") ? "hushnb" : "md";
         entries.push({
           relativePath: rel,
-          name: entry.name.replace(/\.(md|hushproject)$/, ""),
+          name: entry.name.replace(/\.(md|hushnb|hushproject)$/, ""),
           isDirectory: false,
           content: "",
           dropboxPath: display,
           modified: entry.server_modified,
-          tag: entry.name.endsWith(".hushproject") ? "hushproject" : "md",
+          tag,
         });
       }
     }

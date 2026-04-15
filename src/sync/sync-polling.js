@@ -131,11 +131,13 @@ async function syncDropboxDiff(state) {
 
       // Insert tree node — merge with existing folders/projects
       const parts = entry.relativePath.split("/");
-      const fileName = parts.pop().replace(/\.md$/, "");
+      const rawFileName = parts.pop();
+      const isNotebook = rawFileName.endsWith(".hushnb");
+      const fileName = rawFileName.replace(/\.(md|hushnb)$/, "");
       let current = state.fileTree;
       for (const dirName of parts) {
         if (!dirName) continue;
-        let folder = current.find(n => n.type !== "document" && n.name === dirName)
+        let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
           || (dirName === "Inbox" && current.find(n => n.id === "__inbox__"))
           || (dirName === "Trash" && current.find(n => n.id === "__trash__"));
         if (!folder) {
@@ -150,13 +152,13 @@ async function syncDropboxDiff(state) {
       // Avoid duplicates
       if (!current.some(n => n.fileId === file.id)) {
         const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
-        const docNode = {
-          id: crypto.randomUUID(), type: "document",
+        const node = {
+          id: crypto.randomUUID(), type: isNotebook ? "notebook" : "document",
           name: entry.name || fileName, fileId: file.id,
           children: [], flagged: false,
         };
-        if (trashIdx >= 0) current.splice(trashIdx, 0, docNode);
-        else current.push(docNode);
+        if (trashIdx >= 0) current.splice(trashIdx, 0, node);
+        else current.push(node);
       }
       changed = true;
     }

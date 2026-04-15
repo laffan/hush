@@ -411,6 +411,9 @@ export class AppState {
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
         this.emit("files-changed");
+        // Propagate new notebook to Dropbox sync
+        const nbNode = findNodeByFileId(this.fileTree, result.file.id);
+        if (nbNode) this.syncCreateFile(nbNode.id, result.file.id, result.file.content || "[]");
         // Open the newly created notebook
         await this.openNotebook(result.file.id);
         return result;

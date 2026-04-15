@@ -88,7 +88,7 @@ impl SyncManager {
         }
     }
 
-    /// Scan a folder for .md files, returning entries to import.
+    /// Scan a folder for .md and .hushnb files, returning entries to import.
     pub fn scan_folder(folder_path: &str) -> Result<Vec<ImportEntry>, Box<dyn std::error::Error>> {
         let root = PathBuf::from(folder_path);
         if !root.is_dir() {
@@ -133,19 +133,22 @@ impl SyncManager {
                     is_directory: true,
                 });
                 Self::scan_recursive(root, &path, entries)?;
-            } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                let content = fs::read_to_string(&path).unwrap_or_default();
-                let name = path
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                entries.push(ImportEntry {
-                    relative_path: relative,
-                    name,
-                    content,
-                    is_directory: false,
-                });
+            } else {
+                let ext = path.extension().and_then(|e| e.to_str());
+                if ext == Some("md") || ext == Some("hushnb") {
+                    let content = fs::read_to_string(&path).unwrap_or_default();
+                    let name = path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    entries.push(ImportEntry {
+                        relative_path: relative,
+                        name,
+                        content,
+                        is_directory: false,
+                    });
+                }
             }
         }
         Ok(())

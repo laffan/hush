@@ -1,7 +1,7 @@
 /**
  * Sync state operations — full tree sync to Dropbox.
- * Syncs all documents, folders, and projects as a mirror backup.
- * Documents → .md files, Projects → .hushproject (JSON) files.
+ * Syncs all documents, folders, projects, and notebooks as a mirror backup.
+ * Documents → .md files, Notebooks → .hushnb files, Projects → .hushproject (JSON) files.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -24,9 +24,16 @@ function safeName(name) {
 }
 
 /**
+ * Return the Dropbox file extension for a given tree node type.
+ */
+function extensionForType(nodeType) {
+  return nodeType === "notebook" ? ".hushnb" : ".md";
+}
+
+/**
  * Build a flat map of files and directories from the file tree.
- * Documents become "Name.md", Projects get a ".hushproject" metadata file,
- * Folders become directories.
+ * Documents become "Name.md", Notebooks become "Name.hushnb",
+ * Projects get a ".hushproject" metadata file, Folders become directories.
  */
 export function buildSyncManifest(fileTree) {
   const manifest = { files: [], directories: [] };
@@ -34,18 +41,19 @@ export function buildSyncManifest(fileTree) {
   function walk(nodes, parentPath) {
     for (const node of nodes) {
       const name = safeName(node.name) || "Untitled";
-      if (node.type === "document" && node.fileId) {
-        const relPath = parentPath ? `${parentPath}/${name}.md` : `${name}.md`;
-        manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: "md" });
+      if ((node.type === "document" || node.type === "notebook") && node.fileId) {
+        const ext = extensionForType(node.type);
+        const relPath = parentPath ? `${parentPath}/${name}${ext}` : `${name}${ext}`;
+        manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: node.type === "notebook" ? "hushnb" : "md" });
       } else if (node.type === "project") {
         const dirPath = parentPath ? `${parentPath}/${name}` : name;
         manifest.directories.push(dirPath);
-        const childDocs = (node.children || [])
-          .filter(c => c.type === "document")
-          .map(c => c.name + ".md");
+        const childEntries = (node.children || [])
+          .filter(c => c.type === "document" || c.type === "notebook")
+          .map(c => c.name + extensionForType(c.type));
         manifest.files.push({
           nodeId: node.id, fileId: null, relativePath: `${dirPath}/.hushproject`,
-          type: "hushproject", content: JSON.stringify({ ordering: childDocs }, null, 2),
+          type: "hushproject", content: JSON.stringify({ ordering: childEntries }, null, 2),
         });
         if (node.children) walk(node.children, dirPath);
       } else if (node.type === "folder") {
@@ -120,7 +128,7 @@ export async function performInitialSync(state, dropboxPath) {
   for (const file of manifest.files) {
     const fullPath = basePath ? `${basePath}/${file.relativePath}` : `/${file.relativePath}`;
     let content = file.content || "";
-    if (file.type === "md" && file.fileId) {
+    if ((file.type === "md" || file.type === "hushnb") && file.fileId) {
       try {
         const fileData = await tauriInvoke("load_file", { id: file.fileId });
         content = fileData.content || "";
@@ -182,14 +190,16 @@ export async function performInitialSync(state, dropboxPath) {
  */
 function insertIntoTree(fileTree, relativePath, fileId, displayName) {
   const parts = relativePath.split("/");
-  const fileName = parts.pop().replace(/\.md$/, "");
+  const rawFileName = parts.pop();
+  const isNotebook = rawFileName.endsWith(".hushnb");
+  const fileName = rawFileName.replace(/\.(md|hushnb)$/, "");
   let current = fileTree;
 
   for (const dirName of parts) {
     if (!dirName) continue;
-    // Match any container node by name (folder, project, or any non-document).
+    // Match any container node by name (folder, project, or any non-document/notebook).
     // Also match special nodes by ID as fallback (Inbox = __inbox__, Trash = __trash__).
-    let folder = current.find(n => n.type !== "document" && n.name === dirName)
+    let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
       || (dirName === "Inbox" && current.find(n => n.id === "__inbox__"))
       || (dirName === "Trash" && current.find(n => n.id === "__trash__"));
     if (!folder) {
@@ -206,18 +216,18 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
     current = folder.children;
   }
 
-  // Check if a document with this fileId already exists to avoid duplicates
+  // Check if a node with this fileId already exists to avoid duplicates
   if (current.some(n => n.fileId === fileId)) return;
 
   // Insert before Trash if we're at the top level
   const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
-  const docNode = {
-    id: crypto.randomUUID(), type: "document",
+  const node = {
+    id: crypto.randomUUID(), type: isNotebook ? "notebook" : "document",
     name: displayName || fileName, fileId,
     children: [], flagged: false,
   };
-  if (trashIdx >= 0) current.splice(trashIdx, 0, docNode);
-  else current.push(docNode);
+  if (trashIdx >= 0) current.splice(trashIdx, 0, node);
+  else current.push(node);
 }
 
 // ===== Ongoing Sync Operations =====
@@ -272,6 +282,9 @@ export async function acceptExternalChange(state, internalId, content) {
       state._syncPulling = true;
       state.editor.setContent(content);
       state._syncPulling = false;
+    } else if (state.currentNotebookFileId === internalId) {
+      // Reload shapes into the open notebook canvas
+      state.emit("notebook-sync-reload", content);
     }
     state.emit("files-changed");
   } catch (e) {
@@ -293,13 +306,13 @@ export async function syncRenameNode(state, nodeId, oldName, nodeType) {
   const basePath = dropboxPath === "/" ? "" : dropboxPath;
 
   try {
-    if (nodeType === "document") {
+    if (nodeType === "document" || nodeType === "notebook") {
       const node = findNode(state.fileTree, nodeId);
       if (!node?.fileId) return;
       const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
       if (!info) return;
       const pathParts = info.relativePath.split("/");
-      pathParts[pathParts.length - 1] = node.name + ".md";
+      pathParts[pathParts.length - 1] = node.name + extensionForType(nodeType);
       const newRelPath = pathParts.join("/");
       const oldFull = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
       const newFull = basePath ? `${basePath}/${newRelPath}` : `/${newRelPath}`;
@@ -342,7 +355,7 @@ export async function syncDeleteNode(state, nodeId) {
   if (!node) return;
 
   try {
-    if (node.type === "document" && node.fileId) {
+    if ((node.type === "document" || node.type === "notebook") && node.fileId) {
       const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
       if (info) {
         const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
@@ -405,8 +418,10 @@ export async function syncCreateFile(state, nodeId, fileId, content) {
   const ctx = findSyncContext(state.fileTree, nodeId);
   if (!ctx) return;
 
-  const nodeName = findNode(state.fileTree, nodeId)?.name || "Untitled";
-  const relPath = ctx.relativePath ? `${ctx.relativePath}.md` : `${nodeName}.md`;
+  const node = findNode(state.fileTree, nodeId);
+  const nodeName = node?.name || "Untitled";
+  const ext = extensionForType(node?.type);
+  const relPath = ctx.relativePath ? `${ctx.relativePath}${ext}` : `${nodeName}${ext}`;
 
   try {
     const fullPath = basePath ? `${basePath}/${relPath}` : `/${relPath}`;
@@ -437,8 +452,8 @@ export async function syncProjectOrdering(state, projectNodeId) {
   if (!node || node.type !== "project") return;
 
   const docNames = (node.children || [])
-    .filter(c => c.type === "document")
-    .map(c => c.name + ".md");
+    .filter(c => c.type === "document" || c.type === "notebook")
+    .map(c => c.name + extensionForType(c.type));
 
   try {
     const data = JSON.stringify({ ordering: docNames }, null, 2);
@@ -465,7 +480,7 @@ export async function reconcileSync(state) {
   function collectDocs(nodes) {
     const docs = [];
     for (const n of nodes) {
-      if (n.type === "document" && n.fileId) docs.push(n);
+      if ((n.type === "document" || n.type === "notebook") && n.fileId) docs.push(n);
       if (n.children) docs.push(...collectDocs(n.children));
     }
     return docs;

@@ -10,7 +10,7 @@ import { dispatchDomShortcut } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
-import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance, setNotebookLeftInset } from "./notebook/notebook-bridge.js";
+import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -196,8 +196,16 @@ async function init() {
   }
 
   state.on("notebook-open", async (fileId) => { await mountNotebook(notebookContainer, fileId, state); showNotebook(); });
-  state.on("notebook-unmount", async () => { await unmountNotebook(); showEditor(); });
-  state.on("notebook-autosave", () => saveNotebook());
+  state.on("notebook-unmount", async () => {
+    const result = await unmountNotebook();
+    if (result) state.syncFileToExternal(result.fileId, result.content);
+    showEditor();
+  });
+  state.on("notebook-autosave", async () => {
+    const result = await saveNotebook();
+    if (result) state.syncFileToExternal(result.fileId, result.content);
+  });
+  state.on("notebook-sync-reload", (content) => reloadNotebookShapes(content));
   state.on("file-opened", () => { if (!state.currentNotebookFileId) showEditor(); });
 
   // Notebook commands from the command palette

@@ -163,27 +163,32 @@ export function applyNotebookSettings(state) {
 /**
  * Save the current notebook shapes to the backing file.
  * Called by the autosave interval and on notebook switch.
+ * Returns { fileId, content } when a save occurs, or null if nothing to save.
  */
 export async function saveNotebook() {
-  if (!canvasInstance || !currentNotebookFileId || !notebookDirty) return;
+  if (!canvasInstance || !currentNotebookFileId || !notebookDirty) return null;
   notebookDirty = false;
   const shapes = canvasInstance.getShapes();
   const content = JSON.stringify(shapes);
   try {
     if (IS_TAURI) {
       await tauriInvoke("save_file", { id: currentNotebookFileId, content });
+      return { fileId: currentNotebookFileId, content };
     }
   } catch (e) {
     console.error("Failed to save notebook:", e);
   }
+  return null;
 }
 
 /**
  * Destroy the current NotesCanvas and save if dirty.
+ * Returns { fileId, content } if a save occurred, or null otherwise.
  */
 export async function unmountNotebook() {
+  let saveResult = null;
   if (notebookDirty) {
-    await saveNotebook();
+    saveResult = await saveNotebook();
   }
   if (canvasInstance) {
     canvasInstance.destroy();
@@ -191,6 +196,7 @@ export async function unmountNotebook() {
   }
   currentNotebookFileId = null;
   notebookDirty = false;
+  return saveResult;
 }
 
 /**
@@ -219,4 +225,21 @@ export function getCanvasInstance() {
  */
 export function getCurrentNotebookFileId() {
   return currentNotebookFileId;
+}
+
+/**
+ * Reload shapes into the open notebook from synced content.
+ * Used when an external change is pulled for the currently open notebook.
+ */
+export function reloadNotebookShapes(jsonContent) {
+  if (!canvasInstance) return;
+  try {
+    const shapes = JSON.parse(jsonContent);
+    if (Array.isArray(shapes)) {
+      canvasInstance.loadShapes(shapes);
+      notebookDirty = false;
+    }
+  } catch (e) {
+    console.error("Failed to reload notebook shapes from sync:", e);
+  }
 }
