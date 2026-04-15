@@ -1,39 +1,28 @@
-/* ===== File Drop Overlay ===== */
-.drop-overlay {
-  position: fixed;
+/* ===== File Drop — Sidebar Import Overlay ===== */
+/* Sits inside #panel-overlay and covers just the sidebar panel area */
+.drop-import-overlay {
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 99999;
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  padding: 12px;
-  background: var(--panel-bg, rgba(25, 25, 25, 0.85));
-  pointer-events: auto;
-}
-
-.drop-overlay.hidden {
-  display: none;
-}
-
-.drop-zone {
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 2px dashed var(--panel-border, rgba(128, 128, 128, 0.3));
   border-radius: 8px;
-  background: transparent;
-  transition: border-color 0.15s, background 0.15s;
+  margin: 8px;
+  background: var(--panel-bg, rgba(25, 25, 25, 0.5));
+  transition: border-color 0.15s;
 }
 
-.drop-zone-import {
-  flex: 0 0 40%;
+.drop-import-overlay.hidden {
+  display: none;
 }
 
-.drop-zone-copy {
-  flex: 1;
+.drop-import-overlay.drop-zone-active {
+  border-color: var(--fg, #e0e0e0);
 }
 
 .drop-zone-label {
@@ -43,10 +32,6 @@
   opacity: 0.5;
   pointer-events: none;
   user-select: none;
-}
-
-.drop-zone-active {
-  border-color: var(--fg, #e0e0e0);
 }
 
 .drop-zone-active .drop-zone-label {

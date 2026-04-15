@@ -1,19 +1,19 @@
 /**
  * File drag-and-drop — handles files dragged into the app.
  *
- * Behaviour depends on context:
- *   - If the files sidebar panel is open → show "Import file" overlay
- *     over the panel.  Dropping creates a new document from the file.
- *   - If a Doc is active → insert text content at the end of the editor.
- *   - If a Notebook is active → the notebook's own input-handler handles
- *     images and text drops on the canvas (this module does not interfere).
+ * Three drop targets:
+ *   1. Sidebar panel (when open) → "Import file" overlay appears over
+ *      the panel only.  Dropping creates a new document.
+ *   2. Editor area (doc mode) → text is inserted at the end of the doc.
+ *   3. Notebook canvas → handled natively by notebook input-handler
+ *      (images become shapes, text becomes text shapes).
  *
- * IMPORTANT: We prevent the default browser drop behavior globally so that
- * a missed drop never causes the webview to navigate away.
+ * The global safety net prevents the browser from navigating to a
+ * dropped file, but does NOT block the editor/notebook from receiving
+ * the drop event.
  */
 
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
-const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
 function getExtension(name) {
   const i = name.lastIndexOf(".");
@@ -24,121 +24,92 @@ function isTextFile(file) {
   return TEXT_EXTENSIONS.includes(getExtension(file.name)) || file.type.startsWith("text/");
 }
 
-function isImageFile(file) {
-  return IMAGE_EXTENSIONS.includes(getExtension(file.name)) || file.type.startsWith("image/");
+function findTextFile(e) {
+  const files = e.dataTransfer?.files;
+  if (!files) return null;
+  for (let i = 0; i < files.length; i++) {
+    if (isTextFile(files[i])) return files[i];
+  }
+  return null;
 }
 
 export function setupFileDrop(state) {
   // ── Global safety net ────────────────────────────────────────────
-  // Prevent the browser from ever navigating to a dropped file.
-  // Use a named handler so we can check if the notebook already handled it.
+  // Prevent the browser from navigating to a dropped file.
   document.addEventListener("dragover", (e) => e.preventDefault(), true);
   document.addEventListener("drop", (e) => {
-    // Only prevent default if nothing else already handled it
     if (!e.defaultPrevented) e.preventDefault();
   }, true);
 
-  // ── Build drop overlay ────────────────────────────────────────────
-  const overlay = document.createElement("div");
-  overlay.className = "drop-overlay hidden";
+  // ── Sidebar import overlay (lives inside #panel-overlay) ─────────
+  const panelOverlay = document.getElementById("panel-overlay");
+  const importOverlay = document.createElement("div");
+  importOverlay.className = "drop-import-overlay hidden";
+  importOverlay.innerHTML = `<span class="drop-zone-label">Import file</span>`;
+  panelOverlay.appendChild(importOverlay);
 
-  const importZone = document.createElement("div");
-  importZone.className = "drop-zone drop-zone-import";
-  const importLabel = document.createElement("span");
-  importLabel.className = "drop-zone-label";
-  importZone.appendChild(importLabel);
-
-  const insertZone = document.createElement("div");
-  insertZone.className = "drop-zone drop-zone-copy";
-  insertZone.innerHTML = `<span class="drop-zone-label">Insert into current document</span>`;
-
-  overlay.appendChild(importZone);
-  overlay.appendChild(insertZone);
-  document.body.appendChild(overlay);
-
-  // ── Drag enter / leave tracking ──────────────────────────────────
-  let dragCounter = 0;
-
-  document.addEventListener("dragenter", (e) => {
-    if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
-    dragCounter++;
-    if (dragCounter === 1) {
-      // In notebook mode, only show overlay if sidebar panel is open —
-      // otherwise let the canvas handle the drop natively.
-      if (state.currentNotebookFileId) {
-        const panel = document.getElementById("panel-overlay");
-        if (panel && !panel.classList.contains("hidden")) {
-          importLabel.textContent = "Import file";
-          importZone.style.display = "";
-          insertZone.style.display = "none";
-          overlay.classList.remove("hidden");
-        }
-        return;
-      }
-      // In doc mode, always show the overlay so we can capture the drop.
-      // Show both zones: "Import file" + "Insert into current document".
-      importLabel.textContent = "Import file";
-      importZone.style.display = "";
-      insertZone.style.display = "";
-      overlay.classList.remove("hidden");
-    }
-  });
-
-  document.addEventListener("dragleave", () => {
-    dragCounter--;
-    if (dragCounter <= 0) { dragCounter = 0; hideOverlay(); }
-  });
-
-  // ── Zone hover highlights ────────────────────────────────────────
-  importZone.addEventListener("dragenter", () => importZone.classList.add("drop-zone-active"));
-  importZone.addEventListener("dragleave", () => importZone.classList.remove("drop-zone-active"));
-  insertZone.addEventListener("dragenter", () => insertZone.classList.add("drop-zone-active"));
-  insertZone.addEventListener("dragleave", () => insertZone.classList.remove("drop-zone-active"));
-
-  // ── Import zone: create a new document ───────────────────────────
-  importZone.addEventListener("drop", async (e) => {
+  importOverlay.addEventListener("dragover", (e) => {
+    e.preventDefault();
     e.stopPropagation();
-    hideOverlay();
-    const file = findDroppedFile(e, TEXT_EXTENSIONS);
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    importOverlay.classList.add("drop-zone-active");
+  });
+  importOverlay.addEventListener("dragleave", () => {
+    importOverlay.classList.remove("drop-zone-active");
+  });
+  importOverlay.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideImport();
+    const file = findTextFile(e);
     if (!file) return;
     const content = await file.text();
     await importAsNewDocument(state, content);
   });
 
-  // ── Insert zone: append to current document ──────────────────────
-  insertZone.addEventListener("drop", async (e) => {
+  // ── Editor drop handler (doc mode) ───────────────────────────────
+  const editorContainer = document.getElementById("editor-container");
+  editorContainer.addEventListener("dragover", (e) => {
+    if (state.currentNotebookFileId) return;
+    if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
     e.stopPropagation();
-    hideOverlay();
-    const file = findDroppedFile(e, TEXT_EXTENSIONS);
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  });
+  editorContainer.addEventListener("drop", async (e) => {
+    if (state.currentNotebookFileId) return;
+    if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const file = findTextFile(e);
     if (!file) return;
     const content = await file.text();
     appendToEditor(state, content);
   });
 
-  // ── Overlay background drop (fallback) ───────────────────────────
-  overlay.addEventListener("drop", async (e) => {
-    e.stopPropagation();
-    hideOverlay();
+  // ── Show / hide sidebar import overlay on drag ───────────────────
+  let dragCounter = 0;
+
+  document.addEventListener("dragenter", (e) => {
+    if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
+    dragCounter++;
+    if (dragCounter === 1 && !panelOverlay.classList.contains("hidden")) {
+      importOverlay.classList.remove("hidden");
+    }
+  });
+  document.addEventListener("dragleave", () => {
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; hideImport(); }
+  });
+  document.addEventListener("drop", () => {
+    dragCounter = 0;
+    hideImport();
   });
 
-  function hideOverlay() {
-    dragCounter = 0;
-    overlay.classList.add("hidden");
-    importZone.classList.remove("drop-zone-active");
-    insertZone.classList.remove("drop-zone-active");
+  function hideImport() {
+    importOverlay.classList.add("hidden");
+    importOverlay.classList.remove("drop-zone-active");
   }
-}
-
-function findDroppedFile(e, validExts) {
-  const files = e.dataTransfer?.files;
-  if (!files || files.length === 0) return null;
-  for (let i = 0; i < files.length; i++) {
-    const ext = getExtension(files[i].name);
-    if (validExts.includes(ext) || files[i].type.startsWith("text/") || files[i].type.startsWith("image/")) {
-      return files[i];
-    }
-  }
-  return null;
 }
 
 async function importAsNewDocument(state, text) {
