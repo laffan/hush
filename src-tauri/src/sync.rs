@@ -88,7 +88,7 @@ impl SyncManager {
         }
     }
 
-    /// Scan a folder for .md and .hushnb files, returning entries to import.
+    /// Scan a folder for .md and .hushnote files, returning entries to import.
     pub fn scan_folder(folder_path: &str) -> Result<Vec<ImportEntry>, Box<dyn std::error::Error>> {
         let root = PathBuf::from(folder_path);
         if !root.is_dir() {
@@ -135,8 +135,14 @@ impl SyncManager {
                 Self::scan_recursive(root, &path, entries)?;
             } else {
                 let ext = path.extension().and_then(|e| e.to_str());
-                if ext == Some("md") || ext == Some("hushnb") {
-                    let content = fs::read_to_string(&path).unwrap_or_default();
+                if ext == Some("md") || ext == Some("hushnote") {
+                    // .hushnote files are binary zips — read only .md as text;
+                    // notebook content is empty here and unpacked on the JS side.
+                    let content = if ext == Some("md") {
+                        fs::read_to_string(&path).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
                     let name = path
                         .file_stem()
                         .unwrap_or_default()

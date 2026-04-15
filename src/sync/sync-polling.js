@@ -132,8 +132,8 @@ async function syncDropboxDiff(state) {
       // Insert tree node — merge with existing folders/projects
       const parts = entry.relativePath.split("/");
       const rawFileName = parts.pop();
-      const isNotebook = rawFileName.endsWith(".hushnb");
-      const fileName = rawFileName.replace(/\.(md|hushnb)$/, "");
+      const isNotebook = rawFileName.endsWith(".hushnote");
+      const fileName = rawFileName.replace(/\.(md|hushnote)$/, "");
       let current = state.fileTree;
       for (const dirName of parts) {
         if (!dirName) continue;

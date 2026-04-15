@@ -244,7 +244,7 @@ export async function listFolder(path) {
 /**
  * Recursively list all files in a folder. Returns flat array of
  * { relativePath, name, isDirectory, content, dropboxPath, modified, tag }.
- * Includes .md files, .hushnb (notebook) files, .hushproject files, and directories.
+ * Includes .md files, .hushnote (notebook) files, .hushproject files, and directories.
  */
 export async function listFolderRecursive(path) {
   const entries = [];
@@ -268,12 +268,12 @@ export async function listFolderRecursive(path) {
       if (!rel) continue;
       if (entry[".tag"] === "folder") {
         entries.push({ relativePath: rel, name: entry.name, isDirectory: true, content: "" });
-      } else if (entry.name.endsWith(".md") || entry.name.endsWith(".hushnb") || entry.name.endsWith(".hushproject")) {
+      } else if (entry.name.endsWith(".md") || entry.name.endsWith(".hushnote") || entry.name.endsWith(".hushproject")) {
         const tag = entry.name.endsWith(".hushproject") ? "hushproject"
-          : entry.name.endsWith(".hushnb") ? "hushnb" : "md";
+          : entry.name.endsWith(".hushnote") ? "hushnote" : "md";
         entries.push({
           relativePath: rel,
-          name: entry.name.replace(/\.(md|hushnb|hushproject)$/, ""),
+          name: entry.name.replace(/\.(md|hushnote|hushproject)$/, ""),
           isDirectory: false,
           content: "",
           dropboxPath: display,
@@ -302,6 +302,34 @@ export async function downloadFile(path) {
   });
   if (!resp.ok) throw new Error(`Dropbox download failed: ${resp.status}`);
   return await resp.text();
+}
+
+/**
+ * Download a file's content as binary (ArrayBuffer).
+ */
+export async function downloadBinary(path) {
+  const resp = await dbxFetch("https://content.dropboxapi.com/2/files/download", {
+    method: "POST",
+    headers: { "Dropbox-API-Arg": JSON.stringify({ path }) },
+  });
+  if (!resp.ok) throw new Error(`Dropbox download failed: ${resp.status}`);
+  return await resp.arrayBuffer();
+}
+
+/**
+ * Upload (or overwrite) a file with binary content (Uint8Array/ArrayBuffer).
+ */
+export async function uploadBinary(path, data) {
+  const resp = await dbxFetch("https://content.dropboxapi.com/2/files/upload", {
+    method: "POST",
+    headers: {
+      "Dropbox-API-Arg": JSON.stringify({ path, mode: "overwrite", autorename: false, mute: true }),
+      "Content-Type": "application/octet-stream",
+    },
+    body: data,
+  });
+  if (!resp.ok) throw new Error(`Dropbox upload failed: ${resp.status}`);
+  return await resp.json();
 }
 
 /**

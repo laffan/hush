@@ -1,7 +1,7 @@
 /**
  * Sync state operations — full tree sync to Dropbox.
  * Syncs all documents, folders, projects, and notebooks as a mirror backup.
- * Documents → .md files, Notebooks → .hushnb files, Projects → .hushproject (JSON) files.
+ * Documents → .md files, Notebooks → .hushnote (zip) files, Projects → .hushproject (JSON) files.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -27,12 +27,36 @@ function safeName(name) {
  * Return the Dropbox file extension for a given tree node type.
  */
 function extensionForType(nodeType) {
-  return nodeType === "notebook" ? ".hushnb" : ".md";
+  return nodeType === "notebook" ? ".hushnote" : ".md";
+}
+
+function isNotebookPath(relativePath) {
+  return relativePath.endsWith(".hushnote");
+}
+
+/** Upload content to Dropbox, packing notebooks as zip. */
+async function uploadContent(dbx, fullPath, content, relativePath) {
+  if (isNotebookPath(relativePath)) {
+    const { packNotebook } = await import("./notebook-sync.js");
+    const zipData = await packNotebook(content);
+    return dbx.uploadBinary(fullPath, zipData);
+  }
+  return dbx.uploadFile(fullPath, content);
+}
+
+/** Download content from Dropbox, unpacking notebooks from zip. */
+async function downloadContent(dbx, dropboxPath, relativePath) {
+  if (isNotebookPath(relativePath)) {
+    const { unpackNotebook } = await import("./notebook-sync.js");
+    const zipData = await dbx.downloadBinary(dropboxPath);
+    return unpackNotebook(zipData);
+  }
+  return dbx.downloadFile(dropboxPath);
 }
 
 /**
  * Build a flat map of files and directories from the file tree.
- * Documents become "Name.md", Notebooks become "Name.hushnb",
+ * Documents become "Name.md", Notebooks become "Name.hushnote",
  * Projects get a ".hushproject" metadata file, Folders become directories.
  */
 export function buildSyncManifest(fileTree) {
@@ -44,7 +68,7 @@ export function buildSyncManifest(fileTree) {
       if ((node.type === "document" || node.type === "notebook") && node.fileId) {
         const ext = extensionForType(node.type);
         const relPath = parentPath ? `${parentPath}/${name}${ext}` : `${name}${ext}`;
-        manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: node.type === "notebook" ? "hushnb" : "md" });
+        manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: node.type === "notebook" ? "hushnote" : "md" });
       } else if (node.type === "project") {
         const dirPath = parentPath ? `${parentPath}/${name}` : name;
         manifest.directories.push(dirPath);
@@ -128,14 +152,14 @@ export async function performInitialSync(state, dropboxPath) {
   for (const file of manifest.files) {
     const fullPath = basePath ? `${basePath}/${file.relativePath}` : `/${file.relativePath}`;
     let content = file.content || "";
-    if ((file.type === "md" || file.type === "hushnb") && file.fileId) {
+    if ((file.type === "md" || file.type === "hushnote") && file.fileId) {
       try {
         const fileData = await tauriInvoke("load_file", { id: file.fileId });
         content = fileData.content || "";
       } catch (_) { continue; }
     }
     try {
-      await dbx.uploadFile(fullPath, content);
+      await uploadContent(dbx, fullPath, content, file.relativePath);
       uploaded.push(file.relativePath);
       if (file.fileId) {
         await tauriInvoke("register_synced_file", {
@@ -162,7 +186,7 @@ export async function performInitialSync(state, dropboxPath) {
     if (!entry.dropboxPath) continue;
 
     try {
-      const content = await dbx.downloadFile(entry.dropboxPath);
+      const content = await downloadContent(dbx, entry.dropboxPath, entry.relativePath);
       const file = await tauriInvoke("create_file");
       await tauriInvoke("save_file", { id: file.id, content });
       await tauriInvoke("register_synced_file", {
@@ -191,8 +215,8 @@ export async function performInitialSync(state, dropboxPath) {
 function insertIntoTree(fileTree, relativePath, fileId, displayName) {
   const parts = relativePath.split("/");
   const rawFileName = parts.pop();
-  const isNotebook = rawFileName.endsWith(".hushnb");
-  const fileName = rawFileName.replace(/\.(md|hushnb)$/, "");
+  const isNotebook = rawFileName.endsWith(".hushnote");
+  const fileName = rawFileName.replace(/\.(md|hushnote)$/, "");
   let current = fileTree;
 
   for (const dirName of parts) {
@@ -253,7 +277,7 @@ export async function syncFileToExternal(state, fileId, content) {
       const externalModified = meta.server_modified
         ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
       if (externalModified > (info.lastSyncedAt || 0)) {
-        const externalContent = await dbx.downloadFile(fullPath);
+        const externalContent = await downloadContent(dbx, fullPath, info.relativePath);
         if (externalContent !== content) {
           await acceptExternalChange(state, fileId, externalContent);
         } else {
@@ -263,7 +287,7 @@ export async function syncFileToExternal(state, fileId, content) {
       }
     }
 
-    await dbx.uploadFile(fullPath, content);
+    await uploadContent(dbx, fullPath, content, info.relativePath);
     await tauriInvoke("update_sync_hash", { internalId: fileId, content });
   } catch (e) {
     console.error("Sync write failed:", e);
@@ -425,7 +449,7 @@ export async function syncCreateFile(state, nodeId, fileId, content) {
 
   try {
     const fullPath = basePath ? `${basePath}/${relPath}` : `/${relPath}`;
-    await dbx.uploadFile(fullPath, content);
+    await uploadContent(dbx, fullPath, content, relPath);
     await tauriInvoke("register_synced_file", {
       internalId: fileId, syncFolderId: SYNC_FOLDER_ID,
       relativePath: relPath, content,
@@ -502,7 +526,7 @@ export async function reconcileSync(state) {
       try { const file = await tauriInvoke("load_file", { id: doc.fileId }); content = file.content || ""; } catch (_) {}
       const fullPath = basePath ? `${basePath}/${expectedPath}` : `/${expectedPath}`;
       try {
-        await dbx.uploadFile(fullPath, content);
+        await uploadContent(dbx, fullPath, content, expectedPath);
         await tauriInvoke("register_synced_file", {
           internalId: doc.fileId, syncFolderId: SYNC_FOLDER_ID,
           relativePath: expectedPath, content,
@@ -551,7 +575,7 @@ export async function checkDropboxChanges(state) {
       const internalModified = internalFile.modified || 0;
 
       if (externalModified > (info.lastSyncedAt || 0)) {
-        const externalContent = await dbx.downloadFile(fullPath);
+        const externalContent = await downloadContent(dbx, fullPath, info.relativePath);
         if (externalContent === internalFile.content) {
           await invoke("update_sync_hash", { internalId: info.internalId, content: externalContent });
           continue;
@@ -598,7 +622,7 @@ export async function diffDropboxSync(state) {
     if (entry.isDirectory || entry.tag === "hushproject") continue;
     remotePaths.add(entry.relativePath);
     if (!registeredPaths.has(entry.relativePath) && entry.dropboxPath) {
-      entry.content = await dbx.downloadFile(entry.dropboxPath);
+      entry.content = await downloadContent(dbx, entry.dropboxPath, entry.relativePath);
       newFiles.push(entry);
     }
   }
