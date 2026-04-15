@@ -60,19 +60,89 @@ export async function mountNotebook(container, fileId, state) {
   return canvasInstance;
 }
 
+// Map Hush camelCase theme IDs to notebook kebab-case IDs.
+// Keys that are identical (amy, barf, bespin, cobalt, dracula, clouds) are
+// still listed for clarity.
+const HUSH_TO_NOTEBOOK_THEME = {
+  ayuLight: "ayu-light",
+  clouds: "clouds",
+  noctisLilac: "noctis-lilac",
+  rosePineDawn: "rose-pine-dawn",
+  solarizedLight: "solarized-light",
+  smoothy: "default",          // no Smoothy in notebook — fall back
+  amy: "amy",
+  barf: "barf",
+  bespin: "bespin",
+  birdsOfParadise: "birds-of-paradise",
+  boysAndGirls: "boys-and-girls",
+  cobalt: "cobalt",
+  coolGlow: "cool-glow",
+  dracula: "dracula",
+  espresso: "espresso",
+  tomorrow: "tomorrow",
+};
+
 /**
- * Apply Hush notebook settings to the active NotesCanvas
+ * Resolve the notebook theme ID from the current Hush style settings.
+ * Uses the active Hush theme (respecting appearance + styles) and maps
+ * it to the corresponding notebook canvas theme.
+ */
+function resolveNotebookTheme(state) {
+  const s = state.settings;
+
+  // Determine effective appearance
+  let appearance = s.appearance || "dark";
+  if (appearance === "auto") {
+    appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  // Check if an active style overrides the theme
+  let hushThemeId = appearance === "dark" ? s.darkTheme : s.lightTheme;
+  if (s.activeStyleId && s.styles) {
+    const style = s.styles.find(st => st.id === s.activeStyleId);
+    if (style) {
+      if (style.lightThemeId || style.darkThemeId) {
+        const resolved = appearance === "dark" ? style.darkThemeId : style.lightThemeId;
+        if (resolved) hushThemeId = resolved;
+      } else if (style.themeId) {
+        hushThemeId = style.themeId;
+      }
+    }
+  }
+
+  return HUSH_TO_NOTEBOOK_THEME[hushThemeId] || "default";
+}
+
+/**
+ * Apply Hush settings to the active NotesCanvas.
+ * Appearance, theme, and font are derived from the current Hush editor style
+ * so that switching styles in the editor carries over to notebooks.
+ * Grid settings use their own dedicated notebook fields.
  */
 export function applyNotebookSettings(state) {
   if (!canvasInstance) return;
   const s = state.settings;
+
+  // Derive appearance from Hush settings
+  let appearance = s.appearance || "dark";
+  if (appearance === "auto") {
+    appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  // Font: use active style font if set, otherwise editor default
+  let fontFamily = s.fontFamily || "Inter";
+  if (s.activeStyleId && s.styles) {
+    const style = s.styles.find(st => st.id === s.activeStyleId);
+    if (style?.fontFamily) fontFamily = style.fontFamily;
+  }
+
   canvasInstance.applySettings({
-    appearanceMode: s.notebookAppearanceMode || "light",
-    themeId: s.notebookThemeId || "default",
+    appearanceMode: appearance,
+    themeId: resolveNotebookTheme(state),
     backgroundPattern: s.notebookBackgroundPattern || "grid",
     gridSpacing: s.notebookGridSpacing || 25,
     gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.15,
-    fontFamily: s.notebookFontFamily || "Inter",
+    fontFamily,
     fontSize: s.notebookFontSize || 18,
   });
 }

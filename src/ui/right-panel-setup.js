@@ -64,6 +64,8 @@ export function setupRightPanel(state) {
 
   // Show/hide Outline View
   state.on("show-outline", () => {
+    // Don't show outline when a notebook is active
+    if (state.currentNotebookFileId) return;
     rightPanelOverlay.classList.remove("hidden");
     rightTrigger.style.pointerEvents = "none";
     if (!longViewInstance) {

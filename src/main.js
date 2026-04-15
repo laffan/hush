@@ -178,37 +178,31 @@ async function init() {
 
   // === Notebook / Editor view switching ===
 
+  const rightPanelOverlay = document.getElementById("right-panel-overlay");
+
   function showEditor() {
     editorContainer.style.display = "";
     notebookContainer.classList.add("hidden");
+    // Re-enable right sidebar trigger
+    const rightTrigger = document.querySelector("#app > div[style*='right:0']");
+    if (rightTrigger) rightTrigger.style.pointerEvents = "auto";
   }
 
   function showNotebook() {
     editorContainer.style.display = "none";
     notebookContainer.classList.remove("hidden");
+    // Hide the outline panel and disable the right-edge trigger
+    if (!rightPanelOverlay.classList.contains("hidden")) {
+      state.emit("hide-outline");
+    }
+    const rightTrigger = document.querySelector("#app > div[style*='right:0']");
+    if (rightTrigger) rightTrigger.style.pointerEvents = "none";
   }
 
-  // Open a notebook: unmount any existing canvas, mount new one, switch view
-  state.on("notebook-open", async (fileId) => {
-    await mountNotebook(notebookContainer, fileId, state);
-    showNotebook();
-  });
-
-  // Unmount notebook (called when switching to a doc/project)
-  state.on("notebook-unmount", async () => {
-    await unmountNotebook();
-    showEditor();
-  });
-
-  // Autosave for notebooks (fired every 2s by the autosave interval)
-  state.on("notebook-autosave", () => {
-    saveNotebook();
-  });
-
-  // When a file or project is opened, ensure we're in editor mode
-  state.on("file-opened", () => {
-    if (!state.currentNotebookFileId) showEditor();
-  });
+  state.on("notebook-open", async (fileId) => { await mountNotebook(notebookContainer, fileId, state); showNotebook(); });
+  state.on("notebook-unmount", async () => { await unmountNotebook(); showEditor(); });
+  state.on("notebook-autosave", () => saveNotebook());
+  state.on("file-opened", () => { if (!state.currentNotebookFileId) showEditor(); });
 
   // Seed globalStyleId for existing users who have an activeStyleId but no globalStyleId yet
   if (state.settings.activeStyleId && !state.settings.globalStyleId) {
@@ -310,6 +304,8 @@ async function init() {
 
   // Outline toggle (right panel) — emitted by the shortcut dispatcher.
   state.on("toggle-outline-panel", () => {
+    // Don't show outline when a notebook is active
+    if (state.currentNotebookFileId) return;
     const rp = document.getElementById("right-panel-overlay");
     if (!rp) return;
     if (rp.classList.contains("hidden")) {
@@ -625,18 +621,20 @@ async function init() {
     applyActiveStyle(state);
   });
 
-  // Apply notebook settings when settings change
-  state.on("settings-changed", () => {
-    if (state.currentNotebookFileId) {
-      applyNotebookSettings(state);
-    }
-  });
+  // Apply notebook settings when settings, style, or theme changes
+  function syncNotebookIfActive() {
+    if (state.currentNotebookFileId) applyNotebookSettings(state);
+  }
+  state.on("settings-changed", syncNotebookIfActive);
+  state.on("style-changed", syncNotebookIfActive);
+  state.on("theme-changed", syncNotebookIfActive);
 
   // System appearance changes
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if (state.settings.appearance === "auto") {
       applyAppearance("auto");
       updatePrivateBoxColor(state);
+      syncNotebookIfActive();
     }
   });
 
