@@ -1,4 +1,9 @@
-/* Notebook container — fills the same space as the editor */
+/* ===== Notebook mode =====
+   When #app.notebook-mode is active, the notebook canvas replaces
+   the entire editor area.  All editor-specific chrome (column
+   resizers, drag region, right panel, right trigger) is hidden so
+   nothing overlaps the canvas or intercepts its pointer events. */
+
 #notebook-container {
   position: absolute;
   top: 0;
@@ -10,6 +15,18 @@
 
 #notebook-container.hidden {
   display: none;
+}
+
+/* Hide editor chrome when notebook is active */
+.notebook-mode #editor-container,
+.notebook-mode #drag-region,
+.notebook-mode #right-panel-overlay {
+  display: none !important;
+}
+
+/* Column resizers live on <body>, so we toggle .notebook-mode on body too */
+body.notebook-mode .column-resizer {
+  display: none !important;
 }
 
 /* Notebook canvas resets — prevent Hush global styles from leaking in */

@@ -176,27 +176,23 @@ async function init() {
   const editor = createEditor(editorContainer, state);
   state.setEditor(editor);
 
-  // === Notebook / Editor view switching ===
+  // === Notebook / Editor mode switching ===
+  // #app.notebook-mode hides all editor chrome (resizers, right panel, drag
+  // region) via CSS so the notebook canvas occupies the full space.
 
-  const rightPanelOverlay = document.getElementById("right-panel-overlay");
+  const appEl = document.getElementById("app");
 
   function showEditor() {
-    editorContainer.style.display = "";
+    appEl.classList.remove("notebook-mode");
+    document.body.classList.remove("notebook-mode");
     notebookContainer.classList.add("hidden");
-    // Re-enable right sidebar trigger
-    const rightTrigger = document.querySelector("#app > div[style*='right:0']");
-    if (rightTrigger) rightTrigger.style.pointerEvents = "auto";
   }
 
   function showNotebook() {
-    editorContainer.style.display = "none";
+    appEl.classList.add("notebook-mode");
+    document.body.classList.add("notebook-mode");
     notebookContainer.classList.remove("hidden");
-    // Hide the outline panel and disable the right-edge trigger
-    if (!rightPanelOverlay.classList.contains("hidden")) {
-      state.emit("hide-outline");
-    }
-    const rightTrigger = document.querySelector("#app > div[style*='right:0']");
-    if (rightTrigger) rightTrigger.style.pointerEvents = "none";
+    state.emit("hide-outline");
   }
 
   state.on("notebook-open", async (fileId) => { await mountNotebook(notebookContainer, fileId, state); showNotebook(); });
