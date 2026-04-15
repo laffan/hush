@@ -73,6 +73,20 @@ export const shortcutCategories = [
       { key: "shortcutInsertFootnote", label: "Insert footnote" },
     ],
   },
+  {
+    name: "Notebooks",
+    shortcuts: [
+      { key: "shortcutNbSelect", label: "Select tool" },
+      { key: "shortcutNbText", label: "Text tool" },
+      { key: "shortcutNbDragArea", label: "Drag Area tool" },
+      { key: "shortcutNbBrainstorm", label: "Toggle Brainstorm" },
+      { key: "shortcutNbDelete", label: "Delete selected" },
+      { key: "shortcutNbUndo", label: "Undo" },
+      { key: "shortcutNbRedo", label: "Redo" },
+      { key: "shortcutNbGroup", label: "Group shapes" },
+      { key: "shortcutNbUngroup", label: "Ungroup shapes" },
+    ],
+  },
 ];
 
 // Flat list for conflict detection

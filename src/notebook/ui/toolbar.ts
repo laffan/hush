@@ -1,6 +1,7 @@
 import type { DrawingState } from "../state";
 import type { Tool } from "../types";
-import { h } from "./dom-helpers";
+import type { BackgroundPattern } from "../state";
+import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
 import { createBookmarksPanel } from "./bookmarks-panel";
 
@@ -12,6 +13,99 @@ const TOOLS: ToolDef[] = [
   { iconName: "drag-area", label: "Drag Area", tool: "drag-area", shortcut: "A" },
   { iconName: "brainstorm", label: "Brainstorm", tool: "brainstorm", shortcut: "B" },
 ];
+
+function createGridPopup(state: DrawingState): HTMLElement {
+  let popupOpen = false;
+
+  const wrapper = h("div", { style: { position: "relative", display: "inline-flex", alignItems: "center" } });
+
+  const gridBtn = h("button", {
+    title: "Background settings",
+    style: {
+      width: "36px", height: "36px", border: "none", borderRadius: "8px",
+      cursor: "pointer", background: "transparent", display: "flex",
+      alignItems: "center", justifyContent: "center",
+    },
+    children: [icon("grid", 18)],
+    onClick: (e) => { e.stopPropagation(); popupOpen = !popupOpen; buildPopup(); },
+  });
+  wrapper.appendChild(gridBtn);
+
+  const popup = h("div", {
+    style: {
+      display: "none", position: "absolute", bottom: "44px", left: "50%",
+      transform: "translateX(-50%)", padding: "12px 14px", borderRadius: "8px",
+      zIndex: "300", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", minWidth: "200px",
+    },
+  });
+  popup.addEventListener("pointerdown", (e) => e.stopPropagation());
+  wrapper.appendChild(popup);
+
+  document.addEventListener("click", () => { if (popupOpen) { popupOpen = false; buildPopup(); } });
+
+  function buildPopup() {
+    popup.style.display = popupOpen ? "block" : "none";
+    if (!popupOpen) return;
+    clearChildren(popup);
+
+    const theme = state.theme;
+    popup.style.background = theme.uiBackground;
+    popup.style.border = `1px solid ${theme.uiBorder}`;
+
+    const labelStyle: Partial<CSSStyleDeclaration> = {
+      fontSize: "11px", fontWeight: "600", color: theme.foreground,
+      marginBottom: "6px", opacity: "0.7",
+    };
+
+    popup.appendChild(h("div", { text: "Pattern", style: labelStyle }));
+    const patternRow = h("div", { style: { display: "flex", gap: "4px", marginBottom: "10px" } });
+    const patterns: { label: string; value: BackgroundPattern }[] = [
+      { label: "Grid", value: "grid" },
+      { label: "Dots", value: "dot-grid" },
+      { label: "Blank", value: "blank" },
+    ];
+    for (const pat of patterns) {
+      const active = state.backgroundPattern === pat.value;
+      patternRow.appendChild(h("button", {
+        text: pat.label,
+        style: {
+          padding: "3px 10px", border: `1px solid ${active ? theme.accent : theme.uiBorder}`,
+          borderRadius: "4px", background: active ? theme.accent : "transparent",
+          color: active ? "#fff" : theme.foreground, cursor: "pointer",
+          fontSize: "11px", fontWeight: active ? "600" : "400",
+        },
+        onClick: () => { state.backgroundPattern = pat.value; state.notify("theme"); buildPopup(); },
+      }));
+    }
+    popup.appendChild(patternRow);
+
+    if (state.backgroundPattern !== "blank") {
+      popup.appendChild(h("div", { text: "Spacing", style: labelStyle }));
+      const spacingRow = h("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginBottom: "10px" } });
+      const spacingInput = h("input", { attrs: { type: "range", min: "10", max: "60", step: "5" }, style: { flex: "1", accentColor: theme.accent } }) as HTMLInputElement;
+      spacingInput.value = String(state.gridSpacing);
+      const spacingLabel = h("span", { text: `${state.gridSpacing}px`, style: { fontSize: "11px", color: theme.foreground, opacity: "0.6", minWidth: "30px", textAlign: "right" } });
+      spacingInput.addEventListener("input", () => { state.gridSpacing = parseInt(spacingInput.value, 10); spacingLabel.textContent = `${state.gridSpacing}px`; state.notify("theme"); });
+      spacingRow.appendChild(spacingInput);
+      spacingRow.appendChild(spacingLabel);
+      popup.appendChild(spacingRow);
+
+      popup.appendChild(h("div", { text: "Opacity", style: labelStyle }));
+      const opacityRow = h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } });
+      const opacityInput = h("input", { attrs: { type: "range", min: "0", max: "100", step: "5" }, style: { flex: "1", accentColor: theme.accent } }) as HTMLInputElement;
+      opacityInput.value = String(Math.round(state.gridOpacity * 100));
+      const opacityLabel = h("span", { text: `${Math.round(state.gridOpacity * 100)}%`, style: { fontSize: "11px", color: theme.foreground, opacity: "0.6", minWidth: "30px", textAlign: "right" } });
+      opacityInput.addEventListener("input", () => { state.gridOpacity = parseInt(opacityInput.value, 10) / 100; opacityLabel.textContent = `${opacityInput.value}%`; state.notify("theme"); });
+      opacityRow.appendChild(opacityInput);
+      opacityRow.appendChild(opacityLabel);
+      popup.appendChild(opacityRow);
+    }
+  }
+
+  // Expose button for theme updates
+  (wrapper as any)._gridBtn = gridBtn;
+  return wrapper;
+}
 
 export function createToolbar(state: DrawingState): HTMLElement {
   const buttons = new Map<string, HTMLButtonElement>();
@@ -39,6 +133,8 @@ export function createToolbar(state: DrawingState): HTMLElement {
   }
 
   const spacer = h("div", { style: { flex: "1" } });
+
+  const gridPopup = createGridPopup(state);
 
   const undoBtn = h("button", {
     title: "Undo (Cmd+Z)",
@@ -74,11 +170,14 @@ export function createToolbar(state: DrawingState): HTMLElement {
       ...TOOLS.map(makeBtn),
       spacer,
       bookmarksEl,
+      gridPopup,
       resetBtn,
       undoBtn,
       redoBtn,
     ],
   });
+
+  const gridBtnEl = (gridPopup as any)._gridBtn as HTMLElement;
 
   function update() {
     const theme = state.theme;
@@ -95,6 +194,8 @@ export function createToolbar(state: DrawingState): HTMLElement {
     undoBtn.style.color = fg;
     redoBtn.style.color = fg;
     resetBtn.style.color = fg;
+    gridBtnEl.style.color = fg;
+    gridBtnEl.style.opacity = "0.6";
     undoBtn.style.opacity = state.canUndo ? "0.8" : "0.3";
     redoBtn.style.opacity = state.canRedo ? "0.8" : "0.3";
   }

@@ -263,6 +263,26 @@ pub struct AppSettings {
     #[serde(default)]
     pub last_notebook_id: Option<String>,
 
+    // Notebook shortcuts
+    #[serde(default = "default_nb_select")]
+    pub shortcut_nb_select: String,
+    #[serde(default = "default_nb_text")]
+    pub shortcut_nb_text: String,
+    #[serde(default = "default_nb_drag_area")]
+    pub shortcut_nb_drag_area: String,
+    #[serde(default = "default_nb_brainstorm")]
+    pub shortcut_nb_brainstorm: String,
+    #[serde(default = "default_nb_delete")]
+    pub shortcut_nb_delete: String,
+    #[serde(default = "default_nb_undo")]
+    pub shortcut_nb_undo: String,
+    #[serde(default = "default_nb_redo")]
+    pub shortcut_nb_redo: String,
+    #[serde(default = "default_nb_group")]
+    pub shortcut_nb_group: String,
+    #[serde(default = "default_nb_ungroup")]
+    pub shortcut_nb_ungroup: String,
+
     // Session state (persisted across restarts)
     #[serde(default)]
     pub window_width: Option<f64>,
@@ -586,6 +606,15 @@ fn default_notebook_font_family() -> String {
 fn default_notebook_font_size() -> u32 {
     18
 }
+fn default_nb_select() -> String { "1".to_string() }
+fn default_nb_text() -> String { "T".to_string() }
+fn default_nb_drag_area() -> String { "A".to_string() }
+fn default_nb_brainstorm() -> String { "B".to_string() }
+fn default_nb_delete() -> String { "Backspace".to_string() }
+fn default_nb_undo() -> String { "Mod+Z".to_string() }
+fn default_nb_redo() -> String { "Mod+Shift+Z".to_string() }
+fn default_nb_group() -> String { "Mod+G".to_string() }
+fn default_nb_ungroup() -> String { "Mod+Shift+G".to_string() }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -705,6 +734,15 @@ impl Default for AppSettings {
             notebook_font_family: default_notebook_font_family(),
             notebook_font_size: default_notebook_font_size(),
             last_notebook_id: None,
+            shortcut_nb_select: default_nb_select(),
+            shortcut_nb_text: default_nb_text(),
+            shortcut_nb_drag_area: default_nb_drag_area(),
+            shortcut_nb_brainstorm: default_nb_brainstorm(),
+            shortcut_nb_delete: default_nb_delete(),
+            shortcut_nb_undo: default_nb_undo(),
+            shortcut_nb_redo: default_nb_redo(),
+            shortcut_nb_group: default_nb_group(),
+            shortcut_nb_ungroup: default_nb_ungroup(),
             data_dir: PathBuf::new(),
         }
     }

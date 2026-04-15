@@ -30,7 +30,20 @@ export async function mountNotebook(container, fileId, state) {
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
   const { NotesCanvas } = await import("./notes-canvas.ts");
-  canvasInstance = new NotesCanvas(container);
+  // Pass notebook shortcuts from Hush settings
+  const s = state.settings;
+  const shortcuts = {
+    shortcutNbSelect: s.shortcutNbSelect,
+    shortcutNbText: s.shortcutNbText,
+    shortcutNbDragArea: s.shortcutNbDragArea,
+    shortcutNbBrainstorm: s.shortcutNbBrainstorm,
+    shortcutNbDelete: s.shortcutNbDelete,
+    shortcutNbUndo: s.shortcutNbUndo,
+    shortcutNbRedo: s.shortcutNbRedo,
+    shortcutNbGroup: s.shortcutNbGroup,
+    shortcutNbUngroup: s.shortcutNbUngroup,
+  };
+  canvasInstance = new NotesCanvas(container, shortcuts);
 
   // Load shapes from the backing file
   let shapes = [];

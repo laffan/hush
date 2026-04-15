@@ -157,6 +157,17 @@ export class AppState {
       notebookFontSize: 18,
       lastNotebookId: null,
 
+      // Notebook shortcuts
+      shortcutNbSelect: "1",
+      shortcutNbText: "T",
+      shortcutNbDragArea: "A",
+      shortcutNbBrainstorm: "B",
+      shortcutNbDelete: "Backspace",
+      shortcutNbUndo: "Mod+Z",
+      shortcutNbRedo: "Mod+Shift+Z",
+      shortcutNbGroup: "Mod+G",
+      shortcutNbUngroup: "Mod+Shift+G",
+
       // Session state
       lastFileId: null,
       lastProjectId: null,

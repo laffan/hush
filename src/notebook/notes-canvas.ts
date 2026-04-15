@@ -3,7 +3,7 @@ import type { BackgroundPattern } from "./state";
 import type { AppearanceMode } from "./themes";
 import { DrawingState } from "./state";
 import { render } from "./renderer";
-import { bindInputEvents } from "./input-handler";
+import { bindInputEvents, type NotebookShortcuts } from "./input-handler";
 import { createToolbar } from "./ui/toolbar";
 import { createSelectionToolbar } from "./ui/selection-toolbar";
 import { createShelfPanel } from "./ui/shelf-panel";
@@ -22,7 +22,7 @@ export class NotesCanvas {
   private _shelfItems: string[] = [];
   private _shelfPanel: HTMLElement | null = null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
     this.container = container;
     this.state = new DrawingState();
 
@@ -59,7 +59,7 @@ export class NotesCanvas {
         this._shelfItems.splice(idx, 1);
         this._rebuildShelf();
       },
-    });
+    }, shortcuts);
 
     // Update cursor on tool change
     const cursorMap: Record<string, string> = {

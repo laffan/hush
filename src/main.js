@@ -2,7 +2,7 @@ import { createEditor } from "./editor/editor.js";
 import { createSidebar } from "./sidebar/sidebar.js";
 import { AppState } from "./state/state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
-import { applyAppearance, isIOS } from "./settings/settings-ui.js";
+import { applyAppearance, isIOS, openSettingsWindow } from "./settings/settings-ui.js";
 import { getThemeById } from "./themes.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
@@ -10,7 +10,7 @@ import { dispatchDomShortcut } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
-import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings } from "./notebook/notebook-bridge.js";
+import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance } from "./notebook/notebook-bridge.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -200,6 +200,20 @@ async function init() {
   state.on("notebook-autosave", () => saveNotebook());
   state.on("file-opened", () => { if (!state.currentNotebookFileId) showEditor(); });
 
+  // Notebook commands from the command palette
+  state.on("notebook-toggle-shelf", () => {
+    for (const btn of notebookContainer.querySelectorAll("button")) {
+      if (btn.textContent === "\u2039" || btn.textContent === "\u203a") { btn.click(); break; }
+    }
+  });
+  state.on("notebook-toggle-brainstorm", () => {
+    const c = getCanvasInstance();
+    if (!c) return;
+    c.state.brainstormMode = !c.state.brainstormMode;
+    if (c.state.brainstormMode) { c.state.tool = "text"; c.state.notify("tool"); }
+    c.state.notify("brainstormMode");
+  });
+
   // Seed globalStyleId for existing users who have an activeStyleId but no globalStyleId yet
   if (state.settings.activeStyleId && !state.settings.globalStyleId) {
     state.settings.globalStyleId = state.settings.activeStyleId;
@@ -235,19 +249,12 @@ async function init() {
     });
   }
 
-  // Always focus the editor when the window gains focus
-  // This handles: startup, reveal via shortcut, fullscreen toggle, tray click
+  // Focus editor when window gains focus
   window.addEventListener("focus", () => {
     if (state.editor) state.editor.focus();
   });
 
-  // Window-level keyboard shortcuts — the CodeMirror keymap handles every
-  // shortcut while the editor has focus (which is >99% of the time).  This
-  // listener is a fallback for when focus is outside the editor (e.g. right
-  // after closing a modal, before focus is returned to the editor).  It
-  // reads from the exact same shortcut settings + commands map as the
-  // editor keymap, so behaviour stays in sync and changes in the settings
-  // panel take effect instantly.
+  // Window-level keyboard shortcut fallback (for when focus is outside editor)
   const windowCommands = buildEditorCommands();
   window.addEventListener("keydown", (e) => {
     // Skip shortcuts already consumed by CodeMirror's keymap.  When the
@@ -262,16 +269,17 @@ async function init() {
       return;
     }
 
-    // Don't hijack keystrokes while the user is typing into some other
-    // input (e.g. a sidebar search box, a settings field).  The editor
-    // itself uses CodeMirror's contentDOM, which never matches these
-    // selectors — so the fallback still works when focus is on body/etc.
+    // Don't hijack keystrokes in text input fields.  In notebook mode the
+    // target is the canvas element, not body — let shortcuts through.
     const t = e.target;
-    if (t && t !== document.body) {
+    if (t) {
       const tag = t.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) {
-        return;
-      }
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return;
+    }
+    // Cmd+, — open settings (CodeMirror handles this in doc mode, but
+    // we need an explicit check for notebook mode)
+    if (state.currentNotebookFileId && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ",") {
+      e.preventDefault(); openSettingsWindow(state); return;
     }
 
     const view = state.editor ? state.editor.view : null;
@@ -280,9 +288,7 @@ async function init() {
     }
   });
 
-  // Sidebar toggle (left panel) — emitted by the centralised shortcut
-  // dispatcher via `state.emit("toggle-left-panel")`.  The DOM-touching
-  // logic lives here where the sidebar/panel elements are created.
+  // Sidebar toggle (left panel)
   state.on("toggle-left-panel", () => {
     const sb = document.getElementById("sidebar");
     const po = document.getElementById("panel-overlay");
@@ -298,7 +304,6 @@ async function init() {
     }
   });
 
-  // Outline toggle (right panel) — emitted by the shortcut dispatcher.
   state.on("toggle-outline-panel", () => {
     // Don't show outline when a notebook is active
     if (state.currentNotebookFileId) return;
