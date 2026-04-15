@@ -27,7 +27,7 @@ export function removeNode(nodes, id) {
 export function collectDocumentIds(nodes) {
   const ids = [];
   for (const n of nodes) {
-    if (n.type === "document" && n.fileId) ids.push(n.fileId);
+    if ((n.type === "document" || n.type === "notebook") && n.fileId) ids.push(n.fileId);
     if (n.children) ids.push(...collectDocumentIds(n.children));
   }
   return ids;
@@ -35,7 +35,7 @@ export function collectDocumentIds(nodes) {
 
 export function findNodeByFileId(nodes, fileId) {
   for (const n of nodes) {
-    if (n.type === "document" && n.fileId === fileId) return n;
+    if ((n.type === "document" || n.type === "notebook") && n.fileId === fileId) return n;
     if (n.children) {
       const found = findNodeByFileId(n.children, fileId);
       if (found) return found;

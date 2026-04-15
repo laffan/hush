@@ -1,0 +1,70 @@
+/* Notebook container — fills the same space as the editor */
+#notebook-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+#notebook-container.hidden {
+  display: none;
+}
+
+/* Notebook canvas resets — prevent Hush global styles from leaking in */
+#notebook-container * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#notebook-container textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Strip all browser textarea chrome for inline text editing (notebook) */
+#notebook-container textarea.inline-text-editor,
+#notebook-container textarea.inline-text-editor:focus {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  caret-color: auto;
+}
+
+/* Blinking cursor indicator for empty text fields (notebook) */
+@keyframes notebook-blink-cursor {
+  0%, 100% { border-left-color: currentColor; }
+  50% { border-left-color: transparent; }
+}
+#notebook-container textarea.inline-text-editor.empty-cursor {
+  animation: notebook-blink-cursor 1s step-end infinite;
+}
+
+/* Notebook button disabled state */
+#notebook-container button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed !important;
+}
+
+#notebook-container button:not(:disabled):hover {
+  filter: brightness(0.95);
+}
+
+/* Scrollbar styling for shelf panel in notebook */
+#notebook-container .shelf-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+#notebook-container .shelf-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+#notebook-container .shelf-scroll::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 2px;
+}

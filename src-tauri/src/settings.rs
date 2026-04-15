@@ -245,6 +245,24 @@ pub struct AppSettings {
     #[serde(default)]
     pub ratchet_encourage_typing: bool,
 
+    // Notebook settings
+    #[serde(default = "default_notebook_appearance")]
+    pub notebook_appearance_mode: String,
+    #[serde(default = "default_notebook_theme")]
+    pub notebook_theme_id: String,
+    #[serde(default = "default_notebook_bg_pattern")]
+    pub notebook_background_pattern: String,
+    #[serde(default = "default_notebook_grid_spacing")]
+    pub notebook_grid_spacing: u32,
+    #[serde(default = "default_notebook_grid_opacity")]
+    pub notebook_grid_opacity: f64,
+    #[serde(default = "default_notebook_font_family")]
+    pub notebook_font_family: String,
+    #[serde(default = "default_notebook_font_size")]
+    pub notebook_font_size: u32,
+    #[serde(default)]
+    pub last_notebook_id: Option<String>,
+
     // Session state (persisted across restarts)
     #[serde(default)]
     pub window_width: Option<f64>,
@@ -547,6 +565,27 @@ fn default_shortcut_style_4() -> String {
 fn default_privacy_mode() -> String {
     "blackout".to_string()
 }
+fn default_notebook_appearance() -> String {
+    "light".to_string()
+}
+fn default_notebook_theme() -> String {
+    "default".to_string()
+}
+fn default_notebook_bg_pattern() -> String {
+    "grid".to_string()
+}
+fn default_notebook_grid_spacing() -> u32 {
+    25
+}
+fn default_notebook_grid_opacity() -> f64 {
+    0.15
+}
+fn default_notebook_font_family() -> String {
+    "Inter".to_string()
+}
+fn default_notebook_font_size() -> u32 {
+    18
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -658,6 +697,14 @@ impl Default for AppSettings {
             typewriter_mode: false,
             dry_mode: false,
             scroll_position: None,
+            notebook_appearance_mode: default_notebook_appearance(),
+            notebook_theme_id: default_notebook_theme(),
+            notebook_background_pattern: default_notebook_bg_pattern(),
+            notebook_grid_spacing: default_notebook_grid_spacing(),
+            notebook_grid_opacity: default_notebook_grid_opacity(),
+            notebook_font_family: default_notebook_font_family(),
+            notebook_font_size: default_notebook_font_size(),
+            last_notebook_id: None,
             data_dir: PathBuf::new(),
         }
     }

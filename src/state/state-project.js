@@ -14,6 +14,11 @@ async function tauriInvoke(cmd, args) {
 
 export async function openProject(state, projectId) {
   if (state.dirty) await state.saveCurrentFile();
+  // Unmount any active notebook
+  if (state.currentNotebookFileId) {
+    state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
   const node = findNode(state.fileTree, projectId);
   if (!node || node.type !== "project") return;
   state.currentProjectId = projectId;

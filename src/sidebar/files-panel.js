@@ -23,6 +23,8 @@ const typeIcons = {
   folderFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><circle cx="8" cy="8" r="6" /></svg>`,
   project: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
   projectFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
+  notebook: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><line x1="5" y1="4" x2="11" y2="4" /><line x1="5" y1="7" x2="11" y2="7" /><line x1="5" y1="10" x2="9" y2="10" /></svg>`,
+  notebookFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><line x1="5" y1="4" x2="11" y2="4" /><line x1="5" y1="7" x2="11" y2="7" /><line x1="5" y1="10" x2="9" y2="10" /></svg>`,
   syncedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /><line x1="2" y1="8" x2="14" y2="8" /></svg>`,
   syncedFolderBroken: `<svg viewBox="0 0 16 16" class="tree-type-icon sync-broken-icon"><circle cx="8" cy="8" r="6" /><polyline points="2,8 5,8 6,6 7,10 8,6 9,10 10,8 14,8" /></svg>`,
   inbox: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 9 5 9 6.5 11 9.5 11 11 9 14 9" /><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" /></svg>`,
@@ -94,6 +96,7 @@ export function createFilesPanel(container, state, hidePanel) {
   btnRow.className = "tree-create-btns";
   btnRow.innerHTML = `
     <button id="tree-new-doc" title="New Document">${typeIcons.document} Doc</button>
+    <button id="tree-new-notebook" title="New Notebook">${typeIcons.notebook} Notebook</button>
     <button id="tree-new-folder" title="New Folder">${typeIcons.folder} Folder</button>
     <button id="tree-new-project" title="New Project">${typeIcons.project} Project</button>
   `;
@@ -148,6 +151,9 @@ export function createFilesPanel(container, state, hidePanel) {
       if (item.type === "document" && item.fileId) {
         state.openFile(item.fileId);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+      } else if (item.type === "notebook" && item.fileId) {
+        state.openNotebook(item.fileId);
+        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
       } else if (item.type === "project") {
         state.openProject(item.id);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
@@ -173,6 +179,10 @@ export function createFilesPanel(container, state, hidePanel) {
 
   // Bind create buttons
   btnRow.querySelector("#tree-new-doc").addEventListener("click", () => state.newFile());
+  btnRow.querySelector("#tree-new-notebook").addEventListener("click", async () => {
+    await state.createNotebook("New Notebook");
+    refreshList(state);
+  });
   btnRow.querySelector("#tree-new-folder").addEventListener("click", async () => {
     await state.createFolder("New Folder");
     refreshList(state);
@@ -324,6 +334,9 @@ function revealAndOpen(item, state) {
   if (item.type === "document" && item.fileId) {
     state.openFile(item.fileId);
     if (!isInset && storedHidePanel) storedHidePanel();
+  } else if (item.type === "notebook" && item.fileId) {
+    state.openNotebook(item.fileId);
+    if (!isInset && storedHidePanel) storedHidePanel();
   } else if (item.type === "project") {
     state.openProject(item.id);
     if (!isInset && storedHidePanel) storedHidePanel();
@@ -361,6 +374,9 @@ function sortFlaggedItems(tree) {
 function isItemActive(item, state) {
   if (item.type === "document" && item.fileId) {
     return item.fileId === state.currentFileId && !state.currentProjectId;
+  }
+  if (item.type === "notebook" && item.fileId) {
+    return item.fileId === state.currentNotebookFileId;
   }
   if (item.type === "project") return item.id === state.currentProjectId;
   return false;
@@ -427,7 +443,7 @@ function handleDelete(nodeId, state) {
     const itemList = items.length > 0
       ? items.map((n) => `  \u2022 ${n}`).join("\n")
       : "  (empty)";
-    const typeName = node.type === "folder" ? "folder" : node.type === "project" ? "project" : "document";
+    const typeName = node.type === "folder" ? "folder" : node.type === "project" ? "project" : node.type === "notebook" ? "notebook" : "document";
 
     const title = inTrash
       ? `Permanently delete "${node.name}"?`

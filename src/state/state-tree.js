@@ -46,7 +46,11 @@ export async function deleteTreeNode(state, nodeId) {
   }
   await state.saveFileTree();
   const fileIds = collectNodeFileIds(node);
-  if (fileIds.includes(state.currentFileId) || nodeId === state.currentProjectId) {
+  if (fileIds.includes(state.currentNotebookFileId)) {
+    state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
+  if (fileIds.includes(state.currentFileId) || nodeId === state.currentProjectId || fileIds.includes(state.currentNotebookFileId)) {
     state.currentProjectId = null; state.projectDocIds = [];
     if (state.files.length > 0) await state.openFile(state.files[0].id);
     else await state.newFile();
@@ -80,7 +84,7 @@ function clearFlaggedRecursive(node) {
 
 function collectNodeFileIds(node) {
   const ids = [];
-  if (node.type === "document" && node.fileId) ids.push(node.fileId);
+  if ((node.type === "document" || node.type === "notebook") && node.fileId) ids.push(node.fileId);
   if (node.children) ids.push(...collectDocumentIds(node.children));
   return ids;
 }
@@ -98,7 +102,11 @@ async function finalizeFileDeletion(state, fileIds) {
   await state.saveFileTree();
   if (IS_TAURI) state.files = await tauriInvoke("list_files");
   else state._saveFilesLocal();
-  if (fileIds.includes(state.currentFileId)) {
+  if (fileIds.includes(state.currentNotebookFileId)) {
+    state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
+  if (fileIds.includes(state.currentFileId) || fileIds.includes(state.currentNotebookFileId)) {
     state.currentProjectId = null; state.projectDocIds = [];
     if (state.files.length > 0) await state.openFile(state.files[0].id);
     else await state.newFile();
@@ -111,7 +119,7 @@ export async function renameTreeNode(state, nodeId, newName) {
   if (!node) return;
   const oldName = node.name;
   node.name = newName;
-  if (node.type === "document" && node.fileId) {
+  if ((node.type === "document" || node.type === "notebook") && node.fileId) {
     if (IS_TAURI) {
       try { await tauriInvoke("rename_file", { id: node.fileId, name: newName }); state.files = await tauriInvoke("list_files"); }
       catch (e) { console.error("Rename failed:", e); }
@@ -136,10 +144,10 @@ export async function toggleFlagged(state, nodeId) {
 
 export async function duplicateTreeNode(state, nodeId) {
   const node = findNode(state.fileTree, nodeId);
-  if (!node || node.type !== "document" || !node.fileId) return;
+  if (!node || (node.type !== "document" && node.type !== "notebook") || !node.fileId) return;
   const newFileId = await state.duplicateFile(node.fileId);
   if (!newFileId) return;
-  const newNode = { id: crypto.randomUUID(), type: "document", name: node.name + " copy", fileId: newFileId, children: [], flagged: false };
+  const newNode = { id: crypto.randomUUID(), type: node.type, name: node.name + " copy", fileId: newFileId, children: [], flagged: false };
   insertAfter(state.fileTree, nodeId, newNode);
   await state.saveFileTree();
 }

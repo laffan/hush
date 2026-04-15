@@ -96,6 +96,32 @@ impl FileManager {
         Ok(node)
     }
 
+    pub fn create_notebook(
+        &self,
+        name: &str,
+        parent_id: Option<&str>,
+    ) -> Result<(TreeNode, FileEntry), Box<dyn std::error::Error>> {
+        // Create a backing file for the notebook (stores shapes JSON)
+        let file = self.create_file()?;
+        // Save initial empty notebook content
+        self.save_file(&file.id, "[]")?;
+
+        let node = TreeNode {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            node_type: "notebook".to_string(),
+            file_id: Some(file.id.clone()),
+            children: Vec::new(),
+            flagged: false,
+            sync_folder_id: None,
+            locked_style_id: None,
+        };
+        let mut tree = self.get_file_tree()?;
+        insert_into_tree(&mut tree, parent_id, node.clone());
+        self.save_file_tree(&tree)?;
+        Ok((node, file))
+    }
+
     pub fn load_project_content(
         &self,
         project_id: &str,
@@ -234,7 +260,7 @@ fn find_node<'a>(nodes: &'a [TreeNode], id: &str) -> Option<&'a TreeNode> {
 
 fn collect_document_files(nodes: &[TreeNode], out: &mut Vec<String>) {
     for n in nodes {
-        if n.node_type == "document" {
+        if n.node_type == "document" || n.node_type == "notebook" {
             if let Some(ref fid) = n.file_id {
                 out.push(fid.clone());
             }

@@ -40,10 +40,12 @@
     "@tauri-apps/plugin-shell": "^2.3.5",
     "codemirror": "^6.0.2",
     "esbuild": "^0.27.4",
+    "jszip": "^3.10.1",
     "thememirror": "^2.0.1",
     "vite": "^8.0.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.10.1"
+    "@tauri-apps/cli": "^2.10.1",
+    "typescript": "~5.9.3"
   }
 }

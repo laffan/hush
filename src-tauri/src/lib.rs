@@ -47,9 +47,9 @@ pub struct TreeNode {
     pub id: String,
     pub name: String,
     #[serde(rename = "type")]
-    pub node_type: String, // "document" | "folder" | "project"
+    pub node_type: String, // "document" | "folder" | "project" | "notebook"
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file_id: Option<String>, // only for documents — points to files/{uuid}.json
+    pub file_id: Option<String>, // for documents and notebooks — points to files/{uuid}.json
     // Always serialized (even when empty) so the JS frontend always
     // receives a real array — skipping empty children broke sync-folder
     // reconciliation when inserting files into previously-empty folders.
@@ -127,6 +127,21 @@ fn create_folder(state: State<AppState>, name: String, parent_id: Option<String>
 #[tauri::command]
 fn create_project(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<TreeNode, String> {
     state.file_manager.lock().unwrap().create_project(&name, parent_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NotebookCreated {
+    node: TreeNode,
+    file: FileEntry,
+}
+
+#[tauri::command]
+fn create_notebook(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<NotebookCreated, String> {
+    let (node, file) = state.file_manager.lock().unwrap()
+        .create_notebook(&name, parent_id.as_deref())
+        .map_err(|e| e.to_string())?;
+    Ok(NotebookCreated { node, file })
 }
 
 #[tauri::command]
@@ -444,6 +459,7 @@ pub fn run() {
             save_file_tree,
             create_folder,
             create_project,
+            create_notebook,
             load_project_content,
             create_snapshot,
             get_snapshots,

@@ -147,6 +147,16 @@ export class AppState {
       privacyMode: "blackout", // "blackout" or "dummy"
       dummyText: "",
 
+      // Notebook settings
+      notebookAppearanceMode: "light",
+      notebookThemeId: "default",
+      notebookBackgroundPattern: "grid",
+      notebookGridSpacing: 25,
+      notebookGridOpacity: 0.15,
+      notebookFontFamily: "Inter",
+      notebookFontSize: 18,
+      lastNotebookId: null,
+
       // Session state
       lastFileId: null,
       lastProjectId: null,
@@ -157,6 +167,7 @@ export class AppState {
 
     this.currentFileId = null;
     this.currentProjectId = null; // When viewing a project
+    this.currentNotebookFileId = null; // When viewing a notebook
     this.files = [];
     this.fileTree = []; // Tree of TreeNode objects
     this.editor = null;
@@ -201,10 +212,14 @@ export class AppState {
         this.dryMode = !!this.settings.dryMode;
         this._pendingScrollPosition = this.settings.scrollPosition || null;
 
-        // Restore last open file/project
+        // Restore last open file/project/notebook
         const lastProjectId = this.settings.lastProjectId;
         const lastFileId = this.settings.lastFileId;
-        if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
+        const lastNotebookId = this.settings.lastNotebookId;
+        if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
+          // Notebook restore is deferred to main.js via "notebook-open" event
+          this.currentNotebookFileId = lastNotebookId;
+        } else if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
           await this.openProject(lastProjectId);
         } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
           await this.openFile(lastFileId);
@@ -279,6 +294,10 @@ export class AppState {
     this.autosaveInterval = setInterval(() => {
       if (this.dirty) {
         this.saveCurrentFile();
+      }
+      // Notebook autosave is handled via the "notebook-autosave" event
+      if (this.currentNotebookFileId) {
+        this.emit("notebook-autosave");
       }
     }, 2000);
   }
@@ -370,6 +389,41 @@ export class AppState {
   async openProject(projectId) { return _openProject(this, projectId); }
   async saveProjectContent() { return _saveProjectContent(this); }
 
+  // ===== Notebook Operations =====
+
+  async createNotebook(name, parentId = null) {
+    if (this.dirty) await this.saveCurrentFile();
+    const targetParent = parentId || AppState.INBOX_ID;
+    if (IS_TAURI) {
+      try {
+        const result = await tauriInvoke("create_notebook", { name, parentId: targetParent });
+        this.files = await tauriInvoke("list_files");
+        this.fileTree = await tauriInvoke("get_file_tree");
+        this.emit("files-changed");
+        // Open the newly created notebook
+        await this.openNotebook(result.file.id);
+        return result;
+      } catch (e) { console.error("Create notebook failed:", e); }
+    }
+  }
+
+  async openNotebook(fileId) {
+    // Save current file/notebook before switching
+    if (this.dirty) await this.saveCurrentFile();
+    if (this.currentNotebookFileId) {
+      // Unmount the current notebook (save handled by notebook-bridge)
+      this.emit("notebook-unmount");
+    }
+
+    this.currentFileId = null;
+    this.currentProjectId = null;
+    this.projectDocIds = [];
+    this.currentNotebookFileId = fileId;
+
+    this.emit("notebook-open", fileId);
+    this.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId });
+  }
+
   // ===== File Operations =====
 
   async saveCurrentFile() {
@@ -408,6 +462,11 @@ export class AppState {
 
   async newFile(parentId = null) {
     if (this.dirty) await this.saveCurrentFile();
+    // Unmount any active notebook
+    if (this.currentNotebookFileId) {
+      this.emit("notebook-unmount");
+      this.currentNotebookFileId = null;
+    }
     // Default new files go into the Inbox
     const targetParent = parentId || AppState.INBOX_ID;
     let fileId;
@@ -430,6 +489,11 @@ export class AppState {
 
   async openFile(id) {
     if (this.dirty) await this.saveCurrentFile();
+    // Unmount any active notebook
+    if (this.currentNotebookFileId) {
+      this.emit("notebook-unmount");
+      this.currentNotebookFileId = null;
+    }
     this.currentProjectId = null;
     this.projectDocIds = [];
     if (IS_TAURI) {
@@ -515,6 +579,7 @@ export class AppState {
     await this.updateSettings({
       lastFileId: this.currentFileId || null,
       lastProjectId: this.currentProjectId || null,
+      lastNotebookId: this.currentNotebookFileId || null,
       typewriterMode: this.typewriterMode,
       dryMode: this.dryMode,
       scrollPosition: scrollTop,

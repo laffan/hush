@@ -10,6 +10,7 @@ import { dispatchDomShortcut } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
+import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings } from "./notebook/notebook-bridge.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -170,8 +171,44 @@ async function init() {
   applyFontFamily(state.settings.fontFamily);
   updatePrivateBoxColor(state);
 
-  const editor = createEditor(document.getElementById("editor-container"), state);
+  const editorContainer = document.getElementById("editor-container");
+  const notebookContainer = document.getElementById("notebook-container");
+  const editor = createEditor(editorContainer, state);
   state.setEditor(editor);
+
+  // === Notebook / Editor view switching ===
+
+  function showEditor() {
+    editorContainer.style.display = "";
+    notebookContainer.classList.add("hidden");
+  }
+
+  function showNotebook() {
+    editorContainer.style.display = "none";
+    notebookContainer.classList.remove("hidden");
+  }
+
+  // Open a notebook: unmount any existing canvas, mount new one, switch view
+  state.on("notebook-open", async (fileId) => {
+    await mountNotebook(notebookContainer, fileId, state);
+    showNotebook();
+  });
+
+  // Unmount notebook (called when switching to a doc/project)
+  state.on("notebook-unmount", async () => {
+    await unmountNotebook();
+    showEditor();
+  });
+
+  // Autosave for notebooks (fired every 2s by the autosave interval)
+  state.on("notebook-autosave", () => {
+    saveNotebook();
+  });
+
+  // When a file or project is opened, ensure we're in editor mode
+  state.on("file-opened", () => {
+    if (!state.currentNotebookFileId) showEditor();
+  });
 
   // Seed globalStyleId for existing users who have an activeStyleId but no globalStyleId yet
   if (state.settings.activeStyleId && !state.settings.globalStyleId) {
@@ -185,7 +222,11 @@ async function init() {
 
   // Load current file content into the newly created editor
   // (init() already opened the last file/project — re-open only if editor wasn't set yet)
-  if (state.currentProjectId) {
+  if (state.currentNotebookFileId) {
+    // Restore last opened notebook
+    await mountNotebook(notebookContainer, state.currentNotebookFileId, state);
+    showNotebook();
+  } else if (state.currentProjectId) {
     await state.openProject(state.currentProjectId);
   } else if (state.currentFileId) {
     await state.openFile(state.currentFileId);
@@ -582,6 +623,13 @@ async function init() {
     document.documentElement.style.removeProperty("--style-fg");
     // Restore actual settings
     applyActiveStyle(state);
+  });
+
+  // Apply notebook settings when settings change
+  state.on("settings-changed", () => {
+    if (state.currentNotebookFileId) {
+      applyNotebookSettings(state);
+    }
   });
 
   // System appearance changes
