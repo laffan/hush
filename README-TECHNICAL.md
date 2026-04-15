@@ -34,6 +34,17 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │       ├── sticky-headers.js
 │       └── typewriter.js
 │
+├── notebook/              (see README-NOTEBOOK.md)
+│   ├── notebook-bridge.js
+│   ├── notes-canvas.ts
+│   ├── state.ts
+│   ├── renderer.ts
+│   ├── input-handler.ts
+│   └── ui/
+│       ├── toolbar.ts
+│       ├── shelf-panel.ts
+│       └── ...
+│
 ├── sidebar/
 │   ├── sidebar.js
 │   ├── files-panel.js
@@ -95,7 +106,9 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Font CSS is imp
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes.
 
-Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`.
+Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`.
+
+**Notebook state:** When a notebook is open, `currentNotebookFileId` is set and `currentFileId` / `currentProjectId` are null. The notebook canvas has its own `DrawingState` (in `src/notebook/state.ts`), managed by `notebook-bridge.js`. See [README-NOTEBOOK.md](README-NOTEBOOK.md) for details.
 
 On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invoke("list_files")`, and `invoke("get_file_tree")`. In the browser (dev without Tauri), it falls back to localStorage.
 
@@ -132,9 +145,9 @@ Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `
 
 Centered overlay activated by `Cmd+P` (hardcoded in the fixed keymap). Lists all major commands with icons, labels, and keyboard shortcut keycaps. Supports arrow-key navigation, Enter to execute, Escape to dismiss, and text filtering.
 
-When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Turn off X" entries are prepended at the top of the list. Mouse hover selection is suppressed while keyboard-navigating to prevent conflicts.
+Commands are context-sensitive: **shared** commands (New document, New notebook, Files, Styles, Toggle fullscreen, Settings, etc.) always appear; **doc-only** commands (Ratchet, Private mode, Typewriter, Show repeats, Highlight sentence, Outline view) are hidden when a notebook is open; **notebook-only** commands (Open shelf, Start brainstorm) appear only in notebook mode.
 
-Commands that need sidebar panels (`show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`) emit events that the sidebar listens for.
+When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Turn off X" entries are prepended at the top of the list (doc mode only). Mouse hover selection is suppressed while keyboard-navigating to prevent conflicts.
 
 ### Sidebar (`sidebar/sidebar.js`)
 
@@ -146,13 +159,14 @@ Panels render into `#panel-overlay`. Layout is responsive: when wide enough, pan
 
 ### Files Panel (`sidebar/files-panel.js`)
 
-Nested tree view with three node types:
+Nested tree view with four node types:
 
-- **Documents** — Markdown files. Click to open.
+- **Documents** — Markdown files. Click to open in the editor.
+- **Notebooks** — Canvas-based visual notes. Click to open in the notebook view. See [README-NOTEBOOK.md](README-NOTEBOOK.md).
 - **Folders** — Containers for organizing. Drag-and-drop reordering.
 - **Projects** — Ordered containers whose children display as a single document with separators.
 
-Three "New" buttons (Doc, Folder, Project) at the top. All types share a hover menu (rename, duplicate, delete). Active item shown bold and underlined. Rendered via the `SortableList` component.
+Four "New" buttons (Doc, Notebook, Folder, Project) at the top. All types share a hover menu (rename, duplicate, delete). Active item shown bold and underlined. Rendered via the `SortableList` component.
 
 ### Sortable List (`sidebar/sortable-list/`)
 
@@ -240,7 +254,7 @@ CodeMirror plugin for project mode. `createProjectViewField` (StateField) replac
 
 ### File Drop (`editor/file-drop.js`)
 
-Handles `.md`/`.txt` files dragged into the app. Full-screen overlay with two zones: "Import file" (creates new document) and "Copy into current" (inserts text). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
+Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content. In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
 
 ### Zotero Integration (`zotero.js`)
 
@@ -277,7 +291,7 @@ Wraps [thememirror](https://github.com/vadimdemedes/thememirror). Exports `theme
 
 Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
-`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `utility.css`.
+`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `notebook.css`, `utility.css`.
 
 The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 
@@ -299,7 +313,7 @@ Defines the Tauri app setup:
 
 **Important:** Every setting used by the JS frontend must have a corresponding field in `AppSettings`. Serde silently drops unknown fields during deserialization, so missing fields cause settings to be lost on save/load round-trips.
 
-Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy_text` (String), `block_cursor` (bool), `block_cursor_color` (Option), `sticky_headers` (bool), shortcut fields for all customizable bindings.
+Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy_text` (String), `block_cursor` (bool), `block_cursor_color` (Option), `sticky_headers` (bool), shortcut fields for all customizable bindings, notebook-specific fields (`notebook_background_pattern`, `notebook_grid_spacing`, `notebook_grid_opacity`, `notebook_font_size`, `shortcut_nb_*`).
 
 `Style` struct: `{ id, name, theme_id, font_family, font_size, line_height, color_overrides, light/dark variants, block_cursor overrides, header suppression flags }`.
 
@@ -307,7 +321,7 @@ Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy
 
 Files stored as individual JSON files (`{uuid}.json`) in `{data_dir}/files/`. Each: `{ id, name, content, modified }`.
 
-**File tree:** `{data_dir}/file_tree.json`. Each `TreeNode`: `{ id, name, type, fileId?, children[] }` where type is `document`, `folder`, or `project`. Auto-migrates from flat file list on first load.
+**File tree:** `{data_dir}/file_tree.json`. Each `TreeNode`: `{ id, name, type, fileId?, children[] }` where type is `document`, `notebook`, `folder`, or `project`. Documents and notebooks both have a `fileId` pointing to `files/{uuid}.json` — documents store markdown text, notebooks store a JSON array of shapes. Auto-migrates from flat file list on first load.
 
 `save_to_external()` writes `.md` to a user-chosen folder, tracking ID mappings in a `.hush/` subdirectory for Obsidian vault integration.
 
@@ -425,6 +439,21 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Comment | `Cmd+/` |
 | Strikethrough | `` Cmd+` `` |
 | Insert footnote | `Cmd+Shift+M` |
+
+### Notebooks
+
+| Action | Default |
+|--------|---------|
+| Select tool | `1` |
+| Text tool | `T` |
+| Drag Area tool | `A` |
+| Toggle Brainstorm | `B` |
+| Delete selected | `Backspace` |
+| Undo | `Cmd+Z` |
+| Redo | `Cmd+Shift+Z` |
+| Group shapes | `Cmd+G` |
+| Ungroup shapes | `Cmd+Shift+G` |
+| Pan canvas | `Space` (hold) |
 
 ## Tauri Plugins
 

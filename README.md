@@ -14,7 +14,9 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Typewriter Mode** — Locks the cursor to a fixed line on screen. Drag the boundary to reposition it. The document scrolls to keep the cursor in place.
 
-**File Management** — Multiple files with automatic 2-second autosave. Organize documents in folders and projects with drag-and-drop reordering.
+**Notebooks** — Canvas-based visual notes with an infinite pan-and-zoom surface. Create text, images, and drag areas on a freeform canvas. Features brainstorm mode (rapid sequential text entry), a pocket shelf for stashing shapes, camera bookmarks, and 16 matching color themes. Notebooks autosave alongside documents and share the same organizational structure.
+
+**File Management** — Multiple files with automatic 2-second autosave. Organize documents and notebooks in folders and projects with drag-and-drop reordering.
 
 **Dropbox Sync** — Optional full-library sync to Dropbox. Connect via OAuth in Settings > Sync, choose a folder, and all documents, projects, and folders are mirrored automatically. Works across macOS and iOS. Documents sync as `.md` files, projects as `.hushproject` metadata. Sync is bidirectional with automatic conflict resolution.
 
