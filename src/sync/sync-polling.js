@@ -25,10 +25,14 @@ export function isDropboxConnected() {
   return _dropboxConnected;
 }
 
+/** Track whether a startup reconcile has run this session. */
+let _startupReconcileDone = false;
+
 export function startSyncPolling(state) {
   if (syncPollTimer) return;
   _state = state;
   _forceDiffNextCycle = true;
+  _startupReconcileDone = false;
   syncPollTimer = setInterval(() => runSyncCycle(state), 10000);
   setTimeout(() => runSyncCycle(state), 500);
 }
@@ -58,6 +62,14 @@ async function runSyncCycle(state) {
   const forceDiff = _forceDiffNextCycle;
   _forceDiffNextCycle = false;
   try {
+    // On the first cycle after startup, reconcile to register any
+    // local files (e.g. notebooks) that aren't yet in the sync map.
+    if (!_startupReconcileDone) {
+      _startupReconcileDone = true;
+      const { reconcileSync } = await import("./sync-state.js");
+      await reconcileSync(state);
+    }
+
     await syncDropboxContent(state);
 
     // Periodic folder diff (new/deleted files on Dropbox)
