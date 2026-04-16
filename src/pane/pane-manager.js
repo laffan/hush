@@ -219,6 +219,7 @@ function buildPaneDOM(pane) {
   const title = document.createElement("span");
   title.className = "floating-pane-title";
   title.textContent = pane.fileName;
+  title.addEventListener("click", (e) => { e.stopPropagation(); pane.fileType === "notebook" ? appState.openNotebook(pane.fileId) : appState.openFile(pane.fileId); });
   titlebar.appendChild(title);
 
   const buttons = document.createElement("span");
@@ -388,7 +389,6 @@ function toggleCollapse(pane, btn) {
 }
 
 // ── Attach (anchor to canvas or document scroll) ─────────────────────
-
 async function toggleAttach(pane) {
   if (pane.pinned) {
     if (!confirm("This pane is pinned globally. Attaching will remove the pin. Continue?")) return;

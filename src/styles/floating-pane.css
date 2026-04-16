@@ -60,6 +60,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 30px;
+  cursor: pointer;
+}
+
+.floating-pane-title:hover {
+  text-decoration: underline;
+  opacity: 0.9;
 }
 
 /* ── Titlebar buttons ─────────────────────────────────────────────── */
