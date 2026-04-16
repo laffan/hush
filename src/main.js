@@ -375,6 +375,9 @@ async function init() {
   window.addEventListener("resize", updatePanelMode);
   state.on("settings-changed", updatePanelMode);
 
+  // Re-apply column layout when settings change (e.g. makeSpaceForPanes toggled)
+  state.on("settings-changed", () => { if (state._columnResizeHandler) state._columnResizeHandler(); });
+
   const sidebarTrigger = document.createElement("div");
   sidebarTrigger.className = "sidebar-trigger";
   sidebarTrigger.style.cssText =

@@ -105,9 +105,20 @@ export function updateColumnResizers(state) {
     }
 
     const availableWidth = w - leftInsetOffset - rightInsetOffset;
-    const basePad = Math.max(minPad, Math.floor((availableWidth - colW) / 2));
-    const leftPad = basePad + leftInsetOffset;
-    const rightPad = basePad + rightInsetOffset;
+    let leftPad, rightPad;
+
+    // "Make space for panes": when a doc pane is visible in this context,
+    // push the column to the right, leaving most of the space on the left.
+    const makeSpace = state.settings.makeSpaceForPanes !== false;
+    const hasDocPane = !!state._hasVisibleDocPane;
+    if (makeSpace && hasDocPane && !state.currentNotebookFileId && availableWidth > colW + minPad * 2) {
+      rightPad = minPad + rightInsetOffset;
+      leftPad = w - colW - rightPad;
+    } else {
+      const basePad = Math.max(minPad, Math.floor((availableWidth - colW) / 2));
+      leftPad = basePad + leftInsetOffset;
+      rightPad = basePad + rightInsetOffset;
+    }
     const showResizers = availableWidth > colW + minPad * 2;
     const scroller = document.querySelector("#editor-container .cm-scroller");
     if (scroller) {

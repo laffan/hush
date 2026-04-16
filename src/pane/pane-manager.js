@@ -94,6 +94,16 @@ function onContextChange() {
       }
     }
   }
+  notifyLayoutChange();
+}
+
+function notifyLayoutChange() {
+  let hasDoc = false;
+  for (const [, p] of panes) {
+    if (p.fileType === "document" && p.el.style.display !== "none") { hasDoc = true; break; }
+  }
+  appState._hasVisibleDocPane = hasDoc;
+  if (appState._columnResizeHandler) appState._columnResizeHandler();
 }
 
 export function destroyPaneManager() {
@@ -140,6 +150,7 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
 
   await loadPaneContent(pane);
   focusPane(id);
+  notifyLayoutChange();
 }
 
 export function closePane(id) {
@@ -158,6 +169,7 @@ export function closePane(id) {
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) activePaneId = null;
+  notifyLayoutChange();
 }
 
 export function focusPane(id) {
@@ -200,15 +212,10 @@ export function isPaneActive() { return activePaneId !== null; }
 function buildPaneDOM(pane) {
   const el = document.createElement("div");
   el.className = "floating-pane";
-  el.style.left = pane.x + "px";
-  el.style.top = pane.y + "px";
-  el.style.width = pane.width + "px";
-  el.style.height = pane.height + "px";
-
+  Object.assign(el.style, { left: pane.x + "px", top: pane.y + "px", width: pane.width + "px", height: pane.height + "px" });
   // Title bar
   const titlebar = document.createElement("div");
   titlebar.className = "floating-pane-titlebar";
-
   const title = document.createElement("span");
   title.className = "floating-pane-title";
   title.textContent = pane.fileName;
@@ -222,20 +229,15 @@ function buildPaneDOM(pane) {
   const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
   attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
   buttons.appendChild(attachBtn);
-
-  // Pin button: persist across document switches
   const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
   pinBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePinned(pane); });
   buttons.appendChild(pinBtn);
-
   const dupBtn = makeBtn("duplicate", ICON_DUPLICATE, "Duplicate pane");
   dupBtn.addEventListener("click", (e) => { e.stopPropagation(); duplicatePane(pane); });
   buttons.appendChild(dupBtn);
-
   const collapseBtn = makeBtn("collapse", ICON_COLLAPSE, "Collapse");
   collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(pane, collapseBtn); });
   buttons.appendChild(collapseBtn);
-
   const closeBtn = makeBtn("close", ICON_CLOSE, "Close");
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); closePane(pane.id); });
   buttons.appendChild(closeBtn);
@@ -259,7 +261,6 @@ function buildPaneDOM(pane) {
   pane.el = el;
   pane._content = content;
   pane._titlebar = titlebar;
-
   // Event wiring
   setupPaneDrag(pane);
   setupPaneResize(pane);
@@ -309,11 +310,12 @@ function setupPaneDrag(pane) {
         pane._canvasY = startCanvasY + dy / zoom;
         // Screen position updates via the canvas sync loop
       } else if (pane.attached && !appState.currentNotebookFileId) {
-        // Doc-attached: update scroll-relative position
-        pane._scrollRelY = (startTop + dy) + (appState.editor?.view.scrollDOM.scrollTop || 0);
+        // Doc-attached: update both screen position and scroll-relative Y
         pane.x = startLeft + dx;
+        pane.y = startTop + dy;
+        pane._scrollRelY = pane.y + (appState.editor?.view.scrollDOM.scrollTop || 0);
         pane.el.style.left = pane.x + "px";
-        // Y is set by scroll sync loop
+        pane.el.style.top = pane.y + "px";
       } else {
         pane.x = startLeft + dx;
         pane.y = startTop + dy;

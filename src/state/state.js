@@ -24,6 +24,7 @@ export class AppState {
       fontFamily: "Source Sans Pro",
       normalizeHeaders: false,
       normalizeHeaderColor: false,
+      makeSpaceForPanes: true,
       stickyHeaders: false,
       blockCursor: false,
       blockCursorColor: null,

@@ -30,6 +30,8 @@ pub struct AppSettings {
     pub normalize_headers: bool,
     #[serde(default)]
     pub normalize_header_color: bool,
+    #[serde(default = "default_true")]
+    pub make_space_for_panes: bool,
     #[serde(default = "default_typewriter_line_opacity")]
     pub typewriter_line_opacity: f64,
     #[serde(default = "default_padding")]
@@ -628,6 +630,7 @@ impl Default for AppSettings {
             font_family: default_font_family(),
             normalize_headers: false,
             normalize_header_color: false,
+            make_space_for_panes: true,
             typewriter_line_opacity: default_typewriter_line_opacity(),
             padding: default_padding(),
             dropbox_access_token: None,

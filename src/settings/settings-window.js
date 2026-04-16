@@ -186,6 +186,7 @@ function bindAll() {
   bindSelect("setting-font-family", "fontFamily");
   bindCheckbox("setting-normalize-headers", "normalizeHeaders");
   bindCheckbox("setting-normalize-header-color", "normalizeHeaderColor");
+  bindCheckbox("setting-make-space-for-panes", "makeSpaceForPanes");
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
   const blockCursorEl = document.getElementById("setting-block-cursor");
   if (blockCursorEl) {
