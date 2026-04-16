@@ -1,4 +1,4 @@
-import type { Shape } from "./types";
+import type { Shape, TextShape } from "./types";
 import type { BackgroundPattern } from "./state";
 import type { AppearanceMode } from "./themes";
 import { DrawingState } from "./state";
@@ -10,6 +10,28 @@ import { createShelfPanel } from "./ui/shelf-panel";
 import { createTextEditor } from "./ui/text-editor";
 import { createBrainstormInput } from "./ui/brainstorm-input";
 import { createStatusBar } from "./ui/status-bar";
+import { getShapeBounds } from "./utils";
+
+/** The notebook instance that most recently received a pointer interaction.
+ *  The document-level "copy" listener below routes Cmd+C to this one. */
+let lastActiveNotebook: NotesCanvas | null = null;
+let copyListenerAttached = false;
+
+function ensureCopyListener() {
+  if (copyListenerAttached) return;
+  copyListenerAttached = true;
+  document.addEventListener("copy", (e: ClipboardEvent) => {
+    if (!lastActiveNotebook) return;
+    // Never hijack Cmd+C when the user is editing text in an input/textarea
+    // (including the notebook's inline text editor and brainstorm input).
+    const a = document.activeElement as HTMLElement | null;
+    if (a) {
+      const tag = a.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || a.isContentEditable) return;
+    }
+    lastActiveNotebook.handleCopy(e);
+  });
+}
 
 export class NotesCanvas {
   readonly container: HTMLElement;
@@ -87,6 +109,11 @@ export class NotesCanvas {
         this.container.dispatchEvent(new CustomEvent("notebook-change"));
       }
     }) as EventListener);
+
+    // Track which notebook the user is currently interacting with so the
+    // shared document "copy" listener can route Cmd+C to the right one.
+    this._canvas.addEventListener("pointerdown", () => { lastActiveNotebook = this; }, true);
+    ensureCopyListener();
 
     // Build UI — no settings panel or file panel (Hush manages those)
     const shelfCallbacks = {
@@ -168,9 +195,31 @@ export class NotesCanvas {
     cancelAnimationFrame(this._rafId);
     if (this._cleanupInput) this._cleanupInput();
     this.container.innerHTML = "";
+    if (lastActiveNotebook === this) lastActiveNotebook = null;
     // Clear the pattern colour so the sidebar border disappears when we leave
     // the notebook view.
     document.documentElement.style.setProperty("--notebook-pattern-color", "transparent");
+  }
+
+  /**
+   * Build a clipboard payload from currently selected text shapes and
+   * place it on the ClipboardEvent. Ordering mirrors the shelf: children
+   * of each drag-area (insertion order across drag-areas), then any
+   * root-level text shapes, each group sorted top-to-bottom then
+   * left-to-right by shape bounds.
+   */
+  handleCopy(e: ClipboardEvent): boolean {
+    const sel = this.state.selectedIds;
+    if (!sel || sel.size === 0) return false;
+    const selected = this.state.shapes.filter((s) => sel.has(s.id) && s.type === "text") as TextShape[];
+    if (selected.length === 0) return false;
+
+    const ordered = orderTextShapesForCopy(selected, this.state.shapes);
+    const text = ordered.map((s) => s.text).join("\n\n");
+    if (!e.clipboardData) return false;
+    e.clipboardData.setData("text/plain", text);
+    e.preventDefault();
+    return true;
   }
 
   /**
@@ -240,6 +289,34 @@ export class NotesCanvas {
     // Force a state change notification so shelf rebuilds
     this.state.notify("shapes");
   }
+}
+
+/** Shelf-style ordering for copied text shapes. */
+function orderTextShapesForCopy(selected: TextShape[], allShapes: Shape[]): TextShape[] {
+  const pickedIds = new Set(selected.map((s) => s.id));
+  const byPos = (a: Shape, b: Shape) => {
+    const ab = getShapeBounds(a), bb = getShapeBounds(b);
+    return ab.minY - bb.minY || ab.minX - bb.minX;
+  };
+  const result: TextShape[] = [];
+
+  // Drag-areas in their on-canvas insertion order; emit selected text
+  // children for each, sorted top-to-bottom then left-to-right.
+  for (const s of allShapes) {
+    if (s.type !== "drag-area") continue;
+    const kids = allShapes
+      .filter((c) => c.parentId === s.id && c.type === "text" && pickedIds.has(c.id))
+      .sort(byPos) as TextShape[];
+    result.push(...kids);
+  }
+
+  // Then any root-level selected text shapes.
+  const roots = allShapes
+    .filter((s) => !s.parentId && s.type === "text" && pickedIds.has(s.id))
+    .sort(byPos) as TextShape[];
+  result.push(...roots);
+
+  return result;
 }
 
 function hexToRgba(hex: string, alpha: number): string {

@@ -6,6 +6,7 @@
  */
 
 import { createPaneEditor } from "./pane-editor.js";
+import { startTextDrag, isTextDragging } from "./text-drag.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -540,6 +541,9 @@ async function loadDocumentPane(pane) {
   // Listen for main editor changes to sync back into this pane
   pane._mainSyncHandler = () => syncDocToPane(pane);
   appState.on("doc-content-changed", pane._mainSyncHandler);
+
+  // Cmd+drag a selection out of this pane to drop into another editor.
+  setupSelectionTextDrag(pane.editor.view, pane._content);
 }
 
 async function loadNotebookPane(pane) {
@@ -577,6 +581,22 @@ async function loadNotebookPane(pane) {
     canvas.loadShapes(shapes);
   }
 
+  // Center the pane on the same canvas point the notebook would show
+  // when opened normally (i.e. the centre of the main notebook viewport
+  // with the default camera). Without this the pane shows the canvas
+  // origin in its top-left corner. Deferred to the next frame so
+  // pane._content has its final layout size.
+  requestAnimationFrame(() => {
+    if (!canvas.state || !pane._content) return;
+    const mainC = document.getElementById("notebook-container");
+    const mainW = (mainC && mainC.clientWidth) || window.innerWidth;
+    const mainH = (mainC && mainC.clientHeight) || window.innerHeight;
+    const paneW = pane._content.clientWidth || pane.width;
+    const paneH = pane._content.clientHeight || pane.height;
+    canvas.state.camera = { x: (paneW - mainW) / 2, y: (paneH - mainH) / 2, zoom: 1 };
+    canvas.state.notify("camera");
+  });
+
   // Mark dirty + propagate shapes to main canvas on changes
   pane._content.addEventListener("notebook-change", () => {
     pane.dirty = true;
@@ -586,6 +606,107 @@ async function loadNotebookPane(pane) {
   // Listen for main canvas changes to sync back into this pane
   pane._mainNbSyncHandler = () => syncNotebookToPane(pane);
   appState.on("notebook-shapes-changed", pane._mainNbSyncHandler);
+
+  // Cmd+drag a text shape out of this notebook pane to drop into an editor.
+  setupNotebookTextShapeDrag(pane);
+}
+
+// ── Cmd-drag: doc pane selection → any editor ──────────────────────────
+function setupSelectionTextDrag(view, containerEl) {
+  // Attach to the pane's content ancestor with capture:true so this
+  // runs before CodeMirror's own pointerdown handlers on contentDOM.
+  containerEl.addEventListener("pointerdown", (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    if (e.button !== 0) return;
+    if (!view.contentDOM.contains(e.target)) return;
+    const sel = view.state.selection.main;
+    if (sel.empty) return;
+    // Only trigger if pointerdown lands on (or inside) the selection range.
+    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (pos == null || pos < sel.from || pos > sel.to) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    const text = view.state.sliceDoc(sel.from, sel.to);
+    const from = sel.from;
+    const to = sel.to;
+    startTextDrag({
+      text,
+      initialEvent: e,
+      onDrop: (deleteSource) => {
+        if (deleteSource) {
+          view.dispatch({ changes: { from, to, insert: "" } });
+        }
+      },
+    });
+  }, true);
+}
+
+// ── Cmd-drag: notebook pane text shape → any editor ────────────────────
+async function setupNotebookTextShapeDrag(pane) {
+  const { hitTestLink } = await import("../notebook/state-helpers.ts");
+  // Attach to pane._content (a canvas ancestor) with capture:true so the
+  // handler fires before the notebook's own pointerdown on the <canvas>
+  // inside. Listeners on the target element fire in registration order
+  // regardless of phase, so we need an ancestor to win the race.
+  pane._content.addEventListener("pointerdown", (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    if (e.button !== 0) return;
+    const canvas = pane._content.querySelector("canvas");
+    if (!canvas || !(e.target instanceof Node) || !canvas.contains(e.target)) return;
+    const state = pane.notebook?.state;
+    if (!state) return;
+    const rect = canvas.getBoundingClientRect();
+    const canvasPt = {
+      x: (e.clientX - rect.left - state.camera.x) / state.camera.zoom,
+      y: (e.clientY - rect.top - state.camera.y) / state.camera.zoom,
+    };
+    const hit = findTextShapeAt(state.shapes, canvasPt);
+    if (!hit) return;
+    // Cmd+click on a link inside the text shape should still open it —
+    // only start a drag when the click isn't on a link run.
+    if (hitTestLink(canvasPt, hit)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    startTextDrag({
+      text: hit.text,
+      initialEvent: e,
+      onDrop: (deleteSource) => {
+        if (!deleteSource) return;
+        state.shapes = state.shapes.filter((s) => s.id !== hit.id);
+        state.selectedIds = new Set();
+        state.notify("shapes");
+        state.notify("selectedIds");
+        state.recordHistory();
+        pane.dirty = true;
+      },
+    });
+  }, true);
+}
+
+function findTextShapeAt(shapes, pt) {
+  // Iterate back-to-front so the topmost shape wins.
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (s.type !== "text") continue;
+    const b = textShapeBounds(s);
+    if (pt.x >= b.minX && pt.x <= b.maxX && pt.y >= b.minY && pt.y <= b.maxY) return s;
+  }
+  return null;
+}
+
+function textShapeBounds(s) {
+  // Best-effort box — the real bounds helper lives in utils.ts but isn't
+  // reachable from this module. Fall back to a generous rectangle based
+  // on the shape's declared width (or 200px) and a 2-line minimum height.
+  const w = s.width || 200;
+  const lineHeight = s.fontSize * 1.3;
+  const lines = Math.max(1, (s.text || "").split("\n").length);
+  const h = lineHeight * lines;
+  return { minX: s.position.x, minY: s.position.y, maxX: s.position.x + w, maxY: s.position.y + h };
 }
 
 // ── Saving ────────────────────────────────────────────────────────────

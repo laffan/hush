@@ -214,3 +214,33 @@
 .pane-drop-highlight.visible {
   opacity: 1;
 }
+
+/* ── Cmd-drag text ghost ──────────────────────────────────────────── */
+
+.text-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  max-width: 260px;
+  padding: 6px 10px;
+  background: var(--panel-bg, rgba(30, 30, 30, 0.95));
+  border: 1px solid var(--panel-border, rgba(255,255,255,0.12));
+  color: var(--fg);
+  border-radius: 6px;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  opacity: 0.92;
+  z-index: 10000;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.text-drag-ghost.text-drag-ghost-move {
+  border-style: dashed;
+  border-color: #ff6600;
+}
