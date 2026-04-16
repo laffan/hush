@@ -370,16 +370,13 @@ async function init() {
       panelOverlay.classList.remove("panel-inset");
       panelOverlay.classList.add("panel-overlay-mode");
     }
-    // Above 600px, sidebar is always visible (no auto-hide, no pinning)
+    // Above 600px, the panel is open-or-closed only — no pin concept, no
+    // auto-close on click-outside. The sidebar keeps its hover-to-show
+    // behaviour so it doesn't steal screen space when not in use.
     if (w > 600) {
       document.body.classList.add("wide-viewport");
-      sidebar.classList.add("visible");
     } else {
       document.body.classList.remove("wide-viewport");
-      // Re-engage auto-hide by clearing the forced-visible class unless a panel is open
-      if (panelOverlay.classList.contains("hidden")) {
-        sidebar.classList.remove("visible");
-      }
     }
   }
   updatePanelMode();
@@ -400,8 +397,6 @@ async function init() {
     sidebarTrigger.style.pointerEvents = "none";
   });
   function checkSidebarLeave(e) {
-    // Above 600px, sidebar is always visible — no auto-hide
-    if (window.innerWidth > 600) return;
     if (sidebar.classList.contains("pinned")) return;
     const x = e.clientX;
     // Still inside sidebar zone

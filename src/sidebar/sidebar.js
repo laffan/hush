@@ -108,8 +108,7 @@ export function createSidebar(container, state) {
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = null;
     panelOverlay.classList.add("hidden");
-    container.classList.remove("pinned");
-    if (!isWideViewport()) container.classList.remove("visible");
+    container.classList.remove("visible", "pinned");
     // Recalculate column centering for inset mode
     if (state._columnResizeHandler) state._columnResizeHandler();
   }
@@ -325,9 +324,12 @@ export function createSidebar(container, state) {
     if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
-  // Close panel on click outside (unless pinned in inset mode, below 600px viewport)
+  // Close panel on click outside. On wide viewports (>600px) the panel is
+  // either open or closed — no auto-close — so this only fires on narrower
+  // viewports, and even then only when the panel isn't pinned in inset mode.
   document.addEventListener("mousedown", (e) => {
-    const pinActive = !isWideViewport() && panelPinned && panelOverlay.classList.contains("panel-inset");
+    if (isWideViewport()) return;
+    const pinActive = panelPinned && panelOverlay.classList.contains("panel-inset");
     // The version preview overlay is appended to document.body, not inside panelOverlay,
     // so check for it explicitly to avoid closing the panel when clicking restore.
     const versionOverlay = document.querySelector(".version-preview-overlay");
