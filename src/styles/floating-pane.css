@@ -244,3 +244,9 @@
   border-style: dashed;
   border-color: #ff6600;
 }
+
+/* While a cmd-drag is in progress, re-enable pointer-events on inactive
+   pane content so elementFromPoint can find them as drop targets. */
+body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
+  pointer-events: auto;
+}

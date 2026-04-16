@@ -81,6 +81,7 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("keyup", onKey, true);
     ghost.remove();
+    document.body.classList.remove("text-drag-active");
     active = null;
   }
 
@@ -91,6 +92,10 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
     if (!moved) return;
     const target = findDropTarget(e.clientX, e.clientY);
     if (!target) return;
+    // If the drop landed inside a floating pane, activate that pane first
+    // so its editor becomes editable and focused. The pane's own
+    // pointerdown handler wires focusPane() via this synthetic event.
+    focusPaneIfInside(target.el || target.canvasEl || (target.view && target.view.dom));
     if (target.kind === "cm") {
       insertIntoEditor(target.view, text, e.clientX, e.clientY);
     } else if (target.kind === "nb") {
@@ -98,6 +103,12 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
     }
     if (onDrop) onDrop(deleteSource);
   }
+
+  // Inactive panes disable pointer-events on their content (see
+  // floating-pane.css), which would also hide them from elementFromPoint
+  // during the drop search. Add a body class for the duration of the
+  // drag so the CSS override re-enables pointer-events.
+  document.body.classList.add("text-drag-active");
 
   window.addEventListener("pointermove", onMove, true);
   window.addEventListener("pointerup", onUp, true);
@@ -198,5 +209,16 @@ function insertIntoNotebook(state, canvasEl, text, clientX, clientY) {
     y: (clientY - rect.top - state.camera.y) / state.camera.zoom,
   };
   state.addTextShapeAtPosition(text, canvasPt);
+}
+
+/** If `el` lives inside a .floating-pane, trigger its pane's focus logic
+ *  so the drop target becomes the active pane (editable + focused). */
+function focusPaneIfInside(el) {
+  if (!(el instanceof Element)) return;
+  const paneEl = el.closest(".floating-pane");
+  if (!paneEl) return;
+  paneEl.dispatchEvent(new PointerEvent("pointerdown", {
+    bubbles: true, cancelable: true, pointerType: "mouse",
+  }));
 }
 
