@@ -60,10 +60,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 30px;
+}
+
+.fp-title-link {
   cursor: pointer;
 }
 
-.floating-pane-title:hover {
+.fp-title-link:hover {
   text-decoration: underline;
   opacity: 0.9;
 }

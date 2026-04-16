@@ -218,8 +218,11 @@ function buildPaneDOM(pane) {
   titlebar.className = "floating-pane-titlebar";
   const title = document.createElement("span");
   title.className = "floating-pane-title";
-  title.textContent = pane.fileName;
-  title.addEventListener("click", (e) => { e.stopPropagation(); pane.fileType === "notebook" ? appState.openNotebook(pane.fileId) : appState.openFile(pane.fileId); });
+  const titleLink = document.createElement("span");
+  titleLink.className = "fp-title-link";
+  titleLink.textContent = pane.fileName;
+  titleLink.addEventListener("click", (e) => { e.stopPropagation(); pane.fileType === "notebook" ? appState.openNotebook(pane.fileId) : appState.openFile(pane.fileId); });
+  title.appendChild(titleLink);
   titlebar.appendChild(title);
 
   const buttons = document.createElement("span");
@@ -266,7 +269,7 @@ function buildPaneDOM(pane) {
   // Event wiring
   setupPaneDrag(pane);
   setupPaneResize(pane);
-  titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn")) toggleCollapse(pane, collapseBtn); });
+  titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane, collapseBtn); });
   el.addEventListener("pointerdown", () => focusPane(pane.id));
 }
 
@@ -285,8 +288,7 @@ function setupPaneDrag(pane) {
   let startX, startY, startLeft, startTop, startCanvasX, startCanvasY;
 
   pane._titlebar.addEventListener("pointerdown", (e) => {
-    // Only drag from titlebar itself, not buttons
-    if (e.target.closest(".floating-pane-btn")) return;
+    if (e.target.closest(".floating-pane-btn, .fp-title-link")) return;
     e.preventDefault();
     e.stopPropagation();
     startX = e.clientX;
@@ -368,7 +370,6 @@ function setupPaneResize(pane) {
     });
   }
 }
-
 // ── Collapse / Expand ─────────────────────────────────────────────────
 
 function toggleCollapse(pane, btn) {
@@ -418,7 +419,6 @@ async function toggleAttach(pane) {
 }
 
 // ── Pin (global / cross-document persistence, blue header) ────────────
-
 function togglePinned(pane) {
   if (pane.attached) {
     if (!confirm("This pane is attached. Pinning will remove the attachment. Continue?")) return;
