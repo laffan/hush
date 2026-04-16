@@ -38,13 +38,22 @@ export function registerNotebookDropTarget(canvasEl, state) {
 export function startTextDrag({ text, initialEvent, onDrop }) {
   if (active || !text) return;
 
+  // Inactive panes disable pointer-events on their content (see
+  // floating-pane.css), which would also hide them from elementFromPoint
+  // during the drop search. Add a body class for the duration of the
+  // drag so the CSS override re-enables pointer-events.
+  document.body.classList.add("text-drag-active");
+
+  // Ghost follows the cursor. Parent is <html> so we're above anything
+  // the app might stack inside body (floating panes live at z-index 90
+  // but nested stacking contexts can still mask a body-level child).
   const ghost = document.createElement("div");
   ghost.className = "text-drag-ghost";
   const preview = text.length > 80 ? text.slice(0, 77) + "\u2026" : text;
   ghost.textContent = preview;
   ghost.style.left = initialEvent.clientX + 12 + "px";
   ghost.style.top = initialEvent.clientY + 12 + "px";
-  document.body.appendChild(ghost);
+  document.documentElement.appendChild(ghost);
 
   let shiftHeld = !!initialEvent.shiftKey;
   updateGhostMode(ghost, shiftHeld);
@@ -53,6 +62,14 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
   const startY = initialEvent.clientY;
   const MOVE_THRESHOLD = 4;
   let moved = false;
+  let hoveredPane = null;
+
+  function setHoveredPane(paneEl) {
+    if (paneEl === hoveredPane) return;
+    if (hoveredPane) hoveredPane.classList.remove("pane-drop-target");
+    hoveredPane = paneEl;
+    if (hoveredPane) hoveredPane.classList.add("pane-drop-target");
+  }
 
   function onMove(e) {
     if (!moved) {
@@ -66,6 +83,10 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
       shiftHeld = e.shiftKey;
       updateGhostMode(ghost, shiftHeld);
     }
+    // Highlight the pane currently under the cursor (if any).
+    const target = findDropTarget(e.clientX, e.clientY);
+    const targetEl = target && targetElementOf(target);
+    setHoveredPane(targetEl ? targetEl.closest(".floating-pane") : null);
   }
 
   function onKey(e) {
@@ -81,21 +102,25 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("keyup", onKey, true);
     ghost.remove();
+    setHoveredPane(null);
     document.body.classList.remove("text-drag-active");
     active = null;
   }
 
   function onUp(e) {
     const deleteSource = shiftHeld || e.shiftKey;
+    // Resolve the drop target BEFORE cleanup, since cleanup removes the
+    // body.text-drag-active class that re-enables pointer-events on
+    // inactive panes. Without this order elementFromPoint would return
+    // something behind the pane and the drop would silently no-op.
+    const target = moved ? findDropTarget(e.clientX, e.clientY) : null;
     cleanup();
-    // A cmd+click without a real drag shouldn't insert the text.
-    if (!moved) return;
-    const target = findDropTarget(e.clientX, e.clientY);
     if (!target) return;
+
     // If the drop landed inside a floating pane, activate that pane first
     // so its editor becomes editable and focused. The pane's own
     // pointerdown handler wires focusPane() via this synthetic event.
-    focusPaneIfInside(target.el || target.canvasEl || (target.view && target.view.dom));
+    focusPaneIfInside(targetElementOf(target));
     if (target.kind === "cm") {
       insertIntoEditor(target.view, text, e.clientX, e.clientY);
     } else if (target.kind === "nb") {
@@ -103,12 +128,6 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
     }
     if (onDrop) onDrop(deleteSource);
   }
-
-  // Inactive panes disable pointer-events on their content (see
-  // floating-pane.css), which would also hide them from elementFromPoint
-  // during the drop search. Add a body class for the duration of the
-  // drag so the CSS override re-enables pointer-events.
-  document.body.classList.add("text-drag-active");
 
   window.addEventListener("pointermove", onMove, true);
   window.addEventListener("pointerup", onUp, true);
@@ -168,22 +187,35 @@ function updateGhostMode(ghost, deleteOnDrop) {
   ghost.classList.toggle("text-drag-ghost-move", deleteOnDrop);
 }
 
+function targetElementOf(target) {
+  if (!target) return null;
+  if (target.kind === "nb") return target.canvasEl;
+  if (target.kind === "cm") return target.view.dom;
+  return null;
+}
+
 function findDropTarget(x, y) {
-  const el = document.elementFromPoint(x, y);
-  if (!(el instanceof Element)) return null;
+  // Walk the whole stack at the drop point, not just the topmost element.
+  // The ghost (though pointer-events:none) and other siblings can still
+  // show up here, so we look for the first element that matches a known
+  // drop target type.
+  const stack = document.elementsFromPoint(x, y);
+  for (const el of stack) {
+    if (!(el instanceof Element)) continue;
 
-  // Notebook canvas targets — matched by direct element identity so we
-  // don't accidentally catch unrelated canvases.
-  for (const entry of notebookTargets) {
-    if (entry.canvasEl === el || entry.canvasEl.contains(el)) {
-      return { kind: "nb", canvasEl: entry.canvasEl, state: entry.state };
+    // Notebook canvas targets — matched by direct element identity so we
+    // don't accidentally catch unrelated canvases.
+    for (const entry of notebookTargets) {
+      if (entry.canvasEl === el || entry.canvasEl.contains(el)) {
+        return { kind: "nb", canvasEl: entry.canvasEl, state: entry.state };
+      }
     }
-  }
 
-  const cm = el.closest(".cm-editor");
-  if (cm) {
-    const view = EditorView.findFromDOM(cm);
-    if (view) return { kind: "cm", view };
+    const cm = el.closest(".cm-editor");
+    if (cm) {
+      const view = EditorView.findFromDOM(cm);
+      if (view) return { kind: "cm", view };
+    }
   }
   return null;
 }
@@ -221,4 +253,3 @@ function focusPaneIfInside(el) {
     bubbles: true, cancelable: true, pointerType: "mouse",
   }));
 }
-
