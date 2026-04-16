@@ -98,11 +98,11 @@ function onContextChange() {
 }
 
 function notifyLayoutChange() {
-  let hasDoc = false;
+  let hasPane = false;
   for (const [, p] of panes) {
-    if (p.fileType === "document" && p.el.style.display !== "none") { hasDoc = true; break; }
+    if (p.el.style.display !== "none") { hasPane = true; break; }
   }
-  appState._hasVisibleDocPane = hasDoc;
+  appState._hasVisibleDocPane = hasPane;
   if (appState._columnResizeHandler) appState._columnResizeHandler();
 }
 
