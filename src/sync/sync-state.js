@@ -338,26 +338,39 @@ export async function syncRenameNode(state, nodeId, oldName, nodeType) {
       const pathParts = info.relativePath.split("/");
       pathParts[pathParts.length - 1] = node.name + extensionForType(nodeType);
       const newRelPath = pathParts.join("/");
+      if (newRelPath === info.relativePath) return; // no actual rename needed
       const oldFull = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
       const newFull = basePath ? `${basePath}/${newRelPath}` : `/${newRelPath}`;
-      await dbx.moveEntry(oldFull, newFull);
+      try {
+        await dbx.moveEntry(oldFull, newFull);
+      } catch (_) {
+        // 409 = conflict — file already at destination. Update map anyway.
+        const meta = await dbx.getMetadata(newFull).catch(() => null);
+        if (!meta) return;
+      }
       await tauriInvoke("rename_sync_file", {
         folderPath: "__dropbox__", oldRelative: info.relativePath,
         newRelative: newRelPath, internalId: node.fileId,
-      });
+      }).catch(() => {});
     } else {
       const ctx = findSyncContext(state.fileTree, nodeId);
       if (!ctx || !ctx.relativePath) return;
       const parts = ctx.relativePath.split("/");
       parts[parts.length - 1] = oldName;
       const oldRelPath = parts.join("/");
+      if (oldRelPath === ctx.relativePath) return; // no actual rename needed
       const oldFull = basePath ? `${basePath}/${oldRelPath}` : `/${oldRelPath}`;
       const newFull = basePath ? `${basePath}/${ctx.relativePath}` : `/${ctx.relativePath}`;
-      await dbx.moveEntry(oldFull, newFull);
+      try {
+        await dbx.moveEntry(oldFull, newFull);
+      } catch (_) {
+        const meta = await dbx.getMetadata(newFull).catch(() => null);
+        if (!meta) return;
+      }
       await tauriInvoke("rename_sync_directory", {
         folderPath: "__dropbox__", oldRelative: oldRelPath,
         newRelative: ctx.relativePath, syncFolderId: SYNC_FOLDER_ID,
-      });
+      }).catch(() => {});
     }
   } catch (e) {
     console.error("Sync rename failed:", e);

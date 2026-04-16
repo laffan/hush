@@ -234,16 +234,28 @@ function showSyncIndicator(direction, detail) {
   appendSyncLog(direction === "pulled" ? `Downloaded ${detail || "changes"}` : `Uploaded ${detail || "changes"}`);
 }
 
-/** Append a message to the sync log stored in settings. */
-async function appendSyncLog(message) {
-  if (!IS_TAURI) return;
+/** Pending log messages, flushed on a debounce timer. */
+let _pendingLogMessages = [];
+let _logFlushTimer = null;
+
+/** Append a message to the sync log stored in settings (debounced). */
+function appendSyncLog(message) {
+  _pendingLogMessages.push(message);
+  if (_logFlushTimer) clearTimeout(_logFlushTimer);
+  _logFlushTimer = setTimeout(flushSyncLog, 2000);
+}
+
+async function flushSyncLog() {
+  _logFlushTimer = null;
+  if (!IS_TAURI || _pendingLogMessages.length === 0) return;
+  const messages = _pendingLogMessages.splice(0);
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const s = await invoke("get_settings");
     const log = s.dropboxSyncLog || [];
     const now = new Date();
     const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    log.push(`${ts}  ${message}`);
+    for (const msg of messages) log.push(`${ts}  ${msg}`);
     if (log.length > 50) log.splice(0, log.length - 50);
     s.dropboxSyncLog = log;
     await invoke("save_settings", { settings: s });
