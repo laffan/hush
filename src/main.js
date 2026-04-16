@@ -474,6 +474,7 @@ async function init() {
       if (path) {
         try {
           // Reload settings from backend to ensure tokens are current
+          const { invoke } = await import("@tauri-apps/api/core");
           state.settings = await invoke("get_settings");
           const dbx = await import("./sync/dropbox.js");
           if (state.settings.dropboxAccessToken) {

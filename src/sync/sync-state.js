@@ -537,13 +537,18 @@ export async function reconcileSync(state) {
       const newFull = basePath ? `${basePath}/${expectedPath}` : `/${expectedPath}`;
       try {
         await dbx.moveEntry(oldFull, newFull);
+      } catch (_) {
+        // 409 = conflict (destination already exists or source missing).
+        // Verify the file exists at the expected path; if so, just update the map.
+        const meta = await dbx.getMetadata(newFull).catch(() => null);
+        if (!meta) continue; // neither location works — skip
+      }
+      try {
         await tauriInvoke("rename_sync_file", {
           folderPath: "__dropbox__", oldRelative: info.relativePath,
           newRelative: expectedPath, internalId: doc.fileId,
         });
-      } catch (e) {
-        console.error("Sync move failed:", e);
-      }
+      } catch (_) {}
     }
   }
 }
