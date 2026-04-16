@@ -33,10 +33,9 @@ const TITLEBAR_HEIGHT = 30;
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
 const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5"/></svg>`;
 const ICON_EXPAND = `<svg viewBox="0 0 10 10"><rect x="2" y="2" width="6" height="6" rx="0.5"/></svg>`;
-// Attach: anchor to canvas (notebooks) or scroll (docs)
 const ICON_ATTACH = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><line x1="5" y1="5.5" x2="5" y2="9"/></svg>`;
-// Pin: persist across documents (global pane)
 const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
+const ICON_DUPLICATE = `<svg viewBox="0 0 10 10"><rect x="1" y="2.5" width="5.5" height="6" rx="0.7"/><rect x="3.5" y="1" width="5.5" height="6" rx="0.7"/></svg>`;
 
 // ── Public API ────────────────────────────────────────────────────────
 
@@ -104,10 +103,14 @@ export function destroyPaneManager() {
   activePaneId = null;
 }
 
-export async function createPane(fileId, fileName, fileType, x, y) {
-  // Don't open duplicate panes for the same file
-  for (const [, p] of panes) {
-    if (p.fileId === fileId) { focusPane(p.id); return; }
+export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
+  // Don't open duplicate panes for the same file in the same context
+  // (skip check when explicitly duplicating via opts.allowDuplicate)
+  if (!opts.allowDuplicate) {
+    const ctx = opts.ownerContext || getCurrentContext();
+    for (const [, p] of panes) {
+      if (p.fileId === fileId && p.ownerContext === ctx) { focusPane(p.id); return; }
+    }
   }
 
   const id = crypto.randomUUID();
@@ -128,7 +131,7 @@ export async function createPane(fileId, fileName, fileType, x, y) {
     x: Math.max(0, x - DEFAULT_WIDTH / 2),
     y: Math.max(0, y - TITLEBAR_HEIGHT / 2),
     // Owner context: which doc/notebook/project was active when pane was created
-    ownerContext: getCurrentContext(),
+    ownerContext: opts.ownerContext || getCurrentContext(),
   };
 
   buildPaneDOM(pane);
@@ -223,6 +226,10 @@ function buildPaneDOM(pane) {
   const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
   pinBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePinned(pane); });
   buttons.appendChild(pinBtn);
+
+  const dupBtn = makeBtn("duplicate", ICON_DUPLICATE, "Duplicate pane");
+  dupBtn.addEventListener("click", (e) => { e.stopPropagation(); duplicatePane(pane); });
+  buttons.appendChild(dupBtn);
 
   const collapseBtn = makeBtn("collapse", ICON_COLLAPSE, "Collapse");
   collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(pane, collapseBtn); });
@@ -342,30 +349,16 @@ function setupPaneResize(pane) {
       handle.setPointerCapture(e.pointerId);
 
       const onMove = (me) => {
-        const dx = me.clientX - startX;
-        const dy = me.clientY - startY;
-        let newW = startW, newH = startH, newX = startLeft, newY = startTop;
-
-        if (dir.includes("e")) newW = Math.max(MIN_WIDTH, startW + dx);
-        if (dir.includes("w")) { newW = Math.max(MIN_WIDTH, startW - dx); newX = startLeft + (startW - newW); }
-        if (dir.includes("s")) newH = Math.max(MIN_HEIGHT, startH + dy);
-        if (dir.includes("n")) { newH = Math.max(MIN_HEIGHT, startH - dy); newY = startTop + (startH - newH); }
-
-        pane.width = newW;
-        pane.height = newH;
-        pane.x = newX;
-        pane.y = newY;
-        pane.el.style.width = newW + "px";
-        pane.el.style.height = newH + "px";
-        pane.el.style.left = newX + "px";
-        pane.el.style.top = newY + "px";
+        const dx = me.clientX - startX, dy = me.clientY - startY;
+        let w = startW, h = startH, nx = startLeft, ny = startTop;
+        if (dir.includes("e")) w = Math.max(MIN_WIDTH, startW + dx);
+        if (dir.includes("w")) { w = Math.max(MIN_WIDTH, startW - dx); nx = startLeft + (startW - w); }
+        if (dir.includes("s")) h = Math.max(MIN_HEIGHT, startH + dy);
+        if (dir.includes("n")) { h = Math.max(MIN_HEIGHT, startH - dy); ny = startTop + (startH - h); }
+        pane.width = w; pane.height = h; pane.x = nx; pane.y = ny;
+        Object.assign(pane.el.style, { width: w + "px", height: h + "px", left: nx + "px", top: ny + "px" });
       };
-
-      const onUp = () => {
-        handle.removeEventListener("pointermove", onMove);
-        handle.removeEventListener("pointerup", onUp);
-      };
-
+      const onUp = () => { handle.removeEventListener("pointermove", onMove); handle.removeEventListener("pointerup", onUp); };
       handle.addEventListener("pointermove", onMove);
       handle.addEventListener("pointerup", onUp);
     });
@@ -440,6 +433,16 @@ function setPinned(pane, value) {
   const btn = pane.el.querySelector(".fp-btn-pin");
   if (btn) btn.classList.toggle("pin-active", pane.pinned);
   pane.el.classList.toggle("pinned", pane.pinned);
+  // When unpinning, pane returns to its original context — hide if not current
+  if (!value) onContextChange();
+}
+
+function duplicatePane(source) {
+  const offset = 30;
+  createPane(source.fileId, source.fileName, source.fileType,
+    source.x + source.width / 2 + offset,
+    source.y + TITLEBAR_HEIGHT / 2 + offset,
+    { allowDuplicate: true, ownerContext: getCurrentContext() });
 }
 
 // Cache the notebook bridge module to avoid async calls in animation loops
