@@ -177,6 +177,11 @@ async function init() {
   const editor = createEditor(editorContainer, state);
   state.setEditor(editor);
 
+  // Cmd-drag a selection out of the main editor to drop into a pane or
+  // notebook canvas (same behaviour as pane editors).
+  const { attachEditorTextDrag } = await import("./pane/text-drag.js");
+  attachEditorTextDrag(editor.view, editorContainer);
+
   // Emit content-change events so floating panes can sync.
   // Patch markDirty to also fire "doc-content-changed" — this is called
   // by the editor's updateListener on every docChanged event.

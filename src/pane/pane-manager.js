@@ -6,7 +6,7 @@
  */
 
 import { createPaneEditor } from "./pane-editor.js";
-import { startTextDrag, isTextDragging } from "./text-drag.js";
+import { startTextDrag, attachEditorTextDrag } from "./text-drag.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -542,8 +542,9 @@ async function loadDocumentPane(pane) {
   pane._mainSyncHandler = () => syncDocToPane(pane);
   appState.on("doc-content-changed", pane._mainSyncHandler);
 
-  // Cmd+drag a selection out of this pane to drop into another editor.
-  setupSelectionTextDrag(pane.editor.view, pane._content);
+  // Cmd+drag a selection out of this pane to drop into another editor
+  // or a notebook canvas.
+  attachEditorTextDrag(pane.editor.view, pane._content);
 }
 
 async function loadNotebookPane(pane) {
@@ -609,38 +610,6 @@ async function loadNotebookPane(pane) {
 
   // Cmd+drag a text shape out of this notebook pane to drop into an editor.
   setupNotebookTextShapeDrag(pane);
-}
-
-// ── Cmd-drag: doc pane selection → any editor ──────────────────────────
-function setupSelectionTextDrag(view, containerEl) {
-  // Attach to the pane's content ancestor with capture:true so this
-  // runs before CodeMirror's own pointerdown handlers on contentDOM.
-  containerEl.addEventListener("pointerdown", (e) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    if (e.button !== 0) return;
-    if (!view.contentDOM.contains(e.target)) return;
-    const sel = view.state.selection.main;
-    if (sel.empty) return;
-    // Only trigger if pointerdown lands on (or inside) the selection range.
-    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-    if (pos == null || pos < sel.from || pos > sel.to) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    const text = view.state.sliceDoc(sel.from, sel.to);
-    const from = sel.from;
-    const to = sel.to;
-    startTextDrag({
-      text,
-      initialEvent: e,
-      onDrop: (deleteSource) => {
-        if (deleteSource) {
-          view.dispatch({ changes: { from, to, insert: "" } });
-        }
-      },
-    });
-  }, true);
 }
 
 // ── Cmd-drag: notebook pane text shape → any editor ────────────────────

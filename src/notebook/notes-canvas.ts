@@ -11,6 +11,8 @@ import { createTextEditor } from "./ui/text-editor";
 import { createBrainstormInput } from "./ui/brainstorm-input";
 import { createStatusBar } from "./ui/status-bar";
 import { getShapeBounds } from "./utils";
+// @ts-ignore — JS module, no type declaration file
+import { registerNotebookDropTarget } from "../pane/text-drag.js";
 
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
@@ -41,6 +43,7 @@ export class NotesCanvas {
   private _rafId = 0;
   private _imageCache = new Map<string, HTMLImageElement>();
   private _cleanupInput: (() => void) | null = null;
+  private _cleanupDropTarget: (() => void) | null = null;
   private _shelfItems: string[] = [];
   private _shelfPanel: HTMLElement | null = null;
 
@@ -114,6 +117,10 @@ export class NotesCanvas {
     // shared document "copy" listener can route Cmd+C to the right one.
     this._canvas.addEventListener("pointerdown", () => { lastActiveNotebook = this; }, true);
     ensureCopyListener();
+
+    // Register as a drop target for the Cmd-drag text system so text
+    // dragged from a doc editor lands as a new text shape on this canvas.
+    this._cleanupDropTarget = registerNotebookDropTarget(this._canvas, this.state);
 
     // Build UI — no settings panel or file panel (Hush manages those)
     const shelfCallbacks = {
@@ -194,6 +201,7 @@ export class NotesCanvas {
   destroy() {
     cancelAnimationFrame(this._rafId);
     if (this._cleanupInput) this._cleanupInput();
+    if (this._cleanupDropTarget) this._cleanupDropTarget();
     this.container.innerHTML = "";
     if (lastActiveNotebook === this) lastActiveNotebook = null;
     // Clear the pattern colour so the sidebar border disappears when we leave
