@@ -119,12 +119,13 @@ export function closePane(id) {
 }
 
 export function focusPane(id) {
-  // Save previously focused pane
+  // Save and blur previously focused pane
   if (activePaneId && activePaneId !== id) {
     const prev = panes.get(activePaneId);
     if (prev) {
       savePaneContent(prev);
       prev.el.classList.remove("active");
+      if (prev.editor) prev.editor.blur();
     }
   }
   activePaneId = id;
@@ -142,6 +143,8 @@ export function deactivateAllPanes() {
     if (pane) {
       savePaneContent(pane);
       pane.el.classList.remove("active");
+      // Blur the editor so it can't receive keyboard input
+      if (pane.editor) pane.editor.blur();
     }
   }
   activePaneId = null;
@@ -233,7 +236,7 @@ function makeBtn(name, svg, ariaLabel) {
 // ── Drag (title bar) ──────────────────────────────────────────────────
 
 function setupPaneDrag(pane) {
-  let startX, startY, startLeft, startTop;
+  let startX, startY, startLeft, startTop, startCanvasX, startCanvasY;
 
   pane._titlebar.addEventListener("pointerdown", (e) => {
     // Only drag from titlebar itself, not buttons
@@ -244,15 +247,29 @@ function setupPaneDrag(pane) {
     startY = e.clientY;
     startLeft = pane.el.offsetLeft;
     startTop = pane.el.offsetTop;
+    // Snapshot canvas coords for pinned panes
+    if (pane.pinned) {
+      startCanvasX = pane._canvasX;
+      startCanvasY = pane._canvasY;
+    }
     pane._titlebar.setPointerCapture(e.pointerId);
 
     const onMove = (me) => {
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
-      pane.x = startLeft + dx;
-      pane.y = startTop + dy;
-      pane.el.style.left = pane.x + "px";
-      pane.el.style.top = pane.y + "px";
+      if (pane.pinned) {
+        // Convert screen delta to canvas delta (account for zoom)
+        const canvas = _notebookBridge?.getCanvasInstance();
+        const zoom = canvas ? canvas.state.camera.zoom : 1;
+        pane._canvasX = startCanvasX + dx / zoom;
+        pane._canvasY = startCanvasY + dy / zoom;
+        // Screen position updates via the canvas sync loop
+      } else {
+        pane.x = startLeft + dx;
+        pane.y = startTop + dy;
+        pane.el.style.left = pane.x + "px";
+        pane.el.style.top = pane.y + "px";
+      }
     };
 
     const onUp = () => {
@@ -600,7 +617,9 @@ function syncNotebookFromPane(pane) {
   _syncing = true;
   const shapes = pane.notebook.getShapes();
   mainCanvas.loadShapes(JSON.parse(JSON.stringify(shapes)));
-  _syncing = false;
+  // Defer reset: loadShapes triggers change events via queueMicrotask,
+  // so _syncing must stay true until those microtasks have fired.
+  queueMicrotask(() => queueMicrotask(() => { _syncing = false; }));
 }
 
 /**
@@ -619,5 +638,6 @@ function syncNotebookToPane(pane) {
   const shapes = mainCanvas.getShapes();
   pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
   pane.dirty = false;
-  _syncing = false;
+  // Defer reset: same microtask timing issue as above
+  queueMicrotask(() => queueMicrotask(() => { _syncing = false; }));
 }

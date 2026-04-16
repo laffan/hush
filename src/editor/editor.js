@@ -274,6 +274,80 @@ export function createCommentAfterPlugin() {
   );
 }
 
+/**
+ * Build the shared CodeMirror extension set used by both the main editor
+ * and floating pane editors.  This is the single source of truth for the
+ * Hush writing experience (theme, syntax, shortcuts, plugins).
+ *
+ * @param {object}   state     AppState
+ * @param {function} [onChange] Optional callback fired on every docChanged
+ * @returns {{ extensions: Extension[], themeComp, highlightComp, shortcutComp }}
+ */
+export function createBaseExtensions(state, onChange) {
+  const _themeComp = new Compartment();
+  const _highlightComp = new Compartment();
+  const _shortcutComp = new Compartment();
+
+  const activeTheme = getActiveTheme(state.settings);
+  const _s = state.settings.activeStyleId
+    ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId) : null;
+  const nh = _s?.suppressHeaderSize ?? state.settings.normalizeHeaders;
+  const nhc = _s?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
+
+  const updateListener = EditorView.updateListener.of((update) => {
+    if (update.docChanged && onChange) onChange(update);
+  });
+
+  const hushTheme = EditorView.theme({
+    "&": { height: "100%" },
+    ".cm-scroller": {
+      fontFamily: "var(--font-family)",
+      fontSize: "var(--font-size)",
+      lineHeight: "var(--line-height)",
+    },
+    ".cm-content": {
+      caretColor: "var(--cursor)",
+      fontFamily: "var(--font-family)",
+      padding: "0",
+    },
+    ".cm-cursor": { borderLeftColor: "var(--cursor)", borderLeftWidth: "2px" },
+    ".cm-gutters": { display: "none" },
+  });
+
+  const extensions = [
+    hushTheme,
+    _themeComp.of(activeTheme ? activeTheme.extension : []),
+    _highlightComp.of(syntaxHighlighting(
+      getMarkdownHighlight(nh, nhc ? undefined : activeTheme?.headingColor)
+    )),
+    markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
+    history(),
+    drawSelection(),
+    closeBrackets(),
+    updateListener,
+    _shortcutComp.of(buildShortcutExtension(state)),
+    createCalloutPlugin(),
+    createFootnotePlugin(state),
+    createFlagHighlightPlugin(state),
+    createLinkDecoratorPlugin(),
+    headingIndentPlugin,
+    createStickyHeadersPlugin(state),
+    createMultiLineCommentPlugin(),
+    createCommentAfterPlugin(),
+    keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
+    Prec.highest(keymap.of(buildFixedKeymap(state))),
+    placeholder("Start writing..."),
+    EditorView.lineWrapping,
+  ];
+
+  return {
+    extensions,
+    themeComp: _themeComp,
+    highlightComp: _highlightComp,
+    shortcutComp: _shortcutComp,
+  };
+}
+
 /** Toggle block cursor class and set color to heading color. */
 function applyBlockCursor(state) {
   const container = document.getElementById("editor-container");
