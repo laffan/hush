@@ -305,6 +305,27 @@ function finishDrag(pointerEvent) {
 
   const { originElement, ghost, dropTarget, originPath, originParentPath, originIndex, autoExpandedIds, highlightedParent, draggedItem } = this.dragSession;
 
+  // Check if the item was dragged outside the sidebar/panel while Cmd/Ctrl
+  // is held — this takes priority over normal reorder drops.
+  if (pointerEvent && this.config.onDragOutside && draggedItem &&
+      (pointerEvent.metaKey || pointerEvent.ctrlKey)) {
+    const panelOverlay = this.container.closest("#panel-overlay");
+    const rect = panelOverlay?.getBoundingClientRect();
+    if (rect && pointerEvent.clientX > rect.right) {
+      clearDropTarget.call(this);
+      if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
+      ghost.remove();
+      originElement.classList.remove("dragging");
+      document.body.classList.remove("sl-dragging");
+      autoExpandedIds.forEach((id) => this.state.collapsedIds.add(id));
+      this.dragSession = null;
+      this.render();
+      this.config.onDragOutside(draggedItem, pointerEvent.clientX, pointerEvent.clientY);
+      this.config.onDragEnd(null, false);
+      return;
+    }
+  }
+
   clearDropTarget.call(this);
   if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
   ghost.remove();
@@ -312,14 +333,6 @@ function finishDrag(pointerEvent) {
   document.body.classList.remove("sl-dragging");
 
   if (!dropTarget) {
-    // Check if the item was dragged outside the sidebar/panel area
-    if (pointerEvent && this.config.onDragOutside && draggedItem) {
-      const panelOverlay = this.container.closest("#panel-overlay");
-      const rect = panelOverlay?.getBoundingClientRect();
-      if (rect && pointerEvent.clientX > rect.right) {
-        this.config.onDragOutside(draggedItem, pointerEvent.clientX, pointerEvent.clientY);
-      }
-    }
     autoExpandedIds.forEach((id) => this.state.collapsedIds.add(id));
     this.dragSession = null;
     this.render();
