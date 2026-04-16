@@ -16,6 +16,13 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Notebooks** — Canvas-based visual notes with an infinite pan-and-zoom surface. Create text, images, and drag areas on a freeform canvas. Features brainstorm mode (rapid sequential text entry), a pocket shelf for stashing shapes, camera bookmarks, and 16 matching color themes. Notebooks autosave alongside documents and share the same organizational structure.
 
+**Floating Panes** — Cmd-drag any document or notebook from the files sidebar into the editor area to open it as a floating reference pane. Panes are fully functional editors (same markdown features, shortcuts, and syntax highlighting) that float above the main content. Resize from edges or corners, drag via the title bar, collapse to just the header, or close. Panes stay with their parent document and reappear when you return.
+
+- **Attach** — Anchors a pane to the document scroll (docs) or canvas position (notebooks) so it moves with the content.
+- **Pin** — Keeps a pane visible across document switches (blue header). Unpinning returns it to its original document.
+- **Duplicate** — Creates a copy of a pane owned by the current document. Useful for bringing a pinned reference into a new context.
+- **Real-time sync** — Edits in a pane propagate to the main editor if the same file is open, and vice versa.
+
 **File Management** — Multiple files with automatic 2-second autosave. Organize documents and notebooks in folders and projects with drag-and-drop reordering.
 
 **Dropbox Sync** — Optional full-library sync to Dropbox. Connect via OAuth in Settings > Sync, choose a folder, and all documents, projects, and folders are mirrored automatically. Works across macOS and iOS. Documents sync as `.md` files, projects as `.hushproject` metadata. Sync is bidirectional with automatic conflict resolution.

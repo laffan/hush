@@ -45,6 +45,10 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │       ├── shelf-panel.ts
 │       └── ...
 │
+├── pane/
+│   ├── pane-manager.js
+│   └── pane-editor.js
+│
 ├── sidebar/
 │   ├── sidebar.js
 │   ├── files-panel.js
@@ -106,7 +110,7 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Font CSS is imp
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes.
 
-Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`.
+Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`.
 
 **Notebook state:** When a notebook is open, `currentNotebookFileId` is set and `currentFileId` / `currentProjectId` are null. The notebook canvas has its own `DrawingState` (in `src/notebook/state.ts`), managed by `notebook-bridge.js`. See [README-NOTEBOOK.md](README-NOTEBOOK.md) for details.
 
@@ -136,6 +140,8 @@ The CodeMirror 6 instance is configured with:
 - **Mouse filter** blocking mousedown in ratchet mode
 
 **Plugins loaded:** private mode, D.R.Y. highlighting, footnotes, focus mode, callouts, project view (separators), flag highlighting, link decorator, heading indent, sticky headers, encourage typing.
+
+**`createBaseExtensions(state, onChange)`** builds the shared extension set (theme, syntax highlighting, shortcuts, all plugins) used by both the main editor and floating pane editors. Returns compartment handles for theme, highlight, shortcut, and editable reconfiguration.
 
 **`editor/modes.js`** contains mode application (`applyModes`, `applyFullscreen`), column width/resizer management (`updateColumnResizers`), and ratchet timer display (`updateRatchetTimer`). `applyModes` toggles CSS classes on `#app`: `ratchet-active`, `private-mode`, `typewriter-mode`, and `dummy-mode` (when private mode + dummy text is active).
 
@@ -256,6 +262,31 @@ CodeMirror plugin for project mode. `createProjectViewField` (StateField) replac
 
 Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content. In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
 
+### Floating Panes (`pane/`)
+
+Draggable reference windows that float above the editor or notebook canvas. Created by Cmd-dragging a file from the sidebar files panel past the panel boundary into the editing area.
+
+**`pane-manager.js`** — Core lifecycle: create, close, focus, collapse, resize, drag, autosave. Manages a `Map<id, pane>` of active panes with z-index stacking. Each pane stores an `ownerContext` string encoding the document/notebook/project that was active at creation time. On document switches (`file-opened`, `notebook-open`, `notebook-unmount`), non-pinned panes whose context doesn't match are hidden; when the user returns, they reappear.
+
+**`pane-editor.js`** — Factory that calls `createBaseExtensions()` from `editor/editor.js` so pane editors share the identical plugin, shortcut, and theme setup as the main editor. Exposes `setEditable(bool)` via an `EditorView.editable` compartment — inactive panes are locked non-editable to prevent input leaks.
+
+**Pane object:** `{ id, fileId, fileName, fileType, collapsed, attached, pinned, dirty, editor, notebook, el, width, height, x, y, ownerContext }`.
+
+**Attach vs Pin:**
+
+- **Attach** — Anchors the pane to content. In notebooks, converts screen position to canvas world coordinates and syncs every frame via `requestAnimationFrame`. In docs, records `scrollRelY` (pane Y + scrollTop) and updates on the editor's scroll event. Dragging a canvas-attached pane converts screen deltas to canvas deltas (dividing by zoom).
+- **Pin** — Marks the pane as global (`.pinned` class, blue header). Pinned panes stay visible across all document switches. Unpinning triggers `onContextChange()` so the pane returns to its original context. Attach and pin are mutually exclusive — toggling one while the other is active shows a confirmation dialog.
+
+**Duplicate** — Creates a new pane for the same file with `ownerContext` set to the current document (not the source's context). The duplicate check in `createPane` scopes by context, so the same file can have panes in different documents.
+
+**Content sync:** Document panes fire `syncDocFromPane` on every `docChanged`, pushing content to the main editor if the same file is open (with `_syncPulling` flag to suppress `markDirty`). The reverse direction uses a `doc-content-changed` event from `main.js`. Notebook panes sync shapes via `loadShapes()` with a `_syncing` guard reset via double `queueMicrotask` to account for `DrawingState`'s batched change events.
+
+**Input isolation:** The notebook's window `keydown` and document `paste` handlers skip processing when `document.activeElement` is inside a `.floating-pane`. Inactive pane content gets `pointer-events: none` via CSS, and the editor is set to non-editable. A window-level capture-phase `pointerdown` listener deactivates panes when clicking outside.
+
+**Z-index layering:** `#pane-container` is `z-index: 90` (above editor content at 0–80, below sidebars at 100+). The notebook container has no z-index to avoid creating a stacking context, allowing the shelf panel (`z-index: 150`) to render above panes.
+
+**Drag-from-sidebar integration:** `sortable-list/drag-drop.js` has an `onDragOutside(item, x, y)` callback. In `finishDrag`, when Cmd/Ctrl is held and the pointer is right of the panel overlay, the callback fires instead of the normal reorder drop. `files-panel.js` wires this to `createPane()`.
+
 ### Zotero Integration (`zotero.js`)
 
 Citation management. Connects to Zotero API with user key, downloads references with progress tracking, caches locally. Search modal for finding and inserting citations.
@@ -291,7 +322,7 @@ Wraps [thememirror](https://github.com/vadimdemedes/thememirror). Exports `theme
 
 Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
-`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `notebook.css`, `utility.css`.
+`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `notebook.css`, `floating-pane.css`, `utility.css`.
 
 The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 

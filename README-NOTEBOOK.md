@@ -84,6 +84,7 @@ File drops have three independent targets:
 1. **Sidebar panel** — an "Import file" overlay appears inside `#panel-overlay` when it's open. Dropping creates a new document.
 2. **Editor area** (doc mode) — `dragover`/`drop` on `#editor-container` appends text.
 3. **Notebook canvas** — canvas-level `dragover`/`drop` in `input-handler.ts` handles images (→ image shapes) and text files (→ text shapes at drop position). Shelf drags also use canvas-level events.
+4. **Floating panes** — Cmd-dragging a file from the sidebar past the panel edge creates a floating pane (see `pane/pane-manager.js`). Notebook panes can be attached to canvas coordinates. The notebook's `keydown` and `paste` handlers skip processing when `document.activeElement` is inside a `.floating-pane` to prevent input leaks.
 
 ## Core Concepts
 
