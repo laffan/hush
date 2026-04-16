@@ -177,6 +177,15 @@ async function init() {
   const editor = createEditor(editorContainer, state);
   state.setEditor(editor);
 
+  // Emit content-change events so floating panes can sync.
+  // Patch markDirty to also fire "doc-content-changed" — this is called
+  // by the editor's updateListener on every docChanged event.
+  const _origMarkDirty = state.markDirty.bind(state);
+  state.markDirty = function() {
+    _origMarkDirty();
+    state.emit("doc-content-changed");
+  };
+
   // === Notebook / Editor mode switching ===
   // #app.notebook-mode hides all editor chrome (resizers, right panel, drag
   // region) via CSS so the notebook canvas occupies the full space.

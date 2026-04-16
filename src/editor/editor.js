@@ -22,12 +22,12 @@ import { buildCodeMirrorKeymap } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 
 // Custom tags for our extensions
-const commentTag = Tag.define();
-const highlightTag = Tag.define();
+export const commentTag = Tag.define();
+export const highlightTag = Tag.define();
 
 // Custom inline parser for %% comments %%
 const CommentDelim = { resolve: "Comment", mark: "CommentMark" };
-const CommentExtension = {
+export const CommentExtension = {
   defineNodes: [
     { name: "Comment", style: commentTag },
     { name: "CommentMark", style: commentTag },
@@ -46,7 +46,7 @@ const CommentExtension = {
 
 // Custom inline parser for == highlight ==
 const HighlightDelim = { resolve: "Highlight", mark: "HighlightMark" };
-const HighlightExtension = {
+export const HighlightExtension = {
   defineNodes: [
     { name: "Highlight", style: highlightTag },
     { name: "HighlightMark", style: tags.processingInstruction },
@@ -73,7 +73,7 @@ const bypassRatchet = Annotation.define();
  * in `Prec.highest` so it wins against CodeMirror's defaults and any
  * plugin keymaps.  Called on startup and again whenever settings change.
  */
-function buildShortcutExtension(state) {
+export function buildShortcutExtension(state) {
   const commands = buildEditorCommands();
   const userBindings = buildCodeMirrorKeymap(state, commands);
   const fixed = buildFixedKeymap(state);
@@ -85,7 +85,7 @@ function buildShortcutExtension(state) {
 // positioning — no measurement needed, works at any font size.
 const headingMarkerDeco = Decoration.mark({ class: "heading-marker" });
 
-const headingIndentPlugin = ViewPlugin.fromClass(
+export const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.decorations = this.buildDecorations(view);
@@ -118,7 +118,7 @@ const headingIndentPlugin = ViewPlugin.fromClass(
 );
 
 // Build the markdown highlight style, optionally normalizing heading sizes/colors
-function getMarkdownHighlight(normalizeHeaders, headingColor) {
+export function getMarkdownHighlight(normalizeHeaders, headingColor) {
   const color = headingColor || undefined;
   const headingStyles = normalizeHeaders
     ? [
@@ -156,14 +156,14 @@ function getMarkdownHighlight(normalizeHeaders, headingColor) {
   ]);
 }
 
-function hexToRgba(hex, alpha) {
+export function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function createFlagHighlightPlugin(stateRef) {
+export function createFlagHighlightPlugin(stateRef) {
   const highlightRegex = /==[^=]+==/g;
   const flagRegex = /^==([A-Za-z][A-Za-z0-9_-]{0,24}):\s*[^=]+==$/;
   const defaultColor = "rgba(255, 208, 0, 0.3)";
@@ -204,7 +204,7 @@ function createFlagHighlightPlugin(stateRef) {
 }
 
 // Plugin that handles multi-line %% comment %% blocks (the inline parser only works within a single line)
-function createMultiLineCommentPlugin() {
+export function createMultiLineCommentPlugin() {
   const commentRegex = /%%/g;
   return ViewPlugin.fromClass(
     class {
@@ -245,7 +245,7 @@ function createMultiLineCommentPlugin() {
 }
 
 // Plugin that handles the "comment after" marker: ---% makes everything after it semi-gray
-function createCommentAfterPlugin() {
+export function createCommentAfterPlugin() {
   return ViewPlugin.fromClass(
     class {
       constructor(view) {

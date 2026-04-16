@@ -25,6 +25,7 @@ let zCounter = 1000;
 let containerEl = null;
 let appState = null;
 let autosaveTimer = null;
+let _syncing = false;        // guard against infinite sync loops
 
 const DEFAULT_WIDTH = 420;
 const DEFAULT_HEIGHT = 340;
@@ -48,6 +49,8 @@ export function initPaneManager(state) {
   // Sync pane themes when the main editor theme changes
   state.on("theme-changed", syncPaneThemes);
   state.on("style-changed", syncPaneThemes);
+  // Pre-cache notebook bridge for canvas sync
+  getNotebookBridge().catch(() => {});
 }
 
 export function destroyPaneManager() {
@@ -102,6 +105,11 @@ export function closePane(id) {
   if (!pane) return;
   // Save before closing
   savePaneContent(pane);
+  // Remove sync listeners
+  if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
+  if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
+  // Stop canvas sync
+  if (pane.pinned) stopCanvasSync(pane);
   // Destroy editor/notebook
   if (pane.editor) pane.editor.destroy();
   if (pane.notebook) pane.notebook.destroy();
@@ -418,6 +426,7 @@ async function loadPaneContent(pane) {
 async function loadDocumentPane(pane) {
   const editor = createPaneEditor(pane._content, appState, () => {
     pane.dirty = true;
+    syncDocFromPane(pane);
   });
   pane.editor = editor;
 
@@ -432,10 +441,13 @@ async function loadDocumentPane(pane) {
     console.error("Failed to load pane file:", e);
   }
   editor.setContent(content);
+
+  // Listen for main editor changes to sync back into this pane
+  pane._mainSyncHandler = () => syncDocToPane(pane);
+  appState.on("doc-content-changed", pane._mainSyncHandler);
 }
 
 async function loadNotebookPane(pane) {
-  // Dynamically import the NotesCanvas
   const { NotesCanvas } = await import("../notebook/notes-canvas.ts");
   const s = appState.settings;
   const shortcuts = {
@@ -470,10 +482,15 @@ async function loadNotebookPane(pane) {
     canvas.loadShapes(shapes);
   }
 
-  // Mark dirty on canvas changes
+  // Mark dirty + propagate shapes to main canvas on changes
   pane._content.addEventListener("notebook-change", () => {
     pane.dirty = true;
+    syncNotebookFromPane(pane);
   });
+
+  // Listen for main canvas changes to sync back into this pane
+  pane._mainNbSyncHandler = () => syncNotebookToPane(pane);
+  appState.on("notebook-shapes-changed", pane._mainNbSyncHandler);
 }
 
 // ── Saving ────────────────────────────────────────────────────────────
@@ -519,4 +536,88 @@ export function saveAllPanes() {
   for (const [, pane] of panes) {
     savePaneContent(pane);
   }
+}
+
+// ── Content sync (pane ↔ main editor) ─────────────────────────────────
+
+/**
+ * Push document content from a pane to the main editor if the same file
+ * is open.  Called on every doc change in the pane.
+ */
+function syncDocFromPane(pane) {
+  if (_syncing) return;
+  if (pane.fileType !== "document" || !pane.editor) return;
+  if (pane.fileId !== appState.currentFileId) return;
+  if (!appState.editor) return;
+
+  _syncing = true;
+  const content = pane.editor.getContent();
+  const mainView = appState.editor.view;
+  // Preserve main cursor position where possible
+  const mainSel = mainView.state.selection.main;
+  const anchor = Math.min(mainSel.anchor, content.length);
+  const head = Math.min(mainSel.head, content.length);
+  appState._syncPulling = true;
+  appState.editor.setContent(content);
+  try { mainView.dispatch({ selection: { anchor, head } }); } catch (_) {}
+  appState._syncPulling = false;
+  _syncing = false;
+}
+
+/**
+ * Push document content from the main editor to a pane if matching.
+ * Called via the "doc-content-changed" event emitted from main.js.
+ */
+function syncDocToPane(pane) {
+  if (_syncing) return;
+  if (pane.fileType !== "document" || !pane.editor) return;
+  if (pane.fileId !== appState.currentFileId) return;
+
+  _syncing = true;
+  const content = appState.editor.getContent();
+  const paneView = pane.editor.view;
+  const paneSel = paneView.state.selection.main;
+  const anchor = Math.min(paneSel.anchor, content.length);
+  const head = Math.min(paneSel.head, content.length);
+  pane.editor.setContent(content);
+  try { paneView.dispatch({ selection: { anchor, head } }); } catch (_) {}
+  // Don't mark pane dirty — this came from the main editor
+  pane.dirty = false;
+  _syncing = false;
+}
+
+/**
+ * Push shapes from a pane notebook to the main canvas if same file is open.
+ */
+function syncNotebookFromPane(pane) {
+  if (_syncing) return;
+  if (pane.fileType !== "notebook" || !pane.notebook) return;
+  if (pane.fileId !== appState.currentNotebookFileId) return;
+  if (!_notebookBridge) return;
+  const mainCanvas = _notebookBridge.getCanvasInstance();
+  if (!mainCanvas) return;
+
+  _syncing = true;
+  const shapes = pane.notebook.getShapes();
+  mainCanvas.loadShapes(JSON.parse(JSON.stringify(shapes)));
+  _syncing = false;
+}
+
+/**
+ * Push shapes from the main canvas to a matching pane notebook.
+ * Called via the "notebook-shapes-changed" event.
+ */
+function syncNotebookToPane(pane) {
+  if (_syncing) return;
+  if (pane.fileType !== "notebook" || !pane.notebook) return;
+  if (pane.fileId !== appState.currentNotebookFileId) return;
+  if (!_notebookBridge) return;
+  const mainCanvas = _notebookBridge.getCanvasInstance();
+  if (!mainCanvas) return;
+
+  _syncing = true;
+  const shapes = mainCanvas.getShapes();
+  pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
+  pane.dirty = false;
+  _syncing = false;
 }

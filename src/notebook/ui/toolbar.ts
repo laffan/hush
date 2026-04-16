@@ -183,9 +183,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
     const theme = state.theme;
     container.style.background = theme.uiBackground;
 
-    // Center toolbar between sidebar inset and right edge
+    // Center toolbar between sidebar inset and right edge of parent
     const inset = state.leftInset || 0;
-    const center = inset + (window.innerWidth - inset) / 2;
+    const parentW = container.parentElement?.clientWidth || window.innerWidth;
+    const center = inset + (parentW - inset) / 2;
     container.style.left = center + "px";
     container.style.transform = "translateX(-50%)";
 

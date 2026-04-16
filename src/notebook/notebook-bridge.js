@@ -6,6 +6,7 @@
 let canvasInstance = null;
 let currentNotebookFileId = null;
 let notebookDirty = false;
+let _appState = null;
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -65,9 +66,12 @@ export async function mountNotebook(container, fileId, state) {
   // Apply notebook settings from Hush settings
   applyNotebookSettings(state);
 
-  // Listen for shape changes to mark dirty
+  _appState = state;
+
+  // Listen for shape changes to mark dirty + notify panes
   container.addEventListener("notebook-change", () => {
     notebookDirty = true;
+    if (_appState) _appState.emit("notebook-shapes-changed");
   });
 
   return canvasInstance;
