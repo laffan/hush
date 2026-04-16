@@ -77,6 +77,7 @@ export class NotesCanvas {
     this.state.addEventListener("change", () => {
       const t = this.state.theme;
       container.style.background = t.canvasBackground;
+      this._updatePatternCssVar();
     });
 
     // Emit "notebook-change" for autosave integration whenever shapes change
@@ -113,6 +114,10 @@ export class NotesCanvas {
 
     // Initialize undo history with empty canvas
     this.state.initHistory();
+
+    // Sync the pattern CSS variable up front so the sidebar border is
+    // correct before the first state change fires.
+    this._updatePatternCssVar();
 
     // Start render loop
     this._startRenderLoop();
@@ -163,6 +168,24 @@ export class NotesCanvas {
     cancelAnimationFrame(this._rafId);
     if (this._cleanupInput) this._cleanupInput();
     this.container.innerHTML = "";
+    // Clear the pattern colour so the sidebar border disappears when we leave
+    // the notebook view.
+    document.documentElement.style.setProperty("--notebook-pattern-color", "transparent");
+  }
+
+  /**
+   * Push the current dot/grid colour (same hex + alpha the renderer uses)
+   * to a CSS variable so other chrome — e.g. the files sidebar's right
+   * border in notebook mode — can match it exactly. Set to "transparent"
+   * when the pattern is blank or opacity is zero.
+   */
+  private _updatePatternCssVar() {
+    const { backgroundPattern, gridOpacity } = this.state;
+    let value = "transparent";
+    if (backgroundPattern !== "blank" && gridOpacity > 0) {
+      value = hexToRgba(this.state.theme.foreground, gridOpacity * 0.8);
+    }
+    document.documentElement.style.setProperty("--notebook-pattern-color", value);
   }
 
   // === Private ===
@@ -217,4 +240,14 @@ export class NotesCanvas {
     // Force a state change notification so shelf rebuilds
     this.state.notify("shapes");
   }
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (h.length !== 6) return hex;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }

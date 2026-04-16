@@ -60,8 +60,8 @@ function createGridPopup(state: DrawingState): HTMLElement {
     popup.appendChild(h("div", { text: "Pattern", style: labelStyle }));
     const patternRow = h("div", { style: { display: "flex", gap: "4px", marginBottom: "10px" } });
     const patterns: { label: string; value: BackgroundPattern }[] = [
-      { label: "Grid", value: "grid" },
       { label: "Dots", value: "dot-grid" },
+      { label: "Grid", value: "grid" },
       { label: "Blank", value: "blank" },
     ];
     for (const pat of patterns) {

@@ -151,7 +151,7 @@ export class AppState {
       // Notebook settings
       notebookAppearanceMode: "light",
       notebookThemeId: "default",
-      notebookBackgroundPattern: "grid",
+      notebookBackgroundPattern: "dot-grid",
       notebookGridSpacing: 25,
       notebookGridOpacity: 0.15,
       notebookFontFamily: "Inter",

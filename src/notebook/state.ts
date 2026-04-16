@@ -62,7 +62,7 @@ export class DrawingState extends EventTarget {
   // Appearance
   appearanceMode: AppearanceMode = "light";
   themeId = "default";
-  backgroundPattern: BackgroundPattern = "grid";
+  backgroundPattern: BackgroundPattern = "dot-grid";
   gridSpacing = 25;
   gridOpacity = 0.15;
   fontFamily = "Inter";

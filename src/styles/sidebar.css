@@ -93,6 +93,15 @@ body.wide-viewport .panel-pin-btn {
   z-index: 100;
 }
 
+/* In notebook mode the sidebar panel gets a 1px right border that exactly
+   matches the canvas dot/grid colour + opacity. The JS sets
+   --notebook-pattern-color to the computed rgba (or transparent when the
+   background is blank / grid opacity is 0). */
+body.notebook-mode #panel-overlay,
+body.notebook-mode #panel-overlay.panel-inset {
+  border-right: 1px solid var(--notebook-pattern-color, transparent);
+}
+
 #panel-overlay.hidden {
   transform: translateX(-20px);
   opacity: 0;

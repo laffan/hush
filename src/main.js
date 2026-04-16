@@ -6,7 +6,7 @@ import { applyAppearance, isIOS, openSettingsWindow } from "./settings/settings-
 import { getThemeById } from "./themes.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
-import { dispatchDomShortcut } from "./shortcuts.js";
+import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
@@ -288,13 +288,31 @@ async function init() {
       return;
     }
 
+    // A small set of global UI shortcuts should fire even from text fields
+    // inside the notebook (inline text editor, brainstorm input), where the
+    // sidebar is otherwise unreachable. Check these before the textarea
+    // guard so they aren't swallowed.
+    const t = e.target;
+    const tag = t && t.tagName;
+    const isTextField = !!t && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable);
+    const inNotebook = document.body.classList.contains("notebook-mode");
+    if (isTextField && inNotebook) {
+      // Cmd+, — open settings (also hardcoded below for canvas focus)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ",") {
+        e.preventDefault(); openSettingsWindow(state); return;
+      }
+      const alwaysAllowed = ["shortcutToggleSidebar", "shortcutToggleOutline", "shortcutOpenFullscreen"];
+      for (const key of alwaysAllowed) {
+        const sc = state.settings[key];
+        if (sc && matchesDomEvent(e, sc)) {
+          const handler = windowCommands[key];
+          if (handler) { e.preventDefault(); handler(state, null); return; }
+        }
+      }
+    }
     // Don't hijack keystrokes in text input fields.  In notebook mode the
     // target is the canvas element, not body — let shortcuts through.
-    const t = e.target;
-    if (t) {
-      const tag = t.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return;
-    }
+    if (isTextField) return;
     // Cmd+, — open settings (CodeMirror handles this in doc mode, but
     // we need an explicit check for notebook mode)
     if (state.currentNotebookFileId && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ",") {

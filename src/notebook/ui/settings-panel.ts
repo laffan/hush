@@ -114,8 +114,8 @@ export function createSettingsPanel(state: DrawingState, mountOverlayOn?: HTMLEl
     bgSection.appendChild(h("div", { text: "Background Pattern", style: { fontSize: "13px", fontWeight: "600", color: "#555", marginBottom: "8px" } }));
     const patternRow = h("div", { style: { display: "flex", gap: "6px", marginBottom: "10px" } });
     const patterns: { label: string; value: "grid" | "dot-grid" | "blank" }[] = [
-      { label: "Grid", value: "grid" },
       { label: "Dots", value: "dot-grid" },
+      { label: "Grid", value: "grid" },
       { label: "Blank", value: "blank" },
     ];
     for (const pat of patterns) {

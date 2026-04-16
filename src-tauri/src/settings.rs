@@ -594,7 +594,7 @@ fn default_notebook_theme() -> String {
     "default".to_string()
 }
 fn default_notebook_bg_pattern() -> String {
-    "grid".to_string()
+    "dot-grid".to_string()
 }
 fn default_notebook_grid_spacing() -> u32 {
     25

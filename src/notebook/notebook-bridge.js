@@ -156,7 +156,7 @@ export function applyNotebookSettings(state) {
   canvasInstance.applySettings({
     appearanceMode: appearance,
     themeId: resolveNotebookTheme(state),
-    backgroundPattern: s.notebookBackgroundPattern || "grid",
+    backgroundPattern: s.notebookBackgroundPattern || "dot-grid",
     gridSpacing: s.notebookGridSpacing || 25,
     gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.15,
     fontFamily,
