@@ -97,7 +97,7 @@
   width: 10px;
   height: 10px;
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: 1;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -133,8 +133,9 @@
   pointer-events: none;
 }
 
-/* Hide notebook toolbar/UI chrome in inactive panes (keep only the canvas) */
-.floating-pane:not(.active) .floating-pane-content > :not(canvas) {
+/* Hide notebook toolbar/UI chrome in inactive panes (keep only the canvas).
+   Scoped to containers that have a canvas child (notebook panes). */
+.floating-pane:not(.active) .floating-pane-content:has(canvas) > :not(canvas) {
   visibility: hidden;
 }
 
