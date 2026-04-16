@@ -18,7 +18,7 @@ import {
  * Returns { view, getContent, setContent, focus, blur, destroy, reconfigureTheme }.
  */
 export function createPaneEditor(container, appState, onChange) {
-  const { extensions, themeComp, highlightComp, shortcutComp } =
+  const { extensions, themeComp, highlightComp, shortcutComp, editableComp } =
     createBaseExtensions(appState, onChange ? () => onChange() : null);
 
   const startState = EditorState.create({ doc: "", extensions });
@@ -32,6 +32,9 @@ export function createPaneEditor(container, appState, onChange) {
     },
     focus: () => view.focus(),
     blur: () => view.contentDOM.blur(),
+    setEditable: (editable) => {
+      view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(editable)) });
+    },
     destroy: () => view.destroy(),
     reconfigureTheme: (settings) => {
       const t = getActiveTheme(settings);

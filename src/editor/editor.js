@@ -287,6 +287,7 @@ export function createBaseExtensions(state, onChange) {
   const _themeComp = new Compartment();
   const _highlightComp = new Compartment();
   const _shortcutComp = new Compartment();
+  const _editableComp = new Compartment();
 
   const activeTheme = getActiveTheme(state.settings);
   const _s = state.settings.activeStyleId
@@ -338,12 +339,14 @@ export function createBaseExtensions(state, onChange) {
     Prec.highest(keymap.of(buildFixedKeymap(state))),
     placeholder("Start writing..."),
     EditorView.lineWrapping,
+    _editableComp.of(EditorView.editable.of(true)),
   ];
 
   return {
     extensions,
     themeComp: _themeComp,
     highlightComp: _highlightComp,
+    editableComp: _editableComp,
     shortcutComp: _shortcutComp,
   };
 }

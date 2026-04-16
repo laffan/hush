@@ -89,7 +89,7 @@ function onContextChange() {
       if (pane.attached) stopAttachSync(pane);
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
-        if (pane.editor) pane.editor.blur();
+        if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
         activePaneId = null;
       }
     }
@@ -161,13 +161,13 @@ export function closePane(id) {
 }
 
 export function focusPane(id) {
-  // Save and blur previously focused pane
+  // Save, blur, and lock previously focused pane
   if (activePaneId && activePaneId !== id) {
     const prev = panes.get(activePaneId);
     if (prev) {
       savePaneContent(prev);
       prev.el.classList.remove("active");
-      if (prev.editor) prev.editor.blur();
+      if (prev.editor) { prev.editor.blur(); prev.editor.setEditable(false); }
     }
   }
   activePaneId = id;
@@ -175,8 +175,8 @@ export function focusPane(id) {
   if (!pane) return;
   pane.el.classList.add("active");
   pane.el.style.zIndex = ++zCounter;
-  // Focus the inner editor / re-center notebook toolbar
-  if (pane.editor) pane.editor.focus();
+  // Unlock and focus the inner editor / re-center notebook toolbar
+  if (pane.editor) { pane.editor.setEditable(true); pane.editor.focus(); }
   if (pane.notebook) pane.notebook.state.notify("tool");
 }
 
@@ -186,8 +186,8 @@ export function deactivateAllPanes() {
     if (pane) {
       savePaneContent(pane);
       pane.el.classList.remove("active");
-      // Blur the editor so it can't receive keyboard input
-      if (pane.editor) pane.editor.blur();
+      // Blur + lock the editor so it can't receive keyboard input
+      if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
     }
   }
   activePaneId = null;
@@ -438,11 +438,8 @@ function setPinned(pane, value) {
   if (!value) onContextChange();
 }
 
-function duplicatePane(source) {
-  const offset = 30;
-  createPane(source.fileId, source.fileName, source.fileType,
-    source.x + source.width / 2 + offset,
-    source.y + TITLEBAR_HEIGHT / 2 + offset,
+function duplicatePane(s) {
+  createPane(s.fileId, s.fileName, s.fileType, s.x + s.width / 2 + 30, s.y + TITLEBAR_HEIGHT / 2 + 30,
     { allowDuplicate: true, ownerContext: getCurrentContext() });
 }
 

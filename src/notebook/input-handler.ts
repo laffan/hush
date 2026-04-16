@@ -122,6 +122,8 @@ export function bindInputEvents(
       return;
     }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    // Skip if focus is inside a floating pane — let the pane handle its own input
+    if (document.activeElement?.closest(".floating-pane")) return;
 
     // Space-to-pan
     if (e.key === " " && !e.repeat) {
@@ -166,6 +168,8 @@ export function bindInputEvents(
   // Paste
   on(document as unknown as HTMLElement, "paste", (async (e: ClipboardEvent) => {
     if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) return;
+    // Skip if focus is inside a floating pane — let the pane handle its own paste
+    if (document.activeElement?.closest(".floating-pane")) return;
     if (state.editingText) return;
     e.preventDefault();
     const cd = e.clipboardData;
