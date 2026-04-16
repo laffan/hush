@@ -175,8 +175,9 @@ export function focusPane(id) {
   if (!pane) return;
   pane.el.classList.add("active");
   pane.el.style.zIndex = ++zCounter;
-  // Focus the inner editor
+  // Focus the inner editor / re-center notebook toolbar
   if (pane.editor) pane.editor.focus();
+  if (pane.notebook) pane.notebook.state.notify("tool");
 }
 
 export function deactivateAllPanes() {
