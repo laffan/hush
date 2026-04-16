@@ -17,7 +17,7 @@
   min-width: 240px;
   min-height: 60px;
   background: var(--bg, #1e1e1e);
-  border: 1.5px solid transparent;
+  border: 1.5px solid rgba(128, 128, 128, 0.12);
   border-radius: 0;
   overflow: visible;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
@@ -32,7 +32,7 @@
   box-shadow: 0 6px 28px rgba(0, 0, 0, 0.45);
 }
 
-/* ── Title bar (20px drag handle) ─────────────────────────────────── */
+/* ── Title bar ────────────────────────────────────────────────────── */
 
 .floating-pane-titlebar {
   height: 30px;
@@ -44,7 +44,6 @@
   padding: 0 6px;
   user-select: none;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
   gap: 4px;
 }
 

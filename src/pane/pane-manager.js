@@ -261,11 +261,11 @@ function buildPaneDOM(pane) {
   pane.el = el;
   pane._content = content;
   pane._titlebar = titlebar;
+  pane._collapseBtn = collapseBtn;
   // Event wiring
   setupPaneDrag(pane);
   setupPaneResize(pane);
-
-  // Click anywhere on pane → focus it
+  titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn")) toggleCollapse(pane, collapseBtn); });
   el.addEventListener("pointerdown", () => focusPane(pane.id));
 }
 
