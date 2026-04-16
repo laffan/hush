@@ -18,7 +18,7 @@
   min-height: 60px;
   background: var(--bg, #1e1e1e);
   border: 1.5px solid transparent;
-  border-radius: 6px;
+  border-radius: 0;
   overflow: visible;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   display: flex;
@@ -97,7 +97,7 @@
   width: 10px;
   height: 10px;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 1.5;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -131,6 +131,11 @@
 /* Prevent inactive pane editors from receiving focus/input */
 .floating-pane:not(.active) .floating-pane-content {
   pointer-events: none;
+}
+
+/* Hide notebook toolbar/UI chrome in inactive panes (keep only the canvas) */
+.floating-pane:not(.active) .floating-pane-content > :not(canvas) {
+  visibility: hidden;
 }
 
 .floating-pane-content .cm-editor {
