@@ -43,12 +43,9 @@ const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><l
 export function initPaneManager(state) {
   appState = state;
   containerEl = document.getElementById("pane-container");
-  // Start autosave loop for pane editors
   autosaveTimer = setInterval(autosaveAllPanes, 2000);
-  // Sync pane themes when the main editor theme changes
   state.on("theme-changed", syncPaneThemes);
   state.on("style-changed", syncPaneThemes);
-  // Pre-cache notebook bridge for canvas sync
   getNotebookBridge().catch(() => {});
   // Deactivate panes when clicking anywhere outside a pane
   window.addEventListener("pointerdown", (e) => {
@@ -56,7 +53,48 @@ export function initPaneManager(state) {
     if (e.target instanceof Element && e.target.closest(".floating-pane")) return;
     saveAllPanes();
     deactivateAllPanes();
-  }, true); // capture phase so we run before CM can grab focus
+  }, true);
+  // Show/hide panes when the active document changes
+  state.on("file-opened", onContextChange);
+  state.on("notebook-open", onContextChange);
+  state.on("notebook-unmount", onContextChange);
+}
+
+/** Returns an opaque string identifying the current doc/notebook/project. */
+function getCurrentContext() {
+  if (appState.currentNotebookFileId) return "nb:" + appState.currentNotebookFileId;
+  if (appState.currentProjectId) return "pj:" + appState.currentProjectId;
+  if (appState.currentFileId) return "doc:" + appState.currentFileId;
+  return "";
+}
+
+/** Hide non-pinned panes that don't belong to the new context; show ones that do. */
+function onContextChange() {
+  const ctx = getCurrentContext();
+  for (const [, pane] of panes) {
+    if (pane.pinned) {
+      // Pinned panes stay visible in every context
+      pane.el.style.display = "";
+      continue;
+    }
+    if (pane.ownerContext === ctx) {
+      pane.el.style.display = "";
+      // Restart attach sync if needed (was stopped when hidden)
+      if (pane.attached && !pane._syncFrame && !pane._scrollHandler) {
+        if (appState.currentNotebookFileId) startCanvasSync(pane);
+        else startScrollSync(pane);
+      }
+    } else {
+      // Hide and deactivate
+      pane.el.style.display = "none";
+      if (pane.attached) stopAttachSync(pane);
+      if (activePaneId === pane.id) {
+        pane.el.classList.remove("active");
+        if (pane.editor) pane.editor.blur();
+        activePaneId = null;
+      }
+    }
+  }
 }
 
 export function destroyPaneManager() {
@@ -89,6 +127,8 @@ export async function createPane(fileId, fileName, fileType, x, y) {
     height: DEFAULT_HEIGHT,
     x: Math.max(0, x - DEFAULT_WIDTH / 2),
     y: Math.max(0, y - TITLEBAR_HEIGHT / 2),
+    // Owner context: which doc/notebook/project was active when pane was created
+    ownerContext: getCurrentContext(),
   };
 
   buildPaneDOM(pane);
@@ -148,14 +188,11 @@ export function deactivateAllPanes() {
   }
   activePaneId = null;
 }
-
 export function getActivePaneId() { return activePaneId; }
 export function hasPanes() { return panes.size > 0; }
-
 export function isPaneActive() { return activePaneId !== null; }
 
 // ── DOM construction ──────────────────────────────────────────────────
-
 function buildPaneDOM(pane) {
   const el = document.createElement("div");
   el.className = "floating-pane";
@@ -559,11 +596,9 @@ async function loadNotebookPane(pane) {
 }
 
 // ── Saving ────────────────────────────────────────────────────────────
-
 async function savePaneContent(pane) {
   if (!pane.dirty) return;
   pane.dirty = false;
-
   try {
     if (IS_TAURI) {
       let content = "";
@@ -586,17 +621,13 @@ function autosaveAllPanes() {
 }
 
 // ── Theme sync ────────────────────────────────────────────────────────
-
 function syncPaneThemes() {
   for (const [, pane] of panes) {
-    if (pane.editor && pane.editor.reconfigureTheme) {
-      pane.editor.reconfigureTheme(appState.settings);
-    }
+    if (pane.editor?.reconfigureTheme) pane.editor.reconfigureTheme(appState.settings);
   }
 }
 
 // ── Save all panes (called on focus switch to main editor) ────────────
-
 export function saveAllPanes() {
   for (const [, pane] of panes) {
     savePaneContent(pane);
@@ -604,13 +635,9 @@ export function saveAllPanes() {
 }
 
 // ── Content sync (pane ↔ main editor) ─────────────────────────────────
-
 function syncDocFromPane(pane) {
-  if (_syncing) return;
-  if (pane.fileType !== "document" || !pane.editor) return;
-  if (pane.fileId !== appState.currentFileId) return;
-  if (!appState.editor) return;
-
+  if (_syncing || pane.fileType !== "document" || !pane.editor) return;
+  if (pane.fileId !== appState.currentFileId || !appState.editor) return;
   _syncing = true;
   const content = pane.editor.getContent();
   const mainView = appState.editor.view;
@@ -626,10 +653,8 @@ function syncDocFromPane(pane) {
 }
 
 function syncDocToPane(pane) {
-  if (_syncing) return;
-  if (pane.fileType !== "document" || !pane.editor) return;
+  if (_syncing || pane.fileType !== "document" || !pane.editor) return;
   if (pane.fileId !== appState.currentFileId) return;
-
   _syncing = true;
   const content = appState.editor.getContent();
   const paneView = pane.editor.view;
@@ -644,10 +669,8 @@ function syncDocToPane(pane) {
 }
 
 function syncNotebookFromPane(pane) {
-  if (_syncing) return;
-  if (pane.fileType !== "notebook" || !pane.notebook) return;
-  if (pane.fileId !== appState.currentNotebookFileId) return;
-  if (!_notebookBridge) return;
+  if (_syncing || pane.fileType !== "notebook" || !pane.notebook) return;
+  if (pane.fileId !== appState.currentNotebookFileId || !_notebookBridge) return;
   const mainCanvas = _notebookBridge.getCanvasInstance();
   if (!mainCanvas) return;
 
@@ -660,10 +683,8 @@ function syncNotebookFromPane(pane) {
 }
 
 function syncNotebookToPane(pane) {
-  if (_syncing) return;
-  if (pane.fileType !== "notebook" || !pane.notebook) return;
-  if (pane.fileId !== appState.currentNotebookFileId) return;
-  if (!_notebookBridge) return;
+  if (_syncing || pane.fileType !== "notebook" || !pane.notebook) return;
+  if (pane.fileId !== appState.currentNotebookFileId || !_notebookBridge) return;
   const mainCanvas = _notebookBridge.getCanvasInstance();
   if (!mainCanvas) return;
 
