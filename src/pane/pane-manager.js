@@ -285,7 +285,12 @@ function setupPaneDrag(pane) {
     startY = e.clientY;
     startLeft = pane.el.offsetLeft;
     startTop = pane.el.offsetTop;
-    const isDuplicateDrag = e.altKey;
+    // Option+drag: immediately spawn a duplicate at the source position
+    if (e.altKey) {
+      createPane(pane.fileId, pane.fileName, pane.fileType,
+        startLeft + pane.width / 2, startTop + TITLEBAR_HEIGHT / 2,
+        { allowDuplicate: true, ownerContext: getCurrentContext() });
+    }
     // Snapshot canvas coords for attached panes (notebook mode)
     if (pane.attached && appState.currentNotebookFileId) {
       startCanvasX = pane._canvasX;
@@ -321,19 +326,6 @@ function setupPaneDrag(pane) {
     const onUp = () => {
       pane._titlebar.removeEventListener("pointermove", onMove);
       pane._titlebar.removeEventListener("pointerup", onUp);
-      if (isDuplicateDrag) {
-        // Capture end position, restore original, spawn duplicate at end
-        const endX = pane.x, endY = pane.y;
-        pane.x = startLeft; pane.y = startTop;
-        pane.el.style.left = startLeft + "px";
-        pane.el.style.top = startTop + "px";
-        if (pane.attached && appState.currentNotebookFileId) {
-          pane._canvasX = startCanvasX; pane._canvasY = startCanvasY;
-        }
-        createPane(pane.fileId, pane.fileName, pane.fileType,
-          endX + pane.width / 2, endY + TITLEBAR_HEIGHT / 2,
-          { allowDuplicate: true, ownerContext: getCurrentContext() });
-      }
     };
 
     pane._titlebar.addEventListener("pointermove", onMove);

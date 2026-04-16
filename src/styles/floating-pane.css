@@ -35,7 +35,9 @@
 
 .floating-pane-titlebar {
   height: 15px;
+  min-height: 15px;
   padding: 10px 12px;
+  box-sizing: content-box;
   background: transparent;
   cursor: grab;
   display: flex;
