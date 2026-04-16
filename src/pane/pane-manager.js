@@ -146,7 +146,7 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   pane.el.style.zIndex = ++zCounter;
   panes.set(id, pane);
   await loadPaneContent(pane);
-  focusPane(id);
+  if (!opts.skipFocus) focusPane(id);
   notifyLayoutChange();
 }
 
@@ -260,11 +260,7 @@ function buildPaneDOM(pane) {
   setupPaneDrag(pane);
   setupPaneResize(pane);
   titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane); });
-  el.addEventListener("pointerdown", (e) => {
-    // Option+titlebar click spawns a duplicate; focus goes to the new pane, not this one
-    if (e.altKey && e.target.closest(".floating-pane-titlebar") && !e.target.closest(".floating-pane-btn, .fp-title-link")) return;
-    focusPane(pane.id);
-  });
+  el.addEventListener("pointerdown", () => focusPane(pane.id));
 }
 
 function makeBtn(name, svg, ariaLabel) {
@@ -289,11 +285,14 @@ function setupPaneDrag(pane) {
     startY = e.clientY;
     startLeft = pane.el.offsetLeft;
     startTop = pane.el.offsetTop;
-    // Option+drag: immediately spawn a duplicate at the source position
+    // Option+drag: spawn a static duplicate at the source position; the
+    // pane being dragged stays on top (skipFocus keeps the duplicate from
+    // stealing z-index when its async load finishes).
     if (e.altKey) {
       createPane(pane.fileId, pane.fileName, pane.fileType,
         startLeft + pane.width / 2, startTop + TITLEBAR_HEIGHT / 2,
-        { allowDuplicate: true, ownerContext: getCurrentContext() });
+        { allowDuplicate: true, ownerContext: getCurrentContext(), skipFocus: true });
+      pane.el.style.zIndex = ++zCounter;
     }
     // Snapshot canvas coords for attached panes (notebook mode)
     if (pane.attached && appState.currentNotebookFileId) {
