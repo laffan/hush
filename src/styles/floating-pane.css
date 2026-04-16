@@ -34,13 +34,12 @@
 /* ── Title bar ────────────────────────────────────────────────────── */
 
 .floating-pane-titlebar {
-  height: 30px;
-  min-height: 30px;
+  height: 15px;
+  padding: 10px 12px;
   background: transparent;
   cursor: grab;
   display: flex;
   align-items: center;
-  padding: 0 6px;
   user-select: none;
   flex-shrink: 0;
   gap: 4px;
@@ -58,7 +57,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 30px;
+  line-height: 15px;
 }
 
 .fp-title-link {
@@ -80,8 +79,8 @@
 }
 
 .floating-pane-btn {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   background: none;
   border: none;
   cursor: pointer;
@@ -164,7 +163,7 @@
 /* ── Collapsed state ──────────────────────────────────────────────── */
 
 .floating-pane.collapsed {
-  min-height: 30px;
+  min-height: 35px;
 }
 
 .floating-pane.collapsed .floating-pane-content {

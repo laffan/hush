@@ -27,15 +27,12 @@ const DEFAULT_WIDTH = 420;
 const DEFAULT_HEIGHT = 340;
 const MIN_WIDTH = 240;
 const MIN_HEIGHT = 60;
-const TITLEBAR_HEIGHT = 30;
+const TITLEBAR_HEIGHT = 35;
 
 // ── SVG icons ─────────────────────────────────────────────────────────
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
-const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5"/></svg>`;
-const ICON_EXPAND = `<svg viewBox="0 0 10 10"><rect x="2" y="2" width="6" height="6" rx="0.5"/></svg>`;
 const ICON_ATTACH = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><line x1="5" y1="5.5" x2="5" y2="9"/></svg>`;
 const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
-const ICON_DUPLICATE = `<svg viewBox="0 0 10 10"><rect x="1" y="2.5" width="5.5" height="6" rx="0.7"/><rect x="3.5" y="1" width="5.5" height="6" rx="0.7"/></svg>`;
 
 // ── Public API ────────────────────────────────────────────────────────
 
@@ -236,12 +233,6 @@ function buildPaneDOM(pane) {
   const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
   pinBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePinned(pane); });
   buttons.appendChild(pinBtn);
-  const dupBtn = makeBtn("duplicate", ICON_DUPLICATE, "Duplicate pane");
-  dupBtn.addEventListener("click", (e) => { e.stopPropagation(); duplicatePane(pane); });
-  buttons.appendChild(dupBtn);
-  const collapseBtn = makeBtn("collapse", ICON_COLLAPSE, "Collapse");
-  collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(pane, collapseBtn); });
-  buttons.appendChild(collapseBtn);
   const closeBtn = makeBtn("close", ICON_CLOSE, "Close");
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); closePane(pane.id); });
   buttons.appendChild(closeBtn);
@@ -265,11 +256,10 @@ function buildPaneDOM(pane) {
   pane.el = el;
   pane._content = content;
   pane._titlebar = titlebar;
-  pane._collapseBtn = collapseBtn;
   // Event wiring
   setupPaneDrag(pane);
   setupPaneResize(pane);
-  titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane, collapseBtn); });
+  titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane); });
   el.addEventListener("pointerdown", () => focusPane(pane.id));
 }
 
@@ -295,6 +285,7 @@ function setupPaneDrag(pane) {
     startY = e.clientY;
     startLeft = pane.el.offsetLeft;
     startTop = pane.el.offsetTop;
+    const isDuplicateDrag = e.altKey;
     // Snapshot canvas coords for attached panes (notebook mode)
     if (pane.attached && appState.currentNotebookFileId) {
       startCanvasX = pane._canvasX;
@@ -330,6 +321,19 @@ function setupPaneDrag(pane) {
     const onUp = () => {
       pane._titlebar.removeEventListener("pointermove", onMove);
       pane._titlebar.removeEventListener("pointerup", onUp);
+      if (isDuplicateDrag) {
+        // Capture end position, restore original, spawn duplicate at end
+        const endX = pane.x, endY = pane.y;
+        pane.x = startLeft; pane.y = startTop;
+        pane.el.style.left = startLeft + "px";
+        pane.el.style.top = startTop + "px";
+        if (pane.attached && appState.currentNotebookFileId) {
+          pane._canvasX = startCanvasX; pane._canvasY = startCanvasY;
+        }
+        createPane(pane.fileId, pane.fileName, pane.fileType,
+          endX + pane.width / 2, endY + TITLEBAR_HEIGHT / 2,
+          { allowDuplicate: true, ownerContext: getCurrentContext() });
+      }
     };
 
     pane._titlebar.addEventListener("pointermove", onMove);
@@ -372,20 +376,16 @@ function setupPaneResize(pane) {
 }
 // ── Collapse / Expand ─────────────────────────────────────────────────
 
-function toggleCollapse(pane, btn) {
+function toggleCollapse(pane) {
   pane.collapsed = !pane.collapsed;
   if (pane.collapsed) {
     pane._savedHeight = pane.height;
     pane.el.classList.add("collapsed");
     pane.el.style.height = TITLEBAR_HEIGHT + "px";
-    btn.innerHTML = ICON_EXPAND;
-    btn.title = "Expand";
   } else {
     pane.el.classList.remove("collapsed");
     pane.height = pane._savedHeight || DEFAULT_HEIGHT;
     pane.el.style.height = pane.height + "px";
-    btn.innerHTML = ICON_COLLAPSE;
-    btn.title = "Collapse";
   }
 }
 
@@ -438,11 +438,6 @@ function setPinned(pane, value) {
   pane.el.classList.toggle("pinned", pane.pinned);
   // When unpinning, pane returns to its original context — hide if not current
   if (!value) onContextChange();
-}
-
-function duplicatePane(s) {
-  createPane(s.fileId, s.fileName, s.fileType, s.x + s.width / 2 + 30, s.y + TITLEBAR_HEIGHT / 2 + 30,
-    { allowDuplicate: true, ownerContext: getCurrentContext() });
 }
 
 // Cache the notebook bridge module to avoid async calls in animation loops
