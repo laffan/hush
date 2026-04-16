@@ -1,12 +1,8 @@
 /**
- * Floating pane manager — creates, tracks, and controls draggable panes
- * that appear when files are dragged from the sidebar into the editor
- * or notebook area.
- *
- * Each pane is a resizable, draggable window-within-a-window that holds
- * either a CodeMirror editor (for documents) or a NotesCanvas (for
- * notebooks).  Panes support collapse, close, focus management, and
- * in notebook mode a "pin" action that anchors the pane to the canvas.
+ * Floating pane manager — draggable reference panes over the editor/canvas.
+ * Attach: anchors to canvas (notebooks) or scroll (docs).
+ * Pin: persists across document switches (blue header).
+ * Attach and pin are mutually exclusive.
  */
 
 import { createPaneEditor } from "./pane-editor.js";
@@ -31,13 +27,16 @@ const DEFAULT_WIDTH = 420;
 const DEFAULT_HEIGHT = 340;
 const MIN_WIDTH = 240;
 const MIN_HEIGHT = 60;
-const TITLEBAR_HEIGHT = 20;
+const TITLEBAR_HEIGHT = 30;
 
 // ── SVG icons ─────────────────────────────────────────────────────────
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
 const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5"/></svg>`;
 const ICON_EXPAND = `<svg viewBox="0 0 10 10"><rect x="2" y="2" width="6" height="6" rx="0.5"/></svg>`;
-const ICON_PIN = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><line x1="5" y1="5.5" x2="5" y2="9"/></svg>`;
+// Attach: anchor to canvas (notebooks) or scroll (docs)
+const ICON_ATTACH = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><line x1="5" y1="5.5" x2="5" y2="9"/></svg>`;
+// Pin: persist across documents (global pane)
+const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
 
 // ── Public API ────────────────────────────────────────────────────────
 
@@ -51,6 +50,13 @@ export function initPaneManager(state) {
   state.on("style-changed", syncPaneThemes);
   // Pre-cache notebook bridge for canvas sync
   getNotebookBridge().catch(() => {});
+  // Deactivate panes when clicking anywhere outside a pane
+  window.addEventListener("pointerdown", (e) => {
+    if (!activePaneId) return;
+    if (e.target instanceof Element && e.target.closest(".floating-pane")) return;
+    saveAllPanes();
+    deactivateAllPanes();
+  }, true); // capture phase so we run before CM can grab focus
 }
 
 export function destroyPaneManager() {
@@ -60,14 +66,6 @@ export function destroyPaneManager() {
   activePaneId = null;
 }
 
-/**
- * Create a new floating pane for the given file.
- * @param {string} fileId   Backing file UUID
- * @param {string} fileName Display name
- * @param {string} fileType "document" or "notebook"
- * @param {number} x        Initial screen X
- * @param {number} y        Initial screen Y
- */
 export async function createPane(fileId, fileName, fileType, x, y) {
   // Don't open duplicate panes for the same file
   for (const [, p] of panes) {
@@ -81,7 +79,8 @@ export async function createPane(fileId, fileName, fileType, x, y) {
     fileName,
     fileType,
     collapsed: false,
-    pinned: false,
+    attached: false,  // anchored to canvas (notebook) or scroll (doc)
+    pinned: false,    // persists across document switches (blue header)
     dirty: false,
     editor: null,       // CodeMirror wrapper (docs)
     notebook: null,     // NotesCanvas instance (notebooks)
@@ -108,8 +107,8 @@ export function closePane(id) {
   // Remove sync listeners
   if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
-  // Stop canvas sync
-  if (pane.pinned) stopCanvasSync(pane);
+  // Stop attach sync
+  if (pane.attached) stopAttachSync(pane);
   // Destroy editor/notebook
   if (pane.editor) pane.editor.destroy();
   if (pane.notebook) pane.notebook.destroy();
@@ -153,10 +152,6 @@ export function deactivateAllPanes() {
 export function getActivePaneId() { return activePaneId; }
 export function hasPanes() { return panes.size > 0; }
 
-/**
- * If a pane is active its editor should receive keyboard events.
- * Returns true if the active pane consumed the event.
- */
 export function isPaneActive() { return activePaneId !== null; }
 
 // ── DOM construction ──────────────────────────────────────────────────
@@ -181,12 +176,16 @@ function buildPaneDOM(pane) {
   const buttons = document.createElement("span");
   buttons.className = "floating-pane-buttons";
 
-  // Notebook-only pin button
-  if (appState.currentNotebookFileId) {
-    const pinBtn = makeBtn("pin", ICON_PIN, "Pin to canvas");
-    pinBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePin(pane); });
-    buttons.appendChild(pinBtn);
-  }
+  // Attach button: anchor to canvas (notebook) or scroll (doc)
+  const attachLabel = appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
+  const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
+  attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
+  buttons.appendChild(attachBtn);
+
+  // Pin button: persist across document switches
+  const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
+  pinBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePinned(pane); });
+  buttons.appendChild(pinBtn);
 
   const collapseBtn = makeBtn("collapse", ICON_COLLAPSE, "Collapse");
   collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(pane, collapseBtn); });
@@ -247,8 +246,8 @@ function setupPaneDrag(pane) {
     startY = e.clientY;
     startLeft = pane.el.offsetLeft;
     startTop = pane.el.offsetTop;
-    // Snapshot canvas coords for pinned panes
-    if (pane.pinned) {
+    // Snapshot canvas coords for attached panes (notebook mode)
+    if (pane.attached && appState.currentNotebookFileId) {
       startCanvasX = pane._canvasX;
       startCanvasY = pane._canvasY;
     }
@@ -257,13 +256,19 @@ function setupPaneDrag(pane) {
     const onMove = (me) => {
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
-      if (pane.pinned) {
+      if (pane.attached && appState.currentNotebookFileId) {
         // Convert screen delta to canvas delta (account for zoom)
         const canvas = _notebookBridge?.getCanvasInstance();
         const zoom = canvas ? canvas.state.camera.zoom : 1;
         pane._canvasX = startCanvasX + dx / zoom;
         pane._canvasY = startCanvasY + dy / zoom;
         // Screen position updates via the canvas sync loop
+      } else if (pane.attached && !appState.currentNotebookFileId) {
+        // Doc-attached: update scroll-relative position
+        pane._scrollRelY = (startTop + dy) + (appState.editor?.view.scrollDOM.scrollTop || 0);
+        pane.x = startLeft + dx;
+        pane.el.style.left = pane.x + "px";
+        // Y is set by scroll sync loop
       } else {
         pane.x = startLeft + dx;
         pane.y = startTop + dy;
@@ -349,27 +354,55 @@ function toggleCollapse(pane, btn) {
   }
 }
 
-// ── Pin (notebook only) ───────────────────────────────────────────────
+// ── Attach (anchor to canvas or document scroll) ─────────────────────
 
-async function togglePin(pane) {
-  // Ensure notebook bridge is cached before pin operations
-  await getNotebookBridge();
+async function toggleAttach(pane) {
+  if (pane.pinned) {
+    if (!confirm("This pane is pinned globally. Attaching will remove the pin. Continue?")) return;
+    setPinned(pane, false);
+  }
 
-  pane.pinned = !pane.pinned;
+  pane.attached = !pane.attached;
+  const btn = pane.el.querySelector(".fp-btn-attach");
+  if (btn) btn.classList.toggle("attach-active", pane.attached);
+
+  if (pane.attached) {
+    if (appState.currentNotebookFileId) {
+      // Notebook: attach to canvas coordinates
+      await getNotebookBridge();
+      const canvasPos = screenToCanvas(pane.x, pane.y);
+      if (canvasPos) { pane._canvasX = canvasPos.x; pane._canvasY = canvasPos.y; }
+      startCanvasSync(pane);
+    } else {
+      // Doc: attach to scroll position
+      const scrollTop = appState.editor?.view.scrollDOM.scrollTop || 0;
+      pane._scrollRelY = pane.y + scrollTop;
+      startScrollSync(pane);
+    }
+  } else {
+    stopAttachSync(pane);
+  }
+}
+
+// ── Pin (global / cross-document persistence, blue header) ────────────
+
+function togglePinned(pane) {
+  if (pane.attached) {
+    if (!confirm("This pane is attached. Pinning will remove the attachment. Continue?")) return;
+    pane.attached = false;
+    stopAttachSync(pane);
+    const aBtn = pane.el.querySelector(".fp-btn-attach");
+    if (aBtn) aBtn.classList.remove("attach-active");
+  }
+
+  setPinned(pane, !pane.pinned);
+}
+
+function setPinned(pane, value) {
+  pane.pinned = value;
   const btn = pane.el.querySelector(".fp-btn-pin");
   if (btn) btn.classList.toggle("pin-active", pane.pinned);
-
-  if (pane.pinned) {
-    // Convert screen position to canvas coordinates
-    const canvasPos = screenToCanvas(pane.x, pane.y);
-    if (canvasPos) {
-      pane._canvasX = canvasPos.x;
-      pane._canvasY = canvasPos.y;
-    }
-    startCanvasSync(pane);
-  } else {
-    stopCanvasSync(pane);
-  }
+  pane.el.classList.toggle("pinned", pane.pinned);
 }
 
 // Cache the notebook bridge module to avoid async calls in animation loops
@@ -382,10 +415,6 @@ async function getNotebookBridge() {
   return _notebookBridge;
 }
 
-/**
- * Convert screen coords to notebook canvas world coords.
- * Uses the active NotesCanvas camera (pan + zoom).
- */
 function screenToCanvas(screenX, screenY) {
   if (!_notebookBridge) return null;
   const canvas = _notebookBridge.getCanvasInstance();
@@ -410,7 +439,7 @@ function canvasToScreen(canvasX, canvasY) {
 
 function startCanvasSync(pane) {
   function tick() {
-    if (!pane.pinned || !panes.has(pane.id)) return;
+    if (!pane.attached || !panes.has(pane.id)) return;
     const pos = canvasToScreen(pane._canvasX, pane._canvasY);
     if (pos) {
       pane.x = pos.x;
@@ -423,10 +452,29 @@ function startCanvasSync(pane) {
   tick();
 }
 
-function stopCanvasSync(pane) {
+function startScrollSync(pane) {
+  const scrollDOM = appState.editor?.view.scrollDOM;
+  if (!scrollDOM) return;
+  pane._scrollHandler = () => {
+    if (!pane.attached || !panes.has(pane.id)) return;
+    const scrollTop = scrollDOM.scrollTop;
+    pane.y = pane._scrollRelY - scrollTop;
+    pane.el.style.top = pane.y + "px";
+  };
+  scrollDOM.addEventListener("scroll", pane._scrollHandler);
+}
+
+function stopAttachSync(pane) {
+  // Stop canvas sync (notebook)
   if (pane._syncFrame) {
     cancelAnimationFrame(pane._syncFrame);
     pane._syncFrame = null;
+  }
+  // Stop scroll sync (doc)
+  if (pane._scrollHandler) {
+    const scrollDOM = appState.editor?.view.scrollDOM;
+    if (scrollDOM) scrollDOM.removeEventListener("scroll", pane._scrollHandler);
+    pane._scrollHandler = null;
   }
 }
 
@@ -557,10 +605,6 @@ export function saveAllPanes() {
 
 // ── Content sync (pane ↔ main editor) ─────────────────────────────────
 
-/**
- * Push document content from a pane to the main editor if the same file
- * is open.  Called on every doc change in the pane.
- */
 function syncDocFromPane(pane) {
   if (_syncing) return;
   if (pane.fileType !== "document" || !pane.editor) return;
@@ -581,10 +625,6 @@ function syncDocFromPane(pane) {
   _syncing = false;
 }
 
-/**
- * Push document content from the main editor to a pane if matching.
- * Called via the "doc-content-changed" event emitted from main.js.
- */
 function syncDocToPane(pane) {
   if (_syncing) return;
   if (pane.fileType !== "document" || !pane.editor) return;
@@ -603,9 +643,6 @@ function syncDocToPane(pane) {
   _syncing = false;
 }
 
-/**
- * Push shapes from a pane notebook to the main canvas if same file is open.
- */
 function syncNotebookFromPane(pane) {
   if (_syncing) return;
   if (pane.fileType !== "notebook" || !pane.notebook) return;
@@ -622,10 +659,6 @@ function syncNotebookFromPane(pane) {
   queueMicrotask(() => queueMicrotask(() => { _syncing = false; }));
 }
 
-/**
- * Push shapes from the main canvas to a matching pane notebook.
- * Called via the "notebook-shapes-changed" event.
- */
 function syncNotebookToPane(pane) {
   if (_syncing) return;
   if (pane.fileType !== "notebook" || !pane.notebook) return;

@@ -35,8 +35,8 @@
 /* ── Title bar (20px drag handle) ─────────────────────────────────── */
 
 .floating-pane-titlebar {
-  height: 20px;
-  min-height: 20px;
+  height: 30px;
+  min-height: 30px;
   background: rgba(128, 128, 128, 0.12);
   cursor: grab;
   display: flex;
@@ -60,7 +60,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 20px;
+  line-height: 30px;
 }
 
 /* ── Titlebar buttons ─────────────────────────────────────────────── */
@@ -103,9 +103,21 @@
   stroke-linejoin: round;
 }
 
-.floating-pane-btn.pin-active {
+.floating-pane-btn.attach-active {
   opacity: 0.85;
   color: var(--cursor, #ffd700);
+}
+
+.floating-pane-btn.pin-active {
+  opacity: 0.85;
+  color: #4a9eff;
+}
+
+/* ── Pinned pane (global / cross-document) — blue header ──────────── */
+
+.floating-pane.pinned .floating-pane-titlebar {
+  background: rgba(74, 158, 255, 0.25);
+  border-bottom-color: rgba(74, 158, 255, 0.2);
 }
 
 /* ── Content area ─────────────────────────────────────────────────── */
@@ -139,7 +151,7 @@
 /* ── Collapsed state ──────────────────────────────────────────────── */
 
 .floating-pane.collapsed {
-  min-height: 20px;
+  min-height: 30px;
 }
 
 .floating-pane.collapsed .floating-pane-content {

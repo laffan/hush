@@ -10,7 +10,8 @@
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 1;
+  /* No z-index — avoids creating a stacking context so the shelf
+     panel (z-index: 150) can render above floating panes (z-index: 90). */
 }
 
 #notebook-container.hidden {

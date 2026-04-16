@@ -11,7 +11,7 @@ import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
-import { initPaneManager, deactivateAllPanes, isPaneActive, saveAllPanes } from "./pane/pane-manager.js";
+import { initPaneManager, isPaneActive } from "./pane/pane-manager.js";
 
 // Bundled Google Fonts (offline use) — imported from JS so Vite resolves npm packages
 import "@fontsource/eb-garamond/400.css";
@@ -342,22 +342,8 @@ async function init() {
   createSidebar(sidebar, state);
   setupFileDrop(state);
 
-  // Initialize floating pane system
+  // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
-
-  // Focus management: clicking the main editor or notebook deactivates panes
-  editorContainer.addEventListener("pointerdown", () => {
-    if (isPaneActive()) {
-      saveAllPanes();
-      deactivateAllPanes();
-    }
-  });
-  notebookContainer.addEventListener("pointerdown", () => {
-    if (isPaneActive()) {
-      saveAllPanes();
-      deactivateAllPanes();
-    }
-  });
 
   // Sync notebook left inset when sidebar/panel visibility changes
   function syncNotebookInset() {
