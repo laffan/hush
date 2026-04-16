@@ -46,7 +46,14 @@ export async function saveProjectContent(state) {
         state.syncFileToExternal(fid, content);
       } catch (e) { /* skip */ }
     }
-    else { const f = state.files.find(f => f.id === fid); if (f) { f.content = content; f.modified = Math.floor(Date.now()/1000); f.name = state._deriveName(f.content); } }
+    else {
+      const f = state.files.find(f => f.id === fid);
+      if (f) {
+        f.content = content;
+        f.modified = Math.floor(Date.now()/1000);
+        if (!f.name || f.name === "Untitled") f.name = state._deriveName(f.content);
+      }
+    }
   }
   state.dirty = false;
   if (IS_TAURI) state.files = await tauriInvoke("list_files");

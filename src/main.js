@@ -370,6 +370,17 @@ async function init() {
       panelOverlay.classList.remove("panel-inset");
       panelOverlay.classList.add("panel-overlay-mode");
     }
+    // Above 600px, sidebar is always visible (no auto-hide, no pinning)
+    if (w > 600) {
+      document.body.classList.add("wide-viewport");
+      sidebar.classList.add("visible");
+    } else {
+      document.body.classList.remove("wide-viewport");
+      // Re-engage auto-hide by clearing the forced-visible class unless a panel is open
+      if (panelOverlay.classList.contains("hidden")) {
+        sidebar.classList.remove("visible");
+      }
+    }
   }
   updatePanelMode();
   window.addEventListener("resize", updatePanelMode);
@@ -389,8 +400,9 @@ async function init() {
     sidebarTrigger.style.pointerEvents = "none";
   });
   function checkSidebarLeave(e) {
+    // Above 600px, sidebar is always visible — no auto-hide
+    if (window.innerWidth > 600) return;
     if (sidebar.classList.contains("pinned")) return;
-    if (panelOverlay.classList.contains("panel-pinned") && panelOverlay.classList.contains("panel-inset")) return;
     const x = e.clientX;
     // Still inside sidebar zone
     if (x <= 50) return;
@@ -662,11 +674,16 @@ async function init() {
   state.on("style-changed", syncNotebookIfActive);
   state.on("theme-changed", syncNotebookIfActive);
 
-  // System appearance changes
+  // System appearance changes — when set to "auto", re-apply appearance AND
+  // the active style so its light/dark palette follows the system switch.
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if (state.settings.appearance === "auto") {
       applyAppearance("auto");
+      if (state.settings.activeStyleId) {
+        applyActiveStyle(state);
+      }
       updatePrivateBoxColor(state);
+      state.emit("theme-changed");
       syncNotebookIfActive();
     }
   });

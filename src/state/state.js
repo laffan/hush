@@ -454,7 +454,14 @@ export class AppState {
       } catch (e) { console.error("Save failed:", e); }
     } else {
       const file = this.files.find((f) => f.id === this.currentFileId);
-      if (file) { file.content = content; file.modified = Math.floor(Date.now() / 1000); file.name = this._deriveName(content); this._saveFilesLocal(); }
+      if (file) {
+        file.content = content;
+        file.modified = Math.floor(Date.now() / 1000);
+        // Only auto-derive the name while it's still "Untitled" — after that
+        // the name is stable so sync paths don't churn.
+        if (!file.name || file.name === "Untitled") file.name = this._deriveName(content);
+        this._saveFilesLocal();
+      }
     }
     if (this._updateTreeNodeNameByFileId(this.currentFileId)) {
       this.emit("files-changed");

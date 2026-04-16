@@ -284,7 +284,7 @@ export function bindStylesPanel(state, panel) {
 // ── two-column editor modal ────────────────────────────────────────────────────
 const lightThemes = themeList.filter(t => t.type === "light");
 const darkThemes = themeList.filter(t => t.type === "dark");
-const builtInFonts = ["Source Sans Pro", "Source Serif Pro", "Libre Franklin", "Libre Baskerville", "Karla", "Lora", "EB Garamond", "Inter", "Fira Code"];
+const builtInFonts = ["Source Sans Pro", "Source Serif Pro", "Libre Franklin", "Libre Baskerville", "Karla", "Lora", "EB Garamond", "Inter", "Fira Code", "iA Writer Duo", "iA Writer Mono", "iA Writer Quattro"];
 const systemFonts = [
   "Arial", "Avenir", "Avenir Next", "Baskerville", "Courier New",
   "Futura", "Garamond", "Georgia", "Gill Sans", "Helvetica",
@@ -310,6 +310,9 @@ function fontFallback(family) {
     "Libre Baskerville": "'Libre Baskerville', 'Georgia', 'Times New Roman', serif",
     "Karla": "'Karla', 'Helvetica Neue', 'Arial', sans-serif",
     "Lora": "'Lora', 'Georgia', 'Times New Roman', serif",
+    "iA Writer Duo": "'iA Writer Duo', 'Menlo', 'Consolas', monospace",
+    "iA Writer Mono": "'iA Writer Mono', 'Menlo', 'Consolas', monospace",
+    "iA Writer Quattro": "'iA Writer Quattro', 'Helvetica Neue', 'Arial', sans-serif",
   };
   return map[family] || `'${family}', system-ui, sans-serif`;
 }

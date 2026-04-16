@@ -96,10 +96,10 @@ export function createFilesPanel(container, state, hidePanel) {
   const btnRow = document.createElement("div");
   btnRow.className = "tree-create-btns";
   btnRow.innerHTML = `
-    <button id="tree-new-doc" title="New Document">${typeIcons.document} Doc</button>
-    <button id="tree-new-notebook" title="New Notebook">${typeIcons.notebook} Notebook</button>
-    <button id="tree-new-folder" title="New Folder">${typeIcons.folder} Folder</button>
-    <button id="tree-new-project" title="New Project">${typeIcons.project} Project</button>
+    <button id="tree-new-doc" title="New Document">${typeIcons.document}</button>
+    <button id="tree-new-notebook" title="New Notebook">${typeIcons.notebook}</button>
+    <button id="tree-new-folder" title="New Folder">${typeIcons.folder}</button>
+    <button id="tree-new-project" title="New Project">${typeIcons.project}</button>
   `;
   container.appendChild(btnRow);
 

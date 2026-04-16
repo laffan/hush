@@ -23,6 +23,20 @@
   pointer-events: auto;
 }
 
+/* Wide viewports (>600px): sidebar is always visible, no auto-hide, no pinning */
+body.wide-viewport #sidebar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+body.wide-viewport .sidebar-trigger {
+  display: none;
+}
+
+body.wide-viewport .panel-pin-btn {
+  display: none !important;
+}
+
 .sidebar-group {
   display: flex;
   flex-direction: column;

@@ -104,7 +104,7 @@ Both are built by Vite as separate Rollup inputs.
 
 Google Fonts are bundled locally via `@fontsource` npm packages. Font CSS is imported from `main.js` (JS imports, not CSS `@import`) so Vite resolves npm paths correctly.
 
-**Built-in fonts:** Source Sans Pro (default), Source Serif Pro, Libre Franklin, Libre Baskerville, Karla, Lora, EB Garamond, Inter, Fira Code, Helvetica (system).
+**Built-in fonts:** Source Sans Pro (default), Source Serif Pro, Libre Franklin, Libre Baskerville, Karla, Lora, EB Garamond, Inter, Fira Code, iA Writer Duo, iA Writer Mono, iA Writer Quattro, Helvetica (system). The iA Writer families are bundled from `src/assets/fonts/ia-writer-*` and registered via `src/styles/ia-writer-fonts.css`.
 
 ### State Management (`state/state.js`)
 
@@ -157,7 +157,7 @@ When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Tur
 
 ### Sidebar (`sidebar/sidebar.js`)
 
-Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity 0, pointer-events none), revealed by a JS hover trigger. Can be pinned open.
+Fixed 50px column on the left edge with icon buttons. On viewports wider than 600px the sidebar is always visible and there is no panel pin concept — panels are simply open or closed. On narrower viewports the sidebar is hidden by default (opacity 0, pointer-events none) and revealed by a JS hover trigger, and the inset panel can be pinned open.
 
 **Buttons:** Files panel, Styles panel, Versions, Export, Settings (iOS only). Mode toggles (ratchet, private, typewriter, D.R.Y., focus, zotero) are accessed via the command palette (`Cmd+P`).
 
@@ -172,7 +172,7 @@ Nested tree view with four node types:
 - **Folders** — Containers for organizing. Drag-and-drop reordering.
 - **Projects** — Ordered containers whose children display as a single document with separators.
 
-Four "New" buttons (Doc, Notebook, Folder, Project) at the top. All types share a hover menu (rename, duplicate, delete). Active item shown bold and underlined. Rendered via the `SortableList` component.
+Four icon-only "New" buttons (Doc, Notebook, Folder, Project) at the top; the button type is surfaced via tooltip. All types share a hover menu (rename, duplicate, delete). Active item shown bold and underlined. Rendered via the `SortableList` component.
 
 ### Sortable List (`sidebar/sortable-list/`)
 

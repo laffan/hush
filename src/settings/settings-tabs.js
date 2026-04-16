@@ -302,6 +302,9 @@ function renderFontOptions(currentFamily) {
     { name: "EB Garamond", family: "EB Garamond" },
     { name: "Inter", family: "Inter" },
     { name: "Fira Code", family: "Fira Code" },
+    { name: "iA Writer Duo", family: "iA Writer Duo" },
+    { name: "iA Writer Mono", family: "iA Writer Mono" },
+    { name: "iA Writer Quattro", family: "iA Writer Quattro" },
   ];
 
   const systemFonts = getSystemFonts();

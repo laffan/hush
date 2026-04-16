@@ -160,7 +160,17 @@ impl FileManager {
     pub fn save_file(&self, id: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.files_dir.join(format!("{}.json", id));
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        let name = derive_name(content);
+        // Preserve existing name once set. Auto-derive only while the file
+        // is still "Untitled" so the initial save gives it a sensible name
+        // but subsequent edits don't rename (and churn sync paths).
+        let existing_name = fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<FileEntry>(&s).ok())
+            .map(|e| e.name);
+        let name = match existing_name {
+            Some(n) if n != "Untitled" => n,
+            _ => derive_name(content),
+        };
         let entry = FileEntry {
             id: id.to_string(),
             name,

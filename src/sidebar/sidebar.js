@@ -34,7 +34,12 @@ export function createSidebar(container, state) {
   let activePanel = null;
   let panelPinned = false;
 
-  // Pin toggle button — fixed position, shown when hovering panel zone in inset mode
+  function isWideViewport() {
+    return window.innerWidth > 600;
+  }
+
+  // Pin toggle button — fixed position, shown when hovering panel zone in inset mode.
+  // Hidden entirely on wide viewports (>600px), where the sidebar is always open.
   const pinBtn = document.createElement("button");
   pinBtn.className = "panel-pin-btn";
   pinBtn.innerHTML = `<svg viewBox="0 0 15 15" width="15" height="15"><circle cx="7.5" cy="7.5" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
@@ -42,6 +47,10 @@ export function createSidebar(container, state) {
   document.body.appendChild(pinBtn);
 
   function updatePinBtnVisibility() {
+    if (isWideViewport()) {
+      pinBtn.classList.remove("pin-visible", "pin-active");
+      return;
+    }
     const isInset = panelOverlay.classList.contains("panel-inset");
     const isOpen = !panelOverlay.classList.contains("hidden");
     if (panelPinned && isInset && isOpen) {
@@ -53,6 +62,10 @@ export function createSidebar(container, state) {
 
   // Show pin button when mouse is in the panel-overlay zone (x: 50-350) and panel is open in inset mode
   document.addEventListener("mousemove", (e) => {
+    if (isWideViewport()) {
+      pinBtn.classList.remove("pin-visible", "pin-active");
+      return;
+    }
     const isInset = panelOverlay.classList.contains("panel-inset");
     const isOpen = !panelOverlay.classList.contains("hidden");
     if (!isInset || !isOpen) {
@@ -69,6 +82,7 @@ export function createSidebar(container, state) {
   });
 
   pinBtn.addEventListener("click", () => {
+    if (isWideViewport()) return;
     panelPinned = !panelPinned;
     panelOverlay.classList.toggle("panel-pinned", panelPinned);
     pinBtn.title = panelPinned ? "Unpin panel" : "Pin panel open";
@@ -90,11 +104,12 @@ export function createSidebar(container, state) {
   }
 
   function hidePanel() {
-    if (panelPinned && panelOverlay.classList.contains("panel-inset")) return;
+    if (!isWideViewport() && panelPinned && panelOverlay.classList.contains("panel-inset")) return;
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = null;
     panelOverlay.classList.add("hidden");
-    container.classList.remove("visible", "pinned");
+    container.classList.remove("pinned");
+    if (!isWideViewport()) container.classList.remove("visible");
     // Recalculate column centering for inset mode
     if (state._columnResizeHandler) state._columnResizeHandler();
   }
@@ -310,9 +325,9 @@ export function createSidebar(container, state) {
     if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
-  // Close panel on click outside (unless pinned in inset mode)
+  // Close panel on click outside (unless pinned in inset mode, below 600px viewport)
   document.addEventListener("mousedown", (e) => {
-    const pinActive = panelPinned && panelOverlay.classList.contains("panel-inset");
+    const pinActive = !isWideViewport() && panelPinned && panelOverlay.classList.contains("panel-inset");
     // The version preview overlay is appended to document.body, not inside panelOverlay,
     // so check for it explicitly to avoid closing the panel when clicking restore.
     const versionOverlay = document.querySelector(".version-preview-overlay");

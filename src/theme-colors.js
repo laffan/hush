@@ -16,6 +16,9 @@ export const fontFallbacks = {
   "Libre Baskerville": "'Libre Baskerville', 'Georgia', 'Times New Roman', serif",
   "Karla": "'Karla', 'Helvetica Neue', 'Arial', sans-serif",
   "Lora": "'Lora', 'Georgia', 'Times New Roman', serif",
+  "iA Writer Duo": "'iA Writer Duo', 'Menlo', 'Consolas', monospace",
+  "iA Writer Mono": "'iA Writer Mono', 'Menlo', 'Consolas', monospace",
+  "iA Writer Quattro": "'iA Writer Quattro', 'Helvetica Neue', 'Arial', sans-serif",
 };
 
 // Known theme background colors — must match thememirror's actual settings.background

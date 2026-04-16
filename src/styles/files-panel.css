@@ -135,6 +135,15 @@
   gap: 6px;
   width: 100%;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tree-create-btns,
+.tree-create-btns button,
+.flagged-section-root {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tree-item-row.active {

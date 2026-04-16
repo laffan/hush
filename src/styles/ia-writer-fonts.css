@@ -1,0 +1,104 @@
+/* iA Writer custom webfonts. Licensed under SIL Open Font License 1.1.
+   See src/assets/fonts/ia-writer-*/LICENSE.md for full terms. */
+
+/* ===== iA Writer Duo S ===== */
+@font-face {
+  font-family: "iA Writer Duo";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-duo/iAWriterDuoS-Regular.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-duo/iAWriterDuoS-Regular.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Duo";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-duo/iAWriterDuoS-Italic.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-duo/iAWriterDuoS-Italic.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Duo";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-duo/iAWriterDuoS-Bold.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-duo/iAWriterDuoS-Bold.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Duo";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-duo/iAWriterDuoS-BoldItalic.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-duo/iAWriterDuoS-BoldItalic.woff") format("woff");
+}
+
+/* ===== iA Writer Mono S ===== */
+@font-face {
+  font-family: "iA Writer Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-mono/iAWriterMonoS-Regular.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-mono/iAWriterMonoS-Regular.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Mono";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-mono/iAWriterMonoS-Italic.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-mono/iAWriterMonoS-Italic.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-mono/iAWriterMonoS-Bold.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-mono/iAWriterMonoS-Bold.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Mono";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-mono/iAWriterMonoS-BoldItalic.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-mono/iAWriterMonoS-BoldItalic.woff") format("woff");
+}
+
+/* ===== iA Writer Quattro S ===== */
+@font-face {
+  font-family: "iA Writer Quattro";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-Regular.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-Regular.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Quattro";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-Italic.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-Italic.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Quattro";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-Bold.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-Bold.woff") format("woff");
+}
+@font-face {
+  font-family: "iA Writer Quattro";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-BoldItalic.woff2") format("woff2"),
+       url("../assets/fonts/ia-writer-quattro/iAWriterQuattroS-BoldItalic.woff") format("woff");
+}

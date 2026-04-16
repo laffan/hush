@@ -92,7 +92,8 @@
   pointer-events: none;
 }
 
-body.sl-dragging {
+body.sl-dragging,
+body.sl-drag-pending {
   user-select: none;
   -webkit-user-select: none;
 }

@@ -1,4 +1,5 @@
 @import "./shortcut-editor.css";
+@import "../styles/ia-writer-fonts.css";
 
 *, *::before, *::after {
   margin: 0;

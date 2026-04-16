@@ -33,8 +33,13 @@ function onPointerDown(event) {
     pointerId: event.pointerId,
   };
 
+  // Suppress text selection immediately on pointerdown so dragging (or the
+  // hold-delay before a drag starts) never highlights the file list text.
+  document.body.classList.add("sl-drag-pending");
+
   const handlePointerUp = (upEvent) => {
     if (upEvent.pointerId !== event.pointerId) return;
+    document.body.classList.remove("sl-drag-pending");
     if (this.pendingDrag && this.pendingDrag.timeoutId) {
       clearTimeout(this.pendingDrag.timeoutId);
     }
@@ -104,6 +109,7 @@ function startDrag(target, event, options = {}) {
   target.classList.add("dragging");
   target.setPointerCapture(event.pointerId);
   document.body.classList.add("sl-dragging");
+  document.body.classList.remove("sl-drag-pending");
   window.addEventListener("pointermove", this._onPointerMove);
   window.addEventListener("pointerup", this._onPointerUp, { once: true });
   this.config.onDragStart(this._getItemAtPath(originPath));
