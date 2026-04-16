@@ -121,7 +121,7 @@ function onPointerUp(event) {
   if (!this.dragSession) return;
   if (event.pointerId !== this.dragSession.pointerId) return;
   this.dragSession.originElement.releasePointerCapture(event.pointerId);
-  finishDrag.call(this);
+  finishDrag.call(this, event);
 }
 
 function updateDropTarget(clientX, clientY) {
@@ -299,11 +299,11 @@ function ensureChildList(item, itemPath) {
   return list;
 }
 
-function finishDrag() {
+function finishDrag(pointerEvent) {
   if (!this.dragSession) return;
   window.removeEventListener("pointermove", this._onPointerMove);
 
-  const { originElement, ghost, dropTarget, originPath, originParentPath, originIndex, autoExpandedIds, highlightedParent } = this.dragSession;
+  const { originElement, ghost, dropTarget, originPath, originParentPath, originIndex, autoExpandedIds, highlightedParent, draggedItem } = this.dragSession;
 
   clearDropTarget.call(this);
   if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
@@ -312,6 +312,14 @@ function finishDrag() {
   document.body.classList.remove("sl-dragging");
 
   if (!dropTarget) {
+    // Check if the item was dragged outside the sidebar/panel area
+    if (pointerEvent && this.config.onDragOutside && draggedItem) {
+      const panelOverlay = this.container.closest("#panel-overlay");
+      const rect = panelOverlay?.getBoundingClientRect();
+      if (rect && pointerEvent.clientX > rect.right) {
+        this.config.onDragOutside(draggedItem, pointerEvent.clientX, pointerEvent.clientY);
+      }
+    }
     autoExpandedIds.forEach((id) => this.state.collapsedIds.add(id));
     this.dragSession = null;
     this.render();

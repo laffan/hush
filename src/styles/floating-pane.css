@@ -1,0 +1,185 @@
+/* ===== Floating Pane System ===== */
+
+#pane-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 900;
+}
+
+/* ── Pane wrapper ─────────────────────────────────────────────────── */
+
+.floating-pane {
+  position: absolute;
+  min-width: 240px;
+  min-height: 60px;
+  background: var(--bg, #1e1e1e);
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  overflow: visible;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  transition: border-color 0.15s ease;
+}
+
+.floating-pane.active {
+  border-color: var(--cursor, rgba(255, 255, 255, 0.5));
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* ── Title bar (20px drag handle) ─────────────────────────────────── */
+
+.floating-pane-titlebar {
+  height: 20px;
+  min-height: 20px;
+  background: rgba(128, 128, 128, 0.12);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  user-select: none;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+  gap: 4px;
+}
+
+.floating-pane-titlebar:active {
+  cursor: grabbing;
+}
+
+.floating-pane-title {
+  flex: 1;
+  font-size: 11px;
+  color: var(--fg, #ccc);
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 20px;
+}
+
+/* ── Titlebar buttons ─────────────────────────────────────────────── */
+
+.floating-pane-buttons {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.floating-pane-btn {
+  width: 16px;
+  height: 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--fg, #ccc);
+  border-radius: 3px;
+  transition: opacity 0.1s;
+}
+
+.floating-pane-btn:hover {
+  opacity: 0.9;
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.floating-pane-btn svg {
+  width: 10px;
+  height: 10px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.floating-pane-btn.pin-active {
+  opacity: 0.85;
+  color: var(--cursor, #ffd700);
+}
+
+/* ── Content area ─────────────────────────────────────────────────── */
+
+.floating-pane-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.floating-pane-content .cm-editor {
+  height: 100%;
+}
+
+.floating-pane-content .cm-scroller {
+  padding: 8px 12px;
+  overflow: auto;
+}
+
+/* Notebook canvas in pane */
+.floating-pane-content canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ── Collapsed state ──────────────────────────────────────────────── */
+
+.floating-pane.collapsed {
+  min-height: 20px;
+}
+
+.floating-pane.collapsed .floating-pane-content {
+  display: none;
+}
+
+.floating-pane.collapsed .fp-resize-n,
+.floating-pane.collapsed .fp-resize-s,
+.floating-pane.collapsed .fp-resize-e,
+.floating-pane.collapsed .fp-resize-w,
+.floating-pane.collapsed .fp-resize-ne,
+.floating-pane.collapsed .fp-resize-nw,
+.floating-pane.collapsed .fp-resize-se,
+.floating-pane.collapsed .fp-resize-sw {
+  display: none;
+}
+
+/* ── Resize handles ───────────────────────────────────────────────── */
+
+.fp-resize {
+  position: absolute;
+  z-index: 1;
+}
+
+.fp-resize-n  { top: -4px;    left: 8px;   right: 8px;  height: 8px; cursor: n-resize; }
+.fp-resize-s  { bottom: -4px; left: 8px;   right: 8px;  height: 8px; cursor: s-resize; }
+.fp-resize-e  { right: -4px;  top: 8px;    bottom: 8px; width: 8px;  cursor: e-resize; }
+.fp-resize-w  { left: -4px;   top: 8px;    bottom: 8px; width: 8px;  cursor: w-resize; }
+.fp-resize-ne { top: -4px;    right: -4px; width: 12px; height: 12px; cursor: ne-resize; }
+.fp-resize-nw { top: -4px;    left: -4px;  width: 12px; height: 12px; cursor: nw-resize; }
+.fp-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: se-resize; }
+.fp-resize-sw { bottom: -4px; left: -4px;  width: 12px; height: 12px; cursor: sw-resize; }
+
+/* ── Drag-over indicator on editor/notebook area ──────────────────── */
+
+.pane-drop-highlight {
+  position: fixed;
+  pointer-events: none;
+  border: 2px dashed var(--cursor, rgba(255, 255, 255, 0.3));
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 899;
+}
+
+.pane-drop-highlight.visible {
+  opacity: 1;
+}

@@ -8,6 +8,7 @@ import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
 import { findNode, collectFlaggedItems, findAncestorIds } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
+import { createPane } from "../pane/pane-manager.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -157,6 +158,12 @@ export function createFilesPanel(container, state, hidePanel) {
       } else if (item.type === "project") {
         state.openProject(item.id);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+      }
+    },
+
+    onDragOutside: (item, clientX, clientY) => {
+      if ((item.type === "document" || item.type === "notebook") && item.fileId) {
+        createPane(item.fileId, item.name, item.type, clientX, clientY);
       }
     },
 
