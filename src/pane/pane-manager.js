@@ -143,8 +143,8 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
 
   buildPaneDOM(pane);
   containerEl.appendChild(pane.el);
+  pane.el.style.zIndex = ++zCounter;
   panes.set(id, pane);
-
   await loadPaneContent(pane);
   focusPane(id);
   notifyLayoutChange();
@@ -260,7 +260,11 @@ function buildPaneDOM(pane) {
   setupPaneDrag(pane);
   setupPaneResize(pane);
   titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane); });
-  el.addEventListener("pointerdown", () => focusPane(pane.id));
+  el.addEventListener("pointerdown", (e) => {
+    // Option+titlebar click spawns a duplicate; focus goes to the new pane, not this one
+    if (e.altKey && e.target.closest(".floating-pane-titlebar") && !e.target.closest(".floating-pane-btn, .fp-title-link")) return;
+    focusPane(pane.id);
+  });
 }
 
 function makeBtn(name, svg, ariaLabel) {
