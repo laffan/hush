@@ -197,7 +197,9 @@
 }
 
 /* Narrow windows: stack the preview below the settings column so the
-   preview pane isn't cropped off the right edge. */
+   preview pane isn't cropped off the right edge. Switches to a single
+   outer scroll (the body) so the preview — which would otherwise sit
+   past the viewport when settings is tall — is reachable by scrolling. */
 @media (max-width: 700px) {
   .style-modal {
     width: 96%;
@@ -206,17 +208,21 @@
   }
   .style-modal-body {
     flex-direction: column;
+    overflow-y: auto;
   }
   .style-modal-settings {
     width: 100%;
     min-width: 0;
     border-right: none;
     border-bottom: 1px solid var(--panel-border);
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    overflow-y: visible;
   }
   .style-modal-preview {
     border-radius: 0 0 12px 12px;
-    min-height: 160px;
+    min-height: 240px;
+    flex: 0 0 auto;
+    overflow-y: visible;
   }
 }
 

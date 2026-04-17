@@ -431,10 +431,12 @@ function openStyleModal(state, existingStyle, onDone) {
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
 
   function render() {
-    // Preserve the settings column's scroll position across re-renders —
-    // switching light/dark tabs, reseeding theme colors, etc. would
-    // otherwise pop the user back to the top.
-    const prevScroll = backdrop.querySelector(".style-modal-settings")?.scrollTop ?? 0;
+    // Preserve scroll position across re-renders (switching light/dark
+    // tabs, reseeding theme colors, etc.). In wide mode the settings
+    // column is the scroll container; in narrow mode it's the whole body,
+    // so capture both.
+    const prevSettingsScroll = backdrop.querySelector(".style-modal-settings")?.scrollTop ?? 0;
+    const prevBodyScroll = backdrop.querySelector(".style-modal-body")?.scrollTop ?? 0;
     const selectedFont = draft.fontFamily || "";
     const selectedFontLabel = selectedFont || `Default (${state.settings.fontFamily || "EB Garamond"})`;
     const ltId = draft.lightThemeId || "";
@@ -583,7 +585,9 @@ function openStyleModal(state, existingStyle, onDone) {
     bind();
     updatePreview();
     const settings = backdrop.querySelector(".style-modal-settings");
-    if (settings) settings.scrollTop = prevScroll;
+    if (settings) settings.scrollTop = prevSettingsScroll;
+    const body = backdrop.querySelector(".style-modal-body");
+    if (body) body.scrollTop = prevBodyScroll;
   }
 
   // ── preview rendering ────────────────────────────────────────────────────
