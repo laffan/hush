@@ -499,16 +499,20 @@ async function exportCurrentFile(state) {
 
 /**
  * Rewrite doc markdown so each local image ref gets a relative
- * `images/<filename>` URL. External URLs pass through untouched.
+ * `images/<filename>` URL. External URLs pass through untouched. Angle-
+ * bracketed URLs are handled by the shared markdown regex.
  */
 function rewriteImageRefsForExport(content, images) {
   const tracked = new Set(images);
   return content.replace(
-    /(!\[[^\]]*\]\()\s*([^)\s"]+)(\s*(?:"[^"]*")?\s*\))/g,
-    (orig, pre, url, post) => {
-      const bare = url.replace(/^images\//, "");
-      if (!tracked.has(bare)) return orig;
-      return `${pre}images/${bare}${post}`;
+    /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^()\s"]+))(?:\s+"[^"]*")?\s*\)/g,
+    (match, alt, angleUrl, bareUrl) => {
+      const raw = angleUrl != null ? angleUrl : bareUrl;
+      const bare = raw.replace(/^images\//, "");
+      if (!tracked.has(bare)) return match;
+      const next = `images/${bare}`;
+      const wrapped = /[\s()]/.test(next) ? `<${next}>` : next;
+      return `![${alt}](${wrapped})`;
     }
   );
 }

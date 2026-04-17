@@ -140,12 +140,12 @@ export async function renameImageFile(state, oldFilename, newFilename) {
  */
 async function rewriteImageRefs(state, oldFilename, newFilename) {
   const docFileIds = collectDocIds(state.fileTree);
-  const oldRe = new RegExp(`(!\\[[^\\]]*\\]\\(\\s*)${escapeRegex(oldFilename)}(\\s*(?:"[^"]*")?\\s*\\))`, "g");
+  const rewrite = (content) => rewriteContentImageUrl(content, oldFilename, newFilename);
 
   for (const fileId of docFileIds) {
     if (fileId === state.currentFileId && state.editor) {
       const cur = state.editor.getContent();
-      const updated = cur.replace(oldRe, `$1${newFilename}$2`);
+      const updated = rewrite(cur);
       if (updated !== cur) {
         state.editor.setContent(updated);
         state.markDirty();
@@ -156,12 +156,28 @@ async function rewriteImageRefs(state, oldFilename, newFilename) {
     if (!IS_TAURI) continue;
     try {
       const file = await tauriInvoke("load_file", { id: fileId });
-      const updated = file.content.replace(oldRe, `$1${newFilename}$2`);
+      const updated = rewrite(file.content);
       if (updated !== file.content) {
         await tauriInvoke("save_file", { id: fileId, content: updated });
       }
     } catch (e) { /* skip files that fail to load */ }
   }
+}
+
+/** Rewrite every markdown image ref pointing at `oldName` to point at
+ *  `newName`, preserving the `images/` export prefix if present and
+ *  using angle brackets when the new URL needs them. */
+function rewriteContentImageUrl(content, oldName, newName) {
+  const re = new RegExp(IMAGE_MD_RE.source, "g");
+  return content.replace(re, (match, alt, angleUrl, bareUrl) => {
+    const rawUrl = angleUrl != null ? angleUrl : bareUrl;
+    const prefix = rawUrl.startsWith("images/") ? "images/" : "";
+    const bare = rawUrl.replace(/^images\//, "");
+    if (bare !== oldName) return match;
+    const nextUrl = prefix + newName;
+    const wrapped = urlNeedsAngleWrap(nextUrl) ? `<${nextUrl}>` : nextUrl;
+    return `![${alt}](${wrapped})`;
+  });
 }
 
 function collectDocIds(nodes) {
@@ -179,31 +195,21 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Build a regex that matches every markdown image ref to any of the
- *  given filenames (both bare and `images/{filename}` forms). If the
- *  match is the only non-whitespace content on its line, the whole line
- *  is consumed (including the trailing newline) so removal doesn't leave
- *  a blank line behind. */
-function removalRegex(filenames) {
-  const alts = filenames.map(escapeRegex).join("|");
-  // Group 1 captures the image syntax; we let the engine decide between
-  // line-consuming and inline match via two alternatives.
-  const pattern = `(?:^[ \\t]*!\\[[^\\]]*\\]\\(\\s*(?:images/)?(?:${alts})(?:\\s*"[^"]*")?\\s*\\)[ \\t]*\\n?)|!\\[[^\\]]*\\]\\(\\s*(?:images/)?(?:${alts})(?:\\s*"[^"]*")?\\s*\\)`;
-  return new RegExp(pattern, "gm");
-}
-
 /**
  * Remove every markdown image ref to any of `filenames` from every doc
- * in the tree. Updates the currently-open editor buffer too.
+ * in the tree. Updates the currently-open editor buffer too. If the
+ * reference is the only content on its line, the whole line is consumed
+ * so removal doesn't leave a blank line behind.
  */
 export async function removeImageRefs(state, filenames) {
   if (!filenames?.length) return;
-  const re = removalRegex(filenames);
+  const set = new Set(filenames);
   const docFileIds = collectDocIds(state.fileTree);
+  const strip = (content) => removeContentImageRefs(content, set);
   for (const fileId of docFileIds) {
     if (fileId === state.currentFileId && state.editor) {
       const cur = state.editor.getContent();
-      const updated = cur.replace(re, "");
+      const updated = strip(cur);
       if (updated !== cur) {
         state.editor.setContent(updated);
         state.markDirty();
@@ -214,12 +220,38 @@ export async function removeImageRefs(state, filenames) {
     if (!IS_TAURI) continue;
     try {
       const file = await tauriInvoke("load_file", { id: fileId });
-      const updated = file.content.replace(re, "");
+      const updated = strip(file.content);
       if (updated !== file.content) {
         await tauriInvoke("save_file", { id: fileId, content: updated });
       }
     } catch (e) { /* skip files that fail to load */ }
   }
+}
+
+function removeContentImageRefs(content, filenames) {
+  // Walk line-by-line so a ref that occupies an entire line can be
+  // consumed cleanly without leaving a blank line behind.
+  const lines = content.split("\n");
+  const soloRe = /^\s*!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^()\s"]+))(?:\s+"[^"]*")?\s*\)\s*$/;
+  const kept = [];
+  for (const line of lines) {
+    const solo = soloRe.exec(line);
+    if (solo) {
+      const url = solo[2] != null ? solo[2] : solo[3];
+      if (filenames.has(url.replace(/^images\//, ""))) continue; // drop the line entirely
+      kept.push(line);
+      continue;
+    }
+    // Inline refs embedded in other text — strip just the ref.
+    const inline = new RegExp(IMAGE_MD_RE.source, "g");
+    const stripped = line.replace(inline, (match, alt, angleUrl, bareUrl) => {
+      const url = angleUrl != null ? angleUrl : bareUrl;
+      return filenames.has(url.replace(/^images\//, "")) ? "" : match;
+    });
+    kept.push(stripped);
+  }
+  // Collapse runs of blank lines introduced by solo-line removals.
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
 /**
@@ -286,10 +318,33 @@ export function parseAltAndCaption(rawAlt) {
   };
 }
 
-/** Build the canonical markdown for a freshly-dropped image. */
+/** True when a URL needs to be wrapped in `<...>` to parse cleanly
+ *  (spaces and parens are not allowed in bare markdown URLs). */
+export function urlNeedsAngleWrap(url) {
+  return /[\s()]/.test(url);
+}
+
+/** Build the canonical markdown for a freshly-dropped image. Wraps the
+ *  URL in angle brackets if it contains spaces or parens — common for
+ *  collision-suffixed names like `brown-cow (2).png`. */
 export function buildImageMarkdown(alt, filename) {
-  const safe = (alt || "image").replace(/[\[\]]/g, "");
-  return `![${safe}](${filename})`;
+  const safeAlt = (alt || "image").replace(/[\[\]]/g, "");
+  const url = urlNeedsAngleWrap(filename) ? `<${filename}>` : filename;
+  return `![${safeAlt}](${url})`;
+}
+
+/**
+ * Unified regex for markdown image syntax supporting either a bare URL
+ * (no whitespace, no parens) or an angle-bracketed URL (`<...>`). The
+ * capture groups are: 1 = alt text, 2 = angle URL (or undefined),
+ * 3 = bare URL (or undefined).
+ */
+export const IMAGE_MD_RE = /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^()\s"]+))(?:\s+"[^"]*")?\s*\)/g;
+
+/** Pull the URL from an IMAGE_MD_RE match — either the angle-bracketed
+ *  group or the bare group. */
+export function urlFromMatch(match) {
+  return match[2] != null ? match[2] : match[3];
 }
 
 /**
@@ -299,10 +354,10 @@ export function buildImageMarkdown(alt, filename) {
 export function collectImageRefs(state, markdown) {
   const seen = new Set();
   const out = [];
-  const re = /!\[[^\]]*\]\(\s*([^)\s"]+)(?:\s+"[^"]*")?\s*\)/g;
+  IMAGE_MD_RE.lastIndex = 0;
   let match;
-  while ((match = re.exec(markdown)) !== null) {
-    const filename = filenameFromUrl(match[1]);
+  while ((match = IMAGE_MD_RE.exec(markdown)) !== null) {
+    const filename = filenameFromUrl(urlFromMatch(match));
     if (!filename || seen.has(filename)) continue;
     if (!findImageNode(state, filename)) continue;
     seen.add(filename);

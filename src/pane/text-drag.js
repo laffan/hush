@@ -401,16 +401,17 @@ function generateShapeId() {
   return Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
 }
 
-const IMAGE_REF_RE = /^!\[[^\]]*\]\(\s*[^)\s"]+(?:\s+"[^"]*")?\s*\)$/;
+const IMAGE_REF_RE = /^!\[[^\]]*\]\(\s*(?:<[^>]+>|[^()\s"]+)(?:\s+"[^"]*")?\s*\)$/;
 
 function isSingleImageRef(text) {
   return typeof text === "string" && IMAGE_REF_RE.test(text.trim());
 }
 
 function parseImageMarkdown(text) {
-  const m = text.trim().match(/^!\[([^\]]*)\]\(\s*([^)\s"]+)(?:\s+"[^"]*")?\s*\)$/);
+  const m = text.trim().match(/^!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^()\s"]+))(?:\s+"[^"]*")?\s*\)$/);
   if (!m) return null;
-  return { rawAlt: m[1], url: m[2], filename: m[2].replace(/^images\//, "") };
+  const url = m[2] != null ? m[2] : m[3];
+  return { rawAlt: m[1], url, filename: url.replace(/^images\//, "") };
 }
 
 /** Doc → Notebook: resolve the referenced image and drop it as an ImageShape. */
@@ -440,7 +441,8 @@ async function insertImageIntoEditor(view, image, clientX, clientY) {
     if (!state) return;
     const res = await saveDataUrlAsImageNode(state, image.name, image.dataUrl);
     if (!res) return;
-    const md = `![${(res.alt || image.name || "image").replace(/[\[\]]/g, "")}](${res.filename})`;
+    const { buildImageMarkdown } = await import("../state/state-images.js");
+    const md = buildImageMarkdown(res.alt || image.name || "image", res.filename);
     let pos = view.posAtCoords({ x: clientX, y: clientY });
     if (pos == null) pos = view.posAtCoords({ x: clientX, y: clientY }, false);
     if (pos == null) pos = view.state.selection.main.head;

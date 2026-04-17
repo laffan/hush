@@ -17,12 +17,18 @@
  */
 
 import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
-import { getImageDataUrl, parseAltAndCaption, isLocalImageRef, filenameFromUrl } from "../../state/state-images.js";
+import { RangeSetBuilder, Annotation } from "@codemirror/state";
+import {
+  getImageDataUrl, parseAltAndCaption, isLocalImageRef, filenameFromUrl,
+  IMAGE_MD_RE, urlFromMatch,
+} from "../../state/state-images.js";
 import { openImagePreviewModal } from "../image-preview.js";
 
 // Broad match — we filter to local refs inside the builder.
-const IMAGE_RE = /!\[([^\]]*)\]\(\s*([^)\s"]+)(?:\s+"[^"]*")?\s*\)/g;
+const IMAGE_RE = new RegExp(IMAGE_MD_RE.source, "g");
+// Dispatched on files-changed to force the ViewPlugin to re-run
+// buildDecorations (no doc / selection change would otherwise trigger it).
+const imageTreeChanged = Annotation.define();
 
 class ImageWidget extends WidgetType {
   constructor(alt, caption, filename, markdown) {
@@ -82,7 +88,7 @@ function buildDecorations(view, state) {
       const from = line.from + match.index;
       const to = from + match[0].length;
       const rawAlt = match[1];
-      const url = match[2];
+      const url = urlFromMatch(match);
       if (!isLocalImageRef(state, url)) continue;
       // Leave the range as raw markdown while the cursor overlaps it so
       // the user can edit the source directly.
@@ -109,7 +115,7 @@ function imageRefAtPos(state, doc, pos) {
     const from = line.from + match.index;
     const to = from + match[0].length;
     if (pos >= from && pos <= to) {
-      const url = match[2];
+      const url = urlFromMatch(match);
       if (!isLocalImageRef(state, url)) return null;
       return {
         from, to,
@@ -196,16 +202,20 @@ export function createImageDecoratorPlugin(state) {
     class {
       constructor(view) {
         this.decorations = buildDecorations(view, state);
+        // Dispatch a harmless annotation when the image tree changes —
+        // the update() callback below picks it up and rebuilds the
+        // decoration set, which is how previously-unresolvable refs
+        // finally decorate in a pane that was open before the image was
+        // dropped.
         this._refreshOnFiles = () => {
-          // Re-run when the tree changes (e.g. a new image was added) so
-          // previously-unresolvable refs can decorate.
-          this.decorations = buildDecorations(view, state);
-          view.requestMeasure();
+          try { view.dispatch({ annotations: imageTreeChanged.of(Date.now()) }); }
+          catch (_) { /* view may be torn down */ }
         };
         state.on("files-changed", this._refreshOnFiles);
       }
       update(update) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        const treeChanged = update.transactions.some(tr => tr.annotation(imageTreeChanged) != null);
+        if (update.docChanged || update.viewportChanged || update.selectionSet || treeChanged) {
           this.decorations = buildDecorations(update.view, state);
         }
       }

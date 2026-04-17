@@ -199,6 +199,11 @@ function updateDropTarget(clientX, clientY) {
       if (isAncestorPath(this.dragSession.originPath, parentPath)) {
         clearDropTarget.call(this); return;
       }
+      // canDrop also governs sibling reorders — the new parent is the
+      // list owning the drop target, or null when we're at the root.
+      if (!canDropIntoParent.call(this, parentPath)) {
+        clearDropTarget.call(this); return;
+      }
 
       const siblings = Array.from(parentList.children).filter(
         (c) => c instanceof HTMLElement && c.classList.contains("sl-item") && !c.classList.contains("dragging")
@@ -226,9 +231,20 @@ function updateDropTarget(clientX, clientY) {
   ) ?? this.container;
   if (!(containerEl instanceof HTMLElement)) { clearDropTarget.call(this); return; }
   const parentPath = parsePath(containerEl.dataset.path ?? "");
+  if (!canDropIntoParent.call(this, parentPath)) { clearDropTarget.call(this); return; }
   setDropTarget.call(this, containerEl, parentPath, clientY);
   this.dragSession.lastDropUpdateX = clientX;
   this.dragSession.lastDropUpdateY = clientY;
+}
+
+/** Check canDrop against the parent container (null for root-level). */
+function canDropIntoParent(parentPath) {
+  const dragged = this.dragSession?.draggedItem;
+  if (!dragged || !this.config.canDrop) return true;
+  const parentItem = parentPath.length === 0
+    ? null
+    : this._getItemAtPath(parentPath);
+  return this.config.canDrop(dragged, parentItem);
 }
 
 function clearDropTarget() {
