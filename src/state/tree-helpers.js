@@ -52,19 +52,28 @@ export function insertAfter(nodes, afterId, newNode) {
   return false;
 }
 
+/**
+ * Collect flagged items into a forest. A flagged folder/project keeps
+ * its children so the UI can render them nested underneath — matching
+ * the layout the user sees in the regular file tree. A flagged document
+ * / notebook shows as a single row (empty children[]). Non-flagged
+ * containers are walked into so flagged items nested several levels
+ * deep still surface at the top of the Flagged section.
+ */
 export function collectFlaggedItems(nodes) {
   const result = [];
   for (const n of nodes) {
     if (n.flagged) {
-      result.push(n);
-      // Flagged folders / projects pull their descendants up into the Flagged
-      // section alongside them. Images and Trash are never bubbled; their
-      // subtrees are filesystem scaffolding, not user-authored content.
-      if ((n.type === "folder" || n.type === "project") && n.children) {
-        result.push(...collectDescendants(n.children));
-      }
-      // A flagged folder's descendants are already included above — don't
-      // descend again to avoid duplicates.
+      // Clone the node with its children preserved (but sanitised: image
+      // subtrees and the Trash node are always stripped out of bubbled
+      // content since they're filesystem scaffolding).
+      const cloned = {
+        ...n,
+        children: (n.type === "folder" || n.type === "project")
+          ? sanitizeDescendants(n.children || [])
+          : [],
+      };
+      result.push(cloned);
       continue;
     }
     if (n.children) result.push(...collectFlaggedItems(n.children));
@@ -72,15 +81,19 @@ export function collectFlaggedItems(nodes) {
   return result;
 }
 
-function collectDescendants(nodes) {
-  const result = [];
+/** Strip image nodes and special subtrees from a bubbled-up descendant
+ *  list but otherwise preserve the original tree structure. */
+function sanitizeDescendants(nodes) {
+  const out = [];
   for (const n of nodes) {
-    // Skip nested image nodes and any pinned special subtrees.
     if (n.type === "image") continue;
-    result.push(n);
-    if (n.children) result.push(...collectDescendants(n.children));
+    if (n.id === "__images__" || n.id === "__trash__") continue;
+    out.push({
+      ...n,
+      children: n.children ? sanitizeDescendants(n.children) : [],
+    });
   }
-  return result;
+  return out;
 }
 
 export function findAncestorIds(nodes, targetId, path = []) {

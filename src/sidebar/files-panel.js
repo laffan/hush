@@ -295,6 +295,10 @@ function onActionClick(e) {
 // ===== Virtual Flagged Folder =====
 
 let flaggedCollapsed = false;
+// Per-node collapse state for nested entries inside the Flagged section.
+// Keyed by the real tree node id — not stored cross-session, matching
+// how the main tree's SortableList handles collapse.
+const flaggedNodeCollapsed = new Set();
 
 function renderFlaggedSection(state) {
   if (!flaggedContainerEl) return;
@@ -341,54 +345,95 @@ function renderFlaggedSection(state) {
   if (!flaggedCollapsed) {
     const childList = document.createElement("ul");
     childList.className = "sl-list";
-
     for (const item of flaggedItems) {
-      const li = document.createElement("li");
-      li.className = "sl-item flagged-link-item";
-      li.dataset.id = item.id;
-
-      const itemContent = document.createElement("div");
-      itemContent.className = "sl-item-content";
-
-      // Empty fold spacer
-      const spacer = document.createElement("button");
-      spacer.className = "sl-fold-arrow sl-fold-empty";
-      spacer.tabIndex = -1;
-      itemContent.appendChild(spacer);
-
-      const itemLabel = document.createElement("span");
-      itemLabel.className = "sl-item-label";
-      const itemMain = document.createElement("span");
-      itemMain.className = "sl-item-main-label";
-      const itemRow = document.createElement("span");
-      itemRow.className = "tree-item-row";
-      // Only items directly flagged by the user get the unflag button —
-      // descendants of a flagged folder bubble up without one (clicking
-      // the flag button on them would flag them independently, which
-      // isn't what the user is asking for).
-      const button = item.flagged ? flagOnlyButton(item.id) : "";
-      itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(item.name)}</span>${button}`;
-      itemMain.appendChild(itemRow);
-      itemLabel.appendChild(itemMain);
-      itemContent.appendChild(itemLabel);
-      li.appendChild(itemContent);
-
-      // Hover handling
-      li.addEventListener("mouseenter", () => li.classList.add("sl-hovered"));
-      li.addEventListener("mouseleave", () => li.classList.remove("sl-hovered"));
-
-      // Click: open the actual item and reveal it in the tree
-      li.addEventListener("click", (e) => {
-        if (e.target.closest("[data-tree-action]")) return;
-        revealAndOpen(item, state);
-      });
-
-      childList.appendChild(li);
+      childList.appendChild(renderFlaggedNode(item, state, /*isBubbled=*/false));
     }
     folderLi.appendChild(childList);
   }
 
   flaggedContainerEl.appendChild(folderLi);
+}
+
+/**
+ * Render one node inside the Flagged section. Folders/projects render
+ * their children nested underneath, matching the main file tree layout.
+ * `isBubbled` is true for descendants of a flagged folder — those get
+ * no unflag button (clicking it would flag them independently).
+ */
+function renderFlaggedNode(item, state, isBubbled) {
+  const li = document.createElement("li");
+  li.className = "sl-item flagged-link-item";
+  li.dataset.id = item.id;
+
+  const itemContent = document.createElement("div");
+  itemContent.className = "sl-item-content";
+
+  const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+  const isCollapsed = flaggedNodeCollapsed.has(item.id);
+  if (hasChildren) li.classList.add("has-children");
+  if (hasChildren && isCollapsed) li.classList.add("collapsed");
+
+  const foldBtn = document.createElement("button");
+  foldBtn.className = "sl-fold-arrow" + (hasChildren ? "" : " sl-fold-empty");
+  foldBtn.type = "button";
+  if (hasChildren) {
+    foldBtn.textContent = isCollapsed ? "\u25B6\uFE0E" : "\u25BC";
+    foldBtn.setAttribute("aria-label", isCollapsed ? "Expand" : "Collapse");
+    foldBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (flaggedNodeCollapsed.has(item.id)) flaggedNodeCollapsed.delete(item.id);
+      else flaggedNodeCollapsed.add(item.id);
+      renderFlaggedSection(state);
+    });
+  } else {
+    foldBtn.tabIndex = -1;
+  }
+  itemContent.appendChild(foldBtn);
+
+  const itemLabel = document.createElement("span");
+  itemLabel.className = "sl-item-label";
+  const itemMain = document.createElement("span");
+  itemMain.className = "sl-item-main-label";
+  const itemRow = document.createElement("span");
+  itemRow.className = "tree-item-row";
+  // Only items directly flagged by the user get the unflag button —
+  // descendants of a flagged folder bubble up without one.
+  const button = (item.flagged && !isBubbled) ? flagOnlyButton(item.id) : "";
+  itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(item.name)}</span>${button}`;
+  itemMain.appendChild(itemRow);
+  itemLabel.appendChild(itemMain);
+  itemContent.appendChild(itemLabel);
+  li.appendChild(itemContent);
+
+  // Hover handling
+  li.addEventListener("mouseenter", () => li.classList.add("sl-hovered"));
+  li.addEventListener("mouseleave", () => li.classList.remove("sl-hovered"));
+
+  // Click the row: for docs/notebooks/projects, open + reveal. For
+  // folders, toggle the nested children in place.
+  itemContent.addEventListener("click", (e) => {
+    if (e.target.closest("[data-tree-action]")) return;
+    if (e.target.closest(".sl-fold-arrow")) return;
+    if (item.type === "folder") {
+      if (flaggedNodeCollapsed.has(item.id)) flaggedNodeCollapsed.delete(item.id);
+      else flaggedNodeCollapsed.add(item.id);
+      renderFlaggedSection(state);
+      return;
+    }
+    revealAndOpen(item, state);
+  });
+
+  // Nested children (for a flagged folder or any of its sub-folders)
+  if (hasChildren && !isCollapsed) {
+    const childUl = document.createElement("ul");
+    childUl.className = "sl-list";
+    for (const child of item.children) {
+      childUl.appendChild(renderFlaggedNode(child, state, /*isBubbled=*/true));
+    }
+    li.appendChild(childUl);
+  }
+
+  return li;
 }
 
 function revealAndOpen(item, state) {
@@ -620,13 +665,25 @@ const localSyncExpanded = new Set(); // folderId:relPath strings
 async function renderLocalSyncSection(container, state, hidePanel) {
   storedLocalSyncContainer = container;
   container.innerHTML = "";
-  const { listLocalSyncFolders } = await import("../sync/local-sync.js");
-  const folders = await listLocalSyncFolders();
+  let folders = [];
+  try {
+    const { listLocalSyncFolders } = await import("../sync/local-sync.js");
+    folders = await listLocalSyncFolders();
+  } catch (e) {
+    console.error("Local Sync: failed to load folders", e);
+  }
+  // If the container was replaced (panel re-opened) while the async load
+  // was running, bail out — the newer render will paint the new container.
+  if (storedLocalSyncContainer !== container) return;
   if (!folders || folders.length === 0) return;
 
   for (const folder of folders) {
-    const rootLi = buildLocalSyncNode(folder, "", folder.name, true, state, hidePanel);
-    container.appendChild(rootLi);
+    try {
+      const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel);
+      container.appendChild(rootLi);
+    } catch (e) {
+      console.error("Local Sync: failed to render folder", folder, e);
+    }
   }
 }
 

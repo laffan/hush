@@ -298,15 +298,22 @@ export function createSidebar(container, state) {
 
   // The Local Sync list lives in settings.localSyncFolders — when the
   // settings window adds or removes one, re-render the files panel so
-  // the sidebar reflects the change without the user having to reopen it.
+  // the sidebar reflects the change. We always call refreshFilesPanel:
+  // if the panel isn't currently open, the refresh is effectively a
+  // no-op (the render functions guard against missing containers), and
+  // the user still gets a fresh fetch next time they open the panel.
   let _lastLocalSyncSerialised = JSON.stringify(state.settings.localSyncFolders || []);
   state.on("settings-changed", () => {
     const next = JSON.stringify(state.settings.localSyncFolders || []);
     if (next !== _lastLocalSyncSerialised) {
       _lastLocalSyncSerialised = next;
-      if (activePanel === "files") refreshFilesPanel(state);
+      refreshFilesPanel(state);
     }
   });
+  // Dedicated event — the settings window emits this after add/remove
+  // so the refresh path doesn't depend on the generic settings-updated
+  // round-trip (which can be delayed by other settings work).
+  state.on("local-sync-changed", () => refreshFilesPanel(state));
 
   state.on("file-opened", () => {
     if (activePanel === "files") {
@@ -354,7 +361,17 @@ export function createSidebar(container, state) {
     // The version preview overlay is appended to document.body, not inside panelOverlay,
     // so check for it explicitly to avoid closing the panel when clicking restore.
     const versionOverlay = document.querySelector(".version-preview-overlay");
-    if (activePanel && !panelOverlay.contains(e.target) && !container.contains(e.target) && !pinBtn.contains(e.target) && !(versionOverlay && versionOverlay.contains(e.target))) {
+    // The panel resizer sits OUTSIDE the panel (anchored to its right
+    // edge) so it also needs an explicit allowlist entry — otherwise
+    // mousedown on the resizer triggers the click-outside close.
+    if (
+      activePanel &&
+      !panelOverlay.contains(e.target) &&
+      !container.contains(e.target) &&
+      !pinBtn.contains(e.target) &&
+      !panelResizer.contains(e.target) &&
+      !(versionOverlay && versionOverlay.contains(e.target))
+    ) {
       hidePanel();
     }
   });

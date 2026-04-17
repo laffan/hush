@@ -406,6 +406,28 @@ async function init() {
         .then(m => m.refreshFilesPanel(state))
         .catch(() => {});
     }).catch(() => {});
+
+    // Settings window fires this after add/remove so the files panel
+    // refreshes even if the user hasn't re-opened it yet. The generic
+    // settings-updated broadcast also triggers a refresh, but this
+    // dedicated path is faster and doesn't depend on the full settings
+    // round-trip.
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      await listen("local-sync-folders-updated", async () => {
+        // Pull fresh settings so state.settings.localSyncFolders is
+        // current before the refresh reads it.
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const fresh = await invoke("get_settings");
+          if (fresh) Object.assign(state.settings, fresh);
+        } catch (_) {}
+        const { refreshFilesPanel } = await import("./sidebar/files-panel.js");
+        refreshFilesPanel(state);
+      });
+    } catch (e) {
+      console.error("Failed to listen for local-sync-folders-updated:", e);
+    }
   }
 
   // Sync notebook left inset when sidebar/panel visibility changes
