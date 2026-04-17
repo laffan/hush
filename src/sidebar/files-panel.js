@@ -48,7 +48,7 @@ function getIcon(item) {
   return typeIcons[item.type] || typeIcons.document;
 }
 
-// Hover action buttons — no rename for docs, no actions for special nodes, no flag in trash
+// Hover action buttons — no rename for untitled docs or special nodes, no flag in trash
 function actionButtons(nodeId, nodeType, inTrash, item) {
   if (nodeId === AppState.TRASH_ID) {
     return `<span class="tree-actions" data-node-id="${nodeId}">
@@ -61,7 +61,10 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
   }
   const isSpecial = nodeId === AppState.INBOX_ID;
   const isDoc = nodeType === "document";
-  const renameBtn = (isDoc || isSpecial) ? "" : `<button data-tree-action="rename" title="Rename">
+  // Docs auto-derive their name from first line while still "Untitled".
+  // Once content has locked in a name, expose rename like notebooks do.
+  const docRenameable = isDoc && item?.name && item.name !== "Untitled";
+  const renameBtn = (isSpecial || (isDoc && !docRenameable)) ? "" : `<button data-tree-action="rename" title="Rename">
       <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     </button>`;
   const flagBtn = (isSpecial || inTrash) ? "" : `<button data-tree-action="flag" title="Toggle flag">
@@ -180,6 +183,10 @@ export function createFilesPanel(container, state, hidePanel) {
   if (sortableInstance.state.collapsedIds.has(AppState.INBOX_ID)) {
     sortableInstance.state.collapsedIds.delete(AppState.INBOX_ID);
   }
+
+  // Trash stays collapsed unless the user explicitly opens it
+  sortableInstance.state.collapsedIds.add(AppState.TRASH_ID);
+  sortableInstance.render();
 
   // Render the virtual Flagged folder
   renderFlaggedSection(state);
