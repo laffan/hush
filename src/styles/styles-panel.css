@@ -196,10 +196,10 @@
   display: none !important;
 }
 
-/* Narrow windows: stack the preview below the settings column so the
-   preview pane isn't cropped off the right edge. Switches to a single
-   outer scroll (the body) so the preview — which would otherwise sit
-   past the viewport when settings is tall — is reachable by scrolling. */
+/* Narrow windows: stack the panes — preview on top (fixed 250px,
+   scrolls internally), settings below (fills the rest of the space,
+   scrolls independently). Uses `order` to flip the DOM sequence
+   without the column-reverse quirk where scroll direction inverts. */
 @media (max-width: 700px) {
   .style-modal {
     width: 96%;
@@ -208,21 +208,23 @@
   }
   .style-modal-body {
     flex-direction: column;
-    overflow-y: auto;
-  }
-  .style-modal-settings {
-    width: 100%;
-    min-width: 0;
-    border-right: none;
-    border-bottom: 1px solid var(--panel-border);
-    flex: 0 0 auto;
-    overflow-y: visible;
   }
   .style-modal-preview {
-    border-radius: 0 0 12px 12px;
-    min-height: 240px;
-    flex: 0 0 auto;
-    overflow-y: visible;
+    order: 0;
+    flex: 0 0 250px;
+    height: 250px;
+    overflow-y: auto;
+    border-radius: 0;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .style-modal-settings {
+    order: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    border-right: none;
+    overflow-y: auto;
   }
 }
 
