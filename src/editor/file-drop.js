@@ -14,6 +14,7 @@
  */
 
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic", ".heif", ".avif", ".tif", ".tiff"];
 
 function getExtension(name) {
   const i = name.lastIndexOf(".");
@@ -24,6 +25,10 @@ function isTextFile(file) {
   return TEXT_EXTENSIONS.includes(getExtension(file.name)) || file.type.startsWith("text/");
 }
 
+function isImageFile(file) {
+  return IMAGE_EXTENSIONS.includes(getExtension(file.name)) || (file.type || "").startsWith("image/");
+}
+
 function findTextFile(e) {
   const files = e.dataTransfer?.files;
   if (!files) return null;
@@ -31,6 +36,16 @@ function findTextFile(e) {
     if (isTextFile(files[i])) return files[i];
   }
   return null;
+}
+
+function findImageFiles(e) {
+  const files = e.dataTransfer?.files;
+  if (!files) return [];
+  const out = [];
+  for (let i = 0; i < files.length; i++) {
+    if (isImageFile(files[i])) out.push(files[i]);
+  }
+  return out;
 }
 
 export function setupFileDrop(state) {
@@ -81,6 +96,12 @@ export function setupFileDrop(state) {
     if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
     e.preventDefault();
     e.stopPropagation();
+    // Image drops take priority — insert image references at the drop point.
+    const images = findImageFiles(e);
+    if (images.length > 0) {
+      await insertImagesAtDrop(state, images, e.clientX, e.clientY);
+      return;
+    }
     const file = findTextFile(e);
     if (!file) return;
     const content = await file.text();
@@ -127,5 +148,36 @@ function appendToEditor(state, text) {
   const end = view.state.doc.length;
   const prefix = end > 0 ? "\n\n" : "";
   view.dispatch({ changes: { from: end, insert: prefix + text } });
+  state.markDirty();
+}
+
+async function insertImagesAtDrop(state, files, clientX, clientY) {
+  if (!state.editor) return;
+  const view = state.editor.view;
+  const { buildImageMarkdown } = await import("../state/state-images.js");
+  // Pick the insertion point — the coordinate under the cursor, or the
+  // selection head if the coord lies between lines.
+  let pos = view.posAtCoords({ x: clientX, y: clientY });
+  if (pos == null) pos = view.posAtCoords({ x: clientX, y: clientY }, false);
+  if (pos == null) pos = view.state.selection.main.head;
+
+  const chunks = [];
+  for (const file of files) {
+    const res = await state.createImageFromFile(file);
+    if (res) chunks.push(buildImageMarkdown(res.name, res.fileId));
+  }
+  if (!chunks.length) return;
+  const line = view.state.doc.lineAt(pos);
+  // Insert on its own line — add newlines if needed so markdown parses correctly.
+  const atLineStart = pos === line.from;
+  const atLineEnd = pos === line.to;
+  const prefix = atLineStart ? "" : (atLineEnd ? "\n" : "\n");
+  const suffix = atLineEnd && line.to !== view.state.doc.length ? "\n" : (atLineEnd ? "\n" : "\n");
+  const insert = prefix + chunks.join("\n\n") + suffix;
+  view.dispatch({
+    changes: { from: pos, to: pos, insert },
+    selection: { anchor: pos + insert.length },
+  });
+  view.focus();
   state.markDirty();
 }

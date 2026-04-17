@@ -14,6 +14,7 @@ use tauri::{
 
 mod settings;
 mod files;
+mod images;
 mod snapshots;
 mod sync;
 mod sync_commands;
@@ -21,6 +22,7 @@ mod zotero;
 
 use settings::AppSettings;
 use files::FileManager;
+use images::{ImageManager, ImageSaved};
 use snapshots::{SnapshotManager, SnapshotEntry};
 use sync::SyncManager;
 use zotero::ZoteroManager;
@@ -28,6 +30,7 @@ use zotero::ZoteroManager;
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub file_manager: Mutex<FileManager>,
+    pub image_manager: Mutex<ImageManager>,
     pub snapshot_manager: Mutex<SnapshotManager>,
     pub sync_manager: Mutex<SyncManager>,
     pub zotero_manager: Mutex<ZoteroManager>,
@@ -147,6 +150,82 @@ fn create_notebook(state: State<AppState>, name: String, parent_id: Option<Strin
 #[tauri::command]
 fn load_project_content(state: State<AppState>, project_id: String) -> Result<Vec<FileEntry>, String> {
     state.file_manager.lock().unwrap().load_project_content(&project_id).map_err(|e| e.to_string())
+}
+
+// ===== Image commands =====
+
+#[tauri::command]
+fn save_image(state: State<AppState>, data_url: String) -> Result<ImageSaved, String> {
+    state.image_manager.lock().unwrap()
+        .save_from_data_url(&data_url)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_image(state: State<AppState>, file_id: String) -> Result<String, String> {
+    state.image_manager.lock().unwrap()
+        .load_as_data_url(&file_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_image(state: State<AppState>, file_id: String) -> Result<(), String> {
+    state.image_manager.lock().unwrap()
+        .delete(&file_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Export a document (or project) as a folder containing `text.md` and an
+/// `images/` subdir. Each entry in `images` is `{ fileId, name }` — the
+/// exported filename is `{name}.{ext}` with the extension derived from the
+/// stored image's id.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportImage { file_id: String, name: String }
+
+#[tauri::command]
+fn export_with_images(
+    state: State<AppState>,
+    folder: String,
+    markdown: String,
+    images: Vec<ExportImage>,
+) -> Result<(), String> {
+    let root = PathBuf::from(&folder);
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    fs::write(root.join("text.md"), markdown.as_bytes()).map_err(|e| e.to_string())?;
+    if !images.is_empty() {
+        let images_dir = root.join("images");
+        fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
+        let im = state.image_manager.lock().unwrap();
+        let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for entry in &images {
+            let ext = im.extension_of(&entry.file_id).unwrap_or_else(|| "bin".to_string());
+            let (bytes, _mime) = im.load_bytes(&entry.file_id).map_err(|e| e.to_string())?;
+            let base = sanitize_filename(&entry.name);
+            let filename = unique_filename(&used, &base, &ext);
+            used.insert(filename.clone());
+            fs::write(images_dir.join(&filename), &bytes).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn sanitize_filename(name: &str) -> String {
+    let trimmed = name.trim();
+    let cleaned: String = trimmed.chars()
+        .map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '_' } else { c })
+        .collect();
+    if cleaned.is_empty() { "image".to_string() } else { cleaned }
+}
+
+fn unique_filename(used: &std::collections::HashSet<String>, base: &str, ext: &str) -> String {
+    let first = format!("{}.{}", base, ext);
+    if !used.contains(&first) { return first; }
+    for i in 2..u32::MAX {
+        let candidate = format!("{} {}.{}", base, i, ext);
+        if !used.contains(&candidate) { return candidate; }
+    }
+    first
 }
 
 #[tauri::command]
@@ -273,6 +352,7 @@ pub fn run() {
     let data_dir = get_data_dir();
     fs::create_dir_all(&data_dir).ok();
     fs::create_dir_all(data_dir.join("files")).ok();
+    fs::create_dir_all(data_dir.join("files").join("images")).ok();
 
     let settings = AppSettings::load(&data_dir).unwrap_or_default();
 
@@ -286,6 +366,7 @@ pub fn run() {
     let initial_visibility = settings.visibility.clone();
 
     let file_manager = FileManager::new(data_dir.join("files"));
+    let image_manager = ImageManager::new(data_dir.join("files").join("images"));
     let snapshot_manager = SnapshotManager::new(&data_dir);
     let sync_manager = SyncManager::new(&data_dir);
     let zotero_manager = ZoteroManager::new(&data_dir);
@@ -311,6 +392,7 @@ pub fn run() {
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
+            image_manager: Mutex::new(image_manager),
             snapshot_manager: Mutex::new(snapshot_manager),
             sync_manager: Mutex::new(sync_manager),
             zotero_manager: Mutex::new(zotero_manager),
@@ -461,6 +543,10 @@ pub fn run() {
             create_project,
             create_notebook,
             load_project_content,
+            save_image,
+            load_image,
+            delete_image,
+            export_with_images,
             create_snapshot,
             get_snapshots,
             get_snapshot,

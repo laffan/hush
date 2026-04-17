@@ -181,6 +181,11 @@ async function init() {
   // notebook canvas (same behaviour as pane editors).
   const { attachEditorTextDrag } = await import("./pane/text-drag.js");
   attachEditorTextDrag(editor.view, editorContainer);
+  // Cmd-drag also works on image chips / raw image refs — route them via
+  // the same text-drag pipeline so the markdown ref is inserted at the
+  // drop point (the receiving editor re-decorates it).
+  const { attachImageDrag } = await import("./editor/plugins/image-decorator.js");
+  attachImageDrag(editor.view, editorContainer);
 
   // Emit content-change events so floating panes can sync.
   // Patch markDirty to also fire "doc-content-changed" — this is called

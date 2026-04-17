@@ -454,18 +454,35 @@ async function exportCurrentFile(state) {
     ? (findNode(state.fileTree, state.currentProjectId)?.name || "project-export")
     : (state._deriveName(content) || "hush-export");
 
+  const { collectImageRefs } = await import("../state/state-images.js");
+  const images = collectImageRefs(state, content);
+
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   if (IS_TAURI) {
     try {
-      const { save } = await import("@tauri-apps/plugin-dialog");
-      const filePath = await save({
-        defaultPath: `${name}.md`,
-        filters: [{ name: "Markdown", extensions: ["md"] }],
-      });
-      if (filePath) {
-        const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-        await writeTextFile(filePath, content);
+      if (images.length === 0) {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const filePath = await save({
+          defaultPath: `${name}.md`,
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (filePath) {
+          const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+          await writeTextFile(filePath, content);
+        }
+        return;
       }
+      // Has images — export as a folder containing text.md + images/
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const target = await save({ defaultPath: name });
+      if (!target) return;
+      const { markdown, imagesForExport } = rewriteImageRefsForExport(content, images);
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("export_with_images", {
+        folder: target,
+        markdown,
+        images: imagesForExport,
+      });
     } catch (e) {
       console.error("Export failed:", e);
     }
@@ -478,6 +495,40 @@ async function exportCurrentFile(state) {
     a.click();
     URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * Rewrite `hush-image:<fileId>` refs to `images/<name>.<ext>` so the
+ * exported markdown uses plain relative paths. Duplicate names are de-
+ * duplicated by appending an index to match the Rust export path logic.
+ */
+function rewriteImageRefsForExport(content, images) {
+  const sanitize = (n) => (n || "image").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "image";
+  const used = new Map(); // fileId -> exported basename
+  const usedNames = new Set();
+  const imagesForExport = [];
+  for (const img of images) {
+    const ext = (img.fileId.match(/\.([^.]+)$/)?.[1] || "bin").toLowerCase();
+    const base = sanitize(img.name);
+    let candidate = `${base}.${ext}`;
+    let n = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${base} ${n}.${ext}`;
+      n++;
+    }
+    usedNames.add(candidate);
+    used.set(img.fileId, candidate);
+    imagesForExport.push({ fileId: img.fileId, name: img.name });
+  }
+  const rewritten = content.replace(
+    /!\[([^\]]*)\]\(hush-image:([A-Za-z0-9._-]+)\)/g,
+    (orig, alt, fileId) => {
+      const out = used.get(fileId);
+      if (!out) return orig; // Unknown ref — leave alone.
+      return `![${alt}](images/${out})`;
+    }
+  );
+  return { markdown: rewritten, imagesForExport };
 }
 
 function escHtml(str) {

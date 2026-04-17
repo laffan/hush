@@ -25,6 +25,8 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **File Management** — Multiple files with automatic 2-second autosave. Organize documents and notebooks in folders and projects with drag-and-drop reordering.
 
+**Doc Images** — Drag any image file from the desktop into a document to embed it at the drop point. Image files are stored centrally in a top-level **Images** folder (just above Trash) and referenced from docs using a `hush-image:` URL scheme. Hovering over an image reference previews it in a tooltip; clicking opens a full-size modal. Images can be renamed from the Files panel without breaking references. Cmd-drag moves an image reference between documents and panes (same gesture as text). Exporting a doc that contains images produces a folder with `text.md` plus an `images/` subdirectory.
+
 **Dropbox Sync** — Optional full-library sync to Dropbox. Connect via OAuth in Settings > Sync, choose a folder, and all documents, projects, and folders are mirrored automatically. Works across macOS and iOS. Documents sync as `.md` files, projects as `.hushproject` metadata. Sync is bidirectional with automatic conflict resolution.
 
 **Keyboard-First** — Global shortcuts work even when the app is hidden:

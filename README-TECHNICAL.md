@@ -10,9 +10,10 @@ Frontend (src/)                        Backend (src-tauri/src/)
 main.js                  ←──IPC──→     lib.rs (commands)
 ├── command-palette.js                 ├── settings.rs
 ├── theme-colors.js                    ├── files.rs
-├── themes.js                          ├── snapshots.rs
-├── tauri-bridge.js                    ├── sync.rs
-├── zotero.js                          └── zotero.rs
+├── themes.js                          ├── images.rs
+├── tauri-bridge.js                    ├── snapshots.rs
+├── zotero.js                          ├── sync.rs
+│                                      └── zotero.rs
 │
 ├── editor/
 │   ├── editor.js
@@ -21,6 +22,7 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │   ├── sentence-navigator.js
 │   ├── find-replace.js
 │   ├── file-drop.js
+│   ├── image-preview.js
 │   └── plugins/
 │       ├── callouts.js
 │       ├── dry-highlight.js
@@ -28,6 +30,7 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │       ├── focus-mode.js
 │       ├── footnotes.js
 │       ├── footnotes-ui.js
+│       ├── image-decorator.js
 │       ├── link-decorator.js
 │       ├── private-mode.js
 │       ├── project-view.js
@@ -74,6 +77,8 @@ main.js                  ←──IPC──→     lib.rs (commands)
 ├── state/
 │   ├── state.js
 │   ├── state-project.js
+│   ├── state-tree.js
+│   ├── state-images.js
 │   └── tree-helpers.js
 │
 ├── sync/
@@ -116,7 +121,7 @@ Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`
 
 On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invoke("list_files")`, and `invoke("get_file_tree")`. In the browser (dev without Tauri), it falls back to localStorage.
 
-**File tree:** `AppState.fileTree` holds a nested tree of documents, folders, and projects. Each node: `{ id, type, name, fileId?, children[] }`. Persisted via `file_tree.json` (backend) or `localStorage` (web). Special nodes (Inbox, Trash) are auto-created if missing.
+**File tree:** `AppState.fileTree` holds a nested tree of documents, folders, projects, and images. Each node: `{ id, type, name, fileId?, children[] }`. Persisted via `file_tree.json` (backend) or `localStorage` (web). Three special nodes are auto-created if missing and pinned in place: **Inbox** (root position 0, accepts new docs/notebooks), **Images** (second-to-last, holds every `image` node dropped into a doc), and **Trash** (last).
 
 **Project state:** When a project is selected (`currentProjectId`), the editor shows all child documents joined by separator markers. `openProject()` loads and concatenates content; `saveProjectContent()` splits on separators and saves each part back.
 
@@ -260,7 +265,13 @@ CodeMirror plugin for project mode. `createProjectViewField` (StateField) replac
 
 ### File Drop (`editor/file-drop.js`)
 
-Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content. In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
+Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via the Rust `save_image` command, creates an `image` node in the top-level Images folder, and inserts a `![name](hush-image:<fileId>)` reference at the cursor coordinate. In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
+
+### Doc Images (`editor/plugins/image-decorator.js`, `editor/image-preview.js`, `state/state-images.js`)
+
+`hush-image:<fileId>` URLs inside markdown image syntax are decorated by `createImageDecoratorPlugin` with a replace-widget "image chip" (icon + label) whenever the cursor isn't inside the reference — editing the raw syntax reveals it again. The widget element registers a hover tooltip (`attachImageHoverTooltip`) that lazy-loads the full image via the `load_image` Rust command (cached in `state-images.js`). Clicking the chip (or Cmd-clicking the raw syntax) opens `openImagePreviewModal`, a centered lightbox that closes on Escape or backdrop click.
+
+`attachImageDrag` wires Cmd+drag on a chip (or the raw markdown under the cursor) into the existing `pane/text-drag.js` pipeline — the payload is simply the markdown reference, so the receiving editor re-decorates it on drop. Image binaries live in `{data_dir}/files/images/{uuid}.{ext}`; deleting the parent tree node (or emptying Trash) routes through `delete_image` in `state-tree.js`. Exports with image references use `export_with_images`, which writes `text.md` + `images/<name>.<ext>` into a user-chosen folder and rewrites the markdown to relative paths.
 
 ### Floating Panes (`pane/`)
 
@@ -322,7 +333,7 @@ Wraps [thememirror](https://github.com/vadimdemedes/thememirror). Exports `theme
 
 Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
-`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `notebook.css`, `floating-pane.css`, `utility.css`.
+`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `notebook.css`, `floating-pane.css`, `image-preview.css`, `utility.css`.
 
 The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 
@@ -352,9 +363,15 @@ Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy
 
 Files stored as individual JSON files (`{uuid}.json`) in `{data_dir}/files/`. Each: `{ id, name, content, modified }`.
 
-**File tree:** `{data_dir}/file_tree.json`. Each `TreeNode`: `{ id, name, type, fileId?, children[] }` where type is `document`, `notebook`, `folder`, or `project`. Documents and notebooks both have a `fileId` pointing to `files/{uuid}.json` — documents store markdown text, notebooks store a JSON array of shapes. Auto-migrates from flat file list on first load.
+**File tree:** `{data_dir}/file_tree.json`. Each `TreeNode`: `{ id, name, type, fileId?, children[] }` where type is `document`, `notebook`, `folder`, `project`, or `image`. Documents and notebooks have a `fileId` pointing to `files/{uuid}.json`; image nodes have a `fileId` pointing to `files/images/{uuid}.{ext}` (see `images.rs`). Auto-migrates from flat file list on first load.
 
 `save_to_external()` writes `.md` to a user-chosen folder, tracking ID mappings in a `.hush/` subdirectory for Obsidian vault integration.
+
+### `images.rs`
+
+Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload, picks an extension from the MIME type, and writes the raw bytes to `{data_dir}/files/images/{uuid}.{ext}`. The `fileId` returned to the frontend is `{uuid}.{ext}` so a direct filename lookup suffices; MIME is re-derived from the extension on load.
+
+The Tauri command layer exposes `save_image`, `load_image` (returns a data URL for rendering), `delete_image`, and `export_with_images` (writes `text.md` + `images/<name>.<ext>` into a user-chosen folder, rewriting image refs in the process).
 
 ### `snapshots.rs`
 

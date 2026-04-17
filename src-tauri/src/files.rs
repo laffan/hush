@@ -234,8 +234,15 @@ fn insert_into_tree(tree: &mut Vec<TreeNode>, parent_id: Option<&str>, node: Tre
     }
 }
 
-/// Insert at root level but before the Trash node so Trash stays last.
+/// Insert at root level but before the Images and Trash nodes so the
+/// special tail (Images, Trash) stays in its reserved position.
 fn insert_before_trash(tree: &mut Vec<TreeNode>, node: TreeNode) {
+    // Prefer inserting before Images (which sits above Trash); fall back
+    // to Trash for trees that haven't had Images created yet.
+    if let Some(idx) = tree.iter().position(|n| n.id == "__images__") {
+        tree.insert(idx, node);
+        return;
+    }
     if let Some(idx) = tree.iter().position(|n| n.id == "__trash__") {
         tree.insert(idx, node);
     } else {

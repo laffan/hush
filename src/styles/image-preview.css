@@ -1,0 +1,158 @@
+/* Inline image chip rendered inside the editor (replaces the raw
+   `![alt](hush-image:...)` markdown when the cursor is outside the ref). */
+.cm-hush-image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 1px 0.5em 1px 0.4em;
+  margin: 0 1px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--fg, #888) 10%, transparent);
+  color: var(--fg, #ccc);
+  cursor: pointer;
+  font-size: 0.9em;
+  line-height: 1.2;
+  vertical-align: baseline;
+  user-select: none;
+  transition: background-color 0.12s ease;
+}
+
+.cm-hush-image-chip:hover {
+  background: color-mix(in srgb, var(--fg, #888) 20%, transparent);
+}
+
+.cm-hush-image-chip .cm-hush-image-icon {
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  opacity: 0.75;
+}
+
+.cm-hush-image-chip .cm-hush-image-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.cm-hush-image-chip .cm-hush-image-label {
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hover tooltip showing the full image */
+.hush-image-tooltip {
+  position: fixed;
+  z-index: 400;
+  max-width: 320px;
+  padding: 6px;
+  background: var(--bg, #1e1e1e);
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 25%, transparent);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.hush-image-tooltip.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.hush-image-tooltip img {
+  display: block;
+  max-width: 300px;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border-radius: 3px;
+}
+
+.hush-image-tooltip-name {
+  margin-top: 4px;
+  color: var(--fg, #ccc);
+  font-size: 11px;
+  font-family: var(--font-family, sans-serif);
+  opacity: 0.75;
+  text-align: center;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Click-to-preview modal */
+.hush-image-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.hush-image-modal {
+  position: relative;
+  max-width: min(1200px, 90vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.hush-image-modal-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 85vh;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.hush-image-modal-body img {
+  max-width: 100%;
+  max-height: 85vh;
+  width: auto;
+  height: auto;
+  display: block;
+}
+
+.hush-image-modal-name {
+  color: #fff;
+  font-size: 13px;
+  font-family: var(--font-family, sans-serif);
+  opacity: 0.75;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hush-image-modal-close {
+  position: absolute;
+  top: -32px;
+  right: -4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.hush-image-modal-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

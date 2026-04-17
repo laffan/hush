@@ -356,18 +356,19 @@ export class AppState {
   // ===== Special Nodes =====
 
   static INBOX_ID = "__inbox__";
+  static IMAGES_ID = "__images__";
   static TRASH_ID = "__trash__";
 
   ensureSpecialNodes() {
-    if (!this.fileTree.some(n => n.id === AppState.INBOX_ID))
-      this.fileTree.unshift({ id: AppState.INBOX_ID, type: "project", name: "Inbox", children: [], flagged: false });
-    if (!this.fileTree.some(n => n.id === AppState.TRASH_ID))
-      this.fileTree.push({ id: AppState.TRASH_ID, type: "folder", name: "Trash", children: [], flagged: false });
-    // Enforce positions: Inbox first, Trash last
-    const iIdx = this.fileTree.findIndex(n => n.id === AppState.INBOX_ID);
-    if (iIdx > 0) { const [n] = this.fileTree.splice(iIdx, 1); this.fileTree.unshift(n); }
-    const tIdx = this.fileTree.findIndex(n => n.id === AppState.TRASH_ID);
-    if (tIdx >= 0 && tIdx < this.fileTree.length - 1) { const [n] = this.fileTree.splice(tIdx, 1); this.fileTree.push(n); }
+    const t = this.fileTree;
+    if (!t.some(n => n.id === AppState.INBOX_ID)) t.unshift({ id: AppState.INBOX_ID, type: "project", name: "Inbox", children: [], flagged: false });
+    if (!t.some(n => n.id === AppState.IMAGES_ID)) t.push({ id: AppState.IMAGES_ID, type: "folder", name: "Images", children: [], flagged: false });
+    if (!t.some(n => n.id === AppState.TRASH_ID)) t.push({ id: AppState.TRASH_ID, type: "folder", name: "Trash", children: [], flagged: false });
+    // Enforce ordering: Inbox first, Images then Trash pinned to the tail.
+    const moveTo = (id, idx) => { const i = t.findIndex(n => n.id === id); if (i >= 0 && i !== idx) { const [n] = t.splice(i, 1); t.splice(idx, 0, n); } };
+    moveTo(AppState.INBOX_ID, 0);
+    moveTo(AppState.TRASH_ID, t.length - 1);
+    moveTo(AppState.IMAGES_ID, t.length - 2);
   }
 
   isInTrash(nodeId) {
@@ -398,6 +399,9 @@ export class AppState {
   async renameTreeNode(nodeId, newName) { const m = await import("./state-tree.js"); return m.renameTreeNode(this, nodeId, newName); }
   async toggleFlagged(nodeId) { const m = await import("./state-tree.js"); return m.toggleFlagged(this, nodeId); }
   async duplicateTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.duplicateTreeNode(this, nodeId); }
+
+  async createImageFromFile(file) { const m = await import("./state-images.js"); return m.createImageFromFile(this, file); }
+  async loadImageDataUrl(fileId) { const m = await import("./state-images.js"); return m.getImageDataUrl(fileId); }
 
   // ===== Project View (delegated to state-project.js) =====
 

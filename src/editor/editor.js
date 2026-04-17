@@ -14,6 +14,7 @@ import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } 
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
+import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
 import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
@@ -367,6 +368,7 @@ export function createBaseExtensions(state, onChange) {
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
     createLinkDecoratorPlugin(),
+    createImageDecoratorPlugin(),
     headingIndentPlugin,
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
@@ -498,6 +500,7 @@ export function createEditor(container, state) {
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin();
+  const imageDecoratorPlugin = createImageDecoratorPlugin();
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
   const commentAfterPlugin = createCommentAfterPlugin();
@@ -541,6 +544,7 @@ export function createEditor(container, state) {
       footnotePlugin,
       flagHighlightPlugin,
       linkDecoratorPlugin,
+      imageDecoratorPlugin,
       headingIndentPlugin,
       stickyHeadersPlugin,
       multiLineCommentPlugin,

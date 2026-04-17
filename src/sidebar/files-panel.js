@@ -29,13 +29,17 @@ const typeIcons = {
   syncedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /><line x1="2" y1="8" x2="14" y2="8" /></svg>`,
   syncedFolderBroken: `<svg viewBox="0 0 16 16" class="tree-type-icon sync-broken-icon"><circle cx="8" cy="8" r="6" /><polyline points="2,8 5,8 6,6 7,10 8,6 9,10 10,8 14,8" /></svg>`,
   inbox: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 9 5 9 6.5 11 9.5 11 11 9 14 9" /><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" /></svg>`,
+  images: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="2" y="3" width="12" height="10" rx="1.5" /><circle cx="6" cy="7" r="1.2" fill="currentColor" stroke="none" /><polyline points="3,12 6.5,8.5 9,11 11,9 13,12" /></svg>`,
+  image: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="2" y="3" width="12" height="10" rx="1.5" /><circle cx="6" cy="7" r="1.2" fill="currentColor" stroke="none" /><polyline points="3,12 6.5,8.5 9,11 11,9 13,12" /></svg>`,
   trash: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
   flaggedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
 };
 
 function getIcon(item) {
   if (item.id === AppState.INBOX_ID) return typeIcons.inbox;
+  if (item.id === AppState.IMAGES_ID) return typeIcons.images;
   if (item.id === AppState.TRASH_ID) return typeIcons.trash;
+  if (item.type === "image") return typeIcons.image;
   if (item.syncFolderId && item.type === "folder") {
     // Legacy synced folder nodes — show broken icon if Dropbox disconnected
     if (!isDropboxConnected()) return typeIcons.syncedFolderBroken;
@@ -59,18 +63,19 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
   if (item?.syncFolderId && item.type === "folder") {
     return "";
   }
-  const isSpecial = nodeId === AppState.INBOX_ID;
+  const isSpecial = nodeId === AppState.INBOX_ID || nodeId === AppState.IMAGES_ID;
   const isDoc = nodeType === "document";
+  const isImage = nodeType === "image";
   // Docs auto-derive their name from first line while still "Untitled".
   // Once content has locked in a name, expose rename like notebooks do.
   const docRenameable = isDoc && item?.name && item.name !== "Untitled";
   const renameBtn = (isSpecial || (isDoc && !docRenameable)) ? "" : `<button data-tree-action="rename" title="Rename">
       <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     </button>`;
-  const flagBtn = (isSpecial || inTrash) ? "" : `<button data-tree-action="flag" title="Toggle flag">
+  const flagBtn = (isSpecial || inTrash || isImage) ? "" : `<button data-tree-action="flag" title="Toggle flag">
       <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
     </button>`;
-  const dupBtn = isSpecial ? "" : `<button data-tree-action="duplicate" title="Duplicate">
+  const dupBtn = (isSpecial || isImage) ? "" : `<button data-tree-action="duplicate" title="Duplicate">
       <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
     </button>`;
   const delBtn = isSpecial ? "" : `<button data-tree-action="delete" title="Delete">
@@ -129,14 +134,18 @@ export function createFilesPanel(container, state, hidePanel) {
     getId: (item) => item.id,
     getChildren: (item) => item.children || [],
     setChildren: (item, children) => { item.children = children; },
-    canNest: (item) => item.type === "folder" || item.type === "project",
+    canNest: (item) => (item.type === "folder" || item.type === "project") && item.id !== AppState.IMAGES_ID,
     canDrop: (draggedItem, targetItem) => {
+      // Images must stay in the Images folder.
+      if (draggedItem.type === "image") return targetItem.id === AppState.IMAGES_ID;
+      // The Images folder only accepts image nodes.
+      if (targetItem.id === AppState.IMAGES_ID) return draggedItem.type === "image";
       if (targetItem.type === "folder") return true;
       if (targetItem.type === "project") return draggedItem.type === "document" || draggedItem.type === "project";
       return false;
     },
     canDrag: (item) => {
-      return item.id !== AppState.INBOX_ID && item.id !== AppState.TRASH_ID;
+      return item.id !== AppState.INBOX_ID && item.id !== AppState.IMAGES_ID && item.id !== AppState.TRASH_ID;
     },
     enableKeyboard: false,
     dragStartDelay: 180,
@@ -161,6 +170,8 @@ export function createFilesPanel(container, state, hidePanel) {
       } else if (item.type === "project") {
         state.openProject(item.id);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+      } else if (item.type === "image" && item.fileId) {
+        openImagePreview(item.fileId, item.name);
       }
     },
 
@@ -370,6 +381,17 @@ function enforceSpecialPositions(data) {
     const [trash] = data.splice(trashIdx, 1);
     data.push(trash);
   }
+  // Images stays directly above Trash.
+  const imgIdx = data.findIndex(n => n.id === AppState.IMAGES_ID);
+  if (imgIdx >= 0) {
+    const trashAt = data.findIndex(n => n.id === AppState.TRASH_ID);
+    const target = trashAt >= 0 ? trashAt : data.length;
+    if (imgIdx !== target - 1) {
+      const [img] = data.splice(imgIdx, 1);
+      const newTrashAt = data.findIndex(n => n.id === AppState.TRASH_ID);
+      data.splice(newTrashAt >= 0 ? newTrashAt : data.length, 0, img);
+    }
+  }
 }
 
 function sortFlaggedItems(tree) {
@@ -530,4 +552,9 @@ function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+async function openImagePreview(fileId, name) {
+  const { openImagePreviewModal } = await import("../editor/image-preview.js");
+  openImagePreviewModal(fileId, name);
 }
