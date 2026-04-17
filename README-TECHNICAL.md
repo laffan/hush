@@ -265,17 +265,29 @@ CodeMirror plugin for project mode. `createProjectViewField` (StateField) replac
 
 ### File Drop (`editor/file-drop.js`)
 
-Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via the Rust `save_image` command (keeping the user's filename, auto-suffixed on collision) and inserts a standard `![alt](filename.png)` reference at the cursor coordinate. In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
+Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via `save_image` and inserts a standard `![alt](filename.png)` reference at the cursor coordinate (see "Doc Images" below). In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
 
 ### Doc Images (`editor/plugins/image-decorator.js`, `editor/image-preview.js`, `state/state-images.js`)
 
-Standard markdown image syntax — `![alt](filename.png)` with an optional `![alt | caption](filename.png)` caption extension — is replaced by an inline `<img>` widget whenever the cursor isn't inside the reference. The decorator only activates for URLs that resolve to an image in the Images folder; external URLs stay as raw markdown. CSS enforces `max-width: 100%` (column-bounded) and `max-height: 75vh`; narrower images are centered. Captions render in italic below the image. Data URLs are lazy-loaded via the `load_image` Rust command and cached by filename.
+**Storage model.** Image binaries live at `{data_dir}/files/images/{filename}` under the user's original filename; the Rust `ImageManager` auto-suffixes on collision (`brown-cow.png`, `brown-cow (2).png`, ...). A tree node with `type: "image"` and `fileId === filename` records each one. The Images folder is a pinned special node (`__images__`) that sits directly above Trash and only accepts image children; `files-panel.js`' `canDrop` and the generic `canDropIntoParent` check in `sortable-list/drag-drop.js` reject any attempt to drag an image out.
 
-Images are referenced by bare filename. Renaming an image from the Files panel calls `rename_image` in Rust (which renames on disk and auto-suffixes on collision) and then walks every document in the tree to rewrite matching `]({oldname})` → `]({newname})` references — including the currently-open editor buffer.
+**Reference syntax.** Standard markdown — `![alt](filename.png)` — with two extensions: an optional caption after a pipe (`![alt | caption](filename.png)`) renders italic below the image, and URLs containing spaces or parens are wrapped in double quotes (`![alt]("brown-cow (2).png")`) so the parser can unambiguously recover the filename. `IMAGE_MD_RE` in `state-images.js` is the shared regex (bare or quoted URL, capture groups 1=alt, 2=quoted URL, 3=bare URL) consumed by the decorator, the export path, the rename rewriter, and the delete purger so every caller agrees on syntax.
 
-Hover over an `image` row in the Files panel shows the full image in a tooltip (`attachImageHoverTooltip` wired in `files-panel.js`); clicking either the sidebar row or the editor-rendered image opens `openImagePreviewModal`, a centered lightbox that dismisses on Escape or backdrop click.
+**Inline rendering.** `createImageDecoratorPlugin` replaces a resolved ref with an inline `<img>` wrapper whenever no cursor overlaps it; cursor-inside reveals the raw markdown for editing. CSS enforces `max-width: 100%` (editor column-bounded) and `max-height: 50vh`, and narrower images are centered. Data URLs are lazy-loaded via the Rust `load_image` command and cached by filename. The plugin re-runs `buildDecorations` when `state` fires `files-changed` by dispatching an annotated transaction — this is how a pane opened before the image existed still picks it up when the tree updates.
 
-`attachImageDrag` wires Cmd+drag on an image widget (or the raw markdown under the cursor) into the existing `pane/text-drag.js` pipeline — the payload is the markdown reference, so the receiving editor re-decorates it on drop. Image binaries live at `{data_dir}/files/images/{filename}`; deleting the parent tree node (or emptying Trash) routes through `delete_image` in `state-tree.js`. `export_with_images` writes `text.md` + `images/<filename>` into a user-chosen folder and rewrites every local ref to the `images/` relative path.
+**Interactions.** Hovering an `image` row in the Files panel shows the full image in a floating tooltip (`attachImageHoverTooltip` in `editor/image-preview.js`; the tooltip hides immediately when its source row leaves the DOM via a `requestAnimationFrame` connectivity watch). Clicking either the sidebar row or the editor-rendered image opens `openImagePreviewModal`, a centered lightbox dismissed on Escape or backdrop click.
+
+**Rename + delete.** Renaming an image calls `rename_image` in Rust (renames on disk, auto-suffixes on collision, preserves the original extension if the user drops it) and then `rewriteImageRefs` walks every document in the tree, updating both bare and quoted URL forms — including the currently-open editor buffer. Deleting an image (soft or permanent) first runs `removeImageRefs` to purge every matching markdown ref from every doc; solo-line refs consume their line so no blank line is left behind. `findImageNode` also skips the Trash subtree so a manually-typed ref to a trashed image won't resolve.
+
+**Drag routing.** One unified pipeline handles all image transfers:
+- *Desktop → doc / notebook*: `editor/file-drop.js` (docs) and the notebook's own drop handler detect image files and save via `save_image`.
+- *Sidebar → doc / notebook*: the sortable list's new `forceDragOutside(item)` config hook lets image rows escape the panel without a modifier. `files-panel.js`' `onDragOutside` routes them to `dropSidebarImageAt(filename, x, y)` in `pane/text-drag.js`, which `elementsFromPoint`-scans for a CodeMirror editor or registered notebook canvas and inserts markdown or adds an `ImageShape` accordingly.
+- *Doc ↔ pane*: `attachImageDrag` hands the markdown ref to `startTextDrag`; the receiving editor re-decorates it on drop.
+- *Doc → notebook via Cmd-drag*: when `startTextDrag`'s drop target is a notebook canvas and the payload is a single local image ref, it resolves the data URL and adds an `ImageShape` instead of a text shape.
+- *Notebook → doc*: `attachNotebookImageShapeDrag` initiates a drag with a `{ dataUrl, name, width, height }` image payload; the drop handler invokes `save_image` (reusing the auto-suffix logic), creates an image tree node, and inserts `![alt](filename.png)` at the drop coordinate.
+- *Notebook → notebook* with an image payload clones the shape at the drop point. The drag ghost shows a thumbnail for image payloads.
+
+**Export.** `collectImageRefs` walks the current document for local image refs; `export_with_images` (Rust) writes `text.md` + `images/<filename>` into a user-chosen folder, and `rewriteImageRefsForExport` rewrites each ref to the relative `images/` path (quoting URLs when they need it).
 
 ### Floating Panes (`pane/`)
 
@@ -300,7 +312,7 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 
 **Z-index layering:** `#pane-container` is `z-index: 90` (above editor content at 0–80, below sidebars at 100+). The notebook container has no z-index to avoid creating a stacking context, allowing the shelf panel (`z-index: 150`) to render above panes.
 
-**Drag-from-sidebar integration:** `sortable-list/drag-drop.js` has an `onDragOutside(item, x, y)` callback. In `finishDrag`, when Cmd/Ctrl is held and the pointer is right of the panel overlay, the callback fires instead of the normal reorder drop. `files-panel.js` wires this to `createPane()`.
+**Drag-from-sidebar integration:** `sortable-list/drag-drop.js` has an `onDragOutside(item, x, y)` callback. In `finishDrag`, the callback fires instead of the normal reorder drop when the pointer is right of the panel overlay AND either Cmd/Ctrl is held OR `forceDragOutside(item)` returns true. `files-panel.js` uses the modifier path for documents and notebooks (creating a floating pane via `createPane()`) and `forceDragOutside` for image rows so they escape the panel without a modifier — `onDragOutside` then calls `dropSidebarImageAt` in `pane/text-drag.js` to insert markdown into the editor or add an `ImageShape` to the notebook under the pointer. `canDropIntoParent` also runs `canDrop` for sibling reorders and root-level drops (not just "drop into" targets), which is how the images-stay-in-Images rule is enforced.
 
 ### Zotero Integration (`zotero.js`)
 
@@ -313,6 +325,8 @@ Dropbox OAuth PKCE integration for syncing files. `dropbox.js` handles the full 
 ### Sync (`sync/`)
 
 Full-library Dropbox synchronization. All documents, folders, and projects are mirrored to a single Dropbox folder. Documents sync as `.md` files (named from document's first line, max 50 chars, special chars stripped). Projects sync as directories containing their child documents plus a `.hushproject` JSON metadata file with ordering. Folder merging handles special nodes (Inbox, Trash) by matching name and ID. Uses SHA256 hashing + timestamps for change detection with "most recent wins" conflict resolution. Polling runs every 10 seconds for content changes and every 60 seconds for structural diffs (new/deleted files). Sync log persists recent activity in settings. Sync is optional — users connect via OAuth in Settings > Sync and can disconnect at any time, choosing to keep or remove Dropbox files.
+
+> **Note on image sync.** Image nodes and their binaries are local-only. The Dropbox scanner walks for `.md`/`.hushnote` files and the sync manifest filters tree nodes to `type: "document"`/`"notebook"`, so neither the Images tree branch nor the files under `files/images/` round-trip through Dropbox — image refs in synced docs will not resolve on other devices until this is extended.
 
 ### Tauri Bridge (`tauri-bridge.js`)
 
@@ -373,9 +387,9 @@ Files stored as individual JSON files (`{uuid}.json`) in `{data_dir}/files/`. Ea
 
 ### `images.rs`
 
-Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload and writes the raw bytes to `{data_dir}/files/images/{filename}`, keeping the caller-supplied filename and auto-suffixing with ` (2)`, ` (3)`, ... on collision. The filename *is* the stable id: markdown refs use the bare filename and the Rust `load_image` command reads directly by name.
+Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload and writes the raw bytes to `{data_dir}/files/images/{filename}`, keeping the caller-supplied filename as-is and auto-suffixing with ` (2)`, ` (3)`, ... on collision. The filename *is* the stable id: markdown refs use the bare filename (or a double-quoted URL when the filename contains spaces or parens) and the Rust `load_image` command reads directly by name.
 
-The Tauri command layer exposes `save_image` (returns the possibly-suffixed final filename), `load_image` (returns a data URL), `delete_image`, `rename_image` (renames on disk; returns the final name after any collision-handling), `list_images`, and `export_with_images` (writes `text.md` + `images/<filename>` into a user-chosen folder).
+The Tauri command layer exposes `save_image` (returns the possibly-suffixed final filename), `load_image` (returns a data URL), `delete_image`, `rename_image` (renames on disk, auto-suffixes on collision, preserves the original extension if the new name drops it), `list_images`, and `export_with_images` (writes `text.md` + `images/<filename>` into a user-chosen folder).
 
 ### `snapshots.rs`
 
