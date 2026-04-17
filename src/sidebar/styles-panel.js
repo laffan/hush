@@ -572,7 +572,10 @@ function openStyleModal(state, existingStyle, onDone) {
             </div>
           </div>
 
-          <!-- RIGHT: preview pane -->
+          <!-- Draggable divider — only visible in narrow-window stack layout -->
+          <div class="style-modal-divider" role="separator" aria-orientation="horizontal"></div>
+
+          <!-- RIGHT: preview pane (sits on top in narrow-window stack mode) -->
           <div class="style-modal-preview" id="style-preview-pane">
             <div class="style-preview-content">${formatPreviewHtml(PREVIEW_MD)}</div>
             <div class="style-preview-cursor-demo">
@@ -662,6 +665,39 @@ function openStyleModal(state, existingStyle, onDone) {
   function bind() {
     // Close button
     backdrop.querySelector(".style-modal-close").addEventListener("click", close);
+
+    // Draggable divider between preview (top) and settings (bottom) in
+    // narrow-window stack mode. Only active below 700px — wide mode has
+    // a side-by-side layout with no divider.
+    const divider = backdrop.querySelector(".style-modal-divider");
+    const previewPane = backdrop.querySelector(".style-modal-preview");
+    const modalBody = backdrop.querySelector(".style-modal-body");
+    if (divider && previewPane && modalBody) {
+      divider.addEventListener("pointerdown", (e) => {
+        if (window.innerWidth > 700) return;
+        e.preventDefault();
+        const bodyRect = modalBody.getBoundingClientRect();
+        const startY = e.clientY;
+        const startH = previewPane.getBoundingClientRect().height;
+        divider.setPointerCapture(e.pointerId);
+        divider.classList.add("dragging");
+        const onMove = (me) => {
+          const bodyH = bodyRect.height;
+          // Clamp so both panes keep a usable minimum height.
+          const newH = Math.max(80, Math.min(bodyH - 120, startH + (me.clientY - startY)));
+          previewPane.style.flex = `0 0 ${newH}px`;
+        };
+        const onUp = () => {
+          divider.classList.remove("dragging");
+          divider.removeEventListener("pointermove", onMove);
+          divider.removeEventListener("pointerup", onUp);
+          divider.removeEventListener("pointercancel", onUp);
+        };
+        divider.addEventListener("pointermove", onMove);
+        divider.addEventListener("pointerup", onUp);
+        divider.addEventListener("pointercancel", onUp);
+      });
+    }
 
     // Color mode tabs
     backdrop.querySelectorAll(".style-color-tab").forEach(btn => {

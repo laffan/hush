@@ -196,37 +196,9 @@
   display: none !important;
 }
 
-/* Narrow windows: stack the panes — preview on top (fixed 250px,
-   scrolls internally), settings below (fills the rest of the space,
-   scrolls independently). Uses `order` to flip the DOM sequence
-   without the column-reverse quirk where scroll direction inverts. */
-@media (max-width: 700px) {
-  .style-modal {
-    width: 96%;
-    height: 92%;
-    max-height: 800px;
-  }
-  .style-modal-body {
-    flex-direction: column;
-  }
-  .style-modal-preview {
-    order: 0;
-    flex: 0 0 250px;
-    height: 250px;
-    overflow-y: auto;
-    border-radius: 0;
-    border-bottom: 1px solid var(--panel-border);
-  }
-  .style-modal-settings {
-    order: 1;
-    width: 100%;
-    min-width: 0;
-    min-height: 0;
-    flex: 1 1 auto;
-    border-right: none;
-    overflow-y: auto;
-  }
-}
+/* Narrow-window stack layout lives at the bottom of this file —
+   keeping the overrides there so the cascade works without needing
+   !important on every flex property. */
 
 /* Right column: preview */
 .style-modal-preview {
@@ -643,4 +615,68 @@
 .style-sidebar-item:hover .style-shortcut-badge {
   opacity: 0;
   pointer-events: none;
+}
+
+/* ===== Narrow-window modal layout =====
+   Stacks preview (top, half-height by default) above settings (bottom,
+   remaining height) with a draggable divider. `order` flips the DOM
+   sequence without column-reverse's scroll quirks. Each pane owns its
+   own scroll. Lives at the end of the file so flex overrides win the
+   cascade against the wide-mode rules above. */
+.style-modal-divider {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .style-modal {
+    width: 96%;
+    height: 92%;
+    max-height: 800px;
+  }
+  .style-modal-body {
+    flex-direction: column;
+  }
+  .style-modal-preview {
+    order: 0;
+    flex: 0 0 50%;
+    height: auto;
+    overflow-y: auto;
+    border-radius: 0;
+    padding: 20px 24px;
+  }
+  .style-modal-divider {
+    order: 1;
+    display: block;
+    flex: 0 0 6px;
+    height: 6px;
+    background: rgba(128, 128, 128, 0.18);
+    cursor: row-resize;
+    position: relative;
+    user-select: none;
+    touch-action: none;
+  }
+  .style-modal-divider::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 2px;
+    background: rgba(128, 128, 128, 0.5);
+    border-radius: 1px;
+  }
+  .style-modal-divider:hover,
+  .style-modal-divider.dragging {
+    background: rgba(128, 128, 128, 0.28);
+  }
+  .style-modal-settings {
+    order: 2;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 0;
+    border-right: none;
+    overflow-y: auto;
+  }
 }
