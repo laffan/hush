@@ -7,6 +7,7 @@ let canvasInstance = null;
 let currentNotebookFileId = null;
 let notebookDirty = false;
 let _appState = null;
+let _mainDragCleanup = null;
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -25,6 +26,7 @@ export async function mountNotebook(container, fileId, state) {
     canvasInstance.destroy();
     canvasInstance = null;
   }
+  if (_mainDragCleanup) { _mainDragCleanup(); _mainDragCleanup = null; }
 
   currentNotebookFileId = fileId;
   notebookDirty = false;
@@ -73,6 +75,30 @@ export async function mountNotebook(container, fileId, state) {
     notebookDirty = true;
     if (_appState) _appState.emit("notebook-shapes-changed");
   });
+
+  // Wire cmd-drag of text shapes out of the main notebook, same as panes.
+  try {
+    const { attachNotebookTextShapeDrag } = await import("../pane/text-drag.js");
+    const { findShapeAtPoint, hitTestLink } = await import("./state-helpers.ts");
+    const canvasEl = container.querySelector("canvas");
+    if (canvasEl) {
+      _mainDragCleanup = attachNotebookTextShapeDrag(
+        canvasEl,
+        container,
+        canvasInstance.state,
+        {
+          findTextShapeAt: (shapes, pt) => {
+            const hit = findShapeAtPoint(pt, shapes);
+            return hit && hit.type === "text" ? hit : null;
+          },
+          hitTestLink,
+        },
+        () => { notebookDirty = true; },
+      );
+    }
+  } catch (e) {
+    console.error("Failed to wire main notebook text-drag:", e);
+  }
 
   return canvasInstance;
 }
@@ -198,6 +224,7 @@ export async function unmountNotebook() {
     canvasInstance.destroy();
     canvasInstance = null;
   }
+  if (_mainDragCleanup) { _mainDragCleanup(); _mainDragCleanup = null; }
   currentNotebookFileId = null;
   notebookDirty = false;
   return saveResult;

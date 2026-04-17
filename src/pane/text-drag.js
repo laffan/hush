@@ -141,6 +141,53 @@ export function isTextDragging() {
 }
 
 /**
+ * Wire a notebook canvas as a cmd-drag source. A cmd-mousedown on a text
+ * shape starts a drag with that shape's text; Shift at drop deletes the
+ * shape.
+ *
+ * @param {HTMLCanvasElement} canvasEl
+ * @param {HTMLElement} containerEl Ancestor of canvasEl.
+ * @param {object} state   DrawingState from notes-canvas.
+ * @param {object} helpers { findTextShapeAt, hitTestLink? }
+ * @param {() => void} [markDirty]
+ * @returns {() => void} unregister
+ */
+export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helpers, markDirty) {
+  const handler = (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    if (e.button !== 0) return;
+    if (!(e.target instanceof Node) || !canvasEl.contains(e.target)) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const canvasPt = {
+      x: (e.clientX - rect.left - state.camera.x) / state.camera.zoom,
+      y: (e.clientY - rect.top - state.camera.y) / state.camera.zoom,
+    };
+    const hit = helpers.findTextShapeAt(state.shapes, canvasPt);
+    if (!hit) return;
+    if (helpers.hitTestLink && helpers.hitTestLink(canvasPt, hit)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    startTextDrag({
+      text: hit.text,
+      initialEvent: e,
+      onDrop: (deleteSource) => {
+        if (!deleteSource) return;
+        state.shapes = state.shapes.filter((s) => s.id !== hit.id);
+        state.selectedIds = new Set();
+        state.notify("shapes");
+        state.notify("selectedIds");
+        state.recordHistory();
+        if (markDirty) markDirty();
+      },
+    });
+  };
+  containerEl.addEventListener("pointerdown", handler, true);
+  return () => containerEl.removeEventListener("pointerdown", handler, true);
+}
+
+/**
  * Wire a CodeMirror editor as a cmd-drag source.
  *
  * Listens on `containerEl` in the capture phase so the handler runs

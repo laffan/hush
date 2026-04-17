@@ -6,7 +6,7 @@
  */
 
 import { createPaneEditor } from "./pane-editor.js";
-import { startTextDrag, attachEditorTextDrag } from "./text-drag.js";
+import { attachEditorTextDrag, attachNotebookTextShapeDrag } from "./text-drag.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -609,73 +609,27 @@ async function loadNotebookPane(pane) {
   appState.on("notebook-shapes-changed", pane._mainNbSyncHandler);
 
   // Cmd+drag a text shape out of this notebook pane to drop into an editor.
-  setupNotebookTextShapeDrag(pane);
-}
-
-// ── Cmd-drag: notebook pane text shape → any editor ────────────────────
-async function setupNotebookTextShapeDrag(pane) {
-  const { hitTestLink } = await import("../notebook/state-helpers.ts");
-  // Attach to pane._content (a canvas ancestor) with capture:true so the
-  // handler fires before the notebook's own pointerdown on the <canvas>
-  // inside. Listeners on the target element fire in registration order
-  // regardless of phase, so we need an ancestor to win the race.
-  pane._content.addEventListener("pointerdown", (e) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    if (e.button !== 0) return;
-    const canvas = pane._content.querySelector("canvas");
-    if (!canvas || !(e.target instanceof Node) || !canvas.contains(e.target)) return;
-    const state = pane.notebook?.state;
-    if (!state) return;
-    const rect = canvas.getBoundingClientRect();
-    const canvasPt = {
-      x: (e.clientX - rect.left - state.camera.x) / state.camera.zoom,
-      y: (e.clientY - rect.top - state.camera.y) / state.camera.zoom,
-    };
-    const hit = findTextShapeAt(state.shapes, canvasPt);
-    if (!hit) return;
-    // Cmd+click on a link inside the text shape should still open it —
-    // only start a drag when the click isn't on a link run.
-    if (hitTestLink(canvasPt, hit)) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    startTextDrag({
-      text: hit.text,
-      initialEvent: e,
-      onDrop: (deleteSource) => {
-        if (!deleteSource) return;
-        state.shapes = state.shapes.filter((s) => s.id !== hit.id);
-        state.selectedIds = new Set();
-        state.notify("shapes");
-        state.notify("selectedIds");
-        state.recordHistory();
-        pane.dirty = true;
-      },
-    });
-  }, true);
-}
-
-function findTextShapeAt(shapes, pt) {
-  // Iterate back-to-front so the topmost shape wins.
-  for (let i = shapes.length - 1; i >= 0; i--) {
-    const s = shapes[i];
-    if (s.type !== "text") continue;
-    const b = textShapeBounds(s);
-    if (pt.x >= b.minX && pt.x <= b.maxX && pt.y >= b.minY && pt.y <= b.maxY) return s;
+  const nbCanvas = pane._content.querySelector("canvas");
+  if (nbCanvas && pane.notebook) {
+    try {
+      const { findShapeAtPoint, hitTestLink } = await import("../notebook/state-helpers.ts");
+      attachNotebookTextShapeDrag(
+        nbCanvas,
+        pane._content,
+        pane.notebook.state,
+        {
+          findTextShapeAt: (shapes, pt) => {
+            const hit = findShapeAtPoint(pt, shapes);
+            return hit && hit.type === "text" ? hit : null;
+          },
+          hitTestLink,
+        },
+        () => { pane.dirty = true; },
+      );
+    } catch (e) {
+      console.error("Failed to wire notebook pane text-drag:", e);
+    }
   }
-  return null;
-}
-
-function textShapeBounds(s) {
-  // Best-effort box — the real bounds helper lives in utils.ts but isn't
-  // reachable from this module. Fall back to a generous rectangle based
-  // on the shape's declared width (or 200px) and a 2-line minimum height.
-  const w = s.width || 200;
-  const lineHeight = s.fontSize * 1.3;
-  const lines = Math.max(1, (s.text || "").split("\n").length);
-  const h = lineHeight * lines;
-  return { minX: s.position.x, minY: s.position.y, maxX: s.position.x + w, maxY: s.position.y + h };
 }
 
 // ── Saving ────────────────────────────────────────────────────────────
