@@ -110,9 +110,9 @@
 .style-modal {
   position: relative;
   width: 92%;
-  max-width: 860px;
+  max-width: 920px;
   height: 82%;
-  max-height: 560px;
+  max-height: 600px;
   background: var(--panel-bg, var(--bg));
   border-radius: 12px;
   overflow: hidden;
@@ -149,22 +149,51 @@
 }
 
 .style-modal-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
-  margin: 0 0 16px;
+  margin: 0 0 20px;
   color: var(--fg);
   font-family: system-ui, sans-serif;
+  letter-spacing: -0.01em;
 }
 
 /* Left column: settings */
 .style-modal-settings {
-  width: 320px;
-  min-width: 280px;
-  padding: 20px 24px;
+  width: 380px;
+  min-width: 360px;
+  padding: 22px 26px;
   overflow-y: auto;
   border-right: 1px solid var(--panel-border);
   font-family: system-ui, sans-serif;
   font-size: 13px;
+}
+
+/* Section group: clear heading, inset rows, gap between sections */
+.style-modal-section {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.style-modal-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.style-modal-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--sidebar-fg);
+  opacity: 0.75;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+/* Hides the header-scale slider row when "suppress size" is checked */
+.style-row-hidden {
+  display: none !important;
 }
 
 /* Right column: preview */
@@ -243,7 +272,7 @@
 .style-editor-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
 }
 
@@ -251,7 +280,12 @@
   font-size: 12px;
   color: var(--sidebar-fg);
   flex-shrink: 0;
-  width: 50px;
+  width: 96px;
+}
+
+/* Name section has no label — give the input the full row width */
+.style-modal-section:first-of-type .style-editor-row {
+  margin-bottom: 0;
 }
 
 .style-editor-row input[type="text"],
@@ -260,11 +294,16 @@
   background: rgba(128, 128, 128, 0.1);
   border: 1px solid rgba(128, 128, 128, 0.2);
   color: var(--fg);
-  padding: 5px 8px;
+  padding: 6px 10px;
   border-radius: 4px;
   font-size: 13px;
   font-family: system-ui, sans-serif;
   outline: none;
+}
+
+.style-editor-row input[type="text"]:focus,
+.style-editor-row select:focus {
+  border-color: rgba(128, 128, 128, 0.5);
 }
 
 .style-slider-group {
@@ -308,7 +347,7 @@
 .style-color-tabs {
   display: flex;
   gap: 0;
-  margin: 14px 0 10px;
+  margin: 0 0 14px;
   border: 1px solid rgba(128, 128, 128, 0.2);
   border-radius: 6px;
   overflow: hidden;
@@ -338,17 +377,23 @@
   background: rgba(128, 128, 128, 0.08);
 }
 
-/* Color rows */
+/* Color rows — same label column width as regular rows so everything aligns */
 .style-editor-color-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 8px;
 }
 
 .style-editor-color-row label {
   font-size: 12px;
   color: var(--sidebar-fg);
+  flex-shrink: 0;
+  width: 96px;
+}
+
+.style-color-group {
+  flex: 1;
 }
 
 .style-color-group {
