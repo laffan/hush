@@ -470,13 +470,13 @@ function openStyleModal(state, existingStyle, onDone) {
               <div class="style-editor-row">
                 <label>Font</label>
                 <div class="custom-dropdown" id="style-font-dropdown" data-value="${escAttr(selectedFont)}">
-                  <div class="custom-dropdown-selected">${escHtml(selectedFontLabel)}</div>
+                  <div class="custom-dropdown-selected" style="font-family: ${fontFallback(selectedFont || state.settings.fontFamily || "EB Garamond")};">${escHtml(selectedFontLabel)}</div>
                   <div class="custom-dropdown-options">
-                    <div class="custom-dropdown-option${!selectedFont ? ' selected' : ''}" data-value="">Default (${escHtml(state.settings.fontFamily || "EB Garamond")})</div>
+                    <div class="custom-dropdown-option${!selectedFont ? ' selected' : ''}" data-value="" style="font-family: ${fontFallback(state.settings.fontFamily || "EB Garamond")};">Default (${escHtml(state.settings.fontFamily || "EB Garamond")})</div>
                     <div class="custom-dropdown-group-label">Built-in</div>
-                    ${builtInFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+                    ${builtInFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}" style="font-family: ${fontFallback(f)};">${escHtml(f)}</div>`).join('')}
                     <div class="custom-dropdown-group-label">System</div>
-                    ${systemFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+                    ${systemFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}" style="font-family: ${fontFallback(f)};">${escHtml(f)}</div>`).join('')}
                   </div>
                 </div>
               </div>
@@ -825,6 +825,11 @@ function bindCustomDropdown(dropdown, onSelect) {
       const value = opt.dataset.value;
       dropdown.dataset.value = value;
       selected.textContent = opt.textContent;
+      // Carry the option's inline font-family over to the selected display
+      // so the font dropdown keeps rendering each name in its own face.
+      // No-op for dropdowns where options don't set a font-family.
+      const optFont = opt.style.fontFamily;
+      if (optFont) selected.style.fontFamily = optFont;
       optionsList.querySelectorAll(".custom-dropdown-option").forEach(o => o.classList.remove("selected"));
       opt.classList.add("selected");
       dropdown.classList.remove("open");
