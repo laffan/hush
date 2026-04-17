@@ -65,6 +65,44 @@
   fill: currentColor;
 }
 
+/* Right-edge hover trigger — shows a minimalist arrow so the user knows
+   the outline panel exists. Opening the panel is via click or keyboard
+   shortcut; hovering alone doesn't open it. Mirrors the notebook shelf
+   grip visually. */
+.right-panel-trigger {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--sidebar-fg);
+  font-size: 14px;
+  font-family: system-ui, sans-serif;
+  line-height: 1;
+  padding: 0;
+  margin: 0;
+  border-radius: 6px 0 0 6px;
+  cursor: pointer;
+  opacity: 0.25;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 250;
+}
+
+.right-panel-trigger:hover {
+  opacity: 0.85;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.right-panel-trigger.is-hidden {
+  display: none;
+}
+
 /* ===== Outline View Container ===== */
 .longview-container {
   display: flex;

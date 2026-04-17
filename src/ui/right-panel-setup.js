@@ -67,7 +67,7 @@ export function setupRightPanel(state) {
     // Don't show outline when a notebook is active
     if (state.currentNotebookFileId) return;
     rightPanelOverlay.classList.remove("hidden");
-    rightTrigger.style.pointerEvents = "none";
+    rightTrigger.classList.add("is-hidden");
     if (!longViewInstance) {
       longViewInstance = createLongView(rightPanelOverlay, state);
     }
@@ -79,7 +79,7 @@ export function setupRightPanel(state) {
   state.on("hide-outline", () => {
     if (rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset")) return;
     rightPanelOverlay.classList.add("hidden");
-    rightTrigger.style.pointerEvents = "auto";
+    rightTrigger.classList.remove("is-hidden");
     rightPanelPinned = false;
     rightPanelOverlay.classList.remove("panel-pinned");
     rightPinBtn.classList.remove("pin-active", "pin-visible");
@@ -95,12 +95,17 @@ export function setupRightPanel(state) {
     }
   });
 
-  // Right sidebar trigger zone — invisible zone on right edge
-  const rightTrigger = document.createElement("div");
+  // Right sidebar trigger — a hover-revealed arrow icon on the right edge.
+  // The outline no longer auto-opens on hover; the arrow just signals
+  // that a panel is there. Opening happens via click or keyboard shortcut
+  // (Cmd+Shift+\ by default).
+  const rightTrigger = document.createElement("button");
   rightTrigger.className = "right-panel-trigger";
-  rightTrigger.style.cssText = "position:fixed;top:0;right:0;width:20px;height:100%;z-index:250;";
+  rightTrigger.type = "button";
+  rightTrigger.setAttribute("aria-label", "Open outline");
+  rightTrigger.textContent = "\u2039";
   document.getElementById("app").appendChild(rightTrigger);
-  rightTrigger.addEventListener("mouseenter", () => {
+  rightTrigger.addEventListener("click", () => {
     if (rightPanelOverlay.classList.contains("hidden")) {
       state.emit("show-outline");
     }
