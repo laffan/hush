@@ -386,14 +386,14 @@ async function init() {
   new MutationObserver(syncNotebookInset).observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
   new MutationObserver(syncNotebookInset).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
 
-  // Panel inset mode — push into editor margin when there's enough space
+  // Panel inset mode — the left sidebar only overlays the text on narrow
+  // windows. At >= 800px the panel insets alongside the editor (the column
+  // shrinks / shifts to make room); narrower than that, it overlays.
   const panelOverlay = document.getElementById("panel-overlay");
+  const OVERLAY_BREAKPOINT = 800;
   function updatePanelMode() {
     const w = window.innerWidth;
-    const colW = state.settings.columnWidth || 600;
-    const sidePad = Math.max(50, Math.floor((w - colW) / 2));
-    // Panel (300px) + sidebar (50px) = 350px; fits if sidePad >= 350
-    if (sidePad >= 350) {
+    if (w >= OVERLAY_BREAKPOINT) {
       panelOverlay.classList.add("panel-inset");
       panelOverlay.classList.remove("panel-overlay-mode");
     } else {
