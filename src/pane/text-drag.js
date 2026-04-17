@@ -1,11 +1,14 @@
 /**
  * Cmd-drag text between docs/panes and notebooks.
  *
- * Source: a CodeMirror editor's current selection (main or pane) or a
- * notebook's text shape. On pointerup over any CodeMirror editor the
- * dragged text is inserted at the drop coordinate; over a registered
- * notebook canvas it's added as a text shape at the drop coordinate.
- * Holding Shift at drop deletes the source.
+ * Source: a CodeMirror editor's current selection (main or pane) or one or
+ * more text shapes in a notebook. On pointerup over any CodeMirror editor
+ * the payload is inserted as plain text at the drop coordinate (multi-
+ * shape payloads are joined in shelf order — top-to-bottom, left-to-right
+ * — with blank lines between). Over a registered notebook canvas a
+ * multi-shape payload lands as separate text shapes whose relative
+ * positions are preserved, anchored at the drop point. Holding Shift at
+ * drop deletes the source.
  */
 import { EditorView } from "@codemirror/view";
 
@@ -29,14 +32,24 @@ export function registerNotebookDropTarget(canvasEl, state) {
  * Start a custom text-drag session.
  *
  * @param {object} opts
- * @param {string} opts.text                 The text to drag.
- * @param {PointerEvent} opts.initialEvent   The pointerdown that triggered the drag.
+ * @param {string}   [opts.text]          Plain text payload (editor selection or a single shape).
+ * @param {Array}    [opts.shapes]        Notebook shapes payload. Each entry keeps its
+ *                                        own { text, position, width, fontSize, color,
+ *                                        backgroundColor } so relative positions survive
+ *                                        a notebook-to-notebook drop.
+ * @param {string}   [opts.anchorId]      The shape id under the cursor at drag start — used
+ *                                        as the origin when replaying relative positions.
+ * @param {PointerEvent} opts.initialEvent
  * @param {(deleteSource: boolean) => void} [opts.onDrop]
  *   Called after a successful drop, with `true` when the source should be
  *   removed (Shift was held at pointerup).
  */
-export function startTextDrag({ text, initialEvent, onDrop }) {
-  if (active || !text) return;
+export function startTextDrag({ text, shapes, anchorId, initialEvent, onDrop }) {
+  // Normalise: derive the text payload from shapes when needed, ordered
+  // top-to-bottom / left-to-right so CM drops land in reading order.
+  const hasShapes = Array.isArray(shapes) && shapes.length > 0;
+  const joined = hasShapes ? joinShapesForText(shapes) : (text || "");
+  if (active || !joined) return;
 
   // Inactive panes disable pointer-events on their content (see
   // floating-pane.css), which would also hide them from elementFromPoint
@@ -49,8 +62,7 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
   // but nested stacking contexts can still mask a body-level child).
   const ghost = document.createElement("div");
   ghost.className = "text-drag-ghost";
-  const preview = text.length > 80 ? text.slice(0, 77) + "\u2026" : text;
-  ghost.textContent = preview;
+  ghost.textContent = ghostPreview(hasShapes ? shapes : null, joined);
   ghost.style.left = initialEvent.clientX + 12 + "px";
   ghost.style.top = initialEvent.clientY + 12 + "px";
   document.documentElement.appendChild(ghost);
@@ -122,9 +134,13 @@ export function startTextDrag({ text, initialEvent, onDrop }) {
     // pointerdown handler wires focusPane() via this synthetic event.
     focusPaneIfInside(targetElementOf(target));
     if (target.kind === "cm") {
-      insertIntoEditor(target.view, text, e.clientX, e.clientY);
+      insertIntoEditor(target.view, joined, e.clientX, e.clientY);
     } else if (target.kind === "nb") {
-      insertIntoNotebook(target.state, target.canvasEl, text, e.clientX, e.clientY);
+      if (hasShapes) {
+        insertShapesIntoNotebook(target.state, target.canvasEl, shapes, anchorId, e.clientX, e.clientY);
+      } else {
+        insertTextIntoNotebook(target.state, target.canvasEl, joined, e.clientX, e.clientY);
+      }
     }
     if (onDrop) onDrop(deleteSource);
   }
@@ -142,8 +158,10 @@ export function isTextDragging() {
 
 /**
  * Wire a notebook canvas as a cmd-drag source. A cmd-mousedown on a text
- * shape starts a drag with that shape's text; Shift at drop deletes the
- * shape.
+ * shape starts a drag with that shape's text; if multiple text shapes are
+ * selected and the click lands on one of them, the whole selection is
+ * carried (with relative positions preserved for notebook drops). Shift
+ * at drop deletes the source shape(s).
  *
  * @param {HTMLCanvasElement} canvasEl
  * @param {HTMLElement} containerEl Ancestor of canvasEl.
@@ -166,15 +184,27 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
     if (!hit) return;
     if (helpers.hitTestLink && helpers.hitTestLink(canvasPt, hit)) return;
 
+    // Expand to the current selection when the click lands on a selected
+    // shape and more than one text shape is selected. Otherwise drag just
+    // the hit shape.
+    const selected = state.selectedIds instanceof Set
+      ? state.shapes.filter((s) => state.selectedIds.has(s.id) && s.type === "text")
+      : [];
+    const shapes = (selected.length > 1 && selected.some((s) => s.id === hit.id))
+      ? selected.map(cloneShapePayload)
+      : [cloneShapePayload(hit)];
+
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
     startTextDrag({
-      text: hit.text,
+      shapes,
+      anchorId: hit.id,
       initialEvent: e,
       onDrop: (deleteSource) => {
         if (!deleteSource) return;
-        state.shapes = state.shapes.filter((s) => s.id !== hit.id);
+        const ids = new Set(shapes.map((s) => s.id));
+        state.shapes = state.shapes.filter((s) => !ids.has(s.id));
         state.selectedIds = new Set();
         state.notify("shapes");
         state.notify("selectedIds");
@@ -234,6 +264,32 @@ function updateGhostMode(ghost, deleteOnDrop) {
   ghost.classList.toggle("text-drag-ghost-move", deleteOnDrop);
 }
 
+function ghostPreview(shapes, joined) {
+  if (shapes && shapes.length > 1) return `${shapes.length} items`;
+  const s = joined || "";
+  return s.length > 80 ? s.slice(0, 77) + "\u2026" : s;
+}
+
+function cloneShapePayload(s) {
+  return {
+    id: s.id,
+    text: s.text,
+    position: { x: s.position.x, y: s.position.y },
+    width: s.width,
+    fontSize: s.fontSize,
+    color: s.color,
+    backgroundColor: s.backgroundColor,
+  };
+}
+
+/** Sort shapes top-to-bottom / left-to-right and join their text. */
+function joinShapesForText(shapes) {
+  const sorted = [...shapes].sort((a, b) =>
+    (a.position.y - b.position.y) || (a.position.x - b.position.x)
+  );
+  return sorted.map((s) => s.text || "").filter(Boolean).join("\n\n");
+}
+
 function targetElementOf(target) {
   if (!target) return null;
   if (target.kind === "nb") return target.canvasEl;
@@ -280,14 +336,51 @@ function insertIntoEditor(view, text, x, y) {
   view.focus();
 }
 
-function insertIntoNotebook(state, canvasEl, text, clientX, clientY) {
-  if (typeof state.addTextShapeAtPosition !== "function") return;
+function screenToCanvasPt(state, canvasEl, clientX, clientY) {
   const rect = canvasEl.getBoundingClientRect();
-  const canvasPt = {
+  return {
     x: (clientX - rect.left - state.camera.x) / state.camera.zoom,
     y: (clientY - rect.top - state.camera.y) / state.camera.zoom,
   };
-  state.addTextShapeAtPosition(text, canvasPt);
+}
+
+function insertTextIntoNotebook(state, canvasEl, text, clientX, clientY) {
+  if (typeof state.addTextShapeAtPosition !== "function") return;
+  state.addTextShapeAtPosition(text, screenToCanvasPt(state, canvasEl, clientX, clientY));
+}
+
+function insertShapesIntoNotebook(state, canvasEl, shapes, anchorId, clientX, clientY) {
+  const dropPt = screenToCanvasPt(state, canvasEl, clientX, clientY);
+  const anchor = shapes.find((s) => s.id === anchorId) || shapes[0];
+  // Each shape lands at drop + (shape.position - anchor.position) so the
+  // shape the user grabbed arrives under the cursor and the rest keeps
+  // its layout relative to it. We mutate state.shapes directly to
+  // preserve fontSize/width/colour fidelity (the public helper would
+  // coerce to defaults).
+  const newShapes = shapes.map((s) => ({
+    id: generateShapeId(),
+    type: "text",
+    position: {
+      x: dropPt.x + (s.position.x - anchor.position.x),
+      y: dropPt.y + (s.position.y - anchor.position.y),
+    },
+    text: s.text || "",
+    fontSize: s.fontSize != null ? s.fontSize : 18,
+    color: s.color || "#000000",
+    width: s.width,
+    ...(s.backgroundColor ? { backgroundColor: s.backgroundColor } : {}),
+  }));
+  state.shapes = [...state.shapes, ...newShapes];
+  state.selectedIds = new Set(newShapes.map((s) => s.id));
+  if (typeof state.recordHistory === "function") state.recordHistory();
+  state.notify("shapes");
+  state.notify("selectedIds");
+}
+
+function generateShapeId() {
+  // Mirror notebook/utils.ts generateId — millisecond ts plus randomness
+  // is enough; collisions across independent canvases are inconsequential.
+  return Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
 }
 
 /** If `el` lives inside a .floating-pane, trigger its pane's focus logic
