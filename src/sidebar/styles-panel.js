@@ -367,6 +367,27 @@ function saveDefaultDraftToSettings(state, draft) {
   });
 }
 
+/** Fill the color overrides for the given appearance with the theme's own
+ * resolved colors (bg / fg / header / cursor / selection). Gives users a
+ * starting point when they pick a theme — every swatch in the Colors
+ * section reflects what the theme actually renders. */
+function seedColorsFromTheme(draft, colorTab, themeId) {
+  if (!themeId) return;
+  const theme = getThemeById(themeId);
+  const bg = themeBackgrounds[themeId] || (colorTab === "light" ? "#fafafa" : "#1a1a1a");
+  const fg = themeForegrounds[themeId] || (colorTab === "light" ? "#1a1a1a" : "#e0e0e0");
+  const header = theme?.headingColor || fg;
+  const filled = {
+    bg,
+    fg,
+    header,
+    cursor: fg,
+    selection: colorTab === "light" ? "rgba(0, 0, 0, 0.15)" : "rgba(255, 255, 255, 0.18)",
+  };
+  if (colorTab === "light") draft.lightColors = filled;
+  else draft.darkColors = filled;
+}
+
 function openStyleModal(state, existingStyle, onDone) {
   // existingStyle === null → create a new user style
   // existingStyle === "__default__" → edit the Default (global settings)
@@ -628,11 +649,14 @@ function openStyleModal(state, existingStyle, onDone) {
       updatePreview();
     });
 
-    // Theme dropdown
+    // Theme dropdown — selecting a theme seeds the color overrides with
+    // that theme's resolved colors so the user has a starting point to
+    // tweak. Every subsequent theme change re-seeds the overrides.
     bindCustomDropdown(backdrop.querySelector("#style-theme-dropdown"), (val) => {
       if (colorTab === "light") draft.lightThemeId = val;
       else draft.darkThemeId = val;
-      updatePreview();
+      seedColorsFromTheme(draft, colorTab, val);
+      render();
     });
 
     // Sliders
@@ -683,6 +707,7 @@ function openStyleModal(state, existingStyle, onDone) {
     const bcEl = backdrop.querySelector("#style-block-cursor");
     if (bcEl) bcEl.addEventListener("change", () => {
       draft.blockCursor = bcEl.checked;
+      updatePreview();
     });
 
     // Color pickers
