@@ -165,17 +165,17 @@ async function rewriteImageRefs(state, oldFilename, newFilename) {
 }
 
 /** Rewrite every markdown image ref pointing at `oldName` to point at
- *  `newName`, preserving the `images/` export prefix if present and
- *  using angle brackets when the new URL needs them. */
+ *  `newName`, preserving the `images/` export prefix when present and
+ *  quoting the URL when it contains special characters. */
 function rewriteContentImageUrl(content, oldName, newName) {
   const re = new RegExp(IMAGE_MD_RE.source, "g");
-  return content.replace(re, (match, alt, angleUrl, bareUrl) => {
-    const rawUrl = angleUrl != null ? angleUrl : bareUrl;
+  return content.replace(re, (match, alt, quotedUrl, bareUrl) => {
+    const rawUrl = quotedUrl != null ? quotedUrl : bareUrl;
     const prefix = rawUrl.startsWith("images/") ? "images/" : "";
     const bare = rawUrl.replace(/^images\//, "");
     if (bare !== oldName) return match;
     const nextUrl = prefix + newName;
-    const wrapped = urlNeedsAngleWrap(nextUrl) ? `<${nextUrl}>` : nextUrl;
+    const wrapped = urlNeedsQuoteWrap(nextUrl) ? `"${nextUrl}"` : nextUrl;
     return `![${alt}](${wrapped})`;
   });
 }
@@ -232,7 +232,7 @@ function removeContentImageRefs(content, filenames) {
   // Walk line-by-line so a ref that occupies an entire line can be
   // consumed cleanly without leaving a blank line behind.
   const lines = content.split("\n");
-  const soloRe = /^\s*!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^()\s"]+))(?:\s+"[^"]*")?\s*\)\s*$/;
+  const soloRe = /^\s*!\[([^\]]*)\]\(\s*(?:"([^"]+)"|([^()\s"]+))(?:\s+"[^"]*")?\s*\)\s*$/;
   const kept = [];
   for (const line of lines) {
     const solo = soloRe.exec(line);
@@ -244,8 +244,8 @@ function removeContentImageRefs(content, filenames) {
     }
     // Inline refs embedded in other text — strip just the ref.
     const inline = new RegExp(IMAGE_MD_RE.source, "g");
-    const stripped = line.replace(inline, (match, alt, angleUrl, bareUrl) => {
-      const url = angleUrl != null ? angleUrl : bareUrl;
+    const stripped = line.replace(inline, (match, alt, quotedUrl, bareUrl) => {
+      const url = quotedUrl != null ? quotedUrl : bareUrl;
       return filenames.has(url.replace(/^images\//, "")) ? "" : match;
     });
     kept.push(stripped);
@@ -318,31 +318,32 @@ export function parseAltAndCaption(rawAlt) {
   };
 }
 
-/** True when a URL needs to be wrapped in `<...>` to parse cleanly
+/** True when a URL needs to be wrapped in quotes to parse cleanly
  *  (spaces and parens are not allowed in bare markdown URLs). */
-export function urlNeedsAngleWrap(url) {
+export function urlNeedsQuoteWrap(url) {
   return /[\s()]/.test(url);
 }
 
 /** Build the canonical markdown for a freshly-dropped image. Wraps the
- *  URL in angle brackets if it contains spaces or parens — common for
+ *  URL in double quotes when it contains spaces or parens — common for
  *  collision-suffixed names like `brown-cow (2).png`. */
 export function buildImageMarkdown(alt, filename) {
   const safeAlt = (alt || "image").replace(/[\[\]]/g, "");
-  const url = urlNeedsAngleWrap(filename) ? `<${filename}>` : filename;
+  const url = urlNeedsQuoteWrap(filename) ? `"${filename}"` : filename;
   return `![${safeAlt}](${url})`;
 }
 
 /**
  * Unified regex for markdown image syntax supporting either a bare URL
- * (no whitespace, no parens) or an angle-bracketed URL (`<...>`). The
- * capture groups are: 1 = alt text, 2 = angle URL (or undefined),
- * 3 = bare URL (or undefined).
+ * (no whitespace, no parens, no quotes) or a quoted URL (`"..."`). The
+ * capture groups are: 1 = alt text, 2 = quoted URL (or undefined),
+ * 3 = bare URL (or undefined). A trailing `"title"` is optional and
+ * ignored.
  */
-export const IMAGE_MD_RE = /!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^()\s"]+))(?:\s+"[^"]*")?\s*\)/g;
+export const IMAGE_MD_RE = /!\[([^\]]*)\]\(\s*(?:"([^"]+)"|([^()\s"]+))(?:\s+"[^"]*")?\s*\)/g;
 
-/** Pull the URL from an IMAGE_MD_RE match — either the angle-bracketed
- *  group or the bare group. */
+/** Pull the URL from an IMAGE_MD_RE match — either the quoted group or
+ *  the bare group. */
 export function urlFromMatch(match) {
   return match[2] != null ? match[2] : match[3];
 }

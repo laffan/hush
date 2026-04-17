@@ -401,14 +401,14 @@ function generateShapeId() {
   return Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
 }
 
-const IMAGE_REF_RE = /^!\[[^\]]*\]\(\s*(?:<[^>]+>|[^()\s"]+)(?:\s+"[^"]*")?\s*\)$/;
+const IMAGE_REF_RE = /^!\[[^\]]*\]\(\s*(?:"[^"]+"|[^()\s"]+)(?:\s+"[^"]*")?\s*\)$/;
 
 function isSingleImageRef(text) {
   return typeof text === "string" && IMAGE_REF_RE.test(text.trim());
 }
 
 function parseImageMarkdown(text) {
-  const m = text.trim().match(/^!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^()\s"]+))(?:\s+"[^"]*")?\s*\)$/);
+  const m = text.trim().match(/^!\[([^\]]*)\]\(\s*(?:"([^"]+)"|([^()\s"]+))(?:\s+"[^"]*")?\s*\)$/);
   if (!m) return null;
   const url = m[2] != null ? m[2] : m[3];
   return { rawAlt: m[1], url, filename: url.replace(/^images\//, "") };
