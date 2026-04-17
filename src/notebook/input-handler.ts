@@ -118,7 +118,7 @@ export function bindInputEvents(
   // Keyboard shortcuts
   on(window as unknown as HTMLElement, "keydown", ((e: KeyboardEvent) => {
     if (state.editingText) {
-      if (e.key === "Escape") { state.commitText(state.editingText); state.editingText = null; state.notify("editingText"); }
+      if (e.key === "Escape") { state.endEditingText(); }
       return;
     }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;

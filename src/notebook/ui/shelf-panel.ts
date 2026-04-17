@@ -36,6 +36,17 @@ export function createShelfPanel(
   });
   panel.appendChild(content);
 
+  // Persistent search container (kept across rebuilds so the input keeps
+  // focus while the user types).
+  const searchContainer = h("div", { style: { position: "relative", marginBottom: "8px" } });
+  const searchInput = h("input", { attrs: { type: "text", placeholder: "Search..." }, style: { width: "100%", padding: "6px 28px 6px 8px", borderRadius: "6px", fontSize: "13px", outline: "none", boxSizing: "border-box" } }) as HTMLInputElement;
+  searchContainer.appendChild(searchInput);
+  searchInput.addEventListener("input", () => { search = searchInput.value; rebuildBody(); });
+  let searchClearBtn: HTMLButtonElement | null = null;
+
+  // Body holds everything below the search input; cleared on every rebuild.
+  const body = h("div", { style: { flex: "1", display: "flex", flexDirection: "column", overflow: "hidden" } });
+
   function t() { return state.theme; }
 
   function applyTheme() {
@@ -86,34 +97,57 @@ export function createShelfPanel(
     return result;
   }
 
-  function rebuild() {
-    applyTheme();
+  function applySearchTheme() {
     const theme = t();
     const fg = theme.foreground;
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#888";
-    const border = theme.uiBorder;
-    const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
     const inputBg = theme.variant === "dark" ? "rgba(255,255,255,0.06)" : "#fff";
     const inputBorder = theme.variant === "dark" ? "rgba(255,255,255,0.12)" : "#e5e7eb";
+    searchInput.style.border = `1px solid ${inputBorder}`;
+    searchInput.style.background = inputBg;
+    searchInput.style.color = fg;
+    if (search && !searchClearBtn) {
+      searchClearBtn = h("button", { text: "\u00d7", style: { position: "absolute", right: "14px", top: "50%", transform: "translateY(-50%)", border: "none", background: "none", cursor: "pointer", fontSize: "16px", color: muted }, onClick: () => { search = ""; searchInput.value = ""; rebuildBody(); } }) as HTMLButtonElement;
+      searchContainer.appendChild(searchClearBtn);
+    } else if (!search && searchClearBtn) {
+      searchClearBtn.remove();
+      searchClearBtn = null;
+    } else if (searchClearBtn) {
+      searchClearBtn.style.color = muted;
+    }
+  }
+
+  function rebuild() {
+    applyTheme();
 
     panel.style.width = isOpen ? "280px" : "24px";
     panel.style.minWidth = isOpen ? "280px" : "24px";
     grip.textContent = isOpen ? "\u203a" : "\u2039";
     content.style.display = isOpen ? "flex" : "none";
-    if (!isOpen) return;
-
-    clearChildren(content);
-
-    // Search
-    const searchContainer = h("div", { style: { position: "relative", marginBottom: "8px" } });
-    const searchInput = h("input", { attrs: { type: "text", placeholder: "Search..." }, style: { width: "100%", padding: "6px 28px 6px 8px", border: `1px solid ${inputBorder}`, borderRadius: "6px", fontSize: "13px", outline: "none", boxSizing: "border-box", background: inputBg, color: fg } });
-    (searchInput as HTMLInputElement).value = search;
-    searchInput.addEventListener("input", () => { search = (searchInput as HTMLInputElement).value; rebuild(); });
-    searchContainer.appendChild(searchInput);
-    if (search) {
-      searchContainer.appendChild(h("button", { text: "\u00d7", style: { position: "absolute", right: "14px", top: "50%", transform: "translateY(-50%)", border: "none", background: "none", cursor: "pointer", fontSize: "16px", color: muted }, onClick: () => { search = ""; rebuild(); } }));
+    if (!isOpen) {
+      // Detach header/body so a closed shelf doesn't leave them in the DOM.
+      if (searchContainer.parentElement === content) content.removeChild(searchContainer);
+      if (body.parentElement === content) content.removeChild(body);
+      return;
     }
-    content.appendChild(searchContainer);
+
+    // Mount persistent header/body once per open.
+    if (searchContainer.parentElement !== content) content.appendChild(searchContainer);
+    if (body.parentElement !== content) content.appendChild(body);
+
+    applySearchTheme();
+    rebuildBody();
+  }
+
+  function rebuildBody() {
+    const theme = t();
+    const fg = theme.foreground;
+    const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#888";
+    const border = theme.uiBorder;
+    const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
+
+    applySearchTheme();
+    clearChildren(body);
 
     const nodes = buildNodes(state.shapes);
 
@@ -126,9 +160,9 @@ export function createShelfPanel(
       const tagBar = h("div", { style: { display: "flex", flexWrap: "wrap", gap: "4px", paddingBottom: "8px" } });
       for (const tag of sortedTags) {
         const active = activeTag === tag;
-        tagBar.appendChild(h("button", { text: `#${tag}`, style: { padding: "2px 8px", border: "none", borderRadius: "10px", fontSize: "11px", cursor: "pointer", background: active ? theme.accent : (theme.variant === "dark" ? "rgba(255,255,255,0.08)" : "#f1f3f5"), color: active ? "#fff" : muted }, onClick: () => { activeTag = activeTag === tag ? null : tag; rebuild(); } }));
+        tagBar.appendChild(h("button", { text: `#${tag}`, style: { padding: "2px 8px", border: "none", borderRadius: "10px", fontSize: "11px", cursor: "pointer", background: active ? theme.accent : (theme.variant === "dark" ? "rgba(255,255,255,0.08)" : "#f1f3f5"), color: active ? "#fff" : muted }, onClick: () => { activeTag = activeTag === tag ? null : tag; rebuildBody(); } }));
       }
-      content.appendChild(tagBar);
+      body.appendChild(tagBar);
     }
 
     // Filter
@@ -164,7 +198,7 @@ export function createShelfPanel(
         row.appendChild(h("button", { text: "\u00d7", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", padding: "0", opacity: "0.5", color: muted }, onClick: () => opts.onRemoveShelfItem(i) }));
         section.appendChild(row);
       });
-      content.appendChild(section);
+      body.appendChild(section);
     }
 
     // Pinned
@@ -177,7 +211,7 @@ export function createShelfPanel(
       pinnedHeader.appendChild(document.createTextNode("Pinned"));
       section.appendChild(pinnedHeader);
       pinnedItems.forEach((n) => section.appendChild(makeNodeRow(n, true)));
-      content.appendChild(section);
+      body.appendChild(section);
     }
 
     // All items
@@ -186,7 +220,7 @@ export function createShelfPanel(
       scrollArea.appendChild(h("div", { text: "No items. Add shapes to the canvas.", style: { padding: "16px", textAlign: "center", fontSize: "12px", color: muted } }));
     }
     unpinnedItems.forEach((n) => scrollArea.appendChild(makeNodeRow(n, false)));
-    content.appendChild(scrollArea);
+    body.appendChild(scrollArea);
   }
 
   function makeNodeRow(node: ShelfNode, isPinned: boolean): HTMLElement {
@@ -196,7 +230,7 @@ export function createShelfPanel(
     const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
     const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", borderLeft: node.color ? `3px solid ${node.color}` : "3px solid transparent", color: fg } });
     if (node.type === "drag-area") {
-      row.appendChild(h("button", { text: collapsed.has(node.id) ? "\u25b8" : "\u25be", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", color: muted, padding: "0", width: "16px" }, onClick: () => { if (collapsed.has(node.id)) collapsed.delete(node.id); else collapsed.add(node.id); rebuild(); } }));
+      row.appendChild(h("button", { text: collapsed.has(node.id) ? "\u25b8" : "\u25be", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", color: muted, padding: "0", width: "16px" }, onClick: () => { if (collapsed.has(node.id)) collapsed.delete(node.id); else collapsed.add(node.id); rebuildBody(); } }));
     }
     if (node.type === "drag-area") {
       const daIcon = icon("drag-area", 12);
@@ -212,8 +246,8 @@ export function createShelfPanel(
       pocketIcon.style.marginRight = "2px";
       row.appendChild(pocketIcon);
     }
-    row.appendChild(h("span", { text: node.label, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }, onClick: () => state.focusShape(node.shapeId) }));
-    const pinBtn = h("button", { title: isPinned ? "Unpin" : "Pin", style: { border: "none", background: "none", cursor: "pointer", padding: "0", opacity: isPinned ? "0.8" : "0.4", color: isPinned ? theme.accent : muted, display: "flex", alignItems: "center", width: "16px", height: "16px" }, onClick: () => { if (isPinned) pinned.delete(node.id); else pinned.add(node.id); rebuild(); } });
+    row.appendChild(h("span", { text: node.label, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }, onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0) }));
+    const pinBtn = h("button", { title: isPinned ? "Unpin" : "Pin", style: { border: "none", background: "none", cursor: "pointer", padding: "0", opacity: isPinned ? "0.8" : "0.4", color: isPinned ? theme.accent : muted, display: "flex", alignItems: "center", width: "16px", height: "16px" }, onClick: () => { if (isPinned) pinned.delete(node.id); else pinned.add(node.id); rebuildBody(); } });
     pinBtn.appendChild(icon("pin", 12));
     row.appendChild(pinBtn);
     return row;

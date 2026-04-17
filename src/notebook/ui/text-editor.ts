@@ -32,18 +32,14 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   textarea.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && state.brainstormMode && state.editingText) {
       e.preventDefault();
-      state.commitText(state.editingText);
-      state.editingText = null;
-      state.notify("editingText");
+      state.endEditingText();
     }
   });
 
   textarea.addEventListener("blur", () => {
     setTimeout(() => {
       if (!state.editingText) return;
-      state.commitText(state.editingText);
-      state.editingText = null;
-      state.notify("editingText");
+      state.endEditingText();
     }, 150);
   });
 

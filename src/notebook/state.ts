@@ -191,6 +191,21 @@ export class DrawingState extends EventTarget {
     this.notify("editingText");
   }
 
+  /** End an in-progress text edit from any source (blur, escape, click-outside).
+   *  Commits non-empty text, clears the editor, and switches back to the
+   *  select tool so the user leaves text-entry mode. Brainstorm mode keeps
+   *  its current tool — its own widget drives tool state. */
+  endEditingText() {
+    if (!this.editingText) return;
+    this.commitText(this.editingText);
+    this.editingText = null;
+    if (!this.brainstormMode && this.tool !== "select") {
+      this.tool = "select";
+      this.notify("tool");
+    }
+    this.notify("editingText");
+  }
+
   // === Resize handle hit test ===
   hitTestResizeHandles(canvasPt: Point): { shapeId: string; handle: ResizeHandle } | null {
     const handleRadius = (HANDLE_SIZE / 2) / this.camera.zoom + 2;
@@ -232,9 +247,7 @@ export class DrawingState extends EventTarget {
     if (e.button !== 0) return;
 
     if (this.editingText) {
-      this.commitText(this.editingText);
-      this.editingText = null;
-      this.notify("editingText");
+      this.endEditingText();
       return; // commit ends the interaction; next click starts fresh
     }
 
@@ -764,12 +777,23 @@ export class DrawingState extends EventTarget {
     this.notify("shapes");
   }
 
-  focusShape(shapeId: string) {
+  /** Pan so `shapeId` is centered in the visible viewport.
+   *  `offsetLeft` / `offsetRight` reserve screen space for inset chrome
+   *  (sidebar / shelf). Defaults pick up the state's current leftInset. */
+  focusShape(shapeId: string, offsetLeft?: number, offsetRight = 0) {
     const shape = this.shapes.find((s) => s.id === shapeId);
     if (!shape) return;
     const bounds = getShapeBounds(shape);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
-    this.camera = { x: window.innerWidth / 2 - cx * this.camera.zoom, y: window.innerHeight / 2 - cy * this.camera.zoom, zoom: this.camera.zoom };
+    const left = offsetLeft ?? this.leftInset;
+    const w = this.canvasEl?.clientWidth || window.innerWidth;
+    const h = this.canvasEl?.clientHeight || window.innerHeight;
+    const zoom = this.camera.zoom;
+    this.camera = {
+      x: (left + w - offsetRight) / 2 - cx * zoom,
+      y: h / 2 - cy * zoom,
+      zoom,
+    };
     this.selectedIds = new Set([shapeId]);
     this.notify("camera");
     this.notify("selectedIds");
