@@ -206,6 +206,25 @@ export class DrawingState extends EventTarget {
     this.notify("editingText");
   }
 
+  /** Per-keystroke update from the inline text editor. Mirrors the typed
+   *  text onto the underlying shape (when editing an existing one) so
+   *  `getShapeBounds` returns the live height — selection highlights and
+   *  any other bounds-based chrome grow with the textarea instead of
+   *  clipping the overflow. No history snapshot is taken; `commitText`
+   *  still owns that boundary. */
+  updateEditingText(text: string) {
+    if (!this.editingText) return;
+    this.editingText = { ...this.editingText, text };
+    const id = this.editingText.shapeId;
+    if (id) {
+      this.shapes = this.shapes.map((s) =>
+        s.id === id && s.type === "text" ? { ...s, text } : s,
+      );
+      this.notify("shapes");
+    }
+    this.notify("editingText");
+  }
+
   // === Resize handle hit test ===
   hitTestResizeHandles(canvasPt: Point): { shapeId: string; handle: ResizeHandle } | null {
     const handleRadius = (HANDLE_SIZE / 2) / this.camera.zoom + 2;

@@ -24,8 +24,7 @@ export function createTextEditor(state: DrawingState): HTMLElement {
 
   textarea.addEventListener("input", () => {
     if (!state.editingText) return;
-    state.editingText = { ...state.editingText, text: textarea.value };
-    state.notify("editingText");
+    state.updateEditingText(textarea.value);
   });
 
   // In brainstorm mode, Enter commits text (Shift+Enter for newline)
