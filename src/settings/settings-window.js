@@ -53,7 +53,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";
-  if (!settings.shortcutFindAll) settings.shortcutFindAll = "Mod+Shift+F";
+  if (!settings.shortcutFindAll) settings.shortcutFindAll = "Alt+Shift+F";
   if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
   if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Alt+Shift+L";
   if (!settings.shortcutSelectNext) settings.shortcutSelectNext = "Mod+D";
@@ -76,8 +76,8 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Mod+Shift+L";
   if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";
   if (!settings.shortcutSave) settings.shortcutSave = "Mod+S";
-  if (!settings.shortcutFindNext) settings.shortcutFindNext = "Mod+G";
-  if (!settings.shortcutFindPrev) settings.shortcutFindPrev = "Mod+Shift+G";
+  if (!settings.shortcutFindNext) settings.shortcutFindNext = "Ctrl+R";
+  if (!settings.shortcutFindPrev) settings.shortcutFindPrev = "Ctrl+Shift+R";
   if (!settings.shortcutJoinLines) settings.shortcutJoinLines = "Mod+J";
   if (!settings.shortcutJumpNextParagraph) settings.shortcutJumpNextParagraph = "Mod+ArrowDown";
   if (!settings.shortcutJumpPrevParagraph) settings.shortcutJumpPrevParagraph = "Mod+ArrowUp";

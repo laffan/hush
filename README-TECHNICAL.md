@@ -209,7 +209,7 @@ CodeMirror ViewPlugin that dims all text except the current sentence to 50% opac
 Two modes:
 
 - **`Cmd+F`** — Find/replace in current file. Floating bar with match count, prev/next, replace one/all. Pre-fills with selection.
-- **`Cmd+Shift+F`** — Search across all files. Results grouped by file with line numbers, click to navigate. Debounced (200ms).
+- **`Alt+Shift+F`** — Search across all files. Results grouped by file with line numbers, click to navigate. Debounced (200ms).
 
 ### Sentence Navigator (`editor/sentence-navigator.js`)
 
@@ -436,7 +436,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Toggle focus mode | `Cmd+Shift+Y` |
 | New file | `Cmd+N` |
 | Find / replace | `Cmd+F` |
-| Find across files | `Cmd+Shift+F` |
+| Find across files | `Alt+Shift+F` |
 | Zotero search | `Cmd+Shift+I` |
 | Open settings | `Cmd+,` (hardcoded) |
 

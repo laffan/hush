@@ -1,8 +1,8 @@
 /**
  * Find & Replace UI for the editor.
  * - Cmd+F: find/replace within current file
- * - Cmd+Shift+F: find across all files
- * - Cmd+G / Cmd+Shift+G: next/prev match (when find bar is open)
+ * - Alt+Shift+F: find across all files
+ * - Ctrl+R / Ctrl+Shift+R: next/prev match (when find bar is open)
  */
 
 let findBar = null;
@@ -188,7 +188,7 @@ export function openFindReplace(view, state) {
   if (initialQuery) search();
 }
 
-/** Navigate to next match via Cmd+G (called from editor keymap) */
+/** Navigate to next match via Ctrl+R (called from editor keymap) */
 export function findNext() {
   if (findBar && findState.goNext) {
     findState.goNext();
@@ -197,7 +197,7 @@ export function findNext() {
   return false;
 }
 
-/** Navigate to prev match via Cmd+Shift+G (called from editor keymap) */
+/** Navigate to prev match via Ctrl+Shift+R (called from editor keymap) */
 export function findPrev() {
   if (findBar && findState.goPrev) {
     findState.goPrev();

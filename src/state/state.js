@@ -48,7 +48,7 @@ export class AppState {
       shortcutToggleDry: "Mod+Shift+R",
       shortcutToggleFocus: "Mod+Shift+Y",
       shortcutFind: "Mod+F",
-      shortcutFindAll: "Mod+Shift+F",
+      shortcutFindAll: "Alt+Shift+F",
 
       // Shortcuts — Editing (sentence navigation)
       shortcutSelectSentence: "Mod+L",
@@ -74,8 +74,8 @@ export class AppState {
       // Shortcuts — Additional editing actions
       shortcutSelectParagraph: "Mod+Shift+L",
       shortcutSave: "Mod+S",
-      shortcutFindNext: "Mod+G",
-      shortcutFindPrev: "Mod+Shift+G",
+      shortcutFindNext: "Ctrl+R",
+      shortcutFindPrev: "Ctrl+Shift+R",
       shortcutJoinLines: "Mod+J",
       shortcutJumpNextParagraph: "Mod+ArrowDown",
       shortcutJumpPrevParagraph: "Mod+ArrowUp",

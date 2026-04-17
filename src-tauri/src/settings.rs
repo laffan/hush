@@ -506,7 +506,8 @@ fn default_shortcut_find() -> String {
     "Mod+F".to_string()
 }
 fn default_shortcut_find_all() -> String {
-    "Mod+Shift+F".to_string()
+    // Alt+Shift+F to avoid clashing with Cmd+Shift+F (fullscreen).
+    "Alt+Shift+F".to_string()
 }
 fn default_shortcut_select_sentence() -> String {
     "Mod+L".to_string()
@@ -572,10 +573,12 @@ fn default_shortcut_save() -> String {
     "Mod+S".to_string()
 }
 fn default_shortcut_find_next() -> String {
-    "Mod+G".to_string()
+    // Ctrl+R / Ctrl+Shift+R on every platform (not Cmd) so they don't
+    // clash with the notebook's Group / Ungroup shortcuts (Cmd+G / Cmd+Shift+G).
+    "Ctrl+R".to_string()
 }
 fn default_shortcut_find_prev() -> String {
-    "Mod+Shift+G".to_string()
+    "Ctrl+Shift+R".to_string()
 }
 fn default_shortcut_join_lines() -> String {
     "Mod+J".to_string()

@@ -151,12 +151,9 @@ function showLockedStyleToast(state) {
  */
 export function buildEditorCommands() {
   // IMPORTANT: Iteration order matters for conflict resolution.  If two
-  // shortcuts map to the same key combo, the first one in this object
-  // wins (CodeMirror picks the first matching binding).  The built-in
-  // defaults for `shortcutOpenFullscreen` and `shortcutFindAll` both
-  // ship as `Cmd+Shift+F`, so `shortcutFindAll` is listed first to
-  // preserve the legacy behaviour where Find Across Files wins the
-  // default clash — users can resolve the conflict via the settings UI.
+  // shortcuts map to the same key combo (usually via a user customisation),
+  // the first one in this object wins — CodeMirror picks the first matching
+  // binding.  Default bindings are chosen to avoid clashes out of the box.
   return {
     // ===== General =====
     shortcutFind: (state, view) => {
