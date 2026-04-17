@@ -95,7 +95,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     const groupBounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
     for (const shape of shapes) {
       if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id) || !shape.groupId) continue;
-      const b = getShapeBounds(shape);
+      const b = getShapeBounds(shape, state.fontFamily);
       const existing = groupBounds.get(shape.groupId);
       if (existing) {
         existing.minX = Math.min(existing.minX, b.minX);
@@ -115,7 +115,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
         if (shape.id === state.croppingImageId && shape.type === "image") {
           drawCropOverlay(ctx, shape, camera.zoom);
         } else {
-          drawSelectionHighlight(ctx, shape, camera.zoom, theme.accent);
+          drawSelectionHighlight(ctx, shape, camera.zoom, theme.accent, state.fontFamily);
         }
       }
     }
@@ -310,8 +310,8 @@ function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape, imageC
   }
 }
 
-function drawSelectionHighlight(ctx: CanvasRenderingContext2D, shape: Shape, zoom: number, accentColor: string) {
-  const bounds = getShapeBounds(shape);
+function drawSelectionHighlight(ctx: CanvasRenderingContext2D, shape: Shape, zoom: number, accentColor: string, fontFamily?: string) {
+  const bounds = getShapeBounds(shape, fontFamily);
   const pad = 6;
   const x1 = bounds.minX - pad, y1 = bounds.minY - pad;
   const w = bounds.maxX - bounds.minX + pad * 2;
@@ -464,7 +464,7 @@ function drawPocketEntries(
     // Selection highlights for pocketed shapes
     for (const shape of entry.shapes) {
       if (selectedIds.has(shape.id)) {
-        drawSelectionHighlight(ctx, shape, 1 / entry.scale, theme.accent);
+        drawSelectionHighlight(ctx, shape, 1 / entry.scale, theme.accent, fontFamily);
       }
     }
     ctx.restore();

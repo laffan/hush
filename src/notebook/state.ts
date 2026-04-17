@@ -212,7 +212,7 @@ export class DrawingState extends EventTarget {
     for (const shape of this.shapes) {
       if (!this.selectedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue;
-      const b = getShapeBounds(shape);
+      const b = getShapeBounds(shape, this.fontFamily);
       const pad = 6;
       const x1 = b.minX - pad, y1 = b.minY - pad;
       const x2 = b.maxX + pad, y2 = b.maxY + pad;
@@ -293,7 +293,7 @@ export class DrawingState extends EventTarget {
         const shape = this.shapes.find((s) => s.id === handleHit.shapeId);
         if (shape) {
           this._resizeOrigShape = structuredClone(shape);
-          this._resizeOrigBounds = { ...getShapeBounds(shape) };
+          this._resizeOrigBounds = { ...getShapeBounds(shape, this.fontFamily) };
         }
         return;
       }
@@ -410,7 +410,7 @@ export class DrawingState extends EventTarget {
         let gMinX = Infinity, gMinY = Infinity, gMaxX = -Infinity, gMaxY = -Infinity;
         for (const s of this.shapes) {
           if (!this.selectedIds.has(s.id)) continue;
-          const b = getShapeBounds(s);
+          const b = getShapeBounds(s, this.fontFamily);
           gMinX = Math.min(gMinX, b.minX); gMinY = Math.min(gMinY, b.minY);
           gMaxX = Math.max(gMaxX, b.maxX); gMaxY = Math.max(gMaxY, b.maxY);
         }
@@ -526,12 +526,12 @@ export class DrawingState extends EventTarget {
       this.shapes = this.shapes.map((s) => {
         if (!this.selectedIds.has(s.id)) return s;
         if (s.type === "drag-area") return s;
-        const bounds = getShapeBounds(s);
+        const bounds = getShapeBounds(s, this.fontFamily);
         const center: Point = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
         let newParent: string | undefined;
         for (const da of dragAreas) {
           if (this.selectedIds.has(da.id)) continue;
-          if (pointInBounds(center, getShapeBounds(da), 0)) { newParent = da.id; break; }
+          if (pointInBounds(center, getShapeBounds(da, this.fontFamily), 0)) { newParent = da.id; break; }
         }
         if (newParent !== s.parentId) return { ...s, parentId: newParent };
         return s;
@@ -552,7 +552,7 @@ export class DrawingState extends EventTarget {
 
     if (this.tool === "select" && this.selectionBox) {
       const box = normalizeBox(this.selectionBox);
-      const hits = this.shapes.filter((s) => boundsOverlap(getShapeBounds(s), box));
+      const hits = this.shapes.filter((s) => boundsOverlap(getShapeBounds(s, this.fontFamily), box));
       if (e.shiftKey) {
         const next = new Set(this.selectedIds);
         hits.forEach((s) => next.add(s.id));
@@ -574,10 +574,10 @@ export class DrawingState extends EventTarget {
           width: w, height: h, color: "#6b7280", strokeColor: "#6b7280",
           backgroundColor: "rgba(107, 114, 128, 0.16)", borderRadius: 12,
         };
-        const areaBounds = getShapeBounds(newArea);
+        const areaBounds = getShapeBounds(newArea, this.fontFamily);
         this.shapes = [...this.shapes.map((s) => {
           if (s.type === "drag-area" || s.parentId) return s;
-          if (boundsOverlap(getShapeBounds(s), areaBounds)) return { ...s, parentId: newArea.id };
+          if (boundsOverlap(getShapeBounds(s, this.fontFamily), areaBounds)) return { ...s, parentId: newArea.id };
           return s;
         }), newArea];
         this.tool = "select";
@@ -783,7 +783,7 @@ export class DrawingState extends EventTarget {
   focusShape(shapeId: string, offsetLeft?: number, offsetRight = 0) {
     const shape = this.shapes.find((s) => s.id === shapeId);
     if (!shape) return;
-    const bounds = getShapeBounds(shape);
+    const bounds = getShapeBounds(shape, this.fontFamily);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
     const left = offsetLeft ?? this.leftInset;
     const w = this.canvasEl?.clientWidth || window.innerWidth;
