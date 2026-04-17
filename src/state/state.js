@@ -37,6 +37,7 @@ export class AppState {
       dropboxToken: null,
       alwaysOnTop: false,
       columnWidth: 600,
+      sidebarPanelWidth: 300,
       // Shortcuts — General
       shortcutOpenEditor: "CmdOrCtrl+Shift+H",
       shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",
@@ -47,6 +48,8 @@ export class AppState {
       shortcutNewFile: "Mod+N",
       shortcutToggleDry: "Mod+Shift+R",
       shortcutToggleFocus: "Mod+Shift+Y",
+      shortcutToggleWordCount: "Mod+Shift+W",
+      wordCountVisible: false,
       shortcutFind: "Mod+F",
       shortcutFindAll: "Alt+Shift+F",
 
@@ -183,6 +186,7 @@ export class AppState {
     this.currentFileId = null;
     this.currentProjectId = null; // When viewing a project
     this.currentNotebookFileId = null; // When viewing a notebook
+    this.currentLocalSync = null; // When viewing a Local Sync file
     this.files = [];
     this.fileTree = []; // Tree of TreeNode objects
     this.editor = null;
@@ -441,6 +445,7 @@ export class AppState {
     this.currentProjectId = null;
     this.projectDocIds = [];
     this.currentNotebookFileId = fileId;
+    this.currentLocalSync = null;
 
     this.emit("notebook-open", fileId);
     this.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId });
@@ -450,6 +455,10 @@ export class AppState {
 
   async saveCurrentFile() {
     if (this.currentProjectId) return this.saveProjectContent();
+    if (this.currentLocalSync) {
+      const m = await import("../sync/local-sync.js");
+      return m.saveCurrentLocalSync(this);
+    }
     if (!this.currentFileId || !this.editor) return;
     const content = this.editor.getContent();
     this.dirty = false;
@@ -496,6 +505,7 @@ export class AppState {
       this.emit("notebook-unmount");
       this.currentNotebookFileId = null;
     }
+    this.currentLocalSync = null;
     // Default new files go into the Inbox
     const targetParent = parentId || AppState.INBOX_ID;
     let fileId;
@@ -525,6 +535,7 @@ export class AppState {
     }
     this.currentProjectId = null;
     this.projectDocIds = [];
+    this.currentLocalSync = null;
     if (IS_TAURI) {
       try { const file = await tauriInvoke("load_file", { id }); this.currentFileId = file.id; if (this.editor) this.editor.setContent(file.content); }
       catch (e) { console.error("Load file failed:", e); }

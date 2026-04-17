@@ -77,6 +77,8 @@ function buildCommands(state) {
       action: (s) => s.toggleDry() },
     { id: "focus", label: "Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",
       action: (s) => s.toggleFocus() },
+    { id: "word-count", label: "Toggle word count", icon: null, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
+      action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
       action: (s) => s.emit("toggle-outline-panel") },
 

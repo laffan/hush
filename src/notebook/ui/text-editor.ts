@@ -3,6 +3,27 @@ import { FONT_FAMILY, LINE_HEIGHT_RATIO } from "../types";
 import { canvasToScreen } from "../utils";
 import { h } from "./dom-helpers";
 
+/**
+ * Handle exposing minimal controls to outside callers (e.g. the Zotero
+ * search modal). Set when a text-shape editor is actively open; cleared
+ * on commit or end-editing. Used to let the modal suspend blur-commit
+ * while it owns focus, then insert text back into the textarea.
+ */
+export interface ActiveNotebookTextEditor {
+  textarea: HTMLTextAreaElement;
+  state: DrawingState;
+  suspendCommitOnBlur: () => void;
+  resumeCommitOnBlur: () => void;
+  insertAtSelection: (text: string) => void;
+  focus: () => void;
+}
+
+let _activeNotebookTextEditor: ActiveNotebookTextEditor | null = null;
+
+export function getActiveNotebookTextEditor(): ActiveNotebookTextEditor | null {
+  return _activeNotebookTextEditor;
+}
+
 export function createTextEditor(state: DrawingState): HTMLElement {
   const container = h("div", { style: { position: "absolute", top: "0", left: "0", width: "0", height: "0", overflow: "visible", zIndex: "200", pointerEvents: "none" } });
 
@@ -22,6 +43,11 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   });
   container.appendChild(textarea);
 
+  // When a caller (e.g. the Zotero search modal) wants to temporarily
+  // steal focus without triggering the commit-on-blur flow, they flip
+  // `commitSuspended = true` and restore it when done.
+  let commitSuspended = false;
+
   textarea.addEventListener("input", () => {
     if (!state.editingText) return;
     state.updateEditingText(textarea.value);
@@ -38,15 +64,47 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   textarea.addEventListener("blur", () => {
     setTimeout(() => {
       if (!state.editingText) return;
+      if (commitSuspended) return;
       state.endEditingText();
     }, 150);
   });
 
+  const handle: ActiveNotebookTextEditor = {
+    textarea,
+    state,
+    suspendCommitOnBlur: () => { commitSuspended = true; },
+    resumeCommitOnBlur: () => { commitSuspended = false; },
+    insertAtSelection: (text: string) => {
+      if (!state.editingText) return;
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? textarea.value.length;
+      const before = textarea.value.slice(0, start);
+      const after = textarea.value.slice(end);
+      const next = before + text + after;
+      textarea.value = next;
+      const caret = start + text.length;
+      textarea.setSelectionRange(caret, caret);
+      state.updateEditingText(next);
+    },
+    focus: () => {
+      setTimeout(() => {
+        textarea.focus();
+        const pos = textarea.selectionEnd ?? textarea.value.length;
+        textarea.setSelectionRange(pos, pos);
+      }, 0);
+    },
+  };
+
   function update() {
     if (!state.editingText) {
       textarea.style.display = "none";
+      if (_activeNotebookTextEditor === handle) _activeNotebookTextEditor = null;
+      commitSuspended = false;
       return;
     }
+    // Register this editor as the globally-active notebook text editor so
+    // outside callers (like the Zotero modal) can find it.
+    _activeNotebookTextEditor = handle;
 
     const et = state.editingText;
     const scaledFontSize = et.fontSize * state.camera.zoom;

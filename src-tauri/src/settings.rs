@@ -62,11 +62,18 @@ pub struct AppSettings {
     #[serde(default)]
     pub dropbox_token: Option<String>,
 
+    // Local Sync (desktop-only) — mounted folders reflected live in the
+    // sidebar. Writes go straight to disk; unsyncing is non-destructive.
+    #[serde(default)]
+    pub local_sync_folders: Vec<crate::local_sync::LocalSyncFolder>,
+
     // Window
     #[serde(default)]
     pub always_on_top: bool,
     #[serde(default = "default_column_width")]
     pub column_width: u32,
+    #[serde(default = "default_sidebar_panel_width")]
+    pub sidebar_panel_width: u32,
 
     // Shortcuts — General
     #[serde(default = "default_shortcut_open")]
@@ -87,6 +94,10 @@ pub struct AppSettings {
     pub shortcut_toggle_dry: String,
     #[serde(default = "default_shortcut_toggle_focus")]
     pub shortcut_toggle_focus: String,
+    #[serde(default = "default_shortcut_toggle_word_count")]
+    pub shortcut_toggle_word_count: String,
+    #[serde(default)]
+    pub word_count_visible: bool,
     #[serde(default = "default_shortcut_find")]
     pub shortcut_find: String,
     #[serde(default = "default_shortcut_find_all")]
@@ -475,6 +486,9 @@ fn default_padding() -> u32 {
 fn default_column_width() -> u32 {
     600
 }
+fn default_sidebar_panel_width() -> u32 {
+    300
+}
 fn default_shortcut_open() -> String {
     "CmdOrCtrl+Shift+H".to_string()
 }
@@ -501,6 +515,9 @@ fn default_shortcut_toggle_dry() -> String {
 }
 fn default_shortcut_toggle_focus() -> String {
     "Mod+Shift+Y".to_string()
+}
+fn default_shortcut_toggle_word_count() -> String {
+    "Mod+Shift+W".to_string()
 }
 fn default_shortcut_find() -> String {
     "Mod+F".to_string()
@@ -663,8 +680,10 @@ impl Default for AppSettings {
             dropbox_sync_log: Vec::new(),
             sync_folders: Vec::new(),
             dropbox_token: None,
+            local_sync_folders: Vec::new(),
             always_on_top: false,
             column_width: default_column_width(),
+            sidebar_panel_width: default_sidebar_panel_width(),
             shortcut_open_editor: default_shortcut_open(),
             shortcut_open_fullscreen: default_shortcut_fullscreen(),
             shortcut_toggle_private: default_shortcut_private(),
@@ -674,6 +693,8 @@ impl Default for AppSettings {
             shortcut_new_file: default_shortcut_new_file(),
             shortcut_toggle_dry: default_shortcut_toggle_dry(),
             shortcut_toggle_focus: default_shortcut_toggle_focus(),
+            shortcut_toggle_word_count: default_shortcut_toggle_word_count(),
+            word_count_visible: false,
             shortcut_find: default_shortcut_find(),
             shortcut_find_all: default_shortcut_find_all(),
             shortcut_select_sentence: default_shortcut_select_sentence(),

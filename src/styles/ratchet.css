@@ -78,3 +78,34 @@
   z-index: 9999;
   opacity: 0.6;
 }
+
+/* Word count pill — occupies the same slot as the ratchet timer when
+   ratchet is off. When both are active, the word count stacks directly
+   below the timer (body.ratchet-active rule below). */
+.word-count-display {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  background: var(--theme-bg, var(--bg));
+  padding: 2px 8px;
+  border-radius: 6px;
+  z-index: 9999;
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* When ratchet is also visible, push the word count down to sit below
+   the timer. The JS toggles `.stacked` based on state.ratchetMode. */
+.word-count-display.stacked {
+  top: 34px;
+}
+
+/* Hide word count pill in notebook mode — it's a doc-only feature. */
+body.notebook-mode .word-count-display {
+  display: none;
+}

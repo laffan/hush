@@ -16,6 +16,21 @@
   transition: opacity 0.2s;
   z-index: 200;
   pointer-events: none;
+  cursor: crosshair;
+}
+
+#sidebar * {
+  cursor: inherit;
+}
+
+#panel-overlay, #panel-overlay * {
+  cursor: crosshair;
+}
+
+#panel-overlay input,
+#panel-overlay textarea,
+#panel-overlay .tree-rename-input {
+  cursor: text;
 }
 
 #sidebar:hover, #sidebar.visible, #sidebar.pinned {
@@ -75,7 +90,7 @@ body.wide-viewport .panel-pin-btn {
   position: fixed;
   top: 0;
   left: 50px;
-  width: 300px;
+  width: var(--panel-width, 300px);
   height: 100%;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
@@ -85,6 +100,42 @@ body.wide-viewport .panel-pin-btn {
   overflow-y: auto;
   transition: transform 0.2s, opacity 0.2s;
 }
+
+/* Sidebar-panel resizer — mirrors the column-resizer invisible-to-visible
+   feel. The element itself is 40px wide with a 3px visible rail. Sits on
+   the panel's right edge. */
+.sidebar-panel-resizer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  padding: 0 20px;
+  margin-left: -20px;
+  cursor: col-resize;
+  background-clip: content-box;
+  z-index: 110;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.sidebar-panel-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 19px;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--fg, currentColor);
+  opacity: 0;
+  transition: opacity 0.5s ease-in;
+}
+
+.sidebar-panel-resizer.hover::after { opacity: 0.15; transition: opacity 0.5s ease-in; }
+.sidebar-panel-resizer.dragging::after { opacity: 0.35; transition: opacity 0s; }
+.sidebar-panel-resizer:not(.hover):not(.dragging)::after { transition: opacity 0s; }
+
+.sidebar-panel-resizer.hidden { display: none; }
 
 /* Inset mode: panel sits in the editor's left margin, no overlay */
 #panel-overlay.panel-inset {
@@ -108,11 +159,13 @@ body.notebook-mode #panel-overlay.panel-inset {
   pointer-events: none;
 }
 
-/* Pin button — fixed at bottom-right of panel zone */
+/* Pin button — fixed at bottom-right of panel zone. Horizontal offset
+   tracks --panel-width so it stays glued to the panel's right edge when
+   the panel is resized. */
 .panel-pin-btn {
   position: fixed;
   bottom: 12px;
-  left: 322px; /* 50px sidebar + 300px panel - 15px btn - 13px margin */
+  left: calc(50px + var(--panel-width, 300px) - 28px);
   width: 15px;
   height: 15px;
   padding: 0;

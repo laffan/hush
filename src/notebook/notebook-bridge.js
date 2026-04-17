@@ -172,9 +172,18 @@ function resolveNotebookTheme(state) {
 /**
  * Compute the NotesCanvas settings bundle derived from the current Hush
  * editor style. Exported so notebook panes can adopt the same style.
+ * When `lockedStyleId` is provided, the pane's notebook uses that style
+ * instead of whichever style is currently session-active.
  */
-export function computeNotebookSettings(state) {
-  const s = state.settings;
+export function computeNotebookSettings(state, lockedStyleId) {
+  let s = state.settings;
+  if (lockedStyleId) {
+    if (lockedStyleId === "__default__") {
+      s = { ...s, activeStyleId: null };
+    } else if ((s.styles || []).some(st => st.id === lockedStyleId)) {
+      s = { ...s, activeStyleId: lockedStyleId };
+    }
+  }
 
   // Derive appearance from Hush settings
   let appearance = s.appearance || "dark";
@@ -189,9 +198,11 @@ export function computeNotebookSettings(state) {
     if (style?.fontFamily) fontFamily = style.fontFamily;
   }
 
+  const overrideState = s === state.settings ? state : { ...state, settings: s };
+
   return {
     appearanceMode: appearance,
-    themeId: resolveNotebookTheme(state),
+    themeId: resolveNotebookTheme(overrideState),
     backgroundPattern: s.notebookBackgroundPattern || "dot-grid",
     gridSpacing: s.notebookGridSpacing || 25,
     gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.15,

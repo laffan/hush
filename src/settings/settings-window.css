@@ -558,6 +558,29 @@ html, body {
 .sync-status.success { color: #4caf50; }
 .sync-status.error { color: #e53935; }
 
+/* Local Sync list */
+.local-sync-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.local-sync-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; gap: 12px;
+  border: 1px solid var(--panel-border); border-radius: 6px;
+  background: rgba(128,128,128,0.04);
+}
+.local-sync-item-info { min-width: 0; flex: 1; }
+.local-sync-item-name { font-size: 13px; font-weight: 500; }
+.local-sync-item-path {
+  font-size: 11px; opacity: 0.6; margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.local-sync-remove-btn {
+  padding: 4px 10px; border: 1px solid var(--panel-border);
+  background: transparent; color: var(--fg); border-radius: 4px;
+  cursor: pointer; font-size: 11px;
+}
+.local-sync-remove-btn:hover { background: rgba(229,57,53,0.12); color: #e53935; }
+.local-sync-empty { font-size: 12px; opacity: 0.6; padding: 4px 0; }
+
 /* Primary action button (Connect, etc.) */
 .sync-action-btn {
   margin-top: 8px; padding: 8px 18px;

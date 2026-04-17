@@ -36,14 +36,22 @@ export function createPaneEditor(container, appState, onChange) {
       view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(editable)) });
     },
     destroy: () => view.destroy(),
-    reconfigureTheme: (settings) => {
-      const t = getActiveTheme(settings);
-      const style = settings.activeStyleId
-        ? (settings.styles || []).find(s => s.id === settings.activeStyleId) : null;
-      const nh = style?.suppressHeaderSize ?? settings.normalizeHeaders;
-      const nhc = style?.suppressHeaderColor ?? settings.normalizeHeaderColor;
-      const hScale = style?.headerScale ?? settings.headerScale ?? 1.0;
-      const headerOverride = (style && ((settings.appearance === "dark" ? style.darkColors : style.lightColors)?.header))
+    /** Reconfigure theme from the given settings. When `lockedStyleId` is
+     *  provided, the pane uses that style instead of the session's active
+     *  style — this is how panes showing a document with "Lock Style to
+     *  Document" enabled end up with the locked style even when the main
+     *  editor is showing something else. */
+    reconfigureTheme: (settings, lockedStyleId) => {
+      const effective = lockedStyleId
+        ? resolveLockedStyleSettings(settings, lockedStyleId)
+        : settings;
+      const t = getActiveTheme(effective);
+      const style = effective.activeStyleId
+        ? (effective.styles || []).find(s => s.id === effective.activeStyleId) : null;
+      const nh = style?.suppressHeaderSize ?? effective.normalizeHeaders;
+      const nhc = style?.suppressHeaderColor ?? effective.normalizeHeaderColor;
+      const hScale = style?.headerScale ?? effective.headerScale ?? 1.0;
+      const headerOverride = (style && ((effective.appearance === "dark" ? style.darkColors : style.lightColors)?.header))
         || undefined;
       view.dispatch({
         effects: [
@@ -56,4 +64,16 @@ export function createPaneEditor(container, appState, onChange) {
       });
     },
   };
+}
+
+/** Build a shallow copy of settings with its activeStyleId swapped for
+ *  the locked style id. "__default__" means "no style" — explicitly clear
+ *  activeStyleId so the default theme/font is used. */
+function resolveLockedStyleSettings(settings, lockedStyleId) {
+  if (lockedStyleId === "__default__") {
+    return { ...settings, activeStyleId: null };
+  }
+  const exists = (settings.styles || []).some(s => s.id === lockedStyleId);
+  if (!exists) return settings; // style was deleted — fall back to session
+  return { ...settings, activeStyleId: lockedStyleId };
 }

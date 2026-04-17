@@ -23,6 +23,7 @@ export const shortcutCategories = [
       { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },
+      { key: "shortcutToggleWordCount", label: "Toggle word count" },
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutSave", label: "Save file" },
       { key: "shortcutFind", label: "Find / replace" },
@@ -459,6 +460,7 @@ export function renderSyncTab(settings) {
   const isEnabled = !!settings.dropboxEnabled;
   const syncPath = settings.dropboxSyncPath || "";
   const syncLog = settings.dropboxSyncLog || [];
+  const localSyncFolders = settings.localSyncFolders || [];
 
   let html = "";
 
@@ -535,6 +537,33 @@ export function renderSyncTab(settings) {
       </div>
     `;
   }
+
+  // ── Local Sync section (desktop only) ──
+  html += `
+    <div class="settings-section local-sync-section">
+      <h2>Local Sync</h2>
+      <p class="settings-help">
+        Mount a folder on this machine directly in Hush. Local Sync folders
+        are outside the version control system — edits write straight to
+        disk and external changes appear immediately. Unsyncing a folder
+        only removes it from Hush; nothing on disk is changed.
+      </p>
+      <div class="local-sync-list" id="local-sync-list">
+        ${localSyncFolders.length === 0
+          ? `<div class="local-sync-empty">No folders yet.</div>`
+          : localSyncFolders.map(f => `
+              <div class="local-sync-item" data-id="${escAttr(f.id)}">
+                <div class="local-sync-item-info">
+                  <div class="local-sync-item-name">${escHtml(f.name)}</div>
+                  <div class="local-sync-item-path">${escHtml(f.path)}</div>
+                </div>
+                <button class="local-sync-remove-btn" data-id="${escAttr(f.id)}">Remove</button>
+              </div>
+            `).join("")}
+      </div>
+      <button id="local-sync-add" class="sync-action-btn">Add folder</button>
+    </div>
+  `;
 
   return html;
 }

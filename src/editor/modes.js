@@ -49,6 +49,13 @@ export async function applyFullscreen(state) {
   updateColumnResizers(state);
 }
 
+/** Read --panel-width from the root element, falling back to 300. */
+export function getPanelWidthPx() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue("--panel-width").trim();
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : 300;
+}
+
 export function updateColumnResizers(state) {
   document.querySelectorAll(".column-resizer").forEach((el) => el.remove());
   if (state._columnResizeHandler) {
@@ -94,10 +101,12 @@ export function updateColumnResizers(state) {
     const rightInset = rightPanelEl && rightPanelEl.classList.contains("panel-inset");
     const rightOpen = rightPanelEl && !rightPanelEl.classList.contains("hidden");
 
-    // When panels are inset and visible, center within remaining space
+    // When panels are inset and visible, center within remaining space.
+    // Panel width is user-resizable; read it from the CSS var.
     let leftInsetOffset = 0;
     if (isInset && panelOpen) {
-      leftInsetOffset = 350; // sidebar (50) + panel (300)
+      const panelW = getPanelWidthPx();
+      leftInsetOffset = 50 + panelW; // sidebar + panel
     }
     let rightInsetOffset = 0;
     if (rightInset && rightOpen) {

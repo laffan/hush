@@ -74,16 +74,9 @@
   display: none;
 }
 
-/* Heading indent — pull # markers into the left margin */
-.heading-indent {
-  position: relative;
-}
-.heading-marker {
-  position: absolute;
-  right: 100%;
-  white-space: pre;
-  pointer-events: none;
-}
+/* Heading `#` markers are collapsed away by a replace decoration when
+   the cursor isn't on the heading line (see headingIndentPlugin). No
+   positioning CSS is needed — the syntax highlighter handles dimming. */
 
 
 

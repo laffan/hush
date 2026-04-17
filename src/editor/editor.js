@@ -18,6 +18,7 @@ import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
 import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
+import { updateWordCountDisplay, scheduleWordCountRecompute } from "./plugins/word-count.js";
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
 import { buildCodeMirrorKeymap } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
@@ -81,10 +82,12 @@ export function buildShortcutExtension(state) {
   return Prec.highest(keymap.of([...userBindings, ...fixed]));
 }
 
-// Plugin that pulls heading markers (# ## etc.) into the left margin so
-// heading text aligns with body text.  Uses mark decorations with absolute
-// positioning — no measurement needed, works at any font size.
-const headingMarkerDeco = Decoration.mark({ class: "heading-marker" });
+// Plugin that hides heading `#` markers unless the cursor is on that
+// heading line. When the user enters the line, the markers re-appear
+// inline so they can be edited; leaving the line collapses them away.
+// Previously this plugin pulled the markers into the left margin, which
+// got cropped inside narrow panes.
+const headingMarkerHideDeco = Decoration.replace({});
 
 // Hang-indent wrapped list lines so the continuation aligns with the text
 // after the marker. Pixel-accurate: we measure the marker's actual rendered
@@ -116,6 +119,7 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
     }
     update(update) {
       if (update.docChanged || update.viewportChanged || update.geometryChanged
+          || update.selectionSet
           || update.transactions.some(tr => tr.effects.length > 0)) {
         this.decorations = this.buildDecorations(update.view);
       }
@@ -124,15 +128,32 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
       const builder = new RangeSetBuilder();
       const { from, to } = view.viewport;
       const doc = view.state.doc;
+      // A heading's markers reveal themselves when any cursor or selection
+      // overlaps that line; otherwise they collapse away entirely. We check
+      // ranges (not just the primary selection) so multi-cursor edits still
+      // show all affected heading markers.
+      const selRanges = view.state.selection.ranges;
+      const lineTouchesSelection = (lineFrom, lineTo) => {
+        for (const r of selRanges) {
+          const rFrom = Math.min(r.from, r.to);
+          const rTo = Math.max(r.from, r.to);
+          if (rTo >= lineFrom && rFrom <= lineTo) return true;
+        }
+        return false;
+      };
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         const headingMatch = line.text.match(/^(#{1,6})\s/);
         const listMatch = !headingMatch && line.text.match(/^(\s*)([-*+]|\d+[.)])(\s+)/);
         if (headingMatch) {
-          // Line decoration: position:relative so the marker can be absolute
-          builder.add(line.from, line.from, Decoration.line({ class: "heading-indent" }));
-          // Mark decoration: wrap the "## " prefix
-          builder.add(line.from, line.from + headingMatch[0].length, headingMarkerDeco);
+          const markerEnd = line.from + headingMatch[0].length;
+          // When the cursor is on the heading line, leave the markers
+          // visible inline (no decoration needed — the syntax highlighter
+          // already dims them to 40% opacity via tags.processingInstruction).
+          // When it's not, collapse the "## " prefix away entirely.
+          if (!lineTouchesSelection(line.from, line.to)) {
+            builder.add(line.from, markerEnd, headingMarkerHideDeco);
+          }
         } else if (listMatch) {
           // Hang-indent wrapped lines by the actual pixel width of the
           // marker + space so continuation lines line up with the content.
@@ -416,6 +437,7 @@ export function createEditor(container, state) {
     if (update.docChanged) {
       state.markDirty();
       state.trackKeystroke();
+      scheduleWordCountRecompute(state);
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
     }
     // Typewriter: scroll cursor to fixed position on every update
@@ -566,6 +588,7 @@ export function createEditor(container, state) {
   state.on("mode-changed", () => {
     applyModes(state);
     updateRatchetTimer(state);
+    updateWordCountDisplay(state);
     view.dispatch({ effects: [] });
     if (state.ratchetMode) {
       const end = view.state.doc.length;
@@ -625,6 +648,8 @@ export function createEditor(container, state) {
 
   updateColumnResizers(state);
   applyBlockCursor(state);
+  updateWordCountDisplay(state);
+  state.on("file-opened", () => scheduleWordCountRecompute(state));
 
   state.on("style-changed", () => applyBlockCursor(state));
 
@@ -653,6 +678,7 @@ export function createEditor(container, state) {
   });
 
   state.on("settings-changed", () => {
+    updateWordCountDisplay(state);
     const _activeStyle = state.settings.activeStyleId
       ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId)
       : null;

@@ -43,6 +43,10 @@ export function initPaneManager(state) {
   autosaveTimer = setInterval(autosaveAllPanes, 2000);
   state.on("theme-changed", syncPaneThemes);
   state.on("style-changed", syncPaneThemes);
+  // The file-tree node stores `lockedStyleId`; re-sync whenever the tree
+  // changes so panes pick up a newly-set (or cleared) lock without the
+  // user having to reopen them.
+  state.on("files-changed", syncPaneThemes);
   getNotebookBridge().catch(() => {});
   // Deactivate panes when clicking anywhere outside a pane
   window.addEventListener("pointerdown", (e) => {
@@ -541,6 +545,14 @@ async function loadDocumentPane(pane) {
   });
   pane.editor = editor;
 
+  // If this document has a locked style, apply it now so the pane opens
+  // with the right theme/font instead of flashing to the session style
+  // first.
+  const lockedStyleId = findLockedStyleForFile(pane.fileId);
+  if (lockedStyleId && editor.reconfigureTheme) {
+    editor.reconfigureTheme(appState.settings, lockedStyleId);
+  }
+
   // Load file content
   let content = "";
   try {
@@ -586,8 +598,10 @@ async function loadNotebookPane(pane) {
   const canvas = new NotesCanvas(pane._content, shortcuts);
   pane.notebook = canvas;
 
-  // Inherit the current Hush editor style (appearance/theme/font/grid)
-  canvas.applySettings(computeNotebookSettings(appState));
+  // Inherit the current Hush editor style (appearance/theme/font/grid) —
+  // if the notebook has a locked style, that takes precedence.
+  const lockedStyleId = findLockedStyleForFile(pane.fileId);
+  canvas.applySettings(computeNotebookSettings(appState, lockedStyleId));
 
   // Load shapes
   let shapes = [];
@@ -695,17 +709,31 @@ function autosaveAllPanes() {
 
 // ── Theme sync ────────────────────────────────────────────────────────
 async function syncPaneThemes() {
-  let nbSettings = null;
+  let bridge = null;
   for (const [, pane] of panes) {
-    if (pane.editor?.reconfigureTheme) pane.editor.reconfigureTheme(appState.settings);
+    const lockedStyleId = findLockedStyleForFile(pane.fileId);
+    if (pane.editor?.reconfigureTheme) {
+      pane.editor.reconfigureTheme(appState.settings, lockedStyleId);
+    }
     if (pane.notebook) {
-      if (!nbSettings) {
-        const bridge = await getNotebookBridge();
-        nbSettings = bridge.computeNotebookSettings(appState);
-      }
-      pane.notebook.applySettings(nbSettings);
+      if (!bridge) bridge = await getNotebookBridge();
+      pane.notebook.applySettings(bridge.computeNotebookSettings(appState, lockedStyleId));
     }
   }
+}
+
+/** Walk the file tree looking for a tree node with the given fileId and
+ *  return its lockedStyleId (or null if none). */
+function findLockedStyleForFile(fileId) {
+  if (!fileId || !appState?.fileTree) return null;
+  function search(nodes) {
+    for (const n of nodes) {
+      if (n.fileId === fileId) return n.lockedStyleId || null;
+      if (n.children) { const r = search(n.children); if (r) return r; }
+    }
+    return null;
+  }
+  return search(appState.fileTree);
 }
 
 // ── Persistence (settings.persistedPanes) ─────────────────────────────

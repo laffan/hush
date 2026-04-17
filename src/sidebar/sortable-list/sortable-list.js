@@ -93,6 +93,16 @@ export class SortableList {
     });
   }
 
+  /** Toggle the collapsed state of an item by id. */
+  toggle(itemId) {
+    if (this.state.collapsedIds.has(itemId)) {
+      this.state.collapsedIds.delete(itemId);
+    } else {
+      this.state.collapsedIds.add(itemId);
+    }
+    this.render();
+  }
+
   // ===== Internal: used by sub-modules =====
 
   _getItemAtPath(path) {

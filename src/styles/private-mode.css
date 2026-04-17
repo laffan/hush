@@ -26,10 +26,11 @@
   border-left-color: var(--cursor);
 }
 
-/* Hide footnote overlays, marginalia, and heading markers in private mode */
+/* Hide footnote overlays and marginalia in private mode. Heading markers
+   are already hidden by the heading plugin unless the cursor is on the
+   heading line, which we don't try to defeat here. */
 .private-mode .footnote-overlay,
-.private-mode .footnote-marginalia,
-.private-mode .heading-marker {
+.private-mode .footnote-marginalia {
   display: none;
 }
 

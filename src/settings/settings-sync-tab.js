@@ -236,6 +236,41 @@ export function bindSyncTab(saveSetting, settings, render) {
     });
   }
 
+  // Local Sync: add/remove folders. The Rust side picks the path via a
+  // native folder dialog and registers the watcher; on success the
+  // settings window re-renders with the updated list.
+  const localSyncAddBtn = document.getElementById("local-sync-add");
+  if (localSyncAddBtn) {
+    localSyncAddBtn.addEventListener("click", async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const picked = await open({ directory: true, multiple: false });
+        if (!picked) return;
+        const folder = await invoke("local_sync_add", { path: picked });
+        settings.localSyncFolders = (settings.localSyncFolders || []).concat(folder);
+        await saveSetting("localSyncFolders", settings.localSyncFolders);
+        render();
+      } catch (e) {
+        console.error("Failed to add Local Sync folder:", e);
+      }
+    });
+  }
+  document.querySelectorAll(".local-sync-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id;
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("local_sync_remove", { id });
+        settings.localSyncFolders = (settings.localSyncFolders || []).filter(f => f.id !== id);
+        await saveSetting("localSyncFolders", settings.localSyncFolders);
+        render();
+      } catch (e) {
+        console.error("Failed to remove Local Sync folder:", e);
+      }
+    });
+  });
+
   function addSyncLogEntry(message) {
     const now = new Date();
     const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });

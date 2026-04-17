@@ -33,6 +33,7 @@ import {
 } from "./formatting.js";
 import { insertFootnote } from "./plugins/footnotes.js";
 import { openZoteroModal } from "../zotero.js";
+import { toggleWordCount } from "./plugins/word-count.js";
 
 /** Multi-cursor "select next occurrence" — was inline in editor.js. */
 function selectNextInstance(view) {
@@ -173,6 +174,7 @@ export function buildEditorCommands() {
     shortcutTypewriter: (state) => { state.toggleTypewriter(); return true; },
     shortcutToggleDry: (state) => { state.toggleDry(); return true; },
     shortcutToggleFocus: (state) => { state.toggleFocus(); return true; },
+    shortcutToggleWordCount: (state) => toggleWordCount(state),
     shortcutNewFile: (state) => { state.newFile(); return true; },
     shortcutSave: (state) => {
       state.saveCurrentFile();

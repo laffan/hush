@@ -30,10 +30,13 @@ const typeIcons = {
   syncedFolderBroken: `<svg viewBox="0 0 16 16" class="tree-type-icon sync-broken-icon"><circle cx="8" cy="8" r="6" /><polyline points="2,8 5,8 6,6 7,10 8,6 9,10 10,8 14,8" /></svg>`,
   inbox: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 9 5 9 6.5 11 9.5 11 11 9 14 9" /><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" /></svg>`,
   // Images folder: a centered square with the same rounded corners as the
-  // `document` head and a diagonal cross through it.
-  images: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="3" width="10" height="10" rx="1.5" /><line x1="5" y1="5" x2="11" y2="11" /><line x1="11" y1="5" x2="5" y2="11" /></svg>`,
+  // `document` head and a single diagonal slash through it.
+  images: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="3" width="10" height="10" rx="1.5" /><line x1="4.5" y1="11.5" x2="11.5" y2="4.5" /></svg>`,
   trash: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
   flaggedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
+  // Local Sync folder icon: circle with a horizontal line through the
+  // middle — visually distinct from the plain folder (filled circle).
+  localSync: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /><line x1="2" y1="8" x2="14" y2="8" /></svg>`,
 };
 
 function getIcon(item) {
@@ -114,6 +117,14 @@ export function createFilesPanel(container, state, hidePanel) {
   `;
   container.appendChild(btnRow);
 
+  // Local Sync section — rendered above the flagged/files trees. Each
+  // entry is a top-level disclosure that expands to show its on-disk
+  // contents. Populated asynchronously after the main tree renders.
+  const localSyncContainer = document.createElement("ul");
+  localSyncContainer.className = "tree-list-root local-sync-root";
+  container.appendChild(localSyncContainer);
+  renderLocalSyncSection(localSyncContainer, state, hidePanel);
+
   // Flagged section — its own container, separate from SortableList
   flaggedContainerEl = document.createElement("ul");
   flaggedContainerEl.className = "tree-list-root flagged-section-root";
@@ -173,6 +184,14 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item) => {
+      // Clicking anywhere on a folder-like row toggles its collapsed state.
+      // This applies to Inbox, Images, Trash, and any user-created folder.
+      // User projects still open into project view.
+      const isFolderLike = item.type === "folder" || item.id === AppState.INBOX_ID;
+      if (isFolderLike) {
+        if (sortableInstance) sortableInstance.toggle(item.id);
+        return;
+      }
       if (item.type === "document" && item.fileId) {
         state.openFile(item.fileId);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
@@ -217,8 +236,10 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance.state.collapsedIds.delete(AppState.INBOX_ID);
   }
 
-  // Trash stays collapsed unless the user explicitly opens it
+  // Trash and Images stay collapsed unless the user explicitly opens them
+  // (mirroring each other — both are "drawer" special nodes at the tail).
   sortableInstance.state.collapsedIds.add(AppState.TRASH_ID);
+  sortableInstance.state.collapsedIds.add(AppState.IMAGES_ID);
   sortableInstance.render();
 
   // Render the virtual Flagged folder
@@ -341,7 +362,12 @@ function renderFlaggedSection(state) {
       itemMain.className = "sl-item-main-label";
       const itemRow = document.createElement("span");
       itemRow.className = "tree-item-row";
-      itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(item.name)}</span>${flagOnlyButton(item.id)}`;
+      // Only items directly flagged by the user get the unflag button —
+      // descendants of a flagged folder bubble up without one (clicking
+      // the flag button on them would flag them independently, which
+      // isn't what the user is asking for).
+      const button = item.flagged ? flagOnlyButton(item.id) : "";
+      itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(item.name)}</span>${button}`;
       itemMain.appendChild(itemRow);
       itemLabel.appendChild(itemMain);
       itemContent.appendChild(itemLabel);
@@ -458,14 +484,17 @@ function handleRename(nodeId, triggerEl, state) {
   if (!li) return;
   const nameEl = li.querySelector(".tree-item-name");
   if (!nameEl) return;
+  const rowEl = li.querySelector(".tree-item-row");
+  if (rowEl) rowEl.classList.add("renaming");
 
   const currentName = nameEl.textContent;
-  nameEl.innerHTML = `<input class="tree-rename-input" type="text" value="${currentName}" />`;
+  nameEl.innerHTML = `<input class="tree-rename-input" type="text" value="${escAttrValue(currentName)}" />`;
   const input = nameEl.querySelector("input");
   input.focus();
   input.select();
 
   function finishRename() {
+    if (rowEl) rowEl.classList.remove("renaming");
     const newName = input.value.trim();
     if (newName && newName !== currentName) {
       state.renameTreeNode(nodeId, newName).then(() => refreshList(state));
@@ -479,6 +508,10 @@ function handleRename(nodeId, triggerEl, state) {
     if (e.key === "Enter") { e.preventDefault(); input.blur(); }
     if (e.key === "Escape") { input.value = currentName; input.blur(); }
   });
+}
+
+function escAttrValue(str) {
+  return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 async function handleRevealInFinder(nodeId, state) {
@@ -571,6 +604,175 @@ function showDeleteConfirmModal(title, message, onConfirm) {
 
 export function refreshFilesPanel(state) {
   refreshList(state);
+  // Re-render the local-sync section as well so newly added/removed
+  // folders or watcher-pushed changes land in the panel.
+  const root = storedLocalSyncContainer;
+  if (root && storedState && storedHidePanel) {
+    renderLocalSyncSection(root, storedState, storedHidePanel);
+  }
+}
+
+// ===== Local Sync =====
+
+let storedLocalSyncContainer = null;
+const localSyncExpanded = new Set(); // folderId:relPath strings
+
+async function renderLocalSyncSection(container, state, hidePanel) {
+  storedLocalSyncContainer = container;
+  container.innerHTML = "";
+  const { listLocalSyncFolders } = await import("../sync/local-sync.js");
+  const folders = await listLocalSyncFolders();
+  if (!folders || folders.length === 0) return;
+
+  for (const folder of folders) {
+    const rootLi = buildLocalSyncNode(folder, "", folder.name, true, state, hidePanel);
+    container.appendChild(rootLi);
+  }
+}
+
+function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePanel) {
+  const key = `${folder.id}:${relPath}`;
+  const isExpanded = localSyncExpanded.has(key) || (isRoot && localSyncExpanded.size === 0 && false);
+
+  const li = document.createElement("li");
+  li.className = "sl-item has-children" + (isExpanded ? "" : " collapsed");
+  li.dataset.id = key;
+
+  const contentWrapper = document.createElement("div");
+  contentWrapper.className = "sl-item-content";
+
+  const foldArrow = document.createElement("button");
+  foldArrow.className = "sl-fold-arrow";
+  foldArrow.type = "button";
+  foldArrow.textContent = isExpanded ? "\u25BC" : "\u25B6\uFE0E";
+  foldArrow.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleLocalSyncNode(key);
+    if (storedLocalSyncContainer && storedState && storedHidePanel) {
+      renderLocalSyncSection(storedLocalSyncContainer, storedState, storedHidePanel);
+    }
+  });
+  contentWrapper.appendChild(foldArrow);
+
+  const label = document.createElement("span");
+  label.className = "sl-item-label";
+  const main = document.createElement("span");
+  main.className = "sl-item-main-label";
+  const row = document.createElement("span");
+  row.className = "tree-item-row";
+  const removeBtn = isRoot
+    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button data-local-sync-action="remove" title="Remove from Local Sync">&times;</button></span>`
+    : "";
+  row.innerHTML = `${typeIcons.localSync}<span class="tree-item-name">${escHtml(displayName)}</span>${removeBtn}`;
+  main.appendChild(row);
+  label.appendChild(main);
+  contentWrapper.appendChild(label);
+
+  // Row click toggles the folder open/closed (matches Inbox/Trash UX)
+  contentWrapper.addEventListener("click", (e) => {
+    if (e.target.closest("[data-local-sync-action]")) return;
+    if (e.target.closest(".sl-fold-arrow")) return;
+    toggleLocalSyncNode(key);
+    if (storedLocalSyncContainer && storedState && storedHidePanel) {
+      renderLocalSyncSection(storedLocalSyncContainer, storedState, storedHidePanel);
+    }
+  });
+
+  li.appendChild(contentWrapper);
+
+  // Delegated remove-button handler
+  if (isRoot) {
+    const btn = contentWrapper.querySelector('[data-local-sync-action="remove"]');
+    if (btn) {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
+        await removeLocalSyncFolder(folder.id);
+        refreshFilesPanel(state);
+      });
+    }
+  }
+
+  if (isExpanded) {
+    const childList = document.createElement("ul");
+    childList.className = "sl-list";
+    li.appendChild(childList);
+    populateLocalSyncChildren(childList, folder, relPath, state, hidePanel);
+  }
+
+  return li;
+}
+
+function toggleLocalSyncNode(key) {
+  if (localSyncExpanded.has(key)) localSyncExpanded.delete(key);
+  else localSyncExpanded.add(key);
+}
+
+async function populateLocalSyncChildren(container, folder, relPath, state, hidePanel) {
+  container.innerHTML = '<li class="local-sync-loading"><span class="sl-item-label">Loading…</span></li>';
+  try {
+    const { readDir, openLocalSyncFile } = await import("../sync/local-sync.js");
+    const entries = await readDir(folder.id, relPath);
+    container.innerHTML = "";
+    if (entries.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "local-sync-empty";
+      empty.innerHTML = `<span class="sl-item-content"><span class="sl-fold-arrow sl-fold-empty"></span><span class="sl-item-label"><em>(empty)</em></span></span>`;
+      container.appendChild(empty);
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.is_dir || entry.isDir) {
+        const sub = buildLocalSyncNode(folder, entry.relPath || entry.rel_path, entry.name, false, state, hidePanel);
+        container.appendChild(sub);
+      } else {
+        const fileLi = buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFile);
+        container.appendChild(fileLi);
+      }
+    }
+  } catch (e) {
+    console.error("Failed to list local-sync folder:", e);
+    container.innerHTML = `<li class="local-sync-error"><span class="sl-item-label">Failed to read directory</span></li>`;
+  }
+}
+
+function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFile) {
+  const relPath = entry.relPath || entry.rel_path;
+  const li = document.createElement("li");
+  li.className = "sl-item local-sync-file";
+  li.dataset.id = `${folder.id}:${relPath}`;
+
+  const activeKey = state.currentLocalSync
+    ? `${state.currentLocalSync.folderId}:${state.currentLocalSync.relPath}`
+    : null;
+  if (activeKey === `${folder.id}:${relPath}`) li.classList.add("active");
+
+  const itemContent = document.createElement("div");
+  itemContent.className = "sl-item-content";
+  const spacer = document.createElement("button");
+  spacer.className = "sl-fold-arrow sl-fold-empty";
+  spacer.tabIndex = -1;
+  itemContent.appendChild(spacer);
+
+  const label = document.createElement("span");
+  label.className = "sl-item-label";
+  const main = document.createElement("span");
+  main.className = "sl-item-main-label";
+  const row = document.createElement("span");
+  row.className = "tree-item-row" + (li.classList.contains("active") ? " active" : "");
+  row.innerHTML = `${typeIcons.document}<span class="tree-item-name">${escHtml(entry.name)}</span>`;
+  main.appendChild(row);
+  label.appendChild(main);
+  itemContent.appendChild(label);
+  li.appendChild(itemContent);
+
+  itemContent.addEventListener("click", async () => {
+    await openLocalSyncFile(state, folder.id, relPath);
+    const overlay = document.querySelector("#panel-overlay");
+    if (overlay && !overlay.classList.contains("panel-inset") && hidePanel) hidePanel();
+  });
+
+  return li;
 }
 
 function escHtml(str) {

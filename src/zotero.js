@@ -168,11 +168,23 @@ function fuzzySearch(refs, query) {
 
 export async function openZoteroModal(view, state) {
   if (zoteroModal) { closeZoteroModal(); return; }
+  // If the user is editing a notebook text shape, the modal would blur the
+  // inline textarea and commit the shape before a citation could be
+  // inserted. Capture a handle to that editor (and suspend its
+  // commit-on-blur) so the insert flow can route back into it.
+  let notebookTextHandle = null;
+  try {
+    const { getActiveNotebookTextEditor } = await import("./notebook/ui/text-editor.ts");
+    notebookTextHandle = getActiveNotebookTextEditor();
+    if (notebookTextHandle) notebookTextHandle.suspendCommitOnBlur();
+  } catch (_) { /* notebook module not loaded — doc-only context */ }
+
   // Always reload from disk — references may have been updated in the settings window
   cachedReferences = null;
   const refs = await loadReferences();
   if (!refs || refs.length === 0) {
     // No references — prompt user to set up in Settings
+    if (notebookTextHandle) notebookTextHandle.resumeCommitOnBlur();
     showNoRefsMessage();
     return;
   }
@@ -277,16 +289,34 @@ export async function openZoteroModal(view, state) {
       }
     }
     const linkText = `[${title}](${url})`;
-    const cursor = view.state.selection.main.head;
-    view.dispatch({ changes: { from: cursor, insert: linkText } });
-    closeZoteroModal();
-    view.focus();
+    if (notebookTextHandle) {
+      // Notebook text shape — insert into the textarea, then refocus it
+      // and drop the commit-suspend so a later blur commits normally.
+      notebookTextHandle.insertAtSelection(linkText);
+      closeZoteroModal();
+      notebookTextHandle.resumeCommitOnBlur();
+      notebookTextHandle.focus();
+    } else {
+      const cursor = view.state.selection.main.head;
+      view.dispatch({ changes: { from: cursor, insert: linkText } });
+      closeZoteroModal();
+      view.focus();
+    }
+  }
+
+  function restoreFocusToSource() {
+    if (notebookTextHandle) {
+      notebookTextHandle.resumeCommitOnBlur();
+      notebookTextHandle.focus();
+    } else {
+      view.focus();
+    }
   }
 
   // Event listeners
   input.addEventListener("input", () => renderResults(input.value));
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { closeZoteroModal(); view.focus(); }
+    if (e.key === "Escape") { closeZoteroModal(); restoreFocusToSource(); }
   });
 
   resultsEl.addEventListener("click", (e) => {
@@ -299,7 +329,7 @@ export async function openZoteroModal(view, state) {
 
   zoteroModal.querySelector(".zotero-close-btn").addEventListener("click", () => {
     closeZoteroModal();
-    view.focus();
+    restoreFocusToSource();
   });
 
   // Close on outside click
@@ -308,7 +338,7 @@ export async function openZoteroModal(view, state) {
       if (zoteroModal && !zoteroModal.contains(e.target)) {
         closeZoteroModal();
         document.removeEventListener("mousedown", handler);
-        view.focus();
+        restoreFocusToSource();
       }
     });
   }, 0);

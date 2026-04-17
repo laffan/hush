@@ -55,8 +55,30 @@ export function insertAfter(nodes, afterId, newNode) {
 export function collectFlaggedItems(nodes) {
   const result = [];
   for (const n of nodes) {
-    if (n.flagged) result.push(n);
+    if (n.flagged) {
+      result.push(n);
+      // Flagged folders / projects pull their descendants up into the Flagged
+      // section alongside them. Images and Trash are never bubbled; their
+      // subtrees are filesystem scaffolding, not user-authored content.
+      if ((n.type === "folder" || n.type === "project") && n.children) {
+        result.push(...collectDescendants(n.children));
+      }
+      // A flagged folder's descendants are already included above — don't
+      // descend again to avoid duplicates.
+      continue;
+    }
     if (n.children) result.push(...collectFlaggedItems(n.children));
+  }
+  return result;
+}
+
+function collectDescendants(nodes) {
+  const result = [];
+  for (const n of nodes) {
+    // Skip nested image nodes and any pinned special subtrees.
+    if (n.type === "image") continue;
+    result.push(n);
+    if (n.children) result.push(...collectDescendants(n.children));
   }
   return result;
 }

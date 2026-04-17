@@ -319,10 +319,23 @@ async function init() {
     const tag = t && t.tagName;
     const isTextField = !!t && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable);
     const inNotebook = document.body.classList.contains("notebook-mode");
+    const inNotebookInlineEditor = !!t && tag === "TEXTAREA" && t.classList?.contains("inline-text-editor");
     if (isTextField && inNotebook) {
       // Cmd+, — open settings (also hardcoded below for canvas focus)
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ",") {
         e.preventDefault(); openSettingsWindow(state); return;
+      }
+      // Zotero — allow Insert Reference to fire from inside an inline
+      // text-shape editor so users can cite while editing a text shape.
+      // The modal's insert path routes back into the textarea (see
+      // zotero.js getActiveNotebookTextEditor).
+      if (inNotebookInlineEditor) {
+        const sc = state.settings.shortcutZotero;
+        if (sc && matchesDomEvent(e, sc)) {
+          const handler = windowCommands.shortcutZotero;
+          const mainView = state.editor ? state.editor.view : null;
+          if (handler) { e.preventDefault(); handler(state, mainView); return; }
+        }
       }
     }
     // Don't hijack keystrokes in text input fields.  In notebook mode the
@@ -383,13 +396,26 @@ async function init() {
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
 
+  // Local Sync watcher — refresh the files panel when mounted folders
+  // change on disk, and reload the open file if it was the one that
+  // changed.
+  if (IS_TAURI) {
+    const { startLocalSyncWatcher } = await import("./sync/local-sync.js");
+    startLocalSyncWatcher(state, () => {
+      import("./sidebar/files-panel.js")
+        .then(m => m.refreshFilesPanel(state))
+        .catch(() => {});
+    }).catch(() => {});
+  }
+
   // Sync notebook left inset when sidebar/panel visibility changes
   function syncNotebookInset() {
     if (!state.currentNotebookFileId) return;
     const po = document.getElementById("panel-overlay");
     const panelOpen = po && !po.classList.contains("hidden");
     const sbVisible = sidebar.classList.contains("pinned") || sidebar.classList.contains("visible");
-    setNotebookLeftInset(panelOpen ? 350 : sbVisible ? 50 : 0);
+    const panelW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
+    setNotebookLeftInset(panelOpen ? (50 + panelW) : sbVisible ? 50 : 0);
   }
   new MutationObserver(syncNotebookInset).observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
   new MutationObserver(syncNotebookInset).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
@@ -439,8 +465,9 @@ async function init() {
     const x = e.clientX;
     // Still inside sidebar zone
     if (x <= 50) return;
-    // Still inside panel zone (if panel is open)
-    if (!panelOverlay.classList.contains("hidden") && x <= 350) return;
+    // Still inside panel zone (if panel is open) — width is user-resizable
+    const panelW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
+    if (!panelOverlay.classList.contains("hidden") && x <= 50 + panelW) return;
     // Don't hide sidebar if a panel is open — buttons should stay accessible
     if (!panelOverlay.classList.contains("hidden")) return;
     sidebar.classList.remove("visible");

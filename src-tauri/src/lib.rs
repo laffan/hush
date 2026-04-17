@@ -2,11 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Listener, State};
+use tauri::{AppHandle, Emitter, Listener, Manager, State};
 
 #[cfg(desktop)]
 use tauri::{
-    Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconEvent,
     WindowEvent,
@@ -15,6 +14,7 @@ use tauri::{
 mod settings;
 mod files;
 mod images;
+mod local_sync;
 mod snapshots;
 mod sync;
 mod sync_commands;
@@ -23,6 +23,7 @@ mod zotero;
 use settings::AppSettings;
 use files::FileManager;
 use images::{ImageManager, ImageSaved};
+use local_sync::{LocalSyncEntry, LocalSyncFolder, LocalSyncManager};
 use snapshots::{SnapshotManager, SnapshotEntry};
 use sync::SyncManager;
 use zotero::ZoteroManager;
@@ -34,6 +35,7 @@ pub struct AppState {
     pub snapshot_manager: Mutex<SnapshotManager>,
     pub sync_manager: Mutex<SyncManager>,
     pub zotero_manager: Mutex<ZoteroManager>,
+    pub local_sync_manager: LocalSyncManager,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -251,6 +253,113 @@ fn delete_document_snapshots(
         .map_err(|e| e.to_string())
 }
 
+// ===== Local Sync Commands =====
+
+fn find_local_sync_folder(
+    settings: &AppSettings,
+    id: &str,
+) -> Result<LocalSyncFolder, String> {
+    settings
+        .local_sync_folders
+        .iter()
+        .find(|f| f.id == id)
+        .cloned()
+        .ok_or_else(|| format!("Local Sync folder not found: {}", id))
+}
+
+#[tauri::command]
+fn local_sync_add(
+    app: AppHandle,
+    state: State<AppState>,
+    path: String,
+    name: Option<String>,
+) -> Result<LocalSyncFolder, String> {
+    let path_buf = PathBuf::from(&path);
+    if !path_buf.is_dir() {
+        return Err(format!("Not a directory: {}", path));
+    }
+    let final_name = name.unwrap_or_else(|| {
+        path_buf
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone())
+    });
+    let folder = LocalSyncFolder {
+        id: format!("ls_{}", uuid_like()),
+        path,
+        name: final_name,
+        added_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0),
+    };
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.local_sync_folders.push(folder.clone());
+        settings.save().map_err(|e| e.to_string())?;
+    }
+    state.local_sync_manager.watch(app, &folder)?;
+    Ok(folder)
+}
+
+#[tauri::command]
+fn local_sync_remove(state: State<AppState>, id: String) -> Result<(), String> {
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.local_sync_folders.retain(|f| f.id != id);
+        settings.save().map_err(|e| e.to_string())?;
+    }
+    state.local_sync_manager.unwatch(&id);
+    Ok(())
+}
+
+#[tauri::command]
+fn local_sync_list(state: State<AppState>) -> Vec<LocalSyncFolder> {
+    state.settings.lock().unwrap().local_sync_folders.clone()
+}
+
+#[tauri::command]
+fn local_sync_read_dir(
+    state: State<AppState>,
+    id: String,
+    rel_path: Option<String>,
+) -> Result<Vec<LocalSyncEntry>, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::list_dir(&folder, &rel_path.unwrap_or_default())
+}
+
+#[tauri::command]
+fn local_sync_read_file(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+) -> Result<String, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::read_file(&folder, &rel_path)
+}
+
+#[tauri::command]
+fn local_sync_write_file(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+    content: String,
+) -> Result<(), String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::write_file(&folder, &rel_path, &content)
+}
+
+fn uuid_like() -> String {
+    // The app doesn't pull in `uuid`; a timestamp+rand string is good
+    // enough for local-only ids that never leave disk.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let n = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{:x}", n)
+}
+
 // ===== Zotero Commands =====
 
 #[tauri::command]
@@ -355,6 +464,12 @@ pub fn run() {
     let snapshot_manager = SnapshotManager::new(&data_dir);
     let sync_manager = SyncManager::new(&data_dir);
     let zotero_manager = ZoteroManager::new(&data_dir);
+    let local_sync_manager = LocalSyncManager::new();
+
+    // Snapshot of persisted local-sync folders so we can re-arm watchers
+    // after the app state is managed. Clone here while the settings
+    // value is still a plain struct.
+    let persisted_local_sync = settings.local_sync_folders.clone();
 
     // Run snapshot cleanup on startup
     if let Err(e) = snapshot_manager.cleanup_all() {
@@ -381,8 +496,20 @@ pub fn run() {
             snapshot_manager: Mutex::new(snapshot_manager),
             sync_manager: Mutex::new(sync_manager),
             zotero_manager: Mutex::new(zotero_manager),
+            local_sync_manager,
         })
         .setup(move |_app| {
+            // Re-arm local-sync watchers for every folder persisted in
+            // settings. Each one emits `local-sync-changed` events that
+            // the frontend listens to for live refresh.
+            {
+                let handle = _app.handle().clone();
+                let app_state: State<AppState> = _app.state();
+                for folder in &persisted_local_sync {
+                    let _ = app_state.local_sync_manager.watch(handle.clone(), folder);
+                }
+            }
+
             // Handle deep-link URLs (e.g. hushwriter://auth/callback?code=xxx)
             // Must be set up before the desktop block borrows _app.
             {
@@ -560,6 +687,12 @@ pub fn run() {
             sync_commands::reject_external_change,
             save_zotero_references,
             load_zotero_references,
+            local_sync_add,
+            local_sync_remove,
+            local_sync_list,
+            local_sync_read_dir,
+            local_sync_read_file,
+            local_sync_write_file,
             #[cfg(desktop)]
             set_always_on_top,
             set_activation_policy,
