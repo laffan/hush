@@ -55,6 +55,9 @@ export function initPaneManager(state) {
   state.on("file-opened", onContextChange);
   state.on("notebook-open", onContextChange);
   state.on("notebook-unmount", onContextChange);
+
+  // Restore any panes that were open when the app last closed
+  restorePanes().catch((e) => console.error("Pane restore failed:", e));
 }
 
 /** Returns an opaque string identifying the current doc/notebook/project. */
@@ -149,6 +152,7 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   await loadPaneContent(pane);
   if (!opts.skipFocus) focusPane(id);
   notifyLayoutChange();
+  schedulePersist();
 }
 
 export function closePane(id) {
@@ -168,6 +172,7 @@ export function closePane(id) {
   panes.delete(id);
   if (activePaneId === id) activePaneId = null;
   notifyLayoutChange();
+  schedulePersist();
 }
 
 export function focusPane(id) {
@@ -330,6 +335,7 @@ function setupPaneDrag(pane) {
     const onUp = () => {
       pane._titlebar.removeEventListener("pointermove", onMove);
       pane._titlebar.removeEventListener("pointerup", onUp);
+      schedulePersist();
     };
 
     pane._titlebar.addEventListener("pointermove", onMove);
@@ -364,7 +370,11 @@ function setupPaneResize(pane) {
         pane.width = w; pane.height = h; pane.x = nx; pane.y = ny;
         Object.assign(pane.el.style, { width: w + "px", height: h + "px", left: nx + "px", top: ny + "px" });
       };
-      const onUp = () => { handle.removeEventListener("pointermove", onMove); handle.removeEventListener("pointerup", onUp); };
+      const onUp = () => {
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        schedulePersist();
+      };
       handle.addEventListener("pointermove", onMove);
       handle.addEventListener("pointerup", onUp);
     });
@@ -383,6 +393,7 @@ function toggleCollapse(pane) {
     pane.height = pane._savedHeight || DEFAULT_HEIGHT;
     pane.el.style.height = pane.height + "px";
   }
+  schedulePersist();
 }
 
 // ── Attach (anchor to canvas or document scroll) ─────────────────────
@@ -412,6 +423,7 @@ async function toggleAttach(pane) {
   } else {
     stopAttachSync(pane);
   }
+  schedulePersist();
 }
 
 // ── Pin (global / cross-document persistence, blue header) ────────────
@@ -434,6 +446,7 @@ function setPinned(pane, value) {
   pane.el.classList.toggle("pinned", pane.pinned);
   // When unpinning, pane returns to its original context — hide if not current
   if (!value) onContextChange();
+  schedulePersist();
 }
 
 // Cache the notebook bridge module to avoid async calls in animation loops
@@ -493,6 +506,8 @@ function startScrollSync(pane) {
     pane.el.style.top = pane.y + "px";
   };
   scrollDOM.addEventListener("scroll", pane._scrollHandler);
+  // Sync once immediately so restored attach positions don't wait for a scroll
+  pane._scrollHandler();
 }
 
 function stopAttachSync(pane) {
@@ -549,6 +564,7 @@ async function loadDocumentPane(pane) {
 
 async function loadNotebookPane(pane) {
   const { NotesCanvas } = await import("../notebook/notes-canvas.ts");
+  const { computeNotebookSettings } = await import("../notebook/notebook-bridge.js");
   const s = appState.settings;
   const shortcuts = {
     shortcutNbSelect: s.shortcutNbSelect,
@@ -564,6 +580,9 @@ async function loadNotebookPane(pane) {
 
   const canvas = new NotesCanvas(pane._content, shortcuts);
   pane.notebook = canvas;
+
+  // Inherit the current Hush editor style (appearance/theme/font/grid)
+  canvas.applySettings(computeNotebookSettings(appState));
 
   // Load shapes
   let shapes = [];
@@ -619,7 +638,7 @@ async function loadNotebookPane(pane) {
         pane.notebook.state,
         {
           findTextShapeAt: (shapes, pt) => {
-            const hit = findShapeAtPoint(pt, shapes);
+            const hit = findShapeAtPoint(pt, shapes, pane.notebook.state.fontFamily);
             return hit && hit.type === "text" ? hit : null;
           },
           hitTestLink,
@@ -658,10 +677,118 @@ function autosaveAllPanes() {
 }
 
 // ── Theme sync ────────────────────────────────────────────────────────
-function syncPaneThemes() {
+async function syncPaneThemes() {
+  let nbSettings = null;
   for (const [, pane] of panes) {
     if (pane.editor?.reconfigureTheme) pane.editor.reconfigureTheme(appState.settings);
+    if (pane.notebook) {
+      if (!nbSettings) {
+        const bridge = await getNotebookBridge();
+        nbSettings = bridge.computeNotebookSettings(appState);
+      }
+      pane.notebook.applySettings(nbSettings);
+    }
   }
+}
+
+// ── Persistence (settings.persistedPanes) ─────────────────────────────
+
+let _persistTimer = null;
+function schedulePersist() {
+  if (_persistTimer) return;
+  _persistTimer = setTimeout(() => {
+    _persistTimer = null;
+    persistPanesNow();
+  }, 300);
+}
+
+function persistPanesNow() {
+  if (!appState) return;
+  const serialized = [];
+  for (const [, p] of panes) {
+    serialized.push({
+      fileId: p.fileId,
+      fileName: p.fileName,
+      fileType: p.fileType,
+      collapsed: !!p.collapsed,
+      attached: !!p.attached,
+      pinned: !!p.pinned,
+      width: p.width,
+      height: p.height,
+      x: p.x,
+      y: p.y,
+      ownerContext: p.ownerContext || "",
+      canvasX: p._canvasX ?? null,
+      canvasY: p._canvasY ?? null,
+      scrollRelY: p._scrollRelY ?? null,
+    });
+  }
+  appState.updateSettings({ persistedPanes: serialized });
+}
+
+async function restorePanes() {
+  if (!appState) return;
+  const list = appState.settings?.persistedPanes;
+  if (!Array.isArray(list) || list.length === 0) return;
+
+  for (const s of list) {
+    if (!s || !s.fileId || !s.fileType) continue;
+
+    // Resolve current file name (may have been renamed since persist)
+    const file = (appState.files || []).find((f) => f.id === s.fileId);
+    if (!file) continue; // File was deleted — drop pane
+
+    const id = crypto.randomUUID();
+    const pane = {
+      id,
+      fileId: s.fileId,
+      fileName: file.name || s.fileName || "Untitled",
+      fileType: s.fileType,
+      collapsed: !!s.collapsed,
+      attached: false, // we'll re-apply attach below after content loads
+      pinned: !!s.pinned,
+      dirty: false,
+      editor: null,
+      notebook: null,
+      el: null,
+      width: s.width || DEFAULT_WIDTH,
+      height: s.height || DEFAULT_HEIGHT,
+      x: s.x || 0,
+      y: s.y || 0,
+      ownerContext: s.ownerContext || "",
+    };
+    if (s.canvasX != null) pane._canvasX = s.canvasX;
+    if (s.canvasY != null) pane._canvasY = s.canvasY;
+    if (s.scrollRelY != null) pane._scrollRelY = s.scrollRelY;
+
+    buildPaneDOM(pane);
+    containerEl.appendChild(pane.el);
+    pane.el.style.zIndex = ++zCounter;
+    panes.set(id, pane);
+    await loadPaneContent(pane);
+
+    // Re-apply pinned / collapsed visual state
+    if (pane.pinned) {
+      pane.el.classList.add("pinned");
+      const pinBtn = pane.el.querySelector(".fp-btn-pin");
+      if (pinBtn) pinBtn.classList.add("pin-active");
+    }
+    if (pane.collapsed) {
+      pane._savedHeight = pane.height;
+      pane.el.classList.add("collapsed");
+      pane.el.style.height = TITLEBAR_HEIGHT + "px";
+    }
+    // Re-apply attach state (starts sync if appropriate context)
+    if (s.attached) {
+      pane.attached = true;
+      const aBtn = pane.el.querySelector(".fp-btn-attach");
+      if (aBtn) aBtn.classList.add("attach-active");
+    }
+  }
+
+  // Hide panes that don't belong in the current context and start sync
+  // for those that do.
+  onContextChange();
 }
 
 // ── Save all panes (called on focus switch to main editor) ────────────

@@ -42,11 +42,14 @@ export function createPaneEditor(container, appState, onChange) {
         ? (settings.styles || []).find(s => s.id === settings.activeStyleId) : null;
       const nh = style?.suppressHeaderSize ?? settings.normalizeHeaders;
       const nhc = style?.suppressHeaderColor ?? settings.normalizeHeaderColor;
+      const hScale = style?.headerScale ?? settings.headerScale ?? 1.0;
+      const headerOverride = (style && ((settings.appearance === "dark" ? style.darkColors : style.lightColors)?.header))
+        || undefined;
       view.dispatch({
         effects: [
           themeComp.reconfigure(t ? t.extension : []),
           highlightComp.reconfigure(syntaxHighlighting(
-            getMarkdownHighlight(nh, nhc ? undefined : t?.headingColor)
+            getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || t?.headingColor), hScale)
           )),
           shortcutComp.reconfigure(buildShortcutExtension(appState)),
         ],

@@ -88,7 +88,7 @@ export async function mountNotebook(container, fileId, state) {
         canvasInstance.state,
         {
           findTextShapeAt: (shapes, pt) => {
-            const hit = findShapeAtPoint(pt, shapes);
+            const hit = findShapeAtPoint(pt, shapes, canvasInstance.state.fontFamily);
             return hit && hit.type === "text" ? hit : null;
           },
           hitTestLink,
@@ -157,13 +157,10 @@ function resolveNotebookTheme(state) {
 }
 
 /**
- * Apply Hush settings to the active NotesCanvas.
- * Appearance, theme, and font are derived from the current Hush editor style
- * so that switching styles in the editor carries over to notebooks.
- * Grid settings use their own dedicated notebook fields.
+ * Compute the NotesCanvas settings bundle derived from the current Hush
+ * editor style. Exported so notebook panes can adopt the same style.
  */
-export function applyNotebookSettings(state) {
-  if (!canvasInstance) return;
+export function computeNotebookSettings(state) {
   const s = state.settings;
 
   // Derive appearance from Hush settings
@@ -179,7 +176,7 @@ export function applyNotebookSettings(state) {
     if (style?.fontFamily) fontFamily = style.fontFamily;
   }
 
-  canvasInstance.applySettings({
+  return {
     appearanceMode: appearance,
     themeId: resolveNotebookTheme(state),
     backgroundPattern: s.notebookBackgroundPattern || "dot-grid",
@@ -187,7 +184,18 @@ export function applyNotebookSettings(state) {
     gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.15,
     fontFamily,
     fontSize: s.notebookFontSize || 18,
-  });
+  };
+}
+
+/**
+ * Apply Hush settings to the active NotesCanvas.
+ * Appearance, theme, and font are derived from the current Hush editor style
+ * so that switching styles in the editor carries over to notebooks.
+ * Grid settings use their own dedicated notebook fields.
+ */
+export function applyNotebookSettings(state) {
+  if (!canvasInstance) return;
+  canvasInstance.applySettings(computeNotebookSettings(state));
 }
 
 /**

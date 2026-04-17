@@ -293,10 +293,20 @@ async function init() {
       return;
     }
 
-    // A small set of global UI shortcuts should fire even from text fields
-    // inside the notebook (inline text editor, brainstorm input), where the
-    // sidebar is otherwise unreachable. Check these before the textarea
-    // guard so they aren't swallowed.
+    // A small set of global UI shortcuts should fire regardless of focus —
+    // the sidebar/outline/fullscreen toggles are expected to work whether
+    // the user is inside the editor, a notebook text shape, a pane, or the
+    // body. Check these up front before the text-field guard so they
+    // aren't swallowed by focus state.
+    const alwaysAllowedKeys = ["shortcutToggleSidebar", "shortcutToggleOutline", "shortcutOpenFullscreen"];
+    for (const key of alwaysAllowedKeys) {
+      const sc = state.settings[key];
+      if (sc && matchesDomEvent(e, sc)) {
+        const handler = windowCommands[key];
+        if (handler) { e.preventDefault(); handler(state, null); return; }
+      }
+    }
+
     const t = e.target;
     const tag = t && t.tagName;
     const isTextField = !!t && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable);
@@ -305,14 +315,6 @@ async function init() {
       // Cmd+, — open settings (also hardcoded below for canvas focus)
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ",") {
         e.preventDefault(); openSettingsWindow(state); return;
-      }
-      const alwaysAllowed = ["shortcutToggleSidebar", "shortcutToggleOutline", "shortcutOpenFullscreen"];
-      for (const key of alwaysAllowed) {
-        const sc = state.settings[key];
-        if (sc && matchesDomEvent(e, sc)) {
-          const handler = windowCommands[key];
-          if (handler) { e.preventDefault(); handler(state, null); return; }
-        }
       }
     }
     // Don't hijack keystrokes in text input fields.  In notebook mode the
