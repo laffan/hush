@@ -86,12 +86,25 @@ export function buildShortcutExtension(state) {
 const headingMarkerDeco = Decoration.mark({ class: "heading-marker" });
 
 // Hang-indent wrapped list lines so the continuation aligns with the text
-// after the marker. Uses ch units so it scales with font size — the indent
-// width matches the exact marker length ("- " → 2ch, "123. " → 5ch, etc.).
-function listIndentLineDeco(markerLen) {
+// after the marker. Pixel-accurate: we measure the marker's actual rendered
+// width via an offscreen canvas using the editor's computed font, so the
+// wrapped lines sit exactly under the first character of content — not under
+// the marker, and not visibly offset as `ch` units would cause in
+// proportional fonts.
+let _listMarkerMeasureCtx = null;
+function measureListMarkerPx(view, text) {
+  if (!_listMarkerMeasureCtx) {
+    _listMarkerMeasureCtx = document.createElement("canvas").getContext("2d");
+  }
+  const cs = window.getComputedStyle(view.contentDOM);
+  _listMarkerMeasureCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  return _listMarkerMeasureCtx.measureText(text).width;
+}
+
+function listIndentLineDeco(px) {
   return Decoration.line({
     class: "list-indent",
-    attributes: { style: `padding-left: ${markerLen}ch; text-indent: -${markerLen}ch;` },
+    attributes: { style: `padding-left: ${px}px; text-indent: -${px}px;` },
   });
 }
 
@@ -120,9 +133,10 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
           // Mark decoration: wrap the "## " prefix
           builder.add(line.from, line.from + headingMatch[0].length, headingMarkerDeco);
         } else if (listMatch) {
-          // Hang-indent wrapped lines by the width of the marker + space
-          const markerLen = listMatch[0].length;
-          builder.add(line.from, line.from, listIndentLineDeco(markerLen));
+          // Hang-indent wrapped lines by the actual pixel width of the
+          // marker + space so continuation lines line up with the content.
+          const markerPx = measureListMarkerPx(view, listMatch[0]);
+          builder.add(line.from, line.from, listIndentLineDeco(markerPx));
         }
         pos = line.to + 1;
       }
