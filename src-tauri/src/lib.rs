@@ -155,40 +155,48 @@ fn load_project_content(state: State<AppState>, project_id: String) -> Result<Ve
 // ===== Image commands =====
 
 #[tauri::command]
-fn save_image(state: State<AppState>, data_url: String) -> Result<ImageSaved, String> {
+fn save_image(state: State<AppState>, filename: String, data_url: String) -> Result<ImageSaved, String> {
     state.image_manager.lock().unwrap()
-        .save_from_data_url(&data_url)
+        .save_from_data_url(&filename, &data_url)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn load_image(state: State<AppState>, file_id: String) -> Result<String, String> {
+fn load_image(state: State<AppState>, filename: String) -> Result<String, String> {
     state.image_manager.lock().unwrap()
-        .load_as_data_url(&file_id)
+        .load_as_data_url(&filename)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn delete_image(state: State<AppState>, file_id: String) -> Result<(), String> {
+fn delete_image(state: State<AppState>, filename: String) -> Result<(), String> {
     state.image_manager.lock().unwrap()
-        .delete(&file_id)
+        .delete(&filename)
         .map_err(|e| e.to_string())
 }
 
-/// Export a document (or project) as a folder containing `text.md` and an
-/// `images/` subdir. Each entry in `images` is `{ fileId, name }` — the
-/// exported filename is `{name}.{ext}` with the extension derived from the
-/// stored image's id.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ExportImage { file_id: String, name: String }
+#[tauri::command]
+fn rename_image(state: State<AppState>, old_filename: String, new_filename: String) -> Result<String, String> {
+    state.image_manager.lock().unwrap()
+        .rename(&old_filename, &new_filename)
+        .map_err(|e| e.to_string())
+}
 
+#[tauri::command]
+fn list_images(state: State<AppState>) -> Result<Vec<String>, String> {
+    Ok(state.image_manager.lock().unwrap().list())
+}
+
+/// Export a document as a folder containing `text.md` plus an `images/`
+/// subdir. `images` is the list of filenames referenced by the doc; each
+/// one is copied to `images/{filename}` (already disambiguated on import,
+/// so no extra renaming happens here).
 #[tauri::command]
 fn export_with_images(
     state: State<AppState>,
     folder: String,
     markdown: String,
-    images: Vec<ExportImage>,
+    images: Vec<String>,
 ) -> Result<(), String> {
     let root = PathBuf::from(&folder);
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
@@ -197,35 +205,12 @@ fn export_with_images(
         let images_dir = root.join("images");
         fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
         let im = state.image_manager.lock().unwrap();
-        let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for entry in &images {
-            let ext = im.extension_of(&entry.file_id).unwrap_or_else(|| "bin".to_string());
-            let (bytes, _mime) = im.load_bytes(&entry.file_id).map_err(|e| e.to_string())?;
-            let base = sanitize_filename(&entry.name);
-            let filename = unique_filename(&used, &base, &ext);
-            used.insert(filename.clone());
-            fs::write(images_dir.join(&filename), &bytes).map_err(|e| e.to_string())?;
+        for filename in &images {
+            let (bytes, _mime) = im.load_bytes(filename).map_err(|e| e.to_string())?;
+            fs::write(images_dir.join(filename), &bytes).map_err(|e| e.to_string())?;
         }
     }
     Ok(())
-}
-
-fn sanitize_filename(name: &str) -> String {
-    let trimmed = name.trim();
-    let cleaned: String = trimmed.chars()
-        .map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { '_' } else { c })
-        .collect();
-    if cleaned.is_empty() { "image".to_string() } else { cleaned }
-}
-
-fn unique_filename(used: &std::collections::HashSet<String>, base: &str, ext: &str) -> String {
-    let first = format!("{}.{}", base, ext);
-    if !used.contains(&first) { return first; }
-    for i in 2..u32::MAX {
-        let candidate = format!("{} {}.{}", base, i, ext);
-        if !used.contains(&candidate) { return candidate; }
-    }
-    first
 }
 
 #[tauri::command]
@@ -546,6 +531,8 @@ pub fn run() {
             save_image,
             load_image,
             delete_image,
+            rename_image,
+            list_images,
             export_with_images,
             create_snapshot,
             get_snapshots,

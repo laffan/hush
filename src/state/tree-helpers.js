@@ -111,7 +111,11 @@ export function insertNode(tree, node, parentId, findNodeFn) {
 }
 
 function insertBeforeTrash(tree, node) {
-  const idx = tree.findIndex(n => n.id === "__trash__");
-  if (idx >= 0) tree.splice(idx, 0, node);
+  // Keep both special tail nodes (Images, Trash) below any new root-level
+  // insertion by preferring the earlier of the two as the insertion point.
+  const imagesIdx = tree.findIndex(n => n.id === "__images__");
+  if (imagesIdx >= 0) { tree.splice(imagesIdx, 0, node); return; }
+  const trashIdx = tree.findIndex(n => n.id === "__trash__");
+  if (trashIdx >= 0) tree.splice(trashIdx, 0, node);
   else tree.push(node);
 }

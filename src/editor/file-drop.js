@@ -164,7 +164,7 @@ async function insertImagesAtDrop(state, files, clientX, clientY) {
   const chunks = [];
   for (const file of files) {
     const res = await state.createImageFromFile(file);
-    if (res) chunks.push(buildImageMarkdown(res.name, res.fileId));
+    if (res) chunks.push(buildImageMarkdown(res.alt, res.filename));
   }
   if (!chunks.length) return;
   const line = view.state.doc.lineAt(pos);

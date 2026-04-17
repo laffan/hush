@@ -1,20 +1,20 @@
 /*!
  * Image file storage for doc image support.
  *
- * Images live under `{data_dir}/files/images/{fileId}` as raw binary where
- * `fileId` is `{uuid}.{ext}` — the extension is kept in the id so lookups
- * by filename are direct and we know how to serve the file as a data URL
- * without tracking mime types separately.
+ * Images live under `{data_dir}/files/images/{filename}` as raw binary —
+ * the on-disk filename *is* the stable id referenced from markdown. A file
+ * dropped as `brown-cow.png` lands at `files/images/brown-cow.png` and is
+ * referenced in docs as plain `![alt](brown-cow.png)`. If a file with the
+ * same name already exists, we auto-suffix (`brown-cow (2).png`) so we
+ * never clobber.
  *
- * The tree carries an `image` node type with a `file_id` pointing at the
- * binary. Names on the tree node are independent of the on-disk filename
- * so images can be renamed without touching the backing file.
+ * Renames move the on-disk file in-place; the caller is responsible for
+ * rewriting any doc references.
  */
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use std::fs;
 use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 pub struct ImageManager {
     images_dir: PathBuf,
@@ -23,7 +23,7 @@ pub struct ImageManager {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageSaved {
-    pub file_id: String,
+    pub filename: String,
     pub mime_type: String,
     pub byte_size: u64,
 }
@@ -34,72 +34,135 @@ impl ImageManager {
         Self { images_dir }
     }
 
-    /// Write an image from a data URL (`data:image/png;base64,...`) to disk.
-    /// Returns the `file_id` ("uuid.ext") that can be used to look the file up.
+    /// Write an image from a data URL keeping the caller-supplied filename
+    /// (auto-suffixing on collision). Returns the final filename used.
     pub fn save_from_data_url(
         &self,
+        filename: &str,
         data_url: &str,
     ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
         let (mime, bytes) = decode_data_url(data_url)?;
-        let ext = ext_for_mime(&mime).unwrap_or("bin");
-        let file_id = format!("{}.{}", Uuid::new_v4(), ext);
-        let path = self.images_dir.join(&file_id);
+        let base = sanitize_filename(filename);
+        let ext = pick_extension(&base, &mime);
+        let final_name = self.unique_filename(&base, &ext);
+        let path = self.resolve_path(&final_name)?;
         fs::write(&path, &bytes)?;
         Ok(ImageSaved {
-            file_id,
+            filename: final_name,
             mime_type: mime,
             byte_size: bytes.len() as u64,
         })
     }
 
-    /// Read an image by `file_id` and return it as a data URL.
-    pub fn load_as_data_url(&self, file_id: &str) -> Result<String, Box<dyn std::error::Error>> {
-        let path = self.resolve_path(file_id)?;
+    /// Return all filenames currently stored on disk, sorted.
+    pub fn list(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Ok(rd) = fs::read_dir(&self.images_dir) {
+            for entry in rd.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if !name.starts_with('.') && entry.path().is_file() {
+                        out.push(name.to_string());
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Read an image by filename and return it as a data URL.
+    pub fn load_as_data_url(&self, filename: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let path = self.resolve_path(filename)?;
         let bytes = fs::read(&path)?;
-        let mime = ext_for_path(&path)
-            .and_then(mime_for_ext)
+        let mime = ext_for_path(&path).and_then(mime_for_ext)
             .unwrap_or_else(|| "application/octet-stream".to_string());
         Ok(format!("data:{};base64,{}", mime, B64.encode(&bytes)))
     }
 
-    /// Read an image's raw bytes and detected mime type. Used by the export
-    /// path so we can write the image next to the markdown text.
     pub fn load_bytes(
         &self,
-        file_id: &str,
+        filename: &str,
     ) -> Result<(Vec<u8>, String), Box<dyn std::error::Error>> {
-        let path = self.resolve_path(file_id)?;
+        let path = self.resolve_path(filename)?;
         let bytes = fs::read(&path)?;
-        let mime = ext_for_path(&path)
-            .and_then(mime_for_ext)
+        let mime = ext_for_path(&path).and_then(mime_for_ext)
             .unwrap_or_else(|| "application/octet-stream".to_string());
         Ok((bytes, mime))
     }
 
-    pub fn delete(&self, file_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let path = self.resolve_path(file_id)?;
-        if path.exists() {
-            fs::remove_file(&path)?;
-        }
+    pub fn delete(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let path = self.resolve_path(filename)?;
+        if path.exists() { fs::remove_file(&path)?; }
         Ok(())
     }
 
-    /// Extension of the stored file (e.g. "png"). Used during export so the
-    /// exported filename keeps the original format's extension.
-    pub fn extension_of(&self, file_id: &str) -> Option<String> {
-        Path::new(file_id)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.to_lowercase())
+    /// Rename an image on disk. Returns the final name used (auto-suffixed
+    /// if `new_name` already exists). Returns the existing name unchanged
+    /// when rename is a no-op.
+    pub fn rename(
+        &self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        if old_name == new_name { return Ok(old_name.to_string()); }
+        let src = self.resolve_path(old_name)?;
+        if !src.exists() { return Err("image not found".into()); }
+        let sanitized = sanitize_filename(new_name);
+        // Preserve the original extension when the new name lacks one.
+        let final_name = if Path::new(&sanitized).extension().is_none() {
+            let old_ext = ext_for_path(&src).unwrap_or_default();
+            if !old_ext.is_empty() { format!("{}.{}", sanitized, old_ext) } else { sanitized }
+        } else {
+            sanitized
+        };
+        let base = Path::new(&final_name).file_stem().and_then(|s| s.to_str()).unwrap_or("image").to_string();
+        let ext = Path::new(&final_name).extension().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        let final_name = self.unique_filename(&base, &ext);
+        let dst = self.resolve_path(&final_name)?;
+        fs::rename(&src, &dst)?;
+        Ok(final_name)
     }
 
-    fn resolve_path(&self, file_id: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        // Reject any path traversal (file_id should be a bare filename).
-        if file_id.contains('/') || file_id.contains('\\') || file_id.contains("..") {
-            return Err("invalid image file id".into());
+    fn unique_filename(&self, base: &str, ext: &str) -> String {
+        let first = if ext.is_empty() { base.to_string() } else { format!("{}.{}", base, ext) };
+        if !self.images_dir.join(&first).exists() { return first; }
+        for i in 2..u32::MAX {
+            let candidate = if ext.is_empty() {
+                format!("{} {}", base, i)
+            } else {
+                format!("{} {}.{}", base, i, ext)
+            };
+            if !self.images_dir.join(&candidate).exists() { return candidate; }
         }
-        Ok(self.images_dir.join(file_id))
+        first
     }
+
+    fn resolve_path(&self, filename: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+            return Err("invalid image filename".into());
+        }
+        if filename.starts_with('.') { return Err("invalid image filename".into()); }
+        Ok(self.images_dir.join(filename))
+    }
+}
+
+/// Strip path separators and OS-sensitive characters from a filename.
+pub fn sanitize_filename(name: &str) -> String {
+    let trimmed = name.trim();
+    // Extract just the basename in case the caller handed us a path.
+    let slash = trimmed.rfind(|c| c == '/' || c == '\\');
+    let bare = match slash { Some(i) => &trimmed[i + 1..], None => trimmed };
+    let cleaned: String = bare.chars()
+        .map(|c| if "<>:\"|?*".contains(c) || c.is_control() { '_' } else { c })
+        .collect();
+    if cleaned.is_empty() { "image".to_string() } else { cleaned }
+}
+
+fn pick_extension(name: &str, mime: &str) -> String {
+    if let Some(ext) = Path::new(name).extension().and_then(|s| s.to_str()) {
+        return ext.to_ascii_lowercase();
+    }
+    ext_for_mime(mime).unwrap_or("bin").to_string()
 }
 
 fn decode_data_url(s: &str) -> Result<(String, Vec<u8>), Box<dyn std::error::Error>> {
@@ -115,8 +178,6 @@ fn decode_data_url(s: &str) -> Result<(String, Vec<u8>), Box<dyn std::error::Err
     let bytes = if is_b64 {
         B64.decode(payload.as_bytes())?
     } else {
-        // Percent-decode url-safe form. We don't expect non-base64 image
-        // payloads in practice, but handle it just in case.
         urlencoding_decode(payload)
     };
     Ok((mime.to_string(), bytes))
@@ -144,9 +205,7 @@ fn urlencoding_decode(s: &str) -> Vec<u8> {
 }
 
 fn ext_for_path(p: &Path) -> Option<String> {
-    p.extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_lowercase())
+    p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase())
 }
 
 fn ext_for_mime(mime: &str) -> Option<&'static str> {

@@ -265,13 +265,17 @@ CodeMirror plugin for project mode. `createProjectViewField` (StateField) replac
 
 ### File Drop (`editor/file-drop.js`)
 
-Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via the Rust `save_image` command, creates an `image` node in the top-level Images folder, and inserts a `![name](hush-image:<fileId>)` reference at the cursor coordinate. In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
+Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via the Rust `save_image` command (keeping the user's filename, auto-suffixed on collision) and inserts a standard `![alt](filename.png)` reference at the cursor coordinate. In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
 
 ### Doc Images (`editor/plugins/image-decorator.js`, `editor/image-preview.js`, `state/state-images.js`)
 
-`hush-image:<fileId>` URLs inside markdown image syntax are decorated by `createImageDecoratorPlugin` with a replace-widget "image chip" (icon + label) whenever the cursor isn't inside the reference — editing the raw syntax reveals it again. The widget element registers a hover tooltip (`attachImageHoverTooltip`) that lazy-loads the full image via the `load_image` Rust command (cached in `state-images.js`). Clicking the chip (or Cmd-clicking the raw syntax) opens `openImagePreviewModal`, a centered lightbox that closes on Escape or backdrop click.
+Standard markdown image syntax — `![alt](filename.png)` with an optional `![alt | caption](filename.png)` caption extension — is replaced by an inline `<img>` widget whenever the cursor isn't inside the reference. The decorator only activates for URLs that resolve to an image in the Images folder; external URLs stay as raw markdown. CSS enforces `max-width: 100%` (column-bounded) and `max-height: 75vh`; narrower images are centered. Captions render in italic below the image. Data URLs are lazy-loaded via the `load_image` Rust command and cached by filename.
 
-`attachImageDrag` wires Cmd+drag on a chip (or the raw markdown under the cursor) into the existing `pane/text-drag.js` pipeline — the payload is simply the markdown reference, so the receiving editor re-decorates it on drop. Image binaries live in `{data_dir}/files/images/{uuid}.{ext}`; deleting the parent tree node (or emptying Trash) routes through `delete_image` in `state-tree.js`. Exports with image references use `export_with_images`, which writes `text.md` + `images/<name>.<ext>` into a user-chosen folder and rewrites the markdown to relative paths.
+Images are referenced by bare filename. Renaming an image from the Files panel calls `rename_image` in Rust (which renames on disk and auto-suffixes on collision) and then walks every document in the tree to rewrite matching `]({oldname})` → `]({newname})` references — including the currently-open editor buffer.
+
+Hover over an `image` row in the Files panel shows the full image in a tooltip (`attachImageHoverTooltip` wired in `files-panel.js`); clicking either the sidebar row or the editor-rendered image opens `openImagePreviewModal`, a centered lightbox that dismisses on Escape or backdrop click.
+
+`attachImageDrag` wires Cmd+drag on an image widget (or the raw markdown under the cursor) into the existing `pane/text-drag.js` pipeline — the payload is the markdown reference, so the receiving editor re-decorates it on drop. Image binaries live at `{data_dir}/files/images/{filename}`; deleting the parent tree node (or emptying Trash) routes through `delete_image` in `state-tree.js`. `export_with_images` writes `text.md` + `images/<filename>` into a user-chosen folder and rewrites every local ref to the `images/` relative path.
 
 ### Floating Panes (`pane/`)
 
@@ -369,9 +373,9 @@ Files stored as individual JSON files (`{uuid}.json`) in `{data_dir}/files/`. Ea
 
 ### `images.rs`
 
-Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload, picks an extension from the MIME type, and writes the raw bytes to `{data_dir}/files/images/{uuid}.{ext}`. The `fileId` returned to the frontend is `{uuid}.{ext}` so a direct filename lookup suffices; MIME is re-derived from the extension on load.
+Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload and writes the raw bytes to `{data_dir}/files/images/{filename}`, keeping the caller-supplied filename and auto-suffixing with ` (2)`, ` (3)`, ... on collision. The filename *is* the stable id: markdown refs use the bare filename and the Rust `load_image` command reads directly by name.
 
-The Tauri command layer exposes `save_image`, `load_image` (returns a data URL for rendering), `delete_image`, and `export_with_images` (writes `text.md` + `images/<name>.<ext>` into a user-chosen folder, rewriting image refs in the process).
+The Tauri command layer exposes `save_image` (returns the possibly-suffixed final filename), `load_image` (returns a data URL), `delete_image`, `rename_image` (renames on disk; returns the final name after any collision-handling), `list_images`, and `export_with_images` (writes `text.md` + `images/<filename>` into a user-chosen folder).
 
 ### `snapshots.rs`
 

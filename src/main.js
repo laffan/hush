@@ -185,7 +185,7 @@ async function init() {
   // the same text-drag pipeline so the markdown ref is inserted at the
   // drop point (the receiving editor re-decorates it).
   const { attachImageDrag } = await import("./editor/plugins/image-decorator.js");
-  attachImageDrag(editor.view, editorContainer);
+  attachImageDrag(editor.view, editorContainer, state);
 
   // Emit content-change events so floating panes can sync.
   // Patch markDirty to also fire "doc-content-changed" — this is called

@@ -1,54 +1,73 @@
 /**
- * Image reference decorator for internal doc images.
+ * Inline image renderer for doc images.
  *
- * Markdown like `![label](hush-image:xxx.png)` is rendered as an inline
- * image chip:
- *   - Hover shows the image in a tooltip.
- *   - Click opens a full-screen preview modal.
- *   - Cmd+drag grabs the markdown text so it can be dropped into another
- *     pane (or notebook), just like any other selected text.
+ * Standard markdown image syntax — `![alt](filename.png)` — is replaced by
+ * an inline-block widget containing the real image. An optional caption
+ * can be supplied via `![alt | caption](filename.png)` and renders below
+ * the image. External URLs are left untouched so the user still sees the
+ * raw markdown for them.
  *
- * The chip is replaced with the raw markdown while the cursor is inside
- * the range so the reference stays editable.
+ * Sizing is enforced with CSS — `max-width: 100%` keeps the image inside
+ * the editor column, `max-height: 75vh` caps the vertical extent, and the
+ * wrapper is centered so narrower images don't hug the left edge.
+ *
+ * Clicking the image opens the preview modal. Cmd+drag on the rendered
+ * image (or on the raw syntax when the cursor is inside it) hands the
+ * markdown to `pane/text-drag.js` so it can be dropped into another pane.
  */
 
 import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
-import { attachImageHoverTooltip, openImagePreviewModal, hideImageTooltip } from "../image-preview.js";
+import { getImageDataUrl, parseAltAndCaption, isLocalImageRef, filenameFromUrl } from "../../state/state-images.js";
+import { openImagePreviewModal } from "../image-preview.js";
 
-// `![alt](hush-image:<fileId>)` — fileId is uuid.ext with safe chars.
-const IMAGE_RE = /!\[([^\]]*)\]\(hush-image:([A-Za-z0-9._-]+)\)/g;
+// Broad match — we filter to local refs inside the builder.
+const IMAGE_RE = /!\[([^\]]*)\]\(\s*([^)\s"]+)(?:\s+"[^"]*")?\s*\)/g;
 
-class ImageChipWidget extends WidgetType {
-  constructor(alt, fileId, markdown) {
+class ImageWidget extends WidgetType {
+  constructor(alt, caption, filename, markdown) {
     super();
     this.alt = alt;
-    this.fileId = fileId;
+    this.caption = caption;
+    this.filename = filename;
     this.markdown = markdown;
   }
   eq(other) {
-    return this.alt === other.alt && this.fileId === other.fileId;
+    return this.alt === other.alt
+      && this.caption === other.caption
+      && this.filename === other.filename;
   }
   toDOM() {
-    const chip = document.createElement("span");
-    chip.className = "cm-hush-image-chip";
-    chip.dataset.hushImage = this.fileId;
-    chip.dataset.hushImageAlt = this.alt;
-    chip.dataset.hushImageMarkdown = this.markdown;
-    chip.innerHTML = `
-      <span class="cm-hush-image-icon" aria-hidden="true">
-        <svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="7" r="1.2" fill="currentColor"/><polyline points="3,12 6.5,8.5 9,11 11,9 13,12" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-      </span>
-      <span class="cm-hush-image-label"></span>
-    `;
-    chip.querySelector(".cm-hush-image-label").textContent = this.alt || "image";
-    attachImageHoverTooltip(chip, this.fileId, this.alt);
-    return chip;
+    const wrapper = document.createElement("span");
+    wrapper.className = "cm-hush-image-wrapper";
+    wrapper.dataset.hushImage = this.filename;
+    wrapper.dataset.hushImageAlt = this.alt || "";
+    wrapper.dataset.hushImageMarkdown = this.markdown;
+
+    const img = document.createElement("img");
+    img.className = "cm-hush-image";
+    img.alt = this.alt || this.filename;
+    img.loading = "lazy";
+    wrapper.appendChild(img);
+
+    if (this.caption) {
+      const cap = document.createElement("span");
+      cap.className = "cm-hush-image-caption";
+      cap.textContent = this.caption;
+      wrapper.appendChild(cap);
+    }
+
+    // Async load the data URL — toDOM must be sync.
+    getImageDataUrl(this.filename).then((url) => {
+      if (url) img.src = url;
+      else wrapper.classList.add("cm-hush-image-missing");
+    });
+    return wrapper;
   }
   ignoreEvent() { return false; }
 }
 
-function buildDecorations(view) {
+function buildDecorations(view, state) {
   const builder = new RangeSetBuilder();
   const doc = view.state.doc;
   const cursors = view.state.selection.ranges.map(r => ({
@@ -62,23 +81,27 @@ function buildDecorations(view) {
     while ((match = IMAGE_RE.exec(line.text)) !== null) {
       const from = line.from + match.index;
       const to = from + match[0].length;
-      // Leave the range untouched while a cursor / selection overlaps it
-      // so the user can edit the source markdown.
+      const rawAlt = match[1];
+      const url = match[2];
+      if (!isLocalImageRef(state, url)) continue;
+      // Leave the range as raw markdown while the cursor overlaps it so
+      // the user can edit the source directly.
       const cursorInside = cursors.some(c =>
         (c.from >= from && c.from <= to) || (c.to >= from && c.to <= to) ||
         (c.from <= from && c.to >= to)
       );
       if (cursorInside) continue;
+      const { alt, caption } = parseAltAndCaption(rawAlt);
+      const filename = filenameFromUrl(url);
       builder.add(from, to, Decoration.replace({
-        widget: new ImageChipWidget(match[1], match[2], match[0]),
+        widget: new ImageWidget(alt, caption, filename, match[0]),
       }));
     }
   }
   return builder.finish();
 }
 
-/** Find the image ref at a document position, if any. */
-function imageRefAtPos(doc, pos) {
+function imageRefAtPos(state, doc, pos) {
   const line = doc.lineAt(pos);
   IMAGE_RE.lastIndex = 0;
   let match;
@@ -86,62 +109,51 @@ function imageRefAtPos(doc, pos) {
     const from = line.from + match.index;
     const to = from + match[0].length;
     if (pos >= from && pos <= to) {
-      return { from, to, alt: match[1], fileId: match[2], markdown: match[0] };
+      const url = match[2];
+      if (!isLocalImageRef(state, url)) return null;
+      return {
+        from, to,
+        alt: match[1],
+        filename: filenameFromUrl(url),
+        markdown: match[0],
+      };
     }
   }
   return null;
 }
 
-function findChipTarget(e) {
+function findWrapperTarget(e) {
   if (!(e.target instanceof Element)) return null;
-  const chip = e.target.closest(".cm-hush-image-chip");
-  if (!chip) return null;
+  const wrap = e.target.closest(".cm-hush-image-wrapper");
+  if (!wrap) return null;
   return {
-    fileId: chip.dataset.hushImage,
-    alt: chip.dataset.hushImageAlt,
-    markdown: chip.dataset.hushImageMarkdown,
-    el: chip,
+    filename: wrap.dataset.hushImage,
+    alt: wrap.dataset.hushImageAlt,
+    markdown: wrap.dataset.hushImageMarkdown,
+    el: wrap,
   };
 }
 
 const imageEventHandler = EditorView.domEventHandlers({
   mousedown(e, view) {
     if (e.button !== 0) return false;
-    const chip = findChipTarget(e);
-    if (chip) {
-      if (e.metaKey || e.ctrlKey) {
-        // Let text-drag.js pick this up via its own capture-phase handler.
-        return false;
-      }
+    const hit = findWrapperTarget(e);
+    if (hit) {
+      if (e.metaKey || e.ctrlKey) return false; // let the drag handler take it
       e.preventDefault();
-      hideImageTooltip();
-      openImagePreviewModal(chip.fileId, chip.alt);
+      openImagePreviewModal(hit.filename, hit.alt || hit.filename);
       return true;
-    }
-    // Raw markdown click (cursor currently on the ref line): Cmd+click opens preview.
-    if ((e.metaKey || e.ctrlKey)) {
-      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-      if (pos != null) {
-        const ref = imageRefAtPos(view.state.doc, pos);
-        if (ref) {
-          e.preventDefault();
-          openImagePreviewModal(ref.fileId, ref.alt);
-          return true;
-        }
-      }
     }
     return false;
   },
-  mouseleave() { hideImageTooltip(); return false; },
 });
 
 /**
- * Cmd+drag integration — when a user Cmd+drags an image chip (or the raw
- * markdown under the cursor), start a text drag with the image markdown as
- * the payload. The default text-drag handler only kicks in if the user has
- * an active selection, so we special-case images here.
+ * Cmd+drag integration — an image widget (or raw markdown under the cursor)
+ * can be dragged between panes via the existing text-drag pipeline. The
+ * payload is just the markdown so the receiving editor re-decorates it.
  */
-export function attachImageDrag(view, containerEl) {
+export function attachImageDrag(view, containerEl, state) {
   let unbind = null;
   (async () => {
     const { startTextDrag } = await import("../../pane/text-drag.js");
@@ -150,31 +162,26 @@ export function attachImageDrag(view, containerEl) {
       if (e.button !== 0) return;
       if (!(e.target instanceof Node) || !containerEl.contains(e.target)) return;
       let payload = null;
-      const chip = findChipTarget(e);
-      if (chip) {
-        payload = { from: null, to: null, text: chip.markdown, el: chip.el };
+      const hit = findWrapperTarget(e);
+      if (hit) {
+        payload = { from: null, to: null, text: hit.markdown };
       } else {
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
         if (pos == null) return;
-        const ref = imageRefAtPos(view.state.doc, pos);
+        const ref = imageRefAtPos(state, view.state.doc, pos);
         if (!ref) return;
-        payload = { from: ref.from, to: ref.to, text: ref.markdown, el: null };
+        payload = { from: ref.from, to: ref.to, text: ref.markdown };
       }
       if (!payload) return;
-      // Only hijack the event if the click lands on an image. Preserve
-      // normal selection-based drag for text.
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      hideImageTooltip();
       startTextDrag({
         text: payload.text,
         initialEvent: e,
         onDrop: (deleteSource) => {
-          if (!deleteSource) return;
-          if (payload.from != null && payload.to != null) {
-            view.dispatch({ changes: { from: payload.from, to: payload.to, insert: "" } });
-          }
+          if (!deleteSource || payload.from == null) return;
+          view.dispatch({ changes: { from: payload.from, to: payload.to, insert: "" } });
         },
       });
     };
@@ -184,16 +191,26 @@ export function attachImageDrag(view, containerEl) {
   return () => { if (unbind) unbind(); };
 }
 
-export function createImageDecoratorPlugin() {
+export function createImageDecoratorPlugin(state) {
   const plugin = ViewPlugin.fromClass(
     class {
       constructor(view) {
-        this.decorations = buildDecorations(view);
+        this.decorations = buildDecorations(view, state);
+        this._refreshOnFiles = () => {
+          // Re-run when the tree changes (e.g. a new image was added) so
+          // previously-unresolvable refs can decorate.
+          this.decorations = buildDecorations(view, state);
+          view.requestMeasure();
+        };
+        state.on("files-changed", this._refreshOnFiles);
       }
       update(update) {
         if (update.docChanged || update.viewportChanged || update.selectionSet) {
-          this.decorations = buildDecorations(update.view);
+          this.decorations = buildDecorations(update.view, state);
         }
+      }
+      destroy() {
+        if (this._refreshOnFiles) state.off("files-changed", this._refreshOnFiles);
       }
     },
     { decorations: (v) => v.decorations }

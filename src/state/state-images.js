@@ -1,10 +1,11 @@
 /**
- * Image node operations — stores images under the special Images folder
- * and creates doc image references with the `hush-image:` URI scheme.
+ * Image node operations — images live as bare files under the Images
+ * folder and are referenced from markdown by their filename (standard
+ * markdown syntax, e.g. `![alt | caption](brown-cow.png)`).
  *
  * Each image node: `{ id, name, type: "image", fileId, children: [], flagged }`
- * where `fileId` is `{uuid}.{ext}`. Binary storage lives in the Rust
- * `ImageManager` (files/images/{fileId}).
+ * where `name === fileId === "brown-cow.png"`. The binary lives at
+ * `files/images/{fileId}` on disk (Rust `ImageManager`).
  */
 
 import { findNode } from "./tree-helpers.js";
@@ -18,14 +19,11 @@ async function tauriInvoke(cmd, args) {
 
 const dataUrlCache = new Map();
 
-export function clearImageCache(fileId) {
-  if (fileId) dataUrlCache.delete(fileId);
+export function clearImageCache(filename) {
+  if (filename) dataUrlCache.delete(filename);
   else dataUrlCache.clear();
 }
 
-/**
- * Read a File (from a drop) as a data URL.
- */
 export function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -35,7 +33,6 @@ export function fileToDataUrl(file) {
   });
 }
 
-/** True when the File looks like an image (by MIME or extension). */
 export function isImageFile(file) {
   if (!file) return false;
   if (file.type && file.type.startsWith("image/")) return true;
@@ -43,77 +40,155 @@ export function isImageFile(file) {
   return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic", ".heif", ".avif", ".tif", ".tiff"].includes(ext);
 }
 
-/** Strip any path + extension from a File's display name. */
+/** Drop the leading path and keep the bare filename (with extension). */
 function baseName(name) {
+  if (!name) return "image";
   const slash = Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\"));
   const basename = slash >= 0 ? name.slice(slash + 1) : name;
-  const dot = basename.lastIndexOf(".");
-  return (dot > 0 ? basename.slice(0, dot) : basename) || "image";
+  return basename || "image";
+}
+
+/** Derive the alt text shown in the editor from a filename. */
+function altFromFilename(filename) {
+  const base = filename.replace(/\.[^.]+$/, "");
+  return base || "image";
 }
 
 /**
- * Create a new image node in the Images folder from a dropped File.
- * Returns `{ fileId, name, dataUrl }` or null on failure.
+ * Save a dropped File to the Images folder, creating a tree node.
+ * Returns `{ filename, alt, dataUrl }` or null on failure.
  */
 export async function createImageFromFile(state, file) {
   const { AppState } = await import("./state.js");
   if (!file) return null;
   const dataUrl = await fileToDataUrl(file);
-  const displayName = baseName(file.name);
-  let fileId;
+  const requestedName = baseName(file.name);
+  let finalName;
   if (IS_TAURI) {
     try {
-      const saved = await tauriInvoke("save_image", { dataUrl });
-      fileId = saved.fileId;
+      const saved = await tauriInvoke("save_image", { filename: requestedName, dataUrl });
+      finalName = saved.filename;
     } catch (e) {
       console.error("save_image failed:", e);
       return null;
     }
   } else {
-    // Browser fallback: synthesize a file id and keep the data URL in memory.
-    const ext = (dataUrl.match(/^data:image\/([a-z0-9+.-]+);/)?.[1] || "png")
-      .replace("svg+xml", "svg").replace("jpeg", "jpg");
-    fileId = crypto.randomUUID() + "." + ext;
+    // Browser fallback — no collision check.
+    finalName = requestedName;
   }
-  dataUrlCache.set(fileId, dataUrl);
+  dataUrlCache.set(finalName, dataUrl);
 
-  // Insert the new node into the Images folder.
   const images = findNode(state.fileTree, AppState.IMAGES_ID);
-  if (!images) return { fileId, name: displayName, dataUrl };
-  const node = {
-    id: crypto.randomUUID(),
-    type: "image",
-    name: displayName,
-    fileId,
-    children: [],
-    flagged: false,
-  };
-  (images.children || (images.children = [])).push(node);
-  await state.saveFileTree();
-  state.emit("files-changed");
-  return { fileId, name: displayName, dataUrl };
+  if (images) {
+    // Avoid duplicate tree nodes if the backend disambiguated a second
+    // copy of the same filename.
+    const already = (images.children || []).some((c) => c.type === "image" && c.fileId === finalName);
+    if (!already) {
+      const node = {
+        id: crypto.randomUUID(),
+        type: "image",
+        name: finalName,
+        fileId: finalName,
+        children: [],
+        flagged: false,
+      };
+      (images.children || (images.children = [])).push(node);
+      await state.saveFileTree();
+      state.emit("files-changed");
+    }
+  }
+  return { filename: finalName, alt: altFromFilename(finalName), dataUrl };
 }
 
-/** Delete an image binary from disk (called by tree-level delete paths). */
-export async function deleteImageBinary(fileId) {
-  if (!fileId) return;
-  dataUrlCache.delete(fileId);
+/** Delete an image binary from disk. */
+export async function deleteImageBinary(filename) {
+  if (!filename) return;
+  dataUrlCache.delete(filename);
   if (!IS_TAURI) return;
-  try { await tauriInvoke("delete_image", { fileId }); }
+  try { await tauriInvoke("delete_image", { filename }); }
   catch (e) { console.error("delete_image failed:", e); }
 }
 
 /**
- * Resolve an image reference (`hush-image:<fileId>`) to a data URL, caching
- * the result so hover/preview don't re-read the file on every event.
+ * Rename an image on disk and rewrite all doc references in one pass.
+ * Returns the final filename (possibly suffixed to avoid collision).
  */
-export async function getImageDataUrl(fileId) {
-  if (!fileId) return null;
-  if (dataUrlCache.has(fileId)) return dataUrlCache.get(fileId);
+export async function renameImageFile(state, oldFilename, newFilename) {
+  if (!oldFilename || !newFilename || oldFilename === newFilename) return oldFilename;
+  let finalName = newFilename;
+  if (IS_TAURI) {
+    try {
+      finalName = await tauriInvoke("rename_image", {
+        oldFilename,
+        newFilename,
+      });
+    } catch (e) {
+      console.error("rename_image failed:", e);
+      return oldFilename;
+    }
+  }
+  dataUrlCache.delete(oldFilename);
+  dataUrlCache.delete(finalName);
+  await rewriteImageRefs(state, oldFilename, finalName);
+  return finalName;
+}
+
+/**
+ * Walk every document in the tree and rewrite markdown image refs that
+ * point at `oldFilename` to `newFilename`. Updates the in-memory editor
+ * if the current document is affected.
+ */
+async function rewriteImageRefs(state, oldFilename, newFilename) {
+  const docFileIds = collectDocIds(state.fileTree);
+  const oldRe = new RegExp(`(!\\[[^\\]]*\\]\\(\\s*)${escapeRegex(oldFilename)}(\\s*(?:"[^"]*")?\\s*\\))`, "g");
+
+  for (const fileId of docFileIds) {
+    if (fileId === state.currentFileId && state.editor) {
+      const cur = state.editor.getContent();
+      const updated = cur.replace(oldRe, `$1${newFilename}$2`);
+      if (updated !== cur) {
+        state.editor.setContent(updated);
+        state.markDirty();
+        await state.saveCurrentFile();
+      }
+      continue;
+    }
+    if (!IS_TAURI) continue;
+    try {
+      const file = await tauriInvoke("load_file", { id: fileId });
+      const updated = file.content.replace(oldRe, `$1${newFilename}$2`);
+      if (updated !== file.content) {
+        await tauriInvoke("save_file", { id: fileId, content: updated });
+      }
+    } catch (e) { /* skip files that fail to load */ }
+  }
+}
+
+function collectDocIds(nodes) {
+  const out = [];
+  function walk(n) {
+    if (!n) return;
+    if (n.type === "document" && n.fileId) out.push(n.fileId);
+    if (n.children) n.children.forEach(walk);
+  }
+  nodes.forEach(walk);
+  return out;
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Resolve a filename to a data URL, caching the result.
+ */
+export async function getImageDataUrl(filename) {
+  if (!filename) return null;
+  if (dataUrlCache.has(filename)) return dataUrlCache.get(filename);
   if (!IS_TAURI) return null;
   try {
-    const url = await tauriInvoke("load_image", { fileId });
-    dataUrlCache.set(fileId, url);
+    const url = await tauriInvoke("load_image", { filename });
+    dataUrlCache.set(filename, url);
     return url;
   } catch (e) {
     console.error("load_image failed:", e);
@@ -121,52 +196,73 @@ export async function getImageDataUrl(fileId) {
   }
 }
 
-/** Parse a markdown image URL into its file id, if it's an internal ref. */
-export function fileIdFromUrl(url) {
-  if (typeof url !== "string") return null;
-  const m = url.match(/^hush-image:([A-Za-z0-9._-]+)$/);
-  return m ? m[1] : null;
+/** True if the markdown URL resolves to one of our tracked images. */
+export function isLocalImageRef(state, url) {
+  if (!url) return false;
+  // Reject URLs with schemes, absolute paths, or directory traversal — we
+  // only decorate bare filenames stored in the Images folder.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return false;
+  if (url.startsWith("/") || url.includes("..") || url.includes("\\")) return false;
+  // Accept refs of either `brown-cow.png` or `images/brown-cow.png` form —
+  // the latter matches what exports rewrite to.
+  const filename = url.replace(/^images\//, "");
+  return !!findImageNode(state, filename);
 }
 
-/** Build an internal markdown image reference. */
-export function buildImageMarkdown(name, fileId) {
-  const safeAlt = (name || "image").replace(/[\[\]]/g, "");
-  return `![${safeAlt}](hush-image:${fileId})`;
+/** Find an image tree node by filename. */
+export function findImageNode(state, filename) {
+  function walk(nodes) {
+    for (const n of nodes || []) {
+      if (n.type === "image" && n.fileId === filename) return n;
+      const r = walk(n.children);
+      if (r) return r;
+    }
+    return null;
+  }
+  return walk(state.fileTree);
+}
+
+/** Extract filename from a markdown URL (strips `images/` prefix). */
+export function filenameFromUrl(url) {
+  if (!url) return null;
+  return url.replace(/^images\//, "").trim();
 }
 
 /**
- * Walk a markdown string and collect every internal image reference that
- * resolves to a node in the Images folder. Returns `[{ fileId, name }]`
- * in document order with duplicates removed.
+ * Parse `"alt text | caption text"` into `{alt, caption}`. Missing caption
+ * returns `{alt, caption: null}`. Whitespace around each side is trimmed.
  */
-export function collectImageRefs(state, markdown) {
-  const { findImageNodeByFileId } = imageLookupHelpers(state);
-  const seen = new Set();
-  const out = [];
-  const re = /!\[[^\]]*\]\(hush-image:([A-Za-z0-9._-]+)\)/g;
-  let match;
-  while ((match = re.exec(markdown)) !== null) {
-    const fileId = match[1];
-    if (seen.has(fileId)) continue;
-    seen.add(fileId);
-    const node = findImageNodeByFileId(fileId);
-    if (node) out.push({ fileId, name: node.name });
-  }
-  return out;
+export function parseAltAndCaption(rawAlt) {
+  if (!rawAlt) return { alt: "", caption: null };
+  const pipe = rawAlt.indexOf("|");
+  if (pipe < 0) return { alt: rawAlt.trim(), caption: null };
+  return {
+    alt: rawAlt.slice(0, pipe).trim(),
+    caption: rawAlt.slice(pipe + 1).trim() || null,
+  };
 }
 
-function imageLookupHelpers(state) {
-  return {
-    findImageNodeByFileId(fileId) {
-      function walk(nodes) {
-        for (const n of nodes || []) {
-          if (n.type === "image" && n.fileId === fileId) return n;
-          const r = walk(n.children);
-          if (r) return r;
-        }
-        return null;
-      }
-      return walk(state.fileTree);
-    },
-  };
+/** Build the canonical markdown for a freshly-dropped image. */
+export function buildImageMarkdown(alt, filename) {
+  const safe = (alt || "image").replace(/[\[\]]/g, "");
+  return `![${safe}](${filename})`;
+}
+
+/**
+ * Collect every local image ref from a markdown string. Returns a list of
+ * filenames (deduped, in document order).
+ */
+export function collectImageRefs(state, markdown) {
+  const seen = new Set();
+  const out = [];
+  const re = /!\[[^\]]*\]\(\s*([^)\s"]+)(?:\s+"[^"]*")?\s*\)/g;
+  let match;
+  while ((match = re.exec(markdown)) !== null) {
+    const filename = filenameFromUrl(match[1]);
+    if (!filename || seen.has(filename)) continue;
+    if (!findImageNode(state, filename)) continue;
+    seen.add(filename);
+    out.push(filename);
+  }
+  return out;
 }

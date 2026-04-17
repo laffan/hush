@@ -368,7 +368,7 @@ export function createBaseExtensions(state, onChange) {
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
     createLinkDecoratorPlugin(),
-    createImageDecoratorPlugin(),
+    createImageDecoratorPlugin(state),
     headingIndentPlugin,
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
@@ -500,7 +500,7 @@ export function createEditor(container, state) {
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin();
-  const imageDecoratorPlugin = createImageDecoratorPlugin();
+  const imageDecoratorPlugin = createImageDecoratorPlugin(state);
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
   const commentAfterPlugin = createCommentAfterPlugin();

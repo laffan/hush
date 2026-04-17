@@ -119,7 +119,7 @@ async function deleteImageFilesByIds(fileIds) {
   for (const fid of fileIds) {
     clearImageCache(fid);
     if (IS_TAURI) {
-      try { await tauriInvoke("delete_image", { fileId: fid }); } catch (e) { console.error("Delete image:", e); }
+      try { await tauriInvoke("delete_image", { filename: fid }); } catch (e) { console.error("Delete image:", e); }
     }
   }
 }
@@ -144,6 +144,15 @@ export async function renameTreeNode(state, nodeId, newName) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
   const oldName = node.name;
+  if (node.type === "image" && node.fileId) {
+    const { renameImageFile } = await import("./state-images.js");
+    const finalName = await renameImageFile(state, node.fileId, newName);
+    node.fileId = finalName;
+    node.name = finalName;
+    await state.saveFileTree();
+    state.emit("files-changed");
+    return;
+  }
   node.name = newName;
   if ((node.type === "document" || node.type === "notebook") && node.fileId) {
     if (IS_TAURI) {

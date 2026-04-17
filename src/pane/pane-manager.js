@@ -563,7 +563,7 @@ async function loadDocumentPane(pane) {
   // Cmd+drag image chips / raw image refs in a pane so they can be moved
   // between panes just like any other markdown text.
   import("../editor/plugins/image-decorator.js").then((m) => {
-    if (pane.editor && pane._content) m.attachImageDrag(pane.editor.view, pane._content);
+    if (pane.editor && pane._content) m.attachImageDrag(pane.editor.view, pane._content, appState);
   });
 }
 

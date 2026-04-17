@@ -157,6 +157,9 @@ export function createFilesPanel(container, state, hidePanel) {
       const el = document.createElement("span");
       el.className = "tree-item-row" + (isActive ? " active" : "");
       el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${actionButtons(item.id, item.type, inTrash, item)}`;
+      if (item.type === "image" && item.fileId) {
+        attachImageTooltipToRow(el, item.fileId, item.name);
+      }
       return el;
     },
 
@@ -554,7 +557,13 @@ function escHtml(str) {
   return div.innerHTML;
 }
 
-async function openImagePreview(fileId, name) {
+async function openImagePreview(filename, name) {
   const { openImagePreviewModal } = await import("../editor/image-preview.js");
-  openImagePreviewModal(fileId, name);
+  openImagePreviewModal(filename, name);
+}
+
+function attachImageTooltipToRow(rowEl, filename, name) {
+  import("../editor/image-preview.js").then(({ attachImageHoverTooltip }) => {
+    attachImageHoverTooltip(rowEl, filename, name);
+  });
 }
