@@ -117,9 +117,11 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations }
 );
 
-// Build the markdown highlight style, optionally normalizing heading sizes/colors
-export function getMarkdownHighlight(normalizeHeaders, headingColor) {
+// Build the markdown highlight style, optionally normalizing heading sizes/colors.
+// `headerScale` is a multiplier on the default heading progression (default 1.0).
+export function getMarkdownHighlight(normalizeHeaders, headingColor, headerScale) {
   const color = headingColor || undefined;
+  const k = typeof headerScale === "number" && headerScale > 0 ? headerScale : 1.0;
   const headingStyles = normalizeHeaders
     ? [
         { tag: tags.heading1, fontWeight: "700", color },
@@ -130,12 +132,12 @@ export function getMarkdownHighlight(normalizeHeaders, headingColor) {
         { tag: tags.heading6, fontWeight: "600", color },
       ]
     : [
-        { tag: tags.heading1, fontSize: "calc(var(--font-size) * 1.8)", fontWeight: "700", lineHeight: "1.3", color },
-        { tag: tags.heading2, fontSize: "calc(var(--font-size) * 1.5)", fontWeight: "700", lineHeight: "1.3", color },
-        { tag: tags.heading3, fontSize: "calc(var(--font-size) * 1.3)", fontWeight: "600", lineHeight: "1.3", color },
-        { tag: tags.heading4, fontSize: "calc(var(--font-size) * 1.15)", fontWeight: "600", color },
-        { tag: tags.heading5, fontSize: "calc(var(--font-size) * 1.05)", fontWeight: "600", color },
-        { tag: tags.heading6, fontSize: "var(--font-size)", fontWeight: "600", color },
+        { tag: tags.heading1, fontSize: `calc(var(--font-size) * ${1.8 * k})`, fontWeight: "700", lineHeight: "1.3", color },
+        { tag: tags.heading2, fontSize: `calc(var(--font-size) * ${1.5 * k})`, fontWeight: "700", lineHeight: "1.3", color },
+        { tag: tags.heading3, fontSize: `calc(var(--font-size) * ${1.3 * k})`, fontWeight: "600", lineHeight: "1.3", color },
+        { tag: tags.heading4, fontSize: `calc(var(--font-size) * ${1.15 * k})`, fontWeight: "600", color },
+        { tag: tags.heading5, fontSize: `calc(var(--font-size) * ${1.05 * k})`, fontWeight: "600", color },
+        { tag: tags.heading6, fontSize: `calc(var(--font-size) * ${1.0 * k})`, fontWeight: "600", color },
       ];
 
   return HighlightStyle.define([
@@ -294,6 +296,11 @@ export function createBaseExtensions(state, onChange) {
     ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId) : null;
   const nh = _s?.suppressHeaderSize ?? state.settings.normalizeHeaders;
   const nhc = _s?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
+  const hScale = _s?.headerScale ?? state.settings.headerScale ?? 1.0;
+  // Header color override from style's color overrides (light/dark resolved by
+  // applyActiveStyle into --header-color; fall back to theme headingColor).
+  const headerOverride = (_s && ((state.settings.appearance === "dark" ? _s.darkColors : _s.lightColors)?.header))
+    || undefined;
 
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged && onChange) onChange(update);
@@ -319,7 +326,7 @@ export function createBaseExtensions(state, onChange) {
     hushTheme,
     _themeComp.of(activeTheme ? activeTheme.extension : []),
     _highlightComp.of(syntaxHighlighting(
-      getMarkdownHighlight(nh, nhc ? undefined : activeTheme?.headingColor)
+      getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || activeTheme?.headingColor), hScale)
     )),
     markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
     history(),
@@ -484,7 +491,10 @@ export function createEditor(container, state) {
         const _s = state.settings.activeStyleId ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId) : null;
         const nh = _s?.suppressHeaderSize ?? state.settings.normalizeHeaders;
         const nhc = _s?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
-        return getMarkdownHighlight(nh, nhc ? undefined : getActiveTheme(state.settings)?.headingColor);
+        const hScale = _s?.headerScale ?? state.settings.headerScale ?? 1.0;
+        const headerOverride = (_s && ((state.settings.appearance === "dark" ? _s.darkColors : _s.lightColors)?.header))
+          || undefined;
+        return getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || getActiveTheme(state.settings)?.headingColor), hScale);
       })())),
       markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
       history(),
@@ -585,18 +595,26 @@ export function createEditor(container, state) {
 
   state.on("style-changed", () => applyBlockCursor(state));
 
-  state.on("theme-changed", () => {
+  function resolveHeaderArgs() {
     const t = getActiveTheme(state.settings);
     const _activeStyle = state.settings.activeStyleId
       ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId)
       : null;
     const normalizeHeaders = _activeStyle?.suppressHeaderSize ?? state.settings.normalizeHeaders;
     const normalizeHeaderColor = _activeStyle?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
-    const headingColor = normalizeHeaderColor ? undefined : t?.headingColor;
+    const hScale = _activeStyle?.headerScale ?? state.settings.headerScale ?? 1.0;
+    const headerOverride = (_activeStyle && ((state.settings.appearance === "dark" ? _activeStyle.darkColors : _activeStyle.lightColors)?.header))
+      || undefined;
+    const headingColor = normalizeHeaderColor ? undefined : (headerOverride || t?.headingColor);
+    return { t, normalizeHeaders, headingColor, hScale };
+  }
+
+  state.on("theme-changed", () => {
+    const { t, normalizeHeaders, headingColor, hScale } = resolveHeaderArgs();
     view.dispatch({ effects: [
       themeCompartment.reconfigure(t ? t.extension : []),
       highlightCompartment.reconfigure(
-        syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor))
+        syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor, hScale))
       ),
     ] });
   });
@@ -609,15 +627,11 @@ export function createEditor(container, state) {
     document.documentElement.style.setProperty("--font-size", _fs + "px");
     const _lh = _activeStyle?.lineHeight || state.settings.lineHeight;
     document.documentElement.style.setProperty("--line-height", _lh);
-    const t = getActiveTheme(state.settings);
-    // Style-level overrides take precedence over global settings
-    const normalizeHeaders = _activeStyle?.suppressHeaderSize ?? state.settings.normalizeHeaders;
-    const normalizeHeaderColor = _activeStyle?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
-    const headingColor = normalizeHeaderColor ? undefined : t?.headingColor;
+    const { normalizeHeaders, headingColor, hScale } = resolveHeaderArgs();
     view.dispatch({
       effects: [
         highlightCompartment.reconfigure(
-          syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor))
+          syntaxHighlighting(getMarkdownHighlight(normalizeHeaders, headingColor, hScale))
         ),
         // Rebuild the shortcut keymap from the freshly-saved settings so
         // edits in the Settings > Shortcuts panel take effect immediately

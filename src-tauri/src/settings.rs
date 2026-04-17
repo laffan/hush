@@ -30,6 +30,13 @@ pub struct AppSettings {
     pub normalize_headers: bool,
     #[serde(default)]
     pub normalize_header_color: bool,
+    #[serde(default = "default_header_scale")]
+    pub header_scale: f64,
+    // Default-style color overrides (bg/fg/header/cursor/selection) per appearance
+    #[serde(default)]
+    pub default_light_colors: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub default_dark_colors: std::collections::HashMap<String, String>,
     #[serde(default = "default_true")]
     pub make_space_for_panes: bool,
     #[serde(default = "default_typewriter_line_opacity")]
@@ -285,6 +292,11 @@ pub struct AppSettings {
     #[serde(default = "default_nb_ungroup")]
     pub shortcut_nb_ungroup: String,
 
+    // Persisted panes — restored on app open. Shape is opaque to Rust;
+    // JS serializes/deserializes the list of pane objects.
+    #[serde(default)]
+    pub persisted_panes: Vec<serde_json::Value>,
+
     // Session state (persisted across restarts)
     #[serde(default)]
     pub window_width: Option<f64>,
@@ -340,6 +352,8 @@ pub struct Style {
     pub suppress_header_size: Option<bool>,
     #[serde(default)]
     pub suppress_header_color: Option<bool>,
+    #[serde(default)]
+    pub header_scale: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -448,6 +462,9 @@ fn default_font_size() -> u32 {
 }
 fn default_line_height() -> f64 {
     1.6
+}
+fn default_header_scale() -> f64 {
+    1.0
 }
 fn default_font_family() -> String {
     "Source Sans Pro".to_string()
@@ -630,6 +647,9 @@ impl Default for AppSettings {
             font_family: default_font_family(),
             normalize_headers: false,
             normalize_header_color: false,
+            header_scale: default_header_scale(),
+            default_light_colors: std::collections::HashMap::new(),
+            default_dark_colors: std::collections::HashMap::new(),
             make_space_for_panes: true,
             typewriter_line_opacity: default_typewriter_line_opacity(),
             padding: default_padding(),
@@ -720,6 +740,7 @@ impl Default for AppSettings {
             block_cursor: false,
             block_cursor_color: None,
             ratchet_encourage_typing: false,
+            persisted_panes: Vec::new(),
             window_width: None,
             window_height: None,
             window_x: None,

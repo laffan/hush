@@ -123,6 +123,11 @@ export function renderStylesPanel(state) {
   html += `<div class="style-sidebar-item${isDefault ? ' active' : ''}" data-style-id="">
     <span class="style-sidebar-name" style="font-size:14px;">Default</span>
     ${defaultBadge ? `<span class="style-shortcut-badge">${escHtml(defaultBadge)}</span>` : ""}
+    <span class="style-sidebar-actions">
+      <button data-action="edit" data-id="__default__" title="Edit">
+        <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+    </span>
   </div>`;
 
   for (let i = 0; i < styles.length; i++) {
@@ -253,6 +258,13 @@ export function bindStylesPanel(state, panel) {
       const id = btn.dataset.id;
 
       if (action === "edit") {
+        if (id === "__default__") {
+          openStyleModal(state, "__default__", () => {
+            panel.innerHTML = renderStylesPanel(state);
+            bindStylesPanel(state, panel);
+          });
+          return;
+        }
         const style = (state.settings.styles || []).find(s => s.id === id);
         if (style) openStyleModal(state, style, () => {
           panel.innerHTML = renderStylesPanel(state);
@@ -294,6 +306,7 @@ const systemFonts = [
 const colorKeys = [
   { key: "bg", label: "Background" },
   { key: "fg", label: "Text" },
+  { key: "header", label: "Header" },
   { key: "cursor", label: "Cursor" },
   { key: "selection", label: "Selection" },
 ];
@@ -317,16 +330,58 @@ function fontFallback(family) {
   return map[family] || `'${family}', system-ui, sans-serif`;
 }
 
+/** Build a Style-shaped draft from global AppSettings — used when editing the Default style. */
+function buildDefaultDraftFromSettings(state) {
+  const s = state.settings;
+  return {
+    id: "__default__",
+    name: "Default",
+    fontFamily: s.fontFamily || null,
+    fontSize: s.fontSize || null,
+    lineHeight: s.lineHeight || null,
+    lightThemeId: s.lightTheme || "ayuLight",
+    darkThemeId: s.darkTheme || "dracula",
+    lightColors: s.defaultLightColors ? { ...s.defaultLightColors } : {},
+    darkColors: s.defaultDarkColors ? { ...s.defaultDarkColors } : {},
+    suppressHeaderSize: !!s.normalizeHeaders,
+    suppressHeaderColor: !!s.normalizeHeaderColor,
+    headerScale: s.headerScale != null ? s.headerScale : 1.0,
+    blockCursor: !!s.blockCursor,
+  };
+}
+
+/** Persist a Default-style draft back to global AppSettings. */
+function saveDefaultDraftToSettings(state, draft) {
+  state.updateSettings({
+    fontFamily: draft.fontFamily || state.settings.fontFamily,
+    fontSize: draft.fontSize || state.settings.fontSize,
+    lineHeight: draft.lineHeight || state.settings.lineHeight,
+    lightTheme: draft.lightThemeId || state.settings.lightTheme,
+    darkTheme: draft.darkThemeId || state.settings.darkTheme,
+    defaultLightColors: draft.lightColors || {},
+    defaultDarkColors: draft.darkColors || {},
+    normalizeHeaders: !!draft.suppressHeaderSize,
+    normalizeHeaderColor: !!draft.suppressHeaderColor,
+    headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
+    blockCursor: !!draft.blockCursor,
+  });
+}
+
 function openStyleModal(state, existingStyle, onDone) {
+  // existingStyle === null → create a new user style
+  // existingStyle === "__default__" → edit the Default (global settings)
+  const isDefault = existingStyle === "__default__";
   const isNew = !existingStyle;
-  const draft = existingStyle
-    ? JSON.parse(JSON.stringify(migrateStyle(existingStyle)))
-    : {
-        id: "", name: "", fontFamily: null, fontSize: null, lineHeight: null,
-        lightThemeId: state.settings.lightTheme || "ayuLight",
-        darkThemeId: state.settings.darkTheme || "dracula",
-        lightColors: {}, darkColors: {},
-      };
+  const draft = isDefault
+    ? buildDefaultDraftFromSettings(state)
+    : existingStyle
+      ? JSON.parse(JSON.stringify(migrateStyle(existingStyle)))
+      : {
+          id: "", name: "", fontFamily: null, fontSize: null, lineHeight: null,
+          lightThemeId: state.settings.lightTheme || "ayuLight",
+          darkThemeId: state.settings.darkTheme || "dracula",
+          lightColors: {}, darkColors: {},
+        };
 
   let colorTab = "light"; // which tab is shown in the color section
 
@@ -351,6 +406,18 @@ function openStyleModal(state, existingStyle, onDone) {
 
     const activeColors = colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {});
 
+    const headerScale = draft.headerScale != null ? draft.headerScale : 1.0;
+    const title = isDefault ? "Edit Default Style" : isNew ? "New Style" : "Edit Style";
+
+    // Name field is hidden for the Default style (name is fixed)
+    const nameSection = isDefault ? "" : `
+      <div class="style-modal-section">
+        <h3 class="style-modal-section-title">Name</h3>
+        <div class="style-editor-row">
+          <input type="text" id="style-name" value="${escAttr(draft.name)}" placeholder="Style name" />
+        </div>
+      </div>`;
+
     backdrop.innerHTML = `
       <div class="style-modal">
         <button class="style-modal-close">&times;</button>
@@ -358,91 +425,101 @@ function openStyleModal(state, existingStyle, onDone) {
 
           <!-- LEFT: settings column -->
           <div class="style-modal-settings">
-            <h2 class="style-modal-title">${isNew ? "New Style" : "Edit Style"}</h2>
+            <h2 class="style-modal-title">${title}</h2>
 
-            <div class="style-editor-row">
-              <label>Name</label>
-              <input type="text" id="style-name" value="${escAttr(draft.name)}" placeholder="Style name" />
-            </div>
+            ${nameSection}
 
-            <div class="style-editor-row">
-              <label>Font</label>
-              <div class="custom-dropdown" id="style-font-dropdown" data-value="${escAttr(selectedFont)}">
-                <div class="custom-dropdown-selected">${escHtml(selectedFontLabel)}</div>
-                <div class="custom-dropdown-options">
-                  <div class="custom-dropdown-option${!selectedFont ? ' selected' : ''}" data-value="">Default (${escHtml(state.settings.fontFamily || "EB Garamond")})</div>
-                  <div class="custom-dropdown-group-label">Built-in</div>
-                  ${builtInFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
-                  <div class="custom-dropdown-group-label">System</div>
-                  ${systemFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+            <div class="style-modal-section">
+              <h3 class="style-modal-section-title">Editing</h3>
+              <div class="style-editor-row">
+                <label>Font</label>
+                <div class="custom-dropdown" id="style-font-dropdown" data-value="${escAttr(selectedFont)}">
+                  <div class="custom-dropdown-selected">${escHtml(selectedFontLabel)}</div>
+                  <div class="custom-dropdown-options">
+                    <div class="custom-dropdown-option${!selectedFont ? ' selected' : ''}" data-value="">Default (${escHtml(state.settings.fontFamily || "EB Garamond")})</div>
+                    <div class="custom-dropdown-group-label">Built-in</div>
+                    ${builtInFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+                    <div class="custom-dropdown-group-label">System</div>
+                    ${systemFonts.map(f => `<div class="custom-dropdown-option${draft.fontFamily === f ? ' selected' : ''}" data-value="${f}">${escHtml(f)}</div>`).join('')}
+                  </div>
+                </div>
+              </div>
+              <div class="style-editor-row">
+                <label>Size</label>
+                <div class="style-slider-group">
+                  <input type="range" id="style-font-size" min="12" max="36" step="1" value="${draft.fontSize || state.settings.fontSize || 20}" />
+                  <span class="style-slider-value">${draft.fontSize || state.settings.fontSize || 20}px</span>
+                </div>
+              </div>
+              <div class="style-editor-row">
+                <label>Line height</label>
+                <div class="style-slider-group">
+                  <input type="range" id="style-line-height" min="1.0" max="2.5" step="0.1" value="${draft.lineHeight || state.settings.lineHeight || 1.6}" />
+                  <span class="style-slider-value">${draft.lineHeight || state.settings.lineHeight || 1.6}</span>
+                </div>
+              </div>
+              <div class="style-editor-row">
+                <label>Cursor</label>
+                <div class="style-checkbox-group">
+                  <input type="checkbox" id="style-block-cursor" ${(draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor) ? 'checked' : ''} />
+                  <span class="style-checkbox-label">Block</span>
                 </div>
               </div>
             </div>
 
-            <div class="style-editor-row">
-              <label>Size</label>
-              <div class="style-slider-group">
-                <input type="range" id="style-font-size" min="12" max="36" step="1" value="${draft.fontSize || state.settings.fontSize || 20}" />
-                <span class="style-slider-value">${draft.fontSize || state.settings.fontSize || 20}px</span>
+            <div class="style-modal-section">
+              <h3 class="style-modal-section-title">Headers</h3>
+              <div class="style-editor-row">
+                <label>Suppress color</label>
+                <div class="style-checkbox-group">
+                  <input type="checkbox" id="style-suppress-header-color" ${draft.suppressHeaderColor ? 'checked' : ''} />
+                </div>
               </div>
-            </div>
-
-            <div class="style-editor-row">
-              <label>Height</label>
-              <div class="style-slider-group">
-                <input type="range" id="style-line-height" min="1.0" max="2.5" step="0.1" value="${draft.lineHeight || state.settings.lineHeight || 1.6}" />
-                <span class="style-slider-value">${draft.lineHeight || state.settings.lineHeight || 1.6}</span>
+              <div class="style-editor-row">
+                <label>Suppress size</label>
+                <div class="style-checkbox-group">
+                  <input type="checkbox" id="style-suppress-header-size" ${draft.suppressHeaderSize ? 'checked' : ''} />
+                </div>
               </div>
-            </div>
-
-            <div class="style-editor-row">
-              <label>Headers</label>
-              <div class="style-checkbox-group">
-                <input type="checkbox" id="style-suppress-header-size" ${draft.suppressHeaderSize ? 'checked' : ''} />
-                <span class="style-checkbox-label">Suppress size</span>
-                <input type="checkbox" id="style-suppress-header-color" ${draft.suppressHeaderColor ? 'checked' : ''} />
-                <span class="style-checkbox-label">Suppress color</span>
-              </div>
-            </div>
-
-            <div class="style-editor-row">
-              <label>Cursor</label>
-              <div class="style-checkbox-group">
-                <input type="checkbox" id="style-block-cursor" ${(draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor) ? 'checked' : ''} />
-                <span class="style-checkbox-label">Block</span>
-              </div>
-            </div>
-
-            <!-- Color mode tabs -->
-            <div class="style-color-tabs">
-              <button class="style-color-tab${colorTab === 'light' ? ' active' : ''}" data-mode="light">Light</button>
-              <button class="style-color-tab${colorTab === 'dark' ? ' active' : ''}" data-mode="dark">Dark</button>
-            </div>
-
-            <div class="style-editor-row">
-              <label>Theme</label>
-              <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(colorTab === 'light' ? ltId : dtId)}">
-                <div class="custom-dropdown-selected">${escHtml(colorTab === 'light' ? ltLabel : dtLabel)}</div>
-                <div class="custom-dropdown-options">
-                  ${(colorTab === 'light' ? lightThemes : darkThemes).map(t => {
-                    const selId = colorTab === 'light' ? ltId : dtId;
-                    return `<div class="custom-dropdown-option${t.id === selId ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`;
-                  }).join('')}
+              <div class="style-editor-row${draft.suppressHeaderSize ? ' style-row-hidden' : ''}" id="header-scale-row">
+                <label>Size</label>
+                <div class="style-slider-group">
+                  <input type="range" id="style-header-scale" min="0.8" max="2.0" step="0.05" value="${headerScale}" />
+                  <span class="style-slider-value">${headerScale.toFixed(2)}x</span>
                 </div>
               </div>
             </div>
 
-            ${colorKeys.map(ck => {
-              const overrideVal = activeColors[ck.key];
-              const val = overrideVal || "#888888";
-              return `<div class="style-editor-color-row">
-                <label>${ck.label}</label>
-                <div class="style-color-group">
-                  <input type="color" data-color-key="${ck.key}" value="${val}" />
-                  ${overrideVal ? `<button class="style-reset-color" data-color-key="${ck.key}" title="Reset">&times;</button>` : ''}
+            <div class="style-modal-section">
+              <h3 class="style-modal-section-title">Colors</h3>
+              <div class="style-color-tabs">
+                <button class="style-color-tab${colorTab === 'light' ? ' active' : ''}" data-mode="light">Light</button>
+                <button class="style-color-tab${colorTab === 'dark' ? ' active' : ''}" data-mode="dark">Dark</button>
+              </div>
+              <div class="style-editor-row">
+                <label>Theme</label>
+                <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(colorTab === 'light' ? ltId : dtId)}">
+                  <div class="custom-dropdown-selected">${escHtml(colorTab === 'light' ? ltLabel : dtLabel)}</div>
+                  <div class="custom-dropdown-options">
+                    ${(colorTab === 'light' ? lightThemes : darkThemes).map(t => {
+                      const selId = colorTab === 'light' ? ltId : dtId;
+                      return `<div class="custom-dropdown-option${t.id === selId ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`;
+                    }).join('')}
+                  </div>
                 </div>
-              </div>`;
-            }).join("")}
+              </div>
+              ${colorKeys.map(ck => {
+                const overrideVal = activeColors[ck.key];
+                const val = overrideVal || "#888888";
+                return `<div class="style-editor-color-row">
+                  <label>${ck.label}</label>
+                  <div class="style-color-group">
+                    <input type="color" data-color-key="${ck.key}" value="${val}" />
+                    ${overrideVal ? `<button class="style-reset-color" data-color-key="${ck.key}" title="Reset">&times;</button>` : ''}
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>
 
             <div class="style-editor-btns">
               <button id="style-cancel">Cancel</button>
@@ -512,11 +589,23 @@ function openStyleModal(state, existingStyle, onDone) {
       selEl.style.background = selection;
     }
 
-    // Give headings the theme heading color if available
+    // Give headings the theme heading color if available (or override)
     const theme = getThemeById(themeId);
-    const headingColor = theme ? theme.headingColor : fg;
+    const headingColor = colors.header
+      || (draft.suppressHeaderColor ? fg : (theme ? theme.headingColor : fg));
+    const scale = draft.headerScale != null ? draft.headerScale : 1.0;
+    const baseSize = draft.fontSize || state.settings.fontSize || 20;
+    const suppressSize = !!draft.suppressHeaderSize;
+    const scales = { h1: 1.8, h2: 1.5, h3: 1.3 };
     pane.querySelectorAll(".preview-h1, .preview-h2, .preview-h3").forEach(el => {
       el.style.color = headingColor;
+      if (suppressSize) {
+        el.style.fontSize = baseSize + "px";
+      } else {
+        const tag = el.classList.contains("preview-h1") ? "h1"
+          : el.classList.contains("preview-h2") ? "h2" : "h3";
+        el.style.fontSize = (baseSize * scales[tag] * scale) + "px";
+      }
     });
   }
 
@@ -560,14 +649,34 @@ function openStyleModal(state, existingStyle, onDone) {
       updatePreview();
     });
 
+    // Name — update the draft live so tab switches don't wipe the typed value
+    const nameEl = backdrop.querySelector("#style-name");
+    if (nameEl) nameEl.addEventListener("input", () => {
+      draft.name = nameEl.value;
+    });
+
     // Suppress header overrides
     const shsEl = backdrop.querySelector("#style-suppress-header-size");
     if (shsEl) shsEl.addEventListener("change", () => {
       draft.suppressHeaderSize = shsEl.checked;
+      // Show/hide the size slider row
+      const row = backdrop.querySelector("#header-scale-row");
+      if (row) row.classList.toggle("style-row-hidden", shsEl.checked);
+      updatePreview();
     });
     const shcEl = backdrop.querySelector("#style-suppress-header-color");
     if (shcEl) shcEl.addEventListener("change", () => {
       draft.suppressHeaderColor = shcEl.checked;
+      updatePreview();
+    });
+
+    // Header scale slider
+    const hsEl = backdrop.querySelector("#style-header-scale");
+    if (hsEl) hsEl.addEventListener("input", () => {
+      const v = parseFloat(hsEl.value);
+      hsEl.nextElementSibling.textContent = v.toFixed(2) + "x";
+      draft.headerScale = v;
+      updatePreview();
     });
 
     // Block cursor
@@ -597,7 +706,14 @@ function openStyleModal(state, existingStyle, onDone) {
     // Cancel / Save
     backdrop.querySelector("#style-cancel").addEventListener("click", close);
     backdrop.querySelector("#style-save").addEventListener("click", () => {
-      const name = backdrop.querySelector("#style-name")?.value?.trim();
+      if (isDefault) {
+        saveDefaultDraftToSettings(state, draft);
+        state.emit("style-changed");
+        close();
+        if (onDone) onDone();
+        return;
+      }
+      const name = backdrop.querySelector("#style-name")?.value?.trim() || draft.name?.trim();
       if (!name) return;
       draft.name = name;
       // Clean up internal migration flag

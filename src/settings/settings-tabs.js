@@ -169,51 +169,14 @@ export function renderEditorTab(settings) {
           <option value="auto" ${s.appearance === "auto" ? "selected" : ""}>Automatic</option>
         </select>
       </div>
-    </div>
-
-    <div class="settings-section">
-      <h2>Themes</h2>
-      <div class="settings-row">
-        <label>Default light theme</label>
-        <select id="setting-light-theme">
-          ${lightThemes.map((t) => `<option value="${t.id}" ${s.lightTheme === t.id ? "selected" : ""}>${t.name}</option>`).join("")}
-        </select>
-      </div>
-      <div class="settings-row">
-        <label>Default dark theme</label>
-        <select id="setting-dark-theme">
-          ${darkThemes.map((t) => `<option value="${t.id}" ${s.darkTheme === t.id ? "selected" : ""}>${t.name}</option>`).join("")}
-        </select>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <h2>Font</h2>
-      <div class="settings-row">
-        <label>Font family</label>
-        <select id="setting-font-family">
-          ${renderFontOptions(s.fontFamily)}
-        </select>
-      </div>
+      <p class="settings-help">Theme, font, size and header options live in the Styles sidebar — edit the Default style to change these defaults.</p>
     </div>
 
     <div class="settings-section">
       <h2>Headers</h2>
       <div class="settings-row">
-        <label>Normalize header sizes</label>
-        <input type="checkbox" id="setting-normalize-headers" ${s.normalizeHeaders ? "checked" : ""} />
-      </div>
-      <div class="settings-row">
-        <label>Normalize header color</label>
-        <input type="checkbox" id="setting-normalize-header-color" ${s.normalizeHeaderColor ? "checked" : ""} />
-      </div>
-      <div class="settings-row">
         <label>Sticky headers</label>
         <input type="checkbox" id="setting-sticky-headers" ${s.stickyHeaders ? "checked" : ""} />
-      </div>
-      <div class="settings-row">
-        <label>Block cursor</label>
-        <input type="checkbox" id="setting-block-cursor" ${s.blockCursor ? "checked" : ""} />
       </div>
     </div>
 
@@ -266,24 +229,6 @@ export function renderEditorTab(settings) {
           <option value="left" ${s.footnoteMarginSide === "left" ? "selected" : ""}>Left only</option>
           <option value="right" ${s.footnoteMarginSide === "right" ? "selected" : ""}>Right only</option>
         </select>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <h2>Text</h2>
-      <div class="settings-slider-row">
-        <label>Font size</label>
-        <div class="slider-group">
-          <input type="range" id="setting-font-size" min="12" max="36" step="1" value="${s.fontSize || 20}" />
-          <span class="slider-value">${s.fontSize || 20}px</span>
-        </div>
-      </div>
-      <div class="settings-slider-row">
-        <label>Line height</label>
-        <div class="slider-group">
-          <input type="range" id="setting-line-height" min="1.0" max="2.5" step="0.1" value="${s.lineHeight || 1.6}" />
-          <span class="slider-value">${s.lineHeight || 1.6}</span>
-        </div>
       </div>
     </div>
   `;

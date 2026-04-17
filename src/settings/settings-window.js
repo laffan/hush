@@ -179,28 +179,16 @@ function bindAll() {
   bindCheckbox("setting-always-on-top", "alwaysOnTop");
   bindCheckbox("setting-hide-sidebar-tooltips", "hideSidebarTooltips");
 
-  // Editor tab
+  // Editor tab — font/theme/size/line-height live in the Styles sidebar now;
+  // only sticky headers, panes, typewriter and footnotes remain here.
   bindSelect("setting-appearance", "appearance");
-  bindSelect("setting-light-theme", "lightTheme");
-  bindSelect("setting-dark-theme", "darkTheme");
-  bindSelect("setting-font-family", "fontFamily");
-  bindCheckbox("setting-normalize-headers", "normalizeHeaders");
-  bindCheckbox("setting-normalize-header-color", "normalizeHeaderColor");
   bindCheckbox("setting-make-space-for-panes", "makeSpaceForPanes");
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
-  const blockCursorEl = document.getElementById("setting-block-cursor");
-  if (blockCursorEl) {
-    blockCursorEl.addEventListener("change", () => {
-      saveSetting("blockCursor", blockCursorEl.checked);
-    });
-  }
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");
   bindSelect("setting-footnote-font-family", "footnoteFontFamily");
   bindCheckbox("setting-footnote-use-colors", "footnoteUseColors");
   bindSelect("setting-footnote-margin-side", "footnoteMarginSide");
-  bindSlider("setting-font-size", "fontSize", "px");
-  bindSlider("setting-line-height", "lineHeight", "");
 
   // Privacy tab
   bindSelect("setting-privacy-mode", "privacyMode");
