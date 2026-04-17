@@ -121,9 +121,18 @@ export function bindInputEvents(
       if (e.key === "Escape") { state.endEditingText(); }
       return;
     }
+    // Skip if focus is in any editable area. .cm-content (the main document
+    // editor) is contentEditable but is neither INPUT nor TEXTAREA; without
+    // this guard the canvas handler would swallow space keystrokes meant
+    // for the doc editor whenever a notebook canvas is alive anywhere
+    // (including notebook panes opened over a doc).
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      if (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA") return;
+      if (activeEl.isContentEditable) return;
+      if (activeEl.closest(".floating-pane")) return;
+    }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    // Skip if focus is inside a floating pane — let the pane handle its own input
-    if (document.activeElement?.closest(".floating-pane")) return;
 
     // Space-to-pan
     if (e.key === " " && !e.repeat) {

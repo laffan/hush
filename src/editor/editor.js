@@ -85,6 +85,16 @@ export function buildShortcutExtension(state) {
 // positioning — no measurement needed, works at any font size.
 const headingMarkerDeco = Decoration.mark({ class: "heading-marker" });
 
+// Hang-indent wrapped list lines so the continuation aligns with the text
+// after the marker. Uses ch units so it scales with font size — the indent
+// width matches the exact marker length ("- " → 2ch, "123. " → 5ch, etc.).
+function listIndentLineDeco(markerLen) {
+  return Decoration.line({
+    class: "list-indent",
+    attributes: { style: `padding-left: ${markerLen}ch; text-indent: -${markerLen}ch;` },
+  });
+}
+
 export const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -102,12 +112,17 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
       const doc = view.state.doc;
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
-        const m = line.text.match(/^(#{1,6})\s/);
-        if (m) {
+        const headingMatch = line.text.match(/^(#{1,6})\s/);
+        const listMatch = !headingMatch && line.text.match(/^(\s*)([-*+]|\d+[.)])(\s+)/);
+        if (headingMatch) {
           // Line decoration: position:relative so the marker can be absolute
           builder.add(line.from, line.from, Decoration.line({ class: "heading-indent" }));
           // Mark decoration: wrap the "## " prefix
-          builder.add(line.from, line.from + m[0].length, headingMarkerDeco);
+          builder.add(line.from, line.from + headingMatch[0].length, headingMarkerDeco);
+        } else if (listMatch) {
+          // Hang-indent wrapped lines by the width of the marker + space
+          const markerLen = listMatch[0].length;
+          builder.add(line.from, line.from, listIndentLineDeco(markerLen));
         }
         pos = line.to + 1;
       }
