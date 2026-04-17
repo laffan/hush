@@ -77,7 +77,6 @@ export function setupRightPanel(state) {
   });
 
   state.on("hide-outline", () => {
-    if (rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset")) return;
     rightPanelOverlay.classList.add("hidden");
     rightTrigger.classList.remove("is-hidden");
     rightPanelPinned = false;
@@ -86,10 +85,14 @@ export function setupRightPanel(state) {
     if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
-  // Close right panel on click outside (unless pinned in inset mode)
+  // Close right panel on click outside — only when overlaying the
+  // content. Inset mode stays put until the user closes it explicitly
+  // via keyboard shortcut or button. Pinning in overlay mode opts out
+  // of auto-hide.
   document.addEventListener("mousedown", (e) => {
-    const pinActive = rightPanelPinned && rightPanelOverlay.classList.contains("panel-inset");
-    if (!rightPanelOverlay.classList.contains("hidden") && !pinActive &&
+    if (rightPanelOverlay.classList.contains("panel-inset")) return;
+    if (rightPanelPinned) return;
+    if (!rightPanelOverlay.classList.contains("hidden") &&
         !rightPanelOverlay.contains(e.target) && !rightPinBtn.contains(e.target)) {
       state.emit("hide-outline");
     }

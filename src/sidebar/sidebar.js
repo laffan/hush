@@ -104,7 +104,6 @@ export function createSidebar(container, state) {
   }
 
   function hidePanel() {
-    if (!isWideViewport() && panelPinned && panelOverlay.classList.contains("panel-inset")) return;
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = null;
     panelOverlay.classList.add("hidden");
@@ -324,16 +323,18 @@ export function createSidebar(container, state) {
     if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
-  // Close panel on click outside. On wide viewports (>600px) the panel is
-  // either open or closed — no auto-close — so this only fires on narrower
-  // viewports, and even then only when the panel isn't pinned in inset mode.
+  // Close panel on click outside — only when the panel is overlaying the
+  // content. In inset mode the panel pushes the column over rather than
+  // sitting on top of it, so it should stay put until the user explicitly
+  // closes it via the keyboard shortcut or a sidebar button. Pinning in
+  // overlay mode opts out of auto-hide.
   document.addEventListener("mousedown", (e) => {
-    if (isWideViewport()) return;
-    const pinActive = panelPinned && panelOverlay.classList.contains("panel-inset");
+    if (panelOverlay.classList.contains("panel-inset")) return;
+    if (panelPinned) return;
     // The version preview overlay is appended to document.body, not inside panelOverlay,
     // so check for it explicitly to avoid closing the panel when clicking restore.
     const versionOverlay = document.querySelector(".version-preview-overlay");
-    if (activePanel && !pinActive && !panelOverlay.contains(e.target) && !container.contains(e.target) && !pinBtn.contains(e.target) && !(versionOverlay && versionOverlay.contains(e.target))) {
+    if (activePanel && !panelOverlay.contains(e.target) && !container.contains(e.target) && !pinBtn.contains(e.target) && !(versionOverlay && versionOverlay.contains(e.target))) {
       hidePanel();
     }
   });
