@@ -141,17 +141,20 @@ function wrapRuns(
 
   for (const token of tokens) {
     const wordW = measureFn(token.word, fontSize);
-    const spaceW = token.trailingSpace ? measureFn(" ", fontSize) : 0;
+    // `addW` already includes the inter-word space for non-first tokens;
+    // do NOT add a trailing space too or every interior word ends up
+    // charged for both its leading and its trailing gap, over-counting
+    // every interior space by one and forcing premature wraps.
     const addW = currentLineTokens.length > 0 ? measureFn(" ", fontSize) + wordW : wordW;
 
     if (currentWidth + addW > maxWidth && currentLineTokens.length > 0) {
       // Flush current line
       lines.push(tokensToRuns(currentLineTokens));
       currentLineTokens = [token];
-      currentWidth = wordW + spaceW;
+      currentWidth = wordW;
     } else {
       currentLineTokens.push(token);
-      currentWidth += addW + spaceW;
+      currentWidth += addW;
     }
   }
   if (currentLineTokens.length > 0) {
