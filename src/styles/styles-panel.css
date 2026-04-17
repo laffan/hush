@@ -196,6 +196,30 @@
   display: none !important;
 }
 
+/* Narrow windows: stack the preview below the settings column so the
+   preview pane isn't cropped off the right edge. */
+@media (max-width: 700px) {
+  .style-modal {
+    width: 96%;
+    height: 92%;
+    max-height: 800px;
+  }
+  .style-modal-body {
+    flex-direction: column;
+  }
+  .style-modal-settings {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+    flex-shrink: 0;
+  }
+  .style-modal-preview {
+    border-radius: 0 0 12px 12px;
+    min-height: 160px;
+  }
+}
+
 /* Right column: preview */
 .style-modal-preview {
   flex: 1;
@@ -273,7 +297,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
+  min-height: 28px;
 }
 
 .style-editor-row label {
@@ -382,7 +407,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 14px;
+  min-height: 28px;
 }
 
 .style-editor-color-row label {

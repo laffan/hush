@@ -367,22 +367,37 @@ function saveDefaultDraftToSettings(state, draft) {
   });
 }
 
+/** Resolve a specific color key against the given theme. Returns a hex
+ * colour suitable for <input type="color"> — falls back to sensible
+ * defaults for keys the theme doesn't define (selection in particular
+ * isn't a solid colour in our themes, so we pick a neutral approximation).
+ */
+function themeColorFor(key, themeId, colorTab) {
+  const theme = getThemeById(themeId);
+  const bg = themeBackgrounds[themeId] || (colorTab === "light" ? "#fafafa" : "#1a1a1a");
+  const fg = themeForegrounds[themeId] || (colorTab === "light" ? "#1a1a1a" : "#e0e0e0");
+  switch (key) {
+    case "bg": return bg;
+    case "fg": return fg;
+    case "header": return theme?.headingColor || fg;
+    case "cursor": return fg;
+    case "selection": return colorTab === "light" ? "#c8c8c8" : "#3a3a3a";
+    default: return fg;
+  }
+}
+
 /** Fill the color overrides for the given appearance with the theme's own
  * resolved colors (bg / fg / header / cursor / selection). Gives users a
  * starting point when they pick a theme — every swatch in the Colors
  * section reflects what the theme actually renders. */
 function seedColorsFromTheme(draft, colorTab, themeId) {
   if (!themeId) return;
-  const theme = getThemeById(themeId);
-  const bg = themeBackgrounds[themeId] || (colorTab === "light" ? "#fafafa" : "#1a1a1a");
-  const fg = themeForegrounds[themeId] || (colorTab === "light" ? "#1a1a1a" : "#e0e0e0");
-  const header = theme?.headingColor || fg;
   const filled = {
-    bg,
-    fg,
-    header,
-    cursor: fg,
-    selection: colorTab === "light" ? "rgba(0, 0, 0, 0.15)" : "rgba(255, 255, 255, 0.18)",
+    bg: themeColorFor("bg", themeId, colorTab),
+    fg: themeColorFor("fg", themeId, colorTab),
+    header: themeColorFor("header", themeId, colorTab),
+    cursor: themeColorFor("cursor", themeId, colorTab),
+    selection: themeColorFor("selection", themeId, colorTab),
   };
   if (colorTab === "light") draft.lightColors = filled;
   else draft.darkColors = filled;
@@ -531,7 +546,10 @@ function openStyleModal(state, existingStyle, onDone) {
               </div>
               ${colorKeys.map(ck => {
                 const overrideVal = activeColors[ck.key];
-                const val = overrideVal || "#888888";
+                const themeId = colorTab === 'light' ? ltId : dtId;
+                // Show the active theme's color in unset swatches so the
+                // user sees what the theme renders before touching anything.
+                const val = overrideVal || themeColorFor(ck.key, themeId, colorTab);
                 return `<div class="style-editor-color-row">
                   <label>${ck.label}</label>
                   <div class="style-color-group">
