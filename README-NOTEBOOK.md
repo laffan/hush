@@ -74,8 +74,12 @@ Global shortcuts (`Cmd+P` command palette, `Cmd+,` settings, `Cmd+Shift+F` fulls
 
 The command palette is context-sensitive. When a notebook is open:
 
-- **Shown**: New document, New notebook, Files, Styles, Versions, Export, Toggle fullscreen, Settings, **Open shelf**, **Start brainstorm**
-- **Hidden**: Ratchet mode, Private mode, Typewriter mode, Show repeats, Highlight sentence, Outline view
+- **Shown**: New document, New notebook, Files, Styles, Versions, Export, Toggle fullscreen, Settings, **Open shelf**, **Start brainstorm**, **Insert Reference** (Zotero)
+- **Hidden**: Ratchet mode, Private mode, Typewriter mode, Show repeats, Highlight sentence, Outline view, Word count
+
+### Zotero in text shapes
+
+Insert Reference (Zotero search) works inside notebook text shapes. `ui/text-editor.ts` exposes a `suspendCommitOnBlur()` / `resumeCommitOnBlur()` pair and an `insertAtSelection(text)` method; the Zotero search modal calls the suspend hook when it opens, remembers the active text-editor instance, and routes the selected citation back through `insertAtSelection()` before resuming blur-commit. Without this handshake the modal's focus change was committing the text shape and unmounting the editor before the citation could land.
 
 ### Drag and drop
 

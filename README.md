@@ -4,13 +4,15 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 ## Features
 
-**Editor** — A Markdown editor with inline syntax highlighting (headings, bold, italic, links, code), adjustable column width, and 16 color themes across light, dark, and sepia appearances.
+**Editor** — A Markdown editor with inline syntax highlighting (headings, bold, italic, links, code), adjustable column width, and 16 color themes across light, dark, and sepia appearances. Heading `#` markers stay hidden unless your cursor is inside the heading being edited.
 
 **Styles** — Combine theme, font, font size and line height in to specific "styles" that you can easily create and move between using sidebar controls.
 
 **Ratchet Mode** — Forward-only writing. Pick a duration (5–30 minutes) and the editor locks out deletion, selection, and all navigation. The current line is pinned to the center of the screen with previous lines scrolling up above it (typewriter-style). The cursor is always at the end of the document. The timer persists across app restarts.
 
 **Private Mode** — Replaces all characters with opaque boxes so you can write without anyone reading over your shoulder. Toggle with `⌘⇧P`.
+
+**Word Count** — Optional live word count pinned to the top of the text column, horizontally centered just below where the Ratchet timer appears. When Ratchet mode is also active, the count stacks directly beneath the timer in the same pill style. Toggle with `⌘⇧W`.
 
 **Typewriter Mode** — Locks the cursor to a fixed line on screen. Drag the boundary to reposition it. The document scrolls to keep the cursor in place.
 
@@ -22,12 +24,15 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 - **Pin** — Keeps a pane visible across document switches (blue header). Unpinning returns it to its original document.
 - **Duplicate** — Creates a copy of a pane owned by the current document. Useful for bringing a pinned reference into a new context.
 - **Real-time sync** — Edits in a pane propagate to the main editor if the same file is open, and vice versa.
+- **Locked styles** — When a document or notebook has "Lock Style to Document" enabled, any pane showing that file adopts that locked style (theme, font, sizing) instead of the session's active style.
 
-**File Management** — Multiple files with automatic 2-second autosave. Organize documents and notebooks in folders and projects with drag-and-drop reordering.
+**File Management** — Multiple files with automatic 2-second autosave. Organize documents and notebooks in folders and projects with drag-and-drop reordering. Click anywhere on a folder row (including Inbox, Images, and Trash) to toggle it open. The sidebar uses a crosshair cursor while navigating and its width can be resized by dragging its right edge — the handle is invisible until you approach it, matching the editor's column resizers. Filenames use the full available width; per-row action buttons overlay the title only on hover and hide themselves during rename. The **Flagged** section of the outline view surfaces flagged items from nested folders so a flagged folder brings its children up with it.
 
-**Doc Images** — Drag any image file from the desktop into a document to embed it at the drop point, or drag an entry from the **Images** folder in the sidebar into a document or notebook. The editor renders the image inline, capped at the column width and at half the window height; narrower images are centered. Image references use standard markdown (`![alt](brown-cow.png)`) with two extensions: an optional caption after a pipe (`![alt | caption](brown-cow.png)`) and double-quoted URLs for filenames that contain spaces or parens (`![alt]("brown-cow (2).png")`). Every image is stored in a top-level **Images** folder pinned above Trash under its original filename (auto-suffixed on collision). Hovering an image row in that folder shows a tooltip preview; clicking the row — or the image in the editor — opens a full-size modal. Images can be renamed from the Files panel and every reference across every doc is rewritten automatically; deleting an image purges its refs too. Cmd-drag moves image references between panes, docs, and notebooks (a doc image dropped on a notebook canvas becomes an ImageShape; a notebook ImageShape dropped on a doc becomes markdown). Exporting a doc that contains images produces a folder with `text.md` plus an `images/` subdirectory.
+**Doc Images** — Drag any image file from the desktop into a document to embed it at the drop point, or drag an entry from the **Images** folder in the sidebar into a document or notebook. The editor renders the image inline, capped at the column width and at half the window height; narrower images are centered. Image references use standard markdown (`![alt](brown-cow.png)`) with two extensions: an optional caption after a pipe (`![alt | caption](brown-cow.png)`) and double-quoted URLs for filenames that contain spaces or parens (`![alt]("brown-cow (2).png")`). Every image is stored in a top-level **Images** folder pinned above Trash under its original filename (auto-suffixed on collision). The Images folder icon is a photo frame with a single slash through it, and — like Trash — defaults to collapsed, opening only when the user explicitly clicks it. Hovering an image row in that folder shows a tooltip preview; clicking the row — or the image in the editor — opens a full-size modal. Images can be renamed from the Files panel and every reference across every doc is rewritten automatically; deleting an image purges its refs too. Cmd-drag moves image references between panes, docs, and notebooks (a doc image dropped on a notebook canvas becomes an ImageShape; a notebook ImageShape dropped on a doc becomes markdown). Exporting a doc that contains images produces a folder with `text.md` plus an `images/` subdirectory.
 
 **Dropbox Sync** — Optional full-library sync to Dropbox. Connect via OAuth in Settings > Sync, choose a folder, and all documents, projects, and folders are mirrored automatically. Works across macOS and iOS. Documents sync as `.md` files, projects as `.hushproject` metadata. Sync is bidirectional with automatic conflict resolution.
+
+**Local Sync** (desktop only) — A second Sync section lets you point Hush directly at one or more folders on disk. Click **Add folder** to pick a location; the folder and its contents appear in the sidebar under a dedicated icon (a circle with a horizontal line through it). Local Sync folders sit *outside* the version control system — Hush simply reflects the filesystem. Edits made from other apps propagate into Hush as soon as they hit disk, and edits inside Hush write straight back. Unsyncing a Local Sync folder removes it from the sidebar only; nothing is changed on disk.
 
 **Keyboard-First** — Global shortcuts work even when the app is hidden:
 

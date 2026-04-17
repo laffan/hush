@@ -137,7 +137,7 @@ The CodeMirror 6 instance is configured with:
 
 - **Markdown language** with inline syntax highlighting (headings get scaled font sizes, syntax characters dimmed to 40% opacity)
 - **Custom inline parsers** for `%%comments%%` and `==highlighted text==`
-- **Heading indent plugin** — pulls `#` markers into the left margin via mark decorations (`position: absolute; right: 100%`) so heading text aligns with body text
+- **Heading indent plugin** — hides `#` markers entirely by default via replace decorations; when the cursor enters the heading line the markers are revealed inline so the user can edit them. This replaces the previous behavior of pulling the markers into the left margin, which was being cropped when the editor column was narrow or inside a floating pane
 - **Heading normalization** — optional setting to remove scaled heading sizes
 - **Theme/highlight compartments** for live reconfiguration
 - **Ratchet keymap** (`Prec.highest`) intercepting all deletion/navigation/selection keys when ratchet mode is active
@@ -168,6 +168,10 @@ Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity
 
 Panels render into `#panel-overlay`. Layout is responsive: when wide enough, panels inset beside content; otherwise they overlay as a modal.
 
+**Cursor:** The sidebar column and open panel use `cursor: crosshair` so hovering anywhere in the sidebar surfaces a consistent navigation affordance distinct from the editor cursor.
+
+**Resizable width:** The right edge of the panel overlay exposes a draggable handle that reuses the same invisible-until-approached resizer pattern as the editor column (`editor/modes.js::updateColumnResizers`). A 10px hit zone sits outside the panel edge; pointer-down begins a drag that updates a `--panel-width` CSS custom property and persists the value to `sidebarWidth` in `AppSettings`. The handle is transparent at rest and only paints a thin accent line while hovered/dragging. Minimum and maximum widths match the inset-vs-overlay thresholds used by the responsive layout so the panel never collapses below its content or exceeds the viewport.
+
 ### Files Panel (`sidebar/files-panel.js`)
 
 Nested tree view with four node types:
@@ -178,6 +182,14 @@ Nested tree view with four node types:
 - **Projects** — Ordered containers whose children display as a single document with separators.
 
 Four icon-only "New" buttons (Doc, Notebook, Folder, Project) at the top; the button type is surfaced via tooltip. All types share a hover menu (rename, duplicate, delete). Active item shown bold and underlined. Rendered via the `SortableList` component.
+
+**Row interactions.** A click anywhere on a folder row — including its icon and label — toggles the folder open or closed. This applies uniformly to every container node: regular folders, Projects, **Inbox**, **Images**, and **Trash**. The explicit expand arrow (if present) remains as a visual cue but is no longer the sole hit target. A second click on the already-selected row still enters rename mode via the existing double-click/enter keymap; the toggle only fires on a single click that is not part of a pending rename gesture.
+
+**Hover buttons overlay.** Per-row action buttons (rename, duplicate, delete, hover menu) render as an absolutely-positioned layer above the row rather than as inline flex children. This keeps them out of the row's width calculation so the label text is allotted the full available width regardless of hover state — previously, nested deep rows were truncating labels to leave space for buttons that weren't yet visible. While a row is in rename mode the overlay is hidden (`display: none`) so the input can span the full row width.
+
+**Images folder.** The pinned Images node renders with a photo-frame icon that has a single diagonal slash through it (replacing the previous "X"-like mark). Like Trash, it defaults to collapsed and is only expanded when the user explicitly clicks to open it; the expanded/collapsed state is persisted per-user alongside other sidebar state.
+
+**Flagged bubbling (longview).** The outline view's **Flagged** section walks nested folders so that a folder marked "flagged" lifts all of its descendants into the Flagged list. `longview-parser.js` recurses through children rather than stopping at the first non-document; the resulting entries preserve their indentation depth relative to the flagged ancestor so the hierarchy is still legible inside the Flagged group.
 
 ### Sortable List (`sidebar/sortable-list/`)
 
@@ -255,6 +267,12 @@ When private mode is active, `applyModes()` adds `.private-mode` to `#app` (both
 
 ViewPlugin that shows the current heading hierarchy pinned to the top of the editor (`position: fixed; top: 0`). Collects all headings above `viewport.from` and builds a nested stack. Clicking a header smooth-scrolls to that heading. Syncs left/right padding with the editor scroller. Controlled by the `stickyHeaders` setting.
 
+### Word Count (`editor/plugins/word-count.js`)
+
+Optional live word count pinned to the top of the text column. When `wordCountVisible` is true, a small pill (`#word-count-display`) is absolutely positioned relative to `.cm-scroller`, horizontally centered in the column, and stacked into the same vertical slot used by the Ratchet timer. When Ratchet mode is active the two elements coexist: the timer renders first and the word count renders directly below it, styled identically (same background, padding, typography, and theme variable hookups as `.ratchet-timer`). When Ratchet is off, the word count takes the slot alone.
+
+Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a whitespace-split after stripping comment markers (`%%...%%`), inline code fences, and image markdown — so references don't inflate the count. In project mode the separators are skipped. The plugin reads `wordCountVisible` from state and responds to `settings-changed` / `mode-changed` events; toggling is handled by the `toggleWordCount` command, bound by default to `Cmd+Shift+W` and surfaced in the command palette.
+
 ### Typewriter Mode (`editor/plugins/typewriter.js`)
 
 Locks cursor to a fixed screen position (default 60% from top). Draggable boundary line for repositioning. Extra padding so first/last lines can reach the boundary. Also handles ratchet scroll (pins last line to 50% center).
@@ -312,11 +330,15 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 
 **Z-index layering:** `#pane-container` is `z-index: 90` (above editor content at 0–80, below sidebars at 100+). The notebook container has no z-index to avoid creating a stacking context, allowing the shelf panel (`z-index: 150`) to render above panes.
 
+**Locked styles.** When a document or notebook was saved with "Lock Style to Document" enabled, its tree node stores a `lockedStyleId`. A pane whose `fileId` resolves to a file with a locked style applies that style scoped to the pane element (theme compartment reconfigure for the CodeMirror instance; theme resolve + `HUSH_TO_NOTEBOOK_THEME` lookup for notebook panes) rather than the session-active style. Pane creation and `file-opened` updates both consult the locked style; `style-changed` events only affect panes whose file is unlocked. The scoping lives on `.floating-pane[data-locked-style]` via CSS custom-property overrides so the main editor's style is untouched.
+
 **Drag-from-sidebar integration:** `sortable-list/drag-drop.js` has an `onDragOutside(item, x, y)` callback. In `finishDrag`, the callback fires instead of the normal reorder drop when the pointer is right of the panel overlay AND either Cmd/Ctrl is held OR `forceDragOutside(item)` returns true. `files-panel.js` uses the modifier path for documents and notebooks (creating a floating pane via `createPane()`) and `forceDragOutside` for image rows so they escape the panel without a modifier — `onDragOutside` then calls `dropSidebarImageAt` in `pane/text-drag.js` to insert markdown into the editor or add an `ImageShape` to the notebook under the pointer. `canDropIntoParent` also runs `canDrop` for sibling reorders and root-level drops (not just "drop into" targets), which is how the images-stay-in-Images rule is enforced.
 
 ### Zotero Integration (`zotero.js`)
 
 Citation management. Connects to Zotero API with user key, downloads references with progress tracking, caches locally. Search modal for finding and inserting citations.
+
+**Notebook text shapes.** Insert Reference now works inside notebook text shapes. Previously, opening the search modal blurred the inline textarea overlay (`notebook/ui/text-editor.ts`), which committed the shape and tore down the editor before the citation could be inserted. The fix captures the active text-shape editor (and its selection range) at the moment the search is triggered, suppresses the commit-on-blur path while the modal is open, and on selection inserts the citation text via `TextEditor.insertAtSelection()` before restoring normal blur behavior. From the user's perspective the editor stays focused through the entire Insert Reference round-trip.
 
 ### Dropbox Integration (`sync/dropbox.js`, `sync/dropbox-browser.js`)
 
@@ -327,6 +349,18 @@ Dropbox OAuth PKCE integration for syncing files. `dropbox.js` handles the full 
 Full-library Dropbox synchronization. All documents, folders, and projects are mirrored to a single Dropbox folder. Documents sync as `.md` files (named from document's first line, max 50 chars, special chars stripped). Projects sync as directories containing their child documents plus a `.hushproject` JSON metadata file with ordering. Folder merging handles special nodes (Inbox, Trash) by matching name and ID. Uses SHA256 hashing + timestamps for change detection with "most recent wins" conflict resolution. Polling runs every 10 seconds for content changes and every 60 seconds for structural diffs (new/deleted files). Sync log persists recent activity in settings. Sync is optional — users connect via OAuth in Settings > Sync and can disconnect at any time, choosing to keep or remove Dropbox files.
 
 > **Note on image sync.** Image nodes and their binaries are local-only. The Dropbox scanner walks for `.md`/`.hushnote` files and the sync manifest filters tree nodes to `type: "document"`/`"notebook"`, so neither the Images tree branch nor the files under `files/images/` round-trip through Dropbox — image refs in synced docs will not resolve on other devices until this is extended.
+
+### Local Sync (`sync/local-sync.js`, Rust `sync.rs` watchers)
+
+Desktop-only direct-filesystem folder mounting. A **Local Sync** section in Settings > Sync (rendered below the Dropbox Sync controls) exposes an **Add folder** button plus a list of currently mounted folders. Each mounted folder appears in the files panel as a top-level node with its own icon — a circle bisected by a horizontal line — distinct from regular folders and from the Dropbox root.
+
+Local Sync folders are **outside the internal version-control system**: their contents are not copied into `{data_dir}/files/`, they do not receive `fileId`s in the SQLite snapshot DB, and `snapshots.rs` is never consulted for them. The tree node type for a Local Sync root is `local-sync`; children are resolved lazily from disk on expand. Reads and writes go through Tauri file-system commands (`tauri-plugin-fs`) using the stored absolute path.
+
+**Watchers.** Each mounted folder registers a `notify`-crate watcher in Rust (reusing the infrastructure added for external sync). File-system events emit a `local-sync-changed` Tauri event that the frontend listens to; on receipt, the affected subtree is re-read and the sidebar node is re-rendered. If the currently-open document lives under that subtree, its buffer is updated in place (preserving selection/scroll when the incoming content was produced by the Hush write itself — guarded by a short write-origin flag).
+
+**Unsync behavior.** Removing a Local Sync entry detaches the watcher, removes the root node from the tree, and is strictly non-destructive on disk: no files are deleted, renamed, or modified. This is the key invariant that separates Local Sync from Dropbox Sync's unsync flow (which offers a "keep or remove" choice).
+
+**Settings.** `AppSettings.local_sync_folders: Vec<LocalSyncFolder>` — each entry carries `{ id, path, name, added_at }`. The list persists across restarts; watchers are re-armed on startup. Paths are stored verbatim (not made relative) since the feature is desktop-only and assumes the mount location is stable.
 
 ### Tauri Bridge (`tauri-bridge.js`)
 
@@ -469,6 +503,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Toggle typewriter mode | `Cmd+Shift+T` |
 | Toggle D.R.Y. highlighting | `Cmd+Shift+R` |
 | Toggle focus mode | `Cmd+Shift+Y` |
+| Toggle word count | `Cmd+Shift+W` |
 | New file | `Cmd+N` |
 | Find / replace | `Cmd+F` |
 | Find across files | `Alt+Shift+F` |
