@@ -19,7 +19,7 @@ export const shortcutCategories = [
       { key: "shortcutOpenFullscreen", label: "Open fullscreen" },
       { key: "shortcutTogglePrivate", label: "Toggle private mode" },
       { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
-      { key: "shortcutToggleOutline", label: "Toggle outline view" },
+      { key: "shortcutToggleOutline", label: "Toggle right sidebar (outline / shelf)" },
       { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },

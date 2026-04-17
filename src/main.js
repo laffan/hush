@@ -349,8 +349,13 @@ async function init() {
   });
 
   state.on("toggle-outline-panel", () => {
-    // Don't show outline when a notebook is active
-    if (state.currentNotebookFileId) return;
+    // In notebook mode the right sidebar is the Shelf, not the outline.
+    // Share the keyboard shortcut between the two so it just means
+    // "toggle the right panel" regardless of which mode is active.
+    if (state.currentNotebookFileId) {
+      state.emit("notebook-toggle-shelf");
+      return;
+    }
     const rp = document.getElementById("right-panel-overlay");
     if (!rp) return;
     if (rp.classList.contains("hidden")) {
