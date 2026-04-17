@@ -15,13 +15,13 @@ import { computePocketLayout, getMeasureCtx, hitTestShape, pointInBounds } from 
 import { parseLine, parseText } from "./markdown";
 import type { ResizeHandle } from "./state";
 
-export function findShapeAtPoint(pt: Point, shapes: Shape[]): Shape | null {
+export function findShapeAtPoint(pt: Point, shapes: Shape[], fontFamily?: string): Shape | null {
   for (let i = shapes.length - 1; i >= 0; i--) {
     if (shapes[i].type === "drag-area") continue;
-    if (hitTestShape(pt, shapes[i])) return shapes[i];
+    if (hitTestShape(pt, shapes[i], fontFamily)) return shapes[i];
   }
   for (let i = shapes.length - 1; i >= 0; i--) {
-    if (shapes[i].type === "drag-area" && hitTestShape(pt, shapes[i])) return shapes[i];
+    if (shapes[i].type === "drag-area" && hitTestShape(pt, shapes[i], fontFamily)) return shapes[i];
   }
   return null;
 }

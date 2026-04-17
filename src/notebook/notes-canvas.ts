@@ -264,6 +264,8 @@ export class NotesCanvas {
         gridSpacing: this.state.gridSpacing,
         gridOpacity: this.state.gridOpacity,
         isDragging: this.state.isActiveDrag,
+        pocketProximity: this.state.pocketProximity,
+        pocketInZone: this.state.pocketInZone,
         leftInset: this.state.leftInset,
       });
       this._rafId = requestAnimationFrame(loop);

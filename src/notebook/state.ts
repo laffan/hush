@@ -68,7 +68,7 @@ export class DrawingState extends EventTarget {
   fontFamily = "Inter";
 
   get canvasWidth(): number { return this.canvasEl?.clientWidth || window.innerWidth; }
-  get isActiveDrag(): boolean { return this._showPocketTray; }
+  get isActiveDrag(): boolean { return this._showPocketTray || this.pocketProximity > 0; }
 
   get theme(): CanvasTheme {
     const variant = getEffectiveVariant(this.appearanceMode);
@@ -130,6 +130,13 @@ export class DrawingState extends EventTarget {
   private _pocketDragScreenStart: Point = { x: 0, y: 0 };
   private _showPocketTray = false;
   private _dragHoldTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Proximity-based pocket reveal. Updated on every pointer-move during a drag.
+  // 0 = far away (tray hidden), 1 = cursor inside the pocket zone (full glow).
+  pocketProximity = 0;
+  // True when the cursor is currently inside the pocket drop zone — dragged
+  // shapes should render in "pocket card" style while this is true.
+  pocketInZone = false;
 
   // Batched notification
   private _pendingKeys = new Set<string>();
@@ -278,7 +285,7 @@ export class DrawingState extends EventTarget {
       const cropShape = this.shapes.find((s) => s.id === this.croppingImageId);
       const handleHit = this.hitTestResizeHandles(canvasPt);
       if (!handleHit || handleHit.shapeId !== this.croppingImageId) {
-        if (!cropShape || !hitTestShape(canvasPt, cropShape)) {
+        if (!cropShape || !hitTestShape(canvasPt, cropShape, this.fontFamily)) {
           this.stopCropping();
         }
       }
@@ -294,7 +301,7 @@ export class DrawingState extends EventTarget {
 
     if (this.tool === "text" && !this.brainstormMode) {
       // Text tool (not brainstorm — brainstorm has its own input widget)
-      const hit = findShapeAtPoint(canvasPt, this.shapes);
+      const hit = findShapeAtPoint(canvasPt, this.shapes, this.fontFamily);
       if (hit && hit.type === "text") {
         this.startEditingExistingText(hit);
       } else {
@@ -333,7 +340,7 @@ export class DrawingState extends EventTarget {
         return;
       }
       const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily);
-      const hitShape = findShapeAtPoint(canvasPt, this.shapes.filter((s) => !pocketedIds.has(s.id)));
+      const hitShape = findShapeAtPoint(canvasPt, this.shapes.filter((s) => !pocketedIds.has(s.id)), this.fontFamily);
 
       // Cmd+click on a link: open in browser/app
       if (hitShape && hitShape.type === "text" && (e.metaKey || e.ctrlKey)) {
@@ -359,7 +366,6 @@ export class DrawingState extends EventTarget {
           }
           this._isDragging = true;
           this._dragStart = canvasPt;
-          this._startDragHoldTimer();
 
           if (e.altKey) {
             const currentSelected = this.selectedIds.has(hitShape.id) ? this.selectedIds : new Set(groupMembers);
@@ -397,7 +403,7 @@ export class DrawingState extends EventTarget {
     const rect = this.canvasEl.getBoundingClientRect();
     const screenPt: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const canvasPt = screenToCanvas(screenPt, this.camera);
-    const hit = findShapeAtPoint(canvasPt, this.shapes);
+    const hit = findShapeAtPoint(canvasPt, this.shapes, this.fontFamily);
     if (hit && hit.type === "text") {
       this.startEditingExistingText(hit);
     } else {
@@ -445,6 +451,27 @@ export class DrawingState extends EventTarget {
         this.notify("shapes");
       }
       return;
+    }
+
+    // Pocket proximity: fade the tray in as the drag cursor approaches the
+    // left edge. The tray starts to glow at POCKET_PROXIMITY_RANGE px and
+    // reaches full intensity inside the pocket zone itself.
+    if (this._isDragging && this.selectedIds.size > 0) {
+      const POCKET_PROXIMITY_RANGE = 220;
+      const cursorFromPocket = screenPt.x - this.leftInset;
+      const inZone = cursorFromPocket < POCKET_ZONE_WIDTH;
+      let intensity = 0;
+      if (inZone) {
+        intensity = 1;
+      } else if (cursorFromPocket < POCKET_ZONE_WIDTH + POCKET_PROXIMITY_RANGE) {
+        const t = (cursorFromPocket - POCKET_ZONE_WIDTH) / POCKET_PROXIMITY_RANGE;
+        intensity = Math.max(0, 1 - t);
+      }
+      if (intensity !== this.pocketProximity || inZone !== this.pocketInZone) {
+        this.pocketProximity = intensity;
+        this.pocketInZone = inZone;
+        this.notify("shapes");
+      }
     }
 
     if (this._isDragging && this.tool === "select") {
@@ -520,25 +547,23 @@ export class DrawingState extends EventTarget {
 
     if (this._isDragging) {
       this._isDragging = false;
-      const trayWasVisible = this._showPocketTray;
+      const droppedInPocket = this.pocketInZone;
+      // Reset proximity state — render will hide tray on next frame
+      this.pocketProximity = 0;
+      this.pocketInZone = false;
       this._clearDragHoldTimer();
 
       // Check if items should be pocketed (dropped in pocket zone on left edge)
-      // Only if tray was visible (held for 1+ second)
-      const canvas = this.canvasEl;
-      if (trayWasVisible && canvas) {
-        const rect = canvas.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        if (screenX < POCKET_ZONE_WIDTH + this.leftInset) {
-          this.shapes = this.shapes.map((s) =>
-            this.selectedIds.has(s.id) ? { ...s, pocketed: true } : s,
-          );
-          this.selectedIds = new Set();
-          this.recordHistory();
-          this.notify("shapes");
-          this.notify("selectedIds");
-          return;
-        }
+      // — proximity-based: we pocket whenever the cursor is in the zone on release.
+      if (droppedInPocket) {
+        this.shapes = this.shapes.map((s) =>
+          this.selectedIds.has(s.id) ? { ...s, pocketed: true } : s,
+        );
+        this.selectedIds = new Set();
+        this.recordHistory();
+        this.notify("shapes");
+        this.notify("selectedIds");
+        return;
       }
 
       const dragAreas = this.shapes.filter((s) => s.type === "drag-area");

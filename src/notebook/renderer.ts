@@ -20,6 +20,10 @@ export interface RenderState {
   gridOpacity: number;
   fontFamily: string;
   isDragging: boolean;
+  // Proximity-based pocket reveal. 0 = tray hidden, 1 = cursor inside zone.
+  pocketProximity?: number;
+  // True while the drag cursor sits inside the pocket drop zone.
+  pocketInZone?: boolean;
   leftInset: number;
 }
 
@@ -48,8 +52,13 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     drawBackground(ctx, camera, w, h, theme.foreground, backgroundPattern, gridSpacing, gridOpacity * 0.8);
   }
 
-  // Compute pocket layout once for this frame
-  const pocketLayout = computePocketLayout(shapes, w, state.fontFamily);
+  // Compute pocket layout once for this frame. While the user is dragging
+  // into the pocket zone, treat the selected shapes as already pocketed so
+  // they render in pocket-card style mid-drag.
+  const effectiveShapes = state.pocketInZone && selectedIds.size > 0
+    ? shapes.map((s) => selectedIds.has(s.id) ? { ...s, pocketed: true } : s)
+    : shapes;
+  const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily);
   const pocketedIds = pocketLayout.pocketedIds;
 
   ctx.save();
@@ -123,15 +132,20 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
 
   ctx.restore();
 
-  // Draw pocket tray on left edge, offset by sidebar inset
+  // Draw pocket tray on left edge, offset by sidebar inset.
+  // Proximity-based glow: tray fades in as the drag cursor approaches the
+  // pocket zone. Fully visible inside the zone.
   const hasPocketed = pocketLayout.entries.length > 0;
   const leftInset = state.leftInset || 0;
-  if (hasPocketed || state.isDragging) {
-    drawPocketTray(ctx, w, h, state.isDragging, hasPocketed, leftInset);
+  const proximity = state.pocketProximity ?? (state.isDragging ? 1 : 0);
+  if (hasPocketed || proximity > 0) {
+    drawPocketTray(ctx, w, h, state.isDragging, hasPocketed, leftInset, proximity);
   }
 
-  // Draw pocketed shapes at fixed screen positions, offset by sidebar inset
-  if (hasPocketed) {
+  // Draw pocketed shapes at fixed screen positions, offset by sidebar inset.
+  // Also includes the in-flight selected shapes when the cursor is in the
+  // zone (via effectiveShapes above).
+  if (pocketLayout.entries.length > 0) {
     ctx.save();
     ctx.translate(leftInset, 0);
     drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache);
@@ -404,17 +418,30 @@ function drawCropOverlay(ctx: CanvasRenderingContext2D, shape: ImageShape, zoom:
 const POCKET_BLUE = "rgba(66, 153, 225, 0.18)";
 const POCKET_BLUE_HIGHLIGHT = "rgba(66, 153, 225, 0.30)";
 
-function drawPocketTray(ctx: CanvasRenderingContext2D, _w: number, h: number, isDragging: boolean, hasPocketed: boolean, leftInset = 0) {
+function drawPocketTray(
+  ctx: CanvasRenderingContext2D, _w: number, h: number,
+  isDragging: boolean, hasPocketed: boolean, leftInset = 0,
+  proximity = 0,
+) {
   ctx.save();
   const x = leftInset;
-  ctx.fillStyle = isDragging ? POCKET_BLUE_HIGHLIGHT : POCKET_BLUE;
+  // Base tray fill — blends from idle to highlight based on proximity.
+  const baseAlpha = 0.18;
+  const hiAlpha = 0.30;
+  const trayAlpha = isDragging
+    ? baseAlpha + (hiAlpha - baseAlpha) * proximity
+    : baseAlpha;
+  ctx.fillStyle = `rgba(66, 153, 225, ${trayAlpha.toFixed(3)})`;
   ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
-  if (isDragging) {
-    const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_ZONE_WIDTH, 0);
-    gradient.addColorStop(0, "rgba(66, 153, 225, 0.10)");
+  if (isDragging && proximity > 0) {
+    // Glow extends further from the tray as proximity grows — this gives the
+    // "pulls you in as you get close" feel the user asked for.
+    const reach = POCKET_ZONE_WIDTH - POCKET_TRAY_WIDTH + 40 * proximity;
+    const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_TRAY_WIDTH + reach, 0);
+    gradient.addColorStop(0, `rgba(66, 153, 225, ${(0.10 + 0.20 * proximity).toFixed(3)})`);
     gradient.addColorStop(1, "transparent");
     ctx.fillStyle = gradient;
-    ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, POCKET_ZONE_WIDTH - POCKET_TRAY_WIDTH, h);
+    ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, reach, h);
   } else if (hasPocketed) {
     const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_TRAY_WIDTH + 6, 0);
     gradient.addColorStop(0, "rgba(66, 153, 225, 0.06)");

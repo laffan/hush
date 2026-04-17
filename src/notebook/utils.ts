@@ -189,11 +189,15 @@ export function pointInBounds(
 
 // === Hit testing ===
 
-export function hitTestShape(point: Point, shape: Shape): boolean {
+export function hitTestShape(point: Point, shape: Shape, fontFamily?: string): boolean {
   if (shape.type === "draw") {
     return distanceToStroke(point, shape.points) < 12;
   }
-  return pointInBounds(point, getShapeBounds(shape), 4);
+  // Pass fontFamily so text bounds match the rendered size — otherwise
+  // headings (parsed with sizeScale > 1) are hit-tested against bounds
+  // measured with the wrong font, and the clickable area ends up smaller
+  // than the rendered text.
+  return pointInBounds(point, getShapeBounds(shape, fontFamily), 4);
 }
 
 export function distanceToStroke(point: Point, points: Point[]): number {
