@@ -187,7 +187,17 @@ export function createFilesPanel(container, state, hidePanel) {
       }
     },
 
+    // Images can always escape the panel (no Cmd required) so the drop
+    // lands in whatever editor/notebook is under the pointer.
+    forceDragOutside: (item) => item && item.type === "image",
+
     onDragOutside: (item, clientX, clientY) => {
+      if (item.type === "image" && item.fileId) {
+        import("../pane/text-drag.js").then(({ dropSidebarImageAt }) => {
+          dropSidebarImageAt(item.fileId, clientX, clientY);
+        });
+        return;
+      }
       if ((item.type === "document" || item.type === "notebook") && item.fileId) {
         createPane(item.fileId, item.name, item.type, clientX, clientY);
       }

@@ -468,6 +468,51 @@ function insertImageIntoNotebook(state, canvasEl, image, clientX, clientY) {
   state.addImageShape(image.dataUrl, image.name || "image", w, h, pos);
 }
 
+/**
+ * Sidebar → Editor/Notebook: drop an Images-folder entry directly at the
+ * pointer location. Resolves the target from `elementsFromPoint`, so it
+ * works for the main editor, doc panes, the main notebook, and notebook
+ * panes without wiring extra listeners.
+ */
+export async function dropSidebarImageAt(filename, clientX, clientY) {
+  if (!filename) return;
+  const target = findDropTarget(clientX, clientY);
+  if (!target) return;
+  focusPaneIfInside(targetElementOf(target));
+  const { getImageDataUrl, buildImageMarkdown } = await import("../state/state-images.js");
+  const dataUrl = await getImageDataUrl(filename);
+  if (!dataUrl) return;
+  if (target.kind === "cm") {
+    const alt = filename.replace(/\.[^.]+$/, "") || "image";
+    const md = buildImageMarkdown(alt, filename);
+    insertImageMarkdownAt(target.view, md, clientX, clientY);
+    const state = await getAppState();
+    if (state) state.markDirty();
+  } else if (target.kind === "nb") {
+    const dims = await loadImageDimensions(dataUrl);
+    insertImageIntoNotebook(
+      target.state, target.canvasEl,
+      { dataUrl, name: filename, width: dims.width, height: dims.height },
+      clientX, clientY,
+    );
+  }
+}
+
+function insertImageMarkdownAt(view, md, clientX, clientY) {
+  let pos = view.posAtCoords({ x: clientX, y: clientY });
+  if (pos == null) pos = view.posAtCoords({ x: clientX, y: clientY }, false);
+  if (pos == null) pos = view.state.selection.main.head;
+  const line = view.state.doc.lineAt(pos);
+  const prefix = pos === line.from ? "" : "\n";
+  const suffix = pos === line.to ? "\n" : "\n";
+  const insert = prefix + md + suffix;
+  view.dispatch({
+    changes: { from: pos, to: pos, insert },
+    selection: { anchor: pos + insert.length },
+  });
+  view.focus();
+}
+
 function loadImageDimensions(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();

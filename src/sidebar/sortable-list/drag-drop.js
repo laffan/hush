@@ -327,10 +327,13 @@ function finishDrag(pointerEvent) {
 
   const { originElement, ghost, dropTarget, originPath, originParentPath, originIndex, autoExpandedIds, highlightedParent, draggedItem } = this.dragSession;
 
-  // Check if the item was dragged outside the sidebar/panel while Cmd/Ctrl
-  // is held — this takes priority over normal reorder drops.
+  // Check if the item was dragged outside the sidebar/panel. Cmd/Ctrl
+  // elevates any item into a drag-out (used for floating panes), and
+  // `forceDragOutside(item)` lets specific item types — e.g. sidebar
+  // images destined for an editor or notebook — skip the modifier.
+  const forceAllowed = this.config.forceDragOutside?.(draggedItem) === true;
   if (pointerEvent && this.config.onDragOutside && draggedItem &&
-      (pointerEvent.metaKey || pointerEvent.ctrlKey)) {
+      (forceAllowed || pointerEvent.metaKey || pointerEvent.ctrlKey)) {
     const panelOverlay = this.container.closest("#panel-overlay");
     const rect = panelOverlay?.getBoundingClientRect();
     if (rect && pointerEvent.clientX > rect.right) {
