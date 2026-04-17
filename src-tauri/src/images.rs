@@ -43,8 +43,11 @@ impl ImageManager {
     ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
         let (mime, bytes) = decode_data_url(data_url)?;
         let base = sanitize_filename(filename);
-        let ext = pick_extension(&base, &mime);
-        let final_name = self.unique_filename(&base, &ext);
+        let (stem, mut ext) = split_name(&base);
+        if ext.is_empty() {
+            ext = ext_for_mime(&mime).unwrap_or("bin").to_string();
+        }
+        let final_name = self.unique_filename(&stem, &ext);
         let path = self.resolve_path(&final_name)?;
         fs::write(&path, &bytes)?;
         Ok(ImageSaved {
@@ -108,16 +111,12 @@ impl ImageManager {
         let src = self.resolve_path(old_name)?;
         if !src.exists() { return Err("image not found".into()); }
         let sanitized = sanitize_filename(new_name);
-        // Preserve the original extension when the new name lacks one.
-        let final_name = if Path::new(&sanitized).extension().is_none() {
-            let old_ext = ext_for_path(&src).unwrap_or_default();
-            if !old_ext.is_empty() { format!("{}.{}", sanitized, old_ext) } else { sanitized }
-        } else {
-            sanitized
-        };
-        let base = Path::new(&final_name).file_stem().and_then(|s| s.to_str()).unwrap_or("image").to_string();
-        let ext = Path::new(&final_name).extension().and_then(|s| s.to_str()).unwrap_or("").to_string();
-        let final_name = self.unique_filename(&base, &ext);
+        let (stem, mut ext) = split_name(&sanitized);
+        if ext.is_empty() {
+            // Preserve the original extension when the new name dropped it.
+            ext = ext_for_path(&src).unwrap_or_default();
+        }
+        let final_name = self.unique_filename(&stem, &ext);
         let dst = self.resolve_path(&final_name)?;
         fs::rename(&src, &dst)?;
         Ok(final_name)
@@ -158,11 +157,11 @@ pub fn sanitize_filename(name: &str) -> String {
     if cleaned.is_empty() { "image".to_string() } else { cleaned }
 }
 
-fn pick_extension(name: &str, mime: &str) -> String {
-    if let Some(ext) = Path::new(name).extension().and_then(|s| s.to_str()) {
-        return ext.to_ascii_lowercase();
-    }
-    ext_for_mime(mime).unwrap_or("bin").to_string()
+fn split_name(name: &str) -> (String, String) {
+    let p = Path::new(name);
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
+    let ext = p.extension().and_then(|s| s.to_str()).map(|s| s.to_ascii_lowercase()).unwrap_or_default();
+    (stem, ext)
 }
 
 fn decode_data_url(s: &str) -> Result<(String, Vec<u8>), Box<dyn std::error::Error>> {

@@ -427,6 +427,9 @@ function refreshList(state) {
     sortableInstance.setData(sorted);
   }
   renderFlaggedSection(state);
+  // Any rows we might have had a tooltip open over may have been re-
+  // rendered or removed — drop the tooltip so it can't linger.
+  import("../editor/image-preview.js").then(({ hideImageTooltip }) => hideImageTooltip());
 }
 
 function handleRename(nodeId, triggerEl, state) {

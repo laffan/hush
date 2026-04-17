@@ -6,7 +6,7 @@
  */
 
 import { createPaneEditor } from "./pane-editor.js";
-import { attachEditorTextDrag, attachNotebookTextShapeDrag } from "./text-drag.js";
+import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -632,7 +632,7 @@ async function loadNotebookPane(pane) {
   pane._mainNbSyncHandler = () => syncNotebookToPane(pane);
   appState.on("notebook-shapes-changed", pane._mainNbSyncHandler);
 
-  // Cmd+drag a text shape out of this notebook pane to drop into an editor.
+  // Cmd+drag text or image shapes out of this notebook pane.
   const nbCanvas = pane._content.querySelector("canvas");
   if (nbCanvas && pane.notebook) {
     try {
@@ -650,8 +650,20 @@ async function loadNotebookPane(pane) {
         },
         () => { pane.dirty = true; },
       );
+      attachNotebookImageShapeDrag(
+        nbCanvas,
+        pane._content,
+        pane.notebook.state,
+        {
+          findImageShapeAt: (shapes, pt) => {
+            const hit = findShapeAtPoint(pt, shapes, pane.notebook.state.fontFamily);
+            return hit && hit.type === "image" ? hit : null;
+          },
+        },
+        () => { pane.dirty = true; },
+      );
     } catch (e) {
-      console.error("Failed to wire notebook pane text-drag:", e);
+      console.error("Failed to wire notebook pane drag:", e);
     }
   }
 }

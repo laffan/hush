@@ -159,6 +159,9 @@ async function handleOAuthCode(state, invoke, code) {
 async function init() {
   const state = new AppState();
   await state.init();
+  // Expose on window so lazy helpers (e.g. pane/text-drag.js's notebook-to-
+  // doc image path) can reach the live AppState without a hard import cycle.
+  if (typeof window !== "undefined") window.__hushState__ = state;
 
   // On iOS, set html background to prevent black bars behind the webview
   if (isIOS()) {

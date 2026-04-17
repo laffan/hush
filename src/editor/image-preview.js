@@ -14,6 +14,25 @@ let tooltipEl = null;
 let tooltipToken = 0;
 let currentHoverEl = null;
 let hoverTimer = null;
+let connectivityWatch = null;
+
+function cancelConnectivityWatch() {
+  if (connectivityWatch) {
+    cancelAnimationFrame(connectivityWatch);
+    connectivityWatch = null;
+  }
+}
+
+/** Hide the tooltip the moment its source element leaves the DOM. */
+function startConnectivityWatch(el) {
+  cancelConnectivityWatch();
+  const tick = () => {
+    connectivityWatch = null;
+    if (!el || !el.isConnected) { hideImageTooltip(); return; }
+    connectivityWatch = requestAnimationFrame(tick);
+  };
+  connectivityWatch = requestAnimationFrame(tick);
+}
 
 function ensureTooltip() {
   if (tooltipEl) return tooltipEl;
@@ -40,10 +59,11 @@ export function hideImageTooltip() {
   clearTimeout(hoverTimer);
   currentHoverEl = null;
   tooltipToken++;
+  cancelConnectivityWatch();
   if (tooltipEl) tooltipEl.classList.add("hidden");
 }
 
-async function showImageTooltip(filename, name, x, y) {
+async function showImageTooltip(source, filename, name, x, y) {
   const el = ensureTooltip();
   const token = ++tooltipToken;
   const img = el.querySelector("img");
@@ -52,10 +72,13 @@ async function showImageTooltip(filename, name, x, y) {
   const dataUrl = await getImageDataUrl(filename);
   if (token !== tooltipToken) return; // superseded
   if (!dataUrl) return;
+  // Source element may have been removed between the hover delay and the
+  // data-URL resolving (e.g. the user deleted the image).
+  if (source && !source.isConnected) return;
   img.src = dataUrl;
   el.classList.remove("hidden");
-  // Wait for layout so we can size properly.
   requestAnimationFrame(() => positionTooltip(x, y));
+  startConnectivityWatch(source);
 }
 
 /**
@@ -70,7 +93,9 @@ export function attachImageHoverTooltip(el, filename, name) {
     lastX = e.clientX; lastY = e.clientY;
     clearTimeout(hoverTimer);
     hoverTimer = setTimeout(() => {
-      if (currentHoverEl === el) showImageTooltip(filename, name, lastX, lastY);
+      if (currentHoverEl === el && el.isConnected) {
+        showImageTooltip(el, filename, name, lastX, lastY);
+      }
     }, 220);
   };
   const onMove = (e) => {

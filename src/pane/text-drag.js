@@ -44,12 +44,14 @@ export function registerNotebookDropTarget(canvasEl, state) {
  *   Called after a successful drop, with `true` when the source should be
  *   removed (Shift was held at pointerup).
  */
-export function startTextDrag({ text, shapes, anchorId, initialEvent, onDrop }) {
+export function startTextDrag({ text, shapes, anchorId, image, initialEvent, onDrop }) {
   // Normalise: derive the text payload from shapes when needed, ordered
   // top-to-bottom / left-to-right so CM drops land in reading order.
   const hasShapes = Array.isArray(shapes) && shapes.length > 0;
-  const joined = hasShapes ? joinShapesForText(shapes) : (text || "");
-  if (active || !joined) return;
+  const fallbackText = image && !text ? `![${image.name || "image"}](${image.name || "image"})` : (text || "");
+  const joined = hasShapes ? joinShapesForText(shapes) : fallbackText;
+  if (active) return;
+  if (!joined && !image) return;
 
   // Inactive panes disable pointer-events on their content (see
   // floating-pane.css), which would also hide them from elementFromPoint
@@ -62,7 +64,14 @@ export function startTextDrag({ text, shapes, anchorId, initialEvent, onDrop }) 
   // but nested stacking contexts can still mask a body-level child).
   const ghost = document.createElement("div");
   ghost.className = "text-drag-ghost";
-  ghost.textContent = ghostPreview(hasShapes ? shapes : null, joined);
+  if (image && image.dataUrl) {
+    ghost.classList.add("text-drag-ghost-image");
+    const img = document.createElement("img");
+    img.src = image.dataUrl;
+    ghost.appendChild(img);
+  } else {
+    ghost.textContent = ghostPreview(hasShapes ? shapes : null, joined);
+  }
   ghost.style.left = initialEvent.clientX + 12 + "px";
   ghost.style.top = initialEvent.clientY + 12 + "px";
   document.documentElement.appendChild(ghost);
@@ -127,17 +136,26 @@ export function startTextDrag({ text, shapes, anchorId, initialEvent, onDrop }) 
     // something behind the pane and the drop would silently no-op.
     const target = moved ? findDropTarget(e.clientX, e.clientY) : null;
     cleanup();
-    if (!target) return;
+    if (!target) { if (onDrop) onDrop(false); return; }
 
     // If the drop landed inside a floating pane, activate that pane first
     // so its editor becomes editable and focused. The pane's own
     // pointerdown handler wires focusPane() via this synthetic event.
     focusPaneIfInside(targetElementOf(target));
+    // Routing — keep sync paths sync; async paths fire-and-forget.
     if (target.kind === "cm") {
-      insertIntoEditor(target.view, joined, e.clientX, e.clientY);
+      if (image) {
+        insertImageIntoEditor(target.view, image, e.clientX, e.clientY);
+      } else {
+        insertIntoEditor(target.view, joined, e.clientX, e.clientY);
+      }
     } else if (target.kind === "nb") {
-      if (hasShapes) {
+      if (image) {
+        insertImageIntoNotebook(target.state, target.canvasEl, image, e.clientX, e.clientY);
+      } else if (hasShapes) {
         insertShapesIntoNotebook(target.state, target.canvasEl, shapes, anchorId, e.clientX, e.clientY);
+      } else if (isSingleImageRef(joined)) {
+        insertImageRefIntoNotebook(target.state, target.canvasEl, joined, e.clientX, e.clientY);
       } else {
         insertTextIntoNotebook(target.state, target.canvasEl, joined, e.clientX, e.clientY);
       }
@@ -381,6 +399,162 @@ function generateShapeId() {
   // Mirror notebook/utils.ts generateId — millisecond ts plus randomness
   // is enough; collisions across independent canvases are inconsequential.
   return Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
+}
+
+const IMAGE_REF_RE = /^!\[[^\]]*\]\(\s*[^)\s"]+(?:\s+"[^"]*")?\s*\)$/;
+
+function isSingleImageRef(text) {
+  return typeof text === "string" && IMAGE_REF_RE.test(text.trim());
+}
+
+function parseImageMarkdown(text) {
+  const m = text.trim().match(/^!\[([^\]]*)\]\(\s*([^)\s"]+)(?:\s+"[^"]*")?\s*\)$/);
+  if (!m) return null;
+  return { rawAlt: m[1], url: m[2], filename: m[2].replace(/^images\//, "") };
+}
+
+/** Doc → Notebook: resolve the referenced image and drop it as an ImageShape. */
+async function insertImageRefIntoNotebook(state, canvasEl, text, clientX, clientY) {
+  const parsed = parseImageMarkdown(text);
+  if (!parsed) return;
+  try {
+    const { getImageDataUrl } = await import("../state/state-images.js");
+    const dataUrl = await getImageDataUrl(parsed.filename);
+    if (!dataUrl) {
+      state.addTextShapeAtPosition(text, screenToCanvasPt(state, canvasEl, clientX, clientY));
+      return;
+    }
+    const dims = await loadImageDimensions(dataUrl);
+    const pos = screenToCanvasPt(state, canvasEl, clientX, clientY);
+    if (typeof state.addImageShape === "function") {
+      state.addImageShape(dataUrl, parsed.filename, dims.width, dims.height, pos);
+    }
+  } catch (_) { /* ignore — leave the canvas untouched on failure */ }
+}
+
+/** Notebook → Doc: save the shape's image to the Images folder, insert markdown. */
+async function insertImageIntoEditor(view, image, clientX, clientY) {
+  if (!image || !image.dataUrl) return;
+  try {
+    const state = await getAppState();
+    if (!state) return;
+    const res = await saveDataUrlAsImageNode(state, image.name, image.dataUrl);
+    if (!res) return;
+    const md = `![${(res.alt || image.name || "image").replace(/[\[\]]/g, "")}](${res.filename})`;
+    let pos = view.posAtCoords({ x: clientX, y: clientY });
+    if (pos == null) pos = view.posAtCoords({ x: clientX, y: clientY }, false);
+    if (pos == null) pos = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(pos);
+    const prefix = pos === line.from ? "" : "\n";
+    const suffix = pos === line.to ? "\n" : "\n";
+    const insert = prefix + md + suffix;
+    view.dispatch({
+      changes: { from: pos, to: pos, insert },
+      selection: { anchor: pos + insert.length },
+    });
+    view.focus();
+    state.markDirty();
+  } catch (e) { console.error("Image drop into editor failed:", e); }
+}
+
+/** Notebook → Notebook: add the image as a new ImageShape at the drop point. */
+function insertImageIntoNotebook(state, canvasEl, image, clientX, clientY) {
+  if (!image || !image.dataUrl || typeof state.addImageShape !== "function") return;
+  const pos = screenToCanvasPt(state, canvasEl, clientX, clientY);
+  const w = image.width > 0 ? image.width : 400;
+  const h = image.height > 0 ? image.height : 400;
+  state.addImageShape(image.dataUrl, image.name || "image", w, h, pos);
+}
+
+function loadImageDimensions(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || 400, height: img.naturalHeight || 400 });
+    img.onerror = () => resolve({ width: 400, height: 400 });
+    img.src = dataUrl;
+  });
+}
+
+async function getAppState() {
+  // The main-process AppState instance is exposed on window by main.js.
+  // If it isn't there (first seconds of startup), bail out.
+  return typeof window !== "undefined" ? window.__hushState__ || null : null;
+}
+
+async function saveDataUrlAsImageNode(state, rawName, dataUrl) {
+  const { AppState } = await import("../state/state.js");
+  const { findNode } = await import("../state/tree-helpers.js");
+  const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+  const baseName = (rawName || "image").replace(/^.*[\\/]/, "") || "image";
+  let finalName = baseName;
+  if (IS_TAURI) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const saved = await invoke("save_image", { filename: baseName, dataUrl });
+      finalName = saved.filename;
+    } catch (e) { console.error("save_image failed:", e); return null; }
+  }
+  const images = findNode(state.fileTree, AppState.IMAGES_ID);
+  if (images) {
+    const already = (images.children || []).some((c) => c.type === "image" && c.fileId === finalName);
+    if (!already) {
+      (images.children || (images.children = [])).push({
+        id: crypto.randomUUID(),
+        type: "image",
+        name: finalName,
+        fileId: finalName,
+        children: [],
+        flagged: false,
+      });
+      await state.saveFileTree();
+      state.emit("files-changed");
+    }
+  }
+  const { clearImageCache } = await import("../state/state-images.js");
+  clearImageCache(finalName);
+  return { filename: finalName, alt: finalName.replace(/\.[^.]+$/, "") };
+}
+
+/**
+ * Wire a notebook canvas as a source for Cmd+drag of image shapes.
+ * Returns an unregister function.
+ */
+export function attachNotebookImageShapeDrag(canvasEl, containerEl, state, helpers, markDirty) {
+  const handler = (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    if (e.button !== 0) return;
+    if (!(e.target instanceof Node) || !canvasEl.contains(e.target)) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const canvasPt = {
+      x: (e.clientX - rect.left - state.camera.x) / state.camera.zoom,
+      y: (e.clientY - rect.top - state.camera.y) / state.camera.zoom,
+    };
+    const hit = helpers.findImageShapeAt(state.shapes, canvasPt);
+    if (!hit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    startTextDrag({
+      image: {
+        dataUrl: hit.dataUrl,
+        name: hit.name || "image",
+        width: hit.width,
+        height: hit.height,
+      },
+      initialEvent: e,
+      onDrop: (deleteSource) => {
+        if (!deleteSource) return;
+        state.shapes = state.shapes.filter((s) => s.id !== hit.id);
+        state.selectedIds = new Set();
+        state.notify("shapes");
+        state.notify("selectedIds");
+        state.recordHistory();
+        if (markDirty) markDirty();
+      },
+    });
+  };
+  containerEl.addEventListener("pointerdown", handler, true);
+  return () => containerEl.removeEventListener("pointerdown", handler, true);
 }
 
 /** If `el` lives inside a .floating-pane, trigger its pane's focus logic

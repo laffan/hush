@@ -76,13 +76,13 @@ export async function mountNotebook(container, fileId, state) {
     if (_appState) _appState.emit("notebook-shapes-changed");
   });
 
-  // Wire cmd-drag of text shapes out of the main notebook, same as panes.
+  // Wire cmd-drag of text and image shapes out of the main notebook.
   try {
-    const { attachNotebookTextShapeDrag } = await import("../pane/text-drag.js");
+    const { attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } = await import("../pane/text-drag.js");
     const { findShapeAtPoint, hitTestLink } = await import("./state-helpers.ts");
     const canvasEl = container.querySelector("canvas");
     if (canvasEl) {
-      _mainDragCleanup = attachNotebookTextShapeDrag(
+      const txtCleanup = attachNotebookTextShapeDrag(
         canvasEl,
         container,
         canvasInstance.state,
@@ -95,9 +95,22 @@ export async function mountNotebook(container, fileId, state) {
         },
         () => { notebookDirty = true; },
       );
+      const imgCleanup = attachNotebookImageShapeDrag(
+        canvasEl,
+        container,
+        canvasInstance.state,
+        {
+          findImageShapeAt: (shapes, pt) => {
+            const hit = findShapeAtPoint(pt, shapes, canvasInstance.state.fontFamily);
+            return hit && hit.type === "image" ? hit : null;
+          },
+        },
+        () => { notebookDirty = true; },
+      );
+      _mainDragCleanup = () => { txtCleanup && txtCleanup(); imgCleanup && imgCleanup(); };
     }
   } catch (e) {
-    console.error("Failed to wire main notebook text-drag:", e);
+    console.error("Failed to wire main notebook drag:", e);
   }
 
   return canvasInstance;

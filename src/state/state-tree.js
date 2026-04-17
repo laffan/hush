@@ -38,6 +38,13 @@ export async function deleteTreeNode(state, nodeId) {
   if (!node) return;
   if (state.isInTrash(nodeId)) return permanentDeleteNode(state, nodeId);
   await state.syncDeleteNode(nodeId);
+  // Purge any markdown refs to deleted images before detaching the node
+  // so the regex still has the filenames in the tree snapshot.
+  const { imageFileIds: removedImageIds } = collectTypedFileIds(node);
+  if (removedImageIds.length) {
+    const { removeImageRefs } = await import("./state-images.js");
+    await removeImageRefs(state, removedImageIds);
+  }
   const removed = removeNode(state.fileTree, nodeId);
   if (removed) {
     clearFlaggedRecursive(removed);

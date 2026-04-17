@@ -179,6 +179,49 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Build a regex that matches every markdown image ref to any of the
+ *  given filenames (both bare and `images/{filename}` forms). If the
+ *  match is the only non-whitespace content on its line, the whole line
+ *  is consumed (including the trailing newline) so removal doesn't leave
+ *  a blank line behind. */
+function removalRegex(filenames) {
+  const alts = filenames.map(escapeRegex).join("|");
+  // Group 1 captures the image syntax; we let the engine decide between
+  // line-consuming and inline match via two alternatives.
+  const pattern = `(?:^[ \\t]*!\\[[^\\]]*\\]\\(\\s*(?:images/)?(?:${alts})(?:\\s*"[^"]*")?\\s*\\)[ \\t]*\\n?)|!\\[[^\\]]*\\]\\(\\s*(?:images/)?(?:${alts})(?:\\s*"[^"]*")?\\s*\\)`;
+  return new RegExp(pattern, "gm");
+}
+
+/**
+ * Remove every markdown image ref to any of `filenames` from every doc
+ * in the tree. Updates the currently-open editor buffer too.
+ */
+export async function removeImageRefs(state, filenames) {
+  if (!filenames?.length) return;
+  const re = removalRegex(filenames);
+  const docFileIds = collectDocIds(state.fileTree);
+  for (const fileId of docFileIds) {
+    if (fileId === state.currentFileId && state.editor) {
+      const cur = state.editor.getContent();
+      const updated = cur.replace(re, "");
+      if (updated !== cur) {
+        state.editor.setContent(updated);
+        state.markDirty();
+        await state.saveCurrentFile();
+      }
+      continue;
+    }
+    if (!IS_TAURI) continue;
+    try {
+      const file = await tauriInvoke("load_file", { id: fileId });
+      const updated = file.content.replace(re, "");
+      if (updated !== file.content) {
+        await tauriInvoke("save_file", { id: fileId, content: updated });
+      }
+    } catch (e) { /* skip files that fail to load */ }
+  }
+}
+
 /**
  * Resolve a filename to a data URL, caching the result.
  */
@@ -209,10 +252,11 @@ export function isLocalImageRef(state, url) {
   return !!findImageNode(state, filename);
 }
 
-/** Find an image tree node by filename. */
+/** Find an image tree node by filename (trashed images are excluded). */
 export function findImageNode(state, filename) {
   function walk(nodes) {
     for (const n of nodes || []) {
+      if (n.id === "__trash__") continue;
       if (n.type === "image" && n.fileId === filename) return n;
       const r = walk(n.children);
       if (r) return r;
