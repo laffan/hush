@@ -454,10 +454,10 @@ export class DrawingState extends EventTarget {
     }
 
     // Pocket proximity: fade the tray in as the drag cursor approaches the
-    // left edge. The tray starts to glow at POCKET_PROXIMITY_RANGE px and
-    // reaches full intensity inside the pocket zone itself.
+    // left edge. Fully hidden at > 300px, fully visible once the cursor is
+    // over the pocket itself.
     if (this._isDragging && this.selectedIds.size > 0) {
-      const POCKET_PROXIMITY_RANGE = 220;
+      const POCKET_PROXIMITY_RANGE = 300;
       const cursorFromPocket = screenPt.x - this.leftInset;
       const inZone = cursorFromPocket < POCKET_ZONE_WIDTH;
       let intensity = 0;

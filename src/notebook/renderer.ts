@@ -425,29 +425,22 @@ function drawPocketTray(
 ) {
   ctx.save();
   const x = leftInset;
-  // Base tray fill — blends from idle to highlight based on proximity.
-  const baseAlpha = 0.18;
-  const hiAlpha = 0.30;
-  const trayAlpha = isDragging
-    ? baseAlpha + (hiAlpha - baseAlpha) * proximity
-    : baseAlpha;
-  ctx.fillStyle = `rgba(66, 153, 225, ${trayAlpha.toFixed(3)})`;
-  ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
-  if (isDragging && proximity > 0) {
-    // Glow extends further from the tray as proximity grows — this gives the
-    // "pulls you in as you get close" feel the user asked for.
-    const reach = POCKET_ZONE_WIDTH - POCKET_TRAY_WIDTH + 40 * proximity;
-    const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_TRAY_WIDTH + reach, 0);
-    gradient.addColorStop(0, `rgba(66, 153, 225, ${(0.10 + 0.20 * proximity).toFixed(3)})`);
-    gradient.addColorStop(1, "transparent");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, reach, h);
-  } else if (hasPocketed) {
-    const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_TRAY_WIDTH + 6, 0);
-    gradient.addColorStop(0, "rgba(66, 153, 225, 0.06)");
-    gradient.addColorStop(1, "transparent");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, 6, h);
+  // While dragging, the tray fades in with proximity (0 when far, 0.5 over
+  // the pocket itself). Outside of drags, use the idle/hasPocketed treatment.
+  if (isDragging) {
+    ctx.globalAlpha = 0.5 * proximity;
+    ctx.fillStyle = POCKET_BLUE;
+    ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
+  } else {
+    ctx.fillStyle = POCKET_BLUE;
+    ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
+    if (hasPocketed) {
+      const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_TRAY_WIDTH + 6, 0);
+      gradient.addColorStop(0, "rgba(66, 153, 225, 0.06)");
+      gradient.addColorStop(1, "transparent");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, 6, h);
+    }
   }
   ctx.restore();
 }
