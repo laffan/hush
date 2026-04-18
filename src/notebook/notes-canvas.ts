@@ -204,6 +204,13 @@ export class NotesCanvas {
     if (this._cleanupDropTarget) this._cleanupDropTarget();
     this.container.innerHTML = "";
     if (lastActiveNotebook === this) lastActiveNotebook = null;
+    // The text-editor mirrors its active handle onto window for
+    // synchronous lookups (command palette, Zotero modal). Clear it on
+    // teardown so later code doesn't reach a handle whose textarea was
+    // just removed from the DOM.
+    if (typeof window !== "undefined") {
+      (window as unknown as { __activeNotebookTextEditor: unknown }).__activeNotebookTextEditor = null;
+    }
     // Clear the pattern colour so the sidebar border disappears when we leave
     // the notebook view.
     document.documentElement.style.setProperty("--notebook-pattern-color", "transparent");

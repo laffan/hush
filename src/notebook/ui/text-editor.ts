@@ -24,6 +24,17 @@ export function getActiveNotebookTextEditor(): ActiveNotebookTextEditor | null {
   return _activeNotebookTextEditor;
 }
 
+/** Mirror the active handle onto `window` so consumers that can't do an
+ *  async `import()` before focus-stealing (e.g. the command palette,
+ *  which needs to suspend commit-on-blur before its own input focuses)
+ *  can reach it synchronously. */
+function setActiveHandle(handle: ActiveNotebookTextEditor | null) {
+  _activeNotebookTextEditor = handle;
+  if (typeof window !== "undefined") {
+    (window as unknown as { __activeNotebookTextEditor: ActiveNotebookTextEditor | null }).__activeNotebookTextEditor = handle;
+  }
+}
+
 export function createTextEditor(state: DrawingState): HTMLElement {
   const container = h("div", { style: { position: "absolute", top: "0", left: "0", width: "0", height: "0", overflow: "visible", zIndex: "200", pointerEvents: "none" } });
 
@@ -98,13 +109,15 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   function update() {
     if (!state.editingText) {
       textarea.style.display = "none";
-      if (_activeNotebookTextEditor === handle) _activeNotebookTextEditor = null;
+      if (_activeNotebookTextEditor === handle) setActiveHandle(null);
       commitSuspended = false;
       return;
     }
     // Register this editor as the globally-active notebook text editor so
-    // outside callers (like the Zotero modal) can find it.
-    _activeNotebookTextEditor = handle;
+    // outside callers (like the Zotero modal, the command palette) can
+    // find it — both via the exported accessor and synchronously via
+    // `window.__activeNotebookTextEditor`.
+    setActiveHandle(handle);
 
     const et = state.editingText;
     const scaledFontSize = et.fontSize * state.camera.zoom;

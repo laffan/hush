@@ -24,7 +24,10 @@
   color: var(--fg);
 }
 
-.sl-item:hover {
+/* Use the `.sl-hovered` class — managed in rendering.js so only the
+   innermost row under the mouse carries it — instead of `:hover`,
+   which would cascade the tint up through every ancestor folder. */
+.sl-item.sl-hovered {
   background: rgba(128, 128, 128, 0.1);
 }
 

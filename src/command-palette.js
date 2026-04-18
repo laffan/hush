@@ -133,12 +133,43 @@ let activeIndex = 0;
 let filteredCommands = [];
 let allCommands = [];
 let keyboardNav = false;
+// When the palette opens over an active notebook text editor, we suspend
+// that editor's commit-on-blur so the user can navigate to "Insert
+// Reference" (or any command) without their text shape quietly
+// committing. The handle is remembered here so close() can restore it.
+let suspendedNotebookText = null;
 
 function isOpen() { return overlay !== null; }
-function close() { if (overlay) { overlay.remove(); overlay = null; } }
+function close() {
+  if (overlay) { overlay.remove(); overlay = null; }
+  // If the palette opened over an active notebook text shape, hand
+  // focus back and resume its normal blur-commit behaviour. Actions
+  // that need the editor to stay alive (Zotero) null this reference
+  // out before calling close() so this branch no-ops for them.
+  if (suspendedNotebookText) {
+    const h = suspendedNotebookText;
+    suspendedNotebookText = null;
+    try { h.focus(); } catch (_) {}
+    try { h.resumeCommitOnBlur(); } catch (_) {}
+  }
+}
 
 export function toggleCommandPalette(state) {
   if (isOpen()) { close(); if (state.editor) state.editor.focus(); return; }
+  // If the user is mid-edit on a notebook text shape, preserve that
+  // editor across the palette's lifetime — the input we're about to
+  // focus would otherwise blur the textarea and commit the shape
+  // before a command like "Insert Reference" can run. The text-editor
+  // mirrors its active handle on `window` so we can read it
+  // synchronously (an async import() would race the blur).
+  suspendedNotebookText = null;
+  try {
+    const handle = typeof window !== "undefined" ? window.__activeNotebookTextEditor : null;
+    if (handle && typeof handle.suspendCommitOnBlur === "function") {
+      handle.suspendCommitOnBlur();
+      suspendedNotebookText = handle;
+    }
+  } catch (_) { /* no active notebook text editor */ }
   open(state);
 }
 
@@ -193,15 +224,39 @@ function open(state) {
     renderList(list, state);
   });
 
+  // Focus the main editor after close(), but only if we weren't hosting
+  // an active notebook text shape — close() already handed focus back
+  // to the textarea, and stealing it away to the hidden main editor
+  // would blur the textarea and (after the 150ms timer fires) commit
+  // the shape anyway.
+  const focusMainEditorIfAppropriate = () => {
+    if (suspendedNotebookText) return; // close() will focus the textarea
+    if (state.editor) state.editor.focus();
+  };
+
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { e.preventDefault(); close(); if (state.editor) state.editor.focus(); return; }
+    if (e.key === "Escape") { e.preventDefault(); close(); focusMainEditorIfAppropriate(); return; }
     if (e.key === "ArrowDown") { e.preventDefault(); keyboardNav = true; if (filteredCommands.length) { activeIndex = (activeIndex + 1) % filteredCommands.length; renderList(list, state); } return; }
     if (e.key === "ArrowUp") { e.preventDefault(); keyboardNav = true; if (filteredCommands.length) { activeIndex = (activeIndex - 1 + filteredCommands.length) % filteredCommands.length; renderList(list, state); } return; }
-    if (e.key === "Enter") { e.preventDefault(); if (filteredCommands[activeIndex]) { const cmd = filteredCommands[activeIndex]; close(); cmd.action(state); } return; }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (filteredCommands[activeIndex]) {
+        const cmd = filteredCommands[activeIndex];
+        // Zotero's modal needs to stay the owner of the notebook text
+        // handle through its own open/close lifecycle — null the
+        // palette's reference here so close() doesn't resume commit on
+        // a handle the modal is about to re-suspend anyway.
+        const isZotero = cmd.id === "zotero";
+        if (isZotero) suspendedNotebookText = null;
+        close();
+        cmd.action(state);
+      }
+      return;
+    }
   });
 
   overlay.addEventListener("mousedown", (e) => {
-    if (!palette.contains(e.target)) { close(); if (state.editor) state.editor.focus(); }
+    if (!palette.contains(e.target)) { close(); focusMainEditorIfAppropriate(); }
   });
 }
 

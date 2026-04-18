@@ -405,9 +405,7 @@ function renderFlaggedNode(item, state, isBubbled) {
   itemContent.appendChild(itemLabel);
   li.appendChild(itemContent);
 
-  // Hover handling
-  li.addEventListener("mouseenter", () => li.classList.add("sl-hovered"));
-  li.addEventListener("mouseleave", () => li.classList.remove("sl-hovered"));
+  attachLeafHoverHandlers(li);
 
   // Click the row: for docs/notebooks/projects, open + reveal. For
   // folders, toggle the nested children in place.
@@ -714,6 +712,7 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   const li = document.createElement("li");
   li.className = "sl-item has-children" + (isExpanded ? "" : " collapsed");
   li.dataset.id = key;
+  attachLeafHoverHandlers(li);
 
   const contentWrapper = document.createElement("div");
   contentWrapper.className = "sl-item-content";
@@ -822,6 +821,7 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFil
   const li = document.createElement("li");
   li.className = "sl-item local-sync-file";
   li.dataset.id = `${folder.id}:${relPath}`;
+  attachLeafHoverHandlers(li);
 
   const activeKey = state.currentLocalSync
     ? `${state.currentLocalSync.folderId}:${state.currentLocalSync.relPath}`
@@ -937,6 +937,28 @@ function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+/**
+ * Wire mouseenter / mouseleave on a `.sl-item` so only the innermost
+ * row under the cursor carries `.sl-hovered` (mirrors the logic in
+ * sortable-list/rendering.js). Used by the Flagged section and Local
+ * Sync rows, which render outside SortableList's own machinery.
+ */
+function attachLeafHoverHandlers(li) {
+  li.addEventListener("mouseenter", () => {
+    let ancestor = li.parentElement?.closest(".sl-item");
+    while (ancestor) {
+      ancestor.classList.remove("sl-hovered");
+      ancestor = ancestor.parentElement?.closest(".sl-item");
+    }
+    li.classList.add("sl-hovered");
+  });
+  li.addEventListener("mouseleave", () => {
+    li.classList.remove("sl-hovered");
+    const parentItem = li.parentElement?.closest(".sl-item");
+    if (parentItem) parentItem.classList.add("sl-hovered");
+  });
 }
 
 async function openImagePreview(filename, name) {
