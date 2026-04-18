@@ -120,7 +120,9 @@ export function destroyPaneManager() {
 
 export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   // Don't open duplicate panes for the same file in the same context
-  // (skip check when explicitly duplicating via opts.allowDuplicate)
+  // (skip check when explicitly duplicating via opts.allowDuplicate).
+  // Local Sync panes use `fileId` composed of folder id + rel path so
+  // the check still works without per-type special-casing.
   if (!opts.allowDuplicate) {
     const ctx = opts.ownerContext || getCurrentContext();
     for (const [, p] of panes) {
@@ -147,6 +149,11 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     y: Math.max(0, y - TITLEBAR_HEIGHT / 2),
     // Owner context: which doc/notebook/project was active when pane was created
     ownerContext: opts.ownerContext || getCurrentContext(),
+    // Local Sync coordinates — present only for panes backed by a
+    // mounted-folder file. `{ folderId, relPath }`. The load/save path
+    // branches on this to hit local_sync_read_file / local_sync_write_file
+    // instead of the internal file store.
+    localSync: opts.localSync || null,
   };
 
   buildPaneDOM(pane);
@@ -547,18 +554,28 @@ async function loadDocumentPane(pane) {
 
   // If this document has a locked style, apply it now so the pane opens
   // with the right theme/font instead of flashing to the session style
-  // first.
-  const lockedStyleId = findLockedStyleForFile(pane.fileId);
-  if (lockedStyleId && editor.reconfigureTheme) {
-    editor.reconfigureTheme(appState.settings, lockedStyleId);
+  // first. Local Sync files aren't in the internal tree so they never
+  // have a locked style.
+  if (!pane.localSync) {
+    const lockedStyleId = findLockedStyleForFile(pane.fileId);
+    if (lockedStyleId && editor.reconfigureTheme) {
+      editor.reconfigureTheme(appState.settings, lockedStyleId);
+    }
   }
 
-  // Load file content
+  // Load file content — Local Sync panes read straight from disk via
+  // the local_sync_read_file command; everything else goes through the
+  // internal file store.
   let content = "";
   try {
     if (IS_TAURI) {
-      const file = await tauriInvoke("load_file", { id: pane.fileId });
-      content = file.content || "";
+      if (pane.localSync) {
+        const { readFile } = await import("../sync/local-sync.js");
+        content = await readFile(pane.localSync.folderId, pane.localSync.relPath);
+      } else {
+        const file = await tauriInvoke("load_file", { id: pane.fileId });
+        content = file.content || "";
+      }
     }
   } catch (e) {
     console.error("Failed to load pane file:", e);
@@ -694,7 +711,17 @@ async function savePaneContent(pane) {
       } else if (pane.fileType === "notebook" && pane.notebook) {
         content = JSON.stringify(pane.notebook.getShapes());
       }
-      await tauriInvoke("save_file", { id: pane.fileId, content });
+      if (pane.localSync) {
+        // Write back to the mounted folder on disk. The Local Sync
+        // watcher would otherwise echo this change back as an external
+        // update — the state's `_localSyncWriteFlag` guard (in
+        // sync/local-sync.js) suppresses the reload for a short window.
+        if (appState) appState._localSyncWriteFlag = Date.now();
+        const { writeFile } = await import("../sync/local-sync.js");
+        await writeFile(pane.localSync.folderId, pane.localSync.relPath, content);
+      } else {
+        await tauriInvoke("save_file", { id: pane.fileId, content });
+      }
     }
   } catch (e) {
     console.error("Failed to save pane content:", e);
@@ -766,6 +793,7 @@ function persistPanesNow() {
       canvasX: p._canvasX ?? null,
       canvasY: p._canvasY ?? null,
       scrollRelY: p._scrollRelY ?? null,
+      localSync: p.localSync || null,
     });
   }
   appState.updateSettings({ persistedPanes: serialized });
@@ -779,15 +807,26 @@ async function restorePanes() {
   for (const s of list) {
     if (!s || !s.fileId || !s.fileType) continue;
 
-    // Resolve current file name (may have been renamed since persist)
-    const file = (appState.files || []).find((f) => f.id === s.fileId);
-    if (!file) continue; // File was deleted — drop pane
+    // Local Sync panes are validated against the persisted mount list —
+    // if the user removed the mount while the app was closed, drop the
+    // pane. Otherwise the fileName saved at persist time is fine.
+    let resolvedName = s.fileName || "Untitled";
+    if (s.localSync) {
+      const folders = appState.settings?.localSyncFolders || [];
+      const stillMounted = folders.some((f) => f.id === s.localSync.folderId);
+      if (!stillMounted) continue;
+    } else {
+      // Resolve current file name (may have been renamed since persist)
+      const file = (appState.files || []).find((f) => f.id === s.fileId);
+      if (!file) continue; // File was deleted — drop pane
+      resolvedName = file.name || s.fileName || "Untitled";
+    }
 
     const id = crypto.randomUUID();
     const pane = {
       id,
       fileId: s.fileId,
-      fileName: file.name || s.fileName || "Untitled",
+      fileName: resolvedName,
       fileType: s.fileType,
       collapsed: !!s.collapsed,
       attached: false, // we'll re-apply attach below after content loads
@@ -801,6 +840,7 @@ async function restorePanes() {
       x: s.x || 0,
       y: s.y || 0,
       ownerContext: s.ownerContext || "",
+      localSync: s.localSync || null,
     };
     if (s.canvasX != null) pane._canvasX = s.canvasX;
     if (s.canvasY != null) pane._canvasY = s.canvasY;

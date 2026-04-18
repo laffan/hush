@@ -740,7 +740,11 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   const removeBtn = isRoot
     ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button data-local-sync-action="remove" title="Remove from Local Sync">&times;</button></span>`
     : "";
-  row.innerHTML = `${typeIcons.localSync}<span class="tree-item-name">${escHtml(displayName)}</span>${removeBtn}`;
+  // The Local Sync icon marks only the mount root; nested folders use
+  // the regular folder icon so the tree reads as a normal filesystem
+  // view inside the mount.
+  const icon = isRoot ? typeIcons.localSync : typeIcons.folder;
+  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(displayName)}</span>${removeBtn}`;
   main.appendChild(row);
   label.appendChild(main);
   contentWrapper.appendChild(label);
@@ -843,13 +847,90 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFil
   itemContent.appendChild(label);
   li.appendChild(itemContent);
 
-  itemContent.addEventListener("click", async () => {
+  // Cmd/Ctrl-drag to spawn a floating pane for this file.  Mirrors the
+  // SortableList's drag-outside behaviour so Local Sync files feel
+  // identical to normal sidebar docs.
+  attachLocalSyncFileDrag(itemContent, folder, entry, relPath);
+
+  itemContent.addEventListener("click", async (e) => {
+    // A drag-out consumed the gesture — don't also open the file.
+    if (itemContent.dataset.dragConsumed === "1") {
+      delete itemContent.dataset.dragConsumed;
+      return;
+    }
+    // Cmd+click alone (no drag) is treated as "open" as well.
     await openLocalSyncFile(state, folder.id, relPath);
     const overlay = document.querySelector("#panel-overlay");
     if (overlay && !overlay.classList.contains("panel-inset") && hidePanel) hidePanel();
   });
 
   return li;
+}
+
+/**
+ * Wire a pointerdown→move→up sequence on a Local Sync file row so a
+ * Cmd/Ctrl-drag past the panel's right edge spawns a floating pane for
+ * the file. The ghost element matches the SortableList's ghost so the
+ * visual affordance is consistent with dragging a doc out of the
+ * regular file tree.
+ */
+function attachLocalSyncFileDrag(rowEl, folder, entry, relPath) {
+  rowEl.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let dragging = false;
+    let ghost = null;
+
+    const buildGhost = () => {
+      const g = document.createElement("div");
+      g.className = "sl-drag-ghost";
+      g.textContent = entry.name;
+      g.style.transform = `translate3d(${e.clientX - 40}px, ${e.clientY - 10}px, 0)`;
+      document.body.appendChild(g);
+      document.body.classList.add("sl-dragging");
+      return g;
+    };
+
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!dragging && Math.hypot(dx, dy) > 6) {
+        dragging = true;
+        ghost = buildGhost();
+      }
+      if (ghost) {
+        ghost.style.transform = `translate3d(${ev.clientX - 40}px, ${ev.clientY - 10}px, 0)`;
+      }
+    };
+
+    const onUp = async (ev) => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      if (ghost) { ghost.remove(); ghost = null; }
+      document.body.classList.remove("sl-dragging");
+      if (!dragging) return;
+      // Mark this gesture so the subsequent click listener knows to
+      // skip "open in main editor" — the drag replaces that action.
+      rowEl.dataset.dragConsumed = "1";
+      if (!(ev.metaKey || ev.ctrlKey)) return;
+      const panelOverlay = document.getElementById("panel-overlay");
+      const rect = panelOverlay?.getBoundingClientRect();
+      if (!rect || ev.clientX <= rect.right) return;
+      try {
+        const { createPane } = await import("../pane/pane-manager.js");
+        const paneFileId = `ls:${folder.id}:${relPath}`;
+        await createPane(paneFileId, entry.name, "document", ev.clientX, ev.clientY, {
+          localSync: { folderId: folder.id, relPath },
+        });
+      } catch (err) {
+        console.error("Failed to spawn Local Sync pane:", err);
+      }
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  });
 }
 
 function escHtml(str) {
