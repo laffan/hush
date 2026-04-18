@@ -451,25 +451,20 @@ async function init() {
   new MutationObserver(syncNotebookInset).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
 
   // Panel inset mode — the left sidebar only overlays the text on narrow
-  // windows. At >= 800px the panel insets alongside the editor (the column
-  // shrinks / shifts to make room); narrower than that, it overlays.
+  // windows. Above 700px the panel insets alongside the editor (the column
+  // shrinks / shifts to make room) and Cmd+\ simply toggles it on/off;
+  // at 700px or narrower, it falls back to overlay with pin + click-outside.
   const panelOverlay = document.getElementById("panel-overlay");
-  const OVERLAY_BREAKPOINT = 800;
+  const OVERLAY_BREAKPOINT = 700;
   function updatePanelMode() {
     const w = window.innerWidth;
-    if (w >= OVERLAY_BREAKPOINT) {
+    if (w > OVERLAY_BREAKPOINT) {
       panelOverlay.classList.add("panel-inset");
       panelOverlay.classList.remove("panel-overlay-mode");
+      document.body.classList.add("wide-viewport");
     } else {
       panelOverlay.classList.remove("panel-inset");
       panelOverlay.classList.add("panel-overlay-mode");
-    }
-    // Above 600px, the panel is open-or-closed only — no pin concept, no
-    // auto-close on click-outside. The sidebar keeps its hover-to-show
-    // behaviour so it doesn't steal screen space when not in use.
-    if (w > 600) {
-      document.body.classList.add("wide-viewport");
-    } else {
       document.body.classList.remove("wide-viewport");
     }
   }

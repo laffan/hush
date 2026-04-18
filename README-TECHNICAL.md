@@ -162,7 +162,7 @@ When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Tur
 
 ### Sidebar (`sidebar/sidebar.js`)
 
-Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity 0, pointer-events none), revealed by a JS hover trigger. On viewports wider than 600px the side panel is simply open or closed — no pin button and no click-outside auto-close. On narrower viewports, the inset panel can still be pinned open.
+Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity 0, pointer-events none), revealed by a JS hover trigger. On viewports wider than 700px the side panel is always inset (pushing the editor column over) and Cmd+\ simply toggles it on or off — no pin button and no click-outside auto-close. At 700px or narrower, the panel falls back to overlay mode and can be pinned open.
 
 **Buttons:** Files panel, Styles panel, Versions, Export, Settings (iOS only). Mode toggles (ratchet, private, typewriter, D.R.Y., focus, zotero) are accessed via the command palette (`Cmd+P`).
 

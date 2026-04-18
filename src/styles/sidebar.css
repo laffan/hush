@@ -38,7 +38,7 @@
   pointer-events: auto;
 }
 
-/* Wide viewports (>600px): panel has no pin concept (it stays open on its
+/* Wide viewports (>700px): panel has no pin concept (it stays open on its
    own until toggled). The sidebar itself keeps its hover-to-show behavior. */
 body.wide-viewport .panel-pin-btn {
   display: none !important;
