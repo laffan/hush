@@ -407,23 +407,31 @@ async function init() {
         .catch(() => {});
     }).catch(() => {});
 
-    // Settings window fires this after add/remove so the files panel
-    // refreshes even if the user hasn't re-opened it yet. The generic
-    // settings-updated broadcast also triggers a refresh, but this
-    // dedicated path is faster and doesn't depend on the full settings
-    // round-trip.
+    // Settings window fires this after add/remove. We update
+    // state.settings.localSyncFolders directly from the payload (no
+    // round-trip through get_settings) and then refresh the files panel
+    // so the sidebar reflects the change immediately.
     try {
       const { listen } = await import("@tauri-apps/api/event");
-      await listen("local-sync-folders-updated", async () => {
-        // Pull fresh settings so state.settings.localSyncFolders is
-        // current before the refresh reads it.
+      await listen("local-sync-folders-updated", async (event) => {
+        const payload = event?.payload;
+        if (payload && Array.isArray(payload.folders)) {
+          state.settings.localSyncFolders = payload.folders;
+        } else {
+          // Fallback — older settings window builds don't include the
+          // payload, so pull fresh settings as a safety net.
+          try {
+            const { invoke } = await import("@tauri-apps/api/core");
+            const fresh = await invoke("get_settings");
+            if (fresh) Object.assign(state.settings, fresh);
+          } catch (_) {}
+        }
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
-          const fresh = await invoke("get_settings");
-          if (fresh) Object.assign(state.settings, fresh);
-        } catch (_) {}
-        const { refreshFilesPanel } = await import("./sidebar/files-panel.js");
-        refreshFilesPanel(state);
+          const { refreshFilesPanel } = await import("./sidebar/files-panel.js");
+          refreshFilesPanel(state);
+        } catch (e) {
+          console.error("Failed to refresh files panel:", e);
+        }
       });
     } catch (e) {
       console.error("Failed to listen for local-sync-folders-updated:", e);

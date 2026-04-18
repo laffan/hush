@@ -270,16 +270,19 @@
   outline: none;
 }
 
+/* Each section (Local Sync, Flagged, main tree) is a plain <ul>. The
+   panel-overlay itself is the single scroll container — nested scroll
+   areas here would trap the mouse wheel inside one section. */
 .tree-list-root {
-  max-height: calc(100vh - 130px);
-  overflow-y: auto;
-}
-
-/* Local Sync section — matches tree-list-root but with a subtle divider
-   above the main file tree so the two sections are visually distinct. */
-.local-sync-root {
   list-style: none;
   padding: 0;
+  margin: 0;
+}
+
+/* Local Sync section — flows inline with the rest of the file list
+   (no separate scroll pane). A subtle bottom divider when non-empty
+   gives it a visual identity. */
+.local-sync-root {
   margin: 0 0 6px 0;
 }
 

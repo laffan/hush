@@ -239,11 +239,15 @@ export function bindSyncTab(saveSetting, settings, render) {
   // Local Sync: add/remove folders. The Rust side picks the path via a
   // native folder dialog and registers the watcher; on success the
   // settings window re-renders with the updated list.
-  async function emitLocalSyncUpdated() {
+  async function emitLocalSyncUpdated(folders) {
     if (!IS_TAURI) return;
     try {
       const { emit } = await import("@tauri-apps/api/event");
-      await emit("local-sync-folders-updated");
+      // Include the current list in the payload so the main window
+      // doesn't have to re-fetch settings to pick up the change —
+      // avoids any window-ordering races between save_settings and the
+      // event listener.
+      await emit("local-sync-folders-updated", { folders: folders || [] });
     } catch (e) {
       console.error("Failed to emit local-sync-folders-updated:", e);
     }
@@ -259,7 +263,7 @@ export function bindSyncTab(saveSetting, settings, render) {
         const folder = await invoke("local_sync_add", { path: picked });
         settings.localSyncFolders = (settings.localSyncFolders || []).concat(folder);
         await saveSetting("localSyncFolders", settings.localSyncFolders);
-        await emitLocalSyncUpdated();
+        await emitLocalSyncUpdated(settings.localSyncFolders);
         render();
       } catch (e) {
         console.error("Failed to add Local Sync folder:", e);
@@ -274,7 +278,7 @@ export function bindSyncTab(saveSetting, settings, render) {
         await invoke("local_sync_remove", { id });
         settings.localSyncFolders = (settings.localSyncFolders || []).filter(f => f.id !== id);
         await saveSetting("localSyncFolders", settings.localSyncFolders);
-        await emitLocalSyncUpdated();
+        await emitLocalSyncUpdated(settings.localSyncFolders);
         render();
       } catch (e) {
         console.error("Failed to remove Local Sync folder:", e);

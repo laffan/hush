@@ -650,8 +650,13 @@ function showDeleteConfirmModal(title, message, onConfirm) {
 export function refreshFilesPanel(state) {
   refreshList(state);
   // Re-render the local-sync section as well so newly added/removed
-  // folders or watcher-pushed changes land in the panel.
-  const root = storedLocalSyncContainer;
+  // folders or watcher-pushed changes land in the panel. Prefer the
+  // cached reference, but fall back to a live DOM query so the refresh
+  // still works if `storedLocalSyncContainer` got out of sync (e.g. the
+  // panel was rebuilt from outside createFilesPanel).
+  const root = storedLocalSyncContainer?.isConnected
+    ? storedLocalSyncContainer
+    : document.querySelector(".local-sync-root");
   if (root && storedState && storedHidePanel) {
     renderLocalSyncSection(root, storedState, storedHidePanel);
   }
@@ -677,6 +682,17 @@ async function renderLocalSyncSection(container, state, hidePanel) {
   if (storedLocalSyncContainer !== container) return;
   if (!folders || folders.length === 0) return;
 
+  // Seed the root-level expanded state so a freshly-added folder opens
+  // by default (better default than requiring the user to click to see
+  // there's nothing inside yet). Subsequent user toggles override this.
+  for (const folder of folders) {
+    const key = `${folder.id}:`;
+    if (!localSyncExpandedInitialized.has(folder.id)) {
+      localSyncExpanded.add(key);
+      localSyncExpandedInitialized.add(folder.id);
+    }
+  }
+
   for (const folder of folders) {
     try {
       const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel);
@@ -686,6 +702,10 @@ async function renderLocalSyncSection(container, state, hidePanel) {
     }
   }
 }
+
+// Track which folder ids we've already set an initial expansion state for
+// so re-renders don't keep "resetting" a folder the user chose to collapse.
+const localSyncExpandedInitialized = new Set();
 
 function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePanel) {
   const key = `${folder.id}:${relPath}`;
