@@ -134,18 +134,6 @@ export function updateColumnResizers(state) {
       scroller.style.paddingLeft = leftPad + "px";
       scroller.style.paddingRight = rightPad + "px";
     }
-    // Temporary diagnostic — remove once inset-mode-not-triggering bug is fixed.
-    console.log("[inset-debug]", {
-      w, colW, isInset, panelOpen, leftInsetOffset, rightInsetOffset,
-      availableWidth, leftPad, rightPad,
-      scrollerFound: !!scroller,
-      scrollerPadLeft: scroller && scroller.style.paddingLeft,
-      scrollerComputedPadLeft: scroller && getComputedStyle(scroller).paddingLeft,
-      panelOverlayClass: panelEl && panelEl.className,
-      panelWidthCSS: getComputedStyle(document.documentElement).getPropertyValue("--panel-width"),
-      hasDocPane: !!state._hasVisibleDocPane,
-      currentNotebookFileId: state.currentNotebookFileId,
-    });
     if (state.editor && state.editor.view) state.editor.view.requestMeasure();
     state.emit("layout-changed");
 

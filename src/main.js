@@ -157,6 +157,7 @@ async function handleOAuthCode(state, invoke, code) {
 }
 
 async function init() {
+  const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   const state = new AppState();
   await state.init();
   // Expose on window so lazy helpers (e.g. pane/text-drag.js's notebook-to-
@@ -542,7 +543,6 @@ async function init() {
   await setupTauriIntegration(state);
 
   // Apply initial always-on-top setting
-  const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   if (IS_TAURI) {
     const { invoke } = await import("@tauri-apps/api/core");
     if (state.settings.alwaysOnTop) {
