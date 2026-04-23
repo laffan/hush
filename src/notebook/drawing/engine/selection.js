@@ -6,6 +6,12 @@
  *      hush's selection handle style for all shape types.
  *      Sized / positioned via HANDLE_SIZE (side length) + x/y rather
  *      than HANDLE_RADIUS + cx/cy.
+ *   9. Delete badge (the red X beside the bbox) is hidden. Hush's
+ *      shared selection toolbar's trash icon owns delete for every
+ *      shape type, so an extra engine-drawn badge was redundant.
+ *      The element is still created (kept out of the DOM) so the
+ *      rest of the code path that references `deleteBtn.setAttribute`
+ *      stays a no-op without branch changes.
  * ============================================================
  *
  * selection.js — lasso + bounding box + move/resize/delete.
@@ -110,16 +116,16 @@ export function createSelectionEngine({
     handleNodes[spec.name] = c;
   }
 
+  // Hush fork: the red-X delete badge is hidden. Hush surfaces delete
+  // through the shared selection toolbar's trash icon, so an extra
+  // delete affordance attached to the engine's bbox is redundant. The
+  // node stays in the tree (classifyTarget still recognizes
+  // data-handle="delete") but renders at display:none so clicks can't
+  // land on it.
   const deleteBtn = document.createElementNS(SVG_NS, 'g');
   deleteBtn.setAttribute('class', 'delete-btn');
   deleteBtn.dataset.handle = 'delete';
-  const deleteCircle = document.createElementNS(SVG_NS, 'circle');
-  deleteCircle.setAttribute('r', 11);
-  const deleteX = document.createElementNS(SVG_NS, 'path');
-  deleteX.setAttribute('d', 'M-4,-4 L4,4 M4,-4 L-4,4');
-  deleteBtn.appendChild(deleteCircle);
-  deleteBtn.appendChild(deleteX);
-  bboxGroup.appendChild(deleteBtn);
+  deleteBtn.style.display = 'none';
 
   // ---------- state ----------
   const state = {

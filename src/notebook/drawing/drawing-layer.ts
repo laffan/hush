@@ -61,6 +61,10 @@ export interface DrawingLayer {
    *  streamline, spacing) into the engine. `color: "auto"` resolves
    *  to theme.foreground at apply time. */
   applySlot(slot: DrawingSlot): void;
+  /** Configure how long a draw-mode press must hold before it
+   *  promotes into a lasso. Exposed as a user setting in the toolbar
+   *  (slider 500–2000 ms). */
+  setLassoHoldMs(ms: number): void;
   /** Render a swatch preview of a slot into a target canvas, using
    *  the engine's atlas. */
   renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void;
@@ -146,11 +150,21 @@ export function createDrawingLayer({
   state,
   theme,
   camera,
+  onTouchPanStart,
+  onTouchPanMove,
+  onTouchPanEnd,
 }: {
   container: HTMLElement;
   state: ShimState;
   theme: CanvasTheme;
   camera: Camera;
+  /** Two-finger pan hooks — fired by the engine's gesture recogniser
+   *  when the user drags two fingers inside the drawing surface. The
+   *  notebook wires these into `state.camera` so iPad users can pan
+   *  while a brush or eraser is active. */
+  onTouchPanStart?: () => void;
+  onTouchPanMove?: (dx: number, dy: number) => void;
+  onTouchPanEnd?: () => void;
 }): DrawingLayer {
   // Mutable theme object: we mutate in place on setTheme so the
   // engine's atlas cache and our resolveAutoColor closure pick up new
@@ -245,6 +259,62 @@ export function createDrawingLayer({
   selectionLayer.setAttribute("class", "selection-layer");
   svg.appendChild(selectionLayer);
 
+  // Tracks the sub-tool the user was on before the long-press handoff
+  // promoted them into select mode. Restored when the lasso misses or
+  // the user taps away to deselect — mirrors the reference demo's
+  // `transientSelect` flag. Null when no transient select is active
+  // (e.g. the user reached select mode via the main toolbar Lasso
+  // button, in which case we don't want to auto-exit on deselect).
+  let transientPrevSubTool: "draw" | "erase" | "slice" | null = null;
+  function restoreFromTransientSelect(): void {
+    if (!transientPrevSubTool) return;
+    const prev = transientPrevSubTool;
+    transientPrevSubTool = null;
+    if (state.drawingSubTool === "select") state.setDrawingSubTool(prev);
+  }
+
+  // Hold-to-select hint. When a long press during draw/erase promotes
+  // the gesture into a lasso, we flash a small "Selecting" pill to the
+  // left of the anchor point so the user — who often has no keyboard
+  // (iPad / Apple Pencil) — gets a visible acknowledgement that select
+  // mode has engaged. Mounted in `container` rather than `wrapper` so
+  // it stays at fixed screen size as the user zooms.
+  const selectHint = document.createElement("div");
+  selectHint.className = "notebook-drawing-select-hint";
+  selectHint.textContent = "Selecting";
+  Object.assign(selectHint.style, {
+    position: "absolute",
+    pointerEvents: "none",
+    padding: "3px 8px",
+    borderRadius: "999px",
+    background: "rgba(17,17,17,0.85)",
+    color: "#fff",
+    fontSize: "11px",
+    fontWeight: "500",
+    letterSpacing: "0.03em",
+    whiteSpace: "nowrap",
+    opacity: "0",
+    transition: "opacity 0.15s",
+    zIndex: "250",
+    // Sit to the LEFT of the anchor, vertically centered on it.
+    transform: "translate(-100%, -50%)",
+  } as CSSStyleDeclaration);
+  container.appendChild(selectHint);
+  let selectHintTimer: ReturnType<typeof setTimeout> | null = null;
+  function flashSelectHint(localPt: { x: number; y: number }): void {
+    // engine-local → container-screen coords: reverse of pointToLocal.
+    const cx = (localPt.x + originX) * cameraRef.zoom + cameraRef.x;
+    const cy = (localPt.y + originY) * cameraRef.zoom + cameraRef.y;
+    // Small gap so the pill doesn't overlap the cursor anchor.
+    selectHint.style.left = (cx - 10) + "px";
+    selectHint.style.top = cy + "px";
+    selectHint.style.opacity = "1";
+    if (selectHintTimer) clearTimeout(selectHintTimer);
+    selectHintTimer = setTimeout(() => {
+      selectHint.style.opacity = "0";
+    }, 900);
+  }
+
   // ---------- camera + transforms ----------
 
   const cameraRef = { x: camera.x, y: camera.y, zoom: camera.zoom };
@@ -300,8 +370,19 @@ export function createDrawingLayer({
       // 1.5s hold with no drift promotes the in-flight stroke into a
       // lasso — the user's "I want to select what I just drew" gesture.
       // Without this hook the engine just cancels the active stroke.
+      //
+      // Flip the sub-tool to "select" so the stroke engine stops
+      // accepting pointerdowns as draws while the selection is live —
+      // otherwise tapping inside the bbox both moves the selection AND
+      // starts a new stroke. The previous sub-tool is saved so we can
+      // restore it when the user deselects (lasso misses, or tap-away).
+      if (state.drawingSubTool !== "select") {
+        transientPrevSubTool = state.drawingSubTool as "draw" | "erase" | "slice";
+        state.setDrawingSubTool("select");
+      }
       const sel = selectionBox.current;
       if (sel) sel.startLassoAtPointer(pointerId, point);
+      flashSelectHint(point);
     },
     onStrokeAdded: (stroke: EngineStroke, _index: number) => {
       // Always bridge to state.shapes so autosave, Dropbox sync, and
@@ -322,6 +403,17 @@ export function createDrawingLayer({
       const snapshot = removed.slice();
       const shim = shimBox.current;
       if (shim) shim.onEngineStrokesRemoved(removed.map((r) => r.stroke.id));
+      // When strokes disappear via an external path (Hush's trash
+      // button, the Delete shortcut), the engine's selection engine
+      // still thinks those ids are selected — so the SVG bbox and
+      // handles linger pointing at nothing. refreshBBox recomputes
+      // against the current strokes list; any now-missing ids drop
+      // out, which also clears the bbox when every selected stroke
+      // was deleted. Internal paths (the engine's own Delete-key
+      // handler) clear their selection directly, so this guard only
+      // matters for externally-driven removals.
+      const sel = selectionBox.current;
+      if (sel) sel.refreshBBox();
       history.push({
         undo: () => {
           for (const r of snapshot) strokeEngine.insertStrokeAt(r.stroke, r.index);
@@ -382,18 +474,24 @@ export function createDrawingLayer({
       // hush selection (selection toolbar, Cmd+G group, Delete, etc.)
       // sees the same state.
       bridgeEngineSelectionToState();
+      restoreFromTransientSelect();
     },
     onLassoComplete: ({ selected }) => {
       if (selected) expandSelectionToGroups();
       // Bridge regardless — a lasso that hits nothing clears engine
       // selection; we want state.selectedIds to track.
       bridgeEngineSelectionToState();
+      // A miss (tap on empty canvas, or a drag that found nothing)
+      // should drop us back into the previous sub-tool so the user
+      // can keep drawing without going through the main toolbar.
+      if (!selected) restoreFromTransientSelect();
     },
     onSelectionDeleted: () => {
       // engine.removeStrokes fires its own onStrokesRemoved callback,
       // which pushes to history + removes from state.shapes. Also
       // clear state.selectedIds so Hush's selection toolbar hides.
       bridgeEngineSelectionToState();
+      restoreFromTransientSelect();
     },
   });
 
@@ -427,7 +525,19 @@ export function createDrawingLayer({
   }
   selectionBox.current = selectionEngine;
 
-  // Two/three-finger touch → undo/redo on iPad.
+  // If the user manually changes the sub-tool (brush slot, Erase, Slice,
+  // or the main toolbar's Pen/Lasso), clear the transient flag so we
+  // don't later "restore" them to a stale prior sub-tool on deselect.
+  const onSubToolChangeForTransient = ((e: CustomEvent) => {
+    const keys: string[] = (e.detail && e.detail.keys) || [];
+    if (!keys.includes("drawingSubTool")) return;
+    if (state.drawingSubTool !== "select") transientPrevSubTool = null;
+  }) as EventListener;
+  state.addEventListener("change", onSubToolChangeForTransient);
+
+  // Two/three-finger touch → undo/redo on iPad. Two-finger drift
+  // promotes the burst into a pan — forwarded up to the notebook so
+  // state.camera picks up the motion.
   createGestures({
     getRect: () => svg.getBoundingClientRect(),
     pointToLocal,
@@ -435,6 +545,9 @@ export function createDrawingLayer({
     selectionEngine,
     onUndo: () => history.undo(),
     onRedo: () => history.redo(),
+    onPanStart: () => { onTouchPanStart && onTouchPanStart(); },
+    onPanMove: (dx: number, dy: number) => { onTouchPanMove && onTouchPanMove(dx, dy); },
+    onPanEnd: () => { onTouchPanEnd && onTouchPanEnd(); },
   });
 
   /** Pull every stroke that shares a group with any currently-selected
@@ -685,6 +798,10 @@ export function createDrawingLayer({
     strokeEngine.setSpacing(slot.spacing);
   }
 
+  function setLassoHoldMs(ms: number): void {
+    strokeEngine.setLongPressMs(ms);
+  }
+
   function renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -808,7 +925,10 @@ export function createDrawingLayer({
 
   function destroy(): void {
     shim.destroy();
+    state.removeEventListener("change", onSubToolChangeForTransient);
     wrapper.remove();
+    if (selectHintTimer) { clearTimeout(selectHintTimer); selectHintTimer = null; }
+    selectHint.remove();
   }
 
   return {
@@ -817,6 +937,7 @@ export function createDrawingLayer({
     setTheme,
     setTool,
     applySlot,
+    setLassoHoldMs,
     renderSwatch,
     undo,
     redo,

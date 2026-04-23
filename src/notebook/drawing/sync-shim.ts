@@ -103,6 +103,11 @@ export interface ShimState {
    *  changes into this set so hush-level ops (Cmd+G, selection
    *  toolbar, Delete) see the same selection. */
   selectedIds: Set<string>;
+  /** Current drawing sub-tool. The long-press → lasso handoff flips
+   *  this to "select" so the stroke engine stops accepting draws for
+   *  the duration of the selection, and restores on deselect. */
+  drawingSubTool: "draw" | "erase" | "slice" | "select";
+  setDrawingSubTool(sub: "draw" | "erase" | "slice" | "select"): void;
   addEventListener(type: string, listener: (e: CustomEvent) => void): void;
   removeEventListener(type: string, listener: (e: CustomEvent) => void): void;
   notify(key: string): void;

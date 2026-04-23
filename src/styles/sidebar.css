@@ -33,14 +33,19 @@
   cursor: text;
 }
 
-#sidebar:hover, #sidebar.visible, #sidebar.pinned {
+/* Sidebar + panel are a single unit now, opened only by the floating
+   toggle (or Cmd+\). Hover-to-show was removed because iPad taps were
+   leaving the column stuck on after the panel closed — two competing
+   open/close mechanisms fighting over the same classes. */
+#sidebar.visible, #sidebar.pinned {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* Wide viewports (>700px): panel has no pin concept (it stays open on its
-   own until toggled). The sidebar itself keeps its hover-to-show behavior. */
-body.wide-viewport .panel-pin-btn {
+/* Pin button is obsolete: there is no longer a "pin" distinction — the
+   toggle simply opens and closes. Hidden everywhere until we reuse the
+   class for something else. */
+.panel-pin-btn {
   display: none !important;
 }
 
@@ -83,6 +88,72 @@ body.wide-viewport .panel-pin-btn {
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* Floating circular sidebar toggle — fixed in the upper-left corner,
+   above every other piece of chrome. Provides a pointer-only path to
+   opening the files panel for users without a keyboard. Style picks up
+   the toolbar's "soft pill" look: theme background + subtle shadow +
+   backdrop blur for mild glassiness over colored canvases. */
+.sidebar-floating-toggle {
+  position: fixed;
+  /* Inset past the macOS traffic-lights / Tauri drag region so the
+     button doesn't clash with existing top-left chrome. The 20-px
+     horizontal gap is reused by the open-state calc below. */
+  top: 40px;
+  left: 20px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--panel-border, rgba(0, 0, 0, 0.1));
+  border-radius: 50%;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  opacity: 0.85;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  /* Sits above the sidebar (200), panel-overlay (100), toolbars (100),
+     pane-container (90), and the Tauri drag region (80). */
+  z-index: 500;
+  /* Tauri drag region sits at top: 0 with webkit-app-region: drag —
+     opt this button out so clicks don't get consumed as window drags. */
+  -webkit-app-region: no-drag;
+  /* No `left` transition — the sidebar/panel itself doesn't animate
+     its open/close, so the toggle would look out-of-sync sliding over
+     on its own. Opacity/color are still smoothed for the typing-fade
+     and hover states. */
+  transition: opacity 0.15s, color 0.15s;
+}
+
+/* When the panel is open, the button rides the panel's right edge,
+   keeping the same 20-px gap it had from the window edge when closed.
+   50px = the sidebar icon column width; the panel starts there and
+   extends by --panel-width; final 20px = the gap. */
+.sidebar-floating-toggle.panel-open {
+  left: calc(50px + var(--panel-width, 300px) + 20px);
+}
+
+.sidebar-floating-toggle:hover {
+  opacity: 1;
+}
+
+/* Typing-fade: hide while the user is actively writing in a doc.
+   Pointer activity (mousemove / tap) removes the class immediately.
+   Kept out of notebook mode so the button stays reachable for
+   Pencil-only users. The base transition already covers opacity. */
+.sidebar-floating-toggle.typing-fade {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-floating-toggle svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* ===== Panels (LEFT side, next to sidebar) ===== */

@@ -62,7 +62,7 @@ const isIOS =
   /iPad|iPhone|iPod/.test(ua) ||
   (/Macintosh/.test(ua) && 'ontouchend' in document);
 
-const LONG_PRESS_MS = 1500;
+const LONG_PRESS_MS_DEFAULT = 1500;
 const LONG_PRESS_MOVE_THRESHOLD_2 = 16; // 4px
 
 export function createStrokeEngine({
@@ -128,6 +128,7 @@ export function createStrokeEngine({
     longPressTimer: 0,
     longPressAnchor: null,
     longPressPointer: null,
+    longPressMs: LONG_PRESS_MS_DEFAULT,
     previewingIds: null,      // Set<id> currently rendered to previewCanvas
     previewingTiles: null,    // tile keys currently held out of doneCanvas
   };
@@ -286,7 +287,7 @@ export function createStrokeEngine({
       const anchor = state.longPressAnchor;
       state.suppressedPointerId = pid;
       onLongPress && onLongPress({ pointerId: pid, point: anchor });
-    }, LONG_PRESS_MS);
+    }, state.longPressMs);
   }
   function cancelLongPress() {
     if (state.longPressTimer) {
@@ -556,6 +557,14 @@ export function createStrokeEngine({
     setStreamline(v) { OPTIONS.streamline = +v; },
     setSmoothing(v) { OPTIONS.smoothing = +v; },
     setSpacing(v) { OPTIONS.spacing = +v; },
+    // Long-press-to-lasso delay, in ms. Configurable so the hush UI
+    // can expose a slider for users who want the select gesture to
+    // fire faster or require a more deliberate hold.
+    setLongPressMs(ms) {
+      const n = +ms;
+      if (!Number.isFinite(n) || n <= 0) return;
+      state.longPressMs = n;
+    },
     // Render a brush swatch (atlas cell 0, tinted by color) into targetCtx,
     // centered at (x, y) with the given pixel size. The caller is responsible
     // for clearing targetCtx first. `mode` governs how the thumbnail reads:

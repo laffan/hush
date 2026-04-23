@@ -193,6 +193,17 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
       }));
       container.appendChild(wrapper);
       if (savedPopup === "align") togglePopup("align", wrapper, () => makeAlignMenu(state));
+
+      // Group / Ungroup. Show Ungroup when every selected shape already
+      // shares a single groupId (so the whole selection *is* one group);
+      // otherwise show Group to bind the selection together.
+      const firstGroupId = selected[0].groupId;
+      const allSameGroup = !!firstGroupId && selected.every((s) => s.groupId === firstGroupId);
+      if (allSameGroup) {
+        container.appendChild(makeIconBtn("ungroup", "Ungroup", () => state.ungroupSelected()));
+      } else {
+        container.appendChild(makeIconBtn("group", "Group", () => state.groupSelected()));
+      }
     }
     if (hasText) container.appendChild(makeIconBtn("move-to-shelf", "Move to shelf", onMoveToShelf));
 

@@ -1,27 +1,27 @@
 # Notebook Drawing — Technical Overview
 
-The drawing layer is an opt-in mode inside the notebook that adds freehand ink, erase, slice, and lasso-select tools on top of the existing shape-based canvas. It lives in `src/notebook/drawing/` and is ported from a reference demo (`temp-drawing-hush-demo/`) that was a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine.
+The drawing layer adds freehand ink, erase, slice, and lasso-select tools on top of the notebook's shape-based canvas. Its top toolbar (Lasso, Erase, Slice, four brush slots) is always visible alongside the other notebook tools — there's no separate "drawing mode" to enter; clicking any drawing tool implicitly flips `state.tool = "pen"` and routes pointer events into the stroke engine. The layer lives in `src/notebook/drawing/` and is ported from a reference demo (`temp-drawing-hush-demo/`) that was a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine.
 
 The port's core goal is keeping the engine fast (bake-to-canvas with tile indexing, GPU-composited preview transforms) while making every stroke a first-class Hush shape (undo, groups, layers, shelf, pocket, floating panes).
 
 ```
 src/notebook/drawing/
-  drawing-layer.ts       Factory + public API (camera sync, tool switch, brush slot apply, selection-drag hooks, style patches)
+  drawing-layer.ts       Factory + public API (camera sync, tool switch, brush slot apply, selection-drag hooks, style patches, lasso hold-ms, touch pan)
   sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff, no-op fast path)
   brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
-  tool-panel.ts          Top-centered pill with Erase / Slice + the brush slot row (mounted while drawing mode is active)
+  tool-panel.ts          Top pill (always visible): Lasso, Erase, Slice, brush slots, and the lasso hold-time flyout
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
   engine/
-    stroke.js            Stroke engine entry: pointerdown/move/up → active stroke → done canvas
+    stroke.js            Stroke engine entry: pointerdown/move/up → active stroke → done canvas; configurable long-press-ms
     stroke-render.js     Draws stamps into the done canvas via the brush atlas
     stroke-geometry.js   Perfect-freehand integration, bbox, tile hashing, culling
     stroke-atlas.js      PNG atlas loader, per-brush tint cache
     stroke-erase.js      Pixel-test erase (full) + slice (split at cut)
     selection.js         Polygon lasso, move / delete, rotation, square resize handles, previewTransform
-    gestures.js          Two-finger pan / pinch zoom within the drawing stage
-    history.js           Engine-local undo stack (scoped to drawing mode)
+    gestures.js          Multi-touch recogniser: 2-/3-finger tap → undo/redo, 2-finger drag → pan
+    history.js           Engine-local undo stack
     layers.js            Engine-local layer record (id, locked, hidden). Mirrored from notebook state.
     brushes/             brush-1.png ... brush-5.png — the atlases the renderer samples from
 ```
@@ -61,7 +61,7 @@ World-coord translation is also at the shim boundary: `DrawShape.points` are sto
 
 ### The engine (deltas from the reference demo)
 
-Eight targeted deltas have been applied to `engine/` so the port stays as close as possible to the upstream code. Each is documented at the call site and listed here so a diff-check against the reference demo has a known shape:
+Targeted deltas have been applied to `engine/` so the port stays as close as possible to the upstream code. Each is documented at the call site and listed here so a diff-check against the reference demo has a known shape:
 
 1. **`pointToLocal`** — engine receives Hush's screen→local transform instead of computing its own; keeps pointer events aligned with the CSS wrapper transform we drive the engine inside.
 2. **`getDpr`** — DPR is read from a Hush-owned callback (we cap at 2 and factor in `MAX_BACKING_PIXELS`).
@@ -71,10 +71,13 @@ Eight targeted deltas have been applied to `engine/` so the port stays as close 
 6. **public `fullRebake`** — exposed on the engine adapter so the shim can trigger it after bulk loads and layer mutations.
 7. **Square handles** — `selection.js` renders 10 px `<rect>` resize handles in place of the reference demo's circles, matching Hush's TextShape / ImageShape selection UI.
 8. **Pocketed → hidden** — `isStrokeHidden` treats `pocketed` as a reason to skip the done-canvas render; the pocket tray shows those strokes via the separate pocket stash canvas (see "Pocket stash" below).
+9. **Delete badge hidden** — the red-X bbox badge from the reference demo is created but never appended to the DOM. Delete for strokes flows through Hush's shared selection toolbar trash icon, so an engine-owned badge was redundant.
+10. **Two-finger pan** — `gestures.js` watches for two-finger drift past `PAN_START_2` and promotes the burst from tap-candidate to pan. Midpoint deltas (client space) are forwarded via `onPanStart / onPanMove / onPanEnd` so the notebook camera can track. Without this, iPad users couldn't pan while any drawing tool was active (the SVG overlay swallowed the touches).
+11. **Configurable long-press** — `stroke.js` reads its lasso hold duration from `state.longPressMs` instead of a module constant, and exposes `setLongPressMs()`. Hush drives this from the Lasso flyout's 500–2000 ms slider (`state.lassoHoldMs`).
 
-### Drawing mode
+### Drawing tools (the top pill)
 
-`state.tool === "pen"` indicates drawing mode. Inside drawing mode the user picks a sub-tool:
+Drawing is always on-deck: the top pill is rendered at all times and picking any of its buttons flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool from the bottom toolbar (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the pill visually dims (buttons at 0.6 opacity).
 
 | Sub-tool | Engine behavior |
 |----------|-----------------|
@@ -83,9 +86,11 @@ Eight targeted deltas have been applied to `engine/` so the port stays as close 
 | `slice` | Pixel-test slice at the cut; splits a stroke into two. |
 | `select` | Polygon lasso; hits are bridged to `state.selectedIds` (see below). |
 
-The Draw sub-tool has no dedicated button — it's indicated by the highlighted brush slot in the tool panel. Clicking a brush always implies Draw (that's how the user exits Erase/Slice). Lasso is surfaced on the main notebook toolbar alongside Pen so it reads as a sibling tool.
+Draw has no dedicated button — the active brush slot indicates it. Clicking any brush returns the user to Draw (that's how they exit Erase/Slice). Lasso is the first button in the pill; clicking it activates select, clicking the already-active Lasso toggles a flyout with a single slider (500–2000 ms) for the hold-to-lasso duration.
 
-`enterDrawingMode()` flips `state.tool` to `"pen"` and resets the sub-tool to `"draw"`. `exitDrawingMode()` restores the previous non-pen tool. Both fire `"drawingMode"` notifies.
+`enterDrawingMode()` / `exitDrawingMode()` still exist on `DrawingState` for the double-click-on-stroke path and for external callers, but the UI never surfaces them as a toggle.
+
+**Long-press → lasso handoff.** While the user is drawing, a 1.5-s hold (or whatever `state.lassoHoldMs` currently is) without drift cancels the in-flight stroke and promotes the gesture into a lasso. The drawing layer saves the previous sub-tool, flips to `select` for the duration of the selection (so the stroke engine stops accepting new draws), and flashes a small "Selecting" pill to the left of the anchor for acknowledgement. Tapping empty canvas while a selection exists (a `onLassoComplete({ selected: false })` from the engine) restores the previous sub-tool so the user drops straight back into drawing.
 
 ### Brush slots
 
@@ -119,9 +124,9 @@ Instead, hush's select-drag routes DrawShape moves through `engine.previewTransf
 
 A drag of 500 strokes runs at the same frame rate as a single-stroke drag.
 
-### Double-click to enter drawing mode
+### Double-click into drawing
 
-Double-clicking a `DrawShape` (or any stroke in a group) selects it group-aware and calls `enterDrawingMode()`. This replaces hush's default double-click behavior (which creates a new text shape) for the drawing case specifically.
+Double-clicking a `DrawShape` (or any stroke in a group) selects it group-aware and calls `enterDrawingMode()`. This replaces hush's default double-click behavior (which creates a new text shape) for the drawing case specifically. The user can then pick a brush / eraser / etc. from the top pill; exiting drawing is a matter of clicking another top-level tool.
 
 ### Pocket stash
 
@@ -150,8 +155,9 @@ Same as the notebook and main Hush codebase:
 
 1. Add the tool to the `DrawingSubTool` union in `types.ts`.
 2. Implement the pointer handling in `engine/stroke.js` (or a new `engine/*.js` if it's distinct enough).
-3. Add the button to `SUB_TOOLS` in `drawing/tool-panel.ts` (or to the main toolbar if it's a sibling to Pen/Lasso).
+3. Add the button to `SUB_TOOLS` in `drawing/tool-panel.ts`, or mount it alongside Lasso if it needs custom click behavior (e.g. its own flyout).
 4. Route the sub-tool through `DrawingLayer.setTool()` so the engine gets the update.
+5. Have the button's click handler call `activateDrawingSubTool()` from `tool-panel.ts` — that's what flips `state.tool = "pen"`, clears an active pan, and sets the sub-tool in one shot.
 
 ## Adding a new brush
 

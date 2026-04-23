@@ -41,9 +41,12 @@ export function createBookmarksPanel(state: DrawingState): HTMLElement {
     const fg = theme.foreground;
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
 
-    // Toggle button
+    // Toggle button. Match the rest of the toolbar: 0.6 opacity when
+    // idle, full opacity while the dropdown is open (mirrors the Pen,
+    // Layers, and Grid buttons — keeps the chrome visually unified).
     clearChildren(toggleBtn);
     toggleBtn.style.color = fg;
+    toggleBtn.style.opacity = isOpen ? "1" : "0.6";
     toggleBtn.appendChild(icon("canvas-bookmarks", 20));
     if (state.bookmarks.length > 0) {
       const badge = h("span", { text: String(state.bookmarks.length), style: { position: "absolute", top: "2px", right: "2px", fontSize: "9px", background: theme.accent, color: "#fff", borderRadius: "8px", padding: "0px 4px", fontWeight: "600", lineHeight: "14px" } });

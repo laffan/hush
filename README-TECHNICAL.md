@@ -169,7 +169,9 @@ When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Tur
 
 ### Sidebar (`sidebar/sidebar.js`)
 
-Fixed 50px column on the left edge with icon buttons. Hidden by default (opacity 0, pointer-events none), revealed by a JS hover trigger. On viewports wider than 700px the side panel is always inset (pushing the editor column over) and Cmd+\ simply toggles it on or off — no pin button and no click-outside auto-close. At 700px or narrower, the panel falls back to overlay mode and can be pinned open.
+Fixed 50px column on the left edge with icon buttons. The column + panel open as a single unit via the floating toggle (upper-left circular button) or Cmd+\ — hover-to-reveal has been retired because on iPad it fought with the explicit toggle. `#sidebar` is opacity 0 / `pointer-events: none` until the `.visible` or `.pinned` class is set. On viewports wider than 700px the panel is always inset (pushing the editor column over); at 700px or narrower it falls back to overlay mode. The legacy pin button is `display: none` everywhere — the toggle owns open/close.
+
+**Floating toggle (`.sidebar-floating-toggle`).** Circular button fixed at `top: 40px; left: 20px`, z-index 500 so it clears every other piece of chrome. Click emits `toggle-left-panel`, which either shows the files panel or hides all panels. Icon flips between `sidebar-expand` and `sidebar-collapse` based on `#panel-overlay`'s `.hidden` class (watched via `MutationObserver`). When the panel is open the button rides its right edge via `left: calc(50px + var(--panel-width) + 20px)` — no transition, matching the panel's snap behavior. In doc mode only, typing in an editable target adds a `.typing-fade` class that hides the button until any pointer activity brings it back; notebook mode keeps the button permanently visible for Pencil-only users.
 
 **Buttons:** Files panel, Styles panel, Versions, Export, Settings (iOS only). Mode toggles (ratchet, private, typewriter, D.R.Y., focus, zotero) are accessed via the command palette (`Cmd+P`).
 
@@ -554,7 +556,6 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 |--------|---------|
 | Select tool | `1` |
 | Text tool | `T` |
-| Pen tool (enter / exit drawing mode) | `W` |
 | Drag Area tool | `A` |
 | Toggle Brainstorm | `B` |
 | Delete selected | `Backspace` |
@@ -564,7 +565,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Ungroup shapes | `Cmd+Shift+G` |
 | Pan canvas | `Space` (hold) |
 
-Drawing-mode sub-tools (while drawing mode is active): `E` Erase, `X` Slice. Clicking a brush slot returns to Draw. See [README-DRAWING.md](README-DRAWING.md).
+Drawing tools (Lasso, Erase, Slice, brush slots) are reached through the always-visible top pill rather than keyboard shortcuts. Two-finger tap = undo, three-finger tap = redo, two-finger drag = pan. See [README-DRAWING.md](README-DRAWING.md).
 
 ## Tauri Plugins
 

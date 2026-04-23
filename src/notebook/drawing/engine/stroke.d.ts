@@ -39,6 +39,7 @@ export function createStrokeEngine(opts: {
   setStreamline(v: number): void;
   setSmoothing(v: number): void;
   setSpacing(v: number): void;
+  setLongPressMs(ms: number): void;
   renderBrushSwatch(
     brushId: string,
     color: string,

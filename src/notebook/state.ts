@@ -36,7 +36,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "fontSize" | "camera" | "selectionBox" | "editingText"
   | "bookmarks" | "brainstormMode" | "creatingDragArea" | "theme"
   | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
-  | "layers" | "activeLayerId";
+  | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs";
 
 /** Default brush-slot preset. Slots 1–3 default to "auto" color so
  *  they track the active theme's foreground; slot 4 (highlighter) is
@@ -68,6 +68,10 @@ export class DrawingState extends EventTarget {
   drawingSubTool: DrawingSubTool = "draw";
   brushSlots: DrawingSlot[] = DEFAULT_BRUSH_SLOTS.map((s) => ({ ...s }));
   activeBrushSlot = 0;
+  /** Hold duration (ms) that promotes an in-flight stroke into a
+   *  lasso. Exposed via the lasso flyout's slider (500–2000 ms).
+   *  Default matches the engine's built-in constant. */
+  lassoHoldMs = 1500;
 
   // Layers are notebook-level; they host every shape type, not just
   // drawings. Shapes carry `layerId` via ShapeBase; the renderer
@@ -152,6 +156,13 @@ export class DrawingState extends EventTarget {
     if (this.drawingSubTool === sub) return;
     this.drawingSubTool = sub;
     this.notify("drawingSubTool");
+  }
+
+  setLassoHoldMs(ms: number) {
+    const n = Math.max(500, Math.min(2000, Math.round(ms)));
+    if (this.lassoHoldMs === n) return;
+    this.lassoHoldMs = n;
+    this.notify("lassoHoldMs");
   }
 
   setActiveBrushSlot(i: number) {
@@ -854,12 +865,30 @@ export class DrawingState extends EventTarget {
         !(s.layerId && hiddenLayerIds.has(s.layerId)) &&
         boundsOverlap(getShapeBounds(s, this.fontFamily), box),
       );
+      // Group-aware expansion: a grouped shape's members move / style
+      // together, so the marquee should always pick them up as a unit.
+      // Without this, partial overlap inside a group leaves the other
+      // members unselected and the next drag splits the group apart.
+      const hitIds = new Set<string>();
+      const touchedGroups = new Set<string>();
+      for (const s of hits) {
+        hitIds.add(s.id);
+        if (s.groupId) touchedGroups.add(s.groupId);
+      }
+      if (touchedGroups.size > 0) {
+        for (const s of this.shapes) {
+          if (s.groupId && touchedGroups.has(s.groupId) &&
+              !(s.layerId && hiddenLayerIds.has(s.layerId))) {
+            hitIds.add(s.id);
+          }
+        }
+      }
       if (e.shiftKey) {
         const next = new Set(this.selectedIds);
-        hits.forEach((s) => next.add(s.id));
+        hitIds.forEach((id) => next.add(id));
         this.selectedIds = next;
-      } else if (hits.length > 0) {
-        this.selectedIds = new Set(hits.map((s) => s.id));
+      } else if (hitIds.size > 0) {
+        this.selectedIds = new Set(hitIds);
       }
       this.selectionBox = null;
       this._selectStart = null;
@@ -899,7 +928,11 @@ export class DrawingState extends EventTarget {
     const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const zoomFactor = e.ctrlKey ? 0.01 : 0.001;
     const delta = -e.deltaY * zoomFactor;
-    const newZoom = Math.min(2, Math.max(0.1, this.camera.zoom * (1 + delta)));
+    // Zoom range is clamped to [25%, 100%]: zooming past 1:1 tends to
+    // blur ink and serves no real content purpose on a canvas where
+    // everything is already world-space. 25% is the practical
+    // lower-bound for a still-legible overview.
+    const newZoom = Math.min(1, Math.max(0.25, this.camera.zoom * (1 + delta)));
     const scale = newZoom / this.camera.zoom;
     this.camera = {
       x: mouseX - scale * (mouseX - this.camera.x),

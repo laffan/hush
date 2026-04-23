@@ -151,19 +151,40 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       drawGroupHighlight(ctx, bounds, camera.zoom, theme.accent);
     }
 
+    // Strokes never get per-stroke resize handles — the drawing engine
+    // owns their transform, so a handled highlight from the canvas
+    // renderer is non-functional chrome. When more than one stroke is
+    // selected outside a named group, collapse them into a single
+    // combined dashed bbox so the user sees "one selection" instead of
+    // a field of individual stroke boxes.
+    const looseStrokes: Shape[] = [];
     for (const shape of shapes) {
-      if (selectedIds.has(shape.id) && !pocketedIds.has(shape.id)) {
-        if (shape.id === state.croppingImageId && shape.type === "image") {
-          drawCropOverlay(ctx, shape, camera.zoom);
-        } else if (shape.type === "draw" && shape.groupId && groupBounds.has(shape.groupId)) {
-          // DrawShape in a selected group: skip the per-stroke highlight.
-          // Strokes don't have individual resize handles, so a per-shape
-          // box just duplicates the group bbox and clutters the view.
-          // Other shape types keep their per-shape highlight since their
-          // resize handles ride along with it.
-        } else {
-          drawSelectionHighlight(ctx, shape, camera.zoom, theme.accent, state.fontFamily);
-        }
+      if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id)) continue;
+      if (shape.type !== "draw") continue;
+      if (shape.groupId && groupBounds.has(shape.groupId)) continue;
+      looseStrokes.push(shape);
+    }
+    if (looseStrokes.length >= 2) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const s of looseStrokes) {
+        const b = getShapeBounds(s, state.fontFamily);
+        if (b.minX < minX) minX = b.minX;
+        if (b.minY < minY) minY = b.minY;
+        if (b.maxX > maxX) maxX = b.maxX;
+        if (b.maxY > maxY) maxY = b.maxY;
+      }
+      drawGroupHighlight(ctx, { minX, minY, maxX, maxY }, camera.zoom, theme.accent);
+    } else if (looseStrokes.length === 1) {
+      drawStrokeBoundsHighlight(ctx, looseStrokes[0], camera.zoom, theme.accent, state.fontFamily);
+    }
+
+    for (const shape of shapes) {
+      if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id)) continue;
+      if (shape.type === "draw") continue; // handled above (group or loose-stroke bbox)
+      if (shape.id === state.croppingImageId && shape.type === "image") {
+        drawCropOverlay(ctx, shape, camera.zoom);
+      } else {
+        drawSelectionHighlight(ctx, shape, camera.zoom, theme.accent, state.fontFamily);
       }
     }
   }
@@ -390,6 +411,25 @@ function drawSelectionHighlight(ctx: CanvasRenderingContext2D, shape: Shape, zoo
     ctx.fillRect(hx - half, hy - half, handleSize, handleSize);
     ctx.strokeRect(hx - half, hy - half, handleSize, handleSize);
   }
+  ctx.restore();
+}
+
+/** Stroke-specific selection highlight: a dashed bbox with no resize
+ *  handles. DrawShapes can't be resized from the canvas renderer (the
+ *  drawing engine owns transforms), so a handled highlight is just
+ *  chrome that lies about what's interactive. */
+function drawStrokeBoundsHighlight(ctx: CanvasRenderingContext2D, shape: Shape, zoom: number, accentColor: string, fontFamily?: string) {
+  const bounds = getShapeBounds(shape, fontFamily);
+  const pad = 6;
+  const x1 = bounds.minX - pad, y1 = bounds.minY - pad;
+  const w = bounds.maxX - bounds.minX + pad * 2;
+  const h = bounds.maxY - bounds.minY + pad * 2;
+  ctx.save();
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.setLineDash([4 / zoom, 4 / zoom]);
+  ctx.strokeRect(x1, y1, w, h);
+  ctx.setLineDash([]);
   ctx.restore();
 }
 

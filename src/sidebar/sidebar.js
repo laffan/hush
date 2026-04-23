@@ -34,6 +34,62 @@ export function createSidebar(container, state) {
   let activePanel = null;
   let panelPinned = false;
 
+  // Floating circular sidebar-toggle button. Lives above every other
+  // chrome element so keyboard-free users (iPad, Pencil) have a
+  // persistent way to open the left panel — desktop users reach the
+  // same action via Cmd+\. Emits `toggle-left-panel`, which the main
+  // handler either force-opens the files panel on or hides-all-panels.
+  const sidebarToggleBtn = document.createElement("button");
+  sidebarToggleBtn.className = "sidebar-floating-toggle";
+  sidebarToggleBtn.title = "Toggle files panel";
+  sidebarToggleBtn.innerHTML = sidebarToggleSvg("expand");
+  document.body.appendChild(sidebarToggleBtn);
+  sidebarToggleBtn.addEventListener("click", () => {
+    state.emit("toggle-left-panel");
+  });
+  function syncSidebarToggleIcon() {
+    const isOpen = !panelOverlay.classList.contains("hidden");
+    sidebarToggleBtn.innerHTML = sidebarToggleSvg(isOpen ? "collapse" : "expand");
+    sidebarToggleBtn.title = isOpen ? "Close panel" : "Open files panel";
+    // CSS positions the button relative to the panel's right edge when
+    // this class is set — keeps the gap constant as the panel opens,
+    // closes, or is resized.
+    sidebarToggleBtn.classList.toggle("panel-open", isOpen);
+  }
+  // MutationObserver: the panel's visibility is driven by class-flipping
+  // on #panel-overlay (panel-inset, hidden, panel-pinned) rather than a
+  // state event, so watch DOM classes to keep the icon in sync.
+  new MutationObserver(syncSidebarToggleIcon).observe(panelOverlay, {
+    attributes: true, attributeFilter: ["class"],
+  });
+  syncSidebarToggleIcon();
+
+  // Typing-fade. In the markdown editor the toggle sits right over the
+  // writing column; fading it out while typing keeps the view clean.
+  // Any pointer activity (mouse move, tap) brings it back immediately
+  // so the user never has to hunt for it. Notebook mode keeps the
+  // toggle present because typing there is rare and bursty.
+  function showToggleAgain() {
+    if (sidebarToggleBtn.classList.contains("typing-fade")) {
+      sidebarToggleBtn.classList.remove("typing-fade");
+    }
+  }
+  document.addEventListener("keydown", (e) => {
+    if (document.body.classList.contains("notebook-mode")) return;
+    // Ignore modifier-only taps (Shift/Cmd/Ctrl/Alt) — those aren't
+    // "the user is actively writing prose" and shouldn't hide the UI.
+    if (e.key === "Shift" || e.key === "Control" || e.key === "Meta" ||
+        e.key === "Alt" || e.key === "Escape") return;
+    const t = e.target;
+    const isEditable =
+      (t && t.closest && t.closest(".cm-content")) ||
+      (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable));
+    if (!isEditable) return;
+    sidebarToggleBtn.classList.add("typing-fade");
+  });
+  document.addEventListener("pointermove", showToggleAgain);
+  document.addEventListener("pointerdown", showToggleAgain);
+
   // Set up panel-width CSS var from persisted setting, then install the
   // invisible-until-hover right-edge resizer.
   applyPanelWidth(state.settings.sidebarPanelWidth || 300);
@@ -418,6 +474,19 @@ function btn(action, title, svgContent) {
   return `<button class="sidebar-btn" data-action="${action}" data-tooltip-name="${title}">
     <svg viewBox="0 0 24 24">${svgContent}</svg>
   </button>`;
+}
+
+/** SVG for the floating sidebar toggle — expand/collapse variants
+ *  pulled from temp-icons with stroke="currentColor" for theme inheritance. */
+function sidebarToggleSvg(variant) {
+  const chevron = variant === "collapse"
+    ? `<path d="M7.25 10L5.5 12L7.25 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`
+    : `<path d="M5.5 10L7.25 12L5.5 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M19 21L5 21C3.89543 21 3 20.1046 3 19L3 5C3 3.89543 3.89543 3 5 3L19 3C20.1046 3 21 3.89543 21 5L21 19C21 20.1046 20.1046 21 19 21Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M9.5 21V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${chevron}
+  </svg>`;
 }
 
 // Minimalist SVG icons (loaded from src/sidebar_icons/)

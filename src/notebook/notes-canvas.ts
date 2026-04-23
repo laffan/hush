@@ -113,22 +113,47 @@ export class NotesCanvas {
     // `container` alongside the notebook canvas. The layer subscribes
     // to state shape events via its sync shim; we sync camera +
     // theme + drawing-mode input routing explicitly.
+    // Two-finger pan inside the drawing engine: the engine owns
+    // touches while the brush/eraser/lasso is active, so the canvas's
+    // own touchstart pan handler never sees them. The engine's
+    // gesture recogniser emits pan callbacks when two fingers drift;
+    // we translate them into state.camera motion here.
+    let touchPanCamStart: { x: number; y: number; zoom: number } | null = null;
     this._drawingLayer = createDrawingLayer({
       container,
       state: this.state as unknown as import("./drawing/sync-shim").ShimState,
       theme: this.state.theme,
       camera: this.state.camera,
+      onTouchPanStart: () => { touchPanCamStart = { ...this.state.camera }; },
+      onTouchPanMove: (dx, dy) => {
+        if (!touchPanCamStart) return;
+        this.state.camera = {
+          x: touchPanCamStart.x + dx,
+          y: touchPanCamStart.y + dy,
+          zoom: touchPanCamStart.zoom,
+        };
+        this.state.notify("camera");
+      },
+      onTouchPanEnd: () => { touchPanCamStart = null; },
     });
+    // Seed the engine with the user's chosen lasso hold duration.
+    this._drawingLayer.setLassoHoldMs(this.state.lassoHoldMs);
     this.state.addEventListener("change", ((e: CustomEvent) => {
       const keys: string[] = (e.detail && e.detail.keys) || [];
       if (!this._drawingLayer) return;
       if (keys.includes("camera")) this._drawingLayer.setCamera(this.state.camera);
       if (keys.includes("theme")) this._drawingLayer.setTheme(this.state.theme);
-      if (keys.includes("drawingMode") || keys.includes("tool")) {
-        // Pen tool on ⇒ engine SVG captures pointers. Anything else ⇒
-        // SVG releases so the notebook canvas (text / drag-area / pan)
-        // owns input.
-        this._drawingLayer.setInputEnabled(this.state.drawingMode);
+      if (keys.includes("drawingMode") || keys.includes("tool") || keys.includes("isPanning")) {
+        // Pen tool on ⇒ engine SVG captures pointers. Anything else —
+        // including a persistent / transient pan (isPanning) while
+        // inside drawing mode — releases the SVG so the notebook
+        // canvas owns input for pan. Without the isPanning check,
+        // holding space over a drawing would do nothing because the
+        // SVG was still swallowing the pointerdown.
+        this._drawingLayer.setInputEnabled(this.state.drawingMode && !this.state.isPanning);
+      }
+      if (keys.includes("lassoHoldMs")) {
+        this._drawingLayer.setLassoHoldMs(this.state.lassoHoldMs);
       }
     }) as EventListener);
 

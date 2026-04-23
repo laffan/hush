@@ -111,9 +111,11 @@ export function bindInputEvents(
     if (twoFingerPanning && e.touches.length < 2) twoFingerPanning = false;
   });
 
-  // Space-to-pan state
+  // Space-to-pan state. `spaceEnabledPan` tracks whether THIS keydown
+  // is the one that flipped isPanning on — so a persistent pan from the
+  // toolbar grab button survives a space tap-and-release.
   let spaceDown = false;
-  let toolBeforeSpace: string | null = null;
+  let spaceEnabledPan = false;
 
   // Keyboard shortcuts
   on(window as unknown as HTMLElement, "keydown", ((e: KeyboardEvent) => {
@@ -138,9 +140,14 @@ export function bindInputEvents(
     if (e.key === " " && !e.repeat) {
       e.preventDefault();
       spaceDown = true;
-      toolBeforeSpace = state.tool;
-      state.isPanning = true;
-      state.notify("tool");
+      // Only flip isPanning if it wasn't already on (persistent grab
+      // tool). Tracks whether we were the one who turned it on so
+      // keyup doesn't kill a pre-existing persistent pan.
+      if (!state.isPanning) {
+        spaceEnabledPan = true;
+        state.isPanning = true;
+        state.notify("isPanning");
+      }
       return;
     }
 
@@ -168,9 +175,11 @@ export function bindInputEvents(
   on(window as unknown as HTMLElement, "keyup", ((e: KeyboardEvent) => {
     if (e.key === " " && spaceDown) {
       spaceDown = false;
-      state.isPanning = false;
-      if (toolBeforeSpace) { state.tool = toolBeforeSpace as import("./types").Tool; toolBeforeSpace = null; }
-      state.notify("tool");
+      if (spaceEnabledPan) {
+        spaceEnabledPan = false;
+        state.isPanning = false;
+        state.notify("isPanning");
+      }
     }
   }) as unknown as (e: HTMLElementEventMap["keyup"]) => void);
 

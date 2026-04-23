@@ -35,7 +35,7 @@ src/notebook/
     drawing-layer.ts       Engine-backed drawing layer + public API
     sync-shim.ts           state.shapes[] ↔ engine.strokes bridge
     brush-slots.ts         Toolbar slot row + brush-edit flyout
-    tool-panel.ts          Drawing-mode pill (Erase / Slice + brush row)
+    tool-panel.ts          Top draw pill (always visible): Lasso, Erase, Slice, brush slots; owns the lasso hold-time flyout
     layers-panel.ts        Layers dropdown (notebook-level, used by every shape type)
     engine/                Stroke engine (ported; 8 documented deltas)
 ```
@@ -65,7 +65,6 @@ Notebook shortcuts are registered in the Hush shortcut system:
 |-------------|---------|--------|
 | `shortcutNbSelect` | `1` | Select tool |
 | `shortcutNbText` | `T` | Text tool |
-| `shortcutNbPen` | `W` | Pen tool (enter / exit drawing mode) |
 | `shortcutNbDragArea` | `A` | Drag Area tool |
 | `shortcutNbBrainstorm` | `B` | Toggle Brainstorm mode |
 | `shortcutNbDelete` | `Backspace` | Delete selected shapes |
@@ -74,7 +73,7 @@ Notebook shortcuts are registered in the Hush shortcut system:
 | `shortcutNbGroup` | `Mod+G` | Group selected shapes |
 | `shortcutNbUngroup` | `Mod+Shift+G` | Ungroup selected shapes |
 
-Drawing-mode sub-tools (active only while drawing mode is on): `E` Erase, `X` Slice. Clicking a brush slot returns to Draw.
+Draw sub-tools (Lasso, Erase, Slice, brush slots) are reached through the always-visible top pill — no keyboard shortcuts; the E/X hints in the button tooltips are placeholders. Hold space to pan; the grab button in the bottom toolbar does the same thing persistently for pointer-only use.
 
 These appear in Settings > Shortcuts > Notebooks and are stored in `AppSettings` (Rust) alongside the editor shortcuts. The input handler reads them from Hush settings at mount time via the `NotebookShortcuts` interface.
 
@@ -143,9 +142,11 @@ A temporary stash on the left edge of the canvas. Users hold-drag a shape for 1 
 
 A rapid text-entry mode: each Enter creates a new text shape in an expanding spiral pattern around the click origin. Accessed via the `B` key or command palette.
 
-### Drawing mode
+### Drawing
 
-Drawing mode is entered via the Pen tool (`W` key or the main toolbar button) or by double-clicking an existing stroke. While drawing mode is active a top-centered pill surfaces the sub-tools (Erase, Slice) plus the four brush slots; Draw is the implicit default and is indicated by the highlighted brush. Lasso-select is surfaced on the main toolbar as a sibling to Pen.
+The top-centered pill is always visible and carries Lasso, Erase, Slice, and four brush slots. There is no "drawing mode" to enter — clicking any of those tools (or double-clicking an existing stroke) implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the pill visually dims.
+
+A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 1500). Tapping the already-active Lasso button toggles the flyout open.
 
 `DrawShape` instances are first-class shapes — they group, layer, pocket, route through the shelf, and participate in Hush's undo stack. Stroke rendering itself is delegated to a bake-to-canvas engine inside `src/notebook/drawing/`. Full architectural notes, the sync-shim invariants, and the engine deltas are in [README-DRAWING.md](README-DRAWING.md).
 

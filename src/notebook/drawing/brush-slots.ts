@@ -122,7 +122,8 @@ export function createBrushSlots(
       children: [thumb],
       onClick: (e) => {
         e.stopPropagation();
-        const wasActive = state.activeBrushSlot === i && state.drawingSubTool === "draw";
+        const drawingActive = state.tool === "pen";
+        const wasActive = drawingActive && state.activeBrushSlot === i && state.drawingSubTool === "draw";
         if (wasActive) {
           // Flyout only opens on a click of the already-active slot.
           if (flyoutOpen) closeFlyout(); else openFlyout();
@@ -130,7 +131,7 @@ export function createBrushSlots(
         }
         // Switching slots with a selection live restyles the
         // selection to the new slot's full config.
-        if (state.activeBrushSlot !== i && drawingLayer.hasSelection()) {
+        if (drawingActive && state.activeBrushSlot !== i && drawingLayer.hasSelection()) {
           const before = drawingLayer.snapshotSelectedStyle();
           const slot = state.brushSlots[i];
           drawingLayer.applyStyleToSelection({
@@ -141,8 +142,16 @@ export function createBrushSlots(
           });
           drawingLayer.commitStyleHistory(before);
         }
-        // Picking a brush implies Draw sub-tool — this is how the
-        // user exits Erase/Slice (there's no explicit Draw button).
+        // Picking a brush implicitly engages the drawing engine:
+        // drawing-mode used to be a separate "enter pen mode" gesture,
+        // but the top toolbar is always visible now, so any brush /
+        // erase / slice / lasso click is the entry point.
+        if (state.isPanning) { state.isPanning = false; state.notify("isPanning"); }
+        if (state.tool !== "pen") {
+          state.tool = "pen";
+          state.notify("tool");
+          state.notify("drawingMode");
+        }
         if (state.drawingSubTool !== "draw") state.setDrawingSubTool("draw");
         state.setActiveBrushSlot(i);
         // Selecting a different brush does NOT open the flyout;
@@ -352,9 +361,11 @@ export function createBrushSlots(
       drawingLayer.renderSwatch(slotThumbs[i], state.brushSlots[i]);
       // Active-slot indication is opacity-only — no background tint,
       // so the brush preview PNG reads cleanly against the toolbar.
-      // Only highlighted when the user is in Draw sub-tool; Erase/
-      // Slice make the brush selection irrelevant.
-      const active = i === state.activeBrushSlot && state.drawingSubTool === "draw";
+      // Only highlighted when the drawing engine is actually taking
+      // input (state.tool === "pen") AND the sub-tool is Draw.
+      // Erase / Slice make the brush selection irrelevant, and
+      // outside pen mode nothing in the pill is "live" at all.
+      const active = state.tool === "pen" && i === state.activeBrushSlot && state.drawingSubTool === "draw";
       slotBtns[i].style.opacity = active ? "1" : "0.55";
     }
   }
@@ -376,7 +387,8 @@ export function createBrushSlots(
   state.addEventListener("change", ((e: CustomEvent) => {
     const keys: string[] = (e.detail && e.detail.keys) || [];
     if (keys.includes("activeBrushSlot") || keys.includes("brushSlots") ||
-        keys.includes("theme") || keys.includes("drawingSubTool")) {
+        keys.includes("theme") || keys.includes("drawingSubTool") ||
+        keys.includes("tool")) {
       redrawThumbs();
       if (flyoutOpen) { applyFlyoutTheme(); syncFlyoutValues(); }
     }

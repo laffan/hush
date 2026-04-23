@@ -2,9 +2,16 @@
  * HUSH FORK DELTA LOG (vs. temp-drawing-demo reference):
  *   5. createGestures({ pointToLocal }) — optional resolver used by
  *      clientToLocal. Same contract as stroke.js delta #1.
+ *  10. Two-finger drag is now a pan gesture. When two fingers are
+ *      down inside the engine surface (where stroke.js would normally
+ *      own the touch), a drift above PAN_START_2 promotes the burst
+ *      into pan mode and fires onPanStart / onPanMove (client-space
+ *      midpoint deltas) / onPanEnd so the notebook camera can track.
+ *      Without this, users on iPad couldn't pan while a brush slot
+ *      was selected.
  * ============================================================
  *
- * gestures.js — two- and three-finger tap recogniser.
+ * gestures.js — two-/three-finger tap recogniser + two-finger pan.
  *
  * Listens on pointerType === 'touch' only; pen and mouse flow straight
  * through to the stroke / selection engines untouched.
@@ -15,9 +22,12 @@
  *      touch hasn't moved far, we assume this is a gesture, call
  *      strokeEngine.cancelActiveStroke() to discard the nascent stroke,
  *      and from then on treat all active touches as gesture candidates.
- *   3. On pointerup, each touch is scored as a "tap" if it was short,
- *      still, and not too wide (palm). When every touch has lifted we
- *      examine the buffer of recently-ended taps:
+ *   3. While in gesture mode with ≥2 fingers, a drift past PAN_START_2
+ *      flips us into pan mode for the duration of the burst. Pan mode
+ *      skips tap evaluation on release — a pan is never also an undo.
+ *   4. On pointerup (not in pan mode), each touch is scored as a "tap"
+ *      if it was short, still, and not too wide (palm). When every
+ *      touch has lifted we examine the buffer of recently-ended taps:
  *         - 2 taps within range and within simultaneity → onUndo
  *         - 3 taps within range and within simultaneity → onRedo
  *
@@ -28,6 +38,10 @@
 const SIMULTANEITY_MS = 180;       // max time between the first and last contact landing
 const TAP_MAX_MS = 280;            // max duration from down to up for a tap
 const MOVE_TOLERANCE_2 = 64;       // (8 CSS px)^2 — any contact that drifts more is not a tap
+// Promotion threshold from "candidate tap" into "pan". Slightly above
+// MOVE_TOLERANCE_2 so a two-finger tap with a bit of shake still lands
+// as an undo.
+const PAN_START_2 = 144;           // (12 CSS px)^2
 const MIN_PAIR_DIST = 25;          // min distance between two fingertips (prevents accidental doubles)
 const MAX_PAIR_DIST = 320;         // max distance (rejects spread palm contacts)
 // iPadOS reports contact ellipses larger than iPhone: ~40–80 CSS px for
@@ -42,6 +56,9 @@ export function createGestures({
   selectionEngine,
   onUndo,
   onRedo,
+  onPanStart,      // () => void — two-finger drift crossed PAN_START_2
+  onPanMove,       // (dx, dy) => void — midpoint delta from pan-start, in client px
+  onPanEnd,        // () => void — every touch has lifted after a pan
 }) {
   const toLocal = pointToLocal || ((p) => {
     const r = getRect();
@@ -55,6 +72,12 @@ export function createGestures({
   let windowStart = 0;
   // True once we've decided the current touch burst is a gesture rather than a stroke.
   let gestureMode = false;
+  // True once the two-finger drift has crossed PAN_START_2. Pan and
+  // tap are mutually exclusive for a single burst.
+  let panning = false;
+  // Client-space midpoint snapshot at pan-start, used as the frame of
+  // reference for subsequent onPanMove deltas.
+  let panStartMid = null;
 
   function now() { return performance.now(); }
 
@@ -69,6 +92,17 @@ export function createGestures({
     endedTaps.length = 0;
     windowStart = 0;
     gestureMode = false;
+    panning = false;
+    panStartMid = null;
+  }
+
+  /** Average clientX/clientY of currently-active contacts. Returns
+   *  null when the map is empty. */
+  function midClient() {
+    if (active.size === 0) return null;
+    let sx = 0, sy = 0;
+    for (const r of active.values()) { sx += r.clientX; sy += r.clientY; }
+    return { x: sx / active.size, y: sy / active.size };
   }
 
   function qualifiesAsTap(rec) {
@@ -134,6 +168,8 @@ export function createGestures({
       y: p.y,
       startX: p.x,
       startY: p.y,
+      clientX: e.clientX,
+      clientY: e.clientY,
       down: t,
       up: 0,
       moved2: 0,
@@ -162,12 +198,33 @@ export function createGestures({
     const dx = p.x - rec.startX, dy = p.y - rec.startY;
     const d2 = dx * dx + dy * dy;
     if (d2 > rec.moved2) rec.moved2 = d2;
+    rec.clientX = e.clientX;
+    rec.clientY = e.clientY;
     if ((e.width || 0) > MAX_CONTACT_SIZE || (e.height || 0) > MAX_CONTACT_SIZE) {
       rec.tooBig = true;
     }
-    // If we're already in gesture mode and a finger drifts far, the whole
-    // burst stops being a tap — but we still wait for all fingers to lift
-    // before resetting, so we don't mis-feed the stroke engine mid-drag.
+    // Promote to pan the first time any two-finger contact drifts past
+    // the pan threshold. The drift check uses engine-local coords (it's
+    // fine — we just need "did fingers move meaningfully?"); pan
+    // deltas themselves are computed in client space so the notebook
+    // camera translates 1:1 with the user's finger motion.
+    if (gestureMode && !panning && active.size >= 2) {
+      let trigger = false;
+      for (const r of active.values()) {
+        if (r.moved2 > PAN_START_2) { trigger = true; break; }
+      }
+      if (trigger) {
+        panning = true;
+        panStartMid = midClient();
+        onPanStart && onPanStart();
+      }
+    }
+    if (panning) {
+      const mid = midClient();
+      if (mid && panStartMid) {
+        onPanMove && onPanMove(mid.x - panStartMid.x, mid.y - panStartMid.y);
+      }
+    }
   }
 
   function onPointerUp(e) {
@@ -177,8 +234,20 @@ export function createGestures({
     rec.up = now();
     active.delete(e.pointerId);
 
-    if (gestureMode && qualifiesAsTap(rec)) {
+    // Panning disqualifies the whole burst from being any tap gesture —
+    // we don't want a long two-finger drag to also fire an undo.
+    if (!panning && gestureMode && qualifiesAsTap(rec)) {
       endedTaps.push(rec);
+    }
+    // Pan ends on the first lift: remaining fingers fall back to no
+    // gesture (stroke/selection engines won't reactivate mid-burst
+    // because stroke.js keys off its own pointerdown, which we've
+    // already swallowed). The user can start a new pan by lifting all
+    // fingers and re-landing two.
+    if (panning) {
+      panning = false;
+      panStartMid = null;
+      onPanEnd && onPanEnd();
     }
 
     if (active.size === 0) {

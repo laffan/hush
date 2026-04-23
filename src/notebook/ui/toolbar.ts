@@ -11,7 +11,6 @@ interface ToolDef { iconName: string; label: string; tool: Tool | "brainstorm"; 
 const TOOLS: ToolDef[] = [
   { iconName: "select", label: "Select", tool: "select", shortcut: "1" },
   { iconName: "text", label: "Text", tool: "text", shortcut: "T" },
-  { iconName: "pen", label: "Draw", tool: "pen", shortcut: "W" },
   { iconName: "drag-area", label: "Drag Area", tool: "drag-area", shortcut: "A" },
   { iconName: "brainstorm", label: "Brainstorm", tool: "brainstorm", shortcut: "B" },
 ];
@@ -118,26 +117,13 @@ export function createToolbar(state: DrawingState): HTMLElement {
       style: { width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: "8px", cursor: "pointer", background: "transparent", transition: "all 0.15s" },
       children: [icon(def.iconName, 20)],
       onClick: () => {
+        // Any tool press clears an active pan — a persistent grab and
+        // a functional tool shouldn't be layered.
+        if (state.isPanning) { state.isPanning = false; state.notify("isPanning"); }
         if (def.tool === "brainstorm") {
           state.brainstormMode = !state.brainstormMode;
           if (state.brainstormMode) { state.tool = "text"; state.notify("tool"); }
           state.notify("brainstormMode");
-        } else if (def.tool === "pen") {
-          // Pen behavior depends on current state:
-          //  - Not in drawing mode: enter, default to Draw sub-tool.
-          //  - In drawing mode with Draw/Erase/Slice active: exit.
-          //  - In drawing mode with Lasso (select) active: swap to
-          //    Draw. Exits take two clicks from lasso — once to Pen
-          //    (→ draw), once more to Pen (→ exit). Matches the
-          //    convention that Lasso and Pen are sibling tools.
-          if (!state.drawingMode) {
-            state.enterDrawingMode();
-            state.setDrawingSubTool("draw");
-          } else if (state.drawingSubTool === "select") {
-            state.setDrawingSubTool("draw");
-          } else {
-            state.exitDrawingMode();
-          }
         } else {
           state.tool = def.tool;
           state.brainstormMode = false;
@@ -154,46 +140,25 @@ export function createToolbar(state: DrawingState): HTMLElement {
 
   const gridPopup = createGridPopup(state);
 
-  const undoBtn = h("button", {
-    title: "Undo (Cmd+Z)",
-    style: { width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: "8px", cursor: "pointer", background: "transparent", opacity: "0.4" },
-    children: [icon("undo", 20)],
-    onClick: () => state.undo(),
-  });
-  const redoBtn = h("button", {
-    title: "Redo (Cmd+Shift+Z)",
-    style: { width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: "8px", cursor: "pointer", background: "transparent", opacity: "0.4" },
-    children: [icon("redo", 20)],
-    onClick: () => state.redo(),
-  });
-
-  const resetBtn = h("button", {
-    title: "Reset view",
-    style: { width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: "8px", cursor: "pointer", background: "transparent" },
-    children: [icon("reset", 20)],
-    onClick: () => { state.camera = { x: 0, y: 0, zoom: 1 }; state.notify("camera"); },
-  });
-
   const bookmarksEl = createBookmarksPanel(state);
   const layersEl = createLayersPanel(state);
 
-  // Lasso button sits just before the tools block. It's a "virtual"
-  // tool — doesn't set state.tool; instead enters drawing mode (if
-  // needed) and switches the drawing sub-tool to select. Visible
-  // only while drawing mode is active so it doesn't clutter the
-  // toolbar in other contexts.
-  const lassoBtn = h("button", {
-    title: "Lasso select (polygon)",
+  // Grab tool — persistent pan mode. Toggles `state.isPanning`, which
+  // every pointer handler (notebook canvas + drawing engine) already
+  // consults. Exists so iPad users without a keyboard can reach the
+  // same panning affordance space-bar holders get on desktop.
+  const grabBtn = h("button", {
+    title: "Pan (hold space)",
     style: {
-      width: "36px", height: "36px", display: "none",
+      width: "36px", height: "36px", display: "flex",
       alignItems: "center", justifyContent: "center",
       border: "none", borderRadius: "8px", cursor: "pointer",
       background: "transparent", transition: "all 0.15s",
     },
-    children: [icon("lasso", 20)],
+    children: [icon("grab", 20)],
     onClick: () => {
-      if (!state.drawingMode) state.enterDrawingMode();
-      state.setDrawingSubTool("select");
+      state.isPanning = !state.isPanning;
+      state.notify("isPanning");
     },
   });
 
@@ -206,15 +171,12 @@ export function createToolbar(state: DrawingState): HTMLElement {
       backdropFilter: "blur(8px)",
     },
     children: [
-      lassoBtn,
+      grabBtn,
       ...TOOLS.map(makeBtn),
       spacer,
       layersEl.root,
       bookmarksEl,
       gridPopup,
-      resetBtn,
-      undoBtn,
-      redoBtn,
     ],
   });
 
@@ -238,31 +200,18 @@ export function createToolbar(state: DrawingState): HTMLElement {
       let active: boolean;
       if (key === "brainstorm") {
         active = state.brainstormMode;
-      } else if (key === "pen") {
-        // Pen is "active" only when user is in a drawing sub-tool
-        // other than select — select is surfaced separately via the
-        // lasso button so Pen doesn't double up with it.
-        active = state.drawingMode && state.drawingSubTool !== "select";
       } else {
         active = state.tool === key && !state.brainstormMode;
       }
       btn.style.color = active ? accent : fg;
       btn.style.opacity = active ? "1" : "0.6";
     }
-    // Lasso: visible only in drawing mode. Active when the sub-tool
-    // is select (i.e., engine lasso is live).
-    const lassoVisible = state.drawingMode;
-    const lassoActive = state.drawingMode && state.drawingSubTool === "select";
-    lassoBtn.style.display = lassoVisible ? "flex" : "none";
-    lassoBtn.style.color = lassoActive ? accent : fg;
-    lassoBtn.style.opacity = lassoActive ? "1" : "0.6";
-    undoBtn.style.color = fg;
-    redoBtn.style.color = fg;
-    resetBtn.style.color = fg;
+    // Grab: always visible. Active reflects state.isPanning — whether
+    // panning was entered via this button or via the space bar.
+    grabBtn.style.color = state.isPanning ? accent : fg;
+    grabBtn.style.opacity = state.isPanning ? "1" : "0.6";
     gridBtnEl.style.color = fg;
     gridBtnEl.style.opacity = "0.6";
-    undoBtn.style.opacity = state.canUndo ? "0.8" : "0.3";
-    redoBtn.style.opacity = state.canRedo ? "0.8" : "0.3";
   }
 
   state.addEventListener("change", update);
