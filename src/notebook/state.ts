@@ -1,6 +1,6 @@
 import type {
-  Camera, CameraBookmark, DragAreaShape, ImageShape,
-  Point, SelectionBox, Shape, TextShape, Tool,
+  Camera, CameraBookmark, DragAreaShape, DrawingSlot, DrawingSubTool,
+  ImageShape, Layer, Point, SelectionBox, Shape, TextShape, Tool,
 } from "./types";
 import { COLOR_PALETTE } from "./types";
 import {
@@ -34,7 +34,19 @@ export type BackgroundPattern = "grid" | "dot-grid" | "blank";
 
 type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "fontSize" | "camera" | "selectionBox" | "editingText"
-  | "bookmarks" | "brainstormMode" | "creatingDragArea" | "theme";
+  | "bookmarks" | "brainstormMode" | "creatingDragArea" | "theme"
+  | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
+  | "layers" | "activeLayerId";
+
+/** Default brush-slot preset. Slots 1–3 default to "auto" color so
+ *  they track the active theme's foreground; slot 4 (highlighter) is
+ *  yellow because theme-fg highlighters vanish on dark themes. */
+const DEFAULT_BRUSH_SLOTS: DrawingSlot[] = [
+  { brushId: "brush-1", color: "auto",    size: 4,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-2", color: "auto",    size: 8,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-3", color: "auto",    size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-highlighter", color: "#fde047", size: 20, streamline: 0.35, spacing: 0.10, mode: "highlighter" },
+];
 
 export class DrawingState extends EventTarget {
   shapes: Shape[] = [];
@@ -49,6 +61,23 @@ export class DrawingState extends EventTarget {
   brainstormMode = false;
   creatingDragArea: { start: Point; end: Point } | null = null;
 
+  // Drawing mode. `tool === "pen"` is the outer toggle; the fields
+  // below describe the state of pen mode itself. They persist across
+  // pen-mode entry/exit so users don't lose their active slot
+  // selection when they toggle out and back in.
+  drawingSubTool: DrawingSubTool = "draw";
+  brushSlots: DrawingSlot[] = DEFAULT_BRUSH_SLOTS.map((s) => ({ ...s }));
+  activeBrushSlot = 0;
+
+  // Layers are notebook-level; they host every shape type, not just
+  // drawings. Shapes carry `layerId` via ShapeBase; the renderer
+  // iterates by layer order and skips hidden layers. The drawing
+  // engine's internal layer list is a mirror kept in sync by the
+  // sync shim. Seeded with a single "Layer 1" at construction — a
+  // freshly created notebook never has zero layers.
+  layers: Layer[] = [{ id: generateId(), name: "Layer 1", locked: false, hidden: false }];
+  activeLayerId: string = this.layers[0].id;
+
   canvasEl: HTMLCanvasElement | null = null;
   /** When true, left-click pans (set by space bar hold). */
   isPanning = false;
@@ -58,6 +87,15 @@ export class DrawingState extends EventTarget {
   /** Pixel offset from the left edge for the sidebar/panel. The pocket
    *  tray and toolbar center themselves relative to this value. */
   leftInset = 0;
+
+  // Hooks driven by notes-canvas to route DrawShape drags through
+  // the drawing engine's preview pipeline. See drawing-layer.ts
+  // beginSelectionDrag — without this routing, dragging many
+  // selected strokes spams per-frame setStrokePoints calls on the
+  // engine, which is quadratic in selection size.
+  onShapeDragStart: ((selectedIds: Set<string>) => void) | null = null;
+  onShapeDragMove: ((totalDx: number, totalDy: number) => void) | null = null;
+  onShapeDragEnd: (() => void) | null = null;
 
   // Appearance
   appearanceMode: AppearanceMode = "light";
@@ -81,6 +119,155 @@ export class DrawingState extends EventTarget {
 
   setTheme(id: string) { this.themeId = id; this.notify("theme"); }
   setAppearance(mode: AppearanceMode) { this.appearanceMode = mode; this.notify("theme"); }
+
+  // === Drawing mode ===
+  get drawingMode(): boolean { return this.tool === "pen"; }
+
+  /** Enter drawing mode. Saved slot state persists — re-entering
+   *  restores the last active slot and sub-tool. */
+  enterDrawingMode() {
+    if (this.tool === "pen") return;
+    // Clearing selection keeps Hush's selection from peeking through
+    // under the drawing overlay while the user is drawing.
+    if (this.selectedIds.size > 0) {
+      this.selectedIds = new Set();
+      this.notify("selectedIds");
+    }
+    this.brainstormMode = false;
+    this.tool = "pen";
+    this.notify("tool");
+    this.notify("drawingMode");
+    this.notify("brainstormMode");
+  }
+
+  /** Leave drawing mode, returning to Select tool by default. */
+  exitDrawingMode() {
+    if (this.tool !== "pen") return;
+    this.tool = "select";
+    this.notify("tool");
+    this.notify("drawingMode");
+  }
+
+  setDrawingSubTool(sub: DrawingSubTool) {
+    if (this.drawingSubTool === sub) return;
+    this.drawingSubTool = sub;
+    this.notify("drawingSubTool");
+  }
+
+  setActiveBrushSlot(i: number) {
+    if (i < 0 || i >= this.brushSlots.length) return;
+    if (this.activeBrushSlot === i) return;
+    this.activeBrushSlot = i;
+    this.notify("activeBrushSlot");
+  }
+
+  updateBrushSlot(i: number, patch: Partial<DrawingSlot>) {
+    if (i < 0 || i >= this.brushSlots.length) return;
+    this.brushSlots = this.brushSlots.map((s, idx) => idx === i ? { ...s, ...patch } : s);
+    this.notify("brushSlots");
+  }
+
+  // === Layers ===
+  //
+  // Layers are notebook-level and host every shape type. `layers` is
+  // stored top-first (index 0 = top). Every mutation bumps a single
+  // notify("layers"); shape repositioning onto a different layer is
+  // a shape mutation and bumps "shapes".
+  //
+  // Known limitation: strokes render on a dedicated CSS-transformed
+  // canvas stacked above the main notebook canvas, so a text shape
+  // on a layer above a stroke won't visually sit above it. Layers
+  // work as expected WITHIN same-type contents; cross-type z-order
+  // is fixed (drawings-always-on-top). Revisit with per-layer canvas
+  // if the limitation bites.
+
+  addLayer(name?: string): string {
+    const id = generateId();
+    const layerName = name ?? `Layer ${this.layers.length + 1}`;
+    this.layers = [{ id, name: layerName, locked: false, hidden: false }, ...this.layers];
+    this.activeLayerId = id;
+    this.notify("layers");
+    this.notify("activeLayerId");
+    return id;
+  }
+
+  deleteLayer(id: string): boolean {
+    if (this.layers.length <= 1) return false; // always keep at least one layer
+    const layer = this.layers.find((l) => l.id === id);
+    if (!layer) return false;
+    // Drop any shapes on this layer. (Matches the engine's
+    // deleteLayer semantics; we're authoritative now.)
+    this.shapes = this.shapes.filter((s) => s.layerId !== id);
+    this.layers = this.layers.filter((l) => l.id !== id);
+    if (this.activeLayerId === id) this.activeLayerId = this.layers[0].id;
+    this.notify("shapes");
+    this.notify("layers");
+    this.notify("activeLayerId");
+    return true;
+  }
+
+  renameLayer(id: string, name: string) {
+    if (!name.trim()) return;
+    this.layers = this.layers.map((l) => l.id === id ? { ...l, name: name.trim() } : l);
+    this.notify("layers");
+  }
+
+  setLayerHidden(id: string, hidden: boolean) {
+    this.layers = this.layers.map((l) => l.id === id ? { ...l, hidden } : l);
+    this.notify("layers");
+    this.notify("shapes"); // renderer respects layer visibility per shape
+  }
+
+  setLayerLocked(id: string, locked: boolean) {
+    this.layers = this.layers.map((l) => l.id === id ? { ...l, locked } : l);
+    this.notify("layers");
+  }
+
+  moveLayerUp(id: string): boolean {
+    const idx = this.layers.findIndex((l) => l.id === id);
+    if (idx <= 0) return false;
+    const next = this.layers.slice();
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    this.layers = next;
+    this.notify("layers");
+    this.notify("shapes"); // z-order changed
+    return true;
+  }
+
+  moveLayerDown(id: string): boolean {
+    const idx = this.layers.findIndex((l) => l.id === id);
+    if (idx < 0 || idx >= this.layers.length - 1) return false;
+    const next = this.layers.slice();
+    [next[idx + 1], next[idx]] = [next[idx], next[idx + 1]];
+    this.layers = next;
+    this.notify("layers");
+    this.notify("shapes"); // z-order changed
+    return true;
+  }
+
+  setActiveLayer(id: string) {
+    if (!this.layers.some((l) => l.id === id)) return;
+    if (this.activeLayerId === id) return;
+    this.activeLayerId = id;
+    this.notify("activeLayerId");
+  }
+
+  /** True when the active layer is locked or hidden. Shape creators
+   *  should bail early when this returns true — new shapes added to
+   *  an invisible layer would be confusing. */
+  isActiveLayerProtected(): boolean {
+    const L = this.layers.find((l) => l.id === this.activeLayerId);
+    return !L || L.locked || L.hidden;
+  }
+
+  /** Set of layer ids whose contents shouldn't be interactable. Used
+   *  by the selection paths to skip hidden-layer shapes without
+   *  iterating layers on every hit test. */
+  _hiddenLayerIds(): Set<string> {
+    const s = new Set<string>();
+    for (const l of this.layers) if (l.hidden) s.add(l.id);
+    return s;
+  }
 
   // Undo/redo
   private _undo = new UndoManager();
@@ -119,6 +306,18 @@ export class DrawingState extends EventTarget {
   private _selectStart: Point | null = null;
   private _isDragging = false;
   private _dragStart: Point = { x: 0, y: 0 };
+  /** Pointer position at drag-start (distinct from `_dragStart` which
+   *  is updated each pointermove to compute incremental dx/dy).
+   *  Needed by the drawing-engine drag-preview hook so it can apply
+   *  an absolute transform each frame. */
+  private _dragOrigin: Point = { x: 0, y: 0 };
+  /** When true, `onShapeDragStart` has already fired for the active
+   *  drag. Normal drags set this in handlePointerDown. Unpocket
+   *  drags defer the call until the next pointermove so the
+   *  pocket-flag flip gets bridged to the engine FIRST, before the
+   *  shim pauses — otherwise the engine keeps its strokes hidden
+   *  for the duration of the drag. */
+  private _dragStartFired = false;
   private _isResizing = false;
   private _resizeHandle: ResizeHandle | null = null;
   private _resizeStart: Point = { x: 0, y: 0 };
@@ -178,6 +377,7 @@ export class DrawingState extends EventTarget {
         id: shapeId, type: "text", position: editing.position,
         text: trimmed, fontSize: editing.fontSize, color: editing.color,
         width: fitWidth,
+        layerId: this.activeLayerId,
       } as TextShape];
     }
     this.selectedIds = new Set([shapeId]);
@@ -340,7 +540,14 @@ export class DrawingState extends EventTarget {
         return;
       }
       const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily);
-      const hitShape = findShapeAtPoint(canvasPt, this.shapes.filter((s) => !pocketedIds.has(s.id)), this.fontFamily);
+      // Exclude pocketed shapes (rendered elsewhere) and shapes on
+      // hidden layers (invisible → unclickable).
+      const hiddenLayerIds = this._hiddenLayerIds();
+      const hitShape = findShapeAtPoint(
+        canvasPt,
+        this.shapes.filter((s) => !pocketedIds.has(s.id) && !(s.layerId && hiddenLayerIds.has(s.layerId))),
+        this.fontFamily,
+      );
 
       // Cmd+click on a link: open in browser/app
       if (hitShape && hitShape.type === "text" && (e.metaKey || e.ctrlKey)) {
@@ -366,6 +573,10 @@ export class DrawingState extends EventTarget {
           }
           this._isDragging = true;
           this._dragStart = canvasPt;
+          this._dragOrigin = canvasPt;
+          // Normal drag (not from pocket): fire the hook right away.
+          if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
+          this._dragStartFired = true;
 
           if (e.altKey) {
             const currentSelected = this.selectedIds.has(hitShape.id) ? this.selectedIds : new Set(groupMembers);
@@ -404,6 +615,24 @@ export class DrawingState extends EventTarget {
     const screenPt: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const canvasPt = screenToCanvas(screenPt, this.camera);
     const hit = findShapeAtPoint(canvasPt, this.shapes, this.fontFamily);
+    if (hit && hit.type === "draw") {
+      // Double-click on a stroke drops straight into drawing mode —
+      // the user's asking to keep working on this drawing, not make
+      // a new text block on top of it. If the stroke is grouped,
+      // also select the whole group so a follow-up edit sees it.
+      if (hit.groupId) {
+        const groupIds = this.shapes
+          .filter((s) => s.groupId === hit.groupId)
+          .map((s) => s.id);
+        this.selectedIds = new Set(groupIds);
+        this.notify("selectedIds");
+      } else {
+        this.selectedIds = new Set([hit.id]);
+        this.notify("selectedIds");
+      }
+      if (!this.drawingMode) this.enterDrawingMode();
+      return;
+    }
     if (hit && hit.type === "text") {
       this.startEditingExistingText(hit);
     } else {
@@ -448,6 +677,13 @@ export class DrawingState extends EventTarget {
         this._pocketDragPending = false;
         this._isDragging = true;
         this._dragStart = canvasPt;
+        this._dragOrigin = canvasPt;
+        // Defer onShapeDragStart until the next pointermove so the
+        // shim bridges the pocket-flag flip (pocketed: undefined +
+        // fullRebake to show strokes in world again) BEFORE it
+        // pauses for the drag. Without the defer, engine strokes
+        // stay hidden for the whole drag.
+        this._dragStartFired = false;
         this.notify("shapes");
       }
       return;
@@ -479,6 +715,18 @@ export class DrawingState extends EventTarget {
       const dy = canvasPt.y - this._dragStart.y;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         this._dragStart = canvasPt;
+        // Fire the deferred onShapeDragStart (unpocket drags defer
+        // it so the shim bridges the pocket-exit before pausing).
+        if (!this._dragStartFired && this.onShapeDragStart) {
+          this.onShapeDragStart(this.selectedIds);
+          this._dragStartFired = true;
+        }
+        if (this.onShapeDragMove) {
+          this.onShapeDragMove(
+            canvasPt.x - this._dragOrigin.x,
+            canvasPt.y - this._dragOrigin.y,
+          );
+        }
 
         // In crop mode: drag shifts the crop window within the image
         if (this.croppingImageId && this.selectedIds.has(this.croppingImageId)) {
@@ -547,6 +795,11 @@ export class DrawingState extends EventTarget {
 
     if (this._isDragging) {
       this._isDragging = false;
+      // Only call onShapeDragEnd if a start actually fired — a
+      // pocket-exit that never reached a real drag move shouldn't
+      // emit an end with no start.
+      if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
+      this._dragStartFired = false;
       const droppedInPocket = this.pocketInZone;
       // Reset proximity state — render will hide tray on next frame
       this.pocketProximity = 0;
@@ -596,7 +849,11 @@ export class DrawingState extends EventTarget {
 
     if (this.tool === "select" && this.selectionBox) {
       const box = normalizeBox(this.selectionBox);
-      const hits = this.shapes.filter((s) => boundsOverlap(getShapeBounds(s, this.fontFamily), box));
+      const hiddenLayerIds = this._hiddenLayerIds();
+      const hits = this.shapes.filter((s) =>
+        !(s.layerId && hiddenLayerIds.has(s.layerId)) &&
+        boundsOverlap(getShapeBounds(s, this.fontFamily), box),
+      );
       if (e.shiftKey) {
         const next = new Set(this.selectedIds);
         hits.forEach((s) => next.add(s.id));
@@ -617,6 +874,7 @@ export class DrawingState extends EventTarget {
           id: generateId(), type: "drag-area", position: { x: minX, y: minY },
           width: w, height: h, color: "#6b7280", strokeColor: "#6b7280",
           backgroundColor: "rgba(107, 114, 128, 0.16)", borderRadius: 12,
+          layerId: this.activeLayerId,
         };
         const areaBounds = getShapeBounds(newArea, this.fontFamily);
         this.shapes = [...this.shapes.map((s) => {
@@ -802,6 +1060,7 @@ export class DrawingState extends EventTarget {
     this.shapes = [...this.shapes, {
       id, type: "image", position: { x: pos.x - dw / 2, y: pos.y - dh / 2 },
       width: dw, height: dh, dataUrl, name, color: "#000000",
+      layerId: this.activeLayerId,
     } as ImageShape];
     this.selectedIds = new Set([id]);
     this.tool = "select";
@@ -816,7 +1075,7 @@ export class DrawingState extends EventTarget {
   }
 
   addTextShapeAtPosition(text: string, position: Point) {
-    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: 18, color: "#000000", width: 350 } as TextShape];
+    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: 18, color: "#000000", width: 350, layerId: this.activeLayerId } as TextShape];
     this.recordHistory();
     this.notify("shapes");
   }

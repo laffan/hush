@@ -1,5 +1,5 @@
 import { FONT_FAMILY, LINE_HEIGHT_RATIO, COLOR_PALETTE } from "./types";
-import type { Camera, DragAreaShape, ImageShape, Point, SelectionBox, Shape, TextShape } from "./types";
+import type { Camera, DragAreaShape, ImageShape, Layer, Point, SelectionBox, Shape, TextShape } from "./types";
 import type { CanvasTheme } from "./themes";
 import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
@@ -25,6 +25,19 @@ export interface RenderState {
   // True while the drag cursor sits inside the pocket drop zone.
   pocketInZone?: boolean;
   leftInset: number;
+  /** Layer list, top-first. Used to iterate shapes in layer order
+   *  and skip shapes on hidden layers. Optional: falls back to
+   *  single-pass iteration when absent (tests, legacy callers). */
+  layers?: Layer[];
+  /** Optional drawing-layer handle. When present the pocket / shelf
+   *  thumbnail paths blit grouped-drawing regions directly from the
+   *  done canvas instead of re-stamping strokes per-frame. */
+  drawingLayer?: {
+    blitWorldRegion(
+      ctx: CanvasRenderingContext2D,
+      worldBbox: { minX: number; minY: number; maxX: number; maxY: number },
+    ): void;
+  };
 }
 
 export function render(canvas: HTMLCanvasElement, state: RenderState): void {
@@ -65,19 +78,38 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
 
-  for (const shape of shapes) {
-    if (shape.type === "drag-area") {
-      if (!pocketedIds.has(shape.id)) drawDragArea(ctx, shape);
-    }
+  // Build layer order (bottom-first for paint order). If no layers
+  // were provided, fall back to a single synthetic layer that contains
+  // every shape — same visual result as the pre-layers behavior.
+  const layerOrder: { id: string; hidden: boolean }[] = state.layers && state.layers.length
+    ? [...state.layers].reverse().map((l) => ({ id: l.id, hidden: l.hidden }))
+    : [{ id: "__single__", hidden: false }];
+  const shapesByLayer = new Map<string, Shape[]>();
+  for (const l of layerOrder) shapesByLayer.set(l.id, []);
+  for (const s of shapes) {
+    const bucketId = state.layers && state.layers.length ? (s.layerId || layerOrder[layerOrder.length - 1].id) : "__single__";
+    const bucket = shapesByLayer.get(bucketId) || shapesByLayer.get(layerOrder[layerOrder.length - 1].id);
+    if (bucket) bucket.push(s);
   }
 
-  for (const shape of shapes) {
-    if (shape.type === "drag-area") continue;
-    if (shape.id === editingShapeId) continue;
-    if (pocketedIds.has(shape.id)) continue;
-    if (shape.type === "draw") drawStroke(ctx, shape.points, shape.color, shape.width);
-    else if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily);
-    else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId);
+  // Paint each visible layer bottom-first. Within a layer, drag-areas
+  // render behind their contents; drawings are handled by the
+  // drawing-layer canvas and intentionally skipped here.
+  for (const layer of layerOrder) {
+    if (layer.hidden) continue;
+    const layerShapes = shapesByLayer.get(layer.id);
+    if (!layerShapes || !layerShapes.length) continue;
+    for (const shape of layerShapes) {
+      if (shape.type === "drag-area" && !pocketedIds.has(shape.id)) drawDragArea(ctx, shape);
+    }
+    for (const shape of layerShapes) {
+      if (shape.type === "drag-area") continue;
+      if (shape.id === editingShapeId) continue;
+      if (pocketedIds.has(shape.id)) continue;
+      if (shape.type === "draw") continue; // drawing layer owns strokes
+      if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily);
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId);
+    }
   }
 
   if (creatingDragArea) {
@@ -123,6 +155,12 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (selectedIds.has(shape.id) && !pocketedIds.has(shape.id)) {
         if (shape.id === state.croppingImageId && shape.type === "image") {
           drawCropOverlay(ctx, shape, camera.zoom);
+        } else if (shape.type === "draw" && shape.groupId && groupBounds.has(shape.groupId)) {
+          // DrawShape in a selected group: skip the per-stroke highlight.
+          // Strokes don't have individual resize handles, so a per-shape
+          // box just duplicates the group bbox and clutters the view.
+          // Other shape types keep their per-shape highlight since their
+          // resize handles ride along with it.
         } else {
           drawSelectionHighlight(ctx, shape, camera.zoom, theme.accent, state.fontFamily);
         }
@@ -148,7 +186,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   if (pocketLayout.entries.length > 0) {
     ctx.save();
     ctx.translate(leftInset, 0);
-    drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache);
+    drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache, state.drawingLayer);
     ctx.restore();
   }
 
@@ -448,6 +486,7 @@ function drawPocketTray(
 function drawPocketEntries(
   ctx: CanvasRenderingContext2D, entries: PocketEntry[], selectedIds: Set<string>,
   theme: CanvasTheme, fontFamily: string, imageCache: Map<string, HTMLImageElement>,
+  drawingLayer?: RenderState["drawingLayer"],
 ) {
   for (const entry of entries) {
     const b = entry.screenBounds;
@@ -479,13 +518,55 @@ function drawPocketEntries(
       if (shape.type === "drag-area") continue;
       if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false);
-      else if (shape.type === "draw") drawStroke(ctx, shape.points, shape.color, shape.width);
+      // DrawShapes are handled in one pass below — we blit the whole
+      // group's world bbox from the done canvas at once instead of
+      // re-stamping strokes per-frame.
     }
-    // Selection highlights for pocketed shapes
-    for (const shape of entry.shapes) {
-      if (selectedIds.has(shape.id)) {
-        drawSelectionHighlight(ctx, shape, 1 / entry.scale, theme.accent, fontFamily);
+    // Grouped drawings: one drawImage from the drawing layer's done
+    // canvas per entry. Cheap (single blit) and pixel-accurate.
+    if (drawingLayer) {
+      const drawShapesInEntry: Shape[] = [];
+      for (const shape of entry.shapes) {
+        if (shape.type === "draw") drawShapesInEntry.push(shape);
       }
+      if (drawShapesInEntry.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const s of drawShapesInEntry) {
+          const b = getShapeBounds(s, fontFamily);
+          if (b.minX < minX) minX = b.minX;
+          if (b.minY < minY) minY = b.minY;
+          if (b.maxX > maxX) maxX = b.maxX;
+          if (b.maxY > maxY) maxY = b.maxY;
+        }
+        drawingLayer.blitWorldRegion(ctx, { minX, minY, maxX, maxY });
+      }
+    }
+    // Selection highlights for pocketed shapes. Accumulate group
+    // bounds first (for grouped selections), then draw per-shape
+    // highlights for anything not in a selected-group — DrawShapes
+    // in a selected group don't get per-stroke boxes on top of the
+    // group bbox (matches main-canvas behavior).
+    const pocketGroupBounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
+    for (const shape of entry.shapes) {
+      if (!selectedIds.has(shape.id) || !shape.groupId) continue;
+      const b = getShapeBounds(shape, fontFamily);
+      const existing = pocketGroupBounds.get(shape.groupId);
+      if (existing) {
+        existing.minX = Math.min(existing.minX, b.minX);
+        existing.minY = Math.min(existing.minY, b.minY);
+        existing.maxX = Math.max(existing.maxX, b.maxX);
+        existing.maxY = Math.max(existing.maxY, b.maxY);
+      } else {
+        pocketGroupBounds.set(shape.groupId, { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY });
+      }
+    }
+    for (const bounds of pocketGroupBounds.values()) {
+      drawGroupHighlight(ctx, bounds, 1 / entry.scale, theme.accent);
+    }
+    for (const shape of entry.shapes) {
+      if (!selectedIds.has(shape.id)) continue;
+      if (shape.type === "draw" && shape.groupId && pocketGroupBounds.has(shape.groupId)) continue;
+      drawSelectionHighlight(ctx, shape, 1 / entry.scale, theme.accent, fontFamily);
     }
     ctx.restore();
   }

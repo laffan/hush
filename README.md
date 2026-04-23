@@ -16,7 +16,7 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Typewriter Mode** — Locks the cursor to a fixed line on screen. Drag the boundary to reposition it. The document scrolls to keep the cursor in place.
 
-**Notebooks** — Canvas-based visual notes with an infinite pan-and-zoom surface. Create text, images, and drag areas on a freeform canvas. Features brainstorm mode (rapid sequential text entry), a pocket shelf for stashing shapes, camera bookmarks, and 16 matching color themes. Notebooks autosave alongside documents and share the same organizational structure.
+**Notebooks** — Canvas-based visual notes with an infinite pan-and-zoom surface. Create text, images, drag areas, and freehand drawings on a freeform canvas. Drawing mode (`W`) surfaces four brush slots, erase, slice, and polygon-lasso select; strokes group, layer, pocket, and undo like every other shape. Brainstorm mode (rapid sequential text entry), a pocket shelf for stashing shapes, camera bookmarks, and 16 matching color themes round it out. Notebooks autosave alongside documents and share the same organizational structure.
 
 **Floating Panes** — Cmd-drag any document or notebook from the files sidebar into the editor area to open it as a floating reference pane. Panes are fully functional editors (same markdown features, shortcuts, and syntax highlighting) that float above the main content. Resize from edges or corners, drag via the title bar, collapse to just the header, or close. Panes stay with their parent document and reappear when you return.
 

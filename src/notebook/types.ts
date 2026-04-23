@@ -1,5 +1,10 @@
 // === Tools ===
-export type Tool = "select" | "text" | "drag-area" | "brainstorm";
+export type Tool = "select" | "text" | "drag-area" | "brainstorm" | "pen";
+
+/** Sub-tool while Tool === "pen" (drawing mode). The top-level `tool`
+ *  stays "pen"; `drawingSubTool` picks which pen-mode operation is
+ *  active. Has no meaning outside drawing mode. */
+export type DrawingSubTool = "draw" | "erase" | "slice" | "select";
 
 // === Geometry ===
 export interface Point {
@@ -37,12 +42,53 @@ interface ShapeBase {
   parentId?: string; // id of drag-area parent, if any
   groupId?: string;  // shared id for logically grouped shapes
   pocketed?: boolean;  // true if shape is pocketed to right-side zone
+  /** Layer membership. Optional on read (legacy shapes default to the
+   *  first layer on load); set by every shape creator going forward. */
+  layerId?: string;
+}
+
+/** Stroke points carry pressure for brush-size modulation by the
+ *  stamped drawing engine. Legacy v1 data (points without pressure)
+ *  is upgraded at load time by file-io. */
+export interface DrawPoint extends Point {
+  pressure: number;
 }
 
 export interface DrawShape extends ShapeBase {
   type: "draw";
-  points: Point[];
-  width: number;
+  /** Base stamp radius in world CSS px. Renamed from v1 `width`. */
+  size: number;
+  /** Brush atlas id; see BRUSH_DEFS in the drawing engine. */
+  brushId: string;
+  /** Stroke composite behavior. `highlighter` uses multiply + alpha. */
+  mode: "normal" | "highlighter";
+  /** Drawing layer the stroke belongs to. See `Layer` below. */
+  layerId: string;
+  points: DrawPoint[];
+  /** When true, stroke's color tracks theme.foreground. Saved as
+   *  `"auto"` in the color field on disk; resolved on load. */
+  colorIsAuto?: boolean;
+}
+
+/** Drawing layers are a drawing-mode-only concept — notebooks have
+ *  one or more layers, each owning a subset of DrawShapes via
+ *  stroke.layerId. Layers are stored top-first (index 0 = top). */
+export interface Layer {
+  id: string;
+  name: string;
+  locked: boolean;
+  hidden: boolean;
+}
+
+/** One of the 4 brush presets in drawing mode. Not persisted with
+ *  the notebook; lives in app state. */
+export interface DrawingSlot {
+  brushId: string;
+  color: string;            // hex or the literal "auto"
+  size: number;
+  streamline: number;       // 0..1
+  spacing: number;          // 0..1 (fraction of stamp radius)
+  mode: "normal" | "highlighter";
 }
 
 export interface TextShape extends ShapeBase {

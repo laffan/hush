@@ -30,6 +30,31 @@ const PATHS: Record<string, string> = {
   "save": `<path d="M3 19V5C3 3.89543 3.89543 3 5 3H16.1716C16.702 3 17.2107 3.21071 17.5858 3.58579L20.4142 6.41421C20.7893 6.78929 21 7.29799 21 7.82843V19C21 20.1046 20.1046 21 19 21H5C3.89543 21 3 20.1046 3 19Z" stroke="currentColor" stroke-width="1.5"/><path d="M8.6 9H15.4C15.7314 9 16 8.73137 16 8.4V3.6C16 3.26863 15.7314 3 15.4 3H8.6C8.26863 3 8 3.26863 8 3.6V8.4C8 8.73137 8.26863 9 8.6 9Z" stroke="currentColor" stroke-width="1.5"/><path d="M6 13.6V21H18V13.6C18 13.2686 17.7314 13 17.4 13H6.6C6.26863 13 6 13.2686 6 13.6Z" stroke="currentColor" stroke-width="1.5"/>`,
   "open": `<path d="M2 11V4.6C2 4.26863 2.26863 4 2.6 4H8.77805C8.92127 4 9.05977 4.05124 9.16852 4.14445L12.3315 6.85555C12.4402 6.94876 12.5787 7 12.722 7H21.4C21.7314 7 22 7.26863 22 7.6V11M2 11V19.4C2 19.7314 2.26863 20 2.6 20H21.4C21.7314 20 22 19.7314 22 19.4V11M2 11H22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   "pocket": `<path d="M5.03518 3.63328C5.01608 3.28936 5.28981 3 5.63426 3H18.3657C18.7102 3 18.9839 3.28936 18.9648 3.63328L18.0315 20.4333C18.0138 20.7512 17.7508 21 17.4324 21H14.5335C14.2293 21 13.9732 20.7723 13.9377 20.4701L12.5959 9.06507C12.5128 8.35854 11.4872 8.35854 11.4041 9.06507L10.0623 20.4701C10.0268 20.7723 9.7707 21 9.46645 21H6.56759C6.24915 21 5.98618 20.7512 5.96852 20.4333L5.03518 3.63328Z" stroke="currentColor" stroke-width="1.5"/><path d="M5 7.5H6.5C7.60457 7.5 8.5 6.60457 8.5 5.5V3" stroke="currentColor" stroke-width="1.5"/><path d="M18.5 7.5H17.5C16.3954 7.5 15.5 6.60457 15.5 5.5V3" stroke="currentColor" stroke-width="1.5"/>`,
+  // Pen (drawing-mode entry) — ported from temp-icons/edit-pencil.svg,
+  // with stroke="currentColor" per the Illustrator-export fix.
+  "pen": `<path d="M14.3632 5.65156L15.8431 4.17157C16.6242 3.39052 17.8905 3.39052 18.6716 4.17157L20.0858 5.58579C20.8668 6.36683 20.8668 7.63316 20.0858 8.41421L18.6058 9.8942M14.3632 5.65156L4.74749 15.2672C4.41542 15.5993 4.21079 16.0376 4.16947 16.5054L3.92738 19.2459C3.87261 19.8659 4.39148 20.3848 5.0115 20.33L7.75191 20.0879C8.21972 20.0466 8.65806 19.8419 8.99013 19.5099L18.6058 9.8942M14.3632 5.65156L18.6058 9.8942" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  // Eraser — pencil-shape angled eraser sitting on a baseline.
+  "erase": `<path d="M15.5 3.5l5 5L10 19H5v-5L15.5 3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 7l5 5" stroke="currentColor" stroke-width="1.5"/><path d="M4 21h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  // Slice — two blade circles with crossed guides.
+  "slice": `<circle cx="6" cy="7" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="17" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8.3 8.6 L20 19 M8.3 15.4 L20 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  // Lasso — dashed loop with a short knot tail. Distinguishes from
+  // the plain select cursor (which is a rect-shaped marquee).
+  "lasso": `<path d="M6 9 C4 5 10 3 14 4 C19 5 21 10 19 14 C17 17 13 17 11 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="2 2"/><path d="M11 16 L11 20 L9 19" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  // Layers — three stacked diamonds. Matches the reference demo's glyph.
+  "layers-stack": `<path d="M12 3 L21 8 L12 13 L3 8 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3 12 L12 17 L21 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M3 16 L12 21 L21 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>`,
+  // Eye — almond shape with pupil circle.
+  "eye": `<path d="M3 12 Q8 5 12 5 T21 12 Q16 19 12 19 T3 12 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>`,
+  // Eye-off — almond with a slash through it.
+  "eye-off": `<path d="M3 12 Q8 5 12 5 T21 12 Q16 19 12 19 T3 12 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M4 20 L20 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  // Lock (closed).
+  "lock-closed": `<path d="M7 11 V8 A5 5 0 0 1 17 8 V11" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="5" y="11" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>`,
+  // Lock (open) — shackle angled away.
+  "lock-open": `<path d="M7 11 V8 A5 5 0 0 1 16 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="5" y="11" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>`,
+  // Chevron up / down for reorder.
+  "chevron-up": `<path d="M6 14 L12 8 L18 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  "chevron-down": `<path d="M6 10 L12 16 L18 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  // Plus (add).
+  "plus": `<path d="M5 12 H19 M12 5 V19" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
 };
 
 /** Create an SVG icon element. Color is inherited from CSS `color` via currentColor. */

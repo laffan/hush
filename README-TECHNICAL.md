@@ -43,10 +43,17 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │   ├── state.ts
 │   ├── renderer.ts
 │   ├── input-handler.ts
-│   └── ui/
-│       ├── toolbar.ts
-│       ├── shelf-panel.ts
-│       └── ...
+│   ├── ui/
+│   │   ├── toolbar.ts
+│   │   ├── shelf-panel.ts
+│   │   └── ...
+│   └── drawing/            (see README-DRAWING.md)
+│       ├── drawing-layer.ts
+│       ├── sync-shim.ts
+│       ├── brush-slots.ts
+│       ├── tool-panel.ts
+│       ├── layers-panel.ts
+│       └── engine/
 │
 ├── pane/
 │   ├── pane-manager.js
@@ -117,7 +124,7 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Font CSS is imp
 
 Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`.
 
-**Notebook state:** When a notebook is open, `currentNotebookFileId` is set and `currentFileId` / `currentProjectId` are null. The notebook canvas has its own `DrawingState` (in `src/notebook/state.ts`), managed by `notebook-bridge.js`. See [README-NOTEBOOK.md](README-NOTEBOOK.md) for details.
+**Notebook state:** When a notebook is open, `currentNotebookFileId` is set and `currentFileId` / `currentProjectId` are null. The notebook canvas has its own `DrawingState` (in `src/notebook/state.ts`), managed by `notebook-bridge.js`. See [README-NOTEBOOK.md](README-NOTEBOOK.md) for details and [README-DRAWING.md](README-DRAWING.md) for the freehand drawing layer and its engine/shim architecture.
 
 On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invoke("list_files")`, and `invoke("get_file_tree")`. In the browser (dev without Tauri), it falls back to localStorage.
 
@@ -547,6 +554,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 |--------|---------|
 | Select tool | `1` |
 | Text tool | `T` |
+| Pen tool (enter / exit drawing mode) | `W` |
 | Drag Area tool | `A` |
 | Toggle Brainstorm | `B` |
 | Delete selected | `Backspace` |
@@ -555,6 +563,8 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Group shapes | `Cmd+G` |
 | Ungroup shapes | `Cmd+Shift+G` |
 | Pan canvas | `Space` (hold) |
+
+Drawing-mode sub-tools (while drawing mode is active): `E` Erase, `X` Slice. Clicking a brush slot returns to Draw. See [README-DRAWING.md](README-DRAWING.md).
 
 ## Tauri Plugins
 

@@ -31,6 +31,13 @@ src/notebook/
     dom-helpers.ts         h() element builder, setStyles(), clearChildren()
     file-panel.ts          Standalone save/open — unused in Hush
     settings-panel.ts      Standalone settings modal — unused in Hush
+  drawing/                 See README-DRAWING.md
+    drawing-layer.ts       Engine-backed drawing layer + public API
+    sync-shim.ts           state.shapes[] ↔ engine.strokes bridge
+    brush-slots.ts         Toolbar slot row + brush-edit flyout
+    tool-panel.ts          Drawing-mode pill (Erase / Slice + brush row)
+    layers-panel.ts        Layers dropdown (notebook-level, used by every shape type)
+    engine/                Stroke engine (ported; 8 documented deltas)
 ```
 
 ### Integration with Hush
@@ -58,6 +65,7 @@ Notebook shortcuts are registered in the Hush shortcut system:
 |-------------|---------|--------|
 | `shortcutNbSelect` | `1` | Select tool |
 | `shortcutNbText` | `T` | Text tool |
+| `shortcutNbPen` | `W` | Pen tool (enter / exit drawing mode) |
 | `shortcutNbDragArea` | `A` | Drag Area tool |
 | `shortcutNbBrainstorm` | `B` | Toggle Brainstorm mode |
 | `shortcutNbDelete` | `Backspace` | Delete selected shapes |
@@ -65,6 +73,8 @@ Notebook shortcuts are registered in the Hush shortcut system:
 | `shortcutNbRedo` | `Mod+Shift+Z` | Redo |
 | `shortcutNbGroup` | `Mod+G` | Group selected shapes |
 | `shortcutNbUngroup` | `Mod+Shift+G` | Ungroup selected shapes |
+
+Drawing-mode sub-tools (active only while drawing mode is on): `E` Erase, `X` Slice. Clicking a brush slot returns to Draw.
 
 These appear in Settings > Shortcuts > Notebooks and are stored in `AppSettings` (Rust) alongside the editor shortcuts. The input handler reads them from Hush settings at mount time via the `NotebookShortcuts` interface.
 
@@ -113,9 +123,13 @@ The `"change"` event carries `{ detail: { keys: string[] } }` so listeners can c
 | `TextShape` | Positioned text with markdown rendering, optional background color, auto-fit or manual width |
 | `ImageShape` | Positioned image from base64 dataUrl, with optional non-destructive crop region |
 | `DragAreaShape` | Dashed container box that parents shapes dropped inside it |
-| `DrawShape` | Freehand drawing (array of points + width) |
+| `DrawShape` | Freehand stroke — array of points + brushId + size + mode. Rendered by the drawing engine (see [README-DRAWING.md](README-DRAWING.md)). |
 
-All shapes extend `ShapeBase`: `{ id, color, parentId?, groupId?, pocketed? }`.
+All shapes extend `ShapeBase`: `{ id, color, parentId?, groupId?, pocketed?, layerId? }`.
+
+### Layers
+
+Layers are notebook-level and host every shape type, not just drawings. `state.layers` is an ordered array (top-first); every shape carries an optional `layerId` and legacy shapes fall back to the bottom layer on load. The renderer walks bottom-to-top and skips hidden layers. The layers UI (`drawing/layers-panel.ts`) is mounted on the bottom toolbar. See README-DRAWING.md for details.
 
 ### Pocket system
 
@@ -128,6 +142,12 @@ A temporary stash on the left edge of the canvas. Users hold-drag a shape for 1 
 ### Brainstorm mode
 
 A rapid text-entry mode: each Enter creates a new text shape in an expanding spiral pattern around the click origin. Accessed via the `B` key or command palette.
+
+### Drawing mode
+
+Drawing mode is entered via the Pen tool (`W` key or the main toolbar button) or by double-clicking an existing stroke. While drawing mode is active a top-centered pill surfaces the sub-tools (Erase, Slice) plus the four brush slots; Draw is the implicit default and is indicated by the highlighted brush. Lasso-select is surfaced on the main toolbar as a sibling to Pen.
+
+`DrawShape` instances are first-class shapes — they group, layer, pocket, route through the shelf, and participate in Hush's undo stack. Stroke rendering itself is delegated to a bake-to-canvas engine inside `src/notebook/drawing/`. Full architectural notes, the sync-shim invariants, and the engine deltas are in [README-DRAWING.md](README-DRAWING.md).
 
 ### Shelf panel
 
@@ -158,6 +178,8 @@ The same rules from the main Hush codebase apply:
 3. Add the tool button in `ui/toolbar.ts` (in the `TOOLS` array)
 4. Add a shortcut setting to `AppSettings` (Rust) and `shortcutCategories` (settings-tabs.js)
 5. Add a cursor style in the `cursorMap` in `notes-canvas.ts`
+
+For drawing-mode sub-tools (Draw/Erase/Slice/Select siblings), see [README-DRAWING.md](README-DRAWING.md) — that path goes through the engine rather than `DrawingState.handlePointer*`.
 
 ### Adding a canvas theme
 

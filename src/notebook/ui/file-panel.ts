@@ -23,7 +23,7 @@ export function createFilePanel(state: DrawingState): HTMLElement {
     children: [icon("save", 20)],
     onClick: async () => {
       try {
-        await saveNoteFile(state.shapes);
+        await saveNoteFile(state.shapes, state.layers, state.activeLayerId);
       } catch (err) {
         console.error("Save failed:", err);
       }
@@ -38,11 +38,15 @@ export function createFilePanel(state: DrawingState): HTMLElement {
     children: [icon("open", 20)],
     onClick: async () => {
       try {
-        const shapes = await openNoteFile();
-        if (!shapes) return;
-        state.shapes = shapes;
+        const result = await openNoteFile();
+        if (!result) return;
+        state.shapes = result.shapes;
+        state.layers = result.layers;
+        state.activeLayerId = result.activeLayerId;
         state.selectedIds = new Set();
         state.initHistory();
+        state.notify("layers");
+        state.notify("activeLayerId");
         state.notify("shapes");
         state.notify("selectedIds");
       } catch (err) {

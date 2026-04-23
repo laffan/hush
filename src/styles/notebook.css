@@ -88,3 +88,34 @@ body.notebook-mode .column-resizer {
   background: #ddd;
   border-radius: 2px;
 }
+
+/* Drawing overlay — classes used by the engine's selection.js and
+ * stroke.js inside the drawing layer. Scoped to the wrapper class
+ * so rules don't collide with any other notebook SVG. */
+.notebook-drawing-wrapper .lasso {
+  fill: rgba(66, 133, 244, 0.08);
+  stroke: #4285f4;
+  stroke-dasharray: 4 4;
+}
+.notebook-drawing-wrapper .bbox {
+  /* Tinted fill makes the rect hit-testable so drag-on-selection
+   * moves the selection instead of falling through and starting a
+   * new lasso. */
+  fill: rgba(66, 133, 244, 0.06);
+  stroke: #4285f4;
+  stroke-dasharray: 4 4;
+  stroke-width: 1.5;
+  cursor: move;
+}
+.notebook-drawing-wrapper .handle {
+  fill: #fff;
+  stroke: #4285f4;
+  stroke-width: 1.5;
+}
+.notebook-drawing-wrapper .handle.nw, .notebook-drawing-wrapper .handle.se { cursor: nwse-resize; }
+.notebook-drawing-wrapper .handle.ne, .notebook-drawing-wrapper .handle.sw { cursor: nesw-resize; }
+.notebook-drawing-wrapper .handle.n,  .notebook-drawing-wrapper .handle.s  { cursor: ns-resize; }
+.notebook-drawing-wrapper .handle.e,  .notebook-drawing-wrapper .handle.w  { cursor: ew-resize; }
+.notebook-drawing-wrapper .delete-btn { cursor: pointer; }
+.notebook-drawing-wrapper .delete-btn circle { fill: #ea4335; }
+.notebook-drawing-wrapper .delete-btn path { stroke: #fff; stroke-width: 2; stroke-linecap: round; fill: none; }

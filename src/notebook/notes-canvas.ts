@@ -13,6 +13,9 @@ import { createStatusBar } from "./ui/status-bar";
 import { getShapeBounds } from "./utils";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
+import { createDrawingLayer } from "./drawing/drawing-layer";
+import type { DrawingLayer } from "./drawing/drawing-layer";
+import { createDrawingToolPanel } from "./drawing/tool-panel";
 
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
@@ -46,6 +49,7 @@ export class NotesCanvas {
   private _cleanupDropTarget: (() => void) | null = null;
   private _shelfItems: string[] = [];
   private _shelfPanel: HTMLElement | null = null;
+  private _drawingLayer: DrawingLayer | null = null;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
     this.container = container;
@@ -105,6 +109,52 @@ export class NotesCanvas {
       this._updatePatternCssVar();
     });
 
+    // Drawing layer. Mounts its own DOM (3 canvases + SVG) inside
+    // `container` alongside the notebook canvas. The layer subscribes
+    // to state shape events via its sync shim; we sync camera +
+    // theme + drawing-mode input routing explicitly.
+    this._drawingLayer = createDrawingLayer({
+      container,
+      state: this.state as unknown as import("./drawing/sync-shim").ShimState,
+      theme: this.state.theme,
+      camera: this.state.camera,
+    });
+    this.state.addEventListener("change", ((e: CustomEvent) => {
+      const keys: string[] = (e.detail && e.detail.keys) || [];
+      if (!this._drawingLayer) return;
+      if (keys.includes("camera")) this._drawingLayer.setCamera(this.state.camera);
+      if (keys.includes("theme")) this._drawingLayer.setTheme(this.state.theme);
+      if (keys.includes("drawingMode") || keys.includes("tool")) {
+        // Pen tool on ⇒ engine SVG captures pointers. Anything else ⇒
+        // SVG releases so the notebook canvas (text / drag-area / pan)
+        // owns input.
+        this._drawingLayer.setInputEnabled(this.state.drawingMode);
+      }
+    }) as EventListener);
+
+    // Top tool panel + brush-slot flyout. The panel is a pill; the
+    // flyout is wider and mounts alongside so it isn't clipped by
+    // the pill's overflow. Both live inside `container`.
+    const drawingChrome = createDrawingToolPanel(this.state, this._drawingLayer);
+    container.appendChild(drawingChrome.root);
+    container.appendChild(drawingChrome.flyout);
+
+    // Route Hush select-drag through the drawing engine's preview
+    // pipeline for DrawShapes. Without this, dragging N selected
+    // strokes spams per-frame setStrokePoints on the engine — each
+    // call does a linear stroke lookup + tile rebake. The engine's
+    // previewTransform does the same work as one GPU blit per frame.
+    const dl = this._drawingLayer;
+    this.state.onShapeDragStart = (ids) => {
+      const drawIds: string[] = [];
+      for (const s of this.state.shapes) {
+        if (s.type === "draw" && ids.has(s.id)) drawIds.push(s.id);
+      }
+      if (drawIds.length > 0) dl.beginSelectionDrag(drawIds);
+    };
+    this.state.onShapeDragMove = (dx, dy) => { dl.updateSelectionDrag(dx, dy); };
+    this.state.onShapeDragEnd = () => { dl.endSelectionDrag(); };
+
     // Emit "notebook-change" for autosave integration whenever shapes change
     this.state.addEventListener("change", ((e: CustomEvent) => {
       const keys: string[] = e.detail?.keys || [];
@@ -159,9 +209,19 @@ export class NotesCanvas {
 
   // === Public API ===
 
-  loadShapes(shapes: Shape[]) {
-    this.state.shapes = shapes;
+  loadShapes(shapes: Shape[], layers?: import("./types").Layer[], activeLayerId?: string) {
+    // Ensure every shape has a layerId; default to the seed / first
+    // layer so legacy notebooks render on a real layer.
+    const nextLayers = layers && layers.length ? layers : this.state.layers;
+    const topLayerId = nextLayers[0]?.id ?? this.state.activeLayerId;
+    this.state.layers = nextLayers;
+    this.state.activeLayerId = activeLayerId && nextLayers.some((l) => l.id === activeLayerId)
+      ? activeLayerId
+      : topLayerId;
+    this.state.shapes = shapes.map((s) => s.layerId ? s : ({ ...s, layerId: topLayerId }));
     this.state.initHistory();
+    this.state.notify("layers");
+    this.state.notify("activeLayerId");
     this.state.notify("shapes");
   }
 
@@ -202,6 +262,7 @@ export class NotesCanvas {
     cancelAnimationFrame(this._rafId);
     if (this._cleanupInput) this._cleanupInput();
     if (this._cleanupDropTarget) this._cleanupDropTarget();
+    if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
     this.container.innerHTML = "";
     if (lastActiveNotebook === this) lastActiveNotebook = null;
     // The text-editor mirrors its active handle onto window for
@@ -270,6 +331,8 @@ export class NotesCanvas {
         backgroundPattern: this.state.backgroundPattern,
         gridSpacing: this.state.gridSpacing,
         gridOpacity: this.state.gridOpacity,
+        layers: this.state.layers,
+        drawingLayer: this._drawingLayer ?? undefined,
         isDragging: this.state.isActiveDrag,
         pocketProximity: this.state.pocketProximity,
         pocketInZone: this.state.pocketInZone,
