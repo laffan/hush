@@ -41,6 +41,8 @@ pub struct AppSettings {
     pub make_space_for_panes: bool,
     #[serde(default = "default_typewriter_line_opacity")]
     pub typewriter_line_opacity: f64,
+    #[serde(default = "default_focus_mode_opacity")]
+    pub focus_mode_opacity: f64,
     #[serde(default = "default_padding")]
     pub padding: u32,
 
@@ -574,6 +576,9 @@ fn default_shortcut_comment() -> String {
 fn default_shortcut_insert_footnote() -> String {
     "Mod+Shift+M".to_string()
 }
+fn default_focus_mode_opacity() -> f64 {
+    0.5
+}
 fn default_typewriter_line_opacity() -> f64 {
     0.08
 }
@@ -672,6 +677,7 @@ impl Default for AppSettings {
             default_dark_colors: std::collections::HashMap::new(),
             make_space_for_panes: true,
             typewriter_line_opacity: default_typewriter_line_opacity(),
+            focus_mode_opacity: default_focus_mode_opacity(),
             padding: default_padding(),
             dropbox_access_token: None,
             dropbox_refresh_token: None,

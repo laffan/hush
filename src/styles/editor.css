@@ -80,7 +80,9 @@
 
 
 
-/* Column width resizer — wide hit area, thin visible line */
+/* Column width resizer — wide hit area, thin visible line.
+   Hidden by default to keep the writing surface untouchable; revealed
+   only while the user holds CMD (or while a drag is in progress). */
 .column-resizer {
   position: fixed;
   top: 0;
@@ -93,6 +95,12 @@
   z-index: 50;
   background: transparent;
   transition: background 0.15s;
+  display: none;
+}
+
+body.cmd-held .column-resizer,
+.column-resizer.dragging {
+  display: block;
 }
 
 .column-resizer::after {
@@ -108,6 +116,10 @@
   transition: opacity 0.5s ease-in;
 }
 
+/* Holding CMD makes the resizer hit-testable (see the display rule
+   above) but the rail itself stays invisible until the user actually
+   hovers over it — preserving the original "discover on hover" feel
+   while gating any interaction behind the modifier key. */
 .column-resizer.hover::after {
   opacity: 0.15;
   transition: opacity 0.5s ease-in;

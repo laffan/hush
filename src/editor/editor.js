@@ -433,12 +433,30 @@ function applyBlockCursor(state) {
  * Creates the CodeMirror 6 editor instance.
  */
 export function createEditor(container, state) {
+  // Track the previous cursor line so we can fire a rename when the
+  // user moves off line 1. First-line rename is the "filename follows
+  // title" behavior users expected — gated on cursor leaving the title
+  // to avoid the per-keystroke sync churn the old always-rename path
+  // caused on Dropbox.
+  let prevCursorLine = 1;
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       state.markDirty();
       state.trackKeystroke();
       scheduleWordCountRecompute(state);
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
+    }
+    if (update.selectionSet || update.docChanged) {
+      try {
+        const head = update.state.selection.main.head;
+        const line = update.state.doc.lineAt(head).number;
+        if (prevCursorLine === 1 && line !== 1) {
+          // Fire in a microtask so any in-flight dispatch completes
+          // before we trigger rename + tree mutation.
+          queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); });
+        }
+        prevCursorLine = line;
+      } catch { /* ignore — doc may be empty or in-flight */ }
     }
     // Typewriter: scroll cursor to fixed position on every update
     if (state.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
@@ -452,6 +470,12 @@ export function createEditor(container, state) {
         update.view.dispatch({ selection: { anchor: end } });
       }
     }
+  });
+
+  // Editor blur also rename-checks — catches "user clicked the sidebar /
+  // command palette while cursor was still on line 1."
+  const blurListener = EditorView.domEventHandlers({
+    blur: () => { queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); }); },
   });
 
   // Minimal theme
@@ -555,6 +579,7 @@ export function createEditor(container, state) {
       drawSelection(),
       closeBrackets(),
       updateListener,
+      blurListener,
       shortcutCompartment.of(initialShortcuts),
       ratchetKeymap,
       ratchetFilter,

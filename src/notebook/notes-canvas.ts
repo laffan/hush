@@ -9,10 +9,11 @@ import { createSelectionToolbar } from "./ui/selection-toolbar";
 import { createShelfPanel } from "./ui/shelf-panel";
 import { createTextEditor } from "./ui/text-editor";
 import { createBrainstormInput } from "./ui/brainstorm-input";
-import { createStatusBar } from "./ui/status-bar";
 import { getShapeBounds } from "./utils";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
+// @ts-ignore — JS module, no type declaration file
+import { getNotebookCanvasPanes, focusPaneById, scrollPaneToMatch } from "../pane/pane-manager.js";
 import { createDrawingLayer } from "./drawing/drawing-layer";
 import type { DrawingLayer } from "./drawing/drawing-layer";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
@@ -47,6 +48,7 @@ export class NotesCanvas {
   private _imageCache = new Map<string, HTMLImageElement>();
   private _cleanupInput: (() => void) | null = null;
   private _cleanupDropTarget: (() => void) | null = null;
+  private _cleanupPaneListener: (() => void) | null = null;
   private _shelfItems: string[] = [];
   private _shelfPanel: HTMLElement | null = null;
   private _drawingLayer: DrawingLayer | null = null;
@@ -210,6 +212,13 @@ export class NotesCanvas {
         this._shelfItems.splice(i, 1);
         this._rebuildShelf();
       },
+      // Surface notebook panes inside the shelf so their text content
+      // is searchable next to the canvas's own shapes. The list is read
+      // live on every rebuild so editor edits show up without a
+      // dedicated subscription.
+      getPanes: () => getNotebookCanvasPanes(),
+      onFocusPane: (id: string) => focusPaneById(id),
+      onScrollPaneToMatch: (id: string, from: number, to: number) => scrollPaneToMatch(id, from, to),
     };
 
     container.appendChild(createSelectionToolbar(this.state, () => this._moveToShelf()));
@@ -219,7 +228,19 @@ export class NotesCanvas {
 
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);
-    container.appendChild(createStatusBar(this.state));
+
+    // Refresh the shelf when panes are added / removed / hidden so its
+    // pane rows stay in sync without polling. Pane content edits don't
+    // emit this event — they're picked up the next time the shelf
+    // rebuilds for any other reason (search input, shape change).
+    if (typeof window !== "undefined") {
+      const appState = (window as unknown as { __hushState__?: { on(ev: string, fn: () => void): void; off(ev: string, fn: () => void): void } }).__hushState__;
+      if (appState && typeof appState.on === "function") {
+        const handler = () => this._rebuildShelf();
+        appState.on("notebook-pane-changed", handler);
+        this._cleanupPaneListener = () => appState.off("notebook-pane-changed", handler);
+      }
+    }
 
     // Initialize undo history with empty canvas
     this.state.initHistory();
@@ -279,6 +300,18 @@ export class NotesCanvas {
     this.state.notify("theme"); // triggers re-render
   }
 
+  /** Expose the drawing-layer handle for the export path. Returns null
+   *  when the layer is no longer mounted (post-destroy). */
+  getDrawingLayer(): DrawingLayer | null {
+    return this._drawingLayer;
+  }
+
+  /** Expose the image cache so the export path can draw image shapes
+   *  without re-decoding. */
+  getImageCache(): Map<string, HTMLImageElement> {
+    return this._imageCache;
+  }
+
   on(event: string, handler: (detail: unknown) => void) {
     this.state.addEventListener(event, ((e: CustomEvent) => handler(e.detail)) as EventListener);
   }
@@ -287,6 +320,7 @@ export class NotesCanvas {
     cancelAnimationFrame(this._rafId);
     if (this._cleanupInput) this._cleanupInput();
     if (this._cleanupDropTarget) this._cleanupDropTarget();
+    if (this._cleanupPaneListener) { this._cleanupPaneListener(); this._cleanupPaneListener = null; }
     if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
     this.container.innerHTML = "";
     if (lastActiveNotebook === this) lastActiveNotebook = null;

@@ -69,7 +69,18 @@ export function createTextEditor(state: DrawingState): HTMLElement {
     if (e.key === "Enter" && !e.shiftKey && state.brainstormMode && state.editingText) {
       e.preventDefault();
       state.endEditingText();
+      return;
     }
+    // Markdown formatting shortcuts — mirror the main editor's defaults
+    // so muscle memory works inside text shapes too.
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (e.shiftKey) return;
+    if (key === "b") { e.preventDefault(); applyTextareaWrap(textarea, state, "**"); return; }
+    if (key === "i") { e.preventDefault(); applyTextareaWrap(textarea, state, "*"); return; }
+    if (key === "=" || key === "+") { e.preventDefault(); applyTextareaWrap(textarea, state, "=="); return; }
+    if (key === "k") { e.preventDefault(); applyTextareaLink(textarea, state); return; }
   });
 
   textarea.addEventListener("blur", () => {
@@ -192,4 +203,73 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   state.addEventListener("change", update);
   update();
   return container;
+}
+
+/** Toggle a paired marker (e.g. `**`, `*`, `==`) around the textarea's
+ *  current selection. Mirrors the main editor's `toggleWrap` semantics:
+ *  insert markers when nothing is selected, unwrap markers that already
+ *  hug the selection (inside or outside), otherwise wrap. */
+function applyTextareaWrap(textarea: HTMLTextAreaElement, state: DrawingState, marker: string) {
+  const value = textarea.value;
+  const start = textarea.selectionStart ?? value.length;
+  const end = textarea.selectionEnd ?? value.length;
+  const mLen = marker.length;
+
+  let next: string;
+  let caretStart: number;
+  let caretEnd: number;
+
+  if (start === end) {
+    next = value.slice(0, start) + marker + marker + value.slice(end);
+    caretStart = caretEnd = start + mLen;
+  } else {
+    const selected = value.slice(start, end);
+    if (selected.startsWith(marker) && selected.endsWith(marker) && selected.length >= mLen * 2) {
+      const inner = selected.slice(mLen, -mLen);
+      next = value.slice(0, start) + inner + value.slice(end);
+      caretStart = start;
+      caretEnd = start + inner.length;
+    } else {
+      const before = value.slice(Math.max(0, start - mLen), start);
+      const after = value.slice(end, end + mLen);
+      if (before === marker && after === marker) {
+        next = value.slice(0, start - mLen) + selected + value.slice(end + mLen);
+        caretStart = start - mLen;
+        caretEnd = end - mLen;
+      } else {
+        next = value.slice(0, start) + marker + selected + marker + value.slice(end);
+        caretStart = start + mLen;
+        caretEnd = end + mLen;
+      }
+    }
+  }
+
+  textarea.value = next;
+  textarea.setSelectionRange(caretStart, caretEnd);
+  if (state.editingText) state.updateEditingText(next);
+}
+
+/** Insert a `[text](url)` link at the current selection. With selected
+ *  text, the URL placeholder is the selection target so the user can
+ *  start typing it immediately; with no selection the cursor lands
+ *  inside the empty `[]` so they can type the link text first. */
+function applyTextareaLink(textarea: HTMLTextAreaElement, state: DrawingState) {
+  const value = textarea.value;
+  const start = textarea.selectionStart ?? value.length;
+  const end = textarea.selectionEnd ?? value.length;
+  const selected = value.slice(start, end);
+  const URL_PLACEHOLDER = "url";
+  const inserted = `[${selected}](${URL_PLACEHOLDER})`;
+  const next = value.slice(0, start) + inserted + value.slice(end);
+  textarea.value = next;
+
+  if (selected.length === 0) {
+    const caret = start + 1; // inside the empty [
+    textarea.setSelectionRange(caret, caret);
+  } else {
+    const urlStart = start + 1 + selected.length + 2; // after "[selected]("
+    const urlEnd = urlStart + URL_PLACEHOLDER.length;
+    textarea.setSelectionRange(urlStart, urlEnd);
+  }
+  if (state.editingText) state.updateEditingText(next);
 }

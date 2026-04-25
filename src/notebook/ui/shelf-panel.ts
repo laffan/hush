@@ -10,9 +10,25 @@ interface ShelfNode {
   pocketed: boolean;
 }
 
+interface ShelfPaneInfo {
+  id: string;
+  fileName: string;
+  fileType: string;
+  content: string;
+  attached: boolean;
+  pinned: boolean;
+}
+
 export function createShelfPanel(
   state: DrawingState,
-  opts: { shelfItems: string[]; onRemoveShelfItem: (i: number) => void; onRestoreShelfItem: (i: number) => void },
+  opts: {
+    shelfItems: string[];
+    onRemoveShelfItem: (i: number) => void;
+    onRestoreShelfItem: (i: number) => void;
+    getPanes?: () => ShelfPaneInfo[];
+    onFocusPane?: (id: string) => void;
+    onScrollPaneToMatch?: (id: string, from: number, to: number) => void;
+  },
 ): HTMLElement {
   let isOpen = false;
   let search = "";
@@ -26,7 +42,7 @@ export function createShelfPanel(
 
   const grip = h("button", {
     text: "\u2039",
-    style: { width: "24px", height: "100%", position: "absolute", left: "0", top: "0", border: "none", borderRight: "none", borderRadius: "12px 0 0 12px", cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center", zIndex: "10" },
+    style: { width: "24px", height: "100%", position: "absolute", left: "0", top: "0", border: "none", borderRight: "none", borderRadius: "12px 0 0 12px", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", zIndex: "10" },
     onClick: () => { isOpen = !isOpen; rebuild(); },
   });
   panel.appendChild(grip);
@@ -214,13 +230,96 @@ export function createShelfPanel(
       body.appendChild(section);
     }
 
+    // Pane rows — pinned canvas panes show alongside shapes and their
+    // contents are searchable from the same input. The list is read live
+    // from the pane manager so editor edits are picked up on every
+    // rebuild (search input, shape change, pane create/close).
+    const allPanes = opts.getPanes ? opts.getPanes() : [];
+    const q = search.trim().toLowerCase();
+    const visiblePanes = allPanes.filter((p) => {
+      if (q) {
+        const haystack = `${p.fileName}\n${p.content}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      if (activeTag && !p.content.includes(`#${activeTag}`)) return false;
+      return true;
+    });
+    if (visiblePanes.length > 0) {
+      const section = h("div", { style: { padding: "4px 0", borderBottom: `1px solid ${border}` } });
+      section.appendChild(h("div", { text: "Panes", style: { fontSize: "11px", fontWeight: "600", color: muted, textTransform: "uppercase", letterSpacing: "0.5px", padding: "4px 0" } }));
+      for (const p of visiblePanes) {
+        section.appendChild(makePaneRow(p));
+        // Doc panes get per-match drill-downs when the user is searching:
+        // each match shows a snippet and jumps the pane to that range
+        // on click. Notebook panes store JSON, so character positions
+        // wouldn't map to a meaningful place — skip them.
+        if (q && p.fileType !== "notebook" && opts.onScrollPaneToMatch) {
+          const matches = findContentMatches(p.content, q, 20);
+          for (const m of matches) section.appendChild(makePaneMatchRow(p, m, q));
+        }
+      }
+      body.appendChild(section);
+    }
+
     // All items
     const scrollArea = h("div", { style: { flex: "1", overflowY: "auto", padding: "4px 0" } });
-    if (unpinnedItems.length === 0 && opts.shelfItems.length === 0) {
+    if (unpinnedItems.length === 0 && opts.shelfItems.length === 0 && visiblePanes.length === 0) {
       scrollArea.appendChild(h("div", { text: "No items. Add shapes to the canvas.", style: { padding: "16px", textAlign: "center", fontSize: "12px", color: muted } }));
     }
     unpinnedItems.forEach((n) => scrollArea.appendChild(makeNodeRow(n, false)));
     body.appendChild(scrollArea);
+  }
+
+  function makePaneMatchRow(p: ShelfPaneInfo, match: { start: number; }, q: string): HTMLElement {
+    const theme = t();
+    const fg = theme.foreground;
+    const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
+    const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
+    const highlightBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
+
+    const row = h("div", {
+      style: {
+        display: "flex", alignItems: "center", gap: "6px", padding: "3px 0 3px 28px",
+        cursor: "pointer", fontSize: "12px", borderBottom: `1px solid ${subtleBorder}`,
+        color: fg, lineHeight: "1.35",
+      },
+    });
+    const snippet = buildSnippet(p.content, match.start, q.length, muted, highlightBg);
+    row.appendChild(snippet);
+    row.addEventListener("click", () => {
+      if (opts.onScrollPaneToMatch) opts.onScrollPaneToMatch(p.id, match.start, match.start + q.length);
+    });
+    return row;
+  }
+
+  function makePaneRow(p: ShelfPaneInfo): HTMLElement {
+    const theme = t();
+    const fg = theme.foreground;
+    const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
+    const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
+    const row = h("div", {
+      style: {
+        display: "flex", alignItems: "center", gap: "6px", padding: "4px 0", cursor: "pointer",
+        fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`,
+        borderLeft: "3px solid transparent", color: fg,
+      },
+    });
+    const tag = h("span", {
+      text: p.fileType === "notebook" ? "NB" : "DOC",
+      style: {
+        fontSize: "9px", fontWeight: "600", letterSpacing: "0.5px",
+        padding: "2px 5px", borderRadius: "4px",
+        background: theme.variant === "dark" ? "rgba(255,255,255,0.08)" : "#f1f3f5",
+        color: muted, flexShrink: "0",
+      },
+    });
+    row.appendChild(tag);
+    row.appendChild(h("span", {
+      text: p.fileName || "Untitled",
+      style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    }));
+    row.addEventListener("click", () => { if (opts.onFocusPane) opts.onFocusPane(p.id); });
+    return row;
   }
 
   function makeNodeRow(node: ShelfNode, isPinned: boolean): HTMLElement {
@@ -256,4 +355,68 @@ export function createShelfPanel(
   state.addEventListener("change", rebuild);
   rebuild();
   return panel;
+}
+
+/** Find every occurrence of `q` (case-insensitive) inside `content` and
+ *  return their character offsets. Capped so a long doc with the user's
+ *  query everywhere doesn't flood the shelf. */
+function findContentMatches(content: string, q: string, max: number): Array<{ start: number }> {
+  if (!q) return [];
+  const lower = content.toLowerCase();
+  const ql = q.toLowerCase();
+  const out: Array<{ start: number }> = [];
+  let from = 0;
+  while (out.length < max) {
+    const i = lower.indexOf(ql, from);
+    if (i === -1) break;
+    out.push({ start: i });
+    from = i + ql.length;
+  }
+  return out;
+}
+
+/** Render a single search-result snippet: ~20 chars before the match,
+ *  the match itself highlighted, and ~30 chars after. Whitespace is
+ *  collapsed so the snippet stays on one line, and clipped sides get
+ *  ellipses. Returns a span ready to drop into a row. */
+function buildSnippet(
+  content: string,
+  start: number,
+  qLen: number,
+  mutedColor: string,
+  highlightBg: string,
+): HTMLElement {
+  const ctxBefore = 20;
+  const ctxAfter = 30;
+  const cStart = Math.max(0, start - ctxBefore);
+  const cEnd = Math.min(content.length, start + qLen + ctxAfter);
+  const beforeText = content.slice(cStart, start).replace(/\s+/g, " ");
+  const matchText = content.slice(start, start + qLen);
+  const afterText = content.slice(start + qLen, cEnd).replace(/\s+/g, " ");
+
+  const wrap = document.createElement("span");
+  Object.assign(wrap.style, {
+    flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+  } as Partial<CSSStyleDeclaration>);
+  if (cStart > 0) {
+    const lead = document.createElement("span");
+    lead.style.color = mutedColor;
+    lead.textContent = "…";
+    wrap.appendChild(lead);
+  }
+  wrap.appendChild(document.createTextNode(beforeText));
+  const hit = document.createElement("span");
+  Object.assign(hit.style, {
+    background: highlightBg, padding: "0 1px", borderRadius: "2px", fontWeight: "600",
+  } as Partial<CSSStyleDeclaration>);
+  hit.textContent = matchText;
+  wrap.appendChild(hit);
+  wrap.appendChild(document.createTextNode(afterText));
+  if (cEnd < content.length) {
+    const tail = document.createElement("span");
+    tail.style.color = mutedColor;
+    tail.textContent = "…";
+    wrap.appendChild(tail);
+  }
+  return wrap;
 }

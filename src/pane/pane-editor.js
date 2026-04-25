@@ -35,6 +35,19 @@ export function createPaneEditor(container, appState, onChange) {
     setEditable: (editable) => {
       view.dispatch({ effects: editableComp.reconfigure(EditorView.editable.of(editable)) });
     },
+    /** Select the given range and scroll it to the centre of the pane.
+     *  Used by the shelf's search results so a click jumps the reader to
+     *  the matched text. */
+    scrollToPosition: (from, to) => {
+      const docLen = view.state.doc.length;
+      const a = Math.max(0, Math.min(docLen, from));
+      const b = Math.max(0, Math.min(docLen, to ?? from));
+      view.dispatch({
+        selection: { anchor: a, head: b },
+        effects: EditorView.scrollIntoView(a, { y: "center" }),
+      });
+      view.focus();
+    },
     destroy: () => view.destroy(),
     /** Reconfigure theme from the given settings. When `lockedStyleId` is
      *  provided, the pane uses that style instead of the session's active

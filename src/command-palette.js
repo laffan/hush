@@ -7,6 +7,9 @@
  */
 import { openFindReplace, openFindAll } from "./editor/find-replace.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
+import { findNodeByFileId } from "./state/tree-helpers.js";
+import { deleteTreeNode } from "./state/state-tree.js";
+import { getActivePaneId, fitActivePaneToLeftGap, createPane } from "./pane/pane-manager.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
 import ratchetRaw from "./sidebar/sidebar_icons/ratchet.svg?raw";
@@ -35,11 +38,15 @@ const icons = {
   export: svgInner(exportRaw),
   styles: svgInner(stylesRaw),
   zotero: svgInner(zoteroRaw),
+  // Mirrors the inline trash icon used in files-panel.js so the palette
+  // matches the sidebar's visual language. Drawn on a 16-unit viewBox.
+  trash: `<polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" />`,
 };
 
 // Context: "shared" = always shown, "doc" = doc/project only, "notebook" = notebook only
 function buildCommands(state) {
   const inNotebook = !!state.currentNotebookFileId;
+  const hasActivePane = getActivePaneId() != null;
 
   const all = [
     // === SHARED ===
@@ -47,6 +54,29 @@ function buildCommands(state) {
       action: (s) => s.newFile() },
     { id: "new-notebook", label: "New notebook", icon: icons.newFile, shortcutKey: null, ctx: "shared",
       action: (s) => s.createNotebook("New Notebook") },
+    { id: "open-file", label: "Open document or notebook", icon: icons.files, shortcutKey: null, ctx: "shared",
+      keepOpen: true,
+      action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {
+        if (f.type === "notebook") s.openNotebook(f.fileId);
+        else s.openFile(f.fileId);
+      }) },
+    { id: "open-pane", label: "Open document or notebook as pane", icon: icons.files, shortcutKey: null, ctx: "shared",
+      keepOpen: true,
+      action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {
+        const x = Math.max(0, window.innerWidth - 440 - 12);
+        const y = 60;
+        createPane(f.fileId, f.name, f.type, x, y);
+      }) },
+    { id: "delete-current", label: "Delete current file", icon: icons.trash, iconViewBox: "0 0 16 16", shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const fileId = s.currentNotebookFileId || s.currentFileId;
+        if (!fileId) return;
+        const node = findNodeByFileId(s.fileTree, fileId);
+        if (!node) return;
+        const ok = window.confirm(`Move "${node.name || "Untitled"}" to Trash?`);
+        if (!ok) return;
+        await deleteTreeNode(s, node.id);
+      } },
     { id: "files", label: "Files", icon: icons.files, shortcutKey: "shortcutToggleSidebar", ctx: "shared",
       action: (s) => s.emit("toggle-left-panel") },
     { id: "styles", label: "Styles", icon: icons.styles, shortcutKey: null, ctx: "shared",
@@ -82,6 +112,10 @@ function buildCommands(state) {
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
       action: (s) => s.emit("toggle-outline-panel") },
 
+    // === ACTIVE PANE ONLY (doc or notebook) ===
+    { id: "fit-pane-left", label: "Fit pane to left gap", icon: null, shortcutKey: null, ctx: "pane",
+      action: () => fitActivePaneToLeftGap() },
+
     // === NOTEBOOK ONLY ===
     { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-shelf") },
@@ -93,8 +127,40 @@ function buildCommands(state) {
     if (cmd.ctx === "shared") return true;
     if (cmd.ctx === "doc") return !inNotebook;
     if (cmd.ctx === "notebook") return inNotebook;
+    if (cmd.ctx === "pane") return hasActivePane;
     return true;
   });
+}
+
+/** Walk the file tree and return real document/notebook leaves, skipping
+ *  the Images and Trash subtrees. */
+function collectFileLeaves(fileTree) {
+  const out = [];
+  function walk(nodes, skip) {
+    for (const n of nodes) {
+      if (n.id === "__trash__" || n.id === "__images__") continue;
+      if ((n.type === "document" || n.type === "notebook") && n.fileId) {
+        out.push({ id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId });
+      }
+      if (n.children?.length) walk(n.children, skip);
+    }
+  }
+  walk(fileTree || [], false);
+  return out;
+}
+
+/** Replace the palette's command list with file rows that pipe back into
+ *  `onPick(fileLeaf)` on selection. Used by both "Open…" commands. */
+function enterFilePicker(palette, state, placeholder, onPick) {
+  const leaves = collectFileLeaves(state.fileTree);
+  const items = leaves.map((f) => ({
+    id: "file-" + f.id,
+    label: f.name,
+    icon: f.type === "notebook" ? icons.files : icons.newFile,
+    shortcutKey: null,
+    action: () => onPick(f),
+  }));
+  palette.setItems(items, placeholder);
 }
 
 /** Format a stored shortcut string into keycap HTML. */
@@ -215,6 +281,21 @@ function open(state) {
   renderList(list, state);
   input.focus();
 
+  // Handle exposed to keepOpen-style commands so they can swap the palette
+  // into a file-picker (or any other) sub-mode without closing it.
+  const paletteHandle = {
+    setItems(items, placeholder) {
+      allCommands = items;
+      filteredCommands = [...items];
+      activeIndex = 0;
+      if (placeholder !== undefined) input.placeholder = placeholder;
+      input.value = "";
+      input.focus();
+      renderList(list, state);
+    },
+    close() { close(); },
+  };
+
   overlay.addEventListener("mousemove", () => { keyboardNav = false; });
 
   input.addEventListener("input", () => {
@@ -234,23 +315,28 @@ function open(state) {
     if (state.editor) state.editor.focus();
   };
 
+  function runCommand(cmd) {
+    if (!cmd) return;
+    if (cmd.keepOpen) {
+      cmd.action(state, paletteHandle);
+      return;
+    }
+    // Zotero's modal needs to stay the owner of the notebook text handle
+    // through its own open/close lifecycle — null the palette's reference
+    // here so close() doesn't resume commit on a handle the modal is
+    // about to re-suspend anyway.
+    if (cmd.id === "zotero") suspendedNotebookText = null;
+    close();
+    cmd.action(state, paletteHandle);
+  }
+
   input.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.preventDefault(); close(); focusMainEditorIfAppropriate(); return; }
     if (e.key === "ArrowDown") { e.preventDefault(); keyboardNav = true; if (filteredCommands.length) { activeIndex = (activeIndex + 1) % filteredCommands.length; renderList(list, state); } return; }
     if (e.key === "ArrowUp") { e.preventDefault(); keyboardNav = true; if (filteredCommands.length) { activeIndex = (activeIndex - 1 + filteredCommands.length) % filteredCommands.length; renderList(list, state); } return; }
     if (e.key === "Enter") {
       e.preventDefault();
-      if (filteredCommands[activeIndex]) {
-        const cmd = filteredCommands[activeIndex];
-        // Zotero's modal needs to stay the owner of the notebook text
-        // handle through its own open/close lifecycle — null the
-        // palette's reference here so close() doesn't resume commit on
-        // a handle the modal is about to re-suspend anyway.
-        const isZotero = cmd.id === "zotero";
-        if (isZotero) suspendedNotebookText = null;
-        close();
-        cmd.action(state);
-      }
+      runCommand(filteredCommands[activeIndex]);
       return;
     }
   });
@@ -258,6 +344,10 @@ function open(state) {
   overlay.addEventListener("mousedown", (e) => {
     if (!palette.contains(e.target)) { close(); focusMainEditorIfAppropriate(); }
   });
+
+  // Expose runCommand on the list element so renderList's per-row click
+  // handlers can route through the same keepOpen-aware path.
+  list.__runCommand = runCommand;
 }
 
 function renderList(listEl, state) {
@@ -267,7 +357,7 @@ function renderList(listEl, state) {
     row.className = "cmd-palette-item" + (i === activeIndex ? " active" : "");
     const iconEl = document.createElement("span");
     iconEl.className = "cmd-palette-icon";
-    if (cmd.icon) iconEl.innerHTML = `<svg viewBox="0 0 24 24">${cmd.icon}</svg>`;
+    if (cmd.icon) iconEl.innerHTML = `<svg viewBox="${cmd.iconViewBox || "0 0 24 24"}">${cmd.icon}</svg>`;
     row.appendChild(iconEl);
     const labelEl = document.createElement("span");
     labelEl.className = "cmd-palette-label";
@@ -280,7 +370,11 @@ function renderList(listEl, state) {
       shortcutEl.innerHTML = formatShortcutKeys(shortcutRaw);
       row.appendChild(shortcutEl);
     }
-    row.addEventListener("click", () => { close(); cmd.action(state); });
+    row.addEventListener("click", () => {
+      const run = listEl.__runCommand;
+      if (run) run(cmd);
+      else { close(); cmd.action(state); }
+    });
     row.addEventListener("mouseenter", () => {
       if (keyboardNav) return;
       activeIndex = i;

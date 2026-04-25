@@ -202,6 +202,18 @@ export function renderEditorTab(settings) {
     </div>
 
     <div class="settings-section">
+      <h2>Focus mode</h2>
+      <div class="settings-slider-row">
+        <label>Dimmed opacity</label>
+        <div class="slider-group">
+          <input type="range" id="setting-focus-mode-opacity" min="0" max="1" step="0.05" value="${s.focusModeOpacity ?? 0.5}" />
+          <span class="slider-value">${((s.focusModeOpacity ?? 0.5) * 100).toFixed(0)}%</span>
+        </div>
+      </div>
+      <p class="settings-help">When focus mode is on, text outside the current sentence and any open panes fade to this opacity.</p>
+    </div>
+
+    <div class="settings-section">
       <h2>Footnotes</h2>
       <div class="settings-slider-row">
         <label>Font size</label>

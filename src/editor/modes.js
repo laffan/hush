@@ -3,6 +3,10 @@ export function applyModes(state) {
   app.classList.toggle("ratchet-active", state.ratchetMode);
   app.classList.toggle("private-mode", state.privateMode);
   app.classList.toggle("typewriter-mode", state.typewriterMode);
+  // Focus mode lives on <body> so floating panes (which are siblings of
+  // #app, not children) can pick it up via a CSS selector and dim along
+  // with the editor.
+  document.body.classList.toggle("focus-mode-active", state.focusMode);
   // Dummy mode neutralizes heading styles so the dummy text looks like plain prose
   const isDummy = state.privateMode && (state.settings.privacyMode === "dummy");
   app.classList.toggle("dummy-mode", isDummy);

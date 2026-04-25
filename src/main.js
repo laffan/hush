@@ -51,6 +51,15 @@ import "@fontsource/lora/500.css";
 import "@fontsource/lora/600.css";
 import "@fontsource/lora/700.css";
 
+/** Surface the user's "Focus mode opacity" setting as a CSS variable so
+ *  every dim target (the sentence-mask in the editor, every floating
+ *  pane that isn't the active one) reads the same value. */
+function applyFocusModeOpacity(state) {
+  const v = state.settings.focusModeOpacity;
+  const opacity = (typeof v === "number" && v >= 0 && v <= 1) ? v : 0.5;
+  document.documentElement.style.setProperty("--focus-mode-opacity", String(opacity));
+}
+
 function applyActiveStyle(state) {
   const styleId = state.settings.activeStyleId;
   if (!styleId) {
@@ -174,6 +183,7 @@ async function init() {
   document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
   document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
   applyFontFamily(state.settings.fontFamily);
+  applyFocusModeOpacity(state);
   updatePrivateBoxColor(state);
 
   const editorContainer = document.getElementById("editor-container");
@@ -286,6 +296,19 @@ async function init() {
     if (isPaneActive()) return;
     if (state.editor) state.editor.focus();
   });
+
+  // Track CMD held state on the body so the column resizers (and any
+  // future modifier-gated affordance) can reveal themselves only while
+  // the user is intentionally reaching for them.
+  window.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey) document.body.classList.add("cmd-held");
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.key === "Meta" || e.key === "Control" || (!e.metaKey && !e.ctrlKey)) {
+      document.body.classList.remove("cmd-held");
+    }
+  });
+  window.addEventListener("blur", () => document.body.classList.remove("cmd-held"));
 
   // Window-level keyboard shortcut fallback (for when focus is outside editor)
   const windowCommands = buildEditorCommands();
@@ -476,32 +499,14 @@ async function init() {
   // Re-apply column layout when settings change (e.g. makeSpaceForPanes toggled)
   state.on("settings-changed", () => { if (state._columnResizeHandler) state._columnResizeHandler(); });
 
-  const sidebarTrigger = document.createElement("div");
-  sidebarTrigger.className = "sidebar-trigger";
-  sidebarTrigger.style.cssText =
-    "position:fixed;top:0;left:0;width:50px;height:100%;z-index:250;";
-  document.getElementById("app").appendChild(sidebarTrigger);
-  sidebarTrigger.addEventListener("mouseenter", () => {
-    sidebar.classList.add("visible");
-    // Disable trigger so clicks pass through to sidebar buttons
-    sidebarTrigger.style.pointerEvents = "none";
-  });
-  function checkSidebarLeave(e) {
-    if (sidebar.classList.contains("pinned")) return;
-    const x = e.clientX;
-    // Still inside sidebar zone
-    if (x <= 50) return;
-    // Still inside panel zone (if panel is open) — width is user-resizable
-    const panelW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
-    if (!panelOverlay.classList.contains("hidden") && x <= 50 + panelW) return;
-    // Don't hide sidebar if a panel is open — buttons should stay accessible
-    if (!panelOverlay.classList.contains("hidden")) return;
-    sidebar.classList.remove("visible");
-    // Re-enable trigger for next hover
-    sidebarTrigger.style.pointerEvents = "auto";
-  }
-  document.addEventListener("mousemove", checkSidebarLeave);
+  // Keep --focus-mode-opacity in sync with the slider in Settings > Editor.
+  state.on("settings-changed", () => applyFocusModeOpacity(state));
 
+  // The old left-edge hover trigger that used to pop the sidebar in is
+  // gone — the floating .sidebar-floating-toggle button is now the sole
+  // open/close affordance. Removing the hover behaviour also cleans up
+  // accidental sidebar peeks while the user reaches near the column
+  // resizer or for selection on long lines.
   import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
 
   // Save scroll position periodically (debounced on scroll)
@@ -761,16 +766,32 @@ async function init() {
 
   // System appearance changes — when set to "auto", re-apply appearance AND
   // the active style so its light/dark palette follows the system switch.
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-    if (state.settings.appearance === "auto") {
-      applyAppearance("auto");
-      if (state.settings.activeStyleId) {
-        applyActiveStyle(state);
-      }
-      updatePrivateBoxColor(state);
-      state.emit("theme-changed");
-      syncNotebookIfActive();
-    }
+  // The matchMedia "change" event covers the foreground case, but iOS /
+  // iPadOS WKWebView frequently doesn't fire it while Hush is backgrounded.
+  // Re-checking on visibility/focus catches the missed transition so the
+  // user doesn't have to restart the app to pick up the new appearance.
+  let _lastSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  function refreshAutoAppearance() {
+    if (state.settings.appearance !== "auto") return;
+    const nowDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    _lastSystemDark = nowDark;
+    applyAppearance("auto");
+    if (state.settings.activeStyleId) applyActiveStyle(state);
+    updatePrivateBoxColor(state);
+    state.emit("theme-changed");
+    syncNotebookIfActive();
+  }
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refreshAutoAppearance);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    if (state.settings.appearance !== "auto") return;
+    const nowDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (nowDark !== _lastSystemDark) refreshAutoAppearance();
+  });
+  window.addEventListener("focus", () => {
+    if (state.settings.appearance !== "auto") return;
+    const nowDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (nowDark !== _lastSystemDark) refreshAutoAppearance();
   });
 
   // Dropbox sync: start polling if sync is enabled.

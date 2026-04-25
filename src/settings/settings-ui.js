@@ -89,10 +89,16 @@ async function openSettingsModal(state) {
   const root = modal.querySelector(".settings-modal-root");
 
   await initSettingsInto(root, (newSettings) => {
-    // Directly apply settings to state (same window, no cross-window emit)
+    // Directly apply settings to state (same window, no cross-window emit).
+    // The desktop path runs through Tauri's "settings-updated" listener in
+    // main.js which calls applyActiveStyle() before emitting; on iPad we
+    // never go through that listener, so emit "style-changed" too — its
+    // handler is the one that re-runs applyActiveStyle and refreshes the
+    // CSS vars (--bg, --fg, --cursor, etc.) the pane chrome reads.
     if (state) {
       Object.assign(state.settings, newSettings);
       state.emit("settings-changed");
+      state.emit("style-changed");
       state.emit("theme-changed");
     }
   });

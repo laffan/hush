@@ -61,6 +61,26 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* iPad: a drag (incl. space+drag pan) on app chrome would otherwise begin
+   a body-level text selection. Disable selection by default and re-enable
+   it on the editor surfaces and form fields where it's actually wanted. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#editor-container .cm-content,
+.floating-pane .cm-content,
+input,
+textarea,
+[contenteditable="true"],
+.tree-rename-input {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* iOS: fill html bg to prevent black bars behind the webview. The editor and
    notebook canvas intentionally extend edge-to-edge; only floating UI
    (toolbar, shelf, status bar) pulls itself in using env(safe-area-inset-*)

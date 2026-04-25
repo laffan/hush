@@ -97,11 +97,11 @@
    backdrop blur for mild glassiness over colored canvases. */
 .sidebar-floating-toggle {
   position: fixed;
-  /* Inset past the macOS traffic-lights / Tauri drag region so the
-     button doesn't clash with existing top-left chrome. The 20-px
+  /* Anchored to the vertical centre of the viewport — the 20-px
      horizontal gap is reused by the open-state calc below. */
-  top: 40px;
+  top: 50%;
   left: 20px;
+  transform: translateY(-50%);
   width: 36px;
   height: 36px;
   display: flex;
@@ -114,7 +114,6 @@
   opacity: 0.85;
   cursor: pointer;
   padding: 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   /* Sits above the sidebar (200), panel-overlay (100), toolbars (100),
@@ -142,18 +141,48 @@
   opacity: 1;
 }
 
-/* Typing-fade: hide while the user is actively writing in a doc.
+/* Typing-fade: slowly hide while the user is actively writing in a doc.
    Pointer activity (mousemove / tap) removes the class immediately.
-   Kept out of notebook mode so the button stays reachable for
-   Pencil-only users. The base transition already covers opacity. */
-.sidebar-floating-toggle.typing-fade {
+   Kept out of notebook mode so the buttons stay reachable for
+   Pencil-only users. Driven by `body.typing-fade` so the floating
+   toggle, the sidebar's pane icons, and the files panel's "new item"
+   row all fade together.
+   The whole new-item row is faded as a unit (.tree-create-btns rather
+   than .tree-create-btns button) so a single declaration covers all
+   four buttons — targeting the buttons directly leaves room for
+   per-button cascade quirks where some children weren't picking up
+   the fade. */
+.sidebar-floating-toggle,
+#sidebar .sidebar-btn,
+.tree-create-btns {
+  /* Slow 1s opacity transition for the typing-fade affordance. Listed
+     alongside color / background-color (each at 0.15s) so the hover
+     transitions on these elements still feel snappy — bundling them
+     into one declaration here prevents any earlier per-element
+     `transition` shorthand from being only-partially overridden. */
+  transition-property: opacity, color, background-color;
+  transition-duration: 1s, 0.15s, 0.15s;
+  transition-timing-function: ease;
+  /* Hint to the compositor so iOS WebKit reliably interpolates the
+     opacity in both directions instead of snapping the fade-out. */
+  will-change: opacity;
+}
+
+body.typing-fade .sidebar-floating-toggle,
+body.typing-fade #sidebar .sidebar-btn,
+body.typing-fade .tree-create-btns {
   opacity: 0;
   pointer-events: none;
 }
 
-.sidebar-floating-toggle svg {
-  width: 20px;
-  height: 20px;
+.sidebar-floating-toggle {
+  /* Match the notebook shelf grip: small system-font guillemet,
+     centred via the parent's flexbox.  `line-height: 1` keeps the
+     glyph's box flush to its em-square so flex centring lands it on
+     the pill's geometric centre. */
+  font-size: 12px;
+  font-family: -apple-system, system-ui, sans-serif;
+  line-height: 1;
 }
 
 /* ===== Panels (LEFT side, next to sidebar) ===== */

@@ -40,6 +40,78 @@ export interface RenderState {
   };
 }
 
+/** Paint shapes + (optional) background into an arbitrary ctx at an
+ *  arbitrary camera. Skips every piece of editor chrome — selection
+ *  highlights, creating-drag-area preview, selection box, pocket tray,
+ *  pocketed cards. Used by the notebook export path. The caller owns
+ *  the ctx's base transform; `outWidth`/`outHeight` describe the
+ *  target surface in CSS pixels (before DPR scaling, which the caller
+ *  has already applied via setTransform if desired). Drawing strokes
+ *  are NOT painted here — the export path blits them from the drawing
+ *  layer's done canvas afterwards. */
+export function renderForExport(
+  ctx: CanvasRenderingContext2D,
+  outWidth: number,
+  outHeight: number,
+  opts: {
+    shapes: Shape[];
+    camera: Camera;
+    imageCache: Map<string, HTMLImageElement>;
+    theme: CanvasTheme;
+    backgroundPattern: "grid" | "dot-grid" | "blank";
+    gridSpacing: number;
+    gridOpacity: number;
+    fontFamily: string;
+    layers?: Layer[];
+    includeBackground: boolean;
+  },
+): void {
+  const { shapes, camera, imageCache, theme, backgroundPattern, gridSpacing, gridOpacity, fontFamily, layers, includeBackground } = opts;
+
+  if (includeBackground) {
+    ctx.fillStyle = theme.canvasBackground;
+    ctx.fillRect(0, 0, outWidth, outHeight);
+    if (backgroundPattern !== "blank" && gridOpacity > 0) {
+      drawBackground(ctx, camera, outWidth, outHeight, theme.foreground, backgroundPattern, gridSpacing, gridOpacity * 0.8);
+    }
+  }
+
+  ctx.save();
+  ctx.translate(camera.x, camera.y);
+  ctx.scale(camera.zoom, camera.zoom);
+
+  // Same layer-ordering logic as the live render path, minus pocket /
+  // selection / in-flight creation chrome.
+  const layerOrder: { id: string; hidden: boolean }[] = layers && layers.length
+    ? [...layers].reverse().map((l) => ({ id: l.id, hidden: l.hidden }))
+    : [{ id: "__single__", hidden: false }];
+  const shapesByLayer = new Map<string, Shape[]>();
+  for (const l of layerOrder) shapesByLayer.set(l.id, []);
+  for (const s of shapes) {
+    if (s.pocketed) continue; // pocketed shapes never appear in an export
+    const bucketId = layers && layers.length ? (s.layerId || layerOrder[layerOrder.length - 1].id) : "__single__";
+    const bucket = shapesByLayer.get(bucketId) || shapesByLayer.get(layerOrder[layerOrder.length - 1].id);
+    if (bucket) bucket.push(s);
+  }
+
+  for (const layer of layerOrder) {
+    if (layer.hidden) continue;
+    const layerShapes = shapesByLayer.get(layer.id);
+    if (!layerShapes || !layerShapes.length) continue;
+    for (const shape of layerShapes) {
+      if (shape.type === "drag-area") drawDragArea(ctx, shape);
+    }
+    for (const shape of layerShapes) {
+      if (shape.type === "drag-area") continue;
+      if (shape.type === "draw") continue; // drawing layer handled separately
+      if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily);
+      else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false);
+    }
+  }
+
+  ctx.restore();
+}
+
 export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;

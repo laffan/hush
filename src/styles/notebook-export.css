@@ -1,0 +1,150 @@
+/* ===== Notebook Export Modal ===== */
+
+.notebook-export-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 599;
+}
+
+.notebook-export-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 320px;
+  max-width: 90vw;
+  background: var(--panel-bg);
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 16px;
+  z-index: 600;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.notebook-export-modal .nxm-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.notebook-export-modal .nxm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notebook-export-modal .nxm-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.notebook-export-modal .nxm-seg {
+  display: flex;
+  gap: 2px;
+  background: rgba(128, 128, 128, 0.12);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.notebook-export-modal .nxm-seg button {
+  flex: 1;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+
+.notebook-export-modal .nxm-seg button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.notebook-export-modal .nxm-seg button.active {
+  background: var(--theme-bg, var(--bg));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  font-weight: 500;
+}
+
+.notebook-export-modal .nxm-margin {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.notebook-export-modal .nxm-margin label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.notebook-export-modal .nxm-margin-input {
+  width: 64px;
+  padding: 4px 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.notebook-export-modal .nxm-units {
+  opacity: 0.55;
+  font-size: 11px;
+}
+
+.notebook-export-modal .nxm-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.notebook-export-modal .nxm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.notebook-export-modal .nxm-actions button {
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.notebook-export-modal .nxm-actions button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.notebook-export-modal .nxm-confirm {
+  background: var(--accent, #4285f4) !important;
+  color: #fff !important;
+  border-color: var(--accent, #4285f4) !important;
+}
+
+.notebook-export-modal .nxm-confirm:hover {
+  filter: brightness(1.05);
+}

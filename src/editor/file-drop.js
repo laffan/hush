@@ -4,7 +4,8 @@
  * Three drop targets:
  *   1. Sidebar panel (when open) → "Import file" overlay appears over
  *      the panel only.  Dropping creates a new document.
- *   2. Editor area (doc mode) → text is inserted at the end of the doc.
+ *   2. Editor area (doc mode) → images and plain-text payloads land at
+ *      the drop point; whole text-file drops append at the end.
  *   3. Notebook canvas → handled natively by notebook input-handler
  *      (images become shapes, text becomes text shapes).
  *
@@ -36,6 +37,20 @@ function findTextFile(e) {
     if (isTextFile(files[i])) return files[i];
   }
   return null;
+}
+
+function hasAcceptableDragPayload(e) {
+  const types = e.dataTransfer?.types;
+  if (!types) return false;
+  // dataTransfer.types is DOMStringList in Safari; check via includes/contains.
+  const has = (t) => (typeof types.includes === "function" ? types.includes(t) : Array.from(types).includes(t));
+  return has("Files") || has("text/plain") || has("text/uri-list") || has("Text");
+}
+
+function readDragText(e) {
+  const dt = e.dataTransfer;
+  if (!dt) return "";
+  return dt.getData("text/plain") || dt.getData("text/uri-list") || dt.getData("Text") || "";
 }
 
 function findImageFiles(e) {
@@ -83,17 +98,22 @@ export function setupFileDrop(state) {
   });
 
   // ── Editor drop handler (doc mode) ───────────────────────────────
+  // Accepts file drops (images, text files) and plain-text payloads dragged
+  // in from another app. iPad WebView doesn't deliver text drops to
+  // CodeMirror's internal drop handler, so we always insert the payload
+  // ourselves. We attach in the capture phase so we preempt CM — otherwise
+  // a text drop would double-insert on desktop while still failing on iPad.
   const editorContainer = document.getElementById("editor-container");
   editorContainer.addEventListener("dragover", (e) => {
     if (state.currentNotebookFileId) return;
-    if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
+    if (!hasAcceptableDragPayload(e)) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-  });
+  }, true);
   editorContainer.addEventListener("drop", async (e) => {
     if (state.currentNotebookFileId) return;
-    if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
+    if (!hasAcceptableDragPayload(e)) return;
     e.preventDefault();
     e.stopPropagation();
     // Image drops take priority — insert image references at the drop point.
@@ -103,10 +123,14 @@ export function setupFileDrop(state) {
       return;
     }
     const file = findTextFile(e);
-    if (!file) return;
-    const content = await file.text();
-    appendToEditor(state, content);
-  });
+    if (file) {
+      const content = await file.text();
+      appendToEditor(state, content);
+      return;
+    }
+    const text = readDragText(e);
+    if (text) insertTextAtDrop(state, text, e.clientX, e.clientY);
+  }, true);
 
   // ── Show / hide sidebar import overlay on drag ───────────────────
   let dragCounter = 0;
@@ -140,6 +164,20 @@ async function importAsNewDocument(state, text) {
     state.markDirty();
     await state.saveCurrentFile();
   }
+}
+
+function insertTextAtDrop(state, text, clientX, clientY) {
+  if (!state.editor) return;
+  const view = state.editor.view;
+  let pos = view.posAtCoords({ x: clientX, y: clientY });
+  if (pos == null) pos = view.posAtCoords({ x: clientX, y: clientY }, false);
+  if (pos == null) pos = view.state.selection.main.head;
+  view.dispatch({
+    changes: { from: pos, to: pos, insert: text },
+    selection: { anchor: pos + text.length },
+  });
+  view.focus();
+  state.markDirty();
 }
 
 function appendToEditor(state, text) {

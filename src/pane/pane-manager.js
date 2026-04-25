@@ -7,6 +7,7 @@
 
 import { createPaneEditor } from "./pane-editor.js";
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
+import { isIOS } from "../settings/settings-ui.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -34,6 +35,10 @@ const TITLEBAR_HEIGHT = 35;
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
 const ICON_ATTACH = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><line x1="5" y1="5.5" x2="5" y2="9"/></svg>`;
 const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
+// Stylised "A" used as the font-size affordance in the pane header.
+const ICON_SIZE = `<svg viewBox="0 0 10 10"><polyline points="2,8 5,2 8,8"/><line x1="3.3" y1="6" x2="6.7" y2="6"/></svg>`;
+// Chevron — points down when expanded, up when collapsed (rotated via CSS).
+const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><polyline points="2.5,4 5,6.5 7.5,4"/></svg>`;
 
 // ── Public API ────────────────────────────────────────────────────────
 
@@ -109,6 +114,9 @@ function notifyLayoutChange() {
   }
   appState._hasVisibleDocPane = hasPane;
   if (appState._columnResizeHandler) appState._columnResizeHandler();
+  // Surface pane-set changes to the notebook shelf (and any other
+  // listener) so its pane rows can refresh on create/close/show/hide.
+  if (appState && typeof appState.emit === "function") appState.emit("notebook-pane-changed");
 }
 
 export function destroyPaneManager() {
@@ -222,6 +230,149 @@ export function getActivePaneId() { return activePaneId; }
 export function hasPanes() { return panes.size > 0; }
 export function isPaneActive() { return activePaneId !== null; }
 
+/**
+ * Snapshot of panes currently visible on the notebook canvas — used by
+ * the shelf so users can browse and search pane content alongside the
+ * canvas's own shapes. Each entry includes the live editor content so a
+ * shelf rebuild reflects whatever the user is reading right now.
+ */
+export function getNotebookCanvasPanes() {
+  if (!appState || !appState.currentNotebookFileId) return [];
+  const out = [];
+  for (const [, p] of panes) {
+    if (p.el && p.el.style.display === "none") continue;
+    let content = "";
+    if (p.editor && typeof p.editor.getContent === "function") {
+      try { content = p.editor.getContent() || ""; } catch (_) {}
+    }
+    out.push({
+      id: p.id,
+      fileName: p.fileName,
+      fileType: p.fileType,
+      content,
+      attached: !!p.attached,
+      pinned: !!p.pinned,
+    });
+  }
+  return out;
+}
+
+/** Bring the named pane to the foreground (and focus it). */
+export function focusPaneById(id) { focusPane(id); }
+
+/** Focus a doc pane, recentre it in the viewport (panning the canvas
+ *  for attached panes, repositioning the pane element for free-floating
+ *  ones), and scroll its editor so the [from, to] range sits at the
+ *  centre. Used by the shelf's search results so a click on a matched
+ *  snippet jumps the reader to it. */
+export function scrollPaneToMatch(id, from, to) {
+  const pane = panes.get(id);
+  if (!pane) return false;
+  if (!pane.editor || typeof pane.editor.scrollToPosition !== "function") return false;
+  focusPane(id);
+  centerPaneInViewport(pane);
+  pane.editor.scrollToPosition(from, to);
+  return true;
+}
+
+function centerPaneInViewport(pane) {
+  const targetX = Math.max(0, Math.round((window.innerWidth - pane.width) / 2));
+  const targetY = Math.max(0, Math.round((window.innerHeight - pane.height) / 2));
+
+  if (pane.attached) {
+    const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+    if (canvas && pane._canvasX != null && pane._canvasY != null) {
+      // Attached panes live in canvas coords; pan the camera so the
+      // pane's anchor lands at the desired screen position. The next
+      // canvas-sync tick will reconcile pane.x/y, but we set them now
+      // so the pane doesn't visibly snap on the following frame.
+      const cam = canvas.state.camera;
+      canvas.state.camera = {
+        ...cam,
+        x: targetX - pane._canvasX * cam.zoom,
+        y: targetY - pane._canvasY * cam.zoom,
+      };
+      canvas.state.notify("camera");
+      pane.x = targetX;
+      pane.y = targetY;
+      pane.el.style.left = targetX + "px";
+      pane.el.style.top = targetY + "px";
+      return;
+    }
+  }
+  // Free-floating pane — just move the element.
+  pane.x = targetX;
+  pane.y = targetY;
+  pane.el.style.left = targetX + "px";
+  pane.el.style.top = targetY + "px";
+  schedulePersist();
+}
+
+/**
+ * Auto-fit the active pane to the empty zone on the left of the writing
+ * surface. In a doc the pane fills the gap that the "make space for
+ * panes" layout opens up beside the text column; in a notebook there's
+ * no text column to anchor against, so the pane takes a flat 1/3 of the
+ * window width. In both cases the pane sits flush left (clearing the
+ * sidebar / open panel) and stretches to the full vertical viewport.
+ */
+export function fitActivePaneToLeftGap() {
+  if (!activePaneId || !appState) return false;
+  const pane = panes.get(activePaneId);
+  if (!pane) return false;
+
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+  const sideMargin = 12;
+  const topMargin = 35;
+  const bottomMargin = 12;
+  const sidebarZone = 50;
+
+  // If the files panel is open in inset mode, push past it; otherwise the
+  // 50px sidebar trigger is hover-only and transparent, so we can sit
+  // flush against the left edge and let the sidebar float over us.
+  const panelEl = document.getElementById("panel-overlay");
+  const panelOpen = panelEl && !panelEl.classList.contains("hidden");
+  const panelInset = panelEl && panelEl.classList.contains("panel-inset");
+  const panelW = panelOpen && panelInset
+    ? parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300
+    : 0;
+  const leftEdge = sidebarZone + panelW;
+
+  let w;
+  if (appState.currentNotebookFileId) {
+    w = Math.round(viewportW / 3);
+  } else {
+    // Doc mode: read the live padding from the scroller so the pane fits
+    // exactly the gap that the column shift has opened up.
+    const scroller = document.querySelector("#editor-container .cm-scroller");
+    const leftPadPx = scroller ? parseFloat(getComputedStyle(scroller).paddingLeft) || 0 : 0;
+    w = leftPadPx - leftEdge - sideMargin * 2;
+  }
+  w = Math.max(MIN_WIDTH, w);
+
+  const x = leftEdge + sideMargin;
+  const h = Math.max(MIN_HEIGHT, viewportH - topMargin - bottomMargin);
+  const y = topMargin;
+
+  if (pane.collapsed) {
+    pane.collapsed = false;
+    pane.el.classList.remove("collapsed");
+  }
+  pane.width = w;
+  pane.height = h;
+  pane.x = x;
+  pane.y = y;
+  Object.assign(pane.el.style, {
+    width: w + "px",
+    height: h + "px",
+    left: x + "px",
+    top: y + "px",
+  });
+  schedulePersist();
+  return true;
+}
+
 // ── DOM construction ──────────────────────────────────────────────────
 function buildPaneDOM(pane) {
   const el = document.createElement("div");
@@ -242,6 +393,18 @@ function buildPaneDOM(pane) {
   const buttons = document.createElement("span");
   buttons.className = "floating-pane-buttons";
 
+  // Font-size button — opens a small +/- stepper popover. Cmd-clicking
+  // a step inside the popover applies the change to every open pane;
+  // a plain click only changes this one. The override is per
+  // (host doc, pane file) so the same pane opened in another document
+  // keeps its own size. Notebook panes have no text size to adjust, so
+  // this button is doc-only.
+  if (pane.fileType !== "notebook") {
+    const sizeBtn = makeBtn("size", ICON_SIZE, "Pane font size");
+    sizeBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePaneSizePopover(pane, sizeBtn); });
+    buttons.appendChild(sizeBtn);
+  }
+
   // Attach button: anchor to canvas (notebook) or scroll (doc)
   const attachLabel = appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
   const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
@@ -250,6 +413,14 @@ function buildPaneDOM(pane) {
   const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
   pinBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePinned(pane); });
   buttons.appendChild(pinBtn);
+  // Collapse button — only on iOS, where the desktop's title-bar
+  // double-click gesture isn't reachable. Reuses the existing
+  // toggleCollapse() so collapsed-state persistence is shared.
+  if (isIOS()) {
+    const collapseBtn = makeBtn("collapse", ICON_COLLAPSE, "Collapse");
+    collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(pane); });
+    buttons.appendChild(collapseBtn);
+  }
   const closeBtn = makeBtn("close", ICON_CLOSE, "Close");
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); closePane(pane.id); });
   buttons.appendChild(closeBtn);
@@ -278,6 +449,111 @@ function buildPaneDOM(pane) {
   setupPaneResize(pane);
   titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane); });
   el.addEventListener("pointerdown", () => focusPane(pane.id));
+}
+
+// ── Per-pane font size ────────────────────────────────────────────────
+
+const FP_SIZE_MIN = 10;
+const FP_SIZE_MAX = 48;
+const FP_SIZE_STEP = 2;
+
+/** Read the live --font-size CSS var as a fallback when a pane has no
+ *  override yet — that way the first +/- click increments from the
+ *  user's actual current size, not a hardcoded default. */
+function effectivePaneFontSize(pane) {
+  if (typeof pane.fontSize === "number" && Number.isFinite(pane.fontSize)) return pane.fontSize;
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--font-size"));
+  return Number.isFinite(v) ? v : 20;
+}
+
+/** Apply the font-size override to the pane's root element via a CSS
+ *  variable. CodeMirror's hushTheme reads `var(--font-size)`, so setting
+ *  it on the pane element cascades down without needing a CM
+ *  reconfigure. Pass null to clear and inherit the document default. */
+function applyPaneFontSize(pane) {
+  if (!pane.el) return;
+  if (typeof pane.fontSize === "number" && Number.isFinite(pane.fontSize)) {
+    pane.el.style.setProperty("--font-size", pane.fontSize + "px");
+  } else {
+    pane.el.style.removeProperty("--font-size");
+  }
+}
+
+function bumpOnePaneFontSize(pane, delta) {
+  const next = Math.max(FP_SIZE_MIN, Math.min(FP_SIZE_MAX, effectivePaneFontSize(pane) + delta));
+  pane.fontSize = next;
+  applyPaneFontSize(pane);
+}
+
+/** Step a pane's font size by `delta` (px). When `allPanes` is true the
+ *  same delta is applied to every open pane — Cmd-click in the popover
+ *  routes through here. */
+function bumpPaneFontSize(pane, delta, allPanes) {
+  if (allPanes) {
+    // Skip notebook panes — their content is a canvas, not flowed text,
+    // so a font-size change wouldn't do anything useful.
+    for (const [, p] of panes) {
+      if (p.fileType !== "notebook") bumpOnePaneFontSize(p, delta);
+    }
+  } else {
+    bumpOnePaneFontSize(pane, delta);
+  }
+  schedulePersist();
+}
+
+function togglePaneSizePopover(pane, anchorBtn) {
+  // Toggle: clicking the A button while the popover is open just closes it.
+  const existing = pane.el.querySelector(".fp-size-popover");
+  if (existing) { existing.remove(); return; }
+
+  const popover = document.createElement("div");
+  popover.className = "fp-size-popover";
+
+  const minus = document.createElement("button");
+  minus.className = "fp-size-step";
+  minus.type = "button";
+  minus.textContent = "−"; // minus sign
+  minus.title = "Smaller (⌘ to apply to all panes)";
+
+  const label = document.createElement("span");
+  label.className = "fp-size-label";
+
+  const plus = document.createElement("button");
+  plus.className = "fp-size-step";
+  plus.type = "button";
+  plus.textContent = "+";
+  plus.title = "Larger (⌘ to apply to all panes)";
+
+  function refreshLabel() { label.textContent = Math.round(effectivePaneFontSize(pane)) + "px"; }
+  refreshLabel();
+
+  minus.addEventListener("click", (e) => {
+    e.stopPropagation();
+    bumpPaneFontSize(pane, -FP_SIZE_STEP, e.metaKey || e.ctrlKey);
+    refreshLabel();
+  });
+  plus.addEventListener("click", (e) => {
+    e.stopPropagation();
+    bumpPaneFontSize(pane, FP_SIZE_STEP, e.metaKey || e.ctrlKey);
+    refreshLabel();
+  });
+
+  popover.appendChild(minus);
+  popover.appendChild(label);
+  popover.appendChild(plus);
+  popover.addEventListener("pointerdown", (e) => e.stopPropagation());
+  pane.el.appendChild(popover);
+
+  // Close when the user taps anywhere outside the popover or its anchor.
+  setTimeout(() => {
+    const off = (e) => {
+      if (popover.contains(e.target)) return;
+      if (e.target === anchorBtn || anchorBtn.contains(e.target)) return;
+      popover.remove();
+      document.removeEventListener("pointerdown", off, true);
+    };
+    document.addEventListener("pointerdown", off, true);
+  }, 0);
 }
 
 function makeBtn(name, svg, ariaLabel) {
@@ -368,16 +644,26 @@ function setupPaneResize(pane) {
       const startH = pane.height;
       const startLeft = pane.x;
       const startTop = pane.y;
+      // Canvas-attached panes render through `transform: scale(zoom)`,
+      // so a screen-px drag delta corresponds to (delta / zoom) layout
+      // px on the pane. Fall back to 1 for unattached or doc-mode
+      // panes where layout px == screen px.
+      let zoomFactor = 1;
+      if (pane.attached && appState && appState.currentNotebookFileId) {
+        const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+        if (canvas) zoomFactor = canvas.state.camera.zoom || 1;
+      }
 
       handle.setPointerCapture(e.pointerId);
 
       const onMove = (me) => {
-        const dx = me.clientX - startX, dy = me.clientY - startY;
+        const dx = (me.clientX - startX) / zoomFactor;
+        const dy = (me.clientY - startY) / zoomFactor;
         let w = startW, h = startH, nx = startLeft, ny = startTop;
         if (dir.includes("e")) w = Math.max(MIN_WIDTH, startW + dx);
-        if (dir.includes("w")) { w = Math.max(MIN_WIDTH, startW - dx); nx = startLeft + (startW - w); }
+        if (dir.includes("w")) { w = Math.max(MIN_WIDTH, startW - dx); nx = startLeft + (startW - w) * zoomFactor; }
         if (dir.includes("s")) h = Math.max(MIN_HEIGHT, startH + dy);
-        if (dir.includes("n")) { h = Math.max(MIN_HEIGHT, startH - dy); ny = startTop + (startH - h); }
+        if (dir.includes("n")) { h = Math.max(MIN_HEIGHT, startH - dy); ny = startTop + (startH - h) * zoomFactor; }
         pane.width = w; pane.height = h; pane.x = nx; pane.y = ny;
         Object.assign(pane.el.style, { width: w + "px", height: h + "px", left: nx + "px", top: ny + "px" });
       };
@@ -420,10 +706,20 @@ async function toggleAttach(pane) {
 
   if (pane.attached) {
     if (appState.currentNotebookFileId) {
-      // Notebook: attach to canvas coordinates
+      // Notebook: attach to canvas coordinates. Detached panes store
+      // width/height in screen px; once attached, they're interpreted
+      // as layout px and rendered through `transform: scale(zoom)`, so
+      // we divide by the current zoom on attach to keep the visible
+      // size unchanged across the transition.
       await getNotebookBridge();
+      const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+      const zoom = canvas ? (canvas.state.camera.zoom || 1) : 1;
       const canvasPos = screenToCanvas(pane.x, pane.y);
       if (canvasPos) { pane._canvasX = canvasPos.x; pane._canvasY = canvasPos.y; }
+      pane.width = pane.width / zoom;
+      pane.height = pane.height / zoom;
+      pane.el.style.width = pane.width + "px";
+      pane.el.style.height = pane.height + "px";
       startCanvasSync(pane);
     } else {
       // Doc: attach to scroll position
@@ -432,6 +728,18 @@ async function toggleAttach(pane) {
       startScrollSync(pane);
     }
   } else {
+    // Mirror the attach path: panes detaching from canvas convert their
+    // layout-px size back to screen px so the visible size carries
+    // across the transition.
+    const wasCanvasAttached = appState && appState.currentNotebookFileId;
+    if (wasCanvasAttached) {
+      const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+      const zoom = canvas ? (canvas.state.camera.zoom || 1) : 1;
+      pane.width = pane.width * zoom;
+      pane.height = pane.height * zoom;
+      pane.el.style.width = pane.width + "px";
+      pane.el.style.height = pane.height + "px";
+    }
     stopAttachSync(pane);
   }
   schedulePersist();
@@ -501,6 +809,15 @@ function startCanvasSync(pane) {
       pane.y = pos.y;
       pane.el.style.left = pos.x + "px";
       pane.el.style.top = pos.y + "px";
+      // Pane is anchored to the canvas — scale it with the camera zoom
+      // so it shrinks/grows together with the surrounding shapes. The
+      // pane's own width/height are interpreted as "size at 1× zoom"
+      // and rendered through the transform; the resize handler
+      // compensates by dividing screen-px deltas by the same zoom.
+      const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+      const zoom = canvas ? canvas.state.camera.zoom : 1;
+      pane.el.style.transformOrigin = "top left";
+      pane.el.style.transform = `scale(${zoom})`;
     }
     pane._syncFrame = requestAnimationFrame(tick);
   }
@@ -526,6 +843,12 @@ function stopAttachSync(pane) {
   if (pane._syncFrame) {
     cancelAnimationFrame(pane._syncFrame);
     pane._syncFrame = null;
+  }
+  // Drop the camera-zoom transform a canvas-attached pane was using —
+  // once detached, the pane lives at fixed screen size again.
+  if (pane.el) {
+    pane.el.style.transform = "";
+    pane.el.style.transformOrigin = "";
   }
   // Stop scroll sync (doc)
   if (pane._scrollHandler) {
@@ -794,6 +1117,10 @@ function persistPanesNow() {
       canvasY: p._canvasY ?? null,
       scrollRelY: p._scrollRelY ?? null,
       localSync: p.localSync || null,
+      // Per-pane font-size override. Keyed implicitly by the pane's
+      // (ownerContext, fileId) pair, so the same file opened as a pane
+      // in another doc is unaffected.
+      fontSize: typeof p.fontSize === "number" ? p.fontSize : null,
     });
   }
   appState.updateSettings({ persistedPanes: serialized });
@@ -841,12 +1168,14 @@ async function restorePanes() {
       y: s.y || 0,
       ownerContext: s.ownerContext || "",
       localSync: s.localSync || null,
+      fontSize: typeof s.fontSize === "number" ? s.fontSize : null,
     };
     if (s.canvasX != null) pane._canvasX = s.canvasX;
     if (s.canvasY != null) pane._canvasY = s.canvasY;
     if (s.scrollRelY != null) pane._scrollRelY = s.scrollRelY;
 
     buildPaneDOM(pane);
+    applyPaneFontSize(pane);
     containerEl.appendChild(pane.el);
     pane.el.style.zIndex = ++zCounter;
     panes.set(id, pane);

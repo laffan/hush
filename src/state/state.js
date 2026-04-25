@@ -473,8 +473,9 @@ export class AppState {
       if (file) {
         file.content = content;
         file.modified = Math.floor(Date.now() / 1000);
-        // Only auto-derive the name while it's still "Untitled" — after that
-        // the name is stable so sync paths don't churn.
+        // Seed name from first line on the very first save. Subsequent
+        // renames go through maybeRenameFromFirstLine() which fires at
+        // stable moments (cursor off line 1, editor blur).
         if (!file.name || file.name === "Untitled") file.name = this._deriveName(content);
         this._saveFilesLocal();
       }
@@ -482,6 +483,50 @@ export class AppState {
     if (this._updateTreeNodeNameByFileId(this.currentFileId)) {
       this.emit("files-changed");
     }
+    // Autosave-path rename: update the filename to track the first line,
+    // but only when the cursor has moved off it. While the user is still
+    // typing in the title, we deliberately skip — preserves the old
+    // behavior's "name follows first line" feel without the per-keystroke
+    // sync churn that made Dropbox see phantom new files.
+    if (!this._cursorOnFirstLine()) {
+      await this.maybeRenameFromFirstLine();
+    }
+  }
+
+  /**
+   * If the content's derived first-line name differs from the current
+   * tree node's name, rename the file + tree node. Routes through the
+   * regular renameTreeNode path so Dropbox sync sees a rename (stable
+   * internal id → new path), not a delete+create.
+   *
+   * Called on three triggers — see editor.js:
+   *   1. cursor leaves line 1
+   *   2. editor blur
+   *   3. autosave when cursor is not on line 1
+   */
+  async maybeRenameFromFirstLine() {
+    if (this.currentProjectId || this.currentNotebookFileId || this.currentLocalSync) return;
+    if (!this.currentFileId || !this.editor) return;
+    const content = this.editor.getContent();
+    const derived = this._deriveName(content);
+    if (!derived || derived === "Untitled") return;
+    const node = findNodeByFileId(this.fileTree, this.currentFileId);
+    if (!node || node.name === derived) return;
+    const { renameTreeNode } = await import("./state-tree.js");
+    await renameTreeNode(this, node.id, derived);
+    this.emit("files-changed");
+  }
+
+  /** True when the main editor's primary cursor sits on line 1. Used to
+   *  gate the autosave rename path. */
+  _cursorOnFirstLine() {
+    if (!this.editor) return false;
+    const view = this.editor.view;
+    if (!view) return false;
+    try {
+      const head = view.state.selection.main.head;
+      return view.state.doc.lineAt(head).number === 1;
+    } catch { return false; }
   }
 
   _updateTreeNodeNameByFileId(fileId) {
@@ -521,7 +566,10 @@ export class AppState {
     this.currentFileId = fileId;
     this.currentProjectId = null;
     this.projectDocIds = [];
-    if (this.editor) this.editor.setContent("");
+    if (this.editor) {
+      this.editor.setContent("");
+      this.editor.focus();
+    }
     this.emit("files-changed");
     this.emit("file-opened");
   }

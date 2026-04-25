@@ -426,7 +426,52 @@ function openStyleModal(state, existingStyle, onDone) {
   backdrop.className = "style-modal-backdrop";
   document.body.appendChild(backdrop);
 
-  function close() { backdrop.remove(); }
+  // ── autosave ────────────────────────────────────────────────────────────
+  // Edits flush to settings on a short debounce — there are no Save /
+  // Cancel buttons. New user styles materialise on the first edit
+  // (using the typed name or "Untitled" as a placeholder) and become
+  // ordinary updates from then on.
+  let createdNewStyle = !isNew;
+  let saveTimer = null;
+
+  function commitDraft() {
+    if (isDefault) {
+      saveDefaultDraftToSettings(state, draft);
+      state.emit("style-changed");
+      if (onDone) onDone();
+      return;
+    }
+    const name = (draft.name || "").trim() || "Untitled";
+    draft.name = name;
+    delete draft._migrated;
+    if (!state.settings.styles) state.settings.styles = [];
+    if (!createdNewStyle) {
+      draft.id = "style_" + Date.now();
+      state.settings.styles.push(draft);
+      createdNewStyle = true;
+    } else {
+      const idx = state.settings.styles.findIndex(s => s.id === draft.id);
+      if (idx >= 0) state.settings.styles[idx] = draft;
+      else state.settings.styles.push(draft);
+    }
+    state.updateSettings({ styles: state.settings.styles });
+    state.emit("style-changed");
+    if (onDone) onDone();
+  }
+
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { saveTimer = null; commitDraft(); }, 200);
+  }
+
+  function flushSave() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; commitDraft(); }
+  }
+
+  function close() {
+    flushSave();
+    backdrop.remove();
+  }
 
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
 
@@ -565,11 +610,6 @@ function openStyleModal(state, existingStyle, onDone) {
                 </div>`;
               }).join("")}
             </div>
-
-            <div class="style-editor-btns">
-              <button id="style-cancel">Cancel</button>
-              <button id="style-save" class="style-save-btn">${isNew ? "Create" : "Save"}</button>
-            </div>
           </div>
 
           <!-- Draggable divider — only visible in narrow-window stack layout -->
@@ -641,10 +681,15 @@ function openStyleModal(state, existingStyle, onDone) {
       selEl.style.background = selection;
     }
 
-    // Give headings the theme heading color if available (or override)
+    // Give headings the theme heading color if available (or override).
+    // Suppress takes precedence over both override and theme so it
+    // matches the live editor — picking a theme seeds colors.header, so
+    // letting the override win would mean the checkbox never visibly
+    // does anything.
     const theme = getThemeById(themeId);
-    const headingColor = colors.header
-      || (draft.suppressHeaderColor ? fg : (theme ? theme.headingColor : fg));
+    const headingColor = draft.suppressHeaderColor
+      ? fg
+      : (colors.header || (theme ? theme.headingColor : fg));
     const scale = draft.headerScale != null ? draft.headerScale : 1.0;
     const baseSize = draft.fontSize || state.settings.fontSize || 20;
     const suppressSize = !!draft.suppressHeaderSize;
@@ -711,6 +756,7 @@ function openStyleModal(state, existingStyle, onDone) {
     bindCustomDropdown(backdrop.querySelector("#style-font-dropdown"), (val) => {
       draft.fontFamily = val || null;
       updatePreview();
+      scheduleSave();
     });
 
     // Theme dropdown — selecting a theme seeds the color overrides with
@@ -721,6 +767,7 @@ function openStyleModal(state, existingStyle, onDone) {
       else draft.darkThemeId = val;
       seedColorsFromTheme(draft, colorTab, val);
       render();
+      scheduleSave();
     });
 
     // Sliders
@@ -729,18 +776,21 @@ function openStyleModal(state, existingStyle, onDone) {
       fsEl.nextElementSibling.textContent = fsEl.value + "px";
       draft.fontSize = parseFloat(fsEl.value);
       updatePreview();
+      scheduleSave();
     });
     const lhEl = backdrop.querySelector("#style-line-height");
     if (lhEl) lhEl.addEventListener("input", () => {
       lhEl.nextElementSibling.textContent = lhEl.value;
       draft.lineHeight = parseFloat(lhEl.value);
       updatePreview();
+      scheduleSave();
     });
 
     // Name — update the draft live so tab switches don't wipe the typed value
     const nameEl = backdrop.querySelector("#style-name");
     if (nameEl) nameEl.addEventListener("input", () => {
       draft.name = nameEl.value;
+      scheduleSave();
     });
 
     // Suppress header overrides
@@ -751,11 +801,13 @@ function openStyleModal(state, existingStyle, onDone) {
       const row = backdrop.querySelector("#header-scale-row");
       if (row) row.classList.toggle("style-row-hidden", shsEl.checked);
       updatePreview();
+      scheduleSave();
     });
     const shcEl = backdrop.querySelector("#style-suppress-header-color");
     if (shcEl) shcEl.addEventListener("change", () => {
       draft.suppressHeaderColor = shcEl.checked;
       updatePreview();
+      scheduleSave();
     });
 
     // Header scale slider
@@ -765,6 +817,7 @@ function openStyleModal(state, existingStyle, onDone) {
       hsEl.nextElementSibling.textContent = v.toFixed(2) + "x";
       draft.headerScale = v;
       updatePreview();
+      scheduleSave();
     });
 
     // Block cursor
@@ -772,6 +825,7 @@ function openStyleModal(state, existingStyle, onDone) {
     if (bcEl) bcEl.addEventListener("change", () => {
       draft.blockCursor = bcEl.checked;
       updatePreview();
+      scheduleSave();
     });
 
     // Color pickers
@@ -781,6 +835,7 @@ function openStyleModal(state, existingStyle, onDone) {
         const target = colorTab === "light" ? draft.lightColors : draft.darkColors;
         target[key] = input.value;
         updatePreview();
+        scheduleSave();
       });
     });
     backdrop.querySelectorAll(".style-reset-color").forEach(btn => {
@@ -789,37 +844,8 @@ function openStyleModal(state, existingStyle, onDone) {
         const target = colorTab === "light" ? draft.lightColors : draft.darkColors;
         delete target[key];
         render(); // re-render to remove the reset button
+        scheduleSave();
       });
-    });
-
-    // Cancel / Save
-    backdrop.querySelector("#style-cancel").addEventListener("click", close);
-    backdrop.querySelector("#style-save").addEventListener("click", () => {
-      if (isDefault) {
-        saveDefaultDraftToSettings(state, draft);
-        state.emit("style-changed");
-        close();
-        if (onDone) onDone();
-        return;
-      }
-      const name = backdrop.querySelector("#style-name")?.value?.trim() || draft.name?.trim();
-      if (!name) return;
-      draft.name = name;
-      // Clean up internal migration flag
-      delete draft._migrated;
-
-      if (!state.settings.styles) state.settings.styles = [];
-      if (isNew) {
-        draft.id = "style_" + Date.now();
-        state.settings.styles.push(draft);
-      } else {
-        const idx = state.settings.styles.findIndex(s => s.id === draft.id);
-        if (idx >= 0) state.settings.styles[idx] = draft;
-      }
-      state.updateSettings({ styles: state.settings.styles });
-      state.emit("style-changed");
-      close();
-      if (onDone) onDone();
     });
   }
 

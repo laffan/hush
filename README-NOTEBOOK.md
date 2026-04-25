@@ -51,6 +51,17 @@ The notebook does **not** run as a separate window or webview. It mounts into th
 - **Settings sync** — appearance, theme, and font are derived from the current Hush editor style (with a camelCase → kebab-case theme ID mapping in `HUSH_TO_NOTEBOOK_THEME`). Grid pattern, spacing, and opacity use dedicated notebook settings.
 - **Left inset** — a `MutationObserver` on the sidebar/panel DOM classes pushes the current sidebar width (0/50/350px) to `DrawingState.leftInset`, which offsets the pocket tray and toolbar position.
 
+### Export
+
+Pressing **Export** while a notebook is open opens a dedicated modal (`src/sidebar/notebook-export-modal.js`) that collects four choices and hands them to `exportNotebook()` in `src/notebook/notebook-export.ts`:
+
+- **Scope** — *Visible window* exports the current viewport crop at the current camera zoom. *All content* fits the bounding box of every non-pocketed shape, with a user-specified **margin** (in CSS px at 1×) padded on every side.
+- **Format** — `.hushnote` (JSON wrapper around the shapes + layers, versioned), `PNG`, `JPG`, or `PDF` (single-page, JPEG-backed via a minimal inline PDF encoder — no external library).
+- **Scale** — 1×, 2×, 3×. Ignored for `.hushnote`.
+- **Include background** — when off, the raster is emitted with a transparent canvas (no theme background fill, no grid/dot pattern).
+
+The raster pipeline reuses the notebook renderer via `renderForExport()` (shapes + optional background, no selection/pocket/creating chrome) and then blits the drawing layer's "done" canvas via `DrawingLayer.blitDoneCanvasAtWorldOrigin()` so engine strokes land on top of the shape layer — matching the live DOM z-order. Pocketed shapes are explicitly skipped: the pocket is workspace UI, not content. The sidebar's `export-current-file` handler routes to this modal only when `state.currentNotebookFileId` is set; doc exports continue to use the existing Markdown path.
+
 ### File storage
 
 Notebooks are stored identically to documents: as `files/{uuid}.json` in the app data directory. The `content` field holds a JSON array of `Shape` objects (the notebook's entire state). The file tree node has `type: "notebook"` and a `fileId` pointing to the backing file.

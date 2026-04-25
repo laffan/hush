@@ -84,6 +84,12 @@ export interface DrawingLayer {
    *  matching the bbox at ctx's current scale. */
   blitWorldRegion(ctx: CanvasRenderingContext2D, worldBbox: { minX: number; minY: number; maxX: number; maxY: number }): void;
 
+  /** Blit the entire non-pocketed stroke canvas ("done") into `ctx` at
+   *  its current transform, positioned so world coords line up. Used by
+   *  the export path, which has already applied a camera transform to
+   *  ctx. */
+  blitDoneCanvasAtWorldOrigin(ctx: CanvasRenderingContext2D): void;
+
   // ----- hush select-drag integration -----
   //
   // For DrawShape selections, Hush's select-drag routes move updates
@@ -748,6 +754,14 @@ export function createDrawingLayer({
     );
   }
 
+  function blitDoneCanvasAtWorldOrigin(ctx: CanvasRenderingContext2D): void {
+    // Done canvas covers world rect [originX..originX+WORLD_SIZE] ×
+    // [originY..originY+WORLD_SIZE]. Caller's ctx is already in world
+    // coords, so paint the canvas at (originX, originY) at world size.
+    if (doneCanvas.width === 0 || doneCanvas.height === 0) return;
+    ctx.drawImage(doneCanvas, originX, originY, WORLD_SIZE, WORLD_SIZE);
+  }
+
   /** Copy a world-bbox region from the done canvas to the pocket
    *  stash. Called by the sync shim right before the engine
    *  full-rebakes and removes the stroke from done. */
@@ -945,6 +959,7 @@ export function createDrawingLayer({
     canRedo,
     rebake,
     blitWorldRegion,
+    blitDoneCanvasAtWorldOrigin,
     beginSelectionDrag,
     updateSelectionDrag,
     endSelectionDrag,

@@ -215,6 +215,56 @@ fn export_with_images(
     Ok(())
 }
 
+/// Write a raw byte blob to an arbitrary path picked by the user.
+///
+/// The JS fs plugin's `writeFile` with a `Uint8Array` was silently producing
+/// 0-byte files on iOS. Routing binary writes through Rust avoids that.
+/// iOS's document-picker returns a percent-encoded `file://` URL, not a
+/// plain path, so we normalize before writing.
+#[tauri::command]
+fn write_binary_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let resolved = normalize_dialog_path(&path);
+    fs::write(&resolved, &bytes).map_err(|e| format!("{} (path: {})", e, resolved))
+}
+
+/// Strip a `file://` prefix (iOS document-picker URLs) and percent-decode
+/// the remainder. A bare filesystem path passes through untouched. Kept
+/// simple — no UTF-8 validation beyond what path APIs require — because
+/// the input is always a user-picked destination, not untrusted.
+fn normalize_dialog_path(raw: &str) -> String {
+    let trimmed = raw.strip_prefix("file://").unwrap_or(raw);
+    // On iOS the URL looks like `file:///private/var/...` — stripping
+    // `file://` leaves `/private/...`, which is already a valid path.
+    percent_decode(trimmed)
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex_digit(bytes[i + 1]), hex_digit(bytes[i + 2])) {
+                out.push((h << 4) | l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_digit(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
 #[tauri::command]
 fn create_snapshot(
     state: State<AppState>,
@@ -661,6 +711,7 @@ pub fn run() {
             rename_image,
             list_images,
             export_with_images,
+            write_binary_file,
             create_snapshot,
             get_snapshots,
             get_snapshot,

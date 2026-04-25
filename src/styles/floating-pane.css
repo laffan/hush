@@ -17,18 +17,19 @@
   min-width: 240px;
   min-height: 60px;
   background: var(--bg, #1e1e1e);
-  border: none;
+  /* Thin outline in place of the previous drop shadow — keeps the pane
+     readable against any background without bleeding ink across the page. */
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   pointer-events: auto;
-  transition: box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 .floating-pane.active {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border-color: var(--cursor, var(--fg, rgba(255, 255, 255, 0.65)));
 }
 
 /* ── Title bar ────────────────────────────────────────────────────── */
@@ -121,6 +122,59 @@
   color: #4a9eff;
 }
 
+/* When the pane is collapsed, flip the chevron so it points up — making
+   it visually a "pull-down to expand" affordance. */
+.floating-pane.collapsed .fp-btn-collapse svg {
+  transform: rotate(180deg);
+}
+
+/* ── Font-size popover ────────────────────────────────────────────── */
+
+.fp-size-popover {
+  position: absolute;
+  top: 32px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--panel-bg, var(--bg, #1e1e1e));
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+  z-index: 5;
+  user-select: none;
+}
+
+.fp-size-step {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--fg, #ccc);
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0;
+}
+
+.fp-size-step:hover {
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.fp-size-label {
+  min-width: 36px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--fg, #ccc);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Pinned pane (global / cross-document) — blue header ──────────── */
 
 .floating-pane.pinned .floating-pane-titlebar {
@@ -188,6 +242,50 @@
 .fp-resize {
   position: absolute;
   z-index: 1;
+}
+
+/* Hover affordance for the resize handles — implemented as an inset
+   overlay rather than a real border so it can sit above the pane's own
+   content (otherwise CodeMirror / canvas children paint over it). The
+   ::after fills the pane exactly, then we colour individual sides via
+   :has() driven by which handle the cursor is on.
+   - Side handles: light up just that single edge.
+   - Corner handles: light up both edges meeting at that corner. */
+.floating-pane::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  border-radius: inherit;
+  border: 3px solid transparent;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+/* Sides */
+.floating-pane:has(.fp-resize-n:hover)::after { border-top-color: rgba(128, 128, 128, 0.45); }
+.floating-pane:has(.fp-resize-s:hover)::after { border-bottom-color: rgba(128, 128, 128, 0.45); }
+.floating-pane:has(.fp-resize-e:hover)::after { border-right-color: rgba(128, 128, 128, 0.45); }
+.floating-pane:has(.fp-resize-w:hover)::after { border-left-color: rgba(128, 128, 128, 0.45); }
+
+/* Corners — both adjacent edges, in a slightly stronger tone so it
+   reads as a distinct corner accent rather than a side highlight. */
+.floating-pane:has(.fp-resize-ne:hover)::after {
+  border-top-color: rgba(128, 128, 128, 0.6);
+  border-right-color: rgba(128, 128, 128, 0.6);
+}
+.floating-pane:has(.fp-resize-nw:hover)::after {
+  border-top-color: rgba(128, 128, 128, 0.6);
+  border-left-color: rgba(128, 128, 128, 0.6);
+}
+.floating-pane:has(.fp-resize-se:hover)::after {
+  border-bottom-color: rgba(128, 128, 128, 0.6);
+  border-right-color: rgba(128, 128, 128, 0.6);
+}
+.floating-pane:has(.fp-resize-sw:hover)::after {
+  border-bottom-color: rgba(128, 128, 128, 0.6);
+  border-left-color: rgba(128, 128, 128, 0.6);
 }
 
 .fp-resize-n  { top: -4px;    left: 8px;   right: 8px;  height: 8px; cursor: n-resize; }
@@ -269,5 +367,6 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
 
 /* Highlight the pane currently under the dragged text. */
 .floating-pane.pane-drop-target {
-  box-shadow: 0 0 0 2px var(--cursor, #ff6600), 0 2px 10px rgba(0, 0, 0, 0.18);
+  border-color: var(--cursor, #ff6600);
+  box-shadow: 0 0 0 1px var(--cursor, #ff6600);
 }

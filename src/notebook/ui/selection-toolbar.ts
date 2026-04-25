@@ -6,7 +6,10 @@ import { icon } from "./icons";
 
 export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () => void): HTMLElement {
   const container = h("div", {
-    style: { position: "absolute", display: "none", gap: "2px", zIndex: "200", pointerEvents: "auto" },
+    // Sit just above canvas content but below the sidebar (z-index 200)
+    // so popping the files panel doesn't get masked by the selection
+    // chrome floating above a shape.
+    style: { position: "absolute", display: "none", gap: "2px", zIndex: "50", pointerEvents: "auto" },
   });
 
   let activePopup: "color" | "bg" | "size" | "align" | null = null;
@@ -54,28 +57,42 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
     });
   }
 
-  function makeSizeSlider(currentSize: number, onChange: (size: number) => void): HTMLElement {
+  function makeSizeStepper(currentSize: number, onChange: (size: number) => void): HTMLElement {
     const theme = state.theme;
+    const minSize = 6;
+    const maxSize = 30;
+    const step = 1;
     const panel = h("div", {
-      style: { position: "absolute", top: "-44px", left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "6px", padding: "6px 10px", background: theme.uiBackground, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`, zIndex: "300", whiteSpace: "nowrap" },
+      style: { position: "absolute", top: "-44px", left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "4px", padding: "4px 6px", background: theme.uiBackground, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`, zIndex: "300", whiteSpace: "nowrap" },
     });
-    const slider = h("input", {
-      attrs: { type: "range", min: "6", max: "30", step: "1" },
-      style: { width: "100px" },
-    }) as HTMLInputElement;
-    slider.value = String(currentSize);
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.5)" : "#666";
-    const label = h("span", { text: `${currentSize}px`, style: { fontSize: "11px", color: muted, minWidth: "32px" } });
-    slider.addEventListener("input", () => {
-      const v = parseInt(slider.value, 10);
-      label.textContent = `${v}px`;
-      onChange(v);
-    });
+    const label = h("span", { text: `${currentSize}px`, style: { fontSize: "11px", color: muted, minWidth: "32px", textAlign: "center" } });
+
+    let size = currentSize;
+    function makeStep(symbol: string, delta: number): HTMLElement {
+      const btn = h("button", {
+        text: symbol,
+        style: {
+          width: "26px", height: "26px", display: "inline-flex", alignItems: "center", justifyContent: "center",
+          background: "transparent", color: theme.foreground, border: `1px solid ${theme.uiBorder}`,
+          borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "600", lineHeight: "1", padding: "0",
+        },
+      });
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const next = Math.max(minSize, Math.min(maxSize, size + delta));
+        if (next === size) return;
+        size = next;
+        label.textContent = `${size}px`;
+        onChange(size);
+      });
+      return btn;
+    }
+
     panel.addEventListener("pointerdown", (e) => e.stopPropagation());
-    panel.appendChild(h("span", { text: "A", style: { fontSize: "10px", color: muted } }));
-    panel.appendChild(slider);
-    panel.appendChild(h("span", { text: "A", style: { fontSize: "16px", fontWeight: "600", color: theme.foreground } }));
+    panel.appendChild(makeStep("−", -step)); // minus
     panel.appendChild(label);
+    panel.appendChild(makeStep("+", step));
     return panel;
   }
 
@@ -250,7 +267,7 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
       wrapper.appendChild(makeIconBtn("text-size", "Text size", () => {
         const textShape = selected.find((s) => s.type === "text");
         const currentSize = textShape && textShape.type === "text" ? textShape.fontSize : 18;
-        togglePopup("size", wrapper, () => makeSizeSlider(currentSize, (size) => {
+        togglePopup("size", wrapper, () => makeSizeStepper(currentSize, (size) => {
           state.changeSelectedFontSize(size);
         }));
       }));
@@ -258,7 +275,7 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
       if (savedPopup === "size") {
         const textShape = selected.find((s) => s.type === "text");
         const currentSize = textShape && textShape.type === "text" ? textShape.fontSize : 18;
-        togglePopup("size", wrapper, () => makeSizeSlider(currentSize, (size) => {
+        togglePopup("size", wrapper, () => makeSizeStepper(currentSize, (size) => {
           state.changeSelectedFontSize(size);
         }));
       }

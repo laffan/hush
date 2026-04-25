@@ -64,14 +64,17 @@ export function createSidebar(container, state) {
   });
   syncSidebarToggleIcon();
 
-  // Typing-fade. In the markdown editor the toggle sits right over the
-  // writing column; fading it out while typing keeps the view clean.
-  // Any pointer activity (mouse move, tap) brings it back immediately
-  // so the user never has to hunt for it. Notebook mode keeps the
-  // toggle present because typing there is rare and bursty.
-  function showToggleAgain() {
-    if (sidebarToggleBtn.classList.contains("typing-fade")) {
-      sidebarToggleBtn.classList.remove("typing-fade");
+  // Typing-fade. In the markdown editor the floating toggle, the
+  // sidebar's icon column, and the files panel's "new item" buttons all
+  // hover over the writing column; fading them out while the user types
+  // keeps the page clean. Any pointer activity (mousemove / tap) brings
+  // them back immediately. Notebook mode is exempt — typing there is
+  // rare and the buttons need to stay reachable for Pencil-only users.
+  // The class lives on <body> so a single CSS rule can target every
+  // affected icon group.
+  function endTypingFade() {
+    if (document.body.classList.contains("typing-fade")) {
+      document.body.classList.remove("typing-fade");
     }
   }
   document.addEventListener("keydown", (e) => {
@@ -80,15 +83,27 @@ export function createSidebar(container, state) {
     // "the user is actively writing prose" and shouldn't hide the UI.
     if (e.key === "Shift" || e.key === "Control" || e.key === "Meta" ||
         e.key === "Alt" || e.key === "Escape") return;
+    // And ignore any keystroke that's part of a shortcut combination —
+    // Cmd+\ to open the panel, Cmd+S, navigation chords, etc. — so
+    // reaching for the sidebar via keyboard doesn't paradoxically hide
+    // it the moment it opens.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target;
     const isEditable =
       (t && t.closest && t.closest(".cm-content")) ||
       (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable));
     if (!isEditable) return;
-    sidebarToggleBtn.classList.add("typing-fade");
+    document.body.classList.add("typing-fade");
   });
-  document.addEventListener("pointermove", showToggleAgain);
-  document.addEventListener("pointerdown", showToggleAgain);
+  document.addEventListener("pointermove", endTypingFade);
+  document.addEventListener("pointerdown", endTypingFade);
+  // Whenever a panel is opened (toggle button, command palette, file
+  // picker, …) we want the icons fully visible again — even if the
+  // user reached us by keyboard. Listening on the panel-overlay's
+  // class flips covers all those open-paths uniformly.
+  new MutationObserver(() => {
+    if (!panelOverlay.classList.contains("hidden")) endTypingFade();
+  }).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
 
   // Set up panel-width CSS var from persisted setting, then install the
   // invisible-until-hover right-edge resizer.
@@ -212,6 +227,11 @@ export function createSidebar(container, state) {
 
   container.querySelector('[data-action="export"]').addEventListener("click", async () => {
     hidePanel();
+    if (state.currentNotebookFileId) {
+      const { openNotebookExportModal } = await import("./notebook-export-modal.js");
+      await openNotebookExportModal(state);
+      return;
+    }
     await exportCurrentFile(state);
   });
 
@@ -462,8 +482,13 @@ export function createSidebar(container, state) {
     if (state._columnResizeHandler) state._columnResizeHandler();
   });
 
-  state.on("export-current-file", () => {
+  state.on("export-current-file", async () => {
     hidePanel();
+    if (state.currentNotebookFileId) {
+      const { openNotebookExportModal } = await import("./notebook-export-modal.js");
+      await openNotebookExportModal(state);
+      return;
+    }
     exportCurrentFile(state);
   });
 
@@ -479,14 +504,11 @@ function btn(action, title, svgContent) {
 /** SVG for the floating sidebar toggle — expand/collapse variants
  *  pulled from temp-icons with stroke="currentColor" for theme inheritance. */
 function sidebarToggleSvg(variant) {
-  const chevron = variant === "collapse"
-    ? `<path d="M7.25 10L5.5 12L7.25 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`
-    : `<path d="M5.5 10L7.25 12L5.5 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
-  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M19 21L5 21C3.89543 21 3 20.1046 3 19L3 5C3 3.89543 3.89543 3 5 3L19 3C20.1046 3 21 3.89543 21 5L21 19C21 20.1046 20.1046 21 19 21Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M9.5 21V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    ${chevron}
-  </svg>`;
+  // Match the notebook shelf's grip — a single guillemet that rotates
+  // direction with the panel state. The sidebar lives on the left, so
+  // the directions are mirrored from the shelf (which lives on the
+  // right). Closed → "›" (open this way); open → "‹" (close this way).
+  return variant === "collapse" ? "‹" : "›";
 }
 
 // Minimalist SVG icons (loaded from src/sidebar_icons/)
