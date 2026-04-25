@@ -1,0 +1,10 @@
+# Files exempt from the 700-line limit. Keep this list small and
+# documented — every entry is a deliberate decision the team agreed on.
+#
+# Format: one path per line (relative to repo root). Lines starting
+# with `#` are comments. Lines ending with a reason after `# —` are
+# preferred so future maintainers can re-evaluate exceptions.
+
+src/notebook/drawing/engine/stroke.js  # — Ported from upstream demo. Documented "deltas" track edits relative to upstream file boundaries; splitting would break the diff-check workflow described in README-DRAWING.md.
+
+src/notebook/state.ts  # — Pointer-interaction state machine (~lines 465–960) is tightly coupled to shapes/selectedIds/camera/undo. Extraction was evaluated and judged to add a conceptual seam without proportional gain. Revisit if the state machine grows further.

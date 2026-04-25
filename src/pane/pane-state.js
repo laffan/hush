@@ -1,0 +1,53 @@
+/**
+ * Shared module-level state for the pane subsystem. Lives in its own
+ * module so the sibling files (pane-content, pane-persistence, pane-drag,
+ * pane-size-popover) can read and mutate the same state without circular
+ * imports against pane-manager.js.
+ *
+ * Reads happen via the live ES module bindings (e.g. `import { panes }
+ * from "./pane-state.js"` then iterate). Writes go through setters so the
+ * mutation surface stays explicit.
+ */
+
+export const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+
+export async function tauriInvoke(cmd, args) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke(cmd, args);
+}
+
+export const panes = new Map();       // id → pane object — live binding (mutable Map)
+
+export let activePaneId = null;
+export function setActivePaneId(id) { activePaneId = id; }
+
+export let zCounter = 1000;
+export function bumpZCounter() { return ++zCounter; }
+
+export let containerEl = null;
+export function setContainerEl(el) { containerEl = el; }
+
+export let appState = null;
+export function setAppState(s) { appState = s; }
+
+export let autosaveTimer = null;
+export function setAutosaveTimer(t) { autosaveTimer = t; }
+
+export let syncing = false;
+export function setSyncing(v) { syncing = v; }
+
+// ── Lazy notebook bridge handle ──────────────────────────────────────
+export let notebookBridge = null;
+export async function getNotebookBridge() {
+  if (!notebookBridge) {
+    notebookBridge = await import("../notebook/notebook-bridge.js");
+  }
+  return notebookBridge;
+}
+
+// ── Geometry constants ───────────────────────────────────────────────
+export const DEFAULT_WIDTH = 420;
+export const DEFAULT_HEIGHT = 340;
+export const MIN_WIDTH = 240;
+export const MIN_HEIGHT = 60;
+export const TITLEBAR_HEIGHT = 35;

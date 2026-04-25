@@ -11,20 +11,21 @@ use tauri::{
     WindowEvent,
 };
 
-mod settings;
+mod commands;
 mod files;
 mod images;
 mod local_sync;
+mod settings;
 mod snapshots;
 mod sync;
 mod sync_commands;
 mod zotero;
 
-use settings::AppSettings;
 use files::FileManager;
-use images::{ImageManager, ImageSaved};
-use local_sync::{LocalSyncEntry, LocalSyncFolder, LocalSyncManager};
-use snapshots::{SnapshotManager, SnapshotEntry};
+use images::ImageManager;
+use local_sync::LocalSyncManager;
+use settings::AppSettings;
+use snapshots::SnapshotManager;
 use sync::SyncManager;
 use zotero::ZoteroManager;
 
@@ -66,386 +67,6 @@ pub struct TreeNode {
     pub sync_folder_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locked_style_id: Option<String>,
-}
-
-#[tauri::command]
-fn get_settings(state: State<AppState>) -> AppSettings {
-    state.settings.lock().unwrap().clone()
-}
-
-#[tauri::command]
-fn save_settings(state: State<AppState>, settings: AppSettings) -> Result<(), String> {
-    let mut current = state.settings.lock().unwrap();
-    let data_dir = current.data_dir.clone(); // Preserve — it's #[serde(skip)]
-    *current = settings.clone();
-    current.data_dir = data_dir;
-    current.save().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn list_files(state: State<AppState>) -> Result<Vec<FileEntry>, String> {
-    state.file_manager.lock().unwrap().list_files().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn load_file(state: State<AppState>, id: String) -> Result<FileEntry, String> {
-    state.file_manager.lock().unwrap().load_file(&id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn save_file(state: State<AppState>, id: String, content: String) -> Result<(), String> {
-    let fm = state.file_manager.lock().unwrap();
-    fm.save_file(&id, &content).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-fn create_file(state: State<AppState>) -> Result<FileEntry, String> {
-    state.file_manager.lock().unwrap().create_file().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn delete_file(state: State<AppState>, id: String) -> Result<(), String> {
-    state.file_manager.lock().unwrap().delete_file(&id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn rename_file(state: State<AppState>, id: String, name: String) -> Result<(), String> {
-    state.file_manager.lock().unwrap().rename_file(&id, &name).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn get_file_tree(state: State<AppState>) -> Result<Vec<TreeNode>, String> {
-    state.file_manager.lock().unwrap().get_file_tree().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn save_file_tree(state: State<AppState>, tree: Vec<TreeNode>) -> Result<(), String> {
-    state.file_manager.lock().unwrap().save_file_tree(&tree).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn create_folder(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<TreeNode, String> {
-    state.file_manager.lock().unwrap().create_folder(&name, parent_id.as_deref()).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn create_project(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<TreeNode, String> {
-    state.file_manager.lock().unwrap().create_project(&name, parent_id.as_deref()).map_err(|e| e.to_string())
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NotebookCreated {
-    node: TreeNode,
-    file: FileEntry,
-}
-
-#[tauri::command]
-fn create_notebook(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<NotebookCreated, String> {
-    let (node, file) = state.file_manager.lock().unwrap()
-        .create_notebook(&name, parent_id.as_deref())
-        .map_err(|e| e.to_string())?;
-    Ok(NotebookCreated { node, file })
-}
-
-#[tauri::command]
-fn load_project_content(state: State<AppState>, project_id: String) -> Result<Vec<FileEntry>, String> {
-    state.file_manager.lock().unwrap().load_project_content(&project_id).map_err(|e| e.to_string())
-}
-
-// ===== Image commands =====
-
-#[tauri::command]
-fn save_image(state: State<AppState>, filename: String, data_url: String) -> Result<ImageSaved, String> {
-    state.image_manager.lock().unwrap()
-        .save_from_data_url(&filename, &data_url)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn load_image(state: State<AppState>, filename: String) -> Result<String, String> {
-    state.image_manager.lock().unwrap()
-        .load_as_data_url(&filename)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn delete_image(state: State<AppState>, filename: String) -> Result<(), String> {
-    state.image_manager.lock().unwrap()
-        .delete(&filename)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn rename_image(state: State<AppState>, old_filename: String, new_filename: String) -> Result<String, String> {
-    state.image_manager.lock().unwrap()
-        .rename(&old_filename, &new_filename)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn list_images(state: State<AppState>) -> Result<Vec<String>, String> {
-    Ok(state.image_manager.lock().unwrap().list())
-}
-
-/// Export a document as a folder containing `text.md` plus an `images/`
-/// subdir. `images` is the list of filenames referenced by the doc; each
-/// one is copied to `images/{filename}` (already disambiguated on import,
-/// so no extra renaming happens here).
-#[tauri::command]
-fn export_with_images(
-    state: State<AppState>,
-    folder: String,
-    markdown: String,
-    images: Vec<String>,
-) -> Result<(), String> {
-    let root = PathBuf::from(&folder);
-    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-    fs::write(root.join("text.md"), markdown.as_bytes()).map_err(|e| e.to_string())?;
-    if !images.is_empty() {
-        let images_dir = root.join("images");
-        fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
-        let im = state.image_manager.lock().unwrap();
-        for filename in &images {
-            let (bytes, _mime) = im.load_bytes(filename).map_err(|e| e.to_string())?;
-            fs::write(images_dir.join(filename), &bytes).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
-/// Write a raw byte blob to an arbitrary path picked by the user.
-///
-/// The JS fs plugin's `writeFile` with a `Uint8Array` was silently producing
-/// 0-byte files on iOS. Routing binary writes through Rust avoids that.
-/// iOS's document-picker returns a percent-encoded `file://` URL, not a
-/// plain path, so we normalize before writing.
-#[tauri::command]
-fn write_binary_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
-    let resolved = normalize_dialog_path(&path);
-    fs::write(&resolved, &bytes).map_err(|e| format!("{} (path: {})", e, resolved))
-}
-
-/// Strip a `file://` prefix (iOS document-picker URLs) and percent-decode
-/// the remainder. A bare filesystem path passes through untouched. Kept
-/// simple — no UTF-8 validation beyond what path APIs require — because
-/// the input is always a user-picked destination, not untrusted.
-fn normalize_dialog_path(raw: &str) -> String {
-    let trimmed = raw.strip_prefix("file://").unwrap_or(raw);
-    // On iOS the URL looks like `file:///private/var/...` — stripping
-    // `file://` leaves `/private/...`, which is already a valid path.
-    percent_decode(trimmed)
-}
-
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) = (hex_digit(bytes[i + 1]), hex_digit(bytes[i + 2])) {
-                out.push((h << 4) | l);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex_digit(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
-}
-
-#[tauri::command]
-fn create_snapshot(
-    state: State<AppState>,
-    document_id: String,
-    content: String,
-) -> Result<i64, String> {
-    state.snapshot_manager.lock().unwrap()
-        .create_snapshot(&document_id, &content)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn get_snapshots(
-    state: State<AppState>,
-    document_id: String,
-) -> Result<Vec<SnapshotEntry>, String> {
-    state.snapshot_manager.lock().unwrap()
-        .get_snapshots(&document_id)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn get_snapshot(state: State<AppState>, id: i64) -> Result<SnapshotEntry, String> {
-    state.snapshot_manager.lock().unwrap()
-        .get_snapshot(id)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn delete_document_snapshots(
-    state: State<AppState>,
-    document_id: String,
-) -> Result<(), String> {
-    state.snapshot_manager.lock().unwrap()
-        .delete_document_snapshots(&document_id)
-        .map_err(|e| e.to_string())
-}
-
-// ===== Local Sync Commands =====
-
-fn find_local_sync_folder(
-    settings: &AppSettings,
-    id: &str,
-) -> Result<LocalSyncFolder, String> {
-    settings
-        .local_sync_folders
-        .iter()
-        .find(|f| f.id == id)
-        .cloned()
-        .ok_or_else(|| format!("Local Sync folder not found: {}", id))
-}
-
-#[tauri::command]
-fn local_sync_add(
-    app: AppHandle,
-    state: State<AppState>,
-    path: String,
-    name: Option<String>,
-) -> Result<LocalSyncFolder, String> {
-    let path_buf = PathBuf::from(&path);
-    if !path_buf.is_dir() {
-        return Err(format!("Not a directory: {}", path));
-    }
-    let final_name = name.unwrap_or_else(|| {
-        path_buf
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.clone())
-    });
-    let folder = LocalSyncFolder {
-        id: format!("ls_{}", uuid_like()),
-        path,
-        name: final_name,
-        added_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0),
-    };
-    {
-        let mut settings = state.settings.lock().unwrap();
-        settings.local_sync_folders.push(folder.clone());
-        settings.save().map_err(|e| e.to_string())?;
-    }
-    state.local_sync_manager.watch(app, &folder)?;
-    Ok(folder)
-}
-
-#[tauri::command]
-fn local_sync_remove(state: State<AppState>, id: String) -> Result<(), String> {
-    {
-        let mut settings = state.settings.lock().unwrap();
-        settings.local_sync_folders.retain(|f| f.id != id);
-        settings.save().map_err(|e| e.to_string())?;
-    }
-    state.local_sync_manager.unwatch(&id);
-    Ok(())
-}
-
-#[tauri::command]
-fn local_sync_list(state: State<AppState>) -> Vec<LocalSyncFolder> {
-    state.settings.lock().unwrap().local_sync_folders.clone()
-}
-
-#[tauri::command]
-fn local_sync_read_dir(
-    state: State<AppState>,
-    id: String,
-    rel_path: Option<String>,
-) -> Result<Vec<LocalSyncEntry>, String> {
-    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
-    local_sync::list_dir(&folder, &rel_path.unwrap_or_default())
-}
-
-#[tauri::command]
-fn local_sync_read_file(
-    state: State<AppState>,
-    id: String,
-    rel_path: String,
-) -> Result<String, String> {
-    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
-    local_sync::read_file(&folder, &rel_path)
-}
-
-#[tauri::command]
-fn local_sync_write_file(
-    state: State<AppState>,
-    id: String,
-    rel_path: String,
-    content: String,
-) -> Result<(), String> {
-    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
-    local_sync::write_file(&folder, &rel_path, &content)
-}
-
-fn uuid_like() -> String {
-    // The app doesn't pull in `uuid`; a timestamp+rand string is good
-    // enough for local-only ids that never leave disk.
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let n = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("{:x}", n)
-}
-
-// ===== Zotero Commands =====
-
-#[tauri::command]
-fn save_zotero_references(state: State<AppState>, data: String) -> Result<(), String> {
-    state.zotero_manager.lock().unwrap()
-        .save_references(&data)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn load_zotero_references(state: State<AppState>) -> Result<String, String> {
-    state.zotero_manager.lock().unwrap()
-        .load_references()
-        .map_err(|e| e.to_string())
-}
-
-#[cfg(desktop)]
-#[tauri::command]
-fn set_always_on_top(app: AppHandle, on_top: bool) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("main") {
-        window.set_always_on_top(on_top).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn set_activation_policy(_app: AppHandle, _policy: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        match _policy.as_str() {
-            "regular" => _app.set_activation_policy(tauri::ActivationPolicy::Regular),
-            "accessory" => _app.set_activation_policy(tauri::ActivationPolicy::Accessory),
-            _ => return Err(format!("Unknown policy: {}", _policy)),
-        }.map_err(|e| e.to_string())?;
-    }
-    Ok(())
 }
 
 fn get_data_dir() -> PathBuf {
@@ -691,31 +312,31 @@ pub fn run() {
             let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
-            get_settings,
-            save_settings,
-            list_files,
-            load_file,
-            save_file,
-            create_file,
-            delete_file,
-            rename_file,
-            get_file_tree,
-            save_file_tree,
-            create_folder,
-            create_project,
-            create_notebook,
-            load_project_content,
-            save_image,
-            load_image,
-            delete_image,
-            rename_image,
-            list_images,
-            export_with_images,
-            write_binary_file,
-            create_snapshot,
-            get_snapshots,
-            get_snapshot,
-            delete_document_snapshots,
+            commands::settings::get_settings,
+            commands::settings::save_settings,
+            commands::files::list_files,
+            commands::files::load_file,
+            commands::files::save_file,
+            commands::files::create_file,
+            commands::files::delete_file,
+            commands::files::rename_file,
+            commands::files::get_file_tree,
+            commands::files::save_file_tree,
+            commands::files::create_folder,
+            commands::files::create_project,
+            commands::files::create_notebook,
+            commands::files::load_project_content,
+            commands::images::save_image,
+            commands::images::load_image,
+            commands::images::delete_image,
+            commands::images::rename_image,
+            commands::images::list_images,
+            commands::images::export_with_images,
+            commands::images::write_binary_file,
+            commands::snapshots::create_snapshot,
+            commands::snapshots::get_snapshots,
+            commands::snapshots::get_snapshot,
+            commands::snapshots::delete_document_snapshots,
             sync_commands::exchange_dropbox_token,
             sync_commands::refresh_dropbox_token,
             sync_commands::scan_sync_folder,
@@ -736,17 +357,17 @@ pub fn run() {
             sync_commands::diff_sync_folder,
             sync_commands::accept_external_change,
             sync_commands::reject_external_change,
-            save_zotero_references,
-            load_zotero_references,
-            local_sync_add,
-            local_sync_remove,
-            local_sync_list,
-            local_sync_read_dir,
-            local_sync_read_file,
-            local_sync_write_file,
+            commands::zotero::save_zotero_references,
+            commands::zotero::load_zotero_references,
+            commands::local_sync::local_sync_add,
+            commands::local_sync::local_sync_remove,
+            commands::local_sync::local_sync_list,
+            commands::local_sync::local_sync_read_dir,
+            commands::local_sync::local_sync_read_file,
+            commands::local_sync::local_sync_write_file,
             #[cfg(desktop)]
-            set_always_on_top,
-            set_activation_policy,
+            commands::window::set_always_on_top,
+            commands::window::set_activation_policy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hush");

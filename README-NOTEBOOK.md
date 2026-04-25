@@ -11,6 +11,8 @@ src/notebook/
   state.ts                DrawingState class — all canvas state + mutations
   state-helpers.ts        Pure helpers (find, resize, crop, link hit-test, pocket hit-test)
   renderer.ts             Canvas 2D draw functions (pure, no side effects)
+  renderer-selection.ts   Selection / group / crop / lasso-bbox highlights
+  renderer-background.ts  Grid + dot-grid background pattern
   input-handler.ts        DOM event wiring → state methods; reads shortcuts from Hush settings
   external-content.ts     Clipboard / drag-drop / file helpers
   file-io.ts              Save/open .note files (JSZip) — unused in Hush (kept for reference)
@@ -121,6 +123,8 @@ The `"change"` event carries `{ detail: { keys: string[] } }` so listeners can c
 ### Rendering
 
 `renderer.ts` exports a single `render(canvas, state)` function called every frame via `requestAnimationFrame`. All draw functions are pure — they take a context and data, produce pixels, and return. The render state includes a `leftInset` field that shifts the pocket tray and pocketed shape cards to accommodate the sidebar.
+
+Two sibling files keep `renderer.ts` under the line limit while preserving purity: `renderer-selection.ts` (the dashed bbox + handle drawing for selected shapes, group-selection bounds, crop overlay, drag-selection box) and `renderer-background.ts` (the grid / dot-grid background pattern). Both export pure functions called from `render()` and `renderForExport()`.
 
 ### Canvas themes
 

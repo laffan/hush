@@ -1,0 +1,115 @@
+use std::fs;
+use std::path::PathBuf;
+use tauri::State;
+
+use crate::images::ImageSaved;
+use crate::AppState;
+
+#[tauri::command]
+pub fn save_image(state: State<AppState>, filename: String, data_url: String) -> Result<ImageSaved, String> {
+    state.image_manager.lock().unwrap()
+        .save_from_data_url(&filename, &data_url)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_image(state: State<AppState>, filename: String) -> Result<String, String> {
+    state.image_manager.lock().unwrap()
+        .load_as_data_url(&filename)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_image(state: State<AppState>, filename: String) -> Result<(), String> {
+    state.image_manager.lock().unwrap()
+        .delete(&filename)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rename_image(state: State<AppState>, old_filename: String, new_filename: String) -> Result<String, String> {
+    state.image_manager.lock().unwrap()
+        .rename(&old_filename, &new_filename)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_images(state: State<AppState>) -> Result<Vec<String>, String> {
+    Ok(state.image_manager.lock().unwrap().list())
+}
+
+/// Export a document as a folder containing `text.md` plus an `images/`
+/// subdir. `images` is the list of filenames referenced by the doc; each
+/// one is copied to `images/{filename}` (already disambiguated on import,
+/// so no extra renaming happens here).
+#[tauri::command]
+pub fn export_with_images(
+    state: State<AppState>,
+    folder: String,
+    markdown: String,
+    images: Vec<String>,
+) -> Result<(), String> {
+    let root = PathBuf::from(&folder);
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    fs::write(root.join("text.md"), markdown.as_bytes()).map_err(|e| e.to_string())?;
+    if !images.is_empty() {
+        let images_dir = root.join("images");
+        fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
+        let im = state.image_manager.lock().unwrap();
+        for filename in &images {
+            let (bytes, _mime) = im.load_bytes(filename).map_err(|e| e.to_string())?;
+            fs::write(images_dir.join(filename), &bytes).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Write a raw byte blob to an arbitrary path picked by the user.
+///
+/// The JS fs plugin's `writeFile` with a `Uint8Array` was silently producing
+/// 0-byte files on iOS. Routing binary writes through Rust avoids that.
+/// iOS's document-picker returns a percent-encoded `file://` URL, not a
+/// plain path, so we normalize before writing.
+#[tauri::command]
+pub fn write_binary_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let resolved = normalize_dialog_path(&path);
+    fs::write(&resolved, &bytes).map_err(|e| format!("{} (path: {})", e, resolved))
+}
+
+/// Strip a `file://` prefix (iOS document-picker URLs) and percent-decode
+/// the remainder. A bare filesystem path passes through untouched. Kept
+/// simple — no UTF-8 validation beyond what path APIs require — because
+/// the input is always a user-picked destination, not untrusted.
+fn normalize_dialog_path(raw: &str) -> String {
+    let trimmed = raw.strip_prefix("file://").unwrap_or(raw);
+    // On iOS the URL looks like `file:///private/var/...` — stripping
+    // `file://` leaves `/private/...`, which is already a valid path.
+    percent_decode(trimmed)
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex_digit(bytes[i + 1]), hex_digit(bytes[i + 2])) {
+                out.push((h << 4) | l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_digit(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}

@@ -9,35 +9,13 @@ import { AppState } from "../state/state.js";
 import { findNode, collectFlaggedItems, findAncestorIds } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers } from "./files-panel-shared.js";
+import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
 let storedHidePanel = null;
 let storedState = null;
-
-// SVG icons for the three types
-const typeIcons = {
-  document: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
-  documentLocked: `<svg viewBox="0 0 16 16" class="tree-type-icon locked-style-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><circle cx="8" cy="8" r="2.5" /></svg>`,
-  documentFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
-  folder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /></svg>`,
-  folderFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><circle cx="8" cy="8" r="6" /></svg>`,
-  project: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
-  projectFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
-  notebook: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><line x1="5" y1="4" x2="11" y2="4" /><line x1="5" y1="7" x2="11" y2="7" /><line x1="5" y1="10" x2="9" y2="10" /></svg>`,
-  notebookFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><line x1="5" y1="4" x2="11" y2="4" /><line x1="5" y1="7" x2="11" y2="7" /><line x1="5" y1="10" x2="9" y2="10" /></svg>`,
-  syncedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /><line x1="2" y1="8" x2="14" y2="8" /></svg>`,
-  syncedFolderBroken: `<svg viewBox="0 0 16 16" class="tree-type-icon sync-broken-icon"><circle cx="8" cy="8" r="6" /><polyline points="2,8 5,8 6,6 7,10 8,6 9,10 10,8 14,8" /></svg>`,
-  inbox: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 9 5 9 6.5 11 9.5 11 11 9 14 9" /><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" /></svg>`,
-  // Images folder: a centered square with the same rounded corners as the
-  // `document` head and a single diagonal slash through it.
-  images: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="3" width="10" height="10" rx="1.5" /><line x1="4.5" y1="11.5" x2="11.5" y2="4.5" /></svg>`,
-  trash: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
-  flaggedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
-  // Local Sync folder icon: circle with a horizontal line through the
-  // middle — visually distinct from the plain folder (filled circle).
-  localSync: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /><line x1="2" y1="8" x2="14" y2="8" /></svg>`,
-};
 
 function getIcon(item) {
   if (item.id === AppState.INBOX_ID) return typeIcons.inbox;
@@ -123,7 +101,7 @@ export function createFilesPanel(container, state, hidePanel) {
   const localSyncContainer = document.createElement("ul");
   localSyncContainer.className = "tree-list-root local-sync-root";
   container.appendChild(localSyncContainer);
-  renderLocalSyncSection(localSyncContainer, state, hidePanel);
+  renderLocalSyncSection(localSyncContainer, state, hidePanel, refreshFilesPanel);
 
   // Flagged section — its own container, separate from SortableList
   flaggedContainerEl = document.createElement("ul");
@@ -650,316 +628,17 @@ export function refreshFilesPanel(state) {
   // Re-render the local-sync section as well so newly added/removed
   // folders or watcher-pushed changes land in the panel. Prefer the
   // cached reference, but fall back to a live DOM query so the refresh
-  // still works if `storedLocalSyncContainer` got out of sync (e.g. the
-  // panel was rebuilt from outside createFilesPanel).
-  const root = storedLocalSyncContainer?.isConnected
-    ? storedLocalSyncContainer
+  // still works if the cached container got out of sync (e.g. the panel
+  // was rebuilt from outside createFilesPanel).
+  const cached = getLocalSyncContainer();
+  const root = cached?.isConnected
+    ? cached
     : document.querySelector(".local-sync-root");
   if (root && storedState && storedHidePanel) {
-    renderLocalSyncSection(root, storedState, storedHidePanel);
+    renderLocalSyncSection(root, storedState, storedHidePanel, refreshFilesPanel);
   }
 }
 
-// ===== Local Sync =====
-
-let storedLocalSyncContainer = null;
-const localSyncExpanded = new Set(); // folderId:relPath strings
-
-async function renderLocalSyncSection(container, state, hidePanel) {
-  storedLocalSyncContainer = container;
-  container.innerHTML = "";
-  let folders = [];
-  try {
-    const { listLocalSyncFolders } = await import("../sync/local-sync.js");
-    folders = await listLocalSyncFolders();
-  } catch (e) {
-    console.error("Local Sync: failed to load folders", e);
-  }
-  // If the container was replaced (panel re-opened) while the async load
-  // was running, bail out — the newer render will paint the new container.
-  if (storedLocalSyncContainer !== container) return;
-  if (!folders || folders.length === 0) return;
-
-  // Seed the root-level expanded state so a freshly-added folder opens
-  // by default (better default than requiring the user to click to see
-  // there's nothing inside yet). Subsequent user toggles override this.
-  for (const folder of folders) {
-    const key = `${folder.id}:`;
-    if (!localSyncExpandedInitialized.has(folder.id)) {
-      localSyncExpanded.add(key);
-      localSyncExpandedInitialized.add(folder.id);
-    }
-  }
-
-  for (const folder of folders) {
-    try {
-      const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel);
-      container.appendChild(rootLi);
-    } catch (e) {
-      console.error("Local Sync: failed to render folder", folder, e);
-    }
-  }
-}
-
-// Track which folder ids we've already set an initial expansion state for
-// so re-renders don't keep "resetting" a folder the user chose to collapse.
-const localSyncExpandedInitialized = new Set();
-
-function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePanel) {
-  const key = `${folder.id}:${relPath}`;
-  const isExpanded = localSyncExpanded.has(key) || (isRoot && localSyncExpanded.size === 0 && false);
-
-  const li = document.createElement("li");
-  li.className = "sl-item has-children" + (isExpanded ? "" : " collapsed");
-  li.dataset.id = key;
-  attachLeafHoverHandlers(li);
-
-  const contentWrapper = document.createElement("div");
-  contentWrapper.className = "sl-item-content";
-
-  const foldArrow = document.createElement("button");
-  foldArrow.className = "sl-fold-arrow";
-  foldArrow.type = "button";
-  foldArrow.textContent = isExpanded ? "\u25BC" : "\u25B6\uFE0E";
-  foldArrow.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleLocalSyncNode(key);
-    if (storedLocalSyncContainer && storedState && storedHidePanel) {
-      renderLocalSyncSection(storedLocalSyncContainer, storedState, storedHidePanel);
-    }
-  });
-  contentWrapper.appendChild(foldArrow);
-
-  const label = document.createElement("span");
-  label.className = "sl-item-label";
-  const main = document.createElement("span");
-  main.className = "sl-item-main-label";
-  const row = document.createElement("span");
-  row.className = "tree-item-row";
-  const removeBtn = isRoot
-    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button data-local-sync-action="remove" title="Remove from Local Sync">&times;</button></span>`
-    : "";
-  // The Local Sync icon marks only the mount root; nested folders use
-  // the regular folder icon so the tree reads as a normal filesystem
-  // view inside the mount.
-  const icon = isRoot ? typeIcons.localSync : typeIcons.folder;
-  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(displayName)}</span>${removeBtn}`;
-  main.appendChild(row);
-  label.appendChild(main);
-  contentWrapper.appendChild(label);
-
-  // Row click toggles the folder open/closed (matches Inbox/Trash UX)
-  contentWrapper.addEventListener("click", (e) => {
-    if (e.target.closest("[data-local-sync-action]")) return;
-    if (e.target.closest(".sl-fold-arrow")) return;
-    toggleLocalSyncNode(key);
-    if (storedLocalSyncContainer && storedState && storedHidePanel) {
-      renderLocalSyncSection(storedLocalSyncContainer, storedState, storedHidePanel);
-    }
-  });
-
-  li.appendChild(contentWrapper);
-
-  // Delegated remove-button handler
-  if (isRoot) {
-    const btn = contentWrapper.querySelector('[data-local-sync-action="remove"]');
-    if (btn) {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
-        await removeLocalSyncFolder(folder.id);
-        refreshFilesPanel(state);
-      });
-    }
-  }
-
-  if (isExpanded) {
-    const childList = document.createElement("ul");
-    childList.className = "sl-list";
-    li.appendChild(childList);
-    populateLocalSyncChildren(childList, folder, relPath, state, hidePanel);
-  }
-
-  return li;
-}
-
-function toggleLocalSyncNode(key) {
-  if (localSyncExpanded.has(key)) localSyncExpanded.delete(key);
-  else localSyncExpanded.add(key);
-}
-
-async function populateLocalSyncChildren(container, folder, relPath, state, hidePanel) {
-  container.innerHTML = '<li class="local-sync-loading"><span class="sl-item-label">Loading…</span></li>';
-  try {
-    const { readDir, openLocalSyncFile } = await import("../sync/local-sync.js");
-    const entries = await readDir(folder.id, relPath);
-    container.innerHTML = "";
-    if (entries.length === 0) {
-      const empty = document.createElement("li");
-      empty.className = "local-sync-empty";
-      empty.innerHTML = `<span class="sl-item-content"><span class="sl-fold-arrow sl-fold-empty"></span><span class="sl-item-label"><em>(empty)</em></span></span>`;
-      container.appendChild(empty);
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.is_dir || entry.isDir) {
-        const sub = buildLocalSyncNode(folder, entry.relPath || entry.rel_path, entry.name, false, state, hidePanel);
-        container.appendChild(sub);
-      } else {
-        const fileLi = buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFile);
-        container.appendChild(fileLi);
-      }
-    }
-  } catch (e) {
-    console.error("Failed to list local-sync folder:", e);
-    container.innerHTML = `<li class="local-sync-error"><span class="sl-item-label">Failed to read directory</span></li>`;
-  }
-}
-
-function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFile) {
-  const relPath = entry.relPath || entry.rel_path;
-  const li = document.createElement("li");
-  li.className = "sl-item local-sync-file";
-  li.dataset.id = `${folder.id}:${relPath}`;
-  attachLeafHoverHandlers(li);
-
-  const activeKey = state.currentLocalSync
-    ? `${state.currentLocalSync.folderId}:${state.currentLocalSync.relPath}`
-    : null;
-  if (activeKey === `${folder.id}:${relPath}`) li.classList.add("active");
-
-  const itemContent = document.createElement("div");
-  itemContent.className = "sl-item-content";
-  const spacer = document.createElement("button");
-  spacer.className = "sl-fold-arrow sl-fold-empty";
-  spacer.tabIndex = -1;
-  itemContent.appendChild(spacer);
-
-  const label = document.createElement("span");
-  label.className = "sl-item-label";
-  const main = document.createElement("span");
-  main.className = "sl-item-main-label";
-  const row = document.createElement("span");
-  row.className = "tree-item-row" + (li.classList.contains("active") ? " active" : "");
-  row.innerHTML = `${typeIcons.document}<span class="tree-item-name">${escHtml(entry.name)}</span>`;
-  main.appendChild(row);
-  label.appendChild(main);
-  itemContent.appendChild(label);
-  li.appendChild(itemContent);
-
-  // Cmd/Ctrl-drag to spawn a floating pane for this file.  Mirrors the
-  // SortableList's drag-outside behaviour so Local Sync files feel
-  // identical to normal sidebar docs.
-  attachLocalSyncFileDrag(itemContent, folder, entry, relPath);
-
-  itemContent.addEventListener("click", async (e) => {
-    // A drag-out consumed the gesture — don't also open the file.
-    if (itemContent.dataset.dragConsumed === "1") {
-      delete itemContent.dataset.dragConsumed;
-      return;
-    }
-    // Cmd+click alone (no drag) is treated as "open" as well.
-    await openLocalSyncFile(state, folder.id, relPath);
-    const overlay = document.querySelector("#panel-overlay");
-    if (overlay && !overlay.classList.contains("panel-inset") && hidePanel) hidePanel();
-  });
-
-  return li;
-}
-
-/**
- * Wire a pointerdown→move→up sequence on a Local Sync file row so a
- * Cmd/Ctrl-drag past the panel's right edge spawns a floating pane for
- * the file. The ghost element matches the SortableList's ghost so the
- * visual affordance is consistent with dragging a doc out of the
- * regular file tree.
- */
-function attachLocalSyncFileDrag(rowEl, folder, entry, relPath) {
-  rowEl.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    let dragging = false;
-    let ghost = null;
-
-    const buildGhost = () => {
-      const g = document.createElement("div");
-      g.className = "sl-drag-ghost";
-      g.textContent = entry.name;
-      g.style.transform = `translate3d(${e.clientX - 40}px, ${e.clientY - 10}px, 0)`;
-      document.body.appendChild(g);
-      document.body.classList.add("sl-dragging");
-      return g;
-    };
-
-    const onMove = (ev) => {
-      const dx = ev.clientX - startX;
-      const dy = ev.clientY - startY;
-      if (!dragging && Math.hypot(dx, dy) > 6) {
-        dragging = true;
-        ghost = buildGhost();
-      }
-      if (ghost) {
-        ghost.style.transform = `translate3d(${ev.clientX - 40}px, ${ev.clientY - 10}px, 0)`;
-      }
-    };
-
-    const onUp = async (ev) => {
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      if (ghost) { ghost.remove(); ghost = null; }
-      document.body.classList.remove("sl-dragging");
-      if (!dragging) return;
-      // Mark this gesture so the subsequent click listener knows to
-      // skip "open in main editor" — the drag replaces that action.
-      rowEl.dataset.dragConsumed = "1";
-      if (!(ev.metaKey || ev.ctrlKey)) return;
-      const panelOverlay = document.getElementById("panel-overlay");
-      const rect = panelOverlay?.getBoundingClientRect();
-      if (!rect || ev.clientX <= rect.right) return;
-      try {
-        const { createPane } = await import("../pane/pane-manager.js");
-        const paneFileId = `ls:${folder.id}:${relPath}`;
-        await createPane(paneFileId, entry.name, "document", ev.clientX, ev.clientY, {
-          localSync: { folderId: folder.id, relPath },
-        });
-      } catch (err) {
-        console.error("Failed to spawn Local Sync pane:", err);
-      }
-    };
-
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
-  });
-}
-
-function escHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-/**
- * Wire mouseenter / mouseleave on a `.sl-item` so only the innermost
- * row under the cursor carries `.sl-hovered` (mirrors the logic in
- * sortable-list/rendering.js). Used by the Flagged section and Local
- * Sync rows, which render outside SortableList's own machinery.
- */
-function attachLeafHoverHandlers(li) {
-  li.addEventListener("mouseenter", () => {
-    let ancestor = li.parentElement?.closest(".sl-item");
-    while (ancestor) {
-      ancestor.classList.remove("sl-hovered");
-      ancestor = ancestor.parentElement?.closest(".sl-item");
-    }
-    li.classList.add("sl-hovered");
-  });
-  li.addEventListener("mouseleave", () => {
-    li.classList.remove("sl-hovered");
-    const parentItem = li.parentElement?.closest(".sl-item");
-    if (parentItem) parentItem.classList.add("sl-hovered");
-  });
-}
 
 async function openImagePreview(filename, name) {
   const { openImagePreviewModal } = await import("../editor/image-preview.js");

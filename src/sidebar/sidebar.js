@@ -3,9 +3,11 @@
  */
 import { isIOS, openSettingsWindow } from "../settings/settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
-import { findNode } from "../state/tree-helpers.js";
 import { renderStylesPanel, bindStylesPanel } from "./styles-panel.js";
 import { createVersionsPanel, cleanupVersionsPanel } from "./versions-panel.js";
+import { exportCurrentFile } from "./sidebar-export.js";
+import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
+import { createPanelResizer, applyPanelWidth, positionPanelResizer } from "./panel-resizer.js";
 import filesRaw from "./sidebar_icons/files.svg?raw";
 import versionsRaw from "./sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
@@ -14,6 +16,12 @@ import stylesRaw from "./sidebar_icons/styles.svg?raw";
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
+}
+
+function escHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 export function createSidebar(container, state) {
@@ -519,207 +527,3 @@ const icons = {
   settings: svgInner(settingsRaw),
   styles: svgInner(stylesRaw),
 };
-
-/** Ratchet dropdown positioned center-screen (used by command palette). */
-function showRatchetDropdownCentered(state, onStart) {
-  document.querySelectorAll(".ratchet-dropdown").forEach((el) => el.remove());
-
-  const dropdown = document.createElement("div");
-  dropdown.className = "ratchet-dropdown ratchet-dropdown-centered";
-
-  // Options section (checkboxes)
-  const optionsSection = document.createElement("div");
-  optionsSection.className = "ratchet-options-section";
-
-  const encourageLabel = document.createElement("label");
-  encourageLabel.className = "ratchet-checkbox-label";
-  const encourageCheckbox = document.createElement("input");
-  encourageCheckbox.type = "checkbox";
-  encourageCheckbox.checked = !!state.settings.ratchetEncourageTyping;
-  encourageCheckbox.addEventListener("change", () => {
-    state.updateSettings({ ratchetEncourageTyping: encourageCheckbox.checked });
-  });
-  encourageLabel.appendChild(encourageCheckbox);
-  encourageLabel.appendChild(document.createTextNode(" Encourage typing"));
-  optionsSection.appendChild(encourageLabel);
-  dropdown.appendChild(optionsSection);
-
-  const grid = document.createElement("div");
-  grid.className = "ratchet-duration-grid";
-  const durations = [5, 10, 15, 20, 25, 30, 45, 60];
-  durations.forEach((min) => {
-    const opt = document.createElement("div");
-    opt.className = "ratchet-option";
-    opt.textContent = min === 60 ? "1 hr" : `${min} min`;
-    opt.addEventListener("click", () => {
-      state.startRatchet(min);
-      dropdown.remove();
-      onStart();
-    });
-    grid.appendChild(opt);
-  });
-  dropdown.appendChild(grid);
-  document.body.appendChild(dropdown);
-
-  setTimeout(() => {
-    document.addEventListener("mousedown", function handler(e) {
-      if (!dropdown.contains(e.target)) {
-        dropdown.remove();
-        document.removeEventListener("mousedown", handler);
-      }
-    });
-  }, 0);
-}
-
-async function exportCurrentFile(state) {
-  if (!state.editor) return;
-  let content = state.editor.getContent();
-  // For project view, strip separator markers for clean export
-  if (state.currentProjectId) {
-    content = content.replace(/\n\n---hush-separator---\n\n/g, "\n\n");
-  }
-  const name = state.currentProjectId
-    ? (findNode(state.fileTree, state.currentProjectId)?.name || "project-export")
-    : (state._deriveName(content) || "hush-export");
-
-  const { collectImageRefs } = await import("../state/state-images.js");
-  const images = collectImageRefs(state, content);
-
-  const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-  if (IS_TAURI) {
-    try {
-      if (images.length === 0) {
-        const { save } = await import("@tauri-apps/plugin-dialog");
-        const filePath = await save({
-          defaultPath: `${name}.md`,
-          filters: [{ name: "Markdown", extensions: ["md"] }],
-        });
-        if (filePath) {
-          const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-          await writeTextFile(filePath, content);
-        }
-        return;
-      }
-      // Has images — export as a folder containing text.md + images/
-      const { save } = await import("@tauri-apps/plugin-dialog");
-      const target = await save({ defaultPath: name });
-      if (!target) return;
-      const markdown = rewriteImageRefsForExport(content, images);
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("export_with_images", {
-        folder: target,
-        markdown,
-        images,
-      });
-    } catch (e) {
-      console.error("Export failed:", e);
-    }
-  } else {
-    const blob = new Blob([content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${name}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-}
-
-/**
- * Rewrite doc markdown so each local image ref gets a relative
- * `images/<filename>` URL. External URLs pass through untouched. Quoted
- * URLs are handled by the shared markdown regex.
- */
-function rewriteImageRefsForExport(content, images) {
-  const tracked = new Set(images);
-  return content.replace(
-    /!\[([^\]]*)\]\(\s*(?:"([^"]+)"|([^()\s"]+))(?:\s+"[^"]*")?\s*\)/g,
-    (match, alt, quotedUrl, bareUrl) => {
-      const raw = quotedUrl != null ? quotedUrl : bareUrl;
-      const bare = raw.replace(/^images\//, "");
-      if (!tracked.has(bare)) return match;
-      const next = `images/${bare}`;
-      const wrapped = /[\s()]/.test(next) ? `"${next}"` : next;
-      return `![${alt}](${wrapped})`;
-    }
-  );
-}
-
-function escHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// ── Sidebar panel width ────────────────────────────────────────────────
-
-const PANEL_WIDTH_MIN = 220;
-const PANEL_WIDTH_MAX_FRAC = 0.5; // never take more than half the viewport
-
-function applyPanelWidth(px) {
-  const clamped = Math.max(PANEL_WIDTH_MIN, Math.min(window.innerWidth * PANEL_WIDTH_MAX_FRAC, px));
-  document.documentElement.style.setProperty("--panel-width", clamped + "px");
-}
-
-function positionPanelResizer(el, panelOverlay) {
-  const isOpen = !panelOverlay.classList.contains("hidden");
-  if (!isOpen) { el.classList.add("hidden"); return; }
-  el.classList.remove("hidden");
-  const rect = panelOverlay.getBoundingClientRect();
-  // Center the 40-px hit zone on the panel's right edge.
-  el.style.left = rect.right + "px";
-}
-
-function createPanelResizer(state, panelOverlay) {
-  const el = document.createElement("div");
-  el.className = "sidebar-panel-resizer hidden";
-
-  let hideTimeout = null;
-  const show = () => { clearTimeout(hideTimeout); el.classList.add("hover"); };
-  const hide = () => {
-    hideTimeout = setTimeout(() => el.classList.remove("hover"), 200);
-  };
-  el.addEventListener("mouseenter", show);
-  el.addEventListener("mouseleave", hide);
-
-  el.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = panelOverlay.getBoundingClientRect().width;
-    el.classList.add("dragging");
-    show();
-
-    const onMove = (me) => {
-      const next = startWidth + (me.clientX - startX);
-      applyPanelWidth(next);
-      positionPanelResizer(el, panelOverlay);
-      // Editor column layout re-centers when the panel is inset
-      if (state._columnResizeHandler) state._columnResizeHandler();
-    };
-    const onUp = () => {
-      el.classList.remove("dragging");
-      hide();
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      // Persist the final width (read back from the CSS var — clamped)
-      const computed = getComputedStyle(document.documentElement).getPropertyValue("--panel-width").trim();
-      const n = parseInt(computed, 10);
-      if (Number.isFinite(n) && n > 0) state.updateSettings({ sidebarPanelWidth: n });
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  });
-
-  // Keep the resizer glued to the panel's right edge when the panel opens,
-  // closes, or the viewport resizes.
-  const sync = () => positionPanelResizer(el, panelOverlay);
-  new MutationObserver(sync).observe(panelOverlay, { attributes: true, attributeFilter: ["class", "style"] });
-  window.addEventListener("resize", () => {
-    // Re-clamp against new viewport width
-    const current = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
-    applyPanelWidth(current);
-    sync();
-  });
-
-  return el;
-}

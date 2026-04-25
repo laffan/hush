@@ -7,16 +7,28 @@ Hush is a [Tauri v2](https://v2.tauri.app/) desktop app with a vanilla JavaScrip
 ```
 Frontend (src/)                        Backend (src-tauri/src/)
 ───────────                            ────────────────────
-main.js                  ←──IPC──→     lib.rs (commands)
-├── command-palette.js                 ├── settings.rs
-├── theme-colors.js                    ├── files.rs
-├── themes.js                          ├── images.rs
-├── tauri-bridge.js                    ├── snapshots.rs
-├── zotero.js                          ├── sync.rs
+main.js                  ←──IPC──→     lib.rs (app setup + run)
+├── font-imports.js                    ├── commands/
+├── style-application.js               │   ├── files.rs
+├── window-shortcuts.js                │   ├── images.rs
+├── command-palette.js                 │   ├── settings.rs
+├── theme-colors.js                    │   ├── snapshots.rs
+├── themes.js                          │   ├── local_sync.rs
+├── tauri-bridge.js                    │   ├── window.rs
+├── zotero.js                          │   └── zotero.rs
+│                                      ├── settings.rs
+│                                      │   └── defaults.rs
+│                                      ├── files.rs
+│                                      ├── images.rs
+│                                      ├── snapshots.rs
+│                                      ├── sync.rs / sync_commands.rs
+│                                      ├── local_sync.rs
 │                                      └── zotero.rs
 │
 ├── editor/
 │   ├── editor.js
+│   ├── heading-indent.js              (extracted from editor.js)
+│   ├── comment-plugins.js             (extracted from editor.js)
 │   ├── modes.js
 │   ├── formatting.js
 │   ├── sentence-navigator.js
@@ -40,8 +52,10 @@ main.js                  ←──IPC──→     lib.rs (commands)
 ├── notebook/              (see README-NOTEBOOK.md)
 │   ├── notebook-bridge.js
 │   ├── notes-canvas.ts
-│   ├── state.ts
+│   ├── state.ts                       (exception — see .line-limit-exceptions)
 │   ├── renderer.ts
+│   ├── renderer-selection.ts          (extracted from renderer.ts)
+│   ├── renderer-background.ts         (extracted from renderer.ts)
 │   ├── input-handler.ts
 │   ├── ui/
 │   │   ├── toolbar.ts
@@ -49,20 +63,37 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │   │   └── ...
 │   └── drawing/            (see README-DRAWING.md)
 │       ├── drawing-layer.ts
+│       ├── drawing-layer-types.ts     (DrawingLayer interface + selection-style types)
+│       ├── drawing-layer-dom.ts       (DOM/SVG/canvas scaffolding)
+│       ├── selection-style.ts         (retroactive styling session)
 │       ├── sync-shim.ts
 │       ├── brush-slots.ts
 │       ├── tool-panel.ts
 │       ├── layers-panel.ts
-│       └── engine/
+│       └── engine/                    (engine/stroke.js — exception)
 │
 ├── pane/
-│   ├── pane-manager.js
-│   └── pane-editor.js
+│   ├── pane-manager.js                (lifecycle, focus, attach, build DOM)
+│   ├── pane-state.js                  (shared module state + accessors)
+│   ├── pane-editor.js
+│   ├── pane-content.js                (load / save / sync I/O)
+│   ├── pane-attach-sync.js            (canvas + scroll attach loops)
+│   ├── pane-drag.js                   (titlebar drag + edge resize)
+│   ├── pane-size-popover.js           (per-pane font-size override)
+│   ├── pane-persistence.js            (persist + restore across restarts)
+│   └── text-drag.js
 │
 ├── sidebar/
 │   ├── sidebar.js
+│   ├── sidebar-export.js              (extracted from sidebar.js)
+│   ├── ratchet-dropdown.js            (extracted from sidebar.js)
+│   ├── panel-resizer.js               (extracted from sidebar.js)
 │   ├── files-panel.js
+│   ├── files-panel-shared.js          (icons + escapers + hover handlers)
+│   ├── files-panel-local-sync.js      (Local Sync subtree rendering)
 │   ├── styles-panel.js
+│   ├── styles-panel-shared.js         (escapers + theme color maps)
+│   ├── style-modal.js                 (two-column edit modal)
 │   ├── versions-panel.js
 │   └── sortable-list/
 │       ├── sortable-list.js
@@ -83,6 +114,7 @@ main.js                  ←──IPC──→     lib.rs (commands)
 │
 ├── state/
 │   ├── state.js
+│   ├── state-defaults.js              (default AppSettings shape)
 │   ├── state-project.js
 │   ├── state-tree.js
 │   ├── state-images.js
@@ -101,7 +133,7 @@ Communication: `invoke` IPC for commands (settings, file CRUD) and `emit`/`liste
 
 ## Development Rules
 
-**No code file may exceed 700 lines.** If a module grows past this limit, split it.
+**No code file may exceed 700 lines.** If a module grows past this limit, split it. The rule is enforced by `scripts/check-line-limits.sh` (run automatically as part of `npm run build`). A small allowlist lives in `.line-limit-exceptions` for files where splitting would do more harm than good (currently: `notebook/state.ts` and `notebook/drawing/engine/stroke.js`); every entry there must carry a one-line justification.
 
 ## Frontend
 
@@ -112,15 +144,21 @@ Communication: `invoke` IPC for commands (settings, file CRUD) and `emit`/`liste
 
 Both are built by Vite as separate Rollup inputs.
 
+`main.js` is pure orchestration — `init()` wires up the editor, sidebar, panes, command palette, and Tauri integration. Three companion modules carry pieces that used to bloat `main.js` past the line limit:
+
+- **`font-imports.js`** — every `@fontsource` CSS import (~33 lines), pulled in for side effects only
+- **`style-application.js`** — `applyActiveStyle(state)` (apply a named style's theme/font/colour overrides to the document), `applyFocusModeOpacity(state)` (publish the `--focus-mode-opacity` CSS var), and `handleOAuthCode(state, invoke, code)` (Dropbox deep-link callback)
+- **`window-shortcuts.js`** — `installWindowShortcuts(state, windowCommands)`, the window-level keydown fallback that fires when CodeMirror hasn't already consumed the event (Cmd+P, Cmd+O, the always-allowed sidebar/outline/fullscreen toggles, plus the dispatch into `dispatchDomShortcut` for everything else)
+
 ### Fonts
 
-Google Fonts are bundled locally via `@fontsource` npm packages. Font CSS is imported from `main.js` (JS imports, not CSS `@import`) so Vite resolves npm paths correctly.
+Google Fonts are bundled locally via `@fontsource` npm packages. Loaded as a side-effect import (`import "./font-imports.js"`) from `main.js` so Vite resolves npm paths correctly without polluting `main.js` itself.
 
 **Built-in fonts:** Source Sans Pro (default), Source Serif Pro, Libre Franklin, Libre Baskerville, Karla, Lora, EB Garamond, Inter, Fira Code, iA Writer Duo, iA Writer Mono, iA Writer Quattro, Helvetica (system). The iA Writer families are bundled from `src/assets/fonts/ia-writer-*` and registered via `src/styles/ia-writer-fonts.css`.
 
 ### State Management (`state/state.js`)
 
-`AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes.
+`AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes. The default `settings` shape is built by `createDefaultSettings()` in `state/state-defaults.js` (~170 fields mirroring the Rust `AppSettings` struct).
 
 Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`.
 
@@ -153,6 +191,13 @@ The CodeMirror 6 instance is configured with:
 
 **Plugins loaded:** private mode, D.R.Y. highlighting, footnotes, focus mode, callouts, project view (separators), flag highlighting, link decorator, heading indent, sticky headers, encourage typing.
 
+**Sibling modules.** Two CodeMirror plugins were extracted to keep `editor.js` under the line limit:
+
+- **`editor/heading-indent.js`** — `headingIndentPlugin` (collapses `#` markers when the cursor isn't on the heading line) plus the hang-indent helpers for wrapped list lines (`measureListMarkerPx`, `listIndentLineDeco`, `blockquoteLineDeco`).
+- **`editor/comment-plugins.js`** — `createMultiLineCommentPlugin` (multi-line `%%…%%` blocks) and `createCommentAfterPlugin` (the `---%` end-of-document dim marker).
+
+Both are re-exported from `editor.js` so external imports keep working.
+
 **`createBaseExtensions(state, onChange)`** builds the shared extension set (theme, syntax highlighting, shortcuts, all plugins) used by both the main editor and floating pane editors. Returns compartment handles for theme, highlight, shortcut, and editable reconfiguration.
 
 **`editor/modes.js`** contains mode application (`applyModes`, `applyFullscreen`), column width/resizer management (`updateColumnResizers`), and ratchet timer display (`updateRatchetTimer`). `applyModes` toggles CSS classes on `#app`: `ratchet-active`, `private-mode`, `typewriter-mode`, and `dummy-mode` (when private mode + dummy text is active).
@@ -179,9 +224,11 @@ Panels render into `#panel-overlay`. Layout is responsive: when wide enough, pan
 
 **Cursor:** The sidebar column and open panel use `cursor: crosshair` so hovering anywhere in the sidebar surfaces a consistent navigation affordance distinct from the editor cursor.
 
-**Resizable width:** The right edge of the panel overlay exposes a draggable handle that reuses the same invisible-until-approached resizer pattern as the editor column (`editor/modes.js::updateColumnResizers`). A 10px hit zone sits outside the panel edge; pointer-down begins a drag that updates a `--panel-width` CSS custom property and persists the value to `sidebarWidth` in `AppSettings`. The handle is transparent at rest and only paints a thin accent line while hovered/dragging. Minimum and maximum widths match the inset-vs-overlay thresholds used by the responsive layout so the panel never collapses below its content or exceeds the viewport.
+**Resizable width:** The right edge of the panel overlay exposes a draggable handle that reuses the same invisible-until-approached resizer pattern as the editor column (`editor/modes.js::updateColumnResizers`). A 10px hit zone sits outside the panel edge; pointer-down begins a drag that updates a `--panel-width` CSS custom property and persists the value to `sidebarWidth` in `AppSettings`. The handle is transparent at rest and only paints a thin accent line while hovered/dragging. Minimum and maximum widths match the inset-vs-overlay thresholds used by the responsive layout so the panel never collapses below its content or exceeds the viewport. Implementation in `sidebar/panel-resizer.js`.
 
-### Files Panel (`sidebar/files-panel.js`)
+Two more sidebar helpers live alongside the main file: **`sidebar-export.js`** (the Export button — handles markdown-only and folder-with-images flavours, picking dialog vs. download-blob based on Tauri vs. browser) and **`ratchet-dropdown.js`** (the centered duration grid surfaced by the command palette).
+
+### Files Panel (`sidebar/files-panel.js`, `files-panel-shared.js`, `files-panel-local-sync.js`)
 
 Nested tree view with four node types:
 
@@ -200,6 +247,8 @@ Four icon-only "New" buttons (Doc, Notebook, Folder, Project) at the top; the bu
 
 **Flagged bubbling (longview).** The outline view's **Flagged** section walks nested folders so that a folder marked "flagged" lifts all of its descendants into the Flagged list. `longview-parser.js` recurses through children rather than stopping at the first non-document; the resulting entries preserve their indentation depth relative to the flagged ancestor so the hierarchy is still legible inside the Flagged group.
 
+**Local Sync rendering** lives in `files-panel-local-sync.js`. The mounted-folder subtrees render outside the SortableList because their content comes from disk (lazy-expanded via `local_sync_read_dir`). Shared icons / escapers / hover-handlers live in `files-panel-shared.js` so both files can use them without a circular import.
+
 ### Sortable List (`sidebar/sortable-list/`)
 
 Drag-and-drop nested list engine (5 modules):
@@ -210,13 +259,15 @@ Drag-and-drop nested list engine (5 modules):
 - **`keyboard-nav.js`** — Arrow key selection, M to enter/confirm move, Q to cancel.
 - **`utils.js`** — Path parsing, comparison, ancestor checks, tree traversal.
 
-### Styles Panel (`sidebar/styles-panel.js`)
+### Styles Panel (`sidebar/styles-panel.js`, `style-modal.js`, `styles-panel-shared.js`)
 
 Named presets combining theme, font, font size, line height, and color overrides (bg, fg, cursor, selection). Managed through the sidebar's Styles panel.
 
 Style data: `{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides: { bg, fg, cursor, selection } }`.
 
 Live preview on hover/edit via `style-preview` / `style-preview-end` events. Color overrides take precedence over theme colors, applied directly to CSS variables.
+
+The two-column edit modal (settings on the left, live preview on the right) lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save/Cancel buttons; closing the modal flushes the timer. Shared escaper helpers + theme color maps used by both the panel and the modal live in `styles-panel-shared.js`.
 
 ### Outline View / Longview (`longview/`)
 
@@ -318,11 +369,21 @@ Three context-aware drop targets. When the sidebar panel is open, an "Import fil
 
 ### Floating Panes (`pane/`)
 
-Draggable reference windows that float above the editor or notebook canvas. Created by Cmd-dragging a file from the sidebar files panel past the panel boundary into the editing area.
+Draggable reference windows that float above the editor or notebook canvas. Created by Cmd-dragging a file from the sidebar files panel past the panel boundary into the editing area. The subsystem is split across nine modules; **`pane-state.js`** is the shared state hub (the `panes` Map + accessors for the lazy notebook bridge, the active pane id, etc.) so siblings can read/mutate without circular imports against `pane-manager.js`.
 
-**`pane-manager.js`** — Core lifecycle: create, close, focus, collapse, resize, drag, autosave. Manages a `Map<id, pane>` of active panes with z-index stacking. Each pane stores an `ownerContext` string encoding the document/notebook/project that was active at creation time. On document switches (`file-opened`, `notebook-open`, `notebook-unmount`), non-pinned panes whose context doesn't match are hidden; when the user returns, they reappear.
+**`pane-manager.js`** — Lifecycle entry point: create, close, focus, collapse, build DOM, attach/pin toggles, theme sync, ratchet lock. Imports the worker modules below; owns the public API (`initPaneManager`, `createPane`, `closePane`, `focusPane`, etc.).
 
 **`pane-editor.js`** — Factory that calls `createBaseExtensions()` from `editor/editor.js` so pane editors share the identical plugin, shortcut, and theme setup as the main editor. Exposes `setEditable(bool)` via an `EditorView.editable` compartment — inactive panes are locked non-editable to prevent input leaks.
+
+**`pane-content.js`** — Load + save + bidirectional sync with the main editor / notebook canvas. Includes `loadDocumentPane`, `loadNotebookPane`, `savePaneContent`, `autosaveAllPanes`, and the four `syncDoc*` / `syncNotebook*` functions. The sync flag is held in pane-state and protected by try/finally guards so a thrown handler can't permanently jam the channel.
+
+**`pane-attach-sync.js`** — Anchoring loop. `startCanvasSync` drives a per-frame `requestAnimationFrame` that converts the pane's canvas world coords to screen coords through the active camera (also applying `transform: scale(zoom)` so the pane shrinks/grows with the surrounding shapes). `startScrollSync` listens to `scrollDOM.scroll` for doc-mode panes. `stopAttachSync` cleans up both flavours.
+
+**`pane-drag.js`** — `setupPaneDrag` (titlebar) + `setupPaneResize` (edge / corner handles). Notebook-attached panes translate screen deltas into world coords via the camera zoom.
+
+**`pane-size-popover.js`** — Per-pane font-size override via a CSS custom property on the pane root that CodeMirror's `hushTheme` reads. The "A" affordance in the titlebar opens a popover with `−` / `+` (Cmd-click applies to all open panes).
+
+**`pane-persistence.js`** — Serialise the open pane set into `AppSettings.persistedPanes` on a 300 ms debounce; restore on app start. `restorePanes` takes `buildPaneDOM` + `onContextChange` callbacks as deps so it doesn't have to import pane-manager.js (which would be circular).
 
 **Pane object:** `{ id, fileId, fileName, fileType, collapsed, attached, pinned, dirty, editor, notebook, el, width, height, x, y, ownerContext }`.
 
@@ -404,15 +465,28 @@ The settings window has its own standalone `src/settings/settings-window.css` si
 
 Defines the Tauri app setup:
 
-- **AppState** — `Mutex<AppSettings>` + `Mutex<FileManager>` + `Mutex<SnapshotManager>`, managed by Tauri's state system
-- **Tauri commands** — `get_settings`, `save_settings`, `list_files`, `load_file`, `save_file`, `create_file`, `delete_file`, `rename_file`, `get_file_tree`, `save_file_tree`, `create_folder`, `create_project`, `load_project_content`, `check_obsidian_vault`, `set_always_on_top`, `set_activation_policy`, snapshot commands, sync commands, Zotero commands
-- **System tray** — Menu with Toggle Editor, Fullscreen, Settings, Quit. Tray click toggles window.
-- **macOS activation policy** — `Regular` (dock) or `Accessory` (menu bar only) based on `visibility` setting.
-- **Window close behavior** — Main window hides on close; settings window closes normally.
+- **AppState** — `Mutex<AppSettings>` + `Mutex<FileManager>` + `Mutex<ImageManager>` + `Mutex<SnapshotManager>` + `Mutex<SyncManager>` + `Mutex<ZoteroManager>` + `LocalSyncManager`, managed by Tauri's state system
+- **Top-level types** — `FileEntry`, `TreeNode` (the wire shapes the JS frontend sees)
+- **`run()`** — plugin registration, state setup, deep-link listener, tray icon + menu wiring, window-close hide behaviour, the `invoke_handler!` list
+- **macOS activation policy** — `Regular` (dock) or `Accessory` (menu bar only) based on `visibility` setting
 
-### `settings.rs`
+### `commands/` — Tauri command surface
 
-`AppSettings` struct with `serde rename_all = "camelCase"` for JS interop. All fields use `#[serde(default)]` for backward compatibility. Persisted as JSON at `{data_dir}/settings.json`.
+Command handlers are grouped by domain. Each module exports `pub fn` items decorated with `#[tauri::command]`; `lib.rs::run()` references them as `commands::<group>::<name>` in the `invoke_handler!` list.
+
+- **`commands/settings.rs`** — `get_settings`, `save_settings`
+- **`commands/files.rs`** — file CRUD + tree ops + project/notebook creation. Owns the `NotebookCreated` wire shape returned by `create_notebook`
+- **`commands/images.rs`** — image CRUD, `export_with_images`, `write_binary_file` + path normalization helpers (iOS `file://` URLs, percent-decoding)
+- **`commands/snapshots.rs`** — `create_snapshot`, `get_snapshot`, `get_snapshots`, `delete_document_snapshots`
+- **`commands/local_sync.rs`** — `local_sync_add` / `_remove` / `_list` / `_read_dir` / `_read_file` / `_write_file`. Includes the local-only `find_local_sync_folder` helper and a small `uuid_like()` ID generator
+- **`commands/zotero.rs`** — `save_zotero_references`, `load_zotero_references`
+- **`commands/window.rs`** — `set_always_on_top` (desktop), `set_activation_policy`
+
+`sync_commands.rs` (Dropbox / external sync) lives at the crate root rather than under `commands/` because it owns enough internal helpers to merit its own module.
+
+### `settings.rs` + `settings/defaults.rs`
+
+`AppSettings` struct with `serde rename_all = "camelCase"` for JS interop. All fields use `#[serde(default)]` for backward compatibility. Persisted as JSON at `{data_dir}/settings.json`. Default-value functions for the ~75 fields that need non-zero defaults (visibility, themes, shortcuts, notebook settings) live in `settings/defaults.rs` and are pulled in via `mod defaults; use defaults::*;` so `#[serde(default = "default_x")]` paths still resolve.
 
 **Important:** Every setting used by the JS frontend must have a corresponding field in `AppSettings`. Serde silently drops unknown fields during deserialization, so missing fields cause settings to be lost on save/load round-trips.
 

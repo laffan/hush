@@ -27,8 +27,13 @@ import { createGestures } from "./engine/gestures.js";
 import { createSyncShim } from "./sync-shim";
 import type { EngineAdapter, EngineStroke, ShimState } from "./sync-shim";
 import { brushUrl } from "./brush-urls";
+import { createDrawingDom } from "./drawing-layer-dom";
+import { createSelectionStyleSession } from "./selection-style";
+import type { DrawingLayer, EngineTool, SelectionStyleEntry, SelectionStylePatch } from "./drawing-layer-types";
 
-type EngineTool = "draw" | "erase" | "slice" | "select";
+// Re-export so callers that imported these from drawing-layer.ts keep working.
+export type { DrawingLayer, SelectionStyleEntry, SelectionStylePatch };
+
 
 /** Initial wrapper size. Covers the viewport on typical displays with
  *  room for drift. Canvas grows dynamically if strokes extend. */
@@ -39,115 +44,6 @@ const WORLD_SIZE = 2048;
 const MAX_BACKING_PIXELS = 4096 * 4096;
 const MAX_DPR = 2;
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-/** Returned handle. The future drawing-mode controller (step 5+)
- *  drives these methods. */
-export interface DrawingLayer {
-  /** Sync the CSS transform of the drawing wrapper to the camera. */
-  setCamera(camera: Camera): void;
-  /** Toggle whether the drawing SVG captures pointers. Drawing mode
-   *  turns this on; everything else leaves it off so the notebook
-   *  canvas owns input. */
-  setInputEnabled(enabled: boolean): void;
-  /** Apply a theme change. Strokes with colorIsAuto adopt the new
-   *  theme.foreground; the done canvas rebakes. */
-  setTheme(theme: CanvasTheme): void;
-  /** Engine sub-tool while drawing mode is active: draw / erase /
-   *  slice / select. Has no effect when drawing mode is off (SVG is
-   *  non-capturing). */
-  setTool(tool: EngineTool): void;
-  /** Push a brush slot's config (brush id, color, size, mode,
-   *  streamline, spacing) into the engine. `color: "auto"` resolves
-   *  to theme.foreground at apply time. */
-  applySlot(slot: DrawingSlot): void;
-  /** Configure how long a draw-mode press must hold before it
-   *  promotes into a lasso. Exposed as a user setting in the toolbar
-   *  (slider 500–2000 ms). */
-  setLassoHoldMs(ms: number): void;
-  /** Render a swatch preview of a slot into a target canvas, using
-   *  the engine's atlas. */
-  renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void;
-  /** Drawing-mode undo / redo. Separate from Hush's notebook undo
-   *  stack for now — see INTEGRATION-PLAN.md → shortcuts. */
-  undo(): void;
-  redo(): void;
-  canUndo(): boolean;
-  canRedo(): boolean;
-  /** Engine rebake on demand (e.g. after a layer mutation). */
-  rebake(): void;
-  /** Blit a world-space rectangle of the done canvas into `ctx` at
-   *  its current transform. Used by the notebook renderer to draw
-   *  grouped-drawing thumbnails into the pocket tray / shelf. The
-   *  destination uses the ctx's logical coords (pocket transform
-   *  already applied by the caller), so we pass world bbox → dest
-   *  matching the bbox at ctx's current scale. */
-  blitWorldRegion(ctx: CanvasRenderingContext2D, worldBbox: { minX: number; minY: number; maxX: number; maxY: number }): void;
-
-  /** Blit the entire non-pocketed stroke canvas ("done") into `ctx` at
-   *  its current transform, positioned so world coords line up. Used by
-   *  the export path, which has already applied a camera transform to
-   *  ctx. */
-  blitDoneCanvasAtWorldOrigin(ctx: CanvasRenderingContext2D): void;
-
-  // ----- hush select-drag integration -----
-  //
-  // For DrawShape selections, Hush's select-drag routes move updates
-  // through the engine's previewTransform so dragging N strokes is
-  // ~free (one GPU preview per frame, no setStrokePoints churn).
-  // Call begin at drag-start, update per pointer-move, end at
-  // release. If no DrawShapes are in the drag set, these are no-ops.
-
-  /** Begin a hush-driven drag. Strokes with these hush ids get
-   *  excluded from the done canvas and rendered on preview. The
-   *  shim pauses so per-frame state.shapes point mutations don't
-   *  re-enter the engine. */
-  beginSelectionDrag(hushIds: Iterable<string>): void;
-  /** Pointer-move update. `totalDx` / `totalDy` are the accumulated
-   *  world-space delta since drag-start. */
-  updateSelectionDrag(totalDx: number, totalDy: number): void;
-  /** Commit the preview: mutate engine points by the final total
-   *  offset, rebridge, resume the shim. */
-  endSelectionDrag(): void;
-
-  // ----- retroactive selection styling (used by the flyout) -----
-
-  /** True if the drawing-mode selection engine has any strokes
-   *  selected. */
-  hasSelection(): boolean;
-  /** Snapshot the current styles of the selected strokes. Caller
-   *  saves this and passes it to `commitStyleHistory` after a drag
-   *  or click session to produce a single undo entry. */
-  snapshotSelectedStyle(): Map<number, SelectionStyleEntry>;
-  /** Apply a style patch to the current selection. Does not push a
-   *  history entry on its own — pair with begin/commit for
-   *  undoable sessions. `color: "auto"` resolves to theme fg and
-   *  tags the strokes as colorIsAuto. */
-  applyStyleToSelection(patch: SelectionStylePatch): void;
-  /** Push a single undo entry spanning the session between
-   *  snapshot-time and now. No-op if nothing actually changed. */
-  commitStyleHistory(beforeMap: Map<number, SelectionStyleEntry>): void;
-  /** Tear down event listeners + DOM. */
-  destroy(): void;
-}
-
-/** Per-stroke style snapshot used by the retroactive styling path. */
-export interface SelectionStyleEntry {
-  color: string;
-  size: number;
-  brushId: string;
-  mode: "normal" | "highlighter";
-  colorIsAuto: boolean;
-}
-
-/** Style patch accepted by `applyStyleToSelection`. Any subset of
- *  fields is allowed; missing fields are left as-is on each stroke. */
-export interface SelectionStylePatch {
-  color?: string;              // "auto" or hex
-  size?: number;
-  brushId?: string;
-  mode?: "normal" | "highlighter";
-}
 
 /** Construction options. `state` is Hush's DrawingState (kept
  *  structural to avoid a circular import). */
@@ -188,91 +84,13 @@ export function createDrawingLayer({
 
   // ---------- DOM: transform wrapper + engine stage ----------
 
-  const wrapper = document.createElement("div");
-  wrapper.className = "notebook-drawing-wrapper";
-  Object.assign(wrapper.style, {
-    position: "absolute",
-    top: "0",
-    left: "0",
-    width: WORLD_SIZE + "px",
-    height: WORLD_SIZE + "px",
-    transformOrigin: "0 0",
-    pointerEvents: "none",
-  });
-  container.appendChild(wrapper);
-
-  // Center the wrapper on the current viewport so the default cursor
-  // position lands inside canvas bounds.
-  const vw = window.innerWidth || 1200;
-  const vh = window.innerHeight || 800;
-  const originX = vw / 2 - WORLD_SIZE / 2;
-  const originY = vh / 2 - WORLD_SIZE / 2;
-
-  function mkStageCanvas(cls: string): HTMLCanvasElement {
-    const c = document.createElement("canvas");
-    c.className = cls;
-    Object.assign(c.style, {
-      position: "absolute",
-      top: "0",
-      left: "0",
-      pointerEvents: "none",
-    });
-    return c;
-  }
-
-  const doneCanvas = mkStageCanvas("draw-canvas drawing-done");
-  const previewCanvas = mkStageCanvas("draw-canvas drawing-preview");
-  const liveCanvas = mkStageCanvas("draw-canvas drawing-live");
-  wrapper.appendChild(doneCanvas);
-  wrapper.appendChild(previewCanvas);
-  wrapper.appendChild(liveCanvas);
-
-  // Pocket stash: offscreen canvas mirroring the done canvas's pixel
-  // layout. When a stroke flips to pocketed, its region is copied
-  // from done → stash before the engine rebakes (which removes it
-  // from done via engine delta #8). `blitWorldRegion` for pocket
-  // render reads from the stash so pocketed strokes remain paintable
-  // in the pocket tray even though they're absent from the world
-  // view. Stash and done are always the same size/DPR.
-  const pocketStash = document.createElement("canvas");
-  const pocketStashCtx = pocketStash.getContext("2d")!;
-
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("xmlns", SVG_NS);
-  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  svg.setAttribute("viewBox", `0 0 ${WORLD_SIZE} ${WORLD_SIZE}`);
-  Object.assign(svg.style, {
-    position: "absolute",
-    top: "0",
-    left: "0",
-    width: WORLD_SIZE + "px",
-    height: WORLD_SIZE + "px",
-    // Off by default — step 4 doesn't mount drawing mode yet. Step 5
-    // flips to 'auto' when the pen tool activates.
-    pointerEvents: "none",
-    touchAction: "none",
-  });
-  wrapper.appendChild(svg);
-
-  // iPad safety: touch preventDefaults so gesture detection doesn't
-  // yank pointer capture mid-stroke. Mounted even while the SVG is
-  // non-capturing — cheap to keep on.
-  svg.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-  svg.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
-
-  const eraserCursor = document.createElementNS(SVG_NS, "circle");
-  eraserCursor.setAttribute("r", "12");
-  eraserCursor.setAttribute("fill", "none");
-  eraserCursor.setAttribute("stroke", "#111");
-  eraserCursor.setAttribute("stroke-width", "1");
-  eraserCursor.setAttribute("stroke-dasharray", "3 3");
-  eraserCursor.setAttribute("visibility", "hidden");
-  eraserCursor.setAttribute("pointer-events", "none");
-  svg.appendChild(eraserCursor);
-
-  const selectionLayer = document.createElementNS(SVG_NS, "g");
-  selectionLayer.setAttribute("class", "selection-layer");
-  svg.appendChild(selectionLayer);
+  const dom = createDrawingDom(container, WORLD_SIZE);
+  const {
+    wrapper, doneCanvas, previewCanvas, liveCanvas,
+    pocketStash, pocketStashCtx,
+    svg, eraserCursor, selectionLayer, selectHint,
+    originX, originY,
+  } = dom;
 
   // Tracks the sub-tool the user was on before the long-press handoff
   // promoted them into select mode. Restored when the lasso misses or
@@ -288,33 +106,6 @@ export function createDrawingLayer({
     if (state.drawingSubTool === "select") state.setDrawingSubTool(prev);
   }
 
-  // Hold-to-select hint. When a long press during draw/erase promotes
-  // the gesture into a lasso, we flash a small "Selecting" pill to the
-  // left of the anchor point so the user — who often has no keyboard
-  // (iPad / Apple Pencil) — gets a visible acknowledgement that select
-  // mode has engaged. Mounted in `container` rather than `wrapper` so
-  // it stays at fixed screen size as the user zooms.
-  const selectHint = document.createElement("div");
-  selectHint.className = "notebook-drawing-select-hint";
-  selectHint.textContent = "Selecting";
-  Object.assign(selectHint.style, {
-    position: "absolute",
-    pointerEvents: "none",
-    padding: "3px 8px",
-    borderRadius: "999px",
-    background: "rgba(17,17,17,0.85)",
-    color: "#fff",
-    fontSize: "11px",
-    fontWeight: "500",
-    letterSpacing: "0.03em",
-    whiteSpace: "nowrap",
-    opacity: "0",
-    transition: "opacity 0.15s",
-    zIndex: "250",
-    // Sit to the LEFT of the anchor, vertically centered on it.
-    transform: "translate(-100%, -50%)",
-  } as CSSStyleDeclaration);
-  container.appendChild(selectHint);
   let selectHintTimer: ReturnType<typeof setTimeout> | null = null;
   function flashSelectHint(localPt: { x: number; y: number }): void {
     // engine-local → container-screen coords: reverse of pointToLocal.
@@ -852,102 +643,13 @@ export function createDrawingLayer({
   function canUndo() { return history.canUndo(); }
   function canRedo() { return history.canRedo(); }
 
-  // ----- retroactive styling on the live selection -----
-  //
-  // Pattern mirrors the demo's styleSession. The flyout calls:
-  //   1. snapshotSelectedStyle()              → save baseline
-  //   2. applyStyleToSelection(patch) 1..N    → live updates, no history
-  //   3. commitStyleHistory(baselineSnapshot) → single undo entry
-  // Handles the colorIsAuto tag ourselves since setStrokesStyle
-  // doesn't know about it.
-
-  function hasSelection(): boolean {
-    return selectionEngine.hasSelection();
-  }
-
-  function snapshotSelectedStyle(): Map<number, SelectionStyleEntry> {
-    const ids = selectionEngine.getSelectedIds();
-    const map = new Map<number, SelectionStyleEntry>();
-    if (!ids.size) return map;
-    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-      if (!ids.has(s.id)) continue;
-      map.set(s.id, {
-        color: s.color,
-        size: s.size,
-        brushId: s.brush,
-        mode: s.mode,
-        colorIsAuto: !!s.colorIsAuto,
-      });
-    }
-    return map;
-  }
-
-  function applyStyleToSelection(patch: SelectionStylePatch): void {
-    if (!selectionEngine.hasSelection()) return;
-    const ids = selectionEngine.getSelectedIds();
-    const enginePatch: Record<string, unknown> = {};
-    if (patch.color !== undefined) {
-      enginePatch.color = patch.color === "auto" ? (themeRef.foreground || "#111111") : patch.color;
-    }
-    if (patch.size !== undefined) enginePatch.size = patch.size;
-    if (patch.brushId !== undefined) enginePatch.brushId = patch.brushId;
-    if (patch.mode !== undefined) enginePatch.mode = patch.mode;
-    strokeEngine.setStrokesStyle(ids as Set<number>, enginePatch);
-    if (patch.color !== undefined) {
-      const isAuto = patch.color === "auto";
-      for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-        if (ids.has(s.id)) s.colorIsAuto = isAuto;
-      }
-    }
-    // Sync the shim so state.shapes reflects the style change —
-    // autosave, Dropbox, panes all pick it up.
-    const shim = shimBox.current;
-    if (shim) shim.onEngineStrokesTransformed(Array.from(ids));
-    selectionEngine.refreshBBox();
-  }
-
-  function commitStyleHistory(before: Map<number, SelectionStyleEntry>): void {
-    if (!before.size) return;
-    // Snapshot post-state for the same ids.
-    const after = new Map<number, SelectionStyleEntry>();
-    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-      if (!before.has(s.id)) continue;
-      after.set(s.id, {
-        color: s.color, size: s.size, brushId: s.brush, mode: s.mode,
-        colorIsAuto: !!s.colorIsAuto,
-      });
-    }
-    // Bail if nothing changed.
-    let changed = false;
-    for (const [id, b] of before) {
-      const a = after.get(id);
-      if (!a) continue;
-      if (a.color !== b.color || a.size !== b.size ||
-          a.brushId !== b.brushId || a.mode !== b.mode ||
-          a.colorIsAuto !== b.colorIsAuto) { changed = true; break; }
-    }
-    if (!changed) return;
-    const restore = (map: Map<number, SelectionStyleEntry>) => {
-      const styleMap = new Map<number, object>();
-      for (const [id, e] of map) {
-        styleMap.set(id, {
-          color: e.color, size: e.size, brushId: e.brushId, mode: e.mode,
-        });
-      }
-      strokeEngine.setStrokesStyleMap(styleMap);
-      for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-        const e = map.get(s.id);
-        if (e) s.colorIsAuto = e.colorIsAuto;
-      }
-      const shim = shimBox.current;
-      if (shim) shim.onEngineStrokesTransformed(Array.from(map.keys()));
-      selectionEngine.refreshBBox();
-    };
-    history.push({
-      undo: () => restore(before),
-      redo: () => restore(after),
-    });
-  }
+  // Retroactive selection styling — see selection-style.ts for the
+  // snapshot → apply → commit pattern. Closed over the same engines
+  // and history this file uses for everything else.
+  const selectionStyle = createSelectionStyleSession({
+    selectionEngine, strokeEngine, shimBox, themeRef, history,
+  });
+  const { hasSelection, snapshotSelectedStyle, applyStyleToSelection, commitStyleHistory } = selectionStyle;
 
   function destroy(): void {
     shim.destroy();

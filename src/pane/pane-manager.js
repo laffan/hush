@@ -8,28 +8,33 @@
 import { createPaneEditor } from "./pane-editor.js";
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 import { isIOS } from "../settings/settings-ui.js";
+import {
+  IS_TAURI,
+  tauriInvoke,
+  panes,
+  activePaneId, setActivePaneId,
+  zCounter, bumpZCounter,
+  containerEl, setContainerEl,
+  appState, setAppState,
+  autosaveTimer, setAutosaveTimer,
+  notebookBridge, getNotebookBridge,
+  DEFAULT_WIDTH, DEFAULT_HEIGHT, MIN_WIDTH, MIN_HEIGHT, TITLEBAR_HEIGHT,
+} from "./pane-state.js";
+import {
+  loadPaneContent, savePaneContent, autosaveAllPanes,
+  syncDocFromPane, syncDocToPane, syncNotebookFromPane, syncNotebookToPane,
+  findLockedStyleForFile,
+} from "./pane-content.js";
+import { applyPaneFontSize, togglePaneSizePopover } from "./pane-size-popover.js";
+import { setupPaneDrag, setupPaneResize } from "./pane-drag.js";
+import { schedulePersist, persistPanesNow, restorePanes as _restorePanes } from "./pane-persistence.js";
+import { screenToCanvas, canvasToScreen, startCanvasSync, startScrollSync, stopAttachSync } from "./pane-attach-sync.js";
 
-const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-
-async function tauriInvoke(cmd, args) {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke(cmd, args);
+// Wrap restorePanes to inject the local DOM-builder + context-change handler
+// it needs (avoids a pane-persistence → pane-manager circular import).
+function restorePanes() {
+  return _restorePanes({ buildPaneDOM, onContextChange });
 }
-
-// ── Module state ──────────────────────────────────────────────────────
-let panes = new Map();       // id → pane object
-let activePaneId = null;
-let zCounter = 1000;
-let containerEl = null;
-let appState = null;
-let autosaveTimer = null;
-let _syncing = false;        // guard against infinite sync loops
-
-const DEFAULT_WIDTH = 420;
-const DEFAULT_HEIGHT = 340;
-const MIN_WIDTH = 240;
-const MIN_HEIGHT = 60;
-const TITLEBAR_HEIGHT = 35;
 
 // ── SVG icons ─────────────────────────────────────────────────────────
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
@@ -43,9 +48,9 @@ const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><polyline points="2.5,4 5,6.5 7.
 // ── Public API ────────────────────────────────────────────────────────
 
 export function initPaneManager(state) {
-  appState = state;
-  containerEl = document.getElementById("pane-container");
-  autosaveTimer = setInterval(autosaveAllPanes, 2000);
+  setAppState(state);
+  setContainerEl(document.getElementById("pane-container"));
+  setAutosaveTimer(setInterval(autosaveAllPanes, 2000));
   state.on("theme-changed", syncPaneThemes);
   state.on("style-changed", syncPaneThemes);
   // Hover preview: the styles sidebar emits style-preview while a row
@@ -111,7 +116,7 @@ function onContextChange() {
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
         if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
-        activePaneId = null;
+        setActivePaneId(null);
       }
     }
   }
@@ -134,7 +139,7 @@ export function destroyPaneManager() {
   clearInterval(autosaveTimer);
   for (const [id] of panes) closePane(id);
   panes.clear();
-  activePaneId = null;
+  setActivePaneId(null);
 }
 
 export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
@@ -177,7 +182,7 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
 
   buildPaneDOM(pane);
   containerEl.appendChild(pane.el);
-  pane.el.style.zIndex = ++zCounter;
+  pane.el.style.zIndex = bumpZCounter();
   panes.set(id, pane);
   await loadPaneContent(pane);
   if (!opts.skipFocus) focusPane(id);
@@ -200,7 +205,7 @@ export function closePane(id) {
   if (pane.notebook) pane.notebook.destroy();
   pane.el.remove();
   panes.delete(id);
-  if (activePaneId === id) activePaneId = null;
+  if (activePaneId === id) setActivePaneId(null);
   notifyLayoutChange();
   schedulePersist();
 }
@@ -218,11 +223,11 @@ export function focusPane(id) {
       if (prev.editor) { prev.editor.blur(); prev.editor.setEditable(false); }
     }
   }
-  activePaneId = id;
+  setActivePaneId(id);
   const pane = panes.get(id);
   if (!pane) return;
   pane.el.classList.add("active");
-  pane.el.style.zIndex = ++zCounter;
+  pane.el.style.zIndex = bumpZCounter();
   // Unlock and focus the inner editor / re-center notebook toolbar
   if (pane.editor) { pane.editor.setEditable(true); pane.editor.focus(); }
   if (pane.notebook) pane.notebook.state.notify("tool");
@@ -238,7 +243,7 @@ export function deactivateAllPanes() {
       if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
     }
   }
-  activePaneId = null;
+  setActivePaneId(null);
 }
 export function getActivePaneId() { return activePaneId; }
 export function hasPanes() { return panes.size > 0; }
@@ -294,7 +299,7 @@ function centerPaneInViewport(pane) {
   const targetY = Math.max(0, Math.round((window.innerHeight - pane.height) / 2));
 
   if (pane.attached) {
-    const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+    const canvas = notebookBridge ? notebookBridge.getCanvasInstance() : null;
     if (canvas && pane._canvasX != null && pane._canvasY != null) {
       // Attached panes live in canvas coords; pan the camera so the
       // pane's anchor lands at the desired screen position. The next
@@ -415,7 +420,7 @@ function buildPaneDOM(pane) {
   // this button is doc-only.
   if (pane.fileType !== "notebook") {
     const sizeBtn = makeBtn("size", ICON_SIZE, "Pane font size");
-    sizeBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePaneSizePopover(pane, sizeBtn); });
+    sizeBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePaneSizePopover(pane, sizeBtn, schedulePersist); });
     buttons.appendChild(sizeBtn);
   }
 
@@ -459,116 +464,14 @@ function buildPaneDOM(pane) {
   pane._content = content;
   pane._titlebar = titlebar;
   // Event wiring
-  setupPaneDrag(pane);
-  setupPaneResize(pane);
+  setupPaneDrag(pane, { createPane, getCurrentContext, schedulePersist });
+  setupPaneResize(pane, { schedulePersist });
   titlebar.addEventListener("dblclick", (e) => { if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane); });
   el.addEventListener("pointerdown", () => focusPane(pane.id));
 }
 
 // ── Per-pane font size ────────────────────────────────────────────────
 
-const FP_SIZE_MIN = 10;
-const FP_SIZE_MAX = 48;
-const FP_SIZE_STEP = 2;
-
-/** Read the live --font-size CSS var as a fallback when a pane has no
- *  override yet — that way the first +/- click increments from the
- *  user's actual current size, not a hardcoded default. */
-function effectivePaneFontSize(pane) {
-  if (typeof pane.fontSize === "number" && Number.isFinite(pane.fontSize)) return pane.fontSize;
-  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--font-size"));
-  return Number.isFinite(v) ? v : 20;
-}
-
-/** Apply the font-size override to the pane's root element via a CSS
- *  variable. CodeMirror's hushTheme reads `var(--font-size)`, so setting
- *  it on the pane element cascades down without needing a CM
- *  reconfigure. Pass null to clear and inherit the document default. */
-function applyPaneFontSize(pane) {
-  if (!pane.el) return;
-  if (typeof pane.fontSize === "number" && Number.isFinite(pane.fontSize)) {
-    pane.el.style.setProperty("--font-size", pane.fontSize + "px");
-  } else {
-    pane.el.style.removeProperty("--font-size");
-  }
-}
-
-function bumpOnePaneFontSize(pane, delta) {
-  const next = Math.max(FP_SIZE_MIN, Math.min(FP_SIZE_MAX, effectivePaneFontSize(pane) + delta));
-  pane.fontSize = next;
-  applyPaneFontSize(pane);
-}
-
-/** Step a pane's font size by `delta` (px). When `allPanes` is true the
- *  same delta is applied to every open pane — Cmd-click in the popover
- *  routes through here. */
-function bumpPaneFontSize(pane, delta, allPanes) {
-  if (allPanes) {
-    // Skip notebook panes — their content is a canvas, not flowed text,
-    // so a font-size change wouldn't do anything useful.
-    for (const [, p] of panes) {
-      if (p.fileType !== "notebook") bumpOnePaneFontSize(p, delta);
-    }
-  } else {
-    bumpOnePaneFontSize(pane, delta);
-  }
-  schedulePersist();
-}
-
-function togglePaneSizePopover(pane, anchorBtn) {
-  // Toggle: clicking the A button while the popover is open just closes it.
-  const existing = pane.el.querySelector(".fp-size-popover");
-  if (existing) { existing.remove(); return; }
-
-  const popover = document.createElement("div");
-  popover.className = "fp-size-popover";
-
-  const minus = document.createElement("button");
-  minus.className = "fp-size-step";
-  minus.type = "button";
-  minus.textContent = "−"; // minus sign
-  minus.title = "Smaller (⌘ to apply to all panes)";
-
-  const label = document.createElement("span");
-  label.className = "fp-size-label";
-
-  const plus = document.createElement("button");
-  plus.className = "fp-size-step";
-  plus.type = "button";
-  plus.textContent = "+";
-  plus.title = "Larger (⌘ to apply to all panes)";
-
-  function refreshLabel() { label.textContent = Math.round(effectivePaneFontSize(pane)) + "px"; }
-  refreshLabel();
-
-  minus.addEventListener("click", (e) => {
-    e.stopPropagation();
-    bumpPaneFontSize(pane, -FP_SIZE_STEP, e.metaKey || e.ctrlKey);
-    refreshLabel();
-  });
-  plus.addEventListener("click", (e) => {
-    e.stopPropagation();
-    bumpPaneFontSize(pane, FP_SIZE_STEP, e.metaKey || e.ctrlKey);
-    refreshLabel();
-  });
-
-  popover.appendChild(minus);
-  popover.appendChild(label);
-  popover.appendChild(plus);
-  popover.addEventListener("pointerdown", (e) => e.stopPropagation());
-  pane.el.appendChild(popover);
-
-  // Close when the user taps anywhere outside the popover or its anchor.
-  setTimeout(() => {
-    const off = (e) => {
-      if (popover.contains(e.target)) return;
-      if (e.target === anchorBtn || anchorBtn.contains(e.target)) return;
-      popover.remove();
-      document.removeEventListener("pointerdown", off, true);
-    };
-    document.addEventListener("pointerdown", off, true);
-  }, 0);
-}
 
 function makeBtn(name, svg, ariaLabel) {
   const btn = document.createElement("button");
@@ -579,118 +482,6 @@ function makeBtn(name, svg, ariaLabel) {
   return btn;
 }
 
-// ── Drag (title bar) ──────────────────────────────────────────────────
-
-function setupPaneDrag(pane) {
-  let startX, startY, startLeft, startTop, startCanvasX, startCanvasY;
-
-  pane._titlebar.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".floating-pane-btn, .fp-title-link")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    startX = e.clientX;
-    startY = e.clientY;
-    startLeft = pane.el.offsetLeft;
-    startTop = pane.el.offsetTop;
-    // Option+drag: spawn a static duplicate at the source position; the
-    // pane being dragged stays on top (skipFocus keeps the duplicate from
-    // stealing z-index when its async load finishes).
-    if (e.altKey) {
-      createPane(pane.fileId, pane.fileName, pane.fileType,
-        startLeft + pane.width / 2, startTop + TITLEBAR_HEIGHT / 2,
-        { allowDuplicate: true, ownerContext: getCurrentContext(), skipFocus: true });
-      pane.el.style.zIndex = ++zCounter;
-    }
-    // Snapshot canvas coords for attached panes (notebook mode)
-    if (pane.attached && appState.currentNotebookFileId) {
-      startCanvasX = pane._canvasX;
-      startCanvasY = pane._canvasY;
-    }
-    pane._titlebar.setPointerCapture(e.pointerId);
-
-    const onMove = (me) => {
-      const dx = me.clientX - startX;
-      const dy = me.clientY - startY;
-      if (pane.attached && appState.currentNotebookFileId) {
-        // Convert screen delta to canvas delta (account for zoom)
-        const canvas = _notebookBridge?.getCanvasInstance();
-        const zoom = canvas ? canvas.state.camera.zoom : 1;
-        pane._canvasX = startCanvasX + dx / zoom;
-        pane._canvasY = startCanvasY + dy / zoom;
-        // Screen position updates via the canvas sync loop
-      } else if (pane.attached && !appState.currentNotebookFileId) {
-        // Doc-attached: update both screen position and scroll-relative Y
-        pane.x = startLeft + dx;
-        pane.y = startTop + dy;
-        pane._scrollRelY = pane.y + (appState.editor?.view.scrollDOM.scrollTop || 0);
-        pane.el.style.left = pane.x + "px";
-        pane.el.style.top = pane.y + "px";
-      } else {
-        pane.x = startLeft + dx;
-        pane.y = startTop + dy;
-        pane.el.style.left = pane.x + "px";
-        pane.el.style.top = pane.y + "px";
-      }
-    };
-
-    const onUp = () => {
-      pane._titlebar.removeEventListener("pointermove", onMove);
-      pane._titlebar.removeEventListener("pointerup", onUp);
-      schedulePersist();
-    };
-
-    pane._titlebar.addEventListener("pointermove", onMove);
-    pane._titlebar.addEventListener("pointerup", onUp);
-  });
-}
-
-// ── Resize (edge/corner handles) ──────────────────────────────────────
-
-function setupPaneResize(pane) {
-  for (const handle of pane.el.querySelectorAll(".fp-resize")) {
-    handle.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const dir = handle.dataset.dir;
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const startW = pane.width;
-      const startH = pane.height;
-      const startLeft = pane.x;
-      const startTop = pane.y;
-      // Canvas-attached panes render through `transform: scale(zoom)`,
-      // so a screen-px drag delta corresponds to (delta / zoom) layout
-      // px on the pane. Fall back to 1 for unattached or doc-mode
-      // panes where layout px == screen px.
-      let zoomFactor = 1;
-      if (pane.attached && appState && appState.currentNotebookFileId) {
-        const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
-        if (canvas) zoomFactor = canvas.state.camera.zoom || 1;
-      }
-
-      handle.setPointerCapture(e.pointerId);
-
-      const onMove = (me) => {
-        const dx = (me.clientX - startX) / zoomFactor;
-        const dy = (me.clientY - startY) / zoomFactor;
-        let w = startW, h = startH, nx = startLeft, ny = startTop;
-        if (dir.includes("e")) w = Math.max(MIN_WIDTH, startW + dx);
-        if (dir.includes("w")) { w = Math.max(MIN_WIDTH, startW - dx); nx = startLeft + (startW - w) * zoomFactor; }
-        if (dir.includes("s")) h = Math.max(MIN_HEIGHT, startH + dy);
-        if (dir.includes("n")) { h = Math.max(MIN_HEIGHT, startH - dy); ny = startTop + (startH - h) * zoomFactor; }
-        pane.width = w; pane.height = h; pane.x = nx; pane.y = ny;
-        Object.assign(pane.el.style, { width: w + "px", height: h + "px", left: nx + "px", top: ny + "px" });
-      };
-      const onUp = () => {
-        handle.removeEventListener("pointermove", onMove);
-        handle.removeEventListener("pointerup", onUp);
-        schedulePersist();
-      };
-      handle.addEventListener("pointermove", onMove);
-      handle.addEventListener("pointerup", onUp);
-    });
-  }
-}
 // ── Collapse / Expand ─────────────────────────────────────────────────
 
 function toggleCollapse(pane) {
@@ -726,7 +517,7 @@ async function toggleAttach(pane) {
       // we divide by the current zoom on attach to keep the visible
       // size unchanged across the transition.
       await getNotebookBridge();
-      const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+      const canvas = notebookBridge ? notebookBridge.getCanvasInstance() : null;
       const zoom = canvas ? (canvas.state.camera.zoom || 1) : 1;
       const canvasPos = screenToCanvas(pane.x, pane.y);
       if (canvasPos) { pane._canvasX = canvasPos.x; pane._canvasY = canvasPos.y; }
@@ -747,7 +538,7 @@ async function toggleAttach(pane) {
     // across the transition.
     const wasCanvasAttached = appState && appState.currentNotebookFileId;
     if (wasCanvasAttached) {
-      const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
+      const canvas = notebookBridge ? notebookBridge.getCanvasInstance() : null;
       const zoom = canvas ? (canvas.state.camera.zoom || 1) : 1;
       pane.width = pane.width * zoom;
       pane.height = pane.height * zoom;
@@ -782,295 +573,9 @@ function setPinned(pane, value) {
   schedulePersist();
 }
 
-// Cache the notebook bridge module to avoid async calls in animation loops
-let _notebookBridge = null;
-
-async function getNotebookBridge() {
-  if (!_notebookBridge) {
-    _notebookBridge = await import("../notebook/notebook-bridge.js");
-  }
-  return _notebookBridge;
-}
-
-function screenToCanvas(screenX, screenY) {
-  if (!_notebookBridge) return null;
-  const canvas = _notebookBridge.getCanvasInstance();
-  if (!canvas) return null;
-  const cam = canvas.state.camera;
-  return {
-    x: (screenX - cam.x) / cam.zoom,
-    y: (screenY - cam.y) / cam.zoom,
-  };
-}
-
-function canvasToScreen(canvasX, canvasY) {
-  if (!_notebookBridge) return null;
-  const canvas = _notebookBridge.getCanvasInstance();
-  if (!canvas) return null;
-  const cam = canvas.state.camera;
-  return {
-    x: canvasX * cam.zoom + cam.x,
-    y: canvasY * cam.zoom + cam.y,
-  };
-}
-
-function startCanvasSync(pane) {
-  function tick() {
-    if (!pane.attached || !panes.has(pane.id)) return;
-    const pos = canvasToScreen(pane._canvasX, pane._canvasY);
-    if (pos) {
-      pane.x = pos.x;
-      pane.y = pos.y;
-      pane.el.style.left = pos.x + "px";
-      pane.el.style.top = pos.y + "px";
-      // Pane is anchored to the canvas — scale it with the camera zoom
-      // so it shrinks/grows together with the surrounding shapes. The
-      // pane's own width/height are interpreted as "size at 1× zoom"
-      // and rendered through the transform; the resize handler
-      // compensates by dividing screen-px deltas by the same zoom.
-      const canvas = _notebookBridge ? _notebookBridge.getCanvasInstance() : null;
-      const zoom = canvas ? canvas.state.camera.zoom : 1;
-      pane.el.style.transformOrigin = "top left";
-      pane.el.style.transform = `scale(${zoom})`;
-    }
-    pane._syncFrame = requestAnimationFrame(tick);
-  }
-  tick();
-}
-
-function startScrollSync(pane) {
-  const scrollDOM = appState.editor?.view.scrollDOM;
-  if (!scrollDOM) return;
-  pane._scrollHandler = () => {
-    if (!pane.attached || !panes.has(pane.id)) return;
-    const scrollTop = scrollDOM.scrollTop;
-    pane.y = pane._scrollRelY - scrollTop;
-    pane.el.style.top = pane.y + "px";
-  };
-  scrollDOM.addEventListener("scroll", pane._scrollHandler);
-  // Sync once immediately so restored attach positions don't wait for a scroll
-  pane._scrollHandler();
-}
-
-function stopAttachSync(pane) {
-  // Stop canvas sync (notebook)
-  if (pane._syncFrame) {
-    cancelAnimationFrame(pane._syncFrame);
-    pane._syncFrame = null;
-  }
-  // Drop the camera-zoom transform a canvas-attached pane was using —
-  // once detached, the pane lives at fixed screen size again.
-  if (pane.el) {
-    pane.el.style.transform = "";
-    pane.el.style.transformOrigin = "";
-  }
-  // Stop scroll sync (doc)
-  if (pane._scrollHandler) {
-    const scrollDOM = appState.editor?.view.scrollDOM;
-    if (scrollDOM) scrollDOM.removeEventListener("scroll", pane._scrollHandler);
-    pane._scrollHandler = null;
-  }
-}
 
 // ── Content loading ───────────────────────────────────────────────────
 
-async function loadPaneContent(pane) {
-  if (pane.fileType === "document") {
-    await loadDocumentPane(pane);
-  } else if (pane.fileType === "notebook") {
-    await loadNotebookPane(pane);
-  }
-}
-
-async function loadDocumentPane(pane) {
-  const editor = createPaneEditor(pane._content, appState, () => {
-    pane.dirty = true;
-    syncDocFromPane(pane);
-  });
-  pane.editor = editor;
-
-  // Apply the active style (or the locked style for this document) at
-  // creation time so the pane opens with the right theme, font, AND
-  // color overrides. Local Sync files aren't in the internal tree so
-  // they never have a locked style — they pick up the session style.
-  // Calling reconfigureTheme unconditionally also handles the
-  // colour-override path (applyStyleColorsToView in pane-editor.js)
-  // which is what makes panes track --bg / --fg overrides.
-  if (editor.reconfigureTheme) {
-    const lockedStyleId = pane.localSync ? null : findLockedStyleForFile(pane.fileId);
-    editor.reconfigureTheme(appState.settings, lockedStyleId);
-  }
-
-  // Load file content — Local Sync panes read straight from disk via
-  // the local_sync_read_file command; everything else goes through the
-  // internal file store.
-  let content = "";
-  try {
-    if (IS_TAURI) {
-      if (pane.localSync) {
-        const { readFile } = await import("../sync/local-sync.js");
-        content = await readFile(pane.localSync.folderId, pane.localSync.relPath);
-      } else {
-        const file = await tauriInvoke("load_file", { id: pane.fileId });
-        content = file.content || "";
-      }
-    }
-  } catch (e) {
-    console.error("Failed to load pane file:", e);
-  }
-  editor.setContent(content);
-
-  // Listen for main editor changes to sync back into this pane
-  pane._mainSyncHandler = () => syncDocToPane(pane);
-  appState.on("doc-content-changed", pane._mainSyncHandler);
-
-  // Cmd+drag a selection out of this pane to drop into another editor
-  // or a notebook canvas.
-  attachEditorTextDrag(pane.editor.view, pane._content);
-  // Cmd+drag image chips / raw image refs in a pane so they can be moved
-  // between panes just like any other markdown text.
-  import("../editor/plugins/image-decorator.js").then((m) => {
-    if (pane.editor && pane._content) m.attachImageDrag(pane.editor.view, pane._content, appState);
-  });
-}
-
-async function loadNotebookPane(pane) {
-  const { NotesCanvas } = await import("../notebook/notes-canvas.ts");
-  const { computeNotebookSettings } = await import("../notebook/notebook-bridge.js");
-  const s = appState.settings;
-  const shortcuts = {
-    shortcutNbSelect: s.shortcutNbSelect,
-    shortcutNbText: s.shortcutNbText,
-    shortcutNbDragArea: s.shortcutNbDragArea,
-    shortcutNbBrainstorm: s.shortcutNbBrainstorm,
-    shortcutNbDelete: s.shortcutNbDelete,
-    shortcutNbUndo: s.shortcutNbUndo,
-    shortcutNbRedo: s.shortcutNbRedo,
-    shortcutNbGroup: s.shortcutNbGroup,
-    shortcutNbUngroup: s.shortcutNbUngroup,
-  };
-
-  const canvas = new NotesCanvas(pane._content, shortcuts);
-  pane.notebook = canvas;
-
-  // Inherit the current Hush editor style (appearance/theme/font/grid) —
-  // if the notebook has a locked style, that takes precedence.
-  const lockedStyleId = findLockedStyleForFile(pane.fileId);
-  canvas.applySettings(computeNotebookSettings(appState, lockedStyleId));
-
-  // Load shapes
-  let shapes = [];
-  try {
-    if (IS_TAURI) {
-      const file = await tauriInvoke("load_file", { id: pane.fileId });
-      if (file.content && file.content.trim()) {
-        shapes = JSON.parse(file.content);
-      }
-    }
-  } catch (e) {
-    console.error("Failed to load notebook pane shapes:", e);
-  }
-
-  if (Array.isArray(shapes) && shapes.length > 0) {
-    canvas.loadShapes(shapes);
-  }
-
-  // Center the pane on the same canvas point the notebook would show
-  // when opened normally (i.e. the centre of the main notebook viewport
-  // with the default camera). Without this the pane shows the canvas
-  // origin in its top-left corner. Deferred to the next frame so
-  // pane._content has its final layout size.
-  requestAnimationFrame(() => {
-    if (!canvas.state || !pane._content) return;
-    const mainC = document.getElementById("notebook-container");
-    const mainW = (mainC && mainC.clientWidth) || window.innerWidth;
-    const mainH = (mainC && mainC.clientHeight) || window.innerHeight;
-    const paneW = pane._content.clientWidth || pane.width;
-    const paneH = pane._content.clientHeight || pane.height;
-    canvas.state.camera = { x: (paneW - mainW) / 2, y: (paneH - mainH) / 2, zoom: 1 };
-    canvas.state.notify("camera");
-  });
-
-  // Mark dirty + propagate shapes to main canvas on changes
-  pane._content.addEventListener("notebook-change", () => {
-    pane.dirty = true;
-    syncNotebookFromPane(pane);
-  });
-
-  // Listen for main canvas changes to sync back into this pane
-  pane._mainNbSyncHandler = () => syncNotebookToPane(pane);
-  appState.on("notebook-shapes-changed", pane._mainNbSyncHandler);
-
-  // Cmd+drag text or image shapes out of this notebook pane.
-  const nbCanvas = pane._content.querySelector("canvas");
-  if (nbCanvas && pane.notebook) {
-    try {
-      const { findShapeAtPoint, hitTestLink } = await import("../notebook/state-helpers.ts");
-      attachNotebookTextShapeDrag(
-        nbCanvas,
-        pane._content,
-        pane.notebook.state,
-        {
-          findTextShapeAt: (shapes, pt) => {
-            const hit = findShapeAtPoint(pt, shapes, pane.notebook.state.fontFamily);
-            return hit && hit.type === "text" ? hit : null;
-          },
-          hitTestLink,
-        },
-        () => { pane.dirty = true; },
-      );
-      attachNotebookImageShapeDrag(
-        nbCanvas,
-        pane._content,
-        pane.notebook.state,
-        {
-          findImageShapeAt: (shapes, pt) => {
-            const hit = findShapeAtPoint(pt, shapes, pane.notebook.state.fontFamily);
-            return hit && hit.type === "image" ? hit : null;
-          },
-        },
-        () => { pane.dirty = true; },
-      );
-    } catch (e) {
-      console.error("Failed to wire notebook pane drag:", e);
-    }
-  }
-}
-
-// ── Saving ────────────────────────────────────────────────────────────
-async function savePaneContent(pane) {
-  if (!pane.dirty) return;
-  pane.dirty = false;
-  try {
-    if (IS_TAURI) {
-      let content = "";
-      if (pane.fileType === "document" && pane.editor) {
-        content = pane.editor.getContent();
-      } else if (pane.fileType === "notebook" && pane.notebook) {
-        content = JSON.stringify(pane.notebook.getShapes());
-      }
-      if (pane.localSync) {
-        // Write back to the mounted folder on disk. The Local Sync
-        // watcher would otherwise echo this change back as an external
-        // update — the state's `_localSyncWriteFlag` guard (in
-        // sync/local-sync.js) suppresses the reload for a short window.
-        if (appState) appState._localSyncWriteFlag = Date.now();
-        const { writeFile } = await import("../sync/local-sync.js");
-        await writeFile(pane.localSync.folderId, pane.localSync.relPath, content);
-      } else {
-        await tauriInvoke("save_file", { id: pane.fileId, content });
-      }
-    }
-  } catch (e) {
-    console.error("Failed to save pane content:", e);
-  }
-}
-
-function autosaveAllPanes() {
-  for (const [, pane] of panes) {
-    if (pane.dirty) savePaneContent(pane);
-  }
-}
 
 /** When ratchet flips on, blur + lock every pane editor so keystrokes
  *  bounce off. When it flips off, leave panes locked — the user has to
@@ -1086,7 +591,7 @@ function syncPaneRatchetLock() {
     }
     pane.el?.classList.remove("active");
   }
-  activePaneId = null;
+  setActivePaneId(null);
 }
 
 /** Apply a hovered-style preview to every non-locked pane. The styles
@@ -1139,138 +644,8 @@ async function syncPaneThemes() {
   }
 }
 
-/** Walk the file tree looking for a tree node with the given fileId and
- *  return its lockedStyleId (or null if none). */
-function findLockedStyleForFile(fileId) {
-  if (!fileId || !appState?.fileTree) return null;
-  function search(nodes) {
-    for (const n of nodes) {
-      if (n.fileId === fileId) return n.lockedStyleId || null;
-      if (n.children) { const r = search(n.children); if (r) return r; }
-    }
-    return null;
-  }
-  return search(appState.fileTree);
-}
 
 // ── Persistence (settings.persistedPanes) ─────────────────────────────
-
-let _persistTimer = null;
-function schedulePersist() {
-  if (_persistTimer) return;
-  _persistTimer = setTimeout(() => {
-    _persistTimer = null;
-    persistPanesNow();
-  }, 300);
-}
-
-function persistPanesNow() {
-  if (!appState) return;
-  const serialized = [];
-  for (const [, p] of panes) {
-    serialized.push({
-      fileId: p.fileId,
-      fileName: p.fileName,
-      fileType: p.fileType,
-      collapsed: !!p.collapsed,
-      attached: !!p.attached,
-      pinned: !!p.pinned,
-      width: p.width,
-      height: p.height,
-      x: p.x,
-      y: p.y,
-      ownerContext: p.ownerContext || "",
-      canvasX: p._canvasX ?? null,
-      canvasY: p._canvasY ?? null,
-      scrollRelY: p._scrollRelY ?? null,
-      localSync: p.localSync || null,
-      // Per-pane font-size override. Keyed implicitly by the pane's
-      // (ownerContext, fileId) pair, so the same file opened as a pane
-      // in another doc is unaffected.
-      fontSize: typeof p.fontSize === "number" ? p.fontSize : null,
-    });
-  }
-  appState.updateSettings({ persistedPanes: serialized });
-}
-
-async function restorePanes() {
-  if (!appState) return;
-  const list = appState.settings?.persistedPanes;
-  if (!Array.isArray(list) || list.length === 0) return;
-
-  for (const s of list) {
-    if (!s || !s.fileId || !s.fileType) continue;
-
-    // Local Sync panes are validated against the persisted mount list —
-    // if the user removed the mount while the app was closed, drop the
-    // pane. Otherwise the fileName saved at persist time is fine.
-    let resolvedName = s.fileName || "Untitled";
-    if (s.localSync) {
-      const folders = appState.settings?.localSyncFolders || [];
-      const stillMounted = folders.some((f) => f.id === s.localSync.folderId);
-      if (!stillMounted) continue;
-    } else {
-      // Resolve current file name (may have been renamed since persist)
-      const file = (appState.files || []).find((f) => f.id === s.fileId);
-      if (!file) continue; // File was deleted — drop pane
-      resolvedName = file.name || s.fileName || "Untitled";
-    }
-
-    const id = crypto.randomUUID();
-    const pane = {
-      id,
-      fileId: s.fileId,
-      fileName: resolvedName,
-      fileType: s.fileType,
-      collapsed: !!s.collapsed,
-      attached: false, // we'll re-apply attach below after content loads
-      pinned: !!s.pinned,
-      dirty: false,
-      editor: null,
-      notebook: null,
-      el: null,
-      width: s.width || DEFAULT_WIDTH,
-      height: s.height || DEFAULT_HEIGHT,
-      x: s.x || 0,
-      y: s.y || 0,
-      ownerContext: s.ownerContext || "",
-      localSync: s.localSync || null,
-      fontSize: typeof s.fontSize === "number" ? s.fontSize : null,
-    };
-    if (s.canvasX != null) pane._canvasX = s.canvasX;
-    if (s.canvasY != null) pane._canvasY = s.canvasY;
-    if (s.scrollRelY != null) pane._scrollRelY = s.scrollRelY;
-
-    buildPaneDOM(pane);
-    applyPaneFontSize(pane);
-    containerEl.appendChild(pane.el);
-    pane.el.style.zIndex = ++zCounter;
-    panes.set(id, pane);
-    await loadPaneContent(pane);
-
-    // Re-apply pinned / collapsed visual state
-    if (pane.pinned) {
-      pane.el.classList.add("pinned");
-      const pinBtn = pane.el.querySelector(".fp-btn-pin");
-      if (pinBtn) pinBtn.classList.add("pin-active");
-    }
-    if (pane.collapsed) {
-      pane._savedHeight = pane.height;
-      pane.el.classList.add("collapsed");
-      pane.el.style.height = TITLEBAR_HEIGHT + "px";
-    }
-    // Re-apply attach state (starts sync if appropriate context)
-    if (s.attached) {
-      pane.attached = true;
-      const aBtn = pane.el.querySelector(".fp-btn-attach");
-      if (aBtn) aBtn.classList.add("attach-active");
-    }
-  }
-
-  // Hide panes that don't belong in the current context and start sync
-  // for those that do.
-  onContextChange();
-}
 
 // ── Save all panes (called on focus switch to main editor) ────────────
 export function saveAllPanes() {
@@ -1280,63 +655,3 @@ export function saveAllPanes() {
 }
 
 // ── Content sync (pane ↔ main editor) ─────────────────────────────────
-function syncDocFromPane(pane) {
-  if (_syncing || pane.fileType !== "document" || !pane.editor) return;
-  if (pane.fileId !== appState.currentFileId || !appState.editor) return;
-  _syncing = true;
-  const content = pane.editor.getContent();
-  const mainView = appState.editor.view;
-  // Preserve main cursor position where possible
-  const mainSel = mainView.state.selection.main;
-  const anchor = Math.min(mainSel.anchor, content.length);
-  const head = Math.min(mainSel.head, content.length);
-  appState._syncPulling = true;
-  appState.editor.setContent(content);
-  try { mainView.dispatch({ selection: { anchor, head } }); } catch (_) {}
-  appState._syncPulling = false;
-  _syncing = false;
-}
-
-function syncDocToPane(pane) {
-  if (_syncing || pane.fileType !== "document" || !pane.editor) return;
-  if (pane.fileId !== appState.currentFileId) return;
-  _syncing = true;
-  const content = appState.editor.getContent();
-  const paneView = pane.editor.view;
-  const paneSel = paneView.state.selection.main;
-  const anchor = Math.min(paneSel.anchor, content.length);
-  const head = Math.min(paneSel.head, content.length);
-  pane.editor.setContent(content);
-  try { paneView.dispatch({ selection: { anchor, head } }); } catch (_) {}
-  // Don't mark pane dirty — this came from the main editor
-  pane.dirty = false;
-  _syncing = false;
-}
-
-function syncNotebookFromPane(pane) {
-  if (_syncing || pane.fileType !== "notebook" || !pane.notebook) return;
-  if (pane.fileId !== appState.currentNotebookFileId || !_notebookBridge) return;
-  const mainCanvas = _notebookBridge.getCanvasInstance();
-  if (!mainCanvas) return;
-
-  _syncing = true;
-  const shapes = pane.notebook.getShapes();
-  mainCanvas.loadShapes(JSON.parse(JSON.stringify(shapes)));
-  // Defer reset: loadShapes triggers change events via queueMicrotask,
-  // so _syncing must stay true until those microtasks have fired.
-  queueMicrotask(() => queueMicrotask(() => { _syncing = false; }));
-}
-
-function syncNotebookToPane(pane) {
-  if (_syncing || pane.fileType !== "notebook" || !pane.notebook) return;
-  if (pane.fileId !== appState.currentNotebookFileId || !_notebookBridge) return;
-  const mainCanvas = _notebookBridge.getCanvasInstance();
-  if (!mainCanvas) return;
-
-  _syncing = true;
-  const shapes = mainCanvas.getShapes();
-  pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
-  pane.dirty = false;
-  // Defer reset: same microtask timing issue as above
-  queueMicrotask(() => queueMicrotask(() => { _syncing = false; }));
-}
