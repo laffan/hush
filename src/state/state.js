@@ -409,7 +409,10 @@ export class AppState {
 
   // ===== Project View (delegated to state-project.js) =====
 
-  async openProject(projectId) { return _openProject(this, projectId); }
+  async openProject(projectId) {
+    if (this.ratchetMode) return;
+    return _openProject(this, projectId);
+  }
   async saveProjectContent() { return _saveProjectContent(this); }
 
   // ===== Notebook Operations =====
@@ -434,6 +437,7 @@ export class AppState {
   }
 
   async openNotebook(fileId) {
+    if (this.ratchetMode) return;
     // Save current file/notebook before switching
     if (this.dirty) await this.saveCurrentFile();
     if (this.currentNotebookFileId) {
@@ -575,6 +579,9 @@ export class AppState {
   }
 
   async openFile(id) {
+    // Ratchet mode pins the user to the active file — opening another
+    // would let them step around the forward-only lock.
+    if (this.ratchetMode) return;
     if (this.dirty) await this.saveCurrentFile();
     // Unmount any active notebook
     if (this.currentNotebookFileId) {

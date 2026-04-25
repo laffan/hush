@@ -434,32 +434,85 @@ function openStyleModal(state, existingStyle, onDone) {
   let createdNewStyle = !isNew;
   let saveTimer = null;
 
-  function commitDraft() {
+  /** Mirror the draft into `state.settings` *in memory* and emit
+   *  `style-changed` so the editor repaints on every edit — no waiting
+   *  for the debounced disk save. Without this, dragging a colour
+   *  picker resets the 200 ms timer on every input event and the user
+   *  saw zero feedback in the editor until they let go. The Tauri
+   *  save still happens via the debounced `commitDraft`. */
+  function applyDraftLive() {
     if (isDefault) {
-      saveDefaultDraftToSettings(state, draft);
-      state.emit("style-changed");
-      if (onDone) onDone();
-      return;
-    }
-    const name = (draft.name || "").trim() || "Untitled";
-    draft.name = name;
-    delete draft._migrated;
-    if (!state.settings.styles) state.settings.styles = [];
-    if (!createdNewStyle) {
-      draft.id = "style_" + Date.now();
-      state.settings.styles.push(draft);
-      createdNewStyle = true;
+      // Default style writes back onto top-level settings fields. We
+      // mutate `state.settings` directly here (no `updateSettings`)
+      // so the change is visible synchronously without the Tauri
+      // save round-trip.
+      Object.assign(state.settings, {
+        fontFamily: draft.fontFamily || state.settings.fontFamily,
+        fontSize: draft.fontSize || state.settings.fontSize,
+        lineHeight: draft.lineHeight || state.settings.lineHeight,
+        lightTheme: draft.lightThemeId || state.settings.lightTheme,
+        darkTheme: draft.darkThemeId || state.settings.darkTheme,
+        defaultLightColors: draft.lightColors || {},
+        defaultDarkColors: draft.darkColors || {},
+        normalizeHeaders: !!draft.suppressHeaderSize,
+        normalizeHeaderColor: !!draft.suppressHeaderColor,
+        headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
+        blockCursor: !!draft.blockCursor,
+      });
     } else {
-      const idx = state.settings.styles.findIndex(s => s.id === draft.id);
-      if (idx >= 0) state.settings.styles[idx] = draft;
-      else state.settings.styles.push(draft);
+      // For user-defined styles, link the draft into the styles array
+      // so applyActiveStyle (which reads state.settings.styles[…])
+      // sees the latest values immediately. After the link is in
+      // place, subsequent draft mutations land directly on the live
+      // entry — no relink needed.
+      const name = (draft.name || "").trim() || "Untitled";
+      draft.name = name;
+      delete draft._migrated;
+      if (!state.settings.styles) state.settings.styles = [];
+      if (!createdNewStyle) {
+        draft.id = "style_" + Date.now();
+        state.settings.styles.push(draft);
+        createdNewStyle = true;
+      } else {
+        const idx = state.settings.styles.findIndex(s => s.id === draft.id);
+        if (idx >= 0) state.settings.styles[idx] = draft;
+        else state.settings.styles.push(draft);
+      }
     }
-    state.updateSettings({ styles: state.settings.styles });
     state.emit("style-changed");
+  }
+
+  function commitDraft() {
+    // Make sure the in-memory state reflects the draft (covers the
+    // close-without-an-edit case where applyDraftLive never ran).
+    applyDraftLive();
+    // Persist to disk. updateSettings does Object.assign + Tauri save
+    // and fires settings-changed; we already pushed style-changed
+    // through applyDraftLive, so don't re-emit it here.
+    if (isDefault) {
+      state.updateSettings({
+        fontFamily: state.settings.fontFamily,
+        fontSize: state.settings.fontSize,
+        lineHeight: state.settings.lineHeight,
+        lightTheme: state.settings.lightTheme,
+        darkTheme: state.settings.darkTheme,
+        defaultLightColors: state.settings.defaultLightColors,
+        defaultDarkColors: state.settings.defaultDarkColors,
+        normalizeHeaders: state.settings.normalizeHeaders,
+        normalizeHeaderColor: state.settings.normalizeHeaderColor,
+        headerScale: state.settings.headerScale,
+        blockCursor: state.settings.blockCursor,
+      });
+    } else {
+      state.updateSettings({ styles: state.settings.styles });
+    }
     if (onDone) onDone();
   }
 
   function scheduleSave() {
+    // Live-apply immediately so the editor reflects the change with
+    // no perceptible delay, then debounce the disk save.
+    applyDraftLive();
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { saveTimer = null; commitDraft(); }, 200);
   }

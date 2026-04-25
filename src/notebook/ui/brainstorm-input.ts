@@ -3,6 +3,10 @@ import type { Point, TextShape } from "../types";
 import { canvasToScreen, generateId, getShapeBounds, screenToCanvas } from "../utils";
 import { h } from "./dom-helpers";
 
+/** Minimum gap (in canvas px) between a brainstorm card's bounds and
+ *  any neighbouring shape's bounds. */
+const BRAINSTORM_PADDING = 24;
+
 /**
  * Brainstorm mode: a persistent text input that stays at a click location.
  * Each Enter press creates a text shape placed in an expanding spiral
@@ -47,14 +51,10 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
 
   // Track placement state
   let canvasOrigin: Point = { x: 0, y: 0 }; // canvas-space origin of the input
-  let placedPositions: Point[] = [];
-  let quadrantIndex = 0;
   let visible = false;
 
   function show(screenX: number, screenY: number) {
     canvasOrigin = screenToCanvas({ x: screenX, y: screenY }, state.camera);
-    placedPositions = [];
-    quadrantIndex = 0;
     container.style.display = "block";
     container.style.left = screenX + "px";
     container.style.top = screenY + "px";
@@ -87,21 +87,22 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
       const text = input.value.trim();
       if (!text) return;
 
-      // Find position in spiral around origin
-      const pos = findSpiralPosition(canvasOrigin, placedPositions, state);
-      placedPositions.push(pos);
-      quadrantIndex++;
-
-      // Create text shape
-      const newShape: TextShape = {
+      // Build the prospective shape (without a position) so we can
+      // measure how big its bounding box will be at this canvas's
+      // current font, then find a spot that fits without overlap.
+      const draft: TextShape = {
         id: generateId(),
         type: "text",
-        position: pos,
+        position: { x: 0, y: 0 },
         text,
         fontSize: state.fontSize,
         color: state.color,
+        width: state.maxTextWidth,
+        layerId: state.activeLayerId,
       };
-      state.shapes = [...state.shapes, newShape];
+      const pos = findBrainstormPosition(canvasOrigin, draft, state);
+      draft.position = pos;
+      state.shapes = [...state.shapes, draft];
       state.recordHistory();
       state.notify("shapes");
 
@@ -160,45 +161,103 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
 }
 
 /**
- * Find a position in an expanding spiral around the origin,
- * avoiding collisions with existing shapes and previously placed items.
+ * Find a non-overlapping position for a brainstorm card around the
+ * given origin. Approach:
+ *
+ *  1. Compute the draft shape's actual rendered bounds at every
+ *     candidate position (via getShapeBounds) — this is the accurate
+ *     bbox the card will occupy once placed.
+ *  2. Walk an Archimedean-style spiral outward (angle increments
+ *     decrease as the radius grows so ring density stays consistent).
+ *     Each candidate is the centre of where the card should sit; we
+ *     translate so the card's bbox is centred there.
+ *  3. Reject any candidate whose padded bbox intersects any existing
+ *     shape's bbox (pocketed shapes excluded — they live in screen
+ *     space, not the canvas).
+ *  4. The very first card lands at the origin (the input's anchor)
+ *     unless something is already there; ensures a fresh brainstorm
+ *     drops its first card at the user's exact click point.
  */
-function findSpiralPosition(
+function findBrainstormPosition(
   origin: Point,
-  placed: Point[],
+  draft: TextShape,
   state: DrawingState,
 ): Point {
-  const distances = [120, 160, 200, 240, 280];
-  const angleStep = 30; // degrees
-  const startAngle = 45; // start upper-right
+  const fontFamily = state.fontFamily;
+  const otherBounds = state.shapes
+    .filter((s) => !s.pocketed)
+    .map((s) => getShapeBounds(s, fontFamily));
 
-  for (const dist of distances) {
-    for (let a = 0; a < 360; a += angleStep) {
-      const angle = ((startAngle + a) % 360) * (Math.PI / 180);
-      const x = origin.x + Math.cos(angle) * dist;
-      const y = origin.y - Math.sin(angle) * dist; // negative because canvas Y is down
+  // The brainstorm input is anchored at `origin` in screen space. We
+  // model it as an exclusion bbox in canvas coords so the first card
+  // doesn't land underneath it. Width / height are the input's
+  // approximate footprint (200px input + 32px close button + a bit of
+  // chrome ≈ 240×40 in screen px → divided by zoom for canvas px).
+  const zoom = state.camera.zoom || 1;
+  const inputW = 240 / zoom;
+  const inputH = 40 / zoom;
+  const inputBounds = {
+    minX: origin.x - inputW / 2,
+    minY: origin.y - inputH / 2,
+    maxX: origin.x + inputW / 2,
+    maxY: origin.y + inputH / 2,
+  };
+  const blockers = [inputBounds, ...otherBounds];
 
-      // Check collision with placed items (60px min spacing)
-      const tooCloseToPlaced = placed.some((p) => {
-        const dx = p.x - x, dy = p.y - y;
-        return Math.sqrt(dx * dx + dy * dy) < 60;
-      });
-      if (tooCloseToPlaced) continue;
+  // Pre-compute draft's intrinsic size — it doesn't depend on
+  // position, so we measure once and translate per candidate.
+  const sized = getShapeBounds({ ...draft, position: { x: 0, y: 0 } }, fontFamily);
+  const w = sized.maxX - sized.minX;
+  const h = sized.maxY - sized.minY;
 
-      // Check collision with existing shapes (20px padding)
-      const testBounds = { minX: x - 10, minY: y - 10, maxX: x + 100, maxY: y + 30 };
-      const overlapsShape = state.shapes.some((s) => {
-        const sb = getShapeBounds(s);
-        return sb.minX < testBounds.maxX + 20 && sb.maxX > testBounds.minX - 20 &&
-               sb.minY < testBounds.maxY + 20 && sb.maxY > testBounds.minY - 20;
-      });
-      if (overlapsShape) continue;
+  const tryAt = (cx: number, cy: number): { pos: Point; ok: boolean } => {
+    const pos: Point = { x: cx - w / 2, y: cy - h / 2 };
+    const candidate = { minX: pos.x, minY: pos.y, maxX: pos.x + w, maxY: pos.y + h };
+    const ok = !blockers.some((b) =>
+      b.minX < candidate.maxX + BRAINSTORM_PADDING &&
+      b.maxX > candidate.minX - BRAINSTORM_PADDING &&
+      b.minY < candidate.maxY + BRAINSTORM_PADDING &&
+      b.maxY > candidate.minY - BRAINSTORM_PADDING,
+    );
+    return { pos, ok };
+  };
 
-      return { x, y };
+  // Spiral outwards. The minimum radius is set so the first card
+  // clears the input box (its half-diagonal + padding + half the
+  // card's diagonal). Angle step shrinks with radius so candidate
+  // arc-length stays roughly constant.
+  const cardHalfDiag = Math.sqrt(w * w + h * h) / 2;
+  const inputHalfDiag = Math.sqrt(inputW * inputW + inputH * inputH) / 2;
+  const minRadius = inputHalfDiag + cardHalfDiag + BRAINSTORM_PADDING;
+  const maxRadius = Math.max(minRadius * 30, 4000);
+  const radiusStep = Math.max(20, Math.min(40, Math.max(w, h) * 0.25));
+  for (let r = minRadius; r <= maxRadius; r += radiusStep) {
+    // ~28px arc length between samples → angleStep = 28/r radians.
+    // Clamped so very small radii don't degenerate into all-direction
+    // tries (and very large radii don't sample wastefully fine).
+    const angleStep = Math.max(0.06, Math.min(Math.PI / 6, 28 / r));
+    // Per-ring random phase + jitter so consecutive cards don't snap
+    // to the same compass direction once one ring is full. Pure
+    // determinism here would line them up like a clock face, which
+    // looks robotic; this gives the "scattered around" feel the user
+    // asked for while still following the spiral envelope.
+    const phase = Math.random() * Math.PI * 2;
+    for (let a = 0; a < Math.PI * 2; a += angleStep) {
+      const angle = phase + a;
+      const cx = origin.x + Math.cos(angle) * r;
+      const cy = origin.y + Math.sin(angle) * r;
+      const t = tryAt(cx, cy);
+      if (t.ok) return t.pos;
     }
   }
 
-  // Fallback: random angle at 200px
+  // Pathological fallback — the canvas is so densely packed we
+  // couldn't find any open spot inside the search envelope. Drop the
+  // card far enough that it certainly clears.
   const angle = Math.random() * Math.PI * 2;
-  return { x: origin.x + Math.cos(angle) * 200, y: origin.y + Math.sin(angle) * 200 };
+  return {
+    x: origin.x + Math.cos(angle) * (maxRadius + 200),
+    y: origin.y + Math.sin(angle) * (maxRadius + 200),
+  };
 }
+

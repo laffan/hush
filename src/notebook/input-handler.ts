@@ -78,37 +78,75 @@ export function bindInputEvents(
   on(canvas, "pointerdown", (e) => state.handlePointerDown(e));
   on(canvas, "pointermove", (e) => state.handlePointerMove(e));
   on(canvas, "pointerup", (e) => state.handlePointerUp(e));
+  // pointercancel fires on iOS when the system grabs the gesture (e.g.
+  // safe-area swipe, scroll). Route it through the same teardown so we
+  // don't strand `_preTouchSelectedIds` or any other in-flight state.
+  on(canvas, "pointercancel", (e) => state.handlePointerUp(e));
   on(canvas, "dblclick", (e) => state.handleDoubleClick(e));
   on(canvas, "wheel", (e) => state.handleWheel(e), { passive: false });
 
-  // Two-finger touch to pan
-  let twoFingerPanning = false;
-  let twoFingerStart = { x: 0, y: 0 };
+  // Two-finger touch: combined pan + pinch-zoom. Camera at gesture
+  // start is the frame of reference for both translation (midpoint
+  // delta) and zoom (distance ratio) — pivoted around the start
+  // midpoint so the world point under the user's fingers stays put.
+  let twoFingerActive = false;
+  let twoFingerStartMid = { x: 0, y: 0 };
+  let twoFingerStartDist = 0;
   let cameraAtTwoFingerStart = { x: 0, y: 0, zoom: 1 };
+
+  function pinchMid(t0: Touch, t1: Touch) {
+    return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+  }
+  function pinchDist(t0: Touch, t1: Touch) {
+    const dx = t0.clientX - t1.clientX, dy = t0.clientY - t1.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
 
   on(canvas, "touchstart", (e) => {
     if (e.touches.length === 2) {
       e.preventDefault();
-      twoFingerPanning = true;
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      twoFingerStart = { x: midX, y: midY };
+      // The first finger's pointerdown has already kicked off a
+      // marquee / drag / resize / drag-area on the canvas. Drop it
+      // so the chrome doesn't render between the user's fingers.
+      state.cancelActiveInteraction();
+      twoFingerActive = true;
+      twoFingerStartMid = pinchMid(e.touches[0], e.touches[1]);
+      twoFingerStartDist = pinchDist(e.touches[0], e.touches[1]);
       cameraAtTwoFingerStart = { ...state.camera };
     }
   }, { passive: false });
 
   on(canvas, "touchmove", (e) => {
-    if (twoFingerPanning && e.touches.length === 2) {
+    if (twoFingerActive && e.touches.length === 2) {
       e.preventDefault();
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      state.camera = { x: cameraAtTwoFingerStart.x + (midX - twoFingerStart.x), y: cameraAtTwoFingerStart.y + (midY - twoFingerStart.y), zoom: cameraAtTwoFingerStart.zoom };
+      const mid = pinchMid(e.touches[0], e.touches[1]);
+      const dist = pinchDist(e.touches[0], e.touches[1]);
+      // Need a non-zero start distance to compute a ratio. If two
+      // fingers landed at the exact same point, fall back to pure pan
+      // until they separate.
+      const rawScale = twoFingerStartDist > 1 ? dist / twoFingerStartDist : 1;
+      // Match the wheel handler's zoom envelope exactly: [0.25, 1].
+      const newZoom = Math.min(1, Math.max(0.25, cameraAtTwoFingerStart.zoom * rawScale));
+      const effectiveScale = newZoom / cameraAtTwoFingerStart.zoom;
+      // Pivot zoom around the *initial* midpoint (M0) and translate
+      // by (M1 - M0) — equivalent to "the world point that was under
+      // the start midpoint stays under the current midpoint".
+      const cs = cameraAtTwoFingerStart;
+      state.camera = {
+        x: mid.x - effectiveScale * (twoFingerStartMid.x - cs.x),
+        y: mid.y - effectiveScale * (twoFingerStartMid.y - cs.y),
+        zoom: newZoom,
+      };
       state.notify("camera");
     }
   }, { passive: false });
 
   on(canvas, "touchend", (e) => {
-    if (twoFingerPanning && e.touches.length < 2) twoFingerPanning = false;
+    if (twoFingerActive && e.touches.length < 2) twoFingerActive = false;
+  });
+
+  on(canvas, "touchcancel", (e) => {
+    if (twoFingerActive && e.touches.length < 2) twoFingerActive = false;
   });
 
   // Space-to-pan state. `spaceEnabledPan` tracks whether THIS keydown

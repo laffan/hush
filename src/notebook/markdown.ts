@@ -17,6 +17,12 @@ export interface TextRun {
 export interface ParsedLine {
   runs: TextRun[];
   sizeScale: number; // heading scale for the whole line
+  /** `> ...` blockquote line — renderer paints a left rule + indent. */
+  blockquote?: boolean;
+  /** `- [ ]` / `- [x]` task line — renderer draws a checkbox glyph in
+   *  place of the list marker. `taskChecked` is the resolved state. */
+  task?: boolean;
+  taskChecked?: boolean;
 }
 
 /**
@@ -25,6 +31,26 @@ export interface ParsedLine {
 export function parseLine(line: string): ParsedLine {
   let sizeScale = 1.0;
   let workingLine = line;
+  let blockquote = false;
+  let task = false;
+  let taskChecked = false;
+
+  // Block quote prefix — strip a single `> ` (or `>` + nothing) and
+  // mark the line so the renderer can draw the left rule.
+  const bqMatch = workingLine.match(/^>+\s?(.*)$/);
+  if (bqMatch) {
+    blockquote = true;
+    workingLine = bqMatch[1];
+  }
+
+  // Task list — `- [ ] ...` / `- [x] ...`. Strip the marker + bracket;
+  // the renderer draws the checkbox glyph in its place.
+  const taskMatch = workingLine.match(/^[-*+]\s+\[([ xX])\]\s+(.*)$/);
+  if (taskMatch) {
+    task = true;
+    taskChecked = taskMatch[1] !== " ";
+    workingLine = taskMatch[2];
+  }
 
   // Check for heading prefix
   const headingMatch = workingLine.match(/^(#{1,3})\s+(.*)$/);
@@ -35,7 +61,10 @@ export function parseLine(line: string): ParsedLine {
   }
 
   const runs = parseInlineFormatting(workingLine, sizeScale);
-  return { runs, sizeScale };
+  const out: ParsedLine = { runs, sizeScale };
+  if (blockquote) out.blockquote = true;
+  if (task) { out.task = true; out.taskChecked = taskChecked; }
+  return out;
 }
 
 /**
@@ -101,8 +130,19 @@ export function parseText(
     // Word-wrap while preserving run structure
     const fontSize = baseFontSize * parsed.sizeScale;
     const wrapped = wrapRuns(parsed.runs, constraintWidth, fontSize, measureFn);
-    for (const lineRuns of wrapped) {
-      result.push({ runs: lineRuns, sizeScale: parsed.sizeScale });
+    for (let i = 0; i < wrapped.length; i++) {
+      const out: ParsedLine = { runs: wrapped[i], sizeScale: parsed.sizeScale };
+      // Propagate the blockquote rule to every wrapped line so the
+      // continuation aligns under the same left border. The task
+      // marker only renders on the first wrapped line; subsequent
+      // continuation lines are flagged so the renderer can hang-indent
+      // them under the original checkbox.
+      if (parsed.blockquote) out.blockquote = true;
+      if (parsed.task) {
+        if (i === 0) { out.task = true; out.taskChecked = parsed.taskChecked; }
+        else out.task = false; // continuation — indent only, no glyph
+      }
+      result.push(out);
     }
   }
 

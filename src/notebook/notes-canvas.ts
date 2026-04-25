@@ -107,7 +107,7 @@ export class NotesCanvas {
     // Apply theme to container
     this.state.addEventListener("change", () => {
       const t = this.state.theme;
-      container.style.background = t.canvasBackground;
+      container.style.background = this.state.canvasBackgroundOverride || t.canvasBackground;
       this._updatePatternCssVar();
     });
 
@@ -120,23 +120,62 @@ export class NotesCanvas {
     // own touchstart pan handler never sees them. The engine's
     // gesture recogniser emits pan callbacks when two fingers drift;
     // we translate them into state.camera motion here.
-    let touchPanCamStart: { x: number; y: number; zoom: number } | null = null;
+    // Frame of reference for the multi-touch gesture that's currently
+    // active. Pan and pinch both run off the same start camera so a
+    // combined spread+drift produces one coherent transform — the
+    // world point under the gesture's start midpoint stays under the
+    // user's current midpoint.
+    let touchGestureCamStart: { x: number; y: number; zoom: number } | null = null;
+    let touchPinchStartMid = { x: 0, y: 0 };
+    let touchPinchStartDist = 0;
+    let touchPinching = false;
     this._drawingLayer = createDrawingLayer({
       container,
       state: this.state as unknown as import("./drawing/sync-shim").ShimState,
       theme: this.state.theme,
       camera: this.state.camera,
-      onTouchPanStart: () => { touchPanCamStart = { ...this.state.camera }; },
+      onTouchPanStart: () => {
+        if (!touchGestureCamStart) touchGestureCamStart = { ...this.state.camera };
+      },
       onTouchPanMove: (dx, dy) => {
-        if (!touchPanCamStart) return;
+        if (!touchGestureCamStart) return;
+        // Pinch path owns the camera while it's active — the pinch
+        // formula already accounts for midpoint translation.
+        if (touchPinching) return;
         this.state.camera = {
-          x: touchPanCamStart.x + dx,
-          y: touchPanCamStart.y + dy,
-          zoom: touchPanCamStart.zoom,
+          x: touchGestureCamStart.x + dx,
+          y: touchGestureCamStart.y + dy,
+          zoom: touchGestureCamStart.zoom,
         };
         this.state.notify("camera");
       },
-      onTouchPanEnd: () => { touchPanCamStart = null; },
+      onTouchPanEnd: () => {
+        if (!touchPinching) touchGestureCamStart = null;
+      },
+      onTouchPinchStart: (mid, dist) => {
+        if (!touchGestureCamStart) touchGestureCamStart = { ...this.state.camera };
+        touchPinchStartMid = mid;
+        touchPinchStartDist = dist;
+        touchPinching = true;
+      },
+      onTouchPinchMove: (mid, dist) => {
+        if (!touchGestureCamStart || touchPinchStartDist <= 0) return;
+        const cs = touchGestureCamStart;
+        const rawScale = dist / touchPinchStartDist;
+        // Match the wheel handler's zoom envelope: [0.25, 1].
+        const newZoom = Math.min(1, Math.max(0.25, cs.zoom * rawScale));
+        const effectiveScale = newZoom / cs.zoom;
+        this.state.camera = {
+          x: mid.x - effectiveScale * (touchPinchStartMid.x - cs.x),
+          y: mid.y - effectiveScale * (touchPinchStartMid.y - cs.y),
+          zoom: newZoom,
+        };
+        this.state.notify("camera");
+      },
+      onTouchPinchEnd: () => {
+        touchPinching = false;
+        touchGestureCamStart = null;
+      },
     });
     // Seed the engine with the user's chosen lasso hold duration.
     this._drawingLayer.setLassoHoldMs(this.state.lassoHoldMs);
@@ -284,6 +323,8 @@ export class NotesCanvas {
     gridOpacity?: number;
     fontFamily?: string;
     fontSize?: number;
+    canvasBackgroundOverride?: string;
+    maxTextWidth?: number;
   }) {
     if (opts.appearanceMode !== undefined) this.state.setAppearance(opts.appearanceMode);
     if (opts.themeId !== undefined) this.state.setTheme(opts.themeId);
@@ -292,6 +333,13 @@ export class NotesCanvas {
     if (opts.gridOpacity !== undefined) { this.state.gridOpacity = opts.gridOpacity; this.state.notify("theme"); }
     if (opts.fontFamily !== undefined) { this.state.fontFamily = opts.fontFamily; this.state.notify("theme"); }
     if (opts.fontSize !== undefined) { this.state.fontSize = opts.fontSize; this.state.notify("fontSize"); }
+    if (opts.canvasBackgroundOverride !== undefined) {
+      this.state.canvasBackgroundOverride = opts.canvasBackgroundOverride;
+      this.state.notify("theme");
+    }
+    if (opts.maxTextWidth !== undefined && opts.maxTextWidth > 0) {
+      this.state.maxTextWidth = opts.maxTextWidth;
+    }
   }
 
   /** Update the left inset (sidebar width) so pocket tray and toolbar adjust. */
@@ -385,6 +433,7 @@ export class NotesCanvas {
         editingShapeId: this.state.editingText?.shapeId ?? null,
         imageCache: this._imageCache,
         theme: this.state.theme,
+        canvasBackgroundOverride: this.state.canvasBackgroundOverride,
         croppingImageId: this.state.croppingImageId,
         fontFamily: this.state.fontFamily,
         backgroundPattern: this.state.backgroundPattern,

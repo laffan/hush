@@ -214,6 +214,18 @@ export function renderEditorTab(settings) {
     </div>
 
     <div class="settings-section">
+      <h2>Notebook text</h2>
+      <div class="settings-slider-row">
+        <label>Max width</label>
+        <div class="slider-group">
+          <input type="range" id="setting-notebook-text-max-width" min="200" max="800" step="10" value="${s.notebookTextMaxWidth || 350}" />
+          <span class="slider-value">${s.notebookTextMaxWidth || 350}px</span>
+        </div>
+      </div>
+      <p class="settings-help">Width cap for new text shapes and brainstorm cards on the notebook canvas. Existing shapes you've manually resized aren't affected.</p>
+    </div>
+
+    <div class="settings-section">
       <h2>Footnotes</h2>
       <div class="settings-slider-row">
         <label>Font size</label>

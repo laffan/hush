@@ -159,6 +159,9 @@ export function createDrawingLayer({
   onTouchPanStart,
   onTouchPanMove,
   onTouchPanEnd,
+  onTouchPinchStart,
+  onTouchPinchMove,
+  onTouchPinchEnd,
 }: {
   container: HTMLElement;
   state: ShimState;
@@ -171,6 +174,12 @@ export function createDrawingLayer({
   onTouchPanStart?: () => void;
   onTouchPanMove?: (dx: number, dy: number) => void;
   onTouchPanEnd?: () => void;
+  /** Two-finger pinch hooks — fired alongside the pan hooks when the
+   *  user spreads / squeezes two fingers. Notebook drives the camera
+   *  zoom from these. mid + dist are in client (screen) px. */
+  onTouchPinchStart?: (mid: { x: number; y: number }, dist: number) => void;
+  onTouchPinchMove?: (mid: { x: number; y: number }, dist: number) => void;
+  onTouchPinchEnd?: () => void;
 }): DrawingLayer {
   // Mutable theme object: we mutate in place on setTheme so the
   // engine's atlas cache and our resolveAutoColor closure pick up new
@@ -554,6 +563,9 @@ export function createDrawingLayer({
     onPanStart: () => { onTouchPanStart && onTouchPanStart(); },
     onPanMove: (dx: number, dy: number) => { onTouchPanMove && onTouchPanMove(dx, dy); },
     onPanEnd: () => { onTouchPanEnd && onTouchPanEnd(); },
+    onPinchStart: (mid: { x: number; y: number }, dist: number) => { onTouchPinchStart && onTouchPinchStart(mid, dist); },
+    onPinchMove: (mid: { x: number; y: number }, dist: number) => { onTouchPinchMove && onTouchPinchMove(mid, dist); },
+    onPinchEnd: () => { onTouchPinchEnd && onTouchPinchEnd(); },
   });
 
   /** Pull every stroke that shares a group with any currently-selected

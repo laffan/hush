@@ -140,6 +140,7 @@ function rasterizeNotebook(canvas: NotesCanvas, opts: ExportOptions): HTMLCanvas
     fontFamily: state.fontFamily,
     layers: state.layers,
     includeBackground: opts.includeBackground,
+    canvasBackgroundOverride: state.canvasBackgroundOverride,
   });
 
   // Strokes sit above shapes in the live view (drawing wrapper is a

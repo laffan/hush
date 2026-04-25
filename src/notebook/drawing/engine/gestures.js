@@ -9,6 +9,14 @@
  *      midpoint deltas) / onPanEnd so the notebook camera can track.
  *      Without this, users on iPad couldn't pan while a brush slot
  *      was selected.
+ *  12. Two-finger pinch fires onPinchStart / onPinchMove / onPinchEnd
+ *      with client-space midpoint + spread distance. Runs alongside
+ *      pan so the user can pan and zoom in the same gesture.
+ *  13. Followup gating now also requires the first finger to be still
+ *      (moved2 < MOVE_TOLERANCE_2) so a second finger landing during
+ *      a real draw stroke doesn't cancel the stroke. SIMULTANEITY_MS
+ *      bumped from 180→350 ms because natural fast 2-finger taps on
+ *      iPad routinely have ~250 ms inter-finger lag.
  * ============================================================
  *
  * gestures.js — two-/three-finger tap recogniser + two-finger pan.
@@ -35,13 +43,21 @@
  * iPadOS Safari reports these in CSS pixels for touch contacts.
  * ============================================================ */
 
-const SIMULTANEITY_MS = 180;       // max time between the first and last contact landing
+const SIMULTANEITY_MS = 350;       // max time between the first and last contact landing.
+                                   // Was 180 — too tight: a natural fast 2-finger tap on iPad
+                                   // routinely has 200–300 ms of inter-finger lag, and the gap
+                                   // landed each finger's pointerdown as a separate stroke
+                                   // (the user saw a tiny line drawn instead of an undo).
 const TAP_MAX_MS = 280;            // max duration from down to up for a tap
 const MOVE_TOLERANCE_2 = 64;       // (8 CSS px)^2 — any contact that drifts more is not a tap
 // Promotion threshold from "candidate tap" into "pan". Slightly above
 // MOVE_TOLERANCE_2 so a two-finger tap with a bit of shake still lands
 // as an undo.
 const PAN_START_2 = 144;           // (12 CSS px)^2
+// Minimum change in finger-spread distance (CSS px) before we promote
+// the burst into pinch-zoom mode. Mirrors PAN_START in spirit — a
+// little hand jitter shouldn't fire a zoom.
+const PINCH_START = 12;
 const MIN_PAIR_DIST = 25;          // min distance between two fingertips (prevents accidental doubles)
 const MAX_PAIR_DIST = 320;         // max distance (rejects spread palm contacts)
 // iPadOS reports contact ellipses larger than iPhone: ~40–80 CSS px for
@@ -59,6 +75,9 @@ export function createGestures({
   onPanStart,      // () => void — two-finger drift crossed PAN_START_2
   onPanMove,       // (dx, dy) => void — midpoint delta from pan-start, in client px
   onPanEnd,        // () => void — every touch has lifted after a pan
+  onPinchStart,    // (mid: {x,y}, dist: number) => void — finger spread changed past PINCH_START
+  onPinchMove,     // (mid: {x,y}, dist: number) => void — current midpoint + spread (client px)
+  onPinchEnd,      // () => void — every touch has lifted after a pinch
 }) {
   const toLocal = pointToLocal || ((p) => {
     const r = getRect();
@@ -78,6 +97,13 @@ export function createGestures({
   // Client-space midpoint snapshot at pan-start, used as the frame of
   // reference for subsequent onPanMove deltas.
   let panStartMid = null;
+  // True once the finger-spread has changed past PINCH_START. Pinch
+  // runs in parallel with pan — the user is typically doing both — so
+  // we don't gate one on the other; both fire while two fingers move.
+  let pinching = false;
+  // Spread distance at pinch-start; the client of onPinchMove computes
+  // its own ratio against the start dist it captured in onPinchStart.
+  let pinchStartDist = 0;
 
   function now() { return performance.now(); }
 
@@ -94,6 +120,8 @@ export function createGestures({
     gestureMode = false;
     panning = false;
     panStartMid = null;
+    pinching = false;
+    pinchStartDist = 0;
   }
 
   /** Average clientX/clientY of currently-active contacts. Returns
@@ -103,6 +131,16 @@ export function createGestures({
     let sx = 0, sy = 0;
     for (const r of active.values()) { sx += r.clientX; sy += r.clientY; }
     return { x: sx / active.size, y: sy / active.size };
+  }
+
+  /** Distance between the first two active contacts (the only two we
+   *  care about for pinch). Returns 0 if fewer than 2 fingers down. */
+  function pairDistClient() {
+    if (active.size < 2) return 0;
+    const it = active.values();
+    const a = it.next().value, b = it.next().value;
+    const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   function qualifiesAsTap(rec) {
@@ -160,7 +198,17 @@ export function createGestures({
       gestureMode = false;
     }
 
-    const isFollowup = active.size >= 1 && (t - windowStart) <= SIMULTANEITY_MS;
+    // Followup (= "this is part of a multi-touch gesture") requires
+    // an existing finger that hasn't drifted. Without the stable
+    // check, a second finger landing in the middle of a real draw
+    // stroke would cancel the stroke and the user would lose their
+    // ink. With it, we only swallow strokes that the first finger
+    // hasn't actually committed to yet.
+    let firstFingerStable = true;
+    for (const r of active.values()) {
+      if (r.moved2 > MOVE_TOLERANCE_2) { firstFingerStable = false; break; }
+    }
+    const isFollowup = active.size >= 1 && firstFingerStable && (t - windowStart) <= SIMULTANEITY_MS;
 
     active.set(e.pointerId, {
       id: e.pointerId,
@@ -225,6 +273,33 @@ export function createGestures({
         onPanMove && onPanMove(mid.x - panStartMid.x, mid.y - panStartMid.y);
       }
     }
+
+    // Pinch: kicks in once the spread has drifted past PINCH_START.
+    // Captures the start distance the first time it fires so callers
+    // can compute their own scale factor. Runs alongside pan — a
+    // typical iPad zoom is "spread + drift" simultaneously.
+    if (gestureMode && active.size >= 2) {
+      const dist = pairDistClient();
+      if (!pinching) {
+        // Need a non-trivial reference so the ratio is meaningful;
+        // pairDistClient is recomputed each move so we don't latch a
+        // start distance until two fingers have separated a bit.
+        if (dist > 0) {
+          // Latch the very first non-zero spread reading as the
+          // baseline. Subsequent moves measure their drift against it.
+          if (pinchStartDist === 0) pinchStartDist = dist;
+          if (Math.abs(dist - pinchStartDist) > PINCH_START) {
+            pinching = true;
+            const mid = midClient();
+            onPinchStart && onPinchStart(mid, pinchStartDist);
+          }
+        }
+      }
+      if (pinching) {
+        const mid = midClient();
+        onPinchMove && onPinchMove(mid, dist);
+      }
+    }
   }
 
   function onPointerUp(e) {
@@ -234,20 +309,26 @@ export function createGestures({
     rec.up = now();
     active.delete(e.pointerId);
 
-    // Panning disqualifies the whole burst from being any tap gesture —
-    // we don't want a long two-finger drag to also fire an undo.
-    if (!panning && gestureMode && qualifiesAsTap(rec)) {
+    // Panning / pinching disqualifies the whole burst from being any
+    // tap gesture — we don't want a long two-finger drag or a pinch
+    // zoom to also fire an undo.
+    if (!panning && !pinching && gestureMode && qualifiesAsTap(rec)) {
       endedTaps.push(rec);
     }
-    // Pan ends on the first lift: remaining fingers fall back to no
-    // gesture (stroke/selection engines won't reactivate mid-burst
-    // because stroke.js keys off its own pointerdown, which we've
-    // already swallowed). The user can start a new pan by lifting all
-    // fingers and re-landing two.
+    // Pan / pinch end on the first lift: remaining fingers fall back
+    // to no gesture (stroke/selection engines won't reactivate
+    // mid-burst because stroke.js keys off its own pointerdown, which
+    // we've already swallowed). The user can start a new pan/pinch by
+    // lifting all fingers and re-landing two.
     if (panning) {
       panning = false;
       panStartMid = null;
       onPanEnd && onPanEnd();
+    }
+    if (pinching) {
+      pinching = false;
+      pinchStartDist = 0;
+      onPinchEnd && onPinchEnd();
     }
 
     if (active.size === 0) {

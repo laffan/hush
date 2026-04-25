@@ -282,6 +282,11 @@ pub struct AppSettings {
     pub notebook_font_family: String,
     #[serde(default = "default_notebook_font_size")]
     pub notebook_font_size: u32,
+    /// Max width for text shapes on the notebook canvas (px). Drives
+    /// both the inline editor's wrap width and brainstorm-mode card
+    /// sizing — every newly-created text shape clamps to this value.
+    #[serde(default = "default_notebook_text_max_width")]
+    pub notebook_text_max_width: u32,
     #[serde(default)]
     pub last_notebook_id: Option<String>,
 
@@ -650,6 +655,9 @@ fn default_notebook_font_family() -> String {
 fn default_notebook_font_size() -> u32 {
     18
 }
+fn default_notebook_text_max_width() -> u32 {
+    350
+}
 fn default_nb_select() -> String { "1".to_string() }
 fn default_nb_text() -> String { "T".to_string() }
 fn default_nb_drag_area() -> String { "A".to_string() }
@@ -787,6 +795,7 @@ impl Default for AppSettings {
             notebook_grid_opacity: default_notebook_grid_opacity(),
             notebook_font_family: default_notebook_font_family(),
             notebook_font_size: default_notebook_font_size(),
+            notebook_text_max_width: default_notebook_text_max_width(),
             last_notebook_id: None,
             shortcut_nb_select: default_nb_select(),
             shortcut_nb_text: default_nb_text(),

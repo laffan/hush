@@ -12,6 +12,8 @@ import { getActiveTheme } from "../themes.js";
 import {
   createBaseExtensions, getMarkdownHighlight, buildShortcutExtension,
 } from "../editor/editor.js";
+import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
+import { themeBackgrounds } from "../theme-colors.js";
 
 /**
  * Create a CodeMirror editor suitable for a floating pane.
@@ -75,8 +77,78 @@ export function createPaneEditor(container, appState, onChange) {
           shortcutComp.reconfigure(buildShortcutExtension(appState)),
         ],
       });
+      // Apply the style's color overrides directly to this pane's
+      // .cm-editor — mirroring what main.js's applyActiveStyle does for
+      // the main editor. The global CSS vars (--bg, --fg, etc.) reach
+      // the pane wrapper but the CodeMirror theme extension paints its
+      // own background/foreground inside, so without inline overrides
+      // here the pane keeps showing the theme's stock colours.
+      applyStyleColorsToView(view, style, effective);
     },
   };
+}
+
+/** Apply the active style's color overrides (bg / fg / cursor /
+ *  selection) inline to the pane's `.cm-editor` element. Without this,
+ *  the CodeMirror theme extension's stock palette wins inside the pane
+ *  even though the user has overrides — the main editor avoids this by
+ *  setting the same inline styles on its own .cm-editor in
+ *  main.js::applyActiveStyle. */
+function applyStyleColorsToView(view, style, settings) {
+  const root = view.dom;
+  if (!root) return;
+  // The pane wrapper (`.floating-pane`) draws the title-bar backdrop
+  // via its own `background: var(--bg)`. The global --bg gets
+  // updated by main.js::applyActiveStyle, but the cascade can lag in
+  // edge cases (legacy styles missing one of light/darkThemeId, or
+  // an upstream race we'd rather not depend on). Pinning the
+  // wrapper's bg inline alongside the cm-editor's bg makes the
+  // pane's title-bar background track the active style 1:1.
+  const wrapper = root.closest(".floating-pane");
+  // Resolve the appearance, accounting for "auto".
+  let appearance = settings.appearance || "dark";
+  if (appearance === "auto") {
+    appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  // Global-theme fallback for the no-override / legacy-style case so
+  // the pane never inherits whatever --bg happened to be before.
+  const fallbackBg = themeBackgrounds[
+    appearance === "dark" ? settings.darkTheme : settings.lightTheme
+  ] || null;
+  // No active style → strip any prior overrides so the theme's own
+  // palette shows through cleanly.
+  if (!style) {
+    root.style.backgroundColor = "";
+    root.style.color = "";
+    root.style.removeProperty("--style-fg");
+    root.style.removeProperty("--cursor");
+    root.style.removeProperty("--selection");
+    if (wrapper) wrapper.style.backgroundColor = fallbackBg || "";
+    return;
+  }
+  const { themeId, colors } = resolveStyleForAppearance(style, settings.appearance);
+  const overrides = colors || {};
+  const effectiveBg = overrides.bg || themeBackgrounds[themeId] || fallbackBg;
+  if (overrides.bg) {
+    root.style.backgroundColor = overrides.bg;
+  } else if (effectiveBg) {
+    root.style.backgroundColor = effectiveBg;
+  } else {
+    root.style.backgroundColor = "";
+  }
+  if (wrapper) wrapper.style.backgroundColor = effectiveBg || "";
+  if (overrides.fg) {
+    root.style.color = overrides.fg;
+    root.style.setProperty("--style-fg", overrides.fg);
+    if (!overrides.cursor) root.style.setProperty("--cursor", overrides.fg);
+  } else {
+    root.style.color = "";
+    root.style.removeProperty("--style-fg");
+    if (!overrides.cursor) root.style.removeProperty("--cursor");
+  }
+  if (overrides.cursor) root.style.setProperty("--cursor", overrides.cursor);
+  if (overrides.selection) root.style.setProperty("--selection", overrides.selection);
+  else root.style.removeProperty("--selection");
 }
 
 /** Build a shallow copy of settings with its activeStyleId swapped for

@@ -8,4 +8,7 @@ export function createGestures(opts: {
   onPanStart?: () => void;
   onPanMove?: (dx: number, dy: number) => void;
   onPanEnd?: () => void;
+  onPinchStart?: (mid: { x: number; y: number }, dist: number) => void;
+  onPinchMove?: (mid: { x: number; y: number }, dist: number) => void;
+  onPinchEnd?: () => void;
 }): { isGesturing: () => boolean };

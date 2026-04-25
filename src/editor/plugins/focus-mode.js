@@ -61,6 +61,26 @@ function findSentenceEnd(doc, pos) {
   return { line, ch: content.length };
 }
 
+/** Find the bounds of the sentence currently containing the cursor.
+ *  Exported so other plugins (notably link-decorator) can apply the
+ *  same dim treatment to widgets that bypass our `Decoration.mark`
+ *  range — `Decoration.replace` widgets render as their own DOM and
+ *  don't inherit opacity from the mark span around them. Returns
+ *  `{ from, to }` document offsets, or null if focus mode is off /
+ *  the document is empty. */
+export function focusSentenceBounds(view, state) {
+  if (!state?.focusMode) return null;
+  const doc = view.state.doc;
+  if (doc.length === 0) return null;
+  const head = view.state.selection.main.head;
+  const cursorPos = offsetToPos(doc, head);
+  const lineContent = getLine(doc, cursorPos.line);
+  if (lineContent.trim().length === 0) return { from: head, to: head };
+  const ss = findSentenceStart(doc, cursorPos);
+  const se = findSentenceEnd(doc, cursorPos);
+  return { from: posToOffset(doc, ss), to: posToOffset(doc, se) };
+}
+
 // ===== Decoration marks =====
 
 const dimMark = Decoration.mark({ class: "focus-mode-dim" });

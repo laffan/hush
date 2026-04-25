@@ -146,3 +146,50 @@ body.cmd-held .column-resizer,
 .cm-link-rendered:hover {
   text-decoration-color: var(--fg);
 }
+
+/* Block quote: subtle left rule + indent. The border colour is the text
+   colour at 50% so it sits close to the prose without competing with it. */
+.cm-line.cm-blockquote {
+  padding-left: 0.9em;
+  border-left: 2px solid color-mix(in srgb, var(--style-fg, var(--fg)) 50%, transparent);
+}
+
+/* Markdown checkbox lists: render `- [ ]` / `- [x]` as an inline checkbox
+   widget. Click toggles the doc text — see plugins/checkbox-list.js. */
+.cm-task-checkbox {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.4em;
+  vertical-align: -0.1em;
+  border: 1.5px solid color-mix(in srgb, var(--style-fg, var(--fg)) 60%, transparent);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  background: transparent;
+  box-sizing: border-box;
+  flex: none;
+}
+.cm-task-checkbox.checked {
+  background: color-mix(in srgb, var(--style-fg, var(--fg)) 70%, transparent);
+  border-color: color-mix(in srgb, var(--style-fg, var(--fg)) 70%, transparent);
+}
+.cm-task-checkbox.checked::after {
+  content: "";
+  position: absolute;
+  left: 0.18em;
+  top: 0.02em;
+  width: 0.28em;
+  height: 0.5em;
+  border: solid var(--style-bg, var(--bg, #fff));
+  border-width: 0 0.13em 0.13em 0;
+  transform: rotate(45deg);
+}
+/* The list-marker text (`- `) before a checkbox is redundant once the
+   checkbox itself is visible. Hide the dash when it precedes a task
+   widget — markdown-list rendering keeps the marker dimmed via the
+   syntax highlighter's processingInstruction tag, but here it competes
+   with the checkbox. */
+.cm-task-line .cm-task-marker {
+  display: none;
+}

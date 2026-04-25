@@ -8,7 +8,7 @@ import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
-import { toggleCommandPalette } from "./command-palette.js";
+import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 import { initPaneManager, isPaneActive } from "./pane/pane-manager.js";
@@ -91,15 +91,21 @@ function applyActiveStyle(state) {
   // Apply style overrides
   document.body.classList.add("style-active");
 
-  if (style.fontFamily) {
-    applyFontFamily(style.fontFamily);
-  }
-  if (style.fontSize) {
-    document.documentElement.style.setProperty("--font-size", style.fontSize + "px");
-  }
-  if (style.lineHeight) {
-    document.documentElement.style.setProperty("--line-height", style.lineHeight);
-  }
+  // Style fields fall back to the global default whenever the style
+  // doesn't override them — the style is "use my font / size / line
+  // height", not "leave the previous style's values in place". Without
+  // the fallback, switching from a style with `fontFamily: "Lora"` to
+  // one with `fontFamily: null` left Lora active because the unset
+  // case was silently skipped.
+  applyFontFamily(style.fontFamily || state.settings.fontFamily);
+  document.documentElement.style.setProperty(
+    "--font-size",
+    (style.fontSize || state.settings.fontSize) + "px",
+  );
+  document.documentElement.style.setProperty(
+    "--line-height",
+    style.lineHeight || state.settings.lineHeight,
+  );
 
   // Apply the style's theme first, then color overrides on top
   state.emit("theme-changed");
@@ -113,7 +119,20 @@ function applyActiveStyle(state) {
   const cmEditorEl = document.querySelector('.cm-editor');
   // Always update --bg to match the actual background (override or theme)
   const { themeId: resolvedThemeId } = resolveStyleForAppearance(style, state.settings.appearance);
-  const effectiveBg = overrides.bg || themeBackgrounds[resolvedThemeId] || null;
+  // Resolve appearance for the global-theme fallback (handles "auto").
+  let effAppearance = state.settings.appearance || "dark";
+  if (effAppearance === "auto") {
+    effAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  // Robust fallback chain: style override → style's resolved theme →
+  // global appearance theme. The third arm matters for legacy styles
+  // that only set one of light/darkThemeId — without it, switching to
+  // such a style in the opposite appearance would leave --bg pointed
+  // at the prior style's override colour.
+  const fallbackTheme = themeBackgrounds[
+    effAppearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme
+  ] || null;
+  const effectiveBg = overrides.bg || themeBackgrounds[resolvedThemeId] || fallbackTheme;
   if (overrides.bg) {
     document.documentElement.style.setProperty("--bg", overrides.bg);
     document.documentElement.style.setProperty("--style-bg", overrides.bg);
@@ -122,6 +141,9 @@ function applyActiveStyle(state) {
     if (effectiveBg) {
       document.documentElement.style.setProperty("--bg", effectiveBg);
     }
+    // Clear the override-only --style-bg so consumers that key off it
+    // don't carry the previous style's override into a no-override style.
+    document.documentElement.style.removeProperty("--style-bg");
     if (cmEditorEl) cmEditorEl.style.backgroundColor = '';
   }
   if (overrides.fg) {
@@ -322,6 +344,15 @@ async function init() {
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === "p") {
       e.preventDefault();
       toggleCommandPalette(state);
+      return;
+    }
+
+    // Cmd+O / Cmd+Shift+O — jump straight into the palette's
+    // file-picker mode. Matches the "Open document or notebook" /
+    // "Open as pane" palette commands but skips the intermediate hop.
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "o" || e.key === "O")) {
+      e.preventDefault();
+      openFilePalette(state, e.shiftKey ? "pane" : "open");
       return;
     }
 

@@ -7,24 +7,26 @@
 import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
+import { focusSentenceBounds } from "./focus-mode.js";
 
 // Matches [text](url) but not ![alt](img)
 const LINK_RE = /(?<!!)\[([^\]]+)\]\(([^)]+)\)/g;
 
 class LinkWidget extends WidgetType {
-  constructor(text, url) {
+  constructor(text, url, dimmed) {
     super();
     this.text = text;
     this.url = url;
+    this.dimmed = !!dimmed;
   }
 
   eq(other) {
-    return this.text === other.text && this.url === other.url;
+    return this.text === other.text && this.url === other.url && this.dimmed === other.dimmed;
   }
 
   toDOM() {
     const span = document.createElement("span");
-    span.className = "cm-link-rendered";
+    span.className = "cm-link-rendered" + (this.dimmed ? " focus-mode-dim" : "");
     span.textContent = this.text;
     span.title = this.url;
     span.dataset.linkUrl = this.url;
@@ -49,13 +51,19 @@ function linkAtPos(doc, pos) {
   return null;
 }
 
-function buildDecorations(view) {
+function buildDecorations(view, appState) {
   const builder = new RangeSetBuilder();
   const doc = view.state.doc;
   const cursors = view.state.selection.ranges.map(r => ({
     from: Math.min(r.from, r.to),
     to: Math.max(r.from, r.to),
   }));
+  // Bake focus-mode dimming directly into the LinkWidget's DOM. Mark
+  // decorations from focus-mode.js wrap surrounding text in a
+  // `.focus-mode-dim` span, but `Decoration.replace` widgets render as
+  // their own elements outside that span — so links would otherwise
+  // stay at full opacity even when the rest of the line is dimmed.
+  const focusBounds = appState ? focusSentenceBounds(view, appState) : null;
 
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
@@ -74,8 +82,12 @@ function buildDecorations(view) {
       );
       if (cursorInside) continue;
 
+      const dimmed = focusBounds
+        ? (to <= focusBounds.from || from >= focusBounds.to)
+        : false;
+
       builder.add(from, to, Decoration.replace({
-        widget: new LinkWidget(text, url),
+        widget: new LinkWidget(text, url, dimmed),
       }));
     }
   }
@@ -154,15 +166,21 @@ const linkClickHandler = EditorView.domEventHandlers({
   },
 });
 
-export function createLinkDecoratorPlugin() {
+export function createLinkDecoratorPlugin(appState) {
   const plugin = ViewPlugin.fromClass(
     class {
       constructor(view) {
-        this.decorations = buildDecorations(view);
+        this.lastFocusMode = !!appState?.focusMode;
+        this.decorations = buildDecorations(view, appState);
       }
       update(update) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
-          this.decorations = buildDecorations(update.view);
+        // Rebuild on focus-mode toggle as well as the usual triggers —
+        // toggling focus changes which links should be dimmed but
+        // doesn't fire docChanged / selectionSet on its own.
+        const focusToggled = !!appState?.focusMode !== this.lastFocusMode;
+        this.lastFocusMode = !!appState?.focusMode;
+        if (focusToggled || update.docChanged || update.viewportChanged || update.selectionSet) {
+          this.decorations = buildDecorations(update.view, appState);
         }
       }
     },

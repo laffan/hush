@@ -63,7 +63,10 @@ function buildCommands(state) {
     { id: "open-pane", label: "Open document or notebook as pane", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {
-        const x = Math.max(0, window.innerWidth - 440 - 12);
+        // Left-anchored: 50px (sidebar column) + 12px padding. Keeps
+        // new panes near the source they were opened from instead of
+        // tucked in the right gutter — closer to the user's reading flow.
+        const x = 62;
         const y = 60;
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
@@ -218,6 +221,68 @@ function close() {
     try { h.focus(); } catch (_) {}
     try { h.resumeCommitOnBlur(); } catch (_) {}
   }
+}
+
+/**
+ * Open the palette directly into file-picker mode. `mode` is either
+ * "open" (open the picked file in the main editor) or "pane" (open it
+ * as a floating pane). Used by the Cmd+O / Cmd+Shift+O shortcuts —
+ * skips the user from having to first hit Cmd+P then pick "Open…".
+ */
+export function openFilePalette(state, mode) {
+  // If the palette's already up, close it first so we re-open fresh
+  // into the file-picker rather than stacking modes.
+  if (isOpen()) close();
+  // Same suspend-notebook-text dance as toggleCommandPalette so an
+  // active inline text shape isn't committed when we steal focus.
+  suspendedNotebookText = null;
+  try {
+    const handle = typeof window !== "undefined" ? window.__activeNotebookTextEditor : null;
+    if (handle && typeof handle.suspendCommitOnBlur === "function") {
+      handle.suspendCommitOnBlur();
+      suspendedNotebookText = handle;
+    }
+  } catch (_) { /* no active notebook text editor */ }
+  open(state);
+  // After open() the palette element exists; immediately swap it into
+  // file-picker mode — this matches what selecting "Open…" / "Open as
+  // pane…" from the palette does.
+  const api = paletteApi(state);
+  if (mode === "pane") {
+    enterFilePicker(api, state, "Open as pane…", (f) => {
+      // Left side: 50px sidebar + 12px padding. Cmd+Shift+O is a
+      // reach-for-context gesture; landing the pane on the left puts
+      // it where the user expects a secondary reading column.
+      const x = 62;
+      const y = 60;
+      createPane(f.fileId, f.name, f.type, x, y);
+    });
+  } else {
+    enterFilePicker(api, state, "Open file…", (f) => {
+      if (f.type === "notebook") state.openNotebook(f.fileId);
+      else state.openFile(f.fileId);
+    });
+  }
+}
+
+/** Internal handle to the currently-open palette so openFilePalette can
+ *  swap it into file-picker mode without re-implementing the open()
+ *  state machine. Mirrors the `paletteHandle` shape that open() builds
+ *  for keepOpen-style commands. */
+function paletteApi(state) {
+  const input = overlay?.querySelector(".cmd-palette-input");
+  const list = overlay?.querySelector(".cmd-palette-list");
+  return {
+    setItems(items, placeholder) {
+      allCommands = items;
+      filteredCommands = [...items];
+      activeIndex = 0;
+      if (placeholder !== undefined && input) input.placeholder = placeholder;
+      if (input) { input.value = ""; input.focus(); }
+      if (list) renderList(list, state);
+    },
+    close() { close(); },
+  };
 }
 
 export function toggleCommandPalette(state) {

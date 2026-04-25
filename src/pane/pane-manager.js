@@ -48,6 +48,17 @@ export function initPaneManager(state) {
   autosaveTimer = setInterval(autosaveAllPanes, 2000);
   state.on("theme-changed", syncPaneThemes);
   state.on("style-changed", syncPaneThemes);
+  // Hover preview: the styles sidebar emits style-preview while a row
+  // is hovered and style-preview-end on leave. Panes need to track
+  // both so the user gets the same "what will this style look like?"
+  // affordance the main editor already has.
+  state.on("style-preview", previewPaneStyle);
+  state.on("style-preview-end", syncPaneThemes);
+  // Ratchet locks every pane to read-only — the forward-only contract
+  // doesn't survive if the user can drop into a pane and edit there.
+  // Scrolling and panning still work because we only flip the editor's
+  // editable flag, not the pane container's pointer events.
+  state.on("mode-changed", syncPaneRatchetLock);
   // The file-tree node stores `lockedStyleId`; re-sync whenever the tree
   // changes so panes pick up a newly-set (or cleared) lock without the
   // user having to reopen them.
@@ -195,6 +206,9 @@ export function closePane(id) {
 }
 
 export function focusPane(id) {
+  // Ratchet locks all panes — clicking into one shouldn't unlock the
+  // editor and let the user write outside the ratcheted document.
+  if (appState?.ratchetMode) return;
   // Save, blur, and lock previously focused pane
   if (activePaneId && activePaneId !== id) {
     const prev = panes.get(activePaneId);
@@ -875,15 +889,16 @@ async function loadDocumentPane(pane) {
   });
   pane.editor = editor;
 
-  // If this document has a locked style, apply it now so the pane opens
-  // with the right theme/font instead of flashing to the session style
-  // first. Local Sync files aren't in the internal tree so they never
-  // have a locked style.
-  if (!pane.localSync) {
-    const lockedStyleId = findLockedStyleForFile(pane.fileId);
-    if (lockedStyleId && editor.reconfigureTheme) {
-      editor.reconfigureTheme(appState.settings, lockedStyleId);
-    }
+  // Apply the active style (or the locked style for this document) at
+  // creation time so the pane opens with the right theme, font, AND
+  // color overrides. Local Sync files aren't in the internal tree so
+  // they never have a locked style — they pick up the session style.
+  // Calling reconfigureTheme unconditionally also handles the
+  // colour-override path (applyStyleColorsToView in pane-editor.js)
+  // which is what makes panes track --bg / --fg overrides.
+  if (editor.reconfigureTheme) {
+    const lockedStyleId = pane.localSync ? null : findLockedStyleForFile(pane.fileId);
+    editor.reconfigureTheme(appState.settings, lockedStyleId);
   }
 
   // Load file content — Local Sync panes read straight from disk via
@@ -1054,6 +1069,58 @@ async function savePaneContent(pane) {
 function autosaveAllPanes() {
   for (const [, pane] of panes) {
     if (pane.dirty) savePaneContent(pane);
+  }
+}
+
+/** When ratchet flips on, blur + lock every pane editor so keystrokes
+ *  bounce off. When it flips off, leave panes locked — the user has to
+ *  click into one to re-activate it (matches the normal focus model).
+ *  Notebook panes don't have an `editable` toggle on their own, so we
+ *  just deactivate the active pane to clear focus. */
+function syncPaneRatchetLock() {
+  if (!appState?.ratchetMode) return;
+  for (const [, pane] of panes) {
+    if (pane.editor && typeof pane.editor.setEditable === "function") {
+      pane.editor.blur();
+      pane.editor.setEditable(false);
+    }
+    pane.el?.classList.remove("active");
+  }
+  activePaneId = null;
+}
+
+/** Apply a hovered-style preview to every non-locked pane. The styles
+ *  sidebar emits the hovered style as `{ ...style, themeId, colorOverrides }`;
+ *  we synthesise a settings object with that style as activeStyleId
+ *  and route it through the existing reconfigureTheme path so the
+ *  pane uses the same theme + colour-override pipeline the real
+ *  selection does. Locked panes are skipped — they're pinned to a
+ *  specific style and shouldn't flicker on hover. style-preview-end
+ *  invokes syncPaneThemes() which restores the real session style. */
+async function previewPaneStyle(styleObj) {
+  if (!appState || !styleObj || !styleObj.id) return;
+  // Splice the previewed style into the styles list (or update it in
+  // place if already present) so reconfigureTheme can resolve the id.
+  const baseStyles = appState.settings.styles || [];
+  const styles = baseStyles.some((s) => s.id === styleObj.id)
+    ? baseStyles.map((s) => (s.id === styleObj.id ? { ...s, ...styleObj } : s))
+    : [...baseStyles, styleObj];
+  const synthSettings = { ...appState.settings, activeStyleId: styleObj.id, styles };
+  let bridge = null;
+  for (const [, pane] of panes) {
+    const lockedStyleId = findLockedStyleForFile(pane.fileId);
+    if (lockedStyleId) continue; // locked → ignore session previews
+    if (pane.editor?.reconfigureTheme) {
+      pane.editor.reconfigureTheme(synthSettings, null);
+    }
+    if (pane.notebook) {
+      if (!bridge) bridge = await getNotebookBridge();
+      // computeNotebookSettings reads `state.settings`; pass a state
+      // shim so we don't disturb the real appState.
+      pane.notebook.applySettings(
+        bridge.computeNotebookSettings({ ...appState, settings: synthSettings }, null),
+      );
+    }
   }
 }
 

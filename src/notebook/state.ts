@@ -108,6 +108,16 @@ export class DrawingState extends EventTarget {
   gridSpacing = 25;
   gridOpacity = 0.15;
   fontFamily = "Inter";
+  /** When the active Hush style has a `bg` override, this carries that
+   *  hex into the canvas so the notebook paints with the user-chosen
+   *  background instead of the resolved theme's stock canvasBackground.
+   *  Empty string = no override (use the theme's own background). */
+  canvasBackgroundOverride = "";
+  /** Wrap-width cap (px) for new text shapes and brainstorm cards. The
+   *  user adjusts this from Settings > Editor; existing manually-sized
+   *  shapes are unaffected. Falls back to 350 — the historical default
+   *  baked into every text-shape creation site. */
+  maxTextWidth = 350;
 
   get canvasWidth(): number { return this.canvasEl?.clientWidth || window.innerWidth; }
   get isActiveDrag(): boolean { return this._showPocketTray || this.pocketProximity > 0; }
@@ -341,6 +351,13 @@ export class DrawingState extends EventTarget {
   private _showPocketTray = false;
   private _dragHoldTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Snapshot of `selectedIds` taken at the start of every touch-driven
+   *  pointerdown, BEFORE any selection mutation. If the gesture turns
+   *  out to be a multi-touch pan/pinch (cancelActiveInteraction fires),
+   *  we restore this so a finger that briefly grazed a shape on the
+   *  way to a two-finger pan doesn't leave that shape selected. */
+  private _preTouchSelectedIds: Set<string> | null = null;
+
   // Proximity-based pocket reveal. Updated on every pointer-move during a drag.
   // 0 = far away (tray hidden), 1 = cursor inside the pocket zone (full glow).
   pocketProximity = 0;
@@ -403,8 +420,9 @@ export class DrawingState extends EventTarget {
     this.editingText = {
       shapeId: shape.id, position: shape.position,
       text: shape.text, fontSize: shape.fontSize, color: shape.color,
-      // Widen to at least 350 for comfortable editing, unless manually set wider
-      width: shape.manualWidth ? shape.width : Math.max(350, shape.width || 0),
+      // Widen to at least the configured max for comfortable editing,
+      // unless the user has manually resized this shape past it.
+      width: shape.manualWidth ? shape.width : Math.max(this.maxTextWidth, shape.width || 0),
     };
     this.notify("editingText");
   }
@@ -474,6 +492,14 @@ export class DrawingState extends EventTarget {
     const screenPt: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const canvasPt = screenToCanvas(screenPt, this.camera);
 
+    // Snapshot selection BEFORE any mutation so a multi-touch gesture
+    // (two-finger pan, pinch) can rewind any selection change the
+    // first finger caused on its way down. Pen / mouse paths skip the
+    // snapshot — they don't have a multi-finger phase to recover from.
+    if (e.pointerType === "touch" && !this._preTouchSelectedIds) {
+      this._preTouchSelectedIds = new Set(this.selectedIds);
+    }
+
     if (e.button === 1) {
       this._isPanningActive = true;
       this._panStart = { x: e.clientX, y: e.clientY };
@@ -516,7 +542,7 @@ export class DrawingState extends EventTarget {
       if (hit && hit.type === "text") {
         this.startEditingExistingText(hit);
       } else {
-        this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, color: this.color, width: 350 };
+        this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, color: this.color, width: this.maxTextWidth };
         this.notify("editingText");
       }
     } else if (this.brainstormMode) {
@@ -647,7 +673,7 @@ export class DrawingState extends EventTarget {
     if (hit && hit.type === "text") {
       this.startEditingExistingText(hit);
     } else {
-      this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, color: this.color, width: 350 };
+      this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, color: this.color, width: this.maxTextWidth };
       this.notify("editingText");
     }
   }
@@ -796,6 +822,12 @@ export class DrawingState extends EventTarget {
   }
 
   handlePointerUp(e: PointerEvent) {
+    // Gesture finished cleanly — drop the touch selection snapshot so
+    // the next interaction starts fresh. (A multi-touch promotion
+    // would have called cancelActiveInteraction first, which already
+    // consumed and cleared the snapshot.)
+    this._preTouchSelectedIds = null;
+
     if (this._isPanningActive) { this._isPanningActive = false; return; }
 
     // Pocket drag pending: click without movement — just select, no move
@@ -919,6 +951,67 @@ export class DrawingState extends EventTarget {
       this.notify("shapes");
       this.notify("creatingDragArea");
     }
+  }
+
+  /** Drop any in-flight pointer interaction without committing it.
+   *  Called when a multi-touch gesture (pan/pinch) takes over so the
+   *  marquee selection / drag-area / drag / resize state started by
+   *  the first finger doesn't render between the user's fingers. */
+  cancelActiveInteraction() {
+    let changed = false;
+    // Restore the selection that existed before the gesture began —
+    // a finger that brushed a shape on its way to a two-finger pan
+    // shouldn't leave that shape selected once we promote to pan.
+    if (this._preTouchSelectedIds) {
+      const prev = this._preTouchSelectedIds;
+      this._preTouchSelectedIds = null;
+      const sameSize = prev.size === this.selectedIds.size;
+      let same = sameSize;
+      if (sameSize) {
+        for (const id of prev) { if (!this.selectedIds.has(id)) { same = false; break; } }
+      }
+      if (!same) {
+        this.selectedIds = prev;
+        this.notify("selectedIds");
+        changed = true;
+      }
+    }
+    if (this.selectionBox || this._selectStart) {
+      this.selectionBox = null;
+      this._selectStart = null;
+      this.notify("selectionBox");
+      changed = true;
+    }
+    if (this.creatingDragArea) {
+      this.creatingDragArea = null;
+      this.notify("creatingDragArea");
+      changed = true;
+    }
+    if (this._isDragging) {
+      this._isDragging = false;
+      if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
+      this._dragStartFired = false;
+      this.pocketProximity = 0;
+      this.pocketInZone = false;
+      this._clearDragHoldTimer();
+      changed = true;
+    }
+    if (this._isResizing) {
+      this._isResizing = false;
+      this._resizeHandle = null;
+      this._resizeOrigShape = null;
+      this._resizeOrigBounds = null;
+      changed = true;
+    }
+    if (this._pocketDragPending) {
+      this._pocketDragPending = false;
+      changed = true;
+    }
+    if (this._isPanningActive) {
+      this._isPanningActive = false;
+      changed = true;
+    }
+    if (changed) this.notify("shapes");
   }
 
   handleWheel(e: WheelEvent) {
@@ -1108,7 +1201,7 @@ export class DrawingState extends EventTarget {
   }
 
   addTextShapeAtPosition(text: string, position: Point) {
-    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: 18, color: "#000000", width: 350, layerId: this.activeLayerId } as TextShape];
+    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: 18, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
     this.recordHistory();
     this.notify("shapes");
   }

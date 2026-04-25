@@ -29,6 +29,9 @@ export interface RenderState {
    *  and skip shapes on hidden layers. Optional: falls back to
    *  single-pass iteration when absent (tests, legacy callers). */
   layers?: Layer[];
+  /** Style override for the canvas background. Empty / unset falls
+   *  back to `theme.canvasBackground`. */
+  canvasBackgroundOverride?: string;
   /** Optional drawing-layer handle. When present the pocket / shelf
    *  thumbnail paths blit grouped-drawing regions directly from the
    *  done canvas instead of re-stamping strokes per-frame. */
@@ -64,12 +67,13 @@ export function renderForExport(
     fontFamily: string;
     layers?: Layer[];
     includeBackground: boolean;
+    canvasBackgroundOverride?: string;
   },
 ): void {
-  const { shapes, camera, imageCache, theme, backgroundPattern, gridSpacing, gridOpacity, fontFamily, layers, includeBackground } = opts;
+  const { shapes, camera, imageCache, theme, backgroundPattern, gridSpacing, gridOpacity, fontFamily, layers, includeBackground, canvasBackgroundOverride } = opts;
 
   if (includeBackground) {
-    ctx.fillStyle = theme.canvasBackground;
+    ctx.fillStyle = canvasBackgroundOverride || theme.canvasBackground;
     ctx.fillRect(0, 0, outWidth, outHeight);
     if (backgroundPattern !== "blank" && gridOpacity > 0) {
       drawBackground(ctx, camera, outWidth, outHeight, theme.foreground, backgroundPattern, gridSpacing, gridOpacity * 0.8);
@@ -124,12 +128,12 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     canvas.height = h * dpr;
   }
 
-  const { camera, shapes, selectedIds, selectionBox, creatingDragArea, editingShapeId, imageCache, theme, backgroundPattern, gridSpacing, gridOpacity } = state;
+  const { camera, shapes, selectedIds, selectionBox, creatingDragArea, editingShapeId, imageCache, theme, backgroundPattern, gridSpacing, gridOpacity, canvasBackgroundOverride } = state;
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  ctx.fillStyle = theme.canvasBackground;
+  ctx.fillStyle = canvasBackgroundOverride || theme.canvasBackground;
   ctx.fillRect(0, 0, w, h);
 
   if (backgroundPattern !== "blank" && gridOpacity > 0) {
@@ -379,6 +383,15 @@ function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, theme: C
   ctx.save();
   ctx.textBaseline = "top";
 
+  // Per-line indentation for blockquotes and tasks. A blockquote adds
+  // a fixed gutter that hosts the left rule; a task line adds a
+  // checkbox-width gutter. Both can stack ("> - [ ] item"), but we
+  // render whichever is more prominent first.
+  const BLOCKQUOTE_GUTTER = baseFontSize * 0.9;     // padding-left
+  const BLOCKQUOTE_BORDER = 2;                       // px width of the rule
+  const CHECKBOX_SIZE = baseFontSize * 0.85;
+  const CHECKBOX_GAP = baseFontSize * 0.4;
+
   let y = shape.position.y;
   for (const line of parsedLines) {
     const lineScale = line.sizeScale;
@@ -386,6 +399,46 @@ function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, theme: C
     const lineH = lineFontSize * LINE_HEIGHT_RATIO;
     const isHeading = lineScale > 1;
     let x = shape.position.x;
+
+    if (line.blockquote) {
+      // 50% opacity left rule using the text colour. Hex strings
+      // become rgba via a quick parse; non-hex falls back to a
+      // neutral colour-mix-equivalent.
+      ctx.save();
+      ctx.fillStyle = textColor;
+      ctx.globalAlpha = 0.5;
+      ctx.fillRect(x, y, BLOCKQUOTE_BORDER, lineH);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+      x += BLOCKQUOTE_GUTTER;
+    }
+
+    if (line.task !== undefined) {
+      // Reserve a checkbox-sized gutter on every task-related line
+      // (first or continuation). Only the first line draws the box.
+      if (line.task) {
+        const cy = y + (lineFontSize - CHECKBOX_SIZE) / 2;
+        ctx.save();
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.6;
+        ctx.strokeRect(x, cy, CHECKBOX_SIZE, CHECKBOX_SIZE);
+        if (line.taskChecked) {
+          ctx.globalAlpha = 0.85;
+          ctx.fillStyle = textColor;
+          // Tick: two strokes meeting at a 45° corner.
+          ctx.beginPath();
+          ctx.moveTo(x + CHECKBOX_SIZE * 0.22, cy + CHECKBOX_SIZE * 0.55);
+          ctx.lineTo(x + CHECKBOX_SIZE * 0.42, cy + CHECKBOX_SIZE * 0.78);
+          ctx.lineTo(x + CHECKBOX_SIZE * 0.82, cy + CHECKBOX_SIZE * 0.25);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = textColor;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      x += CHECKBOX_SIZE + CHECKBOX_GAP;
+    }
 
     ctx.fillStyle = isHeading ? headingColor : textColor;
 

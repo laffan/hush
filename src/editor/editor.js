@@ -14,6 +14,7 @@ import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } 
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
+import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
@@ -112,6 +113,8 @@ function listIndentLineDeco(px) {
   });
 }
 
+const blockquoteLineDeco = Decoration.line({ class: "cm-blockquote" });
+
 export const headingIndentPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -144,7 +147,8 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         const headingMatch = line.text.match(/^(#{1,6})\s/);
-        const listMatch = !headingMatch && line.text.match(/^(\s*)([-*+]|\d+[.)])(\s+)/);
+        const blockquoteMatch = !headingMatch && /^>+\s?/.test(line.text);
+        const listMatch = !headingMatch && !blockquoteMatch && line.text.match(/^(\s*)([-*+]|\d+[.)])(\s+)/);
         if (headingMatch) {
           const markerEnd = line.from + headingMatch[0].length;
           // When the cursor is on the heading line, leave the markers
@@ -154,6 +158,10 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
           if (!lineTouchesSelection(line.from, line.to)) {
             builder.add(line.from, markerEnd, headingMarkerHideDeco);
           }
+        } else if (blockquoteMatch) {
+          // Line-level decoration so the indent + left border span the
+          // wrapped continuation as well as the leading `>`.
+          builder.add(line.from, line.from, blockquoteLineDeco);
         } else if (listMatch) {
           // Hang-indent wrapped lines by the actual pixel width of the
           // marker + space so continuation lines line up with the content.
@@ -388,7 +396,8 @@ export function createBaseExtensions(state, onChange) {
     createCalloutPlugin(),
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
-    createLinkDecoratorPlugin(),
+    createLinkDecoratorPlugin(state),
+    createCheckboxListPlugin(),
     createImageDecoratorPlugin(state),
     headingIndentPlugin,
     createStickyHeadersPlugin(state),
@@ -512,17 +521,34 @@ export function createEditor(container, state) {
   // panel can change bindings at runtime via the shortcut compartment.
   const initialShortcuts = buildShortcutExtension(state);
 
+  // Ratchet captures the cursor position when the session starts.
+  // Edits before this anchor are forbidden — earlier content is locked.
+  // After the anchor, we still honour the "edit the in-progress word"
+  // relaxation: the user can backspace within the most recent word
+  // they've typed, but not into committed text. Both conditions
+  // collapse to one lock point per transaction.
+  let ratchetAnchor = 0;
+
   const ratchetFilter = EditorState.transactionFilter.of((tr) => {
     if (!state.ratchetMode || tr.annotation(bypassRatchet)) return tr;
     if (tr.docChanged) {
-      // Find the lock point: position after the last space or newline.
-      // Content before the lock point is permanently locked.
       const doc = tr.startState.doc.toString();
-      const lastSpaceIdx = Math.max(doc.lastIndexOf(" "), doc.lastIndexOf("\n"));
-      const lockPoint = lastSpaceIdx + 1;
+      // Look for the most recent whitespace at or after `ratchetAnchor`
+      // and before the cursor — this is the boundary of the user's
+      // current in-progress word. Searching globally (the previous
+      // implementation) broke mid-document ratchet sessions because
+      // the last whitespace in the *whole* doc is usually past where
+      // the user is editing, locking out their cursor entirely.
+      const cursor = tr.startState.selection.main.head;
+      let wordStart = ratchetAnchor;
+      for (let i = cursor - 1; i >= ratchetAnchor; i--) {
+        const c = doc.charCodeAt(i);
+        if (c === 32 /* space */ || c === 10 /* \n */) { wordStart = i + 1; break; }
+      }
+      const lockPoint = Math.max(ratchetAnchor, wordStart);
 
       let reject = false;
-      tr.changes.iterChanges((fromA, toA) => {
+      tr.changes.iterChanges((fromA) => {
         if (fromA < lockPoint) reject = true;
       });
       if (reject) return [];
@@ -545,7 +571,8 @@ export function createEditor(container, state) {
   const projectViewField = createProjectViewField(state);
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
-  const linkDecoratorPlugin = createLinkDecoratorPlugin();
+  const linkDecoratorPlugin = createLinkDecoratorPlugin(state);
+  const checkboxListPlugin = createCheckboxListPlugin();
   const imageDecoratorPlugin = createImageDecoratorPlugin(state);
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
@@ -591,6 +618,7 @@ export function createEditor(container, state) {
       footnotePlugin,
       flagHighlightPlugin,
       linkDecoratorPlugin,
+      checkboxListPlugin,
       imageDecoratorPlugin,
       headingIndentPlugin,
       stickyHeadersPlugin,
@@ -616,11 +644,15 @@ export function createEditor(container, state) {
     updateWordCountDisplay(state);
     view.dispatch({ effects: [] });
     if (state.ratchetMode) {
-      const end = view.state.doc.length;
-      view.dispatch({ selection: { anchor: end }, annotations: bypassRatchet.of(true) });
+      // Anchor at the user's current cursor position so they can
+      // continue writing from wherever they were. The previous
+      // behaviour shoved the cursor to the end of the document — fine
+      // for an empty doc, hostile when starting mid-thought.
+      ratchetAnchor = view.state.selection.main.head;
       view.focus();
       initEncourageTyping(view, state, bypassRatchet);
     } else {
+      ratchetAnchor = 0;
       clearEncourageTyping();
     }
     if (state.typewriterMode) {

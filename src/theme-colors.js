@@ -85,10 +85,27 @@ export function updatePrivateBoxColor(state, overrideBg) {
     root.setProperty("--panel-border", isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)");
 
     // iOS: set background color directly on html/body to avoid safe-area
-    // black bars caused by CSS variable resolution lag during transitions
+    // black bars caused by CSS variable resolution lag during transitions.
+    // We also nudge the sidebar + panel-overlay directly because in
+    // production iOS WebView builds the sidebar's
+    // `background: var(--theme-bg)` reads stale on first paint and never
+    // refreshes — the explicit inline style brings it back into sync
+    // with the active theme. The text colour gets the same treatment
+    // so the icon column's foreground tracks light/dark switches.
     if (document.documentElement.classList.contains("ios")) {
       document.documentElement.style.backgroundColor = bg;
       document.body.style.backgroundColor = bg;
+      const fg = isDark ? "#e0e0e0" : "#1a1a1a";
+      const sidebar = document.getElementById("sidebar");
+      if (sidebar) {
+        sidebar.style.backgroundColor = bg;
+        sidebar.style.color = fg;
+      }
+      const panel = document.getElementById("panel-overlay");
+      if (panel) {
+        panel.style.backgroundColor = bg;
+        panel.style.color = fg;
+      }
     }
   }
 }

@@ -200,6 +200,21 @@ export function computeNotebookSettings(state, lockedStyleId) {
 
   const overrideState = s === state.settings ? state : { ...state, settings: s };
 
+  // Style background override — when the active style has a `bg` set,
+  // pipe it through so the canvas paints the user-chosen background
+  // instead of the resolved notebook theme's stock canvasBackground.
+  // Empty string = no override.
+  let canvasBackgroundOverride = "";
+  if (s.activeStyleId && s.styles) {
+    const style = s.styles.find((st) => st.id === s.activeStyleId);
+    if (style) {
+      const colors = appearance === "dark"
+        ? (style.darkColors || {})
+        : (style.lightColors || {});
+      if (colors.bg) canvasBackgroundOverride = colors.bg;
+    }
+  }
+
   return {
     appearanceMode: appearance,
     themeId: resolveNotebookTheme(overrideState),
@@ -208,6 +223,8 @@ export function computeNotebookSettings(state, lockedStyleId) {
     gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.15,
     fontFamily,
     fontSize: s.notebookFontSize || 18,
+    canvasBackgroundOverride,
+    maxTextWidth: s.notebookTextMaxWidth || 350,
   };
 }
 
