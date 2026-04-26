@@ -64,7 +64,7 @@ World-coord translation is also at the shim boundary: `DrawShape.points` are sto
 
 ### The engine (deltas from the reference demo)
 
-Targeted deltas have been applied to `engine/` so the port stays as close as possible to the upstream code. Each is documented at the call site and listed here so a diff-check against the reference demo has a known shape:
+Targeted deltas have been applied to `engine/` so the port stays as close as possible to the upstream code. Each is documented at the call site (`grep -rn "Hush delta #" src/notebook/drawing/engine/` finds every modification) and listed here so a diff-check against the reference demo has a known shape:
 
 1. **`pointToLocal`** — engine receives Hush's screen→local transform instead of computing its own; keeps pointer events aligned with the CSS wrapper transform we drive the engine inside.
 2. **`getDpr`** — DPR is read from a Hush-owned callback (we cap at 2 and factor in `MAX_BACKING_PIXELS`).

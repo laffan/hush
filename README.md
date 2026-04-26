@@ -12,7 +12,7 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Private Mode** — Replaces all characters with opaque boxes so you can write without anyone reading over your shoulder. Toggle with `⌘⇧P`.
 
-**Word Count** — Optional live word count pinned to the top of the text column, horizontally centered just below where the Ratchet timer appears. When Ratchet mode is also active, the count stacks directly beneath the timer in the same pill style. Toggle with `⌘⇧W`.
+**Word Count** — Optional live word count pinned to the top of the text column, horizontally centered just below where the Ratchet timer appears. When Ratchet mode is also active, the count stacks directly beneath the timer in the same pill style. Doc-mode floating panes carry their own word count next to the title (independent count per pane). Toggle with `⌘⇧W`.
 
 **Typewriter Mode** — Locks the cursor to a fixed line on screen. Drag the boundary to reposition it. The document scrolls to keep the cursor in place.
 
@@ -21,7 +21,7 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 **Floating Panes** — Cmd-drag any document or notebook from the files sidebar into the editor area to open it as a floating reference pane. Panes are fully functional editors (same markdown features, shortcuts, and syntax highlighting) that float above the main content. Resize from edges or corners, drag via the title bar, collapse to just the header, or close. Panes stay with their parent document and reappear when you return.
 
 - **Attach** — Anchors a pane to the document scroll (docs) or canvas position (notebooks) so it moves with the content.
-- **Pin** — Keeps a pane visible across document switches (blue header). Unpinning returns it to its original document.
+- **Pin** — Keeps a pane visible across document switches (blue border). Unpinning returns it to its original document.
 - **Duplicate** — Creates a copy of a pane owned by the current document. Useful for bringing a pinned reference into a new context.
 - **Real-time sync** — Edits in a pane propagate to the main editor if the same file is open, and vice versa.
 - **Locked styles** — When a document or notebook has "Lock Style to Document" enabled, any pane showing that file adopts that locked style (theme, font, sizing) instead of the session's active style.
@@ -36,11 +36,13 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 **Keyboard-First** — Global shortcuts work even when the app is hidden:
 
-**Command Palette** — Press `⌘P` to open a searchable command palette with quick access to all modes and major actions. Active modes appear at the top as "Turn off" entries for fast toggling.
+**Command Palette** — Press `⌘P` to open a searchable command palette with quick access to all modes and major actions. Includes "New document" / "New notebook" plus "as pane" variants that open the new file as a floating reference without leaving the current view. Active modes appear at the top as "Turn off" entries for fast toggling. `⌘O` jumps straight to the file picker; `⌘⇧O` opens the picker in "as pane" mode.
 
 All shortcuts are customizable in Settings.
 
 **Window Behavior** — Floating window that stays out of the dock by default. Options to show in dock, menu bar, or both. Optional always-on-top. Fullscreen mode for immersive writing.
+
+**Tooltips** — Off by default for a clean reading surface. Enable **Show tooltips** in Settings > General to surface labels + shortcut hints on every sidebar, pane header, and notebook toolbar button.
 
 ## Installation
 

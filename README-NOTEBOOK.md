@@ -136,7 +136,7 @@ Two sibling files keep `renderer.ts` under the line limit while preserving purit
 |------|-------------|
 | `TextShape` | Positioned text with markdown rendering, optional background color, auto-fit or manual width |
 | `ImageShape` | Positioned image from base64 dataUrl, with optional non-destructive crop region |
-| `DragAreaShape` | Dashed container box that parents shapes dropped inside it |
+| `DragAreaShape` | Dashed container box that parents shapes dropped inside it. Created by dragging out an area with the Drag Area tool, *or* by selecting 2+ shapes and clicking the Drag Area button in the bottom toolbar — the latter wraps the selection (16 px padding) and re-parents every selected shape into the new container in one shot. See `DrawingState.wrapSelectionInDragArea()` in `state.ts`. |
 | `DrawShape` | Freehand stroke — array of points + brushId + size + mode. Rendered by the drawing engine (see [README-DRAWING.md](README-DRAWING.md)). |
 
 All shapes extend `ShapeBase`: `{ id, color, parentId?, groupId?, pocketed?, layerId? }`.
