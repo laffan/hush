@@ -19,6 +19,7 @@ import {
   autosaveTimer, setAutosaveTimer,
   notebookBridge, getNotebookBridge,
   DEFAULT_WIDTH, DEFAULT_HEIGHT, MIN_WIDTH, MIN_HEIGHT, TITLEBAR_HEIGHT,
+  clampPaneAxis,
 } from "./pane-state.js";
 import {
   loadPaneContent, savePaneContent, autosaveAllPanes,
@@ -173,8 +174,13 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     el: null,           // root DOM element
     width: DEFAULT_WIDTH,
     height: DEFAULT_HEIGHT,
-    x: Math.max(0, x - DEFAULT_WIDTH / 2),
-    y: Math.max(0, y - TITLEBAR_HEIGHT / 2),
+    // Clamp to the viewport so callers that pass a hard-coded anchor
+    // (the command palette's "Open as pane" uses `62, 60`) never land
+    // a pane off-screen on narrow windows. The lower bound also keeps
+    // the title bar visible when the requested anchor is well above
+    // the document area.
+    x: clampPaneAxis(x - DEFAULT_WIDTH / 2, DEFAULT_WIDTH, window.innerWidth),
+    y: clampPaneAxis(y - TITLEBAR_HEIGHT / 2, DEFAULT_HEIGHT, window.innerHeight),
     // Owner context: which doc/notebook/project was active when pane was created
     ownerContext: opts.ownerContext || getCurrentContext(),
     // Local Sync coordinates — present only for panes backed by a

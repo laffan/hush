@@ -59,3 +59,11 @@ export const DEFAULT_HEIGHT = 340;
 export const MIN_WIDTH = 240;
 export const MIN_HEIGHT = 60;
 export const TITLEBAR_HEIGHT = 35;
+
+/** Clamp a pane axis (x or y) so the pane is fully on-screen at the
+ *  given viewport size. Falls back to 0 when the viewport is smaller
+ *  than the pane — the user can still drag it. */
+export function clampPaneAxis(requested, paneSize, viewportSize) {
+  const max = Math.max(0, viewportSize - paneSize);
+  return Math.min(max, Math.max(0, requested));
+}
