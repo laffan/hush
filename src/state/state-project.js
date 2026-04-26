@@ -27,7 +27,8 @@ export async function openProject(state, projectId) {
   let ordered = [];
   if (IS_TAURI) {
     for (const fid of state.projectDocIds) {
-      try { ordered.push(await tauriInvoke("load_file", { id: fid })); } catch (e) { /* skip */ }
+      try { ordered.push(await tauriInvoke("load_file", { id: fid })); }
+      catch (e) { console.warn(`Project load: skipping file ${fid}:`, e); }
     }
   } else { ordered = state.projectDocIds.map(fid => state.files.find(e => e.id === fid)).filter(Boolean); }
   if (state.editor) state.editor.setContent(ordered.map(e => e.content).join("\n\n---hush-separator---\n\n"));
@@ -44,7 +45,7 @@ export async function saveProjectContent(state) {
       try {
         await tauriInvoke("save_file", { id: fid, content });
         state.syncFileToExternal(fid, content);
-      } catch (e) { /* skip */ }
+      } catch (e) { console.warn(`Project save: failed to write file ${fid}:`, e); }
     }
     else {
       const f = state.files.find(f => f.id === fid);

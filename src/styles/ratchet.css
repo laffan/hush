@@ -5,7 +5,7 @@
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   padding: 8px;
-  z-index: 200;
+  z-index: var(--z-sidebar);
   font-family: system-ui, sans-serif;
   font-size: 13px;
   width: 180px;
@@ -61,7 +61,7 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  z-index: 500;
+  z-index: var(--z-modal);
 }
 
 .ratchet-timer {
@@ -75,7 +75,7 @@
   background: var(--theme-bg, var(--bg));
   padding: 2px 8px;
   border-radius: 6px;
-  z-index: 9999;
+  z-index: var(--z-modal-top);
   opacity: 0.6;
 }
 
@@ -93,7 +93,7 @@
   background: var(--theme-bg, var(--bg));
   padding: 2px 8px;
   border-radius: 6px;
-  z-index: 9999;
+  z-index: var(--z-modal-top);
   opacity: 0.6;
   pointer-events: none;
   user-select: none;

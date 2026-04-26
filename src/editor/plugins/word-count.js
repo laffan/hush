@@ -7,7 +7,7 @@
 let wordCountEl = null;
 let recomputeTimer = null;
 
-function countWords(text) {
+export function countWords(text) {
   if (!text) return 0;
   // Strip %% comments %% and inline image refs before counting — comments
   // are editorial notes, not prose, and image markdown isn't "words".

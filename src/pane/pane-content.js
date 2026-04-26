@@ -17,6 +17,33 @@ import {
 } from "./pane-state.js";
 import { createPaneEditor } from "./pane-editor.js";
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
+import { countWords } from "../editor/plugins/word-count.js";
+
+/** Update a pane's word-count chip from the current editor content.
+ *  Notebook panes don't have a word count. The chip itself is created
+ *  in `buildPaneDOM` (pane-manager.js); this function just refreshes its
+ *  text and visibility. */
+export function updatePaneWordCount(pane) {
+  const el = pane._wordCountEl;
+  if (!el) return;
+  const visible = !!appState?.settings?.wordCountVisible
+    && pane.fileType === "document"
+    && !!pane.editor;
+  if (!visible) {
+    el.style.display = "none";
+    el.textContent = "";
+    return;
+  }
+  const n = countWords(pane.editor.getContent());
+  el.textContent = `${n.toLocaleString()} ${n === 1 ? "word" : "words"}`;
+  el.style.display = "";
+}
+
+/** Refresh every pane's word-count chip — used when the user toggles
+ *  the global `wordCountVisible` setting on or off. */
+export function syncAllPaneWordCounts() {
+  for (const [, pane] of panes) updatePaneWordCount(pane);
+}
 
 export async function loadPaneContent(pane) {
   if (pane.fileType === "document") {
@@ -31,6 +58,7 @@ async function loadDocumentPane(pane) {
   const editor = createPaneEditor(pane._content, appState, () => {
     pane.dirty = true;
     syncDocFromPane(pane);
+    updatePaneWordCount(pane);
   });
   pane.editor = editor;
 
@@ -64,6 +92,7 @@ async function loadDocumentPane(pane) {
     console.error("Failed to load pane file:", e);
   }
   editor.setContent(content);
+  updatePaneWordCount(pane);
 
   // Listen for main editor changes to sync back into this pane
   pane._mainSyncHandler = () => syncDocToPane(pane);
@@ -269,11 +298,19 @@ export function syncNotebookFromPane(pane) {
   if (!mainCanvas) return;
 
   setSyncing(true);
-  const shapes = pane.notebook.getShapes();
-  mainCanvas.loadShapes(JSON.parse(JSON.stringify(shapes)));
-  // Defer reset: loadShapes triggers change events via queueMicrotask,
-  // so _syncing must stay true until those microtasks have fired.
-  queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
+  let deferred = false;
+  try {
+    const shapes = pane.notebook.getShapes();
+    mainCanvas.loadShapes(JSON.parse(JSON.stringify(shapes)));
+    // Defer reset: loadShapes triggers change events via queueMicrotask,
+    // so syncing must stay true until those microtasks have fired.
+    queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
+    deferred = true;
+  } finally {
+    // If anything threw before the deferred reset was queued, clear the
+    // flag synchronously so future syncs aren't silently dropped.
+    if (!deferred) setSyncing(false);
+  }
 }
 
 export function syncNotebookToPane(pane) {
@@ -285,10 +322,16 @@ export function syncNotebookToPane(pane) {
   if (!mainCanvas) return;
 
   setSyncing(true);
-  const shapes = mainCanvas.getShapes();
-  pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
-  pane.dirty = false;
-  queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
+  let deferred = false;
+  try {
+    const shapes = mainCanvas.getShapes();
+    pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
+    pane.dirty = false;
+    queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
+    deferred = true;
+  } finally {
+    if (!deferred) setSyncing(false);
+  }
 }
 
 /** Shared lookup used by load + theme paths. Walks the file tree for

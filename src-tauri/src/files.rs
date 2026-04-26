@@ -1,3 +1,4 @@
+use crate::atomic::write_atomic_str;
 use crate::{FileEntry, TreeNode};
 use std::fs;
 use std::path::PathBuf;
@@ -50,7 +51,7 @@ impl FileManager {
     pub fn save_file_tree(&self, tree: &[TreeNode]) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.tree_path();
         let content = serde_json::to_string_pretty(tree)?;
-        fs::write(path, content)?;
+        write_atomic_str(&path, &content)?;
         Ok(())
     }
 
@@ -135,7 +136,10 @@ impl FileManager {
         for file_id in entries {
             match self.load_file(&file_id) {
                 Ok(entry) => result.push(entry),
-                Err(_) => continue,
+                Err(e) => {
+                    eprintln!("load_project_content: skipping file {}: {}", file_id, e);
+                    continue;
+                }
             }
         }
         Ok(result)
@@ -153,7 +157,7 @@ impl FileManager {
             modified: now,
         };
         let path = self.files_dir.join(format!("{}.json", id));
-        fs::write(&path, serde_json::to_string(&entry)?)?;
+        write_atomic_str(&path, &serde_json::to_string(&entry)?)?;
         Ok(entry)
     }
 
@@ -177,7 +181,7 @@ impl FileManager {
             content: content.to_string(),
             modified: now,
         };
-        fs::write(&path, serde_json::to_string(&entry)?)?;
+        write_atomic_str(&path, &serde_json::to_string(&entry)?)?;
         Ok(())
     }
 
@@ -216,7 +220,7 @@ impl FileManager {
         let content = fs::read_to_string(&path)?;
         let mut entry: FileEntry = serde_json::from_str(&content)?;
         entry.name = name.to_string();
-        fs::write(&path, serde_json::to_string(&entry)?)?;
+        write_atomic_str(&path, &serde_json::to_string(&entry)?)?;
         Ok(())
     }
 }

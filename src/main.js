@@ -14,6 +14,7 @@ import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, ge
 import { initPaneManager, isPaneActive } from "./pane/pane-manager.js";
 import { applyActiveStyle, applyFocusModeOpacity, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts } from "./window-shortcuts.js";
+import { setTooltipsEnabled } from "./tooltips.js";
 import "./font-imports.js";
 
 async function init() {
@@ -216,8 +217,8 @@ async function init() {
     startLocalSyncWatcher(state, () => {
       import("./sidebar/files-panel.js")
         .then(m => m.refreshFilesPanel(state))
-        .catch(() => {});
-    }).catch(() => {});
+        .catch((e) => console.warn("Failed to refresh files panel after local-sync change:", e));
+    }).catch((e) => console.warn("Failed to start local-sync watcher:", e));
 
     // Settings window fires this after add/remove. We update
     // state.settings.localSyncFolders directly from the payload (no
@@ -290,6 +291,11 @@ async function init() {
   // Keep --focus-mode-opacity in sync with the slider in Settings > Editor.
   state.on("settings-changed", () => applyFocusModeOpacity(state));
 
+  // Mirror the "Show Tooltips" setting into the global tooltip helper so
+  // every gated [data-tooltip] element gets / loses its native title attr.
+  setTooltipsEnabled(!!state.settings.showTooltips);
+  state.on("settings-changed", () => setTooltipsEnabled(!!state.settings.showTooltips));
+
   // The old left-edge hover trigger that used to pop the sidebar in is
   // gone — the floating .sidebar-floating-toggle button is now the sole
   // open/close affordance. Removing the hover behaviour also cleans up
@@ -339,7 +345,8 @@ async function init() {
   if (IS_TAURI) {
     const { invoke } = await import("@tauri-apps/api/core");
     if (state.settings.alwaysOnTop) {
-      await invoke("set_always_on_top", { onTop: true }).catch(() => {});
+      await invoke("set_always_on_top", { onTop: true })
+        .catch((e) => console.warn("set_always_on_top failed:", e));
     }
   }
 
@@ -367,9 +374,11 @@ async function init() {
       const { invoke } = await import("@tauri-apps/api/core");
       const vis = state.settings.visibility;
       const policy = (vis === "dock" || vis === "both") ? "regular" : "accessory";
-      await invoke("set_activation_policy", { policy }).catch(() => {});
+      await invoke("set_activation_policy", { policy })
+        .catch((e) => console.warn("set_activation_policy failed:", e));
       // Apply always-on-top setting
-      await invoke("set_always_on_top", { onTop: !!state.settings.alwaysOnTop }).catch(() => {});
+      await invoke("set_always_on_top", { onTop: !!state.settings.alwaysOnTop })
+        .catch((e) => console.warn("set_always_on_top failed:", e));
       state.emit("settings-changed");
       state.emit("theme-changed");
       updatePrivateBoxColor(state);

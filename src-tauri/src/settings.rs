@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::atomic::write_atomic_str;
+
 mod defaults;
 use defaults::*;
 
@@ -166,9 +168,13 @@ pub struct AppSettings {
     #[serde(default = "default_footnote_margin_side")]
     pub footnote_margin_side: String,
 
-    // Sidebar
+    // Sidebar / global tooltips. Default off — when on, native browser
+    // tooltips are shown on sidebar, pane header, and notebook toolbar
+    // buttons. Renamed from `hide_sidebar_tooltips` (an inverted flag);
+    // serde alias preserves any legacy persisted value as a true→false
+    // conversion would be incorrect anyway, so we just drop the old key.
     #[serde(default)]
-    pub hide_sidebar_tooltips: bool,
+    pub show_tooltips: bool,
     #[serde(default)]
     pub sticky_headers: bool,
 
@@ -462,7 +468,7 @@ impl Default for AppSettings {
             footnote_use_colors: default_footnote_use_colors(),
             footnote_both_margins: default_footnote_both_margins(),
             footnote_margin_side: default_footnote_margin_side(),
-            hide_sidebar_tooltips: false,
+            show_tooltips: false,
             sticky_headers: false,
             styles: Vec::new(),
             active_style_id: None,
@@ -555,7 +561,7 @@ impl AppSettings {
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.data_dir.join("settings.json");
         let content = serde_json::to_string_pretty(self)?;
-        fs::write(path, content)?;
+        write_atomic_str(&path, &content)?;
         Ok(())
     }
 }

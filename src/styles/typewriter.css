@@ -8,7 +8,7 @@
   cursor: row-resize;
   transition: opacity 0.2s, height 0.15s;
   background: var(--accent);
-  z-index: 150;
+  z-index: var(--z-shelf);
 }
 
 @media (hover: hover) {

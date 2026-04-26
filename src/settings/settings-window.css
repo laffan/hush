@@ -15,6 +15,9 @@
   --tab-bg: #111;
   --tab-hover: rgba(128, 128, 128, 0.15);
   --tab-active: rgba(128, 128, 128, 0.25);
+  /* Settings window runs in its own WebviewWindow and doesn't import
+     base.css, so the z-index scale is duplicated here. Keep in sync. */
+  --z-modal-top: 9999;
 }
 
 [data-theme="light"] {
@@ -666,7 +669,7 @@ html, body {
 }
 
 /* Dropbox folder browser modal */
-.dbx-browser-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center; }
+.dbx-browser-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: var(--z-modal-top); display: flex; align-items: center; justify-content: center; }
 .dbx-browser-modal { background: var(--panel-bg, var(--bg)); border: 1px solid var(--panel-border); border-radius: 12px; width: 90%; max-width: 440px; max-height: 70vh; display: flex; flex-direction: column; overflow: hidden; }
 .dbx-browser-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--panel-border); }
 .dbx-browser-header button { background: transparent; border: 1px solid var(--panel-border); color: var(--fg); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 14px; }

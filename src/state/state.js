@@ -251,8 +251,18 @@ export class AppState {
 
   // ===== Notebook Operations =====
 
-  async createNotebook(name, parentId = null) {
-    if (this.dirty) await this.saveCurrentFile();
+  /** Create a new notebook.
+   *  @param {string} name           Display name for the new notebook.
+   *  @param {string|null} parentId  Tree node to insert under (defaults to Inbox).
+   *  @param {object} [opts]
+   *  @param {boolean} [opts.openImmediately=true]  When false, the notebook
+   *    is created + tree-added + synced but isn't opened in the main view
+   *    (used by the "New Notebook as Pane" command palette entry).
+   *  @returns {Promise<{ fileId: string, name: string } | undefined>}
+   */
+  async createNotebook(name, parentId = null, opts = {}) {
+    const openImmediately = opts.openImmediately !== false;
+    if (openImmediately && this.dirty) await this.saveCurrentFile();
     const targetParent = parentId || AppState.INBOX_ID;
     if (IS_TAURI) {
       try {
@@ -263,9 +273,8 @@ export class AppState {
         // Propagate new notebook to Dropbox sync
         const nbNode = findNodeByFileId(this.fileTree, result.file.id);
         if (nbNode) this.syncCreateFile(nbNode.id, result.file.id, result.file.content || "[]");
-        // Open the newly created notebook
-        await this.openNotebook(result.file.id);
-        return result;
+        if (openImmediately) await this.openNotebook(result.file.id);
+        return { fileId: result.file.id, name: result.node?.name || name };
       } catch (e) { console.error("Create notebook failed:", e); }
     }
   }
@@ -381,14 +390,23 @@ export class AppState {
     return false;
   }
 
-  async newFile(parentId = null) {
-    if (this.dirty) await this.saveCurrentFile();
-    // Unmount any active notebook
-    if (this.currentNotebookFileId) {
+  /** Create a new document.
+   *  @param {string|null} parentId  Tree node to insert under (defaults to Inbox).
+   *  @param {object} [opts]
+   *  @param {boolean} [opts.openImmediately=true]  When false, the new file
+   *    is created + tree-added + synced but the main editor doesn't switch
+   *    to it (used by the "New Doc as Pane" command palette entry).
+   *  @returns {Promise<{ fileId: string, name: string } | undefined>}
+   */
+  async newFile(parentId = null, opts = {}) {
+    const openImmediately = opts.openImmediately !== false;
+    if (openImmediately && this.dirty) await this.saveCurrentFile();
+    // Unmount any active notebook (only when actually switching to the new file)
+    if (openImmediately && this.currentNotebookFileId) {
       this.emit("notebook-unmount");
       this.currentNotebookFileId = null;
     }
-    this.currentLocalSync = null;
+    if (openImmediately) this.currentLocalSync = null;
     // Default new files go into the Inbox
     const targetParent = parentId || AppState.INBOX_ID;
     let fileId;
@@ -401,15 +419,18 @@ export class AppState {
     await this.saveFileTree();
     // Propagate new file to external filesystem if inside a synced folder
     this.syncCreateFile(treeNode.id, fileId, "");
-    this.currentFileId = fileId;
-    this.currentProjectId = null;
-    this.projectDocIds = [];
-    if (this.editor) {
-      this.editor.setContent("");
-      this.editor.focus();
+    if (openImmediately) {
+      this.currentFileId = fileId;
+      this.currentProjectId = null;
+      this.projectDocIds = [];
+      if (this.editor) {
+        this.editor.setContent("");
+        this.editor.focus();
+      }
     }
     this.emit("files-changed");
-    this.emit("file-opened");
+    if (openImmediately) this.emit("file-opened");
+    return { fileId, name: treeNode.name };
   }
 
   async openFile(id) {

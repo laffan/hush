@@ -11,6 +11,7 @@ use tauri::{
     WindowEvent,
 };
 
+mod atomic;
 mod commands;
 mod files;
 mod images;

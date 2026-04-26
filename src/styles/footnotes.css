@@ -37,7 +37,7 @@
   border-radius: 8px;
   padding: 12px 16px;
   padding-right: 32px;
-  z-index: 400;
+  z-index: var(--z-popover);
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
   color: var(--fg);
@@ -132,7 +132,7 @@
   width: 2px;
   height: 1.4em;
   background: var(--accent, var(--fg));
-  z-index: 10001;
+  z-index: var(--z-modal-topmost);
   pointer-events: none;
   animation: footnote-drop-blink 0.8s step-end infinite;
   border-radius: 1px;

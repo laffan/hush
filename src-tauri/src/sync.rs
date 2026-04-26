@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::atomic::write_atomic_str;
 use crate::settings::SyncFolder;
 
 #[derive(Serialize, Clone, Debug)]
@@ -72,19 +73,29 @@ impl SyncManager {
     }
 
     fn load_map(path: &Path) -> HashMap<String, SyncedFileInfo> {
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(map) = serde_json::from_str(&content) {
-                    return map;
+        if !path.exists() {
+            return HashMap::new();
+        }
+        match fs::read_to_string(path) {
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(map) => map,
+                Err(e) => {
+                    eprintln!("sync: malformed sync_map at {} — starting empty: {}", path.display(), e);
+                    HashMap::new()
                 }
+            },
+            Err(e) => {
+                eprintln!("sync: cannot read sync_map at {}: {}", path.display(), e);
+                HashMap::new()
             }
         }
-        HashMap::new()
     }
 
     fn save_map(&self) {
         if let Ok(content) = serde_json::to_string_pretty(&self.file_map) {
-            let _ = fs::write(&self.sync_data_path, content);
+            if let Err(e) = write_atomic_str(&self.sync_data_path, &content) {
+                eprintln!("sync: failed to persist sync_map: {}", e);
+            }
         }
     }
 
@@ -209,7 +220,7 @@ impl SyncManager {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&path, content)?;
+        write_atomic_str(&path, content)?;
         Ok(())
     }
 
@@ -252,7 +263,7 @@ impl SyncManager {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&path, content)?;
+        write_atomic_str(&path, content)?;
         Ok(SyncWriteResult {
             written: true,
             external_is_newer: false,
@@ -442,7 +453,7 @@ impl SyncManager {
         fs::create_dir_all(&dir)?;
         let json_path = dir.join(".hush-project.json");
         let data = serde_json::json!({ "ordering": doc_names });
-        fs::write(&json_path, serde_json::to_string_pretty(&data)?)?;
+        write_atomic_str(&json_path, &serde_json::to_string_pretty(&data)?)?;
         Ok(())
     }
 

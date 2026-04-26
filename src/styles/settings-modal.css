@@ -6,7 +6,7 @@
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 500;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -52,7 +52,7 @@
   position: absolute;
   top: 8px;
   right: 12px;
-  z-index: 510;
+  z-index: var(--z-modal-content);
   width: 28px;
   height: 28px;
   display: flex;

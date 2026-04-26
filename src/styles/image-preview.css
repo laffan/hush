@@ -45,7 +45,7 @@
 /* Hover tooltip (used by the Images folder rows in the sidebar). */
 .hush-image-tooltip {
   position: fixed;
-  z-index: 400;
+  z-index: var(--z-popover);
   max-width: 320px;
   padding: 6px;
   background: var(--bg, #1e1e1e);
@@ -87,7 +87,7 @@
 .hush-image-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 500;
+  z-index: var(--z-modal);
   background: rgba(0, 0, 0, 0.75);
   display: flex;
   align-items: center;

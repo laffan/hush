@@ -1079,6 +1079,57 @@ export class DrawingState extends EventTarget {
     this.notify("shapes");
   }
 
+  /** Wrap the current multi-selection in a new DragArea sized to its
+   *  union bbox (with a small padding). Used by the toolbar so clicking
+   *  the Drag Area tool with 2+ shapes selected acts as a wrap shortcut
+   *  rather than entering draw-an-area mode.
+   *
+   *  Returns true when a wrap happened (caller can suppress the tool
+   *  switch in that case), false otherwise. */
+  wrapSelectionInDragArea(): boolean {
+    if (this.selectedIds.size < 2) return false;
+    const selected = this.shapes.filter((s) => this.selectedIds.has(s.id));
+    // Refuse if the selection is *only* drag-areas — wrapping containers
+    // in another container is rarely what the user means.
+    if (selected.every((s) => s.type === "drag-area")) return false;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of selected) {
+      const b = getShapeBounds(s, this.fontFamily);
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+    }
+    const PAD = 16; // breathing room around the wrapped shapes
+    minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+
+    const newArea: DragAreaShape = {
+      id: generateId(),
+      type: "drag-area",
+      position: { x: minX, y: minY },
+      width: maxX - minX,
+      height: maxY - minY,
+      color: "#6b7280",
+      strokeColor: "#6b7280",
+      backgroundColor: "rgba(107, 114, 128, 0.16)",
+      borderRadius: 12,
+      layerId: this.activeLayerId,
+    };
+    const wrappedIds = new Set(selected.filter((s) => s.type !== "drag-area").map((s) => s.id));
+    this.shapes = [
+      ...this.shapes.map((s) => wrappedIds.has(s.id) ? { ...s, parentId: newArea.id } : s),
+      newArea,
+    ];
+    this.selectedIds = new Set([newArea.id]);
+    this.tool = "select";
+    this.recordHistory();
+    this.notify("shapes");
+    this.notify("selectedIds");
+    this.notify("tool");
+    return true;
+  }
+
   changeSelectedColor(colorName: string) {
     const hex = COLOR_PALETTE[colorName] || colorName;
     this.shapes = this.shapes.map((s) => this.selectedIds.has(s.id) ? { ...s, color: hex } : s);

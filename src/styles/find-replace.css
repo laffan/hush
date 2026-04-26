@@ -7,7 +7,7 @@
   border: 1px solid var(--panel-border);
   border-radius: 10px;
   padding: 10px 12px;
-  z-index: 300;
+  z-index: var(--z-overlay);
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
   display: flex;
@@ -113,7 +113,7 @@
   height: 100%;
   background: var(--panel-bg);
   border-left: 1px solid var(--panel-border);
-  z-index: 300;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   font-family: system-ui, -apple-system, sans-serif;

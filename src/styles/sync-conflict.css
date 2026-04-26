@@ -3,7 +3,7 @@
   position: fixed;
   bottom: 16px;
   left: 16px;
-  z-index: 10000;
+  z-index: var(--z-modal-top);
   background: var(--panel-bg, var(--bg));
   border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.2));
   border-radius: 8px;

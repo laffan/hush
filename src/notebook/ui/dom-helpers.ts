@@ -1,3 +1,6 @@
+// @ts-ignore — sibling JS module
+import { applyTooltip } from "../../tooltips.js";
+
 export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   opts?: {
@@ -16,7 +19,9 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   if (opts?.attrs) for (const [k, v] of Object.entries(opts.attrs)) el.setAttribute(k, v);
   if (opts?.style) Object.assign(el.style, opts.style);
   if (opts?.text) el.textContent = opts.text;
-  if (opts?.title) el.title = opts.title;
+  // Route `title` through the global tooltip gate so the user's
+  // "Show Tooltips" setting controls native-tooltip visibility uniformly.
+  if (opts?.title) applyTooltip(el, opts.title);
   if (opts?.html) el.innerHTML = opts.html;
   if (opts?.onClick) el.addEventListener("click", opts.onClick as EventListener);
   if (opts?.children) {

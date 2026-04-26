@@ -275,7 +275,7 @@ export function createSidebar(container, state) {
   }
 
   function showTooltip(btn, name, shortcutRaw) {
-    if (state.settings.hideSidebarTooltips) return;
+    if (!state.settings.showTooltips) return;
     createTooltipEl();
     clearTimeout(tooltipTimeout);
     tooltipEl.querySelector(".sidebar-tooltip-name").textContent = name;

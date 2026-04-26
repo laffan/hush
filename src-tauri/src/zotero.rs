@@ -1,3 +1,4 @@
+use crate::atomic::write_atomic_str;
 use std::fs;
 use std::path::PathBuf;
 
@@ -15,7 +16,7 @@ impl ZoteroManager {
     /// Save references JSON blob to disk
     pub fn save_references(&self, data: &str) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.data_dir.join("zotero_references.json");
-        fs::write(path, data)?;
+        write_atomic_str(&path, data)?;
         Ok(())
     }
 

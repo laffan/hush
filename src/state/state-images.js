@@ -160,7 +160,7 @@ async function rewriteImageRefs(state, oldFilename, newFilename) {
       if (updated !== file.content) {
         await tauriInvoke("save_file", { id: fileId, content: updated });
       }
-    } catch (e) { /* skip files that fail to load */ }
+    } catch (e) { console.warn(`Image rename: skipping file ${fileId}:`, e); }
   }
 }
 
@@ -224,7 +224,7 @@ export async function removeImageRefs(state, filenames) {
       if (updated !== file.content) {
         await tauriInvoke("save_file", { id: fileId, content: updated });
       }
-    } catch (e) { /* skip files that fail to load */ }
+    } catch (e) { console.warn(`Image purge: skipping file ${fileId}:`, e); }
   }
 }
 

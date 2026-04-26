@@ -146,8 +146,8 @@ export function renderGeneralTab(settings) {
         <input type="checkbox" id="setting-always-on-top" ${s.alwaysOnTop ? "checked" : ""} />
       </div>
       <div class="settings-row">
-        <label>Hide sidebar tooltips</label>
-        <input type="checkbox" id="setting-hide-sidebar-tooltips" ${s.hideSidebarTooltips ? "checked" : ""} />
+        <label>Show tooltips</label>
+        <input type="checkbox" id="setting-show-tooltips" ${s.showTooltips ? "checked" : ""} />
       </div>
     </div>
   `;

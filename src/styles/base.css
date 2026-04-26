@@ -21,6 +21,38 @@
   --line-height: 1.6;
   --padding: 50px;
   --column-width: 600px;
+
+  /* ===== z-index scale =====
+   *
+   * Centralised so new modals don't pick a fresh "high enough" number
+   * each time. Layers stack from low to high; intermediate values
+   * (e.g. 95, 101, 250) are local-only and stay as literals.
+   *
+   *   --z-pane           floating reference panes above editor content
+   *   --z-shelf          notebook shelf panel
+   *   --z-sidebar        left sidebar column + floating toggle
+   *   --z-overlay        transient inline overlays (find/replace, action sheets)
+   *   --z-popover        detached popovers (footnote, command palette, image preview)
+   *   --z-modal          full-screen modal backdrops + standard modals
+   *   --z-modal-content  modal content layer above its own backdrop
+   *   --z-modal-top      "above all modals" — dropdowns that surface from
+   *                      inside a modal (style swatch dropdown, ratchet
+   *                      duration grid, sync conflict, zotero search)
+   *   --z-modal-topmost  a hair above --z-modal-top for footnote popovers
+   *                      that need to clear an open style modal
+   *   --z-drag-ghost     drag preview that must escape every stacking
+   *                      context (text drag chip from sidebar to editor)
+   */
+  --z-pane: 90;
+  --z-shelf: 150;
+  --z-sidebar: 200;
+  --z-overlay: 300;
+  --z-popover: 400;
+  --z-modal: 500;
+  --z-modal-content: 510;
+  --z-modal-top: 9999;
+  --z-modal-topmost: 10001;
+  --z-drag-ghost: 2147483647;
 }
 
 /* Light theme */

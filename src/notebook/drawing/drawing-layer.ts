@@ -484,9 +484,8 @@ export function createDrawingLayer({
 
   function beginSelectionDrag(hushIds: Iterable<string>): void {
     const ids = new Set<number>();
-    const s = shim; // fall back to the shim we already constructed
     for (const hid of hushIds) {
-      const eid = s.getEngineStrokeId(hid);
+      const eid = shim.getEngineStrokeId(hid);
       if (eid !== undefined) ids.add(eid);
     }
     if (ids.size === 0) return;
@@ -494,7 +493,10 @@ export function createDrawingLayer({
     dragTotalDx = 0;
     dragTotalDy = 0;
     shim.pauseForDrag();
-    strokeEngine.previewTransform(dragEngineIds, { kind: "move", dx: 0, dy: 0 });
+    // If previewTransform throws we've already paused the shim — resume
+    // so the caller's missing endSelectionDrag doesn't leave us stuck.
+    try { strokeEngine.previewTransform(dragEngineIds, { kind: "move", dx: 0, dy: 0 }); }
+    catch (e) { console.warn("beginSelectionDrag: previewTransform failed:", e); shim.resumeForDrag(); dragEngineIds = null; }
   }
 
   function updateSelectionDrag(totalDx: number, totalDy: number): void {
@@ -511,17 +513,23 @@ export function createDrawingLayer({
       shim.resumeForDrag();
       return;
     }
-    const dx = dragTotalDx, dy = dragTotalDy;
-    strokeEngine.commitTransform(dragEngineIds, (x, y) => [x + dx, y + dy]);
-    // Clear the preview back to done canvas.
-    strokeEngine.previewTransform(dragEngineIds, null);
-    // Don't bridge via onEngineStrokesTransformed here — state.shapes
-    // already has the post-drag points from hush's own per-frame
-    // updates. Resume is all we need; the shim refreshes lastSeen.
-    shim.resumeForDrag();
-    dragEngineIds = null;
-    dragTotalDx = 0;
-    dragTotalDy = 0;
+    // try/finally guarantees the shim resumes even if commit / preview
+    // clear throws — leaving it paused would silently freeze every
+    // future state→engine sync.
+    try {
+      const dx = dragTotalDx, dy = dragTotalDy;
+      strokeEngine.commitTransform(dragEngineIds, (x, y) => [x + dx, y + dy]);
+      // Clear the preview back to done canvas.
+      strokeEngine.previewTransform(dragEngineIds, null);
+      // Don't bridge via onEngineStrokesTransformed here — state.shapes
+      // already has the post-drag points from hush's own per-frame
+      // updates. Resume is all we need; the shim refreshes lastSeen.
+    } finally {
+      shim.resumeForDrag();
+      dragEngineIds = null;
+      dragTotalDx = 0;
+      dragTotalDy = 0;
+    }
   }
 
   /** Done canvas covers world [originX..originX+WORLD_SIZE] ×

@@ -2,7 +2,7 @@
 .cmd-palette-overlay {
   position: fixed;
   inset: 0;
-  z-index: 400;
+  z-index: var(--z-popover);
   display: flex;
   align-items: flex-start;
   justify-content: center;

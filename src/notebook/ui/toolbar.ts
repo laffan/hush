@@ -124,12 +124,19 @@ export function createToolbar(state: DrawingState): HTMLElement {
           state.brainstormMode = !state.brainstormMode;
           if (state.brainstormMode) { state.tool = "text"; state.notify("tool"); }
           state.notify("brainstormMode");
-        } else {
-          state.tool = def.tool;
-          state.brainstormMode = false;
-          state.notify("tool");
-          state.notify("brainstormMode");
+          return;
         }
+        // Drag Area shortcut: when 2+ shapes are already selected,
+        // pressing Drag Area wraps the selection in a new container
+        // instead of entering draw-an-area mode. Falls through to the
+        // normal tool switch when the wrap can't apply.
+        if (def.tool === "drag-area" && state.wrapSelectionInDragArea()) {
+          return;
+        }
+        state.tool = def.tool;
+        state.brainstormMode = false;
+        state.notify("tool");
+        state.notify("brainstormMode");
       },
     });
     buttons.set(def.tool, btn);

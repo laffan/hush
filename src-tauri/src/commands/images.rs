@@ -64,16 +64,62 @@ pub fn export_with_images(
     Ok(())
 }
 
-/// Write a raw byte blob to an arbitrary path picked by the user.
+/// Write a raw byte blob to a user-picked path.
 ///
 /// The JS fs plugin's `writeFile` with a `Uint8Array` was silently producing
 /// 0-byte files on iOS. Routing binary writes through Rust avoids that.
 /// iOS's document-picker returns a percent-encoded `file://` URL, not a
 /// plain path, so we normalize before writing.
+///
+/// **Containment.** The Tauri dialog plugin already constrains the user to
+/// paths they can reach via the system file picker, but this command is
+/// invokable directly so we add defence-in-depth: the resolved path must
+/// live under the user's home dir, the app's data dir, or a system temp
+/// area. Anything that escapes (e.g. `/etc/...`) is rejected before
+/// `fs::write` runs.
 #[tauri::command]
 pub fn write_binary_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
     let resolved = normalize_dialog_path(&path);
-    fs::write(&resolved, &bytes).map_err(|e| format!("{} (path: {})", e, resolved))
+    let abs = std::path::PathBuf::from(&resolved);
+    ensure_path_in_safe_root(&abs)?;
+    fs::write(&abs, &bytes).map_err(|e| format!("{} (path: {})", e, resolved))
+}
+
+/// Allow writes only under one of: home dir, app data dir, or system
+/// temp dir. Any other absolute destination is rejected.
+fn ensure_path_in_safe_root(path: &std::path::Path) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err(format!("write_binary_file: path must be absolute: {}", path.display()));
+    }
+    // Reject any unresolved `..` — even if a downstream canonicalize
+    // would normalise it, a literal `..` in the path is a smell.
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err(format!("write_binary_file: '..' in path: {}", path.display()));
+        }
+    }
+    let mut allowed: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(home) = dirs::home_dir() { allowed.push(home); }
+    if let Some(data) = dirs::data_dir() { allowed.push(data); }
+    if let Some(cache) = dirs::cache_dir() { allowed.push(cache); }
+    allowed.push(std::env::temp_dir());
+    // macOS: /tmp is a symlink to /private/tmp; iOS sandbox tmp lives
+    // under /private/var/folders/... — both already covered by
+    // env::temp_dir() and dirs::data_dir() respectively, but list them
+    // explicitly so unusual layouts (e.g. sandbox shifts) still resolve.
+    #[cfg(target_os = "macos")]
+    {
+        allowed.push(std::path::PathBuf::from("/tmp"));
+        allowed.push(std::path::PathBuf::from("/private/tmp"));
+        allowed.push(std::path::PathBuf::from("/private/var/folders"));
+    }
+    for root in &allowed {
+        if path.starts_with(root) { return Ok(()); }
+    }
+    Err(format!(
+        "write_binary_file: refusing to write outside home/data/temp roots: {}",
+        path.display()
+    ))
 }
 
 /// Strip a `file://` prefix (iOS document-picker URLs) and percent-decode

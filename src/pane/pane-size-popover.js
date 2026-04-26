@@ -5,6 +5,7 @@
  * so the lifecycle file stays focused on create/close/focus.
  */
 import { panes } from "./pane-state.js";
+import { applyTooltip } from "../tooltips.js";
 
 export const FP_SIZE_MIN = 10;
 export const FP_SIZE_MAX = 48;
@@ -66,7 +67,7 @@ export function togglePaneSizePopover(pane, anchorBtn, schedulePersist) {
   minus.className = "fp-size-step";
   minus.type = "button";
   minus.textContent = "−"; // minus sign
-  minus.title = "Smaller (⌘ to apply to all panes)";
+  applyTooltip(minus, "Smaller (⌘ to apply to all panes)");
 
   const label = document.createElement("span");
   label.className = "fp-size-label";
@@ -75,7 +76,7 @@ export function togglePaneSizePopover(pane, anchorBtn, schedulePersist) {
   plus.className = "fp-size-step";
   plus.type = "button";
   plus.textContent = "+";
-  plus.title = "Larger (⌘ to apply to all panes)";
+  applyTooltip(plus, "Larger (⌘ to apply to all panes)");
 
   function refreshLabel() { label.textContent = Math.round(effectivePaneFontSize(pane)) + "px"; }
   refreshLabel();

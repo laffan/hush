@@ -21,6 +21,9 @@ import versionsRaw from "./sidebar/sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar/sidebar_icons/export.svg?raw";
 import stylesRaw from "./sidebar/sidebar_icons/styles.svg?raw";
 import zoteroRaw from "./sidebar/sidebar_icons/zotero.svg?raw";
+import iconDocRaw from "./sidebar/sidebar_icons/icon-doc.svg?raw";
+import iconNotebookRaw from "./sidebar/sidebar_icons/icon-notebook.svg?raw";
+import iconProjectRaw from "./sidebar/sidebar_icons/icon-project.svg?raw";
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
@@ -38,6 +41,9 @@ const icons = {
   export: svgInner(exportRaw),
   styles: svgInner(stylesRaw),
   zotero: svgInner(zoteroRaw),
+  doc: svgInner(iconDocRaw),
+  notebook: svgInner(iconNotebookRaw),
+  project: svgInner(iconProjectRaw),
   // Mirrors the inline trash icon used in files-panel.js so the palette
   // matches the sidebar's visual language. Drawn on a 16-unit viewBox.
   trash: `<polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" />`,
@@ -50,10 +56,20 @@ function buildCommands(state) {
 
   const all = [
     // === SHARED ===
-    { id: "new-doc", label: "New document", icon: icons.newFile, shortcutKey: "shortcutNewFile", ctx: "shared",
+    { id: "new-doc", label: "New document", icon: icons.doc, shortcutKey: "shortcutNewFile", ctx: "shared",
       action: (s) => s.newFile() },
-    { id: "new-notebook", label: "New notebook", icon: icons.newFile, shortcutKey: null, ctx: "shared",
+    { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: null, ctx: "shared",
       action: (s) => s.createNotebook("New Notebook") },
+    { id: "new-doc-pane", label: "New document as pane", icon: icons.doc, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const created = await s.newFile(null, { openImmediately: false });
+        if (created) createPane(created.fileId, created.name, "document", 62, 60);
+      } },
+    { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.notebook, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const created = await s.createNotebook("New Notebook", null, { openImmediately: false });
+        if (created) createPane(created.fileId, created.name, "notebook", 62, 60);
+      } },
     { id: "open-file", label: "Open document or notebook", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {
@@ -159,7 +175,7 @@ function enterFilePicker(palette, state, placeholder, onPick) {
   const items = leaves.map((f) => ({
     id: "file-" + f.id,
     label: f.name,
-    icon: f.type === "notebook" ? icons.files : icons.newFile,
+    icon: f.type === "notebook" ? icons.notebook : icons.doc,
     shortcutKey: null,
     action: () => onPick(f),
   }));

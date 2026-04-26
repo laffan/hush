@@ -24,11 +24,13 @@ import {
   loadPaneContent, savePaneContent, autosaveAllPanes,
   syncDocFromPane, syncDocToPane, syncNotebookFromPane, syncNotebookToPane,
   findLockedStyleForFile,
+  syncAllPaneWordCounts,
 } from "./pane-content.js";
 import { applyPaneFontSize, togglePaneSizePopover } from "./pane-size-popover.js";
 import { setupPaneDrag, setupPaneResize } from "./pane-drag.js";
 import { schedulePersist, persistPanesNow, restorePanes as _restorePanes } from "./pane-persistence.js";
 import { screenToCanvas, canvasToScreen, startCanvasSync, startScrollSync, stopAttachSync } from "./pane-attach-sync.js";
+import { applyTooltip } from "../tooltips.js";
 
 // Wrap restorePanes to inject the local DOM-builder + context-change handler
 // it needs (avoids a pane-persistence → pane-manager circular import).
@@ -68,6 +70,8 @@ export function initPaneManager(state) {
   // changes so panes pick up a newly-set (or cleared) lock without the
   // user having to reopen them.
   state.on("files-changed", syncPaneThemes);
+  // Refresh pane word-count chips when the global toggle flips.
+  state.on("settings-changed", syncAllPaneWordCounts);
   getNotebookBridge().catch(() => {});
   // Deactivate panes when clicking anywhere outside a pane
   window.addEventListener("pointerdown", (e) => {
@@ -407,6 +411,16 @@ function buildPaneDOM(pane) {
   titleLink.textContent = pane.fileName;
   titleLink.addEventListener("click", (e) => { e.stopPropagation(); pane.fileType === "notebook" ? appState.openNotebook(pane.fileId) : appState.openFile(pane.fileId); });
   title.appendChild(titleLink);
+  // Word-count chip (doc panes only) — sits next to the title and is
+  // populated by pane-content.js's updatePaneWordCount on every doc
+  // change. Stays display:none until the user enables word count.
+  if (pane.fileType !== "notebook") {
+    const wc = document.createElement("span");
+    wc.className = "fp-wordcount";
+    wc.style.display = "none";
+    title.appendChild(wc);
+    pane._wordCountEl = wc;
+  }
   titlebar.appendChild(title);
 
   const buttons = document.createElement("span");
@@ -477,7 +491,7 @@ function makeBtn(name, svg, ariaLabel) {
   const btn = document.createElement("button");
   btn.className = `floating-pane-btn fp-btn-${name}`;
   btn.innerHTML = svg;
-  btn.title = ariaLabel;
+  applyTooltip(btn, ariaLabel);
   btn.setAttribute("aria-label", ariaLabel);
   return btn;
 }

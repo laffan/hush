@@ -7,7 +7,7 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 90; /* Above editor content (0–80), below sidebars (100+) */
+  z-index: var(--z-pane); /* Above editor content (0–80), below sidebars */
 }
 
 /* ── Pane wrapper ─────────────────────────────────────────────────── */
@@ -70,6 +70,16 @@
 .fp-title-link:hover {
   text-decoration: underline;
   opacity: 0.9;
+}
+
+/* Word-count chip next to the title — shown only when the user enables
+   the global word-count toggle. Subtle, sits right after the filename. */
+.fp-wordcount {
+  margin-left: 8px;
+  font-size: 10px;
+  opacity: 0.7;
+  white-space: nowrap;
+  user-select: none;
 }
 
 /* ── Titlebar buttons ─────────────────────────────────────────────── */
@@ -175,11 +185,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Pinned pane (global / cross-document) — blue header ──────────── */
+/* ── Pinned pane (global / cross-document) — blue border ──────────── */
+/* Earlier styling tinted the titlebar blue; the user moved the
+   "this pane persists across documents" affordance to the pane border
+   so the header reads the same as any other pane. */
 
-.floating-pane.pinned .floating-pane-titlebar {
-  background: rgba(74, 158, 255, 0.25);
-  border-bottom-color: rgba(74, 158, 255, 0.2);
+.floating-pane.pinned {
+  border-color: rgba(74, 158, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(74, 158, 255, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 /* ── Content area ─────────────────────────────────────────────────── */
@@ -334,7 +347,7 @@
   pointer-events: none;
   opacity: 0.92;
   /* Above anything else the app stacks (floating panes, panels, etc.). */
-  z-index: 2147483647;
+  z-index: var(--z-drag-ghost);
   user-select: none;
   -webkit-user-select: none;
 }

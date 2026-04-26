@@ -12,6 +12,7 @@
  * rewriting any doc references.
  */
 
+use crate::atomic::write_atomic;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -49,7 +50,7 @@ impl ImageManager {
         }
         let final_name = self.unique_filename(&stem, &ext);
         let path = self.resolve_path(&final_name)?;
-        fs::write(&path, &bytes)?;
+        write_atomic(&path, &bytes)?;
         Ok(ImageSaved {
             filename: final_name,
             mime_type: mime,

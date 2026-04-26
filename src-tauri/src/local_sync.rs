@@ -10,6 +10,7 @@
 //! Unsyncing a folder is strictly non-destructive — the only thing that
 //! changes is that the folder disappears from the sidebar.
 
+use crate::atomic::write_atomic_str;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -180,7 +181,7 @@ pub fn write_file(folder: &LocalSyncFolder, rel_path: &str, content: &str) -> Re
     if let Some(parent) = abs.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(&abs, content.as_bytes()).map_err(|e| e.to_string())
+    write_atomic_str(&abs, content).map_err(|e| e.to_string())
 }
 
 /// Resolve `rel_path` against `root`, canonicalising both and rejecting

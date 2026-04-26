@@ -99,8 +99,9 @@ export function createDefaultSettings() {
     activeStyleId: null,
     globalStyleId: null,
 
-    // Sidebar
-    hideSidebarTooltips: false,
+    // Sidebar / global tooltips (controls native browser tooltips on
+    // sidebar buttons, pane headers, and notebook toolbar buttons).
+    showTooltips: false,
 
     // Outline View (right sidebar)
     longviewShowParagraphs: true,

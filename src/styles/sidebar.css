@@ -14,7 +14,7 @@
   color: var(--sidebar-icon-color, var(--fg));
   opacity: 0;
   transition: opacity 0.2s;
-  z-index: 200;
+  z-index: var(--z-sidebar);
   pointer-events: none;
   cursor: crosshair;
 }
@@ -116,9 +116,9 @@
   padding: 0;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  /* Sits above the sidebar (200), panel-overlay (100), toolbars (100),
-     pane-container (90), and the Tauri drag region (80). */
-  z-index: 500;
+  /* Sits above the sidebar (--z-sidebar), panel-overlay (100), toolbars
+     (100), pane-container (--z-pane), and the Tauri drag region (80). */
+  z-index: var(--z-modal);
   /* Tauri drag region sits at top: 0 with webkit-app-region: drag —
      opt this button out so clicks don't get consumed as window drags. */
   -webkit-app-region: no-drag;
@@ -305,7 +305,7 @@ body.notebook-mode #panel-overlay.panel-inset {
 /* ===== Sidebar Tooltips ===== */
 .sidebar-tooltip {
   position: fixed;
-  z-index: 300;
+  z-index: var(--z-overlay);
   pointer-events: none;
   background: var(--panel-bg, rgba(30, 30, 30, 0.95));
   border: 1px solid var(--panel-border, rgba(255,255,255,0.12));
