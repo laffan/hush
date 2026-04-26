@@ -132,12 +132,22 @@ export async function sendSelectedToFile(state, target) {
       const { reloadNotebookShapes } = await import("./notebook/notebook-bridge.js");
       await reloadNotebookShapes(content);
     }
+    // Delete the original shapes from the source notebook now that the
+    // copy has landed safely in the target.
+    const { getCanvasInstance } = await import("./notebook/notebook-bridge.js");
+    const canvas = getCanvasInstance();
+    if (canvas?.state) canvas.state.deleteSelected();
     return;
   }
 
   if (!inNotebook && target.type === "document") {
-    const text = getDocSelection(state);
-    if (!text) return;
+    const view = state.editor?.view;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    if (sel.from === sel.to) return;
+    const fromPos = sel.from;
+    const toPos = sel.to;
+    const text = view.state.sliceDoc(fromPos, toPos);
     let file;
     try { file = await tauriInvoke("load_file", { id: target.fileId }); }
     catch (e) { console.error("Failed to load target doc:", e); return; }
@@ -149,5 +159,9 @@ export async function sendSelectedToFile(state, target) {
     if (state.currentFileId === target.fileId && state.editor && typeof state.editor.setContent === "function") {
       state.editor.setContent(merged);
     }
+    // Delete the original selection from the source editor now that the
+    // copy has landed safely in the target. Range was captured up front
+    // so an awaited save can't shift it under us.
+    view.dispatch({ changes: { from: fromPos, to: toPos, insert: "" } });
   }
 }
