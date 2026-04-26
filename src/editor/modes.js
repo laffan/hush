@@ -62,8 +62,8 @@ export function getPanelWidthPx() {
 
 export function updateColumnResizers(state) {
   document.querySelectorAll(".column-resizer").forEach((el) => el.remove());
-  if (state._columnResizeHandler) {
-    window.removeEventListener("resize", state._columnResizeHandler);
+  if (state.runtime.columnResizeHandler) {
+    window.removeEventListener("resize", state.runtime.columnResizeHandler);
   }
 
   const leftResizer = document.createElement("div");
@@ -123,7 +123,7 @@ export function updateColumnResizers(state) {
     // "Make space for panes": when a doc pane is visible in this context,
     // push the column to the right, leaving most of the space on the left.
     const makeSpace = state.settings.makeSpaceForPanes !== false;
-    const hasDocPane = !!state._hasVisibleDocPane;
+    const hasDocPane = !!state.runtime.hasVisibleDocPane;
     if (makeSpace && hasDocPane && !state.currentNotebookFileId && availableWidth > colW + minPad * 2) {
       rightPad = minPad + rightInsetOffset;
       leftPad = w - colW - rightPad;
@@ -153,7 +153,7 @@ export function updateColumnResizers(state) {
   }
 
   applyColumnLayout();
-  state._columnResizeHandler = applyColumnLayout;
+  state.runtime.columnResizeHandler = applyColumnLayout;
   window.addEventListener("resize", applyColumnLayout);
 
   function makeDraggable(el, isLeft) {

@@ -43,6 +43,10 @@ export interface RenderState {
       worldBbox: { minX: number; minY: number; maxX: number; maxY: number },
     ): void;
   };
+  /** Device pixel ratio. Injected by the caller (notes-canvas.ts reads
+   *  `window.devicePixelRatio`) so this module stays free of global
+   *  reads — it only needs to render. */
+  dpr?: number;
 }
 
 /** Paint shapes + (optional) background into an arbitrary ctx at an
@@ -122,7 +126,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = state.dpr ?? 1;
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   if (canvas.width !== w * dpr || canvas.height !== h * dpr) {

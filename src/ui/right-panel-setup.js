@@ -72,7 +72,7 @@ export function setupRightPanel(state) {
       longViewInstance = createLongView(rightPanelOverlay, state);
     }
     longViewInstance.render();
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     syncRightPinBtn();
   });
 
@@ -82,7 +82,7 @@ export function setupRightPanel(state) {
     rightPanelPinned = false;
     rightPanelOverlay.classList.remove("panel-pinned");
     rightPinBtn.classList.remove("pin-active", "pin-visible");
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
   // Close right panel on click outside — only when overlaying the

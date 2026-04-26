@@ -303,16 +303,16 @@ export async function acceptExternalChange(state, internalId, content) {
     await tauriInvoke("accept_external_change", { internalId, content });
     state.files = await tauriInvoke("list_files");
     if (state.currentFileId === internalId && state.editor) {
-      state._syncPulling = true;
+      state.runtime.syncPulling = true;
       state.editor.setContent(content);
-      state._syncPulling = false;
+      state.runtime.syncPulling = false;
     } else if (state.currentNotebookFileId === internalId) {
       // Reload shapes into the open notebook canvas
       state.emit("notebook-sync-reload", content);
     }
     state.emit("files-changed");
   } catch (e) {
-    state._syncPulling = false;
+    state.runtime.syncPulling = false;
     console.error("Accept external change failed:", e);
   }
 }

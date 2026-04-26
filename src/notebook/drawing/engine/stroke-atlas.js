@@ -140,6 +140,8 @@ async function loadBrushAtlasPng(url) {
 export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
   const atlasMasks = new Map();
   const tintAtlasCache = new Map();
+  // Hush delta #1a: optional `brushUrl` resolver lets the caller supply
+  // bundler-resolved URLs (Vite ?url imports). Reference default unchanged.
   const resolveBrushUrl = brushUrl || ((id) => `brushes/${id}.png`);
 
   function ensureAtlasMask(brushId) {
@@ -176,9 +178,10 @@ export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
   async function loadPngBrushes() {
     await Promise.all(BRUSH_DEFS.map(async (def) => {
       const url = resolveBrushUrl(def.id);
-      // A null/empty url signals "no PNG for this brush" — the procedural
-      // fallback already handled it via ensureAtlasMask, so skip cleanly
-      // without firing a network request that would show up as a 404.
+      // Hush delta #1b: a null/empty url signals "no PNG for this brush"
+      // — the procedural fallback already handled it via ensureAtlasMask,
+      // so skip cleanly without firing a network request that would show
+      // up as a 404.
       if (!url) return;
       const canvas = await loadBrushAtlasPng(url);
       if (!canvas) return;

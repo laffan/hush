@@ -136,10 +136,10 @@ async function init() {
   }
 
   // Restore scroll position after content is loaded
-  if (state._pendingScrollPosition != null && state.editor) {
+  if (state.runtime.pendingScrollPosition != null && state.editor) {
     requestAnimationFrame(() => {
-      state.editor.view.scrollDOM.scrollTop = state._pendingScrollPosition;
-      state._pendingScrollPosition = null;
+      state.editor.view.scrollDOM.scrollTop = state.runtime.pendingScrollPosition;
+      state.runtime.pendingScrollPosition = null;
     });
   }
 
@@ -286,7 +286,7 @@ async function init() {
   state.on("settings-changed", updatePanelMode);
 
   // Re-apply column layout when settings change (e.g. makeSpaceForPanes toggled)
-  state.on("settings-changed", () => { if (state._columnResizeHandler) state._columnResizeHandler(); });
+  state.on("settings-changed", () => { if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler(); });
 
   // Keep --focus-mode-opacity in sync with the slider in Settings > Editor.
   state.on("settings-changed", () => applyFocusModeOpacity(state));

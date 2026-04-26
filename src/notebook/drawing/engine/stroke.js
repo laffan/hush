@@ -72,9 +72,9 @@ export function createStrokeEngine({
   liveCanvas,
   eraserCursor,
   getRect,               // () => DOMRect-ish (cached by the app)
-  pointToLocal,          // optional (clientPt) => localPt for world-space hosts
-  getDpr,                // optional () => number; defaults to window.devicePixelRatio
-  brushUrl,              // optional brush-PNG resolver passed to createAtlasCache
+  pointToLocal,          // Hush delta #1: optional (clientPt) => localPt for world-space hosts
+  getDpr,                // Hush delta #2: optional () => number; defaults to window.devicePixelRatio
+  brushUrl,              // Hush delta #3: optional brush-PNG resolver passed to createAtlasCache
   onLongPress,
   onStrokeAdded,
   onStrokesRemoved,
@@ -83,19 +83,20 @@ export function createStrokeEngine({
   onBrushAtlasLoaded,
   onLayersChanged,
 }) {
-  // When the pointer target lives inside a CSS-transformed wrapper (our
-  // case — Pivot B), raw clientX/clientY minus the element's rect gives
-  // post-transform screen px, not the world/local px the engine wants
-  // to record on stroke points. `pointToLocal` lets the caller swap in
-  // a transform-aware converter. Defaults preserve the reference demo's
-  // "strip rect.left/top" behavior.
+  // Hush delta #1: when the pointer target lives inside a CSS-transformed
+  // wrapper (our case — Pivot B), raw clientX/clientY minus the element's
+  // rect gives post-transform screen px, not the world/local px the
+  // engine wants to record on stroke points. `pointToLocal` lets the
+  // caller swap in a transform-aware converter. Defaults preserve the
+  // reference demo's "strip rect.left/top" behavior.
   const toLocal = pointToLocal || ((p) => {
     const r = getRect();
     return { x: p.x - r.left, y: p.y - r.top };
   });
-  // `getDpr` lets the host cap device-pixel ratio — necessary on iPad
-  // where our world-sized canvases can blow past Safari's per-canvas
-  // memory limit at native retina. Reference default is unchanged.
+  // Hush delta #2: `getDpr` lets the host cap device-pixel ratio —
+  // necessary on iPad where our world-sized canvases can blow past
+  // Safari's per-canvas memory limit at native retina. Reference default
+  // is unchanged.
   const getDprFn = getDpr || (() => window.devicePixelRatio || 1);
   function fireLayersChanged() {
     if (onLayersChanged) onLayersChanged();
@@ -128,7 +129,7 @@ export function createStrokeEngine({
     longPressTimer: 0,
     longPressAnchor: null,
     longPressPointer: null,
-    longPressMs: LONG_PRESS_MS_DEFAULT,
+    longPressMs: LONG_PRESS_MS_DEFAULT,  // Hush delta #11: configurable via setLongPressMs()
     previewingIds: null,      // Set<id> currently rendered to previewCanvas
     previewingTiles: null,    // tile keys currently held out of doneCanvas
   };
@@ -183,7 +184,7 @@ export function createStrokeEngine({
 
   // --------- wire up subsystems ---------
   const atlas = createAtlasCache({
-    brushUrl,
+    brushUrl,            // Hush delta #3: pass-through of the bundler-resolved URL.
     onAtlasReady(brushId) {
       // When a PNG lands, repaint existing strokes that use this brush, and
       // notify the UI so thumbnails can refresh.
@@ -557,9 +558,9 @@ export function createStrokeEngine({
     setStreamline(v) { OPTIONS.streamline = +v; },
     setSmoothing(v) { OPTIONS.smoothing = +v; },
     setSpacing(v) { OPTIONS.spacing = +v; },
-    // Long-press-to-lasso delay, in ms. Configurable so the hush UI
-    // can expose a slider for users who want the select gesture to
-    // fire faster or require a more deliberate hold.
+    // Hush delta #11: long-press-to-lasso delay, in ms. Configurable so
+    // the hush UI can expose a slider for users who want the select
+    // gesture to fire faster or require a more deliberate hold.
     setLongPressMs(ms) {
       const n = +ms;
       if (!Number.isFinite(n) || n <= 0) return;
@@ -689,10 +690,10 @@ export function createStrokeEngine({
       state.previewingTiles = null;
     },
 
-    // Public rebake — expose the renderer's fullRebake so the sync
-    // shim can batch-load a notebook full of strokes with a single
-    // repaint at the end, instead of triggering a rebake per insert.
-    // Engine delta #6; see INTEGRATION-PLAN.md.
+    // Hush delta #6: public rebake — expose the renderer's fullRebake
+    // so the sync shim can batch-load a notebook full of strokes with a
+    // single repaint at the end, instead of triggering a rebake per
+    // insert. See INTEGRATION-PLAN.md.
     fullRebake() {
       renderer.fullRebake();
     },

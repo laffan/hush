@@ -43,6 +43,7 @@
  * iPadOS Safari reports these in CSS pixels for touch contacts.
  * ============================================================ */
 
+// Hush delta #13: SIMULTANEITY_MS bumped from 180→350 ms; see header.
 const SIMULTANEITY_MS = 350;       // max time between the first and last contact landing.
                                    // Was 180 — too tight: a natural fast 2-finger tap on iPad
                                    // routinely has 200–300 ms of inter-finger lag, and the gap
@@ -50,9 +51,9 @@ const SIMULTANEITY_MS = 350;       // max time between the first and last contac
                                    // (the user saw a tiny line drawn instead of an undo).
 const TAP_MAX_MS = 280;            // max duration from down to up for a tap
 const MOVE_TOLERANCE_2 = 64;       // (8 CSS px)^2 — any contact that drifts more is not a tap
-// Promotion threshold from "candidate tap" into "pan". Slightly above
-// MOVE_TOLERANCE_2 so a two-finger tap with a bit of shake still lands
-// as an undo.
+// Hush delta #10: promotion threshold from "candidate tap" into "pan".
+// Slightly above MOVE_TOLERANCE_2 so a two-finger tap with a bit of
+// shake still lands as an undo.
 const PAN_START_2 = 144;           // (12 CSS px)^2
 // Minimum change in finger-spread distance (CSS px) before we promote
 // the burst into pinch-zoom mode. Mirrors PAN_START in spirit — a
@@ -67,17 +68,17 @@ const MAX_CONTACT_SIZE = 90;
 
 export function createGestures({
   getRect,
-  pointToLocal,    // optional (clientPt) => localPt; see createStrokeEngine
+  pointToLocal,    // Hush delta #5: optional (clientPt) => localPt; mirror of stroke.js delta #1
   strokeEngine,
   selectionEngine,
   onUndo,
   onRedo,
-  onPanStart,      // () => void — two-finger drift crossed PAN_START_2
-  onPanMove,       // (dx, dy) => void — midpoint delta from pan-start, in client px
-  onPanEnd,        // () => void — every touch has lifted after a pan
-  onPinchStart,    // (mid: {x,y}, dist: number) => void — finger spread changed past PINCH_START
-  onPinchMove,     // (mid: {x,y}, dist: number) => void — current midpoint + spread (client px)
-  onPinchEnd,      // () => void — every touch has lifted after a pinch
+  onPanStart,      // Hush delta #10: () => void — two-finger drift crossed PAN_START_2
+  onPanMove,       // Hush delta #10: (dx, dy) => void — midpoint delta from pan-start, in client px
+  onPanEnd,        // Hush delta #10: () => void — every touch has lifted after a pan
+  onPinchStart,    // Hush delta #12: (mid, dist) => void — finger spread changed past PINCH_START
+  onPinchMove,     // Hush delta #12: (mid, dist) => void — current midpoint + spread (client px)
+  onPinchEnd,      // Hush delta #12: () => void — every touch has lifted after a pinch
 }) {
   const toLocal = pointToLocal || ((p) => {
     const r = getRect();

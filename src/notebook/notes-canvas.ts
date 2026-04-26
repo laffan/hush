@@ -445,6 +445,8 @@ export class NotesCanvas {
         pocketProximity: this.state.pocketProximity,
         pocketInZone: this.state.pocketInZone,
         leftInset: this.state.leftInset,
+        // Inject DPR so renderer.ts stays free of `window` reads.
+        dpr: window.devicePixelRatio || 1,
       });
       this._rafId = requestAnimationFrame(loop);
     };

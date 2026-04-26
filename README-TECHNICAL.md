@@ -8,9 +8,10 @@ Hush is a [Tauri v2](https://v2.tauri.app/) desktop app with a vanilla JavaScrip
 Frontend (src/)                        Backend (src-tauri/src/)
 ───────────                            ────────────────────
 main.js                  ←──IPC──→     lib.rs (app setup + run)
-├── font-imports.js                    ├── commands/
-├── style-application.js               │   ├── files.rs
-├── window-shortcuts.js                │   ├── images.rs
+├── font-imports.js                    ├── atomic.rs            (tmp+rename writer)
+├── style-application.js               ├── commands/
+├── window-shortcuts.js                │   ├── files.rs
+├── tooltips.js                        │   ├── images.rs
 ├── command-palette.js                 │   ├── settings.rs
 ├── theme-colors.js                    │   ├── snapshots.rs
 ├── themes.js                          │   ├── local_sync.rs
@@ -149,6 +150,7 @@ Both are built by Vite as separate Rollup inputs.
 - **`font-imports.js`** — every `@fontsource` CSS import (~33 lines), pulled in for side effects only
 - **`style-application.js`** — `applyActiveStyle(state)` (apply a named style's theme/font/colour overrides to the document), `applyFocusModeOpacity(state)` (publish the `--focus-mode-opacity` CSS var), and `handleOAuthCode(state, invoke, code)` (Dropbox deep-link callback)
 - **`window-shortcuts.js`** — `installWindowShortcuts(state, windowCommands)`, the window-level keydown fallback that fires when CodeMirror hasn't already consumed the event (Cmd+P, Cmd+O, the always-allowed sidebar/outline/fullscreen toggles, plus the dispatch into `dispatchDomShortcut` for everything else)
+- **`tooltips.js`** — global tooltip gate. `setTooltipsEnabled(bool)` reflects the `showTooltips` setting onto the DOM; `applyTooltip(el, label)` stashes the label on `data-tooltip` and only writes a native `title` attribute when tooltips are enabled. The notebook `h()` helper routes its `title:` option through `applyTooltip` automatically
 
 ### Fonts
 
@@ -159,6 +161,14 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Loaded as a sid
 ### State Management (`state/state.js`)
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes. The default `settings` shape is built by `createDefaultSettings()` in `state/state-defaults.js` (~170 fields mirroring the Rust `AppSettings` struct).
+
+**`state.runtime` substructure.** Cross-module side-channel data that doesn't belong on `settings` (not persisted) and isn't first-class state (no event emissions) lives on `state.runtime`. Replaces the prior convention where any module could stamp a fresh `state._foo` field on AppState. Current fields:
+
+- `columnResizeHandler` — set by `editor/modes.js`; called by sidebar / panel-resizer / pane-manager / main.js whenever sidebar or pane geometry changes so the editor column re-centers.
+- `hasVisibleDocPane` — written by `pane-manager.js` when pane visibility changes; read by `editor/modes.js` to decide whether to leave the right gutter free.
+- `pendingScrollPosition` — set during `init()` from the persisted `scrollPosition` setting; consumed once by `main.js` after the editor mounts.
+- `localSyncWriteFlag` — short-lived timestamp set when Hush writes to a Local Sync file; the watcher uses it to suppress its own echo within ~500 ms.
+- `syncPulling` — true while a sync layer (Dropbox poll, Local Sync watcher, pane sync) is pushing remote content into the editor; suppresses `markDirty` so the pull doesn't re-trigger an upload.
 
 Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`.
 
@@ -208,7 +218,11 @@ Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `
 
 Centered overlay activated by `Cmd+P` (hardcoded in the fixed keymap). Lists all major commands with icons, labels, and keyboard shortcut keycaps. Supports arrow-key navigation, Enter to execute, Escape to dismiss, and text filtering.
 
-Commands are context-sensitive: **shared** commands (New document, New notebook, Files, Styles, Toggle fullscreen, Settings, etc.) always appear; **doc-only** commands (Ratchet, Private mode, Typewriter, Show repeats, Highlight sentence, Outline view) are hidden when a notebook is open; **notebook-only** commands (Open shelf, Start brainstorm) appear only in notebook mode.
+Commands are context-sensitive: **shared** commands (New document, New notebook, **New document as pane**, **New notebook as pane**, Files, Styles, Toggle fullscreen, Settings, etc.) always appear; **doc-only** commands (Ratchet, Private mode, Typewriter, Show repeats, Highlight sentence, Outline view) are hidden when a notebook is open; **notebook-only** commands (Open shelf, Start brainstorm) appear only in notebook mode.
+
+The "as pane" variants call `state.newFile(null, { openImmediately: false })` / `state.createNotebook("New Notebook", null, { openImmediately: false })` — both methods accept an option to skip the main-view switch and return `{ fileId, name }` so the palette can hand them to `createPane()`. The new file lands in Inbox like any other; it just opens as a floating reference instead of taking over the main editor.
+
+Doc / notebook / project entries (and the file-picker rows surfaced by "Open as pane…") use a shared icon set in `src/sidebar/sidebar_icons/`: `icon-doc.svg`, `icon-notebook.svg`, `icon-project.svg`. All three use `currentColor` for stroke/fill so they pick up the palette's `--fg`.
 
 When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Turn off X" entries are prepended at the top of the list (doc mode only). Mouse hover selection is suppressed while keyboard-navigating to prevent conflicts.
 
@@ -216,13 +230,15 @@ When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Tur
 
 Fixed 50px column on the left edge with icon buttons. The column + panel open as a single unit via the floating toggle (upper-left circular button) or Cmd+\ — hover-to-reveal has been retired because on iPad it fought with the explicit toggle. `#sidebar` is opacity 0 / `pointer-events: none` until the `.visible` or `.pinned` class is set. On viewports wider than 700px the panel is always inset (pushing the editor column over); at 700px or narrower it falls back to overlay mode. The legacy pin button is `display: none` everywhere — the toggle owns open/close.
 
-**Floating toggle (`.sidebar-floating-toggle`).** Circular button fixed at `top: 40px; left: 20px`, z-index 500 so it clears every other piece of chrome. Click emits `toggle-left-panel`, which either shows the files panel or hides all panels. Icon flips between `sidebar-expand` and `sidebar-collapse` based on `#panel-overlay`'s `.hidden` class (watched via `MutationObserver`). When the panel is open the button rides its right edge via `left: calc(50px + var(--panel-width) + 20px)` — no transition, matching the panel's snap behavior. In doc mode only, typing in an editable target adds a `.typing-fade` class that hides the button until any pointer activity brings it back; notebook mode keeps the button permanently visible for Pencil-only users.
+**Floating toggle (`.sidebar-floating-toggle`).** Circular button fixed at `top: 40px; left: 20px`, `z-index: var(--z-modal)` so it clears every other piece of chrome. Click emits `toggle-left-panel`, which either shows the files panel or hides all panels. Icon flips between `sidebar-expand` and `sidebar-collapse` based on `#panel-overlay`'s `.hidden` class (watched via `MutationObserver`). When the panel is open the button rides its right edge via `left: calc(50px + var(--panel-width) + 20px)` — no transition, matching the panel's snap behavior. In doc mode only, typing in an editable target adds a `.typing-fade` class that hides the button until any pointer activity brings it back; notebook mode keeps the button permanently visible for Pencil-only users.
 
 **Buttons:** Files panel, Styles panel, Versions, Export, Settings (iOS only). Mode toggles (ratchet, private, typewriter, D.R.Y., focus, zotero) are accessed via the command palette (`Cmd+P`).
 
 Panels render into `#panel-overlay`. Layout is responsive: when wide enough, panels inset beside content; otherwise they overlay as a modal.
 
 **Cursor:** The sidebar column and open panel use `cursor: crosshair` so hovering anywhere in the sidebar surfaces a consistent navigation affordance distinct from the editor cursor.
+
+**Tooltips.** The sidebar's icon buttons use a custom-styled tooltip overlay (`.sidebar-tooltip` — name + shortcut keycap diagram, ~900 ms hover delay). Pane header buttons and notebook UI buttons use the native browser `title` attribute. Both are gated by the `showTooltips` setting (default off — tooltips are opt-in). The shared mechanism lives in `src/tooltips.js`: `applyTooltip(el, label)` stashes the label on `data-tooltip` and only writes the live `title` attribute when tooltips are enabled; `setTooltipsEnabled(enabled)` flips a body class and walks every `[data-tooltip]` to add/strip its title. Wired from `main.js` once at startup and on every `settings-changed`. The notebook `h()` helper in `ui/dom-helpers.ts` routes its `title:` option through `applyTooltip` automatically, so adding a new notebook button picks up the gate for free.
 
 **Resizable width:** The right edge of the panel overlay exposes a draggable handle that reuses the same invisible-until-approached resizer pattern as the editor column (`editor/modes.js::updateColumnResizers`). A 10px hit zone sits outside the panel edge; pointer-down begins a drag that updates a `--panel-width` CSS custom property and persists the value to `sidebarWidth` in `AppSettings`. The handle is transparent at rest and only paints a thin accent line while hovered/dragging. Minimum and maximum widths match the inset-vs-overlay thresholds used by the responsive layout so the panel never collapses below its content or exceeds the viewport. Implementation in `sidebar/panel-resizer.js`.
 
@@ -333,6 +349,8 @@ Optional live word count pinned to the top of the text column. When `wordCountVi
 
 Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a whitespace-split after stripping comment markers (`%%...%%`), inline code fences, and image markdown — so references don't inflate the count. In project mode the separators are skipped. The plugin reads `wordCountVisible` from state and responds to `settings-changed` / `mode-changed` events; toggling is handled by the `toggleWordCount` command, bound by default to `Cmd+Shift+W` and surfaced in the command palette.
 
+**Pane header chip.** Doc-mode floating panes carry their own word count (`.fp-wordcount`) next to the title — same setting (`wordCountVisible`), independent count per pane (each pane has its own editor). `pane-content.js` exports `countWords` from this module and refreshes the chip on every pane editor `docChanged` plus once on initial load. `pane-manager.js` listens for `settings-changed` and runs `syncAllPaneWordCounts()` so toggling the global flag updates every pane in lockstep. Notebook panes don't get a chip — their content is shapes, not prose.
+
 ### Typewriter Mode (`editor/plugins/typewriter.js`)
 
 Locks cursor to a fixed screen position (default 60% from top). Draggable boundary line for repositioning. Extra padding so first/last lines can reach the boundary. Also handles ratchet scroll (pins last line to 50% center).
@@ -390,7 +408,7 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 **Attach vs Pin:**
 
 - **Attach** — Anchors the pane to content. In notebooks, converts screen position to canvas world coordinates and syncs every frame via `requestAnimationFrame`. In docs, records `scrollRelY` (pane Y + scrollTop) and updates on the editor's scroll event. Dragging a canvas-attached pane converts screen deltas to canvas deltas (dividing by zoom).
-- **Pin** — Marks the pane as global (`.pinned` class, blue header). Pinned panes stay visible across all document switches. Unpinning triggers `onContextChange()` so the pane returns to its original context. Attach and pin are mutually exclusive — toggling one while the other is active shows a confirmation dialog.
+- **Pin** — Marks the pane as global (`.pinned` class — blue **border** with a thin matching shadow ring; header coloring stays normal). Pinned panes stay visible across all document switches. Unpinning triggers `onContextChange()` so the pane returns to its original context. Attach and pin are mutually exclusive — toggling one while the other is active shows a confirmation dialog.
 
 **Duplicate** — Creates a new pane for the same file with `ownerContext` set to the current document (not the source's context). The duplicate check in `createPane` scopes by context, so the same file can have panes in different documents.
 
@@ -398,7 +416,7 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 
 **Input isolation:** The notebook's window `keydown` and document `paste` handlers skip processing when `document.activeElement` is inside a `.floating-pane`. Inactive pane content gets `pointer-events: none` via CSS, and the editor is set to non-editable. A window-level capture-phase `pointerdown` listener deactivates panes when clicking outside.
 
-**Z-index layering:** `#pane-container` is `z-index: 90` (above editor content at 0–80, below sidebars at 100+). The notebook container has no z-index to avoid creating a stacking context, allowing the shelf panel (`z-index: 150`) to render above panes.
+**Z-index layering:** `#pane-container` is `z-index: var(--z-pane)` (90 — above editor content at 0–80, below sidebars). The notebook container has no z-index to avoid creating a stacking context, allowing the shelf panel (`var(--z-shelf)` — 150) to render above panes. The full scale is documented in `base.css`; see "CSS Structure" below.
 
 **Locked styles.** When a document or notebook was saved with "Lock Style to Document" enabled, its tree node stores a `lockedStyleId`. A pane whose `fileId` resolves to a file with a locked style applies that style scoped to the pane element (theme compartment reconfigure for the CodeMirror instance; theme resolve + `HUSH_TO_NOTEBOOK_THEME` lookup for notebook panes) rather than the session-active style. Pane creation and `file-opened` updates both consult the locked style; `style-changed` events only affect panes whose file is unlocked. The scoping lives on `.floating-pane[data-locked-style]` via CSS custom-property overrides so the main editor's style is untouched.
 
@@ -459,6 +477,24 @@ Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
 The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 
+**Design tokens.** `base.css` defines the cross-cutting token set: appearance colours (`--bg`, `--fg`, `--cursor`, `--accent`, panel + sidebar variants per theme), typography (`--font-family`, `--font-size`, `--line-height`, `--padding`, `--column-width`), and a documented z-index scale:
+
+```
+--z-pane: 90            floating reference panes above editor content
+--z-shelf: 150          notebook shelf panel
+--z-sidebar: 200        left sidebar column + floating toggle
+--z-overlay: 300        find-replace, action sheets, sidebar tooltip
+--z-popover: 400        footnote popover, command palette, image hover
+--z-modal: 500          full-screen modal backdrops + standard modals
+--z-modal-content: 510  modal content layer above its own backdrop
+--z-modal-top: 9999     dropdowns above modals (ratchet duration grid,
+                        zotero search, sync conflict, swatch picker)
+--z-modal-topmost: 10001 footnote popover above an open style modal
+--z-drag-ghost: 2147483647  text-drag chip; must escape every stacking context
+```
+
+Per-component literals (1, 5, 10, 80, 89, 95, 100, 101, 250) are local stacking-context tweaks and stay as numbers. Anything modal or higher must use a token. The settings window duplicates the small subset it needs (`--z-modal-top`) since it runs in its own WebviewWindow without `base.css`.
+
 ## Backend (Rust)
 
 ### `lib.rs` — Core
@@ -470,13 +506,17 @@ Defines the Tauri app setup:
 - **`run()`** — plugin registration, state setup, deep-link listener, tray icon + menu wiring, window-close hide behaviour, the `invoke_handler!` list
 - **macOS activation policy** — `Regular` (dock) or `Accessory` (menu bar only) based on `visibility` setting
 
+### `atomic.rs` — Atomic file writes
+
+Tiny helper used by every long-lived JSON / binary store. `write_atomic(&Path, &[u8])` and `write_atomic_str(&Path, &str)` both write to `<path>.tmp` in the same directory, `sync_all()` to flush dirty buffers, then `fs::rename` (atomic on the same filesystem). Worst case on crash or power loss is "the previous version" — never a partial write. Used by `files.rs` (`save_file_tree`, `create_file`, `save_file`, `rename_file`), `settings.rs::save`, `images.rs::save_from_data_url`, `sync.rs` (sync map + external folder writes + project metadata), `local_sync.rs::write_file`, and `zotero.rs::save_references`.
+
 ### `commands/` — Tauri command surface
 
 Command handlers are grouped by domain. Each module exports `pub fn` items decorated with `#[tauri::command]`; `lib.rs::run()` references them as `commands::<group>::<name>` in the `invoke_handler!` list.
 
 - **`commands/settings.rs`** — `get_settings`, `save_settings`
 - **`commands/files.rs`** — file CRUD + tree ops + project/notebook creation. Owns the `NotebookCreated` wire shape returned by `create_notebook`
-- **`commands/images.rs`** — image CRUD, `export_with_images`, `write_binary_file` + path normalization helpers (iOS `file://` URLs, percent-decoding)
+- **`commands/images.rs`** — image CRUD, `export_with_images`, `write_binary_file` + path normalization helpers (iOS `file://` URLs, percent-decoding). `write_binary_file` also runs `ensure_path_in_safe_root()` — defence-in-depth on top of the dialog plugin's access controls — that requires absolute paths under home / data / cache / temp dirs (plus `/private/var/folders` on macOS) and rejects literal `..` components
 - **`commands/snapshots.rs`** — `create_snapshot`, `get_snapshot`, `get_snapshots`, `delete_document_snapshots`
 - **`commands/local_sync.rs`** — `local_sync_add` / `_remove` / `_list` / `_read_dir` / `_read_file` / `_write_file`. Includes the local-only `find_local_sync_folder` helper and a small `uuid_like()` ID generator
 - **`commands/zotero.rs`** — `save_zotero_references`, `load_zotero_references`

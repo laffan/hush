@@ -27,7 +27,7 @@
  * ============================================================ */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-// Hush fork: square handles (rects) instead of the reference's
+// Hush delta #7: square handles (rects) instead of the reference's
 // circles, matching the canvas-drawn handle style Hush uses for
 // text/image/drag-area selection. HANDLE_SIZE is the side length;
 // offset from the corner is HANDLE_SIZE/2 so the rect is centered
@@ -78,7 +78,7 @@ export function createSelectionEngine({
   svg,
   layer,           // <g id="selectionLayer">
   getRect,
-  pointToLocal,    // optional (clientPt) => localPt; see createStrokeEngine
+  pointToLocal,    // Hush delta #4: optional (clientPt) => localPt; mirror of stroke.js delta #1
   strokeEngine,
   isSelectable,    // (stroke) => bool — skip locked/hidden in lasso hit-test
   onExit,          // () => void — user hit Escape to leave select mode
@@ -116,10 +116,10 @@ export function createSelectionEngine({
     handleNodes[spec.name] = c;
   }
 
-  // Hush fork: the red-X delete badge is hidden. Hush surfaces delete
-  // through the shared selection toolbar's trash icon, so an extra
-  // delete affordance attached to the engine's bbox is redundant. The
-  // node stays in the tree (classifyTarget still recognizes
+  // Hush delta #9: the red-X delete badge is hidden. Hush surfaces
+  // delete through the shared selection toolbar's trash icon, so an
+  // extra delete affordance attached to the engine's bbox is redundant.
+  // The node stays in the tree (classifyTarget still recognizes
   // data-handle="delete") but renders at display:none so clicks can't
   // land on it.
   const deleteBtn = document.createElementNS(SVG_NS, 'g');

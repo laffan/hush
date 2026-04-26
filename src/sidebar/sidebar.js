@@ -187,7 +187,7 @@ export function createSidebar(container, state) {
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     // Recalculate column centering for inset mode
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   }
 
   function hidePanel() {
@@ -196,7 +196,7 @@ export function createSidebar(container, state) {
     panelOverlay.classList.add("hidden");
     container.classList.remove("visible", "pinned");
     // Recalculate column centering for inset mode
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   }
 
   // Button click handlers
@@ -211,7 +211,7 @@ export function createSidebar(container, state) {
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createFilesPanel(panelOverlay, state, hidePanel);
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
   container.querySelector('[data-action="styles"]').addEventListener("click", () => {
@@ -230,7 +230,7 @@ export function createSidebar(container, state) {
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createVersionsPanel(panelOverlay, state, hidePanel);
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
   container.querySelector('[data-action="export"]').addEventListener("click", async () => {
@@ -419,7 +419,7 @@ export function createSidebar(container, state) {
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createFilesPanel(panelOverlay, state, hidePanel);
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
   // Cmd+\ hide support — reset internal state
@@ -431,7 +431,7 @@ export function createSidebar(container, state) {
     pinBtn.classList.remove("pin-active", "pin-visible");
     panelOverlay.classList.add("hidden");
     container.classList.remove("visible", "pinned");
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
   // Close panel on click outside — only when the panel is overlaying the
@@ -487,7 +487,7 @@ export function createSidebar(container, state) {
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     createVersionsPanel(panelOverlay, state, hidePanel);
-    if (state._columnResizeHandler) state._columnResizeHandler();
+    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
   state.on("export-current-file", async () => {

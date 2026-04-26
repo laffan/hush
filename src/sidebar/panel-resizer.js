@@ -41,7 +41,7 @@ export function createPanelResizer(state, panelOverlay) {
       applyPanelWidth(next);
       positionPanelResizer(el, panelOverlay);
       // Editor column layout re-centers when the panel is inset
-      if (state._columnResizeHandler) state._columnResizeHandler();
+      if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     };
     const onUp = () => {
       el.classList.remove("dragging");

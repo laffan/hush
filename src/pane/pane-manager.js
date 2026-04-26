@@ -132,8 +132,8 @@ function notifyLayoutChange() {
   for (const [, p] of panes) {
     if (p.el.style.display !== "none") { hasPane = true; break; }
   }
-  appState._hasVisibleDocPane = hasPane;
-  if (appState._columnResizeHandler) appState._columnResizeHandler();
+  appState.runtime.hasVisibleDocPane = hasPane;
+  if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
   // Surface pane-set changes to the notebook shelf (and any other
   // listener) so its pane rows can refresh on create/close/show/hide.
   if (appState && typeof appState.emit === "function") appState.emit("notebook-pane-changed");

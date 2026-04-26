@@ -228,9 +228,9 @@ export async function savePaneContent(pane) {
       if (pane.localSync) {
         // Write back to the mounted folder on disk. The Local Sync
         // watcher would otherwise echo this change back as an external
-        // update — the state's `_localSyncWriteFlag` guard (in
+        // update — the state's `runtime.localSyncWriteFlag` guard (in
         // sync/local-sync.js) suppresses the reload for a short window.
-        if (appState) appState._localSyncWriteFlag = Date.now();
+        if (appState) appState.runtime.localSyncWriteFlag = Date.now();
         const { writeFile } = await import("../sync/local-sync.js");
         await writeFile(pane.localSync.folderId, pane.localSync.relPath, content);
       } else {
@@ -260,10 +260,10 @@ export function syncDocFromPane(pane) {
     const mainSel = mainView.state.selection.main;
     const anchor = Math.min(mainSel.anchor, content.length);
     const head = Math.min(mainSel.head, content.length);
-    appState._syncPulling = true;
+    appState.runtime.syncPulling = true;
     appState.editor.setContent(content);
     try { mainView.dispatch({ selection: { anchor, head } }); } catch (_) {}
-    appState._syncPulling = false;
+    appState.runtime.syncPulling = false;
   } finally {
     setSyncing(false);
   }

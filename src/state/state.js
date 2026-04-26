@@ -41,7 +41,6 @@ export class AppState {
     // Autosave interval
     this.autosaveInterval = null;
     this.dirty = false;
-    this._syncPulling = false; // suppress markDirty during sync pull
 
     // Snapshot keystroke tracking
     this._keystrokeCount = 0;
@@ -49,6 +48,38 @@ export class AppState {
 
     // Listeners
     this._listeners = {};
+
+    /**
+     * Cross-module runtime side-channel — values written by one module
+     * and read by another that don't belong on `settings` (not persisted)
+     * and aren't first-class state (no event emissions). Formalised here
+     * to replace the prior `state._foo` convention where any module
+     * could quietly stamp a fresh underscore field on AppState.
+     *
+     *  - `columnResizeHandler` — set by editor/modes.js; called by sidebar,
+     *    panel-resizer, right-panel-setup, pane-manager, main.js whenever
+     *    sidebar/pane geometry changes so the editor column re-centers.
+     *  - `hasVisibleDocPane`   — written by pane-manager when pane visibility
+     *    changes; read by editor/modes.js to decide whether to leave the
+     *    right gutter free for panes.
+     *  - `pendingScrollPosition` — set during init() from the persisted
+     *    `scrollPosition` setting; consumed once by main.js after the
+     *    editor mounts, then nulled.
+     *  - `localSyncWriteFlag`  — short-lived timestamp set when Hush writes
+     *    to a Local Sync file; the watcher uses it to suppress its own
+     *    echo within ~500ms.
+     *  - `syncPulling`         — true while a sync layer (Dropbox poll,
+     *    Local Sync watcher, pane sync) is pushing remote content into the
+     *    editor; suppresses `markDirty` so the pull doesn't re-trigger an
+     *    upload.
+     */
+    this.runtime = {
+      columnResizeHandler: null,
+      hasVisibleDocPane: false,
+      pendingScrollPosition: null,
+      localSyncWriteFlag: 0,
+      syncPulling: false,
+    };
   }
 
   async init() {
@@ -63,7 +94,7 @@ export class AppState {
         // Restore session state from settings
         this.typewriterMode = !!this.settings.typewriterMode;
         this.dryMode = !!this.settings.dryMode;
-        this._pendingScrollPosition = this.settings.scrollPosition || null;
+        this.runtime.pendingScrollPosition = this.settings.scrollPosition || null;
 
         // Restore last open file/project/notebook
         const lastProjectId = this.settings.lastProjectId;
@@ -160,7 +191,7 @@ export class AppState {
   }
 
   markDirty() {
-    if (this._syncPulling) return;
+    if (this.runtime.syncPulling) return;
     this.dirty = true;
   }
 

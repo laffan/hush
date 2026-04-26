@@ -7,7 +7,7 @@
  *
  * The currently-open file is tracked on `AppState` via two extra fields:
  *   - `state.currentLocalSync = { folderId, relPath }`
- *   - `state._localSyncWriteFlag` — guards against watcher-echo reloads
+ *   - `state.runtime.localSyncWriteFlag` — guards against watcher-echo reloads
  *     when we just wrote the file ourselves.
  */
 
@@ -85,7 +85,7 @@ export async function saveCurrentLocalSync(state) {
   if (!state.currentLocalSync || !state.editor) return;
   const { folderId, relPath } = state.currentLocalSync;
   const content = state.editor.getContent();
-  state._localSyncWriteFlag = Date.now();
+  state.runtime.localSyncWriteFlag = Date.now();
   state.dirty = false;
   try { await writeFile(folderId, relPath, content); }
   catch (e) { console.error("Local Sync save failed:", e); }
@@ -99,7 +99,7 @@ export async function startLocalSyncWatcher(state, onChanged) {
   await listen("local-sync-changed", (event) => {
     const { id, paths } = event.payload || {};
     // Ignore events that echo our own write (within 500ms of last write)
-    if (state._localSyncWriteFlag && Date.now() - state._localSyncWriteFlag < 500) {
+    if (state.runtime.localSyncWriteFlag && Date.now() - state.runtime.localSyncWriteFlag < 500) {
       return;
     }
     // If the currently-open local-sync file changed on disk, reload it
@@ -109,9 +109,9 @@ export async function startLocalSyncWatcher(state, onChanged) {
       if (matches) {
         readFile(id, editedPath).then((content) => {
           if (state.editor && state.currentLocalSync && state.currentLocalSync.relPath === editedPath) {
-            state._syncPulling = true;
+            state.runtime.syncPulling = true;
             state.editor.setContent(content);
-            state._syncPulling = false;
+            state.runtime.syncPulling = false;
           }
         }).catch(() => {});
       }
