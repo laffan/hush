@@ -103,6 +103,10 @@ pub struct AppSettings {
     pub shortcut_toggle_focus: String,
     #[serde(default = "default_shortcut_toggle_word_count")]
     pub shortcut_toggle_word_count: String,
+    #[serde(default = "default_shortcut_zen_focus")]
+    pub shortcut_zen_focus: String,
+    #[serde(default = "default_zen_focus_font_size")]
+    pub zen_focus_font_size: u32,
     #[serde(default)]
     pub word_count_visible: bool,
     #[serde(default = "default_shortcut_find")]
@@ -442,6 +446,8 @@ impl Default for AppSettings {
             shortcut_toggle_dry: default_shortcut_toggle_dry(),
             shortcut_toggle_focus: default_shortcut_toggle_focus(),
             shortcut_toggle_word_count: default_shortcut_toggle_word_count(),
+            shortcut_zen_focus: default_shortcut_zen_focus(),
+            zen_focus_font_size: default_zen_focus_font_size(),
             word_count_visible: false,
             shortcut_find: default_shortcut_find(),
             shortcut_find_all: default_shortcut_find_all(),

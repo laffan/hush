@@ -174,6 +174,7 @@ export function buildEditorCommands() {
     shortcutTypewriter: (state) => { state.toggleTypewriter(); return true; },
     shortcutToggleDry: (state) => { state.toggleDry(); return true; },
     shortcutToggleFocus: (state) => { state.toggleFocus(); return true; },
+    shortcutZenFocus: (state) => { state.toggleZenFocus(); return true; },
     shortcutToggleWordCount: (state) => toggleWordCount(state),
     shortcutNewFile: (state) => { state.newFile(); return true; },
     shortcutSave: (state) => {

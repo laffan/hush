@@ -23,6 +23,7 @@ export const shortcutCategories = [
       { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
       { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },
+      { key: "shortcutZenFocus", label: "Toggle Zen Focus" },
       { key: "shortcutToggleWordCount", label: "Toggle word count" },
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutSave", label: "Save file" },
@@ -211,6 +212,18 @@ export function renderEditorTab(settings) {
         </div>
       </div>
       <p class="settings-help">When focus mode is on, text outside the current sentence and any open panes fade to this opacity.</p>
+    </div>
+
+    <div class="settings-section">
+      <h2>Zen Focus</h2>
+      <div class="settings-slider-row">
+        <label>Font size</label>
+        <div class="slider-group">
+          <input type="range" id="setting-zen-focus-font-size" min="18" max="72" step="1" value="${s.zenFocusFontSize || 30}" />
+          <span class="slider-value">${s.zenFocusFontSize || 30}px</span>
+        </div>
+      </div>
+      <p class="settings-help">Font size used while Zen Focus is open (toggle with the configured shortcut, default ⌘⇧S).</p>
     </div>
 
     <div class="settings-section">

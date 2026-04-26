@@ -15,7 +15,7 @@ import {
   syncing,
   setSyncing,
 } from "./pane-state.js";
-import { createPaneEditor } from "./pane-editor.js";
+import { createPaneEditor, attachPaneTextDrop } from "./pane-editor.js";
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 import { countWords } from "../editor/plugins/word-count.js";
 
@@ -104,7 +104,6 @@ async function loadDocumentPane(pane) {
   // Accept text dragged INTO the pane from outside the app (or from
   // another doc / pane). The main editor's file-drop net doesn't
   // cover panes, so without this drops fall through silently.
-  const { attachPaneTextDrop } = await import("./pane-editor.js");
   attachPaneTextDrop(pane);
   // Cmd+drag image chips / raw image refs in a pane so they can be moved
   // between panes just like any other markdown text.

@@ -6,6 +6,7 @@ import { applyAppearance, isIOS, openSettingsWindow } from "./settings/settings-
 import { getThemeById } from "./themes.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
+import { initZenFocus } from "./editor/zen-focus.js";
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
@@ -207,6 +208,7 @@ async function init() {
   const sidebar = document.getElementById("sidebar");
   createSidebar(sidebar, state);
   setupFileDrop(state);
+  initZenFocus(state);
 
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);

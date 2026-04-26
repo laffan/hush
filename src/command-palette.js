@@ -132,6 +132,8 @@ function buildCommands(state) {
       action: (s) => s.toggleDry() },
     { id: "focus", label: "Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",
       action: (s) => s.toggleFocus() },
+    { id: "zen", label: "Zen Focus", icon: icons.focus, shortcutKey: "shortcutZenFocus", ctx: "shared",
+      action: (s) => s.toggleZenFocus() },
     { id: "word-count", label: "Toggle word count", icon: null, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
@@ -347,8 +349,22 @@ export function toggleCommandPalette(state) {
 }
 
 function buildActiveModeTurnoffs(state) {
-  // Only show turn-offs for doc modes when not in notebook
+  // Zen Focus is the only mode whose turn-off entry shows up in
+  // notebook context too (you can be Zen-focusing a text shape).
+  if (state.zenFocus) {
+    const zen = [{
+      id: "turnoff-zenFocus", label: "Turn off Zen Focus", icon: icons.focus,
+      shortcutKey: "shortcutZenFocus", action: (s) => s.toggleZenFocus(),
+    }];
+    if (state.currentNotebookFileId) return zen;
+    // In doc mode, prepend Zen alongside the doc-only turn-offs below.
+    return [...zen, ...docModeTurnoffs(state)];
+  }
   if (state.currentNotebookFileId) return [];
+  return docModeTurnoffs(state);
+}
+
+function docModeTurnoffs(state) {
   const modes = [
     { flag: "ratchetMode", label: "Turn off Ratchet mode", icon: icons.ratchet, action: (s) => s.stopRatchet() },
     { flag: "privateMode", label: "Turn off Private mode", icon: icons.private, shortcutKey: "shortcutTogglePrivate", action: (s) => s.togglePrivate() },

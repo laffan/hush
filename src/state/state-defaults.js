@@ -40,6 +40,8 @@ export function createDefaultSettings() {
     shortcutToggleDry: "Mod+Shift+R",
     shortcutToggleFocus: "Mod+Shift+Y",
     shortcutToggleWordCount: "Mod+Shift+W",
+    shortcutZenFocus: "Mod+Shift+S",
+    zenFocusFontSize: 30,
     wordCountVisible: false,
     shortcutFind: "Mod+F",
     shortcutFindAll: "Alt+Shift+F",

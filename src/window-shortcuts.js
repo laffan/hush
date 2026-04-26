@@ -70,6 +70,13 @@ export function installWindowShortcuts(state, windowCommands) {
           const mainView = state.editor ? state.editor.view : null;
           if (handler) { e.preventDefault(); handler(state, mainView); return; }
         }
+        // Zen Focus — same pattern: the shortcut should reach the
+        // user wherever they're typing prose, including a text shape.
+        const zen = state.settings.shortcutZenFocus;
+        if (zen && matchesDomEvent(e, zen)) {
+          const handler = windowCommands.shortcutZenFocus;
+          if (handler) { e.preventDefault(); handler(state, null); return; }
+        }
       }
     }
     // Don't hijack keystrokes in text input fields.  In notebook mode the

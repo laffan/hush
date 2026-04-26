@@ -36,6 +36,7 @@ export class AppState {
     this.typewriterPosition = 0.6;
     this.dryMode = false;
     this.focusMode = false;
+    this.zenFocus = false;
     this.isFullscreen = false;
 
     // Autosave interval
@@ -604,6 +605,12 @@ export class AppState {
   toggleFocus() {
     this.focusMode = !this.focusMode;
     this.emit("mode-changed");
+  }
+
+  toggleZenFocus() {
+    this.zenFocus = !this.zenFocus;
+    this.emit("mode-changed");
+    this.emit("zen-focus-changed");
   }
 
   toggleFullscreen() {

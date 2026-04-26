@@ -136,6 +136,12 @@ pub fn default_shortcut_toggle_focus() -> String {
 pub fn default_shortcut_toggle_word_count() -> String {
     "Mod+Shift+W".to_string()
 }
+pub fn default_shortcut_zen_focus() -> String {
+    "Mod+Shift+S".to_string()
+}
+pub fn default_zen_focus_font_size() -> u32 {
+    30
+}
 pub fn default_shortcut_find() -> String {
     "Mod+F".to_string()
 }
