@@ -29,16 +29,21 @@ import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./commen
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
 
-// Custom tags for our extensions
+// Custom tags for our extensions. Comment / Highlight content and their
+// `%%` / `==` delimiters get separate tags so the markers can render at
+// a much lower opacity than the wrapped content — otherwise the dense
+// punctuation reads louder than the prose it's annotating.
 export const commentTag = Tag.define();
+export const commentMarkTag = Tag.define();
 export const highlightTag = Tag.define();
+export const highlightMarkTag = Tag.define();
 
 // Custom inline parser for %% comments %%
 const CommentDelim = { resolve: "Comment", mark: "CommentMark" };
 export const CommentExtension = {
   defineNodes: [
     { name: "Comment", style: commentTag },
-    { name: "CommentMark", style: commentTag },
+    { name: "CommentMark", style: commentMarkTag },
   ],
   parseInline: [{
     name: "Comment",
@@ -57,7 +62,7 @@ const HighlightDelim = { resolve: "Highlight", mark: "HighlightMark" };
 export const HighlightExtension = {
   defineNodes: [
     { name: "Highlight", style: highlightTag },
-    { name: "HighlightMark", style: tags.processingInstruction },
+    { name: "HighlightMark", style: highlightMarkTag },
   ],
   parseInline: [{
     name: "Highlight",
@@ -121,11 +126,13 @@ export function getMarkdownHighlight(normalizeHeaders, headingColor, headerScale
     { tag: tags.link, textDecoration: "underline" },
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "calc(var(--font-size) * 0.9)" },
-    // Custom syntax: %% comments %% — dimmed out
+    // Custom syntax: %% comments %% — content dimmed; markers nearly invisible
     { tag: commentTag, opacity: "0.4" },
+    { tag: commentMarkTag, opacity: "0.2" },
     // Custom syntax: == highlight == — highlighted background (flag-typed highlights get per-flag color from plugin)
     { tag: highlightTag, borderRadius: "2px" },
-    // Dim the markdown syntax characters (# * _ ` %% == ~~ etc.)
+    { tag: highlightMarkTag, opacity: "0.2" },
+    // Dim the markdown syntax characters (# * _ ` ~~ etc.)
     { tag: tags.processingInstruction, opacity: "0.4" },
   ]);
 }
