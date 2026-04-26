@@ -1464,8 +1464,8 @@ export class DrawingState extends EventTarget {
     this.addTextShapeAtPosition(text, screenToCanvas({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, this.camera));
   }
 
-  addTextShapeAtPosition(text: string, position: Point) {
-    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: 18, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
+  addTextShapeAtPosition(text: string, position: Point, opts?: { fontSize?: number }) {
+    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? 18, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
     this.recordHistory();
     this.notify("shapes");
   }

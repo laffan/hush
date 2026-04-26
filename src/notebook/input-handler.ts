@@ -259,18 +259,25 @@ export function bindInputEvents(
     const shelfIdx = e.dataTransfer.getData("application/x-shelf-index");
     if (shelfIdx !== "") { inputOpts?.onShelfDrop?.(parseInt(shelfIdx, 10), dropPos.x, dropPos.y); return; }
 
+    // Cmd/Ctrl-drag of plain text formats the dropped text as a
+    // markdown blockquote at 14px — for pasting reference quotes
+    // from outside the app without follow-up reformatting.
+    const asQuote = e.metaKey || e.ctrlKey;
+    const formatText = (t: string) => asQuote ? `> ${t}` : t;
+    const textOpts = asQuote ? { fontSize: 14 } : undefined;
+
     // File drops (images, text) — direct canvas drops
     const files = Array.from(e.dataTransfer.files);
     let handledFile = false;
     for (const file of files) {
       if (isImageFile(file)) { const dataUrl = await fileToDataUrl(file); const dims = await getImageDimensions(dataUrl); state.addImageShape(dataUrl, file.name, dims.width, dims.height, dropPos); handledFile = true; }
-      else if (isTextFile(file)) { const text = await file.text(); if (text.trim()) state.addTextShapeAtPosition(cleanLineBreaks(text), dropPos); handledFile = true; }
+      else if (isTextFile(file)) { const text = await file.text(); if (text.trim()) state.addTextShapeAtPosition(formatText(cleanLineBreaks(text)), dropPos, textOpts); handledFile = true; }
     }
     if (handledFile) return;
 
     // Plain text drops
     const text = await extractDroppedText(e.dataTransfer);
-    if (text && text.trim()) state.addTextShapeAtPosition(cleanLineBreaks(text), dropPos);
+    if (text && text.trim()) state.addTextShapeAtPosition(formatText(cleanLineBreaks(text)), dropPos, textOpts);
   }) as unknown as (e: HTMLElementEventMap["drop"]) => void);
 
   return () => { for (const fn of cleanups) fn(); };
