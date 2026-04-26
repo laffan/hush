@@ -223,7 +223,7 @@ export function renderEditorTab(settings) {
           <span class="slider-value">${s.zenFocusFontSize || 30}px</span>
         </div>
       </div>
-      <p class="settings-help">Font size used while Zen Focus is open (toggle with the configured shortcut, default ⌘⇧S).</p>
+      <p class="settings-help">Font size while Zen is open. Focus mode auto-engages in Zen — surrounding-sentence dim is governed by the Focus mode opacity slider above. Toggle Zen with the configured shortcut, default ⌘⇧S.</p>
     </div>
 
     <div class="settings-section">

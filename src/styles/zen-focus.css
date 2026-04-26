@@ -1,6 +1,9 @@
 /* Zen Focus — fullscreen distraction-free overlay. The overlay sits
  * above every other piece of chrome at --z-modal-top so sidebars,
- * toolbars, panes, and shelves all disappear behind its background. */
+ * toolbars, panes, and shelves all disappear behind its background.
+ * The Zen editor is a freshly-built CodeMirror inside the stage; the
+ * source editor stays put in its own DOM and gets the final content
+ * pushed back on exit. */
 
 .zen-focus-overlay {
   position: fixed;
@@ -12,9 +15,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 6vh 4vw;
-  /* Local font-size knob driven by JS from settings; descendants pick
-   * it up via the `.zen-focus-target` rules below. */
+  padding: 0 4vw;
   --zen-font-size: 30px;
   animation: zen-focus-fade-in 200ms ease-out;
 }
@@ -24,60 +25,73 @@
   to   { opacity: 1; }
 }
 
+/* Gradient curtains — fade the top and bottom thirds back to the
+ * theme background so the user works in the centre band. */
+.zen-focus-overlay::before,
+.zen-focus-overlay::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 33vh;
+  pointer-events: none;
+  z-index: 2;
+}
+.zen-focus-overlay::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--bg) 0%, var(--bg) 30%, transparent 100%);
+}
+.zen-focus-overlay::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--bg) 0%, var(--bg) 30%, transparent 100%);
+}
+
 .zen-focus-stage {
   width: min(100%, 760px);
-  max-height: 100%;
+  height: 100%;
   display: flex;
   align-items: stretch;
   justify-content: center;
 }
 
-/* Editor target overrides — applied while a host element is parked in
- * the Zen overlay. CodeMirror editors and the notebook textarea both
- * land here; the textarea needs the absolute-positioning reset because
- * its inline styles place it at a canvas-coord pixel offset. */
-.zen-focus-target {
-  width: 100% !important;
-  height: 100% !important;
-  font-size: var(--zen-font-size) !important;
+/* Shadow CodeMirror styling — applies to the .cm-editor created
+ * inside the stage. No focus ring; full height; transparent
+ * background; 50vh top/bottom padding so the cursor's line can sit
+ * at the window's vertical centre regardless of where it is in the
+ * document. */
+.zen-focus-stage .cm-editor,
+.zen-focus-stage .cm-editor.cm-focused {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  outline: none;
+  border: none;
+}
+.zen-focus-stage .cm-scroller {
+  font-size: var(--zen-font-size);
+  line-height: 1.5;
+  padding: 50vh 0;
+  scrollbar-width: none;
+}
+.zen-focus-stage .cm-scroller::-webkit-scrollbar { display: none; }
+
+/* Focus mode auto-engages in Zen (zen-focus.js sets state.focusMode
+ * on enter, restores on exit). Surrounding-sentence dim therefore
+ * uses the user's existing focus-mode opacity setting — no Zen
+ * override; the existing slider in Settings > Editor > Focus mode
+ * is the single source of truth. */
+
+/* While Zen is open, hide the floating chrome that would otherwise
+ * peek through. The typewriter boundary is hidden too in case the
+ * user already had typewriter mode on. */
+body.zen-focus-active .ratchet-timer,
+body.zen-focus-active .word-count-display,
+body.zen-focus-active .sidebar-floating-toggle,
+body.zen-focus-active .typewriter-boundary {
+  display: none !important;
 }
 
-/* CodeMirror tweaks inside the overlay — bigger font, comfortable
- * line height, and the column resizer / pane chrome all hidden. */
-.zen-focus-target.cm-editor {
-  background: transparent !important;
-  height: 100% !important;
-  max-height: calc(100vh - 12vh);
-}
-.zen-focus-target .cm-scroller {
-  font-size: var(--zen-font-size) !important;
-  line-height: 1.5 !important;
-  padding: 0 !important;
-}
-
-/* Notebook text-shape textarea — re-anchor inside the stage and let it
- * wrap naturally instead of using the canvas-coord absolute placement
- * it inherits from text-editor.ts. */
-textarea.zen-focus-target.inline-text-editor {
-  position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  width: 100% !important;
-  min-height: 50vh !important;
-  background: transparent !important;
-  white-space: pre-wrap !important;
-  overflow: auto !important;
-  resize: none !important;
-  outline: none !important;
-  border: none !important;
-  font-family: var(--font-family) !important;
-  line-height: 1.5 !important;
-  font-size: var(--zen-font-size) !important;
-}
-
-/* Shortcut hint — quiet by default, fades in on mousemove (the JS
- * controller toggles `.visible`). Kept in the bottom-right so it
- * doesn't compete with the editor's centered column. */
+/* Shortcut hint — quiet by default, fades in on mousemove. */
 .zen-focus-hint {
   position: absolute;
   right: 32px;
@@ -91,16 +105,8 @@ textarea.zen-focus-target.inline-text-editor {
   opacity: 0;
   pointer-events: none;
   transition: opacity 200ms ease-out;
+  z-index: 3;
 }
 .zen-focus-hint.visible {
   opacity: 0.7;
-}
-
-/* While Zen is open, ratchet timer / word count pills shouldn't keep
- * floating above the overlay. They're absolutely positioned to body
- * children with their own z-index, so explicitly tuck them away. */
-body.zen-focus-active .ratchet-timer,
-body.zen-focus-active .word-count-display,
-body.zen-focus-active .sidebar-floating-toggle {
-  display: none !important;
 }

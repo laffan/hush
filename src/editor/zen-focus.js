@@ -1,84 +1,140 @@
 /**
  * Zen Focus — fullscreen distraction-free overlay.
  *
- * Picks the editor the user is currently working with (notebook text
- * shape > active doc pane > main editor), moves its DOM into a
- * fullscreen overlay, bumps the font size, and fades over every other
- * piece of chrome. Exits on Esc or the toggle shortcut, restoring the
- * editor to its original parent.
+ * Picks the prose surface the user is currently working with (notebook
+ * text shape > active doc pane > main editor), reads its content +
+ * cursor position, and mounts a freshly-built CodeMirror editor inside
+ * the Zen overlay seeded with that state. The source editor is
+ * untouched while Zen is open. On exit the new content + selection
+ * are pushed back to the source.
  *
- * The DOM-move keeps editing live: there's no shadow editor and no
- * content sync — typing in Zen IS typing in the source. CodeMirror
- * tolerates being reparented; the textarea overlay tolerates it too as
- * long as we override its absolute positioning while it's in Zen.
+ * The shadow-editor approach sidesteps every flavour of bug we hit
+ * with the previous DOM-reparent design: there's no measure-cycle
+ * staleness (the new editor is born at the right size), no fight with
+ * the pane click-outside-deactivate handler, and no need for textarea
+ * mirror geometry — the notebook text shape gets a real CodeMirror
+ * for the duration of Zen, with the value flowed back on exit.
  */
 
+import { EditorView } from "@codemirror/view";
+import { EditorState, EditorSelection } from "@codemirror/state";
+import { createBaseExtensions } from "./editor.js";
+import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { panes } from "../pane/pane-state.js";
 import { getActivePaneId } from "../pane/pane-manager.js";
 
-let active = null; // { source, target, parent, nextSibling, overlay, hint, listeners }
+let active = null;
 let hintFadeTimer = null;
 
 const HINT_FADE_MS = 1500;
 
 export function initZenFocus(state) {
   state.on("zen-focus-changed", () => {
-    if (state.zenFocus) {
-      enterZenFocus(state);
-    } else {
-      exitZenFocus(state);
-    }
+    if (state.zenFocus) enterZenFocus(state);
+    else exitZenFocus(state);
   });
   state.on("settings-changed", () => {
-    if (active && active.overlay) {
-      const px = state.settings.zenFocusFontSize || 30;
-      active.overlay.style.setProperty("--zen-font-size", `${px}px`);
-    }
+    if (!active || !active.overlay) return;
+    const px = state.settings.zenFocusFontSize || 30;
+    active.overlay.style.setProperty("--zen-font-size", `${px}px`);
   });
 }
 
-/** Find the right element to host inside the Zen overlay. Priority:
+/** Find the prose surface to seed the Zen editor from. Priority:
  *  notebook text-shape editor > active doc pane editor > main editor.
  *  Returns null if there's nothing prose-shaped to focus on. */
 function pickZenSource(state) {
-  // Notebook text-shape inline editor (highest priority — the user is
-  // mid-edit on a shape).
   const nbHandle = (typeof window !== "undefined")
-    ? window.__activeNotebookTextEditor
-    : null;
+    ? window.__activeNotebookTextEditor : null;
   if (nbHandle && nbHandle.textarea && document.contains(nbHandle.textarea)) {
-    return { kind: "notebook-text", element: nbHandle.textarea, handle: nbHandle };
+    return { kind: "notebook-text", handle: nbHandle };
   }
-  // Active doc pane (notebook panes are skipped — no prose to focus on).
   const paneId = getActivePaneId();
   if (paneId) {
     const pane = panes.get(paneId);
-    if (pane && pane.fileType === "document" && pane.editor?.view?.dom) {
-      return { kind: "pane", element: pane.editor.view.dom, pane };
+    if (pane && pane.fileType === "document" && pane.editor?.view) {
+      return { kind: "pane", pane };
     }
   }
-  // Main editor — only meaningful in doc mode.
-  if (!state.currentNotebookFileId && state.editor?.view?.dom) {
-    return { kind: "main", element: state.editor.view.dom, view: state.editor.view };
+  if (!state.currentNotebookFileId && state.editor?.view) {
+    return { kind: "main", view: state.editor.view };
   }
   return null;
 }
+
+/** Snapshot the source's content + selection to seed the Zen editor. */
+function readSeed(source) {
+  if (source.kind === "main") {
+    const v = source.view;
+    const sel = v.state.selection.main;
+    return { content: v.state.sliceDoc(), anchor: sel.anchor, head: sel.head };
+  }
+  if (source.kind === "pane") {
+    const v = source.pane.editor.view;
+    const sel = v.state.selection.main;
+    return { content: v.state.sliceDoc(), anchor: sel.anchor, head: sel.head };
+  }
+  // notebook-text
+  const ta = source.handle.textarea;
+  return {
+    content: ta.value || "",
+    anchor: ta.selectionStart || 0,
+    head: ta.selectionEnd || 0,
+  };
+}
+
+/** Push the Zen editor's final content + selection back to the source.
+ *  For CM sources we dispatch a single replacement transaction so undo
+ *  history stays sensible; for the textarea we set value, selection,
+ *  and fire `input` so text-editor.ts's state-update path runs. */
+function writeBack(source, content, anchor, head) {
+  if (source.kind === "main") {
+    const v = source.view;
+    const len = v.state.doc.length;
+    const a = clamp(anchor, 0, content.length);
+    const h = clamp(head, 0, content.length);
+    v.dispatch({
+      changes: { from: 0, to: len, insert: content },
+      selection: { anchor: a, head: h },
+    });
+    v.focus();
+    return;
+  }
+  if (source.kind === "pane") {
+    const v = source.pane.editor.view;
+    const len = v.state.doc.length;
+    const a = clamp(anchor, 0, content.length);
+    const h = clamp(head, 0, content.length);
+    v.dispatch({
+      changes: { from: 0, to: len, insert: content },
+      selection: { anchor: a, head: h },
+    });
+    v.focus();
+    return;
+  }
+  const ta = source.handle.textarea;
+  ta.value = content;
+  ta.selectionStart = clamp(anchor, 0, content.length);
+  ta.selectionEnd = clamp(head, 0, content.length);
+  // text-editor.ts's input handler reads textarea.value and updates
+  // state.editingText — fire the event so its measurement / commit
+  // path stays in sync with the post-Zen value.
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+  ta.focus();
+}
+
+function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n | 0)); }
 
 export function enterZenFocus(state) {
   if (active) return;
   const source = pickZenSource(state);
   if (!source) {
-    // No suitable source; quietly clear the flag so the toggle isn't
-    // stuck in an inconsistent state.
     state.zenFocus = false;
     return;
   }
+  const seed = readSeed(source);
 
-  const target = source.element;
-  const parent = target.parentNode;
-  const nextSibling = target.nextSibling;
-  const savedInline = target.getAttribute("style");
-
+  // Build overlay shell.
   const overlay = document.createElement("div");
   overlay.className = "zen-focus-overlay";
   overlay.style.setProperty("--zen-font-size", `${state.settings.zenFocusFontSize || 30}px`);
@@ -92,14 +148,41 @@ export function enterZenFocus(state) {
   hint.textContent = formatShortcutForHint(state.settings.shortcutZenFocus || "Mod+Shift+S");
   overlay.appendChild(hint);
 
+  // Auto-enable focus mode (only the active sentence is fully visible —
+  // the rest dims to 50% via --focus-mode-opacity overridden in CSS).
+  const wasFocusMode = state.focusMode;
+  if (!wasFocusMode) {
+    state.focusMode = true;
+    state.emit("mode-changed");
+  }
+
   document.body.classList.add("zen-focus-active");
   document.body.appendChild(overlay);
-  stage.appendChild(target);
-  // Mark the target so CSS can override its inline positioning while
-  // it's hosted by the overlay (the notebook textarea is positioned
-  // absolutely in canvas coords; CodeMirror editors carry their own
-  // sizing). The class is removed on exit.
-  target.classList.add("zen-focus-target");
+
+  // Build the Zen shadow editor. createBaseExtensions covers markdown,
+  // callouts, links, etc. — but it intentionally omits focus mode (and
+  // a few other doc-only plugins) because panes don't need them.
+  // Zen *does* want sentence-level dim, so we add focus mode here on
+  // top of the base set.
+  const { extensions } = createBaseExtensions(state, () => { /* no per-keystroke sync */ });
+  // Recentre on every selection / doc / viewport change. CodeMirror's
+  // own scrollIntoView effect handles measurement timing — far more
+  // reliable than computing scrollTop ourselves before CM has settled.
+  const recentre = EditorView.updateListener.of((u) => {
+    if (u.selectionSet || u.docChanged || u.viewportChanged) {
+      const head = u.state.selection.main.head;
+      u.view.dispatch({ effects: EditorView.scrollIntoView(head, { y: "center" }) });
+    }
+  });
+  const editorState = EditorState.create({
+    doc: seed.content,
+    selection: EditorSelection.range(
+      clamp(seed.anchor, 0, seed.content.length),
+      clamp(seed.head,   0, seed.content.length),
+    ),
+    extensions: [...extensions, createFocusModePlugin(state), recentre],
+  });
+  const zenView = new EditorView({ state: editorState, parent: stage });
 
   const onKeydown = (e) => {
     if (e.key === "Escape") {
@@ -112,26 +195,44 @@ export function enterZenFocus(state) {
   document.addEventListener("keydown", onKeydown, true);
   overlay.addEventListener("mousemove", onMouseMove);
 
-  // Move focus into the editor so the user can type immediately.
-  // CodeMirror exposes view.focus(); the textarea exposes .focus() too.
-  if (source.kind === "main" && source.view) source.view.focus();
-  else if (source.kind === "pane" && source.pane?.editor?.focus) source.pane.editor.focus();
-  else if (source.kind === "notebook-text" && source.handle?.focus) source.handle.focus();
+  // The shadow editor's update-driven plugins (focus mode, in
+  // particular) only rebuild on its own transactions. Forward
+  // mode-changed to the zen view via a no-op dispatch so toggling
+  // focus mode (Cmd+Shift+Y) inside Zen actually re-renders the
+  // dim decorations — matches what the main editor's mode-changed
+  // handler does for its view.
+  const onModeChanged = () => {
+    if (!active || !active.zenView) return;
+    active.zenView.dispatch({ effects: [] });
+  };
+  state.on("mode-changed", onModeChanged);
 
-  // Prime the hint visible briefly so the user discovers the shortcut
-  // without having to wave the mouse around first.
+  zenView.focus();
+
+  // Initial scroll-to-cursor — CM dispatches the effect, which may
+  // settle on the next measure cycle. The rAF tail covers the case
+  // where the first dispatch happens before initial layout.
+  const initialScroll = () => {
+    if (!active) return;
+    zenView.dispatch({
+      effects: EditorView.scrollIntoView(zenView.state.selection.main.head, { y: "center" }),
+    });
+  };
+  initialScroll();
+  requestAnimationFrame(initialScroll);
+  setTimeout(initialScroll, 60);
+
   showHint(hint);
 
   active = {
     source,
-    target,
-    parent,
-    nextSibling,
-    savedInline,
+    zenView,
     overlay,
     hint,
     onKeydown,
     onMouseMove,
+    onModeChanged,
+    wasFocusMode,
   };
 }
 
@@ -140,29 +241,25 @@ export function exitZenFocus(state) {
   const a = active;
   active = null;
 
+  // Snapshot final content + selection before tearing down the editor.
+  const finalContent = a.zenView.state.doc.toString();
+  const finalSel = a.zenView.state.selection.main;
+
   document.removeEventListener("keydown", a.onKeydown, true);
   a.overlay.removeEventListener("mousemove", a.onMouseMove);
+  if (a.onModeChanged) state.off("mode-changed", a.onModeChanged);
   if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; }
 
-  a.target.classList.remove("zen-focus-target");
-  if (a.savedInline == null) a.target.removeAttribute("style");
-  else a.target.setAttribute("style", a.savedInline);
-
-  // Restore the target to its original spot. If the next sibling is
-  // gone (e.g. the parent rebuilt while Zen was open), append at end.
-  if (a.nextSibling && a.nextSibling.parentNode === a.parent) {
-    a.parent.insertBefore(a.target, a.nextSibling);
-  } else if (a.parent && document.contains(a.parent)) {
-    a.parent.appendChild(a.target);
-  }
-
+  a.zenView.destroy();
   a.overlay.remove();
   document.body.classList.remove("zen-focus-active");
 
-  // Return focus to the source so the user lands back where they were.
-  if (a.source.kind === "main" && state.editor?.view) state.editor.view.focus();
-  else if (a.source.kind === "pane" && a.source.pane?.editor?.focus) a.source.pane.editor.focus();
-  else if (a.source.kind === "notebook-text" && a.source.handle?.focus) a.source.handle.focus();
+  if (!a.wasFocusMode && state.focusMode) {
+    state.focusMode = false;
+    state.emit("mode-changed");
+  }
+
+  writeBack(a.source, finalContent, finalSel.anchor, finalSel.head);
 }
 
 export function toggleZenFocus(state) {

@@ -74,10 +74,13 @@ export function initPaneManager(state) {
   // Refresh pane word-count chips when the global toggle flips.
   state.on("settings-changed", syncAllPaneWordCounts);
   getNotebookBridge().catch(() => {});
-  // Deactivate panes when clicking anywhere outside a pane
+  // Deactivate panes when clicking anywhere outside a pane. Zen Focus
+  // reparents the editor out of `.floating-pane` so we whitelist the
+  // overlay too — otherwise every click during Zen would deactivate.
   window.addEventListener("pointerdown", (e) => {
     if (!activePaneId) return;
     if (e.target instanceof Element && e.target.closest(".floating-pane")) return;
+    if (document.body.classList.contains("zen-focus-active")) return;
     saveAllPanes();
     deactivateAllPanes();
   }, true);
