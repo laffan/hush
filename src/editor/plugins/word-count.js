@@ -9,9 +9,19 @@ let recomputeTimer = null;
 
 export function countWords(text) {
   if (!text) return 0;
+  // The `---%` marker dims everything from the start of its line to the
+  // end of the document in the editor (see comment-plugins.js).
+  // Mirror that: anything past the marker is editorial gray-out, not
+  // prose. Slice it off before any other stripping so a `---%` sitting
+  // inside a multi-line comment is treated the same as the editor does.
+  let cleaned = text;
+  const tailMatch = cleaned.match(/(^|\n)[^\n]*---%/);
+  if (tailMatch) {
+    cleaned = cleaned.slice(0, tailMatch.index + (tailMatch[1] ? 1 : 0));
+  }
   // Strip %% comments %% and inline image refs before counting — comments
   // are editorial notes, not prose, and image markdown isn't "words".
-  const cleaned = text
+  cleaned = cleaned
     .replace(/%%[\s\S]*?%%/g, " ")
     .replace(/!\[[^\]]*\]\(\s*(?:"[^"]+"|[^()\s"]+)(?:\s+"[^"]*")?\s*\)/g, " ")
     .replace(/---hush-separator---/g, " ");
