@@ -133,21 +133,22 @@ async function loadNotebookPane(pane) {
   const lockedStyleId = findLockedStyleForFile(pane.fileId);
   canvas.applySettings(computeNotebookSettings(appState, lockedStyleId));
 
-  // Load shapes
-  let shapes = [];
+  // Load shapes + layers + flowchart edges through the canonical
+  // envelope decoder so panes match the main canvas's persistence.
+  let snapshot = null;
   try {
     if (IS_TAURI) {
       const file = await tauriInvoke("load_file", { id: pane.fileId });
-      if (file.content && file.content.trim()) {
-        shapes = JSON.parse(file.content);
-      }
+      const { decodeNotebookContent } = await import("../notebook/notebook-content.ts");
+      snapshot = decodeNotebookContent(file.content);
     }
   } catch (e) {
     console.error("Failed to load notebook pane shapes:", e);
   }
 
-  if (Array.isArray(shapes) && shapes.length > 0) {
-    canvas.loadShapes(shapes);
+  if (snapshot) {
+    canvas.loadShapes(snapshot.shapes, snapshot.layers);
+    canvas.state.flowchart.deserialize(snapshot.flowEdges);
   }
 
   // Center the pane on the same canvas point the notebook would show
@@ -223,7 +224,12 @@ export async function savePaneContent(pane) {
       if (pane.fileType === "document" && pane.editor) {
         content = pane.editor.getContent();
       } else if (pane.fileType === "notebook" && pane.notebook) {
-        content = JSON.stringify(pane.notebook.getShapes());
+        const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
+        content = encodeNotebookContent({
+          shapes: pane.notebook.getShapes(),
+          layers: pane.notebook.state.layers,
+          flowEdges: pane.notebook.state.flowchart.serialize(),
+        });
       }
       if (pane.localSync) {
         // Write back to the mounted folder on disk. The Local Sync
@@ -302,6 +308,9 @@ export function syncNotebookFromPane(pane) {
   try {
     const shapes = pane.notebook.getShapes();
     mainCanvas.loadShapes(JSON.parse(JSON.stringify(shapes)));
+    // Mirror flowchart edges too — without this, edges added in the
+    // pane wouldn't surface in the main canvas (or vice versa below).
+    mainCanvas.state.flowchart.deserialize(pane.notebook.state.flowchart.serialize());
     // Defer reset: loadShapes triggers change events via queueMicrotask,
     // so syncing must stay true until those microtasks have fired.
     queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
@@ -326,6 +335,7 @@ export function syncNotebookToPane(pane) {
   try {
     const shapes = mainCanvas.getShapes();
     pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
+    pane.notebook.state.flowchart.deserialize(mainCanvas.state.flowchart.serialize());
     pane.dirty = false;
     queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
     deferred = true;

@@ -21,6 +21,8 @@ src/notebook/
   types.ts                Shape types, constants, color palettes
   undo-manager.ts         Snapshot-based undo/redo (100 entries)
   utils.ts                Geometry, hit testing, text measurement, alignment, pocket layout
+  flowchart.ts            Portable flowchart layer (edges, drop-to-connect, bezier arrows)
+  notebook-content.ts     Persistence envelope (encode/decode, legacy bare-array fallback)
   ui/
     toolbar.ts             Bottom tool bar (tools, grid popup, bookmarks, undo/redo)
     selection-toolbar.ts   Context toolbar above selected shapes
@@ -66,7 +68,19 @@ The raster pipeline reuses the notebook renderer via `renderForExport()` (shapes
 
 ### File storage
 
-Notebooks are stored identically to documents: as `files/{uuid}.json` in the app data directory. The `content` field holds a JSON array of `Shape` objects (the notebook's entire state). The file tree node has `type: "notebook"` and a `fileId` pointing to the backing file.
+Notebooks are stored as `files/{uuid}.json` in the app data directory. The `content` field holds a JSON envelope built by `notebook-content.ts::encodeNotebookContent`:
+
+```jsonc
+{
+  "format": "hushnote",
+  "version": 1,
+  "shapes":    [...],   // every shape on the canvas
+  "layers":    [...],   // ordered, top-first
+  "flowEdges": [...]    // flowchart edges between text shapes
+}
+```
+
+`decodeNotebookContent` parses this and also accepts the legacy bare `Shape[]` array form (older notebooks before the envelope migration) so existing files round-trip without rewriting on load. Every save / load / sync path goes through this pair (autosave in `notebook-bridge.js`, pane I/O in `pane/pane-content.js`, sync pull in `reloadNotebookShapes`, plus `.hushnote` export in `notebook-export.ts`) so the on-disk format stays consistent.
 
 The standalone `.note` zip format (from tauri-drawing) is not used. `file-io.ts` is retained in the codebase for reference but not imported.
 
@@ -156,6 +170,24 @@ A temporary stash on the left edge of the canvas. Users hold-drag a shape for 1 
 ### Brainstorm mode
 
 A rapid text-entry mode: each Enter creates a new text shape in an expanding spiral pattern around the click origin. Accessed via the `B` key or command palette.
+
+### Flowchart
+
+Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`). Connects text shapes with directed bezier arrows; arrows render under the text (so the box always reads on top) and follow each connected node as it moves. The layer itself knows nothing about Hush's shape types — `DrawingState` configures it with `getBounds` / `isFlowable` callbacks so it only treats `TextShape` nodes as flowable.
+
+**Three ways to connect.**
+
+- *Drag-to-connect.* Drag a text shape and release it on top of another. The dropped shape becomes a child of the target — its bounds snap to the right of the parent (with vertical stacking under any existing siblings) and its descendants follow by the same delta so the chain stays intact.
+- *Edit-to-connect (⌘→ inside the inline text editor).* Commit the current edit, open a new editor positioned as a child of the just-edited node. The edge is wired by `commitText` once the user types something — `_pendingFlowParent` carries the parent id between the new-editor open and the eventual commit.
+- *Edit-as-sibling (⌘↓).* Like ⌘→ but routes through the current node's parent (or, if there is no parent, opens a fresh editor below).
+
+**Navigation.** ⌘← inside the inline editor jumps to the parent of the current node, ⌘↑ jumps back to the most-recently-edited node (a 16-entry MRU history kept on `DrawingState._recentEditIds`).
+
+**Selection drag pulls descendants.** When the user drags one or more flowchart nodes, every transitive descendant moves with the selection so the layout remains coherent.
+
+**Edge delete UI.** Hovering an arrow tracks its id on `state.flowHoveredEdgeId`; the renderer paints a small circular X badge at the curve's midpoint in screen space (fixed-size regardless of zoom — `drawEdgeDeleteButton` in `renderer-selection.ts`). Clicking the badge removes that single edge and records history. Deleting a node removes every edge that referenced it (`flowchart.removeNode` is called from `deleteSelected`).
+
+**Persistence.** Edges are JSON-serialised by `flowchart.serialize()` and round-trip through the same `notebook-content.ts` envelope used for shapes + layers (see "File storage" above). Legacy notebooks (bare `Shape[]` array) decode with `flowEdges = undefined`, which the deserialiser treats as "no edges" — no migration needed.
 
 ### Drawing
 

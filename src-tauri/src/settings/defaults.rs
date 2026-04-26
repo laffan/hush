@@ -256,6 +256,9 @@ pub fn default_notebook_bg_pattern() -> String {
 pub fn default_notebook_grid_spacing() -> u32 {
     25
 }
+pub fn default_notebook_shelf_width() -> u32 {
+    280
+}
 pub fn default_notebook_grid_opacity() -> f64 {
     0.15
 }

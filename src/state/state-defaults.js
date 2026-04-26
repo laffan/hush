@@ -28,6 +28,7 @@ export function createDefaultSettings() {
     alwaysOnTop: false,
     columnWidth: 600,
     sidebarPanelWidth: 300,
+    notebookShelfWidth: 280,
     // Shortcuts — General
     shortcutOpenEditor: "CmdOrCtrl+Shift+H",
     shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",

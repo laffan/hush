@@ -10,6 +10,7 @@ import { openSettingsWindow } from "./settings/settings-ui.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import { getActivePaneId, fitActivePaneToLeftGap, createPane } from "./pane/pane-manager.js";
+import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
 import ratchetRaw from "./sidebar/sidebar_icons/ratchet.svg?raw";
@@ -86,6 +87,11 @@ function buildCommands(state) {
         const y = 60;
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
+    { id: "extract-selected", label: "Create New From Selected", icon: icons.newFile, shortcutKey: null, ctx: "shared",
+      action: (s) => createNewFromSelected(s) },
+    { id: "send-selected", label: "Send Selected", icon: icons.export, shortcutKey: null, ctx: "shared",
+      keepOpen: true,
+      action: (s, p) => enterSendSelectedPicker(p, s) },
     { id: "delete-current", label: "Delete current file", icon: icons.trash, iconViewBox: "0 0 16 16", shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const fileId = s.currentNotebookFileId || s.currentFileId;
@@ -166,6 +172,26 @@ function collectFileLeaves(fileTree) {
   }
   walk(fileTree || [], false);
   return out;
+}
+
+/** Open a file picker filtered to documents (in doc mode) or notebooks
+ *  (in notebook mode), excluding the currently-open file, and append the
+ *  current selection to whichever the user picks. */
+function enterSendSelectedPicker(palette, state) {
+  const inNotebook = !!state.currentNotebookFileId;
+  const wantedType = inNotebook ? "notebook" : "document";
+  const currentId = inNotebook ? state.currentNotebookFileId : state.currentFileId;
+  const leaves = collectFileLeaves(state.fileTree)
+    .filter((f) => f.type === wantedType && f.fileId !== currentId);
+  const items = leaves.map((f) => ({
+    id: "send-target-" + f.id,
+    label: f.name,
+    icon: f.type === "notebook" ? icons.notebook : icons.doc,
+    shortcutKey: null,
+    action: () => sendSelectedToFile(state, f),
+  }));
+  const placeholder = inNotebook ? "Send selection to notebook…" : "Send selection to document…";
+  palette.setItems(items, placeholder);
 }
 
 /** Replace the palette's command list with file rows that pipe back into

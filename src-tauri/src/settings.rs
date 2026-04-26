@@ -296,6 +296,8 @@ pub struct AppSettings {
     /// sizing — every newly-created text shape clamps to this value.
     #[serde(default = "default_notebook_text_max_width")]
     pub notebook_text_max_width: u32,
+    #[serde(default = "default_notebook_shelf_width")]
+    pub notebook_shelf_width: u32,
     #[serde(default)]
     pub last_notebook_id: Option<String>,
 
@@ -528,6 +530,7 @@ impl Default for AppSettings {
             notebook_font_family: default_notebook_font_family(),
             notebook_font_size: default_notebook_font_size(),
             notebook_text_max_width: default_notebook_text_max_width(),
+            notebook_shelf_width: default_notebook_shelf_width(),
             last_notebook_id: None,
             shortcut_nb_select: default_nb_select(),
             shortcut_nb_text: default_nb_text(),

@@ -1,4 +1,5 @@
 import type { Camera, ImageShape, SelectionBox, Shape } from "./types";
+import type { CanvasTheme } from "./themes";
 import { getShapeBounds } from "./utils";
 
 export function drawSelectionHighlight(ctx: CanvasRenderingContext2D, shape: Shape, zoom: number, accentColor: string, fontFamily?: string) {
@@ -108,5 +109,38 @@ export function drawCropOverlay(ctx: CanvasRenderingContext2D, shape: ImageShape
     ctx.fillRect(hx - half, hy - half, handleSize, handleSize);
     ctx.strokeRect(hx - half, hy - half, handleSize, handleSize);
   }
+  ctx.restore();
+}
+
+/** Small circular X button drawn at the midpoint of a hovered flowchart
+ *  edge. Rendered in screen space (caller passes pre-transformed sx/sy)
+ *  so the affordance is a fixed size regardless of zoom. Click handling
+ *  lives in DrawingState.handlePointerDown — that path hit-tests in
+ *  canvas space against the same midpoint with a 12px-screen-radius
+ *  threshold scaled by 1/zoom. */
+export function drawEdgeDeleteButton(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  theme: CanvasTheme,
+): void {
+  const r = 9;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.fillStyle = theme.uiBackground;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = theme.foreground;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx - 3.5, sy - 3.5);
+  ctx.lineTo(sx + 3.5, sy + 3.5);
+  ctx.moveTo(sx + 3.5, sy - 3.5);
+  ctx.lineTo(sx - 3.5, sy + 3.5);
+  ctx.lineWidth = 1.4;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = theme.foreground;
+  ctx.stroke();
   ctx.restore();
 }

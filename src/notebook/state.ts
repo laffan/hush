@@ -9,6 +9,7 @@ import {
   pointInBounds, screenToCanvas,
 } from "./utils";
 import { UndoManager } from "./undo-manager";
+import { FlowchartLayer } from "./flowchart";
 import type { AppearanceMode, CanvasTheme } from "./themes";
 import { THEMES, getEffectiveVariant } from "./themes";
 import {
@@ -87,6 +88,25 @@ export class DrawingState extends EventTarget {
   isPanning = false;
   /** Shape ID currently being cropped, or null */
   croppingImageId: string | null = null;
+
+  /** Flowchart edges between text shapes. Drop a text shape onto another
+   *  text shape to connect them; arrows render in the canvas. Ported
+   *  from Steiner — see src/notebook/flowchart.ts for the portable API. */
+  flowchart = new FlowchartLayer<Shape>({
+    getBounds: (s) => getShapeBounds(s, this.fontFamily),
+    isFlowable: (s) => s.type === "text",
+  });
+  /** While dragging a single text shape, the id of the shape under the
+   *  cursor that would be the drop-connection target (or null). */
+  flowDropTargetId: string | null = null;
+  /** id of an edge whose curve the cursor is hovering over (or null). */
+  flowHoveredEdgeId: string | null = null;
+  /** Set by startEditingFlowchartChild before a new shape exists; consumed
+   *  by commitText to wire the edge once the shape is created. */
+  private _pendingFlowParent: string | null = null;
+  /** History of recently-edited text-shape ids, oldest first. Used by
+   *  ⌘↑ in the inline editor to jump back to the last node touched. */
+  private _recentEditIds: string[] = [];
 
   /** Pixel offset from the left edge for the sidebar/panel. The pocket
    *  tray and toolbar center themselves relative to this value. */
@@ -383,9 +403,9 @@ export class DrawingState extends EventTarget {
   }
 
   // === Text ===
-  commitText(editing: EditingText) {
+  commitText(editing: EditingText): string | null {
     const trimmed = editing.text.trim();
-    if (!trimmed) return;
+    if (!trimmed) return null;
     let shapeId: string;
     if (editing.shapeId) {
       shapeId = editing.shapeId;
@@ -407,13 +427,21 @@ export class DrawingState extends EventTarget {
         width: fitWidth,
         layerId: this.activeLayerId,
       } as TextShape];
+      // Pending flowchart parent (set by startEditingFlowchartChild before
+      // user typed) — wire the edge once the new shape exists.
+      if (this._pendingFlowParent) {
+        this.flowchart.addEdge(this._pendingFlowParent, shapeId);
+        this._pendingFlowParent = null;
+      }
     }
+    this.recordRecentEdit(shapeId);
     this.selectedIds = new Set([shapeId]);
     this.tool = "select";
     this.recordHistory();
     this.notify("shapes");
     this.notify("selectedIds");
     this.notify("tool");
+    return shapeId;
   }
 
   startEditingExistingText(shape: TextShape) {
@@ -424,7 +452,94 @@ export class DrawingState extends EventTarget {
       // unless the user has manually resized this shape past it.
       width: shape.manualWidth ? shape.width : Math.max(this.maxTextWidth, shape.width || 0),
     };
+    this.recordRecentEdit(shape.id);
     this.notify("editingText");
+  }
+
+  /** Track a text-shape id in the recent-edit history (most-recent last,
+   *  capped at 16 entries). Used by ⌘↑ inside the inline editor to jump
+   *  back to the previous node, and by the flowchart layer for sibling
+   *  navigation. */
+  recordRecentEdit(id: string) {
+    const idx = this._recentEditIds.indexOf(id);
+    if (idx >= 0) this._recentEditIds.splice(idx, 1);
+    this._recentEditIds.push(id);
+    if (this._recentEditIds.length > 16) this._recentEditIds.shift();
+  }
+
+  // === Flowchart-aware editing shortcuts ===
+  //   ⌘→  startEditingFlowchartChild   — open a new node as the child of `parentId`
+  //   ⌘↓  startEditingFlowchartSibling — sibling of currentId (or new node below it)
+  //   ⌘←  startEditingFlowchartParent  — re-enter the parent of currentId
+  //   ⌘↑  startEditingMostRecent       — jump back to the previously edited node
+
+  /** Open an editor for a brand-new node positioned as a flowchart child of
+   *  `parentId`. The edge is added by commitText once the user types. */
+  startEditingFlowchartChild(parentId: string) {
+    const parent = this.shapes.find((s) => s.id === parentId);
+    if (!parent || parent.type !== "text") return;
+    const pBounds = getShapeBounds(parent, this.fontFamily);
+    let baseY = pBounds.minY;
+    for (const cid of this.flowchart.childrenOf(parentId)) {
+      const c = this.shapes.find((s) => s.id === cid);
+      if (!c) continue;
+      const cb = getShapeBounds(c, this.fontFamily);
+      if (cb.maxY + 16 > baseY) baseY = cb.maxY + 16;
+    }
+    this._pendingFlowParent = parentId;
+    this.editingText = {
+      shapeId: null,
+      position: { x: pBounds.maxX + 60, y: baseY },
+      text: "",
+      fontSize: parent.fontSize,
+      color: parent.color,
+      width: this.maxTextWidth,
+    };
+    this.notify("editingText");
+  }
+
+  /** Open an editor for a sibling of `currentId` — child of the same parent
+   *  if one exists; otherwise just a new node directly below current. */
+  startEditingFlowchartSibling(currentId: string) {
+    const parentId = this.flowchart.parentOf(currentId);
+    if (parentId) { this.startEditingFlowchartChild(parentId); return; }
+    const cur = this.shapes.find((s) => s.id === currentId);
+    if (!cur || cur.type !== "text") return;
+    const cb = getShapeBounds(cur, this.fontFamily);
+    this.editingText = {
+      shapeId: null,
+      position: { x: cur.position.x, y: cb.maxY + 16 },
+      text: "",
+      fontSize: cur.fontSize,
+      color: cur.color,
+      width: cur.width ?? this.maxTextWidth,
+    };
+    this.notify("editingText");
+  }
+
+  /** Enter edit mode on the flowchart parent of `currentId`, if any. */
+  startEditingFlowchartParent(currentId: string): boolean {
+    const parentId = this.flowchart.parentOf(currentId);
+    if (!parentId) return false;
+    const parent = this.shapes.find((s) => s.id === parentId);
+    if (!parent || parent.type !== "text") return false;
+    this.startEditingExistingText(parent);
+    return true;
+  }
+
+  /** Enter edit mode on the most-recently-edited text shape (excluding
+   *  `excludeId` and the just-edited shape if same). */
+  startEditingMostRecent(excludeId?: string): boolean {
+    for (let i = this._recentEditIds.length - 1; i >= 0; i--) {
+      const id = this._recentEditIds[i];
+      if (id === excludeId) continue;
+      const shape = this.shapes.find((s) => s.id === id);
+      if (shape && shape.type === "text") {
+        this.startEditingExistingText(shape);
+        return true;
+      }
+    }
+    return false;
   }
 
   /** End an in-progress text edit from any source (blur, escape, click-outside).
@@ -512,6 +627,21 @@ export class DrawingState extends EventTarget {
     if (this.editingText) {
       this.endEditingText();
       return; // commit ends the interaction; next click starts fresh
+    }
+
+    // Click on the X delete-button of a hovered flowchart edge. Hit-test
+    // in canvas space (12 px screen radius / current zoom) so the target
+    // matches the on-screen circle drawn by the renderer.
+    if (this.flowHoveredEdgeId) {
+      const mid = this.flowchart.getEdgeMidpoint(this.flowHoveredEdgeId, this.shapes);
+      const r = 12 / this.camera.zoom;
+      if (mid && Math.hypot(canvasPt.x - mid.x, canvasPt.y - mid.y) < r) {
+        this.flowchart.removeEdge(this.flowHoveredEdgeId);
+        this.flowHoveredEdgeId = null;
+        this.recordHistory();
+        this.notify("shapes");
+        return;
+      }
     }
 
     const willEditText = this.tool === "text" && !this.brainstormMode;
@@ -787,11 +917,33 @@ export class DrawingState extends EventTarget {
         for (const s of this.shapes) {
           if (this.selectedIds.has(s.id) && s.type === "drag-area") selectedDragAreaIds.add(s.id);
         }
+        // Flowchart descendants of any selected node move with the
+        // selection so the downstream spatial layout stays intact.
+        const flowDescendants = new Set<string>();
+        for (const id of this.selectedIds) {
+          for (const d of this.flowchart.descendantsOf(id)) flowDescendants.add(d);
+        }
         this.shapes = this.shapes.map((s) => {
           if (this.selectedIds.has(s.id)) return moveShape(s, dx, dy);
           if (s.parentId && selectedDragAreaIds.has(s.parentId)) return moveShape(s, dx, dy);
+          if (flowDescendants.has(s.id)) return moveShape(s, dx, dy);
           return s;
         });
+        // While dragging a single text shape, keep the drop target hover
+        // up to date so the renderer can outline the prospective parent.
+        if (this.selectedIds.size === 1) {
+          const draggedId = this.selectedIds.values().next().value as string;
+          const dragged = this.shapes.find((s) => s.id === draggedId);
+          if (dragged && dragged.type === "text") {
+            const b = getShapeBounds(dragged, this.fontFamily);
+            const center: Point = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+            const t = this.flowchart.findDropTarget(center, this.shapes, draggedId);
+            const newId = t ? t.id : null;
+            if (newId !== this.flowDropTargetId) {
+              this.flowDropTargetId = newId;
+            }
+          }
+        }
         this.notify("shapes");
       }
       return;
@@ -818,6 +970,17 @@ export class DrawingState extends EventTarget {
     } else if (this.tool === "drag-area" && this.creatingDragArea) {
       this.creatingDragArea = { ...this.creatingDragArea, end: canvasPt };
       this.notify("creatingDragArea");
+    } else {
+      // Idle hover: track the flowchart edge under the cursor so the
+      // renderer can render the delete-X badge, and pointer-down knows
+      // which edge to remove if the user clicks the badge.
+      const threshold = 10 / this.camera.zoom;
+      const edge = this.flowchart.findEdgeNear(canvasPt, this.shapes, threshold);
+      const newId = edge ? edge.id : null;
+      if (newId !== this.flowHoveredEdgeId) {
+        this.flowHoveredEdgeId = newId;
+        this.notify("shapes"); // triggers re-render of the badge
+      }
     }
   }
 
@@ -876,6 +1039,43 @@ export class DrawingState extends EventTarget {
         if (newParent !== s.parentId) return { ...s, parentId: newParent };
         return s;
       });
+
+      // Flowchart drop: a single text shape released over another text
+      // shape becomes its child (or sibling, if the target already has
+      // children). Snapping the parent also pulls its descendants so the
+      // chain stays intact.
+      if (this.selectedIds.size === 1) {
+        const droppedId = this.selectedIds.values().next().value as string;
+        const dropped = this.shapes.find((s) => s.id === droppedId);
+        if (dropped && dropped.type === "text") {
+          const oldBounds = getShapeBounds(dropped, this.fontFamily);
+          const center: Point = {
+            x: (oldBounds.minX + oldBounds.maxX) / 2,
+            y: (oldBounds.minY + oldBounds.maxY) / 2,
+          };
+          const target = this.flowchart.findDropTarget(center, this.shapes, droppedId);
+          if (target) {
+            const newTL = this.flowchart.tryConnect(droppedId, target.id, this.shapes);
+            if (newTL) {
+              const dx = newTL.minX - oldBounds.minX;
+              const dy = newTL.minY - oldBounds.minY;
+              this.shapes = this.shapes.map((s) =>
+                s.id === droppedId && s.type === "text"
+                  ? { ...s, position: { x: s.position.x + dx, y: s.position.y + dy } }
+                  : s,
+              );
+              const desc = this.flowchart.descendantsOf(droppedId);
+              if (desc.size > 0) {
+                this.shapes = this.shapes.map((s) =>
+                  desc.has(s.id) ? moveShape(s, dx, dy) : s,
+                );
+              }
+            }
+          }
+        }
+      }
+      this.flowDropTargetId = null;
+
       this.recordHistory();
       this.notify("shapes");
       return;
@@ -1059,6 +1259,8 @@ export class DrawingState extends EventTarget {
     this.shapes = this.shapes
       .filter((s) => !deletingIds.has(s.id))
       .map((s) => s.parentId && deletingIds.has(s.parentId) ? { ...s, parentId: undefined } : s);
+    // Drop any flowchart edges that referenced the deleted nodes.
+    for (const id of deletingIds) this.flowchart.removeNode(id);
     this.selectedIds = new Set();
     this.recordHistory();
     this.notify("shapes");

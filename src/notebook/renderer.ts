@@ -4,8 +4,9 @@ import type { CanvasTheme } from "./themes";
 import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
-import { drawSelectionHighlight, drawStrokeBoundsHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay } from "./renderer-selection";
+import { drawSelectionHighlight, drawStrokeBoundsHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton } from "./renderer-selection";
 import { drawBackground } from "./renderer-background";
+import type { FlowchartLayer } from "./flowchart";
 
 export interface RenderState {
   shapes: Shape[];
@@ -47,6 +48,14 @@ export interface RenderState {
    *  `window.devicePixelRatio`) so this module stays free of global
    *  reads — it only needs to render. */
   dpr?: number;
+  /** Optional flowchart layer. When present, arrows render between the
+   *  drag-area pass and the text/image pass. */
+  flowchart?: FlowchartLayer<Shape>;
+  /** id of a shape currently outlined as a flowchart drop target. */
+  flowDropTargetId?: string | null;
+  /** id of a flowchart edge whose curve the cursor is hovering — the
+   *  renderer paints a delete-X badge at the edge midpoint. */
+  flowHoveredEdgeId?: string | null;
 }
 
 /** Paint shapes + (optional) background into an arbitrary ctx at an
@@ -174,9 +183,11 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     if (bucket) bucket.push(s);
   }
 
-  // Paint each visible layer bottom-first. Within a layer, drag-areas
-  // render behind their contents; drawings are handled by the
-  // drawing-layer canvas and intentionally skipped here.
+  // Two-pass layered paint: drag-areas across all layers (bottom-first),
+  // then flowchart arrows, then text/image shapes across all layers.
+  // Splitting the passes lets connecting arrows sit between containers
+  // and their contents regardless of which layer either lives on. Drawings
+  // are handled by the drawing-layer canvas and intentionally skipped here.
   for (const layer of layerOrder) {
     if (layer.hidden) continue;
     const layerShapes = shapesByLayer.get(layer.id);
@@ -184,6 +195,20 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     for (const shape of layerShapes) {
       if (shape.type === "drag-area" && !pocketedIds.has(shape.id)) drawDragArea(ctx, shape);
     }
+  }
+
+  // Flowchart arrows render under text shapes so the connectors visually
+  // emerge from behind the boxes. Skip pocketed shapes — their world
+  // representation is the pocket card, not the canvas.
+  if (state.flowchart) {
+    state.flowchart.setArrowColor(theme.foreground);
+    state.flowchart.draw(ctx, shapes.filter((s) => !pocketedIds.has(s.id)));
+  }
+
+  for (const layer of layerOrder) {
+    if (layer.hidden) continue;
+    const layerShapes = shapesByLayer.get(layer.id);
+    if (!layerShapes || !layerShapes.length) continue;
     for (const shape of layerShapes) {
       if (shape.type === "drag-area") continue;
       if (shape.id === editingShapeId) continue;
@@ -191,6 +216,27 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (shape.type === "draw") continue; // drawing layer owns strokes
       if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId);
+    }
+  }
+
+  // Drop-target outline: dashed rectangle around the shape that would be
+  // connected if the user released the drag right now.
+  if (state.flowDropTargetId) {
+    const target = shapes.find((s) => s.id === state.flowDropTargetId);
+    if (target && !pocketedIds.has(target.id)) {
+      const tb = getShapeBounds(target, state.fontFamily);
+      const pad = 8;
+      ctx.save();
+      ctx.strokeStyle = theme.accent;
+      ctx.lineWidth = 2 / camera.zoom;
+      ctx.setLineDash([8 / camera.zoom, 4 / camera.zoom]);
+      ctx.strokeRect(
+        tb.minX - pad,
+        tb.minY - pad,
+        tb.maxX - tb.minX + pad * 2,
+        tb.maxY - tb.minY + pad * 2,
+      );
+      ctx.restore();
     }
   }
 
@@ -272,6 +318,19 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   }
 
   ctx.restore();
+
+  // Hovered-edge delete button — drawn in screen space so it's a fixed
+  // size regardless of zoom. Click handling lives in
+  // DrawingState.handlePointerDown (canvas-space hit-test against
+  // getEdgeMidpoint with a 12px-screen-radius / zoom threshold).
+  if (state.flowchart && state.flowHoveredEdgeId) {
+    const mid = state.flowchart.getEdgeMidpoint(state.flowHoveredEdgeId, shapes);
+    if (mid) {
+      const sx = mid.x * camera.zoom + camera.x;
+      const sy = mid.y * camera.zoom + camera.y;
+      drawEdgeDeleteButton(ctx, sx, sy, theme);
+    }
+  }
 
   // Draw pocket tray on left edge, offset by sidebar inset.
   // Proximity-based glow: tray fades in as the drag cursor approaches the

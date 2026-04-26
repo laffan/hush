@@ -48,21 +48,23 @@ export async function mountNotebook(container, fileId, state) {
   };
   canvasInstance = new NotesCanvas(container, shortcuts);
 
-  // Load shapes from the backing file
-  let shapes = [];
+  // Load notebook contents (shapes + layers + flowchart edges) from the
+  // backing file. The envelope format is parsed by `decodeNotebookContent`,
+  // which tolerates the legacy bare-Shape[] form for older notebooks.
+  let snapshot = null;
   try {
     if (IS_TAURI) {
       const file = await tauriInvoke("load_file", { id: fileId });
-      if (file.content && file.content.trim()) {
-        shapes = JSON.parse(file.content);
-      }
+      const { decodeNotebookContent } = await import("./notebook-content.ts");
+      snapshot = decodeNotebookContent(file.content);
     }
   } catch (e) {
     console.error("Failed to load notebook shapes:", e);
   }
 
-  if (Array.isArray(shapes) && shapes.length > 0) {
-    canvasInstance.loadShapes(shapes);
+  if (snapshot) {
+    canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
+    canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
   }
 
   // Apply notebook settings from Hush settings
@@ -247,8 +249,12 @@ export function applyNotebookSettings(state) {
 export async function saveNotebook() {
   if (!canvasInstance || !currentNotebookFileId || !notebookDirty) return null;
   notebookDirty = false;
-  const shapes = canvasInstance.getShapes();
-  const content = JSON.stringify(shapes);
+  const { encodeNotebookContent } = await import("./notebook-content.ts");
+  const content = encodeNotebookContent({
+    shapes: canvasInstance.getShapes(),
+    layers: canvasInstance.state.layers,
+    flowEdges: canvasInstance.state.flowchart.serialize(),
+  });
   try {
     if (IS_TAURI) {
       await tauriInvoke("save_file", { id: currentNotebookFileId, content });
@@ -311,12 +317,14 @@ export function getCurrentNotebookFileId() {
  * Reload shapes into the open notebook from synced content.
  * Used when an external change is pulled for the currently open notebook.
  */
-export function reloadNotebookShapes(jsonContent) {
+export async function reloadNotebookShapes(jsonContent) {
   if (!canvasInstance) return;
   try {
-    const shapes = JSON.parse(jsonContent);
-    if (Array.isArray(shapes)) {
-      canvasInstance.loadShapes(shapes);
+    const { decodeNotebookContent } = await import("./notebook-content.ts");
+    const snapshot = decodeNotebookContent(jsonContent);
+    if (snapshot) {
+      canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
+      canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
       notebookDirty = false;
     }
   } catch (e) {

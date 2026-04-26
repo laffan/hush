@@ -179,13 +179,15 @@ function computeContentBounds(shapes: { pocketed?: boolean }[], fontFamily: stri
 // ───────────────────── encoders ─────────────────────
 
 function encodeHushnote(canvas: NotesCanvas): Uint8Array {
-  // Self-describing JSON wrapper so future versions can evolve without
-  // colliding with the raw shapes array stored in the backing file.
+  // Same envelope shape used by autosave (see notebook-content.ts), but
+  // pretty-printed for the export-to-disk file. Keeps a single source
+  // of truth for what a `.hushnote` file contains.
   const payload = {
     format: "hushnote",
     version: 1,
     shapes: canvas.getShapes(),
     layers: canvas.state.layers,
+    flowEdges: canvas.state.flowchart.serialize(),
   };
   const json = JSON.stringify(payload, null, 2);
   return new TextEncoder().encode(json);

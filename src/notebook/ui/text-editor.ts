@@ -71,10 +71,40 @@ export function createTextEditor(state: DrawingState): HTMLElement {
       state.endEditingText();
       return;
     }
-    // Markdown formatting shortcuts — mirror the main editor's defaults
-    // so muscle memory works inside text shapes too.
     const mod = e.metaKey || e.ctrlKey;
     if (!mod || e.altKey) return;
+
+    // Cmd+Arrow flowchart shortcuts. Commit the current edit, then open
+    // a new editing context relative to that node:
+    //   ⌘→  edit a new child (added to the flowchart on commit)
+    //   ⌘↓  edit a new sibling (or new node below if no parent)
+    //   ⌘↑  jump back to the most recently edited node
+    //   ⌘←  re-enter the flowchart parent
+    // ⌘↑ works even from an empty new edit; the others need a current
+    // node — otherwise let the textarea handle the cursor key normally.
+    if (!e.shiftKey && (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft")) {
+      const editing = state.editingText;
+      if (!editing) return;
+      const hasText = editing.text.trim().length > 0;
+      const wouldHaveCurrent = editing.shapeId || hasText;
+      if (e.key !== "ArrowUp" && !wouldHaveCurrent) return;
+      e.preventDefault();
+      let currentId: string | null = editing.shapeId;
+      if (hasText) {
+        const committed = state.commitText(editing);
+        if (committed) currentId = committed;
+      }
+      state.editingText = null;
+      state.notify("editingText");
+      if (e.key === "ArrowRight" && currentId) state.startEditingFlowchartChild(currentId);
+      else if (e.key === "ArrowDown" && currentId) state.startEditingFlowchartSibling(currentId);
+      else if (e.key === "ArrowUp") state.startEditingMostRecent(currentId ?? undefined);
+      else if (e.key === "ArrowLeft" && currentId) state.startEditingFlowchartParent(currentId);
+      return;
+    }
+
+    // Markdown formatting shortcuts — mirror the main editor's defaults
+    // so muscle memory works inside text shapes too.
     const key = e.key.toLowerCase();
     if (e.shiftKey) return;
     if (key === "b") { e.preventDefault(); applyTextareaWrap(textarea, state, "**"); return; }

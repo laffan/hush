@@ -283,6 +283,17 @@ export function getNotebookCanvasPanes() {
 /** Bring the named pane to the foreground (and focus it). */
 export function focusPaneById(id) { focusPane(id); }
 
+/** Focus the pane and recentre it in the viewport. Used by the shelf so
+ *  clicking a pinned-pane row brings it back into view, mirroring the
+ *  centring half of `scrollPaneToMatch` without needing a text range. */
+export function focusAndCenterPaneById(id) {
+  const pane = panes.get(id);
+  if (!pane) return false;
+  focusPane(id);
+  centerPaneInViewport(pane);
+  return true;
+}
+
 /** Focus a doc pane, recentre it in the viewport (panning the canvas
  *  for attached panes, repositioning the pane element for free-floating
  *  ones), and scroll its editor so the [from, to] range sits at the

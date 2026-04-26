@@ -91,7 +91,9 @@ async function init() {
     const result = await saveNotebook();
     if (result) state.syncFileToExternal(result.fileId, result.content);
   });
-  state.on("notebook-sync-reload", (content) => reloadNotebookShapes(content));
+  state.on("notebook-sync-reload", (content) => {
+    reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));
+  });
   state.on("file-opened", () => { if (!state.currentNotebookFileId) showEditor(); });
 
   // Notebook commands from the command palette

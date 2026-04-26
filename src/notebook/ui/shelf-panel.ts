@@ -1,5 +1,5 @@
 import type { DrawingState } from "../state";
-import type { Shape } from "../types";
+import type { Shape, TextShape } from "../types";
 import { getShapeBounds } from "../utils";
 import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
@@ -8,6 +8,24 @@ interface ShelfNode {
   id: string; type: string; label: string; excerpt: string;
   color: string | null; shapeId: string; parentId: string | undefined; depth: number;
   pocketed: boolean;
+  /** True when this text shape participates in a flowchart (has at
+   *  least one in/out edge). Drives the small arrow indicator and is
+   *  also used as the indented-tree signal. */
+  flow?: boolean;
+  /** First line is a markdown heading (`#`..`######` followed by a space).
+   *  The `#` markers are stripped from `label` and the row renders bold. */
+  heading?: boolean;
+}
+
+/** Build a shelf-row label from a text shape's contents. Only the first
+ *  line is shown (rows are single-line), and a leading markdown heading
+ *  marker is stripped — the row's bold weight signals it instead. */
+function buildLabel(text: string, max: number): { label: string; heading: boolean } {
+  const firstLine = text.split("\n", 1)[0].trimStart();
+  const m = firstLine.match(/^#{1,6}\s+(.*)$/);
+  const stripped = m ? m[1] : firstLine;
+  const truncated = stripped.length > max ? stripped.substring(0, max) + "..." : stripped;
+  return { label: truncated, heading: !!m };
 }
 
 interface ShelfPaneInfo {
@@ -28,6 +46,7 @@ export function createShelfPanel(
     getPanes?: () => ShelfPaneInfo[];
     onFocusPane?: (id: string) => void;
     onScrollPaneToMatch?: (id: string, from: number, to: number) => void;
+    initialWidth?: number;
   },
 ): HTMLElement {
   let isOpen = false;
@@ -35,6 +54,7 @@ export function createShelfPanel(
   let activeTag: string | null = null;
   const collapsed = new Set<string>();
   const pinned = new Set<string>();
+  let openWidth = Math.max(200, opts.initialWidth ?? 280);
 
   const panel = h("div", {
     style: { position: "absolute", top: "calc(env(safe-area-inset-top) + 20px)", right: "env(safe-area-inset-right)", bottom: "calc(env(safe-area-inset-bottom) + 20px)", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
@@ -77,8 +97,41 @@ export function createShelfPanel(
 
   function buildNodes(shapes: Shape[]): ShelfNode[] {
     const result: ShelfNode[] = [];
+    const flow = state.flowchart;
     const dragAreas = shapes.filter((s) => s.type === "drag-area");
     const others = shapes.filter((s) => s.type === "text" || s.type === "image");
+    const byId = new Map<string, Shape>(shapes.map((s) => [s.id, s]));
+
+    const isFlowParticipant = (id: string) =>
+      flow.parentOf(id) !== null || flow.childrenOf(id).length > 0;
+
+    function pushTextNode(s: TextShape, parentScopeId: string | undefined, depth: number) {
+      const { label, heading } = buildLabel(s.text, 50);
+      result.push({
+        id: s.id, type: "text",
+        label, excerpt: s.text, color: s.backgroundColor || null,
+        shapeId: s.id, parentId: parentScopeId, depth, pocketed: !!s.pocketed,
+        flow: isFlowParticipant(s.id), heading,
+      });
+    }
+
+    /** Walk every flow child of `parentId` whose shape is in `scope`,
+     *  pushing each as a text row under the current outline. Recurses
+     *  depth-first so the rendered list mirrors the flowchart tree. */
+    function walkFlowChildren(parentId: string, scope: Set<string>, parentScopeId: string | undefined, depth: number) {
+      const childIds = flow.childrenOf(parentId).filter((id) => scope.has(id));
+      const childShapes = childIds
+        .map((id) => byId.get(id))
+        .filter((s): s is TextShape => !!s && s.type === "text");
+      childShapes.sort((a, b) => {
+        const ab = getShapeBounds(a); const bb = getShapeBounds(b);
+        return ab.minY - bb.minY || ab.minX - bb.minX;
+      });
+      for (const c of childShapes) {
+        pushTextNode(c, parentScopeId, depth);
+        walkFlowChildren(c.id, scope, parentScopeId, depth + 1);
+      }
+    }
 
     for (const da of dragAreas) {
       const children = shapes.filter((s) => s.parentId === da.id);
@@ -86,14 +139,21 @@ export function createShelfPanel(
       let name = `(${children.length} items)`;
       if (textChildren.length > 0) {
         const sorted = [...textChildren].sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
-        if (sorted[0].type === "text") { const tx = sorted[0].text.substring(0, 40); name = `${tx}${sorted[0].text.length > 40 ? "..." : ""}`; }
+        if (sorted[0].type === "text") name = buildLabel(sorted[0].text, 40).label;
       }
       result.push({ id: da.id, type: "drag-area", label: name, excerpt: "", color: da.type === "drag-area" ? da.strokeColor : null, shapeId: da.id, parentId: undefined, depth: 0, pocketed: !!da.pocketed });
       if (!collapsed.has(da.id)) {
         const sortedChildren = [...children].sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
+        const scope = new Set(children.map((c) => c.id));
         for (const child of sortedChildren) {
           if (child.type === "text") {
-            result.push({ id: child.id, type: "text", label: child.text.substring(0, 50) + (child.text.length > 50 ? "..." : ""), excerpt: child.text, color: child.backgroundColor || null, shapeId: child.id, parentId: da.id, depth: 1, pocketed: !!child.pocketed });
+            // If this text shape's flow parent is in the same scope it
+            // will be rendered nested under that parent — skip the flat
+            // pass to avoid duplication.
+            const fp = flow.parentOf(child.id);
+            if (fp && scope.has(fp)) continue;
+            pushTextNode(child, da.id, 1);
+            walkFlowChildren(child.id, scope, da.id, 2);
           } else if (child.type === "image") {
             result.push({ id: child.id, type: "image", label: child.name || "Image", excerpt: "", color: null, shapeId: child.id, parentId: da.id, depth: 1, pocketed: !!child.pocketed });
           }
@@ -102,10 +162,14 @@ export function createShelfPanel(
     }
 
     const rootOthers = others.filter((s) => !s.parentId).sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
+    const rootScope = new Set(rootOthers.map((s) => s.id));
     for (const s of rootOthers) {
       if (s.type === "text") {
         if (!s.text.trim()) continue;
-        result.push({ id: s.id, type: "text", label: s.text.substring(0, 50) + (s.text.length > 50 ? "..." : ""), excerpt: s.text, color: s.backgroundColor || null, shapeId: s.id, parentId: undefined, depth: 0, pocketed: !!s.pocketed });
+        const fp = flow.parentOf(s.id);
+        if (fp && rootScope.has(fp)) continue;
+        pushTextNode(s, undefined, 0);
+        walkFlowChildren(s.id, rootScope, undefined, 1);
       } else if (s.type === "image") {
         result.push({ id: s.id, type: "image", label: s.name || "Image", excerpt: "", color: null, shapeId: s.id, parentId: undefined, depth: 0, pocketed: !!s.pocketed });
       }
@@ -136,8 +200,8 @@ export function createShelfPanel(
   function rebuild() {
     applyTheme();
 
-    panel.style.width = isOpen ? "280px" : "24px";
-    panel.style.minWidth = isOpen ? "280px" : "24px";
+    panel.style.width = isOpen ? `${openWidth}px` : "24px";
+    panel.style.minWidth = isOpen ? `${openWidth}px` : "24px";
     grip.textContent = isOpen ? "\u203a" : "\u2039";
     content.style.display = isOpen ? "flex" : "none";
     if (!isOpen) {
@@ -345,16 +409,38 @@ export function createShelfPanel(
       pocketIcon.style.marginRight = "2px";
       row.appendChild(pocketIcon);
     }
-    row.appendChild(h("span", { text: node.label, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }, onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0) }));
+    if (node.flow) {
+      const arrow = h("span", {
+        text: "→",
+        style: { flexShrink: "0", color: muted, fontSize: "11px", marginRight: "2px", lineHeight: "1" },
+      });
+      row.appendChild(arrow);
+    }
+    row.appendChild(h("span", { text: node.label, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", fontWeight: node.heading ? "600" : "400" }, onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0) }));
     const pinBtn = h("button", { title: isPinned ? "Unpin" : "Pin", style: { border: "none", background: "none", cursor: "pointer", padding: "0", opacity: isPinned ? "0.8" : "0.4", color: isPinned ? theme.accent : muted, display: "flex", alignItems: "center", width: "16px", height: "16px" }, onClick: () => { if (isPinned) pinned.delete(node.id); else pinned.add(node.id); rebuildBody(); } });
     pinBtn.appendChild(icon("pin", 12));
     row.appendChild(pinBtn);
     return row;
   }
 
+  // Expose width accessors for the resizer companion. The resizer mutates
+  // openWidth without re-running rebuild() so the user gets a smooth drag.
+  (panel as ShelfPanelEl).__setShelfWidth = (w: number) => {
+    openWidth = w;
+    if (isOpen) { panel.style.width = `${w}px`; panel.style.minWidth = `${w}px`; }
+  };
+  (panel as ShelfPanelEl).__getShelfWidth = () => openWidth;
+  (panel as ShelfPanelEl).__isShelfOpen = () => isOpen;
+
   state.addEventListener("change", rebuild);
   rebuild();
   return panel;
+}
+
+export interface ShelfPanelEl extends HTMLElement {
+  __setShelfWidth?: (w: number) => void;
+  __getShelfWidth?: () => number;
+  __isShelfOpen?: () => boolean;
 }
 
 /** Find every occurrence of `q` (case-insensitive) inside `content` and

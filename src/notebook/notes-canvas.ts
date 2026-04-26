@@ -6,14 +6,15 @@ import { render } from "./renderer";
 import { bindInputEvents, type NotebookShortcuts } from "./input-handler";
 import { createToolbar } from "./ui/toolbar";
 import { createSelectionToolbar } from "./ui/selection-toolbar";
-import { createShelfPanel } from "./ui/shelf-panel";
+import { createShelfPanel, type ShelfPanelEl } from "./ui/shelf-panel";
+import { createShelfResizer } from "./ui/shelf-resizer";
 import { createTextEditor } from "./ui/text-editor";
 import { createBrainstormInput } from "./ui/brainstorm-input";
 import { getShapeBounds } from "./utils";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
 // @ts-ignore — JS module, no type declaration file
-import { getNotebookCanvasPanes, focusPaneById, scrollPaneToMatch } from "../pane/pane-manager.js";
+import { getNotebookCanvasPanes, focusAndCenterPaneById, scrollPaneToMatch } from "../pane/pane-manager.js";
 import { createDrawingLayer } from "./drawing/drawing-layer";
 import type { DrawingLayer } from "./drawing/drawing-layer";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
@@ -51,6 +52,7 @@ export class NotesCanvas {
   private _cleanupPaneListener: (() => void) | null = null;
   private _shelfItems: string[] = [];
   private _shelfPanel: HTMLElement | null = null;
+  private _shelfResizer: HTMLElement | null = null;
   private _drawingLayer: DrawingLayer | null = null;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
@@ -256,8 +258,12 @@ export class NotesCanvas {
       // live on every rebuild so editor edits show up without a
       // dedicated subscription.
       getPanes: () => getNotebookCanvasPanes(),
-      onFocusPane: (id: string) => focusPaneById(id),
+      onFocusPane: (id: string) => focusAndCenterPaneById(id),
       onScrollPaneToMatch: (id: string, from: number, to: number) => scrollPaneToMatch(id, from, to),
+      initialWidth: (() => {
+        const appState = (window as unknown as { __hushState__?: { settings?: { notebookShelfWidth?: number } } }).__hushState__;
+        return appState?.settings?.notebookShelfWidth;
+      })(),
     };
 
     container.appendChild(createSelectionToolbar(this.state, () => this._moveToShelf()));
@@ -267,6 +273,19 @@ export class NotesCanvas {
 
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);
+
+    // Shelf resize handle. Mounted to body so its fixed-position math is
+    // independent of the canvas container's transform / scroll.
+    const shelfResizer = createShelfResizer(this._shelfPanel as ShelfPanelEl, {
+      onCommit: (w: number) => {
+        const appState = (window as unknown as { __hushState__?: { updateSettings?: (p: Record<string, unknown>) => void } }).__hushState__;
+        if (appState && typeof appState.updateSettings === "function") {
+          appState.updateSettings({ notebookShelfWidth: w });
+        }
+      },
+    });
+    document.body.appendChild(shelfResizer);
+    this._shelfResizer = shelfResizer;
 
     // Refresh the shelf when panes are added / removed / hidden so its
     // pane rows stay in sync without polling. Pane content edits don't
@@ -370,6 +389,7 @@ export class NotesCanvas {
     if (this._cleanupDropTarget) this._cleanupDropTarget();
     if (this._cleanupPaneListener) { this._cleanupPaneListener(); this._cleanupPaneListener = null; }
     if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
+    if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
     if (lastActiveNotebook === this) lastActiveNotebook = null;
     // The text-editor mirrors its active handle onto window for
@@ -447,6 +467,9 @@ export class NotesCanvas {
         leftInset: this.state.leftInset,
         // Inject DPR so renderer.ts stays free of `window` reads.
         dpr: window.devicePixelRatio || 1,
+        flowchart: this.state.flowchart,
+        flowDropTargetId: this.state.flowDropTargetId,
+        flowHoveredEdgeId: this.state.flowHoveredEdgeId,
       });
       this._rafId = requestAnimationFrame(loop);
     };
