@@ -36,6 +36,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── find-replace.js
 │   ├── file-drop.js
 │   ├── image-preview.js
+│   ├── zen-focus.js
 │   └── plugins/
 │       ├── callouts.js
 │       ├── dry-highlight.js
@@ -170,7 +171,7 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Loaded as a sid
 - `localSyncWriteFlag` — short-lived timestamp set when Hush writes to a Local Sync file; the watcher uses it to suppress its own echo within ~500 ms.
 - `syncPulling` — true while a sync layer (Dropbox poll, Local Sync watcher, pane sync) is pushing remote content into the editor; suppresses `markDirty` so the pull doesn't re-trigger an upload.
 
-Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`.
+Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`, `zen-focus-changed`.
 
 **Notebook state:** When a notebook is open, `currentNotebookFileId` is set and `currentFileId` / `currentProjectId` are null. The notebook canvas has its own `DrawingState` (in `src/notebook/state.ts`), managed by `notebook-bridge.js`. See [README-NOTEBOOK.md](README-NOTEBOOK.md) for details and [README-DRAWING.md](README-DRAWING.md) for the freehand drawing layer and its engine/shim architecture.
 
@@ -190,7 +191,7 @@ Extracted from `main.js`. Contains `fontFallbacks` map, `themeBackgrounds` color
 
 The CodeMirror 6 instance is configured with:
 
-- **Markdown language** with inline syntax highlighting (headings get scaled font sizes, syntax characters dimmed to 40% opacity)
+- **Markdown language** with inline syntax highlighting (headings get scaled font sizes, generic syntax characters dimmed to 40% opacity; `%%` comment markers and `==` highlight markers carry their own tags pinned to 20% opacity so the delimiters fade further than the content they wrap)
 - **Custom inline parsers** for `%%comments%%` and `==highlighted text==`
 - **Heading indent plugin** — hides `#` markers entirely by default via replace decorations; when the cursor enters the heading line the markers are revealed inline so the user can edit them. This replaces the previous behavior of pulling the markers into the left margin, which was being cropped when the editor column was narrow or inside a floating pane
 - **Heading normalization** — optional setting to remove scaled heading sizes
@@ -297,6 +298,20 @@ Document snapshot history viewer. Shows timestamped snapshots with content previ
 
 CodeMirror ViewPlugin that dims all text except the current sentence to 50% opacity. Uses sentence-boundary detection from `sentence-navigator.js`. On empty lines, all text is dimmed.
 
+### Zen Focus (`editor/zen-focus.js`, `styles/zen-focus.css`)
+
+Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in three contexts: the main editor (doc mode), an active doc pane, or a notebook text-shape inline editor. The source surface picked at toggle time is the one whose handle matches first in that priority order.
+
+**Shadow editor model.** Rather than reparenting the source's DOM into the overlay, Zen builds a fresh `EditorView` inside the overlay and seeds it with the source's content + cursor offset. The source editor sits dormant for the duration of Zen. On exit the new content + selection are pushed back to the source via a single replacement transaction (CodeMirror sources) or a textarea value+input dispatch (notebook text shape — text-editor.ts's input handler then updates `state.editingText`). The shadow approach sidesteps every category of bug we hit with reparenting: stale CodeMirror geometry, fights with the pane click-outside-deactivate handler, textarea positional weirdness.
+
+**Focus mode lives here on purpose.** `createBaseExtensions()` deliberately omits `createFocusModePlugin` (panes don't want sentence-level dim inside them); the Zen module re-adds it to the shadow editor's extension list. Zen also auto-enables `state.focusMode` on entry and restores its prior value on exit, so surrounding-sentence dim works without a separate toggle. A `mode-changed` listener forwards a no-op dispatch to the zen view so toggling focus mode (`Cmd+Shift+Y`) from inside Zen wakes the shadow editor's focus-mode plugin.
+
+**Centring + curtains.** A 50vh top/bottom padding on the shadow `.cm-scroller` lets every line — including the first and last — sit at the window's vertical centre. An `EditorView.updateListener` dispatches `EditorView.scrollIntoView(head, { y: "center" })` on every selection / doc / viewport change so the cursor's line tracks centre as the user types or arrows. Two `::before` / `::after` gradient curtains fade the top and bottom thirds of the overlay back to `--bg`, so the user works in the centre band.
+
+**Hint pill.** A small `.zen-focus-hint` in the bottom-right shows the configured shortcut; opacity 0 by default, fades in on `mousemove` and out 1.5 s later.
+
+**Settings.** `zenFocusFontSize` (Settings > Editor > Zen Focus, default 30 px) and `shortcutZenFocus` (Settings > Shortcuts > General, default `Mod+Shift+S`). Surrounding-sentence dim uses the user's existing `focusModeOpacity` slider — Zen reads through to it rather than introducing a parallel knob.
+
 ### Find & Replace (`editor/find-replace.js`)
 
 Two modes:
@@ -347,7 +362,7 @@ ViewPlugin that shows the current heading hierarchy pinned to the top of the edi
 
 Optional live word count pinned to the top of the text column. When `wordCountVisible` is true, a small pill (`#word-count-display`) is absolutely positioned relative to `.cm-scroller`, horizontally centered in the column, and stacked into the same vertical slot used by the Ratchet timer. When Ratchet mode is active the two elements coexist: the timer renders first and the word count renders directly below it, styled identically (same background, padding, typography, and theme variable hookups as `.ratchet-timer`). When Ratchet is off, the word count takes the slot alone.
 
-Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a whitespace-split after stripping comment markers (`%%...%%`), inline code fences, and image markdown — so references don't inflate the count. In project mode the separators are skipped. The plugin reads `wordCountVisible` from state and responds to `settings-changed` / `mode-changed` events; toggling is handled by the `toggleWordCount` command, bound by default to `Cmd+Shift+W` and surfaced in the command palette.
+Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a whitespace-split after stripping comment markers (`%%...%%`), inline code fences, image markdown, and any text past the line containing the `---%` end-of-document gray-out marker — editorial notes don't inflate the total. In project mode the separators are skipped. The plugin reads `wordCountVisible` from state and responds to `settings-changed` / `mode-changed` events; toggling is handled by the `toggleWordCount` command, bound by default to `Cmd+Shift+W` and surfaced in the command palette.
 
 **Pane header chip.** Doc-mode floating panes carry their own word count (`.fp-wordcount`) next to the title — same setting (`wordCountVisible`), independent count per pane (each pane has its own editor). `pane-content.js` exports `countWords` from this module and refreshes the chip on every pane editor `docChanged` plus once on initial load. `pane-manager.js` listens for `settings-changed` and runs `syncAllPaneWordCounts()` so toggling the global flag updates every pane in lockstep. Notebook panes don't get a chip — their content is shapes, not prose.
 
@@ -361,7 +376,7 @@ CodeMirror plugin for project mode. `createProjectViewField` (StateField) replac
 
 ### File Drop (`editor/file-drop.js`)
 
-Three context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via `save_image` and inserts a standard `![alt](filename.png)` reference at the cursor coordinate (see "Doc Images" below). In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes). Tauri's built-in drag-drop is disabled so DOM events reach the webview.
+Four context-aware drop targets. When the sidebar panel is open, an "Import file" overlay appears inside `#panel-overlay` — dropping creates a new document. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via `save_image` and inserts a standard `![alt](filename.png)` reference at the cursor coordinate (see "Doc Images" below). In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes); holding Cmd/Ctrl while dropping plain text wraps it in a markdown blockquote and creates the resulting TextShape at 14 px instead of the default 18. Doc panes get their own drop wiring via `attachPaneTextDrop` (in `pane/pane-editor.js`) — the main editor's drop net only covers `#editor-container` so without this drops on a floating doc pane fell through. The two payload-classification helpers (`hasAcceptableDragPayload`, `readDragText`) are shared exports of `file-drop.js`. Tauri's built-in drag-drop is disabled so DOM events reach the webview.
 
 ### Doc Images (`editor/plugins/image-decorator.js`, `editor/image-preview.js`, `state/state-images.js`)
 
@@ -626,6 +641,7 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Toggle typewriter mode | `Cmd+Shift+T` |
 | Toggle D.R.Y. highlighting | `Cmd+Shift+R` |
 | Toggle focus mode | `Cmd+Shift+Y` |
+| Toggle Zen Focus | `Cmd+Shift+S` |
 | Toggle word count | `Cmd+Shift+W` |
 | New file | `Cmd+N` |
 | Find / replace | `Cmd+F` |

@@ -13,7 +13,7 @@ src/notebook/drawing/
   sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff, no-op fast path)
   brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
-  tool-panel.ts          Top pill (always visible): Lasso, Erase, Slice, brush slots, and the lasso hold-time flyout
+  tool-panel.ts          Top pill (always visible by default — hidden when minimized): Lasso, Erase, Slice, brush slots, lasso hold-time flyout, minimize button, and the restore pencil pill mounted next to the bottom toolbar
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
   engine/
@@ -81,6 +81,8 @@ Targeted deltas have been applied to `engine/` so the port stays as close as pos
 ### Drawing tools (the top pill)
 
 Drawing is always on-deck: the top pill is rendered at all times and picking any of its buttons flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool from the bottom toolbar (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the pill visually dims (buttons at 0.6 opacity).
+
+The pill ends with a **minimize** button. Clicking it flips `state.drawingToolbarMinimized = true`, which hides the pill (`display: none`) and shows a separate one-item pencil pill positioned 10 px to the right of the bottom toolbar. Clicking the pencil flips the flag back. The flag is session-only (not persisted). The restore pill's left edge tracks the bottom toolbar's right edge via a `ResizeObserver` + state-change hook in `notes-canvas.ts` so it stays glued in place as theme / sidebar / brainstorm width changes shift the bottom toolbar around.
 
 | Sub-tool | Engine behavior |
 |----------|-----------------|

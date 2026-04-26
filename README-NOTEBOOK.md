@@ -39,7 +39,7 @@ src/notebook/
     drawing-layer.ts       Engine-backed drawing layer + public API
     sync-shim.ts           state.shapes[] ↔ engine.strokes bridge
     brush-slots.ts         Toolbar slot row + brush-edit flyout
-    tool-panel.ts          Top draw pill (always visible): Lasso, Erase, Slice, brush slots; owns the lasso hold-time flyout
+    tool-panel.ts          Top draw pill: Lasso, Erase, Slice, brush slots, lasso hold-time flyout, plus a minimize button + restore pencil pill mounted alongside the bottom toolbar
     layers-panel.ts        Layers dropdown (notebook-level, used by every shape type)
     engine/                Stroke engine (ported; 8 documented deltas)
 ```
@@ -123,7 +123,7 @@ File drops have three independent targets:
 
 1. **Sidebar panel** — an "Import file" overlay appears inside `#panel-overlay` when it's open. Dropping creates a new document.
 2. **Editor area** (doc mode) — `dragover`/`drop` on `#editor-container` appends text.
-3. **Notebook canvas** — canvas-level `dragover`/`drop` in `input-handler.ts` handles images (→ image shapes) and text files (→ text shapes at drop position). Shelf drags also use canvas-level events.
+3. **Notebook canvas** — canvas-level `dragover`/`drop` in `input-handler.ts` handles images (→ image shapes) and text files (→ text shapes at drop position). Shelf drags also use canvas-level events. Cmd/Ctrl-dragging plain text wraps it in a markdown blockquote (`> …`) and creates the resulting TextShape at 14 px instead of the default 18 px — `addTextShapeAtPosition` accepts an `opts.fontSize` to support this.
 4. **Floating panes** — Cmd-dragging a file from the sidebar past the panel edge creates a floating pane (see `pane/pane-manager.js`). Notebook panes can be attached to canvas coordinates. The notebook's `keydown` and `paste` handlers skip processing when `document.activeElement` is inside a `.floating-pane` to prevent input leaks.
 
 ## Core Concepts
