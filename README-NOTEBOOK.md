@@ -199,7 +199,12 @@ A long press during draw/erase promotes the in-flight stroke into a lasso pick. 
 
 ### Shelf panel
 
-Right-side slide-out panel listing all shapes organized by drag-area containers. Features search, #tag filtering, pin/unpin, and drag-to-restore. Themed to match the canvas theme.
+Right-side slide-out panel listing every shape organized by its drag-area container. Features search, #tag filtering, pin/unpin, and drag-to-restore. Themed to match the canvas theme.
+
+- **Resizable** — the shelf's left edge is a hover-revealed drag handle (mirrors the sidebar's resizer pattern). The width is clamped to 200 px.. 60% of the viewport and persists in `notebookShelfWidth`. The shelf's open/close `transition: width 0.2s` is suspended for the duration of the drag so the rendered width tracks the cursor instead of chasing it.
+- **Flowchart outline** — text shapes that participate in a flowchart edge are nested under their flow parent (depth = flow-tree depth) instead of rendering flat, with a small `→` marker on every flow node. Scoping is per drag-area, so a flow that spans drag-areas surfaces as multiple roots. Non-flow shapes still render at depth 0/1 as before.
+- **Heading rows** — when a text shape's first line starts with `#..######` followed by a space, the marker is stripped and the row renders bold; the rest of the body still feeds search.
+- **Attached panes only** — `getNotebookCanvasPanes()` filters to `pane.attached === true`. Globally-pinned panes float across every document and aren't part of any one notebook's outline, so they're omitted from the shelf along with free-floating local panes. Clicking a pane row routes through `focusAndCenterPaneById()`, which reuses the search-result `centerPaneInViewport()` helper so the pane both pops to the front and recentres on screen.
 
 ## Development Rules
 

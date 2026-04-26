@@ -264,6 +264,12 @@ export function getNotebookCanvasPanes() {
   const out = [];
   for (const [, p] of panes) {
     if (p.el && p.el.style.display === "none") continue;
+    // Only canvas-attached panes participate in the shelf — they're the
+    // ones anchored to a specific spot on this notebook. Globally-pinned
+    // panes float across every document and don't belong to the canvas's
+    // outline. Free-floating local panes are also excluded for the same
+    // "is this content of the notebook?" reason.
+    if (!p.attached) continue;
     let content = "";
     if (p.editor && typeof p.editor.getContent === "function") {
       try { content = p.editor.getContent() || ""; } catch (_) {}
