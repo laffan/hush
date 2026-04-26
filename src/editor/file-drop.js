@@ -39,7 +39,7 @@ function findTextFile(e) {
   return null;
 }
 
-function hasAcceptableDragPayload(e) {
+export function hasAcceptableDragPayload(e) {
   const types = e.dataTransfer?.types;
   if (!types) return false;
   // dataTransfer.types is DOMStringList in Safari; check via includes/contains.
@@ -47,7 +47,7 @@ function hasAcceptableDragPayload(e) {
   return has("Files") || has("text/plain") || has("text/uri-list") || has("Text");
 }
 
-function readDragText(e) {
+export function readDragText(e) {
   const dt = e.dataTransfer;
   if (!dt) return "";
   return dt.getData("text/plain") || dt.getData("text/uri-list") || dt.getData("Text") || "";

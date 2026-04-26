@@ -14,6 +14,7 @@ import {
 } from "../editor/editor.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 import { themeBackgrounds } from "../theme-colors.js";
+import { hasAcceptableDragPayload, readDragText } from "../editor/file-drop.js";
 
 /**
  * Create a CodeMirror editor suitable for a floating pane.
@@ -86,6 +87,40 @@ export function createPaneEditor(container, appState, onChange) {
       applyStyleColorsToView(view, style, effective);
     },
   };
+}
+
+/** Wire dragover/drop on a doc pane's content element so plain text
+ *  dragged in from outside (or from another pane) lands at the drop
+ *  point. CodeMirror's internal drop path is unreliable inside the
+ *  pane (the same WebView quirk that motivated `editor/file-drop.js`
+ *  for the main editor) and the global drop net handles only the main
+ *  editor / notebook canvas, leaving panes silent. */
+export function attachPaneTextDrop(pane) {
+  const content = pane._content;
+  if (!content) return;
+  content.addEventListener("dragover", (e) => {
+    if (!hasAcceptableDragPayload(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }, true);
+  content.addEventListener("drop", (e) => {
+    if (!hasAcceptableDragPayload(e)) return;
+    const text = readDragText(e);
+    if (!text) return;
+    const view = pane.editor?.view;
+    if (!view) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (pos == null) pos = view.posAtCoords({ x: e.clientX, y: e.clientY }, false);
+    if (pos == null) pos = view.state.selection.main.head;
+    view.dispatch({
+      changes: { from: pos, to: pos, insert: text },
+      selection: { anchor: pos + text.length },
+    });
+    view.focus();
+  }, true);
 }
 
 /** Apply the active style's color overrides (bg / fg / cursor /

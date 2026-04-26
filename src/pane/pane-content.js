@@ -101,6 +101,11 @@ async function loadDocumentPane(pane) {
   // Cmd+drag a selection out of this pane to drop into another editor
   // or a notebook canvas.
   attachEditorTextDrag(pane.editor.view, pane._content);
+  // Accept text dragged INTO the pane from outside the app (or from
+  // another doc / pane). The main editor's file-drop net doesn't
+  // cover panes, so without this drops fall through silently.
+  const { attachPaneTextDrop } = await import("./pane-editor.js");
+  attachPaneTextDrop(pane);
   // Cmd+drag image chips / raw image refs in a pane so they can be moved
   // between panes just like any other markdown text.
   import("../editor/plugins/image-decorator.js").then((m) => {
