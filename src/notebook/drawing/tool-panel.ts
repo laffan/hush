@@ -43,6 +43,9 @@ export interface DrawingToolPanelHandle {
    *  can extend past the pill and position themselves relative to
    *  their shared parent. */
   flyout: HTMLElement;
+  /** One-item pill (pencil icon) shown only while the main panel is
+   *  minimized. Caller mounts it next to the bottom toolbar. */
+  restorePill: HTMLElement;
 }
 
 export function createDrawingToolPanel(
@@ -140,6 +143,47 @@ export function createDrawingToolPanel(
   // layer membership applies to every shape type, not just drawings.
   const slots = createBrushSlots(state, drawingLayer);
   container.appendChild(slots.root);
+
+  // ----- Minimize button -------------------------------------------
+
+  container.appendChild(h("div", {
+    style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
+  }));
+
+  const minimizeBtn = h("button", {
+    title: "Hide drawing toolbar",
+    style: {
+      width: "36px", height: "36px", display: "flex",
+      alignItems: "center", justifyContent: "center",
+      border: "none", borderRadius: "8px", cursor: "pointer",
+      background: "transparent", transition: "all 0.15s",
+    },
+    children: [icon("minimize", 20)],
+    onClick: () => state.setDrawingToolbarMinimized(true),
+  }) as HTMLButtonElement;
+  container.appendChild(minimizeBtn);
+
+  // ----- Restore pill (shown when minimized) -----------------------
+
+  const restorePill = h("button", {
+    title: "Show drawing toolbar",
+    style: {
+      position: "absolute",
+      bottom: "calc(16px + env(safe-area-inset-bottom))",
+      width: "48px", height: "48px",
+      display: "none",
+      alignItems: "center", justifyContent: "center",
+      border: "none", borderRadius: "12px", cursor: "pointer",
+      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+      backdropFilter: "blur(8px)",
+      padding: "6px 8px",
+      zIndex: "100",
+      userSelect: "none",
+    },
+    children: [icon("pen", 20)],
+    onClick: () => state.setDrawingToolbarMinimized(false),
+  }) as HTMLButtonElement;
+  restorePill.classList.add("notebook-tool-panel");
 
   // ----- Lasso flyout (hold-duration slider) ------------------------
 
@@ -275,7 +319,17 @@ export function createDrawingToolPanel(
     container.style.left = center + "px";
     container.style.transform = "translateX(-50%)";
     container.style.background = state.theme.uiBackground;
+    container.style.color = state.theme.foreground;
     if (lassoFlyoutOpen) positionLassoFlyout();
+  }
+
+  function applyMinimizedState(): void {
+    const minimized = state.drawingToolbarMinimized;
+    container.style.display = minimized ? "none" : "flex";
+    restorePill.style.display = minimized ? "flex" : "none";
+    restorePill.style.background = state.theme.uiBackground;
+    restorePill.style.color = state.theme.foreground;
+    if (minimized && lassoFlyoutOpen) closeLassoFlyout();
   }
 
   state.addEventListener("change", ((e: CustomEvent) => {
@@ -302,10 +356,14 @@ export function createDrawingToolPanel(
     }
     updateActiveClasses();
     applyLayout();
+    if (keys.includes("drawingToolbarMinimized") || keys.includes("theme")) {
+      applyMinimizedState();
+    }
   }) as EventListener);
 
   updateActiveClasses();
   applyLayout();
+  applyMinimizedState();
   applyActiveSlot();
   drawingLayer.setTool(state.drawingSubTool);
 
@@ -315,5 +373,5 @@ export function createDrawingToolPanel(
   flyoutGroup.appendChild(slots.flyout);
   flyoutGroup.appendChild(lassoFlyout);
 
-  return { root: container, flyout: flyoutGroup };
+  return { root: container, flyout: flyoutGroup, restorePill };
 }

@@ -37,7 +37,8 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "fontSize" | "camera" | "selectionBox" | "editingText"
   | "bookmarks" | "brainstormMode" | "creatingDragArea" | "theme"
   | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
-  | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs";
+  | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
+  | "drawingToolbarMinimized";
 
 /** Default brush-slot preset. Slots 1–3 default to "auto" color so
  *  they track the active theme's foreground; slot 4 (highlighter) is
@@ -73,6 +74,10 @@ export class DrawingState extends EventTarget {
    *  lasso. Exposed via the lasso flyout's slider (500–2000 ms).
    *  Default matches the engine's built-in constant. */
   lassoHoldMs = 1500;
+
+  /** When true, the top drawing pill is hidden and a one-item pencil
+   *  pill appears beside the bottom toolbar. Session-only state. */
+  drawingToolbarMinimized = false;
 
   // Layers are notebook-level; they host every shape type, not just
   // drawings. Shapes carry `layerId` via ShapeBase; the renderer
@@ -186,6 +191,12 @@ export class DrawingState extends EventTarget {
     if (this.drawingSubTool === sub) return;
     this.drawingSubTool = sub;
     this.notify("drawingSubTool");
+  }
+
+  setDrawingToolbarMinimized(b: boolean) {
+    if (this.drawingToolbarMinimized === b) return;
+    this.drawingToolbarMinimized = b;
+    this.notify("drawingToolbarMinimized");
   }
 
   setLassoHoldMs(ms: number) {

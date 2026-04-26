@@ -269,7 +269,38 @@ export class NotesCanvas {
     container.appendChild(createSelectionToolbar(this.state, () => this._moveToShelf()));
     container.appendChild(createTextEditor(this.state));
     container.appendChild(createBrainstormInput(this.state));
-    container.appendChild(createToolbar(this.state));
+    const bottomToolbar = createToolbar(this.state);
+    container.appendChild(bottomToolbar);
+
+    // Mount the drawing-toolbar restore pill (pencil) next to the
+    // bottom toolbar; the layout function below positions it to the
+    // right of the bottom toolbar with a 10px gap whenever shown.
+    container.appendChild(drawingChrome.restorePill);
+    const positionRestorePill = () => {
+      if (!this.state.drawingToolbarMinimized) return;
+      const tbRect = bottomToolbar.getBoundingClientRect();
+      const parentRect = container.getBoundingClientRect();
+      const left = tbRect.right - parentRect.left + 10;
+      drawingChrome.restorePill.style.left = `${left}px`;
+      drawingChrome.restorePill.style.transform = "none";
+    };
+    this.state.addEventListener("change", ((e: CustomEvent) => {
+      const keys: string[] = (e.detail && e.detail.keys) || [];
+      if (keys.includes("drawingToolbarMinimized") || keys.includes("theme") ||
+          keys.includes("isPanning") || keys.includes("brainstormMode") ||
+          keys.includes("tool")) {
+        // Defer to next frame so the bottom toolbar has rendered any
+        // size changes (active tool tints don't change width, but
+        // theme/leftInset shifts do).
+        requestAnimationFrame(positionRestorePill);
+      }
+    }) as EventListener);
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => positionRestorePill());
+      ro.observe(bottomToolbar);
+      ro.observe(container);
+    }
+    requestAnimationFrame(positionRestorePill);
 
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);
