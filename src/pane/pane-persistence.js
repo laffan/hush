@@ -10,7 +10,7 @@ import {
   appState,
   panes,
   containerEl,
-  bumpZCounter,
+  zForPane,
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
   TITLEBAR_HEIGHT,
@@ -109,7 +109,7 @@ export async function restorePanes(deps) {
     buildPaneDOM(pane);
     applyPaneFontSize(pane);
     containerEl.appendChild(pane.el);
-    pane.el.style.zIndex = bumpZCounter();
+    pane.el.style.zIndex = zForPane(pane);
     panes.set(id, pane);
     await loadPaneContent(pane);
 

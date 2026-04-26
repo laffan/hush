@@ -8,7 +8,7 @@ import {
   appState,
   notebookBridge,
   panes,
-  bumpZCounter,
+  zForPane,
   TITLEBAR_HEIGHT,
   MIN_WIDTH,
   MIN_HEIGHT,
@@ -33,7 +33,7 @@ export function setupPaneDrag(pane, deps) {
       createPane(pane.fileId, pane.fileName, pane.fileType,
         startLeft + pane.width / 2, startTop + TITLEBAR_HEIGHT / 2,
         { allowDuplicate: true, ownerContext: getCurrentContext(), skipFocus: true });
-      pane.el.style.zIndex = bumpZCounter();
+      pane.el.style.zIndex = zForPane(pane);
     }
     // Snapshot canvas coords for attached panes (notebook mode)
     if (pane.attached && appState.currentNotebookFileId) {

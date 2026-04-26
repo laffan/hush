@@ -13,7 +13,7 @@ import {
   tauriInvoke,
   panes,
   activePaneId, setActivePaneId,
-  zCounter, bumpZCounter,
+  zForPane,
   containerEl, setContainerEl,
   appState, setAppState,
   autosaveTimer, setAutosaveTimer,
@@ -186,7 +186,7 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
 
   buildPaneDOM(pane);
   containerEl.appendChild(pane.el);
-  pane.el.style.zIndex = bumpZCounter();
+  pane.el.style.zIndex = zForPane(pane);
   panes.set(id, pane);
   await loadPaneContent(pane);
   if (!opts.skipFocus) focusPane(id);
@@ -231,7 +231,7 @@ export function focusPane(id) {
   const pane = panes.get(id);
   if (!pane) return;
   pane.el.classList.add("active");
-  pane.el.style.zIndex = bumpZCounter();
+  pane.el.style.zIndex = zForPane(pane);
   // Unlock and focus the inner editor / re-center notebook toolbar
   if (pane.editor) { pane.editor.setEditable(true); pane.editor.focus(); }
   if (pane.notebook) pane.notebook.state.notify("tool");
@@ -599,6 +599,9 @@ function setPinned(pane, value) {
   const btn = pane.el.querySelector(".fp-btn-pin");
   if (btn) btn.classList.toggle("pin-active", pane.pinned);
   pane.el.classList.toggle("pinned", pane.pinned);
+  // Re-stamp z-index so the pane lifts into (or drops out of) the
+  // pinned z-band immediately on toggle.
+  pane.el.style.zIndex = zForPane(pane);
   // When unpinning, pane returns to its original context — hide if not current
   if (!value) onContextChange();
   schedulePersist();

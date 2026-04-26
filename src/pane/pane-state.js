@@ -24,6 +24,14 @@ export function setActivePaneId(id) { activePaneId = id; }
 export let zCounter = 1000;
 export function bumpZCounter() { return ++zCounter; }
 
+// Pinned (global) panes always stack above non-pinned (local) panes,
+// regardless of focus order. The offset is large enough that no realistic
+// number of focus events on local panes can catch up.
+export const PINNED_Z_OFFSET = 100000;
+export function zForPane(pane) {
+  return bumpZCounter() + (pane.pinned ? PINNED_Z_OFFSET : 0);
+}
+
 export let containerEl = null;
 export function setContainerEl(el) { containerEl = el; }
 
