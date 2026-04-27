@@ -200,9 +200,34 @@ async function insertImagesAtDrop(state, files, clientX, clientY) {
   if (pos == null) pos = view.state.selection.main.head;
 
   const chunks = [];
-  for (const file of files) {
-    const res = await state.createImageFromFile(file);
-    if (res) chunks.push(buildImageMarkdown(res.alt, res.filename));
+  // Local Sync docs: write each image as a sibling file inside the
+  // mounted folder so refs stay relative and the file remains portable
+  // (the same `.md` opened in another editor still resolves images).
+  const ls = state.currentLocalSync;
+  if (ls?.folderId && ls?.relPath) {
+    const slash = ls.relPath.lastIndexOf("/");
+    const baseDir = slash >= 0 ? ls.relPath.slice(0, slash) : "";
+    const { writeFileBytes } = await import("../sync/local-sync.js");
+    const { isImageFile } = await import("../state/state-images.js");
+    for (const file of files) {
+      if (!isImageFile(file)) continue;
+      try {
+        const buf = await file.arrayBuffer();
+        const bytes = Array.from(new Uint8Array(buf));
+        const target = baseDir ? `${baseDir}/${file.name}` : file.name;
+        const finalRel = await writeFileBytes(ls.folderId, target, bytes);
+        const finalName = (finalRel || target).split("/").pop();
+        const altSrc = finalName.replace(/\.[^.]+$/, "") || "image";
+        chunks.push(buildImageMarkdown(altSrc, finalName));
+      } catch (e) {
+        console.error("Local Sync image drop failed:", e);
+      }
+    }
+  } else {
+    for (const file of files) {
+      const res = await state.createImageFromFile(file);
+      if (res) chunks.push(buildImageMarkdown(res.alt, res.filename));
+    }
   }
   if (!chunks.length) return;
   const line = view.state.doc.lineAt(pos);

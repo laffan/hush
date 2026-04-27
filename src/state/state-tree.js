@@ -70,7 +70,7 @@ async function permanentDeleteNode(state, nodeId) {
   if (!node) return;
   const { docFileIds, imageFileIds } = collectTypedFileIds(node);
   await deleteDocFilesByIds(state, docFileIds);
-  await deleteImageFilesByIds(imageFileIds);
+  await deleteImageFilesByIds(state, imageFileIds);
   removeNode(state.fileTree, nodeId);
   await finalizeFileDeletion(state, docFileIds);
 }
@@ -87,7 +87,7 @@ export async function emptyTrash(state) {
     imageFileIds.push(...typed.imageFileIds);
   }
   await deleteDocFilesByIds(state, docFileIds);
-  await deleteImageFilesByIds(imageFileIds);
+  await deleteImageFilesByIds(state, imageFileIds);
   trash.children = [];
   await finalizeFileDeletion(state, docFileIds);
 }
@@ -120,13 +120,23 @@ async function deleteDocFilesByIds(state, fileIds) {
   }
 }
 
-async function deleteImageFilesByIds(fileIds) {
+async function deleteImageFilesByIds(state, fileIds) {
   if (!fileIds.length) return;
   const { clearImageCache } = await import("./state-images.js");
+  let syncDeleteImage = null;
+  if (IS_TAURI && state?.settings?.dropboxEnabled) {
+    try {
+      const mod = await import("../sync/sync-state.js");
+      syncDeleteImage = mod.syncDeleteImage;
+    } catch (_) {}
+  }
   for (const fid of fileIds) {
     clearImageCache(fid);
     if (IS_TAURI) {
       try { await tauriInvoke("delete_image", { filename: fid }); } catch (e) { console.error("Delete image:", e); }
+      if (syncDeleteImage) {
+        try { await syncDeleteImage(state, fid); } catch (e) { console.error("Sync image delete:", e); }
+      }
     }
   }
 }

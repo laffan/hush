@@ -19,9 +19,25 @@ async function tauriInvoke(cmd, args) {
 
 const dataUrlCache = new Map();
 
+/** Cache key — global images key by bare filename; Local Sync siblings
+ *  key by folderId + baseDir + filename so a sibling `cow.png` doesn't
+ *  shadow the global one (or another folder's `cow.png`). */
+function cacheKeyFor(filename, context) {
+  if (context && context.kind === "localSync") {
+    return `ls:${context.folderId}:${context.baseDir || ""}/${filename}`;
+  }
+  return filename;
+}
+
 export function clearImageCache(filename) {
-  if (filename) dataUrlCache.delete(filename);
-  else dataUrlCache.clear();
+  if (!filename) { dataUrlCache.clear(); return; }
+  // Drop every cache entry pointing at this filename — across global +
+  // every Local Sync context. Cheap because the cache is small.
+  for (const key of [...dataUrlCache.keys()]) {
+    if (key === filename || key.endsWith(`/${filename}`)) {
+      dataUrlCache.delete(key);
+    }
+  }
 }
 
 export function fileToDataUrl(file) {
@@ -79,6 +95,7 @@ export async function createImageFromFile(state, file) {
   dataUrlCache.set(finalName, dataUrl);
 
   const images = findNode(state.fileTree, AppState.IMAGES_ID);
+  let isNew = false;
   if (images) {
     // Avoid duplicate tree nodes if the backend disambiguated a second
     // copy of the same filename.
@@ -95,7 +112,14 @@ export async function createImageFromFile(state, file) {
       (images.children || (images.children = [])).push(node);
       await state.saveFileTree();
       state.emit("files-changed");
+      isNew = true;
     }
+  }
+  if (isNew && IS_TAURI && state.settings?.dropboxEnabled) {
+    try {
+      const { syncCreateImage } = await import("../sync/sync-state.js");
+      await syncCreateImage(state, finalName);
+    } catch (e) { console.error("Sync image upload:", e); }
   }
   return { filename: finalName, alt: altFromFilename(finalName), dataUrl };
 }
@@ -255,15 +279,29 @@ function removeContentImageRefs(content, filenames) {
 }
 
 /**
- * Resolve a filename to a data URL, caching the result.
+ * Resolve a filename to a data URL, caching the result. Pass `context`
+ * (a `{ kind: "localSync", folderId, baseDir }` shape) to read from a
+ * mounted Local Sync folder instead of the global Images store.
  */
-export async function getImageDataUrl(filename) {
+export async function getImageDataUrl(filename, context) {
   if (!filename) return null;
-  if (dataUrlCache.has(filename)) return dataUrlCache.get(filename);
+  const key = cacheKeyFor(filename, context);
+  if (dataUrlCache.has(key)) return dataUrlCache.get(key);
   if (!IS_TAURI) return null;
+  if (context && context.kind === "localSync") {
+    try {
+      const { readSiblingImageDataUrl } = await import("../sync/local-sync.js");
+      const url = await readSiblingImageDataUrl(context.folderId, context.baseDir, filename);
+      if (url) dataUrlCache.set(key, url);
+      return url;
+    } catch (e) {
+      console.error("readSiblingImageDataUrl failed:", e);
+      return null;
+    }
+  }
   try {
     const url = await tauriInvoke("load_image", { filename });
-    dataUrlCache.set(filename, url);
+    dataUrlCache.set(key, url);
     return url;
   } catch (e) {
     console.error("load_image failed:", e);
@@ -271,8 +309,11 @@ export async function getImageDataUrl(filename) {
   }
 }
 
-/** True if the markdown URL resolves to one of our tracked images. */
-export function isLocalImageRef(state, url) {
+/** True if the markdown URL resolves to a renderable local image. With
+ *  no context, gate on the global Images tree. With a Local Sync
+ *  context, accept any plausibly-local bare filename — the actual file
+ *  existence is verified at fetch time. */
+export function isLocalImageRef(state, url, context) {
   if (!url) return false;
   // Reject URLs with schemes, absolute paths, or directory traversal — we
   // only decorate bare filenames stored in the Images folder.
@@ -281,6 +322,12 @@ export function isLocalImageRef(state, url) {
   // Accept refs of either `brown-cow.png` or `images/brown-cow.png` form —
   // the latter matches what exports rewrite to.
   const filename = url.replace(/^images\//, "");
+  if (context && context.kind === "localSync") {
+    // Local Sync docs reference sibling files on disk; we don't pre-walk
+    // the tree, so accept any bare image filename and let the loader
+    // surface a missing-file fallback if it isn't there.
+    return /\.[a-z0-9]+$/i.test(filename);
+  }
   return !!findImageNode(state, filename);
 }
 

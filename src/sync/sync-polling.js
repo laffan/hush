@@ -175,6 +175,21 @@ async function syncDropboxDiff(state) {
       changed = true;
     }
 
+    // Handle new images downloaded by diffDropboxSync (binary already
+    // saved to disk + registered; we just slot the tree node).
+    for (const img of (diff.newImages || [])) {
+      const images = state.fileTree.find(n => n.id === "__images__");
+      if (!images) continue;
+      if (!Array.isArray(images.children)) images.children = [];
+      const exists = images.children.some(c => c.type === "image" && c.fileId === img.filename);
+      if (exists) continue;
+      images.children.push({
+        id: crypto.randomUUID(), type: "image", name: img.filename,
+        fileId: img.filename, children: [], flagged: false,
+      });
+      changed = true;
+    }
+
     // Handle deleted files on Dropbox
     for (const internalId of (diff.deletedFileIds || [])) {
       const treeNode = findNodeByFileId(state.fileTree, internalId);
@@ -191,7 +206,10 @@ async function syncDropboxDiff(state) {
       await state.saveFileTree();
       state.files = await invoke("list_files");
       state.emit("files-changed");
-      const newNames = (diff.newFiles || []).map(e => e.name || e.relativePath).join(", ");
+      const newNames = [
+        ...((diff.newFiles || []).map(e => e.name || e.relativePath)),
+        ...((diff.newImages || []).map(i => i.filename)),
+      ].join(", ");
       showSyncIndicator("pulled", newNames || "structural changes");
     }
   } catch (e) {

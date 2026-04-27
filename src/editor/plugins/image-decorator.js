@@ -31,17 +31,19 @@ const IMAGE_RE = new RegExp(IMAGE_MD_RE.source, "g");
 const imageTreeChanged = Annotation.define();
 
 class ImageWidget extends WidgetType {
-  constructor(alt, caption, filename, markdown) {
+  constructor(alt, caption, filename, markdown, context) {
     super();
     this.alt = alt;
     this.caption = caption;
     this.filename = filename;
     this.markdown = markdown;
+    this.context = context || null;
   }
   eq(other) {
     return this.alt === other.alt
       && this.caption === other.caption
-      && this.filename === other.filename;
+      && this.filename === other.filename
+      && sameContext(this.context, other.context);
   }
   toDOM() {
     const wrapper = document.createElement("span");
@@ -64,7 +66,7 @@ class ImageWidget extends WidgetType {
     }
 
     // Async load the data URL — toDOM must be sync.
-    getImageDataUrl(this.filename).then((url) => {
+    getImageDataUrl(this.filename, this.context).then((url) => {
       if (url) img.src = url;
       else wrapper.classList.add("cm-hush-image-missing");
     });
@@ -73,7 +75,13 @@ class ImageWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
-function buildDecorations(view, state) {
+function sameContext(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.kind === b.kind && a.folderId === b.folderId && a.baseDir === b.baseDir;
+}
+
+function buildDecorations(view, state, context) {
   const builder = new RangeSetBuilder();
   const doc = view.state.doc;
   const cursors = view.state.selection.ranges.map(r => ({
@@ -89,7 +97,7 @@ function buildDecorations(view, state) {
       const to = from + match[0].length;
       const rawAlt = match[1];
       const url = urlFromMatch(match);
-      if (!isLocalImageRef(state, url)) continue;
+      if (!isLocalImageRef(state, url, context)) continue;
       // Leave the range as raw markdown while the cursor overlaps it so
       // the user can edit the source directly.
       const cursorInside = cursors.some(c =>
@@ -100,14 +108,14 @@ function buildDecorations(view, state) {
       const { alt, caption } = parseAltAndCaption(rawAlt);
       const filename = filenameFromUrl(url);
       builder.add(from, to, Decoration.replace({
-        widget: new ImageWidget(alt, caption, filename, match[0]),
+        widget: new ImageWidget(alt, caption, filename, match[0], context),
       }));
     }
   }
   return builder.finish();
 }
 
-function imageRefAtPos(state, doc, pos) {
+function imageRefAtPos(state, doc, pos, context) {
   const line = doc.lineAt(pos);
   IMAGE_RE.lastIndex = 0;
   let match;
@@ -116,7 +124,7 @@ function imageRefAtPos(state, doc, pos) {
     const to = from + match[0].length;
     if (pos >= from && pos <= to) {
       const url = urlFromMatch(match);
-      if (!isLocalImageRef(state, url)) return null;
+      if (!isLocalImageRef(state, url, context)) return null;
       return {
         from, to,
         alt: match[1],
@@ -140,26 +148,29 @@ function findWrapperTarget(e) {
   };
 }
 
-const imageEventHandler = EditorView.domEventHandlers({
-  mousedown(e, view) {
-    if (e.button !== 0) return false;
-    const hit = findWrapperTarget(e);
-    if (hit) {
-      if (e.metaKey || e.ctrlKey) return false; // let the drag handler take it
-      e.preventDefault();
-      openImagePreviewModal(hit.filename, hit.alt || hit.filename);
-      return true;
-    }
-    return false;
-  },
-});
+function makeImageEventHandler(getContext) {
+  return EditorView.domEventHandlers({
+    mousedown(e, view) {
+      if (e.button !== 0) return false;
+      const hit = findWrapperTarget(e);
+      if (hit) {
+        if (e.metaKey || e.ctrlKey) return false; // let the drag handler take it
+        e.preventDefault();
+        const ctx = getContext ? getContext() : null;
+        openImagePreviewModal(hit.filename, hit.alt || hit.filename, ctx);
+        return true;
+      }
+      return false;
+    },
+  });
+}
 
 /**
  * Cmd+drag integration — an image widget (or raw markdown under the cursor)
  * can be dragged between panes via the existing text-drag pipeline. The
  * payload is just the markdown so the receiving editor re-decorates it.
  */
-export function attachImageDrag(view, containerEl, state) {
+export function attachImageDrag(view, containerEl, state, getContext) {
   let unbind = null;
   (async () => {
     const { startTextDrag } = await import("../../pane/text-drag.js");
@@ -174,7 +185,8 @@ export function attachImageDrag(view, containerEl, state) {
       } else {
         const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
         if (pos == null) return;
-        const ref = imageRefAtPos(state, view.state.doc, pos);
+        const ctx = getContext ? getContext() : null;
+        const ref = imageRefAtPos(state, view.state.doc, pos, ctx);
         if (!ref) return;
         payload = { from: ref.from, to: ref.to, text: ref.markdown };
       }
@@ -197,11 +209,19 @@ export function attachImageDrag(view, containerEl, state) {
   return () => { if (unbind) unbind(); };
 }
 
-export function createImageDecoratorPlugin(state) {
+/**
+ * `getContext` is an optional () => `{ kind: "localSync", folderId, baseDir }`
+ * resolver. The main editor passes a closure over `state.currentLocalSync`;
+ * pane editors pass a closure over their own `pane.localSync`. When the
+ * resolver returns null the decorator falls back to global Images
+ * resolution exactly as before.
+ */
+export function createImageDecoratorPlugin(state, getContext) {
+  const ctx = () => (getContext ? getContext() : null);
   const plugin = ViewPlugin.fromClass(
     class {
       constructor(view) {
-        this.decorations = buildDecorations(view, state);
+        this.decorations = buildDecorations(view, state, ctx());
         // Dispatch a harmless annotation when the image tree changes —
         // the update() callback below picks it up and rebuilds the
         // decoration set, which is how previously-unresolvable refs
@@ -216,7 +236,7 @@ export function createImageDecoratorPlugin(state) {
       update(update) {
         const treeChanged = update.transactions.some(tr => tr.annotation(imageTreeChanged) != null);
         if (update.docChanged || update.viewportChanged || update.selectionSet || treeChanged) {
-          this.decorations = buildDecorations(update.view, state);
+          this.decorations = buildDecorations(update.view, state, ctx());
         }
       }
       destroy() {
@@ -225,5 +245,5 @@ export function createImageDecoratorPlugin(state) {
     },
     { decorations: (v) => v.decorations }
   );
-  return [plugin, imageEventHandler];
+  return [plugin, makeImageEventHandler(ctx)];
 }

@@ -43,14 +43,42 @@ impl ImageManager {
         data_url: &str,
     ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
         let (mime, bytes) = decode_data_url(data_url)?;
+        self.save_bytes_with_mime(filename, &bytes, Some(&mime))
+    }
+
+    /// Write raw image bytes keeping the caller-supplied filename
+    /// (auto-suffixing on collision). The MIME type is inferred from the
+    /// filename extension. Used by Dropbox sync to land downloaded image
+    /// binaries without round-tripping through a data URL.
+    pub fn save_from_bytes(
+        &self,
+        filename: &str,
+        bytes: &[u8],
+    ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
+        self.save_bytes_with_mime(filename, bytes, None)
+    }
+
+    fn save_bytes_with_mime(
+        &self,
+        filename: &str,
+        bytes: &[u8],
+        mime_hint: Option<&str>,
+    ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
         let base = sanitize_filename(filename);
         let (stem, mut ext) = split_name(&base);
         if ext.is_empty() {
-            ext = ext_for_mime(&mime).unwrap_or("bin").to_string();
+            ext = mime_hint
+                .and_then(ext_for_mime)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "bin".to_string());
         }
         let final_name = self.unique_filename(&stem, &ext);
         let path = self.resolve_path(&final_name)?;
-        write_atomic(&path, &bytes)?;
+        write_atomic(&path, bytes)?;
+        let mime = mime_hint
+            .map(|s| s.to_string())
+            .or_else(|| mime_for_ext(ext.clone()))
+            .unwrap_or_else(|| "application/octet-stream".to_string());
         Ok(ImageSaved {
             filename: final_name,
             mime_type: mime,

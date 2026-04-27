@@ -21,8 +21,26 @@ use std::time::SystemTime;
 use tauri::{AppHandle, Emitter};
 
 /// Supported extensions for files visible in the tree. Hidden files (`.foo`)
-/// and anything not in this list are filtered out of listings.
-const SUPPORTED_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
+/// and anything not in this list are filtered out of listings. Images
+/// surface so a Local Sync `.md` can reference sibling files on disk and
+/// so the sidebar shows them with hover preview.
+const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "md", "markdown", "txt",
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
+    "heic", "heif", "avif", "tif", "tiff",
+];
+
+/// Extensions that the JS side treats as binary image refs. Used to
+/// classify entries (and to gate text vs binary read paths).
+pub const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
+    "heic", "heif", "avif", "tif", "tiff",
+];
+
+pub fn is_image_extension(ext: &str) -> bool {
+    let lower = ext.to_ascii_lowercase();
+    IMAGE_EXTENSIONS.contains(&lower.as_str())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +58,10 @@ pub struct LocalSyncEntry {
     pub rel_path: String,
     pub is_dir: bool,
     pub modified: u64,
+    /// True when this entry's extension is one of the image types. JS
+    /// uses this to route clicks to the preview modal instead of the
+    /// text editor.
+    pub is_image: bool,
 }
 
 pub struct LocalSyncManager {
@@ -131,15 +153,17 @@ pub fn list_dir(folder: &LocalSyncFolder, rel_path: &str) -> Result<Vec<LocalSyn
             Err(_) => continue,
         };
         let is_dir = meta.is_dir();
+        let mut ext_lower = String::new();
         if !is_dir {
-            let ext = Path::new(&name)
+            ext_lower = Path::new(&name)
                 .extension()
                 .map(|e| e.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
-            if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+            if !SUPPORTED_EXTENSIONS.contains(&ext_lower.as_str()) {
                 continue;
             }
         }
+        let is_image = !is_dir && is_image_extension(&ext_lower);
         let modified = meta
             .modified()
             .ok()
@@ -156,6 +180,7 @@ pub fn list_dir(folder: &LocalSyncFolder, rel_path: &str) -> Result<Vec<LocalSyn
             rel_path: rel,
             is_dir,
             modified,
+            is_image,
         });
     }
     // Directories before files, then name-sorted inside each group.
@@ -182,6 +207,68 @@ pub fn write_file(folder: &LocalSyncFolder, rel_path: &str, content: &str) -> Re
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     write_atomic_str(&abs, content).map_err(|e| e.to_string())
+}
+
+/// Read raw bytes — used by the JS side to fetch image binaries that
+/// live next to a Local Sync `.md` file.
+pub fn read_file_bytes(folder: &LocalSyncFolder, rel_path: &str) -> Result<Vec<u8>, String> {
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    fs::read(&abs).map_err(|e| e.to_string())
+}
+
+/// Write raw bytes. Auto-suffixes on collision so a dropped image
+/// doesn't clobber an existing sibling. Returns the actual relative
+/// path written (the caller uses this for the markdown ref).
+pub fn write_file_bytes_unique(
+    folder: &LocalSyncFolder,
+    rel_path: &str,
+    bytes: &[u8],
+) -> Result<String, String> {
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    if let Some(parent) = abs.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let final_abs = unique_path(&abs);
+    fs::write(&final_abs, bytes).map_err(|e| e.to_string())?;
+    // Recompute the rel_path for the suffixed file.
+    let canon_root = fs::canonicalize(&root).map_err(|e| e.to_string())?;
+    let final_rel = final_abs
+        .strip_prefix(&canon_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| rel_path.to_string());
+    Ok(final_rel)
+}
+
+/// Append " (2)", " (3)", ... before the extension if `path` already
+/// exists. Mirrors `ImageManager::unique_filename` so collision
+/// suffixing is consistent across image storage backends.
+fn unique_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or(Path::new(""));
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image")
+        .to_string();
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string());
+    for i in 2..u32::MAX {
+        let name = match &ext {
+            Some(e) => format!("{} {}.{}", stem, i, e),
+            None => format!("{} {}", stem, i),
+        };
+        let candidate = parent.join(&name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    path.to_path_buf()
 }
 
 /// Resolve `rel_path` against `root`, canonicalising both and rejecting

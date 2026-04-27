@@ -241,10 +241,25 @@ export async function listFolder(path) {
   return entries;
 }
 
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "heif", "avif", "tif", "tiff"];
+
+function classifyEntry(name) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".hushproject")) return { tag: "hushproject", stripExt: /\.hushproject$/ };
+  if (lower.endsWith(".hushnote")) return { tag: "hushnote", stripExt: /\.hushnote$/ };
+  if (lower.endsWith(".md")) return { tag: "md", stripExt: /\.md$/ };
+  for (const ext of IMAGE_EXTENSIONS) {
+    if (lower.endsWith(`.${ext}`)) return { tag: "image", stripExt: null };
+  }
+  return null;
+}
+
 /**
  * Recursively list all files in a folder. Returns flat array of
  * { relativePath, name, isDirectory, content, dropboxPath, modified, tag }.
- * Includes .md files, .hushnote (notebook) files, .hushproject files, and directories.
+ * Includes .md, .hushnote, .hushproject, image binaries, and directories.
+ * For images the `name` keeps its extension since the filename *is* the
+ * stable id used everywhere else in Hush.
  */
 export async function listFolderRecursive(path) {
   const entries = [];
@@ -268,19 +283,20 @@ export async function listFolderRecursive(path) {
       if (!rel) continue;
       if (entry[".tag"] === "folder") {
         entries.push({ relativePath: rel, name: entry.name, isDirectory: true, content: "" });
-      } else if (entry.name.endsWith(".md") || entry.name.endsWith(".hushnote") || entry.name.endsWith(".hushproject")) {
-        const tag = entry.name.endsWith(".hushproject") ? "hushproject"
-          : entry.name.endsWith(".hushnote") ? "hushnote" : "md";
-        entries.push({
-          relativePath: rel,
-          name: entry.name.replace(/\.(md|hushnote|hushproject)$/, ""),
-          isDirectory: false,
-          content: "",
-          dropboxPath: display,
-          modified: entry.server_modified,
-          tag,
-        });
+        continue;
       }
+      const cls = classifyEntry(entry.name);
+      if (!cls) continue;
+      const name = cls.stripExt ? entry.name.replace(cls.stripExt, "") : entry.name;
+      entries.push({
+        relativePath: rel,
+        name,
+        isDirectory: false,
+        content: "",
+        dropboxPath: display,
+        modified: entry.server_modified,
+        tag: cls.tag,
+      });
     }
 
     if (!data.has_more) break;

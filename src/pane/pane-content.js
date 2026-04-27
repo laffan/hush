@@ -59,6 +59,17 @@ async function loadDocumentPane(pane) {
     pane.dirty = true;
     syncDocFromPane(pane);
     updatePaneWordCount(pane);
+  }, {
+    // Reads `pane.localSync` lazily so the resolver always sees the
+    // current value if the pane is later re-pointed at a different
+    // file. Image-decorator widgets re-evaluate context on each rebuild.
+    getLocalSyncContext: () => {
+      const ls = pane.localSync;
+      if (!ls || !ls.folderId || !ls.relPath) return null;
+      const slash = ls.relPath.lastIndexOf("/");
+      const baseDir = slash >= 0 ? ls.relPath.slice(0, slash) : "";
+      return { kind: "localSync", folderId: ls.folderId, baseDir };
+    },
   });
   pane.editor = editor;
 

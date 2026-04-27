@@ -20,9 +20,14 @@ import { hasAcceptableDragPayload, readDragText } from "../editor/file-drop.js";
  * Create a CodeMirror editor suitable for a floating pane.
  * Returns { view, getContent, setContent, focus, blur, destroy, reconfigureTheme }.
  */
-export function createPaneEditor(container, appState, onChange) {
+export function createPaneEditor(container, appState, onChange, opts) {
+  // The pane caller passes a `getLocalSyncContext` resolver that reads
+  // its own `pane.localSync` so this pane's image-decorator targets the
+  // right mounted folder even when the main editor is showing a
+  // different doc. Falls back to no context (global Images store).
+  const getImageContext = opts?.getLocalSyncContext || (() => null);
   const { extensions, themeComp, highlightComp, shortcutComp, editableComp } =
-    createBaseExtensions(appState, onChange ? () => onChange() : null);
+    createBaseExtensions(appState, onChange ? () => onChange() : null, { getImageContext });
 
   const startState = EditorState.create({ doc: "", extensions });
   const view = new EditorView({ state: startState, parent: container });

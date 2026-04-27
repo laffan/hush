@@ -540,8 +540,54 @@ impl SyncManager {
     }
 
     fn hash_content(content: &str) -> String {
+        Self::hash_bytes(content.as_bytes())
+    }
+
+    /// SHA256 hex digest of arbitrary bytes. Used for image binaries so the
+    /// same `last_synced_hash` field works for text and binary entries.
+    pub fn hash_bytes(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
-        hasher.update(content.as_bytes());
+        hasher.update(bytes);
         format!("{:x}", hasher.finalize())
+    }
+
+    /// Register a synced image binary — same shape as `register_file` but
+    /// hashes raw bytes instead of UTF-8 content. The `internal_id` for an
+    /// image is its filename (the stable id used everywhere else).
+    pub fn register_image(
+        &mut self,
+        internal_id: &str,
+        sync_folder_id: &str,
+        relative_path: &str,
+        bytes: &[u8],
+    ) {
+        let hash = Self::hash_bytes(bytes);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        self.file_map.insert(
+            internal_id.to_string(),
+            SyncedFileInfo {
+                internal_id: internal_id.to_string(),
+                sync_folder_id: sync_folder_id.to_string(),
+                relative_path: relative_path.to_string(),
+                last_synced_hash: hash,
+                last_synced_at: now,
+            },
+        );
+        self.save_map();
+    }
+
+    /// Refresh the hash + timestamp for a synced image.
+    pub fn update_image_hash(&mut self, internal_id: &str, bytes: &[u8]) {
+        if let Some(info) = self.file_map.get_mut(internal_id) {
+            info.last_synced_hash = Self::hash_bytes(bytes);
+            info.last_synced_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            self.save_map();
+        }
     }
 }

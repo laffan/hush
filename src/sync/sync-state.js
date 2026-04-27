@@ -4,6 +4,13 @@
  * Documents → .md files, Notebooks → .hushnote (zip) files, Projects → .hushproject (JSON) files.
  */
 
+import {
+  isImageFilename,
+  uploadImage,
+  downloadImage,
+  insertImageIntoTree,
+} from "./sync-images.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 
@@ -69,6 +76,10 @@ export function buildSyncManifest(fileTree) {
         const ext = extensionForType(node.type);
         const relPath = parentPath ? `${parentPath}/${name}${ext}` : `${name}${ext}`;
         manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: node.type === "notebook" ? "hushnote" : "md" });
+      } else if (node.type === "image" && node.fileId) {
+        // Image filenames stay verbatim — they *are* the stable id.
+        const relPath = parentPath ? `${parentPath}/${node.fileId}` : node.fileId;
+        manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: "image" });
       } else if (node.type === "project") {
         const dirPath = parentPath ? `${parentPath}/${name}` : name;
         manifest.directories.push(dirPath);
@@ -151,6 +162,19 @@ export async function performInitialSync(state, dropboxPath) {
   // Upload all files
   for (const file of manifest.files) {
     const fullPath = basePath ? `${basePath}/${file.relativePath}` : `/${file.relativePath}`;
+    if (file.type === "image" && file.fileId) {
+      try {
+        await uploadImage(dbx, fullPath, file.fileId);
+        uploaded.push(file.relativePath);
+        await tauriInvoke("register_synced_image", {
+          filename: file.fileId, syncFolderId: SYNC_FOLDER_ID,
+          relativePath: file.relativePath,
+        });
+      } catch (e) {
+        console.error(`Image upload failed for ${file.relativePath}:`, e);
+      }
+      continue;
+    }
     let content = file.content || "";
     if ((file.type === "md" || file.type === "hushnote") && file.fileId) {
       try {
@@ -184,6 +208,21 @@ export async function performInitialSync(state, dropboxPath) {
     if (entry.isDirectory || localPaths.has(entry.relativePath)) continue;
     if (entry.tag === "hushproject") continue;
     if (!entry.dropboxPath) continue;
+
+    if (entry.tag === "image") {
+      try {
+        const finalName = await downloadImage(dbx, entry.dropboxPath, entry.name);
+        await tauriInvoke("register_synced_image", {
+          filename: finalName, syncFolderId: SYNC_FOLDER_ID,
+          relativePath: entry.relativePath,
+        });
+        insertImageIntoTree(state.fileTree, finalName);
+        downloaded.push(entry.relativePath);
+      } catch (e) {
+        console.error(`Image download failed for ${entry.relativePath}:`, e);
+      }
+      continue;
+    }
 
     try {
       const content = await downloadContent(dbx, entry.dropboxPath, entry.relativePath);
@@ -318,190 +357,17 @@ export async function acceptExternalChange(state, internalId, content) {
 }
 
 /**
- * Propagate a rename to Dropbox.
+ * Per-tree-node mutation propagation lives in sync-mutations.js. They're
+ * re-exported here so existing callers (`state-tree.js`, sidebar, ...)
+ * keep their imports working.
  */
-export async function syncRenameNode(state, nodeId, oldName, nodeType) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return;
-
-  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
-  const dbx = await import("./dropbox.js");
-  const basePath = dropboxPath === "/" ? "" : dropboxPath;
-
-  try {
-    if (nodeType === "document" || nodeType === "notebook") {
-      const node = findNode(state.fileTree, nodeId);
-      if (!node?.fileId) return;
-      const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
-      if (!info) return;
-      const pathParts = info.relativePath.split("/");
-      pathParts[pathParts.length - 1] = node.name + extensionForType(nodeType);
-      const newRelPath = pathParts.join("/");
-      if (newRelPath === info.relativePath) return; // no actual rename needed
-      const oldFull = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
-      const newFull = basePath ? `${basePath}/${newRelPath}` : `/${newRelPath}`;
-      try {
-        await dbx.moveEntry(oldFull, newFull);
-      } catch (_) {
-        // 409 = conflict — file already at destination. Update map anyway.
-        const meta = await dbx.getMetadata(newFull).catch(() => null);
-        if (!meta) return;
-      }
-      await tauriInvoke("rename_sync_file", {
-        folderPath: "__dropbox__", oldRelative: info.relativePath,
-        newRelative: newRelPath, internalId: node.fileId,
-      }).catch(() => {});
-    } else {
-      const ctx = findSyncContext(state.fileTree, nodeId);
-      if (!ctx || !ctx.relativePath) return;
-      const parts = ctx.relativePath.split("/");
-      parts[parts.length - 1] = oldName;
-      const oldRelPath = parts.join("/");
-      if (oldRelPath === ctx.relativePath) return; // no actual rename needed
-      const oldFull = basePath ? `${basePath}/${oldRelPath}` : `/${oldRelPath}`;
-      const newFull = basePath ? `${basePath}/${ctx.relativePath}` : `/${ctx.relativePath}`;
-      try {
-        await dbx.moveEntry(oldFull, newFull);
-      } catch (_) {
-        const meta = await dbx.getMetadata(newFull).catch(() => null);
-        if (!meta) return;
-      }
-      await tauriInvoke("rename_sync_directory", {
-        folderPath: "__dropbox__", oldRelative: oldRelPath,
-        newRelative: ctx.relativePath, syncFolderId: SYNC_FOLDER_ID,
-      }).catch(() => {});
-    }
-  } catch (e) {
-    console.error("Sync rename failed:", e);
-  }
-}
-
-/**
- * Propagate a delete to Dropbox.
- */
-export async function syncDeleteNode(state, nodeId) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return;
-
-  const { findNode, findSyncContext } = await import("../state/tree-helpers.js");
-  const dbx = await import("./dropbox.js");
-  const basePath = dropboxPath === "/" ? "" : dropboxPath;
-  const node = findNode(state.fileTree, nodeId);
-  if (!node) return;
-
-  try {
-    if ((node.type === "document" || node.type === "notebook") && node.fileId) {
-      const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
-      if (info) {
-        const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
-        await dbx.deleteEntry(fullPath).catch(() => {});
-        await tauriInvoke("delete_sync_file", { folderPath: "__dropbox__", internalId: node.fileId });
-      }
-    } else {
-      const ctx = findSyncContext(state.fileTree, nodeId);
-      if (ctx && ctx.relativePath) {
-        const fullPath = basePath ? `${basePath}/${ctx.relativePath}` : `/${ctx.relativePath}`;
-        await dbx.deleteEntry(fullPath).catch(() => {});
-        await tauriInvoke("delete_sync_directory", {
-          folderPath: "__dropbox__", relativePath: ctx.relativePath,
-          syncFolderId: SYNC_FOLDER_ID,
-        });
-      }
-    }
-  } catch (e) {
-    console.error("Sync delete failed:", e);
-  }
-}
-
-/**
- * Propagate a new folder/project creation to Dropbox.
- */
-export async function syncCreateNode(state, nodeId, nodeType) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return;
-
-  const { findSyncContext } = await import("../state/tree-helpers.js");
-  const dbx = await import("./dropbox.js");
-  const basePath = dropboxPath === "/" ? "" : dropboxPath;
-  const ctx = findSyncContext(state.fileTree, nodeId);
-  if (!ctx || !ctx.relativePath) return;
-
-  try {
-    const fullPath = basePath ? `${basePath}/${ctx.relativePath}` : `/${ctx.relativePath}`;
-    await dbx.createFolder(fullPath);
-    if (nodeType === "project") {
-      const data = JSON.stringify({ ordering: [] }, null, 2);
-      await dbx.uploadFile(`${fullPath}/.hushproject`, data);
-    }
-  } catch (e) {
-    console.error("Sync create dir failed:", e);
-  }
-}
-
-/**
- * Propagate a new file creation to Dropbox.
- */
-export async function syncCreateFile(state, nodeId, fileId, content) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return;
-
-  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
-  const dbx = await import("./dropbox.js");
-  const basePath = dropboxPath === "/" ? "" : dropboxPath;
-  const ctx = findSyncContext(state.fileTree, nodeId);
-  if (!ctx) return;
-
-  const node = findNode(state.fileTree, nodeId);
-  const nodeName = node?.name || "Untitled";
-  const ext = extensionForType(node?.type);
-  const relPath = ctx.relativePath ? `${ctx.relativePath}${ext}` : `${nodeName}${ext}`;
-
-  try {
-    const fullPath = basePath ? `${basePath}/${relPath}` : `/${relPath}`;
-    await uploadContent(dbx, fullPath, content, relPath);
-    await tauriInvoke("register_synced_file", {
-      internalId: fileId, syncFolderId: SYNC_FOLDER_ID,
-      relativePath: relPath, content,
-    });
-  } catch (e) {
-    console.error("Sync create file failed:", e);
-  }
-}
-
-/**
- * Update a project's .hushproject ordering file on Dropbox.
- */
-export async function syncProjectOrdering(state, projectNodeId) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return;
-
-  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
-  const dbx = await import("./dropbox.js");
-  const basePath = dropboxPath === "/" ? "" : dropboxPath;
-  const ctx = findSyncContext(state.fileTree, projectNodeId);
-  if (!ctx) return;
-  const node = findNode(state.fileTree, projectNodeId);
-  if (!node || node.type !== "project") return;
-
-  const docNames = (node.children || [])
-    .filter(c => c.type === "document" || c.type === "notebook")
-    .map(c => c.name + extensionForType(c.type));
-
-  try {
-    const data = JSON.stringify({ ordering: docNames }, null, 2);
-    const fullPath = basePath
-      ? `${basePath}/${ctx.relativePath}/.hushproject`
-      : `/${ctx.relativePath}/.hushproject`;
-    await dbx.uploadFile(fullPath, data);
-  } catch (e) {
-    console.error("Sync project ordering failed:", e);
-  }
-}
+export {
+  syncRenameNode,
+  syncDeleteNode,
+  syncCreateNode,
+  syncCreateFile,
+  syncProjectOrdering,
+} from "./sync-mutations.js";
 
 /**
  * Reconcile sync state after a tree reorganization (drag-and-drop).
@@ -581,6 +447,10 @@ export async function checkDropboxChanges(state) {
   const changes = [];
 
   for (const info of syncedFiles) {
+    // Image binaries are immutable once written (filenames auto-suffix
+    // on collision), so the per-file content-poll loop has nothing to do
+    // for them. New / deleted images are handled by `diffDropboxSync`.
+    if (isImageFilename(info.relativePath.split("/").pop())) continue;
     try {
       const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
       const meta = await dbx.getMetadata(fullPath);
@@ -617,7 +487,10 @@ export async function checkDropboxChanges(state) {
 }
 
 /**
- * Diff Dropbox against local: detect new remote files and deleted remote files.
+ * Diff Dropbox against local: detect new remote files, deleted remote files,
+ * and new remote images. Images are downloaded + persisted + registered
+ * inline so the caller only has to insert tree nodes (returned in the
+ * `newImages` bucket as `{ filename, relativePath }`).
  */
 export async function diffDropboxSync(state) {
   if (!IS_TAURI || !state.settings.dropboxEnabled) return null;
@@ -635,21 +508,36 @@ export async function diffDropboxSync(state) {
   const registeredPaths = new Set(syncedFiles.map(f => f.relativePath));
   const remotePaths = new Set();
   const newFiles = [];
+  const newImages = [];
 
   for (const entry of remoteEntries) {
     if (entry.isDirectory || entry.tag === "hushproject") continue;
     remotePaths.add(entry.relativePath);
-    if (!registeredPaths.has(entry.relativePath) && entry.dropboxPath) {
-      entry.content = await downloadContent(dbx, entry.dropboxPath, entry.relativePath);
-      newFiles.push(entry);
+    if (registeredPaths.has(entry.relativePath) || !entry.dropboxPath) continue;
+
+    if (entry.tag === "image") {
+      try {
+        const finalName = await downloadImage(dbx, entry.dropboxPath, entry.name);
+        await invoke("register_synced_image", {
+          filename: finalName, syncFolderId: SYNC_FOLDER_ID,
+          relativePath: entry.relativePath,
+        });
+        newImages.push({ filename: finalName, relativePath: entry.relativePath });
+      } catch (e) {
+        console.error(`Image diff download failed for ${entry.relativePath}:`, e);
+      }
+      continue;
     }
+
+    entry.content = await downloadContent(dbx, entry.dropboxPath, entry.relativePath);
+    newFiles.push(entry);
   }
 
   const deletedFileIds = syncedFiles
     .filter(f => !remotePaths.has(f.relativePath))
     .map(f => f.internalId);
 
-  return { newFiles, deletedFileIds };
+  return { newFiles, newImages, deletedFileIds };
 }
 
 /**
@@ -670,5 +558,8 @@ export async function disconnectSync(state, removeFromDropbox) {
   const dbx = await import("./dropbox.js");
   dbx.clearTokens();
 }
+
+// Re-export image sync helpers so older imports keep resolving.
+export { syncCreateImage, syncDeleteImage } from "./sync-images.js";
 
 export { SYNC_FOLDER_ID };

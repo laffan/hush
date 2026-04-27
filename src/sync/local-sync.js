@@ -59,6 +59,63 @@ export async function writeFile(id, relPath, content) {
   return invoke("local_sync_write_file", { id, relPath, content });
 }
 
+export async function readFileBytes(id, relPath) {
+  if (!IS_TAURI) return null;
+  return invoke("local_sync_read_file_bytes", { id, relPath });
+}
+
+/** Write a binary blob into a Local Sync folder with collision auto-suffix.
+ *  Returns the actual relative path written so the caller can build a
+ *  matching markdown ref. */
+export async function writeFileBytes(id, relPath, bytes) {
+  if (!IS_TAURI) return null;
+  return invoke("local_sync_write_file_bytes", { id, relPath, bytes });
+}
+
+/** MIME type for an image filename's extension. */
+function mimeForFilename(name) {
+  const m = (name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (!m) return "application/octet-stream";
+  switch (m[1]) {
+    case "png": return "image/png";
+    case "jpg": case "jpeg": return "image/jpeg";
+    case "gif": return "image/gif";
+    case "webp": return "image/webp";
+    case "svg": return "image/svg+xml";
+    case "bmp": return "image/bmp";
+    case "heic": return "image/heic";
+    case "heif": return "image/heif";
+    case "avif": return "image/avif";
+    case "tif": case "tiff": return "image/tiff";
+    default: return "application/octet-stream";
+  }
+}
+
+function bytesToBase64(bytes) {
+  let bin = "";
+  const arr = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+  const chunk = 0x8000;
+  for (let i = 0; i < arr.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, arr.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+/** Read a sibling image and return a data URL. `baseDir` is the dirname
+ *  of the .md that owns the ref ("" for files at the mount root). */
+export async function readSiblingImageDataUrl(folderId, baseDir, filename) {
+  if (!IS_TAURI || !folderId || !filename) return null;
+  const relPath = baseDir ? `${baseDir}/${filename}` : filename;
+  try {
+    const bytes = await readFileBytes(folderId, relPath);
+    if (!bytes) return null;
+    const mime = mimeForFilename(filename);
+    return `data:${mime};base64,${bytesToBase64(bytes)}`;
+  } catch (e) {
+    return null;
+  }
+}
+
 /** Open a Local Sync file into the main editor. */
 export async function openLocalSyncFile(state, folderId, relPath) {
   if (state.dirty) await state.saveCurrentFile();

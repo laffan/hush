@@ -63,13 +63,13 @@ export function hideImageTooltip() {
   if (tooltipEl) tooltipEl.classList.add("hidden");
 }
 
-async function showImageTooltip(source, filename, name, x, y) {
+async function showImageTooltip(source, filename, name, x, y, context) {
   const el = ensureTooltip();
   const token = ++tooltipToken;
   const img = el.querySelector("img");
   const label = el.querySelector(".hush-image-tooltip-name");
   label.textContent = name || "";
-  const dataUrl = await getImageDataUrl(filename);
+  const dataUrl = await getImageDataUrl(filename, context);
   if (token !== tooltipToken) return; // superseded
   if (!dataUrl) return;
   // Source element may have been removed between the hover delay and the
@@ -83,9 +83,10 @@ async function showImageTooltip(source, filename, name, x, y) {
 
 /**
  * Attach hover behaviour to an arbitrary DOM element. The element receives
- * a tooltip showing the image after a short hover delay.
+ * a tooltip showing the image after a short hover delay. Pass `context`
+ * for Local Sync sibling resolution.
  */
-export function attachImageHoverTooltip(el, filename, name) {
+export function attachImageHoverTooltip(el, filename, name, context) {
   if (!el || !filename) return () => {};
   let lastX = 0, lastY = 0;
   const onEnter = (e) => {
@@ -94,7 +95,7 @@ export function attachImageHoverTooltip(el, filename, name) {
     clearTimeout(hoverTimer);
     hoverTimer = setTimeout(() => {
       if (currentHoverEl === el && el.isConnected) {
-        showImageTooltip(el, filename, name, lastX, lastY);
+        showImageTooltip(el, filename, name, lastX, lastY, context);
       }
     }, 220);
   };
@@ -115,8 +116,9 @@ export function attachImageHoverTooltip(el, filename, name) {
   };
 }
 
-/** Open a centered modal showing the image at full size. */
-export async function openImagePreviewModal(filename, name) {
+/** Open a centered modal showing the image at full size. Pass `context`
+ *  for Local Sync sibling resolution. */
+export async function openImagePreviewModal(filename, name, context) {
   hideImageTooltip();
   const existing = document.querySelector(".hush-image-modal-backdrop");
   if (existing) existing.remove();
@@ -135,7 +137,7 @@ export async function openImagePreviewModal(filename, name) {
 
   modal.querySelector(".hush-image-modal-name").textContent = name || "";
   const img = modal.querySelector("img");
-  const dataUrl = await getImageDataUrl(filename);
+  const dataUrl = await getImageDataUrl(filename, context);
   if (dataUrl) img.src = dataUrl;
 
   const close = () => {

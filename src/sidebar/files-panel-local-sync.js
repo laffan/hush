@@ -173,8 +173,9 @@ async function populateLocalSyncChildren(container, folder, relPath, state, hide
 
 function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFile) {
   const relPath = entry.relPath || entry.rel_path;
+  const isImage = entry.isImage || entry.is_image || false;
   const li = document.createElement("li");
-  li.className = "sl-item local-sync-file";
+  li.className = "sl-item local-sync-file" + (isImage ? " local-sync-image" : "");
   li.dataset.id = `${folder.id}:${relPath}`;
   attachLeafHoverHandlers(li);
 
@@ -196,11 +197,31 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFil
   main.className = "sl-item-main-label";
   const row = document.createElement("span");
   row.className = "tree-item-row" + (li.classList.contains("active") ? " active" : "");
-  row.innerHTML = `${typeIcons.document}<span class="tree-item-name">${escHtml(entry.name)}</span>`;
+  const icon = isImage ? (typeIcons.image || typeIcons.document) : typeIcons.document;
+  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(entry.name)}</span>`;
   main.appendChild(row);
   label.appendChild(main);
   itemContent.appendChild(label);
   li.appendChild(itemContent);
+
+  if (isImage) {
+    // Sibling-file context so the preview path (and hover) reads bytes
+    // straight from the mounted folder rather than the global Images
+    // store. baseDir is the relPath's parent ("" at the mount root).
+    const slash = relPath.lastIndexOf("/");
+    const baseDir = slash >= 0 ? relPath.slice(0, slash) : "";
+    const ctx = { kind: "localSync", folderId: folder.id, baseDir };
+    (async () => {
+      const { attachImageHoverTooltip } = await import("../editor/image-preview.js");
+      attachImageHoverTooltip(itemContent, entry.name, entry.name, ctx);
+    })();
+    itemContent.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const { openImagePreviewModal } = await import("../editor/image-preview.js");
+      openImagePreviewModal(entry.name, entry.name, ctx);
+    });
+    return li;
+  }
 
   // Cmd/Ctrl-drag to spawn a floating pane for this file.  Mirrors the
   // SortableList's drag-outside behaviour so Local Sync files feel

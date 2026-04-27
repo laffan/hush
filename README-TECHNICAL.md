@@ -123,10 +123,14 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   └── tree-helpers.js
 │
 ├── sync/
-│   ├── sync-state.js
+│   ├── sync-state.js                 (bulk operations: manifest, initial, diff, conflict reconcile)
+│   ├── sync-mutations.js             (per-node propagation: rename / delete / create dir+file / project ordering)
+│   ├── sync-images.js                (Dropbox image binary upload/download + tree insert)
 │   ├── sync-polling.js
+│   ├── notebook-sync.js              (.hushnote zip pack/unpack)
 │   ├── dropbox.js
-│   └── dropbox-browser.js
+│   ├── dropbox-browser.js
+│   └── local-sync.js                 (desktop-only filesystem mounts — JS wrapper over Rust commands)
 │
 └── styles/                            (CSS, per-module)
 ```
@@ -451,7 +455,9 @@ Dropbox OAuth PKCE integration for syncing files. `dropbox.js` handles the full 
 
 Full-library Dropbox synchronization. All documents, folders, and projects are mirrored to a single Dropbox folder. Documents sync as `.md` files (named from document's first line, max 50 chars, special chars stripped). Projects sync as directories containing their child documents plus a `.hushproject` JSON metadata file with ordering. Folder merging handles special nodes (Inbox, Trash) by matching name and ID. Uses SHA256 hashing + timestamps for change detection with "most recent wins" conflict resolution. Polling runs every 10 seconds for content changes and every 60 seconds for structural diffs (new/deleted files). Sync log persists recent activity in settings. Sync is optional — users connect via OAuth in Settings > Sync and can disconnect at any time, choosing to keep or remove Dropbox files.
 
-> **Note on image sync.** Image nodes and their binaries are local-only. The Dropbox scanner walks for `.md`/`.hushnote` files and the sync manifest filters tree nodes to `type: "document"`/`"notebook"`, so neither the Images tree branch nor the files under `files/images/` round-trip through Dropbox — image refs in synced docs will not resolve on other devices until this is extended.
+> **Note on image sync.** Doc images round-trip through Dropbox: the manifest emits each image node as `Images/<filename>` (the `Images/` prefix mirrors the pinned `__images__` folder), `listFolderRecursive` accepts the standard image extensions and tags entries `image`, and `performInitialSync` / `diffDropboxSync` upload + download the binaries via `uploadBinary` / `downloadBinary`. Bytes flow through `save_image_bytes` and `load_image_bytes` Tauri commands so we never base64-round-trip them. Sync metadata uses the same `SyncedFileInfo` map as documents — for images the `internal_id` field is the filename (matching the rest of the app's image addressing) and `last_synced_hash` is `SHA256(bytes)`. Image binaries are treated as immutable per filename (collisions auto-suffix at save time), so `checkDropboxChanges` skips them in its content-poll loop and `diffDropboxSync` carries the new/deleted bookkeeping.
+>
+> **Local Sync uses a different model:** sibling-file resolution. A `.md` file mounted via Local Sync references images that live next to it on disk (`![](cow.png)` resolves to `<mount>/<dir>/cow.png`), not to the global Hush Images store. `local_sync.rs::SUPPORTED_EXTENSIONS` accepts standard image extensions so PNG/JPG/etc. surface in the sidebar listing alongside `.md` files; `local_sync_read_file_bytes` and `local_sync_write_file_bytes` (the latter auto-suffixes on collision) handle the binary IO. Image refs are resolved through a "source context" plumbed into the editor: `getImageDataUrl(filename, context)` and `isLocalImageRef(state, url, context)` accept an optional `{ kind: "localSync", folderId, baseDir }` shape, and `createImageDecoratorPlugin(state, getContext)` threads a per-editor resolver so the main editor reads `state.currentLocalSync` while pane editors read their own `pane.localSync`. The cache key in `state-images.js::dataUrlCache` incorporates the context so a sibling `cow.png` doesn't shadow the global one. Image drops into a Local Sync doc go through `editor/file-drop.js::insertImagesAtDrop`, which writes the binary as a sibling file via `writeFileBytes` and inserts a relative ref. Sidebar image rows skip the text-editor open path and instead show a hover preview / open the preview modal on click — both read through the same context-aware `getImageDataUrl`.
 
 ### Local Sync (`sync/local-sync.js`, Rust `sync.rs` watchers)
 

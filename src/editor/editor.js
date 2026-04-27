@@ -86,6 +86,21 @@ const bypassRatchet = Annotation.define();
  * in `Prec.highest` so it wins against CodeMirror's defaults and any
  * plugin keymaps.  Called on startup and again whenever settings change.
  */
+/**
+ * Default image-context resolver used by the main editor: when the user
+ * is editing a Local Sync `.md`, image refs resolve relative to the
+ * file's parent directory inside the mounted folder. Pane editors pass
+ * their own resolver so the same plugin can render two different
+ * contexts simultaneously.
+ */
+export function defaultLocalSyncContext(state) {
+  const cur = state.currentLocalSync;
+  if (!cur || !cur.folderId || !cur.relPath) return null;
+  const slash = cur.relPath.lastIndexOf("/");
+  const baseDir = slash >= 0 ? cur.relPath.slice(0, slash) : "";
+  return { kind: "localSync", folderId: cur.folderId, baseDir };
+}
+
 export function buildShortcutExtension(state) {
   const commands = buildEditorCommands();
   const userBindings = buildCodeMirrorKeymap(state, commands);
@@ -192,9 +207,18 @@ export function createFlagHighlightPlugin(stateRef) {
  *
  * @param {object}   state     AppState
  * @param {function} [onChange] Optional callback fired on every docChanged
+ * @param {object}   [opts]
+ * @param {function} [opts.getImageContext] Optional resolver returning a
+ *   `{ kind: "localSync", folderId, baseDir }` shape so the image
+ *   decorator + preview can target sibling files in a Local Sync folder
+ *   instead of the global Images store. Defaults to reading
+ *   `state.currentLocalSync` (fits the main editor; pane editors pass
+ *   their own resolver since they may render a different doc than the
+ *   main view).
  * @returns {{ extensions: Extension[], themeComp, highlightComp, shortcutComp }}
  */
-export function createBaseExtensions(state, onChange) {
+export function createBaseExtensions(state, onChange, opts) {
+  const getImageContext = opts?.getImageContext || (() => defaultLocalSyncContext(state));
   const _themeComp = new Compartment();
   const _highlightComp = new Compartment();
   const _shortcutComp = new Compartment();
@@ -248,7 +272,7 @@ export function createBaseExtensions(state, onChange) {
     createFlagHighlightPlugin(state),
     createLinkDecoratorPlugin(state),
     createCheckboxListPlugin(),
-    createImageDecoratorPlugin(state),
+    createImageDecoratorPlugin(state, getImageContext),
     headingIndentPlugin,
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
@@ -423,7 +447,7 @@ export function createEditor(container, state) {
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin(state);
   const checkboxListPlugin = createCheckboxListPlugin();
-  const imageDecoratorPlugin = createImageDecoratorPlugin(state);
+  const imageDecoratorPlugin = createImageDecoratorPlugin(state, () => defaultLocalSyncContext(state));
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
   const commentAfterPlugin = createCommentAfterPlugin();

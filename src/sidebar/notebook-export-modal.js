@@ -41,7 +41,7 @@ export async function openNotebookExportModal(state) {
   modal.innerHTML = `
     <div class="nxm-title">Export notebook</div>
 
-    <div class="nxm-section">
+    <div class="nxm-section" data-hide-when="format=hushnote">
       <div class="nxm-label">Scope</div>
       <div class="nxm-seg" data-group="scope">
         <button data-value="visible" class="active">Visible window</button>

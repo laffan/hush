@@ -123,6 +123,51 @@ pub fn unregister_sync_folder(
     Ok(())
 }
 
+/// Register an image binary in the sync map. The image's bytes are read
+/// from disk (via `ImageManager`) and hashed so future diffs can compare
+/// without re-downloading the Dropbox copy. `internal_id` for an image is
+/// always its filename — the stable id the rest of the app uses.
+#[tauri::command]
+pub fn register_synced_image(
+    state: State<AppState>,
+    filename: String,
+    sync_folder_id: String,
+    relative_path: String,
+) -> Result<(), String> {
+    let (bytes, _mime) = state.image_manager.lock().unwrap()
+        .load_bytes(&filename)
+        .map_err(|e| e.to_string())?;
+    state.sync_manager.lock().unwrap()
+        .register_image(&filename, &sync_folder_id, &relative_path, &bytes);
+    Ok(())
+}
+
+/// Refresh the sync hash for an image after a write. Reads bytes from
+/// disk so the JS side doesn't have to ferry them across the IPC.
+#[tauri::command]
+pub fn update_sync_image_hash(
+    state: State<AppState>,
+    filename: String,
+) -> Result<(), String> {
+    let (bytes, _mime) = state.image_manager.lock().unwrap()
+        .load_bytes(&filename)
+        .map_err(|e| e.to_string())?;
+    state.sync_manager.lock().unwrap()
+        .update_image_hash(&filename, &bytes);
+    Ok(())
+}
+
+/// Remove an image's sync mapping (e.g. when the image is deleted locally).
+#[tauri::command]
+pub fn unregister_synced_image(
+    state: State<AppState>,
+    filename: String,
+) -> Result<(), String> {
+    state.sync_manager.lock().unwrap()
+        .unregister_file(&filename);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn write_sync_file(
     state: State<AppState>,

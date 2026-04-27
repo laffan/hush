@@ -99,6 +99,32 @@ pub fn local_sync_write_file(
     local_sync::write_file(&folder, &rel_path, &content)
 }
 
+/// Read raw bytes from a Local Sync file. Used to fetch image binaries
+/// that live next to a `.md` so they can be rendered inline.
+#[tauri::command]
+pub fn local_sync_read_file_bytes(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+) -> Result<Vec<u8>, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::read_file_bytes(&folder, &rel_path)
+}
+
+/// Write raw bytes (e.g. a dropped image) into a Local Sync folder
+/// auto-suffixing the name on collision. Returns the actual relative
+/// path written so the caller can build the right markdown ref.
+#[tauri::command]
+pub fn local_sync_write_file_bytes(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::write_file_bytes_unique(&folder, &rel_path, &bytes)
+}
+
 fn uuid_like() -> String {
     // The app doesn't pull in `uuid`; a timestamp+rand string is good
     // enough for local-only ids that never leave disk.
