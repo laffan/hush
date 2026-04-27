@@ -537,9 +537,9 @@ Command handlers are grouped by domain. Each module exports `pub fn` items decor
 
 - **`commands/settings.rs`** — `get_settings`, `save_settings`
 - **`commands/files.rs`** — file CRUD + tree ops + project/notebook creation. Owns the `NotebookCreated` wire shape returned by `create_notebook`
-- **`commands/images.rs`** — image CRUD, `export_with_images`, `write_binary_file` + path normalization helpers (iOS `file://` URLs, percent-decoding). `write_binary_file` also runs `ensure_path_in_safe_root()` — defence-in-depth on top of the dialog plugin's access controls — that requires absolute paths under home / data / cache / temp dirs (plus `/private/var/folders` on macOS) and rejects literal `..` components
+- **`commands/images.rs`** — image CRUD, `export_with_images`, `write_binary_file` + path normalization helpers (iOS `file://` URLs, percent-decoding). `save_image_bytes` and `load_image_bytes` are the raw-byte siblings used by the Dropbox sync layer to upload / download image binaries without round-tripping through a base64 data URL. `write_binary_file` also runs `ensure_path_in_safe_root()` — defence-in-depth on top of the dialog plugin's access controls — that requires absolute paths under home / data / cache / temp dirs (plus `/private/var/folders` on macOS) and rejects literal `..` components
 - **`commands/snapshots.rs`** — `create_snapshot`, `get_snapshot`, `get_snapshots`, `delete_document_snapshots`
-- **`commands/local_sync.rs`** — `local_sync_add` / `_remove` / `_list` / `_read_dir` / `_read_file` / `_write_file`. Includes the local-only `find_local_sync_folder` helper and a small `uuid_like()` ID generator
+- **`commands/local_sync.rs`** — `local_sync_add` / `_remove` / `_list` / `_read_dir` / `_read_file` / `_write_file` / `_read_file_bytes` / `_write_file_bytes`. The byte variants surface image binaries that live next to a Local Sync `.md` file (`_write_file_bytes` auto-suffixes on collision, mirroring `ImageManager::unique_filename`). Includes the local-only `find_local_sync_folder` helper and a small `uuid_like()` ID generator
 - **`commands/zotero.rs`** — `save_zotero_references`, `load_zotero_references`
 - **`commands/window.rs`** — `set_always_on_top` (desktop), `set_activation_policy`
 
@@ -565,9 +565,9 @@ Files stored as individual JSON files (`{uuid}.json`) in `{data_dir}/files/`. Ea
 
 ### `images.rs`
 
-Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload and writes the raw bytes to `{data_dir}/files/images/{filename}`, keeping the caller-supplied filename as-is and auto-suffixing with ` (2)`, ` (3)`, ... on collision. The filename *is* the stable id: markdown refs use the bare filename (or a double-quoted URL when the filename contains spaces or parens) and the Rust `load_image` command reads directly by name.
+Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload and writes the raw bytes to `{data_dir}/files/images/{filename}`, keeping the caller-supplied filename as-is and auto-suffixing with ` (2)`, ` (3)`, ... on collision. The filename *is* the stable id: markdown refs use the bare filename (or a double-quoted URL when the filename contains spaces or parens) and the Rust `load_image` command reads directly by name. `save_from_data_url` and `save_from_bytes` share a private `save_bytes_with_mime` core; the latter is what Dropbox image sync calls so a downloaded binary can land without first being base64-encoded.
 
-The Tauri command layer exposes `save_image` (returns the possibly-suffixed final filename), `load_image` (returns a data URL), `delete_image`, `rename_image` (renames on disk, auto-suffixes on collision, preserves the original extension if the new name drops it), `list_images`, and `export_with_images` (writes `text.md` + `images/<filename>` into a user-chosen folder).
+The Tauri command layer exposes `save_image` (data-URL ingest, returns the possibly-suffixed final filename), `save_image_bytes` (raw-byte ingest, used by Dropbox download path), `load_image` (returns a data URL), `load_image_bytes` (returns raw bytes, used by Dropbox upload path), `delete_image`, `rename_image` (renames on disk, auto-suffixes on collision, preserves the original extension if the new name drops it), `list_images`, and `export_with_images` (writes `text.md` + `images/<filename>` into a user-chosen folder).
 
 ### `snapshots.rs`
 
@@ -575,7 +575,7 @@ Document version history stored in SQLite (`{data_dir}/snapshots.db`). Creates t
 
 ### `sync.rs`
 
-External folder synchronization. Uses SHA256 hashing for change detection, file system watching via `notify` crate (FSEvents on macOS), and conflict detection when both local and external copies change.
+External folder synchronization. Uses SHA256 hashing for change detection, file system watching via `notify` crate (FSEvents on macOS), and conflict detection when both local and external copies change. `SyncManager::hash_bytes` (and the parallel `register_image` / `update_image_hash` methods) extend the same `SyncedFileInfo` map to image binaries — the on-disk hash is just a hex string, so text and binary entries coexist without a discriminator. For images the `internal_id` field stores the filename (matching how the rest of the app addresses images) instead of a UUID.
 
 ### `zotero.rs`
 

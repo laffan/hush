@@ -59,7 +59,7 @@ The notebook does **not** run as a separate window or webview. It mounts into th
 
 Pressing **Export** while a notebook is open opens a dedicated modal (`src/sidebar/notebook-export-modal.js`) that collects four choices and hands them to `exportNotebook()` in `src/notebook/notebook-export.ts`:
 
-- **Scope** — *Visible window* exports the current viewport crop at the current camera zoom. *All content* fits the bounding box of every non-pocketed shape, with a user-specified **margin** (in CSS px at 1×) padded on every side.
+- **Scope** — *Visible window* exports the current viewport crop at the current camera zoom. *All content* fits the bounding box of every non-pocketed shape, with a user-specified **margin** (in CSS px at 1×) padded on every side. The Scope toggle is hidden when `.hushnote` is the active format because the JSON envelope is always a complete snapshot of every shape and layer (`exportNotebook()` short-circuits the scope branch for that format).
 - **Format** — `.hushnote` (JSON wrapper around the shapes + layers, versioned), `PNG`, `JPG`, or `PDF` (single-page, JPEG-backed via a minimal inline PDF encoder — no external library).
 - **Scale** — 1×, 2×, 3×. Ignored for `.hushnote`.
 - **Include background** — when off, the raster is emitted with a transparent canvas (no theme background fill, no grid/dot pattern).
