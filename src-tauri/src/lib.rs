@@ -350,7 +350,6 @@ pub fn run() {
             sync_commands::unregister_synced_image,
             sync_commands::unregister_sync_folder,
             sync_commands::write_sync_file,
-            sync_commands::update_sync_hash,
             sync_commands::get_synced_files,
             sync_commands::get_sync_file_info,
             sync_commands::rename_sync_file,

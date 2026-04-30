@@ -5,7 +5,6 @@
  */
 
 import {
-  isImageFilename,
   uploadImage,
   downloadImage,
   insertImageIntoTree,
@@ -306,6 +305,15 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
 
 /**
  * Push a single file's content to Dropbox after an edit.
+ *
+ * The cursor consumer is the only path for *pulling* remote changes, so
+ * this function only handles the push half. The response's `rev` is
+ * recorded as `last_known_rev` so that when the cursor delta later
+ * reports our own write, echo suppression skips it instead of looping.
+ *
+ * If a remote change happened between our last sync and this upload,
+ * our upload overwrites it. Concurrent edits from different devices are
+ * recoverable from the Versions panel.
  */
 export async function syncFileToExternal(state, fileId, content) {
   if (!IS_TAURI || !state.settings.dropboxEnabled) return;
@@ -320,33 +328,9 @@ export async function syncFileToExternal(state, fileId, content) {
     const basePath = dropboxPath === "/" ? "" : dropboxPath;
     const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
 
-    const meta = await dbx.getMetadata(fullPath);
-    if (meta) {
-      const externalModified = serverModifiedSecs(meta.server_modified) || 0;
-      // `lastSyncedAt` is now stored in Dropbox's clock domain (we record
-      // `server_modified` after every upload), so this comparison only fires
-      // when *another* writer has touched the file since we last synced —
-      // not because of client/server clock skew.
-      if (externalModified > (info.lastSyncedAt || 0)) {
-        const externalContent = await downloadContent(dbx, fullPath, info.relativePath);
-        if (externalContent === content) {
-          await tauriInvoke("update_sync_hash", {
-            internalId: fileId, content: externalContent, syncedAt: externalModified,
-          });
-          return;
-        }
-        // Genuine divergence: another device has newer content AND the
-        // user has different local content. Prefer the local edits — the
-        // user can recover the external version from the Versions panel.
-        // Fall through to upload.
-      }
-    }
-
     const uploadResp = await uploadContent(dbx, fullPath, content, info.relativePath);
     const uploadedAt = serverModifiedSecs(uploadResp?.server_modified)
       || Math.floor(Date.now() / 1000);
-    // Record the response rev so the cursor consumer recognizes this
-    // write as ours and doesn't echo it back as a remote change.
     await tauriInvoke("update_sync_state", {
       internalId: fileId,
       content,
@@ -457,121 +441,10 @@ export async function reconcileSync(state) {
   }
 }
 
-/**
- * Check all synced files for content changes on Dropbox.
- */
-export async function checkDropboxChanges(state) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return [];
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return [];
-
-  const { invoke } = await import("@tauri-apps/api/core");
-  const dbx = await import("./dropbox.js");
-  const basePath = dropboxPath === "/" ? "" : dropboxPath;
-  const syncedFiles = await invoke("get_synced_files", { syncFolderId: SYNC_FOLDER_ID });
-  const changes = [];
-
-  for (const info of syncedFiles) {
-    // Image binaries are immutable once written (filenames auto-suffix
-    // on collision), so the per-file content-poll loop has nothing to do
-    // for them. New / deleted images are handled by `diffDropboxSync`.
-    if (isImageFilename(info.relativePath.split("/").pop())) continue;
-    try {
-      const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
-      const meta = await dbx.getMetadata(fullPath);
-      if (!meta) continue;
-
-      const externalModified = serverModifiedSecs(meta.server_modified) || 0;
-      const internalFile = await invoke("load_file", { id: info.internalId });
-      if (!internalFile) continue;
-      const internalModified = internalFile.modified || 0;
-
-      if (externalModified > (info.lastSyncedAt || 0)) {
-        // `lastSyncedAt` is in Dropbox's clock domain, so this only triggers
-        // for genuine remote changes (not our own previous upload).
-        const externalContent = await downloadContent(dbx, fullPath, info.relativePath);
-        if (externalContent === internalFile.content) {
-          await invoke("update_sync_hash", {
-            internalId: info.internalId, content: externalContent, syncedAt: externalModified,
-          });
-          continue;
-        }
-        // Real divergence — pull only if there are no in-flight local edits
-        // since our last sync. Otherwise local wins and we push.
-        if (internalModified <= (info.lastSyncedAt || 0)) {
-          changes.push({
-            type: "pull", internalId: info.internalId,
-            content: externalContent, syncedAt: externalModified,
-          });
-          continue;
-        }
-      }
-
-      if (internalModified > (info.lastSyncedAt || 0) && internalFile.content) {
-        changes.push({
-          type: "push", internalId: info.internalId,
-          content: internalFile.content, relativePath: info.relativePath,
-        });
-      }
-    } catch (_) {}
-  }
-
-  return changes;
-}
-
-/**
- * Diff Dropbox against local: detect new remote files, deleted remote files,
- * and new remote images. Images are downloaded + persisted + registered
- * inline so the caller only has to insert tree nodes (returned in the
- * `newImages` bucket as `{ filename, relativePath }`).
- */
-export async function diffDropboxSync(state) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return null;
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return null;
-
-  const dbx = await import("./dropbox.js");
-  const { invoke } = await import("@tauri-apps/api/core");
-  const basePath = dropboxPath === "/" ? "" : dropboxPath;
-
-  let remoteEntries;
-  try { remoteEntries = await dbx.listFolderRecursive(basePath); } catch (_) { return null; }
-
-  const syncedFiles = await invoke("get_synced_files", { syncFolderId: SYNC_FOLDER_ID });
-  const registeredPaths = new Set(syncedFiles.map(f => f.relativePath));
-  const remotePaths = new Set();
-  const newFiles = [];
-  const newImages = [];
-
-  for (const entry of remoteEntries) {
-    if (entry.isDirectory || entry.tag === "hushproject") continue;
-    remotePaths.add(entry.relativePath);
-    if (registeredPaths.has(entry.relativePath) || !entry.dropboxPath) continue;
-
-    if (entry.tag === "image") {
-      try {
-        const finalName = await downloadImage(dbx, entry.dropboxPath, entry.name);
-        await invoke("register_synced_image", {
-          filename: finalName, syncFolderId: SYNC_FOLDER_ID,
-          relativePath: entry.relativePath,
-        });
-        newImages.push({ filename: finalName, relativePath: entry.relativePath });
-      } catch (e) {
-        console.error(`Image diff download failed for ${entry.relativePath}:`, e);
-      }
-      continue;
-    }
-
-    entry.content = await downloadContent(dbx, entry.dropboxPath, entry.relativePath);
-    newFiles.push(entry);
-  }
-
-  const deletedFileIds = syncedFiles
-    .filter(f => !remotePaths.has(f.relativePath))
-    .map(f => f.internalId);
-
-  return { newFiles, newImages, deletedFileIds };
-}
+// Note: `checkDropboxChanges` and `diffDropboxSync` were removed. They've
+// been replaced by `pullDropboxCursor` in `dropbox-cursor.js` — a single
+// server-side delta query that reports renames as one event with a stable
+// remote_id and skips the per-file metadata fetch loop.
 
 /**
  * Disconnect Dropbox sync. Optionally removes data from Dropbox.
