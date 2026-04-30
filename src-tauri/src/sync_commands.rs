@@ -216,7 +216,6 @@ pub fn get_sync_file_info(
 ) -> Option<SyncedFileInfo> {
     state.sync_manager.lock().unwrap()
         .get_file_info(&internal_id)
-        .cloned()
 }
 
 #[tauri::command]

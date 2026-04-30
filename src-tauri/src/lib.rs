@@ -20,6 +20,7 @@ mod settings;
 mod snapshots;
 mod sync;
 mod sync_commands;
+mod sync_db;
 mod zotero;
 
 use files::FileManager;

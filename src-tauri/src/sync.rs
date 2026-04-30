@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::atomic::write_atomic_str;
 use crate::settings::SyncFolder;
+use crate::sync_db::{migrate_from_json, SyncDb};
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +16,13 @@ pub struct SyncWriteResult {
     pub external_modified: Option<i64>,
 }
 
+/// Per-file sync mapping. Persisted in `sync.db` via `SyncDb`. The struct
+/// is kept here (rather than in `sync_db`) because it's also part of the
+/// public Tauri command surface — both worlds deserialize it.
+///
+/// `remote_id` and `last_known_rev` are populated by Stage 3+ (Dropbox
+/// cursor + echo suppression). For now they default to empty strings;
+/// legacy entries migrated from `sync_map.json` start that way.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncedFileInfo {
@@ -24,7 +31,11 @@ pub struct SyncedFileInfo {
     pub relative_path: String,
     pub last_synced_hash: String,
     #[serde(default)]
-    pub last_synced_at: i64, // Unix timestamp of last successful sync
+    pub last_synced_at: i64,
+    #[serde(default)]
+    pub remote_id: String,
+    #[serde(default)]
+    pub last_known_rev: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -43,63 +54,48 @@ pub struct ExternalChange {
     pub relative_path: String,
     pub external_content: String,
     pub internal_content: String,
-    pub external_modified: i64,  // Unix timestamp of external file
-    pub internal_modified: i64,  // Unix timestamp of internal file
+    pub external_modified: i64,
+    pub internal_modified: i64,
 }
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncFolderDiff {
     pub new_files: Vec<ImportEntry>,
-    pub deleted_file_ids: Vec<String>, // internal_ids of files no longer on disk
-    /// All subdirectory relative paths currently on disk. Used by the
-    /// frontend to prune stale empty folder nodes from the tree.
+    pub deleted_file_ids: Vec<String>,
     pub disk_directories: Vec<String>,
 }
 
 pub struct SyncManager {
-    sync_data_path: PathBuf,
-    file_map: HashMap<String, SyncedFileInfo>, // internal_id -> SyncedFileInfo
+    db: SyncDb,
 }
 
 impl SyncManager {
     pub fn new(data_dir: &Path) -> Self {
-        let sync_data_path = data_dir.join("sync_map.json");
-        let file_map = Self::load_map(&sync_data_path);
-        Self {
-            sync_data_path,
-            file_map,
-        }
-    }
+        let db = SyncDb::new(data_dir);
 
-    fn load_map(path: &Path) -> HashMap<String, SyncedFileInfo> {
-        if !path.exists() {
-            return HashMap::new();
-        }
-        match fs::read_to_string(path) {
-            Ok(content) => match serde_json::from_str(&content) {
-                Ok(map) => map,
-                Err(e) => {
-                    eprintln!("sync: malformed sync_map at {} — starting empty: {}", path.display(), e);
-                    HashMap::new()
+        // One-shot migration from the legacy JSON map. After it runs the
+        // file is renamed to `sync_map.json.bak` so we don't re-run.
+        let json_path = data_dir.join("sync_map.json");
+        if json_path.exists() {
+            match migrate_from_json(&db, &json_path) {
+                Ok((migrated, orphaned)) => {
+                    eprintln!(
+                        "sync: migrated {} entries from sync_map.json ({} orphans recorded)",
+                        migrated, orphaned
+                    );
                 }
-            },
-            Err(e) => {
-                eprintln!("sync: cannot read sync_map at {}: {}", path.display(), e);
-                HashMap::new()
+                Err(e) => {
+                    eprintln!("sync: migration from sync_map.json failed: {}", e);
+                }
             }
         }
+
+        Self { db }
     }
 
-    fn save_map(&self) {
-        if let Ok(content) = serde_json::to_string_pretty(&self.file_map) {
-            if let Err(e) = write_atomic_str(&self.sync_data_path, &content) {
-                eprintln!("sync: failed to persist sync_map: {}", e);
-            }
-        }
-    }
+    // ===== Folder scanning (filesystem helpers, unchanged) =====
 
-    /// Scan a folder for .md and .hushnote files, returning entries to import.
     pub fn scan_folder(folder_path: &str) -> Result<Vec<ImportEntry>, Box<dyn std::error::Error>> {
         let root = PathBuf::from(folder_path);
         if !root.is_dir() {
@@ -125,7 +121,6 @@ impl SyncManager {
                 .to_string_lossy()
                 .to_string();
 
-            // Skip hidden files/dirs
             if let Some(name) = path.file_name() {
                 if name.to_string_lossy().starts_with('.') {
                     continue;
@@ -147,8 +142,6 @@ impl SyncManager {
             } else {
                 let ext = path.extension().and_then(|e| e.to_str());
                 if ext == Some("md") || ext == Some("hushnote") {
-                    // .hushnote files are binary zips — read only .md as text;
-                    // notebook content is empty here and unpacked on the JS side.
                     let content = if ext == Some("md") {
                         fs::read_to_string(&path).unwrap_or_default()
                     } else {
@@ -171,7 +164,8 @@ impl SyncManager {
         Ok(())
     }
 
-    /// Register a synced file mapping.
+    // ===== Map operations (now SQLite-backed) =====
+
     pub fn register_file(
         &mut self,
         internal_id: &str,
@@ -179,38 +173,50 @@ impl SyncManager {
         relative_path: &str,
         content: &str,
     ) {
-        let hash = Self::hash_content(content);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        self.file_map.insert(
-            internal_id.to_string(),
-            SyncedFileInfo {
-                internal_id: internal_id.to_string(),
-                sync_folder_id: sync_folder_id.to_string(),
-                relative_path: relative_path.to_string(),
-                last_synced_hash: hash,
-                last_synced_at: now,
-            },
-        );
-        self.save_map();
+        let info = SyncedFileInfo {
+            internal_id: internal_id.to_string(),
+            sync_folder_id: sync_folder_id.to_string(),
+            relative_path: relative_path.to_string(),
+            last_synced_hash: Self::hash_content(content),
+            last_synced_at: now_secs(),
+            remote_id: String::new(),
+            last_known_rev: String::new(),
+        };
+        if let Err(e) = self.db.upsert_file(&info) {
+            eprintln!("sync: register_file failed: {}", e);
+        }
     }
 
-    /// Remove a synced file mapping.
     pub fn unregister_file(&mut self, internal_id: &str) {
-        self.file_map.remove(internal_id);
-        self.save_map();
+        if let Err(e) = self.db.delete(internal_id) {
+            eprintln!("sync: unregister_file failed: {}", e);
+        }
     }
 
-    /// Remove all mappings for a sync folder.
     pub fn unregister_folder(&mut self, sync_folder_id: &str) {
-        self.file_map
-            .retain(|_, info| info.sync_folder_id != sync_folder_id);
-        self.save_map();
+        if let Err(e) = self.db.delete_folder(sync_folder_id) {
+            eprintln!("sync: unregister_folder failed: {}", e);
+        }
     }
 
-    /// Write content to external file.
+    pub fn update_hash(&mut self, internal_id: &str, content: &str, synced_at: Option<i64>) {
+        let hash = Self::hash_content(content);
+        let ts = synced_at.unwrap_or_else(now_secs);
+        if let Err(e) = self.db.update_hash(internal_id, &hash, ts) {
+            eprintln!("sync: update_hash failed: {}", e);
+        }
+    }
+
+    pub fn get_folder_files(&self, sync_folder_id: &str) -> Vec<SyncedFileInfo> {
+        self.db.list_folder(sync_folder_id).unwrap_or_default()
+    }
+
+    pub fn get_file_info(&self, internal_id: &str) -> Option<SyncedFileInfo> {
+        self.db.get(internal_id).ok().flatten()
+    }
+
+    // ===== Filesystem write/read =====
+
     pub fn write_external(
         folder_path: &str,
         relative_path: &str,
@@ -224,8 +230,9 @@ impl SyncManager {
         Ok(())
     }
 
-    /// Write content to external file only if the external file hasn't been
-    /// modified since the last sync. Returns a result indicating what happened.
+    /// Write only if the external file hasn't been modified since the last
+    /// sync. The mtime check is a coarse safety net — Stage 3+ replaces
+    /// this with rev-based echo suppression.
     pub fn write_external_if_current(
         &self,
         folder_path: &str,
@@ -236,8 +243,10 @@ impl SyncManager {
         let path = PathBuf::from(folder_path).join(relative_path);
         if path.exists() {
             let last_synced_at = self
-                .file_map
+                .db
                 .get(internal_id)
+                .ok()
+                .flatten()
                 .map(|info| info.last_synced_at)
                 .unwrap_or(0);
             let external_mtime = fs::metadata(&path)
@@ -249,7 +258,6 @@ impl SyncManager {
                 })
                 .unwrap_or(0);
             if external_mtime > last_synced_at {
-                // External file is newer — don't overwrite
                 let external_content = fs::read_to_string(&path).ok();
                 return Ok(SyncWriteResult {
                     written: false,
@@ -259,7 +267,6 @@ impl SyncManager {
                 });
             }
         }
-        // Safe to write — external hasn't changed since last sync
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -272,7 +279,6 @@ impl SyncManager {
         })
     }
 
-    /// Read external file content.
     pub fn read_external(
         folder_path: &str,
         relative_path: &str,
@@ -281,44 +287,12 @@ impl SyncManager {
         Ok(fs::read_to_string(&path)?)
     }
 
-    /// Update the hash after a successful sync. If `synced_at` is provided,
-    /// it's used verbatim (e.g. Dropbox's server_modified) so `last_synced_at`
-    /// stays in the same clock domain as future external timestamp checks.
-    /// Falls back to local clock when the caller has no server timestamp.
-    pub fn update_hash(&mut self, internal_id: &str, content: &str, synced_at: Option<i64>) {
-        if let Some(info) = self.file_map.get_mut(internal_id) {
-            info.last_synced_hash = Self::hash_content(content);
-            info.last_synced_at = synced_at.unwrap_or_else(|| {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64
-            });
-            self.save_map();
-        }
-    }
-
-    /// Get all synced file infos for a given sync folder.
-    pub fn get_folder_files(&self, sync_folder_id: &str) -> Vec<SyncedFileInfo> {
-        self.file_map
-            .values()
-            .filter(|info| info.sync_folder_id == sync_folder_id)
-            .cloned()
-            .collect()
-    }
-
-    /// Get sync info for a specific internal file.
-    pub fn get_file_info(&self, internal_id: &str) -> Option<&SyncedFileInfo> {
-        self.file_map.get(internal_id)
-    }
-
-    /// Check if an external file has changed since last sync.
     pub fn check_external_change(
         &self,
         folder: &SyncFolder,
         internal_id: &str,
     ) -> Option<String> {
-        let info = self.file_map.get(internal_id)?;
+        let info = self.db.get(internal_id).ok().flatten()?;
         let path = PathBuf::from(&folder.path).join(&info.relative_path);
         let content = fs::read_to_string(&path).ok()?;
         let hash = Self::hash_content(&content);
@@ -329,7 +303,6 @@ impl SyncManager {
         }
     }
 
-    /// Rename an external file and update the mapping's relative path.
     pub fn rename_external_file(
         &mut self,
         folder_path: &str,
@@ -345,31 +318,25 @@ impl SyncManager {
             }
             fs::rename(&old_full, &new_full)?;
         }
-        if let Some(info) = self.file_map.get_mut(internal_id) {
-            info.relative_path = new_relative.to_string();
-            self.save_map();
-        }
+        self.db.update_path(internal_id, new_relative)?;
         Ok(())
     }
 
-    /// Delete an external file and remove its sync mapping.
     pub fn delete_external_file(
         &mut self,
         folder_path: &str,
         internal_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(info) = self.file_map.get(internal_id) {
+        if let Some(info) = self.db.get(internal_id)? {
             let full = PathBuf::from(folder_path).join(&info.relative_path);
             if full.exists() {
                 fs::remove_file(&full)?;
             }
         }
-        self.file_map.remove(internal_id);
-        self.save_map();
+        self.db.delete(internal_id)?;
         Ok(())
     }
 
-    /// Create an external directory.
     pub fn create_external_directory(
         folder_path: &str,
         relative_path: &str,
@@ -379,7 +346,6 @@ impl SyncManager {
         Ok(())
     }
 
-    /// Rename an external directory and update all child mappings.
     pub fn rename_external_directory(
         &mut self,
         folder_path: &str,
@@ -395,25 +361,13 @@ impl SyncManager {
             }
             fs::rename(&old_full, &new_full)?;
         }
-        // Update all mappings whose relative_path starts with old_relative/
         let old_prefix = format!("{}/", old_relative.trim_end_matches('/'));
         let new_prefix = format!("{}/", new_relative.trim_end_matches('/'));
-        for info in self.file_map.values_mut() {
-            if info.sync_folder_id == sync_folder_id
-                && info.relative_path.starts_with(&old_prefix)
-            {
-                info.relative_path = format!(
-                    "{}{}",
-                    new_prefix,
-                    &info.relative_path[old_prefix.len()..]
-                );
-            }
-        }
-        self.save_map();
+        self.db
+            .rename_prefix(sync_folder_id, &old_prefix, &new_prefix)?;
         Ok(())
     }
 
-    /// Delete an external directory and all its contents.
     pub fn delete_external_directory(
         &mut self,
         folder_path: &str,
@@ -424,17 +378,11 @@ impl SyncManager {
         if full.exists() {
             fs::remove_dir_all(&full)?;
         }
-        // Remove all mappings for files inside this directory
         let prefix = format!("{}/", relative_path.trim_end_matches('/'));
-        self.file_map.retain(|_, info| {
-            !(info.sync_folder_id == sync_folder_id
-                && info.relative_path.starts_with(&prefix))
-        });
-        self.save_map();
+        self.db.delete_prefix(sync_folder_id, &prefix)?;
         Ok(())
     }
 
-    /// Create an external file and register it.
     pub fn create_external_file(
         &mut self,
         folder_path: &str,
@@ -448,7 +396,6 @@ impl SyncManager {
         Ok(())
     }
 
-    /// Write a project ordering JSON file alongside the project directory.
     pub fn write_project_json(
         folder_path: &str,
         relative_path: &str,
@@ -462,32 +409,35 @@ impl SyncManager {
         Ok(())
     }
 
-    /// Check all files in a sync folder for external changes.
-    pub fn check_all_external_changes(
-        &self,
-        folder: &SyncFolder,
-    ) -> Vec<ExternalChange> {
+    pub fn check_all_external_changes(&self, folder: &SyncFolder) -> Vec<ExternalChange> {
         let mut changes = Vec::new();
-        for info in self.file_map.values() {
-            if info.sync_folder_id != folder.id {
-                continue;
+        let entries = match self.db.list_folder(&folder.id) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("sync: list_folder failed: {}", e);
+                return changes;
             }
+        };
+        for info in entries {
             let path = PathBuf::from(&folder.path).join(&info.relative_path);
             if let Ok(external_content) = fs::read_to_string(&path) {
                 let hash = Self::hash_content(&external_content);
                 if hash != info.last_synced_hash {
-                    // Get external file modification time
                     let external_modified = fs::metadata(&path)
                         .and_then(|m| m.modified())
-                        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+                        .map(|t| {
+                            t.duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs() as i64
+                        })
                         .unwrap_or(0);
                     changes.push(ExternalChange {
                         internal_id: info.internal_id.clone(),
                         relative_path: info.relative_path.clone(),
                         external_content,
-                        internal_content: String::new(), // filled by caller
+                        internal_content: String::new(),
                         external_modified,
-                        internal_modified: 0, // filled by caller
+                        internal_modified: 0,
                     });
                 }
             }
@@ -495,18 +445,12 @@ impl SyncManager {
         changes
     }
 
-    /// Compare the filesystem contents of a local sync folder against the
-    /// sync map. Returns new files (on disk but not registered), deleted
-    /// files (registered but no longer on disk), and the full set of
-    /// directory paths currently on disk (for pruning stale folder nodes).
     pub fn diff_sync_folder(&self, folder: &SyncFolder) -> SyncFolderDiff {
         use std::collections::HashSet;
 
-        // Collect all relative paths currently registered for this folder
-        let registered: HashSet<String> = self
-            .file_map
-            .values()
-            .filter(|info| info.sync_folder_id == folder.id)
+        let registered_entries = self.db.list_folder(&folder.id).unwrap_or_default();
+        let registered: HashSet<String> = registered_entries
+            .iter()
             .map(|info| info.relative_path.clone())
             .collect();
 
@@ -527,13 +471,9 @@ impl SyncManager {
             }
         }
 
-        // Find registered files that are no longer on disk
-        let deleted_file_ids: Vec<String> = self
-            .file_map
-            .values()
-            .filter(|info| {
-                info.sync_folder_id == folder.id && !disk_files.contains(&info.relative_path)
-            })
+        let deleted_file_ids: Vec<String> = registered_entries
+            .iter()
+            .filter(|info| !disk_files.contains(&info.relative_path))
             .map(|info| info.internal_id.clone())
             .collect();
 
@@ -544,21 +484,20 @@ impl SyncManager {
         }
     }
 
+    // ===== Hashing helpers =====
+
     fn hash_content(content: &str) -> String {
         Self::hash_bytes(content.as_bytes())
     }
 
-    /// SHA256 hex digest of arbitrary bytes. Used for image binaries so the
-    /// same `last_synced_hash` field works for text and binary entries.
     pub fn hash_bytes(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
         format!("{:x}", hasher.finalize())
     }
 
-    /// Register a synced image binary — same shape as `register_file` but
-    /// hashes raw bytes instead of UTF-8 content. The `internal_id` for an
-    /// image is its filename (the stable id used everywhere else).
+    // ===== Image-specific helpers =====
+
     pub fn register_image(
         &mut self,
         internal_id: &str,
@@ -566,33 +505,31 @@ impl SyncManager {
         relative_path: &str,
         bytes: &[u8],
     ) {
-        let hash = Self::hash_bytes(bytes);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        self.file_map.insert(
-            internal_id.to_string(),
-            SyncedFileInfo {
-                internal_id: internal_id.to_string(),
-                sync_folder_id: sync_folder_id.to_string(),
-                relative_path: relative_path.to_string(),
-                last_synced_hash: hash,
-                last_synced_at: now,
-            },
-        );
-        self.save_map();
-    }
-
-    /// Refresh the hash + timestamp for a synced image.
-    pub fn update_image_hash(&mut self, internal_id: &str, bytes: &[u8]) {
-        if let Some(info) = self.file_map.get_mut(internal_id) {
-            info.last_synced_hash = Self::hash_bytes(bytes);
-            info.last_synced_at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            self.save_map();
+        let info = SyncedFileInfo {
+            internal_id: internal_id.to_string(),
+            sync_folder_id: sync_folder_id.to_string(),
+            relative_path: relative_path.to_string(),
+            last_synced_hash: Self::hash_bytes(bytes),
+            last_synced_at: now_secs(),
+            remote_id: String::new(),
+            last_known_rev: String::new(),
+        };
+        if let Err(e) = self.db.upsert_file(&info) {
+            eprintln!("sync: register_image failed: {}", e);
         }
     }
+
+    pub fn update_image_hash(&mut self, internal_id: &str, bytes: &[u8]) {
+        let hash = Self::hash_bytes(bytes);
+        if let Err(e) = self.db.update_hash(internal_id, &hash, now_secs()) {
+            eprintln!("sync: update_image_hash failed: {}", e);
+        }
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
