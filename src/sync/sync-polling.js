@@ -263,6 +263,13 @@ async function applyContentChanged(state, ev, dbx, invoke) {
       // so the next autosave doesn't push the same content right back.
       state.dirty = false;
     }
+    // Notebooks have their own canvas; the open-editor branch above
+    // wouldn't fire since `state.currentFileId` is null while a notebook
+    // is open. Emit `notebook-sync-reload` so notebook-bridge can swap
+    // shapes in place if the changed file is the open notebook.
+    if (ev.kind === "hushnote" && state.currentNotebookFileId === ev.internalId) {
+      state.emit("notebook-sync-reload", content);
+    }
     state.files = await invoke("list_files");
     return true;
   } finally {

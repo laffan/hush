@@ -2,12 +2,21 @@
  * Notebook sync serialization — pack/unpack .hushnote zip files.
  *
  * .hushnote is a ZIP archive containing:
- *   data.json   — shapes array (image dataUrls replaced with relative paths)
- *   images/     — extracted image files
+ *   data.json   — the notebook envelope (shapes + layers + flowEdges) with
+ *                 image dataUrls in shapes replaced by relative paths
+ *                 ("images/img_N.png") into the zip
+ *   images/     — extracted image binaries
  *
- * This mirrors the .note format from tauri-drawing (file-io.ts).
- * Internal storage keeps images as inline base64 dataUrls; the zip format
+ * Internal storage keeps images inline as base64 dataUrls; the zip format
  * extracts them so the file is portable and smaller on disk.
+ *
+ * The envelope shape mirrors `notebook/notebook-content.ts`:
+ *   { format: "hushnote", version: 1, shapes, layers?, flowEdges? }
+ *
+ * Earlier versions of this file packed only `shapes` and dropped layers
+ * and flowEdges on every sync, which made cross-device notebooks look
+ * empty. Both pack/unpack are now envelope-aware and tolerate the
+ * legacy bare-array form on input for back-compat.
  */
 
 import JSZip from "jszip";
@@ -21,69 +30,113 @@ function guessExtension(dataUrl) {
   return ".png";
 }
 
+/** Best-effort parse of the on-disk content into `{ shapes, layers, flowEdges }`.
+ *  Tolerates the legacy bare-array form. Mirrors `decodeNotebookContent`
+ *  in notebook-content.ts but lives here to keep this module dependency-free. */
+function parseEnvelope(jsonContent) {
+  if (!jsonContent || !jsonContent.trim()) {
+    return { shapes: [], layers: undefined, flowEdges: undefined };
+  }
+  let parsed;
+  try { parsed = JSON.parse(jsonContent); }
+  catch { return { shapes: [], layers: undefined, flowEdges: undefined }; }
+
+  if (Array.isArray(parsed)) {
+    return { shapes: parsed, layers: undefined, flowEdges: undefined };
+  }
+  if (parsed && typeof parsed === "object") {
+    return {
+      shapes: Array.isArray(parsed.shapes) ? parsed.shapes : [],
+      layers: Array.isArray(parsed.layers) ? parsed.layers : undefined,
+      flowEdges: Array.isArray(parsed.flowEdges) ? parsed.flowEdges : undefined,
+    };
+  }
+  return { shapes: [], layers: undefined, flowEdges: undefined };
+}
+
 /**
  * Pack a notebook's internal JSON content into a .hushnote zip (Uint8Array).
- * @param {string} jsonContent — the internal JSON string (shapes array with inline base64 images)
+ * Accepts either the envelope format produced by `encodeNotebookContent` or
+ * the legacy bare `Shape[]` array. Always emits the envelope inside the zip.
+ * @param {string} jsonContent
  * @returns {Promise<Uint8Array>}
  */
 export async function packNotebook(jsonContent) {
-  let shapes;
-  try {
-    shapes = JSON.parse(jsonContent);
-  } catch (_) {
-    shapes = [];
-  }
-  if (!Array.isArray(shapes)) shapes = [];
+  const { shapes, layers, flowEdges } = parseEnvelope(jsonContent);
 
   const zip = new JSZip();
   const imgFolder = zip.folder("images");
   let imgIndex = 0;
 
   const exportShapes = shapes.map((s) => {
-    if (s.type !== "image") return s;
-    const ext = guessExtension(s.dataUrl || "");
+    if (s.type !== "image" || !s.dataUrl) return s;
+    // Already pointing at a zip-relative path (e.g. mid-pack edge case) —
+    // leave alone.
+    if (!s.dataUrl.startsWith("data:")) return s;
+    const ext = guessExtension(s.dataUrl);
     const imgFilename = `img_${imgIndex++}${ext}`;
-    const base64 = (s.dataUrl || "").split(",")[1];
+    const base64 = s.dataUrl.split(",")[1];
     if (base64) imgFolder.file(imgFilename, base64, { base64: true });
     return { ...s, dataUrl: `images/${imgFilename}` };
   });
 
-  zip.file("data.json", JSON.stringify({ shapes: exportShapes }, null, 2));
+  const envelope = {
+    format: "hushnote",
+    version: 1,
+    shapes: exportShapes,
+    layers,
+    flowEdges,
+  };
+  zip.file("data.json", JSON.stringify(envelope, null, 2));
   return await zip.generateAsync({ type: "uint8array" });
 }
 
 /**
- * Unpack a .hushnote zip into the internal JSON content string.
- * Re-inlines images from the images/ folder as base64 dataUrls.
- * @param {ArrayBuffer|Uint8Array} zipData — the raw zip bytes
- * @returns {Promise<string>} — JSON string of shapes array
+ * Unpack a .hushnote zip into the internal JSON envelope string.
+ * Re-inlines images from images/ as base64 dataUrls; returns a string the
+ * editor's `decodeNotebookContent` can read directly. Tolerates the
+ * legacy bare-array form for back-compat with old `.hushnote` files.
+ * @param {ArrayBuffer|Uint8Array} zipData
+ * @returns {Promise<string>}
  */
 export async function unpackNotebook(zipData) {
   const zip = await JSZip.loadAsync(zipData);
   const dataFile = zip.file("data.json");
-  if (!dataFile) return "[]";
+  if (!dataFile) return JSON.stringify({ format: "hushnote", version: 1, shapes: [] });
 
   const json = await dataFile.async("string");
-  let noteData;
-  try {
-    noteData = JSON.parse(json);
-  } catch (_) {
-    return "[]";
+  let parsed;
+  try { parsed = JSON.parse(json); }
+  catch { return JSON.stringify({ format: "hushnote", version: 1, shapes: [] }); }
+
+  let shapes, layers, flowEdges;
+  if (Array.isArray(parsed)) {
+    shapes = parsed; layers = undefined; flowEdges = undefined;
+  } else if (parsed && typeof parsed === "object") {
+    shapes = Array.isArray(parsed.shapes) ? parsed.shapes : [];
+    layers = Array.isArray(parsed.layers) ? parsed.layers : undefined;
+    flowEdges = Array.isArray(parsed.flowEdges) ? parsed.flowEdges : undefined;
+  } else {
+    shapes = []; layers = undefined; flowEdges = undefined;
   }
 
-  const shapes = noteData.shapes || [];
-
-  const result = await Promise.all(shapes.map(async (s) => {
-    if (s.type !== "image") return s;
-    if (s.dataUrl && s.dataUrl.startsWith("data:")) return s;
+  const inlinedShapes = await Promise.all(shapes.map(async (s) => {
+    if (s.type !== "image" || !s.dataUrl) return s;
+    if (s.dataUrl.startsWith("data:")) return s;
     const imgFile = zip.file(s.dataUrl);
     if (!imgFile) return s;
     const data = await imgFile.async("base64");
-    const ext = (s.dataUrl || "").split(".").pop() || "png";
+    const ext = s.dataUrl.split(".").pop() || "png";
     const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg"
       : ext === "webp" ? "image/webp" : `image/${ext}`;
     return { ...s, dataUrl: `data:${mime};base64,${data}` };
   }));
 
-  return JSON.stringify(result);
+  return JSON.stringify({
+    format: "hushnote",
+    version: 1,
+    shapes: inlinedShapes,
+    layers,
+    flowEdges,
+  });
 }
