@@ -338,8 +338,15 @@ async function executeUploadPayload(state, op, dbx) {
     throw new Error("upload_payload op missing payload");
   }
   const fullPath = fullDbxPath(state, op.path);
-  // No internal_id to track — `.hushproject` files are derived state.
-  await dbx.uploadFile(fullPath, op.payload);
+  const resp = await dbx.uploadFile(fullPath, op.payload);
+  // Meta files (`.hush/*.json`) aren't tracked in `synced_files` so they
+  // don't get the SQLite-backed echo suppression that user content does.
+  // Stash the response rev in pane-sync's in-memory set instead so the
+  // cursor consumer skips when our own upload comes back as a delta.
+  if (op.path && op.path.startsWith(".hush/") && resp?.rev) {
+    const { markOurRev } = await import("./pane-sync.js");
+    markOurRev(resp.rev);
+  }
 }
 
 function serverModifiedSecs(s) {

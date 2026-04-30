@@ -19,6 +19,15 @@ import { loadPaneContent } from "./pane-content.js";
 import { applyPaneFontSize } from "./pane-size-popover.js";
 
 let _persistTimer = null;
+// Suppression depth — incremented by `applyRemotePanes` while it's
+// merging incoming pane state, decremented when done. Prevents the
+// apply path from re-uploading the same payload it just consumed.
+let _persistSuppressDepth = 0;
+
+export function suppressPersist(on) {
+  if (on) _persistSuppressDepth++;
+  else _persistSuppressDepth = Math.max(0, _persistSuppressDepth - 1);
+}
 
 export function schedulePersist() {
   if (_persistTimer) return;
@@ -30,6 +39,7 @@ export function schedulePersist() {
 
 export function persistPanesNow() {
   if (!appState) return;
+  if (_persistSuppressDepth > 0) return;
   const serialized = [];
   for (const [, p] of panes) {
     serialized.push({
@@ -55,6 +65,19 @@ export function persistPanesNow() {
     });
   }
   appState.updateSettings({ persistedPanes: serialized });
+
+  // Cross-device pane sync — fire-and-forget; the op log handles retry.
+  // Only the platform-stable subset of fields (anchoring + identity, no
+  // pixel layout) gets uploaded; see pane-sync.js.
+  if (appState.settings?.dropboxEnabled && appState.settings?.dropboxSyncPath) {
+    pushPanesToDropbox().catch((e) => console.warn("pane sync upload failed:", e));
+  }
+}
+
+async function pushPanesToDropbox() {
+  const { serializePanesForSync, enqueuePaneUpload } = await import("../sync/pane-sync.js");
+  const payload = await serializePanesForSync(panes);
+  await enqueuePaneUpload(payload);
 }
 
 export async function restorePanes(deps) {

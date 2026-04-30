@@ -201,6 +201,14 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   if (!opts.skipFocus) focusPane(id);
   notifyLayoutChange();
   schedulePersist();
+  return pane;
+}
+
+/** Re-evaluate which panes should be visible in the current context.
+ *  Exposed so the sync layer can refresh visibility after applying
+ *  remote panes whose `ownerContext` may not match the current view. */
+export function refreshPaneContextVisibility() {
+  onContextChange();
 }
 
 export function closePane(id) {

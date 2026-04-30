@@ -32,8 +32,15 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-function classifyEntry(name) {
+function classifyEntry(name, relativePath) {
   const lower = (name || "").toLowerCase();
+  // `.hush/*.json` is the meta channel — single-device-config files
+  // synced through the same cursor. Currently `panes.json`; future
+  // meta files (workspace state, etc.) join here without expanding the
+  // dispatch surface.
+  if (relativePath && relativePath.startsWith(".hush/") && lower.endsWith(".json")) {
+    return "meta";
+  }
   if (lower.endsWith(".hushproject")) return "hushproject";
   if (lower.endsWith(".hushnote")) return "hushnote";
   if (lower.endsWith(".md")) return "md";
@@ -185,9 +192,23 @@ async function processEntries(state, entries, base, handlers) {
 
     const rel = relativeFromDisplay(entry.path_display, base);
     if (!rel) continue;
-    const kind = classifyEntry(entry.name);
+    const kind = classifyEntry(entry.name, rel);
     if (!kind) continue;
     if (kind === "hushproject") continue; // generated locally, ignore
+
+    // Meta files (.hush/*.json — pane sync, future workspace state) bypass
+    // the synced_files identity table since they aren't user content.
+    if (kind === "meta") {
+      if (handlers.onMeta) {
+        await handlers.onMeta({
+          relativePath: rel,
+          dropboxPath: entry.path_display,
+          rev: entry.rev || "",
+          serverModified: serverModifiedSecs(entry.server_modified),
+        });
+      }
+      continue;
+    }
 
     let info = await tauriInvoke("find_synced_file_by_remote_id", { remoteId: entry.id });
 
