@@ -302,6 +302,11 @@ pub struct AppSettings {
     pub notebook_text_max_width: u32,
     #[serde(default = "default_notebook_shelf_width")]
     pub notebook_shelf_width: u32,
+    /// User-saved text-style presets for notebook text shapes. Each entry
+    /// is `{ id, color, backgroundColor, fontSize }`. Stored as opaque JSON
+    /// so the JS side owns the shape.
+    #[serde(default)]
+    pub notebook_text_styles: Vec<serde_json::Value>,
     #[serde(default)]
     pub last_notebook_id: Option<String>,
 
@@ -537,6 +542,7 @@ impl Default for AppSettings {
             notebook_font_size: default_notebook_font_size(),
             notebook_text_max_width: default_notebook_text_max_width(),
             notebook_shelf_width: default_notebook_shelf_width(),
+            notebook_text_styles: Vec::new(),
             last_notebook_id: None,
             shortcut_nb_select: default_nb_select(),
             shortcut_nb_text: default_nb_text(),

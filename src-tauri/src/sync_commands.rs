@@ -183,7 +183,7 @@ pub fn write_sync_file(
     if result.written {
         drop(sync_mgr);
         state.sync_manager.lock().unwrap()
-            .update_hash(&internal_id, &content);
+            .update_hash(&internal_id, &content, None);
     }
     Ok(result)
 }
@@ -193,9 +193,10 @@ pub fn update_sync_hash(
     state: State<AppState>,
     internal_id: String,
     content: String,
+    synced_at: Option<i64>,
 ) -> Result<(), String> {
     state.sync_manager.lock().unwrap()
-        .update_hash(&internal_id, &content);
+        .update_hash(&internal_id, &content, synced_at);
     Ok(())
 }
 
@@ -341,6 +342,7 @@ pub fn accept_external_change(
     state: State<AppState>,
     internal_id: String,
     content: String,
+    synced_at: Option<i64>,
 ) -> Result<(), String> {
     {
         let fm = state.file_manager.lock().unwrap();
@@ -355,7 +357,7 @@ pub fn accept_external_change(
         .save_file(&internal_id, &content)
         .map_err(|e| e.to_string())?;
     state.sync_manager.lock().unwrap()
-        .update_hash(&internal_id, &content);
+        .update_hash(&internal_id, &content, synced_at);
     Ok(())
 }
 
@@ -375,6 +377,6 @@ pub fn reject_external_change(
     SyncManager::write_external(&folder_path, &info.relative_path, &content)
         .map_err(|e| e.to_string())?;
     drop(sync_mgr);
-    state.sync_manager.lock().unwrap().update_hash(&internal_id, &content);
+    state.sync_manager.lock().unwrap().update_hash(&internal_id, &content, None);
     Ok(())
 }

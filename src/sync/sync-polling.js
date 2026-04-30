@@ -105,7 +105,7 @@ async function syncDropboxContent(state) {
       const node = findNodeByFileId(state.fileTree, change.internalId);
       const fileName = node?.name || change.relativePath || change.internalId;
       if (change.type === "pull") {
-        await acceptExternalChange(state, change.internalId, change.content);
+        await acceptExternalChange(state, change.internalId, change.content, change.syncedAt || null);
         showSyncIndicator("pulled", fileName);
       } else if (change.type === "push") {
         await syncFileToExternal(state, change.internalId, change.content);

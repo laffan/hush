@@ -281,14 +281,19 @@ impl SyncManager {
         Ok(fs::read_to_string(&path)?)
     }
 
-    /// Update the hash after a successful sync.
-    pub fn update_hash(&mut self, internal_id: &str, content: &str) {
+    /// Update the hash after a successful sync. If `synced_at` is provided,
+    /// it's used verbatim (e.g. Dropbox's server_modified) so `last_synced_at`
+    /// stays in the same clock domain as future external timestamp checks.
+    /// Falls back to local clock when the caller has no server timestamp.
+    pub fn update_hash(&mut self, internal_id: &str, content: &str, synced_at: Option<i64>) {
         if let Some(info) = self.file_map.get_mut(internal_id) {
             info.last_synced_hash = Self::hash_content(content);
-            info.last_synced_at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
+            info.last_synced_at = synced_at.unwrap_or_else(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64
+            });
             self.save_map();
         }
     }

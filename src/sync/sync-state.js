@@ -41,7 +41,9 @@ function isNotebookPath(relativePath) {
   return relativePath.endsWith(".hushnote");
 }
 
-/** Upload content to Dropbox, packing notebooks as zip. */
+/** Upload content to Dropbox, packing notebooks as zip. Returns the
+ * upload response (which includes `server_modified` from Dropbox's clock).
+ */
 async function uploadContent(dbx, fullPath, content, relativePath) {
   if (isNotebookPath(relativePath)) {
     const { packNotebook } = await import("./notebook-sync.js");
@@ -49,6 +51,13 @@ async function uploadContent(dbx, fullPath, content, relativePath) {
     return dbx.uploadBinary(fullPath, zipData);
   }
   return dbx.uploadFile(fullPath, content);
+}
+
+/** Convert a Dropbox `server_modified` ISO string to Unix seconds. */
+function serverModifiedSecs(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
 }
 
 /** Download content from Dropbox, unpacking notebooks from zip. */
@@ -313,21 +322,31 @@ export async function syncFileToExternal(state, fileId, content) {
 
     const meta = await dbx.getMetadata(fullPath);
     if (meta) {
-      const externalModified = meta.server_modified
-        ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
+      const externalModified = serverModifiedSecs(meta.server_modified) || 0;
+      // `lastSyncedAt` is now stored in Dropbox's clock domain (we record
+      // `server_modified` after every upload), so this comparison only fires
+      // when *another* writer has touched the file since we last synced —
+      // not because of client/server clock skew.
       if (externalModified > (info.lastSyncedAt || 0)) {
         const externalContent = await downloadContent(dbx, fullPath, info.relativePath);
-        if (externalContent !== content) {
-          await acceptExternalChange(state, fileId, externalContent);
-        } else {
-          await tauriInvoke("update_sync_hash", { internalId: fileId, content: externalContent });
+        if (externalContent === content) {
+          await tauriInvoke("update_sync_hash", {
+            internalId: fileId, content: externalContent, syncedAt: externalModified,
+          });
+          return;
         }
-        return;
+        // Genuine divergence: another device has newer content AND the
+        // user has different local content. Prefer the local edits — the
+        // user can recover the external version from the Versions panel.
+        // Fall through to upload.
       }
     }
 
-    await uploadContent(dbx, fullPath, content, info.relativePath);
-    await tauriInvoke("update_sync_hash", { internalId: fileId, content });
+    const uploadResp = await uploadContent(dbx, fullPath, content, info.relativePath);
+    const uploadedAt = serverModifiedSecs(uploadResp?.server_modified);
+    await tauriInvoke("update_sync_hash", {
+      internalId: fileId, content, syncedAt: uploadedAt,
+    });
   } catch (e) {
     console.error("Sync write failed:", e);
   }
@@ -336,10 +355,10 @@ export async function syncFileToExternal(state, fileId, content) {
 /**
  * Accept an external change — replace internal content with external.
  */
-export async function acceptExternalChange(state, internalId, content) {
+export async function acceptExternalChange(state, internalId, content, syncedAt = null) {
   if (!IS_TAURI) return;
   try {
-    await tauriInvoke("accept_external_change", { internalId, content });
+    await tauriInvoke("accept_external_change", { internalId, content, syncedAt });
     state.files = await tauriInvoke("list_files");
     if (state.currentFileId === internalId && state.editor) {
       state.runtime.syncPulling = true;
@@ -456,20 +475,28 @@ export async function checkDropboxChanges(state) {
       const meta = await dbx.getMetadata(fullPath);
       if (!meta) continue;
 
-      const externalModified = meta.server_modified
-        ? Math.floor(new Date(meta.server_modified).getTime() / 1000) : 0;
+      const externalModified = serverModifiedSecs(meta.server_modified) || 0;
       const internalFile = await invoke("load_file", { id: info.internalId });
       if (!internalFile) continue;
       const internalModified = internalFile.modified || 0;
 
       if (externalModified > (info.lastSyncedAt || 0)) {
+        // `lastSyncedAt` is in Dropbox's clock domain, so this only triggers
+        // for genuine remote changes (not our own previous upload).
         const externalContent = await downloadContent(dbx, fullPath, info.relativePath);
         if (externalContent === internalFile.content) {
-          await invoke("update_sync_hash", { internalId: info.internalId, content: externalContent });
+          await invoke("update_sync_hash", {
+            internalId: info.internalId, content: externalContent, syncedAt: externalModified,
+          });
           continue;
         }
-        if (externalModified >= internalModified) {
-          changes.push({ type: "pull", internalId: info.internalId, content: externalContent });
+        // Real divergence — pull only if there are no in-flight local edits
+        // since our last sync. Otherwise local wins and we push.
+        if (internalModified <= (info.lastSyncedAt || 0)) {
+          changes.push({
+            type: "pull", internalId: info.internalId,
+            content: externalContent, syncedAt: externalModified,
+          });
           continue;
         }
       }

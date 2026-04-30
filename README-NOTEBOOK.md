@@ -177,13 +177,16 @@ Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`). Co
 
 **Three ways to connect.**
 
-- *Drag-to-connect.* Drag a text shape and release it on top of another. The dropped shape becomes a child of the target — its bounds snap to the right of the parent (with vertical stacking under any existing siblings) and its descendants follow by the same delta so the chain stays intact.
+- *Drag-to-connect.* Drag one or more text shapes and release them on top of another. Each dropped shape becomes a child of the target — its bounds snap to the right of the parent (with vertical stacking under any existing siblings) and its descendants follow by the same delta so the chain stays intact. The drop target is resolved from the live cursor position, not the selection centroid, so multi-select drops behave the same as single-shape drops.
+- *Drag-to-merge (⌘ / Ctrl held).* Same gesture as above but holds Cmd/Ctrl on release: every dragged text shape's text is appended to the target (joined by blank lines), the originals are removed along with their flow edges, and the target re-fits its width if it wasn't manually sized. Useful for collapsing a cluster of fragments into one node without leaving arrows behind.
 - *Edit-to-connect (⌘→ inside the inline text editor).* Commit the current edit, open a new editor positioned as a child of the just-edited node. The edge is wired by `commitText` once the user types something — `_pendingFlowParent` carries the parent id between the new-editor open and the eventual commit.
 - *Edit-as-sibling (⌘↓).* Like ⌘→ but routes through the current node's parent (or, if there is no parent, opens a fresh editor below).
 
 **Navigation.** ⌘← inside the inline editor jumps to the parent of the current node, ⌘↑ jumps back to the most-recently-edited node (a 16-entry MRU history kept on `DrawingState._recentEditIds`).
 
 **Selection drag pulls descendants.** When the user drags one or more flowchart nodes, every transitive descendant moves with the selection so the layout remains coherent.
+
+**Tidy.** When the selection contains any text shape that has flow children, a **Tidy subtree** button appears on the selection toolbar. Tidy keeps the root anchored at its current position and re-lays out every descendant so siblings can't overlap regardless of subtree depth or width — `tidyGapX` (default 150) sits between a parent's right edge and its children's left edges, `tidyGapY` (default 25) is the vertical gap between sibling subtree bounding boxes, and each parent is centered vertically against the block of its children. Implemented as `FlowchartLayer.tidy(rootId, shapes, opts?)` returning a `Map<id, {minX, minY}>`; `DrawingState.tidySubtree(id)` translates that into per-shape position deltas and records a single undo entry.
 
 **Edge delete UI.** Hovering an arrow tracks its id on `state.flowHoveredEdgeId`; the renderer paints a small circular X badge at the curve's midpoint in screen space (fixed-size regardless of zoom — `drawEdgeDeleteButton` in `renderer-selection.ts`). Clicking the badge removes that single edge and records history. Deleting a node removes every edge that referenced it (`flowchart.removeNode` is called from `deleteSelected`).
 
@@ -196,6 +199,16 @@ The top-centered pill is always visible and carries Lasso, Erase, Slice, and fou
 A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 1500). Tapping the already-active Lasso button toggles the flyout open.
 
 `DrawShape` instances are first-class shapes — they group, layer, pocket, route through the shelf, and participate in Hush's undo stack. Stroke rendering itself is delegated to a bake-to-canvas engine inside `src/notebook/drawing/`. Full architectural notes, the sync-shim invariants, and the engine deltas are in [README-DRAWING.md](README-DRAWING.md).
+
+### Emoji stickers
+
+Text shapes whose final content is *only* emoji (one or more grapheme clusters separated by whitespace) get rasterized into an `ImageShape` on commit. The detection lives in `src/notebook/emoji-sticker.ts` — `isEmojiOnly()` walks `Intl.Segmenter` grapheme clusters and matches each against an Extended Pictographic / Regional Indicator / keycap regex (so flags, ZWJ family sequences, and skin-tone modifiers all stay together). When the test passes, `emojiToDataUrl()` paints the string into a DPR-aware `<canvas>` at the platform's color emoji font and `commitText` swaps the new (or just-edited) shape over to an image of `STICKER_SIZE` × `STICKER_SIZE` (100 px). Stickers scale, crop, layer, pocket, and export like any other image; replacing an existing text shape with a sticker also drops it from the flowchart layer because images aren't flowable.
+
+### Saved text styles
+
+Selecting a text shape surfaces a **Style** button on the selection toolbar that opens a row of every saved preset, plus a **+ Style** capture button at the end. Clicking a chip applies its `{color, backgroundColor, fontSize}` triple to every selected text shape via `DrawingState.applyTextStyle()`. Clicking **+ Style** snapshots the first selected text shape's combo and saves it. Hovering a chip reveals a small `×` for one-click delete.
+
+The list is **app-wide**, not per-notebook — it lives in `AppSettings.notebookTextStyles` (`Vec<serde_json::Value>` on the Rust side, kept opaque so the JS owns the `{id, color, backgroundColor, fontSize}` shape) and round-trips through the standard `state.updateSettings({ notebookTextStyles })` path. The UI reads the list from `__hushState__.settings.notebookTextStyles` on each open, so newly-added entries appear without an explicit re-render path.
 
 ### Shelf panel
 

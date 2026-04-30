@@ -29,6 +29,9 @@ export function createDefaultSettings() {
     columnWidth: 600,
     sidebarPanelWidth: 300,
     notebookShelfWidth: 280,
+    // App-wide saved text-style presets for notebook text shapes.
+    // Each entry: { id, color, backgroundColor, fontSize }.
+    notebookTextStyles: [],
     // Shortcuts — General
     shortcutOpenEditor: "CmdOrCtrl+Shift+H",
     shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",

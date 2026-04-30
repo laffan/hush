@@ -10,6 +10,11 @@ import {
 } from "./utils";
 import { UndoManager } from "./undo-manager";
 import { FlowchartLayer } from "./flowchart";
+import { isEmojiOnly, emojiToDataUrl } from "./emoji-sticker";
+
+// Pixel size (canvas units) for emoji-only text shapes that get rasterized
+// into ImageShape stickers on commit.
+const STICKER_SIZE = 100;
 import type { AppearanceMode, CanvasTheme } from "./themes";
 import { THEMES, getEffectiveVariant } from "./themes";
 import {
@@ -416,12 +421,38 @@ export class DrawingState extends EventTarget {
   // === Text ===
   commitText(editing: EditingText): string | null {
     const trimmed = editing.text.trim();
-    if (!trimmed) return null;
+    if (!trimmed) {
+      this._pendingFlowParent = null;
+      return null;
+    }
+    // Emoji-only text becomes an image "sticker": rasterize at STICKER_SIZE
+    // and swap the shape type so it scales/crops/exports like any image.
+    const sticker = isEmojiOnly(trimmed)
+      ? { dataUrl: emojiToDataUrl(trimmed, STICKER_SIZE), name: trimmed }
+      : null;
+
     let shapeId: string;
     if (editing.shapeId) {
       shapeId = editing.shapeId;
       this.shapes = this.shapes.map((s) => {
         if (s.id !== editing.shapeId || s.type !== "text") return s;
+        if (sticker) {
+          const img: ImageShape = {
+            id: s.id,
+            type: "image",
+            position: s.position,
+            width: STICKER_SIZE,
+            height: STICKER_SIZE,
+            dataUrl: sticker.dataUrl,
+            name: sticker.name,
+            color: s.color,
+            parentId: s.parentId,
+            groupId: s.groupId,
+            pocketed: s.pocketed,
+            layerId: s.layerId,
+          };
+          return img;
+        }
         const updated = { ...s, text: trimmed };
         // Auto-shrink width to content if not manually resized
         if (!s.manualWidth) {
@@ -429,20 +460,42 @@ export class DrawingState extends EventTarget {
         }
         return updated;
       });
+      // Editing-an-existing-shape that became a sticker drops its flow
+      // edges — image shapes aren't flowable.
+      if (sticker) this.flowchart.removeNode(shapeId);
     } else {
       shapeId = generateId();
-      const fitWidth = autoFitWidth(trimmed, editing.fontSize, editing.width, this.fontFamily);
-      this.shapes = [...this.shapes, {
-        id: shapeId, type: "text", position: editing.position,
-        text: trimmed, fontSize: editing.fontSize, color: editing.color,
-        width: fitWidth,
-        layerId: this.activeLayerId,
-      } as TextShape];
-      // Pending flowchart parent (set by startEditingFlowchartChild before
-      // user typed) — wire the edge once the new shape exists.
-      if (this._pendingFlowParent) {
-        this.flowchart.addEdge(this._pendingFlowParent, shapeId);
+      if (sticker) {
+        this.shapes = [
+          ...this.shapes,
+          {
+            id: shapeId,
+            type: "image",
+            position: editing.position,
+            width: STICKER_SIZE,
+            height: STICKER_SIZE,
+            dataUrl: sticker.dataUrl,
+            name: sticker.name,
+            color: editing.color,
+            layerId: this.activeLayerId,
+          } as ImageShape,
+        ];
+        // Pending flow parent is meaningless for an image — discard it.
         this._pendingFlowParent = null;
+      } else {
+        const fitWidth = autoFitWidth(trimmed, editing.fontSize, editing.width, this.fontFamily);
+        this.shapes = [...this.shapes, {
+          id: shapeId, type: "text", position: editing.position,
+          text: trimmed, fontSize: editing.fontSize, color: editing.color,
+          width: fitWidth,
+          layerId: this.activeLayerId,
+        } as TextShape];
+        // Pending flowchart parent (set by startEditingFlowchartChild before
+        // user typed) — wire the edge once the new shape exists.
+        if (this._pendingFlowParent) {
+          this.flowchart.addEdge(this._pendingFlowParent, shapeId);
+          this._pendingFlowParent = null;
+        }
       }
     }
     this.recordRecentEdit(shapeId);
@@ -476,6 +529,29 @@ export class DrawingState extends EventTarget {
     if (idx >= 0) this._recentEditIds.splice(idx, 1);
     this._recentEditIds.push(id);
     if (this._recentEditIds.length > 16) this._recentEditIds.shift();
+  }
+
+  /** Re-layout the flowchart subtree rooted at `rootId` via FlowchartLayer.tidy.
+   * Root stays anchored; descendants move so siblings don't overlap. */
+  tidySubtree(rootId: string): void {
+    const layout = this.flowchart.tidy(rootId, this.shapes);
+    if (layout.size === 0) return;
+    const deltas = new Map<string, { dx: number; dy: number }>();
+    for (const [id, tl] of layout) {
+      const s = this.shapes.find((x) => x.id === id);
+      if (!s) continue;
+      const old = getShapeBounds(s, this.fontFamily);
+      const dx = tl.minX - old.minX;
+      const dy = tl.minY - old.minY;
+      if (dx !== 0 || dy !== 0) deltas.set(id, { dx, dy });
+    }
+    if (deltas.size === 0) return;
+    this.shapes = this.shapes.map((s) => {
+      const d = deltas.get(s.id);
+      return d ? moveShape(s, d.dx, d.dy) : s;
+    });
+    this.recordHistory();
+    this.notify("shapes");
   }
 
   // === Flowchart-aware editing shortcuts ===
@@ -940,19 +1016,43 @@ export class DrawingState extends EventTarget {
           if (flowDescendants.has(s.id)) return moveShape(s, dx, dy);
           return s;
         });
-        // While dragging a single text shape, keep the drop target hover
-        // up to date so the renderer can outline the prospective parent.
-        if (this.selectedIds.size === 1) {
-          const draggedId = this.selectedIds.values().next().value as string;
-          const dragged = this.shapes.find((s) => s.id === draggedId);
-          if (dragged && dragged.type === "text") {
-            const b = getShapeBounds(dragged, this.fontFamily);
-            const center: Point = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
-            const t = this.flowchart.findDropTarget(center, this.shapes, draggedId);
-            const newId = t ? t.id : null;
-            if (newId !== this.flowDropTargetId) {
-              this.flowDropTargetId = newId;
+        // While dragging text shape(s), keep the drop-target hover up to
+        // date so the renderer can outline the prospective parent. Uses
+        // the live cursor for multi-drag so it still reads naturally when
+        // many shapes are being moved at once.
+        const draggingTextIds: string[] = [];
+        for (const s of this.shapes) {
+          if (this.selectedIds.has(s.id) && s.type === "text") draggingTextIds.push(s.id);
+        }
+        if (draggingTextIds.length > 0) {
+          let probe: Point;
+          let exclude: string;
+          if (draggingTextIds.length === 1) {
+            const id = draggingTextIds[0];
+            const sh = this.shapes.find((s) => s.id === id)!;
+            const b = getShapeBounds(sh, this.fontFamily);
+            probe = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+            exclude = id;
+          } else {
+            probe = canvasPt;
+            exclude = "";
+          }
+          const draggingSet = new Set(draggingTextIds);
+          let target: Shape | null = null;
+          for (let i = this.shapes.length - 1; i >= 0; i--) {
+            const s = this.shapes[i];
+            if (s.type !== "text") continue;
+            if (draggingSet.has(s.id)) continue;
+            if (s.id === exclude) continue;
+            const bb = getShapeBounds(s, this.fontFamily);
+            if (probe.x >= bb.minX && probe.x <= bb.maxX && probe.y >= bb.minY && probe.y <= bb.maxY) {
+              target = s;
+              break;
             }
+          }
+          const newId = target ? target.id : null;
+          if (newId !== this.flowDropTargetId) {
+            this.flowDropTargetId = newId;
           }
         }
         this.notify("shapes");
@@ -1051,23 +1151,81 @@ export class DrawingState extends EventTarget {
         return s;
       });
 
-      // Flowchart drop: a single text shape released over another text
-      // shape becomes its child (or sibling, if the target already has
-      // children). Snapping the parent also pulls its descendants so the
-      // chain stays intact.
-      if (this.selectedIds.size === 1) {
-        const droppedId = this.selectedIds.values().next().value as string;
-        const dropped = this.shapes.find((s) => s.id === droppedId);
-        if (dropped && dropped.type === "text") {
-          const oldBounds = getShapeBounds(dropped, this.fontFamily);
-          const center: Point = {
-            x: (oldBounds.minX + oldBounds.maxX) / 2,
-            y: (oldBounds.minY + oldBounds.maxY) / 2,
-          };
-          const target = this.flowchart.findDropTarget(center, this.shapes, droppedId);
-          if (target) {
-            const newTL = this.flowchart.tryConnect(droppedId, target.id, this.shapes);
-            if (newTL) {
+      // Flowchart drop: any number of dragged text shapes dropped on top of
+      // another text shape. Behavior depends on the modifier:
+      //   - default            → each dropped shape becomes a child of the
+      //                          target (parent → child arrow, stacked below
+      //                          existing siblings)
+      //   - cmd / ctrl held    → each dropped shape's text is APPENDED to
+      //                          the target's text and the dropped shape is
+      //                          deleted (no arrow drawn)
+      // The target is found via the live cursor position at drop time, not
+      // the centroid — works the same for one or many dragged shapes.
+      const droppedTextIds: string[] = [];
+      for (const s of this.shapes) {
+        if (this.selectedIds.has(s.id) && s.type === "text") {
+          droppedTextIds.push(s.id);
+        }
+      }
+      if (droppedTextIds.length > 0) {
+        const droppedSet = new Set(droppedTextIds);
+        let dropPt: Point | null = null;
+        if (this.canvasEl) {
+          const r = this.canvasEl.getBoundingClientRect();
+          dropPt = screenToCanvas({ x: e.clientX - r.left, y: e.clientY - r.top }, this.camera);
+        }
+
+        let target: Shape | null = null;
+        if (dropPt) {
+          for (let i = this.shapes.length - 1; i >= 0; i--) {
+            const s = this.shapes[i];
+            if (droppedSet.has(s.id)) continue;
+            if (s.type !== "text") continue;
+            const b = getShapeBounds(s, this.fontFamily);
+            if (
+              dropPt.x >= b.minX &&
+              dropPt.x <= b.maxX &&
+              dropPt.y >= b.minY &&
+              dropPt.y <= b.maxY
+            ) {
+              target = s;
+              break;
+            }
+          }
+        }
+
+        if (target) {
+          const appendMode = e.metaKey || e.ctrlKey;
+          if (appendMode) {
+            // Concatenate dropped texts in stack order and merge into target.
+            const targetId = target.id;
+            const appended: string[] = [];
+            for (const id of droppedTextIds) {
+              const s = this.shapes.find((sh) => sh.id === id);
+              if (s && s.type === "text") appended.push(s.text);
+            }
+            const merged = appended.join("\n\n");
+            this.shapes = this.shapes
+              .filter((s) => !droppedSet.has(s.id))
+              .map((s) => {
+                if (s.id !== targetId || s.type !== "text") return s;
+                const nextText = s.text ? `${s.text}\n\n${merged}` : merged;
+                const updated = { ...s, text: nextText };
+                if (!s.manualWidth) {
+                  updated.width = autoFitWidth(nextText, s.fontSize, s.width, this.fontFamily);
+                }
+                return updated;
+              });
+            for (const id of droppedTextIds) this.flowchart.removeNode(id);
+            this.selectedIds = new Set([targetId]);
+            this.notify("selectedIds");
+          } else {
+            for (const droppedId of droppedTextIds) {
+              const dropped = this.shapes.find((s) => s.id === droppedId);
+              if (!dropped || dropped.type !== "text") continue;
+              const oldBounds = getShapeBounds(dropped, this.fontFamily);
+              const newTL = this.flowchart.tryConnect(droppedId, target.id, this.shapes);
+              if (!newTL) continue;
               const dx = newTL.minX - oldBounds.minX;
               const dy = newTL.minY - oldBounds.minY;
               this.shapes = this.shapes.map((s) =>
@@ -1075,6 +1233,8 @@ export class DrawingState extends EventTarget {
                   ? { ...s, position: { x: s.position.x + dx, y: s.position.y + dy } }
                   : s,
               );
+              // Snapping the parent also pulls its descendants — replay their
+              // existing offset so the chain stays intact.
               const desc = this.flowchart.descendantsOf(droppedId);
               if (desc.size > 0) {
                 this.shapes = this.shapes.map((s) =>
@@ -1392,6 +1552,28 @@ export class DrawingState extends EventTarget {
   changeSelectedFontSize(newSize: number) {
     this.shapes = this.shapes.map((s) =>
       this.selectedIds.has(s.id) && s.type === "text" ? { ...s, fontSize: newSize } : s);
+    this.recordHistory();
+    this.notify("shapes");
+  }
+
+  /**
+   * Apply a saved text-style preset (color + backgroundColor + fontSize) to
+   * every selected text shape in one shot. `color` is a hex string (the
+   * preset captures the resolved hex, bypassing the named-palette lookup);
+   * `backgroundColor` is either a palette key, a CSS string, or undefined
+   * to clear the background.
+   */
+  applyTextStyle(opts: { color: string; backgroundColor: string | undefined; fontSize: number }) {
+    this.shapes = this.shapes.map((s) => {
+      if (!this.selectedIds.has(s.id)) return s;
+      if (s.type !== "text") return s;
+      return {
+        ...s,
+        color: opts.color,
+        backgroundColor: opts.backgroundColor,
+        fontSize: opts.fontSize,
+      };
+    });
     this.recordHistory();
     this.notify("shapes");
   }

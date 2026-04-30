@@ -14,7 +14,7 @@
  * The raster pipeline:
  *   1. Compute target CSS dimensions + camera for the chosen scope.
  *   2. Allocate an offscreen canvas at dims × scale.
- *   3. Call `renderForExport()` in renderer.ts to paint shapes
+ *   3. Call `renderForExport()` in renderer-export.ts to paint shapes
  *      (optional background).
  *   4. Blit the drawing layer's done canvas so engine strokes appear
  *      on top of the shape layer (matching the live DOM z-order).
@@ -22,9 +22,10 @@
  */
 
 import type { NotesCanvas } from "./notes-canvas";
-import { renderForExport } from "./renderer";
+import { renderForExport } from "./renderer-export";
 import { getShapeBounds } from "./utils";
 import type { Bounds } from "./types";
+import { composeVectorTextPdf } from "./notebook-pdf";
 
 export type ExportScope = "visible" | "all";
 export type ExportFormat = "hushnote" | "png" | "jpg" | "pdf";
@@ -74,22 +75,53 @@ export async function exportNotebook(
     return encodeHushnote(canvas);
   }
 
+  if (opts.format === "pdf") {
+    // Render the canvas WITHOUT text glyphs (decorations like blockquote
+    // rules, link underlines, and highlight backgrounds stay), then
+    // overlay vector text in the PDF stream.
+    const built = buildExportRaster(canvas, opts, /* omitTextGlyphs */ true);
+    const jpeg = await canvasToBytes(built.canvas, "image/jpeg", 0.92);
+    return composeVectorTextPdf(jpeg, {
+      cssW: built.cssW,
+      cssH: built.cssH,
+      pxW: built.canvas.width,
+      pxH: built.canvas.height,
+      camera: built.camera,
+      theme: canvas.state.theme,
+      fontFamily: canvas.state.fontFamily,
+      shapes: canvas.state.shapes,
+      layers: canvas.state.layers,
+    });
+  }
   const raster = rasterizeNotebook(canvas, opts);
   if (opts.format === "png") {
     return canvasToBytes(raster, "image/png");
   }
-  if (opts.format === "jpg") {
-    return canvasToBytes(raster, "image/jpeg", 0.92);
-  }
-  // pdf: wrap the JPEG (smaller than PNG for photo-like pages) in a
-  // minimal single-page PDF.
-  const jpeg = await canvasToBytes(raster, "image/jpeg", 0.92);
-  return wrapJpegAsPdf(jpeg, raster.width, raster.height);
+  // jpg
+  return canvasToBytes(raster, "image/jpeg", 0.92);
 }
 
 // ───────────────────── raster pipeline ─────────────────────
 
 function rasterizeNotebook(canvas: NotesCanvas, opts: ExportOptions): HTMLCanvasElement {
+  return buildExportRaster(canvas, opts, false).canvas;
+}
+
+interface ExportRaster {
+  canvas: HTMLCanvasElement;
+  cssW: number;
+  cssH: number;
+  camera: { x: number; y: number; zoom: number };
+}
+
+/**
+ * Shared raster pipeline used by every format. `omitTextGlyphs=true`
+ * skips fillText calls for text shapes but keeps every other decoration
+ * (text-shape backgrounds, blockquote rules, task checkboxes, link
+ * underlines, highlight backgrounds) — used by the PDF path so vector
+ * text can be overlaid without doubling-up.
+ */
+function buildExportRaster(canvas: NotesCanvas, opts: ExportOptions, omitTextGlyphs: boolean): ExportRaster {
   const state = canvas.state;
   const viewport = canvas.container.getBoundingClientRect();
 
@@ -105,8 +137,6 @@ function rasterizeNotebook(canvas: NotesCanvas, opts: ExportOptions): HTMLCanvas
     const bounds = computeContentBounds(state.shapes as never[], state.fontFamily);
     const m = Math.max(0, opts.margin | 0);
     if (!bounds) {
-      // Empty notebook: fall back to a small margin-only square so the
-      // output is still a valid image.
       cssW = Math.max(1, m * 2 || 64);
       cssH = Math.max(1, m * 2 || 64);
       camera = { x: m, y: m, zoom: 1 };
@@ -124,9 +154,6 @@ function rasterizeNotebook(canvas: NotesCanvas, opts: ExportOptions): HTMLCanvas
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Failed to acquire 2D context");
 
-  // A single scale(scale, scale) baseline means every downstream draw
-  // call can think in CSS pixels — matches the live renderer's mental
-  // model.
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
   renderForExport(ctx, cssW, cssH, {
@@ -141,6 +168,8 @@ function rasterizeNotebook(canvas: NotesCanvas, opts: ExportOptions): HTMLCanvas
     layers: state.layers,
     includeBackground: opts.includeBackground,
     canvasBackgroundOverride: state.canvasBackgroundOverride,
+    flowchart: state.flowchart,
+    omitTextGlyphs,
   });
 
   // Strokes sit above shapes in the live view (drawing wrapper is a
@@ -155,7 +184,7 @@ function rasterizeNotebook(canvas: NotesCanvas, opts: ExportOptions): HTMLCanvas
     ctx.restore();
   }
 
-  return out;
+  return { canvas: out, cssW, cssH, camera };
 }
 
 function computeContentBounds(shapes: { pocketed?: boolean }[], fontFamily: string): Bounds | null {
@@ -200,68 +229,4 @@ async function canvasToBytes(c: HTMLCanvasElement, mime: string, quality?: numbe
   return new Uint8Array(buf);
 }
 
-// ───────────────────── minimal PDF encoder ─────────────────────
-//
-// Wraps a single JPEG into a valid 1-page PDF. One image XObject
-// (DCTDecode) + a page whose content stream draws it at page size.
-// No fonts, metadata, or compression beyond the embedded JPEG.
-// Page dims equal the pixel dims of the raster at 72 dpi — consumers
-// that want a physical size can scale in their viewer.
-
-function wrapJpegAsPdf(jpeg: Uint8Array, pxW: number, pxH: number): Uint8Array {
-  const enc = new TextEncoder();
-  const parts: Uint8Array[] = [];
-  const offsets: number[] = [];
-  let length = 0;
-
-  const push = (chunk: Uint8Array | string) => {
-    const bytes = typeof chunk === "string" ? enc.encode(chunk) : chunk;
-    parts.push(bytes);
-    length += bytes.length;
-    return bytes.length;
-  };
-  const markObj = () => { offsets.push(length); };
-
-  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
-
-  // Object 1: catalog
-  markObj();
-  push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-
-  // Object 2: pages
-  markObj();
-  push("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
-
-  // Object 3: page
-  markObj();
-  push(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pxW} ${pxH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`);
-
-  // Object 4: image XObject (DCTDecode = JPEG)
-  markObj();
-  push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pxW} /Height ${pxH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
-  push(jpeg);
-  push("\nendstream\nendobj\n");
-
-  // Object 5: content stream: draw image at page size.
-  const content = `q\n${pxW} 0 0 ${pxH} 0 0 cm\n/Im0 Do\nQ\n`;
-  const contentBytes = enc.encode(content);
-  markObj();
-  push(`5 0 obj\n<< /Length ${contentBytes.length} >>\nstream\n`);
-  push(contentBytes);
-  push("\nendstream\nendobj\n");
-
-  // xref
-  const xrefOffset = length;
-  push(`xref\n0 6\n0000000000 65535 f \n`);
-  for (const o of offsets) {
-    push(o.toString().padStart(10, "0") + " 00000 n \n");
-  }
-
-  push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
-
-  // Concatenate
-  const out = new Uint8Array(length);
-  let off = 0;
-  for (const p of parts) { out.set(p, off); off += p.length; }
-  return out;
-}
+// PDF encoding now lives in `notebook-pdf.ts` (vector-text variant).

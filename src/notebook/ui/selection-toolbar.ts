@@ -4,6 +4,45 @@ import { canvasToScreen, computePocketLayout, getShapeBounds } from "../utils";
 import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
 
+interface SavedTextStyle {
+  id: string;
+  color: string;
+  backgroundColor?: string;
+  fontSize: number;
+}
+
+interface AppStateBridge {
+  settings?: { notebookTextStyles?: SavedTextStyle[] };
+  updateSettings?: (p: Record<string, unknown>) => void;
+  on?: (ev: string, fn: () => void) => void;
+  off?: (ev: string, fn: () => void) => void;
+}
+
+function getAppState(): AppStateBridge | undefined {
+  return (window as unknown as { __hushState__?: AppStateBridge }).__hushState__;
+}
+
+function getSavedTextStyles(): SavedTextStyle[] {
+  const list = getAppState()?.settings?.notebookTextStyles;
+  return Array.isArray(list) ? list : [];
+}
+
+function setSavedTextStyles(next: SavedTextStyle[]): void {
+  const app = getAppState();
+  if (app && typeof app.updateSettings === "function") {
+    app.updateSettings({ notebookTextStyles: next });
+  }
+}
+
+function genStyleId(): string {
+  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+}
+
+function resolveBackground(bg: string | undefined): string | undefined {
+  if (!bg) return undefined;
+  return COLOR_PALETTE[bg] || bg;
+}
+
 export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () => void): HTMLElement {
   const container = h("div", {
     // Sit just above canvas content but below the sidebar (z-index 200)
@@ -12,7 +51,8 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
     style: { position: "absolute", display: "none", gap: "2px", zIndex: "50", pointerEvents: "auto" },
   });
 
-  let activePopup: "color" | "bg" | "size" | "align" | null = null;
+  type PopupType = "color" | "bg" | "size" | "align" | "style";
+  let activePopup: PopupType | null = null;
   let popupEl: HTMLElement | null = null;
   let popupWrapper: HTMLElement | null = null;
   let isRenamingImage = false;
@@ -133,7 +173,120 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
     return panel;
   }
 
-  function togglePopup(type: "color" | "bg" | "size" | "align", wrapper: HTMLElement, create: () => HTMLElement) {
+  /** Picker over the user's saved {color,bg,size} text-style presets, plus
+   *  a "+ Style" capture button. App-wide — persisted via AppSettings. */
+  function makeStyleMenu(
+    state: DrawingState,
+    rerender: () => void,
+  ): HTMLElement {
+    const theme = state.theme;
+    const muted = theme.variant === "dark" ? "rgba(255,255,255,0.5)" : "#666";
+    const panel = h("div", {
+      style: {
+        position: "absolute", top: "-46px", left: "50%", transform: "translateX(-50%)",
+        display: "flex", alignItems: "center", gap: "4px", padding: "5px 6px",
+        background: theme.uiBackground, borderRadius: "8px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`,
+        zIndex: "300", whiteSpace: "nowrap",
+      },
+    });
+    panel.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+    const styles = getSavedTextStyles();
+
+    if (styles.length === 0) {
+      panel.appendChild(h("span", {
+        text: "No saved styles",
+        style: { fontSize: "11px", color: muted, padding: "0 4px" },
+      }));
+    }
+
+    for (const s of styles) {
+      const wrap = h("div", { style: { position: "relative", display: "inline-flex" } });
+      const fg = s.color || theme.foreground;
+      const bg = resolveBackground(s.backgroundColor) || "transparent";
+      const chip = h("button", {
+        title: `Apply (${s.fontSize}px)`,
+        style: {
+          padding: "3px 10px",
+          border: bg === "transparent" ? "1px dashed rgba(0,0,0,0.15)" : "1px solid rgba(0,0,0,0.06)",
+          borderRadius: "10px",
+          background: bg,
+          color: fg,
+          fontSize: `${Math.max(10, Math.min(14, s.fontSize / 2))}px`,
+          fontWeight: "500",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          lineHeight: "1.4",
+        },
+        children: ["Aa"],
+        onClick: () => {
+          state.applyTextStyle({
+            color: s.color,
+            backgroundColor: s.backgroundColor,
+            fontSize: s.fontSize,
+          });
+          closePopup();
+        },
+      });
+      wrap.appendChild(chip);
+
+      const del = h("button", {
+        title: "Delete style",
+        text: "×",
+        style: {
+          position: "absolute", top: "-6px", right: "-6px",
+          width: "14px", height: "14px", borderRadius: "50%",
+          border: "none", background: theme.uiBackground,
+          color: theme.foreground, fontSize: "11px", lineHeight: "12px",
+          cursor: "pointer", padding: "0",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+          display: "none",
+        },
+      });
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const remaining = getSavedTextStyles().filter((x) => x.id !== s.id);
+        setSavedTextStyles(remaining);
+        rerender();
+      });
+      wrap.addEventListener("mouseenter", () => { del.style.display = "block"; });
+      wrap.addEventListener("mouseleave", () => { del.style.display = "none"; });
+      wrap.appendChild(del);
+
+      panel.appendChild(wrap);
+    }
+
+    const addBtn = h("button", {
+      title: "Save current style",
+      style: {
+        display: "inline-flex", alignItems: "center", gap: "3px",
+        padding: "3px 8px",
+        border: `1px solid ${theme.uiBorder}`,
+        borderRadius: "10px", background: "transparent",
+        color: theme.foreground, fontSize: "11px", fontWeight: "500",
+        cursor: "pointer", fontFamily: "inherit",
+      },
+      children: ["+ Style"],
+      onClick: () => {
+        const firstText = state.shapes.find((sh) => state.selectedIds.has(sh.id) && sh.type === "text");
+        if (!firstText || firstText.type !== "text") return;
+        const entry: SavedTextStyle = {
+          id: genStyleId(),
+          color: firstText.color || "#000000",
+          backgroundColor: firstText.backgroundColor,
+          fontSize: firstText.fontSize,
+        };
+        setSavedTextStyles([...getSavedTextStyles(), entry]);
+        rerender();
+      },
+    });
+    panel.appendChild(addBtn);
+
+    return panel;
+  }
+
+  function togglePopup(type: PopupType, wrapper: HTMLElement, create: () => HTMLElement) {
     if (activePopup === type) { closePopup(); return; }
     closePopup();
     popupEl = create();
@@ -279,6 +432,35 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
           state.changeSelectedFontSize(size);
         }));
       }
+    }
+
+    if (hasText) {
+      const wrapper = h("div", { style: { position: "relative" } });
+      const reopen = () => {
+        closePopup();
+        popupEl = makeStyleMenu(state, reopen);
+        popupWrapper = wrapper;
+        activePopup = "style";
+        wrapper.appendChild(popupEl);
+      };
+      wrapper.appendChild(makeIconBtn("text-style", "Style", () => {
+        if (activePopup === "style") { closePopup(); return; }
+        reopen();
+      }));
+      container.appendChild(wrapper);
+      if (savedPopup === "style") reopen();
+    }
+
+    // Tidy: re-layout the flowchart subtree under any selected text node
+    // that has children. Mirrors steiner — root anchored, descendants
+    // stacked so siblings don't overlap.
+    const tidyableIds = selected
+      .filter((s) => s.type === "text" && state.flowchart.childrenOf(s.id).length > 0)
+      .map((s) => s.id);
+    if (tidyableIds.length > 0) {
+      container.appendChild(makeIconBtn("tidy", "Tidy subtree", () => {
+        for (const id of tidyableIds) state.tidySubtree(id);
+      }));
     }
 
     container.appendChild(makeIconBtn("trash", "Delete", () => state.deleteSelected()));
