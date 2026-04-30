@@ -166,9 +166,14 @@ export async function startLocalSyncWatcher(state, onChanged) {
       if (matches) {
         readFile(id, editedPath).then((content) => {
           if (state.editor && state.currentLocalSync && state.currentLocalSync.relPath === editedPath) {
-            state.runtime.syncPulling = true;
-            state.editor.setContent(content);
-            state.runtime.syncPulling = false;
+            // Local-sync paths don't have a Hush fileId; pass the relPath
+            // as the lock key. The pull-lock check uses currentFileId so
+            // this only blocks markDirty when the user is editing this
+            // exact local-sync file (currentFileId is set to the relPath
+            // by openLocalSyncFile).
+            state.acquirePullLock(`localsync:${id}:${editedPath}`);
+            try { state.editor.setContent(content); state.dirty = false; }
+            finally { state.releasePullLock(); }
           }
         }).catch(() => {});
       }

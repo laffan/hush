@@ -367,9 +367,9 @@ export async function acceptExternalChange(state, internalId, content, syncedAt 
     await tauriInvoke("accept_external_change", { internalId, content, syncedAt });
     state.files = await tauriInvoke("list_files");
     if (state.currentFileId === internalId && state.editor) {
-      state.runtime.syncPulling = true;
-      state.editor.setContent(content);
-      state.runtime.syncPulling = false;
+      state.acquirePullLock(internalId);
+      try { state.editor.setContent(content); state.dirty = false; }
+      finally { state.releasePullLock(); }
     } else if (state.currentNotebookFileId === internalId) {
       // Reload shapes into the open notebook canvas
       state.emit("notebook-sync-reload", content);

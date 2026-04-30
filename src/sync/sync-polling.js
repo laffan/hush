@@ -222,42 +222,52 @@ async function applyRenamed(state, ev, invoke, findNodeByFileId) {
 async function applyContentChanged(state, ev, dbx, invoke) {
   if (ev.kind === "image") return false; // images are content-immutable on rename
 
-  let content;
+  // If the file is currently open in the editor, hold the pull lock
+  // across the full pull (download + persist + setContent) so any
+  // in-flight save / keystroke for this file is suppressed for the whole
+  // window. Without this, the user's pre-pull buffer can ride out the
+  // download via autosave and overwrite what we just pulled.
+  const isOpen = state.currentFileId === ev.internalId && state.editor;
+  if (isOpen) state.acquirePullLock(ev.internalId);
+
   try {
-    if (ev.kind === "hushnote") {
-      const buf = await dbx.downloadBinary(ev.dropboxPath);
-      const { unpackNotebook } = await import("./notebook-sync.js");
-      content = await unpackNotebook(new Uint8Array(buf));
-    } else {
-      content = await dbx.downloadFile(ev.dropboxPath);
+    let content;
+    try {
+      if (ev.kind === "hushnote") {
+        const buf = await dbx.downloadBinary(ev.dropboxPath);
+        const { unpackNotebook } = await import("./notebook-sync.js");
+        content = await unpackNotebook(new Uint8Array(buf));
+      } else {
+        content = await dbx.downloadFile(ev.dropboxPath);
+      }
+    } catch (e) {
+      console.error("cursor: content download failed:", e);
+      return false;
     }
-  } catch (e) {
-    console.error("cursor: content download failed:", e);
-    return false;
-  }
 
-  // Persist + take a snapshot via the existing accept_external_change.
-  await invoke("accept_external_change", {
-    internalId: ev.internalId,
-    content,
-    syncedAt: ev.serverModified || null,
-  });
-  // Then refresh the sync state with the new rev.
-  await invoke("update_sync_state", {
-    internalId: ev.internalId,
-    content,
-    rev: ev.rev,
-    syncedAt: ev.serverModified || Math.floor(Date.now() / 1000),
-  });
+    await invoke("accept_external_change", {
+      internalId: ev.internalId,
+      content,
+      syncedAt: ev.serverModified || null,
+    });
+    await invoke("update_sync_state", {
+      internalId: ev.internalId,
+      content,
+      rev: ev.rev,
+      syncedAt: ev.serverModified || Math.floor(Date.now() / 1000),
+    });
 
-  // Update editor if the file is currently open.
-  if (state.currentFileId === ev.internalId && state.editor) {
-    state.runtime.syncPulling = true;
-    try { state.editor.setContent(content); }
-    finally { state.runtime.syncPulling = false; }
+    if (isOpen) {
+      state.editor.setContent(content);
+      // We just synced the editor's content with the remote. Clear dirty
+      // so the next autosave doesn't push the same content right back.
+      state.dirty = false;
+    }
+    state.files = await invoke("list_files");
+    return true;
+  } finally {
+    if (isOpen) state.releasePullLock();
   }
-  state.files = await invoke("list_files");
-  return true;
 }
 
 // ===== Tree insertion helpers =====

@@ -281,10 +281,13 @@ export function syncDocFromPane(pane) {
     const mainSel = mainView.state.selection.main;
     const anchor = Math.min(mainSel.anchor, content.length);
     const head = Math.min(mainSel.head, content.length);
-    appState.runtime.syncPulling = true;
-    appState.editor.setContent(content);
-    try { mainView.dispatch({ selection: { anchor, head } }); } catch (_) {}
-    appState.runtime.syncPulling = false;
+    appState.acquirePullLock(pane.fileId);
+    try {
+      appState.editor.setContent(content);
+      try { mainView.dispatch({ selection: { anchor, head } }); } catch (_) {}
+    } finally {
+      appState.releasePullLock();
+    }
   } finally {
     setSyncing(false);
   }

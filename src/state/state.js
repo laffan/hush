@@ -70,9 +70,16 @@ export class AppState {
      *    to a Local Sync file; the watcher uses it to suppress its own
      *    echo within ~500ms.
      *  - `syncPulling`         — true while a sync layer (Dropbox poll,
-     *    Local Sync watcher, pane sync) is pushing remote content into the
-     *    editor; suppresses `markDirty` so the pull doesn't re-trigger an
-     *    upload.
+     *    Local Sync watcher, pane sync) is pulling remote content for the
+     *    file in `syncPullingFileId`. Blocks both `markDirty` *and*
+     *    `saveCurrentFile` for that file so a keystroke or autosave
+     *    during the pull window can't upload the editor's pre-pull
+     *    buffer over the just-arrived remote content. Held across the
+     *    entire pull (download + persist + setContent), not just the
+     *    final synchronous edit.
+     *  - `syncPullingFileId`   — internal id of the file being pulled,
+     *    or null. Other files can still save freely while one file is
+     *    being pulled.
      */
     this.runtime = {
       columnResizeHandler: null,
@@ -80,6 +87,7 @@ export class AppState {
       pendingScrollPosition: null,
       localSyncWriteFlag: 0,
       syncPulling: false,
+      syncPullingFileId: null,
     };
   }
 
@@ -192,8 +200,34 @@ export class AppState {
   }
 
   markDirty() {
-    if (this.runtime.syncPulling) return;
+    if (this._isPullLockedForCurrent()) return;
     this.dirty = true;
+  }
+
+  _isPullLockedForCurrent() {
+    if (!this.runtime.syncPulling) return false;
+    const key = this.runtime.syncPullingFileId;
+    if (key === this.currentFileId) return true;
+    // Local-sync uses a synthetic key since those files don't have a
+    // Hush fileId.
+    if (this.currentLocalSync) {
+      const localKey = `localsync:${this.currentLocalSync.folderId}:${this.currentLocalSync.relPath}`;
+      if (key === localKey) return true;
+    }
+    return false;
+  }
+
+  /// Acquire a pull lock for `fileId`. Held by the caller across the full
+  /// async pull (download → persist → setContent) so saves and dirty-marks
+  /// for this file can't race the in-flight remote write.
+  acquirePullLock(fileId) {
+    this.runtime.syncPulling = true;
+    this.runtime.syncPullingFileId = fileId;
+  }
+
+  releasePullLock() {
+    this.runtime.syncPulling = false;
+    this.runtime.syncPullingFileId = null;
   }
 
   trackKeystroke() {
@@ -339,6 +373,10 @@ export class AppState {
       return m.saveCurrentLocalSync(this);
     }
     if (!this.currentFileId || !this.editor) return;
+    // A pull is in flight for the current file: don't upload the editor's
+    // pre-pull buffer over the just-arriving remote content. The pull
+    // releases the lock and clears `dirty`, so we'll resume normally.
+    if (this._isPullLockedForCurrent()) return;
     const content = this.editor.getContent();
     this.dirty = false;
     if (IS_TAURI) {
