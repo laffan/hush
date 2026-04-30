@@ -420,3 +420,136 @@ pub fn pending_op_failed(state: State<AppState>, id: i64, error: String) -> Resu
     state.sync_manager.lock().unwrap().op_failed(id, &error);
     Ok(())
 }
+
+// ===== Cursor & cursor-driven lookups =====
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DropboxCursorState {
+    pub cursor: String,
+    pub root_path: String,
+}
+
+#[tauri::command]
+pub fn get_dropbox_cursor(
+    state: State<AppState>,
+    sync_folder_id: String,
+) -> Option<DropboxCursorState> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .get_cursor(&sync_folder_id)
+        .map(|(cursor, root_path)| DropboxCursorState { cursor, root_path })
+}
+
+#[tauri::command]
+pub fn set_dropbox_cursor(
+    state: State<AppState>,
+    sync_folder_id: String,
+    cursor: String,
+    root_path: String,
+) -> Result<(), String> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .set_cursor(&sync_folder_id, &cursor, &root_path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_dropbox_cursor(
+    state: State<AppState>,
+    sync_folder_id: String,
+) -> Result<(), String> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .clear_cursor(&sync_folder_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn find_synced_file_by_remote_id(
+    state: State<AppState>,
+    remote_id: String,
+) -> Option<SyncedFileInfo> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .find_by_remote_id(&remote_id)
+}
+
+#[tauri::command]
+pub fn find_synced_file_by_path(
+    state: State<AppState>,
+    sync_folder_id: String,
+    relative_path: String,
+) -> Option<SyncedFileInfo> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .find_by_path_ci(&sync_folder_id, &relative_path)
+}
+
+#[tauri::command]
+pub fn backfill_remote_id(
+    state: State<AppState>,
+    internal_id: String,
+    remote_id: String,
+    rev: String,
+) -> Result<(), String> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .backfill_remote_id(&internal_id, &remote_id, &rev);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_sync_state(
+    state: State<AppState>,
+    internal_id: String,
+    content: String,
+    rev: String,
+    synced_at: i64,
+) -> Result<(), String> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .update_sync_state(&internal_id, &content, &rev, synced_at);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn register_synced_file_full(
+    state: State<AppState>,
+    internal_id: String,
+    sync_folder_id: String,
+    relative_path: String,
+    content: String,
+    remote_id: String,
+    rev: String,
+    synced_at: i64,
+) -> Result<(), String> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .register_file_full(
+            &internal_id,
+            &sync_folder_id,
+            &relative_path,
+            &content,
+            &remote_id,
+            &rev,
+            synced_at,
+        );
+    Ok(())
+}

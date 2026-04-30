@@ -349,6 +349,46 @@ export async function uploadBinary(path, data) {
 }
 
 /**
+ * Authenticated POST to a Dropbox JSON endpoint. Returns the raw Response
+ * so the caller can inspect non-OK status codes (e.g. cursor-reset 409).
+ */
+export async function authedJsonPost(url, body) {
+  return dbxFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Issue a recursive list_folder rooted at `path`. Returns the full
+ * Dropbox response object including `cursor` and `has_more` so the caller
+ * can drive cursor-based delta consumption. Does NOT auto-paginate;
+ * cursors must be persisted between calls.
+ */
+export async function listFolderRaw(path, { recursive = true, includeDeleted = false } = {}) {
+  const norm = (path || "").replace(/\/+$/, "");
+  const resp = await authedJsonPost("https://api.dropboxapi.com/2/files/list_folder", {
+    path: norm || "",
+    recursive,
+    include_deleted: includeDeleted,
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    throw new Error(`Dropbox list_folder ${resp.status}: ${txt}`);
+  }
+  return resp.json();
+}
+
+/**
+ * Continue a cursor. The caller must check the response: a 409 with a
+ * `reset` error means the cursor expired and the caller should reseed.
+ */
+export async function listFolderContinueRaw(cursor) {
+  return authedJsonPost("https://api.dropboxapi.com/2/files/list_folder/continue", { cursor });
+}
+
+/**
  * Get file metadata (server_modified, content_hash, etc.) without downloading.
  */
 export async function getMetadata(path) {

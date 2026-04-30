@@ -600,6 +600,85 @@ impl SyncManager {
             eprintln!("sync: op_failed({}) failed: {}", id, e);
         }
     }
+
+    // ===== Cursor & cursor-driven lookups =====
+
+    pub fn find_by_remote_id(&self, remote_id: &str) -> Option<SyncedFileInfo> {
+        self.db.find_by_remote_id(remote_id).ok().flatten()
+    }
+
+    pub fn find_by_path_ci(
+        &self,
+        sync_folder_id: &str,
+        relative_path: &str,
+    ) -> Option<SyncedFileInfo> {
+        self.db
+            .find_by_path_ci(sync_folder_id, relative_path)
+            .ok()
+            .flatten()
+    }
+
+    pub fn backfill_remote_id(&mut self, internal_id: &str, remote_id: &str, rev: &str) {
+        if let Err(e) = self.db.backfill_remote_id(internal_id, remote_id, rev) {
+            eprintln!("sync: backfill_remote_id failed: {}", e);
+        }
+    }
+
+    pub fn update_sync_state(
+        &mut self,
+        internal_id: &str,
+        content: &str,
+        rev: &str,
+        synced_at: i64,
+    ) {
+        let hash = Self::hash_content(content);
+        if let Err(e) = self.db.update_sync_state(internal_id, &hash, rev, synced_at) {
+            eprintln!("sync: update_sync_state failed: {}", e);
+        }
+    }
+
+    /// Like `register_file`, but populates `remote_id` and `last_known_rev`
+    /// at registration time. Used by the cursor consumer when importing a
+    /// brand-new external file.
+    pub fn register_file_full(
+        &mut self,
+        internal_id: &str,
+        sync_folder_id: &str,
+        relative_path: &str,
+        content: &str,
+        remote_id: &str,
+        rev: &str,
+        synced_at: i64,
+    ) {
+        let info = SyncedFileInfo {
+            internal_id: internal_id.to_string(),
+            sync_folder_id: sync_folder_id.to_string(),
+            relative_path: relative_path.to_string(),
+            last_synced_hash: Self::hash_content(content),
+            last_synced_at: synced_at,
+            remote_id: remote_id.to_string(),
+            last_known_rev: rev.to_string(),
+        };
+        if let Err(e) = self.db.upsert_file(&info) {
+            eprintln!("sync: register_file_full failed: {}", e);
+        }
+    }
+
+    pub fn get_cursor(&self, sync_folder_id: &str) -> Option<(String, String)> {
+        self.db.get_cursor(sync_folder_id).ok().flatten()
+    }
+
+    pub fn set_cursor(&mut self, sync_folder_id: &str, cursor: &str, root_path: &str) {
+        if let Err(e) = self.db.set_cursor(sync_folder_id, cursor, root_path) {
+            eprintln!("sync: set_cursor failed: {}", e);
+        }
+    }
+
+    pub fn clear_cursor(&mut self, sync_folder_id: &str) {
+        if let Err(e) = self.db.clear_cursor(sync_folder_id) {
+            eprintln!("sync: clear_cursor failed: {}", e);
+        }
+    }
 }
 
 fn now_secs() -> i64 {

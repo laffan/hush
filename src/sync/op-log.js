@@ -306,19 +306,30 @@ async function executeUpload(state, op, dbx) {
   }
 
   const fullPath = fullDbxPath(state, op.path);
+  let resp;
   if (op.path.endsWith(".hushnote")) {
     const { packNotebook } = await import("./notebook-sync.js");
     const zipData = await packNotebook(file.content);
-    await dbx.uploadBinary(fullPath, zipData);
+    resp = await dbx.uploadBinary(fullPath, zipData);
   } else {
-    await dbx.uploadFile(fullPath, file.content);
+    resp = await dbx.uploadFile(fullPath, file.content);
   }
 
-  await tauriInvoke("register_synced_file", {
+  // Record the new rev so the cursor consumer can recognize our own
+  // write and skip it instead of pulling it back.
+  const remoteId = resp?.id || "";
+  const rev = resp?.rev || "";
+  const syncedAt = serverModifiedSecs(resp?.server_modified)
+    || Math.floor(Date.now() / 1000);
+
+  await tauriInvoke("register_synced_file_full", {
     internalId: op.internalId,
     syncFolderId: SYNC_FOLDER_ID,
     relativePath: op.path,
     content: file.content,
+    remoteId,
+    rev,
+    syncedAt,
   });
 }
 
@@ -327,7 +338,14 @@ async function executeUploadPayload(state, op, dbx) {
     throw new Error("upload_payload op missing payload");
   }
   const fullPath = fullDbxPath(state, op.path);
+  // No internal_id to track — `.hushproject` files are derived state.
   await dbx.uploadFile(fullPath, op.payload);
+}
+
+function serverModifiedSecs(s) {
+  if (!s) return 0;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? Math.floor(t / 1000) : 0;
 }
 
 async function executeCreateFolder(state, op, dbx) {

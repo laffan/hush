@@ -237,6 +237,123 @@ impl SyncDb {
         Ok(())
     }
 
+    // ===== Lookups for cursor consumer =====
+
+    /// Find a synced file by Dropbox `id`. Empty `remote_id` is never a
+    /// match — that's the sentinel for "not yet backfilled".
+    pub fn find_by_remote_id(&self, remote_id: &str) -> Result<Option<SyncedFileInfo>, rusqlite::Error> {
+        if remote_id.is_empty() {
+            return Ok(None);
+        }
+        let conn = self.connect()?;
+        conn.query_row(
+            "SELECT internal_id, sync_folder_id, relative_path,
+                    last_synced_hash, last_synced_at, remote_id, last_known_rev
+             FROM synced_files WHERE remote_id = ?1",
+            params![remote_id],
+            row_to_info,
+        )
+        .optional()
+    }
+
+    /// Case-insensitive path lookup. Dropbox `deleted` events only carry
+    /// `path_lower`, so the cursor consumer can't match by exact case.
+    pub fn find_by_path_ci(
+        &self,
+        sync_folder_id: &str,
+        relative_path: &str,
+    ) -> Result<Option<SyncedFileInfo>, rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.query_row(
+            "SELECT internal_id, sync_folder_id, relative_path,
+                    last_synced_hash, last_synced_at, remote_id, last_known_rev
+             FROM synced_files
+             WHERE sync_folder_id = ?1 AND LOWER(relative_path) = LOWER(?2)
+             LIMIT 1",
+            params![sync_folder_id, relative_path],
+            row_to_info,
+        )
+        .optional()
+    }
+
+    /// Backfill `remote_id` and `last_known_rev` on a legacy entry.
+    pub fn backfill_remote_id(
+        &self,
+        internal_id: &str,
+        remote_id: &str,
+        rev: &str,
+    ) -> Result<(), rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE synced_files
+             SET remote_id = ?1, last_known_rev = ?2
+             WHERE internal_id = ?3",
+            params![remote_id, rev, internal_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update both content hash and last_known_rev together. Used after a
+    /// successful upload (rev = response rev) and after a successful pull
+    /// (rev = entry's rev from the cursor delta).
+    pub fn update_sync_state(
+        &self,
+        internal_id: &str,
+        hash: &str,
+        rev: &str,
+        synced_at: i64,
+    ) -> Result<(), rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE synced_files
+             SET last_synced_hash = ?1, last_synced_at = ?2, last_known_rev = ?3
+             WHERE internal_id = ?4",
+            params![hash, synced_at, rev, internal_id],
+        )?;
+        Ok(())
+    }
+
+    // ===== dropbox_cursor =====
+
+    pub fn get_cursor(&self, sync_folder_id: &str) -> Result<Option<(String, String)>, rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.query_row(
+            "SELECT cursor, root_path FROM dropbox_cursor WHERE sync_folder_id = ?1",
+            params![sync_folder_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+    }
+
+    pub fn set_cursor(
+        &self,
+        sync_folder_id: &str,
+        cursor: &str,
+        root_path: &str,
+    ) -> Result<(), rusqlite::Error> {
+        let conn = self.connect()?;
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "INSERT INTO dropbox_cursor (sync_folder_id, cursor, root_path, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(sync_folder_id) DO UPDATE SET
+                cursor = excluded.cursor,
+                root_path = excluded.root_path,
+                updated_at = excluded.updated_at",
+            params![sync_folder_id, cursor, root_path, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_cursor(&self, sync_folder_id: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.execute(
+            "DELETE FROM dropbox_cursor WHERE sync_folder_id = ?1",
+            params![sync_folder_id],
+        )?;
+        Ok(())
+    }
+
     // ===== pending_ops =====
 
     /// Append a pending op. Returns the new row id.
@@ -545,6 +662,62 @@ mod tests {
         assert_eq!(ops.len(), 1);
         assert_eq!(ops[0].attempts, 2);
         assert_eq!(ops[0].last_error.as_deref(), Some("still down"));
+    }
+
+    #[test]
+    fn find_by_remote_id_skips_empty_sentinels() {
+        // Legacy entries with `remote_id = ""` must not collide on lookup;
+        // empty is the "not yet backfilled" marker, not a real id.
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDb::new(dir.path());
+        db.upsert_file(&mk_info("a", "f", "x.md", "h", 1)).unwrap();
+        db.upsert_file(&mk_info("b", "f", "y.md", "h", 1)).unwrap();
+        assert!(db.find_by_remote_id("").unwrap().is_none());
+        // After backfill, found by id
+        db.backfill_remote_id("a", "id:abc", "rev1").unwrap();
+        assert_eq!(
+            db.find_by_remote_id("id:abc").unwrap().unwrap().internal_id,
+            "a"
+        );
+    }
+
+    #[test]
+    fn find_by_path_is_case_insensitive() {
+        // Dropbox `deleted` events only carry `path_lower`. Make sure the
+        // lookup matches a stored entry whose case differs.
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDb::new(dir.path());
+        db.upsert_file(&mk_info("a", "f", "Notes/Today.md", "", 0)).unwrap();
+        let got = db.find_by_path_ci("f", "notes/today.md").unwrap();
+        assert_eq!(got.unwrap().internal_id, "a");
+    }
+
+    #[test]
+    fn update_sync_state_writes_rev_and_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDb::new(dir.path());
+        db.upsert_file(&mk_info("a", "f", "x.md", "old-hash", 1)).unwrap();
+        db.update_sync_state("a", "new-hash", "rev42", 999).unwrap();
+        let got = db.get("a").unwrap().unwrap();
+        assert_eq!(got.last_synced_hash, "new-hash");
+        assert_eq!(got.last_synced_at, 999);
+        assert_eq!(got.last_known_rev, "rev42");
+    }
+
+    #[test]
+    fn cursor_set_get_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDb::new(dir.path());
+        assert!(db.get_cursor("dbx").unwrap().is_none());
+        db.set_cursor("dbx", "cur123", "/Apps/Hush").unwrap();
+        let (cur, root) = db.get_cursor("dbx").unwrap().unwrap();
+        assert_eq!(cur, "cur123");
+        assert_eq!(root, "/Apps/Hush");
+        db.set_cursor("dbx", "cur456", "/Apps/Hush").unwrap();
+        let (cur, _) = db.get_cursor("dbx").unwrap().unwrap();
+        assert_eq!(cur, "cur456"); // upsert
+        db.clear_cursor("dbx").unwrap();
+        assert!(db.get_cursor("dbx").unwrap().is_none());
     }
 
     #[test]

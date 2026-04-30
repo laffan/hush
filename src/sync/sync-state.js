@@ -343,9 +343,15 @@ export async function syncFileToExternal(state, fileId, content) {
     }
 
     const uploadResp = await uploadContent(dbx, fullPath, content, info.relativePath);
-    const uploadedAt = serverModifiedSecs(uploadResp?.server_modified);
-    await tauriInvoke("update_sync_hash", {
-      internalId: fileId, content, syncedAt: uploadedAt,
+    const uploadedAt = serverModifiedSecs(uploadResp?.server_modified)
+      || Math.floor(Date.now() / 1000);
+    // Record the response rev so the cursor consumer recognizes this
+    // write as ours and doesn't echo it back as a remote change.
+    await tauriInvoke("update_sync_state", {
+      internalId: fileId,
+      content,
+      rev: uploadResp?.rev || "",
+      syncedAt: uploadedAt,
     });
   } catch (e) {
     console.error("Sync write failed:", e);
