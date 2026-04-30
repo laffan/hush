@@ -280,45 +280,72 @@ export function recoverOffscreenPanes(panesToCheck, viewport) {
 
 // ===== Upload trigger =====
 
-/**
- * Enqueue an upload of the panes payload via the op log.
- *
- * Multiple enqueues before the drain fires upload more than once; the
- * last write wins on Dropbox so it's correct, just slightly wasteful.
- * The `persistPanesNow` debounce (300ms) makes flurries rare in practice.
- */
 export async function enqueuePaneUpload(payload) {
-  const { enqueueUploadPayload, triggerDrain } = await import("./op-log.js");
-  await enqueueUploadPayload({ path: PANES_PATH, payload });
-  triggerDrain();
+  const { enqueueMetaUpload } = await import("./meta-sync.js");
+  return enqueueMetaUpload("panes.json", payload);
 }
+
+// Re-export for callers that imported from here pre-meta-sync extraction.
+export { markOurRev, isOurRev } from "./meta-sync.js";
 
 /**
- * In-memory set of `rev` tokens we've recently uploaded ourselves. The
- * cursor consumer asks `isOurRev` before applying a meta event so we
- * don't re-apply our own writes. The set is bounded; older entries get
- * dropped FIFO.
- *
- * Meta files don't live in the `synced_files` table (they aren't user
- * content), so the SQLite-backed `last_known_rev` echo suppression
- * doesn't cover them. This is the minimal local equivalent.
+ * Cursor dispatcher for `.hush/panes.json`. Called by sync-polling when
+ * a remote pane payload arrives. Keeps all the pane-sync orchestration
+ * (lazy imports, deps wiring) here so the cursor handler stays generic.
  */
-const _ourRevs = new Set();
-const _ourRevsOrder = [];
-const OUR_REVS_MAX = 32;
+export async function applyPanesFile(payload) {
+  const { panes } = await import("../pane/pane-state.js");
+  const { suppressPersist } = await import("../pane/pane-persistence.js");
+  const { createPane, refreshPaneContextVisibility } = await import("../pane/pane-manager.js");
 
-export function markOurRev(rev) {
-  if (!rev || _ourRevs.has(rev)) return;
-  _ourRevs.add(rev);
-  _ourRevsOrder.push(rev);
-  while (_ourRevsOrder.length > OUR_REVS_MAX) {
-    const old = _ourRevsOrder.shift();
-    _ourRevs.delete(old);
-  }
-}
+  const DEFAULT_X = 80;
+  const DEFAULT_Y = 100;
 
-export function isOurRev(rev) {
-  return !!rev && _ourRevs.has(rev);
+  const result = await applyRemotePanes(payload, {
+    panes,
+    suppressPersist,
+    createPaneFn: async (opts) => {
+      try {
+        const pane = await createPane(
+          opts.fileId,
+          opts.fileName || "Untitled",
+          opts.fileType,
+          DEFAULT_X,
+          DEFAULT_Y,
+          { ownerContext: opts.ownerContext, skipFocus: true },
+        );
+        if (!pane) return null;
+        if (opts.attached) {
+          pane.attached = true;
+          const aBtn = pane.el.querySelector(".fp-btn-attach");
+          if (aBtn) aBtn.classList.add("attach-active");
+        }
+        if (opts.pinned) {
+          pane.pinned = true;
+          pane.el.classList.add("pinned");
+          const pBtn = pane.el.querySelector(".fp-btn-pin");
+          if (pBtn) pBtn.classList.add("pin-active");
+        }
+        if (opts.collapsed) {
+          pane._savedHeight = pane.height;
+          pane.el.classList.add("collapsed");
+          pane.el.style.height = "32px";
+          pane.collapsed = true;
+        }
+        if (opts.canvasX != null) pane._canvasX = opts.canvasX;
+        if (opts.canvasY != null) pane._canvasY = opts.canvasY;
+        if (opts.scrollRelY != null) pane._scrollRelY = opts.scrollRelY;
+        if (opts.fontSize != null) pane.fontSize = opts.fontSize;
+        return pane;
+      } catch (e) {
+        console.warn("createPane (from sync) failed:", e);
+        return null;
+      }
+    },
+    recoverOffscreenFn: (added) => recoverOffscreenPanes(added),
+  });
+  refreshPaneContextVisibility();
+  return result;
 }
 
 export const PANES_RELATIVE_PATH = PANES_PATH;

@@ -18,7 +18,6 @@ import {
   enqueueDelete,
   enqueueDeleteDir,
   enqueueUpload,
-  enqueueUploadPayload,
   enqueueCreateFolder,
   triggerDrain,
 } from "./op-log.js";
@@ -106,6 +105,10 @@ export async function syncDeleteNode(state, nodeId) {
 
 /**
  * Propagate a new folder/project creation to Dropbox via the op log.
+ *
+ * Project-ness is now recorded in `.hush/projects.json` rather than
+ * per-folder `.hushproject` files. The folder itself is still created
+ * on Dropbox so docs in the project have somewhere to land.
  */
 export async function syncCreateNode(state, nodeId, nodeType) {
   if (!syncEnabled(state)) return;
@@ -116,14 +119,11 @@ export async function syncCreateNode(state, nodeId, nodeType) {
 
   try {
     await enqueueCreateFolder({ path: ctx.relativePath });
-    if (nodeType === "project") {
-      const data = JSON.stringify({ ordering: [] }, null, 2);
-      await enqueueUploadPayload({
-        path: `${ctx.relativePath}/.hushproject`,
-        payload: data,
-      });
-    }
     triggerDrain(state);
+    if (nodeType === "project") {
+      const { pushProjectsToDropbox } = await import("./project-sync.js");
+      await pushProjectsToDropbox(state);
+    }
   } catch (e) {
     console.error("Sync create dir enqueue failed:", e);
   }
@@ -157,29 +157,21 @@ export async function syncCreateFile(state, nodeId, fileId, content) {
 }
 
 /**
- * Update a project's .hushproject ordering file on Dropbox via the op log.
+ * Refresh the cross-device project registry on Dropbox after a project's
+ * ordering or membership changes. The whole `.hush/projects.json` is
+ * rewritten — projects are cheap to enumerate and one upload is simpler
+ * than per-project diffs.
+ *
+ * (The `projectNodeId` parameter is preserved for caller compatibility
+ * but we re-serialize all projects regardless of which one changed.)
  */
+// eslint-disable-next-line no-unused-vars
 export async function syncProjectOrdering(state, projectNodeId) {
   if (!syncEnabled(state)) return;
-
-  const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
-  const ctx = findSyncContext(state.fileTree, projectNodeId);
-  if (!ctx) return;
-  const node = findNode(state.fileTree, projectNodeId);
-  if (!node || node.type !== "project") return;
-
-  const docNames = (node.children || [])
-    .filter(c => c.type === "document" || c.type === "notebook")
-    .map(c => c.name + extensionForType(c.type));
-
   try {
-    const data = JSON.stringify({ ordering: docNames }, null, 2);
-    await enqueueUploadPayload({
-      path: `${ctx.relativePath}/.hushproject`,
-      payload: data,
-    });
-    triggerDrain(state);
+    const { pushProjectsToDropbox } = await import("./project-sync.js");
+    await pushProjectsToDropbox(state);
   } catch (e) {
-    console.error("Sync project ordering enqueue failed:", e);
+    console.error("Sync project ordering push failed:", e);
   }
 }

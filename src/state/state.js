@@ -13,6 +13,13 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
+const _STYLE_SYNCED_KEYS = new Set(["styles", "activeStyleId", "globalStyleId"]);
+function _isStyleRelevant(partial) {
+  if (!partial) return false;
+  for (const k of Object.keys(partial)) if (_STYLE_SYNCED_KEYS.has(k)) return true;
+  return false;
+}
+
 export class AppState {
   constructor() {
     this.settings = createDefaultSettings();
@@ -582,13 +589,24 @@ export class AppState {
   async syncProjectOrdering(pid) { return this._syncOp("syncProjectOrdering", pid); }
   async reconcileSync() { return this._syncOp("reconcileSync"); }
 
-  async updateSettings(partial) {
+  async updateSettings(partial, opts = {}) {
     Object.assign(this.settings, partial);
     if (IS_TAURI) {
       try { await tauriInvoke("save_settings", { settings: this.settings }); }
       catch (e) { console.error("Settings save failed:", e); }
     } else { localStorage.setItem("hush_settings", JSON.stringify(this.settings)); }
     this.emit("settings-changed");
+
+    // Push style changes to `.hush/styles.json` when style-relevant fields
+    // changed and this update didn't originate from a sync apply (which
+    // would loop). Fire-and-forget — the op-log handles retry.
+    if (!opts.fromSync && IS_TAURI && this.settings?.dropboxEnabled
+        && this.settings?.dropboxSyncPath
+        && _isStyleRelevant(partial)) {
+      import("../sync/style-sync.js")
+        .then(m => m.pushStylesToDropbox(this))
+        .catch(e => console.warn("style sync upload failed:", e));
+    }
   }
 
   // Session state persistence

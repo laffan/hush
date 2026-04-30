@@ -89,15 +89,11 @@ export function buildSyncManifest(fileTree) {
         const relPath = parentPath ? `${parentPath}/${node.fileId}` : node.fileId;
         manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: "image" });
       } else if (node.type === "project") {
+        // Project ordering now lives in `.hush/projects.json` rather
+        // than per-folder `.hushproject` files. The folder itself is
+        // still mirrored so child docs land in the right place.
         const dirPath = parentPath ? `${parentPath}/${name}` : name;
         manifest.directories.push(dirPath);
-        const childEntries = (node.children || [])
-          .filter(c => c.type === "document" || c.type === "notebook")
-          .map(c => c.name + extensionForType(c.type));
-        manifest.files.push({
-          nodeId: node.id, fileId: null, relativePath: `${dirPath}/.hushproject`,
-          type: "hushproject", content: JSON.stringify({ ordering: childEntries }, null, 2),
-        });
         if (node.children) walk(node.children, dirPath);
       } else if (node.type === "folder") {
         const dirPath = parentPath ? `${parentPath}/${name}` : name;
@@ -439,6 +435,19 @@ export async function reconcileSync(state) {
       } catch (_) {}
     }
   }
+
+  // Refresh the projects + styles meta files on first sync after a
+  // reconnect. Cheap (one upload each); ensures a brand-new device
+  // ends up with `.hush/*.json` populated even if the user hasn't
+  // touched anything yet this session.
+  try {
+    const { pushProjectsToDropbox } = await import("./project-sync.js");
+    await pushProjectsToDropbox(state);
+  } catch (_) {}
+  try {
+    const { pushStylesToDropbox } = await import("./style-sync.js");
+    await pushStylesToDropbox(state);
+  } catch (_) {}
 }
 
 // Note: `checkDropboxChanges` and `diffDropboxSync` were removed. They've

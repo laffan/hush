@@ -123,14 +123,18 @@ async function syncDropboxCursor(state) {
     },
     onMeta: async (ev) => {
       try {
-        const { isOurRev } = await import("./pane-sync.js");
-        if (isOurRev(ev.rev)) return; // skip our own upload echoing back
+        const { isOurRev } = await import("./meta-sync.js");
+        if (isOurRev(ev.rev)) return; // our own upload echoing back
 
         const filename = ev.relativePath.split("/").pop();
-        if (filename === "panes.json") {
-          await applyRemotePanesPayload(state, ev, dbx);
+        const dispatcher = await getMetaDispatcher(filename);
+        if (!dispatcher) return; // unknown meta file — ignore for forward-compat
+
+        const payload = await dbx.downloadFile(ev.dropboxPath);
+        const result = await dispatcher(state, payload);
+        if (result && (result.matched || result.added || result.applied)) {
+          showSyncIndicator("pulled", `${filename} (${result.matched || 0}/${result.added || 0})`);
         }
-        // Future meta files (workspace.json, etc.) dispatch here.
       } catch (e) {
         console.warn("cursor: meta apply failed:", e);
       }
@@ -291,70 +295,20 @@ async function applyContentChanged(state, ev, dbx, invoke) {
   }
 }
 
-async function applyRemotePanesPayload(state, ev, dbx) {
-  const payload = await dbx.downloadFile(ev.dropboxPath);
-  const { applyRemotePanes, recoverOffscreenPanes } = await import("./pane-sync.js");
-  const { panes } = await import("../pane/pane-state.js");
-  const { suppressPersist } = await import("../pane/pane-persistence.js");
-  // Lazy-import pane-manager: it transitively imports pane-persistence,
-  // which imports us at startup — avoid the cycle by deferring.
-  const { createPane, refreshPaneContextVisibility } = await import("../pane/pane-manager.js");
-
-  // A reasonable default landing spot for newly-arrived panes — left
-  // edge with a small inset. recoverOffscreenPanes will fan them out
-  // afterwards if multiple arrived in the same batch.
-  const DEFAULT_X = 80;
-  const DEFAULT_Y = 100;
-
-  const result = await applyRemotePanes(payload, {
-    panes,
-    suppressPersist,
-    createPaneFn: async (opts) => {
-      try {
-        const pane = await createPane(
-          opts.fileId,
-          opts.fileName || "Untitled",
-          opts.fileType,
-          DEFAULT_X,
-          DEFAULT_Y,
-          { ownerContext: opts.ownerContext, skipFocus: true },
-        );
-        if (!pane) return null;
-        // Apply the cross-device subset that createPane doesn't take.
-        if (opts.attached) {
-          pane.attached = true;
-          const aBtn = pane.el.querySelector(".fp-btn-attach");
-          if (aBtn) aBtn.classList.add("attach-active");
-        }
-        if (opts.pinned) {
-          pane.pinned = true;
-          pane.el.classList.add("pinned");
-          const pBtn = pane.el.querySelector(".fp-btn-pin");
-          if (pBtn) pBtn.classList.add("pin-active");
-        }
-        if (opts.collapsed) {
-          pane._savedHeight = pane.height;
-          pane.el.classList.add("collapsed");
-          pane.el.style.height = "32px";
-          pane.collapsed = true;
-        }
-        if (opts.canvasX != null) pane._canvasX = opts.canvasX;
-        if (opts.canvasY != null) pane._canvasY = opts.canvasY;
-        if (opts.scrollRelY != null) pane._scrollRelY = opts.scrollRelY;
-        if (opts.fontSize != null) pane.fontSize = opts.fontSize;
-        return pane;
-      } catch (e) {
-        console.warn("createPane (from sync) failed:", e);
-        return null;
-      }
-    },
-    recoverOffscreenFn: (added) => recoverOffscreenPanes(added),
-  });
-  // After applying remote panes, hide any whose ownerContext doesn't
-  // match the current view (the existing onContextChange covers this).
-  refreshPaneContextVisibility();
-  if (result.matched || result.added) {
-    showSyncIndicator("pulled", `panes (${result.matched} updated, ${result.added} added)`);
+/** Resolve the dispatcher for a `.hush/<file>` payload. Each meta-file
+ *  module owns its applier; this just maps filename → loader. New meta
+ *  files (workspace.json, etc.) join here. Unknown filenames return null
+ *  for forward-compat: a future device's writes don't crash older clients. */
+async function getMetaDispatcher(filename) {
+  switch (filename) {
+    case "panes.json":
+      return (await import("./pane-sync.js")).applyPanesFile;
+    case "projects.json":
+      return (await import("./project-sync.js")).applyProjectsFile;
+    case "styles.json":
+      return (await import("./style-sync.js")).applyStylesFile;
+    default:
+      return null;
   }
 }
 
