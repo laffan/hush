@@ -159,22 +159,29 @@ export async function startLocalSyncWatcher(state, onChanged) {
     if (state.runtime.localSyncWriteFlag && Date.now() - state.runtime.localSyncWriteFlag < 500) {
       return;
     }
-    // If the currently-open local-sync file changed on disk, reload it
+    // If the currently-open local-sync file changed on disk, reload it.
     if (state.currentLocalSync && state.currentLocalSync.folderId === id) {
       const editedPath = state.currentLocalSync.relPath;
-      const matches = Array.isArray(paths) && paths.some(p => p.endsWith(editedPath));
+      // Match by suffix-with-separator, not bare endsWith — `a/foo.md`
+      // shouldn't match `b/a/foo.md`'s ancestor walk.
+      const matches = Array.isArray(paths) && paths.some(p => {
+        if (p === editedPath) return true;
+        return p.endsWith("/" + editedPath) || p.endsWith("\\" + editedPath);
+      });
       if (matches) {
         readFile(id, editedPath).then((content) => {
-          if (state.editor && state.currentLocalSync && state.currentLocalSync.relPath === editedPath) {
-            // Local-sync paths don't have a Hush fileId; pass the relPath
-            // as the lock key. The pull-lock check uses currentFileId so
-            // this only blocks markDirty when the user is editing this
-            // exact local-sync file (currentFileId is set to the relPath
-            // by openLocalSyncFile).
-            state.acquirePullLock(`localsync:${id}:${editedPath}`);
-            try { state.editor.setContent(content); state.dirty = false; }
-            finally { state.releasePullLock(); }
-          }
+          if (!state.editor || !state.currentLocalSync || state.currentLocalSync.relPath !== editedPath) return;
+          // Skip identical-content events. notify can emit duplicate events
+          // (e.g. metadata-only changes, atomic-write races) and reapplying
+          // identical content would jump the cursor without any user-visible
+          // benefit.
+          if (state.editor.getContent() === content) return;
+          // Local-sync paths don't have a Hush fileId; use a synthetic
+          // lock key. _isPullLockedForCurrent matches it against
+          // state.currentLocalSync so saves are correctly blocked.
+          state.acquirePullLock(`localsync:${id}:${editedPath}`);
+          try { state.editor.setContent(content); state.dirty = false; }
+          finally { state.releasePullLock(); }
         }).catch(() => {});
       }
     }
