@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::sync::SyncedFileInfo;
+use crate::sync::{PendingOp, SyncedFileInfo};
 
 pub struct SyncDb {
     db_path: PathBuf,
@@ -237,6 +237,80 @@ impl SyncDb {
         Ok(())
     }
 
+    // ===== pending_ops =====
+
+    /// Append a pending op. Returns the new row id.
+    pub fn enqueue_op(&self, op: &PendingOp) -> Result<i64, rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.execute(
+            "INSERT INTO pending_ops
+             (kind, internal_id, remote_id, path, new_path, payload, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                op.kind,
+                op.internal_id,
+                op.remote_id,
+                op.path,
+                op.new_path,
+                op.payload,
+                op.created_at,
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Look at the next batch of pending ops in insertion order. Caller is
+    /// responsible for executing them sequentially and reporting outcome
+    /// via `op_succeeded` / `op_failed`.
+    pub fn peek_ops(&self, limit: usize) -> Result<Vec<PendingOp>, rusqlite::Error> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, internal_id, remote_id, path, new_path, payload,
+                    created_at, attempts, last_error
+             FROM pending_ops
+             ORDER BY id ASC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok(PendingOp {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                internal_id: row.get(2)?,
+                remote_id: row.get(3)?,
+                path: row.get(4)?,
+                new_path: row.get(5)?,
+                payload: row.get(6)?,
+                created_at: row.get(7)?,
+                attempts: row.get(8)?,
+                last_error: row.get(9)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn op_succeeded(&self, id: i64) -> Result<(), rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.execute("DELETE FROM pending_ops WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn op_failed(&self, id: i64, error: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.execute(
+            "UPDATE pending_ops
+             SET attempts = attempts + 1, last_error = ?1
+             WHERE id = ?2",
+            params![error, id],
+        )?;
+        Ok(())
+    }
+
+    #[allow(dead_code)] // exposed to UI in a later stage
+    pub fn pending_op_count(&self) -> Result<i64, rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.query_row("SELECT COUNT(*) FROM pending_ops", [], |row| row.get(0))
+    }
+
     // ===== sync_orphans =====
 
     pub fn record_orphan(
@@ -430,6 +504,58 @@ mod tests {
         // JSON should be renamed to .bak
         assert!(!json.exists());
         assert!(dir.path().join("sync_map.json.bak").exists());
+    }
+
+    fn mk_op(kind: &str, path: &str) -> PendingOp {
+        PendingOp {
+            id: 0,
+            kind: kind.into(),
+            internal_id: None,
+            remote_id: None,
+            path: path.into(),
+            new_path: None,
+            payload: None,
+            created_at: 0,
+            attempts: 0,
+            last_error: None,
+        }
+    }
+
+    #[test]
+    fn op_log_enqueue_peek_succeed_drops_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDb::new(dir.path());
+        let id = db.enqueue_op(&mk_op("delete", "x.md")).unwrap();
+        let ops = db.peek_ops(10).unwrap();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].id, id);
+        assert_eq!(ops[0].kind, "delete");
+        db.op_succeeded(id).unwrap();
+        assert_eq!(db.peek_ops(10).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn op_log_failed_increments_attempts_and_keeps_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDb::new(dir.path());
+        let id = db.enqueue_op(&mk_op("upload", "x.md")).unwrap();
+        db.op_failed(id, "network").unwrap();
+        db.op_failed(id, "still down").unwrap();
+        let ops = db.peek_ops(10).unwrap();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].attempts, 2);
+        assert_eq!(ops[0].last_error.as_deref(), Some("still down"));
+    }
+
+    #[test]
+    fn op_log_peek_returns_in_insertion_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDb::new(dir.path());
+        let id_a = db.enqueue_op(&mk_op("rename", "a")).unwrap();
+        let id_b = db.enqueue_op(&mk_op("delete", "b")).unwrap();
+        let id_c = db.enqueue_op(&mk_op("upload", "c")).unwrap();
+        let ops = db.peek_ops(10).unwrap();
+        assert_eq!(ops.iter().map(|o| o.id).collect::<Vec<_>>(), vec![id_a, id_b, id_c]);
     }
 
     #[test]

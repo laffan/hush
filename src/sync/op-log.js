@@ -1,0 +1,337 @@
+/**
+ * Operation log: durable, ordered queue of mutations that need to be
+ * replayed against Dropbox. Replaces the fire-and-forget calls that used
+ * to live in `sync-mutations.js`.
+ *
+ * Why this exists:
+ *   * Survives offline: enqueued ops persist in `sync.db` and replay on
+ *     reconnect.
+ *   * Idempotent: each kind's executor checks remote state and tolerates
+ *     a partially-completed previous attempt without producing duplicates.
+ *   * Serial: one op at a time, in insertion order — guarantees that a
+ *     rename then an upload of the same file can't race.
+ *
+ * The op log is the *only* path mutations should take from this point
+ * forward. Callers in `sync-mutations.js` enqueue and trigger the drain;
+ * this module owns execution.
+ */
+
+const SYNC_FOLDER_ID = "__dropbox_sync__";
+const DRAIN_INTERVAL_MS = 30000; // safety-net retry cadence
+
+let _drainTimer = null;
+let _draining = false;
+let _state = null;
+
+async function tauriInvoke(cmd, args) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke(cmd, args);
+}
+
+function dropboxBasePath(state) {
+  const p = state?.settings?.dropboxSyncPath;
+  if (!p || p === "/") return "";
+  return p;
+}
+
+function fullDbxPath(state, relativePath) {
+  const base = dropboxBasePath(state);
+  return base ? `${base}/${relativePath}` : `/${relativePath}`;
+}
+
+// ===== Public API =====
+
+export async function enqueueRename({ internalId, fromPath, toPath }) {
+  return tauriInvoke("enqueue_sync_op", {
+    kind: "rename",
+    internalId: internalId || null,
+    remoteId: null,
+    path: fromPath,
+    newPath: toPath,
+    payload: null,
+  });
+}
+
+export async function enqueueRenameDir({ fromPath, toPath }) {
+  return tauriInvoke("enqueue_sync_op", {
+    kind: "rename_dir",
+    internalId: null,
+    remoteId: null,
+    path: fromPath,
+    newPath: toPath,
+    payload: null,
+  });
+}
+
+export async function enqueueDelete({ internalId, path }) {
+  return tauriInvoke("enqueue_sync_op", {
+    kind: "delete",
+    internalId: internalId || null,
+    remoteId: null,
+    path,
+    newPath: null,
+    payload: null,
+  });
+}
+
+export async function enqueueDeleteDir({ path }) {
+  return tauriInvoke("enqueue_sync_op", {
+    kind: "delete_dir",
+    internalId: null,
+    remoteId: null,
+    path,
+    newPath: null,
+    payload: null,
+  });
+}
+
+export async function enqueueUpload({ internalId, path }) {
+  return tauriInvoke("enqueue_sync_op", {
+    kind: "upload",
+    internalId,
+    remoteId: null,
+    path,
+    newPath: null,
+    payload: null,
+  });
+}
+
+export async function enqueueCreateFolder({ path }) {
+  return tauriInvoke("enqueue_sync_op", {
+    kind: "create_folder",
+    internalId: null,
+    remoteId: null,
+    path,
+    newPath: null,
+    payload: null,
+  });
+}
+
+/// Upload a fixed payload (e.g. `.hushproject` ordering JSON) — used when
+/// the content isn't backed by a FileManager file.
+export async function enqueueUploadPayload({ path, payload }) {
+  return tauriInvoke("enqueue_sync_op", {
+    kind: "upload_payload",
+    internalId: null,
+    remoteId: null,
+    path,
+    newPath: null,
+    payload,
+  });
+}
+
+// ===== Drain worker lifecycle =====
+
+export function startDrainWorker(state) {
+  _state = state;
+  if (_drainTimer) return;
+  _drainTimer = setInterval(() => drainOnce(state), DRAIN_INTERVAL_MS);
+  drainOnce(state);
+}
+
+export function stopDrainWorker() {
+  if (_drainTimer) clearInterval(_drainTimer);
+  _drainTimer = null;
+  _state = null;
+}
+
+/// Trigger an immediate drain. Safe to call from anywhere; concurrent
+/// triggers collapse into a single in-flight drain via `_draining`.
+export function triggerDrain(state) {
+  drainOnce(state || _state);
+}
+
+async function drainOnce(state) {
+  if (_draining || !state) return;
+  if (!state.settings?.dropboxEnabled || !state.settings?.dropboxSyncPath) return;
+  _draining = true;
+  try {
+    while (true) {
+      const ops = await tauriInvoke("peek_pending_ops", { limit: 1 });
+      if (!ops || ops.length === 0) break;
+      const op = ops[0];
+      try {
+        await executeOp(state, op);
+        await tauriInvoke("pending_op_succeeded", { id: op.id });
+      } catch (e) {
+        const msg = e?.message || String(e);
+        await tauriInvoke("pending_op_failed", { id: op.id, error: msg }).catch(() => {});
+        // Stop draining on failure — most likely network. The interval
+        // (or the next caller-triggered drain) will retry. Leaving the op
+        // at the head means we don't reorder past it.
+        console.warn(`op-log: ${op.kind} failed (will retry):`, msg);
+        break;
+      }
+    }
+  } finally {
+    _draining = false;
+  }
+}
+
+// ===== Op executors =====
+
+async function executeOp(state, op) {
+  const dbx = await import("./dropbox.js");
+  switch (op.kind) {
+    case "rename": return executeRename(state, op, dbx);
+    case "rename_dir": return executeRenameDir(state, op, dbx);
+    case "delete": return executeDelete(state, op, dbx);
+    case "delete_dir": return executeDeleteDir(state, op, dbx);
+    case "upload": return executeUpload(state, op, dbx);
+    case "upload_payload": return executeUploadPayload(state, op, dbx);
+    case "create_folder": return executeCreateFolder(state, op, dbx);
+    default: throw new Error(`unknown op kind: ${op.kind}`);
+  }
+}
+
+async function executeRename(state, op, dbx) {
+  const fromFull = fullDbxPath(state, op.path);
+  const toFull = fullDbxPath(state, op.newPath);
+
+  // Idempotency: if the destination already exists and the source
+  // doesn't, a previous attempt succeeded. Just refresh the map.
+  const [destMeta, srcMeta] = await Promise.all([
+    dbx.getMetadata(toFull).catch(() => null),
+    dbx.getMetadata(fromFull).catch(() => null),
+  ]);
+
+  if (destMeta && !srcMeta) {
+    // Move already happened.
+    if (op.internalId) {
+      await tauriInvoke("rename_sync_file", {
+        folderPath: "__dropbox__",
+        oldRelative: op.path,
+        newRelative: op.newPath,
+        internalId: op.internalId,
+      });
+    }
+    return;
+  }
+
+  if (destMeta && srcMeta) {
+    // Both exist — collision. Refuse to overwrite; leave for the user
+    // (cursor reconciliation in stage 3 will surface this as a conflict).
+    throw new Error(`rename collision: ${op.newPath} already exists`);
+  }
+
+  if (!srcMeta) {
+    // Source gone, destination missing — there's nothing to do. Treat as
+    // success so we don't loop forever on a nonexistent file.
+    return;
+  }
+
+  await dbx.moveEntry(fromFull, toFull);
+  if (op.internalId) {
+    await tauriInvoke("rename_sync_file", {
+      folderPath: "__dropbox__",
+      oldRelative: op.path,
+      newRelative: op.newPath,
+      internalId: op.internalId,
+    });
+  }
+}
+
+async function executeRenameDir(state, op, dbx) {
+  const fromFull = fullDbxPath(state, op.path);
+  const toFull = fullDbxPath(state, op.newPath);
+
+  const [destMeta, srcMeta] = await Promise.all([
+    dbx.getMetadata(toFull).catch(() => null),
+    dbx.getMetadata(fromFull).catch(() => null),
+  ]);
+
+  if (destMeta && !srcMeta) {
+    await tauriInvoke("rename_sync_directory", {
+      folderPath: "__dropbox__",
+      oldRelative: op.path,
+      newRelative: op.newPath,
+      syncFolderId: SYNC_FOLDER_ID,
+    });
+    return;
+  }
+  if (destMeta && srcMeta) {
+    throw new Error(`directory rename collision: ${op.newPath} exists`);
+  }
+  if (!srcMeta) return;
+
+  await dbx.moveEntry(fromFull, toFull);
+  await tauriInvoke("rename_sync_directory", {
+    folderPath: "__dropbox__",
+    oldRelative: op.path,
+    newRelative: op.newPath,
+    syncFolderId: SYNC_FOLDER_ID,
+  });
+}
+
+async function executeDelete(state, op, dbx) {
+  const fullPath = fullDbxPath(state, op.path);
+  try {
+    await dbx.deleteEntry(fullPath);
+  } catch (e) {
+    // If it's already gone, treat as success.
+    const meta = await dbx.getMetadata(fullPath).catch(() => null);
+    if (meta) throw e;
+  }
+  if (op.internalId) {
+    await tauriInvoke("delete_sync_file", {
+      folderPath: "__dropbox__",
+      internalId: op.internalId,
+    }).catch(() => {});
+  }
+}
+
+async function executeDeleteDir(state, op, dbx) {
+  const fullPath = fullDbxPath(state, op.path);
+  try {
+    await dbx.deleteEntry(fullPath);
+  } catch (e) {
+    const meta = await dbx.getMetadata(fullPath).catch(() => null);
+    if (meta) throw e;
+  }
+  await tauriInvoke("delete_sync_directory", {
+    folderPath: "__dropbox__",
+    relativePath: op.path,
+    syncFolderId: SYNC_FOLDER_ID,
+  }).catch(() => {});
+}
+
+async function executeUpload(state, op, dbx) {
+  if (!op.internalId) throw new Error("upload op missing internalId");
+
+  // Re-read content fresh — the latest user edit always wins.
+  const file = await tauriInvoke("load_file", { id: op.internalId }).catch(() => null);
+  if (!file) {
+    // File deleted locally before upload drained. Drop the op silently.
+    return;
+  }
+
+  const fullPath = fullDbxPath(state, op.path);
+  if (op.path.endsWith(".hushnote")) {
+    const { packNotebook } = await import("./notebook-sync.js");
+    const zipData = await packNotebook(file.content);
+    await dbx.uploadBinary(fullPath, zipData);
+  } else {
+    await dbx.uploadFile(fullPath, file.content);
+  }
+
+  await tauriInvoke("register_synced_file", {
+    internalId: op.internalId,
+    syncFolderId: SYNC_FOLDER_ID,
+    relativePath: op.path,
+    content: file.content,
+  });
+}
+
+async function executeUploadPayload(state, op, dbx) {
+  if (op.payload === null || op.payload === undefined) {
+    throw new Error("upload_payload op missing payload");
+  }
+  const fullPath = fullDbxPath(state, op.path);
+  await dbx.uploadFile(fullPath, op.payload);
+}
+
+async function executeCreateFolder(state, op, dbx) {
+  const fullPath = fullDbxPath(state, op.path);
+  // dbx.createFolder() already swallows "already exists" conflicts.
+  await dbx.createFolder(fullPath);
+}

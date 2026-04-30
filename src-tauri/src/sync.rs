@@ -58,6 +58,37 @@ pub struct ExternalChange {
     pub internal_modified: i64,
 }
 
+/// One row in the durable operation log. Mutations from the UI (rename,
+/// delete, upload, etc.) are appended here before being executed against
+/// Dropbox; the JS-side drain worker consumes them in insertion order.
+///
+/// `path` is the operation's primary target — old path for renames,
+/// target path for everything else. `new_path` is set only for renames.
+/// Content for upload ops is *not* stored here; it's re-read from the
+/// FileManager at drain time so the latest user edit always wins.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingOp {
+    #[serde(default)]
+    pub id: i64,
+    pub kind: String,
+    #[serde(default)]
+    pub internal_id: Option<String>,
+    #[serde(default)]
+    pub remote_id: Option<String>,
+    pub path: String,
+    #[serde(default)]
+    pub new_path: Option<String>,
+    #[serde(default)]
+    pub payload: Option<String>,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
+    pub attempts: i32,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncFolderDiff {
@@ -523,6 +554,50 @@ impl SyncManager {
         let hash = Self::hash_bytes(bytes);
         if let Err(e) = self.db.update_hash(internal_id, &hash, now_secs()) {
             eprintln!("sync: update_image_hash failed: {}", e);
+        }
+    }
+
+    // ===== Operation log =====
+
+    /// Append a pending op. The drain worker (JS-side) picks these up in
+    /// insertion order and executes them against Dropbox.
+    pub fn enqueue_op(
+        &self,
+        kind: &str,
+        internal_id: Option<String>,
+        remote_id: Option<String>,
+        path: &str,
+        new_path: Option<String>,
+        payload: Option<String>,
+    ) -> Result<i64, rusqlite::Error> {
+        let op = PendingOp {
+            id: 0,
+            kind: kind.to_string(),
+            internal_id,
+            remote_id,
+            path: path.to_string(),
+            new_path,
+            payload,
+            created_at: now_secs(),
+            attempts: 0,
+            last_error: None,
+        };
+        self.db.enqueue_op(&op)
+    }
+
+    pub fn peek_ops(&self, limit: usize) -> Vec<PendingOp> {
+        self.db.peek_ops(limit).unwrap_or_default()
+    }
+
+    pub fn op_succeeded(&self, id: i64) {
+        if let Err(e) = self.db.op_succeeded(id) {
+            eprintln!("sync: op_succeeded({}) failed: {}", id, e);
+        }
+    }
+
+    pub fn op_failed(&self, id: i64, error: &str) {
+        if let Err(e) = self.db.op_failed(id, error) {
+            eprintln!("sync: op_failed({}) failed: {}", id, e);
         }
     }
 }

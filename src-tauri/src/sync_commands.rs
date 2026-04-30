@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::AppState;
-use crate::sync::{SyncManager, SyncWriteResult, SyncFolderDiff, ImportEntry, SyncedFileInfo, ExternalChange};
+use crate::sync::{SyncManager, SyncWriteResult, SyncFolderDiff, ImportEntry, SyncedFileInfo, ExternalChange, PendingOp};
 
 // ===== Dropbox OAuth =====
 
@@ -377,5 +377,46 @@ pub fn reject_external_change(
         .map_err(|e| e.to_string())?;
     drop(sync_mgr);
     state.sync_manager.lock().unwrap().update_hash(&internal_id, &content, None);
+    Ok(())
+}
+
+// ===== Operation log =====
+
+#[tauri::command]
+pub fn enqueue_sync_op(
+    state: State<AppState>,
+    kind: String,
+    internal_id: Option<String>,
+    remote_id: Option<String>,
+    path: String,
+    new_path: Option<String>,
+    payload: Option<String>,
+) -> Result<i64, String> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .enqueue_op(&kind, internal_id, remote_id, &path, new_path, payload)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn peek_pending_ops(state: State<AppState>, limit: Option<usize>) -> Vec<PendingOp> {
+    state
+        .sync_manager
+        .lock()
+        .unwrap()
+        .peek_ops(limit.unwrap_or(50))
+}
+
+#[tauri::command]
+pub fn pending_op_succeeded(state: State<AppState>, id: i64) -> Result<(), String> {
+    state.sync_manager.lock().unwrap().op_succeeded(id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pending_op_failed(state: State<AppState>, id: i64, error: String) -> Result<(), String> {
+    state.sync_manager.lock().unwrap().op_failed(id, &error);
     Ok(())
 }

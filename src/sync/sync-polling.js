@@ -35,6 +35,8 @@ export function startSyncPolling(state) {
   _startupReconcileDone = false;
   syncPollTimer = setInterval(() => runSyncCycle(state), 10000);
   setTimeout(() => runSyncCycle(state), 500);
+  // Drain any ops queued while sync was paused (or by a previous session).
+  import("./op-log.js").then(({ startDrainWorker }) => startDrainWorker(state));
 }
 
 /** Trigger an immediate sync cycle (e.g. after a file save). */
@@ -53,6 +55,7 @@ export function triggerFullReconcile() {
 
 export function stopSyncPolling() {
   if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+  import("./op-log.js").then(({ stopDrainWorker }) => stopDrainWorker());
 }
 
 async function runSyncCycle(state) {
