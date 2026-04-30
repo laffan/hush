@@ -33,20 +33,15 @@ import { schedulePersist, persistPanesNow, restorePanes as _restorePanes } from 
 import { screenToCanvas, canvasToScreen, startCanvasSync, startScrollSync, stopAttachSync } from "./pane-attach-sync.js";
 import { applyTooltip } from "../tooltips.js";
 
-// Wrap restorePanes to inject the local DOM-builder + context-change handler
-// it needs (avoids a pane-persistence → pane-manager circular import).
-function restorePanes() {
-  return _restorePanes({ buildPaneDOM, onContextChange });
-}
+// Inject local DOM-builder + context handler (avoids pane-persistence → pane-manager cycle).
+const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
 
 // ── SVG icons ─────────────────────────────────────────────────────────
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
 const ICON_ATTACH = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><line x1="5" y1="5.5" x2="5" y2="9"/></svg>`;
 const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
-// Stylised "A" used as the font-size affordance in the pane header.
-const ICON_SIZE = `<svg viewBox="0 0 10 10"><polyline points="2,8 5,2 8,8"/><line x1="3.3" y1="6" x2="6.7" y2="6"/></svg>`;
-// Chevron — points down when expanded, up when collapsed (rotated via CSS).
-const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><polyline points="2.5,4 5,6.5 7.5,4"/></svg>`;
+const ICON_SIZE = `<svg viewBox="0 0 10 10"><polyline points="2,8 5,2 8,8"/><line x1="3.3" y1="6" x2="6.7" y2="6"/></svg>`; // stylised "A"
+const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><polyline points="2.5,4 5,6.5 7.5,4"/></svg>`; // chevron, rotates via CSS
 
 // ── Public API ────────────────────────────────────────────────────────
 
@@ -204,12 +199,9 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   return pane;
 }
 
-/** Re-evaluate which panes should be visible in the current context.
- *  Exposed so the sync layer can refresh visibility after applying
- *  remote panes whose `ownerContext` may not match the current view. */
-export function refreshPaneContextVisibility() {
-  onContextChange();
-}
+/** Public alias of `onContextChange` so the sync layer can re-evaluate
+ *  pane visibility after merging remote panes from another device. */
+export { onContextChange as refreshPaneContextVisibility };
 
 export function closePane(id) {
   const pane = panes.get(id);
