@@ -44,7 +44,7 @@ export function createVersionsPanel(container, state, hidePanel) {
   const searchInput = container.querySelector(".versions-search");
   searchInput.addEventListener("input", () => {
     searchQuery = searchInput.value;
-    applyFilter(container, state);
+    applyFilter(container, state).catch((e) => console.error("Versions filter failed:", e));
   });
 
   // Arrow key navigation
@@ -104,7 +104,12 @@ async function loadSnapshots(container, state) {
 
 function getActiveDocumentId(state) {
   if (state.currentProjectId) return null; // versions not supported for projects yet
+  if (state.currentNotebookFileId) return state.currentNotebookFileId;
   return state.currentFileId;
+}
+
+function isNotebookMode(state) {
+  return !!state.currentNotebookFileId;
 }
 
 function renderEmpty(container, message) {
@@ -114,10 +119,16 @@ function renderEmpty(container, message) {
   }
 }
 
-function applyFilter(container, state) {
+async function applyFilter(container, state) {
   const q = searchQuery.trim().toLowerCase();
   if (!q) {
     filteredSnapshots = currentSnapshots;
+  } else if (isNotebookMode(state)) {
+    const { extractSnapshotText } = await import("./notebook-snapshot-preview.js");
+    filteredSnapshots = currentSnapshots.filter((s) => {
+      const text = extractSnapshotText(s.content || "");
+      return text.toLowerCase().includes(q);
+    });
   } else {
     filteredSnapshots = currentSnapshots.filter(
       (s) => s.content && s.content.toLowerCase().includes(q)
@@ -187,15 +198,20 @@ function showPreview(snap, state) {
   const previewContainer = document.createElement("div");
   previewContainer.className = "version-preview-container";
 
-  const content = document.createElement("div");
-  content.className = "version-preview-content";
-  if (searchQuery.trim()) {
-    content.innerHTML = highlightMatches(snap.content, searchQuery.trim());
+  if (isNotebookMode(state)) {
+    previewContainer.classList.add("version-preview-notebook");
+    renderNotebookPreview(previewContainer, snap, state);
   } else {
-    content.textContent = snap.content;
+    const content = document.createElement("div");
+    content.className = "version-preview-content";
+    if (searchQuery.trim()) {
+      content.innerHTML = highlightMatches(snap.content, searchQuery.trim());
+    } else {
+      content.textContent = snap.content;
+    }
+    previewContainer.appendChild(content);
   }
 
-  previewContainer.appendChild(content);
   previewOverlay.appendChild(previewContainer);
 
   // Restore bar
@@ -215,6 +231,41 @@ function showPreview(snap, state) {
   document.body.appendChild(previewOverlay);
 }
 
+function renderNotebookPreview(container, snap, _state) {
+  const wrap = document.createElement("div");
+  wrap.className = "version-preview-notebook-wrap";
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "version-preview-notebook-canvas";
+  wrap.appendChild(canvas);
+
+  const summary = document.createElement("div");
+  summary.className = "version-preview-notebook-summary";
+  wrap.appendChild(summary);
+
+  container.appendChild(wrap);
+
+  // Defer to next frame so the canvas has its layout dimensions before
+  // we measure it for the offscreen render.
+  requestAnimationFrame(async () => {
+    try {
+      const [{ renderNotebookSnapshotThumbnail }, { getCanvasInstance }] = await Promise.all([
+        import("./notebook-snapshot-preview.js"),
+        import("../notebook/notebook-bridge.js"),
+      ]);
+      const liveCanvas = getCanvasInstance();
+      const stats = renderNotebookSnapshotThumbnail(canvas, snap.content, liveCanvas);
+      const parts = [];
+      parts.push(`${stats.shapeCount} shape${stats.shapeCount === 1 ? "" : "s"}`);
+      if (stats.layerCount) parts.push(`${stats.layerCount} layer${stats.layerCount === 1 ? "" : "s"}`);
+      summary.textContent = parts.join(" · ");
+    } catch (e) {
+      console.error("Notebook snapshot preview failed:", e);
+      summary.textContent = "Preview unavailable";
+    }
+  });
+}
+
 function removePreview() {
   if (previewOverlay) {
     previewOverlay.remove();
@@ -223,10 +274,11 @@ function removePreview() {
 }
 
 async function restoreSnapshot(snap, state) {
-  if (!state.currentFileId) return;
+  const notebook = isNotebookMode(state);
+  const fileId = notebook ? state.currentNotebookFileId : state.currentFileId;
+  if (!fileId) return;
 
   const content = snap.content;
-  const fileId = state.currentFileId;
 
   // Save the snapshot content directly to the backend first
   if (IS_TAURI) {
@@ -238,11 +290,17 @@ async function restoreSnapshot(snap, state) {
     }
   }
 
-  // Close the versions panel, then update the editor
+  // Close the versions panel, then update the active surface
   if (panelState) panelState.emit("hide-panel");
 
-  // Now set the editor content after the panel is closed
-  if (state.editor) {
+  if (notebook) {
+    try {
+      const { reloadNotebookShapes } = await import("../notebook/notebook-bridge.js");
+      await reloadNotebookShapes(content);
+    } catch (e) {
+      console.error("Notebook restore reload failed:", e);
+    }
+  } else if (state.editor) {
     state.editor.setContent(content);
     state.dirty = false;
   }
@@ -295,11 +353,12 @@ function formatTimestamp(unixSeconds) {
 }
 
 function getActiveFileName(state) {
-  if (!state.currentFileId || !state.fileTree) return null;
+  const activeId = state.currentNotebookFileId || state.currentFileId;
+  if (!activeId || !state.fileTree) return null;
   // Search tree for a node with matching fileId
   function searchTree(nodes) {
     for (const node of nodes) {
-      if (node.fileId === state.currentFileId) return node.name;
+      if (node.fileId === activeId) return node.name;
       if (node.children) {
         const found = searchTree(node.children);
         if (found) return found;

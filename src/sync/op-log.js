@@ -305,6 +305,17 @@ async function executeUpload(state, op, dbx) {
     return;
   }
 
+  // Hash gate: if the disk content matches what we last synced, the op
+  // is a no-op. Skip the upload to avoid minting a new Dropbox rev that
+  // other devices would then pull back. The op is still considered
+  // successful so it drains out of the queue.
+  const { sha256Hex, markOurFileRev } = await import("./meta-sync.js");
+  const info = await tauriInvoke("get_sync_file_info", { internalId: op.internalId }).catch(() => null);
+  if (info && info.lastSyncedHash) {
+    const hash = await sha256Hex(file.content);
+    if (hash && hash === info.lastSyncedHash) return;
+  }
+
   const fullPath = fullDbxPath(state, op.path);
   let resp;
   if (op.path.endsWith(".hushnote")) {
@@ -331,6 +342,11 @@ async function executeUpload(state, op, dbx) {
     rev,
     syncedAt,
   });
+
+  // Stash the rev in the per-file recent-revs ring so the cursor can
+  // recognize the echo even after a later push has bumped the
+  // single-slot SQLite `last_known_rev`.
+  markOurFileRev(op.internalId, rev);
 }
 
 async function executeUploadPayload(state, op, dbx) {

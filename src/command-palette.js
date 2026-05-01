@@ -118,6 +118,14 @@ function buildCommands(state) {
       } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
+    { id: "desk-set", label: "Use this file as desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+      action: (s) => {
+        const fileId = s.currentNotebookFileId || s.currentFileId;
+        if (!fileId || s.currentProjectId) return;
+        s.setDesk(fileId);
+      } },
+    { id: "desk-clear", label: "Remove desk", icon: icons.trash, iconViewBox: "0 0 16 16", shortcutKey: null, ctx: "shared",
+      action: (s) => s.setDesk(null) },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("export-current-file") },
     { id: "fullscreen", label: "Toggle fullscreen", icon: null, shortcutKey: "shortcutOpenFullscreen", ctx: "shared",

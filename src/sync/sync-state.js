@@ -9,6 +9,7 @@ import {
   downloadImage,
   insertImageIntoTree,
 } from "./sync-images.js";
+import { sha256Hex, markOurFileRev } from "./meta-sync.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
@@ -300,6 +301,23 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
 // ===== Ongoing Sync Operations =====
 
 /**
+ * Per-fileId upload serializer. Without this, fast autosaves (e.g. a
+ * notebook drawing session that emits 2 s autosaves while each upload
+ * takes >2 s) stack uploads in flight. That stack produces three
+ * downstream bugs: (1) `update_sync_state` runs in completion order
+ * rather than start order, leaving `last_known_rev` lagging the actual
+ * Dropbox state; (2) the cursor poll then sees a "different rev" for
+ * our own write and treats it as an external change → destructive
+ * notebook reload; (3) network bandwidth is wasted re-uploading content
+ * that's already stale. Per-file serialization fixes all three with a
+ * one-slot pending queue: while one upload is in flight, the next call
+ * replaces a single pending payload, and that payload fires when the
+ * in-flight upload's rev has been recorded.
+ */
+const _inflightUploads = new Map();   // fileId → Promise
+const _pendingUploads = new Map();    // fileId → { state, content }
+
+/**
  * Push a single file's content to Dropbox after an edit.
  *
  * The cursor consumer is the only path for *pulling* remote changes, so
@@ -311,14 +329,47 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
  * our upload overwrites it. Concurrent edits from different devices are
  * recoverable from the Versions panel.
  */
-export async function syncFileToExternal(state, fileId, content) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
-  const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return;
+export function syncFileToExternal(state, fileId, content) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return Promise.resolve();
+  if (!state.settings.dropboxSyncPath) return Promise.resolve();
 
+  // If an upload for this file is already running, stash the latest
+  // content as the next-up. Repeated calls during the in-flight window
+  // collapse into a single pending slot — the most recent content wins.
+  if (_inflightUploads.has(fileId)) {
+    _pendingUploads.set(fileId, { state, content });
+    return _inflightUploads.get(fileId);
+  }
+
+  const p = _runUpload(state, fileId, content).finally(() => {
+    _inflightUploads.delete(fileId);
+    const pending = _pendingUploads.get(fileId);
+    if (pending) {
+      _pendingUploads.delete(fileId);
+      // Fire the pending upload through the same path so the slot can
+      // refill again if more saves arrived during this run.
+      syncFileToExternal(pending.state, fileId, pending.content);
+    }
+  });
+  _inflightUploads.set(fileId, p);
+  return p;
+}
+
+async function _runUpload(state, fileId, content) {
+  const dropboxPath = state.settings.dropboxSyncPath;
   try {
     const info = await tauriInvoke("get_sync_file_info", { internalId: fileId });
     if (!info) return;
+
+    // Hash gate: skip the upload entirely when local content matches
+    // what we last pushed for this file. Backstops project mode (where
+    // `saveProjectContent` re-pushes every doc in the project on every
+    // save) and any future caller that hands us unchanged content. The
+    // cursor still has the right rev because we don't mint a new one.
+    const localHash = await sha256Hex(content);
+    if (localHash && info.lastSyncedHash && localHash === info.lastSyncedHash) {
+      return;
+    }
 
     const dbx = await import("./dropbox.js");
     const basePath = dropboxPath === "/" ? "" : dropboxPath;
@@ -333,6 +384,11 @@ export async function syncFileToExternal(state, fileId, content) {
       rev: uploadResp?.rev || "",
       syncedAt: uploadedAt,
     });
+
+    // Stash the rev in the per-file recent-revs ring so the cursor's
+    // echo-suppression survives the rev-race even when a later push
+    // overwrites the SQLite `last_known_rev`.
+    markOurFileRev(fileId, uploadResp?.rev || "");
   } catch (e) {
     console.error("Sync write failed:", e);
   }

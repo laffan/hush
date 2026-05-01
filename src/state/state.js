@@ -580,8 +580,9 @@ export class AppState {
     }
   }
 
-  // ===== Sync Operations (delegated to sync-state.js) =====
-  async _syncOp(fn, ...args) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...args); }
+  // ===== Desk + Sync Operations (delegated to sibling modules) =====
+  async setDesk(fileId) { const m = await import("./state-desk.js"); return m.setDesk(this, fileId); }
+  async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
   async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }
   async syncDeleteNode(nid) { return this._syncOp("syncDeleteNode", nid); }
@@ -683,18 +684,12 @@ export class AppState {
   }
 
   // Event system
-  on(event, fn) {
-    if (!this._listeners[event]) this._listeners[event] = [];
-    this._listeners[event].push(fn);
-  }
-
+  on(event, fn) { (this._listeners[event] ||= []).push(fn); }
   off(event, fn) {
     if (!this._listeners[event]) return;
     this._listeners[event] = this._listeners[event].filter((f) => f !== fn);
   }
-
   emit(event, data) {
-    if (!this._listeners[event]) return;
-    this._listeners[event].forEach((fn) => fn(data));
+    if (this._listeners[event]) this._listeners[event].forEach((fn) => fn(data));
   }
 }

@@ -171,6 +171,7 @@ async function continueAndProcess(state, dbx, base, cursor, handlers, count) {
 
 async function processEntries(state, entries, base, handlers) {
   const baseLower = base.toLowerCase();
+  const { wasOurFileRev } = await import("./meta-sync.js");
 
   for (const entry of entries) {
     const tag = entry[".tag"];
@@ -241,8 +242,15 @@ async function processEntries(state, entries, base, handlers) {
       continue;
     }
 
-    // Echo suppression: this rev is one we wrote ourselves.
-    if (entry.rev && info.lastKnownRev && info.lastKnownRev === entry.rev) {
+    // Echo suppression: this rev is one we wrote ourselves. The
+    // SQLite-backed `lastKnownRev` is one slot — fast successive pushes
+    // bump it past the rev Dropbox eventually reports back. The
+    // per-file ring (populated in `_runUpload` and `executeUpload`)
+    // covers the recent-history gap.
+    if (entry.rev && (
+      (info.lastKnownRev && info.lastKnownRev === entry.rev) ||
+      wasOurFileRev(info.internalId, entry.rev)
+    )) {
       continue;
     }
 

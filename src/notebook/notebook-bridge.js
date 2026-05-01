@@ -8,6 +8,12 @@ let currentNotebookFileId = null;
 let notebookDirty = false;
 let _appState = null;
 let _mainDragCleanup = null;
+/** Last content we successfully wrote to disk for the open notebook.
+ *  Compared byte-for-byte against incoming sync-reload payloads so an
+ *  echoed pull (Dropbox cursor reporting our own write back to us) is
+ *  a no-op rather than a destructive `loadShapes` that re-IDs every
+ *  stroke and clobbers the engine's selection / undo state. */
+let _lastSavedContent = null;
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -30,6 +36,7 @@ export async function mountNotebook(container, fileId, state) {
 
   currentNotebookFileId = fileId;
   notebookDirty = false;
+  _lastSavedContent = null;
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
   const { NotesCanvas } = await import("./notes-canvas.ts");
@@ -258,6 +265,12 @@ export async function saveNotebook() {
   try {
     if (IS_TAURI) {
       await tauriInvoke("save_file", { id: currentNotebookFileId, content });
+      _lastSavedContent = content;
+      // Mirror the doc-side cadence: snapshot every successful autosave
+      // write. The backend's decay rules (snapshots.rs) keep volume bounded
+      // and the JSON envelope is what restore consumes.
+      try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
+      catch (e) { console.error("Notebook snapshot failed:", e); }
       return { fileId: currentNotebookFileId, content };
     }
   } catch (e) {
@@ -319,12 +332,18 @@ export function getCurrentNotebookFileId() {
  */
 export async function reloadNotebookShapes(jsonContent) {
   if (!canvasInstance) return;
+  // Echo guard: if the incoming pull is byte-identical to what we last
+  // wrote to disk, it's our own upload coming back through the cursor.
+  // Skipping avoids a destructive `loadShapes` (undo wipe + engine
+  // stroke-id churn) for a no-op change.
+  if (jsonContent === _lastSavedContent) return;
   try {
     const { decodeNotebookContent } = await import("./notebook-content.ts");
     const snapshot = decodeNotebookContent(jsonContent);
     if (snapshot) {
       canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
       canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
+      _lastSavedContent = jsonContent;
       notebookDirty = false;
     }
   } catch (e) {

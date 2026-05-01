@@ -32,6 +32,10 @@ export function createDefaultSettings() {
     // App-wide saved text-style presets for notebook text shapes.
     // Each entry: { id, color, backgroundColor, fontSize }.
     notebookTextStyles: [],
+    // "Desk" — pinned doc or notebook fileId surfaced as a thumbnail at
+    // the bottom of the files panel. Synced via `.hush/desk.json`. Null
+    // when no desk is assigned.
+    deskFileId: null,
     // Shortcuts — General
     shortcutOpenEditor: "CmdOrCtrl+Shift+H",
     shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",

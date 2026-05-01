@@ -97,10 +97,12 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── files-panel.js
 │   ├── files-panel-shared.js          (icons + escapers + hover handlers)
 │   ├── files-panel-local-sync.js      (Local Sync subtree rendering)
+│   ├── desk-thumbnail.js              (pinned thumbnail at the panel bottom)
 │   ├── styles-panel.js
 │   ├── styles-panel-shared.js         (escapers + theme color maps)
 │   ├── style-modal.js                 (two-column edit modal)
 │   ├── versions-panel.js
+│   ├── notebook-snapshot-preview.js   (snapshot thumbnails for notebooks)
 │   └── sortable-list/
 │       ├── sortable-list.js
 │       ├── rendering.js
@@ -181,7 +183,7 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Loaded as a sid
 - `localSyncWriteFlag` — short-lived timestamp set when Hush writes to a Local Sync file; the watcher uses it to suppress its own echo within ~500 ms.
 - `syncPulling` — true while a sync layer (Dropbox poll, Local Sync watcher, pane sync) is pushing remote content into the editor; suppresses `markDirty` so the pull doesn't re-trigger an upload.
 
-Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`, `zen-focus-changed`.
+Key events: `mode-changed`, `fullscreen-changed`, `files-changed`, `file-opened`, `settings-changed`, `theme-changed`, `style-changed`, `style-preview`, `style-preview-end`, `show-files-panel`, `hide-panel`, `show-styles-panel`, `show-ratchet-dropdown`, `show-versions-panel`, `export-current-file`, `notebook-open`, `notebook-unmount`, `notebook-autosave`, `doc-content-changed`, `notebook-shapes-changed`, `desk-changed`, `zen-focus-changed`.
 
 **Notebook state:** When a notebook is open, `currentNotebookFileId` is set and `currentFileId` / `currentProjectId` are null. The notebook canvas has its own `DrawingState` (in `src/notebook/state.ts`), managed by `notebook-bridge.js`. See [README-NOTEBOOK.md](README-NOTEBOOK.md) for details and [README-DRAWING.md](README-DRAWING.md) for the freehand drawing layer and its engine/shim architecture.
 
@@ -276,6 +278,8 @@ Four icon-only "New" buttons (Doc, Notebook, Folder, Project) at the top; the bu
 
 **Local Sync rendering** lives in `files-panel-local-sync.js`. The mounted-folder subtrees render outside the SortableList because their content comes from disk (lazy-expanded via `local_sync_read_dir`). Shared icons / escapers / hover-handlers live in `files-panel-shared.js` so both files can use them without a circular import.
 
+**Desk thumbnail** (`sidebar/desk-thumbnail.js`) is a pinned card at the bottom of the panel-overlay showing the doc or notebook in `settings.deskFileId`. It's `position: absolute; bottom: 0` inside the fixed `#panel-overlay`, so the file list scrolls behind it without lifting it off the bottom edge. Click opens the file via `openFile` / `openNotebook`. The thumbnail re-renders on `desk-changed` and `files-changed`, plus a 2.5 s-debounced refresh on `doc-content-changed` / `notebook-shapes-changed` for the desk file (the delay lets the 2 s autosave land before we re-read from disk). For docs, the body shows a markdown-stripped text preview clamped to six lines via `previewSnippet`. For notebooks, it reuses `renderNotebookSnapshotThumbnail` from the Versions panel work, threaded through the live `NotesCanvas`'s theme/font/imageCache so the thumbnail visually matches the open notebook. Assignment and clear flow through two command-palette entries: **Use this file as desk** and **Remove desk**, both calling `state.setDesk(fileId | null)` (delegated to `state/state-desk.js`). Cross-device sync rides `.hush/desk.json`: the wire format carries Dropbox's cross-device-stable `remote_id` (resolved at upload via `get_sync_file_info`, resolved at apply via `find_synced_file_by_remote_id`) plus the file type. Local-Sync-only files have no `remote_id`, so they keep the desk slot locally but skip the upload.
+
 ### Sortable List (`sidebar/sortable-list/`)
 
 Drag-and-drop nested list engine (5 modules):
@@ -302,7 +306,11 @@ Right-side panel showing document structure. Parses headings and flagged items f
 
 ### Versions Panel (`sidebar/versions-panel.js`)
 
-Document snapshot history viewer. Shows timestamped snapshots with content preview. One-click restore to revert to a previous version. Backend storage via `snapshots.rs`.
+Snapshot history viewer for both docs and notebooks. Shows timestamped snapshots and a one-click restore. Backend storage via `snapshots.rs` — the `snapshots` table is keyed by `document_id` + free-form `content` text, so notebook JSON envelopes drop into the same store as doc markdown without a schema change.
+
+**Doc mode.** Snapshot creation is driven by `state.js::trackKeystroke()` (every 30 dirty keystrokes) plus `createManualSnapshot`. The preview is the snapshot text, with search-match highlighting; restore writes through `save_file` and re-seeds the editor via `editor.setContent`.
+
+**Notebook mode.** Snapshot creation rides the existing 2 s notebook autosave: after a successful `save_file` in `notebook-bridge.js::saveNotebook()`, the bridge calls `create_snapshot` with the same JSON content. Search filters by the concatenated text-shape bodies (extracted by `extractSnapshotText` in `sidebar/notebook-snapshot-preview.js`). Preview is a thumbnail rendered from the JSON envelope: `notebook-snapshot-preview.js` decodes the envelope, fits a camera to the content bbox, and calls `renderForExport` (with the live notebook's theme/font/imageCache so it visually matches what the user sees). Drawing strokes are approximated as polylines because the bake-engine canvas only exists for the live notebook — fine for a thumbnail. Restore writes through `save_file` then calls `reloadNotebookShapes` on the bridge so the open canvas re-seeds without remounting.
 
 ### Focus Mode (`editor/plugins/focus-mode.js`)
 
@@ -501,7 +509,11 @@ Full-library Dropbox synchronization. All documents, folders, and projects are m
 
 **Outbound (UI → Dropbox).** Renames, deletes, file creations, and folder creations enqueue rows in `pending_ops` instead of calling Dropbox directly. The drain worker (`op-log.js`) executes them serially in insertion order with idempotent semantics — each executor calls `getMetadata` at the destination first so a partially-completed previous attempt collapses to success without producing a duplicate. Ops outlive offline windows. Per-edit content uploads go through `syncFileToExternal` (a single `uploadFile` call); the response's `rev` is recorded as `last_known_rev`.
 
-**Inbound (Dropbox → UI).** A single `pullDropboxCursor` call (`dropbox-cursor.js`) drives `/2/files/list_folder/continue` to get only the entries that changed since the last cursor. Events are matched by Dropbox's stable `id` (which doesn't change on rename), so a remote rename is reported as one event with the old `id` and a new `path_display` — we update the path in the sync map without creating a duplicate internal file. Cursor expiry (>90 days or server-side reset) is detected as a 409 with `reset` and triggers a clean reseed. Echo suppression: events whose `rev` matches our recorded `last_known_rev` are skipped silently — these are our own writes coming back. Polling cadence is 10 seconds.
+**Push gates.** Three layers of "don't push unchanged content" sit on every outbound write so a no-op autosave can't mint a fresh Dropbox rev that other devices would then pull back: (1) `_runUpload` in `sync-state.js` and `executeUpload` in `op-log.js` SHA-256 the local content and compare against `SyncedFileInfo.lastSyncedHash`, returning early on equality. (2) `enqueueMetaUpload` in `meta-sync.js` keeps a per-filename hash of the last enqueued payload (`panes.json`, `projects.json`, `styles.json`, `desk.json`) and drops identical re-enqueues. (3) The hashing helper `sha256Hex` matches the Rust `SyncedFileInfo.last_synced_hash` format (lowercase hex over UTF-8 bytes) so the two sides compare directly without an extra Tauri round-trip.
+
+**Inbound (Dropbox → UI).** A single `pullDropboxCursor` call (`dropbox-cursor.js`) drives `/2/files/list_folder/continue` to get only the entries that changed since the last cursor. Events are matched by Dropbox's stable `id` (which doesn't change on rename), so a remote rename is reported as one event with the old `id` and a new `path_display` — we update the path in the sync map without creating a duplicate internal file. Cursor expiry (>90 days or server-side reset) is detected as a 409 with `reset` and triggers a clean reseed. Polling cadence is 10 seconds.
+
+**Echo suppression.** Two layers protect against pulling our own writes back. The SQLite-backed `last_known_rev` is the per-file slot updated on every successful upload — most echoes match against it. But that slot is single-valued, and a fast type → push → type → push sequence can bump it past the rev Dropbox eventually reports back (Dropbox's index is eventually-consistent; the cursor delta can carry the older rev after a newer one has overwritten the slot). The recent-revs ring in `meta-sync.js::markOurFileRev` / `wasOurFileRev` keeps the last 16 revs we wrote per file, and `dropbox-cursor.js::processEntries` accepts a match against either source as our own write. Meta files (`.hush/*.json`) use the parallel global `markOurRev` / `isOurRev` ring since they aren't tracked in `synced_files`.
 
 **Editor pull lock.** `state.acquirePullLock(fileId)` is held across the full async pull (download + persist + setContent), not just the synchronous edit. While the lock is held for the editor's current file, both `markDirty` and `saveCurrentFile` bail — a keystroke or autosave during the pull window can't upload a pre-pull buffer back over what just arrived. Other files save freely.
 

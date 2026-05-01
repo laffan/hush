@@ -380,3 +380,67 @@
 .tree-delete-confirm:hover {
   background: rgba(220, 50, 50, 0.25) !important;
 }
+
+/* ===== Desk thumbnail ===== */
+/* Pinned to the bottom of the panel-overlay (which is position: fixed,
+   so absolute children sit relative to its viewport box and do not
+   scroll with the file list). The list scrolls behind it via the
+   bottom padding added to .tree-list-root when a desk is present. */
+.desk-thumbnail {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  height: 120px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--theme-bg, var(--bg));
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.desk-thumbnail:hover {
+  background: rgba(128, 128, 128, 0.08);
+  border-color: var(--fg);
+}
+
+.desk-thumbnail:focus-visible {
+  outline: none;
+  border-color: var(--fg);
+}
+
+.desk-thumbnail-body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.desk-thumbnail-text {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg);
+  font-family: var(--font-family, "Source Sans Pro", sans-serif);
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+
+.desk-thumbnail-canvas {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 4px;
+}
