@@ -1732,18 +1732,43 @@ export class DrawingState extends EventTarget {
 
   /** Pan so `shapeId` is centered in the visible viewport.
    *  `offsetLeft` / `offsetRight` reserve screen space for inset chrome
-   *  (sidebar / shelf). Defaults pick up the state's current leftInset. */
+   *  (sidebar / shelf). Defaults pick up the state's current leftInset.
+   *  When the chrome would consume most of the canvas (a narrow pane
+   *  with the shelf open), the offsets are dropped so the shape lands
+   *  somewhere visible instead of being squeezed under the shelf. */
   focusShape(shapeId: string, offsetLeft?: number, offsetRight = 0) {
     const shape = this.shapes.find((s) => s.id === shapeId);
     if (!shape) return;
     const bounds = getShapeBounds(shape, this.fontFamily);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
-    const left = offsetLeft ?? this.leftInset;
-    const w = this.canvasEl?.clientWidth || window.innerWidth;
-    const h = this.canvasEl?.clientHeight || window.innerHeight;
+    const requestedLeft = offsetLeft ?? this.leftInset;
+    // Prefer getBoundingClientRect — clientWidth misses sub-pixel layout
+    // and stays at zero longer when the canvas is freshly mounted in a
+    // pane that hasn't taken its first paint yet.
+    let w = 0, h = 0;
+    if (this.canvasEl) {
+      const r = this.canvasEl.getBoundingClientRect();
+      w = Math.round(r.width);
+      h = Math.round(r.height);
+    }
+    if (w <= 0) w = window.innerWidth;
+    if (h <= 0) h = window.innerHeight;
+
+    // If the requested chrome eats more than two-thirds of the canvas,
+    // fall back to centering inside the bare canvas — better to put the
+    // shape behind a sliver of shelf than to pan it off-screen entirely
+    // (the failure mode users hit when the shelf is open inside a
+    // narrow notebook pane).
+    let left = requestedLeft;
+    let right = offsetRight;
+    if (left + right > w * 0.66) {
+      left = 0;
+      right = 0;
+    }
+
     const zoom = this.camera.zoom;
     this.camera = {
-      x: (left + w - offsetRight) / 2 - cx * zoom,
+      x: (left + w - right) / 2 - cx * zoom,
       y: h / 2 - cy * zoom,
       zoom,
     };
