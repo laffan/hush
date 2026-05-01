@@ -106,8 +106,16 @@ function buildCommands(state) {
       action: (s) => s.emit("toggle-left-panel") },
     { id: "styles", label: "Styles", icon: icons.styles, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-styles-panel") },
-    { id: "zotero", label: "Insert reference", icon: icons.zotero, shortcutKey: "shortcutZotero", ctx: "shared",
-      action: async (s) => { if (s.editor) { const { openZoteroModal } = await import("./zotero.js"); openZoteroModal(s.editor.view, s); } } },
+    { id: "zotero", label: "Zotero: Insert reference", icon: icons.zotero, shortcutKey: "shortcutZotero", ctx: "shared",
+      action: async (s) => {
+        const { openZoteroModal } = await import("./zotero.js");
+        openZoteroModal(s.editor ? s.editor.view : null, s);
+      } },
+    { id: "zotero-highlights", label: "Zotero: Create highlight browser", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const { openZoteroHighlightPane } = await import("./zotero/highlight-pane.js");
+        openZoteroHighlightPane(s);
+      } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",

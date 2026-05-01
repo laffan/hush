@@ -107,13 +107,11 @@ function onContextChange() {
     }
     if (pane.ownerContext === ctx) {
       pane.el.style.display = "";
-      // Restart attach sync if needed (was stopped when hidden)
       if (pane.attached && !pane._syncFrame && !pane._scrollHandler) {
         if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
       }
     } else {
-      // Hide and deactivate
       pane.el.style.display = "none";
       if (pane.attached) stopAttachSync(pane);
       if (activePaneId === pane.id) {
@@ -179,13 +177,14 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     // the document area.
     x: clampPaneAxis(x - DEFAULT_WIDTH / 2, DEFAULT_WIDTH, window.innerWidth),
     y: clampPaneAxis(y - TITLEBAR_HEIGHT / 2, DEFAULT_HEIGHT, window.innerHeight),
-    // Owner context: which doc/notebook/project was active when pane was created
-    ownerContext: opts.ownerContext || getCurrentContext(),
+    // Owner context: doc/notebook/project active at creation. Nullish-coalesce so callers can pass "" to opt out (zotero panes).
+    ownerContext: opts.ownerContext ?? getCurrentContext(),
     // Local Sync coordinates — present only for panes backed by a
     // mounted-folder file. `{ folderId, relPath }`. The load/save path
     // branches on this to hit local_sync_read_file / local_sync_write_file
     // instead of the internal file store.
     localSync: opts.localSync || null,
+    zotero: opts.zotero || null,
   };
 
   buildPaneDOM(pane);
@@ -435,7 +434,7 @@ function buildPaneDOM(pane) {
   const titleLink = document.createElement("span");
   titleLink.className = "fp-title-link";
   titleLink.textContent = pane.fileName;
-  titleLink.addEventListener("click", (e) => { e.stopPropagation(); pane.fileType === "notebook" ? appState.openNotebook(pane.fileId) : appState.openFile(pane.fileId); });
+  titleLink.addEventListener("click", (e) => { if (pane.fileType === "zotero-highlights") return; e.stopPropagation(); pane.fileType === "notebook" ? appState.openNotebook(pane.fileId) : appState.openFile(pane.fileId); });
   title.appendChild(titleLink);
   // Word-count chip (doc panes only) — sits next to the title and is
   // populated by pane-content.js's updatePaneWordCount on every doc
@@ -458,7 +457,7 @@ function buildPaneDOM(pane) {
   // (host doc, pane file) so the same pane opened in another document
   // keeps its own size. Notebook panes have no text size to adjust, so
   // this button is doc-only.
-  if (pane.fileType !== "notebook") {
+  if (pane.fileType !== "notebook" && pane.fileType !== "zotero-highlights") {
     const sizeBtn = makeBtn("size", ICON_SIZE, "Pane font size");
     sizeBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePaneSizePopover(pane, sizeBtn, schedulePersist); });
     buttons.appendChild(sizeBtn);
@@ -696,5 +695,3 @@ export function saveAllPanes() {
     savePaneContent(pane);
   }
 }
-
-// ── Content sync (pane ↔ main editor) ─────────────────────────────────

@@ -113,9 +113,15 @@ The command palette is context-sensitive. When a notebook is open:
 - **Shown**: New document, New notebook, Files, Styles, Versions, Export, Toggle fullscreen, Settings, **Open shelf**, **Start brainstorm**, **Insert Reference** (Zotero)
 - **Hidden**: Ratchet mode, Private mode, Typewriter mode, Show repeats, Highlight sentence, Outline view, Word count
 
-### Zotero in text shapes
+### Zotero references on the canvas
 
-Insert Reference (Zotero search) works inside notebook text shapes. `ui/text-editor.ts` exposes a `suspendCommitOnBlur()` / `resumeCommitOnBlur()` pair and an `insertAtSelection(text)` method; the Zotero search modal calls the suspend hook when it opens, remembers the active text-editor instance, and routes the selected citation back through `insertAtSelection()` before resuming blur-commit. Without this handshake the modal's focus change was committing the text shape and unmounting the editor before the citation could land.
+Insert Reference (Zotero search) supports three notebook contexts and is routed by `resolveInsertContext()` in `src/zotero.js`:
+
+- **Active text-shape edit.** The modal captures the inline-editor handle on open (via `getActiveNotebookTextEditor()`), suspends the textarea's commit-on-blur, and routes the citation back through `TextEditor.insertAtSelection()` before resuming. Without this handshake the modal's focus change would commit the text shape and unmount the editor before the citation could land. `ui/text-editor.ts` exposes `suspendCommitOnBlur()` / `resumeCommitOnBlur()` / `insertAtSelection(text)` for this dance.
+- **No active edit.** When invoked with no text-shape edit in flight, the modal drops a new `TextShape` containing the citation at the canvas viewport centre. `state.currentNotebookFileId` takes priority over the (always-mounted, hidden) CodeMirror view in the resolver — without that check, notebook inserts were silently routing into the hidden doc.
+- **PDF snapshots.** When a PDF attachment is selected, the detail panel exposes an **Insert snapshot** checkbox plus a page selector. Picking the option downloads the PDF, rasterizes the chosen page to a WebP data URL at the configured render height, and adds an `ImageShape` flush to the right of the text shape (or side-by-side with a fresh `TextShape` in the no-edit case). The data URL lives only on the canvas — it does **not** populate the global Images folder, since the binary already round-trips inside the notebook's JSON envelope. A Cmd-drag from the canvas into a doc still promotes the shape to a global image via the existing `text-drag.js` flow.
+
+PDF.js (`pdfjs-dist`) is lazy-loaded by `src/zotero-snapshot.js` so the worker bundle is only paid for by users who actually use the snapshot feature. The PDF binary itself is fetched server-side via the `download_zotero_pdf` Rust command (Zotero's `/file` endpoint redirects to a presigned S3 URL whose CORS policy rejects the webview's `null` origin) and cached at `{data_dir}/zotero_pdfs/{itemKey}.pdf` for instant re-renders of other pages without re-downloading. Render height, display height, and WebP quality are all on the Zotero settings tab.
 
 ### Drag and drop
 

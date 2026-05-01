@@ -62,6 +62,18 @@ export function persistPanesNow() {
       // (ownerContext, fileId) pair, so the same file opened as a pane
       // in another doc is unaffected.
       fontSize: typeof p.fontSize === "number" ? p.fontSize : null,
+      // Zotero highlight pane: persist the chosen attachment so the pane
+      // restores straight into the annotations view. When unset, the
+      // restored pane re-enters its search step.
+      zotero: p.zotero
+        ? {
+            itemKey: p.zotero.itemKey || null,
+            attKey: p.zotero.attKey || null,
+            title: p.zotero.title || "",
+            authors: p.zotero.authors || "",
+            year: p.zotero.year || "",
+          }
+        : null,
     });
   }
   appState.updateSettings({ persistedPanes: serialized });
@@ -93,7 +105,12 @@ export async function restorePanes(deps) {
     // if the user removed the mount while the app was closed, drop the
     // pane. Otherwise the fileName saved at persist time is fine.
     let resolvedName = s.fileName || "Untitled";
-    if (s.localSync) {
+    if (s.fileType === "zotero-highlights") {
+      // No backing tree node — the persisted name is authoritative.
+      // Falls back to a placeholder; the pane refines its title once
+      // the attachment-mode UI mounts.
+      resolvedName = s.zotero?.title || s.fileName || "Zotero highlights";
+    } else if (s.localSync) {
       const folders = appState.settings?.localSyncFolders || [];
       const stillMounted = folders.some((f) => f.id === s.localSync.folderId);
       if (!stillMounted) continue;
@@ -124,6 +141,7 @@ export async function restorePanes(deps) {
       ownerContext: s.ownerContext || "",
       localSync: s.localSync || null,
       fontSize: typeof s.fontSize === "number" ? s.fontSize : null,
+      zotero: s.zotero ? { ...s.zotero } : null,
     };
     if (s.canvasX != null) pane._canvasX = s.canvasX;
     if (s.canvasY != null) pane._canvasY = s.canvasY;

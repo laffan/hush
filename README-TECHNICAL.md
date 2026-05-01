@@ -17,6 +17,10 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 ├── themes.js                          │   ├── local_sync.rs
 ├── tauri-bridge.js                    │   ├── window.rs
 ├── zotero.js                          │   └── zotero.rs
+├── zotero-snapshot.js                  │
+├── zotero-annotations.js              │
+├── zotero/                            │
+│   └── highlight-pane.js              │
 │                                      ├── settings.rs
 │                                      │   └── defaults.rs
 │                                      ├── files.rs
@@ -424,7 +428,7 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 
 **`pane-persistence.js`** — Serialise the open pane set into `AppSettings.persistedPanes` on a 300 ms debounce; restore on app start. `restorePanes` takes `buildPaneDOM` + `onContextChange` callbacks as deps so it doesn't have to import pane-manager.js (which would be circular).
 
-**Pane object:** `{ id, fileId, fileName, fileType, collapsed, attached, pinned, dirty, editor, notebook, el, width, height, x, y, ownerContext }`.
+**Pane object:** `{ id, fileId, fileName, fileType, collapsed, attached, pinned, dirty, editor, notebook, el, width, height, x, y, ownerContext, localSync, zotero }`. `fileType` is one of `"document"`, `"notebook"`, or `"zotero-highlights"`. The third type is a fileless pane (no underlying tree node, no `editor` / `notebook` instance) used by the Zotero highlight browser; the `zotero` field carries `{ itemKey, attKey, title, authors, year }` once the user has chosen an attachment. See "Highlight browser pane" under Zotero Integration for the load / persist branches.
 
 **Attach vs Pin:**
 
@@ -443,11 +447,47 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 
 **Drag-from-sidebar integration:** `sortable-list/drag-drop.js` has an `onDragOutside(item, x, y)` callback. In `finishDrag`, the callback fires instead of the normal reorder drop when the pointer is right of the panel overlay AND either Cmd/Ctrl is held OR `forceDragOutside(item)` returns true. `files-panel.js` uses the modifier path for documents and notebooks (creating a floating pane via `createPane()`) and `forceDragOutside` for image rows so they escape the panel without a modifier — `onDragOutside` then calls `dropSidebarImageAt` in `pane/text-drag.js` to insert markdown into the editor or add an `ImageShape` to the notebook under the pointer. `canDropIntoParent` also runs `canDrop` for sibling reorders and root-level drops (not just "drop into" targets), which is how the images-stay-in-Images rule is enforced.
 
-### Zotero Integration (`zotero.js`)
+### Zotero Integration (`zotero.js`, `zotero-snapshot.js`, `zotero-annotations.js`, `zotero/highlight-pane.js`)
 
-Citation management. Connects to Zotero API with user key, downloads references with progress tracking, caches locally. Search modal for finding and inserting citations.
+Citation management plus a highlight browser pane. Connects to the Zotero Web API with a user key, downloads references (and their attachments) with progress tracking, caches the result locally. The shared fuzzy search (`fuzzySearch` in `zotero.js`) is matched against title / shortTitle / authors / year / item key.
 
-**Notebook text shapes.** Insert Reference now works inside notebook text shapes. Previously, opening the search modal blurred the inline textarea overlay (`notebook/ui/text-editor.ts`), which committed the shape and tore down the editor before the citation could be inserted. The fix captures the active text-shape editor (and its selection range) at the moment the search is triggered, suppresses the commit-on-blur path while the modal is open, and on selection inserts the citation text via `TextEditor.insertAtSelection()` before restoring normal blur behavior. From the user's perspective the editor stays focused through the entire Insert Reference round-trip.
+Two surfaces consume the cache:
+
+- **Insert reference modal** (`openZoteroModal` in `zotero.js`, palette label "Zotero: Insert reference", default `⌘⇧I`) — modal that picks an item or attachment and inserts a `[Title](zotero://...)` link, with an optional page anchor and optional PDF snapshot.
+- **Highlight browser pane** (`openZoteroHighlightPane` in `zotero/highlight-pane.js`, palette label "Zotero: Create highlight browser") — a new pane fileType, see "Highlight browser pane" below.
+
+**Insertion contexts.** A single helper, `resolveInsertContext(view, notebookTextHandle, state)`, decides where the citation lands:
+
+1. **Active notebook text-shape edit** — modal captures the inline textarea handle on open (see "Notebook text shapes" below), routes citation through `TextEditor.insertAtSelection()`.
+2. **Notebook canvas with no active edit** — `state.currentNotebookFileId` takes priority over the always-mounted-but-hidden CodeMirror view, so inserts here drop a new `TextShape` at the viewport centre rather than silently landing in the hidden doc.
+3. **Doc** — `view.dispatch({ changes })` at the cursor.
+
+**Notebook text shapes.** Opening the search modal blurs the inline textarea overlay (`notebook/ui/text-editor.ts`), which would normally commit the shape and tear down the editor before the citation could be inserted. `text-editor.ts` exports `suspendCommitOnBlur()` / `resumeCommitOnBlur()` / `insertAtSelection(text)` plus a `getActiveNotebookTextEditor()` accessor (also mirrored on `window.__activeNotebookTextEditor` for synchronous lookup from focus-stealing UI like the command palette). The modal suspends the commit on open, inserts the citation through the textarea handle on confirm, and resumes blur-commit on close.
+
+**PDF snapshots.** When a PDF attachment is selected, the detail panel reveals an **Insert snapshot** checkbox + page selector. On confirm, `renderPdfPage()` in `zotero-snapshot.js` lazy-loads `pdfjs-dist`, rasterizes the chosen page to a `<canvas>` at the configured render height, and emits a WebP data URL via `canvas.toDataURL("image/webp", quality)`. The result is inserted alongside the citation:
+
+- **Notebook (edit or canvas)** — the data URL is embedded directly on a new `ImageShape` placed flush to the right of the text. It does *not* go through `createImageFromDataUrl` — the bytes already round-trip inside the notebook's JSON envelope, and surfacing every snapshot in the global Images folder felt like clutter. A Cmd-drag from the canvas into a doc still promotes the shape via `text-drag.js`.
+- **Doc** — `state.createImageFromDataUrl(dataUrl, filename)` saves the binary to `Images/`, returns the (possibly auto-suffixed) final filename, and the modal inserts `![alt](filename.webp)` after the citation. Filenames containing whitespace/parens (collisions emit `name 2.webp`) are wrapped in double quotes per the convention enforced by `IMAGE_MD_RE`, otherwise the doc image decoder silently ignores the markdown.
+
+**PDF download.** Zotero's `/users/{id}/items/{key}/file` endpoint returns a 302 to a presigned S3 URL whose CORS policy rejects the webview's `null` origin, so a webview-side fetch fails after the redirect. The `download_zotero_pdf` Tauri command (`commands/zotero.rs`) does the request server-side via `reqwest` (with redirect following enabled), persists the bytes to `{data_dir}/zotero_pdfs/{itemKey}.pdf` keyed on a sanitised attachment id, and returns them. Subsequent renders of other pages from the same paper read from the cache without re-fetching.
+
+**Settings.** The Zotero tab carries credentials (User ID + API key) plus a **PDF Snapshots** group: render height (default 1500 px), display height on canvas (default 300 px), and WebP quality (default 90, 1–100). All three round-trip through `AppSettings` (`zotero_snapshot_render_height`, `zotero_snapshot_display_height`, `zotero_snapshot_quality`).
+
+**Highlight browser pane.** A third pane fileType — `"zotero-highlights"` — surfaces a paper's PDF annotations next to the editor. The pane is fileless: it has no underlying tree node, so `pane-content.js` skips the doc/notebook load path and calls `mountZoteroHighlightPane(pane, appState)` instead, `pane-manager.js::buildPaneDOM` skips the font-size button and the title-link's open-in-main-view handler, and `savePaneContent` is a no-op for the type. The chosen attachment is persisted on `pane.zotero = { itemKey, attKey, title, authors, year }` and serialised by `pane-persistence.js` so a restart lands directly back in annotations mode.
+
+The pane has three internal modes that swap the body:
+
+1. **Search** — fuzzy search over the local reference cache (`loadReferences` + `fuzzySearch` re-exported from `zotero.js`).
+2. **Pick attachment** — only entered when the chosen item has 2+ PDFs. With exactly one PDF the pane jumps straight to mode 3; with zero, the search step shows an inline message.
+3. **Annotations** — header with a Zotero deep-link title (clickable, opens the PDF at page 1), authors/year, refresh button. Below that an annotation search input, then a two-column body: a 30 px column of 15 px color swatches (with an empty-circle "All" filter at top), and the filtered annotation list. Empty-text annotations (typically ink / image annotations) are filtered out — those don't surface usefully here and would otherwise dilute the color buckets.
+
+Each annotation row's `p. N` label is itself a Zotero deep link. Tauri webviews don't navigate plain anchors with custom schemes, so an `attachExternalLinkHandler` helper intercepts the click and routes through `@tauri-apps/plugin-opener::openUrl` (with a `window.open` fallback for browser dev). Drag-out reuses `pane/text-drag.js::startTextDrag` — `pointerdown` on a row formats the annotation as a markdown blockquote with comment + a `zotero://open-pdf?page=N` citation suffix and hands it to the existing pipeline. A re-entrancy guard on `_fetching` prevents overlapping network calls during rapid refreshes / reloads.
+
+**Annotation cache.** `src/zotero-annotations.js` exposes `getAnnotations(attKey, userId, apiKey, { forceRefresh })` and `groupByColor(annotations)`. The fetch goes through the `fetch_zotero_annotations` Tauri command (server-side, paginated), which hits `/users/{id}/items/{attKey}/children?itemType=annotation` — note the `/children` endpoint, not `/items?parentItem=…`; the latter doesn't actually scope by parent and returns the entire library. Results are cached at `{data_dir}/zotero_annotations/{attKey}.json` via `save_zotero_annotations`, and `load_zotero_annotations` returns `Option<String>` so a missing cache is distinct from an empty array. The pane reads cache-first and only re-fetches when the user hits `↻`.
+
+**Cross-device pane sync.** Highlight panes participate in the same `.hush/panes.json` sync as documents and notebooks (`src/sync/pane-sync.js`). They follow exactly the same rules as every other pane type — default = floating in their creation context, attach = anchored to canvas/scroll within that context, pin = global. The only zotero-specific deviation is the cross-device identity: a local `fileId` like `zotero:<uuid>` is per-install and means nothing on another device, so `serializePanesForSync` writes `remoteFileId = "zotero:" + attKey` plus an inline `zotero` payload, and `applyRemotePanes` keys de-dup on `attKey` instead of `fileId` for this fileType (via the `matchKey` helper). All other apply behavior — owner resolution, anchoring updates, soft-state propagation — runs through the standard branches. Annotation cache files are *not* synced; each device hits Zotero on first open and builds its own.
+
+A long-standing bug in `applyPanesFile`'s signature (`(payload)` instead of the dispatcher protocol's `(state, payload)`) caused the AppState object to be passed where the JSON string was expected, which silently failed `JSON.parse` and meant nothing applied. Fixed in 2026-04 alongside the highlight-pane work; once corrected, all pane types — docs, notebooks, and zotero highlights — sync via the same pipeline.
 
 ### Dropbox Integration (`sync/dropbox.js`, `sync/dropbox-browser.js`)
 
@@ -491,7 +531,7 @@ Global shortcut registration via `@tauri-apps/plugin-global-shortcut`. Shortcuts
 
 Runs in a separate Tauri WebviewWindow (desktop) or modal overlay (iOS). Loads/saves settings via IPC, notifies main window via events.
 
-**Tabs:** General (visibility, always-on-top), Editor (appearance, themes, fonts, headers, footnotes, typewriter, sizes), Shortcuts (customizable with conflict detection), D.R.Y. (detection range, stopwords), Flags (outline view settings), Privacy (blackout vs dummy mode, dummy text input), Sync (Dropbox OAuth connect/disconnect, folder selection, sync preview, unsync with keep/remove), Zotero (API credentials, reference management).
+**Tabs:** General (visibility, always-on-top), Editor (appearance, themes, fonts, headers, footnotes, typewriter, sizes), Shortcuts (customizable with conflict detection), D.R.Y. (detection range, stopwords), Flags (outline view settings), Privacy (blackout vs dummy mode, dummy text input), Sync (Dropbox OAuth connect/disconnect, folder selection, sync preview, unsync with keep/remove), Zotero (API credentials, reference management, PDF snapshot render/display heights + WebP quality).
 
 Tab rendering is split into `settings-tabs.js` to keep file sizes under 700 lines.
 
@@ -552,7 +592,7 @@ Command handlers are grouped by domain. Each module exports `pub fn` items decor
 - **`commands/images.rs`** — image CRUD, `export_with_images`, `write_binary_file` + path normalization helpers (iOS `file://` URLs, percent-decoding). `save_image_bytes` and `load_image_bytes` are the raw-byte siblings used by the Dropbox sync layer to upload / download image binaries without round-tripping through a base64 data URL. `write_binary_file` also runs `ensure_path_in_safe_root()` — defence-in-depth on top of the dialog plugin's access controls — that requires absolute paths under home / data / cache / temp dirs (plus `/private/var/folders` on macOS) and rejects literal `..` components
 - **`commands/snapshots.rs`** — `create_snapshot`, `get_snapshot`, `get_snapshots`, `delete_document_snapshots`
 - **`commands/local_sync.rs`** — `local_sync_add` / `_remove` / `_list` / `_read_dir` / `_read_file` / `_write_file` / `_read_file_bytes` / `_write_file_bytes`. The byte variants surface image binaries that live next to a Local Sync `.md` file (`_write_file_bytes` auto-suffixes on collision, mirroring `ImageManager::unique_filename`). Includes the local-only `find_local_sync_folder` helper and a small `uuid_like()` ID generator
-- **`commands/zotero.rs`** — `save_zotero_references`, `load_zotero_references`
+- **`commands/zotero.rs`** — `save_zotero_references`, `load_zotero_references`, `save_zotero_pdf`, `load_zotero_pdf`, `zotero_pdf_exists`, `download_zotero_pdf` (server-side fetch + cache for the snapshot pipeline), `save_zotero_annotations`, `load_zotero_annotations` (Option-returning), `fetch_zotero_annotations` (server-side paginated fetch + cache for the highlight browser pane)
 - **`commands/window.rs`** — `set_always_on_top` (desktop), `set_activation_policy`
 
 `sync_commands.rs` (Dropbox / external sync) lives at the crate root rather than under `commands/` because it owns enough internal helpers to merit its own module.
@@ -591,7 +631,7 @@ External folder synchronization. Uses SHA256 hashing for change detection, file 
 
 ### `zotero.rs`
 
-Persists Zotero reference data locally for offline citation search.
+Persists Zotero reference data, downloaded PDF binaries, and per-attachment annotation snapshots locally. References live in `{data_dir}/zotero_references.json` (offline citation search). PDFs land in `{data_dir}/zotero_pdfs/{itemKey}.pdf` keyed on a sanitised attachment id (alphanumeric + `-_` only) and are written via `write_atomic` so a crashed download leaves the previous copy intact. Annotations land in `{data_dir}/zotero_annotations/{attKey}.json` under the same sanitisation rule and the same atomic write path; the highlight browser pane reads cache-first and only re-fetches on explicit refresh. All three directories are local-only — they aren't part of any sync folder.
 
 ## Build
 
@@ -635,7 +675,9 @@ Open the Xcode project to configure signing before building.
 ├── files/
 │   ├── {uuid}.json
 │   └── .hush/
-└── zotero/
+├── zotero_references.json
+├── zotero_pdfs/
+└── zotero_annotations/
 ```
 
 Platform paths:

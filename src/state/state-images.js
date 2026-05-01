@@ -75,30 +75,38 @@ function altFromFilename(filename) {
  * Returns `{ filename, alt, dataUrl }` or null on failure.
  */
 export async function createImageFromFile(state, file) {
-  const { AppState } = await import("./state.js");
   if (!file) return null;
   const dataUrl = await fileToDataUrl(file);
-  const requestedName = baseName(file.name);
+  return createImageFromDataUrl(state, dataUrl, file.name);
+}
+
+/**
+ * Save an in-memory data URL to the Images folder, creating a tree node.
+ * Mirrors `createImageFromFile` but accepts a precomputed data URL — used
+ * by the Zotero snapshot pipeline (rasterized PDF page) and any other
+ * caller that already has the bytes in memory.
+ */
+export async function createImageFromDataUrl(state, dataUrl, requestedName) {
+  const { AppState } = await import("./state.js");
+  if (!dataUrl) return null;
+  const name = baseName(requestedName || "image.png");
   let finalName;
   if (IS_TAURI) {
     try {
-      const saved = await tauriInvoke("save_image", { filename: requestedName, dataUrl });
+      const saved = await tauriInvoke("save_image", { filename: name, dataUrl });
       finalName = saved.filename;
     } catch (e) {
       console.error("save_image failed:", e);
       return null;
     }
   } else {
-    // Browser fallback — no collision check.
-    finalName = requestedName;
+    finalName = name;
   }
   dataUrlCache.set(finalName, dataUrl);
 
   const images = findNode(state.fileTree, AppState.IMAGES_ID);
   let isNew = false;
   if (images) {
-    // Avoid duplicate tree nodes if the backend disambiguated a second
-    // copy of the same filename.
     const already = (images.children || []).some((c) => c.type === "image" && c.fileId === finalName);
     if (!already) {
       const node = {

@@ -206,6 +206,15 @@ pub fn default_typewriter_line_opacity() -> f64 {
 pub fn default_shortcut_zotero() -> String {
     "Mod+Shift+I".to_string()
 }
+pub fn default_zotero_snapshot_render_height() -> u32 {
+    1500
+}
+pub fn default_zotero_snapshot_display_height() -> u32 {
+    300
+}
+pub fn default_zotero_snapshot_quality() -> u32 {
+    90
+}
 pub fn default_shortcut_strikethrough() -> String {
     "Mod+`".to_string()
 }

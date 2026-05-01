@@ -312,6 +312,7 @@ export class AppState {
   async duplicateTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.duplicateTreeNode(this, nodeId); }
 
   async createImageFromFile(file) { const m = await import("./state-images.js"); return m.createImageFromFile(this, file); }
+  async createImageFromDataUrl(dataUrl, name) { const m = await import("./state-images.js"); return m.createImageFromDataUrl(this, dataUrl, name); }
   async loadImageDataUrl(fileId) { const m = await import("./state-images.js"); return m.getImageDataUrl(fileId); }
 
   // ===== Project View (delegated to state-project.js) =====

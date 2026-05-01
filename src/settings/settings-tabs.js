@@ -674,5 +674,23 @@ export function renderZoteroTab(settings) {
         ${hasRefs ? "Update References" : "Download References"}
       </button>
     </div>
+    <div class="settings-section">
+      <h2>PDF Snapshots</h2>
+      <p class="settings-help">
+        When inserting a Zotero PDF reference with the Insert snapshot option, the chosen page is rendered to an image at this size.
+      </p>
+      <div class="settings-row">
+        <label>Render height (px)</label>
+        <input type="number" id="zotero-snapshot-render-height" min="100" max="6000" step="50" value="${s.zoteroSnapshotRenderHeight ?? 1500}" />
+      </div>
+      <div class="settings-row">
+        <label>Display height (px)</label>
+        <input type="number" id="zotero-snapshot-display-height" min="50" max="2000" step="10" value="${s.zoteroSnapshotDisplayHeight ?? 300}" />
+      </div>
+      <div class="settings-row">
+        <label>WebP quality (1–100)</label>
+        <input type="number" id="zotero-snapshot-quality" min="1" max="100" step="1" value="${s.zoteroSnapshotQuality ?? 90}" />
+      </div>
+    </div>
   `;
 }

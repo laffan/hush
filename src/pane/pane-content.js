@@ -50,6 +50,9 @@ export async function loadPaneContent(pane) {
     await loadDocumentPane(pane);
   } else if (pane.fileType === "notebook") {
     await loadNotebookPane(pane);
+  } else if (pane.fileType === "zotero-highlights") {
+    const { mountZoteroHighlightPane } = await import("../zotero/highlight-pane.js");
+    await mountZoteroHighlightPane(pane, appState);
   }
 }
 
@@ -230,6 +233,10 @@ async function loadNotebookPane(pane) {
 
 // ── Saving ────────────────────────────────────────────────────────────
 export async function savePaneContent(pane) {
+  // Zotero highlight panes have no backing document; their state lives
+  // in the local annotation cache (written by the fetcher) and the pane
+  // payload persisted in settings.persistedPanes.
+  if (pane.fileType === "zotero-highlights") { pane.dirty = false; return; }
   if (!pane.dirty) return;
   pane.dirty = false;
 

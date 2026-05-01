@@ -309,6 +309,10 @@ function bindAll() {
     });
   }
 
+  bindNumber("zotero-snapshot-render-height", "zoteroSnapshotRenderHeight");
+  bindNumber("zotero-snapshot-display-height", "zoteroSnapshotDisplayHeight");
+  bindNumber("zotero-snapshot-quality", "zoteroSnapshotQuality");
+
   const zoteroDownloadBtn = document.getElementById("zotero-download-btn");
   if (zoteroDownloadBtn) {
     zoteroDownloadBtn.addEventListener("click", async () => {
@@ -393,6 +397,15 @@ function bindCheckbox(id, key) {
   const el = document.getElementById(id);
   if (!el) return;
   el.addEventListener("change", () => saveSetting(key, el.checked));
+}
+
+function bindNumber(id, key) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("change", () => {
+    const v = parseInt(el.value, 10);
+    if (Number.isFinite(v)) saveSetting(key, v);
+  });
 }
 
 function bindSlider(id, key, suffix, formatter) {

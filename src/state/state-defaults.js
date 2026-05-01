@@ -144,6 +144,9 @@ export function createDefaultSettings() {
     zoteroLastUpdate: null,
     zoteroReferenceCount: 0,
     zoteroFileSize: null,
+    zoteroSnapshotRenderHeight: 1500,
+    zoteroSnapshotDisplayHeight: 300,
+    zoteroSnapshotQuality: 90,
 
     // Privacy — dummy text mode
     privacyMode: "blackout", // "blackout" or "dummy"

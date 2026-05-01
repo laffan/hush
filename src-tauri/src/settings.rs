@@ -233,6 +233,12 @@ pub struct AppSettings {
     pub zotero_file_size: Option<String>,
     #[serde(default = "default_shortcut_zotero")]
     pub shortcut_zotero: String,
+    #[serde(default = "default_zotero_snapshot_render_height")]
+    pub zotero_snapshot_render_height: u32,
+    #[serde(default = "default_zotero_snapshot_display_height")]
+    pub zotero_snapshot_display_height: u32,
+    #[serde(default = "default_zotero_snapshot_quality")]
+    pub zotero_snapshot_quality: u32,
 
     // Privacy mode
     #[serde(default = "default_privacy_mode")]
@@ -505,6 +511,9 @@ impl Default for AppSettings {
             zotero_reference_count: 0,
             zotero_file_size: None,
             shortcut_zotero: default_shortcut_zotero(),
+            zotero_snapshot_render_height: default_zotero_snapshot_render_height(),
+            zotero_snapshot_display_height: default_zotero_snapshot_display_height(),
+            zotero_snapshot_quality: default_zotero_snapshot_quality(),
             shortcut_strikethrough: default_shortcut_strikethrough(),
             shortcut_select_paragraph: default_shortcut_select_paragraph(),
             shortcut_save: default_shortcut_save(),

@@ -188,8 +188,7 @@ export function buildEditorCommands() {
     shortcutFindNext: () => findNext(),
     shortcutFindPrev: () => findPrev(),
     shortcutZotero: (state, view) => {
-      if (!view) return false;
-      openZoteroModal(view, state);
+      openZoteroModal(view || null, state);
       return true;
     },
 

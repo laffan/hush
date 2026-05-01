@@ -47,6 +47,14 @@ function buildOwnerContext(kind, id) {
   return `${kind}:${id}`;
 }
 
+/** Compose the dedup match key for a pane. Zotero panes key on
+ *  `attKey` (cross-device stable identity) instead of `fileId` (per
+ *  install). All other panes key on `fileId`. */
+function matchKey(ownerContext, fileType, fileId, attKey) {
+  const ident = fileType === "zotero-highlights" ? `att:${attKey || ""}` : fileId || "";
+  return `${ownerContext || ""}|${ident}|${fileType}`;
+}
+
 // ===== Outbound =====
 
 /**
@@ -64,9 +72,28 @@ export async function serializePanesForSync(panesMap) {
     if (!pane || !pane.fileId || !pane.fileType) continue;
     if (pane.localSync) continue; // local-sync panes have no Dropbox identity
 
-    const fileInfo = await tauriInvoke("get_sync_file_info", { internalId: pane.fileId })
-      .catch(() => null);
-    if (!fileInfo || !fileInfo.remoteId) continue; // not yet uploaded — skip
+    // Zotero highlight panes have no underlying Dropbox file, but the
+    // Zotero `attKey` is itself a stable cross-device identity. Use it
+    // as the `remoteFileId` and ride along the rest of the wire format.
+    let remoteFileId;
+    let zoteroPayload = null;
+    if (pane.fileType === "zotero-highlights") {
+      const att = pane.zotero?.attKey;
+      if (!att) continue; // still in search step — nothing to sync yet
+      remoteFileId = `zotero:${att}`;
+      zoteroPayload = {
+        itemKey: pane.zotero.itemKey || null,
+        attKey: pane.zotero.attKey,
+        title: pane.zotero.title || "",
+        authors: pane.zotero.authors || "",
+        year: pane.zotero.year || "",
+      };
+    } else {
+      const fileInfo = await tauriInvoke("get_sync_file_info", { internalId: pane.fileId })
+        .catch(() => null);
+      if (!fileInfo || !fileInfo.remoteId) continue; // not yet uploaded — skip
+      remoteFileId = fileInfo.remoteId;
+    }
 
     const owner = parseOwnerContext(pane.ownerContext);
     let ownerRemoteId = "";
@@ -82,7 +109,7 @@ export async function serializePanesForSync(panesMap) {
     }
 
     out.push({
-      remoteFileId: fileInfo.remoteId,
+      remoteFileId,
       fileType: pane.fileType,
       ownerKind: owner.kind,
       ownerRemoteId,
@@ -93,6 +120,7 @@ export async function serializePanesForSync(panesMap) {
       canvasY: pane._canvasY ?? null,
       scrollRelY: pane._scrollRelY ?? null,
       fontSize: typeof pane.fontSize === "number" ? pane.fontSize : null,
+      zotero: zoteroPayload,
     });
   }
 
@@ -134,10 +162,25 @@ export async function applyRemotePanes(payloadString, deps) {
   for (const p of parsed.panes) {
     if (!p || !p.remoteFileId || !p.fileType) { skipped++; continue; }
 
-    const localFile = await tauriInvoke("find_synced_file_by_remote_id", {
-      remoteId: p.remoteFileId,
-    }).catch(() => null);
-    if (!localFile) { skipped++; continue; }
+    let localFileId = null;
+    let fileName = "Untitled";
+    let zoteroPayload = null;
+
+    if (p.fileType === "zotero-highlights") {
+      // Cross-device identity is the Zotero attKey; no local file to
+      // resolve. The local fileId is minted by createPaneFn so it
+      // doesn't collide with any existing pane.
+      if (!p.zotero?.attKey) { skipped++; continue; }
+      zoteroPayload = p.zotero;
+      fileName = p.zotero.title || "Zotero highlights";
+    } else {
+      const localFile = await tauriInvoke("find_synced_file_by_remote_id", {
+        remoteId: p.remoteFileId,
+      }).catch(() => null);
+      if (!localFile) { skipped++; continue; }
+      localFileId = localFile.internalId;
+      fileName = localFile.relativePath?.split("/").pop()?.replace(/\.(md|hushnote)$/, "") || "Untitled";
+    }
 
     let ownerContext = "";
     if (p.ownerKind && p.ownerRemoteId) {
@@ -149,7 +192,7 @@ export async function applyRemotePanes(payloadString, deps) {
     }
 
     resolved.push({
-      fileId: localFile.internalId,
+      fileId: localFileId, // null for zotero — minted at create time
       fileType: p.fileType,
       ownerContext,
       attached: !!p.attached,
@@ -159,16 +202,16 @@ export async function applyRemotePanes(payloadString, deps) {
       canvasY: p.canvasY,
       scrollRelY: p.scrollRelY,
       fontSize: typeof p.fontSize === "number" ? p.fontSize : null,
-      fileName: localFile.relativePath?.split("/").pop()?.replace(/\.(md|hushnote)$/, "") || "Untitled",
+      fileName,
+      zotero: zoteroPayload,
     });
   }
 
-  // Index existing panes by (ownerContext, fileId, fileType) so we can
-  // match additive merges in O(1).
+  // Index existing panes for O(1) match. Regular panes key on local
+  // fileId; zotero panes key on attKey (cross-device stable).
   const localByKey = new Map();
   for (const [, pane] of panes) {
-    const key = `${pane.ownerContext || ""}|${pane.fileId}|${pane.fileType}`;
-    localByKey.set(key, pane);
+    localByKey.set(matchKey(pane.ownerContext, pane.fileType, pane.fileId, pane.zotero?.attKey), pane);
   }
 
   const newlyAdded = [];
@@ -178,7 +221,7 @@ export async function applyRemotePanes(payloadString, deps) {
   if (suppressPersist) suppressPersist(true);
   try {
     for (const r of resolved) {
-      const key = `${r.ownerContext || ""}|${r.fileId}|${r.fileType}`;
+      const key = matchKey(r.ownerContext, r.fileType, r.fileId, r.zotero?.attKey);
       const existing = localByKey.get(key);
       if (existing) {
         // Update anchoring + soft state; pixel layout stays put.
@@ -203,6 +246,7 @@ export async function applyRemotePanes(payloadString, deps) {
           scrollRelY: r.scrollRelY,
           fontSize: r.fontSize,
           fileName: r.fileName,
+          zotero: r.zotero,
           fromSync: true,
         });
         if (pane) { newlyAdded.push(pane); added++; }
@@ -292,8 +336,15 @@ export { markOurRev, isOurRev } from "./meta-sync.js";
  * Cursor dispatcher for `.hush/panes.json`. Called by sync-polling when
  * a remote pane payload arrives. Keeps all the pane-sync orchestration
  * (lazy imports, deps wiring) here so the cursor handler stays generic.
+ *
+ * Signature matches the meta-dispatcher protocol: `(state, payload)`.
+ * The `state` arg is currently unused — pane-sync pulls everything it
+ * needs via the lazy imports below — but accepting it keeps the
+ * function shape uniform with the other meta dispatchers and prevents
+ * the silent arg-drop bug where the second arg (payload) gets thrown
+ * away and JSON.parse ends up trying to parse the AppState object.
  */
-export async function applyPanesFile(payload) {
+export async function applyPanesFile(_state, payload) {
   const { panes } = await import("../pane/pane-state.js");
   const { suppressPersist } = await import("../pane/pane-persistence.js");
   const { createPane, refreshPaneContextVisibility } = await import("../pane/pane-manager.js");
@@ -306,13 +357,19 @@ export async function applyPanesFile(payload) {
     suppressPersist,
     createPaneFn: async (opts) => {
       try {
+        // Zotero panes carry no synced file; mint a local-only fileId
+        // so the de-dup check in createPane has something stable to
+        // compare and the persistence layer has a key.
+        const fileId = opts.fileType === "zotero-highlights"
+          ? `zotero:${crypto.randomUUID()}`
+          : opts.fileId;
         const pane = await createPane(
-          opts.fileId,
+          fileId,
           opts.fileName || "Untitled",
           opts.fileType,
           DEFAULT_X,
           DEFAULT_Y,
-          { ownerContext: opts.ownerContext, skipFocus: true },
+          { ownerContext: opts.ownerContext, skipFocus: true, zotero: opts.zotero || null },
         );
         if (!pane) return null;
         if (opts.attached) {
