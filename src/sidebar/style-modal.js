@@ -82,6 +82,7 @@ function buildDefaultDraftFromSettings(state) {
     darkColors: s.defaultDarkColors ? { ...s.defaultDarkColors } : {},
     suppressHeaderSize: !!s.normalizeHeaders,
     suppressHeaderColor: !!s.normalizeHeaderColor,
+    underlineHeaders: !!s.underlineHeaders,
     headerScale: s.headerScale != null ? s.headerScale : 1.0,
     blockCursor: !!s.blockCursor,
   };
@@ -164,6 +165,7 @@ export function openStyleModal(state, existingStyle, onDone) {
         defaultDarkColors: draft.darkColors || {},
         normalizeHeaders: !!draft.suppressHeaderSize,
         normalizeHeaderColor: !!draft.suppressHeaderColor,
+        underlineHeaders: !!draft.underlineHeaders,
         headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
         blockCursor: !!draft.blockCursor,
       });
@@ -198,6 +200,7 @@ export function openStyleModal(state, existingStyle, onDone) {
         defaultDarkColors: state.settings.defaultDarkColors,
         normalizeHeaders: state.settings.normalizeHeaders,
         normalizeHeaderColor: state.settings.normalizeHeaderColor,
+        underlineHeaders: state.settings.underlineHeaders,
         headerScale: state.settings.headerScale,
         blockCursor: state.settings.blockCursor,
       });
@@ -310,6 +313,12 @@ export function openStyleModal(state, existingStyle, onDone) {
                 <label>Suppress size</label>
                 <div class="style-checkbox-group">
                   <input type="checkbox" id="style-suppress-header-size" ${draft.suppressHeaderSize ? 'checked' : ''} />
+                </div>
+              </div>
+              <div class="style-editor-row">
+                <label>Underline</label>
+                <div class="style-checkbox-group">
+                  <input type="checkbox" id="style-underline-headers" ${draft.underlineHeaders ? 'checked' : ''} />
                 </div>
               </div>
               <div class="style-editor-row${draft.suppressHeaderSize ? ' style-row-hidden' : ''}" id="header-scale-row">
@@ -430,6 +439,7 @@ export function openStyleModal(state, existingStyle, onDone) {
     const scales = { h1: 1.8, h2: 1.5, h3: 1.3 };
     pane.querySelectorAll(".preview-h1, .preview-h2, .preview-h3").forEach(el => {
       el.style.color = headingColor;
+      el.style.textDecoration = draft.underlineHeaders ? "underline" : "";
       if (suppressSize) {
         el.style.fontSize = baseSize + "px";
       } else {
@@ -526,6 +536,12 @@ export function openStyleModal(state, existingStyle, onDone) {
     const shcEl = backdrop.querySelector("#style-suppress-header-color");
     if (shcEl) shcEl.addEventListener("change", () => {
       draft.suppressHeaderColor = shcEl.checked;
+      updatePreview();
+      scheduleSave();
+    });
+    const uhEl = backdrop.querySelector("#style-underline-headers");
+    if (uhEl) uhEl.addEventListener("change", () => {
+      draft.underlineHeaders = uhEl.checked;
       updatePreview();
       scheduleSave();
     });

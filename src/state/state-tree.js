@@ -194,12 +194,27 @@ export async function toggleFlagged(state, nodeId) {
   await state.saveFileTree();
 }
 
+/** Convert a Folder ↔ Project. The two types are structurally
+ *  identical in the tree (children stay put); only the `type` field
+ *  changes. Project → Folder loses ordering and the joined preview but
+ *  no files are deleted. */
+export async function convertContainerType(state, nodeId, targetType) {
+  if (targetType !== "folder" && targetType !== "project") return;
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  if (node.type === targetType) return;
+  if (node.type !== "folder" && node.type !== "project") return;
+  node.type = targetType;
+  await state.saveFileTree();
+  state.emit("files-changed");
+}
+
 export async function duplicateTreeNode(state, nodeId) {
   const node = findNode(state.fileTree, nodeId);
   if (!node || (node.type !== "document" && node.type !== "notebook") || !node.fileId) return;
   const newFileId = await state.duplicateFile(node.fileId);
   if (!newFileId) return;
-  const newNode = { id: crypto.randomUUID(), type: node.type, name: node.name + " copy", fileId: newFileId, children: [], flagged: false };
+  const newNode = { id: crypto.randomUUID(), type: node.type, name: node.name + "-Copy", fileId: newFileId, children: [], flagged: false };
   insertAfter(state.fileTree, nodeId, newNode);
   await state.saveFileTree();
 }

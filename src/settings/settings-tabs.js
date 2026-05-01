@@ -133,6 +133,13 @@ export function renderGeneralTab(settings) {
   const s = settings;
   return `
     <div class="settings-section">
+      <h2>Appearance</h2>
+      <div class="settings-row">
+        <label>Color scheme</label>
+        <select id="setting-appearance">${["light","dark","auto"].map(v => `<option value="${v}" ${s.appearance === v ? "selected" : ""}>${v === "auto" ? "Automatic" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select>
+      </div>
+    </div>
+    <div class="settings-section">
       <h2>Visibility</h2>
       <div class="settings-row">
         <label>App visibility</label>
@@ -162,19 +169,6 @@ export function renderEditorTab(settings) {
 
   return `
     <div class="settings-section">
-      <h2>Appearance</h2>
-      <div class="settings-row">
-        <label>Color scheme</label>
-        <select id="setting-appearance">
-          <option value="light" ${s.appearance === "light" ? "selected" : ""}>Light</option>
-          <option value="dark" ${s.appearance === "dark" ? "selected" : ""}>Dark</option>
-          <option value="auto" ${s.appearance === "auto" ? "selected" : ""}>Automatic</option>
-        </select>
-      </div>
-      <p class="settings-help">Theme, font, size and header options live in the Styles sidebar — edit the Default style to change these defaults.</p>
-    </div>
-
-    <div class="settings-section">
       <h2>Headers</h2>
       <div class="settings-row">
         <label>Sticky headers</label>
@@ -188,7 +182,14 @@ export function renderEditorTab(settings) {
         <label>Make space for panes</label>
         <input type="checkbox" id="setting-make-space-for-panes" ${s.makeSpaceForPanes !== false ? "checked" : ""} />
       </div>
-      <p class="settings-help">When a document pane is open, shift the edit column to the right, leaving space on the left for panes.</p>
+      <div class="settings-row">
+        <label>Shift column to</label>
+        <select id="setting-make-space-direction">
+          <option value="right" ${(s.makeSpaceDirection || "right") === "right" ? "selected" : ""}>Right</option>
+          <option value="left" ${s.makeSpaceDirection === "left" ? "selected" : ""}>Left</option>
+        </select>
+      </div>
+      <p class="settings-help">When a pane is open, shift the edit column away from the panes.</p>
     </div>
 
     <div class="settings-section">

@@ -35,6 +35,8 @@ pub struct AppSettings {
     pub normalize_headers: bool,
     #[serde(default)]
     pub normalize_header_color: bool,
+    #[serde(default)]
+    pub underline_headers: bool,
     #[serde(default = "default_header_scale")]
     pub header_scale: f64,
     // Default-style color overrides (bg/fg/header/cursor/selection) per appearance
@@ -44,6 +46,8 @@ pub struct AppSettings {
     pub default_dark_colors: std::collections::HashMap<String, String>,
     #[serde(default = "default_true")]
     pub make_space_for_panes: bool,
+    #[serde(default = "default_make_space_direction")]
+    pub make_space_direction: String,
     #[serde(default = "default_typewriter_line_opacity")]
     pub typewriter_line_opacity: f64,
     #[serde(default = "default_focus_mode_opacity")]
@@ -403,6 +407,8 @@ pub struct Style {
     #[serde(default)]
     pub suppress_header_color: Option<bool>,
     #[serde(default)]
+    pub underline_headers: Option<bool>,
+    #[serde(default)]
     pub header_scale: Option<f64>,
 }
 
@@ -435,10 +441,12 @@ impl Default for AppSettings {
             font_family: default_font_family(),
             normalize_headers: false,
             normalize_header_color: false,
+            underline_headers: false,
             header_scale: default_header_scale(),
             default_light_colors: std::collections::HashMap::new(),
             default_dark_colors: std::collections::HashMap::new(),
             make_space_for_panes: true,
+            make_space_direction: default_make_space_direction(),
             typewriter_line_opacity: default_typewriter_line_opacity(),
             focus_mode_opacity: default_focus_mode_opacity(),
             padding: default_padding(),

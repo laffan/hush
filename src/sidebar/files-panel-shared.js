@@ -45,6 +45,35 @@ export function escAttrValue(str) {
  * sortable-list/rendering.js). Used by the Flagged section and Local
  * Sync rows, which render outside SortableList's own machinery.
  */
+/** Generic confirmation modal — used by the rename / duplicate / delete
+ *  flows. Shares the existing `tree-delete-modal-*` styles. */
+export function showConfirmModal({ title, message, confirmLabel = "Confirm", onConfirm }) {
+  document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
+  const backdrop = document.createElement("div");
+  backdrop.className = "tree-delete-modal-backdrop";
+  const modal = document.createElement("div");
+  modal.className = "tree-delete-modal";
+  modal.innerHTML = `
+    <div class="tree-delete-modal-title">${escHtml(title)}</div>
+    <pre class="tree-delete-modal-message">${escHtml(message)}</pre>
+    <div class="tree-delete-modal-btns">
+      <button class="tree-delete-cancel">Cancel</button>
+      <button class="tree-delete-confirm">${escHtml(confirmLabel)}</button>
+    </div>`;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  modal.querySelector(".tree-delete-cancel").addEventListener("click", () => backdrop.remove());
+  modal.querySelector(".tree-delete-confirm").addEventListener("click", () => {
+    backdrop.remove();
+    onConfirm();
+  });
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+export function showDeleteConfirmModal(title, message, onConfirm) {
+  showConfirmModal({ title, message, confirmLabel: "Delete", onConfirm });
+}
+
 export function attachLeafHoverHandlers(li) {
   li.addEventListener("mouseenter", () => {
     let ancestor = li.parentElement?.closest(".sl-item");

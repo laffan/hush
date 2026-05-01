@@ -223,10 +223,11 @@ export class NotesCanvas {
     this.state.onShapeDragMove = (dx, dy) => { dl.updateSelectionDrag(dx, dy); };
     this.state.onShapeDragEnd = () => { dl.endSelectionDrag(); };
 
-    // Emit "notebook-change" for autosave integration whenever shapes change
+    // Emit "notebook-change" for autosave integration whenever shapes
+    // (or other persisted state — bookmarks) change.
     this.state.addEventListener("change", ((e: CustomEvent) => {
       const keys: string[] = e.detail?.keys || [];
-      if (keys.includes("shapes")) {
+      if (keys.includes("shapes") || keys.includes("bookmarks")) {
         this.container.dispatchEvent(new CustomEvent("notebook-change"));
       }
     }) as EventListener);

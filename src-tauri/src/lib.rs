@@ -71,7 +71,7 @@ pub struct TreeNode {
     pub locked_style_id: Option<String>,
 }
 
-fn get_data_dir() -> PathBuf {
+pub fn get_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("com.hush.app")
@@ -392,6 +392,7 @@ pub fn run() {
             commands::local_sync::local_sync_write_file,
             commands::local_sync::local_sync_read_file_bytes,
             commands::local_sync::local_sync_write_file_bytes,
+            commands::backup::backup_app_data,
             #[cfg(desktop)]
             commands::window::set_always_on_top,
             commands::window::set_activation_policy,
