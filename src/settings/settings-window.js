@@ -190,6 +190,7 @@ function bindAll() {
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-zen-focus-font-size", "zenFocusFontSize", "px");
   bindSlider("setting-notebook-text-max-width", "notebookTextMaxWidth", "px");
+  bindSelect("setting-flow-connect-mode", "flowConnectMode");
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");
   bindSelect("setting-footnote-font-family", "footnoteFontFamily");
   bindCheckbox("setting-footnote-use-colors", "footnoteUseColors");

@@ -242,6 +242,18 @@ export function renderEditorTab(settings) {
     </div>
 
     <div class="settings-section">
+      <h2>Flowchart</h2>
+      <div class="settings-row">
+        <label>Edge connections</label>
+        <select id="setting-flow-connect-mode">
+          <option value="closest" ${(s.flowConnectMode || "closest") === "closest" ? "selected" : ""}>Connect closest edge</option>
+          <option value="horizontal" ${s.flowConnectMode === "horizontal" ? "selected" : ""}>Connect left/right edges</option>
+        </select>
+      </div>
+      <p class="settings-help">How flowchart arrows route between linked text shapes. "Closest" picks the nearest pair of cardinal edges so a child placed below a parent connects bottom-to-top; "Left/right" always exits a parent's right edge and enters the child's left.</p>
+    </div>
+
+    <div class="settings-section">
       <h2>Footnotes</h2>
       <div class="settings-slider-row">
         <label>Font size</label>

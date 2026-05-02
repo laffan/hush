@@ -238,6 +238,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
     fontSize: s.notebookFontSize || 18,
     canvasBackgroundOverride,
     maxTextWidth: s.notebookTextMaxWidth || 350,
+    flowConnectMode: s.flowConnectMode === "horizontal" ? "horizontal" : "closest",
   };
 }
 

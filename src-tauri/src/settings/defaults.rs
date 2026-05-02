@@ -289,6 +289,9 @@ pub fn default_notebook_font_size() -> u32 {
 pub fn default_notebook_text_max_width() -> u32 {
     350
 }
+pub fn default_flow_connect_mode() -> String {
+    "closest".to_string()
+}
 pub fn default_nb_select() -> String { "1".to_string() }
 pub fn default_nb_text() -> String { "T".to_string() }
 pub fn default_nb_drag_area() -> String { "A".to_string() }

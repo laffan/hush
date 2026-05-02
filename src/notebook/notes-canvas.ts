@@ -393,6 +393,7 @@ export class NotesCanvas {
     fontSize?: number;
     canvasBackgroundOverride?: string;
     maxTextWidth?: number;
+    flowConnectMode?: "closest" | "horizontal";
   }) {
     if (opts.appearanceMode !== undefined) this.state.setAppearance(opts.appearanceMode);
     if (opts.themeId !== undefined) this.state.setTheme(opts.themeId);
@@ -407,6 +408,10 @@ export class NotesCanvas {
     }
     if (opts.maxTextWidth !== undefined && opts.maxTextWidth > 0) {
       this.state.maxTextWidth = opts.maxTextWidth;
+    }
+    if (opts.flowConnectMode !== undefined) {
+      this.state.flowchart.setConnectMode(opts.flowConnectMode);
+      this.state.notify("shapes");
     }
   }
 
