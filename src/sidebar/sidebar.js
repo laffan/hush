@@ -405,6 +405,12 @@ export function createSidebar(container, state) {
     }
   });
 
+  state.on("notebook-open", () => {
+    if (activePanel === "files") {
+      refreshFilesPanel(state);
+    }
+  });
+
   state.on("dropbox-status-changed", () => {
     if (activePanel === "files") {
       refreshFilesPanel(state);

@@ -766,9 +766,11 @@ export class DrawingState extends EventTarget {
         this.editingText = { shapeId: null, position: canvasPt, text: "", fontSize: this.fontSize, color: this.color, width: this.maxTextWidth };
         this.notify("editingText");
       }
-    } else if (this.brainstormMode) {
-      // Brainstorm mode — handled by brainstorm-input.ts widget, just skip
-    } else if (this.tool === "select") {
+    } else if (this.tool === "select" || this.brainstormMode) {
+      // Brainstorm mode runs alongside the floating input widget — its
+      // position is handled by the input's own drag handle, so canvas
+      // clicks fall through to normal selection / drag-to-move so the
+      // user can still rearrange shapes without leaving brainstorm.
       const handleHit = this.hitTestResizeHandles(canvasPt);
       if (handleHit) {
         this._isResizing = true;
@@ -869,7 +871,7 @@ export class DrawingState extends EventTarget {
   }
 
   handleDoubleClick(e: MouseEvent) {
-    if (!this.canvasEl || this.brainstormMode) return;
+    if (!this.canvasEl) return;
     const rect = this.canvasEl.getBoundingClientRect();
     const screenPt: Point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const canvasPt = screenToCanvas(screenPt, this.camera);
@@ -969,7 +971,7 @@ export class DrawingState extends EventTarget {
       }
     }
 
-    if (this._isDragging && this.tool === "select") {
+    if (this._isDragging && (this.tool === "select" || this.brainstormMode)) {
       const dx = canvasPt.x - this._dragStart.x;
       const dy = canvasPt.y - this._dragStart.y;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
@@ -1080,7 +1082,7 @@ export class DrawingState extends EventTarget {
       return;
     }
 
-    if (this.tool === "select" && this._selectStart) {
+    if ((this.tool === "select" || this.brainstormMode) && this._selectStart) {
       this.selectionBox = { start: this._selectStart, end: canvasPt };
       this.notify("selectionBox");
     } else if (this.tool === "drag-area" && this.creatingDragArea) {
@@ -1266,7 +1268,7 @@ export class DrawingState extends EventTarget {
       return;
     }
 
-    if (this.tool === "select" && this.selectionBox) {
+    if ((this.tool === "select" || this.brainstormMode) && this.selectionBox) {
       const box = normalizeBox(this.selectionBox);
       const hiddenLayerIds = this._hiddenLayerIds();
       const hits = this.shapes.filter((s) =>

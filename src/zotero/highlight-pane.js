@@ -14,15 +14,12 @@
  * Zotero API isn't pinged on each open.
  */
 
-import { createPane } from "../pane/pane-manager.js";
+import { createPane, getInitialPanePosition } from "../pane/pane-manager.js";
+import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "../pane/pane-state.js";
 import { schedulePersist } from "../pane/pane-persistence.js";
 import { loadReferences, fuzzySearch } from "../zotero.js";
 import { getAnnotations, groupByColor } from "../zotero-annotations.js";
 import { startTextDrag } from "../pane/text-drag.js";
-
-/** Anchor matches the palette's "open as pane" placement. */
-const OPEN_X = 80;
-const OPEN_Y = 80;
 
 /** Clean up the raw highlight string Zotero pulled out of the PDF.
  *  Two cosmetic passes: collapse runs of line breaks into single
@@ -44,7 +41,12 @@ export async function openZoteroHighlightPane(state) {
   const fileId = "zotero:" + crypto.randomUUID();
   // Default ownerContext (current doc/notebook). Pin/attach behavior
   // matches every other pane type — no special-casing.
-  await createPane(fileId, "Zotero highlights", "zotero-highlights", OPEN_X, OPEN_Y);
+  // Anchor matches the palette's "open as pane" placement: lands in the
+  // gap opposite the editor column shift, clear of the sidebar.
+  const pos = getInitialPanePosition(state);
+  const x = pos.x + PANE_DEFAULT_WIDTH / 2;
+  const y = pos.y + PANE_TITLEBAR_HEIGHT / 2;
+  await createPane(fileId, "Zotero highlights", "zotero-highlights", x, y);
 }
 
 /** Mount entry point — invoked by `pane-content.js::loadPaneContent`

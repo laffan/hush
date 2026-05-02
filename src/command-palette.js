@@ -9,7 +9,8 @@ import { openFindReplace, openFindAll } from "./editor/find-replace.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
-import { getActivePaneId, fitActivePaneToLeftGap, createPane } from "./pane/pane-manager.js";
+import { getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition } from "./pane/pane-manager.js";
+import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
@@ -28,6 +29,18 @@ import iconProjectRaw from "./sidebar/sidebar_icons/icon-project.svg?raw";
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
+}
+
+/** createPane treats (x, y) as a click-point and centres the pane on
+ *  it. To land a pane's *top-left* at the position computed by
+ *  `getInitialPanePosition`, pre-add half the default size so the
+ *  centring math cancels out. */
+function paneAnchorClickPoint(state) {
+  const pos = getInitialPanePosition(state);
+  return {
+    x: pos.x + PANE_DEFAULT_WIDTH / 2,
+    y: pos.y + PANE_TITLEBAR_HEIGHT / 2,
+  };
 }
 
 const icons = {
@@ -64,12 +77,18 @@ function buildCommands(state) {
     { id: "new-doc-pane", label: "New document as pane", icon: icons.doc, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const created = await s.newFile(null, { openImmediately: false });
-        if (created) createPane(created.fileId, created.name, "document", 62, 60);
+        if (created) {
+          const { x, y } = paneAnchorClickPoint(s);
+          createPane(created.fileId, created.name, "document", x, y);
+        }
       } },
     { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.notebook, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const created = await s.createNotebook("New Notebook", null, { openImmediately: false });
-        if (created) createPane(created.fileId, created.name, "notebook", 62, 60);
+        if (created) {
+          const { x, y } = paneAnchorClickPoint(s);
+          createPane(created.fileId, created.name, "notebook", x, y);
+        }
       } },
     { id: "open-file", label: "Open document or notebook", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
@@ -80,11 +99,10 @@ function buildCommands(state) {
     { id: "open-pane", label: "Open document or notebook as pane", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {
-        // Left-anchored: 50px (sidebar column) + 12px padding. Keeps
-        // new panes near the source they were opened from instead of
-        // tucked in the right gutter — closer to the user's reading flow.
-        const x = 62;
-        const y = 60;
+        // Place the pane in the gap opposite the editor column shift —
+        // see `getInitialPanePosition`. Falls back to the left gutter
+        // when "Shift column to" is on the default ("right").
+        const { x, y } = paneAnchorClickPoint(s);
         createPane(f.fileId, f.name, f.type, x, y);
       }) },
     { id: "extract-selected", label: "Create New From Selected", icon: icons.newFile, shortcutKey: null, ctx: "shared",
@@ -161,8 +179,8 @@ function buildCommands(state) {
       action: (s) => s.emit("toggle-outline-panel") },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
-    { id: "fit-pane-left", label: "Fit pane to left gap", icon: null, shortcutKey: null, ctx: "pane",
-      action: () => fitActivePaneToLeftGap() },
+    { id: "fit-pane-gap", label: "Fit pane to gap", icon: null, shortcutKey: null, ctx: "pane",
+      action: () => fitActivePaneToGap() },
 
     // === NOTEBOOK ONLY ===
     { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
@@ -315,11 +333,8 @@ export function openFilePalette(state, mode) {
   const api = paletteApi(state);
   if (mode === "pane") {
     enterFilePicker(api, state, "Open as pane…", (f) => {
-      // Left side: 50px sidebar + 12px padding. Cmd+Shift+O is a
-      // reach-for-context gesture; landing the pane on the left puts
-      // it where the user expects a secondary reading column.
-      const x = 62;
-      const y = 60;
+      // Pane lands in the gap opposite the editor column shift.
+      const { x, y } = paneAnchorClickPoint(state);
       createPane(f.fileId, f.name, f.type, x, y);
     });
   } else {

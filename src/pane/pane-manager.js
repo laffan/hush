@@ -356,15 +356,63 @@ function centerPaneInViewport(pane) {
   schedulePersist();
 }
 
+/** Width occupied by the sidebar (50 px hover trigger + the open files
+ *  panel when it sits in the layout — pinned or inset modes). Pure
+ *  hover overlays don't count because they retract on mouse-out. Free-
+ *  floating pane code uses this when picking initial coordinates so a
+ *  fresh pane lands past the sidebar instead of underneath it. */
+function getSidebarInset() {
+  const sidebarZone = 50;
+  const panelEl = document.getElementById("panel-overlay");
+  const panelOpen = panelEl && !panelEl.classList.contains("hidden");
+  const panelLayout = panelEl
+    && (panelEl.classList.contains("panel-inset")
+      || panelEl.classList.contains("panel-pinned"));
+  const panelW = panelOpen && panelLayout
+    ? parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300
+    : 0;
+  return sidebarZone + panelW;
+}
+
+/** "Make space for panes" pushes the editor column to one side and
+ *  leaves a gap on the other. Panes belong in that gap — opposite the
+ *  shifted column. Returns "left" or "right" (the side the pane should
+ *  sit on). Defaults to "left" so behaviour matches the historical
+ *  hard-coded x=62 placement when settings haven't been touched. */
+function getPaneSide(state) {
+  return (state?.settings?.makeSpaceDirection === "left") ? "right" : "left";
+}
+
+/** Top-left coordinate for a freshly-opened pane. Clears the sidebar on
+ *  the left, the right panel on the right, and obeys the column-shift
+ *  setting so panes appear in the empty gap rather than over the text.
+ *  Used by every "Open as pane" / "New … as pane" entry point. */
+export function getInitialPanePosition(state, w = DEFAULT_WIDTH) {
+  const sideMargin = 12;
+  const topMargin = 60;
+  const side = getPaneSide(state);
+  let x;
+  if (side === "left") {
+    x = getSidebarInset() + sideMargin;
+  } else {
+    const rightPanelEl = document.querySelector(".right-panel");
+    const rightOpen = rightPanelEl && rightPanelEl.classList.contains("visible");
+    const rightInset = rightOpen ? 200 : 0;
+    x = window.innerWidth - w - rightInset - sideMargin;
+  }
+  return { x: Math.max(0, x), y: topMargin };
+}
+
 /**
- * Auto-fit the active pane to the empty zone on the left of the writing
+ * Auto-fit the active pane to the empty zone next to the writing
  * surface. In a doc the pane fills the gap that the "make space for
  * panes" layout opens up beside the text column; in a notebook there's
  * no text column to anchor against, so the pane takes a flat 1/3 of the
- * window width. In both cases the pane sits flush left (clearing the
- * sidebar / open panel) and stretches to the full vertical viewport.
+ * window width. The pane sits flush against the gutter (clearing the
+ * sidebar on the left, the right-panel inset on the right) and stretches
+ * to the full vertical viewport. Honours the user's column-shift setting.
  */
-export function fitActivePaneToLeftGap() {
+export function fitActivePaneToGap() {
   if (!activePaneId || !appState) return false;
   const pane = panes.get(activePaneId);
   if (!pane) return false;
@@ -374,18 +422,8 @@ export function fitActivePaneToLeftGap() {
   const sideMargin = 12;
   const topMargin = 35;
   const bottomMargin = 12;
-  const sidebarZone = 50;
-
-  // If the files panel is open in inset mode, push past it; otherwise the
-  // 50px sidebar trigger is hover-only and transparent, so we can sit
-  // flush against the left edge and let the sidebar float over us.
-  const panelEl = document.getElementById("panel-overlay");
-  const panelOpen = panelEl && !panelEl.classList.contains("hidden");
-  const panelInset = panelEl && panelEl.classList.contains("panel-inset");
-  const panelW = panelOpen && panelInset
-    ? parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300
-    : 0;
-  const leftEdge = sidebarZone + panelW;
+  const leftEdge = getSidebarInset();
+  const side = getPaneSide(appState);
 
   let w;
   if (appState.currentNotebookFileId) {
@@ -394,12 +432,18 @@ export function fitActivePaneToLeftGap() {
     // Doc mode: read the live padding from the scroller so the pane fits
     // exactly the gap that the column shift has opened up.
     const scroller = document.querySelector("#editor-container .cm-scroller");
-    const leftPadPx = scroller ? parseFloat(getComputedStyle(scroller).paddingLeft) || 0 : 0;
-    w = leftPadPx - leftEdge - sideMargin * 2;
+    const cs = scroller ? getComputedStyle(scroller) : null;
+    const padPx = side === "left"
+      ? (cs ? parseFloat(cs.paddingLeft) || 0 : 0)
+      : (cs ? parseFloat(cs.paddingRight) || 0 : 0);
+    const inset = side === "left" ? leftEdge : 0;
+    w = padPx - inset - sideMargin * 2;
   }
   w = Math.max(MIN_WIDTH, w);
 
-  const x = leftEdge + sideMargin;
+  const x = side === "left"
+    ? leftEdge + sideMargin
+    : viewportW - w - sideMargin;
   const h = Math.max(MIN_HEIGHT, viewportH - topMargin - bottomMargin);
   const y = topMargin;
 
@@ -420,6 +464,10 @@ export function fitActivePaneToLeftGap() {
   schedulePersist();
   return true;
 }
+
+/** @deprecated kept for any external caller; new code should use
+ *  {@link fitActivePaneToGap}, which is direction-aware. */
+export const fitActivePaneToLeftGap = fitActivePaneToGap;
 
 // ── DOM construction ──────────────────────────────────────────────────
 function buildPaneDOM(pane) {
@@ -673,6 +721,7 @@ async function previewPaneStyle(styleObj) {
 
 // ── Theme sync ────────────────────────────────────────────────────────
 async function syncPaneThemes() {
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
   let bridge = null;
   for (const [, pane] of panes) {
     const lockedStyleId = findLockedStyleForFile(pane.fileId);
@@ -682,6 +731,17 @@ async function syncPaneThemes() {
     if (pane.notebook) {
       if (!bridge) bridge = await getNotebookBridge();
       pane.notebook.applySettings(bridge.computeNotebookSettings(appState, lockedStyleId));
+    }
+    // Track tree-side renames in the pane title — covers both manual
+    // sidebar renames and the auto-rename-from-first-line that fires for
+    // freshly-created "Untitled" docs.
+    if (pane.fileType === "document" || pane.fileType === "notebook") {
+      const node = findNodeByFileId(appState.fileTree, pane.fileId);
+      if (node && node.name && node.name !== pane.fileName) {
+        pane.fileName = node.name;
+        const titleLink = pane._titlebar?.querySelector(".fp-title-link");
+        if (titleLink) titleLink.textContent = node.name;
+      }
     }
   }
 }

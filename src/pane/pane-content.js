@@ -291,6 +291,15 @@ export async function savePaneContent(pane) {
       } else {
         await tauriInvoke("save_file", { id: pane.fileId, content });
       }
+      // Mirror the main editor's "name follows first line" behaviour for
+      // panes — without this, docs created via "New Document as Pane"
+      // never pick up a name and stay "Untitled". Skip Local Sync (its
+      // filename is on disk) and the file currently open in the main
+      // editor (saveCurrentFile already handles it).
+      if (!pane.localSync && pane.fileType === "document"
+          && appState && pane.fileId !== appState.currentFileId) {
+        await appState.maybeRenameFileFromContent(pane.fileId, content);
+      }
     }
   } catch (e) {
     console.error("Failed to save pane content:", e);

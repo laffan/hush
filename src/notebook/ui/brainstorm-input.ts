@@ -35,6 +35,36 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
     fontSize: "14px", fontFamily: "inherit", background: "transparent",
   });
 
+  // While the input has focus, Enter creates new cards. When focus is
+  // pulled away (e.g. user double-clicks the canvas to start a regular
+  // text shape), the input switches to a red border — a visual cue that
+  // typing here won't go where the cursor is. Click the input again to
+  // re-engage. The brainstormMode flag itself stays on either way.
+  const FOCUS_BORDER = "1px solid #4285f4";
+  const BLUR_BORDER = "3px solid #e53935";
+  input.addEventListener("focus", () => { inputRow.style.border = FOCUS_BORDER; });
+  input.addEventListener("blur", () => { inputRow.style.border = BLUR_BORDER; });
+
+  // Hamburger-style grip — clicking on the canvas no longer repositions
+  // the input (so users can drag shapes while brainstorming), so the
+  // input needs its own drag affordance. Sits flush on the input's white
+  // background; the close button retains its gray panel for contrast.
+  const dragHandle = h("button", {
+    style: {
+      width: "26px", height: "32px", border: "none", background: "transparent",
+      cursor: "grab", color: "#999", padding: "0",
+      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0",
+    },
+    title: "Drag to move",
+  });
+  dragHandle.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <line x1="2" y1="4" x2="12" y2="4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="2" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+  `;
+
   const closeBtn = h("button", {
     text: "×",
     style: {
@@ -46,6 +76,7 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
   });
 
   inputRow.appendChild(input);
+  inputRow.appendChild(dragHandle);
   inputRow.appendChild(closeBtn);
   container.appendChild(inputRow);
 
@@ -114,45 +145,77 @@ export function createBrainstormInput(state: DrawingState): HTMLElement {
     }
   });
 
-  // Prevent canvas pointer events from stealing focus
+  // Prevent canvas pointer events from stealing focus. Stop propagation
+  // so the canvas's own pointerdown doesn't fire when the user is
+  // interacting with the input widget itself.
   container.addEventListener("pointerdown", (e) => e.stopPropagation());
 
-  // Listen for brainstorm mode + click on canvas
-  // The state handler sets brainstormMode but we intercept canvas clicks here
-  function handleCanvasClick(e: PointerEvent) {
-    if (!state.brainstormMode) { if (visible) hide(); return; }
+  // Drag the input around via the hamburger handle. Updates `canvasOrigin`
+  // (canvas-space) too so camera moves keep the input in place.
+  dragHandle.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startScreen = { x: e.clientX, y: e.clientY };
+    const startLeft = parseFloat(container.style.left) || 0;
+    const startTop = parseFloat(container.style.top) || 0;
+    dragHandle.style.cursor = "grabbing";
+    dragHandle.setPointerCapture(e.pointerId);
+    const onMove = (ev: PointerEvent) => {
+      const nx = startLeft + (ev.clientX - startScreen.x);
+      const ny = startTop + (ev.clientY - startScreen.y);
+      container.style.left = nx + "px";
+      container.style.top = ny + "px";
+      canvasOrigin = screenToCanvas({ x: nx, y: ny }, state.camera);
+    };
+    const onUp = (ev: PointerEvent) => {
+      dragHandle.releasePointerCapture(ev.pointerId);
+      dragHandle.style.cursor = "grab";
+      dragHandle.removeEventListener("pointermove", onMove);
+      dragHandle.removeEventListener("pointerup", onUp);
+      dragHandle.removeEventListener("pointercancel", onUp);
+    };
+    dragHandle.addEventListener("pointermove", onMove);
+    dragHandle.addEventListener("pointerup", onUp);
+    dragHandle.addEventListener("pointercancel", onUp);
+  });
 
-    // Don't intercept if clicking on UI elements
-    const target = e.target as HTMLElement;
-    if (target.closest("button") || target.closest("input") || target.tagName === "INPUT") return;
-
-    const canvas = state.canvasEl;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-
-    if (visible) {
-      // Move the input to the new click location
-      show(screenX, screenY);
-    } else {
-      show(screenX, screenY);
-    }
-  }
-
-  // Update position when camera moves
+  // Update position when camera moves; show / hide in lockstep with the
+  // brainstormMode flag. The input is auto-placed on toggle (no longer
+  // anchored to a "first canvas click") so the canvas behaves like
+  // select mode the entire time brainstorm is on.
   state.addEventListener("change", (ev) => {
     const detail = (ev as CustomEvent).detail;
     if (detail?.keys?.includes("camera")) updatePosition();
-    if (detail?.keys?.includes("brainstormMode") && !state.brainstormMode) hide();
+    if (detail?.keys?.includes("brainstormMode")) {
+      if (state.brainstormMode && !visible) {
+        showAtDefault();
+      } else if (!state.brainstormMode && visible) {
+        hide();
+      }
+    }
   });
 
-  // We need to register the click handler on the canvas — but it doesn't exist yet.
-  // Do it after the canvas is set.
+  /** Default landing spot when brainstormMode is toggled on. Lands the
+   *  input at the centre of the user's current pan view (where they're
+   *  already looking), and from there the user drags it via the
+   *  hamburger handle. */
+  function showAtDefault() {
+    const canvas = state.canvasEl;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    // Approximate input footprint (input 200 + handle 26 + close 32 ≈ 258 wide,
+    // ~32 tall). Centre that footprint in the viewport.
+    const x = Math.max(0, Math.round(rect.width / 2 - 129));
+    const y = Math.max(0, Math.round(rect.height / 2 - 16));
+    show(x, y);
+  }
+
+  // If brainstormMode flipped on before the canvas mounted, show the
+  // input as soon as it's available.
   const checkCanvas = setInterval(() => {
     if (state.canvasEl) {
-      state.canvasEl.addEventListener("pointerdown", handleCanvasClick, { capture: true });
+      if (state.brainstormMode && !visible) showAtDefault();
       clearInterval(checkCanvas);
     }
   }, 50);

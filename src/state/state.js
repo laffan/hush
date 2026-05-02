@@ -443,6 +443,23 @@ export class AppState {
     this.emit("files-changed");
   }
 
+  /** Pane-driven counterpart to {@link maybeRenameFromFirstLine}. Takes a
+   *  fileId + raw content (read from the pane's own editor) and renames
+   *  the matching tree node when the derived first-line name differs.
+   *  Called from `savePaneContent` so docs created via "New Document as
+   *  Pane" pick up a name from their first line, exactly like docs
+   *  created in the main editor. */
+  async maybeRenameFileFromContent(fileId, content) {
+    if (!fileId) return;
+    const derived = this._deriveName(content);
+    if (!derived || derived === "Untitled") return;
+    const node = findNodeByFileId(this.fileTree, fileId);
+    if (!node || node.name === derived) return;
+    const { renameTreeNode } = await import("./state-tree.js");
+    await renameTreeNode(this, node.id, derived);
+    this.emit("files-changed");
+  }
+
   /** True when the main editor's primary cursor sits on line 1. Used to
    *  gate the autosave rename path. */
   _cursorOnFirstLine() {

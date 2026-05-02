@@ -108,7 +108,10 @@ export class NotesCanvas {
     };
     this.state.addEventListener("change", () => {
       if (this.state.isPanning) this._canvas.style.cursor = "grab";
-      else this._canvas.style.cursor = this.state.brainstormMode ? "text" : (cursorMap[this.state.tool] || "default");
+      // Brainstorm mode now behaves like select on the canvas (drag
+      // shapes, double-click to add text); the floating input has its
+      // own focus / cursor. Show the default arrow so this matches.
+      else this._canvas.style.cursor = this.state.brainstormMode ? "default" : (cursorMap[this.state.tool] || "default");
     });
 
     // Image cache management
