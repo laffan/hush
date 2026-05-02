@@ -146,6 +146,8 @@
 .cmd-floating-button {
   position: fixed;
   left: 20px;
+  /* The Cmd ⌘ button sits on the bottom row; the palette ☰ button
+     above stacks 12 px higher (52 = 36 button + ~16 gap). */
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   width: 36px;
   height: 36px;
@@ -171,7 +173,12 @@
   -webkit-backdrop-filter: blur(8px);
   z-index: var(--z-modal);
   -webkit-app-region: no-drag;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  transition: opacity 0.15s, color 0.15s, background 0.15s, box-shadow 0.12s;
+}
+
+.cmd-floating-button.cmd-palette-button {
+  /* Stack above the Cmd button with a 12 px gap. */
+  bottom: calc(20px + 36px + 12px + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.panel-open {
@@ -186,6 +193,13 @@
   background: var(--accent, #5a8ad8);
   color: #fff;
   opacity: 1;
+}
+
+/* While the Cmd button is held, paint a 30 px / 30 % opacity halo
+   around it so the user can still see it under their thumb. The
+   palette button is a single-tap action and doesn't need it. */
+.cmd-floating-button:not(.cmd-palette-button).active {
+  box-shadow: 0 0 0 30px rgba(90, 138, 216, 0.3);
 }
 
 .sidebar-floating-toggle:hover {

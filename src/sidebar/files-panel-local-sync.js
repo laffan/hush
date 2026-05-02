@@ -289,7 +289,7 @@ function attachLocalSyncFileDrag(rowEl, folder, entry, relPath) {
       // Mark this gesture so the subsequent click listener knows to
       // skip "open in main editor" — the drag replaces that action.
       rowEl.dataset.dragConsumed = "1";
-      if (!(ev.metaKey || ev.ctrlKey)) return;
+      if (!(ev.metaKey || ev.ctrlKey || (typeof window !== "undefined" && window.__hushCmdHeld))) return;
       const panelOverlay = document.getElementById("panel-overlay");
       const rect = panelOverlay?.getBoundingClientRect();
       if (!rect || ev.clientX <= rect.right) return;

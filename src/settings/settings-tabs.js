@@ -158,7 +158,7 @@ export function renderGeneralTab(settings) {
         <label>Show tooltips</label>
         <input type="checkbox" id="setting-show-tooltips" ${s.showTooltips ? "checked" : ""} />
       </div>
-      ${isIOSSettings() ? `<div class="settings-row"><label>Show Cmd Button</label><input type="checkbox" id="setting-show-cmd-button" ${s.showCmdButton ? "checked" : ""} /></div><p class="settings-help">A floating ⌘ button in the bottom-left of the editor. Hold it to mimic the Cmd key being pressed (drag text out, Cmd-drag to merge flowchart nodes, etc.) on touch devices that don't have a hardware keyboard.</p>` : ""}
+      ${isIOSSettings() ? `<div class="settings-row"><label>Touch mode</label><input type="checkbox" id="setting-touch-mode" ${s.touchMode ? "checked" : ""} /></div><p class="settings-help">Adds two floating buttons to the bottom-left of the editor for keyboard-free use: a ⌘ button to hold for Cmd-drag gestures, and a menu button (☰) above it that opens the command palette.</p>` : ""}
     </div>
   `;
 }
