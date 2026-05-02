@@ -4,37 +4,6 @@
 
 import { parsePath, pathsEqual, isAncestorPath, getChildrenAtPath, getItemAtPath } from "./utils.js";
 
-/** On-screen debug toast — used while diagnosing the iPad drag-to-pane
- *  gesture, since console.log isn't visible without a tethered debugger.
- *  Set `window.__hushDragDebug = false` to silence. */
-function showDragDebugToast(text) {
-  let el = document.getElementById("__hush-drag-debug");
-  if (!el) {
-    el = document.createElement("pre");
-    el.id = "__hush-drag-debug";
-    Object.assign(el.style, {
-      position: "fixed",
-      top: "12px",
-      right: "12px",
-      maxWidth: "60vw",
-      padding: "10px 12px",
-      background: "rgba(0,0,0,0.85)",
-      color: "#0f0",
-      font: "11px/1.4 Menlo, Monaco, monospace",
-      borderRadius: "8px",
-      whiteSpace: "pre-wrap",
-      pointerEvents: "none",
-      zIndex: "2147483646",
-      boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-    });
-    document.body.appendChild(el);
-  }
-  el.textContent = text;
-  el.style.opacity = "1";
-  clearTimeout(el._fadeTimer);
-  el._fadeTimer = setTimeout(() => { el.style.opacity = "0.6"; }, 4000);
-}
-
 export function initDragHandlers(instance) {
   instance._onPointerDown = onPointerDown.bind(instance);
   instance._onPointerMove = onPointerMove.bind(instance);
@@ -365,22 +334,6 @@ function finishDrag(pointerEvent) {
   const forceAllowed = this.config.forceDragOutside?.(draggedItem) === true;
   const cmdHeld = pointerEvent && (pointerEvent.metaKey || pointerEvent.ctrlKey
     || !!(typeof window !== "undefined" && window.__hushCmdHeld));
-  if (typeof window !== "undefined" && window.__hushDragDebug !== false) {
-    const panelOverlay = this.container.closest("#panel-overlay");
-    const panelRight = panelOverlay?.getBoundingClientRect().right;
-    const clientX = pointerEvent?.clientX;
-    const isOutside = clientX != null && panelRight != null ? clientX > panelRight : null;
-    const lines = [
-      `item=${draggedItem?.type ?? "?"}/${draggedItem?.name ?? "?"}`,
-      `forceAllowed=${forceAllowed}`,
-      `meta=${!!pointerEvent?.metaKey} ctrl=${!!pointerEvent?.ctrlKey} virtual=${!!(typeof window !== "undefined" && window.__hushCmdHeld)}`,
-      `cmdHeld=${cmdHeld}`,
-      `clientX=${clientX} panelRight=${panelRight}`,
-      `isOutside=${isOutside}`,
-      `→ ${pointerEvent && this.config.onDragOutside && draggedItem && (forceAllowed || cmdHeld) && isOutside ? "WILL FIRE onDragOutside" : "NO drag-out"}`,
-    ];
-    showDragDebugToast(lines.join("\n"));
-  }
   if (pointerEvent && this.config.onDragOutside && draggedItem &&
       (forceAllowed || cmdHeld)) {
     const panelOverlay = this.container.closest("#panel-overlay");

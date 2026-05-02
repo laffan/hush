@@ -440,14 +440,11 @@ function open(state) {
     close() { close(); },
   };
 
-  // Real-mouse movement clears the keyboard-nav flag so hover takes
-  // over selection again. Skip touch / pen pointer types — those fire
-  // synthetic mousemoves on iOS during a scroll and shouldn't be
-  // interpreted as "user is hovering with a mouse".
-  overlay.addEventListener("pointermove", (e) => {
-    if (e.pointerType && e.pointerType !== "mouse") return;
-    keyboardNav = false;
-  });
+  // The keyboardNav flag is cleared lazily inside the row pointerenter
+  // handler (mouse pointer only). Avoiding an overlay-wide pointermove
+  // listener matters on iPad — pointermove fires for every touch frame,
+  // even when the callback would early-return, and the dispatch alone
+  // was enough to make scrolling commit only at touch release.
 
   input.addEventListener("input", () => {
     const q = input.value.trim().toLowerCase();
@@ -533,7 +530,9 @@ function renderList(listEl, state) {
     // what made scrolling visibly stutter.
     row.addEventListener("pointerenter", (e) => {
       if (e.pointerType && e.pointerType !== "mouse") return;
-      if (keyboardNav) return;
+      // Real-mouse hover takes back keyboard-nav lock so the highlight
+      // tracks the cursor again.
+      keyboardNav = false;
       if (activeIndex === i) return;
       const prev = listEl.children[activeIndex];
       if (prev) prev.classList.remove("active");
