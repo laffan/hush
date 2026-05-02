@@ -77,7 +77,9 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │       └── engine/                    (engine/stroke.js — exception)
 │
 ├── pane/
-│   ├── pane-manager.js                (lifecycle, focus, attach, build DOM)
+│   ├── pane-manager.js                (lifecycle, focus, theme/style sync)
+│   ├── pane-toolbar.js                (extracted: title-bar DOM + collapse/attach/pin)
+│   ├── pane-layout.js                 (extracted: getInitialPanePosition, fitActivePaneToGap, centerPaneInViewport)
 │   ├── pane-state.js                  (shared module state + accessors)
 │   ├── pane-editor.js
 │   ├── pane-content.js                (load / save / sync I/O)
@@ -115,15 +117,22 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │
 ├── settings/
 │   ├── settings-window.js
-│   ├── settings-tabs.js
+│   ├── settings-tabs.js               (shared escapers + General/Editor/D.R.Y./Privacy/Flags tabs)
+│   ├── settings-tabs-shortcuts.js     (extracted: shortcutCategories + Shortcuts tab)
+│   ├── settings-tabs-sync.js          (extracted: Dropbox + Local Sync tab)
+│   ├── settings-tabs-zotero.js        (extracted: Zotero tab)
 │   └── settings-ui.js
 │
 ├── state/
-│   ├── state.js
+│   ├── state.js                       (AppState — thin coordinator)
 │   ├── state-defaults.js              (default AppSettings shape)
+│   ├── state-modes.js                 (extracted: ratchet / private / typewriter / dry / focus / zen / fullscreen toggles)
+│   ├── state-snapshots.js             (extracted: keystroke-driven snapshot tracking)
+│   ├── state-naming.js                (extracted: first-line auto-rename helpers)
 │   ├── state-project.js
 │   ├── state-tree.js
 │   ├── state-images.js
+│   ├── state-desk.js
 │   └── tree-helpers.js
 │
 ├── sync/
@@ -174,6 +183,12 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Loaded as a sid
 ### State Management (`state/state.js`)
 
 `AppState` is the single source of truth. It holds settings, file list, mode flags, and the editor reference. Uses a simple event emitter (`on`/`off`/`emit`) to notify UI of changes. The default `settings` shape is built by `createDefaultSettings()` in `state/state-defaults.js` (~170 fields mirroring the Rust `AppSettings` struct).
+
+**Sibling state modules.** `state.js` stays a thin coordinator; the chunks of behaviour that don't need to live on `AppState` itself were lifted into siblings so the file stays under the line limit:
+
+- **`state-modes.js`** — every `toggle*` / `start|stopRatchet` mode flip. Each export takes `state` as the first arg; the matching `AppState.toggleX()` methods are one-line delegations so external callers (command palette, sidebar, editor commands) keep working unchanged.
+- **`state-snapshots.js`** — `trackKeystroke(state)` (the every-30-keystrokes auto-snapshot) and `createManualSnapshot(state)`. Doc-only; notebook snapshots ride the autosave path in `notebook-bridge.js`.
+- **`state-naming.js`** — `deriveName`, `cursorOnFirstLine`, `updateTreeNodeNameByFileId`, `maybeRenameFromFirstLine`, `maybeRenameFileFromContent`. The "name follows first line" rule has three triggers in `editor.js` (cursor leaves line 1, editor blur, autosave when cursor isn't on line 1); the pane-driven counterpart fires on `savePaneContent` so docs created via "New Document as Pane" get the same treatment.
 
 **`state.runtime` substructure.** Cross-module side-channel data that doesn't belong on `settings` (not persisted) and isn't first-class state (no event emissions) lives on `state.runtime`. Replaces the prior convention where any module could stamp a fresh `state._foo` field on AppState. Current fields:
 
@@ -430,7 +445,7 @@ Four context-aware drop targets. When the sidebar panel is open, an "Import file
 
 Draggable reference windows that float above the editor or notebook canvas. Created by Cmd-dragging a file from the sidebar files panel past the panel boundary into the editing area. The subsystem is split across nine modules; **`pane-state.js`** is the shared state hub (the `panes` Map + accessors for the lazy notebook bridge, the active pane id, etc.) so siblings can read/mutate without circular imports against `pane-manager.js`.
 
-**`pane-manager.js`** — Lifecycle entry point: create, close, focus, collapse, build DOM, attach/pin toggles, theme sync, ratchet lock. Imports the worker modules below; owns the public API (`initPaneManager`, `createPane`, `closePane`, `focusPane`, etc.).
+**`pane-manager.js`** — Lifecycle entry point: create, close, focus, theme/style sync, ratchet lock. Imports the worker modules below; owns the public API (`initPaneManager`, `createPane`, `closePane`, `focusPane`, etc.). The title-bar DOM (icons, buttons, collapse/attach/pin toggles) lives in **`pane-toolbar.js`**, and the positioning helpers (`getInitialPanePosition`, `fitActivePaneToGap`, `centerPaneInViewport`) live in **`pane-layout.js`** — both extracted to keep `pane-manager.js` under the line limit. `pane-toolbar.js` receives `{ closePane, focusPane, createPane, getCurrentContext, onContextChange }` from `pane-manager.js` at build time so it doesn't need a back-import.
 
 **`pane-editor.js`** — Factory that calls `createBaseExtensions()` from `editor/editor.js` so pane editors share the identical plugin, shortcut, and theme setup as the main editor. Exposes `setEditable(bool)` via an `EditorView.editable` compartment — inactive panes are locked non-editable to prevent input leaks.
 
@@ -561,7 +576,7 @@ Runs in a separate Tauri WebviewWindow (desktop) or modal overlay (iOS). Loads/s
 
 **Header underline.** `Style.underlineHeaders` (and the global `underlineHeaders` setting for the Default style) flows through `getMarkdownHighlight(nh, color, scale, { underline })` as `text-decoration: underline` on every heading tag. The style modal previews it live alongside the colour and size sliders. The header colour override path (`resolveHeaderColorOverride`) was simplified at the same time so a colour set on the Default style (which lives in `defaultLightColors` / `defaultDarkColors`) actually applies to the editor — it had previously been preview-only.
 
-Tab rendering is split into `settings-tabs.js` to keep file sizes under 700 lines.
+Tab rendering is split into `settings-tabs.js` to keep file sizes under 700 lines. The three largest tabs were lifted further into siblings — `settings-tabs-shortcuts.js` (categories, conflict detection, search-filtered render), `settings-tabs-sync.js` (Dropbox states + Local Sync), and `settings-tabs-zotero.js` (credentials, references, PDF snapshot tuning). `settings-tabs.js` re-exports them so `settings-window.js` can keep its single barrel import.
 
 ### Themes (`themes.js`)
 

@@ -1,100 +1,16 @@
 /**
- * Settings tab rendering functions — extracted from settings-window.js.
- * Each render function accepts a context object { settings, drySearchQuery }.
+ * Settings tab rendering — entry point. Each render function accepts a
+ * context object { settings, drySearchQuery }. Larger tabs are split
+ * into sibling files and re-exported here so settings-window.js can
+ * import everything from one place:
+ *   - settings-tabs-shortcuts.js   (Shortcuts tab + categories)
+ *   - settings-tabs-sync.js        (Dropbox + Local Sync tab)
+ *   - settings-tabs-zotero.js      (Zotero tab)
  */
-import { themeList } from "../themes.js";
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
 import { renderFlagsTab } from "../longview/longview-settings.js";
 
-// Shortcuts organized by category.  This list is the exhaustive inventory
-// of every user-customizable shortcut in the app — every entry here must
-// have a matching field in `AppSettings` (Rust) and a handler registered
-// in `editor/editor.js` via `buildCodeMirrorKeymap` so that edits in the
-// settings UI actually take effect.
-export const shortcutCategories = [
-  {
-    name: "General",
-    shortcuts: [
-      { key: "shortcutOpenEditor", label: "Toggle editor" },
-      { key: "shortcutOpenFullscreen", label: "Open fullscreen" },
-      { key: "shortcutTogglePrivate", label: "Toggle private mode" },
-      { key: "shortcutToggleSidebar", label: "Toggle sidebar" },
-      { key: "shortcutToggleOutline", label: "Toggle right sidebar (outline / shelf)" },
-      { key: "shortcutTypewriter", label: "Toggle typewriter mode" },
-      { key: "shortcutToggleDry", label: "Toggle D.R.Y. highlighting" },
-      { key: "shortcutToggleFocus", label: "Toggle focus mode" },
-      { key: "shortcutZenFocus", label: "Toggle Zen Focus" },
-      { key: "shortcutToggleWordCount", label: "Toggle word count" },
-      { key: "shortcutNewFile", label: "New file" },
-      { key: "shortcutSave", label: "Save file" },
-      { key: "shortcutFind", label: "Find / replace" },
-      { key: "shortcutFindAll", label: "Find across files" },
-      { key: "shortcutFindNext", label: "Find next match" },
-      { key: "shortcutFindPrev", label: "Find previous match" },
-      { key: "shortcutZotero", label: "Zotero search" },
-    ],
-  },
-  {
-    name: "Editing",
-    shortcuts: [
-      { key: "shortcutSelectSentence", label: "Select sentence" },
-      { key: "shortcutSelectParagraph", label: "Select paragraph" },
-      { key: "shortcutReduceSentence", label: "Reduce sentence selection" },
-      { key: "shortcutSelectNext", label: "Select next instance" },
-      { key: "shortcutSelectPrevious", label: "Select previous instance" },
-      { key: "shortcutJumpNextSentence", label: "Jump to next sentence" },
-      { key: "shortcutJumpPrevSentence", label: "Jump to previous sentence" },
-      { key: "shortcutJumpNextParagraph", label: "Jump to next paragraph" },
-      { key: "shortcutJumpPrevParagraph", label: "Jump to previous paragraph" },
-      { key: "shortcutNextSentence", label: "Shift selection to next sentence" },
-      { key: "shortcutPrevSentence", label: "Shift selection to previous sentence" },
-      { key: "shortcutMoveSentenceForward", label: "Move sentence forward" },
-      { key: "shortcutMoveSentenceBack", label: "Move sentence back" },
-      { key: "shortcutDeleteToSentenceEnd", label: "Delete to sentence end" },
-      { key: "shortcutJoinLines", label: "Join lines (pull up)" },
-    ],
-  },
-  {
-    name: "Styles",
-    shortcuts: [
-      { key: "shortcutStyleDefault", label: "Switch to Default style" },
-      { key: "shortcutStyle1", label: "Switch to style 1" },
-      { key: "shortcutStyle2", label: "Switch to style 2" },
-      { key: "shortcutStyle3", label: "Switch to style 3" },
-      { key: "shortcutStyle4", label: "Switch to style 4" },
-    ],
-  },
-  {
-    name: "Formatting",
-    shortcuts: [
-      { key: "shortcutBold", label: "Bold" },
-      { key: "shortcutItalic", label: "Italic" },
-      { key: "shortcutHighlight", label: "Highlight" },
-      { key: "shortcutComment", label: "Comment" },
-      { key: "shortcutStrikethrough", label: "Strikethrough" },
-      { key: "shortcutInsertFootnote", label: "Insert footnote" },
-    ],
-  },
-  {
-    name: "Notebooks",
-    shortcuts: [
-      { key: "shortcutNbSelect", label: "Select tool" },
-      { key: "shortcutNbText", label: "Text tool" },
-      { key: "shortcutNbDragArea", label: "Drag Area tool" },
-      { key: "shortcutNbBrainstorm", label: "Toggle Brainstorm" },
-      { key: "shortcutNbDelete", label: "Delete selected" },
-      { key: "shortcutNbUndo", label: "Undo" },
-      { key: "shortcutNbRedo", label: "Redo" },
-      { key: "shortcutNbGroup", label: "Group shapes" },
-      { key: "shortcutNbUngroup", label: "Ungroup shapes" },
-    ],
-  },
-];
-
-// Flat list for conflict detection
-export const shortcutDefs = shortcutCategories.flatMap(cat => cat.shortcuts);
-
-// ===== Helpers =====
+// ===== Shared helpers (also used by sibling tab files) =====
 export function escHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
@@ -105,22 +21,6 @@ export function escAttr(str) {
   return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
-export function normalizeShortcut(s) {
-  if (!s) return "";
-  return s.replace(/CmdOrCtrl|Mod/g, "Cmd").toLowerCase();
-}
-
-export function findConflict(settings, key) {
-  const val = settings[key];
-  if (!val) return null;
-  const normalized = normalizeShortcut(val);
-  for (const def of shortcutDefs) {
-    if (def.key === key) continue;
-    if (settings[def.key] && normalizeShortcut(settings[def.key]) === normalized) return def.label;
-  }
-  return null;
-}
-
 // iPadOS 13+ reports as Macintosh; accept any positive maxTouchPoints
 // (real Macs expose 0; some WKWebView versions on iPad only expose 1).
 export function isIOSSettings() {
@@ -128,6 +28,15 @@ export function isIOSSettings() {
   const tp = navigator.maxTouchPoints || 0;
   return /Mac/i.test(navigator.platform || "") && tp > 0;
 }
+
+// Re-export sibling-file APIs so settings-window.js's single import
+// statement keeps working without touching every call site.
+export {
+  shortcutCategories, shortcutDefs, normalizeShortcut, findConflict,
+  renderShortcutsTab, renderShortcutKeys,
+} from "./settings-tabs-shortcuts.js";
+export { renderSyncTab } from "./settings-tabs-sync.js";
+export { renderZoteroTab } from "./settings-tabs-zotero.js";
 
 // ===== General Tab =====
 export function renderGeneralTab(settings) {
@@ -166,8 +75,6 @@ export function renderGeneralTab(settings) {
 // ===== Editor Tab =====
 export function renderEditorTab(settings) {
   const s = settings;
-  const lightThemes = themeList.filter((t) => t.type === "light");
-  const darkThemes = themeList.filter((t) => t.type === "dark");
 
   return `
     <div class="settings-section">
@@ -287,164 +194,6 @@ export function renderEditorTab(settings) {
   `;
 }
 
-// System font options
-function renderFontOptions(currentFamily) {
-  const builtIn = [
-    { name: "Source Sans Pro", family: "Source Sans Pro" },
-    { name: "Source Serif Pro", family: "Source Serif Pro" },
-    { name: "Libre Franklin", family: "Libre Franklin" },
-    { name: "Libre Baskerville", family: "Libre Baskerville" },
-    { name: "Karla", family: "Karla" },
-    { name: "Lora", family: "Lora" },
-    { name: "Helvetica", family: "Helvetica" },
-    { name: "EB Garamond", family: "EB Garamond" },
-    { name: "Inter", family: "Inter" },
-    { name: "Fira Code", family: "Fira Code" },
-    { name: "iA Writer Duo", family: "iA Writer Duo" },
-    { name: "iA Writer Mono", family: "iA Writer Mono" },
-    { name: "iA Writer Quattro", family: "iA Writer Quattro" },
-  ];
-
-  const systemFonts = getSystemFonts();
-  let html = `<optgroup label="Built-in">`;
-  for (const f of builtIn) {
-    html += `<option value="${f.family}" ${currentFamily === f.family ? "selected" : ""} style="font-family: '${f.family}'">${f.name}</option>`;
-  }
-  html += `</optgroup>`;
-
-  if (systemFonts.length > 0) {
-    html += `<optgroup label="System Fonts">`;
-    for (const name of systemFonts) {
-      const sel = currentFamily === name ? "selected" : "";
-      html += `<option value="${name}" ${sel} style="font-family: '${name}'">${name}</option>`;
-    }
-    html += `</optgroup>`;
-  }
-
-  return html;
-}
-
-function getSystemFonts() {
-  // Use the Local Font Access API if available, else return common system fonts
-  const common = [
-    "Arial", "Avenir", "Avenir Next", "Baskerville", "Bookman Old Style",
-    "Courier New", "Didot", "Futura", "Garamond", "Geneva", "Georgia",
-    "Gill Sans", "Hoefler Text",
-    "Lucida Grande", "Menlo", "Monaco", "Optima", "Palatino",
-    "SF Mono", "SF Pro", "SF Pro Display", "SF Pro Rounded", "SF Pro Text",
-    "System UI", "Times New Roman", "Trebuchet MS", "Verdana",
-  ];
-  return common;
-}
-
-// ===== Shortcuts Tab =====
-export function renderShortcutsTab(settings, searchQuery = "") {
-  const q = (searchQuery || "").trim().toLowerCase();
-
-  // Collect all shortcuts with conflict + category info
-  const all = [];
-  for (const category of shortcutCategories) {
-    for (const def of category.shortcuts) {
-      all.push({
-        ...def,
-        categoryName: category.name,
-        conflict: findConflict(settings, def.key),
-      });
-    }
-  }
-
-  const matchesQuery = (item) => {
-    if (!q) return true;
-    if (item.label.toLowerCase().includes(q)) return true;
-    const val = settings[item.key];
-    if (val && val.toLowerCase().includes(q)) return true;
-    return false;
-  };
-
-  const conflictItems = all.filter((s) => s.conflict);
-  const conflictKeys = new Set(conflictItems.map((s) => s.key));
-
-  let html = `
-    <div class="settings-section shortcut-search-section">
-      <div class="shortcut-search-row">
-        <input type="text" id="shortcut-search-input" placeholder="Search shortcuts…" value="${escAttr(searchQuery)}" autocomplete="off" spellcheck="false" />
-      </div>
-    </div>
-  `;
-
-  // Pinned conflicts — always visible at the top when any exist.
-  if (conflictItems.length > 0) {
-    html += `<div class="settings-section shortcut-conflicts-section"><h2>Conflicts</h2>`;
-    for (const item of conflictItems) {
-      html += renderShortcutRow(settings, item, q, item.categoryName);
-    }
-    html += `</div>`;
-  }
-
-  // Regular categories — exclude items already shown in the Conflicts section
-  // and filter by search query.
-  let anyMatches = false;
-  for (const category of shortcutCategories) {
-    const items = category.shortcuts
-      .filter((def) => !conflictKeys.has(def.key))
-      .map((def) => ({ ...def, conflict: null }))
-      .filter(matchesQuery);
-    if (items.length === 0) continue;
-    anyMatches = true;
-    html += `<div class="settings-section"><h2>${category.name}</h2>`;
-    for (const item of items) {
-      html += renderShortcutRow(settings, item, q);
-    }
-    html += `</div>`;
-  }
-
-  if (q && !anyMatches && conflictItems.filter(matchesQuery).length === 0) {
-    html += `<div class="settings-section"><p class="settings-help">No shortcuts match "${escHtml(searchQuery)}".</p></div>`;
-  }
-
-  return html;
-}
-
-function renderShortcutRow(settings, def, query, categoryLabel) {
-  const labelHtml = highlightMatch(def.label, query);
-  const categoryTag = categoryLabel
-    ? ` <span class="shortcut-category-tag">${escHtml(categoryLabel)}</span>`
-    : "";
-  return `<div class="shortcut-row-wrap" data-shortcut-key="${escAttr(def.key)}">
-    <div class="shortcut-row-inner">
-      <label>${labelHtml}${categoryTag}</label>
-      <div class="shortcut-display">
-        ${renderShortcutKeys(settings[def.key])}
-      </div>
-    </div>
-    ${def.conflict ? `<div class="shortcut-conflict">Conflicts with "${escHtml(def.conflict)}"</div>` : ""}
-  </div>`;
-}
-
-function highlightMatch(text, query) {
-  if (!query) return escHtml(text);
-  const lower = text.toLowerCase();
-  const idx = lower.indexOf(query);
-  if (idx < 0) return escHtml(text);
-  const before = text.slice(0, idx);
-  const match = text.slice(idx, idx + query.length);
-  const after = text.slice(idx + query.length);
-  return `${escHtml(before)}<mark class="shortcut-search-hit">${escHtml(match)}</mark>${escHtml(after)}`;
-}
-
-export function renderShortcutKeys(shortcut) {
-  if (!shortcut) return `<span class="shortcut-keys"><kbd>None</kbd></span>`;
-  const display = shortcut
-    .replace(/CmdOrCtrl|Mod/g, navigator.platform.includes("Mac") ? "\u2318" : "Ctrl");
-  const parts = display.split("+").map((p) => {
-    const d = p
-      .replace("Shift", "\u21E7")
-      .replace("Alt", navigator.platform.includes("Mac") ? "\u2325" : "Alt");
-    return `<kbd>${d}</kbd>`;
-  });
-  return `<span class="shortcut-keys">${parts.join("")}</span>`;
-}
-
 // ===== D.R.Y. Tab =====
 export function renderDryTab(settings, drySearchQuery) {
   const s = settings;
@@ -506,120 +255,6 @@ export function renderFlagsSettingsTab(settings) {
   return renderFlagsTab(settings);
 }
 
-// ===== Sync Tab =====
-export function renderSyncTab(settings) {
-  const isConnected = !!settings.dropboxAccessToken;
-  const isEnabled = !!settings.dropboxEnabled;
-  const syncPath = settings.dropboxSyncPath || "";
-  const syncLog = settings.dropboxSyncLog || [];
-  const localSyncFolders = settings.localSyncFolders || [];
-
-  let html = "";
-
-  if (!isConnected) {
-    // ---- Not connected ----
-    html += `
-      <div class="settings-section">
-        <h2>Dropbox Sync</h2>
-        <p class="settings-help">
-          Connect your Dropbox account to sync all your documents, projects, and folders
-          across devices. Hush mirrors your entire library to a Dropbox folder as a backup.
-        </p>
-        <button id="sync-connect-dropbox" class="sync-action-btn">Connect to Dropbox</button>
-        <div id="sync-auth-status" class="sync-status"></div>
-      </div>
-    `;
-  } else if (!isEnabled || !syncPath) {
-    // ---- Connected, choosing folder ----
-    html += `
-      <div class="settings-section">
-        <h2>Dropbox Sync</h2>
-        <p class="settings-help">
-          Connected to Dropbox. Select a folder to sync your library to.
-          All documents, projects, and folders will be mirrored automatically.
-        </p>
-        <div class="settings-row">
-          <label>Sync folder</label>
-          <div class="sync-path-row">
-            <span id="sync-selected-path" class="sync-path-display">${syncPath ? escHtml(syncPath) : "None"}</span>
-            <button id="sync-browse-folder" class="sync-inline-btn">Browse</button>
-          </div>
-        </div>
-        <div id="sync-preview" class="sync-preview-box" style="display:none;"></div>
-        <div id="sync-auth-status" class="sync-status"></div>
-      </div>
-      <div class="settings-section">
-        <button id="sync-disconnect" class="sync-danger-btn">Disconnect Dropbox</button>
-      </div>
-    `;
-  } else {
-    // ---- Actively syncing ----
-    html += `
-      <div class="settings-section">
-        <h2>Dropbox Sync</h2>
-        <div class="sync-info-box">
-          <div class="sync-info-row">
-            <span class="sync-info-label">Status</span>
-            <span class="sync-info-value" id="sync-connection-status">Active</span>
-          </div>
-          <div class="sync-info-row">
-            <span class="sync-info-label">Folder</span>
-            <span class="sync-info-value">${escHtml(syncPath)}</span>
-          </div>
-        </div>
-        <div class="sync-btn-row">
-          <button id="sync-test-connection" class="sync-inline-btn">Test Connection</button>
-          <button id="sync-change-folder" class="sync-inline-btn">Change Folder</button>
-        </div>
-        <div id="sync-auth-status" class="sync-status"></div>
-      </div>
-      <div class="settings-section">
-        <h2>Sync Log</h2>
-        <div class="sync-log-box" id="sync-log-box">
-          ${syncLog.length > 0
-            ? syncLog.slice(-20).reverse().map(entry => `<div class="sync-log-entry">${escHtml(entry)}</div>`).join("")
-            : `<div class="sync-log-empty">No sync activity yet.</div>`
-          }
-        </div>
-      </div>
-      <div class="settings-section">
-        <h2>Disconnect</h2>
-        <p class="settings-help">Stop syncing and return to local-only mode.</p>
-        <button id="sync-unsync" class="sync-danger-btn">Stop Syncing</button>
-      </div>
-    `;
-  }
-
-  // ── Local Sync section (desktop only) ──
-  html += `
-    <div class="settings-section local-sync-section">
-      <h2>Local Sync</h2>
-      <p class="settings-help">
-        Mount a folder on this machine directly in Hush. Local Sync folders
-        are outside the version control system — edits write straight to
-        disk and external changes appear immediately. Unsyncing a folder
-        only removes it from Hush; nothing on disk is changed.
-      </p>
-      <div class="local-sync-list" id="local-sync-list">
-        ${localSyncFolders.length === 0
-          ? `<div class="local-sync-empty">No folders yet.</div>`
-          : localSyncFolders.map(f => `
-              <div class="local-sync-item" data-id="${escAttr(f.id)}">
-                <div class="local-sync-item-info">
-                  <div class="local-sync-item-name">${escHtml(f.name)}</div>
-                  <div class="local-sync-item-path">${escHtml(f.path)}</div>
-                </div>
-                <button class="local-sync-remove-btn" data-id="${escAttr(f.id)}">Remove</button>
-              </div>
-            `).join("")}
-      </div>
-      <button id="local-sync-add" class="sync-action-btn">Add folder</button>
-    </div>
-  `;
-
-  return html;
-}
-
 // ===== Privacy Tab =====
 export function renderPrivacyTab(settings) {
   const s = settings;
@@ -643,69 +278,6 @@ export function renderPrivacyTab(settings) {
       <p class="settings-help">Paste the text of a dummy document below. When dummy mode is active, your writing will appear to be this text instead. Line breaks and formatting are stripped on paste.</p>
       <textarea id="setting-dummy-text" rows="12" placeholder="Paste your dummy document text here... e.g. a boring quarterly report, meeting notes, etc.">${escHtml(s.dummyText || "")}</textarea>
       ${hasDummy ? `<p class="settings-help" style="margin-top: 8px;">${s.dummyText.length.toLocaleString()} characters loaded</p>` : ""}
-    </div>
-  `;
-}
-
-// ===== Zotero Tab =====
-export function renderZoteroTab(settings) {
-  const s = settings;
-  const hasCredentials = s.zoteroApiKey && s.zoteroUserId;
-  const hasRefs = s.zoteroReferenceCount > 0;
-  return `
-    <div class="settings-section">
-      <h2>Zotero API</h2>
-      <p class="settings-help">
-        Enter your Zotero User ID and API Key to connect your library.
-        Create an API key at <a href="https://www.zotero.org/settings/keys" target="_blank" style="color: inherit; text-decoration: underline;">zotero.org/settings/keys</a>.
-      </p>
-      <div class="zotero-credentials">
-        <div class="settings-row">
-          <label>User ID</label>
-          <input type="text" id="zotero-user-id" placeholder="e.g. 12345678" value="${escAttr(s.zoteroUserId || "")}" />
-        </div>
-        <div class="settings-row">
-          <label>API Key</label>
-          <input type="password" id="zotero-api-key" placeholder="Zotero API key" value="${escAttr(s.zoteroApiKey || "")}" />
-        </div>
-        <button id="zotero-test-btn" class="zotero-test-btn">Test Connection</button>
-        <div id="zotero-test-status" class="zotero-status"></div>
-      </div>
-    </div>
-    <div class="settings-section">
-      <h2>References</h2>
-      <div id="zotero-progress" class="zotero-progress" style="display:none;">
-        <div class="zotero-progress-bar"><div id="zotero-progress-fill" class="zotero-progress-fill"></div></div>
-        <div id="zotero-progress-text" class="zotero-progress-text"></div>
-      </div>
-      ${hasRefs ? `
-        <div class="zotero-ref-info">
-          <strong>${s.zoteroReferenceCount}</strong> reference${s.zoteroReferenceCount !== 1 ? "s" : ""}
-          ${s.zoteroLastUpdate ? `<br/><span class="zotero-ref-detail">Last updated: ${s.zoteroLastUpdate}</span>` : ""}
-          ${s.zoteroFileSize ? `<br/><span class="zotero-ref-detail">File size: ${s.zoteroFileSize}</span>` : ""}
-        </div>
-      ` : ""}
-      <button id="zotero-download-btn" class="zotero-download-btn" ${!hasCredentials ? "disabled" : ""}>
-        ${hasRefs ? "Update References" : "Download References"}
-      </button>
-    </div>
-    <div class="settings-section">
-      <h2>PDF Snapshots</h2>
-      <p class="settings-help">
-        When inserting a Zotero PDF reference with the Insert snapshot option, the chosen page is rendered to an image at this size.
-      </p>
-      <div class="settings-row">
-        <label>Render height (px)</label>
-        <input type="number" id="zotero-snapshot-render-height" min="100" max="6000" step="50" value="${s.zoteroSnapshotRenderHeight ?? 1500}" />
-      </div>
-      <div class="settings-row">
-        <label>Display height (px)</label>
-        <input type="number" id="zotero-snapshot-display-height" min="50" max="2000" step="10" value="${s.zoteroSnapshotDisplayHeight ?? 300}" />
-      </div>
-      <div class="settings-row">
-        <label>WebP quality (1–100)</label>
-        <input type="number" id="zotero-snapshot-quality" min="1" max="100" step="1" value="${s.zoteroSnapshotQuality ?? 90}" />
-      </div>
     </div>
   `;
 }

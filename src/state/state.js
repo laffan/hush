@@ -5,6 +5,9 @@
 import { findNode, removeNode, collectDocumentIds, findNodeByFileId, insertAfter, insertNode } from "./tree-helpers.js";
 import { openProject as _openProject, saveProjectContent as _saveProjectContent } from "./state-project.js";
 import { createDefaultSettings } from "./state-defaults.js";
+import * as _modes from "./state-modes.js";
+import * as _snapshots from "./state-snapshots.js";
+import * as _naming from "./state-naming.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -237,32 +240,8 @@ export class AppState {
     this.runtime.syncPullingFileId = null;
   }
 
-  trackKeystroke() {
-    this._keystrokeCount++;
-    if (this._keystrokeCount >= 30 && this.dirty) {
-      this._keystrokeCount = 0;
-      this._createSnapshot();
-    }
-  }
-
-  async _createSnapshot() {
-    const docId = this.currentProjectId ? null : this.currentFileId;
-    if (!docId || !this.editor || this._snapshotPending) return;
-    this._snapshotPending = true;
-    try {
-      if (IS_TAURI) await tauriInvoke("create_snapshot", { documentId: docId, content: this.editor.getContent() });
-    } catch (e) { console.error("Snapshot failed:", e); }
-    finally { this._snapshotPending = false; }
-  }
-
-  async createManualSnapshot() {
-    const docId = this.currentProjectId ? null : this.currentFileId;
-    if (!docId || !this.editor) return;
-    if (IS_TAURI) {
-      try { await tauriInvoke("create_snapshot", { documentId: docId, content: this.editor.getContent() }); }
-      catch (e) { console.error("Manual snapshot failed:", e); }
-    }
-  }
+  trackKeystroke() { _snapshots.trackKeystroke(this); }
+  createManualSnapshot() { return _snapshots.createManualSnapshot(this); }
 
   // ===== Special Nodes =====
 
@@ -402,11 +381,11 @@ export class AppState {
         // Seed name from first line on the very first save. Subsequent
         // renames go through maybeRenameFromFirstLine() which fires at
         // stable moments (cursor off line 1, editor blur).
-        if (!file.name || file.name === "Untitled") file.name = this._deriveName(content);
+        if (!file.name || file.name === "Untitled") file.name = _naming.deriveName(content);
         this._saveFilesLocal();
       }
     }
-    if (this._updateTreeNodeNameByFileId(this.currentFileId)) {
+    if (_naming.updateTreeNodeNameByFileId(this, this.currentFileId)) {
       this.emit("files-changed");
     }
     // Autosave-path rename: update the filename to track the first line,
@@ -414,77 +393,14 @@ export class AppState {
     // typing in the title, we deliberately skip — preserves the old
     // behavior's "name follows first line" feel without the per-keystroke
     // sync churn that made Dropbox see phantom new files.
-    if (!this._cursorOnFirstLine()) {
+    if (!_naming.cursorOnFirstLine(this)) {
       await this.maybeRenameFromFirstLine();
     }
   }
 
-  /**
-   * If the content's derived first-line name differs from the current
-   * tree node's name, rename the file + tree node. Routes through the
-   * regular renameTreeNode path so Dropbox sync sees a rename (stable
-   * internal id → new path), not a delete+create.
-   *
-   * Called on three triggers — see editor.js:
-   *   1. cursor leaves line 1
-   *   2. editor blur
-   *   3. autosave when cursor is not on line 1
-   */
-  async maybeRenameFromFirstLine() {
-    if (this.currentProjectId || this.currentNotebookFileId || this.currentLocalSync) return;
-    if (!this.currentFileId || !this.editor) return;
-    const content = this.editor.getContent();
-    const derived = this._deriveName(content);
-    if (!derived || derived === "Untitled") return;
-    const node = findNodeByFileId(this.fileTree, this.currentFileId);
-    if (!node || node.name === derived) return;
-    const { renameTreeNode } = await import("./state-tree.js");
-    await renameTreeNode(this, node.id, derived);
-    this.emit("files-changed");
-  }
-
-  /** Pane-driven counterpart to {@link maybeRenameFromFirstLine}. Takes a
-   *  fileId + raw content (read from the pane's own editor) and renames
-   *  the matching tree node when the derived first-line name differs.
-   *  Called from `savePaneContent` so docs created via "New Document as
-   *  Pane" pick up a name from their first line, exactly like docs
-   *  created in the main editor. */
-  async maybeRenameFileFromContent(fileId, content) {
-    if (!fileId) return;
-    const derived = this._deriveName(content);
-    if (!derived || derived === "Untitled") return;
-    const node = findNodeByFileId(this.fileTree, fileId);
-    if (!node || node.name === derived) return;
-    const { renameTreeNode } = await import("./state-tree.js");
-    await renameTreeNode(this, node.id, derived);
-    this.emit("files-changed");
-  }
-
-  /** True when the main editor's primary cursor sits on line 1. Used to
-   *  gate the autosave rename path. */
-  _cursorOnFirstLine() {
-    if (!this.editor) return false;
-    const view = this.editor.view;
-    if (!view) return false;
-    try {
-      const head = view.state.selection.main.head;
-      return view.state.doc.lineAt(head).number === 1;
-    } catch { return false; }
-  }
-
-  _updateTreeNodeNameByFileId(fileId) {
-    const file = this.files.find((f) => f.id === fileId);
-    if (!file) return false;
-    const node = findNodeByFileId(this.fileTree, fileId);
-    if (node && node.name !== file.name) {
-      const oldName = node.name;
-      node.name = file.name;
-      // Propagate rename to Dropbox sync
-      this.syncRenameNode(node.id, oldName, node.type);
-      return true;
-    }
-    return false;
-  }
+  maybeRenameFromFirstLine() { return _naming.maybeRenameFromFirstLine(this); }
+  maybeRenameFileFromContent(fileId, content) { return _naming.maybeRenameFileFromContent(this, fileId, content); }
+  _deriveName(content) { return _naming.deriveName(content); }
 
   /** Create a new document.
    *  @param {string|null} parentId  Tree node to insert under (defaults to Inbox).
@@ -644,62 +560,15 @@ export class AppState {
     });
   }
 
-  // Ratchet mode
-  startRatchet(minutes) {
-    const endTime = Date.now() + minutes * 60 * 1000;
-    this.ratchetEndTime = endTime;
-    this.ratchetMode = true;
-    localStorage.setItem("hush_ratchet_end", endTime.toString());
-    this.emit("mode-changed");
-  }
-
-  stopRatchet() {
-    this.ratchetMode = false;
-    this.ratchetEndTime = null;
-    localStorage.removeItem("hush_ratchet_end");
-    this.emit("mode-changed");
-  }
-
-  togglePrivate() {
-    this.privateMode = !this.privateMode;
-    this.emit("mode-changed");
-  }
-
-  toggleTypewriter() {
-    if (this.ratchetMode) return;
-    this.typewriterMode = !this.typewriterMode;
-    this.emit("mode-changed");
-    this.updateSettings({ typewriterMode: this.typewriterMode });
-  }
-
-  toggleDry() {
-    this.dryMode = !this.dryMode;
-    this.emit("mode-changed");
-    this.updateSettings({ dryMode: this.dryMode });
-  }
-
-  toggleFocus() {
-    this.focusMode = !this.focusMode;
-    this.emit("mode-changed");
-  }
-
-  toggleZenFocus() {
-    this.zenFocus = !this.zenFocus;
-    this.emit("mode-changed");
-    this.emit("zen-focus-changed");
-  }
-
-  toggleFullscreen() {
-    this.isFullscreen = !this.isFullscreen;
-    this.emit("fullscreen-changed");
-  }
-
-  _deriveName(content) {
-    const trimmed = content.trim();
-    if (!trimmed) return "Untitled";
-    const firstLine = trimmed.split("\n")[0].replace(/^#+\s*/, "").replace(/[<>:"/\\|?*]/g, "").trim();
-    return firstLine.length <= 50 ? firstLine : firstLine.slice(0, 50);
-  }
+  // Mode toggles (delegated to state-modes.js)
+  startRatchet(minutes) { _modes.startRatchet(this, minutes); }
+  stopRatchet() { _modes.stopRatchet(this); }
+  togglePrivate() { _modes.togglePrivate(this); }
+  toggleTypewriter() { _modes.toggleTypewriter(this); }
+  toggleDry() { _modes.toggleDry(this); }
+  toggleFocus() { _modes.toggleFocus(this); }
+  toggleZenFocus() { _modes.toggleZenFocus(this); }
+  toggleFullscreen() { _modes.toggleFullscreen(this); }
 
   // Event system
   on(event, fn) { (this._listeners[event] ||= []).push(fn); }
