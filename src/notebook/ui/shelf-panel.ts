@@ -416,7 +416,19 @@ export function createShelfPanel(
       });
       row.appendChild(arrow);
     }
-    row.appendChild(h("span", { text: node.label, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", fontWeight: node.heading ? "600" : "400" }, onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0) }));
+    row.setAttribute("data-shelf-row", "1");
+    row.setAttribute("data-shape-id", node.shapeId);
+    row.appendChild(h("span", { text: node.label, attrs: { "data-shelf-row-label": "1" }, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", fontWeight: node.heading ? "600" : "400" }, onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0) }));
+    // Fall-back: clicks on the row that didn't land on the label span
+    // (icon, padding) still pan. Without this the pin button + flow
+    // arrow + drag-area icon swallow part of the row, so clicks there
+    // appear to do nothing.
+    row.addEventListener("click", (ev) => {
+      const tgt = ev.target as HTMLElement | null;
+      if (tgt && tgt.closest("[data-shelf-row-label]")) return; // already handled
+      if (tgt && tgt.closest("button")) return; // pin / collapse handled separately
+      state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0);
+    });
     const pinBtn = h("button", { title: isPinned ? "Unpin" : "Pin", style: { border: "none", background: "none", cursor: "pointer", padding: "0", opacity: isPinned ? "0.8" : "0.4", color: isPinned ? theme.accent : muted, display: "flex", alignItems: "center", width: "16px", height: "16px" }, onClick: () => { if (isPinned) pinned.delete(node.id); else pinned.add(node.id); rebuildBody(); } });
     pinBtn.appendChild(icon("pin", 12));
     row.appendChild(pinBtn);

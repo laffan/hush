@@ -23,6 +23,7 @@ import {
   IMAGE_MD_RE, urlFromMatch,
 } from "../../state/state-images.js";
 import { openImagePreviewModal } from "../image-preview.js";
+import { isCmdHeld } from "../../cmd-button.js";
 
 // Broad match — we filter to local refs inside the builder.
 const IMAGE_RE = new RegExp(IMAGE_MD_RE.source, "g");
@@ -154,7 +155,7 @@ function makeImageEventHandler(getContext) {
       if (e.button !== 0) return false;
       const hit = findWrapperTarget(e);
       if (hit) {
-        if (e.metaKey || e.ctrlKey) return false; // let the drag handler take it
+        if (isCmdHeld(e)) return false; // let the drag handler take it
         e.preventDefault();
         const ctx = getContext ? getContext() : null;
         openImagePreviewModal(hit.filename, hit.alt || hit.filename, ctx);
@@ -175,7 +176,7 @@ export function attachImageDrag(view, containerEl, state, getContext) {
   (async () => {
     const { startTextDrag } = await import("../../pane/text-drag.js");
     const handler = (e) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
+      if (!isCmdHeld(e)) return;
       if (e.button !== 0) return;
       if (!(e.target instanceof Node) || !containerEl.contains(e.target)) return;
       let payload = null;

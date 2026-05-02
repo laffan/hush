@@ -332,8 +332,10 @@ function finishDrag(pointerEvent) {
   // `forceDragOutside(item)` lets specific item types — e.g. sidebar
   // images destined for an editor or notebook — skip the modifier.
   const forceAllowed = this.config.forceDragOutside?.(draggedItem) === true;
+  const cmdHeld = pointerEvent && (pointerEvent.metaKey || pointerEvent.ctrlKey
+    || !!(typeof window !== "undefined" && window.__hushCmdHeld));
   if (pointerEvent && this.config.onDragOutside && draggedItem &&
-      (forceAllowed || pointerEvent.metaKey || pointerEvent.ctrlKey)) {
+      (forceAllowed || cmdHeld)) {
     const panelOverlay = this.container.closest("#panel-overlay");
     const rect = panelOverlay?.getBoundingClientRect();
     if (rect && pointerEvent.clientX > rect.right) {

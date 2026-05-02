@@ -43,6 +43,14 @@
 .cmd-palette-list {
   overflow-y: auto;
   padding: 6px 0;
+  /* Contain the scroll-chain so a flick at the end of the list doesn't
+     bleed up to the body and yank the underlying editor. */
+  overscroll-behavior: contain;
+  /* Hint to the compositor that the list owns its own scroll. iPadOS's
+     WKWebView paints scroll updates immediately when the touch target
+     is contained on its own layer; without this nudge the list
+     batched updates and only committed at touch release. */
+  will-change: scroll-position;
 }
 
 .cmd-palette-item {

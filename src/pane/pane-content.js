@@ -108,6 +108,33 @@ async function loadDocumentPane(pane) {
   editor.setContent(content);
   updatePaneWordCount(pane);
 
+  // Restore the persisted editor scroll position (if any). Defer to the
+  // next frame so CodeMirror has applied the document insert and laid
+  // out its viewport — setting scrollTop before measure leaves the
+  // editor pinned to 0.
+  if (typeof pane.editorScrollTop === "number" && pane.editorScrollTop > 0 && editor.setScrollTop) {
+    requestAnimationFrame(() => {
+      try { editor.setScrollTop(pane.editorScrollTop); } catch (_) {}
+    });
+  }
+
+  // Track scroll changes so persist + sync see the latest position.
+  // Throttle to 200 ms — scroll events are noisy and we only need to
+  // capture the resting offset.
+  if (editor.onScroll) {
+    let scrollTimer = null;
+    pane._scrollListenerCleanup = editor.onScroll(() => {
+      const next = editor.getScrollTop();
+      if (next === pane.editorScrollTop) return;
+      pane.editorScrollTop = next;
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null;
+        import("./pane-persistence.js").then((m) => m.schedulePersist?.()).catch(() => {});
+      }, 200);
+    });
+  }
+
   // Listen for main editor changes to sync back into this pane
   pane._mainSyncHandler = () => syncDocToPane(pane);
   appState.on("doc-content-changed", pane._mainSyncHandler);

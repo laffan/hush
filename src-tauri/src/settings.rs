@@ -18,6 +18,10 @@ pub struct AppSettings {
     #[serde(default = "default_appearance")]
     pub appearance: String,
 
+    // iOS-only on-screen touch buttons (Cmd + command-palette)
+    #[serde(default)]
+    pub touch_mode: bool,
+
     // Editor > Themes
     #[serde(default = "default_light_theme")]
     pub light_theme: String,
@@ -434,6 +438,7 @@ impl Default for AppSettings {
         Self {
             visibility: default_visibility(),
             appearance: default_appearance(),
+            touch_mode: false,
             light_theme: default_light_theme(),
             dark_theme: default_dark_theme(),
             font_size: default_font_size(),

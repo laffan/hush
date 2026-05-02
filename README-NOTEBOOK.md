@@ -76,11 +76,12 @@ Notebooks are stored as `files/{uuid}.json` in the app data directory. The `cont
   "version": 1,
   "shapes":    [...],   // every shape on the canvas
   "layers":    [...],   // ordered, top-first
-  "flowEdges": [...]    // flowchart edges between text shapes
+  "flowEdges": [...],   // flowchart edges between text shapes
+  "bookmarks": [...]    // optional camera bookmarks; same shape as DrawingState
 }
 ```
 
-`decodeNotebookContent` parses this and also accepts the legacy bare `Shape[]` array form (older notebooks before the envelope migration) so existing files round-trip without rewriting on load. Every save / load / sync path goes through this pair (autosave in `notebook-bridge.js`, pane I/O in `pane/pane-content.js`, sync pull in `reloadNotebookShapes`, plus `.hushnote` export in `notebook-export.ts`) so the on-disk format stays consistent.
+`decodeNotebookContent` parses this and also accepts the legacy bare `Shape[]` array form (older notebooks before the envelope migration) so existing files round-trip without rewriting on load. `bookmarks` was added later still and is treated as optional — older envelopes decode with `bookmarks = undefined` and the bridge skips the assignment. Every save / load / sync path goes through this pair (autosave in `notebook-bridge.js`, pane I/O in `pane/pane-content.js`, sync pull in `reloadNotebookShapes`, plus `.hushnote` export in `notebook-export.ts`) so the on-disk format stays consistent. Bookmark mutations call `state.notify("bookmarks")`, which `notes-canvas.ts` forwards as a `notebook-change` CustomEvent so the autosave pipeline picks it up alongside shape edits.
 
 The standalone `.note` zip format (from tauri-drawing) is not used. `file-io.ts` is retained in the codebase for reference but not imported.
 
@@ -131,6 +132,18 @@ File drops have three independent targets:
 2. **Editor area** (doc mode) — `dragover`/`drop` on `#editor-container` appends text.
 3. **Notebook canvas** — canvas-level `dragover`/`drop` in `input-handler.ts` handles images (→ image shapes) and text files (→ text shapes at drop position). Shelf drags also use canvas-level events. Cmd/Ctrl-dragging plain text wraps it in a markdown blockquote (`> …`) and creates the resulting TextShape at 14 px instead of the default 18 px — `addTextShapeAtPosition` accepts an `opts.fontSize` to support this.
 4. **Floating panes** — Cmd-dragging a file from the sidebar past the panel edge creates a floating pane (see `pane/pane-manager.js`). Notebook panes can be attached to canvas coordinates. The notebook's `keydown` and `paste` handlers skip processing when `document.activeElement` is inside a `.floating-pane` to prevent input leaks.
+
+### Touch handling
+
+Pinch-zoom + two-finger pan are detected via `touchstart` / `touchmove` / `touchend` on the canvas element. The handlers count touches via `e.targetTouches.length` (touches whose `target` is the canvas) rather than `e.touches.length` (every touch on screen). That distinction matters with iOS Touch mode on: a finger holding the floating ⌘ pill in the bottom-left has the button as its target, so it isn't counted as a second canvas touch and doesn't kick the canvas into pinch-zoom while the other hand drags content out.
+
+### Copy / paste
+
+`Cmd+C` (or `Cmd+X`) inside a notebook serialises the current shape selection — plus any flowchart edges fully contained in it — into a `{ format: "steiner-clipboard", version: 1, shapes, flowEdges }` envelope and writes it to the OS clipboard via `navigator.clipboard.writeText(JSON.stringify(...))`. The same string is stashed on `window.__hushNotebookClipboard` so an immediate paste in the same session round-trips even when the OS clipboard write is rejected. `Cmd+V` first tries to parse the incoming clipboard text as a `hush-clipboard` / `steiner-clipboard` envelope (or falls back to the window stash) — on a match `state.pasteSerializedShapes(payload)` mints fresh ids for every shape, remaps `parentId` / `groupId` and flow-edge endpoints onto the new ids, attaches everything to the active layer, drops `pocketed`, and translates the cluster so its centre lands at the viewport centre (or at the supplied drop point). On no match we fall through to the existing "create a TextShape with the pasted text" path.
+
+### Markdown lists in text shapes
+
+`markdown.ts::parseLine` recognises `- `, `* `, `+ `, and `1. ` / `1)` numbered prefixes (and tolerates leading whitespace as a depth indicator). The parsed line carries `list: true`, `listMarker` (`"•"` or the literal number+dot), and `listDepth` (one step per two-space block). `renderer.ts` reserves a `1.5em` gutter for the marker and steps the indent by `1.2em` per depth level, so wrapped lines hang-indent under the first character of the text rather than reading as new entries. The first wrapped line draws the marker; continuation lines pass an empty `listMarker` so the indent is preserved without a duplicate bullet.
 
 ## Core Concepts
 

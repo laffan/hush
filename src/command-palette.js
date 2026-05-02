@@ -440,7 +440,11 @@ function open(state) {
     close() { close(); },
   };
 
-  overlay.addEventListener("mousemove", () => { keyboardNav = false; });
+  // The keyboardNav flag is cleared lazily inside the row pointerenter
+  // handler (mouse pointer only). Avoiding an overlay-wide pointermove
+  // listener matters on iPad — pointermove fires for every touch frame,
+  // even when the callback would early-return, and the dispatch alone
+  // was enough to make scrolling commit only at touch release.
 
   input.addEventListener("input", () => {
     const q = input.value.trim().toLowerCase();
@@ -519,10 +523,21 @@ function renderList(listEl, state) {
       if (run) run(cmd);
       else { close(); cmd.action(state); }
     });
-    row.addEventListener("mouseenter", () => {
-      if (keyboardNav) return;
+    // Hover behaviour: only react to real mouse pointers. On iOS the
+    // synthetic mouseenter fires for every row your finger crosses
+    // during a touch scroll; toggling an `.active` class across every
+    // row each time triggers a full reflow per crossed row, which is
+    // what made scrolling visibly stutter.
+    row.addEventListener("pointerenter", (e) => {
+      if (e.pointerType && e.pointerType !== "mouse") return;
+      // Real-mouse hover takes back keyboard-nav lock so the highlight
+      // tracks the cursor again.
+      keyboardNav = false;
+      if (activeIndex === i) return;
+      const prev = listEl.children[activeIndex];
+      if (prev) prev.classList.remove("active");
       activeIndex = i;
-      listEl.querySelectorAll(".cmd-palette-item").forEach((el, j) => el.classList.toggle("active", j === i));
+      row.classList.add("active");
     });
     listEl.appendChild(row);
   });

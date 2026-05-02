@@ -6,10 +6,15 @@ import settingsCssUrl from "./settings-window.css?url";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-/** Detect iOS/iPadOS (includes iPad reporting as "MacIntel" with touch) */
+/** Detect iOS/iPadOS (includes iPad reporting as "MacIntel" with touch).
+ *  Threshold lowered to `maxTouchPoints > 0` — some WKWebView versions
+ *  on iPad expose only 1 touch point even though the device handles
+ *  multi-touch fine. */
 export function isIOS() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent || "")) return true;
+  const platform = navigator.platform || "";
+  const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return /Mac/i.test(platform) && tp > 0;
 }
 
 let settingsModal = null;

@@ -804,7 +804,8 @@ export class DrawingState extends EventTarget {
       );
 
       // Cmd+click on a link: open in browser/app
-      if (hitShape && hitShape.type === "text" && (e.metaKey || e.ctrlKey)) {
+      const cmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
+      if (hitShape && hitShape.type === "text" && cmdHeld) {
         const link = hitTestLink(canvasPt, hitShape);
         if (link) { openExternalUrl(link); return; }
       }
@@ -1195,7 +1196,7 @@ export class DrawingState extends EventTarget {
         }
 
         if (target) {
-          const appendMode = e.metaKey || e.ctrlKey;
+          const appendMode = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
           if (appendMode) {
             // Concatenate dropped texts in stack order and merge into target.
             const targetId = target.id;
