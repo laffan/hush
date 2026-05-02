@@ -1,4 +1,4 @@
-import type { Shape, TextShape } from "./types";
+import type { Shape } from "./types";
 import type { BackgroundPattern } from "./state";
 import type { AppearanceMode } from "./themes";
 import { DrawingState } from "./state";
@@ -10,7 +10,6 @@ import { createShelfPanel, type ShelfPanelEl } from "./ui/shelf-panel";
 import { createShelfResizer } from "./ui/shelf-resizer";
 import { createTextEditor } from "./ui/text-editor";
 import { createBrainstormInput } from "./ui/brainstorm-input";
-import { getShapeBounds } from "./utils";
 // @ts-ignore — JS module, no type declaration file
 import { registerNotebookDropTarget } from "../pane/text-drag.js";
 // @ts-ignore — JS module, no type declaration file
@@ -22,6 +21,15 @@ import { createDrawingToolPanel } from "./drawing/tool-panel";
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
 let lastActiveNotebook: NotesCanvas | null = null;
+
+/** State of the most recently interacted-with notebook canvas. Set on
+ *  pointerdown and cleared on destroy. The window-scoped Cmd+C / V / X
+ *  keyboard handlers in `input-handler.ts` consult this so multi-canvas
+ *  scenarios (main canvas + a pane, desk thumbnail, etc.) don't all
+ *  paste in parallel. Returns null when no canvas has been touched yet. */
+export function getActiveNotebookState(): DrawingState | null {
+  return lastActiveNotebook ? lastActiveNotebook.state : null;
+}
 let copyListenerAttached = false;
 
 function ensureCopyListener() {
@@ -235,6 +243,12 @@ export class NotesCanvas {
     // Track which notebook the user is currently interacting with so the
     // shared document "copy" listener can route Cmd+C to the right one.
     this._canvas.addEventListener("pointerdown", () => { lastActiveNotebook = this; }, true);
+    // Claim active-canvas status on mount so window-scoped clipboard
+    // handlers route to this instance even before any pointerdown. If a
+    // pane mounts later it will steal the slot on its first pointer
+    // gesture (the listener above), and the user's last-touched canvas
+    // remains the clipboard target.
+    if (!lastActiveNotebook) lastActiveNotebook = this;
     ensureCopyListener();
 
     // Register as a drop target for the Cmd-drag text system so text
@@ -437,22 +451,18 @@ export class NotesCanvas {
   }
 
   /**
-   * Build a clipboard payload from currently selected text shapes and
-   * place it on the ClipboardEvent. Ordering mirrors the shelf: children
-   * of each drag-area (insertion order across drag-areas), then any
-   * root-level text shapes, each group sorted top-to-bottom then
-   * left-to-right by shape bounds.
+   * Place the current selection on the system clipboard as a
+   * `canvas-clipboard@1` envelope (text/plain JSON), so paste round-trips
+   * back into Hush or into Steiner. Synchronous setData via the copy
+   * event is the reliable path on a non-editable canvas; the keydown
+   * Cmd+C handler in input-handler.ts is a backstop with the same payload.
    */
   handleCopy(e: ClipboardEvent): boolean {
-    const sel = this.state.selectedIds;
-    if (!sel || sel.size === 0) return false;
-    const selected = this.state.shapes.filter((s) => sel.has(s.id) && s.type === "text") as TextShape[];
-    if (selected.length === 0) return false;
-
-    const ordered = orderTextShapesForCopy(selected, this.state.shapes);
-    const text = ordered.map((s) => s.text).join("\n\n");
+    const json = this.state.serializeSelection();
+    if (!json) return false;
     if (!e.clipboardData) return false;
-    e.clipboardData.setData("text/plain", text);
+    e.clipboardData.setData("text/plain", json);
+    (window as unknown as { __hushNotebookClipboard?: string }).__hushNotebookClipboard = json;
     e.preventDefault();
     return true;
   }
@@ -534,34 +544,6 @@ export class NotesCanvas {
     // Force a state change notification so shelf rebuilds
     this.state.notify("shapes");
   }
-}
-
-/** Shelf-style ordering for copied text shapes. */
-function orderTextShapesForCopy(selected: TextShape[], allShapes: Shape[]): TextShape[] {
-  const pickedIds = new Set(selected.map((s) => s.id));
-  const byPos = (a: Shape, b: Shape) => {
-    const ab = getShapeBounds(a), bb = getShapeBounds(b);
-    return ab.minY - bb.minY || ab.minX - bb.minX;
-  };
-  const result: TextShape[] = [];
-
-  // Drag-areas in their on-canvas insertion order; emit selected text
-  // children for each, sorted top-to-bottom then left-to-right.
-  for (const s of allShapes) {
-    if (s.type !== "drag-area") continue;
-    const kids = allShapes
-      .filter((c) => c.parentId === s.id && c.type === "text" && pickedIds.has(c.id))
-      .sort(byPos) as TextShape[];
-    result.push(...kids);
-  }
-
-  // Then any root-level selected text shapes.
-  const roots = allShapes
-    .filter((s) => !s.parentId && s.type === "text" && pickedIds.has(s.id))
-    .sort(byPos) as TextShape[];
-  result.push(...roots);
-
-  return result;
 }
 
 function hexToRgba(hex: string, alpha: number): string {

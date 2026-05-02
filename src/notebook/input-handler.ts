@@ -4,6 +4,46 @@ import {
   fileToDataUrl, getImageDimensions, isImageFile, isTextFile,
 } from "./external-content";
 import { screenToCanvas } from "./utils";
+import { tryDecode } from "./clipboard-format";
+import { getActiveNotebookState } from "./notes-canvas";
+import {
+  writeText as tauriWriteText, readText as tauriReadText,
+} from "@tauri-apps/plugin-clipboard-manager";
+
+/** Cmd+C / V / X bind on `window`, so when several NotesCanvas instances
+ *  exist (main canvas + a pane, desk thumbnail, etc.) every state's
+ *  handler fires on the same keystroke. Allow only the canvas the user
+ *  last interacted with to act — otherwise hidden / 0-sized panes paste
+ *  in parallel and the visible canvas's paste lands at unexpected
+ *  coordinates. NotesCanvas claims the slot on mount, so a single
+ *  fresh notebook always has an active canvas before the user can
+ *  reach for the keyboard. */
+function isClipboardOwner(state: DrawingState): boolean {
+  return getActiveNotebookState() === state;
+}
+
+const IS_TAURI: boolean =
+  typeof window !== "undefined" &&
+  (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ != null;
+
+// Tauri's WKWebView blocks `navigator.clipboard.writeText` /
+// `readText` from non-editable canvas focus, surfacing the macOS
+// "Paste from..." prompt for every read. The clipboard-manager plugin
+// talks to NSPasteboard directly and bypasses that UI; the browser
+// build keeps the standard navigator API.
+async function writeClipboardText(text: string): Promise<void> {
+  if (IS_TAURI) {
+    try { await tauriWriteText(text); return; } catch { /* fall through */ }
+  }
+  try { await navigator.clipboard.writeText(text); } catch { /* clipboard unavailable */ }
+}
+
+async function readClipboardText(): Promise<string> {
+  if (IS_TAURI) {
+    try { return await tauriReadText(); } catch { /* fall through */ }
+  }
+  try { return await navigator.clipboard.readText(); } catch { return ""; }
+}
 
 export interface InputOptions {
   onShelfDrop?: (index: number, x: number, y: number) => void;
@@ -211,22 +251,32 @@ export function bindInputEvents(
     if (matchesKey(e, sc.shortcutNbRedo)) { e.preventDefault(); state.redo(); return; }
     if (matchesKey(e, sc.shortcutNbUndo)) { e.preventDefault(); state.undo(); return; }
 
-    // Copy / Cut — write the current selection out as a portable
-    // clipboard envelope (also dropping a plain-text fallback) so the
-    // shapes can be pasted back into Hush, into another Hush window, or
-    // into the Steiner project. Cut additionally deletes the source.
+    // Copy / Cut — write the current selection out as a `canvas-clipboard@1`
+    // envelope so the shapes can be pasted back into Hush, into another Hush
+    // window, or into Steiner. Cut additionally deletes the source.
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "c" || e.key === "C" || e.key === "x" || e.key === "X")) {
+      if (!isClipboardOwner(state)) return;
       const payload = state.serializeSelection();
       if (!payload) return;
       e.preventDefault();
-      const json = JSON.stringify(payload);
-      try {
-        navigator.clipboard?.writeText(json).catch(() => {});
-      } catch { /* ignore */ }
+      void writeClipboardText(payload);
       // Stash on the window so an immediate paste in the same session
       // round-trips even when the OS clipboard write was rejected.
-      (window as any).__hushNotebookClipboard = json;
+      (window as any).__hushNotebookClipboard = payload;
       if (e.key === "x" || e.key === "X") state.deleteSelected();
+      return;
+    }
+    // Paste — the browser only fires the `paste` event reliably when an
+    // editable element (input/textarea/contenteditable) is focused. The
+    // canvas page has no such element by default, so without this handler
+    // Cmd+V silently no-ops. Read the clipboard ourselves via the async
+    // API; the document `paste` listener stays as a fallback for when a
+    // paste *is* dispatched (e.g. native Edit > Paste in Tauri), and the
+    // two paths dedupe on `lastPasteAt`.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "v" || e.key === "V")) {
+      if (!isClipboardOwner(state)) return;
+      e.preventDefault();
+      void asyncCanvasPaste(state);
       return;
     }
     // Ctrl+Y as alternative redo (not customizable)
@@ -244,38 +294,44 @@ export function bindInputEvents(
     }
   }) as unknown as (e: HTMLElementEventMap["keyup"]) => void);
 
-  // Paste
+  // Paste — fires when an editable element is focused (or via native
+  // Edit > Paste in Tauri). The Cmd+V keydown handler above covers the
+  // canvas-focused case via the async clipboard API. Both paths share
+  // `lastPasteAt` to avoid double-pasting if both fire.
   on(document as unknown as HTMLElement, "paste", (async (e: ClipboardEvent) => {
+    if (!isClipboardOwner(state)) return;
     if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) return;
     // Skip if focus is inside a floating pane — let the pane handle its own paste
     if (document.activeElement?.closest(".floating-pane")) return;
     if (state.editingText) return;
     e.preventDefault();
+    if (recentlyPasted()) return;
     const cd = e.clipboardData;
     if (!cd) return;
+
+    const rawText = extractTextFromDataTransfer(cd);
+    const env = tryDecode(rawText) ?? tryDecode((window as any).__hushNotebookClipboard ?? "");
+    if (env) {
+      markPasted();
+      state.pasteEnvelope(env);
+      return;
+    }
+
     for (const item of Array.from(cd.items)) {
       if (item.type.startsWith("image/")) {
         const file = item.getAsFile();
-        if (file) { const dataUrl = await fileToDataUrl(file); const dims = await getImageDimensions(dataUrl); state.addImageShape(dataUrl, file.name, dims.width, dims.height); return; }
+        if (file) {
+          markPasted();
+          const dataUrl = await fileToDataUrl(file);
+          const dims = await getImageDimensions(dataUrl);
+          state.addImageShape(dataUrl, file.name, dims.width, dims.height);
+          return;
+        }
       }
     }
-    const text = extractTextFromDataTransfer(cd);
-    // First try to parse as a Hush/Steiner clipboard envelope; only fall
-    // back to plain-text shape creation if that fails.
-    if (text && text.trim()) {
-      const stash = (window as any).__hushNotebookClipboard as string | undefined;
-      const candidate = (text.trim().startsWith("{") ? text : null) || stash || null;
-      if (candidate) {
-        try {
-          const parsed = JSON.parse(candidate);
-          const fmt = (parsed && typeof parsed.format === "string") ? parsed.format : "";
-          if ((fmt === "hush-clipboard" || fmt === "steiner-clipboard") && Array.isArray(parsed.shapes)) {
-            state.pasteSerializedShapes(parsed);
-            return;
-          }
-        } catch { /* not JSON — fall through */ }
-      }
-      state.addTextShapeAtCenter(cleanLineBreaks(text));
+    if (rawText && rawText.trim()) {
+      markPasted();
+      state.addTextShapeAtCenter(cleanLineBreaks(rawText));
     }
   }) as unknown as (e: HTMLElementEventMap["paste"]) => void);
 
@@ -320,4 +376,71 @@ export function bindInputEvents(
   }) as unknown as (e: HTMLElementEventMap["drop"]) => void);
 
   return () => { for (const fn of cleanups) fn(); };
+}
+
+// Dedupe between the keydown Cmd+V path and the document `paste` listener:
+// browsers vary on whether they dispatch `paste` when nothing editable is
+// focused, so we always run the keydown path and skip the paste-event work
+// if it already ran (or vice-versa).
+let lastPasteAt = 0;
+const PASTE_DEDUP_MS = 400;
+function markPasted() { lastPasteAt = Date.now(); }
+function recentlyPasted(): boolean { return Date.now() - lastPasteAt < PASTE_DEDUP_MS; }
+
+async function asyncCanvasPaste(state: DrawingState) {
+  if (recentlyPasted()) return;
+  // Bail early if the focus is in any editable surface — the paste belongs
+  // there, not on the canvas.
+  const activeEl = document.activeElement as HTMLElement | null;
+  if (activeEl) {
+    if (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA") return;
+    if (activeEl.isContentEditable) return;
+    if (activeEl.closest(".floating-pane")) return;
+  }
+  if (state.editingText) return;
+
+  const text = await readClipboardText();
+
+  // Same-session fallback: if the OS clipboard is empty (or stripped the
+  // JSON), use the stash we wrote on copy.
+  const env = tryDecode(text) ?? tryDecode((window as any).__hushNotebookClipboard ?? "");
+  if (env) {
+    markPasted();
+    state.pasteEnvelope(env);
+    return;
+  }
+
+  // navigator.clipboard.read() returns image blobs on browsers that
+  // support it. Best-effort; failures fall through to plain text.
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      for (const type of item.types) {
+        if (type.startsWith("image/")) {
+          const blob = await item.getType(type);
+          const dataUrl = await blobToDataUrl(blob);
+          const dims = await getImageDimensions(dataUrl);
+          markPasted();
+          state.addImageShape(dataUrl, "pasted-image", dims.width, dims.height);
+          return;
+        }
+      }
+    }
+  } catch {
+    // clipboard.read() unsupported — fall through.
+  }
+
+  if (text && text.trim()) {
+    markPasted();
+    state.addTextShapeAtCenter(cleanLineBreaks(text));
+  }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error("Failed to read blob"));
+    r.readAsDataURL(blob);
+  });
 }

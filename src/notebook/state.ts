@@ -11,6 +11,10 @@ import {
 import { UndoManager } from "./undo-manager";
 import { FlowchartLayer } from "./flowchart";
 import { isEmojiOnly, emojiToDataUrl } from "./emoji-sticker";
+import {
+  encodeSelection, remapForPaste,
+  type ClipboardEnvelope,
+} from "./clipboard-format";
 
 // Pixel size (canvas units) for emoji-only text shapes that get rasterized
 // into ImageShape stickers on commit.
@@ -1644,80 +1648,63 @@ export class DrawingState extends EventTarget {
   }
 
   addTextShapeAtCenter(text: string) {
-    this.addTextShapeAtPosition(text, screenToCanvas({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, this.camera));
+    this.addTextShapeAtPosition(text, screenToCanvas(this._visibleScreenCenter(), this.camera));
   }
 
-  /** Serialise the current selection (and any flowchart edges fully
-   *  contained in it) into a portable clipboard envelope. Cross-app
-   *  compatibility with Steiner uses a `steiner-clipboard` format tag
-   *  alongside `hush-clipboard` so either reader can pick it up. */
-  serializeSelection(): { format: string; version: number; shapes: Shape[]; flowEdges: { id: string; from: string; to: string }[] } | null {
-    if (this.selectedIds.size === 0) return null;
-    const ids = new Set(this.selectedIds);
-    const shapes = this.shapes
-      .filter((s) => ids.has(s.id))
-      .map((s) => JSON.parse(JSON.stringify(s)) as Shape);
-    if (shapes.length === 0) return null;
-    const edges = this.flowchart.serialize().filter((e) => ids.has(e.from) && ids.has(e.to));
+  /** Centre of the visible canvas region in viewport (screen) coords.
+   *  The canvas DOM element spans the entire content column, but Hush's
+   *  sidebar/panel chrome (`leftInset`) overlays its left edge. Sub the
+   *  inset so paste / addTextShapeAtCenter land at the *visible* centre,
+   *  not the geometric centre of the canvas element. Falls back to
+   *  window centre when the canvas isn't yet laid out (rect 0×0). */
+  private _visibleScreenCenter(): Point {
+    const inset = this.leftInset || 0;
+    if (this.canvasEl) {
+      const r = this.canvasEl.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        return {
+          x: r.left + (inset + r.width) / 2,
+          y: r.top + r.height / 2,
+        };
+      }
+    }
     return {
-      format: "steiner-clipboard",
-      version: 1,
-      shapes,
-      flowEdges: edges,
+      x: (inset + window.innerWidth) / 2,
+      y: window.innerHeight / 2,
     };
   }
 
-  /** Paste a previously-serialised envelope. Generates fresh ids for
-   *  every shape and remaps parent/edge references onto the new ids,
-   *  positions the cluster at `dropPos` (defaulting to the viewport
-   *  centre), and selects the newly-created shapes. */
-  pasteSerializedShapes(payload: { shapes?: Shape[]; flowEdges?: { id: string; from: string; to: string }[] }, dropPos?: Point) {
-    const incoming = Array.isArray(payload?.shapes) ? payload.shapes : [];
-    if (incoming.length === 0) return;
-    const idMap = new Map<string, string>();
-    for (const s of incoming) idMap.set(s.id, generateId());
+  /** Serialise the current selection (and any flowchart edges fully
+   *  contained in it) into the portable `canvas-clipboard@1` envelope
+   *  shared with Steiner. Returns the JSON string ready to write to the
+   *  system clipboard, or null if nothing is selected. */
+  serializeSelection(): string | null {
+    if (this.selectedIds.size === 0) return null;
+    const selected = this.shapes.filter((s) => this.selectedIds.has(s.id));
+    if (selected.length === 0) return null;
+    return encodeSelection(selected, this.flowchart.serialize());
+  }
 
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const s of incoming) {
-      const b = getShapeBounds(s as Shape, this.fontFamily);
-      if (b.minX < minX) minX = b.minX;
-      if (b.minY < minY) minY = b.minY;
-      if (b.maxX > maxX) maxX = b.maxX;
-      if (b.maxY > maxY) maxY = b.maxY;
-    }
-    const center = dropPos || screenToCanvas({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, this.camera);
-    const dx = center.x - (minX + maxX) / 2;
-    const dy = center.y - (minY + maxY) / 2;
-
-    const cloned: Shape[] = incoming.map((s) => {
-      const copy: any = JSON.parse(JSON.stringify(s));
-      copy.id = idMap.get(s.id) || generateId();
-      if (copy.parentId && idMap.has(copy.parentId)) copy.parentId = idMap.get(copy.parentId);
-      else if (copy.parentId && !idMap.has(copy.parentId)) delete copy.parentId;
-      if (copy.groupId && idMap.has(copy.groupId)) copy.groupId = idMap.get(copy.groupId);
-      else if (copy.groupId && !idMap.has(copy.groupId)) delete copy.groupId;
-      // Layers are notebook-scoped — attach to the active layer rather
-      // than carrying the source's layerId, which won't exist here.
-      copy.layerId = this.activeLayerId;
-      delete copy.pocketed;
-      if (copy.position) {
-        copy.position = { x: copy.position.x + dx, y: copy.position.y + dy };
-      } else if (copy.points) {
-        copy.points = copy.points.map((p: Point) => ({ x: p.x + dx, y: p.y + dy }));
-      }
-      return copy as Shape;
+  /** Paste a decoded `canvas-clipboard@1` envelope. Generates fresh ids
+   *  for every shape, remaps parent / edge references onto the new ids,
+   *  positions the cluster at `dropPos` (defaulting to the centre of the
+   *  canvas's bounding rect — which respects the sidebar / shelf — falling
+   *  back to the window centre if the canvas isn't mounted yet), and
+   *  selects the newly-created shapes. */
+  pasteEnvelope(env: ClipboardEnvelope, dropPos?: Point) {
+    const center = dropPos || screenToCanvas(this._visibleScreenCenter(), this.camera);
+    const { shapes: pasted, edges, newIds } = remapForPaste(env, center, {
+      activeLayerId: this.activeLayerId,
+      fontFamily: this.fontFamily,
     });
+    if (pasted.length === 0) return;
 
-    this.shapes = [...this.shapes, ...cloned];
-
-    const incomingEdges = Array.isArray(payload?.flowEdges) ? payload.flowEdges : [];
-    for (const e of incomingEdges) {
-      const from = idMap.get(e.from);
-      const to = idMap.get(e.to);
-      if (from && to) this.flowchart.addEdge(from, to);
+    this.shapes = [...this.shapes, ...pasted];
+    for (const e of edges) {
+      this.flowchart.addEdge(e.from, e.to);
     }
 
-    this.selectedIds = new Set(cloned.map((s) => s.id));
+    this.selectedIds = new Set(newIds);
     this.tool = "select";
     this.recordHistory();
     this.notify("shapes");
