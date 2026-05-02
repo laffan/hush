@@ -65,11 +65,17 @@ function attachListeners() {
     if (_editTimer) clearTimeout(_editTimer);
     _editTimer = setTimeout(() => { _editTimer = null; refreshDeskThumbnail(); }, EDIT_REFRESH_DELAY_MS);
   };
+  // Pane changes (open/close/move/resize) don't fire their own state event,
+  // but they always end up touching `settings.persistedPanes`, so we hook
+  // settings-changed and just re-render the overlay (cheap — DOM children
+  // are absolute-positioned divs).
+  const onSettingsChanged = () => refreshDeskThumbnail();
   _state.on("desk-changed", onDeskChanged);
   _state.on("files-changed", onFilesChanged);
   _state.on("doc-content-changed", onContentEdit);
   _state.on("notebook-shapes-changed", onContentEdit);
-  _listeners = { onDeskChanged, onFilesChanged, onContentEdit };
+  _state.on("settings-changed", onSettingsChanged);
+  _listeners = { onDeskChanged, onFilesChanged, onContentEdit, onSettingsChanged };
 }
 
 function detachListeners() {
@@ -78,6 +84,7 @@ function detachListeners() {
   _state.off("files-changed", _listeners.onFilesChanged);
   _state.off("doc-content-changed", _listeners.onContentEdit);
   _state.off("notebook-shapes-changed", _listeners.onContentEdit);
+  _state.off("settings-changed", _listeners.onSettingsChanged);
   _listeners = null;
   if (_editTimer) { clearTimeout(_editTimer); _editTimer = null; }
 }
@@ -104,6 +111,13 @@ export function refreshDeskThumbnail() {
   body.className = "desk-thumbnail-body";
   wrap.appendChild(body);
 
+  // Pane overlay: a child of the body sized to match the thumbnail
+  // viewport so per-pane mini-rectangles can be absolutely positioned
+  // without disturbing the underlying canvas/text.
+  const paneLayer = document.createElement("div");
+  paneLayer.className = "desk-thumbnail-panes";
+  body.appendChild(paneLayer);
+
   wrap.addEventListener("click", () => {
     if (!_state) return;
     if (node.type === "notebook") _state.openNotebook(fileId);
@@ -121,7 +135,29 @@ export function refreshDeskThumbnail() {
   const myToken = ++_renderToken;
   paintBody(node, fileId, body).then(() => {
     if (myToken !== _renderToken) return;
+    paintPanesOverlay(fileId, node, paneLayer);
   }).catch((e) => console.warn("desk thumbnail paint failed:", e));
+
+  // Re-render when the panel width changes so the canvas snapshot stays
+  // crisp instead of stretching pixels. The text-only doc preview cares
+  // less, but the pane overlay still needs a recalc on resize.
+  if (typeof ResizeObserver !== "undefined") {
+    let lastW = 0, lastH = 0;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (!r) return;
+      if (Math.abs(r.width - lastW) < 0.5 && Math.abs(r.height - lastH) < 0.5) return;
+      lastW = r.width; lastH = r.height;
+      // Re-render the canvas at the new dimensions; reposition pane overlay.
+      const canvas = body.querySelector("canvas.desk-thumbnail-canvas");
+      if (canvas) {
+        repaintNotebookCanvas(canvas, node, fileId);
+      }
+      paintPanesOverlay(fileId, node, paneLayer);
+    });
+    ro.observe(body);
+    wrap._resizeObserver = ro;
+  }
 }
 
 async function paintBody(node, fileId, body) {
@@ -141,21 +177,11 @@ async function paintBody(node, fileId, body) {
   if (node.type === "notebook") {
     const canvas = document.createElement("canvas");
     canvas.className = "desk-thumbnail-canvas";
+    canvas._snapshotContent = content;
     body.appendChild(canvas);
     // Defer to next frame so the canvas has its layout dimensions before
     // we measure it for the snapshot render.
-    requestAnimationFrame(async () => {
-      try {
-        const [{ renderNotebookSnapshotThumbnail }, { getCanvasInstance }] = await Promise.all([
-          import("./notebook-snapshot-preview.js"),
-          import("../notebook/notebook-bridge.js"),
-        ]);
-        const liveCanvas = getCanvasInstance();
-        renderNotebookSnapshotThumbnail(canvas, content, liveCanvas);
-      } catch (e) {
-        console.warn("desk notebook thumbnail failed:", e);
-      }
-    });
+    requestAnimationFrame(() => repaintNotebookCanvas(canvas, node, fileId, content));
   } else {
     const text = document.createElement("div");
     text.className = "desk-thumbnail-text";
@@ -184,5 +210,75 @@ function previewSnippet(content) {
 function removeExistingThumbnail() {
   if (!_panelOverlay) return;
   const existing = _panelOverlay.querySelector(".desk-thumbnail");
-  if (existing) existing.remove();
+  if (existing) {
+    if (existing._resizeObserver) {
+      try { existing._resizeObserver.disconnect(); } catch (_) {}
+    }
+    existing.remove();
+  }
+}
+
+async function repaintNotebookCanvas(canvas, node, fileId, freshContent) {
+  if (node.type !== "notebook") return;
+  let content = freshContent ?? canvas._snapshotContent ?? "";
+  if (!content && IS_TAURI) {
+    try {
+      const file = await tauriInvoke("load_file", { id: fileId });
+      content = file?.content || "";
+      canvas._snapshotContent = content;
+    } catch (_) {
+      return;
+    }
+  }
+  try {
+    const [{ renderNotebookSnapshotThumbnail }, { getCanvasInstance }] = await Promise.all([
+      import("./notebook-snapshot-preview.js"),
+      import("../notebook/notebook-bridge.js"),
+    ]);
+    const liveCanvas = getCanvasInstance();
+    renderNotebookSnapshotThumbnail(canvas, content, liveCanvas);
+  } catch (e) {
+    console.warn("desk notebook thumbnail repaint failed:", e);
+  }
+}
+
+/** Overlay miniature pane rectangles on top of the thumbnail body. The
+ *  pane positions are stored in screen-space pixels relative to the
+ *  editor area, so we use the live window dimensions as the reference
+ *  frame and scale into the thumbnail body. Both pinned panes and panes
+ *  whose ownerContext matches the desk file are surfaced. */
+function paintPanesOverlay(fileId, node, layer) {
+  if (!layer || !_state) return;
+  layer.innerHTML = "";
+  const persisted = _state.settings?.persistedPanes;
+  if (!Array.isArray(persisted) || persisted.length === 0) return;
+  const ctxKey = node.type === "notebook" ? "nb:" + fileId : "doc:" + fileId;
+  const matching = persisted.filter((p) => {
+    if (!p) return false;
+    if (p.pinned) return true;
+    return p.ownerContext === ctxKey;
+  });
+  if (matching.length === 0) return;
+
+  const refW = Math.max(400, window.innerWidth || 1200);
+  const refH = Math.max(300, window.innerHeight || 800);
+  const layerW = layer.clientWidth || layer.getBoundingClientRect().width;
+  const layerH = layer.clientHeight || layer.getBoundingClientRect().height;
+  if (layerW <= 0 || layerH <= 0) return;
+  const sx = layerW / refW;
+  const sy = layerH / refH;
+
+  for (const p of matching) {
+    const rect = document.createElement("div");
+    rect.className = "desk-thumbnail-pane" + (p.pinned ? " pinned" : "");
+    const w = Math.max(6, (p.width || 320) * sx);
+    const h = Math.max(4, (p.height || 240) * sy);
+    const x = Math.min(layerW - w, Math.max(0, (p.x || 0) * sx));
+    const y = Math.min(layerH - h, Math.max(0, (p.y || 0) * sy));
+    rect.style.left = x + "px";
+    rect.style.top = y + "px";
+    rect.style.width = w + "px";
+    rect.style.height = h + "px";
+    layer.appendChild(rect);
+  }
 }

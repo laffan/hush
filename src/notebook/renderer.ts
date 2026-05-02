@@ -432,6 +432,24 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
       x += CHECKBOX_SIZE + CHECKBOX_GAP;
     }
 
+    if (line.list) {
+      // Nested-list step + a bullet/number-width gutter so wrapped lines
+      // hang-indent under the marker. The marker is only drawn on the
+      // first wrapped line; continuation lines pass `listMarker = ""`.
+      const LIST_DEPTH_STEP = baseFontSize * 1.2;
+      const LIST_MARKER_GUTTER = baseFontSize * 1.5;
+      x += LIST_DEPTH_STEP * (line.listDepth || 0);
+      if (line.listMarker) {
+        ctx.save();
+        ctx.fillStyle = textColor;
+        ctx.globalAlpha = 0.75;
+        ctx.font = `normal normal ${lineFontSize}px ${ff}`;
+        if (!omitGlyphs) ctx.fillText(line.listMarker, x, y);
+        ctx.restore();
+      }
+      x += LIST_MARKER_GUTTER;
+    }
+
     ctx.fillStyle = isHeading ? headingColor : textColor;
 
     for (const run of line.runs) {

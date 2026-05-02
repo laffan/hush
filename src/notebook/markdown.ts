@@ -23,6 +23,15 @@ export interface ParsedLine {
    *  place of the list marker. `taskChecked` is the resolved state. */
   task?: boolean;
   taskChecked?: boolean;
+  /** Plain markdown list line — `- foo`, `* foo`, `+ foo`, or `1. foo`.
+   *  `listMarker` is the glyph the renderer should paint in the gutter
+   *  for the first wrapped line of the item; on continuation lines
+   *  `listMarker` is empty so only the indent reserve is preserved. */
+  list?: boolean;
+  listMarker?: string;
+  /** Number of leading spaces preceding the marker, in fractions of a
+   *  font width — lets the renderer step the indent for nested lists. */
+  listDepth?: number;
 }
 
 /**
@@ -45,11 +54,33 @@ export function parseLine(line: string): ParsedLine {
 
   // Task list — `- [ ] ...` / `- [x] ...`. Strip the marker + bracket;
   // the renderer draws the checkbox glyph in its place.
-  const taskMatch = workingLine.match(/^[-*+]\s+\[([ xX])\]\s+(.*)$/);
+  const taskMatch = workingLine.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
   if (taskMatch) {
     task = true;
-    taskChecked = taskMatch[1] !== " ";
-    workingLine = taskMatch[2];
+    taskChecked = taskMatch[2] !== " ";
+    workingLine = taskMatch[3];
+  }
+
+  // Plain markdown list — bullet or numbered. Strip the marker; the
+  // renderer paints a glyph in its place and reserves a hang-indent
+  // gutter so wrapped lines align under the first character of text.
+  let list = false;
+  let listMarker = "";
+  let listDepth = 0;
+  if (!task) {
+    const bulletMatch = workingLine.match(/^(\s*)([-*+])\s+(.*)$/);
+    const numberMatch = !bulletMatch ? workingLine.match(/^(\s*)(\d+)[.)]\s+(.*)$/) : null;
+    if (bulletMatch) {
+      list = true;
+      listMarker = "•";
+      listDepth = Math.floor(bulletMatch[1].length / 2);
+      workingLine = bulletMatch[3];
+    } else if (numberMatch) {
+      list = true;
+      listMarker = numberMatch[2] + ".";
+      listDepth = Math.floor(numberMatch[1].length / 2);
+      workingLine = numberMatch[3];
+    }
   }
 
   // Check for heading prefix
@@ -64,6 +95,7 @@ export function parseLine(line: string): ParsedLine {
   const out: ParsedLine = { runs, sizeScale };
   if (blockquote) out.blockquote = true;
   if (task) { out.task = true; out.taskChecked = taskChecked; }
+  if (list) { out.list = true; out.listMarker = listMarker; out.listDepth = listDepth; }
   return out;
 }
 
@@ -141,6 +173,14 @@ export function parseText(
       if (parsed.task) {
         if (i === 0) { out.task = true; out.taskChecked = parsed.taskChecked; }
         else out.task = false; // continuation — indent only, no glyph
+      }
+      if (parsed.list) {
+        out.list = true;
+        out.listDepth = parsed.listDepth;
+        // First wrapped line draws the bullet/number; continuation
+        // lines just preserve the gutter so the wrap hangs under the
+        // text rather than reading like a fresh list entry.
+        out.listMarker = i === 0 ? (parsed.listMarker || "") : "";
       }
       result.push(out);
     }

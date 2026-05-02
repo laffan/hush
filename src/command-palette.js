@@ -136,6 +136,11 @@ function buildCommands(state) {
       action: (s) => { if (s.editor) openFindAll(s.editor.view, s); } },
     { id: "settings", label: "Settings", icon: null, shortcutKey: null, ctx: "shared",
       action: (s) => openSettingsWindow(s) },
+    { id: "backup", label: "Backup App Data", icon: icons.export, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const { openBackupAppDataModal } = await import("./backup.js");
+        openBackupAppDataModal(s);
+      } },
 
     // === DOC ONLY ===
     { id: "ratchet", label: "Ratchet mode", icon: icons.ratchet, shortcutKey: null, ctx: "doc",

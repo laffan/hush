@@ -183,6 +183,7 @@ function bindAll() {
   // only sticky headers, panes, typewriter and footnotes remain here.
   bindSelect("setting-appearance", "appearance");
   bindCheckbox("setting-make-space-for-panes", "makeSpaceForPanes");
+  bindSelect("setting-make-space-direction", "makeSpaceDirection");
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));

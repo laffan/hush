@@ -82,7 +82,7 @@ export class DrawingState extends EventTarget {
 
   /** When true, the top drawing pill is hidden and a one-item pencil
    *  pill appears beside the bottom toolbar. Session-only state. */
-  drawingToolbarMinimized = false;
+  drawingToolbarMinimized = true;
 
   // Layers are notebook-level; they host every shape type, not just
   // drawings. Shapes carry `layerId` via ShapeBase; the renderer
@@ -1305,7 +1305,7 @@ export class DrawingState extends EventTarget {
         const newArea: DragAreaShape = {
           id: generateId(), type: "drag-area", position: { x: minX, y: minY },
           width: w, height: h, color: "#6b7280", strokeColor: "#6b7280",
-          backgroundColor: "rgba(107, 114, 128, 0.16)", borderRadius: 12,
+          backgroundColor: "rgba(107, 114, 128, 0.04)", borderRadius: 12,
           layerId: this.activeLayerId,
         };
         const areaBounds = getShapeBounds(newArea, this.fontFamily);
@@ -1485,7 +1485,7 @@ export class DrawingState extends EventTarget {
       height: maxY - minY,
       color: "#6b7280",
       strokeColor: "#6b7280",
-      backgroundColor: "rgba(107, 114, 128, 0.16)",
+      backgroundColor: "rgba(107, 114, 128, 0.04)",
       borderRadius: 12,
       layerId: this.activeLayerId,
     };
@@ -1515,10 +1515,10 @@ export class DrawingState extends EventTarget {
       if (!this.selectedIds.has(s.id)) return s;
       if (s.type === "text") return { ...s, backgroundColor: colorName === "reset" ? undefined : colorName };
       if (s.type === "drag-area") {
-        if (colorName === "reset") return { ...s, strokeColor: "#6b7280", backgroundColor: "rgba(107, 114, 128, 0.16)" };
+        if (colorName === "reset") return { ...s, strokeColor: "#6b7280", backgroundColor: "rgba(107, 114, 128, 0.04)" };
         const hex = COLOR_PALETTE[colorName] || "#6b7280";
         const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-        return { ...s, strokeColor: hex, backgroundColor: `rgba(${r}, ${g}, ${b}, 0.16)` };
+        return { ...s, strokeColor: hex, backgroundColor: `rgba(${r}, ${g}, ${b}, 0.04)` };
       }
       return s;
     });
@@ -1646,6 +1646,84 @@ export class DrawingState extends EventTarget {
     this.addTextShapeAtPosition(text, screenToCanvas({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, this.camera));
   }
 
+  /** Serialise the current selection (and any flowchart edges fully
+   *  contained in it) into a portable clipboard envelope. Cross-app
+   *  compatibility with Steiner uses a `steiner-clipboard` format tag
+   *  alongside `hush-clipboard` so either reader can pick it up. */
+  serializeSelection(): { format: string; version: number; shapes: Shape[]; flowEdges: { id: string; from: string; to: string }[] } | null {
+    if (this.selectedIds.size === 0) return null;
+    const ids = new Set(this.selectedIds);
+    const shapes = this.shapes
+      .filter((s) => ids.has(s.id))
+      .map((s) => JSON.parse(JSON.stringify(s)) as Shape);
+    if (shapes.length === 0) return null;
+    const edges = this.flowchart.serialize().filter((e) => ids.has(e.from) && ids.has(e.to));
+    return {
+      format: "steiner-clipboard",
+      version: 1,
+      shapes,
+      flowEdges: edges,
+    };
+  }
+
+  /** Paste a previously-serialised envelope. Generates fresh ids for
+   *  every shape and remaps parent/edge references onto the new ids,
+   *  positions the cluster at `dropPos` (defaulting to the viewport
+   *  centre), and selects the newly-created shapes. */
+  pasteSerializedShapes(payload: { shapes?: Shape[]; flowEdges?: { id: string; from: string; to: string }[] }, dropPos?: Point) {
+    const incoming = Array.isArray(payload?.shapes) ? payload.shapes : [];
+    if (incoming.length === 0) return;
+    const idMap = new Map<string, string>();
+    for (const s of incoming) idMap.set(s.id, generateId());
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of incoming) {
+      const b = getShapeBounds(s as Shape, this.fontFamily);
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+    }
+    const center = dropPos || screenToCanvas({ x: window.innerWidth / 2, y: window.innerHeight / 2 }, this.camera);
+    const dx = center.x - (minX + maxX) / 2;
+    const dy = center.y - (minY + maxY) / 2;
+
+    const cloned: Shape[] = incoming.map((s) => {
+      const copy: any = JSON.parse(JSON.stringify(s));
+      copy.id = idMap.get(s.id) || generateId();
+      if (copy.parentId && idMap.has(copy.parentId)) copy.parentId = idMap.get(copy.parentId);
+      else if (copy.parentId && !idMap.has(copy.parentId)) delete copy.parentId;
+      if (copy.groupId && idMap.has(copy.groupId)) copy.groupId = idMap.get(copy.groupId);
+      else if (copy.groupId && !idMap.has(copy.groupId)) delete copy.groupId;
+      // Layers are notebook-scoped — attach to the active layer rather
+      // than carrying the source's layerId, which won't exist here.
+      copy.layerId = this.activeLayerId;
+      delete copy.pocketed;
+      if (copy.position) {
+        copy.position = { x: copy.position.x + dx, y: copy.position.y + dy };
+      } else if (copy.points) {
+        copy.points = copy.points.map((p: Point) => ({ x: p.x + dx, y: p.y + dy }));
+      }
+      return copy as Shape;
+    });
+
+    this.shapes = [...this.shapes, ...cloned];
+
+    const incomingEdges = Array.isArray(payload?.flowEdges) ? payload.flowEdges : [];
+    for (const e of incomingEdges) {
+      const from = idMap.get(e.from);
+      const to = idMap.get(e.to);
+      if (from && to) this.flowchart.addEdge(from, to);
+    }
+
+    this.selectedIds = new Set(cloned.map((s) => s.id));
+    this.tool = "select";
+    this.recordHistory();
+    this.notify("shapes");
+    this.notify("selectedIds");
+    this.notify("tool");
+  }
+
   addTextShapeAtPosition(text: string, position: Point, opts?: { fontSize?: number }) {
     this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? 18, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
     this.recordHistory();
@@ -1654,18 +1732,43 @@ export class DrawingState extends EventTarget {
 
   /** Pan so `shapeId` is centered in the visible viewport.
    *  `offsetLeft` / `offsetRight` reserve screen space for inset chrome
-   *  (sidebar / shelf). Defaults pick up the state's current leftInset. */
+   *  (sidebar / shelf). Defaults pick up the state's current leftInset.
+   *  When the chrome would consume most of the canvas (a narrow pane
+   *  with the shelf open), the offsets are dropped so the shape lands
+   *  somewhere visible instead of being squeezed under the shelf. */
   focusShape(shapeId: string, offsetLeft?: number, offsetRight = 0) {
     const shape = this.shapes.find((s) => s.id === shapeId);
     if (!shape) return;
     const bounds = getShapeBounds(shape, this.fontFamily);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
-    const left = offsetLeft ?? this.leftInset;
-    const w = this.canvasEl?.clientWidth || window.innerWidth;
-    const h = this.canvasEl?.clientHeight || window.innerHeight;
+    const requestedLeft = offsetLeft ?? this.leftInset;
+    // Prefer getBoundingClientRect — clientWidth misses sub-pixel layout
+    // and stays at zero longer when the canvas is freshly mounted in a
+    // pane that hasn't taken its first paint yet.
+    let w = 0, h = 0;
+    if (this.canvasEl) {
+      const r = this.canvasEl.getBoundingClientRect();
+      w = Math.round(r.width);
+      h = Math.round(r.height);
+    }
+    if (w <= 0) w = window.innerWidth;
+    if (h <= 0) h = window.innerHeight;
+
+    // If the requested chrome eats more than two-thirds of the canvas,
+    // fall back to centering inside the bare canvas — better to put the
+    // shape behind a sliver of shelf than to pan it off-screen entirely
+    // (the failure mode users hit when the shelf is open inside a
+    // narrow notebook pane).
+    let left = requestedLeft;
+    let right = offsetRight;
+    if (left + right > w * 0.66) {
+      left = 0;
+      right = 0;
+    }
+
     const zoom = this.camera.zoom;
     this.camera = {
-      x: (left + w - offsetRight) / 2 - cx * zoom,
+      x: (left + w - right) / 2 - cx * zoom,
       y: h / 2 - cy * zoom,
       zoom,
     };

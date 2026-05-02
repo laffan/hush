@@ -9,7 +9,7 @@ import { AppState } from "../state/state.js";
 import { findNode, collectFlaggedItems, findAncestorIds } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers } from "./files-panel-shared.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { mountDeskThumbnail, unmountDeskThumbnail, refreshDeskThumbnail } from "./desk-thumbnail.js";
 
@@ -66,8 +66,20 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
   const delBtn = isSpecial ? "" : `<button data-tree-action="delete" title="Delete">
       <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
     </button>`;
+  // Folder ↔ Project toggle. Only surfaced on real Folder/Project nodes
+  // (not Inbox/Trash/Images, not the legacy synced root, never on docs
+  // or images). The bi-directional arrow signals "swap container type"
+  // — going Project → Folder loses ordering + project preview, so the
+  // click handler shows a confirmation prompt for that direction only.
+  let convertBtn = "";
+  if (!isSpecial && (nodeType === "folder" || nodeType === "project") && !item?.syncFolderId) {
+    const target = nodeType === "folder" ? "project" : "folder";
+    convertBtn = `<button data-tree-action="convert-container" data-target-type="${target}" title="Convert to ${target}">
+      <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+    </button>`;
+  }
   return `<span class="tree-actions" data-node-id="${nodeId}">
-    ${flagBtn}${renameBtn}${dupBtn}${delBtn}
+    ${flagBtn}${renameBtn}${convertBtn}${dupBtn}${delBtn}
   </span>`;
 }
 
@@ -262,7 +274,9 @@ function onActionClick(e) {
   if (action === "rename") {
     handleRename(nodeId, actionBtn, storedState);
   } else if (action === "duplicate") {
-    storedState.duplicateTreeNode(nodeId).then(() => refreshList(storedState));
+    handleDuplicate(nodeId, storedState);
+  } else if (action === "convert-container") {
+    handleConvertContainer(nodeId, actionBtn.dataset.targetType, storedState);
   } else if (action === "delete") {
     handleDelete(nodeId, storedState);
   } else if (action === "flag") {
@@ -552,6 +566,42 @@ async function handleRevealInFinder(nodeId, state) {
   }
 }
 
+function handleConvertContainer(nodeId, targetType, state) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  if (targetType !== "folder" && targetType !== "project") return;
+  if (node.type === targetType) return;
+
+  const doConvert = () => {
+    state.convertContainerType(nodeId, targetType).then(() => refreshList(state));
+  };
+
+  if (node.type === "project" && targetType === "folder") {
+    showConfirmModal({
+      title: `Convert "${node.name}" to a folder?`,
+      message: "Switching from a project to a folder loses the project's ordering and the joined preview view. Files will be preserved.",
+      confirmLabel: "Convert",
+      onConfirm: doConvert,
+    });
+  } else {
+    doConvert();
+  }
+}
+
+function handleDuplicate(nodeId, state) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  const typeName = node.type === "notebook" ? "notebook" : "document";
+  showConfirmModal({
+    title: `Duplicate ${typeName} "${node.name}"?`,
+    message: `A copy named "${node.name}-Copy" will be created next to the original.`,
+    confirmLabel: "Duplicate",
+    onConfirm: () => {
+      state.duplicateTreeNode(nodeId).then(() => refreshList(state));
+    },
+  });
+}
+
 function handleDelete(nodeId, state) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
@@ -598,33 +648,6 @@ function collectAllNames(nodes) {
     if (n.children) names.push(...collectAllNames(n.children));
   }
   return names;
-}
-
-function showDeleteConfirmModal(title, message, onConfirm) {
-  document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
-
-  const backdrop = document.createElement("div");
-  backdrop.className = "tree-delete-modal-backdrop";
-  const modal = document.createElement("div");
-  modal.className = "tree-delete-modal";
-  modal.innerHTML = `
-    <div class="tree-delete-modal-title">${escHtml(title)}</div>
-    <pre class="tree-delete-modal-message">${escHtml(message)}</pre>
-    <div class="tree-delete-modal-btns">
-      <button class="tree-delete-cancel">Cancel</button>
-      <button class="tree-delete-confirm">Delete</button>
-    </div>
-  `;
-  backdrop.appendChild(modal);
-  document.body.appendChild(backdrop);
-  modal.querySelector(".tree-delete-cancel").addEventListener("click", () => backdrop.remove());
-  modal.querySelector(".tree-delete-confirm").addEventListener("click", () => {
-    backdrop.remove();
-    onConfirm();
-  });
-  backdrop.addEventListener("click", (e) => {
-    if (e.target === backdrop) backdrop.remove();
-  });
 }
 
 export function refreshFilesPanel(state) {

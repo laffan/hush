@@ -381,6 +381,94 @@
   background: rgba(220, 50, 50, 0.25) !important;
 }
 
+/* ===== Backup App Data modal ===== */
+.backup-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.backup-modal {
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 460px;
+  width: 90%;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.backup-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.backup-modal-help {
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.backup-modal-progress { margin-bottom: 16px; }
+
+.backup-progress-bar {
+  height: 8px;
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.backup-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent, #5a8ad8);
+  transition: width 0.15s linear;
+}
+
+.backup-progress-status {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backup-modal-result {
+  font-size: 12px;
+  margin-bottom: 16px;
+  word-break: break-all;
+  color: var(--fg);
+}
+
+.backup-modal-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.backup-modal-btns button {
+  padding: 6px 16px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+}
+
+.backup-modal-btns button:hover { background: rgba(128, 128, 128, 0.15); }
+.backup-modal-btns button:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ===== Desk thumbnail ===== */
 /* Pinned to the bottom of the panel-overlay (which is position: fixed,
    so absolute children sit relative to its viewport box and do not
@@ -443,4 +531,34 @@
   height: 100%;
   display: block;
   border-radius: 4px;
+  /* The thumbnail body owns the layout; the canvas paints into the box
+     verbatim. Using object-fit ensures the rendered bitmap is centered
+     and never stretched even before a ResizeObserver-driven repaint
+     catches up. */
+  object-fit: contain;
+}
+
+.desk-thumbnail-panes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.desk-thumbnail-body {
+  position: relative;
+}
+
+.desk-thumbnail-pane {
+  position: absolute;
+  border: 1px solid var(--accent, #5a8ad8);
+  background: rgba(90, 138, 216, 0.1);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.desk-thumbnail-pane.pinned {
+  border-color: #5a8ad8;
+  border-style: solid;
 }

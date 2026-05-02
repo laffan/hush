@@ -19,19 +19,21 @@
  * don't branch on format. Encoding always emits the new envelope.
  */
 
-import type { Shape, Layer } from "./types";
+import type { Shape, Layer, CameraBookmark } from "./types";
 import type { FlowEdge } from "./flowchart";
 
 export interface NotebookContent {
   shapes: Shape[];
   layers?: Layer[];
   flowEdges?: FlowEdge[];
+  bookmarks?: CameraBookmark[];
 }
 
 export interface NotebookSnapshotInput {
   shapes: Shape[];
   layers?: Layer[];
   flowEdges?: FlowEdge[];
+  bookmarks?: CameraBookmark[];
 }
 
 /** JSON-encode a notebook snapshot in the envelope format.
@@ -50,6 +52,7 @@ export function encodeNotebookContent(snapshot: NotebookSnapshotInput): string {
     shapes: snapshot.shapes.map(quantizeShape),
     layers: snapshot.layers,
     flowEdges: snapshot.flowEdges,
+    bookmarks: snapshot.bookmarks,
   };
   return JSON.stringify(payload);
 }
@@ -86,7 +89,8 @@ export function decodeNotebookContent(content: string | null | undefined): Noteb
     const shapes = Array.isArray(obj.shapes) ? (obj.shapes as Shape[]) : [];
     const layers = Array.isArray(obj.layers) ? (obj.layers as Layer[]) : undefined;
     const flowEdges = Array.isArray(obj.flowEdges) ? (obj.flowEdges as FlowEdge[]) : undefined;
-    return { shapes, layers, flowEdges };
+    const bookmarks = Array.isArray(obj.bookmarks) ? (obj.bookmarks as CameraBookmark[]) : undefined;
+    return { shapes, layers, flowEdges, bookmarks };
   }
   return null;
 }

@@ -24,6 +24,21 @@ import { startTextDrag } from "../pane/text-drag.js";
 const OPEN_X = 80;
 const OPEN_Y = 80;
 
+/** Clean up the raw highlight string Zotero pulled out of the PDF.
+ *  Two cosmetic passes: collapse runs of line breaks into single
+ *  spaces (PDF text extraction sprays \n every visual line, even
+ *  mid-sentence), and strip "- " sequences (most often the trailing
+ *  half of a soft-hyphenated word wrap, e.g. "hyphen- ated" → "hyphenated").
+ */
+function tidyHighlightText(raw) {
+  if (!raw) return "";
+  return raw
+    .replace(/[\r\n]+/g, " ")
+    .replace(/- /g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /** Public entry point — invoked by the command palette. */
 export async function openZoteroHighlightPane(state) {
   const fileId = "zotero:" + crypto.randomUUID();
@@ -277,8 +292,13 @@ async function fetchAndPaint(pane, force) {
     });
     // Drop entries with no highlighted text (typically ink / image
     // annotations) — those don't surface usefully here and they pollute
-    // the color swatches.
-    pane._zh.annotations = annotations.filter((a) => (a.text || "").trim().length > 0);
+    // the color swatches. Also tidy each remaining highlight: collapse
+    // intra-quote line breaks (PDF text extraction often inserts them
+    // mid-sentence) and strip the trailing "- " produced by
+    // soft-hyphenated line wraps.
+    pane._zh.annotations = annotations
+      .filter((a) => (a.text || "").trim().length > 0)
+      .map((a) => ({ ...a, text: tidyHighlightText(a.text) }));
     if (pane._zh.statusEl) {
       const noun = annotations.length === 1 ? "annotation" : "annotations";
       pane._zh.statusEl.textContent = `${annotations.length} ${noun}${fromCache ? " (cached)" : ""}`;

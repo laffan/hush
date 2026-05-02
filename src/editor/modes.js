@@ -121,12 +121,18 @@ export function updateColumnResizers(state) {
     let leftPad, rightPad;
 
     // "Make space for panes": when a doc pane is visible in this context,
-    // push the column to the right, leaving most of the space on the left.
+    // push the column away from the panes per the user's chosen direction.
     const makeSpace = state.settings.makeSpaceForPanes !== false;
+    const direction = state.settings.makeSpaceDirection === "left" ? "left" : "right";
     const hasDocPane = !!state.runtime.hasVisibleDocPane;
     if (makeSpace && hasDocPane && !state.currentNotebookFileId && availableWidth > colW + minPad * 2) {
-      rightPad = minPad + rightInsetOffset;
-      leftPad = w - colW - rightPad;
+      if (direction === "left") {
+        leftPad = minPad + leftInsetOffset;
+        rightPad = w - colW - leftPad;
+      } else {
+        rightPad = minPad + rightInsetOffset;
+        leftPad = w - colW - rightPad;
+      }
     } else {
       const basePad = Math.max(minPad, Math.floor((availableWidth - colW) / 2));
       leftPad = basePad + leftInsetOffset;

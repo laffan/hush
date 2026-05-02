@@ -58,6 +58,9 @@ pub fn default_dry_stopwords() -> Vec<String> {
 pub fn default_true() -> bool {
     true
 }
+pub fn default_make_space_direction() -> String {
+    "right".to_string()
+}
 pub fn default_longview_body_font_size() -> u32 {
     3
 }

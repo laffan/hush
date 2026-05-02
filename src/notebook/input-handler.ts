@@ -206,6 +206,25 @@ export function bindInputEvents(
     if (matchesKey(e, sc.shortcutNbGroup)) { e.preventDefault(); state.groupSelected(); return; }
     if (matchesKey(e, sc.shortcutNbRedo)) { e.preventDefault(); state.redo(); return; }
     if (matchesKey(e, sc.shortcutNbUndo)) { e.preventDefault(); state.undo(); return; }
+
+    // Copy / Cut — write the current selection out as a portable
+    // clipboard envelope (also dropping a plain-text fallback) so the
+    // shapes can be pasted back into Hush, into another Hush window, or
+    // into the Steiner project. Cut additionally deletes the source.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "c" || e.key === "C" || e.key === "x" || e.key === "X")) {
+      const payload = state.serializeSelection();
+      if (!payload) return;
+      e.preventDefault();
+      const json = JSON.stringify(payload);
+      try {
+        navigator.clipboard?.writeText(json).catch(() => {});
+      } catch { /* ignore */ }
+      // Stash on the window so an immediate paste in the same session
+      // round-trips even when the OS clipboard write was rejected.
+      (window as any).__hushNotebookClipboard = json;
+      if (e.key === "x" || e.key === "X") state.deleteSelected();
+      return;
+    }
     // Ctrl+Y as alternative redo (not customizable)
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === "y" || e.key === "Y")) { e.preventDefault(); state.redo(); }
   }) as unknown as (e: HTMLElementEventMap["keydown"]) => void);
@@ -237,7 +256,23 @@ export function bindInputEvents(
       }
     }
     const text = extractTextFromDataTransfer(cd);
-    if (text && text.trim()) state.addTextShapeAtCenter(cleanLineBreaks(text));
+    // First try to parse as a Hush/Steiner clipboard envelope; only fall
+    // back to plain-text shape creation if that fails.
+    if (text && text.trim()) {
+      const stash = (window as any).__hushNotebookClipboard as string | undefined;
+      const candidate = (text.trim().startsWith("{") ? text : null) || stash || null;
+      if (candidate) {
+        try {
+          const parsed = JSON.parse(candidate);
+          const fmt = (parsed && typeof parsed.format === "string") ? parsed.format : "";
+          if ((fmt === "hush-clipboard" || fmt === "steiner-clipboard") && Array.isArray(parsed.shapes)) {
+            state.pasteSerializedShapes(parsed);
+            return;
+          }
+        } catch { /* not JSON — fall through */ }
+      }
+      state.addTextShapeAtCenter(cleanLineBreaks(text));
+    }
   }) as unknown as (e: HTMLElementEventMap["paste"]) => void);
 
   // Drag/drop — only handle shelf drags and direct canvas drops.

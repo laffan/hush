@@ -72,6 +72,10 @@ export async function mountNotebook(container, fileId, state) {
   if (snapshot) {
     canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
     canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
+    if (Array.isArray(snapshot.bookmarks)) {
+      canvasInstance.state.bookmarks = snapshot.bookmarks;
+      canvasInstance.state.notify("bookmarks");
+    }
   }
 
   // Apply notebook settings from Hush settings
@@ -261,6 +265,7 @@ export async function saveNotebook() {
     shapes: canvasInstance.getShapes(),
     layers: canvasInstance.state.layers,
     flowEdges: canvasInstance.state.flowchart.serialize(),
+    bookmarks: canvasInstance.state.bookmarks,
   });
   try {
     if (IS_TAURI) {
@@ -343,6 +348,10 @@ export async function reloadNotebookShapes(jsonContent) {
     if (snapshot) {
       canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
       canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
+      if (Array.isArray(snapshot.bookmarks)) {
+        canvasInstance.state.bookmarks = snapshot.bookmarks;
+        canvasInstance.state.notify("bookmarks");
+      }
       _lastSavedContent = jsonContent;
       notebookDirty = false;
     }

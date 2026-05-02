@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod files;
 pub mod images;
 pub mod local_sync;
