@@ -440,7 +440,14 @@ function open(state) {
     close() { close(); },
   };
 
-  overlay.addEventListener("mousemove", () => { keyboardNav = false; });
+  // Real-mouse movement clears the keyboard-nav flag so hover takes
+  // over selection again. Skip touch / pen pointer types — those fire
+  // synthetic mousemoves on iOS during a scroll and shouldn't be
+  // interpreted as "user is hovering with a mouse".
+  overlay.addEventListener("pointermove", (e) => {
+    if (e.pointerType && e.pointerType !== "mouse") return;
+    keyboardNav = false;
+  });
 
   input.addEventListener("input", () => {
     const q = input.value.trim().toLowerCase();
@@ -519,10 +526,19 @@ function renderList(listEl, state) {
       if (run) run(cmd);
       else { close(); cmd.action(state); }
     });
-    row.addEventListener("mouseenter", () => {
+    // Hover behaviour: only react to real mouse pointers. On iOS the
+    // synthetic mouseenter fires for every row your finger crosses
+    // during a touch scroll; toggling an `.active` class across every
+    // row each time triggers a full reflow per crossed row, which is
+    // what made scrolling visibly stutter.
+    row.addEventListener("pointerenter", (e) => {
+      if (e.pointerType && e.pointerType !== "mouse") return;
       if (keyboardNav) return;
+      if (activeIndex === i) return;
+      const prev = listEl.children[activeIndex];
+      if (prev) prev.classList.remove("active");
       activeIndex = i;
-      listEl.querySelectorAll(".cmd-palette-item").forEach((el, j) => el.classList.toggle("active", j === i));
+      row.classList.add("active");
     });
     listEl.appendChild(row);
   });
