@@ -34,16 +34,36 @@ export interface NotebookSnapshotInput {
   flowEdges?: FlowEdge[];
 }
 
-/** JSON-encode a notebook snapshot in the envelope format. */
+/** JSON-encode a notebook snapshot in the envelope format.
+ *  DrawShape points are quantized at this boundary: x/y rounded to integer
+ *  pixels and pressure rounded to 0.05 buckets (2 decimal places). The
+ *  visible difference is sub-pixel — `stroke-render.js`'s stamp radius is
+ *  `halfSize * (0.6 + 0.4 * pressure)`, so 0.05 of pressure is 2% of
+ *  halfSize, well below brush noise — and the byte savings on dense
+ *  Pencil strokes are large (~50%). Serializing the quantized shape is
+ *  the only place this lossy rounding happens; in-memory points keep
+ *  their original precision while drawing. */
 export function encodeNotebookContent(snapshot: NotebookSnapshotInput): string {
   const payload = {
     format: "hushnote",
     version: 1,
-    shapes: snapshot.shapes,
+    shapes: snapshot.shapes.map(quantizeShape),
     layers: snapshot.layers,
     flowEdges: snapshot.flowEdges,
   };
   return JSON.stringify(payload);
+}
+
+function quantizeShape(s: Shape): Shape {
+  if (s.type !== "draw") return s;
+  const ds = s as Shape & { points?: Array<{ x: number; y: number; pressure: number }> };
+  if (!ds.points || ds.points.length === 0) return s;
+  const points = ds.points.map((p) => ({
+    x: Math.round(p.x),
+    y: Math.round(p.y),
+    pressure: Math.round(p.pressure * 20) / 20,
+  }));
+  return { ...ds, points } as Shape;
 }
 
 /** Parse on-disk notebook content. Tolerates the legacy bare-array form
