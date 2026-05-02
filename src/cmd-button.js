@@ -17,8 +17,22 @@
  * 20 px from the panel's right edge while the files panel is open.
  */
 
-const IS_TAURI_MOBILE = typeof window !== "undefined"
-  && /iPad|iPhone|iPod/.test(navigator.userAgent || "");
+/** Detect iOS / iPadOS — iPad reports as MacIntel since iPadOS 13, so
+ *  the userAgent check alone misses it. Accept any platform that has
+ *  multiple touch points OR the iPad-style platform shape. */
+function isIOSDevice() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // Modern iPad (Safari + Tauri WebView): platform == "MacIntel" but
+  // navigator.maxTouchPoints > 0 (Macs report 0). Allow any positive
+  // value rather than the stricter > 1 — some WebView versions only
+  // expose 1.
+  const platform = navigator.platform || "";
+  const touchPoints = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  if (/Mac/i.test(platform) && touchPoints > 0) return true;
+  return false;
+}
 
 /** Single source of truth for "Cmd is held" — call sites use this in
  *  place of `e.metaKey || e.ctrlKey` when they want to honour the
@@ -41,7 +55,7 @@ export function initCmdButton(state) {
 
 function applyCmdButtonVisibility() {
   if (!_state) return;
-  const wantVisible = !!(IS_TAURI_MOBILE && _state.settings?.showCmdButton);
+  const wantVisible = !!(isIOSDevice() && _state.settings?.showCmdButton);
   if (wantVisible && !_btn) mountButton();
   else if (!wantVisible && _btn) unmountButton();
 }

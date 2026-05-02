@@ -116,16 +116,17 @@ export function findConflict(settings, key) {
   const normalized = normalizeShortcut(val);
   for (const def of shortcutDefs) {
     if (def.key === key) continue;
-    if (settings[def.key] && normalizeShortcut(settings[def.key]) === normalized) {
-      return def.label;
-    }
+    if (settings[def.key] && normalizeShortcut(settings[def.key]) === normalized) return def.label;
   }
   return null;
 }
 
+// iPadOS 13+ reports as Macintosh; accept any positive maxTouchPoints
+// (real Macs expose 0; some WKWebView versions on iPad only expose 1).
 export function isIOSSettings() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent || "")) return true;
+  const tp = navigator.maxTouchPoints || 0;
+  return /Mac/i.test(navigator.platform || "") && tp > 0;
 }
 
 // ===== General Tab =====

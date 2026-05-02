@@ -1739,8 +1739,6 @@ export class DrawingState extends EventTarget {
    *  somewhere visible instead of being squeezed under the shelf. */
   focusShape(shapeId: string, offsetLeft?: number, offsetRight = 0) {
     const shape = this.shapes.find((s) => s.id === shapeId);
-    // eslint-disable-next-line no-console
-    console.log("[focusShape] called", { shapeId, offsetLeft, offsetRight, shapeFound: !!shape, totalShapes: this.shapes.length, canvasEl: !!this.canvasEl, canvasW: this.canvasEl?.clientWidth, canvasH: this.canvasEl?.clientHeight, canvasInDom: this.canvasEl ? document.contains(this.canvasEl) : false });
     if (!shape) return;
     const bounds = getShapeBounds(shape, this.fontFamily);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
@@ -1770,14 +1768,11 @@ export class DrawingState extends EventTarget {
     }
 
     const zoom = this.camera.zoom;
-    const cameraBefore = { ...this.camera };
     this.camera = {
       x: (left + w - right) / 2 - cx * zoom,
       y: h / 2 - cy * zoom,
       zoom,
     };
-    // eslint-disable-next-line no-console
-    console.log("[focusShape] camera updated", { cameraBefore, cameraAfter: { ...this.camera }, w, h, left, right, cx, cy, zoom, bounds });
     this.selectedIds = new Set([shapeId]);
     this.notify("camera");
     this.notify("selectedIds");

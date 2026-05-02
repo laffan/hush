@@ -418,26 +418,15 @@ export function createShelfPanel(
     }
     row.setAttribute("data-shelf-row", "1");
     row.setAttribute("data-shape-id", node.shapeId);
-    // Diagnostic: log every pointer event that lands on the row so we
-    // can tell whether clicks are reaching the span at all.
-    row.addEventListener("pointerdown", (ev) => {
-      // eslint-disable-next-line no-console
-      console.log("[shelf] row pointerdown", { shapeId: node.shapeId, label: node.label, target: (ev.target as HTMLElement).tagName, panelInPane: !!panel.closest(".floating-pane") });
-    }, true);
-    row.appendChild(h("span", { text: node.label, attrs: { "data-shelf-row-label": "1" }, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", fontWeight: node.heading ? "600" : "400" }, onClick: () => {
-      // eslint-disable-next-line no-console
-      console.log("[shelf] row label clicked", { shapeId: node.shapeId, label: node.label, isOpen, panelOffsetWidth: panel.offsetWidth, panelInPane: !!panel.closest(".floating-pane") });
-      state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0);
-    } }));
-    // Fall-back: any click on the row that didn't land on the label
-    // span (icon, padding) still pans — and we log it so we can see
-    // when clicks are landing off-label.
+    row.appendChild(h("span", { text: node.label, attrs: { "data-shelf-row-label": "1" }, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", fontWeight: node.heading ? "600" : "400" }, onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0) }));
+    // Fall-back: clicks on the row that didn't land on the label span
+    // (icon, padding) still pan. Without this the pin button + flow
+    // arrow + drag-area icon swallow part of the row, so clicks there
+    // appear to do nothing.
     row.addEventListener("click", (ev) => {
       const tgt = ev.target as HTMLElement | null;
       if (tgt && tgt.closest("[data-shelf-row-label]")) return; // already handled
       if (tgt && tgt.closest("button")) return; // pin / collapse handled separately
-      // eslint-disable-next-line no-console
-      console.log("[shelf] row body clicked (off-label)", { shapeId: node.shapeId, target: tgt?.tagName, panelInPane: !!panel.closest(".floating-pane") });
       state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0);
     });
     const pinBtn = h("button", { title: isPinned ? "Unpin" : "Pin", style: { border: "none", background: "none", cursor: "pointer", padding: "0", opacity: isPinned ? "0.8" : "0.4", color: isPinned ? theme.accent : muted, display: "flex", alignItems: "center", width: "16px", height: "16px" }, onClick: () => { if (isPinned) pinned.delete(node.id); else pinned.add(node.id); rebuildBody(); } });
