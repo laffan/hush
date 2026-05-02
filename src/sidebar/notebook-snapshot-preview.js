@@ -19,7 +19,10 @@ const PADDING = 32;
 
 /** Render a notebook snapshot's JSON content into `targetCanvas`.
  *  `liveCanvas` is the active NotesCanvas (used for theme/font/imageCache).
- *  Returns a summary describing the snapshot ({shapeCount, layerCount}). */
+ *  Returns `{ shapeCount, layerCount, camera, contentBounds }` — the
+ *  camera is the one used to project the snapshot, suitable for
+ *  callers that want to overlay markers (panes, viewport, etc.) on
+ *  top of the thumbnail. `contentBounds` is null for an empty notebook. */
 export function renderNotebookSnapshotThumbnail(targetCanvas, content, liveCanvas) {
   const decoded = decodeNotebookContent(content) || { shapes: [], layers: [], flowEdges: [] };
   const shapes = (decoded.shapes || []).filter((s) => !s.pocketed);
@@ -32,7 +35,7 @@ export function renderNotebookSnapshotThumbnail(targetCanvas, content, liveCanva
   targetCanvas.height = cssH * dpr;
 
   const ctx = targetCanvas.getContext("2d");
-  if (!ctx) return { shapeCount: shapes.length, layerCount: layers ? layers.length : 0 };
+  if (!ctx) return { shapeCount: shapes.length, layerCount: layers ? layers.length : 0, camera: null, contentBounds: null };
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   const fontFamily = liveCanvas?.state?.fontFamily || "Inter";
@@ -53,20 +56,9 @@ export function renderNotebookSnapshotThumbnail(targetCanvas, content, liveCanva
     ctx.fillStyle = theme.canvasBackground;
     ctx.fillRect(0, 0, cssW, cssH);
     drawEmptyMessage(ctx, cssW, cssH, theme);
-    return { shapeCount: 0, layerCount: layers ? layers.length : 0 };
+    return { shapeCount: 0, layerCount: layers ? layers.length : 0, camera: null, contentBounds: null };
   }
-  const contentW = Math.max(1, bounds.maxX - bounds.minX);
-  const contentH = Math.max(1, bounds.maxY - bounds.minY);
-  const innerW = Math.max(1, cssW - PADDING * 2);
-  const innerH = Math.max(1, cssH - PADDING * 2);
-  const zoom = Math.min(innerW / contentW, innerH / contentH, 1);
-  const scaledW = contentW * zoom;
-  const scaledH = contentH * zoom;
-  camera = {
-    x: (cssW - scaledW) / 2 - bounds.minX * zoom,
-    y: (cssH - scaledH) / 2 - bounds.minY * zoom,
-    zoom,
-  };
+  camera = computeSnapshotCamera(bounds, cssW, cssH);
 
   renderForExport(ctx, cssW, cssH, {
     shapes,
@@ -86,7 +78,39 @@ export function renderNotebookSnapshotThumbnail(targetCanvas, content, liveCanva
 
   drawApproximateStrokes(ctx, shapes, camera, theme);
 
-  return { shapeCount: shapes.length, layerCount: layers ? layers.length : 0 };
+  return {
+    shapeCount: shapes.length,
+    layerCount: layers ? layers.length : 0,
+    camera,
+    contentBounds: bounds,
+  };
+}
+
+/** Recompute the camera used by `renderNotebookSnapshotThumbnail` for a
+ *  given canvas size and content bounding box. Useful for callers that
+ *  want to project world coordinates (pane positions, viewport rect)
+ *  into thumbnail screen space without re-rendering the canvas. */
+export function computeSnapshotCamera(bounds, cssW, cssH) {
+  if (!bounds) return null;
+  const contentW = Math.max(1, bounds.maxX - bounds.minX);
+  const contentH = Math.max(1, bounds.maxY - bounds.minY);
+  const innerW = Math.max(1, cssW - PADDING * 2);
+  const innerH = Math.max(1, cssH - PADDING * 2);
+  const zoom = Math.min(innerW / contentW, innerH / contentH, 1);
+  const scaledW = contentW * zoom;
+  const scaledH = contentH * zoom;
+  return {
+    x: (cssW - scaledW) / 2 - bounds.minX * zoom,
+    y: (cssH - scaledH) / 2 - bounds.minY * zoom,
+    zoom,
+  };
+}
+
+/** Compute content bounds for a decoded notebook payload — exported so
+ *  the desk thumbnail can drive `computeSnapshotCamera` directly. */
+export function computeNotebookBounds(decoded, fontFamily) {
+  const shapes = (decoded?.shapes || []).filter((s) => !s.pocketed);
+  return computeContentBounds(shapes, fontFamily);
 }
 
 /** Concatenate every text-shape body into a single searchable string.
