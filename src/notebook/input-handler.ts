@@ -103,24 +103,28 @@ export function bindInputEvents(
   }
 
   on(canvas, "touchstart", (e) => {
-    if (e.touches.length === 2) {
+    // Use `targetTouches` rather than `touches` so a finger that
+    // started on something else (e.g. the on-screen Cmd button) isn't
+    // counted as a second canvas touch and doesn't kick the canvas
+    // into pinch-zoom while the other hand drags content out.
+    if (e.targetTouches.length === 2) {
       e.preventDefault();
       // The first finger's pointerdown has already kicked off a
       // marquee / drag / resize / drag-area on the canvas. Drop it
       // so the chrome doesn't render between the user's fingers.
       state.cancelActiveInteraction();
       twoFingerActive = true;
-      twoFingerStartMid = pinchMid(e.touches[0], e.touches[1]);
-      twoFingerStartDist = pinchDist(e.touches[0], e.touches[1]);
+      twoFingerStartMid = pinchMid(e.targetTouches[0], e.targetTouches[1]);
+      twoFingerStartDist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
       cameraAtTwoFingerStart = { ...state.camera };
     }
   }, { passive: false });
 
   on(canvas, "touchmove", (e) => {
-    if (twoFingerActive && e.touches.length === 2) {
+    if (twoFingerActive && e.targetTouches.length === 2) {
       e.preventDefault();
-      const mid = pinchMid(e.touches[0], e.touches[1]);
-      const dist = pinchDist(e.touches[0], e.touches[1]);
+      const mid = pinchMid(e.targetTouches[0], e.targetTouches[1]);
+      const dist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
       // Need a non-zero start distance to compute a ratio. If two
       // fingers landed at the exact same point, fall back to pure pan
       // until they separate.
@@ -142,11 +146,11 @@ export function bindInputEvents(
   }, { passive: false });
 
   on(canvas, "touchend", (e) => {
-    if (twoFingerActive && e.touches.length < 2) twoFingerActive = false;
+    if (twoFingerActive && e.targetTouches.length < 2) twoFingerActive = false;
   });
 
   on(canvas, "touchcancel", (e) => {
-    if (twoFingerActive && e.touches.length < 2) twoFingerActive = false;
+    if (twoFingerActive && e.targetTouches.length < 2) twoFingerActive = false;
   });
 
   // Space-to-pan state. `spaceEnabledPan` tracks whether THIS keydown

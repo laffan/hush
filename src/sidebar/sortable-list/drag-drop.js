@@ -334,6 +334,25 @@ function finishDrag(pointerEvent) {
   const forceAllowed = this.config.forceDragOutside?.(draggedItem) === true;
   const cmdHeld = pointerEvent && (pointerEvent.metaKey || pointerEvent.ctrlKey
     || !!(typeof window !== "undefined" && window.__hushCmdHeld));
+  // eslint-disable-next-line no-console
+  if (typeof window !== "undefined" && window.__hushDragDebug !== false) {
+    console.log("[sortable] finishDrag", {
+      hasOnDragOutside: !!this.config.onDragOutside,
+      hasItem: !!draggedItem,
+      itemType: draggedItem?.type,
+      itemName: draggedItem?.name,
+      forceAllowed,
+      metaKey: !!pointerEvent?.metaKey,
+      ctrlKey: !!pointerEvent?.ctrlKey,
+      virtualCmd: !!(typeof window !== "undefined" && window.__hushCmdHeld),
+      cmdHeld,
+      clientX: pointerEvent?.clientX,
+      panelRight: this.container.closest("#panel-overlay")?.getBoundingClientRect().right,
+      isOutside: pointerEvent && this.container.closest("#panel-overlay")
+        ? pointerEvent.clientX > this.container.closest("#panel-overlay").getBoundingClientRect().right
+        : null,
+    });
+  }
   if (pointerEvent && this.config.onDragOutside && draggedItem &&
       (forceAllowed || cmdHeld)) {
     const panelOverlay = this.container.closest("#panel-overlay");
