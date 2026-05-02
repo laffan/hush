@@ -205,14 +205,11 @@ export { onContextChange as refreshPaneContextVisibility };
 export function closePane(id) {
   const pane = panes.get(id);
   if (!pane) return;
-  // Save before closing
   savePaneContent(pane);
-  // Remove sync listeners
   if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
-  // Stop attach sync
+  if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
-  // Destroy editor/notebook
   if (pane.editor) pane.editor.destroy();
   if (pane.notebook) pane.notebook.destroy();
   pane.el.remove();
@@ -226,6 +223,7 @@ export function focusPane(id) {
   // Ratchet locks all panes — clicking into one shouldn't unlock the
   // editor and let the user write outside the ratcheted document.
   if (appState?.ratchetMode) return;
+  const wasActive = activePaneId === id;
   // Save, blur, and lock previously focused pane
   if (activePaneId && activePaneId !== id) {
     const prev = panes.get(activePaneId);
@@ -240,9 +238,11 @@ export function focusPane(id) {
   if (!pane) return;
   pane.el.classList.add("active");
   pane.el.style.zIndex = zForPane(pane);
-  // Unlock and focus the inner editor / re-center notebook toolbar
+  // Skip the notebook notify when the pane was already active — every
+  // notify("tool") rebuilds the shelf, eating the click on shelf rows
+  // because pointerdown fires this on every press.
   if (pane.editor) { pane.editor.setEditable(true); pane.editor.focus(); }
-  if (pane.notebook) pane.notebook.state.notify("tool");
+  if (pane.notebook && !wasActive) pane.notebook.state.notify("tool");
 }
 
 export function deactivateAllPanes() {

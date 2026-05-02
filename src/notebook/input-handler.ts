@@ -297,7 +297,7 @@ export function bindInputEvents(
     // Cmd/Ctrl-drag of plain text formats the dropped text as a
     // markdown blockquote at 14px — for pasting reference quotes
     // from outside the app without follow-up reformatting.
-    const asQuote = e.metaKey || e.ctrlKey;
+    const asQuote = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
     const formatText = (t: string) => asQuote ? `> ${t}` : t;
     const textOpts = asQuote ? { fontSize: 14 } : undefined;
 

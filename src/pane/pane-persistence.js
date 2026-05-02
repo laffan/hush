@@ -57,6 +57,9 @@ export function persistPanesNow() {
       canvasX: p._canvasX ?? null,
       canvasY: p._canvasY ?? null,
       scrollRelY: p._scrollRelY ?? null,
+      // Editor scroll position inside doc panes — restored on next mount
+      // so reopening a pane lands the reader where they left off.
+      editorScrollTop: typeof p.editorScrollTop === "number" ? p.editorScrollTop : null,
       localSync: p.localSync || null,
       // Per-pane font-size override. Keyed implicitly by the pane's
       // (ownerContext, fileId) pair, so the same file opened as a pane
@@ -142,6 +145,7 @@ export async function restorePanes(deps) {
       localSync: s.localSync || null,
       fontSize: typeof s.fontSize === "number" ? s.fontSize : null,
       zotero: s.zotero ? { ...s.zotero } : null,
+      editorScrollTop: typeof s.editorScrollTop === "number" ? s.editorScrollTop : null,
     };
     if (s.canvasX != null) pane._canvasX = s.canvasX;
     if (s.canvasY != null) pane._canvasY = s.canvasY;

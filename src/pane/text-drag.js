@@ -11,6 +11,7 @@
  * drop deletes the source.
  */
 import { EditorView } from "@codemirror/view";
+import { isCmdHeld } from "../cmd-button.js";
 
 let active = null;
 
@@ -190,7 +191,7 @@ export function isTextDragging() {
  */
 export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helpers, markDirty) {
   const handler = (e) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
+    if (!isCmdHeld(e)) return;
     if (e.button !== 0) return;
     if (!(e.target instanceof Node) || !canvasEl.contains(e.target)) return;
     const rect = canvasEl.getBoundingClientRect();
@@ -249,7 +250,7 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
  */
 export function attachEditorTextDrag(view, containerEl) {
   const handler = (e) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
+    if (!isCmdHeld(e)) return;
     if (e.button !== 0) return;
     if (!(e.target instanceof Node) || !view.contentDOM.contains(e.target)) return;
     const sel = view.state.selection.main;
@@ -568,7 +569,7 @@ async function saveDataUrlAsImageNode(state, rawName, dataUrl) {
  */
 export function attachNotebookImageShapeDrag(canvasEl, containerEl, state, helpers, markDirty) {
   const handler = (e) => {
-    if (!(e.metaKey || e.ctrlKey)) return;
+    if (!isCmdHeld(e)) return;
     if (e.button !== 0) return;
     if (!(e.target instanceof Node) || !canvasEl.contains(e.target)) return;
     const rect = canvasEl.getBoundingClientRect();

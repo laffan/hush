@@ -56,6 +56,18 @@ export function createPaneEditor(container, appState, onChange, opts) {
       });
       view.focus();
     },
+    /** Read / write the editor's scroll offset so the host (pane
+     *  persistence + sync) can stash and restore it. */
+    getScrollTop: () => view.scrollDOM.scrollTop,
+    setScrollTop: (px) => { view.scrollDOM.scrollTop = px; },
+    /** Subscribe to scroll events on the editor's scroller. Returns an
+     *  unsubscribe function. The host throttles writes via the persist
+     *  debounce so this fires plenty often. */
+    onScroll: (handler) => {
+      const sd = view.scrollDOM;
+      sd.addEventListener("scroll", handler, { passive: true });
+      return () => sd.removeEventListener("scroll", handler);
+    },
     destroy: () => view.destroy(),
     /** Reconfigure theme from the given settings. When `lockedStyleId` is
      *  provided, the pane uses that style instead of the session's active

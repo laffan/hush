@@ -13,6 +13,7 @@ import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 import { initPaneManager, isPaneActive } from "./pane/pane-manager.js";
+import { initCmdButton } from "./cmd-button.js";
 import { applyActiveStyle, applyFocusModeOpacity, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
@@ -212,6 +213,9 @@ async function init() {
 
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
+
+  // iOS-only on-screen Cmd button (gated by `showCmdButton` setting).
+  initCmdButton(state);
 
   // Local Sync watcher — refresh the files panel when mounted folders
   // change on disk, and reload the open file if it was the one that

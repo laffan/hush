@@ -10,11 +10,14 @@
  * (no remote_id, or local-sync-only) are skipped — they can't survive
  * the round-trip in any meaningful way.
  *
- * Pixel layout (`x`, `y`, `width`, `height`) is intentionally NOT
- * synced. Different device classes have wildly different viewports;
- * each device picks its own placement. Anchored panes (canvas-attached
- * notebooks, scroll-anchored docs) DO carry their anchor across so the
- * pane snaps back to the right paragraph or canvas point.
+ * Pane size (`width`, `height`) and the editor's scroll position do
+ * round-trip across devices so a reading layout stays put. Position
+ * (`x`, `y`) does not — different device classes have wildly different
+ * viewports, so each device picks its own placement and the
+ * `recoverOffscreenPanes` pass nudges any incoming pane that landed
+ * off-screen back into view. Anchored panes (canvas-attached notebooks,
+ * scroll-anchored docs) carry their anchor across so the pane snaps
+ * back to the right paragraph or canvas point.
  *
  * Merge policy: additive. Panes that exist locally but not remotely are
  * kept (you didn't lose anything by going to another device). Remote
@@ -119,6 +122,9 @@ export async function serializePanesForSync(panesMap) {
       canvasX: pane._canvasX ?? null,
       canvasY: pane._canvasY ?? null,
       scrollRelY: pane._scrollRelY ?? null,
+      width: typeof pane.width === "number" ? pane.width : null,
+      height: typeof pane.height === "number" ? pane.height : null,
+      editorScrollTop: typeof pane.editorScrollTop === "number" ? pane.editorScrollTop : null,
       fontSize: typeof pane.fontSize === "number" ? pane.fontSize : null,
       zotero: zoteroPayload,
     });
@@ -201,6 +207,9 @@ export async function applyRemotePanes(payloadString, deps) {
       canvasX: p.canvasX,
       canvasY: p.canvasY,
       scrollRelY: p.scrollRelY,
+      width: typeof p.width === "number" ? p.width : null,
+      height: typeof p.height === "number" ? p.height : null,
+      editorScrollTop: typeof p.editorScrollTop === "number" ? p.editorScrollTop : null,
       fontSize: typeof p.fontSize === "number" ? p.fontSize : null,
       fileName,
       zotero: zoteroPayload,
@@ -224,7 +233,8 @@ export async function applyRemotePanes(payloadString, deps) {
       const key = matchKey(r.ownerContext, r.fileType, r.fileId, r.zotero?.attKey);
       const existing = localByKey.get(key);
       if (existing) {
-        // Update anchoring + soft state; pixel layout stays put.
+        // Update anchoring + soft state. Size + editor scroll round-trip;
+        // position is left alone (different viewports across devices).
         if (r.canvasX != null) existing._canvasX = r.canvasX;
         if (r.canvasY != null) existing._canvasY = r.canvasY;
         if (r.scrollRelY != null) existing._scrollRelY = r.scrollRelY;
@@ -232,6 +242,20 @@ export async function applyRemotePanes(payloadString, deps) {
         if (r.pinned !== undefined) existing.pinned = r.pinned;
         if (r.collapsed !== undefined) existing.collapsed = r.collapsed;
         if (r.fontSize !== null) existing.fontSize = r.fontSize;
+        if (r.width != null && r.width > 0) {
+          existing.width = r.width;
+          if (existing.el) existing.el.style.width = r.width + "px";
+        }
+        if (r.height != null && r.height > 0) {
+          existing.height = r.height;
+          if (existing.el && !existing.collapsed) existing.el.style.height = r.height + "px";
+        }
+        if (r.editorScrollTop != null) {
+          existing.editorScrollTop = r.editorScrollTop;
+          if (existing.editor && existing.editor.setScrollTop) {
+            try { existing.editor.setScrollTop(r.editorScrollTop); } catch (_) {}
+          }
+        }
         matched++;
       } else if (createPaneFn) {
         const pane = await createPaneFn({
@@ -244,6 +268,9 @@ export async function applyRemotePanes(payloadString, deps) {
           canvasX: r.canvasX,
           canvasY: r.canvasY,
           scrollRelY: r.scrollRelY,
+          width: r.width,
+          height: r.height,
+          editorScrollTop: r.editorScrollTop,
           fontSize: r.fontSize,
           fileName: r.fileName,
           zotero: r.zotero,
@@ -393,6 +420,24 @@ export async function applyPanesFile(_state, payload) {
         if (opts.canvasY != null) pane._canvasY = opts.canvasY;
         if (opts.scrollRelY != null) pane._scrollRelY = opts.scrollRelY;
         if (opts.fontSize != null) pane.fontSize = opts.fontSize;
+        if (typeof opts.width === "number" && opts.width > 0) {
+          pane.width = opts.width;
+          if (pane.el) pane.el.style.width = opts.width + "px";
+        }
+        if (typeof opts.height === "number" && opts.height > 0) {
+          pane.height = opts.height;
+          if (pane.el && !pane.collapsed) pane.el.style.height = opts.height + "px";
+        }
+        if (typeof opts.editorScrollTop === "number") {
+          pane.editorScrollTop = opts.editorScrollTop;
+          if (pane.editor && pane.editor.setScrollTop) {
+            // Defer one frame so the editor has loaded its content
+            // before we ask it to scroll.
+            requestAnimationFrame(() => {
+              try { pane.editor.setScrollTop(opts.editorScrollTop); } catch (_) {}
+            });
+          }
+        }
         return pane;
       } catch (e) {
         console.warn("createPane (from sync) failed:", e);
