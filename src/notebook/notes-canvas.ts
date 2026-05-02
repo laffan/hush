@@ -475,7 +475,17 @@ export class NotesCanvas {
   // === Private ===
 
   private _startRenderLoop() {
+    let _lastLoggedCamera = "";
     const loop = () => {
+      // Diagnostic: log when the camera changes between frames so we
+      // can see whether focusShape's update is reaching the renderer.
+      const c = this.state.camera;
+      const sig = `${c.x.toFixed(1)},${c.y.toFixed(1)},${c.zoom.toFixed(3)}`;
+      if (sig !== _lastLoggedCamera) {
+        _lastLoggedCamera = sig;
+        // eslint-disable-next-line no-console
+        console.log("[render] camera changed", { camera: c, isPane: !!(this.container as HTMLElement).closest(".floating-pane") });
+      }
       render(this._canvas, {
         shapes: this.state.shapes,
         selectedIds: this.state.selectedIds,
