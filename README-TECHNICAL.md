@@ -410,14 +410,14 @@ Optional live word count pinned to the top of the text column. When `wordCountVi
 
 Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a whitespace-split after stripping comment markers (`%%...%%`), inline code fences, image markdown, and any text past the line containing the `---%` end-of-document gray-out marker — editorial notes don't inflate the total. In project mode the separators are skipped. Selection changes trigger a recompute too — partly so the project per-doc number tracks separator crossings, partly so a `.has-selection` class flips on the pill the moment the user has something selected. The plugin reads `wordCountVisible` from state and responds to `settings-changed` / `mode-changed` events; toggling is handled by the `toggleWordCount` command, bound by default to `Cmd+Shift+W` and surfaced in the command palette.
 
-**Format.** `recompute()` builds a `[…counts] words` tuple via `formatCounts`, with an optional selection slot prepended:
+**Format.** `recompute()` builds a `[[count, label], …]` array and `formatCounts` joins each pair as `"<n> <label>"` with `" / "` between them. Each slot carries its own label so the pill is self-describing:
 
-| Mode                            | No hover                  | Hover w/ selection                  |
-|---------------------------------|---------------------------|-------------------------------------|
-| Doc / notebook                  | `total words`             | `selection / total words`           |
-| Project (joined buffer)         | `section / total words`   | `selection / section / total words` |
+| Mode                            | No hover                          | Hover w/ selection                              |
+|---------------------------------|-----------------------------------|-------------------------------------------------|
+| Doc / notebook                  | `<n> words` (or `word` for 1)     | `<n> selected / <n> total`                      |
+| Project (joined buffer)         | `<n> section / <n> total`         | `<n> selected / <n> section / <n> total`        |
 
-`section` is the slice of the joined buffer between the separators surrounding the cursor (`sliceProjectSegmentAt`). The trailing noun toggles `word` ↔ `words` based on the right-most number.
+`section` is the slice of the joined buffer between the separators surrounding the cursor (`sliceProjectSegmentAt`). The `word`/`words` switch only matters in the regular-doc, no-selection case — every other case uses fixed labels (`selected`, `section`, `total`).
 
 **Selection hover.** The pill is `pointer-events: none` by default so the cursor passes through to the editor and editor drag-selects aren't interrupted. The `.has-selection` modifier (added by `recompute()` when `view.state.selection.main.from !== to`) flips it to `auto`, so the pill is hoverable only while a selection exists. `mouseenter` flips a module-level `showingSelection` flag and re-runs `recompute()`, which prepends the selection slot; `mouseleave` clears the flag and reverts. If the selection is cleared while hovering, the next `recompute()` (fired by the selection-set update listener) drops the flag automatically.
 

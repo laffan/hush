@@ -93,33 +93,33 @@ function recompute(state) {
   const total = countWords(text);
   const inProject = !!state.currentProjectId && text.includes("---hush-separator---");
 
-  // Project mode: show "section / total". Section = the slice of the
-  // joined buffer between the separators surrounding the cursor.
-  // Hovering with a selection prepends a "selection / …" slot.
+  // Project mode: show "<n> section / <n> total". Section = the slice
+  // of the joined buffer between the separators surrounding the
+  // cursor. Hovering with a selection prepends a "<n> selected" slot.
   if (inProject) {
     const cursor = getProjectCursorPos(state);
     if (cursor != null) {
       const section = countWords(sliceProjectSegmentAt(text, cursor));
-      const counts = showSel
-        ? [countWords(getSelectionText(state)), section, total]
-        : [section, total];
-      wordCountEl.textContent = formatCounts(counts);
+      const parts = showSel
+        ? [[countWords(getSelectionText(state)), "selected"], [section, "section"], [total, "total"]]
+        : [[section, "section"], [total, "total"]];
+      wordCountEl.textContent = formatCounts(parts);
       return;
     }
     // Cursor wasn't locatable — fall through to the non-project format.
   }
 
-  // Non-project: "total" alone, or "selection / total" while hovered
-  // with text selected.
-  const counts = showSel ? [countWords(getSelectionText(state)), total] : [total];
-  wordCountEl.textContent = formatCounts(counts);
+  // Non-project: "<n> words" alone, or "<n> selected / <n> total"
+  // while hovered with text selected.
+  const parts = showSel
+    ? [[countWords(getSelectionText(state)), "selected"], [total, "total"]]
+    : [[total, total === 1 ? "word" : "words"]];
+  wordCountEl.textContent = formatCounts(parts);
 }
 
-/** Render a `[a, b, c]` tuple as `"a / b / c words"` (or "word" for 1). */
+/** Render `[[count, label], …]` as `"a label / b label / c label"`. */
 function formatCounts(parts) {
-  const last = parts[parts.length - 1];
-  const noun = last === 1 ? "word" : "words";
-  return `${parts.map((n) => n.toLocaleString()).join(" / ")} ${noun}`;
+  return parts.map(([n, label]) => `${n.toLocaleString()} ${label}`).join(" / ");
 }
 
 function hasNonEmptySelection(state) {
