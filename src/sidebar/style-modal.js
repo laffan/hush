@@ -139,6 +139,13 @@ export function openStyleModal(state, existingStyle, onDone) {
         };
 
   let colorTab = "light"; // which tab is shown in the color section
+  // Theme id currently being hovered in the theme dropdown. Non-null
+  // overrides `draft.lightThemeId` / `darkThemeId` inside `updatePreview`
+  // so the right-hand preview pane reflects whichever option the user is
+  // pointing at — matching the on-hover behaviour of the Styles sidebar.
+  // Cleared at every `render()` so a stale hover from one color tab can't
+  // leak into the other tab's dropdown rebuild.
+  let previewThemeId = null;
 
   // ── build the backdrop ───────────────────────────────────────────────────
   const backdrop = document.createElement("div");
@@ -228,6 +235,7 @@ export function openStyleModal(state, existingStyle, onDone) {
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
 
   function render() {
+    previewThemeId = null;
     const prevSettingsScroll = backdrop.querySelector(".style-modal-settings")?.scrollTop ?? 0;
     const prevBodyScroll = backdrop.querySelector(".style-modal-body")?.scrollTop ?? 0;
     const selectedFont = draft.fontFamily || "";
@@ -389,8 +397,21 @@ export function openStyleModal(state, existingStyle, onDone) {
     const pane = backdrop.querySelector("#style-preview-pane");
     if (!pane) return;
 
-    const themeId = colorTab === "light" ? draft.lightThemeId : draft.darkThemeId;
-    const colors = colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {});
+    // Hover-preview path: if the user is pointing at a theme option, the
+    // pane shows that theme's *seeded* colors (the same ones a click would
+    // commit) rather than the draft's overrides — that way the theme
+    // itself is what's being previewed, not the user's prior tweaks.
+    const draftThemeId = colorTab === "light" ? draft.lightThemeId : draft.darkThemeId;
+    const themeId = previewThemeId || draftThemeId;
+    const colors = previewThemeId
+      ? {
+          bg: themeColorFor("bg", previewThemeId, colorTab),
+          fg: themeColorFor("fg", previewThemeId, colorTab),
+          header: themeColorFor("header", previewThemeId, colorTab),
+          cursor: themeColorFor("cursor", previewThemeId, colorTab),
+          selection: themeColorFor("selection", previewThemeId, colorTab),
+        }
+      : (colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {}));
 
     const bg = colors.bg || themeBackgrounds[themeId] || (colorTab === "light" ? "#fafafa" : "#1a1a1a");
     const fg = colors.fg || themeForegrounds[themeId] || (colorTab === "light" ? "#1a1a1a" : "#e0e0e0");
@@ -502,6 +523,17 @@ export function openStyleModal(state, existingStyle, onDone) {
       seedColorsFromTheme(draft, colorTab, val);
       render();
       scheduleSave();
+    }, {
+      onHover: (val) => {
+        previewThemeId = val || null;
+        updatePreview();
+      },
+      onClose: () => {
+        if (previewThemeId !== null) {
+          previewThemeId = null;
+          updatePreview();
+        }
+      },
     });
 
     const fsEl = backdrop.querySelector("#style-font-size");
@@ -605,20 +637,33 @@ function fmtInline(text) {
 }
 
 // ── shared custom dropdown ─────────────────────────────────────────────────────
-function bindCustomDropdown(dropdown, onSelect) {
+function bindCustomDropdown(dropdown, onSelect, opts) {
   if (!dropdown) return;
   const selected = dropdown.querySelector(".custom-dropdown-selected");
   const optionsList = dropdown.querySelector(".custom-dropdown-options");
+  const onClose = opts && opts.onClose;
+  const onHover = opts && opts.onHover;
+
+  function closeDropdown() {
+    if (!dropdown.classList.contains("open")) return;
+    dropdown.classList.remove("open");
+    if (onClose) onClose();
+  }
 
   selected.addEventListener("click", (e) => {
     e.stopPropagation();
     const isOpen = dropdown.classList.contains("open");
-    document.querySelectorAll(".custom-dropdown.open").forEach(d => d.classList.remove("open"));
-    if (!isOpen) {
+    // Closing every other open dropdown also clears their hover preview.
+    document.querySelectorAll(".custom-dropdown.open").forEach(d => {
+      if (d !== dropdown) d.classList.remove("open");
+    });
+    if (isOpen) {
+      closeDropdown();
+    } else {
       dropdown.classList.add("open");
       setTimeout(() => {
         document.addEventListener("mousedown", function handler(e2) {
-          if (!dropdown.contains(e2.target)) { dropdown.classList.remove("open"); document.removeEventListener("mousedown", handler); }
+          if (!dropdown.contains(e2.target)) { closeDropdown(); document.removeEventListener("mousedown", handler); }
         });
       }, 0);
     }
@@ -634,8 +679,16 @@ function bindCustomDropdown(dropdown, onSelect) {
       if (optFont) selected.style.fontFamily = optFont;
       optionsList.querySelectorAll(".custom-dropdown-option").forEach(o => o.classList.remove("selected"));
       opt.classList.add("selected");
-      dropdown.classList.remove("open");
+      closeDropdown();
       if (onSelect) onSelect(value);
     });
+    if (onHover) {
+      opt.addEventListener("mouseenter", () => onHover(opt.dataset.value));
+    }
   });
+  if (onHover) {
+    // Cursor leaves the entire option list — clear the hover preview so
+    // the pane snaps back to the committed draft state.
+    optionsList.addEventListener("mouseleave", () => onHover(null));
+  }
 }

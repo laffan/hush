@@ -11,7 +11,7 @@ import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
-import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
+import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, previewNotebookStyle, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 import { initPaneManager, isPaneActive } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
 import { applyActiveStyle, applyFocusModeOpacity, handleOAuthCode } from "./style-application.js";
@@ -582,11 +582,10 @@ async function init() {
       if (!overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.fg);
     }
     if (overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.cursor);
-    if (overrides.selection) {
-      document.documentElement.style.setProperty("--selection", overrides.selection);
-    } else {
-      document.documentElement.style.removeProperty("--selection");
-    }
+    if (overrides.selection) document.documentElement.style.setProperty("--selection", overrides.selection);
+    else document.documentElement.style.removeProperty("--selection");
+    // Notebook canvas derives its theme/font/bg from the active style.
+    if (state.currentNotebookFileId) previewNotebookStyle(state, styleObj.id);
   });
   state.on("style-preview-end", () => {
     if (!previewActive) return;
@@ -598,8 +597,8 @@ async function init() {
       cmEditor.style.color = '';
     }
     document.documentElement.style.removeProperty("--style-fg");
-    // Restore actual settings
     applyActiveStyle(state);
+    if (state.currentNotebookFileId) applyNotebookSettings(state);
   });
 
   // Apply notebook settings when settings, style, or theme changes

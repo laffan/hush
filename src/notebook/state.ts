@@ -386,6 +386,23 @@ export class DrawingState extends EventTarget {
   private _resizeOrigShape: Shape | null = null;
   private _resizeOrigBounds: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
 
+  /** Pre-drag bounds of every drag-area whose subtree is being moved by
+   *  the active drag. Used by the Cmd-modifier "expand-to-fit" gesture
+   *  (`applyCmdHeldResize`) so the area can grow live to wrap the dragged
+   *  item + its connected shapes, and contract back — but never below
+   *  the captured original — when Cmd is released. */
+  private _dragAreaResizeOriginals: Map<string, {
+    position: Point;
+    width: number;
+    height: number;
+  }> = new Map();
+  /** Latest known cmd / ctrl state for the active drag. Tracked separately
+   *  from pointer events because a user can press / release Cmd while the
+   *  cursor is stationary; `applyCmdHeldResize` is invoked from a
+   *  window-level keydown / keyup hook in input-handler so the drag-area
+   *  reacts in real time. */
+  private _dragCmdHeld = false;
+
   // Pocket drag state
   private _pocketDragPending = false;
   private _pocketDragScreenStart: Point = { x: 0, y: 0 };
@@ -872,6 +889,8 @@ export class DrawingState extends EventTarget {
           // Normal drag (not from pocket): fire the hook right away.
           if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
           this._dragStartFired = true;
+          this._setupDragAreaResize();
+          this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
 
           if (e.altKey) {
             const currentSelected = this.selectedIds.has(hitShape.id) ? this.selectedIds : new Set(groupMembers);
@@ -979,6 +998,8 @@ export class DrawingState extends EventTarget {
         // pauses for the drag. Without the defer, engine strokes
         // stay hidden for the whole drag.
         this._dragStartFired = false;
+        this._setupDragAreaResize();
+        this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
         this.notify("shapes");
       }
       return;
@@ -1070,6 +1091,13 @@ export class DrawingState extends EventTarget {
           if (flowDescendants.has(s.id)) return moveShape(s, dx, dy);
           return s;
         });
+        // Track Cmd state from this move event so a hold-modifier-while-dragging
+        // gesture grows the parent drag-area to wrap the moving cluster.
+        // Falls back to the global flag set by the on-screen Cmd button (Touch
+        // mode). Re-applied below; if Cmd is released the area contracts back
+        // toward its original bounds (but never shrinks below them).
+        this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
+        this.applyCmdHeldResize();
         // While dragging text shape(s), keep the drop-target hover up to
         // date so the renderer can outline the prospective parent. Uses
         // the live cursor for multi-drag so it still reads naturally when
@@ -1171,6 +1199,8 @@ export class DrawingState extends EventTarget {
       // emit an end with no start.
       if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
       this._dragStartFired = false;
+      this._dragAreaResizeOriginals.clear();
+      this._dragCmdHeld = false;
       const droppedInPocket = this.pocketInZone;
       // Reset proximity state — render will hide tray on next frame
       this.pocketProximity = 0;
@@ -1428,6 +1458,8 @@ export class DrawingState extends EventTarget {
       this._isDragging = false;
       if (this._dragStartFired && this.onShapeDragEnd) this.onShapeDragEnd();
       this._dragStartFired = false;
+      this._dragAreaResizeOriginals.clear();
+      this._dragCmdHeld = false;
       this.pocketProximity = 0;
       this.pocketInZone = false;
       this._clearDragHoldTimer();
@@ -1487,6 +1519,145 @@ export class DrawingState extends EventTarget {
       this._dragHoldTimer = null;
     }
     this._showPocketTray = false;
+  }
+
+  // === Cmd-held drag-area resize ===
+  // While a drag is in progress AND Cmd / Ctrl is held, every parent
+  // drag-area of a moving shape grows live to wrap the cluster (the
+  // dragged item plus anything moving with it via group / flowchart /
+  // nested-drag-area). Releasing Cmd contracts the area back, but never
+  // below the bounds it had at drag-start.
+
+  /** Snapshot the bounds of every drag-area whose subtree intersects the
+   *  active drag. Called from `handlePointerDown` / pocket-flip in
+   *  `handlePointerMove` once `_isDragging` flips on. */
+  private _setupDragAreaResize() {
+    this._dragAreaResizeOriginals.clear();
+    const moving = this._collectMovingShapeIds();
+    if (moving.size === 0) return;
+    // Don't track an area that's itself moving — its bounds shift with
+    // the drag, so resizing relative to a frozen "original" wouldn't
+    // mean anything.
+    const movingDragAreas = new Set<string>();
+    for (const s of this.shapes) {
+      if (moving.has(s.id) && s.type === "drag-area") movingDragAreas.add(s.id);
+    }
+    const tracked = new Set<string>();
+    for (const id of moving) {
+      const s = this.shapes.find((x) => x.id === id);
+      if (!s || !s.parentId) continue;
+      if (movingDragAreas.has(s.parentId)) continue;
+      tracked.add(s.parentId);
+    }
+    for (const areaId of tracked) {
+      const a = this.shapes.find((x) => x.id === areaId);
+      if (a && a.type === "drag-area") {
+        this._dragAreaResizeOriginals.set(areaId, {
+          position: { ...a.position },
+          width: a.width,
+          height: a.height,
+        });
+      }
+    }
+  }
+
+  /** IDs of every shape that the active drag is moving — selection +
+   *  children of selected drag-areas + flow descendants + group followers
+   *  of those descendants. Mirrors the move set built each frame in
+   *  `handlePointerMove`. */
+  private _collectMovingShapeIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const id of this.selectedIds) ids.add(id);
+    const selectedDragAreaIds = new Set<string>();
+    for (const s of this.shapes) {
+      if (this.selectedIds.has(s.id) && s.type === "drag-area") selectedDragAreaIds.add(s.id);
+    }
+    for (const s of this.shapes) {
+      if (s.parentId && selectedDragAreaIds.has(s.parentId)) ids.add(s.id);
+    }
+    for (const id of this.selectedIds) {
+      for (const d of this.flowchart.descendantsOf(id)) ids.add(d);
+    }
+    const followingGroups = new Set<string>();
+    for (const id of ids) {
+      const sh = this.shapes.find((x) => x.id === id);
+      if (sh?.groupId) followingGroups.add(sh.groupId);
+    }
+    if (followingGroups.size > 0) {
+      for (const sh of this.shapes) {
+        if (sh.groupId && followingGroups.has(sh.groupId)) ids.add(sh.id);
+      }
+    }
+    return ids;
+  }
+
+  /** Update the cmd-held flag for the active drag and re-apply the
+   *  resize. Called by the window-level keydown / keyup hook in
+   *  `input-handler.ts` so toggling Cmd while the cursor is stationary
+   *  still updates the area in real time. */
+  setDragCmdHeld(held: boolean) {
+    if (!this._isDragging) return;
+    if (this._dragCmdHeld === held) return;
+    this._dragCmdHeld = held;
+    this.applyCmdHeldResize();
+  }
+
+  /** Re-apply the parent-drag-area resize using the current `_dragCmdHeld`
+   *  flag. Cmd held = expand to wrap the moving cluster. Cmd released =
+   *  restore each tracked area to its captured pre-drag bounds. */
+  applyCmdHeldResize() {
+    if (this._dragAreaResizeOriginals.size === 0) return;
+
+    if (!this._dragCmdHeld) {
+      let mutated = false;
+      this.shapes = this.shapes.map((s) => {
+        if (s.type !== "drag-area") return s;
+        const orig = this._dragAreaResizeOriginals.get(s.id);
+        if (!orig) return s;
+        if (s.position.x === orig.position.x && s.position.y === orig.position.y &&
+            s.width === orig.width && s.height === orig.height) return s;
+        mutated = true;
+        return { ...s, position: { ...orig.position }, width: orig.width, height: orig.height };
+      });
+      if (mutated) this.notify("shapes");
+      return;
+    }
+
+    const moving = this._collectMovingShapeIds();
+    let unionB: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+    for (const id of moving) {
+      const s = this.shapes.find((x) => x.id === id);
+      if (!s) continue;
+      const b = getShapeBounds(s, this.fontFamily);
+      if (!unionB) unionB = { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY };
+      else {
+        if (b.minX < unionB.minX) unionB.minX = b.minX;
+        if (b.minY < unionB.minY) unionB.minY = b.minY;
+        if (b.maxX > unionB.maxX) unionB.maxX = b.maxX;
+        if (b.maxY > unionB.maxY) unionB.maxY = b.maxY;
+      }
+    }
+    if (!unionB) return;
+
+    // Same padding as `wrapSelectionInDragArea` so the visual breathing
+    // room is consistent with the manual wrap shortcut.
+    const PAD = 16;
+    let mutated = false;
+    this.shapes = this.shapes.map((s) => {
+      if (s.type !== "drag-area") return s;
+      const orig = this._dragAreaResizeOriginals.get(s.id);
+      if (!orig) return s;
+      const minX = Math.min(orig.position.x, unionB!.minX - PAD);
+      const minY = Math.min(orig.position.y, unionB!.minY - PAD);
+      const maxX = Math.max(orig.position.x + orig.width, unionB!.maxX + PAD);
+      const maxY = Math.max(orig.position.y + orig.height, unionB!.maxY + PAD);
+      const newW = maxX - minX;
+      const newH = maxY - minY;
+      if (s.position.x === minX && s.position.y === minY && s.width === newW && s.height === newH) return s;
+      mutated = true;
+      return { ...s, position: { x: minX, y: minY }, width: newW, height: newH };
+    });
+    if (mutated) this.notify("shapes");
   }
 
   // === Shape operations ===

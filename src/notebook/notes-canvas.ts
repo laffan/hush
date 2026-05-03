@@ -226,11 +226,16 @@ export class NotesCanvas {
     this.state.onShapeDragEnd = () => { dl.endSelectionDrag(); };
 
     // Emit "notebook-change" for autosave integration whenever shapes
-    // (or other persisted state — bookmarks) change.
+    // (or other persisted state — bookmarks) change. Camera (pan / zoom)
+    // changes ride a separate event so the bridge can persist them
+    // without spending a version snapshot on every pan / zoom step.
     this.state.addEventListener("change", ((e: CustomEvent) => {
       const keys: string[] = e.detail?.keys || [];
       if (keys.includes("shapes") || keys.includes("bookmarks")) {
         this.container.dispatchEvent(new CustomEvent("notebook-change"));
+      }
+      if (keys.includes("camera")) {
+        this.container.dispatchEvent(new CustomEvent("notebook-camera-change"));
       }
     }) as EventListener);
 

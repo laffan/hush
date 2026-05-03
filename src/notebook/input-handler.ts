@@ -287,7 +287,23 @@ export function bindInputEvents(
         state.notify("isPanning");
       }
     }
+    // Cmd / Ctrl release during a drag — contracts any tracked drag-area
+    // back toward its original bounds. The Touch-mode Cmd button
+    // synthesises a Meta keyup, so this listener catches both paths.
+    if (e.key === "Meta" || e.key === "Control") {
+      state.setDragCmdHeld(false);
+    }
   }) as unknown as (e: HTMLElementEventMap["keyup"]) => void);
+
+  // Cmd / Ctrl press during a drag — expands every parent drag-area to
+  // wrap the moving cluster. Mirrors the keyup hook above; pointermove
+  // still re-syncs the flag so a press-without-key-event (rare) can't
+  // leave the area stale.
+  on(window as unknown as HTMLElement, "keydown", ((e: KeyboardEvent) => {
+    if (e.key === "Meta" || e.key === "Control") {
+      state.setDragCmdHeld(true);
+    }
+  }) as unknown as (e: HTMLElementEventMap["keydown"]) => void);
 
   // Paste — fires when an editable element is focused (or via native
   // Edit > Paste in Tauri). The Cmd+V keydown handler above covers the

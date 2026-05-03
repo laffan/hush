@@ -19,7 +19,7 @@
  * don't branch on format. Encoding always emits the new envelope.
  */
 
-import type { Shape, Layer, CameraBookmark } from "./types";
+import type { Shape, Layer, CameraBookmark, Camera } from "./types";
 import type { FlowEdge } from "./flowchart";
 
 export interface NotebookContent {
@@ -27,6 +27,7 @@ export interface NotebookContent {
   layers?: Layer[];
   flowEdges?: FlowEdge[];
   bookmarks?: CameraBookmark[];
+  camera?: Camera;
 }
 
 export interface NotebookSnapshotInput {
@@ -34,6 +35,7 @@ export interface NotebookSnapshotInput {
   layers?: Layer[];
   flowEdges?: FlowEdge[];
   bookmarks?: CameraBookmark[];
+  camera?: Camera;
 }
 
 /** JSON-encode a notebook snapshot in the envelope format.
@@ -53,8 +55,15 @@ export function encodeNotebookContent(snapshot: NotebookSnapshotInput): string {
     layers: snapshot.layers,
     flowEdges: snapshot.flowEdges,
     bookmarks: snapshot.bookmarks,
+    camera: snapshot.camera,
   };
   return JSON.stringify(payload);
+}
+
+function isCamera(v: unknown): boolean {
+  if (!v || typeof v !== "object") return false;
+  const c = v as Record<string, unknown>;
+  return typeof c.x === "number" && typeof c.y === "number" && typeof c.zoom === "number";
 }
 
 function quantizeShape(s: Shape): Shape {
@@ -90,7 +99,8 @@ export function decodeNotebookContent(content: string | null | undefined): Noteb
     const layers = Array.isArray(obj.layers) ? (obj.layers as Layer[]) : undefined;
     const flowEdges = Array.isArray(obj.flowEdges) ? (obj.flowEdges as FlowEdge[]) : undefined;
     const bookmarks = Array.isArray(obj.bookmarks) ? (obj.bookmarks as CameraBookmark[]) : undefined;
-    return { shapes, layers, flowEdges, bookmarks };
+    const camera = isCamera(obj.camera) ? (obj.camera as Camera) : undefined;
+    return { shapes, layers, flowEdges, bookmarks, camera };
   }
   return null;
 }

@@ -6,6 +6,11 @@
 let canvasInstance = null;
 let currentNotebookFileId = null;
 let notebookDirty = false;
+// Camera (pan + zoom) changes mark this flag, separate from `notebookDirty`,
+// so the autosave still writes the file (preserving the new camera) but we
+// can skip snapshot creation for camera-only updates — pan / zoom isn't
+// content history, and version-pruning would otherwise burn a slot per pan.
+let cameraDirty = false;
 let _appState = null;
 let _mainDragCleanup = null;
 /** Last content we successfully wrote to disk for the open notebook.
@@ -36,6 +41,7 @@ export async function mountNotebook(container, fileId, state) {
 
   currentNotebookFileId = fileId;
   notebookDirty = false;
+  cameraDirty = false;
   _lastSavedContent = null;
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
@@ -76,6 +82,14 @@ export async function mountNotebook(container, fileId, state) {
       canvasInstance.state.bookmarks = snapshot.bookmarks;
       canvasInstance.state.notify("bookmarks");
     }
+    // Restore the saved pan / zoom so reopening a notebook lands the
+    // user back where they were. Only applied on the initial mount —
+    // sync pulls (`reloadNotebookShapes`) deliberately leave the camera
+    // alone so a remote device's view doesn't yank this device around.
+    if (snapshot.camera) {
+      canvasInstance.state.camera = { ...snapshot.camera };
+      canvasInstance.state.notify("camera");
+    }
   }
 
   // Apply notebook settings from Hush settings
@@ -87,6 +101,12 @@ export async function mountNotebook(container, fileId, state) {
   container.addEventListener("notebook-change", () => {
     notebookDirty = true;
     if (_appState) _appState.emit("notebook-shapes-changed");
+  });
+  // Camera (pan / zoom) changes go through a separate dirty flag so the
+  // file is rewritten with the new viewport but no version snapshot
+  // is created — pan / zoom isn't content history.
+  container.addEventListener("notebook-camera-change", () => {
+    cameraDirty = true;
   });
 
   // Wire cmd-drag of text and image shapes out of the main notebook.
@@ -125,6 +145,15 @@ export async function mountNotebook(container, fileId, state) {
   } catch (e) {
     console.error("Failed to wire main notebook drag:", e);
   }
+
+  // Initial-load notifications run via queueMicrotask, which means the
+  // `notify("camera")` fired by the saved-camera restore above lands on
+  // the container listener attached during mount. Flush the microtasks
+  // and reset the flags so the just-restored state isn't immediately
+  // re-saved on the next autosave tick.
+  await Promise.resolve();
+  notebookDirty = false;
+  cameraDirty = false;
 
   return canvasInstance;
 }
@@ -254,29 +283,50 @@ export function applyNotebookSettings(state) {
 }
 
 /**
+ * Preview a different style on the active NotesCanvas without writing it
+ * back to the active style id. Mirrors the doc-side hover-preview path
+ * driven from the Styles sidebar / style edit modal: callers re-apply
+ * `applyNotebookSettings(state)` on hover-end / modal-cancel to revert.
+ *
+ * `styleId` accepts a saved style id, `"__default__"` for the no-style
+ * baseline, or any id absent from `state.settings.styles` (treated as
+ * "no style" by `computeNotebookSettings`).
+ */
+export function previewNotebookStyle(state, styleId) {
+  if (!canvasInstance) return;
+  canvasInstance.applySettings(computeNotebookSettings(state, styleId || "__default__"));
+}
+
+/**
  * Save the current notebook shapes to the backing file.
  * Called by the autosave interval and on notebook switch.
  * Returns { fileId, content } when a save occurs, or null if nothing to save.
  */
 export async function saveNotebook() {
-  if (!canvasInstance || !currentNotebookFileId || !notebookDirty) return null;
+  if (!canvasInstance || !currentNotebookFileId) return null;
+  if (!notebookDirty && !cameraDirty) return null;
+  const wasContentDirty = notebookDirty;
   notebookDirty = false;
+  cameraDirty = false;
   const { encodeNotebookContent } = await import("./notebook-content.ts");
   const content = encodeNotebookContent({
     shapes: canvasInstance.getShapes(),
     layers: canvasInstance.state.layers,
     flowEdges: canvasInstance.state.flowchart.serialize(),
     bookmarks: canvasInstance.state.bookmarks,
+    camera: canvasInstance.state.camera,
   });
   try {
     if (IS_TAURI) {
       await tauriInvoke("save_file", { id: currentNotebookFileId, content });
       _lastSavedContent = content;
       // Mirror the doc-side cadence: snapshot every successful autosave
-      // write. The backend's decay rules (snapshots.rs) keep volume bounded
-      // and the JSON envelope is what restore consumes.
-      try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
-      catch (e) { console.error("Notebook snapshot failed:", e); }
+      // write — but only when the write covers a real content change.
+      // Camera-only saves don't earn a version slot.
+      if (wasContentDirty) {
+        try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
+        catch (e) { console.error("Notebook snapshot failed:", e); }
+      }
       return { fileId: currentNotebookFileId, content };
     }
   } catch (e) {
@@ -291,7 +341,7 @@ export async function saveNotebook() {
  */
 export async function unmountNotebook() {
   let saveResult = null;
-  if (notebookDirty) {
+  if (notebookDirty || cameraDirty) {
     saveResult = await saveNotebook();
   }
   if (canvasInstance) {
@@ -301,6 +351,7 @@ export async function unmountNotebook() {
   if (_mainDragCleanup) { _mainDragCleanup(); _mainDragCleanup = null; }
   currentNotebookFileId = null;
   notebookDirty = false;
+  cameraDirty = false;
   return saveResult;
 }
 
@@ -353,8 +404,12 @@ export async function reloadNotebookShapes(jsonContent) {
         canvasInstance.state.bookmarks = snapshot.bookmarks;
         canvasInstance.state.notify("bookmarks");
       }
+      // Deliberately skip applying snapshot.camera here — viewports differ
+      // across devices, and an incoming sync nudging the local pan / zoom
+      // would feel like the canvas was being yanked around.
       _lastSavedContent = jsonContent;
       notebookDirty = false;
+      cameraDirty = false;
     }
   } catch (e) {
     console.error("Failed to reload notebook shapes from sync:", e);
