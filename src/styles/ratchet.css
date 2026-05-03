@@ -94,7 +94,7 @@
   padding: 2px 8px;
   border-radius: 6px;
   z-index: var(--z-modal-top);
-  opacity: 0.9;
+  opacity: 1;
   pointer-events: none;
   user-select: none;
 }

@@ -227,9 +227,11 @@ function buildCommands(state) {
 }
 
 /** Walk the file tree and return real document/notebook leaves plus
- *  project nodes, skipping the Images and Trash subtrees. Projects are
- *  surfaced in their own right (not just walked into) so the Cmd+O
- *  picker can open them as joined views. */
+ *  user-created project nodes, skipping the Images, Trash, and Inbox
+ *  subtrees. Inbox is internally typed as a project but functions as a
+ *  folder, so it's filtered out of the picker — only "real" projects
+ *  (the ones the user can click in the sidebar to open the joined view)
+ *  appear here. */
 function collectFileLeaves(fileTree) {
   const out = [];
   function walk(nodes) {
@@ -238,7 +240,10 @@ function collectFileLeaves(fileTree) {
       if ((n.type === "document" || n.type === "notebook") && n.fileId) {
         out.push({ id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId });
       }
-      if (n.type === "project") {
+      // Inbox is internally typed as a project but functions as a
+      // folder — skip the project entry but still recurse so docs that
+      // live inside Inbox surface in the picker.
+      if (n.type === "project" && n.id !== "__inbox__") {
         out.push({ id: n.id, name: n.name || "Untitled", type: "project", fileId: n.id });
       }
       if (n.children?.length) walk(n.children);
@@ -545,6 +550,12 @@ function open(state) {
     if (!palette.contains(e.target)) { close(); focusMainEditorIfAppropriate(); }
   });
 
+  // Real mouse movement (mouse-only event, never fired by touch) hands
+  // the highlight back to hover-driven selection. Until that happens,
+  // `keyboardNav` stays true and the per-row `pointerenter` no-ops so
+  // arrow keys aren't yanked back to the cursor's resting position.
+  overlay.addEventListener("mousemove", () => { keyboardNav = false; });
+
   // Expose runCommand on the list element so renderList's per-row click
   // handlers can route through the same keepOpen-aware path.
   list.__runCommand = runCommand;
@@ -580,11 +591,17 @@ function renderList(listEl, state) {
     // during a touch scroll; toggling an `.active` class across every
     // row each time triggers a full reflow per crossed row, which is
     // what made scrolling visibly stutter.
+    //
+    // While keyboard nav is engaged, ignore pointerenter entirely —
+    // pointerenter fires on the row that re-renders under a stationary
+    // cursor after each ArrowUp/Down, which would otherwise yank the
+    // highlight back to the mouse position. The overlay-level
+    // `mousemove` listener clears `keyboardNav` once the user actually
+    // moves the mouse again (mousemove is mouse-only, so iPad touch
+    // scrolling never trips it).
     row.addEventListener("pointerenter", (e) => {
       if (e.pointerType && e.pointerType !== "mouse") return;
-      // Real-mouse hover takes back keyboard-nav lock so the highlight
-      // tracks the cursor again.
-      keyboardNav = false;
+      if (keyboardNav) return;
       if (activeIndex === i) return;
       const prev = listEl.children[activeIndex];
       if (prev) prev.classList.remove("active");
