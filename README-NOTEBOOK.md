@@ -77,11 +77,14 @@ Notebooks are stored as `files/{uuid}.json` in the app data directory. The `cont
   "shapes":    [...],   // every shape on the canvas
   "layers":    [...],   // ordered, top-first
   "flowEdges": [...],   // flowchart edges between text shapes
-  "bookmarks": [...]    // optional camera bookmarks; same shape as DrawingState
+  "bookmarks": [...],   // optional camera bookmarks; same shape as DrawingState
+  "camera":    {...}    // optional saved viewport — { x, y, zoom }
 }
 ```
 
 `decodeNotebookContent` parses this and also accepts the legacy bare `Shape[]` array form (older notebooks before the envelope migration) so existing files round-trip without rewriting on load. `bookmarks` was added later still and is treated as optional — older envelopes decode with `bookmarks = undefined` and the bridge skips the assignment. Every save / load / sync path goes through this pair (autosave in `notebook-bridge.js`, pane I/O in `pane/pane-content.js`, sync pull in `reloadNotebookShapes`, plus `.hushnote` export in `notebook-export.ts`) so the on-disk format stays consistent. Bookmark mutations call `state.notify("bookmarks")`, which `notes-canvas.ts` forwards as a `notebook-change` CustomEvent so the autosave pipeline picks it up alongside shape edits.
+
+`camera` is the persisted pan + zoom; mounting a notebook restores it so the user lands where they left off. Pan / zoom changes ride a separate `notebook-camera-change` event into the bridge — autosave still writes the file (preserving the camera) but skips the version snapshot, since the viewport isn't content history. `reloadNotebookShapes` (the sync-pull entry point) deliberately ignores `snapshot.camera` so a remote device's view doesn't yank the local viewport around; per-device camera handling falls out naturally from there. Pane mounts also skip the saved camera and centre on the same world point the main canvas would, since pane viewports differ from the main canvas.
 
 The standalone `.note` zip format (from tauri-drawing) is not used. `file-io.ts` is retained in the codebase for reference but not imported.
 
@@ -169,7 +172,7 @@ Two sibling files keep `renderer.ts` under the line limit while preserving purit
 |------|-------------|
 | `TextShape` | Positioned text with markdown rendering, optional background color, auto-fit or manual width |
 | `ImageShape` | Positioned image from base64 dataUrl, with optional non-destructive crop region |
-| `DragAreaShape` | Dashed container box that parents shapes dropped inside it. Created by dragging out an area with the Drag Area tool, *or* by selecting 2+ shapes and clicking the Drag Area button in the bottom toolbar — the latter wraps the selection (16 px padding) and re-parents every selected shape into the new container in one shot. See `DrawingState.wrapSelectionInDragArea()` in `state.ts`. |
+| `DragAreaShape` | Dashed container box that parents shapes dropped inside it. Created by dragging out an area with the Drag Area tool, *or* by selecting 2+ shapes and clicking the Drag Area button in the bottom toolbar — the latter wraps the selection (16 px padding) and re-parents every selected shape into the new container in one shot. See `DrawingState.wrapSelectionInDragArea()` in `state.ts`. Holding `⌘` (or the Touch-mode `⌘` button) while dragging a child of a drag-area grows the area live to wrap the moving cluster (selection + group + flowchart descendants) with 20 px breathing room — `DrawingState.applyCmdHeldResize()` mutates the area's bounds each frame from the cmd-toggle key listeners in `input-handler.ts`. Releasing `⌘` contracts the area back, capped at the bounds it had at drag-start. |
 | `DrawShape` | Freehand stroke — array of points + brushId + size + mode. Rendered by the drawing engine (see [README-DRAWING.md](README-DRAWING.md)). |
 
 All shapes extend `ShapeBase`: `{ id, color, parentId?, groupId?, pocketed?, layerId? }`.
