@@ -36,6 +36,13 @@ export function toggleDry(state) {
   state.updateSettings({ dryMode: state.dryMode });
 }
 
+export function toggleProofread(state) {
+  if (state.currentNotebookFileId) return;
+  state.proofreadMode = !state.proofreadMode;
+  state.emit("mode-changed");
+  state.updateSettings({ proofreadMode: state.proofreadMode });
+}
+
 export function toggleFocus(state) {
   state.focusMode = !state.focusMode;
   state.emit("mode-changed");

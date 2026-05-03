@@ -301,3 +301,10 @@ pub fn default_nb_undo() -> String { "Mod+Z".to_string() }
 pub fn default_nb_redo() -> String { "Mod+Shift+Z".to_string() }
 pub fn default_nb_group() -> String { "Mod+G".to_string() }
 pub fn default_nb_ungroup() -> String { "Mod+Shift+G".to_string() }
+
+pub fn default_proofread_disabled_rules() -> Vec<String> {
+    // LongSentences — verbosity warnings tend to be aesthetic noise for
+    // longform writing. Every other curated rule starts on; the user can
+    // flip individual ones from the Proofread settings tab.
+    vec!["LongSentences".to_string()]
+}

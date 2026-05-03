@@ -81,12 +81,11 @@ export class AppState {
     this.focusMode = false;
     this.zenFocus = false;
     this.isFullscreen = false;
-    // Doc-only proofreading toggles, not persisted — flipped via the
-    // command palette's "Check Spelling" / "Check Grammar" entries.
-    // The spellcheck dictionary and grammar Rust call are both lazy so
-    // sessions that never enable them pay no cost.
-    this.spellcheckActive = false;
-    this.grammarCheckActive = false;
+    // Doc-only Spelling/Grammar mode. Persisted via `proofreadMode` in
+    // settings so a user who left it on at quit returns to it. Both the
+    // nspell dictionary and the harper Rust call are lazy on first use,
+    // so sessions that never enable it pay no cost.
+    this.proofreadMode = false;
 
     // Autosave interval
     this.autosaveInterval = null;
@@ -157,6 +156,7 @@ export class AppState {
         // Restore session state from settings
         this.typewriterMode = !!this.settings.typewriterMode;
         this.dryMode = !!this.settings.dryMode;
+        this.proofreadMode = !!this.settings.proofreadMode;
         this.runtime.pendingScrollPosition = this.settings.scrollPosition || null;
 
         if (initialFile && initialFile.fileId && initialFile.fileType) {
@@ -666,6 +666,7 @@ export class AppState {
   togglePrivate() { _modes.togglePrivate(this); }
   toggleTypewriter() { _modes.toggleTypewriter(this); }
   toggleDry() { _modes.toggleDry(this); }
+  toggleProofread() { _modes.toggleProofread(this); }
   toggleFocus() { _modes.toggleFocus(this); }
   toggleZenFocus() { _modes.toggleZenFocus(this); }
   toggleFullscreen() { _modes.toggleFullscreen(this); }

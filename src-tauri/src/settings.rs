@@ -380,6 +380,16 @@ pub struct AppSettings {
     #[serde(default)]
     pub scroll_position: Option<f64>,
 
+    // Spelling / Grammar — single combined mode (nspell + harper-core).
+    // `proofread_disabled_rules` carries the list of harper rule names
+    // (e.g. "LongSentences") that the user has switched off in the
+    // Proofread settings tab; the JS frontend forwards it on every
+    // `check_grammar` call.
+    #[serde(default)]
+    pub proofread_mode: bool,
+    #[serde(default = "default_proofread_disabled_rules")]
+    pub proofread_disabled_rules: Vec<String>,
+
     #[serde(skip)]
     pub data_dir: PathBuf,
 }
@@ -566,6 +576,8 @@ impl Default for AppSettings {
             typewriter_mode: false,
             dry_mode: false,
             scroll_position: None,
+            proofread_mode: false,
+            proofread_disabled_rules: default_proofread_disabled_rules(),
             notebook_appearance_mode: default_notebook_appearance(),
             notebook_theme_id: default_notebook_theme(),
             notebook_background_pattern: default_notebook_bg_pattern(),

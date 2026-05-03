@@ -1,9 +1,14 @@
 // Grammar checking via the `harper-core` crate.
 //
-// Exposes a single `check_grammar` Tauri command that takes the raw markdown
-// text from the editor and returns a list of issues. Spans use UTF-16 code
-// unit offsets so they line up with CodeMirror's positions in the JS frontend
-// without further conversion (harper itself returns Unicode scalar offsets).
+// Exposes two Tauri commands:
+//   - `check_grammar(text, disabled_rules)` lints a markdown buffer and
+//     returns a list of issues with UTF-16 spans + replacement
+//     suggestions. The frontend forwards the user's
+//     `proofreadDisabledRules` setting so a rule like `LongSentences`
+//     can be silenced without rebuilding the linter.
+//   - `list_grammar_rules()` returns the curated rule names harper
+//     ships with so the Proofread settings tab can render a checkbox
+//     per rule without hard-coding a list.
 
 use harper_core::{
     linting::{LintGroup, Linter, Suggestion},
@@ -19,6 +24,46 @@ pub struct GrammarIssue {
     pub message: String,
     pub suggestions: Vec<String>,
 }
+
+/// Curated list of well-known harper rules surfaced in the Proofread
+/// settings tab. We intentionally don't expose the full ~250-rule set —
+/// most of them target very specific phrasings (a/an, vice versa, day in
+/// age, etc.) and the resulting wall of checkboxes is more confusing
+/// than helpful. The names below match the struct identifiers harper
+/// uses internally; `LintGroup::config.set_rule_enabled` keys off the
+/// same strings.
+const CURATED_RULES: &[&str] = &[
+    "SpellCheck",
+    "LongSentences",
+    "RepeatedWords",
+    "SentenceCapitalization",
+    "OxfordComma",
+    "NoOxfordComma",
+    "ThatWhich",
+    "ThenThan",
+    "ToTwoToo",
+    "TheyreConfusions",
+    "ItsContraction",
+    "ItsPossessive",
+    "BoringWords",
+    "FillerWords",
+    "Hedging",
+    "MoreBetter",
+    "LessWorse",
+    "VeryUnique",
+    "AnA",
+    "WhomSubjectOfVerb",
+    "CompoundNouns",
+    "PronounContraction",
+    "PossessiveYour",
+    "WereWhere",
+    "Spaces",
+    "Dashes",
+    "EllipsisLength",
+    "QuoteSpacing",
+    "UnclosedQuotes",
+    "CommaFixes",
+];
 
 /// Convert a (start, end) pair expressed in Unicode-scalar offsets into the
 /// equivalent UTF-16 code-unit offsets for the same source text. CodeMirror
@@ -61,9 +106,20 @@ fn suggestion_to_string(s: &Suggestion) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn check_grammar(text: String) -> Result<Vec<GrammarIssue>, String> {
+pub fn check_grammar(
+    text: String,
+    disabled_rules: Option<Vec<String>>,
+) -> Result<Vec<GrammarIssue>, String> {
     let dict = FstDictionary::curated();
     let mut linter = LintGroup::new_curated(dict, Dialect::American);
+    if let Some(rules) = disabled_rules {
+        for rule in rules {
+            // `set_rule_enabled` is a no-op for unknown keys, so we
+            // don't need to guard against rules that no longer exist
+            // after a harper upgrade.
+            linter.config.set_rule_enabled(rule, false);
+        }
+    }
     let document = Document::new_markdown_default_curated(&text);
     let lints = linter.lint(&document);
 
@@ -83,4 +139,14 @@ pub fn check_grammar(text: String) -> Result<Vec<GrammarIssue>, String> {
         });
     }
     Ok(out)
+}
+
+/// Return the curated rule names so the Proofread settings tab can
+/// render one checkbox per rule. The list is sorted to match the
+/// human-friendly settings UI ordering.
+#[tauri::command]
+pub fn list_grammar_rules() -> Vec<String> {
+    let mut v: Vec<String> = CURATED_RULES.iter().map(|s| (*s).to_string()).collect();
+    v.sort();
+    v
 }

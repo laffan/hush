@@ -180,6 +180,10 @@ export function createDefaultSettings() {
     shortcutNbGroup: "Mod+G",
     shortcutNbUngroup: "Mod+Shift+G",
 
+    // Spelling / Grammar (harper-core + nspell)
+    proofreadMode: false,
+    proofreadDisabledRules: ["LongSentences"],
+
     // Session state
     lastFileId: null,
     lastProjectId: null,

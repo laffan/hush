@@ -1,65 +1,81 @@
 /**
- * Spellcheck — opt-in red-wavy underline for misspelled words.
+ * Spellcheck side of the combined Spelling/Grammar mode.
  *
  * Uses `nspell` against the bundled `dictionary-en` Hunspell dictionaries.
- * The dictionary is loaded lazily on first activation so the cost is paid
- * by users who actually flip the toggle. Default is OFF; the command
- * palette's "Check Spelling" entry flips `state.spellcheckActive` and
- * triggers a redecorate.
+ * The `aff` and `dic` files are loaded directly via Vite's `?url` query so
+ * Vite copies the binary assets into the build output and the
+ * dictionary-en JS entry point (which uses `node:fs/promises`) is bypassed
+ * — that entry point only works under Node, and silently doing nothing in
+ * the browser was why decorations weren't appearing in the previous build.
  *
- * Markdown structure (URLs, code, image refs, comments) is skipped via a
- * regex strip so we don't underline filenames or `%%note%%` markers.
- *
- * Doc-only — notebooks intentionally aren't wired up.
+ * The dictionary is loaded lazily on first activation; misspellings are
+ * underlined with `.hush-spellcheck-error` (red wavy). Markdown structure
+ * (URLs, code, image refs, %%comments%%, ==flags==) is masked out before
+ * checking so filenames and editorial markers aren't flagged. Doc-only —
+ * the toggle short-circuits when a notebook is open.
  */
 import { ViewPlugin, Decoration } from "@codemirror/view";
 import { RangeSetBuilder, Annotation } from "@codemirror/state";
+
+// Vite resolves these to URLs in the build output. dictionary-en's JS
+// entry point uses Node-only APIs, so we skip it and just fetch the
+// raw Hunspell files. The deep import works because Vite's asset
+// resolver traverses node_modules even when the package's `exports`
+// map only exports the root.
+import affUrl from "dictionary-en/index.aff?url";
+import dicUrl from "dictionary-en/index.dic?url";
 
 export const spellcheckRedecorate = Annotation.define();
 
 let _spellPromise = null;
 let _spell = null;
+let _spellLoadError = null;
 
-/** Lazy-load nspell + dictionary-en. The first call kicks off the import
- *  and keeps the in-flight promise so concurrent callers share it. */
-async function loadSpellChecker() {
+export function isSpellLoaded() { return !!_spell; }
+export function getSpellLoadError() { return _spellLoadError; }
+
+/** Lazy-load nspell + the bundled Hunspell dictionary. The first call
+ *  kicks off the import and keeps the in-flight promise so concurrent
+ *  callers share it. Errors are surfaced via console.warn AND stored on
+ *  `_spellLoadError` so the UI can flag a bad install. */
+export async function loadSpellChecker() {
   if (_spell) return _spell;
   if (_spellPromise) return _spellPromise;
   _spellPromise = (async () => {
-    const [{ default: nspell }, dictMod] = await Promise.all([
-      import("nspell"),
-      import("dictionary-en"),
-    ]);
-    const dictFn = dictMod.default || dictMod;
-    let dict;
-    if (typeof dictFn === "function") {
-      // Modern (Promise) and legacy (callback) call shapes both supported.
-      dict = await new Promise((resolve, reject) => {
-        const ret = dictFn((err, d) => err ? reject(err) : resolve(d));
-        if (ret && typeof ret.then === "function") ret.then(resolve, reject);
-      });
-    } else {
-      dict = dictFn;
+    try {
+      const [nspellMod, affResp, dicResp] = await Promise.all([
+        import("nspell"),
+        fetch(affUrl),
+        fetch(dicUrl),
+      ]);
+      const nspell = nspellMod.default || nspellMod;
+      if (!affResp.ok) throw new Error(`failed to fetch aff: ${affResp.status}`);
+      if (!dicResp.ok) throw new Error(`failed to fetch dic: ${dicResp.status}`);
+      const [aff, dic] = await Promise.all([affResp.text(), dicResp.text()]);
+      _spell = nspell(aff, dic);
+      return _spell;
+    } catch (e) {
+      _spellLoadError = e;
+      console.warn("Hush spellcheck: dictionary load failed", e);
+      throw e;
     }
-    _spell = nspell(dict);
-    return _spell;
   })();
   return _spellPromise;
 }
 
-/** Strip markdown constructs that shouldn't be spellchecked, replacing each
- *  with spaces to preserve offsets so the editor positions still line up. */
+/** Strip markdown constructs that shouldn't be spellchecked, replacing
+ *  each match with same-length spaces so the resulting text shares
+ *  offsets with the original buffer (the editor's word ranges line up
+ *  with `view.state.doc` 1:1). */
 function maskNonProseRegions(text) {
-  // Order matters — code first, then images / links / inline code, then
-  // hush-specific %% comments and == flag/highlight wrappers.
   const patterns = [
-    /```[\s\S]*?```/g,                   // fenced code blocks
-    /`[^`\n]*`/g,                        // inline code
-    /!\[[^\]]*\]\([^)]*\)/g,             // image markdown
-    /\[[^\]]*\]\([^)]*\)/g,              // link markdown
-    /https?:\/\/\S+/g,                   // bare URLs
-    /%%[\s\S]*?%%/g,                     // hush comment blocks
-    /==[A-Za-z][A-Za-z0-9_-]*(?::[^=]*)?==/g, // hush flags / highlight markers
+    /```[\s\S]*?```/g,
+    /`[^`\n]*`/g,
+    /!\[[^\]]*\]\([^)]*\)/g,
+    /\[[^\]]*\]\([^)]*\)/g,
+    /https?:\/\/\S+/g,
+    /%%[\s\S]*?%%/g,
+    /==[A-Za-z][A-Za-z0-9_-]*(?::[^=]*)?==/g,
   ];
   let masked = text;
   for (const re of patterns) {
@@ -68,9 +84,6 @@ function maskNonProseRegions(text) {
   return masked;
 }
 
-/** Word boundary scan over masked text. Yields `{ word, from, to }` in
- *  source-text offsets. Matches letters + apostrophes / hyphens but
- *  rejects pure-numeric tokens. */
 function* iterateWords(maskedText) {
   const re = /[A-Za-z][A-Za-z'’-]*/g;
   let m;
@@ -85,12 +98,12 @@ export function createSpellcheckPlugin(stateRef) {
   return ViewPlugin.fromClass(
     class {
       constructor(view) {
-        this._wasActive = !!stateRef.spellcheckActive;
+        this._wasActive = !!stateRef.proofreadMode;
         this.decorations = this.buildDecorations(view);
       }
 
       update(update) {
-        const active = !!stateRef.spellcheckActive;
+        const active = !!stateRef.proofreadMode;
         const flipped = active !== this._wasActive;
         this._wasActive = active;
         const annot = update.transactions.some(
@@ -102,7 +115,7 @@ export function createSpellcheckPlugin(stateRef) {
       }
 
       buildDecorations(view) {
-        if (!stateRef.spellcheckActive) return Decoration.none;
+        if (!stateRef.proofreadMode) return Decoration.none;
         if (!_spell) {
           // Fire-and-forget load. When it resolves we dispatch an empty
           // transaction with the redecorate annotation so this method
@@ -112,7 +125,7 @@ export function createSpellcheckPlugin(stateRef) {
             try {
               view.dispatch({ annotations: spellcheckRedecorate.of(true) });
             } catch (_) { /* view destroyed mid-load */ }
-          }).catch((e) => console.warn("Spellchecker failed to load:", e));
+          }).catch(() => { /* already logged inside loadSpellChecker */ });
           return Decoration.none;
         }
         const builder = new RangeSetBuilder();
@@ -132,22 +145,4 @@ export function createSpellcheckPlugin(stateRef) {
     },
     { decorations: (v) => v.decorations },
   );
-}
-
-/** Command-palette action — flip the active flag and ask the editor to
- *  redecorate. Idempotent: a second call simply turns it back off.
- *
- *  Doc-only at the moment; notebooks aren't wired in. */
-export function toggleSpellcheck(state) {
-  if (state.currentNotebookFileId) return;
-  state.spellcheckActive = !state.spellcheckActive;
-  if (state.spellcheckActive) {
-    // Warm the dictionary load so the first decorate pass has it ready.
-    loadSpellChecker().catch(() => { /* surfaced on first decorate */ });
-  }
-  if (state.editor) {
-    try {
-      state.editor.view.dispatch({ annotations: spellcheckRedecorate.of(true) });
-    } catch (_) { /* view not mounted */ }
-  }
 }
