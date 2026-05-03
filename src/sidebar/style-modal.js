@@ -139,13 +139,11 @@ export function openStyleModal(state, existingStyle, onDone) {
         };
 
   let colorTab = "light"; // which tab is shown in the color section
-  // Theme id currently being hovered in the theme dropdown. Non-null
-  // overrides `draft.lightThemeId` / `darkThemeId` inside `updatePreview`
-  // so the right-hand preview pane reflects whichever option the user is
-  // pointing at — matching the on-hover behaviour of the Styles sidebar.
-  // Cleared at every `render()` so a stale hover from one color tab can't
-  // leak into the other tab's dropdown rebuild.
+  // Hover-preview overrides for the theme + font dropdowns — non-null
+  // wins over the draft inside `updatePreview`, mirroring the Styles
+  // sidebar's hover-preview. Cleared on render() and on dropdown close.
   let previewThemeId = null;
+  let previewFontFamily = null; // "" = the "Default" entry; null = no hover
 
   // ── build the backdrop ───────────────────────────────────────────────────
   const backdrop = document.createElement("div");
@@ -236,6 +234,7 @@ export function openStyleModal(state, existingStyle, onDone) {
 
   function render() {
     previewThemeId = null;
+    previewFontFamily = null;
     const prevSettingsScroll = backdrop.querySelector(".style-modal-settings")?.scrollTop ?? 0;
     const prevBodyScroll = backdrop.querySelector(".style-modal-body")?.scrollTop ?? 0;
     const selectedFont = draft.fontFamily || "";
@@ -397,10 +396,8 @@ export function openStyleModal(state, existingStyle, onDone) {
     const pane = backdrop.querySelector("#style-preview-pane");
     if (!pane) return;
 
-    // Hover-preview path: if the user is pointing at a theme option, the
-    // pane shows that theme's *seeded* colors (the same ones a click would
-    // commit) rather than the draft's overrides — that way the theme
-    // itself is what's being previewed, not the user's prior tweaks.
+    // Hover-preview wins over the draft. Theme hover seeds fresh colors
+    // so the pane shows the theme itself, not draft overrides.
     const draftThemeId = colorTab === "light" ? draft.lightThemeId : draft.darkThemeId;
     const themeId = previewThemeId || draftThemeId;
     const colors = previewThemeId
@@ -417,7 +414,12 @@ export function openStyleModal(state, existingStyle, onDone) {
     const fg = colors.fg || themeForegrounds[themeId] || (colorTab === "light" ? "#1a1a1a" : "#e0e0e0");
     const cursor = colors.cursor || fg;
     const selection = colors.selection || "rgba(128, 128, 128, 0.3)";
-    const font = draft.fontFamily ? fontFallback(draft.fontFamily) : fontFallback(state.settings.fontFamily || "EB Garamond");
+    const editorDefaultFont = state.settings.fontFamily || "EB Garamond";
+    // Hovered font wins. Empty string ("Default" entry) → editor default.
+    const effectiveFont = previewFontFamily !== null
+      ? (previewFontFamily || editorDefaultFont)
+      : (draft.fontFamily || editorDefaultFont);
+    const font = fontFallback(effectiveFont);
     const size = (draft.fontSize || state.settings.fontSize || 20) + "px";
     const lh = draft.lineHeight || state.settings.lineHeight || 1.6;
     const isBlock = draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor;
@@ -511,10 +513,19 @@ export function openStyleModal(state, existingStyle, onDone) {
       });
     });
 
+    // Hover-preview hooks: onHover fires with the option's value (null
+    // when the cursor leaves the option list); onClose fires when the
+    // dropdown collapses without a click. Both reset the preview var
+    // and re-run updatePreview so the pane snaps to the committed draft.
     bindCustomDropdown(backdrop.querySelector("#style-font-dropdown"), (val) => {
       draft.fontFamily = val || null;
       updatePreview();
       scheduleSave();
+    }, {
+      onHover: (val) => { previewFontFamily = val; updatePreview(); },
+      onClose: () => {
+        if (previewFontFamily !== null) { previewFontFamily = null; updatePreview(); }
+      },
     });
 
     bindCustomDropdown(backdrop.querySelector("#style-theme-dropdown"), (val) => {
@@ -524,15 +535,9 @@ export function openStyleModal(state, existingStyle, onDone) {
       render();
       scheduleSave();
     }, {
-      onHover: (val) => {
-        previewThemeId = val || null;
-        updatePreview();
-      },
+      onHover: (val) => { previewThemeId = val || null; updatePreview(); },
       onClose: () => {
-        if (previewThemeId !== null) {
-          previewThemeId = null;
-          updatePreview();
-        }
+        if (previewThemeId !== null) { previewThemeId = null; updatePreview(); }
       },
     });
 

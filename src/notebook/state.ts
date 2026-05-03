@@ -1639,9 +1639,10 @@ export class DrawingState extends EventTarget {
     }
     if (!unionB) return;
 
-    // Same padding as `wrapSelectionInDragArea` so the visual breathing
-    // room is consistent with the manual wrap shortcut.
-    const PAD = 16;
+    // 20 px breathing room between the moving cluster's edge and the
+    // expanded drag-area border so the wrapped shapes don't end up
+    // flush against the dashed outline.
+    const PAD = 20;
     let mutated = false;
     this.shapes = this.shapes.map((s) => {
       if (s.type !== "drag-area") return s;
