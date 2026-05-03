@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "npm run check:line-limits && vite build",
     "check:line-limits": "bash scripts/check-line-limits.sh",
+    "postinstall": "node scripts/copy-dictionaries.mjs",
     "tauri": "tauri",
     "build:macos": "tauri build",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",

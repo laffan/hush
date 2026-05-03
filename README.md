@@ -77,6 +77,8 @@ npm run tauri build
 
 The built app will be in `src-tauri/target/release/bundle/`.
 
+`npm install` also runs `scripts/copy-dictionaries.mjs` (via `postinstall`), which copies the Hunspell `aff` / `dic` files out of the `dictionary-en` package into `src/assets/dictionaries/` so the Proofread mode spellchecker can `?url`-import them through Vite. The folder is gitignored.
+
 ## Development
 
 ```sh

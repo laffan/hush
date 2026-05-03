@@ -6,3 +6,8 @@ src-tauri/target/
 Thumbs.db
 .env
 .env.local
+
+# Hunspell dictionary files copied out of node_modules/dictionary-en by
+# scripts/copy-dictionaries.mjs (run via npm postinstall).
+src/assets/dictionaries/
+

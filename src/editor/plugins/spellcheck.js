@@ -2,11 +2,12 @@
  * Spellcheck side of Proofread mode.
  *
  * Uses `nspell` against the bundled `dictionary-en` Hunspell dictionaries.
- * The `aff` and `dic` files are loaded directly via Vite's `?url` query so
- * Vite copies the binary assets into the build output and the
- * dictionary-en JS entry point (which uses `node:fs/promises`) is bypassed
- * — that entry point only works under Node, and silently doing nothing in
- * the browser was why decorations weren't appearing in the previous build.
+ * The `aff` and `dic` files are copied out of `node_modules/dictionary-en`
+ * into `src/assets/dictionaries/` by `scripts/copy-dictionaries.mjs`
+ * (wired into `npm postinstall`) so we can `?url`-import them through
+ * Vite without fighting the package's strict `exports` map. The
+ * dictionary-en JS entry point itself is a non-starter in the webview —
+ * it uses `node:fs/promises` and would silently no-op.
  *
  * The dictionary is loaded lazily on first activation; misspellings are
  * underlined with `.hush-spellcheck-error` (red wavy). Markdown structure
@@ -17,13 +18,8 @@
 import { ViewPlugin, Decoration } from "@codemirror/view";
 import { RangeSetBuilder, Annotation } from "@codemirror/state";
 
-// Vite resolves these to URLs in the build output. dictionary-en's JS
-// entry point uses Node-only APIs, so we skip it and just fetch the
-// raw Hunspell files. The deep import works because Vite's asset
-// resolver traverses node_modules even when the package's `exports`
-// map only exports the root.
-import affUrl from "dictionary-en/index.aff?url";
-import dicUrl from "dictionary-en/index.dic?url";
+import affUrl from "../../assets/dictionaries/en.aff?url";
+import dicUrl from "../../assets/dictionaries/en.dic?url";
 
 export const spellcheckRedecorate = Annotation.define();
 
