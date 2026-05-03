@@ -2,11 +2,10 @@
  * Project view — CodeMirror extension for displaying multiple documents
  * as a single document with dashed separators between them.
  *
- * Separators are rendered as horizontal dashed lines and are protected
- * from editing via a transaction filter.
- *
- * Uses a StateField (not ViewPlugin) because block-level decorations
- * must be provided via EditorView.decorations.from(field).
+ * Separators are rendered as a block-level dashed widget that fully
+ * replaces the marker line, and are protected from any edit that would
+ * change how many separator lines exist in the affected range — so users
+ * can neither delete an existing separator nor type a new one.
  */
 
 import { EditorView, Decoration, WidgetType } from "@codemirror/view";
@@ -14,13 +13,15 @@ import { EditorState, StateField, Annotation } from "@codemirror/state";
 
 export const bypassSeparatorFilter = Annotation.define();
 
-export const SEPARATOR = "\n\n---hush-separator---\n\n";
+// One newline on each side: the marker's own line-break boundaries also
+// double as the join boundaries between docs, so removing either \n
+// touches the separator line and is rejected by the filter below.
+export const SEPARATOR = "\n---hush-separator---\n";
 const SEPARATOR_LINE = "---hush-separator---";
 
-// Widget that renders a dashed horizontal line (inline, styled as block via CSS)
 class SeparatorWidget extends WidgetType {
   toDOM() {
-    const el = document.createElement("span");
+    const el = document.createElement("div");
     el.className = "project-separator";
     el.setAttribute("contenteditable", "false");
     return el;
@@ -43,6 +44,7 @@ function buildDecorations(editorState, appState) {
       builder.push(
         Decoration.replace({
           widget: new SeparatorWidget(),
+          block: true,
         }).range(line.from, line.to)
       );
     }
@@ -51,7 +53,6 @@ function buildDecorations(editorState, appState) {
   return Decoration.set(builder);
 }
 
-// StateField that provides block-level separator decorations
 export function createProjectViewField(state) {
   return StateField.define({
     create(editorState) {
@@ -65,9 +66,23 @@ export function createProjectViewField(state) {
   });
 }
 
+function countSeparatorsInRange(doc, from, to) {
+  if (doc.length === 0) return 0;
+  const clampedFrom = Math.max(0, Math.min(from, doc.length));
+  const clampedTo = Math.max(0, Math.min(to, doc.length));
+  const fromLine = doc.lineAt(clampedFrom).number;
+  const toLine = doc.lineAt(clampedTo).number;
+  let n = 0;
+  for (let i = fromLine; i <= toLine; i++) {
+    if (doc.line(i).text.trim() === SEPARATOR_LINE) n++;
+  }
+  return n;
+}
+
 /**
- * Transaction filter that prevents editing separator lines.
- * Users cannot delete into or modify the separator text.
+ * Block any transaction that would change the number of separator lines
+ * in the affected range — covers both deleting existing separators and
+ * typing/pasting a new `---hush-separator---` line.
  */
 export function createSeparatorFilter(state) {
   return EditorState.transactionFilter.of((tr) => {
@@ -75,22 +90,15 @@ export function createSeparatorFilter(state) {
     if (!tr.docChanged) return tr;
     if (tr.annotation(bypassSeparatorFilter)) return tr;
 
-    // Check if any change touches a separator line
-    let dominated = false;
-    tr.changes.iterChanges((fromA, toA) => {
-      const doc = tr.startState.doc;
-      const fromLine = doc.lineAt(fromA);
-      const toLine = doc.lineAt(Math.min(toA, doc.length));
-
-      for (let i = fromLine.number; i <= toLine.number; i++) {
-        const line = doc.line(i);
-        if (line.text.trim() === SEPARATOR_LINE) {
-          dominated = true;
-        }
-      }
+    let blocked = false;
+    tr.changes.iterChanges((fromA, toA, fromB, toB) => {
+      if (blocked) return;
+      const oldCount = countSeparatorsInRange(tr.startState.doc, fromA, toA);
+      const newCount = countSeparatorsInRange(tr.state.doc, fromB, toB);
+      if (oldCount !== newCount) blocked = true;
     });
 
-    if (dominated) return []; // Block the transaction
+    if (blocked) return [];
     return tr;
   });
 }

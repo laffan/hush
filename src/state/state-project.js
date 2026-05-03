@@ -4,8 +4,28 @@
  */
 
 import { findNode, collectDocumentIds } from "./tree-helpers.js";
+import { SEPARATOR } from "../editor/plugins/project-view.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+
+/**
+ * Split the joined project buffer back into per-doc parts. Bounded to
+ * `expectedCount - 1` separator hits so a stray `---hush-separator---`
+ * line (e.g. carried over from data corrupted by an earlier version of
+ * this plugin) can't bleed content across doc boundaries.
+ */
+function splitProjectBuffer(text, expectedCount) {
+  const parts = [];
+  let pos = 0;
+  for (let i = 0; i < expectedCount - 1; i++) {
+    const idx = text.indexOf(SEPARATOR, pos);
+    if (idx === -1) break;
+    parts.push(text.slice(pos, idx));
+    pos = idx + SEPARATOR.length;
+  }
+  parts.push(text.slice(pos));
+  return parts;
+}
 
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -31,14 +51,14 @@ export async function openProject(state, projectId) {
       catch (e) { console.warn(`Project load: skipping file ${fid}:`, e); }
     }
   } else { ordered = state.projectDocIds.map(fid => state.files.find(e => e.id === fid)).filter(Boolean); }
-  if (state.editor) state.editor.setContent(ordered.map(e => e.content).join("\n\n---hush-separator---\n\n"));
+  if (state.editor) state.editor.setContent(ordered.map(e => e.content).join(SEPARATOR));
   state.emit("file-opened");
   state.updateSettings({ lastProjectId: projectId, lastFileId: null });
 }
 
 export async function saveProjectContent(state) {
   if (!state.currentProjectId || !state.editor || !state.projectDocIds.length) return;
-  const parts = state.editor.getContent().split("\n\n---hush-separator---\n\n");
+  const parts = splitProjectBuffer(state.editor.getContent(), state.projectDocIds.length);
   for (let i = 0; i < state.projectDocIds.length && i < parts.length; i++) {
     const fid = state.projectDocIds[i], content = parts[i] || "";
     if (IS_TAURI) {

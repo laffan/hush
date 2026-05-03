@@ -5,7 +5,7 @@ export async function exportCurrentFile(state) {
   let content = state.editor.getContent();
   // For project view, strip separator markers for clean export
   if (state.currentProjectId) {
-    content = content.replace(/\n\n---hush-separator---\n\n/g, "\n\n");
+    content = content.replace(/\n---hush-separator---\n/g, "\n\n");
   }
   const name = state.currentProjectId
     ? (findNode(state.fileTree, state.currentProjectId)?.name || "project-export")
