@@ -1,5 +1,5 @@
 /**
- * Grammar side of the combined Spelling/Grammar mode.
+ * Grammar side of Proofread mode.
  *
  * Calls the `check_grammar` Tauri command (`harper-core` Rust crate) on
  * a 1.5s debounce after edits. Results are cached per `EditorView` in a

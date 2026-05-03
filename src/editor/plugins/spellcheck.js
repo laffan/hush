@@ -1,5 +1,5 @@
 /**
- * Spellcheck side of the combined Spelling/Grammar mode.
+ * Spellcheck side of Proofread mode.
  *
  * Uses `nspell` against the bundled `dictionary-en` Hunspell dictionaries.
  * The `aff` and `dic` files are loaded directly via Vite's `?url` query so

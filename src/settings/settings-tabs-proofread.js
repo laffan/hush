@@ -48,9 +48,9 @@ export function renderProofreadTab(settings) {
 
   return `
     <div class="settings-section">
-      <h2>Proofread</h2>
+      <h2>Proofread mode</h2>
       <p class="settings-help">
-        Spelling/Grammar mode is a single doc-only toggle accessed from the
+        Proofread mode is a single doc-only toggle accessed from the
         command palette. While it's on, misspellings underline in red and
         grammar issues from <code>harper-core</code> underline in green.
         Hover a green underline for a tooltip with the rule's message and

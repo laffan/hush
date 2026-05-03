@@ -380,7 +380,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub scroll_position: Option<f64>,
 
-    // Spelling / Grammar — single combined mode (nspell + harper-core).
+    // Proofread mode — combined nspell + harper-core toggle.
     // `proofread_disabled_rules` carries the list of harper rule names
     // (e.g. "LongSentences") that the user has switched off in the
     // Proofread settings tab; the JS frontend forwards it on every

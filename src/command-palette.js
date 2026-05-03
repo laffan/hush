@@ -212,7 +212,7 @@ function buildCommands(state) {
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
       action: (s) => s.emit("toggle-outline-panel") },
-    { id: "proofread", label: "Spelling/Grammar mode", icon: null, shortcutKey: null, ctx: "doc",
+    { id: "proofread", label: "Proofread mode", icon: null, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
@@ -459,7 +459,7 @@ function docModeTurnoffs(state) {
     { flag: "typewriterMode", label: "Turn off Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", action: (s) => s.toggleTypewriter() },
     { flag: "dryMode", label: "Turn off Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", action: (s) => s.toggleDry() },
     { flag: "focusMode", label: "Turn off Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
-    { flag: "proofreadMode", label: "Turn off Spelling/Grammar mode", icon: null, action: (s) => s.toggleProofread() },
+    { flag: "proofreadMode", label: "Turn off Proofread mode", icon: null, action: (s) => s.toggleProofread() },
   ];
   return modes
     .filter(m => state[m.flag])

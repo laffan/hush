@@ -81,7 +81,7 @@ export class AppState {
     this.focusMode = false;
     this.zenFocus = false;
     this.isFullscreen = false;
-    // Doc-only Spelling/Grammar mode. Persisted via `proofreadMode` in
+    // Doc-only Proofread mode. Persisted via `proofreadMode` in
     // settings so a user who left it on at quit returns to it. Both the
     // nspell dictionary and the harper Rust call are lazy on first use,
     // so sessions that never enable it pay no cost.
