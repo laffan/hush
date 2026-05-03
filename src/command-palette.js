@@ -24,8 +24,13 @@ import versionsRaw from "./sidebar/sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar/sidebar_icons/export.svg?raw";
 import stylesRaw from "./sidebar/sidebar_icons/styles.svg?raw";
 import zoteroRaw from "./sidebar/sidebar_icons/zotero.svg?raw";
-import iconDocRaw from "./sidebar/sidebar_icons/icon-doc.svg?raw";
-import iconNotebookRaw from "./sidebar/sidebar_icons/icon-notebook.svg?raw";
+import { typeIcons } from "./sidebar/files-panel-shared.js";
+
+/** Wrap inner SVG markup (paths / polygons / etc.) in an `<svg>` of the
+ *  given viewBox so it can be dropped straight into an `iconEl`. */
+function wrapSvg(inner, viewBox = "0 0 24 24") {
+  return `<svg viewBox="${viewBox}">${inner}</svg>`;
+}
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
@@ -43,26 +48,28 @@ function paneAnchorClickPoint(state) {
   };
 }
 
+/** Each icon is the full `<svg …>…</svg>` markup so a row can drop it
+ *  straight into the icon slot without the renderer needing to know
+ *  about per-icon viewBox sizing. The doc / notebook / project /
+ *  inbox / images / trash glyphs are reused verbatim from the sidebar
+ *  via `typeIcons` so the palette and the file tree show the exact
+ *  same visual language. */
 const icons = {
-  newFile: svgInner(newFileRaw),
-  files: svgInner(filesRaw),
-  ratchet: svgInner(ratchetRaw),
-  private: svgInner(privateRaw),
-  typewriter: svgInner(typewriterRaw),
-  dry: svgInner(dryRaw),
-  focus: svgInner(focusRaw),
-  versions: svgInner(versionsRaw),
-  export: svgInner(exportRaw),
-  styles: svgInner(stylesRaw),
-  zotero: svgInner(zoteroRaw),
-  doc: svgInner(iconDocRaw),
-  notebook: svgInner(iconNotebookRaw),
-  // Triangle, mirroring the sidebar's project icon (files-panel-shared.js).
-  // Drawn on a 16-unit viewBox.
-  project: `<polygon points="8,1 15,15 1,15" />`,
-  // Mirrors the inline trash icon used in files-panel.js so the palette
-  // matches the sidebar's visual language. Drawn on a 16-unit viewBox.
-  trash: `<polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" />`,
+  newFile: wrapSvg(svgInner(newFileRaw)),
+  files: wrapSvg(svgInner(filesRaw)),
+  ratchet: wrapSvg(svgInner(ratchetRaw)),
+  private: wrapSvg(svgInner(privateRaw)),
+  typewriter: wrapSvg(svgInner(typewriterRaw)),
+  dry: wrapSvg(svgInner(dryRaw)),
+  focus: wrapSvg(svgInner(focusRaw)),
+  versions: wrapSvg(svgInner(versionsRaw)),
+  export: wrapSvg(svgInner(exportRaw)),
+  styles: wrapSvg(svgInner(stylesRaw)),
+  zotero: wrapSvg(svgInner(zoteroRaw)),
+  doc: typeIcons.document,
+  notebook: typeIcons.notebook,
+  project: typeIcons.project,
+  trash: typeIcons.trash,
 };
 
 /** Detect whether we're running on a desktop Tauri build that supports
@@ -138,7 +145,7 @@ function buildCommands(state) {
         if (!fileId || !fileType) return;
         openInNewWindow(fileId, fileType);
       } },
-    { id: "delete-current", label: "Delete current file", icon: icons.trash, iconViewBox: "0 0 16 16", shortcutKey: null, ctx: "shared",
+    { id: "delete-current", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const fileId = s.currentNotebookFileId || s.currentFileId;
         if (!fileId) return;
@@ -170,7 +177,7 @@ function buildCommands(state) {
         if (!fileId || s.currentProjectId) return;
         s.setDesk(fileId);
       } },
-    { id: "desk-clear", label: "Remove desk", icon: icons.trash, iconViewBox: "0 0 16 16", shortcutKey: null, ctx: "shared",
+    { id: "desk-clear", label: "Remove desk", icon: icons.trash, shortcutKey: null, ctx: "shared",
       action: (s) => s.setDesk(null) },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("export-current-file") },
@@ -285,9 +292,6 @@ function enterFilePicker(palette, state, placeholder, onPick, { includeProjects 
     id: "file-" + f.id,
     label: f.name,
     icon: f.type === "notebook" ? icons.notebook : f.type === "project" ? icons.project : icons.doc,
-    // Project icon (triangle) is drawn on a 16-unit viewBox; doc and
-    // notebook share the default 24-unit one.
-    iconViewBox: f.type === "project" ? "0 0 16 16" : undefined,
     shortcutKey: null,
     action: () => onPick(f),
   }));
@@ -572,7 +576,7 @@ function renderList(listEl, state) {
     row.className = "cmd-palette-item" + (i === activeIndex ? " active" : "");
     const iconEl = document.createElement("span");
     iconEl.className = "cmd-palette-icon";
-    if (cmd.icon) iconEl.innerHTML = `<svg viewBox="${cmd.iconViewBox || "0 0 24 24"}">${cmd.icon}</svg>`;
+    if (cmd.icon) iconEl.innerHTML = cmd.icon;
     row.appendChild(iconEl);
     const labelEl = document.createElement("span");
     labelEl.className = "cmd-palette-label";

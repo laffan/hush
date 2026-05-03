@@ -104,7 +104,6 @@
    through to the editor and editor drag-selects aren't intercepted. */
 .word-count-display.has-selection {
   pointer-events: auto;
-  cursor: help;
 }
 
 /* When ratchet is also visible, push the word count down to sit below

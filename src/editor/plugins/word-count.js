@@ -83,34 +83,43 @@ function recompute(state) {
   // click-through and doesn't intercept editor drags.
   const selectionActive = hasNonEmptySelection(state);
   wordCountEl.classList.toggle("has-selection", selectionActive);
-
-  // Hover-while-selection: replace the regular count with the count of
-  // the selected text. Bail back to the regular path the moment the
-  // selection disappears.
-  if (showingSelection && selectionActive) {
-    const selText = getSelectionText(state);
-    const n = countWords(selText);
-    wordCountEl.textContent = `${n.toLocaleString()} selected`;
-    return;
-  }
+  // Selection has to be present *and* the user has to be hovering
+  // for the selection slot to show. Drop the hover flag the moment
+  // the selection disappears so a stale flag doesn't bleed into the
+  // next render.
   if (showingSelection && !selectionActive) showingSelection = false;
+  const showSel = showingSelection && selectionActive;
 
-  // In project mode the editor holds every doc joined by
-  // `---hush-separator---`. Show two counts: the doc the cursor is
-  // inside / the entire project. Slip back to the single-count form
-  // when the cursor isn't locatable (no view, no selection).
-  if (state.currentProjectId && text.includes("---hush-separator---")) {
-    const total = countWords(text);
+  const total = countWords(text);
+  const inProject = !!state.currentProjectId && text.includes("---hush-separator---");
+
+  // Project mode: show "section / total". Section = the slice of the
+  // joined buffer between the separators surrounding the cursor.
+  // Hovering with a selection prepends a "selection / …" slot.
+  if (inProject) {
     const cursor = getProjectCursorPos(state);
     if (cursor != null) {
-      const segment = sliceProjectSegmentAt(text, cursor);
-      const current = countWords(segment);
-      wordCountEl.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} ${total === 1 ? "word" : "words"}`;
+      const section = countWords(sliceProjectSegmentAt(text, cursor));
+      const counts = showSel
+        ? [countWords(getSelectionText(state)), section, total]
+        : [section, total];
+      wordCountEl.textContent = formatCounts(counts);
       return;
     }
+    // Cursor wasn't locatable — fall through to the non-project format.
   }
-  const n = countWords(text);
-  wordCountEl.textContent = `${n.toLocaleString()} ${n === 1 ? "word" : "words"}`;
+
+  // Non-project: "total" alone, or "selection / total" while hovered
+  // with text selected.
+  const counts = showSel ? [countWords(getSelectionText(state)), total] : [total];
+  wordCountEl.textContent = formatCounts(counts);
+}
+
+/** Render a `[a, b, c]` tuple as `"a / b / c words"` (or "word" for 1). */
+function formatCounts(parts) {
+  const last = parts[parts.length - 1];
+  const noun = last === 1 ? "word" : "words";
+  return `${parts.map((n) => n.toLocaleString()).join(" / ")} ${noun}`;
 }
 
 function hasNonEmptySelection(state) {
