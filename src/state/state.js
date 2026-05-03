@@ -81,6 +81,12 @@ export class AppState {
     this.focusMode = false;
     this.zenFocus = false;
     this.isFullscreen = false;
+    // Doc-only proofreading toggles, not persisted — flipped via the
+    // command palette's "Check Spelling" / "Check Grammar" entries.
+    // The spellcheck dictionary and grammar Rust call are both lazy so
+    // sessions that never enable them pay no cost.
+    this.spellcheckActive = false;
+    this.grammarCheckActive = false;
 
     // Autosave interval
     this.autosaveInterval = null;

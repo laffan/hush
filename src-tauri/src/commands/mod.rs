@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod files;
+pub mod grammar;
 pub mod images;
 pub mod local_sync;
 pub mod multi_window;

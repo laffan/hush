@@ -414,6 +414,7 @@ pub fn run() {
             commands::local_sync::local_sync_read_file_bytes,
             commands::local_sync::local_sync_write_file_bytes,
             commands::backup::backup_app_data,
+            commands::grammar::check_grammar,
             #[cfg(desktop)]
             commands::window::set_always_on_top,
             commands::window::set_activation_policy,

@@ -1,0 +1,44 @@
+/* ===== Proofreading: spellcheck + grammar underlines + tooltips ===== */
+
+/* Browser-native red wavy underline for misspelled words. The standard
+   `text-decoration: underline wavy` falls back gracefully when SVG masks
+   aren't supported. */
+.hush-spellcheck-error {
+  text-decoration: underline wavy rgba(220, 38, 38, 0.85);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+}
+
+[data-theme="dark"] .hush-spellcheck-error {
+  text-decoration-color: rgba(248, 113, 113, 0.85);
+}
+
+/* Grammar issues — green-blue wavy to distinguish from spelling. */
+.hush-grammar-error {
+  text-decoration: underline wavy rgba(20, 150, 100, 0.85);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
+[data-theme="dark"] .hush-grammar-error {
+  text-decoration-color: rgba(74, 222, 128, 0.8);
+}
+
+/* Tooltip surfaced by the grammar plugin's hoverTooltip. CodeMirror
+   wraps our DOM in `.cm-tooltip`, so we inherit positioning and only
+   theme the contents. */
+.cm-tooltip .hush-grammar-tooltip {
+  max-width: 360px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cm-tooltip .hush-grammar-tooltip-message {
+  font-weight: 600;
+}
+
+.cm-tooltip .hush-grammar-tooltip-suggestions {
+  margin-top: 4px;
+  opacity: 0.8;
+}

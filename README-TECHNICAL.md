@@ -54,6 +54,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │       ├── private-mode.js
 │       ├── project-view.js
 │       ├── sticky-headers.js
+│       ├── spellcheck.js
+│       ├── grammar-check.js
 │       └── typewriter.js
 │
 ├── notebook/              (see README-NOTEBOOK.md)
@@ -426,6 +428,20 @@ Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a
 
 **Pane header chip.** Doc-mode floating panes carry their own word count (`.fp-wordcount`) next to the title — same setting (`wordCountVisible`), independent count per pane (each pane has its own editor). `pane-content.js` exports `countWords` from this module and refreshes the chip on every pane editor `docChanged` plus once on initial load. `pane-manager.js` listens for `settings-changed` and runs `syncAllPaneWordCounts()` so toggling the global flag updates every pane in lockstep. Notebook panes don't get a chip — their content is shapes, not prose.
 
+### Spellcheck + Grammar Check (`editor/plugins/spellcheck.js`, `editor/plugins/grammar-check.js`)
+
+Two opt-in proofreading plugins surfaced via the command palette as **Check Spelling** and **Check Grammar**. Both default to off; activation lives on `state.spellcheckActive` / `state.grammarCheckActive` (runtime-only, not persisted) so a user who never enables them pays no cost. Both are **doc-only** — the toggles short-circuit when a notebook is open.
+
+**Spellcheck.** `createSpellcheckPlugin(state)` is a CodeMirror `ViewPlugin` that lazy-imports `nspell` + `dictionary-en` (Hunspell `aff` / `dic` bundled via the npm package) on first activation. The decorator runs on every `docChanged` while the toggle is on, masks out URLs / code / image markdown / `%%comments%%` / `==flags==` (each replaced with same-length spaces so source offsets stay valid), and underlines any remaining word `nspell.correct(word)` rejects with the `.hush-spellcheck-error` class. The dictionary load is fire-and-forget — the first decorate pass while loading returns no decorations and dispatches a redecorate annotation when the checker resolves.
+
+**Grammar.** `createGrammarCheckPlugin(state)` calls the `check_grammar` Tauri command (`commands/grammar.rs`, `harper-core` crate) on a 1.5 s debounce after edits. Results are cached per `EditorView` in a `WeakMap` so the buffer only re-lints after actual changes. The plugin tracks a per-view `runId` so a debounced run that finishes after a newer one started discards itself. A companion `createGrammarHoverTooltip(state)` reuses the same cache to surface a tooltip with the harper message + suggestions when the user hovers an underline.
+
+**Offset translation.** harper returns spans in Unicode-scalar offsets (`Span<char>`); CodeMirror addresses positions in JavaScript UTF-16 code units. `char_to_utf16_range` in the Rust command does the conversion once on the way out so the JS frontend never has to re-walk the buffer per issue. ASCII / BMP prose is unaffected; emoji + supplementary-plane characters are now handled correctly.
+
+**Wiring.** Both plugins are mounted only on the main editor (`editor/editor.js`) — `createBaseExtensions` (the pane factory) intentionally doesn't include them, keeping floating panes lean and matching the docs-only scope. The "turn off Spelling / Grammar check" entries appear at the top of the command palette while either is active, mirroring the existing `Turn off …` rows for Ratchet, Private, etc.
+
+**Backend.** `commands::grammar::check_grammar(text: String) -> Vec<GrammarIssue>` builds `LintGroup::new_curated(FstDictionary::curated(), Dialect::American)` against `Document::new_markdown_default_curated(&text)` — markdown parser so harper ignores fenced code blocks and link syntax — and serialises each `Lint` to `{ from, to, message, suggestions }`. `Suggestion::ReplaceWith(Vec<char>)` and `Suggestion::InsertAfter(Vec<char>)` are flattened to strings; `Suggestion::Remove` is dropped (it has no replacement text to surface in the tooltip). The dictionary is held in a static `Arc` inside harper, so back-to-back lints of edited buffers don't repay the dictionary build cost.
+
 ### Typewriter Mode (`editor/plugins/typewriter.js`)
 
 Locks cursor to a fixed screen position (default 60% from top). Draggable boundary line for repositioning. Extra padding so first/last lines can reach the boundary. Also handles ratchet scroll (pins last line to 50% center).
@@ -630,7 +646,7 @@ Each built-in theme lives in its own file under `src/themes/` (e.g. `dracula.js`
 
 Per-module CSS files under `src/styles/`, imported via `src/styles/main.css`:
 
-`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `notebook.css`, `floating-pane.css`, `image-preview.css`, `utility.css`.
+`base.css`, `editor.css`, `sidebar.css`, `files-panel.css`, `styles-panel.css`, `longview.css`, `versions-panel.css`, `ratchet.css`, `private-mode.css`, `typewriter.css`, `find-replace.css`, `footnotes.css`, `focus-mode.css`, `dry-highlight.css`, `callouts.css`, `file-drop.css`, `zotero.css`, `sync-conflict.css`, `sortable-list.css`, `project-view.css`, `settings-modal.css`, `sticky-headers.css`, `command-palette.css`, `notebook.css`, `floating-pane.css`, `image-preview.css`, `proofreading.css`, `utility.css`.
 
 The settings window has its own standalone `src/settings/settings-window.css` since it runs in a separate WebviewWindow.
 
@@ -679,6 +695,7 @@ Command handlers are grouped by domain. Each module exports `pub fn` items decor
 - **`commands/zotero.rs`** — `save_zotero_references`, `load_zotero_references`, `save_zotero_pdf`, `load_zotero_pdf`, `zotero_pdf_exists`, `download_zotero_pdf` (server-side fetch + cache for the snapshot pipeline), `save_zotero_annotations`, `load_zotero_annotations` (Option-returning), `fetch_zotero_annotations` (server-side paginated fetch + cache for the highlight browser pane)
 - **`commands/window.rs`** — `set_always_on_top` (desktop), `set_activation_policy`
 - **`commands/backup.rs`** — `backup_app_data(destination)` zips the contents of `{data_dir}` into a single archive at the user-chosen path (using the `zip` crate, `Deflated` compression). `snapshots.db`, `.tmp`, and `.bak` files are excluded so the backup is self-contained authored content + settings + Zotero / sync metadata, not version history. Per-file progress is reported to the JS frontend via `app.emit("backup-progress", { processed, total, currentFile })`
+- **`commands/grammar.rs`** — `check_grammar(text)` runs the document through `harper-core` (`LintGroup::new_curated(FstDictionary::curated(), Dialect::American)` over `Document::new_markdown_default_curated(&text)`) and returns `Vec<GrammarIssue>` (`{ from, to, message, suggestions }`). Spans are converted from harper's Unicode-scalar offsets to UTF-16 code-unit offsets so the JS frontend can apply them directly to CodeMirror positions without re-walking the buffer
 
 `sync_commands.rs` (Dropbox / external sync) lives at the crate root rather than under `commands/` because it owns enough internal helpers to merit its own module.
 

@@ -212,6 +212,10 @@ function buildCommands(state) {
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
       action: (s) => s.emit("toggle-outline-panel") },
+    { id: "check-spelling", label: "Check Spelling", icon: null, shortcutKey: null, ctx: "doc",
+      action: async (s) => { const { toggleSpellcheck } = await import("./editor/plugins/spellcheck.js"); toggleSpellcheck(s); } },
+    { id: "check-grammar", label: "Check Grammar", icon: null, shortcutKey: null, ctx: "doc",
+      action: async (s) => { const { toggleGrammarCheck } = await import("./editor/plugins/grammar-check.js"); toggleGrammarCheck(s); } },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: null, shortcutKey: null, ctx: "pane",
@@ -457,6 +461,14 @@ function docModeTurnoffs(state) {
     { flag: "typewriterMode", label: "Turn off Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", action: (s) => s.toggleTypewriter() },
     { flag: "dryMode", label: "Turn off Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", action: (s) => s.toggleDry() },
     { flag: "focusMode", label: "Turn off Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
+    { flag: "spellcheckActive", label: "Turn off Spelling check", icon: null, action: async (s) => {
+      const { toggleSpellcheck } = await import("./editor/plugins/spellcheck.js");
+      toggleSpellcheck(s);
+    } },
+    { flag: "grammarCheckActive", label: "Turn off Grammar check", icon: null, action: async (s) => {
+      const { toggleGrammarCheck } = await import("./editor/plugins/grammar-check.js");
+      toggleGrammarCheck(s);
+    } },
   ];
   return modes
     .filter(m => state[m.flag])

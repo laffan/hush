@@ -64,6 +64,8 @@ All shortcuts are customizable in Settings.
 
 **Tooltips** — Off by default for a clean reading surface. Enable **Show tooltips** in Settings > General to surface labels + shortcut hints on every sidebar, pane header, and notebook toolbar button.
 
+**Spelling & Grammar** — Both checkers default to off. The command palette carries two doc-only entries: **Check Spelling** runs `nspell` against the bundled Hunspell `dictionary-en` and underlines unknown words in red wavy ink, and **Check Grammar** routes the document through the `harper-core` Rust crate and underlines style / agreement / phrasing issues in green. Each entry toggles its checker on or off; while a checker is on, edits flow through it (spelling on every keystroke, grammar on a 1.5 s debounce) and hovering a grammar underline pops a tooltip with the message and replacement suggestions. Markdown structure (URLs, code, image refs, `%%comments%%`, `==flags==`) is masked out before checking. Notebooks are intentionally skipped for now — proofreading is a docs-only feature.
+
 ## Installation
 
 Requires [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/).
