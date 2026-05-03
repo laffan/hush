@@ -144,6 +144,12 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     closePopup();
   });
 
+  // Close popup on Escape
+  document.addEventListener("keydown", (e) => {
+    if (!popupEl || !activePopup) return;
+    if (e.key === "Escape") { closePopup(); }
+  });
+
   function makeAlignMenu(state: DrawingState): HTMLElement {
     const theme = state.theme;
     const btnStyle: Partial<CSSStyleDeclaration> = {
@@ -195,8 +201,10 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     });
     panel.addEventListener("pointerdown", (e) => e.stopPropagation());
 
+    // Fixed-width labels keep the swatch rows aligned so the colour
+    // circles line up across "Text" and "Bg".
     const labelStyle: Partial<CSSStyleDeclaration> = {
-      fontSize: "11px", color: muted, minWidth: "26px",
+      fontSize: "11px", color: muted, width: "32px", flexShrink: "0",
       textTransform: "uppercase", letterSpacing: "0.5px",
     };
 
@@ -213,14 +221,12 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     if (opts.hasColorable) {
       panel.appendChild(makeRow("Text", makeSwatchRow(TEXT_COLORS, (c) => {
         state.changeSelectedColor(c === "reset" ? "black" : c);
-        closePopup();
       })));
     }
 
     if (opts.hasBgable) {
       panel.appendChild(makeRow("Bg", makeSwatchRow(BACKGROUND_COLORS, (c) => {
         state.changeSelectedBackground(c);
-        closePopup();
       })));
     }
 
@@ -270,7 +276,6 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
             backgroundColor: s.backgroundColor,
             fontSize: s.fontSize,
           });
-          closePopup();
         },
       });
       wrap.appendChild(chip);
@@ -330,13 +335,14 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     stylesRow.appendChild(addBtn);
 
     const clearBtn = h("button", {
-      title: "Clear text color and background",
+      title: "Reset text color, background, and size",
       style: chipBtnStyle,
       children: ["Clear"],
       onClick: () => {
         state.changeSelectedColor("black");
         state.changeSelectedBackground("reset");
-        closePopup();
+        // 18 px matches the default seeded by addTextShape* in state.ts.
+        state.changeSelectedFontSize(18);
       },
     });
     stylesRow.appendChild(clearBtn);

@@ -394,15 +394,11 @@ export function createShelfPanel(
     const highlightBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
     const isSelected = state.selectedIds.has(node.shapeId);
     // Sky-blue tinted background + accent left rail for the row whose
-    // shape is currently selected on the canvas. The blockquote left
-    // rule (when present) wins over the colour rail so quoted rows
-    // still read as quotes.
+    // shape is currently selected on the canvas.
     const selectedBg = theme.variant === "dark" ? "rgba(120, 180, 255, 0.14)" : "rgba(66, 133, 244, 0.12)";
-    const blockquoteBg = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)";
     let leftBorder = node.color ? `3px solid ${node.color}` : "3px solid transparent";
-    if (node.blockquote) leftBorder = `3px solid ${muted}`;
-    if (isSelected && !node.blockquote && !node.color) leftBorder = `3px solid ${theme.accent}`;
-    const rowBg = isSelected ? selectedBg : (node.blockquote ? blockquoteBg : "transparent");
+    if (isSelected && !node.color) leftBorder = `3px solid ${theme.accent}`;
+    const rowBg = isSelected ? selectedBg : "transparent";
     const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", borderLeft: leftBorder, color: fg, background: rowBg } });
     if (node.type === "drag-area") {
       row.appendChild(h("button", { text: collapsed.has(node.id) ? "\u25b8" : "\u25be", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", color: muted, padding: "0", width: "16px" }, onClick: () => { if (collapsed.has(node.id)) collapsed.delete(node.id); else collapsed.add(node.id); rebuildBody(); } }));
@@ -428,20 +424,17 @@ export function createShelfPanel(
       });
       row.appendChild(arrow);
     }
-    if (node.blockquote) {
-      const quote = h("span", {
-        text: "“", // left double quotation mark
-        style: { flexShrink: "0", color: muted, fontSize: "13px", marginRight: "2px", lineHeight: "1" },
-      });
-      row.appendChild(quote);
-    }
     row.setAttribute("data-shelf-row", "1");
     row.setAttribute("data-shape-id", node.shapeId);
+    // Heading rows pick up the same heading colour the canvas renderer
+    // uses (theme.headingColor) so the shelf reads as a coloured outline.
+    const labelColor = node.heading ? theme.headingColor : fg;
     const labelSpan = h("span", {
       attrs: { "data-shelf-row-label": "1" },
       style: {
         flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         cursor: "pointer",
+        color: labelColor,
         fontWeight: node.heading ? "600" : "400",
         fontStyle: node.blockquote ? "italic" : "normal",
       },

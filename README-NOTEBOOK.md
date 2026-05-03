@@ -225,11 +225,13 @@ Text shapes whose final content is *only* emoji (one or more grapheme clusters s
 
 ### Colors menu (text + background + saved styles)
 
-Selecting any text or drag-area shape surfaces a single **Colors** button on the selection toolbar (`ui/selection-toolbar.ts::makeColorsMenu`). The popup stacks three sections:
+Selecting any text or drag-area shape surfaces a single **Colors** button on the selection toolbar (`ui/selection-toolbar.ts::makeColorsMenu`). The popup stacks three sections, with the labels pinned to a fixed width so the swatch circles line up:
 
 - **Text** — palette swatches mapped through `DrawingState.changeSelectedColor()`. Hidden when the selection has no text shape.
 - **Bg** — palette swatches routed through `DrawingState.changeSelectedBackground()` (sets `backgroundColor` on text shapes; for drag-areas it derives matching stroke + 4 % fill).
-- **Styles** — every saved `{color, backgroundColor, fontSize}` preset rendered as an `Aa` chip. Clicking a chip applies the preset via `DrawingState.applyTextStyle()`. **+ Style** snapshots the first selected text shape's combo and saves it. **Clear** resets text colour to the default and clears the background. Hovering a chip reveals a small `×` for one-click delete. The Styles row is hidden when the selection has no text shape.
+- **Styles** — every saved `{color, backgroundColor, fontSize}` preset rendered as an `Aa` chip. Clicking a chip applies the preset via `DrawingState.applyTextStyle()`. **+ Style** snapshots the first selected text shape's combo and saves it. **Clear** resets text colour, background, and font size (back to the 18 px default). Hovering a chip reveals a small `×` for one-click delete. The Styles row is hidden when the selection has no text shape.
+
+The popup is sticky — clicking a swatch or a saved chip applies the change but leaves the popup open so the user can iterate. Esc or a pointerdown outside closes it (both handled by document-level listeners installed once at toolbar mount).
 
 Saved presets are **app-wide**, not per-notebook — they live in `AppSettings.notebookTextStyles` (`Vec<serde_json::Value>` on the Rust side, kept opaque so the JS owns the `{id, color, backgroundColor, fontSize}` shape) and round-trip through the standard `state.updateSettings({ notebookTextStyles })` path. The UI reads the list from `__hushState__.settings.notebookTextStyles` on each open, so newly-added entries appear without an explicit re-render path.
 
@@ -239,7 +241,7 @@ Right-side slide-out panel listing every shape organized by its drag-area contai
 
 - **Resizable** — the shelf's left edge is a hover-revealed drag handle (mirrors the sidebar's resizer pattern). The width is clamped to 200 px.. 60% of the viewport and persists in `notebookShelfWidth`. The shelf's open/close `transition: width 0.2s` is suspended for the duration of the drag so the rendered width tracks the cursor instead of chasing it.
 - **Flowchart outline** — text shapes that participate in a flowchart edge are nested under their flow parent (depth = flow-tree depth) instead of rendering flat, with a small `→` marker on every flow node. Scoping is per drag-area, so a flow that spans drag-areas surfaces as multiple roots. Non-flow shapes still render at depth 0/1 as before.
-- **Markdown formatting** — `buildLabel` strips a leading `#..######` heading marker (the row renders bold) and a leading `> ` blockquote marker (the row renders italic with a left rule + soft tinted background and a leading `“` glyph). Inline `==highlight==` runs are preserved in the label and `renderLabelInline` paints them with the same yellow background used by the search-snippet renderer. Originals still feed the search index.
+- **Markdown formatting** — `buildLabel` strips a leading `#..######` heading marker (the row renders bold and picks up `theme.headingColor` so the shelf reads as a coloured outline) and a leading `> ` blockquote marker (the row renders italic — no extra chrome). Inline `==highlight==` runs are preserved in the label and `renderLabelInline` paints them with the same yellow background used by the search-snippet renderer. Originals still feed the search index.
 - **Selection sync** — when a shape is selected on the canvas, its shelf row tints with the theme accent (background + 3 px left rail). The sync is automatic — the panel already re-renders on every `change` event, and `state.notify("selectedIds")` fires through the same channel.
 - **Attached panes only** — `getNotebookCanvasPanes()` filters to `pane.attached === true`. Globally-pinned panes float across every document and aren't part of any one notebook's outline, so they're omitted from the shelf along with free-floating local panes. Clicking a pane row routes through `focusAndCenterPaneById()`, which reuses the search-result `centerPaneInViewport()` helper so the pane both pops to the front and recentres on screen.
 
