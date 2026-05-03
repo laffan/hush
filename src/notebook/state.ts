@@ -1792,13 +1792,4 @@ export class DrawingState extends EventTarget {
     this.notify("selectedIds");
   }
 
-  moveSelectedToShelf(): string[] {
-    const texts = this.shapes.filter((s) => this.selectedIds.has(s.id) && s.type === "text").map((s) => s.type === "text" ? s.text : "");
-    this.shapes = this.shapes.filter((s) => !(this.selectedIds.has(s.id) && s.type === "text"));
-    this.selectedIds = new Set();
-    this.recordHistory();
-    this.notify("shapes");
-    this.notify("selectedIds");
-    return texts;
-  }
 }

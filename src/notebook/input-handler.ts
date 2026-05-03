@@ -45,10 +45,6 @@ async function readClipboardText(): Promise<string> {
   try { return await navigator.clipboard.readText(); } catch { return ""; }
 }
 
-export interface InputOptions {
-  onShelfDrop?: (index: number, x: number, y: number) => void;
-}
-
 /** Shortcut keys read from Hush settings (camelCase field names). */
 export interface NotebookShortcuts {
   shortcutNbSelect: string;
@@ -101,7 +97,6 @@ function matchesKey(e: KeyboardEvent, shortcut: string): boolean {
 export function bindInputEvents(
   canvas: HTMLCanvasElement,
   state: DrawingState,
-  inputOpts?: InputOptions,
   shortcuts?: Partial<NotebookShortcuts>,
 ): () => void {
   const sc = { ...DEFAULTS, ...shortcuts };
@@ -335,12 +330,12 @@ export function bindInputEvents(
     }
   }) as unknown as (e: HTMLElementEventMap["paste"]) => void);
 
-  // Drag/drop — only handle shelf drags and direct canvas drops.
+  // Drag/drop — direct canvas drops only.
   // External file drops are handled by Hush's file-drop.js which
   // forwards to the canvas via notebook-bridge when appropriate.
   on(canvas, "dragover", ((e: DragEvent) => {
     e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = e.dataTransfer.types.includes("application/x-shelf-index") ? "move" : "copy";
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
   }) as unknown as (e: HTMLElementEventMap["dragover"]) => void);
 
   on(canvas, "drop", (async (e: DragEvent) => {
@@ -349,10 +344,6 @@ export function bindInputEvents(
     if (!e.dataTransfer) return;
     const rect = canvas.getBoundingClientRect();
     const dropPos = screenToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top }, state.camera);
-
-    // Shelf item drag-to-restore
-    const shelfIdx = e.dataTransfer.getData("application/x-shelf-index");
-    if (shelfIdx !== "") { inputOpts?.onShelfDrop?.(parseInt(shelfIdx, 10), dropPos.x, dropPos.y); return; }
 
     // Cmd/Ctrl-drag of plain text formats the dropped text as a
     // markdown blockquote at 14px — for pasting reference quotes

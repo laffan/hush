@@ -15,17 +15,48 @@ interface ShelfNode {
   /** First line is a markdown heading (`#`..`######` followed by a space).
    *  The `#` markers are stripped from `label` and the row renders bold. */
   heading?: boolean;
+  /** First line is a markdown blockquote (`> …`). The `>` is stripped
+   *  from `label` and the row paints a left rule + soft background. */
+  blockquote?: boolean;
 }
 
 /** Build a shelf-row label from a text shape's contents. Only the first
- *  line is shown (rows are single-line), and a leading markdown heading
- *  marker is stripped — the row's bold weight signals it instead. */
-function buildLabel(text: string, max: number): { label: string; heading: boolean } {
-  const firstLine = text.split("\n", 1)[0].trimStart();
+ *  line is shown (rows are single-line). Leading markdown markers — `#`
+ *  for headings, `>` for blockquotes — are stripped; the row's styling
+ *  signals them instead. Inline `==highlight==` markers are preserved
+ *  in the label so the renderer can paint them. */
+function buildLabel(text: string, max: number): { label: string; heading: boolean; blockquote: boolean } {
+  let firstLine = text.split("\n", 1)[0].trimStart();
+  let blockquote = false;
+  const bqMatch = firstLine.match(/^>+\s?(.*)$/);
+  if (bqMatch) { blockquote = true; firstLine = bqMatch[1]; }
   const m = firstLine.match(/^#{1,6}\s+(.*)$/);
   const stripped = m ? m[1] : firstLine;
   const truncated = stripped.length > max ? stripped.substring(0, max) + "..." : stripped;
-  return { label: truncated, heading: !!m };
+  return { label: truncated, heading: !!m, blockquote };
+}
+
+/** Render a shelf-row label, painting `==highlight==` runs with a soft
+ *  yellow background. Returns a span ready to drop into a row; falls
+ *  back to a plain text node when there are no markers. */
+function renderLabelInline(label: string, highlightBg: string): HTMLElement | Text {
+  if (!label.includes("==")) return document.createTextNode(label);
+  const wrap = document.createElement("span");
+  const re = /==([^=]+?)==/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(label)) !== null) {
+    if (m.index > last) wrap.appendChild(document.createTextNode(label.slice(last, m.index)));
+    const hi = document.createElement("span");
+    Object.assign(hi.style, {
+      background: highlightBg, padding: "0 2px", borderRadius: "2px",
+    } as Partial<CSSStyleDeclaration>);
+    hi.textContent = m[1];
+    wrap.appendChild(hi);
+    last = m.index + m[0].length;
+  }
+  if (last < label.length) wrap.appendChild(document.createTextNode(label.slice(last)));
+  return wrap;
 }
 
 interface ShelfPaneInfo {
@@ -40,9 +71,6 @@ interface ShelfPaneInfo {
 export function createShelfPanel(
   state: DrawingState,
   opts: {
-    shelfItems: string[];
-    onRemoveShelfItem: (i: number) => void;
-    onRestoreShelfItem: (i: number) => void;
     getPanes?: () => ShelfPaneInfo[];
     onFocusPane?: (id: string) => void;
     onScrollPaneToMatch?: (id: string, from: number, to: number) => void;
@@ -106,12 +134,12 @@ export function createShelfPanel(
       flow.parentOf(id) !== null || flow.childrenOf(id).length > 0;
 
     function pushTextNode(s: TextShape, parentScopeId: string | undefined, depth: number) {
-      const { label, heading } = buildLabel(s.text, 50);
+      const { label, heading, blockquote } = buildLabel(s.text, 50);
       result.push({
         id: s.id, type: "text",
         label, excerpt: s.text, color: s.backgroundColor || null,
         shapeId: s.id, parentId: parentScopeId, depth, pocketed: !!s.pocketed,
-        flow: isFlowParticipant(s.id), heading,
+        flow: isFlowParticipant(s.id), heading, blockquote,
       });
     }
 
@@ -253,34 +281,6 @@ export function createShelfPanel(
     const pinnedItems = filtered.filter((n) => pinned.has(n.id));
     const unpinnedItems = filtered.filter((n) => !pinned.has(n.id));
 
-    // Shelf items
-    if (opts.shelfItems.length > 0) {
-      const section = h("div", { style: { padding: "4px 0", borderBottom: `1px solid ${border}` } });
-      section.appendChild(h("div", { text: "Shelved", style: { fontSize: "11px", fontWeight: "600", color: muted, textTransform: "uppercase", letterSpacing: "0.5px", padding: "4px 0" } }));
-      opts.shelfItems.forEach((text, i) => {
-        const row = h("div", {
-          style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, cursor: "grab", color: fg },
-          attrs: { draggable: "true" },
-        });
-        row.addEventListener("dragstart", (e) => {
-          if (e.dataTransfer) {
-            e.dataTransfer.setData("application/x-shelf-index", String(i));
-            e.dataTransfer.effectAllowed = "copyMove";
-            const ghost = document.createElement("div");
-            Object.assign(ghost.style, { padding: "6px 12px", background: theme.accent, color: "#fff", borderRadius: "6px", fontSize: "13px", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", position: "absolute", top: "-1000px" });
-            ghost.textContent = text.substring(0, 50);
-            document.body.appendChild(ghost);
-            e.dataTransfer.setDragImage(ghost, 10, 10);
-            setTimeout(() => ghost.remove(), 0);
-          }
-        });
-        row.appendChild(h("span", { text, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }));
-        row.appendChild(h("button", { text: "\u00d7", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", padding: "0", opacity: "0.5", color: muted }, onClick: () => opts.onRemoveShelfItem(i) }));
-        section.appendChild(row);
-      });
-      body.appendChild(section);
-    }
-
     // Pinned
     if (pinnedItems.length > 0) {
       const section = h("div", { style: { padding: "4px 0", borderBottom: `1px solid ${border}` } });
@@ -327,7 +327,7 @@ export function createShelfPanel(
 
     // All items
     const scrollArea = h("div", { style: { flex: "1", overflowY: "auto", padding: "4px 0" } });
-    if (unpinnedItems.length === 0 && opts.shelfItems.length === 0 && visiblePanes.length === 0) {
+    if (unpinnedItems.length === 0 && visiblePanes.length === 0) {
       scrollArea.appendChild(h("div", { text: "No items. Add shapes to the canvas.", style: { padding: "16px", textAlign: "center", fontSize: "12px", color: muted } }));
     }
     unpinnedItems.forEach((n) => scrollArea.appendChild(makeNodeRow(n, false)));
@@ -391,7 +391,19 @@ export function createShelfPanel(
     const fg = theme.foreground;
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
     const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
-    const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", borderLeft: node.color ? `3px solid ${node.color}` : "3px solid transparent", color: fg } });
+    const highlightBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
+    const isSelected = state.selectedIds.has(node.shapeId);
+    // Sky-blue tinted background + accent left rail for the row whose
+    // shape is currently selected on the canvas. The blockquote left
+    // rule (when present) wins over the colour rail so quoted rows
+    // still read as quotes.
+    const selectedBg = theme.variant === "dark" ? "rgba(120, 180, 255, 0.14)" : "rgba(66, 133, 244, 0.12)";
+    const blockquoteBg = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)";
+    let leftBorder = node.color ? `3px solid ${node.color}` : "3px solid transparent";
+    if (node.blockquote) leftBorder = `3px solid ${muted}`;
+    if (isSelected && !node.blockquote && !node.color) leftBorder = `3px solid ${theme.accent}`;
+    const rowBg = isSelected ? selectedBg : (node.blockquote ? blockquoteBg : "transparent");
+    const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", borderLeft: leftBorder, color: fg, background: rowBg } });
     if (node.type === "drag-area") {
       row.appendChild(h("button", { text: collapsed.has(node.id) ? "\u25b8" : "\u25be", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", color: muted, padding: "0", width: "16px" }, onClick: () => { if (collapsed.has(node.id)) collapsed.delete(node.id); else collapsed.add(node.id); rebuildBody(); } }));
     }
@@ -416,9 +428,27 @@ export function createShelfPanel(
       });
       row.appendChild(arrow);
     }
+    if (node.blockquote) {
+      const quote = h("span", {
+        text: "“", // left double quotation mark
+        style: { flexShrink: "0", color: muted, fontSize: "13px", marginRight: "2px", lineHeight: "1" },
+      });
+      row.appendChild(quote);
+    }
     row.setAttribute("data-shelf-row", "1");
     row.setAttribute("data-shape-id", node.shapeId);
-    row.appendChild(h("span", { text: node.label, attrs: { "data-shelf-row-label": "1" }, style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", fontWeight: node.heading ? "600" : "400" }, onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0) }));
+    const labelSpan = h("span", {
+      attrs: { "data-shelf-row-label": "1" },
+      style: {
+        flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        cursor: "pointer",
+        fontWeight: node.heading ? "600" : "400",
+        fontStyle: node.blockquote ? "italic" : "normal",
+      },
+      onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0),
+    });
+    labelSpan.appendChild(renderLabelInline(node.label, highlightBg));
+    row.appendChild(labelSpan);
     // Fall-back: clicks on the row that didn't land on the label span
     // (icon, padding) still pan. Without this the pin button + flow
     // arrow + drag-area icon swallow part of the row, so clicks there

@@ -43,7 +43,7 @@ function resolveBackground(bg: string | undefined): string | undefined {
   return COLOR_PALETTE[bg] || bg;
 }
 
-export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () => void): HTMLElement {
+export function createSelectionToolbar(state: DrawingState): HTMLElement {
   const container = h("div", {
     // Sit just above canvas content but below the sidebar (z-index 200)
     // so popping the files panel doesn't get masked by the selection
@@ -51,7 +51,7 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
     style: { position: "absolute", display: "none", gap: "2px", zIndex: "50", pointerEvents: "auto" },
   });
 
-  type PopupType = "color" | "bg" | "size" | "align" | "style";
+  type PopupType = "colors" | "size" | "align";
   let activePopup: PopupType | null = null;
   let popupEl: HTMLElement | null = null;
   let popupWrapper: HTMLElement | null = null;
@@ -73,10 +73,9 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
     });
   }
 
-  function makePalette(colors: readonly string[], onSelect: (c: string) => void): HTMLElement {
-    const theme = state.theme;
+  function makeSwatchRow(colors: readonly string[], onSelect: (c: string) => void): HTMLElement {
     return h("div", {
-      style: { position: "absolute", top: "-36px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "4px", padding: "6px 8px", background: theme.uiBackground, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`, zIndex: "300" },
+      style: { display: "flex", gap: "4px", alignItems: "center" },
       children: colors.map((c) => {
         if (c === "reset") {
           const btn = h("button", {
@@ -173,18 +172,22 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
     return panel;
   }
 
-  /** Picker over the user's saved {color,bg,size} text-style presets, plus
-   *  a "+ Style" capture button. App-wide — persisted via AppSettings. */
-  function makeStyleMenu(
+  /** Combined Colors menu — text color row, background color row, and the
+   *  saved-style chips list (with a "+ Style" capture and "Clear" reset
+   *  button). Rows that don't apply to the current selection are hidden,
+   *  so a drag-area-only selection just sees the background row. */
+  function makeColorsMenu(
     state: DrawingState,
     rerender: () => void,
+    opts: { hasColorable: boolean; hasBgable: boolean; hasText: boolean },
   ): HTMLElement {
     const theme = state.theme;
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.5)" : "#666";
     const panel = h("div", {
       style: {
-        position: "absolute", top: "-46px", left: "50%", transform: "translateX(-50%)",
-        display: "flex", alignItems: "center", gap: "4px", padding: "5px 6px",
+        position: "absolute", left: "50%", transform: "translateX(-50%)",
+        bottom: "calc(100% + 4px)",
+        display: "flex", flexDirection: "column", gap: "6px", padding: "8px 10px",
         background: theme.uiBackground, borderRadius: "8px",
         boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`,
         zIndex: "300", whiteSpace: "nowrap",
@@ -192,10 +195,51 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
     });
     panel.addEventListener("pointerdown", (e) => e.stopPropagation());
 
-    const styles = getSavedTextStyles();
+    const labelStyle: Partial<CSSStyleDeclaration> = {
+      fontSize: "11px", color: muted, minWidth: "26px",
+      textTransform: "uppercase", letterSpacing: "0.5px",
+    };
 
+    function makeRow(label: string, swatches: HTMLElement): HTMLElement {
+      return h("div", {
+        style: { display: "flex", alignItems: "center", gap: "8px" },
+        children: [
+          h("span", { text: label, style: labelStyle }),
+          swatches,
+        ],
+      });
+    }
+
+    if (opts.hasColorable) {
+      panel.appendChild(makeRow("Text", makeSwatchRow(TEXT_COLORS, (c) => {
+        state.changeSelectedColor(c === "reset" ? "black" : c);
+        closePopup();
+      })));
+    }
+
+    if (opts.hasBgable) {
+      panel.appendChild(makeRow("Bg", makeSwatchRow(BACKGROUND_COLORS, (c) => {
+        state.changeSelectedBackground(c);
+        closePopup();
+      })));
+    }
+
+    if (!opts.hasText) return panel;
+
+    // Divider above the saved-style chips.
+    panel.appendChild(h("div", {
+      style: {
+        height: "1px", background: theme.uiBorder, margin: "2px 0",
+      },
+    }));
+
+    const stylesRow = h("div", {
+      style: { display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" },
+    });
+
+    const styles = getSavedTextStyles();
     if (styles.length === 0) {
-      panel.appendChild(h("span", {
+      stylesRow.appendChild(h("span", {
         text: "No saved styles",
         style: { fontSize: "11px", color: muted, padding: "0 4px" },
       }));
@@ -254,19 +298,21 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
       wrap.addEventListener("mouseleave", () => { del.style.display = "none"; });
       wrap.appendChild(del);
 
-      panel.appendChild(wrap);
+      stylesRow.appendChild(wrap);
     }
+
+    const chipBtnStyle: Partial<CSSStyleDeclaration> = {
+      display: "inline-flex", alignItems: "center", gap: "3px",
+      padding: "3px 8px",
+      border: `1px solid ${theme.uiBorder}`,
+      borderRadius: "10px", background: "transparent",
+      color: theme.foreground, fontSize: "11px", fontWeight: "500",
+      cursor: "pointer", fontFamily: "inherit",
+    };
 
     const addBtn = h("button", {
       title: "Save current style",
-      style: {
-        display: "inline-flex", alignItems: "center", gap: "3px",
-        padding: "3px 8px",
-        border: `1px solid ${theme.uiBorder}`,
-        borderRadius: "10px", background: "transparent",
-        color: theme.foreground, fontSize: "11px", fontWeight: "500",
-        cursor: "pointer", fontFamily: "inherit",
-      },
+      style: chipBtnStyle,
       children: ["+ Style"],
       onClick: () => {
         const firstText = state.shapes.find((sh) => state.selectedIds.has(sh.id) && sh.type === "text");
@@ -281,7 +327,21 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
         rerender();
       },
     });
-    panel.appendChild(addBtn);
+    stylesRow.appendChild(addBtn);
+
+    const clearBtn = h("button", {
+      title: "Clear text color and background",
+      style: chipBtnStyle,
+      children: ["Clear"],
+      onClick: () => {
+        state.changeSelectedColor("black");
+        state.changeSelectedBackground("reset");
+        closePopup();
+      },
+    });
+    stylesRow.appendChild(clearBtn);
+
+    panel.appendChild(stylesRow);
 
     return panel;
   }
@@ -375,8 +435,6 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
         container.appendChild(makeIconBtn("group", "Group", () => state.groupSelected()));
       }
     }
-    if (hasText) container.appendChild(makeIconBtn("move-to-shelf", "Move to shelf", onMoveToShelf));
-
     if (hasImage && selected.length === 1) {
       const isCropping = state.croppingImageId === selected[0].id;
       container.appendChild(makeIconBtn("crop", isCropping ? "Finish crop" : "Crop image", () => {
@@ -385,34 +443,21 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
       }));
     }
 
-    if (hasColorable) {
+    if (hasColorable || hasBgable) {
       const wrapper = h("div", { style: { position: "relative" } });
-      wrapper.appendChild(makeIconBtn("text-color", "Text color", () => {
-        togglePopup("color", wrapper, () => makePalette(TEXT_COLORS, (c) => {
-          state.changeSelectedColor(c === "reset" ? "black" : c);
-          closePopup();
-        }));
+      const reopen = () => {
+        closePopup();
+        popupEl = makeColorsMenu(state, reopen, { hasColorable, hasBgable, hasText });
+        popupWrapper = wrapper;
+        activePopup = "colors";
+        wrapper.appendChild(popupEl);
+      };
+      wrapper.appendChild(makeIconBtn("text-color", "Colors", () => {
+        if (activePopup === "colors") { closePopup(); return; }
+        reopen();
       }));
       container.appendChild(wrapper);
-      if (savedPopup === "color") togglePopup("color", wrapper, () => makePalette(TEXT_COLORS, (c) => {
-        state.changeSelectedColor(c === "reset" ? "black" : c);
-        closePopup();
-      }));
-    }
-
-    if (hasBgable) {
-      const wrapper = h("div", { style: { position: "relative" } });
-      wrapper.appendChild(makeIconBtn("background-color", "Background", () => {
-        togglePopup("bg", wrapper, () => makePalette(BACKGROUND_COLORS, (c) => {
-          state.changeSelectedBackground(c);
-          closePopup();
-        }));
-      }));
-      container.appendChild(wrapper);
-      if (savedPopup === "bg") togglePopup("bg", wrapper, () => makePalette(BACKGROUND_COLORS, (c) => {
-        state.changeSelectedBackground(c);
-        closePopup();
-      }));
+      if (savedPopup === "colors") reopen();
     }
 
     if (hasText) {
@@ -432,23 +477,6 @@ export function createSelectionToolbar(state: DrawingState, onMoveToShelf: () =>
           state.changeSelectedFontSize(size);
         }));
       }
-    }
-
-    if (hasText) {
-      const wrapper = h("div", { style: { position: "relative" } });
-      const reopen = () => {
-        closePopup();
-        popupEl = makeStyleMenu(state, reopen);
-        popupWrapper = wrapper;
-        activePopup = "style";
-        wrapper.appendChild(popupEl);
-      };
-      wrapper.appendChild(makeIconBtn("text-style", "Style", () => {
-        if (activePopup === "style") { closePopup(); return; }
-        reopen();
-      }));
-      container.appendChild(wrapper);
-      if (savedPopup === "style") reopen();
     }
 
     // Tidy: re-layout the flowchart subtree under any selected text node

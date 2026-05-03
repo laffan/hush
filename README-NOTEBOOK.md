@@ -223,11 +223,15 @@ A long press during draw/erase promotes the in-flight stroke into a lasso pick. 
 
 Text shapes whose final content is *only* emoji (one or more grapheme clusters separated by whitespace) get rasterized into an `ImageShape` on commit. The detection lives in `src/notebook/emoji-sticker.ts` — `isEmojiOnly()` walks `Intl.Segmenter` grapheme clusters and matches each against an Extended Pictographic / Regional Indicator / keycap regex (so flags, ZWJ family sequences, and skin-tone modifiers all stay together). When the test passes, `emojiToDataUrl()` paints the string into a DPR-aware `<canvas>` at the platform's color emoji font and `commitText` swaps the new (or just-edited) shape over to an image of `STICKER_SIZE` × `STICKER_SIZE` (100 px). Stickers scale, crop, layer, pocket, and export like any other image; replacing an existing text shape with a sticker also drops it from the flowchart layer because images aren't flowable.
 
-### Saved text styles
+### Colors menu (text + background + saved styles)
 
-Selecting a text shape surfaces a **Style** button on the selection toolbar that opens a row of every saved preset, plus a **+ Style** capture button at the end. Clicking a chip applies its `{color, backgroundColor, fontSize}` triple to every selected text shape via `DrawingState.applyTextStyle()`. Clicking **+ Style** snapshots the first selected text shape's combo and saves it. Hovering a chip reveals a small `×` for one-click delete.
+Selecting any text or drag-area shape surfaces a single **Colors** button on the selection toolbar (`ui/selection-toolbar.ts::makeColorsMenu`). The popup stacks three sections:
 
-The list is **app-wide**, not per-notebook — it lives in `AppSettings.notebookTextStyles` (`Vec<serde_json::Value>` on the Rust side, kept opaque so the JS owns the `{id, color, backgroundColor, fontSize}` shape) and round-trips through the standard `state.updateSettings({ notebookTextStyles })` path. The UI reads the list from `__hushState__.settings.notebookTextStyles` on each open, so newly-added entries appear without an explicit re-render path.
+- **Text** — palette swatches mapped through `DrawingState.changeSelectedColor()`. Hidden when the selection has no text shape.
+- **Bg** — palette swatches routed through `DrawingState.changeSelectedBackground()` (sets `backgroundColor` on text shapes; for drag-areas it derives matching stroke + 4 % fill).
+- **Styles** — every saved `{color, backgroundColor, fontSize}` preset rendered as an `Aa` chip. Clicking a chip applies the preset via `DrawingState.applyTextStyle()`. **+ Style** snapshots the first selected text shape's combo and saves it. **Clear** resets text colour to the default and clears the background. Hovering a chip reveals a small `×` for one-click delete. The Styles row is hidden when the selection has no text shape.
+
+Saved presets are **app-wide**, not per-notebook — they live in `AppSettings.notebookTextStyles` (`Vec<serde_json::Value>` on the Rust side, kept opaque so the JS owns the `{id, color, backgroundColor, fontSize}` shape) and round-trip through the standard `state.updateSettings({ notebookTextStyles })` path. The UI reads the list from `__hushState__.settings.notebookTextStyles` on each open, so newly-added entries appear without an explicit re-render path.
 
 ### Shelf panel
 
@@ -235,7 +239,8 @@ Right-side slide-out panel listing every shape organized by its drag-area contai
 
 - **Resizable** — the shelf's left edge is a hover-revealed drag handle (mirrors the sidebar's resizer pattern). The width is clamped to 200 px.. 60% of the viewport and persists in `notebookShelfWidth`. The shelf's open/close `transition: width 0.2s` is suspended for the duration of the drag so the rendered width tracks the cursor instead of chasing it.
 - **Flowchart outline** — text shapes that participate in a flowchart edge are nested under their flow parent (depth = flow-tree depth) instead of rendering flat, with a small `→` marker on every flow node. Scoping is per drag-area, so a flow that spans drag-areas surfaces as multiple roots. Non-flow shapes still render at depth 0/1 as before.
-- **Heading rows** — when a text shape's first line starts with `#..######` followed by a space, the marker is stripped and the row renders bold; the rest of the body still feeds search.
+- **Markdown formatting** — `buildLabel` strips a leading `#..######` heading marker (the row renders bold) and a leading `> ` blockquote marker (the row renders italic with a left rule + soft tinted background and a leading `“` glyph). Inline `==highlight==` runs are preserved in the label and `renderLabelInline` paints them with the same yellow background used by the search-snippet renderer. Originals still feed the search index.
+- **Selection sync** — when a shape is selected on the canvas, its shelf row tints with the theme accent (background + 3 px left rail). The sync is automatic — the panel already re-renders on every `change` event, and `state.notify("selectedIds")` fires through the same channel.
 - **Attached panes only** — `getNotebookCanvasPanes()` filters to `pane.attached === true`. Globally-pinned panes float across every document and aren't part of any one notebook's outline, so they're omitted from the shelf along with free-floating local panes. Clicking a pane row routes through `focusAndCenterPaneById()`, which reuses the search-result `centerPaneInViewport()` helper so the pane both pops to the front and recentres on screen.
 
 ## Development Rules

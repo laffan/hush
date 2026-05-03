@@ -58,7 +58,6 @@ export class NotesCanvas {
   private _cleanupInput: (() => void) | null = null;
   private _cleanupDropTarget: (() => void) | null = null;
   private _cleanupPaneListener: (() => void) | null = null;
-  private _shelfItems: string[] = [];
   private _shelfPanel: HTMLElement | null = null;
   private _shelfResizer: HTMLElement | null = null;
   private _drawingLayer: DrawingLayer | null = null;
@@ -92,15 +91,7 @@ export class NotesCanvas {
     this.state.canvasEl = this._canvas;
 
     // Bind input events
-    this._cleanupInput = bindInputEvents(this._canvas, this.state, {
-      onShelfDrop: (idx, x, y) => {
-        if (idx < 0 || idx >= this._shelfItems.length) return;
-        const text = this._shelfItems[idx];
-        this.state.addTextShapeAtPosition(text, { x, y });
-        this._shelfItems.splice(idx, 1);
-        this._rebuildShelf();
-      },
-    }, shortcuts);
+    this._cleanupInput = bindInputEvents(this._canvas, this.state, shortcuts);
 
     // Update cursor on tool change
     const cursorMap: Record<string, string> = {
@@ -260,17 +251,6 @@ export class NotesCanvas {
 
     // Build UI — no settings panel or file panel (Hush manages those)
     const shelfCallbacks = {
-      shelfItems: this._shelfItems,
-      onRemoveShelfItem: (i: number) => {
-        this._shelfItems.splice(i, 1);
-        this._rebuildShelf();
-      },
-      onRestoreShelfItem: (i: number) => {
-        const text = this._shelfItems[i];
-        this.state.addTextShapeAtCenter(text);
-        this._shelfItems.splice(i, 1);
-        this._rebuildShelf();
-      },
       // Surface notebook panes inside the shelf so their text content
       // is searchable next to the canvas's own shapes. The list is read
       // live on every rebuild so editor edits show up without a
@@ -284,7 +264,7 @@ export class NotesCanvas {
       })(),
     };
 
-    container.appendChild(createSelectionToolbar(this.state, () => this._moveToShelf()));
+    container.appendChild(createSelectionToolbar(this.state));
     container.appendChild(createTextEditor(this.state));
     container.appendChild(createBrainstormInput(this.state));
     const bottomToolbar = createToolbar(this.state);
@@ -343,7 +323,7 @@ export class NotesCanvas {
     if (typeof window !== "undefined") {
       const appState = (window as unknown as { __hushState__?: { on(ev: string, fn: () => void): void; off(ev: string, fn: () => void): void } }).__hushState__;
       if (appState && typeof appState.on === "function") {
-        const handler = () => this._rebuildShelf();
+        const handler = () => this.state.notify("shapes");
         appState.on("notebook-pane-changed", handler);
         this._cleanupPaneListener = () => appState.off("notebook-pane-changed", handler);
       }
@@ -540,18 +520,6 @@ export class NotesCanvas {
     }
   }
 
-  private _moveToShelf() {
-    const texts = this.state.moveSelectedToShelf();
-    if (texts.length > 0) {
-      this._shelfItems.unshift(...texts);
-      this._rebuildShelf();
-    }
-  }
-
-  private _rebuildShelf() {
-    // Force a state change notification so shelf rebuilds
-    this.state.notify("shapes");
-  }
 }
 
 function hexToRgba(hex: string, alpha: number): string {
