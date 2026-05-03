@@ -41,10 +41,10 @@ function humanizeRuleName(name) {
 }
 
 /** Per-rule descriptions for the curated set in `commands/grammar.rs`.
- *  Kept short (one sentence) — the rule name itself + checkbox is the
- *  primary signal, the description is the "what does this catch?"
- *  hint underneath. Anything not in this map falls back to the
- *  humanized rule name so a future harper bump doesn't crash the UI. */
+ *  Kept short (one sentence) — the rule name is the primary signal,
+ *  the description is a "what does this catch?" hint underneath.
+ *  Anything not in this map falls back to the humanized rule name so a
+ *  future harper bump doesn't crash the UI. */
 const RULE_DESCRIPTIONS = {
   SpellCheck: "Underline words harper doesn't recognize.",
   LongSentences: "Flag sentences longer than ~40 words.",
@@ -85,14 +85,20 @@ function descriptionFor(rule) {
 export function renderProofreadTab(settings) {
   const disabled = new Set(settings.proofreadDisabledRules || []);
   const rules = _cachedRules || [];
+  // Each row reuses the `.settings-row` shape from D.R.Y.'s Detection
+  // section — left-aligned label, right-aligned control, thin
+  // border-bottom between rows — and stacks a small dimmed
+  // description under the rule name.
   const rulesHtml = rules.length
     ? rules.map((rule) => `
-        <div class="proofread-rule-row">
+        <div class="settings-row proofread-rule-row">
+          <div class="proofread-rule-label">
+            <div class="proofread-rule-name">${escHtml(humanizeRuleName(rule))}</div>
+            <div class="proofread-rule-description">${escHtml(descriptionFor(rule))}</div>
+          </div>
           <input type="checkbox" id="proofread-rule-${escAttr(rule)}"
                  data-rule="${escAttr(rule)}"
                  ${disabled.has(rule) ? "" : "checked"} />
-          <label for="proofread-rule-${escAttr(rule)}">${escHtml(humanizeRuleName(rule))}</label>
-          <div class="proofread-rule-description">${escHtml(descriptionFor(rule))}</div>
         </div>
       `).join("")
     : `<p class="settings-help">Loading rules…</p>`;

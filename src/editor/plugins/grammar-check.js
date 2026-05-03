@@ -7,9 +7,11 @@
  * companion `hoverTooltip` reuses the same cache to surface the harper
  * message + suggestions on hover.
  *
- * While harper is running — the first run can take a couple of seconds
- * because the curated dictionary is built lazily — a "Checking grammar…"
- * pill appears beside the word count slot via `setGrammarLoadingPill`.
+ * The very first run after toggling proofread on bypasses the debounce —
+ * harper's curated dictionary takes a few seconds to build, and waiting
+ * 1.5 s before that work begins makes the mode feel broken. A centered
+ * "Proofreading…" modal stays up across the whole span (toggle → underline
+ * paint) so the user never wonders whether anything is happening.
  *
  * Doc-only — the toggle short-circuits when a notebook is open.
  */
@@ -23,23 +25,25 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 const _viewState = new WeakMap();
 let _activeRunCount = 0;
+let _modalEl = null;
 
-/** Show / hide the "Checking grammar…" pill. Mounted into
- *  `#editor-container` once on first call so it inherits the editor's
- *  centring and font, and toggled via the `.visible` class. */
-export function setGrammarLoadingPill(visible) {
-  let pill = document.getElementById("hush-grammar-loading-pill");
-  if (!pill) {
+/** Show / hide the centered "Proofreading…" modal. Mounted on <body>
+ *  the first time it's needed so it floats above every other surface
+ *  for the duration of the run. */
+export function setProofreadLoadingModal(visible) {
+  if (!_modalEl) {
     if (!visible) return;
-    const container = document.getElementById("editor-container");
-    if (!container) return;
-    pill = document.createElement("div");
-    pill.id = "hush-grammar-loading-pill";
-    pill.className = "hush-grammar-loading-pill";
-    pill.textContent = "Checking grammar…";
-    container.appendChild(pill);
+    _modalEl = document.createElement("div");
+    _modalEl.className = "hush-proofread-loading-modal";
+    const spinner = document.createElement("span");
+    spinner.className = "hush-proofread-loading-spinner";
+    const label = document.createElement("span");
+    label.textContent = "Proofreading…";
+    _modalEl.appendChild(spinner);
+    _modalEl.appendChild(label);
+    document.body.appendChild(_modalEl);
   }
-  pill.classList.toggle("visible", visible);
+  _modalEl.classList.toggle("visible", visible);
 }
 
 async function runGrammarCheck(text, disabledRules) {
@@ -66,7 +70,7 @@ export function createGrammarCheckPlugin(stateRef) {
         this._timer = null;
         _viewState.set(view, { issues: [], lastText: null, runId: 0 });
         this.decorations = Decoration.none;
-        if (stateRef.proofreadMode) this.scheduleCheck();
+        if (stateRef.proofreadMode) this.runCheckNow();
       }
 
       destroy() {
@@ -91,7 +95,13 @@ export function createGrammarCheckPlugin(stateRef) {
           return;
         }
 
-        if (active && (flipped || update.docChanged)) {
+        if (active && flipped) {
+          // Toggle just flipped on — fire immediately so the loading
+          // modal is up across the whole cold-start dictionary build,
+          // not after a 1.5 s pause.
+          if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+          this.runCheckNow();
+        } else if (active && update.docChanged) {
           this.scheduleCheck();
         }
 
@@ -114,7 +124,7 @@ export function createGrammarCheckPlugin(stateRef) {
         const myRun = ++s.runId;
         const disabledRules = stateRef.settings?.proofreadDisabledRules || [];
         _activeRunCount++;
-        if (_activeRunCount === 1) setGrammarLoadingPill(true);
+        if (_activeRunCount === 1) setProofreadLoadingModal(true);
         try {
           const issues = await runGrammarCheck(text, disabledRules);
           if (myRun !== s.runId) return;
@@ -124,9 +134,14 @@ export function createGrammarCheckPlugin(stateRef) {
           try {
             this.view.dispatch({ annotations: grammarRedecorate.of(true) });
           } catch (_) { /* view destroyed */ }
+          // Hold the modal across one paint frame so the underlines
+          // are visibly rendered before it disappears. Without this
+          // the modal can vanish a frame before the orange ink lands,
+          // which reads as nothing happening.
+          await new Promise((r) => requestAnimationFrame(r));
         } finally {
           _activeRunCount = Math.max(0, _activeRunCount - 1);
-          if (_activeRunCount === 0) setGrammarLoadingPill(false);
+          if (_activeRunCount === 0) setProofreadLoadingModal(false);
         }
       }
 
