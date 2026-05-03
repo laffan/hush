@@ -66,10 +66,11 @@ const icons = {
   export: wrapSvg(svgInner(exportRaw)),
   styles: wrapSvg(svgInner(stylesRaw)),
   zotero: wrapSvg(svgInner(zoteroRaw)),
-  // "Aa" with a diagonal slash — used for Proofread mode. Stroke-only
-  // paths so it picks up `stroke: currentColor; fill: none` from the
-  // palette icon CSS without per-row overrides.
-  proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="3" y1="21" x2="21" y2="3"/></svg>`,
+  // "Aa" with a shallow cross laid over the letters — two near-flat
+  // lines mirrored about the horizontal axis. Stroke-only paths so it
+  // picks up `stroke: currentColor; fill: none` from the palette icon
+  // CSS without per-row overrides.
+  proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="2" y1="14" x2="22" y2="10"/><line x1="2" y1="10" x2="22" y2="14"/></svg>`,
   doc: typeIcons.document,
   notebook: typeIcons.notebook,
   project: typeIcons.project,

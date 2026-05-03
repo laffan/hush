@@ -82,9 +82,10 @@ export class AppState {
     this.zenFocus = false;
     this.isFullscreen = false;
     // Doc-only Proofread mode (harper-core via the `check_grammar`
-    // Tauri command). Persisted via `proofreadMode` in settings so a
-    // user who left it on at quit returns to it. Sessions that never
-    // enable it pay no cost — the harper call is lazy.
+    // Tauri command). Intentionally NOT persisted between sessions —
+    // the first lint after enabling it has to build harper's curated
+    // dictionary, which adds a noticeable startup pause. Each session
+    // starts off; the user re-enables when they want it.
     this.proofreadMode = false;
 
     // Autosave interval
@@ -156,7 +157,6 @@ export class AppState {
         // Restore session state from settings
         this.typewriterMode = !!this.settings.typewriterMode;
         this.dryMode = !!this.settings.dryMode;
-        this.proofreadMode = !!this.settings.proofreadMode;
         this.runtime.pendingScrollPosition = this.settings.scrollPosition || null;
 
         if (initialFile && initialFile.fileId && initialFile.fileType) {

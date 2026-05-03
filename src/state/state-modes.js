@@ -40,7 +40,9 @@ export function toggleProofread(state) {
   if (state.currentNotebookFileId) return;
   state.proofreadMode = !state.proofreadMode;
   state.emit("mode-changed");
-  state.updateSettings({ proofreadMode: state.proofreadMode });
+  // Deliberately not persisted — see the matching note in state.js.
+  // Each session starts with proofread off so the cold-start dictionary
+  // build doesn't gate startup.
 }
 
 export function toggleFocus(state) {
