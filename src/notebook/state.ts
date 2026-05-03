@@ -108,6 +108,7 @@ export class DrawingState extends EventTarget {
    *  from Steiner — see src/notebook/flowchart.ts for the portable API. */
   flowchart = new FlowchartLayer<Shape>({
     getBounds: (s) => getShapeBounds(s, this.fontFamily),
+    getLayoutBounds: (s) => this.unionGroupBounds(s),
     isFlowable: (s) => s.type === "text",
   });
   /** While dragging a single text shape, the id of the shape under the
@@ -535,6 +536,23 @@ export class DrawingState extends EventTarget {
     if (this._recentEditIds.length > 16) this._recentEditIds.shift();
   }
 
+  /** Bounds of `s` unioned with its group-mates. Used as the layout footprint
+   * for tidy so siblings don't overlap items grouped with a flowchart node. */
+  private unionGroupBounds(s: Shape): { minX: number; minY: number; maxX: number; maxY: number } {
+    const b = getShapeBounds(s, this.fontFamily);
+    if (!s.groupId) return b;
+    let { minX, minY, maxX, maxY } = b;
+    for (const o of this.shapes) {
+      if (o.id === s.id || o.groupId !== s.groupId) continue;
+      const ob = getShapeBounds(o, this.fontFamily);
+      if (ob.minX < minX) minX = ob.minX;
+      if (ob.minY < minY) minY = ob.minY;
+      if (ob.maxX > maxX) maxX = ob.maxX;
+      if (ob.maxY > maxY) maxY = ob.maxY;
+    }
+    return { minX, minY, maxX, maxY };
+  }
+
   /** Re-layout the flowchart subtree rooted at `rootId` via FlowchartLayer.tidy.
    * Root stays anchored; descendants move so siblings don't overlap. */
   tidySubtree(rootId: string): void {
@@ -550,6 +568,22 @@ export class DrawingState extends EventTarget {
       if (dx !== 0 || dy !== 0) deltas.set(id, { dx, dy });
     }
     if (deltas.size === 0) return;
+    // Group-mates of moved flowchart nodes follow along, mirroring the drag
+    // behavior — otherwise tidy tears groups apart by leaving non-flowchart
+    // members behind.
+    const groupDeltas = new Map<string, { dx: number; dy: number }>();
+    for (const [id, d] of deltas) {
+      const sh = this.shapes.find((x) => x.id === id);
+      if (sh?.groupId) groupDeltas.set(sh.groupId, d);
+    }
+    if (groupDeltas.size > 0) {
+      for (const sh of this.shapes) {
+        if (sh.groupId && !deltas.has(sh.id)) {
+          const d = groupDeltas.get(sh.groupId);
+          if (d) deltas.set(sh.id, d);
+        }
+      }
+    }
     this.shapes = this.shapes.map((s) => {
       const d = deltas.get(s.id);
       return d ? moveShape(s, d.dx, d.dy) : s;
