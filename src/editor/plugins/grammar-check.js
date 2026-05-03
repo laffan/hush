@@ -125,6 +125,13 @@ export function createGrammarCheckPlugin(stateRef) {
         const disabledRules = stateRef.settings?.proofreadDisabledRules || [];
         _activeRunCount++;
         if (_activeRunCount === 1) setProofreadLoadingModal(true);
+        // Yield two animation frames before kicking off the Rust call.
+        // The first lets the browser commit the layout that includes
+        // the freshly-mounted modal; the second guarantees a paint has
+        // happened before any synchronous IPC scheduling spikes the
+        // main thread.
+        await new Promise((r) => requestAnimationFrame(r));
+        await new Promise((r) => requestAnimationFrame(r));
         try {
           const issues = await runGrammarCheck(text, disabledRules);
           if (myRun !== s.runId) return;

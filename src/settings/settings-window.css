@@ -706,3 +706,42 @@ html, body {
   background: rgba(128, 128, 128, 0.09);
 }
 #setting-dummy-text::placeholder { color: var(--sidebar-fg, #888); opacity: 0.6; }
+
+/* ===== Proofread tab — rule list ===== */
+/* Each rule reuses `.settings-row` (label left, control right, thin
+   border-bottom between rows). The label slot stacks the rule name
+   and a dimmer one-liner description. Top-aligned because the label
+   is two lines tall and centring it would float the checkbox over
+   the description. */
+.proofread-rules-list { margin-top: 12px; }
+
+.proofread-rule-row.settings-row {
+  align-items: flex-start;
+  padding: 12px 0;
+}
+
+.proofread-rule-label {
+  flex: 1;
+  padding-right: 16px;
+  min-width: 0;
+}
+
+.proofread-rule-name {
+  font-size: 14px;
+  color: var(--fg);
+  line-height: 1.3;
+}
+
+.proofread-rule-description {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--sidebar-fg, #888);
+  opacity: 0.75;
+  line-height: 1.45;
+  font-weight: 400;
+}
+
+.proofread-rule-row input[type="checkbox"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}

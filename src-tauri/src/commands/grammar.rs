@@ -106,39 +106,48 @@ fn suggestion_to_string(s: &Suggestion) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn check_grammar(
+pub async fn check_grammar(
     text: String,
     disabled_rules: Option<Vec<String>>,
 ) -> Result<Vec<GrammarIssue>, String> {
-    let dict = FstDictionary::curated();
-    let mut linter = LintGroup::new_curated(dict, Dialect::American);
-    if let Some(rules) = disabled_rules {
-        for rule in rules {
-            // `set_rule_enabled` is a no-op for unknown keys, so we
-            // don't need to guard against rules that no longer exist
-            // after a harper upgrade.
-            linter.config.set_rule_enabled(rule, false);
+    // Synchronous Tauri commands run on the WebView's main thread, so
+    // pinning harper's multi-second cold-start dictionary build there
+    // would freeze the JS side (beach ball cursor, no paint of the
+    // "Proofreading…" modal). Hop to the blocking thread pool so the
+    // UI stays responsive across the run.
+    tauri::async_runtime::spawn_blocking(move || {
+        let dict = FstDictionary::curated();
+        let mut linter = LintGroup::new_curated(dict, Dialect::American);
+        if let Some(rules) = disabled_rules {
+            for rule in rules {
+                // `set_rule_enabled` is a no-op for unknown keys, so we
+                // don't need to guard against rules that no longer exist
+                // after a harper upgrade.
+                linter.config.set_rule_enabled(rule, false);
+            }
         }
-    }
-    let document = Document::new_markdown_default_curated(&text);
-    let lints = linter.lint(&document);
+        let document = Document::new_markdown_default_curated(&text);
+        let lints = linter.lint(&document);
 
-    let mut out = Vec::with_capacity(lints.len());
-    for lint in lints {
-        let (from, to) = char_to_utf16_range(&text, lint.span.start, lint.span.end);
-        let suggestions = lint
-            .suggestions
-            .iter()
-            .filter_map(suggestion_to_string)
-            .collect();
-        out.push(GrammarIssue {
-            from,
-            to,
-            message: lint.message,
-            suggestions,
-        });
-    }
-    Ok(out)
+        let mut out = Vec::with_capacity(lints.len());
+        for lint in lints {
+            let (from, to) = char_to_utf16_range(&text, lint.span.start, lint.span.end);
+            let suggestions = lint
+                .suggestions
+                .iter()
+                .filter_map(suggestion_to_string)
+                .collect();
+            out.push(GrammarIssue {
+                from,
+                to,
+                message: lint.message,
+                suggestions,
+            });
+        }
+        out
+    })
+    .await
+    .map_err(|e| format!("grammar check task failed: {e}"))
 }
 
 /// Return the curated rule names so the Proofread settings tab can
