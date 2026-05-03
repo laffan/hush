@@ -417,6 +417,14 @@ export function createSidebar(container, state) {
     }
   });
 
+  // Multi-window: another window opened, closed, or changed its file —
+  // re-render so the per-window numeral badges track reality.
+  state.on("windows-changed", () => {
+    if (activePanel === "files") {
+      refreshFilesPanel(state);
+    }
+  });
+
   // Cmd+\ toggle support — force-show files (not toggle)
   state.on("show-files-panel", () => {
     if (activePanel === "versions") cleanupVersionsPanel();

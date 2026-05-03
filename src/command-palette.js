@@ -12,6 +12,7 @@ import { deleteTreeNode } from "./state/state-tree.js";
 import { getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition } from "./pane/pane-manager.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
+import { openInNewWindow } from "./multi-window.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
 import ratchetRaw from "./sidebar/sidebar_icons/ratchet.svg?raw";
@@ -63,10 +64,25 @@ const icons = {
   trash: `<polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" />`,
 };
 
+/** Detect whether we're running on a desktop Tauri build that supports
+ *  spawning additional windows. Multi-window is desktop-only — iOS /
+ *  iPadOS Tauri intentionally exposes a single window surface. */
+function isDesktopTauri() {
+  if (typeof window === "undefined") return false;
+  if (!window.__TAURI_INTERNALS__) return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/.test(ua)) return false;
+  const platform = navigator.platform || "";
+  const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  if (/Mac/i.test(platform) && tp > 0) return false; // iPadOS reporting as Mac
+  return true;
+}
+
 // Context: "shared" = always shown, "doc" = doc/project only, "notebook" = notebook only
 function buildCommands(state) {
   const inNotebook = !!state.currentNotebookFileId;
   const hasActivePane = getActivePaneId() != null;
+  const desktop = isDesktopTauri();
 
   const all = [
     // === SHARED ===
@@ -110,6 +126,16 @@ function buildCommands(state) {
     { id: "send-selected", label: "Send Selected", icon: icons.export, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterSendSelectedPicker(p, s) },
+    { id: "open-in-new-window", label: "Open in new window", icon: icons.files, shortcutKey: null, ctx: "desktop",
+      action: (s) => {
+        const fileId = s.currentNotebookFileId || s.currentProjectId || s.currentFileId;
+        const fileType = s.currentNotebookFileId
+          ? "notebook"
+          : s.currentProjectId ? "project"
+          : s.currentFileId ? "document" : null;
+        if (!fileId || !fileType) return;
+        openInNewWindow(fileId, fileType);
+      } },
     { id: "delete-current", label: "Delete current file", icon: icons.trash, iconViewBox: "0 0 16 16", shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const fileId = s.currentNotebookFileId || s.currentFileId;
@@ -194,6 +220,7 @@ function buildCommands(state) {
     if (cmd.ctx === "doc") return !inNotebook;
     if (cmd.ctx === "notebook") return inNotebook;
     if (cmd.ctx === "pane") return hasActivePane;
+    if (cmd.ctx === "desktop") return desktop;
     return true;
   });
 }

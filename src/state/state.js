@@ -23,6 +23,26 @@ function _isStyleRelevant(partial) {
   return false;
 }
 
+// Settings keys that belong to whichever window the user is currently
+// looking at, not to the shared app config. Secondary windows skip
+// disk-writing these (and the main window's on-disk values are
+// re-overlaid on every cross-window save) so opening a file in a child
+// window can't clobber the main window's restored session.
+const _PER_WINDOW_SETTINGS_KEYS = new Set([
+  "lastFileId",
+  "lastNotebookId",
+  "lastProjectId",
+  "scrollPosition",
+  "typewriterMode",
+  "dryMode",
+]);
+function _allKeysPerWindow(partial) {
+  if (!partial) return false;
+  const keys = Object.keys(partial);
+  if (keys.length === 0) return false;
+  return keys.every((k) => _PER_WINDOW_SETTINGS_KEYS.has(k));
+}
+
 export class AppState {
   constructor() {
     this.settings = createDefaultSettings();
@@ -34,6 +54,19 @@ export class AppState {
     this.files = [];
     this.fileTree = []; // Tree of TreeNode objects
     this.editor = null;
+
+    // Multi-window — populated by main.js after registering with the
+    // Rust-side WindowRegistry. `windowList` is the full list of open
+    // Hush windows (each entry: `{ label, number, fileId, fileType }`)
+    // and refreshes whenever any window opens, closes, or switches file.
+    // `currentWindowNumber` is this window's slot (1-indexed) — used by
+    // the sidebar to pick the right "self" badge style.
+    // `isSecondaryWindow` flips on for any non-"main" window so per-
+    // window settings (lastFileId, scrollPosition, mode toggles) skip
+    // the disk write that would clobber the main window's session.
+    this.windowList = [];
+    this.currentWindowNumber = 1;
+    this.isSecondaryWindow = false;
 
     // Project view state
     this.projectDocIds = []; // Ordered doc fileIds when viewing a project
@@ -101,7 +134,12 @@ export class AppState {
     };
   }
 
-  async init() {
+  async init(opts = {}) {
+    // `initialFile` overrides the usual "restore last file" branch — used
+    // by secondary windows opened via "Open in new window" so the new
+    // window lands on the file the user picked, not whatever the global
+    // `lastFileId` happens to be.
+    const initialFile = opts.initialFile || null;
     if (IS_TAURI) {
       try {
         Object.assign(this.settings, await tauriInvoke("get_settings"));
@@ -115,21 +153,41 @@ export class AppState {
         this.dryMode = !!this.settings.dryMode;
         this.runtime.pendingScrollPosition = this.settings.scrollPosition || null;
 
-        // Restore last open file/project/notebook
-        const lastProjectId = this.settings.lastProjectId;
-        const lastFileId = this.settings.lastFileId;
-        const lastNotebookId = this.settings.lastNotebookId;
-        if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
-          // Notebook restore is deferred to main.js via "notebook-open" event
-          this.currentNotebookFileId = lastNotebookId;
-        } else if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
-          await this.openProject(lastProjectId);
-        } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
-          await this.openFile(lastFileId);
-        } else if (this.files.length > 0) {
-          await this.openFile(this.files[0].id);
+        if (initialFile && initialFile.fileId && initialFile.fileType) {
+          // New-window startup path — main.js will mount the notebook /
+          // project surface based on the seeded fields below; we don't
+          // touch persisted lastFileId so the main window's session is
+          // unaffected when this window closes.
+          if (initialFile.fileType === "notebook"
+              && this.files.some(f => f.id === initialFile.fileId)) {
+            this.currentNotebookFileId = initialFile.fileId;
+          } else if (initialFile.fileType === "project"
+              && findNode(this.fileTree, initialFile.fileId)) {
+            await this.openProject(initialFile.fileId);
+          } else if (this.files.some(f => f.id === initialFile.fileId)) {
+            await this.openFile(initialFile.fileId);
+          } else if (this.files.length > 0) {
+            await this.openFile(this.files[0].id);
+          } else {
+            await this.newFile();
+          }
         } else {
-          await this.newFile();
+          // Restore last open file/project/notebook
+          const lastProjectId = this.settings.lastProjectId;
+          const lastFileId = this.settings.lastFileId;
+          const lastNotebookId = this.settings.lastNotebookId;
+          if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
+            // Notebook restore is deferred to main.js via "notebook-open" event
+            this.currentNotebookFileId = lastNotebookId;
+          } else if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
+            await this.openProject(lastProjectId);
+          } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
+            await this.openFile(lastFileId);
+          } else if (this.files.length > 0) {
+            await this.openFile(this.files[0].id);
+          } else {
+            await this.newFile();
+          }
         }
       } catch (e) {
         console.error("Failed to init from Tauri:", e);
@@ -274,6 +332,7 @@ export class AppState {
       try { await tauriInvoke("save_file_tree", { tree: this.fileTree }); }
       catch (e) { console.error("Save tree failed:", e); }
     } else { this._saveTreeLocal(); }
+    this._broadcastCrossWindow("files");
     this.emit("files-changed");
   }
 
@@ -527,10 +586,35 @@ export class AppState {
 
   async updateSettings(partial, opts = {}) {
     Object.assign(this.settings, partial);
+    // Secondary windows: skip disk writes for purely per-window updates,
+    // and on shared-key writes overlay the main window's per-window
+    // values from disk so we don't clobber its session state.
+    if (this.isSecondaryWindow) {
+      if (_allKeysPerWindow(partial)) {
+        this.emit("settings-changed");
+        return;
+      }
+      if (IS_TAURI) {
+        try {
+          const fresh = await tauriInvoke("get_settings");
+          const toSave = { ...this.settings };
+          for (const k of _PER_WINDOW_SETTINGS_KEYS) {
+            if (k in fresh) toSave[k] = fresh[k];
+          }
+          await tauriInvoke("save_settings", { settings: toSave });
+        } catch (e) { console.error("Settings save failed:", e); }
+      } else {
+        localStorage.setItem("hush_settings", JSON.stringify(this.settings));
+      }
+      this._broadcastCrossWindow("settings");
+      this.emit("settings-changed");
+      return;
+    }
     if (IS_TAURI) {
       try { await tauriInvoke("save_settings", { settings: this.settings }); }
       catch (e) { console.error("Settings save failed:", e); }
     } else { localStorage.setItem("hush_settings", JSON.stringify(this.settings)); }
+    this._broadcastCrossWindow("settings");
     this.emit("settings-changed");
 
     // Push style changes to `.hush/styles.json` when style-relevant fields
@@ -543,6 +627,16 @@ export class AppState {
         .then(m => m.pushStylesToDropbox(this))
         .catch(e => console.warn("style sync upload failed:", e));
     }
+  }
+
+  /** Fire-and-forget broadcast helper — tells sibling windows that
+   *  cross-window state mutated. Soft-fails when the multi-window helper
+   *  isn't available (browser dev / iOS). */
+  _broadcastCrossWindow(kind) {
+    if (!IS_TAURI) return;
+    import("../multi-window.js")
+      .then((m) => m.broadcastStateChange(kind))
+      .catch(() => { /* multi-window unavailable */ });
   }
 
   // Session state persistence

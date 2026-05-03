@@ -17,12 +17,29 @@ import { initCmdButton } from "./cmd-button.js";
 import { applyActiveStyle, applyFocusModeOpacity, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
+import {
+  getInitialFileFromHash,
+  getCurrentWindowLabel,
+  setupMultiWindow,
+} from "./multi-window.js";
 import "./font-imports.js";
 
 async function init() {
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   const state = new AppState();
-  await state.init();
+
+  // Detect which Tauri window we're running inside and whether this is a
+  // secondary "Open in new window" surface. The main window always
+  // restores from `lastFileId`; secondary windows seed from a hash
+  // payload (`#file=...&type=...`) and skip per-window setting writes.
+  if (IS_TAURI) {
+    try {
+      const label = await getCurrentWindowLabel();
+      state.isSecondaryWindow = label !== "main";
+    } catch (_) { /* fall back to main-window behaviour */ }
+  }
+  const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
+  await state.init({ initialFile });
   // Expose on window so lazy helpers (e.g. pane/text-drag.js's notebook-to-
   // doc image path) can reach the live AppState without a hard import cycle.
   if (typeof window !== "undefined") window.__hushState__ = state;
@@ -348,6 +365,9 @@ async function init() {
   });
 
   await setupTauriIntegration(state);
+  // Multi-window: register with the Rust registry, mirror current file
+  // back, listen for sibling-window mutations. See `multi-window.js`.
+  await setupMultiWindow(state);
 
   // Apply initial always-on-top setting
   if (IS_TAURI) {
@@ -366,7 +386,19 @@ async function init() {
     });
     await listen("settings-updated", async (event) => {
       const newSettings = event.payload;
-      Object.assign(state.settings, newSettings);
+      // Preserve this window's per-window session keys — the settings
+      // window's saved payload carries whichever lastFileId it picked
+      // up at open time (typically main's), and merging it blindly
+      // would yank a secondary window's view back to main's file.
+      const keepPerWindow = state.isSecondaryWindow ? {
+        lastFileId: state.settings.lastFileId,
+        lastNotebookId: state.settings.lastNotebookId,
+        lastProjectId: state.settings.lastProjectId,
+        scrollPosition: state.settings.scrollPosition,
+        typewriterMode: state.settings.typewriterMode,
+        dryMode: state.settings.dryMode,
+      } : {};
+      Object.assign(state.settings, newSettings, keepPerWindow);
 
       // If there's an active style, apply it; otherwise apply standard settings
       if (state.settings.activeStyleId) {

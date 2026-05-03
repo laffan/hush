@@ -37,6 +37,19 @@ function getIcon(item) {
   return typeIcons[item.type] || typeIcons.document;
 }
 
+/** Multi-window numeral badges for a tree row: one chip per window
+ *  currently displaying this file. Documents/notebooks key off `fileId`,
+ *  projects off the tree-node `id`. Returns "" when fewer than two
+ *  Hush windows are open or no window matches. */
+function windowBadgesHtml(item, state) {
+  const list = state.windowList || [];
+  if (list.length < 2) return "";
+  const key = item.type === "project" ? item.id : item.fileId;
+  if (!key) return "";
+  const matches = list.filter(w => w.fileType === item.type && w.fileId === key);
+  return matches.map(w => `<span class="tree-window-badge">${w.number}</span>`).join("");
+}
+
 // Hover action buttons — no rename for untitled docs or special nodes, no flag in trash
 function actionButtons(nodeId, nodeType, inTrash, item) {
   if (nodeId === AppState.TRASH_ID) {
@@ -167,7 +180,7 @@ export function createFilesPanel(container, state, hidePanel) {
       const inTrash = state.isInTrash(item.id);
       const el = document.createElement("span");
       el.className = "tree-item-row" + (isActive ? " active" : "");
-      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${actionButtons(item.id, item.type, inTrash, item)}`;
+      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item)}`;
       if (item.type === "image" && item.fileId) {
         attachImageTooltipToRow(el, item.fileId, item.name);
       }

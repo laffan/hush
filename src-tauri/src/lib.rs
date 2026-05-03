@@ -16,6 +16,7 @@ mod commands;
 mod files;
 mod images;
 mod local_sync;
+mod multi_window;
 mod settings;
 mod snapshots;
 mod sync;
@@ -26,6 +27,7 @@ mod zotero;
 use files::FileManager;
 use images::ImageManager;
 use local_sync::LocalSyncManager;
+use multi_window::WindowRegistry;
 use settings::AppSettings;
 use snapshots::SnapshotManager;
 use sync::SyncManager;
@@ -39,6 +41,7 @@ pub struct AppState {
     pub sync_manager: Mutex<SyncManager>,
     pub zotero_manager: Mutex<ZoteroManager>,
     pub local_sync_manager: LocalSyncManager,
+    pub window_registry: WindowRegistry,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -171,6 +174,7 @@ pub fn run() {
             sync_manager: Mutex::new(sync_manager),
             zotero_manager: Mutex::new(zotero_manager),
             local_sync_manager,
+            window_registry: WindowRegistry::new(),
         })
         .setup(move |_app| {
             // Re-arm local-sync watchers for every folder persisted in
@@ -294,21 +298,37 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             #[cfg(desktop)]
-            if window.label() == "main" {
-                match event {
-                    WindowEvent::CloseRequested { api, .. } => {
-                        api.prevent_close();
-                        if let Some(state) = window.try_state::<AppState>() {
-                            save_window_geometry(window, &state);
+            {
+                let label = window.label().to_string();
+                if label == "main" {
+                    match event {
+                        WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            if let Some(state) = window.try_state::<AppState>() {
+                                save_window_geometry(window, &state);
+                            }
+                            let _ = window.hide();
                         }
-                        let _ = window.hide();
+                        WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                            if let Some(state) = window.try_state::<AppState>() {
+                                save_window_geometry(window, &state);
+                            }
+                        }
+                        _ => {}
                     }
-                    WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                } else if label != "settings" {
+                    // Secondary editor windows opened by "Open in new
+                    // window". When they're destroyed we drop them from
+                    // the registry so the sidebar's window-number badges
+                    // disappear in lockstep.
+                    if let WindowEvent::Destroyed = event {
                         if let Some(state) = window.try_state::<AppState>() {
-                            save_window_geometry(window, &state);
+                            state.window_registry.remove(&label);
+                            let _ = window
+                                .app_handle()
+                                .emit("windows-updated", state.window_registry.list());
                         }
                     }
-                    _ => {}
                 }
             }
             #[cfg(mobile)]
@@ -397,6 +417,11 @@ pub fn run() {
             #[cfg(desktop)]
             commands::window::set_always_on_top,
             commands::window::set_activation_policy,
+            commands::multi_window::list_windows,
+            commands::multi_window::register_window,
+            commands::multi_window::set_window_file,
+            commands::multi_window::unregister_window,
+            commands::multi_window::broadcast_state_change,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hush");
