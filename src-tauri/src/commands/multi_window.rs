@@ -63,3 +63,46 @@ pub fn broadcast_state_change(
     )
     .map_err(|e| e.to_string())
 }
+
+/// Broadcast a live document edit to every other window. Receivers
+/// whose currently-open doc matches `file_id` apply `content` to their
+/// editor in place so the user sees the same buffer in both windows
+/// without waiting for the autosave round-trip.
+#[tauri::command]
+pub fn broadcast_doc_changed(
+    app: AppHandle,
+    file_id: String,
+    content: String,
+    originator: String,
+) -> Result<(), String> {
+    app.emit(
+        "cross-window-doc-changed",
+        serde_json::json!({
+            "fileId": file_id,
+            "content": content,
+            "originator": originator,
+        }),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Broadcast a notebook save (JSON envelope) so other windows showing
+/// the same notebook can call `reloadNotebookShapes` and reflect the
+/// new shape set without remounting the canvas.
+#[tauri::command]
+pub fn broadcast_notebook_changed(
+    app: AppHandle,
+    file_id: String,
+    content: String,
+    originator: String,
+) -> Result<(), String> {
+    app.emit(
+        "cross-window-notebook-changed",
+        serde_json::json!({
+            "fileId": file_id,
+            "content": content,
+            "originator": originator,
+        }),
+    )
+    .map_err(|e| e.to_string())
+}

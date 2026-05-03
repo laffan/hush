@@ -108,7 +108,16 @@ async function init() {
   });
   state.on("notebook-autosave", async () => {
     const result = await saveNotebook();
-    if (result) state.syncFileToExternal(result.fileId, result.content);
+    if (result) {
+      state.syncFileToExternal(result.fileId, result.content);
+      // Fan the fresh envelope out to sibling windows so any one of them
+      // currently displaying the same notebook can `reloadNotebookShapes`
+      // and pick up the new shape set without remounting.
+      state.emit("notebook-cross-window-broadcast", {
+        fileId: result.fileId,
+        content: result.content,
+      });
+    }
   });
   state.on("notebook-sync-reload", (content) => {
     reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));

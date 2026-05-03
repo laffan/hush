@@ -161,21 +161,65 @@ export async function broadcastStateChange(kind) {
   }
 }
 
+/** Push a live document edit to other windows. Debounced by callers —
+ *  see `setupMultiWindow`'s 250 ms doc-content-changed throttle. */
+export async function broadcastDocChanged(fileId, content) {
+  if (!IS_TAURI) return;
+  if (!fileId) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const originator = await getLabel();
+    await invoke("broadcast_doc_changed", { fileId, content, originator });
+  } catch (e) {
+    console.warn("broadcast_doc_changed failed:", e);
+  }
+}
+
+/** Push a notebook envelope (JSON) to other windows. Fired from the
+ *  2 s notebook autosave so siblings can `reloadNotebookShapes`. */
+export async function broadcastNotebookChanged(fileId, content) {
+  if (!IS_TAURI) return;
+  if (!fileId) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const originator = await getLabel();
+    await invoke("broadcast_notebook_changed", { fileId, content, originator });
+  } catch (e) {
+    console.warn("broadcast_notebook_changed failed:", e);
+  }
+}
+
 /** Subscribe to cross-window events. Returns an unsubscribe function
- *  that detaches both listeners. */
-export async function subscribeCrossWindow({ onWindowsUpdated, onStateChanged }) {
+ *  that detaches every listener. */
+export async function subscribeCrossWindow({
+  onWindowsUpdated,
+  onStateChanged,
+  onDocChanged,
+  onNotebookChanged,
+}) {
   if (!IS_TAURI) return () => {};
   const { listen } = await import("@tauri-apps/api/event");
   const myLabel = await getLabel();
-  const u1 = await listen("windows-updated", (event) => {
+  const us = [];
+  us.push(await listen("windows-updated", (event) => {
     if (typeof onWindowsUpdated === "function") onWindowsUpdated(event.payload || []);
-  });
-  const u2 = await listen("cross-window-state-changed", (event) => {
+  }));
+  us.push(await listen("cross-window-state-changed", (event) => {
     const { kind, originator } = event.payload || {};
     if (originator === myLabel) return; // our own echo
     if (typeof onStateChanged === "function") onStateChanged(kind);
-  });
-  return () => { try { u1(); } catch (_) {} try { u2(); } catch (_) {} };
+  }));
+  us.push(await listen("cross-window-doc-changed", (event) => {
+    const { fileId, content, originator } = event.payload || {};
+    if (originator === myLabel) return;
+    if (typeof onDocChanged === "function") onDocChanged(fileId, content);
+  }));
+  us.push(await listen("cross-window-notebook-changed", (event) => {
+    const { fileId, content, originator } = event.payload || {};
+    if (originator === myLabel) return;
+    if (typeof onNotebookChanged === "function") onNotebookChanged(fileId, content);
+  }));
+  return () => { for (const u of us) { try { u(); } catch (_) {} } };
 }
 
 /** Resolve `(state) → { fileId, fileType }` for whichever surface is
@@ -188,33 +232,23 @@ function currentFileFromState(state) {
   return { fileId: null, fileType: null };
 }
 
-/** End-to-end multi-window wiring for `main.js`. Registers this window
- *  with the Rust registry, seeds `state.windowList` / `currentWindow-
- *  Number`, mirrors current-file changes back into the registry, and
- *  applies cross-window settings / file-tree mutations to the local
- *  AppState. The helper exists in this module (rather than inline in
- *  `main.js`) so the entry point stays under the project's 700-line
- *  cap. Soft-fails when Tauri APIs aren't available. */
+/** End-to-end multi-window wiring for `main.js`. Subscribes to every
+ *  cross-window event first (so the upcoming register/push echoes feed
+ *  back through the same pipe and `state.windowList` populates without
+ *  a separate fetchWindowList round-trip), then claims this window's
+ *  number from the Rust registry and pushes the currently-open file.
+ *
+ *  Beyond registry maintenance, this helper also drives live content
+ *  sync: doc keystrokes broadcast (debounced 250 ms) so siblings can
+ *  apply the buffer in place; notebook autosaves broadcast their JSON
+ *  envelope so siblings can `reloadNotebookShapes`. The helper lives
+ *  in this module rather than inline in `main.js` to keep the entry
+ *  point under the project's 700-line cap. */
 export async function setupMultiWindow(state) {
   if (!IS_TAURI) return;
-  try {
-    const info = await registerThisWindow();
-    state.currentWindowNumber = info?.number || 1;
-    state.windowList = await fetchWindowList();
-    state.emit("windows-changed");
-    const { fileId, fileType } = currentFileFromState(state);
-    await pushCurrentFile(fileId, fileType);
-  } catch (e) {
-    console.warn("Multi-window registration failed:", e);
-  }
 
-  const syncWindowFile = () => {
-    const { fileId, fileType } = currentFileFromState(state);
-    pushCurrentFile(fileId, fileType);
-  };
-  state.on("file-opened", syncWindowFile);
-  state.on("notebook-open", syncWindowFile);
-
+  // Subscribe BEFORE register/push so the broadcasts that those calls
+  // emit are picked up as our own initial windowList population.
   await subscribeCrossWindow({
     onWindowsUpdated: (list) => {
       state.windowList = list || [];
@@ -248,10 +282,95 @@ export async function setupMultiWindow(state) {
         console.warn("Failed to apply cross-window state change:", e);
       }
     },
+    onDocChanged: (fileId, content) => applyRemoteDocChange(state, fileId, content),
+    onNotebookChanged: (fileId, content) => applyRemoteNotebookChange(state, fileId, content),
+  });
+
+  try {
+    const info = await registerThisWindow();
+    state.currentWindowNumber = info?.number || 1;
+    const { fileId, fileType } = currentFileFromState(state);
+    await pushCurrentFile(fileId, fileType);
+  } catch (e) {
+    console.warn("Multi-window registration failed:", e);
+  }
+
+  const syncWindowFile = () => {
+    const { fileId, fileType } = currentFileFromState(state);
+    pushCurrentFile(fileId, fileType);
+  };
+  state.on("file-opened", syncWindowFile);
+  state.on("notebook-open", syncWindowFile);
+
+  // Live doc broadcast — fires on the doc-content-changed pulse main.js
+  // adds to markDirty(). Debounced so a fast typist doesn't flood the
+  // event bus, but well under the 2 s autosave so the other window
+  // sees the buffer mid-paragraph rather than only on save.
+  let docBroadcastTimer = null;
+  state.on("doc-content-changed", () => {
+    if (state.runtime.syncPulling) return; // we're applying a sibling's edit
+    if (!state.currentFileId) return;
+    if (state.currentProjectId) return; // project view = joined virtual buffer
+    if (!state.editor) return;
+    const fileId = state.currentFileId;
+    clearTimeout(docBroadcastTimer);
+    docBroadcastTimer = setTimeout(() => {
+      try { broadcastDocChanged(fileId, state.editor.getContent()); }
+      catch (_) { /* editor torn down */ }
+    }, 250);
+  });
+
+  // Notebook envelopes ride the existing 2 s autosave — main.js calls
+  // `saveNotebook()` on the `notebook-autosave` event and re-emits the
+  // result through `notebook-cross-window-broadcast` for us to pick up.
+  state.on("notebook-cross-window-broadcast", ({ fileId, content }) => {
+    if (state.runtime.syncPulling) return;
+    if (!fileId) return;
+    broadcastNotebookChanged(fileId, content);
   });
 
   // Best-effort cleanup — Rust drops us from the registry on
   // `WindowEvent::Destroyed`, but the JS unload path beats that for the
   // "user closed the window" case.
   window.addEventListener("beforeunload", () => { unregisterThisWindow(); });
+}
+
+/** Apply a sibling window's live doc edit to the local editor when our
+ *  current file matches. Preserves the cursor / selection across the
+ *  setContent dispatch (clamped to the new content length) and uses the
+ *  existing pull-lock plumbing so the resulting docChanged round-trip
+ *  doesn't mark the editor dirty (and doesn't re-broadcast). */
+function applyRemoteDocChange(state, fileId, content) {
+  if (!state.editor) return;
+  if (state.currentFileId !== fileId) return;
+  const view = state.editor.view;
+  const sel = view.state.selection.main;
+  const anchor = Math.min(sel.anchor, content.length);
+  const head = Math.min(sel.head, content.length);
+  state.acquirePullLock(fileId);
+  try {
+    state.editor.setContent(content);
+    try { view.dispatch({ selection: { anchor, head } }); } catch (_) {}
+  } finally {
+    state.releasePullLock();
+  }
+  state.dirty = false;
+}
+
+/** Apply a sibling notebook save to our open canvas via the lazy
+ *  notebook bridge. Acquires the pull lock so the reload doesn't loop
+ *  back through the autosave path. */
+async function applyRemoteNotebookChange(state, fileId, content) {
+  if (state.currentNotebookFileId !== fileId) return;
+  state.acquirePullLock(fileId);
+  try {
+    const m = await import("./notebook/notebook-bridge.js");
+    if (typeof m.reloadNotebookShapes === "function") {
+      await m.reloadNotebookShapes(content);
+    }
+  } catch (e) {
+    console.warn("Failed to apply remote notebook change:", e);
+  } finally {
+    state.releasePullLock();
+  }
 }
