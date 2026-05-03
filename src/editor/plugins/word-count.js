@@ -59,8 +59,47 @@ function recompute(state) {
   if (state.editor && state.editor.getContent) {
     text = state.editor.getContent();
   }
+  // In project mode the editor holds every doc joined by
+  // `---hush-separator---`. Show two counts: the doc the cursor is
+  // inside / the entire project. Slip back to the single-count form
+  // when the cursor isn't locatable (no view, no selection).
+  if (state.currentProjectId && text.includes("---hush-separator---")) {
+    const total = countWords(text);
+    const cursor = getProjectCursorPos(state);
+    if (cursor != null) {
+      const segment = sliceProjectSegmentAt(text, cursor);
+      const current = countWords(segment);
+      wordCountEl.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} ${total === 1 ? "word" : "words"}`;
+      return;
+    }
+  }
   const n = countWords(text);
   wordCountEl.textContent = `${n.toLocaleString()} ${n === 1 ? "word" : "words"}`;
+}
+
+function getProjectCursorPos(state) {
+  try {
+    const view = state.editor?.view;
+    if (!view) return null;
+    return view.state.selection.main.head;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Return the slice of the joined project buffer that surrounds `pos`,
+ *  i.e. the text between the nearest preceding and following separator
+ *  lines (or document edges). */
+function sliceProjectSegmentAt(text, pos) {
+  const sep = "---hush-separator---";
+  let start = 0;
+  let idx = text.indexOf(sep);
+  while (idx !== -1 && idx < pos) {
+    start = idx + sep.length;
+    idx = text.indexOf(sep, start);
+  }
+  const end = idx === -1 ? text.length : idx;
+  return text.slice(start, end);
 }
 
 /** Call on every doc change to update the pill (debounced). */

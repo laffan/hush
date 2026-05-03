@@ -430,7 +430,7 @@
   font-size: 14px;
   font-weight: 600;
   line-height: 1.25;
-  padding-right: 28px;
+  padding-right: 56px;
   color: var(--fg);
   text-decoration: none;
 }
@@ -443,7 +443,8 @@
   color: var(--sidebar-fg);
   margin-top: 2px;
 }
-.fp-zotero-highlights .zh-refresh-btn {
+.fp-zotero-highlights .zh-refresh-btn,
+.fp-zotero-highlights .zh-back-arrow-btn {
   position: absolute;
   top: 6px;
   right: 8px;
@@ -458,7 +459,9 @@
   cursor: pointer;
   opacity: 0.7;
 }
-.fp-zotero-highlights .zh-refresh-btn:hover { opacity: 1; }
+.fp-zotero-highlights .zh-back-arrow-btn { right: 36px; }
+.fp-zotero-highlights .zh-refresh-btn:hover,
+.fp-zotero-highlights .zh-back-arrow-btn:hover { opacity: 1; }
 
 .fp-zotero-highlights .zh-annot-search {
   margin-top: 8px;

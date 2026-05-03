@@ -106,12 +106,13 @@ function buildCommands(state) {
           createPane(created.fileId, created.name, "notebook", x, y);
         }
       } },
-    { id: "open-file", label: "Open document or notebook", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "open-file", label: "Open document, notebook, or project", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {
         if (f.type === "notebook") s.openNotebook(f.fileId);
+        else if (f.type === "project") s.openProject(f.fileId);
         else s.openFile(f.fileId);
-      }) },
+      }, { includeProjects: true }) },
     { id: "open-pane", label: "Open document or notebook as pane", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {
@@ -225,20 +226,25 @@ function buildCommands(state) {
   });
 }
 
-/** Walk the file tree and return real document/notebook leaves, skipping
- *  the Images and Trash subtrees. */
+/** Walk the file tree and return real document/notebook leaves plus
+ *  project nodes, skipping the Images and Trash subtrees. Projects are
+ *  surfaced in their own right (not just walked into) so the Cmd+O
+ *  picker can open them as joined views. */
 function collectFileLeaves(fileTree) {
   const out = [];
-  function walk(nodes, skip) {
+  function walk(nodes) {
     for (const n of nodes) {
       if (n.id === "__trash__" || n.id === "__images__") continue;
       if ((n.type === "document" || n.type === "notebook") && n.fileId) {
         out.push({ id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId });
       }
-      if (n.children?.length) walk(n.children, skip);
+      if (n.type === "project") {
+        out.push({ id: n.id, name: n.name || "Untitled", type: "project", fileId: n.id });
+      }
+      if (n.children?.length) walk(n.children);
     }
   }
-  walk(fileTree || [], false);
+  walk(fileTree || []);
   return out;
 }
 
@@ -263,13 +269,16 @@ function enterSendSelectedPicker(palette, state) {
 }
 
 /** Replace the palette's command list with file rows that pipe back into
- *  `onPick(fileLeaf)` on selection. Used by both "Open…" commands. */
-function enterFilePicker(palette, state, placeholder, onPick) {
-  const leaves = collectFileLeaves(state.fileTree);
+ *  `onPick(fileLeaf)` on selection. Used by both "Open…" commands.
+ *  `includeProjects` is opt-in because the floating-pane path doesn't
+ *  support project types — only the main editor can host the joined view. */
+function enterFilePicker(palette, state, placeholder, onPick, { includeProjects = false } = {}) {
+  let leaves = collectFileLeaves(state.fileTree);
+  if (!includeProjects) leaves = leaves.filter((f) => f.type !== "project");
   const items = leaves.map((f) => ({
     id: "file-" + f.id,
     label: f.name,
-    icon: f.type === "notebook" ? icons.notebook : icons.doc,
+    icon: f.type === "notebook" ? icons.notebook : f.type === "project" ? icons.project : icons.doc,
     shortcutKey: null,
     action: () => onPick(f),
   }));
@@ -367,8 +376,9 @@ export function openFilePalette(state, mode) {
   } else {
     enterFilePicker(api, state, "Open file…", (f) => {
       if (f.type === "notebook") state.openNotebook(f.fileId);
+      else if (f.type === "project") state.openProject(f.fileId);
       else state.openFile(f.fileId);
-    });
+    }, { includeProjects: true });
   }
 }
 

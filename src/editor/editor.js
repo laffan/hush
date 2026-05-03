@@ -347,6 +347,11 @@ export function createEditor(container, state) {
       state.trackKeystroke();
       scheduleWordCountRecompute(state);
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
+    } else if (update.selectionSet && state.currentProjectId) {
+      // Project mode shows a per-doc / total split — the per-doc half
+      // changes as the cursor crosses separators, so keep the pill
+      // synced on selection moves too.
+      scheduleWordCountRecompute(state);
     }
     if (update.selectionSet || update.docChanged) {
       try {

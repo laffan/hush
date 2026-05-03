@@ -236,6 +236,21 @@ async function renderAnnotationsView(pane, fromCacheFirst) {
   refreshBtn.textContent = "↻";
   refreshBtn.addEventListener("click", () => fetchAndPaint(pane, /* force */ true));
   header.appendChild(refreshBtn);
+  // Back arrow — drops the chosen reference and returns to the search
+  // view so a different paper can be picked. Cleared `pane.zotero` so a
+  // restart lands back in search instead of bouncing into annotations.
+  const backBtn = document.createElement("button");
+  backBtn.className = "zh-back-arrow-btn";
+  backBtn.title = "Back to reference search";
+  backBtn.textContent = "←";
+  backBtn.addEventListener("click", () => {
+    pane.zotero = null;
+    pane.fileName = "Zotero highlights";
+    setTitleText(pane, pane.fileName);
+    schedulePersist();
+    renderSearchView(pane);
+  });
+  header.appendChild(backBtn);
   root.appendChild(header);
 
   // Search bar
