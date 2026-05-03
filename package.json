@@ -30,6 +30,7 @@
     "@fontsource/lora": "^5.2.8",
     "@fontsource/source-sans-pro": "^5.2.5",
     "@fontsource/source-serif-pro": "^5.2.5",
+    "@lezer/highlight": "^1.2.3",
     "@lezer/markdown": "^1.6.3",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
@@ -44,7 +45,6 @@
     "esbuild": "^0.27.4",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^5.7.284",
-    "thememirror": "^2.0.1",
     "vite": "^8.0.0"
   },
   "devDependencies": {

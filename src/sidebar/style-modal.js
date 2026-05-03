@@ -6,7 +6,7 @@
  * list. Helpers shared with the list (escAttr/escHtml/migrateStyle/theme
  * color maps) live in styles-panel-shared.js.
  */
-import { themeList, getThemeById } from "../themes.js";
+import { themeList, getThemeById } from "../themes/index.js";
 import {
   escAttr,
   escHtml,

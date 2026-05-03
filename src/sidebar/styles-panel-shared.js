@@ -3,7 +3,7 @@
  * its own file so style-modal.js can import these without creating a
  * circular import with styles-panel.js.
  */
-import { getThemeById } from "../themes.js";
+import { getThemeById } from "../themes/index.js";
 
 export function escAttr(str) {
   return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");

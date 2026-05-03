@@ -3,7 +3,7 @@ import { createSidebar } from "./sidebar/sidebar.js";
 import { AppState } from "./state/state.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
 import { applyAppearance, isIOS, openSettingsWindow } from "./settings/settings-ui.js";
-import { getThemeById } from "./themes.js";
+import { getThemeById } from "./themes/index.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
 import { initZenFocus } from "./editor/zen-focus.js";

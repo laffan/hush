@@ -1,31 +1,30 @@
 /**
- * Theme registry — wraps thememirror themes for CodeMirror
+ * Theme registry — local replacements for the previous thememirror imports.
+ * Each theme lives in a sibling file built via `./_create-theme.js`.
  */
-import {
-  amy,
-  ayuLight,
-  barf,
-  bespin,
-  birdsOfParadise,
-  boysAndGirls,
-  clouds,
-  cobalt,
-  coolGlow,
-  dracula,
-  espresso,
-  noctisLilac,
-  rosePineDawn,
-  smoothy,
-  solarizedLight,
-  tomorrow,
-} from "thememirror";
+import { amy } from "./amy.js";
+import { ayuLight } from "./ayu-light.js";
+import { barf } from "./barf.js";
+import { bespin } from "./bespin.js";
+import { birdsOfParadise } from "./birds-of-paradise.js";
+import { boysAndGirls } from "./boys-and-girls.js";
+import { clouds } from "./clouds.js";
+import { cobalt } from "./cobalt.js";
+import { coolGlow } from "./cool-glow.js";
+import { dracula } from "./dracula.js";
+import { espresso } from "./espresso.js";
+import { noctisLilac } from "./noctis-lilac.js";
+import { rosePineDawn } from "./rose-pine-dawn.js";
+import { smoothy } from "./smoothy.js";
+import { solarizedLight } from "./solarized-light.js";
+import { tomorrow } from "./tomorrow.js";
 
 export const themeList = [
   // Light themes — headingColor matches each theme's accent/keyword tones
   { id: "ayuLight", name: "Ayu Light", type: "light", extension: ayuLight, headingColor: "#ff9940" },
   { id: "clouds", name: "Clouds", type: "light", extension: clouds, headingColor: "#af582a" },
   { id: "noctisLilac", name: "Noctis Lilac", type: "light", extension: noctisLilac, headingColor: "#8c4aff" },
-  { id: "rosePineDawn", name: "Ros\u00e9 Pine Dawn", type: "light", extension: rosePineDawn, headingColor: "#907aa9" },
+  { id: "rosePineDawn", name: "Rosé Pine Dawn", type: "light", extension: rosePineDawn, headingColor: "#907aa9" },
   { id: "solarizedLight", name: "Solarized Light", type: "light", extension: solarizedLight, headingColor: "#268bd2" },
   { id: "smoothy", name: "Smoothy", type: "light", extension: smoothy, headingColor: "#5a67d8" },
 

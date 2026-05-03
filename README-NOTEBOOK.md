@@ -17,7 +17,7 @@ src/notebook/
   external-content.ts     Clipboard / drag-drop / file helpers
   file-io.ts              Save/open .note files (JSZip) — unused in Hush (kept for reference)
   markdown.ts             Inline markdown parser: headings, bold, italic, links, highlights
-  themes.ts               16 canvas themes mapped from Hush's thememirror themes
+  themes.ts               16 canvas themes mirroring Hush's editor theme set
   types.ts                Shape types, constants, color palettes
   undo-manager.ts         Snapshot-based undo/redo (100 entries)
   utils.ts                Geometry, hit testing, text measurement, alignment, pocket layout
@@ -161,7 +161,7 @@ Two sibling files keep `renderer.ts` under the line limit while preserving purit
 
 ### Canvas themes
 
-16 themes mirrored from Hush's thememirror set, stored as flat objects with canvas-specific properties (`canvasBackground`, `foreground`, `headingColor`, `selection`, `accent`, `gridColor`, `uiBackground`, `uiBorder`). The active theme is resolved from the Hush editor style via `HUSH_TO_NOTEBOOK_THEME` in `notebook-bridge.js`.
+16 themes mirroring the Hush editor theme set (now self-contained under `src/themes/`), stored as flat objects with canvas-specific properties (`canvasBackground`, `foreground`, `headingColor`, `selection`, `accent`, `gridColor`, `uiBackground`, `uiBorder`). The active theme is resolved from the Hush editor style via `HUSH_TO_NOTEBOOK_THEME` in `notebook-bridge.js`.
 
 ### Shape types
 

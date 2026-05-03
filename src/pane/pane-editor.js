@@ -8,7 +8,7 @@
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
-import { getActiveTheme } from "../themes.js";
+import { getActiveTheme } from "../themes/index.js";
 import {
   createBaseExtensions, getMarkdownHighlight, buildShortcutExtension,
 } from "../editor/editor.js";

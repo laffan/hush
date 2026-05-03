@@ -6,7 +6,7 @@ import { tags, Tag } from "@lezer/highlight";
 import { Strikethrough } from "@lezer/markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-import { getActiveTheme } from "../themes.js";
+import { getActiveTheme } from "../themes/index.js";
 import { createPrivateModePlugin } from "./plugins/private-mode.js";
 import { createDryHighlightPlugin } from "./plugins/dry-highlight.js";
 import { createFootnotePlugin } from "./plugins/footnotes.js";

@@ -16,7 +16,10 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 ├── cmd-button.js                      │   ├── snapshots.rs
 ├── backup.js                          │   ├── local_sync.rs
 ├── theme-colors.js                    │   ├── window.rs
-├── themes.js                          │   ├── backup.rs
+├── themes/                            │   ├── backup.rs
+│   ├── index.js                       (themeList, getThemeById, getActiveTheme)
+│   ├── _create-theme.js               (EditorView.theme + HighlightStyle wrapper)
+│   └── <theme>.js × 16                (one file per built-in theme)
 ├── tauri-bridge.js                    │   └── zotero.rs
 ├── zotero.js                          │
 ├── zotero-snapshot.js                 ├── settings.rs
@@ -612,9 +615,13 @@ Runs in a separate Tauri WebviewWindow (desktop) or modal overlay (iOS). Loads/s
 
 Tab rendering is split into `settings-tabs.js` to keep file sizes under 700 lines. The three largest tabs were lifted further into siblings — `settings-tabs-shortcuts.js` (categories, conflict detection, search-filtered render), `settings-tabs-sync.js` (Dropbox states + Local Sync), and `settings-tabs-zotero.js` (credentials, references, PDF snapshot tuning). `settings-tabs.js` re-exports them so `settings-window.js` can keep its single barrel import.
 
-### Themes (`themes.js`)
+### Themes (`themes/`)
 
-Wraps [thememirror](https://github.com/vadimdemedes/thememirror). Exports `themeList` array of `{ id, name, type, extension }`. `getActiveTheme()` resolves current theme considering active style overrides and appearance setting.
+Each built-in theme lives in its own file under `src/themes/` (e.g. `dracula.js`, `ayu-light.js`). The data was lifted out of the `thememirror` npm package — the dependency is gone, and adding or tuning a theme is now a one-file edit. Each file calls a local `createTheme({ variant, settings, styles })` helper (`_create-theme.js`) that wraps `EditorView.theme()` + `HighlightStyle.define()` exactly as thememirror used to.
+
+`settings` carries the seven CodeMirror surface colours (`background`, `foreground`, `caret`, `selection`, `lineHighlight`, `gutterBackground`, `gutterForeground`). `styles` is intentionally minimal — only `t.comment` is preserved so HTML comments inside markdown still get a theme-tinted colour. The long tail of language-mode tags (keyword, typeName, className, etc.) was dropped during extraction; Hush is markdown-only, so the only affected surface is fenced-code-block syntax (which now renders in the foreground colour). Markdown-token typography (heading colour, bold, italic, link underline, etc.) is owned by `getMarkdownHighlight()` in `editor/editor.js`, layered on top.
+
+`themes/index.js` exports the `themeList` array of `{ id, name, type, extension, headingColor }` and the `getActiveTheme()` resolver, which considers the active style's theme overrides and the current appearance setting.
 
 **Light:** Ayu Light, Clouds, Noctis Lilac, Rose Pine Dawn, Solarized Light, Smoothy
 **Dark:** Amy, Barf, Bespin, Birds of Paradise, Boys and Girls, Cobalt, Cool Glow, Dracula, Espresso, Tomorrow
