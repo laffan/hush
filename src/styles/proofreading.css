@@ -1,25 +1,18 @@
-/* ===== Proofreading: spellcheck + grammar underlines, tooltip, pill ===== */
+/* ===== Proofreading: harper-core grammar underlines, tooltip, pill ===== */
 
-/* Browser-native red wavy underline for misspelled words. */
-.hush-spellcheck-error {
-  text-decoration: underline wavy rgba(220, 38, 38, 0.85);
-  text-decoration-skip-ink: none;
-  text-underline-offset: 2px;
-}
-
-[data-theme="dark"] .hush-spellcheck-error {
-  text-decoration-color: rgba(248, 113, 113, 0.85);
-}
-
-/* Grammar issues — green-blue wavy to distinguish from spelling. */
+/* Issues from harper underline as a thick solid orange line. We use
+   `text-decoration` so the underline tracks each word's visible glyph
+   range; `text-decoration-thickness: 3px` gives the requested weight
+   without making CodeMirror lay out an extra row. */
 .hush-grammar-error {
-  text-decoration: underline wavy rgba(20, 150, 100, 0.85);
+  text-decoration: underline solid #f59e0b;
+  text-decoration-thickness: 3px;
   text-decoration-skip-ink: none;
   text-underline-offset: 3px;
 }
 
 [data-theme="dark"] .hush-grammar-error {
-  text-decoration-color: rgba(74, 222, 128, 0.8);
+  text-decoration-color: #fbbf24;
 }
 
 /* Hover tooltip surfaced by the grammar plugin. */
@@ -73,20 +66,34 @@
 
 /* ===== Proofread settings tab ===== */
 .proofread-rules-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 6px 16px;
-  margin-top: 8px;
-}
-.proofread-rules-list .proofread-rule-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 13px;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 12px;
 }
-.proofread-rules-list .proofread-rule-row label {
-  flex: 1;
-  font-family: monospace;
+
+.proofread-rule-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 4px;
+  align-items: start;
+}
+
+.proofread-rule-row input[type="checkbox"] {
+  margin-top: 4px;
+}
+
+.proofread-rule-row label {
+  font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
+  align-self: center;
+}
+
+.proofread-rule-description {
+  grid-column: 2;
+  font-size: 12px;
+  opacity: 0.7;
+  line-height: 1.45;
 }

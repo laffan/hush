@@ -64,7 +64,7 @@ All shortcuts are customizable in Settings.
 
 **Tooltips** — Off by default for a clean reading surface. Enable **Show tooltips** in Settings > General to surface labels + shortcut hints on every sidebar, pane header, and notebook toolbar button.
 
-**Proofread mode** — Single doc-only proofreading toggle, off by default. Surfaced in the command palette as **Proofread mode**. While the mode is on, misspellings underline in red wavy ink (`nspell` against the bundled Hunspell `dictionary-en`) and grammar issues underline in green wavy ink (`harper-core` Rust crate). Spelling re-runs on every keystroke; grammar re-runs on a 1.5 s debounce and surfaces a brief "Checking grammar…" pill while harper is working. Hovering a green underline pops a tooltip with the rule's message and replacement suggestions. Markdown structure (URLs, code, image refs, `%%comments%%`, `==flags==`) is masked out before checking so filenames and editorial markers aren't flagged. Settings > Proofread carries a checkbox per harper rule — `LongSentences` ships off because it's noisy for longform writing; the rest are on by default. Notebooks are intentionally skipped for now.
+**Proofread mode** — Single doc-only toggle that runs the document through the [`harper-core`](https://github.com/Automattic/harper) Rust crate and underlines spelling + grammar issues in a thick orange line. Off by default; flip via the command palette (**Proofread mode**, the **Aa** icon with a slash through it). The check re-runs on a 1.5 s debounce after edits and a brief "Checking grammar…" pill appears while harper is working. Hover an underline for a tooltip with the rule's message and replacement suggestions. Settings > Proofread carries a checkbox per harper rule, each with a one-line description — *Long Sentences* ships off because it's noisy for longform writing; the rest are on by default. Notebooks are intentionally skipped for now.
 
 ## Installation
 
@@ -76,8 +76,6 @@ npm run tauri build
 ```
 
 The built app will be in `src-tauri/target/release/bundle/`.
-
-`npm install` also runs `scripts/copy-dictionaries.mjs` (via `postinstall`), which copies the Hunspell `aff` / `dic` files out of the `dictionary-en` package into `src/assets/dictionaries/` so the Proofread mode spellchecker can `?url`-import them through Vite. The folder is gitignored.
 
 ## Development
 

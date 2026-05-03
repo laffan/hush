@@ -25,7 +25,6 @@ import { buildCodeMirrorKeymap } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 import { headingIndentPlugin } from "./heading-indent.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
-import { createSpellcheckPlugin } from "./plugins/spellcheck.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 
 // Re-export for callers that imported these from editor.js historically.
@@ -479,7 +478,6 @@ export function createEditor(container, state) {
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
   const commentAfterPlugin = createCommentAfterPlugin();
-  const spellcheckPlugin = createSpellcheckPlugin(state);
   const grammarCheckPlugin = createGrammarCheckPlugin(state);
   const grammarHoverTooltip = createGrammarHoverTooltip(state);
 
@@ -529,7 +527,6 @@ export function createEditor(container, state) {
       stickyHeadersPlugin,
       multiLineCommentPlugin,
       commentAfterPlugin,
-      spellcheckPlugin,
       grammarCheckPlugin,
       grammarHoverTooltip,
       encouragePlugin,

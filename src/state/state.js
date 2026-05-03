@@ -81,10 +81,10 @@ export class AppState {
     this.focusMode = false;
     this.zenFocus = false;
     this.isFullscreen = false;
-    // Doc-only Proofread mode. Persisted via `proofreadMode` in
-    // settings so a user who left it on at quit returns to it. Both the
-    // nspell dictionary and the harper Rust call are lazy on first use,
-    // so sessions that never enable it pay no cost.
+    // Doc-only Proofread mode (harper-core via the `check_grammar`
+    // Tauri command). Persisted via `proofreadMode` in settings so a
+    // user who left it on at quit returns to it. Sessions that never
+    // enable it pay no cost — the harper call is lazy.
     this.proofreadMode = false;
 
     // Autosave interval

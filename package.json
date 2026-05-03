@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "npm run check:line-limits && vite build",
     "check:line-limits": "bash scripts/check-line-limits.sh",
-    "postinstall": "node scripts/copy-dictionaries.mjs",
     "tauri": "tauri",
     "build:macos": "tauri build",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
@@ -43,10 +42,8 @@
     "@tauri-apps/plugin-positioner": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "codemirror": "^6.0.2",
-    "dictionary-en": "^4.0.0",
     "esbuild": "^0.27.4",
     "jszip": "^3.10.1",
-    "nspell": "^2.1.5",
     "pdfjs-dist": "^5.7.284",
     "vite": "^8.0.0"
   },
