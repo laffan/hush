@@ -99,6 +99,14 @@
   user-select: none;
 }
 
+/* Re-enable hover only while a selection exists so the pill reports
+   the selected-word count on hover. Otherwise the cursor passes
+   through to the editor and editor drag-selects aren't intercepted. */
+.word-count-display.has-selection {
+  pointer-events: auto;
+  cursor: help;
+}
+
 /* When ratchet is also visible, push the word count down to sit below
    the timer. The JS toggles `.stacked` based on state.ratchetMode. */
 .word-count-display.stacked {

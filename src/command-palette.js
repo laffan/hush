@@ -26,7 +26,6 @@ import stylesRaw from "./sidebar/sidebar_icons/styles.svg?raw";
 import zoteroRaw from "./sidebar/sidebar_icons/zotero.svg?raw";
 import iconDocRaw from "./sidebar/sidebar_icons/icon-doc.svg?raw";
 import iconNotebookRaw from "./sidebar/sidebar_icons/icon-notebook.svg?raw";
-import iconProjectRaw from "./sidebar/sidebar_icons/icon-project.svg?raw";
 
 function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
@@ -58,7 +57,9 @@ const icons = {
   zotero: svgInner(zoteroRaw),
   doc: svgInner(iconDocRaw),
   notebook: svgInner(iconNotebookRaw),
-  project: svgInner(iconProjectRaw),
+  // Triangle, mirroring the sidebar's project icon (files-panel-shared.js).
+  // Drawn on a 16-unit viewBox.
+  project: `<polygon points="8,1 15,15 1,15" />`,
   // Mirrors the inline trash icon used in files-panel.js so the palette
   // matches the sidebar's visual language. Drawn on a 16-unit viewBox.
   trash: `<polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" />`,
@@ -284,6 +285,9 @@ function enterFilePicker(palette, state, placeholder, onPick, { includeProjects 
     id: "file-" + f.id,
     label: f.name,
     icon: f.type === "notebook" ? icons.notebook : f.type === "project" ? icons.project : icons.doc,
+    // Project icon (triangle) is drawn on a 16-unit viewBox; doc and
+    // notebook share the default 24-unit one.
+    iconViewBox: f.type === "project" ? "0 0 16 16" : undefined,
     shortcutKey: null,
     action: () => onPick(f),
   }));

@@ -6,6 +6,10 @@
 
 let wordCountEl = null;
 let recomputeTimer = null;
+// True while the cursor is hovering the pill *and* the editor has a
+// non-empty selection. While true, recompute() prints the selection
+// count instead of the regular doc/project count.
+let showingSelection = false;
 
 export function countWords(text) {
   if (!text) return 0;
@@ -45,6 +49,21 @@ export function updateWordCountDisplay(state) {
     wordCountEl = document.createElement("div");
     wordCountEl.id = "word-count-display";
     wordCountEl.className = "word-count-display";
+    // Hover-to-show-selection: the pill itself stays click-through
+    // (pointer-events: none) so the cursor passes through to the
+    // editor; the `.has-selection` modifier flips that to `auto` only
+    // when a selection exists, so the hover is dormant the rest of
+    // the time.
+    wordCountEl.addEventListener("mouseenter", () => {
+      if (!hasNonEmptySelection(state)) return;
+      showingSelection = true;
+      recompute(state);
+    });
+    wordCountEl.addEventListener("mouseleave", () => {
+      if (!showingSelection) return;
+      showingSelection = false;
+      recompute(state);
+    });
     document.body.appendChild(wordCountEl);
   }
   document.body.classList.add("word-count-active");
@@ -59,6 +78,23 @@ function recompute(state) {
   if (state.editor && state.editor.getContent) {
     text = state.editor.getContent();
   }
+  // Toggle the pointer-events shim so the pill is hoverable only when
+  // there's a selection to report. The rest of the time it stays
+  // click-through and doesn't intercept editor drags.
+  const selectionActive = hasNonEmptySelection(state);
+  wordCountEl.classList.toggle("has-selection", selectionActive);
+
+  // Hover-while-selection: replace the regular count with the count of
+  // the selected text. Bail back to the regular path the moment the
+  // selection disappears.
+  if (showingSelection && selectionActive) {
+    const selText = getSelectionText(state);
+    const n = countWords(selText);
+    wordCountEl.textContent = `${n.toLocaleString()} selected`;
+    return;
+  }
+  if (showingSelection && !selectionActive) showingSelection = false;
+
   // In project mode the editor holds every doc joined by
   // `---hush-separator---`. Show two counts: the doc the cursor is
   // inside / the entire project. Slip back to the single-count form
@@ -75,6 +111,28 @@ function recompute(state) {
   }
   const n = countWords(text);
   wordCountEl.textContent = `${n.toLocaleString()} ${n === 1 ? "word" : "words"}`;
+}
+
+function hasNonEmptySelection(state) {
+  try {
+    const view = state.editor?.view;
+    if (!view) return false;
+    const sel = view.state.selection.main;
+    return sel.from !== sel.to;
+  } catch (_) {
+    return false;
+  }
+}
+
+function getSelectionText(state) {
+  try {
+    const view = state.editor?.view;
+    if (!view) return "";
+    const sel = view.state.selection.main;
+    return view.state.doc.sliceString(sel.from, sel.to);
+  } catch (_) {
+    return "";
+  }
 }
 
 function getProjectCursorPos(state) {

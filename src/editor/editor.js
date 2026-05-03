@@ -347,10 +347,12 @@ export function createEditor(container, state) {
       state.trackKeystroke();
       scheduleWordCountRecompute(state);
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
-    } else if (update.selectionSet && state.currentProjectId) {
-      // Project mode shows a per-doc / total split — the per-doc half
-      // changes as the cursor crosses separators, so keep the pill
-      // synced on selection moves too.
+    } else if (update.selectionSet) {
+      // Selection changes feed the word count for two reasons:
+      // project mode tracks which sub-doc the cursor is in (per-doc /
+      // total split), and any mode needs the `.has-selection`
+      // hover-pointer-events toggle synced as soon as the user
+      // selects or clears text.
       scheduleWordCountRecompute(state);
     }
     if (update.selectionSet || update.docChanged) {
