@@ -143,10 +143,12 @@ async function init() {
     state.settings.globalStyleId = state.settings.activeStyleId;
   }
 
-  // Apply active style if one was persisted — must happen after editor creation
-  if (state.settings.activeStyleId) {
-    applyActiveStyle(state);
-  }
+  // Apply active style — runs even when activeStyleId is null so the
+  // Default style's post-processing layer (settings.shaderLayer) mounts
+  // on startup. The no-style branch of applyActiveStyle is a near-no-op
+  // for everything else (just re-asserts standard font/theme/color
+  // values that are already in place from earlier init steps).
+  applyActiveStyle(state);
 
   // Load current file content into the newly created editor
   // (init() already opened the last file/project — re-open only if editor wasn't set yet)

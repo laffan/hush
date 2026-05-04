@@ -2,27 +2,23 @@
  * WebGL2 layer: neon bloom — three soft colored glow blobs drifting
  * across the screen, screen-blended onto the editor.
  *
- * Replaces the earlier CRT shader (which the user found too flickery).
- * Goal here is the "atmospheric neon" feel — like distant pink/cyan
- * signs cast a soft glow on the writing surface — without any
- * scanlines, retrace, or rapid flicker.
+ * Knobs (registry-defined):
+ *   - brightness:  master bloom brightness (0..1)
+ *   - speed:       drift speed (0..1, mapped to 0..2× base rate)
+ *   - color1/2/3:  hex colors of the three blobs
  *
- * Why this is worth a fragment shader instead of CSS: the closest CSS
- * equivalent is animated `radial-gradient(...)` keyframes with
- * `mix-blend-mode: screen`. That works for a *static* set of glows but
- * smoothly interpolating sub-pixel positions every frame in CSS forces
- * paint cycles on the entire layer. The fragment shader does the same
- * compositing on the GPU at <1ms per frame and gives us per-pixel
- * smoothness. Honest answer though: if you don't notice the difference,
+ * Intensity is the master scale that multiplies brightness, so it
+ * smoothly fades the whole layer to nothing at intensity 0.
+ *
+ * Why a fragment shader vs CSS: smoothly interpolating sub-pixel blob
+ * positions every frame in CSS forces paint cycles on the entire layer.
+ * The shader does the same compositing on the GPU at <1ms/frame and
+ * gives us per-pixel smoothness. If you don't notice the difference,
  * the CSS path is fine.
  *
- * The blend mode lives on the host element (not the canvas) — putting
- * it on the canvas isolates the blend to the host's transparent
- * backdrop, painting the canvas opaque over the editor. With it on the
- * host, the entire layer composites onto everything in body's stacking
- * context.
- *
- * rAF loop is gated on visibility + focus via ctx.onVisible. WebGL
+ * Blend mode lives on the host element (not the canvas) — putting it
+ * on the canvas isolates the blend to the host's transparent backdrop.
+ * rAF loop is gated on visibility + focus via ctx.onVisible; WebGL
  * context is loseContext()-ed on dispose.
  */
 
@@ -40,14 +36,13 @@ in vec2 v_uv;
 out vec4 outColor;
 
 uniform float u_time;
-uniform float u_intensity;
+uniform float u_brightness;   // master output scale (intensity * knob)
 uniform vec2  u_resolution;
+uniform vec3  u_color1;
+uniform vec3  u_color2;
+uniform vec3  u_color3;
 
-// Soft glow falloff: brighter core, much softer halo. Two stacked
-// smoothsteps approximate a Gaussian without the cost of expensive
-// exp() calls and read better at low intensity.
 vec3 glow(vec2 uv, vec2 c, float r, vec3 color, float aspect) {
-  // Correct for non-square viewport so blobs stay round.
   vec2 d = (uv - c) * vec2(aspect, 1.0);
   float dist = length(d);
   float core = smoothstep(r * 0.25, 0.0, dist);
@@ -56,33 +51,22 @@ vec3 glow(vec2 uv, vec2 c, float r, vec3 color, float aspect) {
 }
 
 void main() {
-  // Aspect-corrected coords — without this the blobs squish on
-  // wide viewports.
   float aspect = u_resolution.x / max(u_resolution.y, 1.0);
 
-  // Three blobs drifting at slow, irrationally-related rates so the
-  // pattern never visibly repeats.
-  float t = u_time * 0.10; // overall slow drift
+  // Drift positions — irrationally-related rates so the pattern
+  // never visibly repeats. u_time already incorporates the speed knob.
+  float t = u_time;
   vec2 p1 = vec2(0.28 + 0.22 * sin(t * 1.13), 0.40 + 0.18 * cos(t * 0.91));
   vec2 p2 = vec2(0.74 + 0.18 * cos(t * 0.87), 0.62 + 0.20 * sin(t * 1.07));
   vec2 p3 = vec2(0.50 + 0.26 * sin(t * 0.63), 0.50 + 0.22 * cos(t * 1.27));
 
   vec3 col = vec3(0.0);
-  // Magenta / cyan / violet — classic neon palette, complementary
-  // hues so the screen blend produces clean whites where they overlap
-  // instead of muddy browns.
-  col += glow(v_uv, p1, 0.55, vec3(0.95, 0.20, 0.65), aspect); // magenta
-  col += glow(v_uv, p2, 0.55, vec3(0.20, 0.78, 0.95), aspect); // cyan
-  col += glow(v_uv, p3, 0.55, vec3(0.55, 0.30, 0.92), aspect); // violet
+  col += glow(v_uv, p1, 0.55, u_color1, aspect);
+  col += glow(v_uv, p2, 0.55, u_color2, aspect);
+  col += glow(v_uv, p3, 0.55, u_color3, aspect);
 
-  // Intensity scales the whole bloom. At 0 every channel is 0, so the
-  // canvas paints transparent black everywhere — invisible.
-  col *= u_intensity * 0.45;
+  col *= u_brightness;
 
-  // Output as straight alpha blend (no mix-blend-mode: screen needed —
-  // the canvas alpha-composites and the host carries the screen blend).
-  // alpha = brightness, so dark regions stay transparent (editor shows)
-  // and bright regions composite as colored bloom.
   float a = clamp((col.r + col.g + col.b) * 0.85, 0.0, 0.9);
   outColor = vec4(col, a);
 }`;
@@ -91,9 +75,6 @@ export default function mount(host, ctx) {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
   host.appendChild(canvas);
-  // Screen blend on the HOST (not the canvas) so the entire layer
-  // brightens the editor underneath. Screen mode never darkens; it
-  // only adds light, which is what bloom should do.
   host.style.mixBlendMode = "screen";
 
   const gl = canvas.getContext("webgl2", {
@@ -107,9 +88,6 @@ export default function mount(host, ctx) {
   });
 
   if (!gl) {
-    // Fallback for platforms without WebGL2: animated CSS radial
-    // gradients in the same neon palette. Less smooth but the same
-    // visual idea.
     canvas.remove();
     host.style.background = `
       radial-gradient(circle at 30% 40%, rgba(244,52,166,0.18), transparent 50%),
@@ -133,8 +111,11 @@ export default function mount(host, ctx) {
   gl.useProgram(program);
 
   const uTime = gl.getUniformLocation(program, "u_time");
-  const uIntensity = gl.getUniformLocation(program, "u_intensity");
+  const uBright = gl.getUniformLocation(program, "u_brightness");
   const uRes = gl.getUniformLocation(program, "u_resolution");
+  const uC1 = gl.getUniformLocation(program, "u_color1");
+  const uC2 = gl.getUniformLocation(program, "u_color2");
+  const uC3 = gl.getUniformLocation(program, "u_color3");
 
   const buf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -149,17 +130,31 @@ export default function mount(host, ctx) {
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+  // Per-frame state derived from intensity + options.
   let intensity = clamp(ctx.intensity);
+  let options = ctx.options || {};
   let visible = !document.hidden && document.hasFocus();
   let rafId = 0;
   const start = performance.now();
+  // `timeAccum` accumulates real-time × current speed so changing the
+  // speed knob doesn't snap the blobs — they smoothly continue from
+  // wherever they were.
+  let timeAccum = 0;
+  let lastClock = start;
+
+  function applyOptions() {
+    const c1 = hexToVec3(options.color1 || "#f334a6");
+    const c2 = hexToVec3(options.color2 || "#34c4f4");
+    const c3 = hexToVec3(options.color3 || "#8c4ce8");
+    gl.uniform3f(uC1, c1[0], c1[1], c1[2]);
+    gl.uniform3f(uC2, c2[0], c2[1], c2[2]);
+    gl.uniform3f(uC3, c3[0], c3[1], c3[2]);
+  }
+  applyOptions();
 
   function resize() {
     const w = ctx.width;
     const h = ctx.height;
-    // Render at half-DPR (or native CSS px on non-retina). The blobs
-    // are smooth volumetric gradients, so upsampling adds an extra
-    // hint of softness for free — perfect for a bloom layer.
     const dpr = Math.min(ctx.dpr, 1.0);
     canvas.width = Math.max(1, Math.floor(w * dpr));
     canvas.height = Math.max(1, Math.floor(h * dpr));
@@ -171,16 +166,29 @@ export default function mount(host, ctx) {
   function draw() {
     rafId = 0;
     if (!visible) return;
-    const t = (performance.now() - start) / 1000;
-    gl.uniform1f(uTime, t);
-    gl.uniform1f(uIntensity, intensity);
+    const now = performance.now();
+    // Speed knob 0..1 → multiplier 0..2 over a base rate of 0.10/sec.
+    const speed = num(options.speed, 0.4) * 2 * 0.10;
+    timeAccum += ((now - lastClock) / 1000) * speed;
+    lastClock = now;
+    // brightness knob × master intensity; clamp so high knob values
+    // don't blow out the screen blend.
+    const bright = clamp(num(options.brightness, 0.55) * intensity);
+
+    gl.uniform1f(uTime, timeAccum);
+    gl.uniform1f(uBright, bright);
     gl.uniform2f(uRes, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     rafId = requestAnimationFrame(draw);
   }
-  function startLoop() { if (!rafId && visible) rafId = requestAnimationFrame(draw); }
+  function startLoop() {
+    if (!rafId && visible) {
+      lastClock = performance.now();
+      rafId = requestAnimationFrame(draw);
+    }
+  }
   function stopLoop() { if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } }
 
   ctx.onResize = () => { resize(); };
@@ -193,7 +201,11 @@ export default function mount(host, ctx) {
   startLoop();
 
   return {
-    update({ intensity: i }) { intensity = clamp(i); },
+    update({ intensity: i, options: o }) {
+      intensity = clamp(i);
+      options = o || {};
+      applyOptions();
+    },
     dispose() {
       stopLoop();
       try {
@@ -236,4 +248,18 @@ function link(gl, vsrc, fsrc) {
 function clamp(v) {
   if (typeof v !== "number" || Number.isNaN(v)) return 0.5;
   return Math.max(0, Math.min(1, v));
+}
+
+function num(v, fallback) {
+  return (typeof v === "number" && !Number.isNaN(v)) ? v : fallback;
+}
+
+function hexToVec3(hex) {
+  // Accepts #rgb, #rrggbb. Returns [r, g, b] in 0..1.
+  const h = (hex || "").replace("#", "");
+  const expand = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  const r = (parseInt(expand.slice(0, 2), 16) || 0) / 255;
+  const g = (parseInt(expand.slice(2, 4), 16) || 0) / 255;
+  const b = (parseInt(expand.slice(4, 6), 16) || 0) / 255;
+  return [r, g, b];
 }

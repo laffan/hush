@@ -19,13 +19,16 @@
  *   3. A scanline overlay painted as the host element's background,
  *      independent of the text effect.
  *
+ * Knobs:
+ *   - glow:            tight halo radius scale (0..1 → 0..30 px)
+ *   - halo:            soft falloff radius scale (0..1 → 0..50 px)
+ *   - scanlineOpacity: bar alpha (0..1)
+ *   - scanlineColor:   hex color of the scanline bars
+ *
  * Cleanup invariant: dispose() removes the class, the custom properties,
  * the injected <style>, and the host's inline styles. After dispose
  * there should be NO trace of this layer anywhere — that's the
  * "pull the plug" guarantee.
- *
- * Idle cost: zero JS frames. text-shadow is GPU-composited; scanline
- * overlay is a single repeating gradient. No animation.
  */
 
 const RULES_ID = "shader-layer-phosphor-rules";
@@ -59,46 +62,40 @@ function removeRules() {
 export default function mount(host, ctx) {
   injectRules();
 
-  // Scope = the modal preview pane when the layer is in container mode,
-  // <body> when fullscreen. The scope element is the only place the
-  // scope class lives, and the only place the custom properties are
-  // set — so cleanup is trivially scoped.
   const scope = host.parentElement === document.body
     ? document.body
     : host.parentElement;
   scope.classList.add(SCOPE_CLASS);
 
-  function apply(intensity) {
+  function apply(intensity, options) {
     const i = clamp(intensity);
+    const o = options || {};
 
-    // Two text-shadow layers, both color = currentColor:
-    //   - "glow":   tight halo at 1..6px, the sharp neon edge
-    //   - "halo":   soft falloff at 6..28px, the ambient bleed
-    // Both scale linearly with intensity. At 0 the values collapse to
-    // 0 0 0 currentColor, which renders no shadow.
-    const glowPx = (i * 6).toFixed(2);
-    const haloPx = (i * 22).toFixed(2);
+    // Glow radii — knob values 0..1 map to 0..30 px (tight) and
+    // 0..50 px (soft). Master intensity then scales both.
+    const glowPx = (num(o.glow, 0.4) * 30 * i).toFixed(2);
+    const haloPx = (num(o.halo, 0.6) * 50 * i).toFixed(2);
     scope.style.setProperty(VAR_GLOW, `${glowPx}px`);
     scope.style.setProperty(VAR_HALO, `${haloPx}px`);
 
-    // Scanline overlay on the host element. 3px-period stripes (1px
-    // dark + 2px transparent) — finer than the "Vignette + Scanlines"
-    // layer so it pairs with the glow without overpowering it.
-    const scanA = (0.06 + i * 0.20).toFixed(3);
+    // Scanline overlay on the host element. Knob alpha + color, scaled
+    // by intensity. 3px period stripes pair well with the glow.
+    const scanA = (num(o.scanlineOpacity, 0.2) * i).toFixed(3);
+    const scanRgb = hexToRgbCsv(o.scanlineColor || "#000000");
     host.style.background = `repeating-linear-gradient(
       to bottom,
       rgba(0,0,0,0) 0,
       rgba(0,0,0,0) 2px,
-      rgba(0,0,0,${scanA}) 2px,
-      rgba(0,0,0,${scanA}) 3px
+      rgba(${scanRgb},${scanA}) 2px,
+      rgba(${scanRgb},${scanA}) 3px
     )`;
     host.style.mixBlendMode = "multiply";
   }
 
-  apply(ctx.intensity);
+  apply(ctx.intensity, ctx.options);
 
   return {
-    update({ intensity }) { apply(intensity); },
+    update({ intensity, options }) { apply(intensity, options); },
     dispose() {
       // Full unwind. Wrapped in try blocks individually so a stale
       // reference in one step can't strand cleanup of the others —
@@ -116,4 +113,17 @@ export default function mount(host, ctx) {
 function clamp(v) {
   if (typeof v !== "number" || Number.isNaN(v)) return 0.5;
   return Math.max(0, Math.min(1, v));
+}
+
+function num(v, fallback) {
+  return (typeof v === "number" && !Number.isNaN(v)) ? v : fallback;
+}
+
+function hexToRgbCsv(hex) {
+  const h = (hex || "").replace("#", "");
+  const expand = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  const r = parseInt(expand.slice(0, 2), 16) || 0;
+  const g = parseInt(expand.slice(2, 4), 16) || 0;
+  const b = parseInt(expand.slice(4, 6), 16) || 0;
+  return `${r},${g},${b}`;
 }

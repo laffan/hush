@@ -31,6 +31,7 @@ function syncShaderLayerForStyle(style) {
   loadShaderModule().then(m => m.applyShaderLayer({
     layerId: cfg.layerId,
     intensity: typeof cfg.intensity === "number" ? cfg.intensity : 0.5,
+    options: cfg.options || {},
   })).catch(e => console.warn("shader layer mount failed", e));
 }
 

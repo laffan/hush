@@ -23,21 +23,64 @@ const HOST_ID = "shader-layer-host";
 let _hostContainer = null;
 
 // Registry of every shipped layer. Shape:
-//   { id, name, family: "css" | "canvas2d" | "webgl2", load: () => Promise<Module> }
-// Each loaded module must export:
-//   default function mount(host, ctx) → returns { update?, dispose }
-// `host` is the shared overlay div. `ctx` is { intensity, dpr, onResize, onVisible }.
+//   { id, name, family, load, settings }
+// `settings` is a small per-layer schema (kept here, not in the layer
+// module, so the modal can render knobs without needing to import the
+// layer code first). Each setting:
+//   { id, label, type: "range" | "color", min?, max?, step?, default }
+// The user's chosen values live on draft.shaderLayer.options keyed by
+// setting id and are passed into the layer's mount/update via
+// ctx.options.
 export const SHADER_LAYERS = [
-  { id: "css-vignette-scanlines", name: "Vignette + Scanlines (CSS)",
+  {
+    id: "css-vignette-scanlines",
+    name: "Vignette + Scanlines (CSS)",
     family: "css",
-    load: () => import("./layers/css-vignette-scanlines.js") },
-  { id: "css-phosphor-scanlines", name: "Phosphor Scanlines (CSS)",
+    load: () => import("./layers/css-vignette-scanlines.js"),
+    settings: [
+      { id: "vignetteStrength", label: "Vignette darkness", type: "range", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "scanlineOpacity", label: "Scanline opacity", type: "range", min: 0, max: 1, step: 0.01, default: 0.15 },
+      { id: "scanlineColor", label: "Scanline color", type: "color", default: "#000000" },
+    ],
+  },
+  {
+    id: "css-phosphor-scanlines",
+    name: "Phosphor Scanlines (CSS)",
     family: "css",
-    load: () => import("./layers/css-phosphor-scanlines.js") },
-  { id: "webgl-neon-bloom", name: "Neon Bloom (WebGL2)",
+    load: () => import("./layers/css-phosphor-scanlines.js"),
+    settings: [
+      { id: "glow", label: "Text glow (sharp)", type: "range", min: 0, max: 1, step: 0.01, default: 0.4 },
+      { id: "halo", label: "Text halo (soft)", type: "range", min: 0, max: 1, step: 0.01, default: 0.6 },
+      { id: "scanlineOpacity", label: "Scanline opacity", type: "range", min: 0, max: 1, step: 0.01, default: 0.2 },
+      { id: "scanlineColor", label: "Scanline color", type: "color", default: "#000000" },
+    ],
+  },
+  {
+    id: "webgl-neon-bloom",
+    name: "Neon Bloom (WebGL2)",
     family: "webgl2",
-    load: () => import("./layers/webgl-neon-bloom.js") },
+    load: () => import("./layers/webgl-neon-bloom.js"),
+    settings: [
+      { id: "brightness", label: "Bloom brightness", type: "range", min: 0, max: 1, step: 0.01, default: 0.55 },
+      { id: "speed", label: "Drift speed", type: "range", min: 0, max: 1, step: 0.01, default: 0.4 },
+      { id: "color1", label: "Bloom color 1", type: "color", default: "#f334a6" },
+      { id: "color2", label: "Bloom color 2", type: "color", default: "#34c4f4" },
+      { id: "color3", label: "Bloom color 3", type: "color", default: "#8c4ce8" },
+    ],
+  },
 ];
+
+/** Resolve full options for a layer: defaults from registry overlaid by
+ *  user-supplied values. Used by both applyShaderLayer and the modal. */
+export function resolveLayerOptions(layerId, userOptions) {
+  const reg = findLayer(layerId);
+  if (!reg) return {};
+  const out = {};
+  for (const s of (reg.settings || [])) {
+    out[s.id] = (userOptions && s.id in userOptions) ? userOptions[s.id] : s.default;
+  }
+  return out;
+}
 
 let _state = null;
 // _state shape when active:
@@ -93,20 +136,26 @@ function findLayer(id) {
 }
 
 /** Mount the requested layer. Idempotent: a re-call with the same layer
- *  + container just updates intensity; a different layer or container
- *  tears down + mounts fresh.
+ *  + container just updates intensity / options; a different layer or
+ *  container tears down + mounts fresh.
  *
  *  `container` is optional — pass an element to scope the shader to that
- *  element (used for in-modal previews). Default is fullscreen overlay. */
-export async function applyShaderLayer({ layerId, intensity, container }) {
+ *  element (used for in-modal previews). Default is fullscreen overlay.
+ *  `options` is the per-layer knob values; missing keys fall back to
+ *  the registry defaults. */
+export async function applyShaderLayer({ layerId, intensity, container, options }) {
   const reg = findLayer(layerId);
   if (!reg) { unmountShaderLayer(); return; }
 
   const wantContainer = container || null;
+  const fullOptions = resolveLayerOptions(layerId, options);
 
-  // Same layer + same container — just push the new intensity through.
+  // Same layer + same container — just push the new values through.
   if (_state && _state.layerId === layerId && _hostContainer === wantContainer) {
-    _state.instance?.update?.({ intensity: clampIntensity(intensity) });
+    _state.instance?.update?.({
+      intensity: clampIntensity(intensity),
+      options: fullOptions,
+    });
     return;
   }
 
@@ -114,7 +163,7 @@ export async function applyShaderLayer({ layerId, intensity, container }) {
   unmountShaderLayer();
   const host = ensureHost(wantContainer);
   const mod = await reg.load();
-  const ctx = buildCtx(host, intensity);
+  const ctx = buildCtx(host, intensity, fullOptions);
   const instance = await mod.default(host, ctx);
 
   _state = {
@@ -193,9 +242,10 @@ function clampIntensity(v) {
  *  This is the gate that keeps "on" cheap: animated layers only run their
  *  rAF loop while the page is visible AND the window is focused. Static
  *  layers ignore the visibility callbacks entirely. */
-function buildCtx(host, intensity) {
+function buildCtx(host, intensity, options) {
   const ctx = {
     intensity: clampIntensity(intensity),
+    options: options || {},
     dpr: window.devicePixelRatio || 1,
     width: host.clientWidth || window.innerWidth,
     height: host.clientHeight || window.innerHeight,

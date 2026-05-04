@@ -1,20 +1,18 @@
 /**
- * Shader-layer modal block — extracted from style-modal.js to keep that
- * file under the 700-line limit. Owns the section markup plus its event
- * handlers (enable checkbox, layer dropdown, intensity slider) AND the
- * live-preview plumbing.
+ * Post-processing modal block — extracted from style-modal.js to keep
+ * that file under the 700-line limit. Owns the section markup plus its
+ * event handlers AND the live-preview plumbing.
  *
- * Why preview lives here, not in style-application.js: applyActiveStyle()
- * only fires the shader for the currently *active* style. The user is
- * usually editing a non-active style (or a brand-new one), so we apply
- * the shader directly during modal interactions and revert on close.
+ * Per-layer knobs come from each layer's `settings` schema in the
+ * SHADER_LAYERS registry. The modal renders inputs for each schema
+ * entry and writes user values into draft.shaderLayer.options. The
+ * registry's `resolveLayerOptions` overlays defaults at apply time so a
+ * fresh draft always has sensible values.
  */
-import { SHADER_LAYERS, applyShaderLayer, unmountShaderLayer } from "../shader-layer/index.js";
+import { SHADER_LAYERS, applyShaderLayer, unmountShaderLayer, resolveLayerOptions } from "../shader-layer/index.js";
 import { escAttr, escHtml } from "./styles-panel-shared.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
 
-/** Tracks whether the section is currently driving the shader so we can
- *  revert without trampling another caller. */
 let _previewing = false;
 
 function pushPreview(cfg, container) {
@@ -25,23 +23,51 @@ function pushPreview(cfg, container) {
   applyShaderLayer({
     layerId: cfg.layerId,
     intensity: cfg.intensity ?? 0.5,
+    options: cfg.options || {},
     container: container || null,
   });
   _previewing = true;
 }
 
-/** Called by the modal on close so the global state restores itself.
- *  We just unmount; main.js's existing settings-changed / style-changed
- *  handlers re-run applyActiveStyle which will re-mount the active
- *  style's shader (if any). */
 export function endShaderPreview(applyActiveStyle, state) {
   if (_previewing) {
     unmountShaderLayer();
     _previewing = false;
   }
-  // Re-apply the active style's shader (or clear, if none) so we leave
-  // the viewport reflecting the committed world.
   if (applyActiveStyle && state) applyActiveStyle(state);
+}
+
+/** Render the inputs for one layer's settings schema. */
+function renderLayerOptions(layerId, userOptions) {
+  const reg = SHADER_LAYERS.find(l => l.id === layerId);
+  if (!reg || !reg.settings || reg.settings.length === 0) return "";
+  const resolved = resolveLayerOptions(layerId, userOptions);
+  return reg.settings.map(s => {
+    const v = resolved[s.id];
+    if (s.type === "range") {
+      const min = s.min ?? 0;
+      const max = s.max ?? 1;
+      const step = s.step ?? 0.01;
+      const display = step >= 1 ? `${v}` : `${Math.round(v * 100)}%`;
+      return `<div class="style-editor-row">
+        <label>${escHtml(s.label)}</label>
+        <div class="style-slider-group">
+          <input type="range" data-shader-opt="${escAttr(s.id)}"
+                 min="${min}" max="${max}" step="${step}" value="${v}" />
+          <span class="style-slider-value">${escHtml(display)}</span>
+        </div>
+      </div>`;
+    }
+    if (s.type === "color") {
+      return `<div class="style-editor-color-row">
+        <label>${escHtml(s.label)}</label>
+        <div class="style-color-group">
+          <input type="color" data-shader-opt="${escAttr(s.id)}" value="${escAttr(v)}" />
+        </div>
+      </div>`;
+    }
+    return "";
+  }).join("");
 }
 
 export function renderShaderSection(draft) {
@@ -55,9 +81,11 @@ export function renderShaderSection(draft) {
     `<div class="custom-dropdown-option${l.id === selectedId ? " selected" : ""}" data-value="${escAttr(l.id)}">${escHtml(l.name)}</div>`
   ).join("");
 
+  const knobsHtml = renderLayerOptions(selectedId, cfg.options);
+
   return `
     <div class="style-modal-section">
-      <h3 class="style-modal-section-title">Shader Layer</h3>
+      <h3 class="style-modal-section-title">Post Processing</h3>
       <div class="style-editor-row">
         <label>Enable</label>
         <div class="style-checkbox-group">
@@ -72,24 +100,23 @@ export function renderShaderSection(draft) {
         </div>
       </div>
       <div class="style-editor-row${enabled ? "" : " style-row-hidden"}" id="shader-intensity-row">
-        <label>Intensity</label>
+        <label>Master intensity</label>
         <div class="style-slider-group">
           <input type="range" id="style-shader-intensity" min="0" max="1" step="0.01" value="${intensity}" />
           <span class="style-slider-value">${Math.round(intensity * 100)}%</span>
         </div>
       </div>
+      <div id="shader-knobs"${enabled ? "" : ` class="style-row-hidden"`}>${knobsHtml}</div>
     </div>`;
 }
 
 export function bindShaderSection(backdrop, draft, scheduleSave) {
   const enabledEl = backdrop.querySelector("#style-shader-enabled");
-  if (!enabledEl) return; // Default-style render returned "", nothing to bind
+  if (!enabledEl) return;
 
   const dropdown = backdrop.querySelector("#style-shader-dropdown");
   const intEl = backdrop.querySelector("#style-shader-intensity");
-  // Scope the preview to the modal's right-column preview pane so the
-  // user sees the effect right where they expect it. Falls back to
-  // fullscreen if for any reason the pane element isn't present.
+  const knobsContainer = backdrop.querySelector("#shader-knobs");
   const previewPane = backdrop.querySelector("#style-preview-pane");
 
   function ensureCfg() {
@@ -98,14 +125,53 @@ export function bindShaderSection(backdrop, draft, scheduleSave) {
         enabled: false,
         layerId: SHADER_LAYERS[0].id,
         intensity: 0.5,
+        options: {},
       };
     }
+    if (!draft.shaderLayer.options) draft.shaderLayer.options = {};
     return draft.shaderLayer;
   }
 
   function syncRowVisibility(enabled) {
     backdrop.querySelector("#shader-layer-row")?.classList.toggle("style-row-hidden", !enabled);
     backdrop.querySelector("#shader-intensity-row")?.classList.toggle("style-row-hidden", !enabled);
+    knobsContainer?.classList.toggle("style-row-hidden", !enabled);
+  }
+
+  function rerenderKnobs() {
+    const cfg = ensureCfg();
+    if (knobsContainer) {
+      knobsContainer.innerHTML = renderLayerOptions(cfg.layerId, cfg.options);
+      bindKnobInputs();
+    }
+  }
+
+  function bindKnobInputs() {
+    if (!knobsContainer) return;
+    knobsContainer.querySelectorAll('[data-shader-opt]').forEach(input => {
+      const optId = input.dataset.shaderOpt;
+      const handler = () => {
+        const cfg = ensureCfg();
+        cfg.options = cfg.options || {};
+        if (input.type === "range") {
+          const v = parseFloat(input.value);
+          cfg.options[optId] = v;
+          // Update the value display (next sibling span).
+          const display = input.nextElementSibling;
+          if (display) {
+            const step = parseFloat(input.step);
+            display.textContent = step >= 1 ? `${v}` : `${Math.round(v * 100)}%`;
+          }
+        } else {
+          cfg.options[optId] = input.value;
+        }
+        pushPreview(cfg, previewPane);
+        scheduleSave();
+      };
+      input.addEventListener("input", handler);
+      // Color inputs also fire change for the final commit.
+      if (input.type === "color") input.addEventListener("change", handler);
+    });
   }
 
   enabledEl.addEventListener("change", () => {
@@ -122,23 +188,20 @@ export function bindShaderSection(backdrop, draft, scheduleSave) {
     cfg.enabled = true;
     enabledEl.checked = true;
     syncRowVisibility(true);
+    rerenderKnobs(); // new layer → different knobs
     pushPreview(cfg, previewPane);
     scheduleSave();
   }, {
     onHover: (val) => {
-      // Hover preview — don't mutate the draft, just push a temporary
-      // shader to the preview pane. Null val (cursor left the option
-      // list) is handled by onClose below.
       if (!val) return;
       pushPreview({
         enabled: true,
         layerId: val,
         intensity: ensureCfg().intensity ?? 0.5,
+        options: ensureCfg().options || {},
       }, previewPane);
     },
     onClose: () => {
-      // Dropdown collapsed without a selection — restore the committed
-      // draft so the preview matches what's saved.
       pushPreview(ensureCfg(), previewPane);
     },
   });
@@ -152,8 +215,8 @@ export function bindShaderSection(backdrop, draft, scheduleSave) {
     scheduleSave();
   });
 
-  // First-render: if the draft already has a shader on, mount it now so
-  // the user lands on the modal with the saved effect already showing.
+  bindKnobInputs();
+
   if (draft.shaderLayer?.enabled && draft.shaderLayer?.layerId) {
     pushPreview(draft.shaderLayer, previewPane);
   }
