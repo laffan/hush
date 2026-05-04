@@ -144,7 +144,17 @@ export function openStyleModal(state, existingStyle, onDone) {
           lightColors: {}, darkColors: {},
         };
 
-  let colorTab = "light"; // which tab is shown in the color section
+  // Pre-select the tab that matches the current appearance so editors
+  // land on the colour set they're actually looking at. "auto" resolves
+  // through the system preference, sepia falls back to light for tab
+  // purposes.
+  function resolveInitialColorTab() {
+    const appearance = state.settings.appearance || "dark";
+    if (appearance === "dark") return "dark";
+    if (appearance === "light" || appearance === "sepia") return "light";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  let colorTab = resolveInitialColorTab();
   // Hover-preview overrides for the theme + font dropdowns — non-null
   // wins over the draft inside `updatePreview`, mirroring the Styles
   // sidebar's hover-preview. Cleared on render() and on dropdown close.
@@ -348,8 +358,6 @@ export function openStyleModal(state, existingStyle, onDone) {
               </div>
             </div>
 
-            ${renderShaderSection(draft)}
-
             <div class="style-modal-section">
               <h3 class="style-modal-section-title">Colors</h3>
               <div class="style-color-tabs">
@@ -381,6 +389,8 @@ export function openStyleModal(state, existingStyle, onDone) {
                 </div>`;
               }).join("")}
             </div>
+
+            ${renderShaderSection(draft)}
           </div>
 
           <!-- Draggable divider — only visible in narrow-window stack layout -->

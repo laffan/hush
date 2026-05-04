@@ -92,7 +92,7 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   const row = document.createElement("span");
   row.className = "tree-item-row";
   const removeBtn = isRoot
-    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button data-local-sync-action="remove" title="Remove from Local Sync">&times;</button></span>`
+    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button data-local-sync-action="remove" data-tooltip="Remove from Local Sync">&times;</button></span>`
     : "";
   // The Local Sync icon marks only the mount root; nested folders use
   // the regular folder icon so the tree reads as a normal filesystem

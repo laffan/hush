@@ -7,15 +7,15 @@
 
 // SVG icons for the tree-item types
 export const typeIcons = {
-  document: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
-  documentLocked: `<svg viewBox="0 0 16 16" class="tree-type-icon locked-style-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><circle cx="8" cy="8" r="2.5" /></svg>`,
-  documentFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /></svg>`,
+  document: `<svg viewBox="0 0 16 16" class="tree-type-icon"><line x1="4" y1="4" x2="12" y2="4" /><line x1="4" y1="8" x2="12" y2="8" /><line x1="4" y1="12" x2="9" y2="12" /></svg>`,
+  documentLocked: `<svg viewBox="0 0 16 16" class="tree-type-icon locked-style-icon"><line x1="4" y1="4" x2="12" y2="4" /><line x1="4" y1="8" x2="12" y2="8" /><line x1="4" y1="12" x2="9" y2="12" /><circle cx="13" cy="13" r="1.5" /></svg>`,
+  documentFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><line x1="4" y1="4" x2="12" y2="4" /><line x1="4" y1="8" x2="12" y2="8" /><line x1="4" y1="12" x2="9" y2="12" /></svg>`,
   folder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /></svg>`,
   folderFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><circle cx="8" cy="8" r="6" /></svg>`,
   project: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
   projectFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><polygon points="8,1 15,15 1,15" /></svg>`,
-  notebook: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><line x1="5" y1="4" x2="11" y2="4" /><line x1="5" y1="7" x2="11" y2="7" /><line x1="5" y1="10" x2="9" y2="10" /></svg>`,
-  notebookFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1.5" /><line x1="5" y1="4" x2="11" y2="4" /><line x1="5" y1="7" x2="11" y2="7" /><line x1="5" y1="10" x2="9" y2="10" /></svg>`,
+  notebook: `<svg viewBox="0 0 16 16" class="tree-type-icon notebook-icon"><circle cx="4" cy="4" r="1" /><circle cx="8" cy="4" r="1" /><circle cx="12" cy="4" r="1" /><circle cx="4" cy="8" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="12" cy="8" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="8" cy="12" r="1" /><circle cx="12" cy="12" r="1" /></svg>`,
+  notebookFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon notebook-icon flagged-icon"><circle cx="4" cy="4" r="1" /><circle cx="8" cy="4" r="1" /><circle cx="12" cy="4" r="1" /><circle cx="4" cy="8" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="12" cy="8" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="8" cy="12" r="1" /><circle cx="12" cy="12" r="1" /></svg>`,
   syncedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><circle cx="8" cy="8" r="6" /><line x1="2" y1="8" x2="14" y2="8" /></svg>`,
   syncedFolderBroken: `<svg viewBox="0 0 16 16" class="tree-type-icon sync-broken-icon"><circle cx="8" cy="8" r="6" /><polyline points="2,8 5,8 6,6 7,10 8,6 9,10 10,8 14,8" /></svg>`,
   inbox: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 9 5 9 6.5 11 9.5 11 11 9 14 9" /><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" /></svg>`,

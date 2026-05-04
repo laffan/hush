@@ -21,6 +21,14 @@ let _enabled = false;
 export function setTooltipsEnabled(enabled) {
   _enabled = !!enabled;
   document.body.classList.toggle("tooltips-on", _enabled);
+  refreshTooltips();
+}
+
+/** Re-walk every `[data-tooltip]` element and add/strip the `title`
+ *  attribute to match the current enabled state. Call this after
+ *  rendering new tooltip-bearing markup so freshly-added elements pick
+ *  up the user's setting without a settings round-trip. */
+export function refreshTooltips() {
   for (const el of document.querySelectorAll("[data-tooltip]")) {
     if (_enabled) el.title = el.dataset.tooltip;
     else el.removeAttribute("title");

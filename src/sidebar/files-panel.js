@@ -10,6 +10,7 @@ import { findNode, collectFlaggedItems, findAncestorIds } from "../state/tree-he
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
+import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { mountDeskThumbnail, unmountDeskThumbnail, refreshDeskThumbnail } from "./desk-thumbnail.js";
 
@@ -54,7 +55,7 @@ function windowBadgesHtml(item, state) {
 function actionButtons(nodeId, nodeType, inTrash, item) {
   if (nodeId === AppState.TRASH_ID) {
     return `<span class="tree-actions" data-node-id="${nodeId}">
-      <button data-tree-action="empty-trash" class="tree-action-text" title="Empty Trash">Empty</button>
+      <button data-tree-action="empty-trash" class="tree-action-text" data-tooltip="Empty Trash">Empty</button>
     </span>`;
   }
   // Legacy synced folder root
@@ -67,16 +68,16 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
   // Docs auto-derive their name from first line while still "Untitled".
   // Once content has locked in a name, expose rename like notebooks do.
   const docRenameable = isDoc && item?.name && item.name !== "Untitled";
-  const renameBtn = (isSpecial || (isDoc && !docRenameable)) ? "" : `<button data-tree-action="rename" title="Rename">
+  const renameBtn = (isSpecial || (isDoc && !docRenameable)) ? "" : `<button data-tree-action="rename" data-tooltip="Rename">
       <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     </button>`;
-  const flagBtn = (isSpecial || inTrash || isImage) ? "" : `<button data-tree-action="flag" title="Toggle flag">
+  const flagBtn = (isSpecial || inTrash || isImage) ? "" : `<button data-tree-action="flag" data-tooltip="Toggle flag">
       <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
     </button>`;
-  const dupBtn = (isSpecial || isImage) ? "" : `<button data-tree-action="duplicate" title="Duplicate">
+  const dupBtn = (isSpecial || isImage) ? "" : `<button data-tree-action="duplicate" data-tooltip="Duplicate">
       <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
     </button>`;
-  const delBtn = isSpecial ? "" : `<button data-tree-action="delete" title="Delete">
+  const delBtn = isSpecial ? "" : `<button data-tree-action="delete" data-tooltip="Delete">
       <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
     </button>`;
   // Folder ↔ Project toggle. Only surfaced on real Folder/Project nodes
@@ -87,7 +88,7 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
   let convertBtn = "";
   if (!isSpecial && (nodeType === "folder" || nodeType === "project") && !item?.syncFolderId) {
     const target = nodeType === "folder" ? "project" : "folder";
-    convertBtn = `<button data-tree-action="convert-container" data-target-type="${target}" title="Convert to ${target}">
+    convertBtn = `<button data-tree-action="convert-container" data-target-type="${target}" data-tooltip="Convert to ${target}">
       <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
     </button>`;
   }
@@ -99,7 +100,7 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
 // Flag-only action button for the virtual Flagged folder items
 function flagOnlyButton(nodeId) {
   return `<span class="tree-actions" data-node-id="${nodeId}">
-    <button data-tree-action="flag" title="Unflag">
+    <button data-tree-action="flag" data-tooltip="Unflag">
       <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
     </button>
   </span>`;
@@ -114,10 +115,10 @@ export function createFilesPanel(container, state, hidePanel) {
   const btnRow = document.createElement("div");
   btnRow.className = "tree-create-btns";
   btnRow.innerHTML = `
-    <button id="tree-new-doc" title="New Document">${typeIcons.document}</button>
-    <button id="tree-new-notebook" title="New Notebook">${typeIcons.notebook}</button>
-    <button id="tree-new-folder" title="New Folder">${typeIcons.folder}</button>
-    <button id="tree-new-project" title="New Project">${typeIcons.project}</button>
+    <button id="tree-new-doc" data-tooltip="New Document">${typeIcons.document}</button>
+    <button id="tree-new-notebook" data-tooltip="New Notebook">${typeIcons.notebook}</button>
+    <button id="tree-new-folder" data-tooltip="New Folder">${typeIcons.folder}</button>
+    <button id="tree-new-project" data-tooltip="New Project">${typeIcons.project}</button>
   `;
   container.appendChild(btnRow);
 
@@ -527,6 +528,10 @@ function refreshList(state) {
   // Any rows we might have had a tooltip open over may have been re-
   // rendered or removed — drop the tooltip so it can't linger.
   import("../editor/image-preview.js").then(({ hideImageTooltip }) => hideImageTooltip());
+  // Newly-rendered rows carry `data-tooltip` markers; the global gate's
+  // walk only runs on settings change, so re-apply here so freshly added
+  // hover-action buttons pick up the user's Show Tooltips setting.
+  refreshTooltips();
 }
 
 function handleRename(nodeId, triggerEl, state) {

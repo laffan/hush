@@ -12,10 +12,10 @@ import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, previewNotebookStyle, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
-import { initPaneManager, isPaneActive } from "./pane/pane-manager.js";
+import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
 import { applyActiveStyle, applyFocusModeOpacity, handleOAuthCode } from "./style-application.js";
-import { installWindowShortcuts } from "./window-shortcuts.js";
+import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
 import {
   getInitialFileFromHash,
@@ -175,11 +175,7 @@ async function init() {
     });
   }
 
-  // Focus editor when window gains focus (unless a floating pane is active)
-  window.addEventListener("focus", () => {
-    if (isPaneActive()) return;
-    if (state.editor) state.editor.focus();
-  });
+  installActivationFocus(state, notebookContainer);
 
   // Track CMD held state on the body so the column resizers (and any
   // future modifier-gated affordance) can reveal themselves only while

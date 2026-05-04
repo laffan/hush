@@ -5,7 +5,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags, Tag } from "@lezer/highlight";
 import { Strikethrough } from "@lezer/markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { wrapOnSelection } from "./wrap-on-selection.js";
 import { getActiveTheme } from "../themes/index.js";
 import { createPrivateModePlugin } from "./plugins/private-mode.js";
 import { createDryHighlightPlugin } from "./plugins/dry-highlight.js";
@@ -284,7 +284,7 @@ export function createBaseExtensions(state, onChange, opts) {
     markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
     history(),
     drawSelection(),
-    closeBrackets(),
+    wrapOnSelection,
     updateListener,
     _shortcutComp.of(buildShortcutExtension(state)),
     createCalloutPlugin(),
@@ -297,7 +297,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
     createCommentAfterPlugin(),
-    keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),
     placeholder("Start writing..."),
     EditorView.lineWrapping,
@@ -507,7 +507,7 @@ export function createEditor(container, state) {
       markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
       history(),
       drawSelection(),
-      closeBrackets(),
+      wrapOnSelection,
       updateListener,
       blurListener,
       shortcutCompartment.of(initialShortcuts),
@@ -532,7 +532,7 @@ export function createEditor(container, state) {
       encouragePlugin,
       projectViewField,
       separatorFilter,
-      keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
     ],

@@ -11,6 +11,29 @@
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
+import { isPaneActive } from "./pane/pane-manager.js";
+
+/**
+ * Wire window activation to focus the active editing surface so keyboard
+ * shortcuts fire without an extra click. macOS `focus` lands before the
+ * WebView is first-responder (rAF defers past it); iOS doesn't always
+ * fire `focus`, so `visibilitychange` is the reliable signal there.
+ */
+export function installActivationFocus(state, notebookContainer) {
+  notebookContainer.setAttribute("tabindex", "-1");
+  notebookContainer.style.outline = "none";
+  function refocus() {
+    if (isPaneActive()) return;
+    requestAnimationFrame(() => {
+      if (state.currentNotebookFileId) notebookContainer.focus({ preventScroll: true });
+      else if (state.editor) state.editor.focus();
+    });
+  }
+  window.addEventListener("focus", refocus);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refocus();
+  });
+}
 
 export function installWindowShortcuts(state, windowCommands) {
   window.addEventListener("keydown", (e) => {

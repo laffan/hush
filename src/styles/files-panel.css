@@ -246,7 +246,19 @@
   fill: currentColor;
 }
 
-/* Locked-style documents show a dot inside the document icon */
+/* Doc icon is line-based, so the flagged variant beefs up the stroke
+   instead of relying on fill (which lines ignore). */
+.tree-type-icon.flagged-icon line {
+  stroke-width: 3;
+}
+
+/* Notebook icon — solid dot grid (override the default stroke-only look). */
+.tree-type-icon.notebook-icon circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* Locked-style documents show a small filled dot at the corner of the doc icon. */
 .tree-type-icon.locked-style-icon circle {
   fill: currentColor;
   stroke: none;
