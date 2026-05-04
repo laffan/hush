@@ -165,6 +165,7 @@ export function createSelectionEngine({
     lastTransform: null,         // last applied transform (for commit)
     rotateAnchor: null,          // { x, y } center of rotation
     rotateStartAngle: 0,         // angle (rad) of cursor at rotation start
+    externalDragging: false,     // true while Hush owns a drag; bbox stays hidden
   };
 
   // ---------- helpers ----------
@@ -173,6 +174,15 @@ export function createSelectionEngine({
   }
 
   function updateBBoxView() {
+    // Externally-driven drag (Hush rectangle-select moving strokes)
+    // hides the bbox + handles; refuse to flip them back to visible
+    // even if the bridge re-runs setSelectedIds while the gesture is
+    // in flight (state.shapes mutates per pointermove → the bridge
+    // listens for "shapes" → would otherwise reveal the bbox here).
+    if (state.externalDragging) {
+      bboxGroup.setAttribute('visibility', 'hidden');
+      return;
+    }
     if (!state.bbox || state.selectedIds.size === 0) {
       bboxGroup.setAttribute('visibility', 'hidden');
       return;
@@ -596,12 +606,14 @@ export function createSelectionEngine({
     // bboxes trying to follow the same gesture along slightly
     // different paths.
     beginExternalDrag() {
-      bboxGroup.setAttribute('visibility', 'hidden');
+      state.externalDragging = true;
+      updateBBoxView();
     },
     endExternalDrag() {
       // Hush's commit has already moved the underlying stroke points
       // via engine.commitTransform; recompute against them so the
       // bbox lines up with the strokes' final positions, then unhide.
+      state.externalDragging = false;
       recomputeBBoxFromSelection();
     },
     cancelActive() {
