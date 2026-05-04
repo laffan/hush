@@ -105,6 +105,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── styles-panel.js
 │   ├── styles-panel-shared.js         (escapers + theme color maps)
 │   ├── style-modal.js                 (two-column edit modal)
+│   ├── style-modal-shader.js          (Post Processing block + per-layer knobs)
+│   ├── custom-dropdown.js             (extracted dropdown widget used by style-modal)
 │   ├── versions-panel.js
 │   ├── notebook-snapshot-preview.js   (snapshot thumbnails for notebooks)
 │   └── sortable-list/
@@ -150,6 +152,13 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── dropbox.js
 │   ├── dropbox-browser.js
 │   └── local-sync.js                 (desktop-only filesystem mounts — JS wrapper over Rust commands)
+│
+├── shader-layer/                      (optional per-style post-processing — see README)
+│   ├── index.js                       (registry + lifecycle + per-layer knob schema)
+│   └── layers/
+│       ├── css-vignette-scanlines.js  (CSS — static, zero-rAF)
+│       ├── css-phosphor-scanlines.js  (CSS — scanlines + text-shadow glow on actual editor text)
+│       └── webgl-neon-bloom.js        (WebGL2 — drifting glow blobs)
 │
 └── styles/                            (CSS, per-module)
 ```
@@ -330,7 +339,38 @@ Style data: `{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrid
 
 Live preview on hover/edit via `style-preview` / `style-preview-end` events. Color overrides take precedence over theme colors, applied directly to CSS variables.
 
-The two-column edit modal (settings on the left, live preview on the right) lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save/Cancel buttons; closing the modal flushes the timer. Shared escaper helpers + theme color maps used by both the panel and the modal live in `styles-panel-shared.js`.
+The two-column edit modal (settings on the left, live preview on the right) lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save/Cancel buttons; closing the modal flushes the timer. Shared escaper helpers + theme color maps used by both the panel and the modal live in `styles-panel-shared.js`. The Post Processing block in the modal is split into `style-modal-shader.js` and the generic dropdown widget into `custom-dropdown.js` to keep `style-modal.js` under the line limit.
+
+### Post Processing / Shader Layer (`shader-layer/`)
+
+Optional per-style overlay of decorative effects (scanlines, vignette, neon glow on text, drifting bloom). Surfaced in the style edit modal as a "Post Processing" block; data lives on `Style.shaderLayer` for user styles and `AppSettings.shaderLayer` for the Default style. Rust struct `ShaderLayer { enabled, layer_id, intensity, options }` (camelCase via serde) round-trips alongside the rest of the Style.
+
+**Zero-cost-when-off.** The whole runtime — `shader-layer/index.js` and every `layers/<id>.js` — is dynamically imported via `import()` only when a style with `shaderLayer.enabled === true` is applied. `style-application.js` keeps a one-shot `_shaderModulePromise` so the chunk loads once per session at most. Users with no effect configured pay nothing: no DOM, no canvas, no WebGL context, no rAF loop, no listeners, and the bundle never reaches the renderer.
+
+**Registry** (`shader-layer/index.js`). `SHADER_LAYERS` is an array of `{ id, name, family: "css" | "webgl2", load: () => Promise<Module>, settings: KnobSchema[] }`. The schema lives in the registry rather than the layer modules so the modal can render a layer's knob list without first loading the layer's code. Each `KnobSchema` is `{ id, label, type: "range" | "color", min?, max?, step?, default }`. `resolveLayerOptions(layerId, userValues)` overlays user values on top of the schema defaults.
+
+**Lifecycle.** `applyShaderLayer({ layerId, intensity, container?, options? })` is idempotent: same layer + same container → push new intensity/options to the existing instance via `update()`; different layer or container → `unmountShaderLayer()` and remount fresh. `container` is optional — pass an element to scope the host inside it (used by the modal preview pane); omit for fullscreen overlay. `unmountShaderLayer()` calls the layer's `dispose()`, drops the resize/visibility listeners installed by `buildCtx`, and removes the host element.
+
+**Per-mount ctx.** `buildCtx(host, intensity, options)` returns `{ intensity, options, dpr, width, height, onResize, onVisible }`. The registry installs the resize observer + `visibilitychange` / `focus` / `blur` handlers once at mount; layers subscribe through callbacks rather than wiring their own. Animated layers gate their rAF loop on `onVisible(visible && focused)` so the GPU/CPU goes quiet when the user tabs away.
+
+**Host element.** Single `<div id="shader-layer-host">` with `pointer-events: none` so it never intercepts clicks. Two positioning modes:
+
+- **Fullscreen** (no container): `position: fixed; inset: 0; z-index: 501`. Above the floating sidebar toggle (`--z-modal: 500`) but below modal content (`--z-modal-content: 510`) — so the shader covers all chrome (sidebar, panes, overlays, popovers) but the style modal / settings / command palette stay visually clean while open.
+- **Scoped** (container element): `position: absolute; inset: 0; z-index: 1` appended into the container. Used by the modal preview pane (`#style-preview-pane`, which carries `position: relative` so the host sizes correctly) so hovering / selecting layers in the dropdown previews them inside the preview pane only, not over the live editor.
+
+**Blend modes live on the host, not the canvas.** Putting `mix-blend-mode` on a child canvas isolates the blend to the host's transparent backdrop — cleared white pixels paint opaque over the editor instead of multiplying with it. Setting it on the host blends the entire layer-as-a-unit onto everything beneath in body's stacking context. The host CSS deliberately omits `contain: strict` for the same reason (paint containment establishes paint isolation that breaks `mix-blend-mode` reach).
+
+**Layer modules.** Each exports `default function mount(host, ctx)` returning `{ update?, dispose }`.
+
+- **`css-vignette-scanlines.js`** — radial vignette + horizontal scanline pattern via two stacked `background-image` gradients on the host. No animation. Knobs: `vignetteStrength`, `scanlineOpacity`, `scanlineColor`. `mix-blend-mode: multiply` so scanlines darken light themes correctly.
+- **`css-phosphor-scanlines.js`** — first layer to break the pure-overlay model. Adds a class (`.shader-layer-phosphor-active`) to either `<body>` (fullscreen) or the modal preview pane (scoped), and injects a `<style>` in `<head>` with rules targeting `.cm-content` and `.style-preview-content`. The rules read CSS custom properties (`--shader-layer-phosphor-glow`, `--shader-layer-phosphor-halo`) that intensity-driven JS sets on the scope element so a slider drag retunes the glow without re-rendering anything. Knobs: `glow`, `halo`, `scanlineOpacity`, `scanlineColor`. Cleanup invariant: `dispose()` removes the class, the custom properties, the injected `<style>`, and the host's inline styles. Each step wrapped in its own try block so a stale reference can't strand the rest — this is the "pull the plug" path.
+- **`webgl-neon-bloom.js`** — three soft colored glow blobs drifting on irrationally-related rates (so the pattern never visibly repeats), screen-blended via `mix-blend-mode: screen` on the host. Procedural-only; no source texture sampled. Knobs: `brightness`, `speed`, three blob colors. Speed accumulates real-time × current rate into a `timeAccum` counter so changing speed mid-flight doesn't snap the blob positions. Renders at half-DPR — the blobs are smooth volumetric gradients, so upsampling adds an extra hint of softness for free. WebGL context is `WEBGL_lose_context.loseContext()`-ed on dispose so WebKit releases GPU memory immediately. Falls back to animated CSS radial gradients when WebGL2 isn't available.
+
+**Belt-and-suspenders panic cleanup.** `panicCleanup()` (also exposed on `window.__hushShaderPanicCleanup` for dev-console use) is the "pull the plug" escape hatch — finds and removes any `shader-layer-*` artifacts (host element, injected stylesheets, scope classes, custom properties on `<html>`/`<body>`) regardless of internal state tracking. Idempotent and safe to call any time. Useful if a layer ever glitches mid-mount or if you want to verify the feature can be fully removed.
+
+**Modal integration** (`sidebar/style-modal-shader.js`). `renderShaderSection(draft)` produces the section markup (Enable checkbox + layer dropdown + master intensity slider + per-layer knob list); `bindShaderSection(backdrop, draft, scheduleSave)` wires events. Hovering layers in the dropdown previews each via `applyShaderLayer({ container: previewPane })`; selecting commits to the draft and `scheduleSave()`-s. Switching layers re-renders the knob list against the new schema. `endShaderPreview(applyActiveStyle, state)` is called from `style-modal.js::close()` so closing the modal restores whatever shader the active style requires (or none).
+
+**Default vs user-style storage.** User styles carry `shaderLayer` on each `Style` object; the Default style stores its shader at `AppSettings.shaderLayer` (top-level), since the Default style is reconstructed on the fly in the modal from individual `AppSettings` fields. `applyActiveStyle()` reads from whichever slot matches the active style. The startup call to `applyActiveStyle` is unconditional (was previously gated on `activeStyleId` truthy) so the Default's shader mounts on app launch.
 
 ### Outline View / Longview (`longview/`)
 
