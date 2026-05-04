@@ -17,6 +17,10 @@
  */
 
 const HOST_ID = "shader-layer-host";
+// Tracks the container the host was last appended to. When the caller
+// asks for a different container (e.g. modal preview pane) we tear the
+// host down and rebuild it scoped to the new parent.
+let _hostContainer = null;
 
 // Registry of every shipped layer. Shape:
 //   { id, name, family: "css" | "canvas2d" | "webgl2", load: () => Promise<Module> }
@@ -39,23 +43,46 @@ let _state = null;
 // _state shape when active:
 //   { layerId, host, instance, dispose, resizeObs, visHandler, focusHandler }
 
-function ensureHost() {
+function ensureHost(container) {
+  // `container` null/undefined → fullscreen overlay (default).
+  // `container` element → host appended into it as an absolutely-positioned
+  //   overlay (used by the style modal to scope the preview to the
+  //   preview pane).
+  const wantContainer = container || null;
   let host = document.getElementById(HOST_ID);
-  if (host) return host;
+  if (host && _hostContainer === wantContainer) return host;
+
+  if (host) host.remove(); // container changed — rebuild
+
   host = document.createElement("div");
   host.id = HOST_ID;
-  // Cover the writing surfaces (editor / notebook / panes) but stay below
-  // the sidebar (200) and every modal layer. pointer-events: none so the
-  // editor still receives clicks even when an opaque layer sits on top.
-  host.style.cssText = [
-    "position:fixed",
-    "inset:0",
-    "z-index:100",
-    "pointer-events:none",
-    "overflow:hidden",
-    "contain:strict",
-  ].join(";");
-  document.body.appendChild(host);
+  if (wantContainer) {
+    // Scoped — fill the parent. The parent must be position: relative or
+    // similar; the modal preview pane already is.
+    host.style.cssText = [
+      "position:absolute",
+      "inset:0",
+      "z-index:1",
+      "pointer-events:none",
+      "overflow:hidden",
+      "contain:strict",
+    ].join(";");
+    wantContainer.appendChild(host);
+  } else {
+    // Fullscreen — covers writing surfaces, stays below sidebar (200) and
+    // every modal layer. pointer-events: none so the editor still
+    // receives clicks even when an opaque layer sits on top.
+    host.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "z-index:100",
+      "pointer-events:none",
+      "overflow:hidden",
+      "contain:strict",
+    ].join(";");
+    document.body.appendChild(host);
+  }
+  _hostContainer = wantContainer;
   return host;
 }
 
@@ -64,20 +91,26 @@ function findLayer(id) {
 }
 
 /** Mount the requested layer. Idempotent: a re-call with the same layer
- *  just updates intensity; a different layer tears down + mounts fresh. */
-export async function applyShaderLayer({ layerId, intensity }) {
+ *  + container just updates intensity; a different layer or container
+ *  tears down + mounts fresh.
+ *
+ *  `container` is optional — pass an element to scope the shader to that
+ *  element (used for in-modal previews). Default is fullscreen overlay. */
+export async function applyShaderLayer({ layerId, intensity, container }) {
   const reg = findLayer(layerId);
   if (!reg) { unmountShaderLayer(); return; }
 
-  // Same layer already mounted — just push the new intensity through.
-  if (_state && _state.layerId === layerId) {
+  const wantContainer = container || null;
+
+  // Same layer + same container — just push the new intensity through.
+  if (_state && _state.layerId === layerId && _hostContainer === wantContainer) {
     _state.instance?.update?.({ intensity: clampIntensity(intensity) });
     return;
   }
 
-  // Different layer (or first mount) — wipe and rebuild.
+  // Different layer or container — wipe and rebuild.
   unmountShaderLayer();
-  const host = ensureHost();
+  const host = ensureHost(wantContainer);
   const mod = await reg.load();
   const ctx = buildCtx(host, intensity);
   const instance = await mod.default(host, ctx);
@@ -104,6 +137,7 @@ export function unmountShaderLayer() {
   const host = document.getElementById(HOST_ID);
   if (host) host.remove();
   _state = null;
+  _hostContainer = null;
 }
 
 function clampIntensity(v) {

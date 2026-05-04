@@ -207,6 +207,9 @@
   overflow-y: auto;
   transition: background 0.15s, color 0.15s;
   border-radius: 0 12px 12px 0;
+  /* Lets the optional shader-layer host (position: absolute; inset: 0)
+     scope itself to the preview pane instead of the viewport. */
+  position: relative;
 }
 
 .style-preview-content {

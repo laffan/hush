@@ -14,7 +14,8 @@ import {
   themeBackgrounds,
   themeForegrounds,
 } from "./styles-panel-shared.js";
-import { renderShaderSection, bindShaderSection } from "./style-modal-shader.js";
+import { renderShaderSection, bindShaderSection, endShaderPreview } from "./style-modal-shader.js";
+import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
 
 // ── lorem ipsum preview text ───────────────────────────────────────────────────
@@ -230,6 +231,9 @@ export function openStyleModal(state, existingStyle, onDone) {
   function close() {
     flushSave();
     backdrop.remove();
+    // Drop any modal-driven shader preview, then re-apply the active
+    // style so its shader (if any) takes the screen back.
+    endShaderPreview(applyActiveStyle, state);
   }
 
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
@@ -339,7 +343,7 @@ export function openStyleModal(state, existingStyle, onDone) {
               </div>
             </div>
 
-            ${renderShaderSection(draft)}
+            ${renderShaderSection(draft, isDefault)}
 
             <div class="style-modal-section">
               <h3 class="style-modal-section-title">Colors</h3>
