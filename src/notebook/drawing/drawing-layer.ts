@@ -28,6 +28,7 @@ import type { EngineAdapter, EngineStroke, ShimState } from "./sync-shim";
 import { brushUrl } from "./brush-urls";
 import { createDrawingDom } from "./drawing-layer-dom";
 import { createSelectionStyleSession } from "./selection-style";
+import { createSelectionBridge } from "./selection-bridge";
 import type { DrawingLayer, EngineTool, SelectionStyleEntry, SelectionStylePatch } from "./drawing-layer-types";
 
 // Re-export so callers that imported these from drawing-layer.ts keep working.
@@ -314,6 +315,11 @@ export function createDrawingLayer({
     if (state.drawingSubTool !== "select") transientPrevSubTool = null;
   }) as EventListener;
   state.addEventListener("change", onSubToolChangeForTransient);
+
+  // Bridge Hush's selectedIds → engine selection so the bbox +
+  // handles appear for strokes selected via Hush's regular Select
+  // rectangle, not just the pen-mode lasso.
+  const selectionBridge = createSelectionBridge({ state, selectionEngine, shimBox });
 
   // Two/three-finger touch → undo/redo on iPad. Two-finger drift
   // promotes the burst into a pan — forwarded up to the notebook so
@@ -642,6 +648,7 @@ export function createDrawingLayer({
   function destroy(): void {
     shim.destroy();
     state.removeEventListener("change", onSubToolChangeForTransient);
+    selectionBridge.destroy();
     wrapper.remove();
     if (selectHintTimer) { clearTimeout(selectHintTimer); selectHintTimer = null; }
     selectHint.remove();

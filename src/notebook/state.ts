@@ -217,13 +217,30 @@ export class DrawingState extends EventTarget {
   setDrawingToolbarMinimized(b: boolean) {
     if (this.drawingToolbarMinimized === b) return;
     this.drawingToolbarMinimized = b;
-    // When the user hides the drawing toolbar, fall back to Select so
-    // they aren't trapped with an active draw / erase / slice tool
-    // they can no longer see or change.
     if (b && this.tool === "pen") {
+      // When the user hides the drawing toolbar, fall back to Select
+      // so they aren't trapped with an active draw / erase / slice
+      // tool they can no longer see or change.
       this.tool = "select";
       this.notify("tool");
       this.notify("drawingMode");
+    } else if (!b) {
+      // Restoring the toolbar drops the user back into drawing with
+      // the first brush slot active — opening the pencil pill should
+      // mean "I want to draw again" without a separate brush click.
+      if (this.activeBrushSlot !== 0) {
+        this.activeBrushSlot = 0;
+        this.notify("activeBrushSlot");
+      }
+      if (this.drawingSubTool !== "draw") {
+        this.drawingSubTool = "draw";
+        this.notify("drawingSubTool");
+      }
+      if (this.tool !== "pen") {
+        this.tool = "pen";
+        this.notify("tool");
+        this.notify("drawingMode");
+      }
     }
     this.notify("drawingToolbarMinimized");
   }

@@ -10,6 +10,7 @@ src/notebook/drawing/
   drawing-layer-types.ts DrawingLayer interface + EngineTool / SelectionStyleEntry / SelectionStylePatch types
   drawing-layer-dom.ts   DOM scaffolding (transform wrapper, three stacked canvases, pocket-stash canvas, SVG overlay, eraser cursor, "Selecting" hint pill)
   selection-style.ts     Retroactive selection styling session (snapshot → apply → commit one undo entry)
+  selection-bridge.ts    Mirrors Hush's state.selectedIds into the engine selection so resize / rotate handles also appear under the regular Select tool, not only the pen-mode lasso
   sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff, no-op fast path)
   brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
@@ -149,7 +150,9 @@ Slider inputs open a session on their first `input` event of a drag and commit o
 
 ### Selection bbox: resize, rotate, undo
 
-`selection.js` paints a dashed bbox with **eight square resize handles** (corners + edge mid-points) and a **rotation handle** as a small circle hovering above the top edge with a tether down to the bbox. Resize is always **proportional** — corner handles project the cursor onto the diagonal anchor→handle vector; edge mid-handles propagate their single-axis scale to the locked axis. The engine's `commitTransform(ids, fn, sizeScale)` accepts an optional uniform size scale so the brush stamp itself widens or narrows with the bbox, not just the underlying point positions. Rotation rotates the chrome via an SVG `transform="rotate(angle, cx, cy)"` for live feedback and bakes the rotated points on commit; the bbox is then recomputed axis-aligned from the new points.
+`selection.js` paints a dashed bbox with **eight square resize handles** (corners + edge mid-points) and a **rotation handle** as a small circle on a tether above the top edge. Resize is always **proportional** — corner handles project the cursor onto the diagonal anchor→handle vector; edge mid-handles propagate their single-axis scale to the locked axis. The engine's `commitTransform(ids, fn, sizeScale)` accepts an optional uniform size scale so the brush stamp itself widens or narrows with the bbox, not just the underlying point positions. Rotation rotates the chrome via an SVG `transform="rotate(angle, cx, cy)"` for live feedback and bakes the rotated points on commit; the bbox is then recomputed axis-aligned from the new points.
+
+The bbox + handles also appear when strokes are selected via Hush's regular Select tool — `selection-bridge.ts` listens for `selectedIds` / `tool` / `drawingSubTool` change events and pushes the matching engine stroke ids into `selectionEngine.setSelectedIds()`. CSS pins `pointer-events: auto` on `.bbox` and `.handle` so the handles stay interactive even when the SVG root has `pointer-events: none` outside pen mode (which lets empty-canvas clicks fall through to Hush's input layer). The pen-mode lasso path skips the bridge so it owns its own selection set.
 
 ### Undo / redo
 

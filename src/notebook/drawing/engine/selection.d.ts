@@ -14,6 +14,7 @@ export function createSelectionEngine(opts: {
   startLassoAtPointer(pointerId: number, point: { x: number; y: number }): void;
   hasSelection(): boolean;
   getSelectedIds(): Set<number>;
+  setSelectedIds(ids: Iterable<number>): void;
   refreshBBox(): void;
   cancelActive(): void;
 };

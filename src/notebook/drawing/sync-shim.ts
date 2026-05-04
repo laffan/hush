@@ -103,6 +103,11 @@ export interface ShimState {
    *  changes into this set so hush-level ops (Cmd+G, selection
    *  toolbar, Delete) see the same selection. */
   selectedIds: Set<string>;
+  /** Outer tool (the bottom-toolbar selection: select / pen / text /
+   *  drag-area / brainstorm). Drawing-layer reads this so it can keep
+   *  the engine bbox in sync when Hush selects strokes outside pen
+   *  mode (the rectangular-select case). */
+  tool: string;
   /** Current drawing sub-tool. The long-press → lasso handoff flips
    *  this to "select" so the stroke engine stops accepting draws for
    *  the duration of the selection, and restores on deselect. */

@@ -43,10 +43,12 @@
  * iPadOS Safari reports these in CSS pixels for touch contacts.
  * ============================================================ */
 
-// Hush delta #13: SIMULTANEITY_MS bumped from 180→350 ms; see header.
-const SIMULTANEITY_MS = 350;       // max time between the first and last contact landing.
+// Hush delta #13: SIMULTANEITY_MS bumped from 180→350 ms (and now to
+// 600 ms for the inter-landing window only — the gestureMode trigger
+// no longer requires it, see header).
+const SIMULTANEITY_MS = 600;       // max time between the first and last contact landing.
                                    // Was 180 — too tight: a natural fast 2-finger tap on iPad
-                                   // routinely has 200–300 ms of inter-finger lag, and the gap
+                                   // routinely has 200–500 ms of inter-finger lag, and the gap
                                    // landed each finger's pointerdown as a separate stroke
                                    // (the user saw a tiny line drawn instead of an undo).
 const TAP_MAX_MS = 280;            // max duration from down to up for a tap
@@ -204,12 +206,15 @@ export function createGestures({
     // check, a second finger landing in the middle of a real draw
     // stroke would cancel the stroke and the user would lose their
     // ink. With it, we only swallow strokes that the first finger
-    // hasn't actually committed to yet.
+    // hasn't actually committed to yet. We deliberately don't gate
+    // on SIMULTANEITY_MS here — that window covers the *evaluation*
+    // step (see evaluateBurst). Plenty of users tap with 400–500 ms
+    // of inter-finger lag; a strict pre-gate dropped those.
     let firstFingerStable = true;
     for (const r of active.values()) {
       if (r.moved2 > MOVE_TOLERANCE_2) { firstFingerStable = false; break; }
     }
-    const isFollowup = active.size >= 1 && firstFingerStable && (t - windowStart) <= SIMULTANEITY_MS;
+    const isFollowup = active.size >= 1 && firstFingerStable;
 
     active.set(e.pointerId, {
       id: e.pointerId,
@@ -225,16 +230,24 @@ export function createGestures({
       tooBig: big,
     });
 
-    // Second+ contact within the simultaneity window → we're in a gesture.
+    // Second+ contact while finger #1 is stable → we're in a gesture.
     // Swallow the event so stroke.js never sees it (and doesn't start a
     // stroke on the follow-up finger) and discard any touch-started stroke
-    // that was spawned when finger #1 landed.
-    if (isFollowup) {
+    // that was spawned when finger #1 landed. Once gestureMode is on,
+    // every subsequent finger also gets swallowed for the duration of
+    // the burst so a 3-finger redo doesn't accidentally land a third
+    // stroke when the third finger arrives later.
+    if (isFollowup || gestureMode) {
       e.stopImmediatePropagation();
       if (!gestureMode) {
         gestureMode = true;
         strokeEngine.cancelActiveStroke();
         if (selectionEngine && selectionEngine.cancelActive) selectionEngine.cancelActive();
+      } else {
+        // Already in gesture mode; make sure no stroke leaked in
+        // between fingers (e.g. after my own onPointerDown ran for
+        // an earlier finger that wasn't yet known to be a gesture).
+        strokeEngine.cancelActiveStroke();
       }
     }
   }

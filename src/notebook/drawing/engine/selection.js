@@ -38,9 +38,10 @@ const MIN_SCALE = 0.05;
 // Rotation handle: a small circle floating above the top edge of the
 // bbox. ROTATE_OFFSET is the pixel gap between the bbox top and the
 // handle's center. Sized a touch larger than the resize handles so
-// it reads as a different affordance.
-const ROTATE_HANDLE_R = 7;
-const ROTATE_OFFSET = 24;
+// it reads as a different affordance, and far enough above the bbox
+// that a finger can grab it without overlapping the top resize row.
+const ROTATE_HANDLE_R = 8;
+const ROTATE_OFFSET = 48;
 
 const HANDLE_SPEC = [
   { name: 'nw', sx: 0, sy: 0 },
@@ -551,6 +552,24 @@ export function createSelectionEngine({
     // Abort an in-progress lasso/move/resize without mutating strokes. Called
     // by the gesture recogniser when a second touch promotes the interaction
     // from "lasso" to "multi-finger gesture".
+    // Hush-side bridge: when the user selects strokes via the regular
+    // Select tool (not lasso), set the engine's bbox / handles so
+    // resize + rotate work without entering pen-select mode. The
+    // svg is left non-capturing so empty-canvas clicks still fall
+    // through to Hush's input layer; only the painted handles + bbox
+    // (CSS `pointer-events: auto`) are interactive.
+    setSelectedIds(ids) {
+      const next = ids instanceof Set ? new Set(ids) : new Set(ids || []);
+      // Filter to ids that actually exist in the engine.
+      const present = new Set();
+      for (const s of strokeEngine.getStrokes()) if (next.has(s.id)) present.add(s.id);
+      state.selectedIds = present;
+      if (present.size === 0) {
+        clearSelection();
+      } else {
+        recomputeBBoxFromSelection();
+      }
+    },
     cancelActive() {
       if (state.mode === 'idle') return;
       // If a live preview transform is applied, undo it in the DOM.

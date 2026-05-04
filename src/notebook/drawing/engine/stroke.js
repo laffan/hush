@@ -307,6 +307,21 @@ export function createStrokeEngine({
       if (L && (L.locked || L.hidden)) return;
     }
     if (e.button !== undefined && e.button !== 0) return;
+    // Defensive: if a stroke is already in flight from a different
+    // pointer, treat the new contact as the start of a multi-touch
+    // gesture (the gestures recogniser may also intercept this in its
+    // capture-phase listener; this branch is the backstop). Cancel
+    // the in-flight stroke and don't open a second one — committing
+    // both would draw a stray dot at each finger.
+    if (state.active && state.activePointerId !== null && state.activePointerId !== e.pointerId) {
+      cancelLongPress();
+      state.active = null;
+      state.activePointerId = null;
+      state.suppressedPointerId = null;
+      clearCtx(liveCtx);
+      eraserCursor.setAttribute('visibility', 'hidden');
+      return;
+    }
     try { svg.setPointerCapture(e.pointerId); } catch {}
     e.preventDefault();
     const p = getPoint(e);

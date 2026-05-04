@@ -4,7 +4,7 @@ import type { CanvasTheme } from "./themes";
 import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
-import { drawSelectionHighlight, drawStrokeBoundsHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton } from "./renderer-selection";
+import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton } from "./renderer-selection";
 import { drawBackground } from "./renderer-background";
 import type { FlowchartLayer } from "./flowchart";
 
@@ -206,32 +206,12 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       drawGroupHighlight(ctx, bounds, camera.zoom, theme.accent);
     }
 
-    // Strokes never get per-stroke resize handles — the drawing engine
-    // owns their transform, so a handled highlight from the canvas
-    // renderer is non-functional chrome. When more than one stroke is
-    // selected outside a named group, collapse them into a single
-    // combined dashed bbox so the user sees "one selection" instead of
-    // a field of individual stroke boxes.
-    const looseStrokes: Shape[] = [];
-    for (const shape of shapes) {
-      if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id)) continue;
-      if (shape.type !== "draw") continue;
-      if (shape.groupId && groupBounds.has(shape.groupId)) continue;
-      looseStrokes.push(shape);
-    }
-    if (looseStrokes.length >= 2) {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const s of looseStrokes) {
-        const b = getShapeBounds(s, state.fontFamily);
-        if (b.minX < minX) minX = b.minX;
-        if (b.minY < minY) minY = b.minY;
-        if (b.maxX > maxX) maxX = b.maxX;
-        if (b.maxY > maxY) maxY = b.maxY;
-      }
-      drawGroupHighlight(ctx, { minX, minY, maxX, maxY }, camera.zoom, theme.accent);
-    } else if (looseStrokes.length === 1) {
-      drawStrokeBoundsHighlight(ctx, looseStrokes[0], camera.zoom, theme.accent, state.fontFamily);
-    }
+    // Stroke selections are drawn by the drawing engine's SVG overlay
+    // (see selection.js + drawing-layer.ts bridge) so the user gets
+    // resize + rotation handles regardless of which select tool they
+    // used to make the selection. The canvas-side stroke highlight is
+    // intentionally omitted to avoid two bboxes painting the same
+    // selection.
 
     for (const shape of shapes) {
       if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id)) continue;

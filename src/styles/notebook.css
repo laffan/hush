@@ -100,17 +100,21 @@ body.notebook-mode .column-resizer {
 .notebook-drawing-wrapper .bbox {
   /* Tinted fill makes the rect hit-testable so drag-on-selection
    * moves the selection instead of falling through and starting a
-   * new lasso. */
+   * new lasso. The explicit pointer-events keeps the bbox interactive
+   * even when the SVG root is set to pointer-events: none (the case
+   * outside pen mode — see drawing-layer.setInputEnabled). */
   fill: rgba(66, 133, 244, 0.06);
   stroke: #4285f4;
   stroke-dasharray: 4 4;
   stroke-width: 1.5;
   cursor: move;
+  pointer-events: auto;
 }
 .notebook-drawing-wrapper .handle {
   fill: #fff;
   stroke: #4285f4;
   stroke-width: 1.5;
+  pointer-events: auto;
 }
 .notebook-drawing-wrapper .handle.nw, .notebook-drawing-wrapper .handle.se { cursor: nwse-resize; }
 .notebook-drawing-wrapper .handle.ne, .notebook-drawing-wrapper .handle.sw { cursor: nesw-resize; }

@@ -119,8 +119,27 @@ export function createDrawingToolPanel(
   });
   container.appendChild(lassoBtn);
 
-  // Divider between lasso and erase/slice — groups "select" apart
-  // from the destructive tools.
+  // ----- Undo (backup for the 2-finger tap gesture) ----------------
+  // The touch gesture isn't always reliable on every device, so a
+  // visible button gives the user a definitely-works fallback. Wired
+  // straight to Hush's snapshot-based undo so it shares the stack
+  // with ⌘Z and the gesture itself.
+
+  const undoBtn = h("button", {
+    title: "Undo",
+    style: {
+      width: "36px", height: "36px", display: "flex",
+      alignItems: "center", justifyContent: "center",
+      border: "none", borderRadius: "8px", cursor: "pointer",
+      background: "transparent", transition: "all 0.15s",
+    },
+    children: [icon("undo", 20)],
+    onClick: () => drawingLayer.undo(),
+  }) as HTMLButtonElement;
+  container.appendChild(undoBtn);
+
+  // Divider between lasso/undo and erase/slice — groups "select"
+  // and its companion away from the destructive tools.
   container.appendChild(h("div", {
     style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
   }));
