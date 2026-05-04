@@ -374,6 +374,13 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       return;
     }
 
+    // While the drawing engine is mid-transform (move / resize /
+    // rotate from its own bbox grab), step out of the way — the
+    // engine's chrome is tracking the gesture and a stale toolbar
+    // anchored to the pre-drag bounds is just visual noise. Pops
+    // back at the committed position on release.
+    if (state.strokeEngineDragging) { container.style.display = "none"; return; }
+
     const selected = state.shapes.filter((s) => state.selectedIds.has(s.id));
     if (selected.length === 0) { container.style.display = "none"; return; }
 
@@ -398,17 +405,11 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       }
     } else {
       let minX = Infinity, minY = Infinity;
-      // Engine-driven stroke drag publishes a live offset; include it
-      // here so the toolbar floats with the engine bbox during the
-      // drag instead of staying at the pre-drag position.
-      const drag = state.strokeDragOffset;
       for (const s of selected) {
         if (pocketLayout.pocketedIds.has(s.id)) continue;
         const b = getShapeBounds(s);
-        const dx = drag && s.type === "draw" ? drag.dx : 0;
-        const dy = drag && s.type === "draw" ? drag.dy : 0;
-        if (b.minX + dx < minX) minX = b.minX + dx;
-        if (b.minY + dy < minY) minY = b.minY + dy;
+        if (b.minX < minX) minX = b.minX;
+        if (b.minY < minY) minY = b.minY;
       }
       const topLeft = canvasToScreen({ x: minX, y: minY }, state.camera);
       // Offset by selection highlight padding (6 canvas units) to align with the

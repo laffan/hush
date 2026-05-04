@@ -274,20 +274,21 @@ export function createDrawingLayer({
       bridgeEngineSelectionToState();
       restoreFromTransientSelect();
     },
-    // Engine-driven drag (pen-mode bbox grab). Publish the live offset
-    // on state so Hush's group highlight + selection toolbar can
-    // shift their bounds by the same delta — without it, those float
-    // at the pre-drag position until the engine commits and the
-    // shapes' points actually move.
-    onDragMove: (evt: { kind: string; dx: number; dy: number }) => {
-      if (evt.kind !== "move") return;
-      state.strokeDragOffset = { dx: evt.dx, dy: evt.dy };
-      state.notify("strokeDragOffset");
+    // Engine-driven drag (pen-mode bbox grab). Hide Hush's gray
+    // group highlight + selection toolbar for the duration so the
+    // engine's bbox + handles are the only chrome moving — both
+    // reappear at the committed position on release. Avoids the
+    // "two boxes lagging" feel when one tracks and the other
+    // doesn't.
+    onDragStart: () => {
+      if (state.strokeEngineDragging) return;
+      state.strokeEngineDragging = true;
+      state.notify("strokeEngineDragging");
     },
     onDragEnd: () => {
-      if (state.strokeDragOffset === null) return;
-      state.strokeDragOffset = null;
-      state.notify("strokeDragOffset");
+      if (!state.strokeEngineDragging) return;
+      state.strokeEngineDragging = false;
+      state.notify("strokeEngineDragging");
     },
   });
 

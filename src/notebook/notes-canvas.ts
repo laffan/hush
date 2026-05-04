@@ -508,7 +508,7 @@ export class NotesCanvas {
         flowchart: this.state.flowchart,
         flowDropTargetId: this.state.flowDropTargetId,
         flowHoveredEdgeId: this.state.flowHoveredEdgeId,
-        strokeDragOffset: this.state.strokeDragOffset,
+        strokeEngineDragging: this.state.strokeEngineDragging,
       });
       this._rafId = requestAnimationFrame(loop);
     };

@@ -112,11 +112,12 @@ export interface ShimState {
    *  this to "select" so the stroke engine stops accepting draws for
    *  the duration of the selection, and restores on deselect. */
   drawingSubTool: "draw" | "erase" | "slice" | "select";
-  /** Live offset published during an engine-driven move drag (pen-
-   *  mode bbox grab). Hush's group highlight + selection toolbar add
-   *  this delta to selected stroke shapes' bounds so they slide along
-   *  with the engine bbox. Cleared on commit / cancel. */
-  strokeDragOffset: { dx: number; dy: number } | null;
+  /** True while the drawing engine is mid-transform on its own bbox.
+   *  Set by drawing-layer's onDragStart hook; cleared on onDragEnd.
+   *  Hush hides its group highlight + selection toolbar while this
+   *  is true so the engine bbox is the only chrome moving during the
+   *  gesture. */
+  strokeEngineDragging: boolean;
   setDrawingSubTool(sub: "draw" | "erase" | "slice" | "select"): void;
   addEventListener(type: string, listener: (e: CustomEvent) => void): void;
   removeEventListener(type: string, listener: (e: CustomEvent) => void): void;

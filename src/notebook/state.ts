@@ -48,7 +48,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
   | "drawingToolbarMinimized" | "drawingToolbarOffset"
-  | "strokeDragOffset";
+  | "strokeEngineDragging";
 
 /** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
  *  the active theme's foreground. Slots 2 and 3 carry an explicit
@@ -96,13 +96,13 @@ export class DrawingState extends EventTarget {
    *  Session-only state — resets when the notebook re-mounts. */
   drawingToolbarOffset: { x: number; y: number } = { x: 0, y: 0 };
 
-  /** Live offset applied to selected stroke shapes by the drawing
-   *  engine's own move-by-bbox path (pen-mode lasso drag). Hush's
-   *  group highlight + selection toolbar add this offset to the
-   *  underlying shape bounds during the gesture so they slide in
-   *  lockstep with the engine's bbox + handles. Cleared on commit /
-   *  cancel; null otherwise. */
-  strokeDragOffset: { dx: number; dy: number } | null = null;
+  /** True while the drawing engine is mid-transform (move / resize /
+   *  rotate) on its own bbox. Hush's group highlight + selection
+   *  toolbar hide for the duration so the engine's chrome is the
+   *  only bbox in flight; everything reappears on release at the
+   *  committed position. Avoids the awkward "two boxes lagging in
+   *  different directions" mid-drag. */
+  strokeEngineDragging = false;
 
   // Layers are notebook-level; they host every shape type, not just
   // drawings. Shapes carry `layerId` via ShapeBase; the renderer
