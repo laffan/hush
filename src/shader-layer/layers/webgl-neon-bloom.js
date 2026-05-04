@@ -37,6 +37,7 @@ out vec4 outColor;
 
 uniform float u_time;
 uniform float u_brightness;   // master output scale (intensity * knob)
+uniform float u_blobSize;     // radius multiplier (0.5..3, default 1)
 uniform vec2  u_resolution;
 uniform vec3  u_color1;
 uniform vec3  u_color2;
@@ -60,10 +61,15 @@ void main() {
   vec2 p2 = vec2(0.74 + 0.18 * cos(t * 0.87), 0.62 + 0.20 * sin(t * 1.07));
   vec2 p3 = vec2(0.50 + 0.26 * sin(t * 0.63), 0.50 + 0.22 * cos(t * 1.27));
 
+  // Base radius 0.55 was the original hard-coded value. The blob-size
+  // knob scales it up to 3× (so a single blob can wash the whole
+  // viewport) or down to 0.5× (tighter, more discrete glows).
+  float r = 0.55 * u_blobSize;
+
   vec3 col = vec3(0.0);
-  col += glow(v_uv, p1, 0.55, u_color1, aspect);
-  col += glow(v_uv, p2, 0.55, u_color2, aspect);
-  col += glow(v_uv, p3, 0.55, u_color3, aspect);
+  col += glow(v_uv, p1, r, u_color1, aspect);
+  col += glow(v_uv, p2, r, u_color2, aspect);
+  col += glow(v_uv, p3, r, u_color3, aspect);
 
   col *= u_brightness;
 
@@ -112,6 +118,7 @@ export default function mount(host, ctx) {
 
   const uTime = gl.getUniformLocation(program, "u_time");
   const uBright = gl.getUniformLocation(program, "u_brightness");
+  const uBlobSize = gl.getUniformLocation(program, "u_blobSize");
   const uRes = gl.getUniformLocation(program, "u_resolution");
   const uC1 = gl.getUniformLocation(program, "u_color1");
   const uC2 = gl.getUniformLocation(program, "u_color2");
@@ -177,6 +184,7 @@ export default function mount(host, ctx) {
 
     gl.uniform1f(uTime, timeAccum);
     gl.uniform1f(uBright, bright);
+    gl.uniform1f(uBlobSize, num(options.blobSize, 1));
     gl.uniform2f(uRes, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);

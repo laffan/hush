@@ -62,6 +62,7 @@ export const SHADER_LAYERS = [
     load: () => import("./layers/webgl-neon-bloom.js"),
     settings: [
       { id: "brightness", label: "Bloom brightness", type: "range", min: 0, max: 1, step: 0.01, default: 0.55 },
+      { id: "blobSize", label: "Blob size", type: "range", min: 0.5, max: 3, step: 0.05, default: 1 },
       { id: "speed", label: "Drift speed", type: "range", min: 0, max: 1, step: 0.01, default: 0.4 },
       { id: "color1", label: "Bloom color 1", type: "color", default: "#f334a6" },
       { id: "color2", label: "Bloom color 2", type: "color", default: "#34c4f4" },
