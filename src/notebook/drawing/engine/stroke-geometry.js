@@ -237,5 +237,14 @@ export function xformFromDescriptor(t) {
     const { sx, sy, ax, ay } = t;
     return (x, y) => [ax + (x - ax) * sx, ay + (y - ay) * sy];
   }
+  if (t.kind === 'rotate') {
+    const { angle, ax, ay } = t;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return (x, y) => {
+      const dx = x - ax, dy = y - ay;
+      return [ax + dx * cos - dy * sin, ay + dx * sin + dy * cos];
+    };
+  }
   return null;
 }

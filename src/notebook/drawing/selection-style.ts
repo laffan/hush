@@ -6,17 +6,13 @@
  * about it.
  *
  * Pulled out of drawing-layer.ts as a factory that closes over the
- * deps it needs (selection / stroke engines, history, theme ref,
- * shim box). The shape returned matches the four interface methods on
- * DrawingLayer exactly (hasSelection, snapshotSelectedStyle,
+ * deps it needs (selection / stroke engines, recordHistory hook,
+ * theme ref, shim box). The shape returned matches the four interface
+ * methods on DrawingLayer exactly (hasSelection, snapshotSelectedStyle,
  * applyStyleToSelection, commitStyleHistory).
  */
 import type { EngineStroke } from "./sync-shim";
 import type { SelectionStyleEntry, SelectionStylePatch } from "./drawing-layer-types";
-
-interface History {
-  push(entry: { undo: () => void; redo: () => void }): void;
-}
 
 interface SelectionEngine {
   hasSelection(): boolean;
@@ -50,9 +46,9 @@ export function createSelectionStyleSession(deps: {
   strokeEngine: StrokeEngine;
   shimBox: ShimBox;
   themeRef: ThemeRef;
-  history: History;
+  recordHistory: () => void;
 }): SelectionStyleSession {
-  const { selectionEngine, strokeEngine, shimBox, themeRef, history } = deps;
+  const { selectionEngine, strokeEngine, shimBox, themeRef, recordHistory } = deps;
 
   function hasSelection(): boolean {
     return selectionEngine.hasSelection();
@@ -101,45 +97,20 @@ export function createSelectionStyleSession(deps: {
 
   function commitStyleHistory(before: Map<number, SelectionStyleEntry>): void {
     if (!before.size) return;
-    // Snapshot post-state for the same ids.
-    const after = new Map<number, SelectionStyleEntry>();
-    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-      if (!before.has(s.id)) continue;
-      after.set(s.id, {
-        color: s.color, size: s.size, brushId: s.brush, mode: s.mode,
-        colorIsAuto: !!s.colorIsAuto,
-      });
-    }
-    // Bail if nothing changed.
+    // Detect whether anything actually changed since the snapshot.
+    // recordHistory captures state.shapes wholesale, so we don't need
+    // before/after closures — we just want to suppress the snapshot
+    // when a session was opened but no slider actually moved.
     let changed = false;
-    for (const [id, b] of before) {
-      const a = after.get(id);
-      if (!a) continue;
-      if (a.color !== b.color || a.size !== b.size ||
-          a.brushId !== b.brushId || a.mode !== b.mode ||
-          a.colorIsAuto !== b.colorIsAuto) { changed = true; break; }
+    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
+      const b = before.get(s.id);
+      if (!b) continue;
+      if (s.color !== b.color || s.size !== b.size ||
+          s.brush !== b.brushId || s.mode !== b.mode ||
+          !!s.colorIsAuto !== b.colorIsAuto) { changed = true; break; }
     }
     if (!changed) return;
-    const restore = (map: Map<number, SelectionStyleEntry>) => {
-      const styleMap = new Map<number, object>();
-      for (const [id, e] of map) {
-        styleMap.set(id, {
-          color: e.color, size: e.size, brushId: e.brushId, mode: e.mode,
-        });
-      }
-      strokeEngine.setStrokesStyleMap(styleMap);
-      for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-        const e = map.get(s.id);
-        if (e) s.colorIsAuto = e.colorIsAuto;
-      }
-      const shim = shimBox.current;
-      if (shim) shim.onEngineStrokesTransformed(Array.from(map.keys()));
-      selectionEngine.refreshBBox();
-    };
-    history.push({
-      undo: () => restore(before),
-      redo: () => restore(after),
-    });
+    recordHistory();
   }
 
   return { hasSelection, snapshotSelectedStyle, applyStyleToSelection, commitStyleHistory };

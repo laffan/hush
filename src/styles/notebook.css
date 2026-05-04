@@ -116,6 +116,13 @@ body.notebook-mode .column-resizer {
 .notebook-drawing-wrapper .handle.ne, .notebook-drawing-wrapper .handle.sw { cursor: nesw-resize; }
 .notebook-drawing-wrapper .handle.n,  .notebook-drawing-wrapper .handle.s  { cursor: ns-resize; }
 .notebook-drawing-wrapper .handle.e,  .notebook-drawing-wrapper .handle.w  { cursor: ew-resize; }
+.notebook-drawing-wrapper .handle.rotate { cursor: grab; }
+.notebook-drawing-wrapper .handle.rotate:active { cursor: grabbing; }
+.notebook-drawing-wrapper .handle-tether {
+  stroke: #4285f4;
+  stroke-width: 1;
+  pointer-events: none;
+}
 .notebook-drawing-wrapper .delete-btn { cursor: pointer; }
 .notebook-drawing-wrapper .delete-btn circle { fill: #ea4335; }
 .notebook-drawing-wrapper .delete-btn path { stroke: #fff; stroke-width: 2; stroke-linecap: round; fill: none; }

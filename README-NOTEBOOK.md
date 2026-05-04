@@ -218,7 +218,7 @@ Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`). Co
 
 The top-centered pill is always visible and carries Lasso, Erase, Slice, and four brush slots. There is no "drawing mode" to enter — clicking any of those tools (or double-clicking an existing stroke) implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the pill visually dims.
 
-A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 1500). Tapping the already-active Lasso button toggles the flyout open.
+A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 500). Tapping the already-active Lasso button toggles the flyout open.
 
 `DrawShape` instances are first-class shapes — they group, layer, pocket, route through the shelf, and participate in Hush's undo stack. Stroke rendering itself is delegated to a bake-to-canvas engine inside `src/notebook/drawing/`. Full architectural notes, the sync-shim invariants, and the engine deltas are in [README-DRAWING.md](README-DRAWING.md).
 

@@ -204,9 +204,12 @@ export class NotesCanvas {
 
     // Top tool panel + brush-slot flyout. The panel is a pill; the
     // flyout is wider and mounts alongside so it isn't clipped by
-    // the pill's overflow. Both live inside `container`.
+    // the pill's overflow. Both live inside `container`. The meta
+    // pill (drag handle + minimize) sits to the right of the main
+    // pill and travels with it when dragged.
     const drawingChrome = createDrawingToolPanel(this.state, this._drawingLayer);
     container.appendChild(drawingChrome.root);
+    container.appendChild(drawingChrome.metaPill);
     container.appendChild(drawingChrome.flyout);
 
     // Route Hush select-drag through the drawing engine's preview

@@ -8,6 +8,13 @@
  *
  * Contents (left → right):
  *   Lasso | Erase · Slice | Brush 1 · Brush 2 · Brush 3 · Brush 4
+ *   then a small meta-tools cluster mounted alongside:
+ *   Drag (reposition) · Minimize
+ *
+ * The meta-tools cluster sits in its own pill — minimize and drag
+ * aren't drawing tools, so they don't share the line with brush
+ * slots. The drag handle is a press-and-drag affordance that moves
+ * both pills together.
  *
  * The lasso button exposes its own small flyout (click to activate,
  * click-again to toggle) letting the user dial in how long a held
@@ -37,8 +44,12 @@ const SUB_TOOLS: SubToolDef[] = [
 ];
 
 export interface DrawingToolPanelHandle {
-  /** The pill-shaped panel that sits at the top of the notebook. */
+  /** The pill-shaped panel that sits at the top of the notebook —
+   *  contains the drawing tools (lasso / erase / slice / brushes). */
   root: HTMLElement;
+  /** Meta-tools pill (drag handle + minimize). Mounted alongside the
+   *  main pill so the two travel together when dragged. */
+  metaPill: HTMLElement;
   /** Flyouts (brush edit + lasso settings). Append separately — they
    *  can extend past the pill and position themselves relative to
    *  their shared parent. */
@@ -144,11 +155,42 @@ export function createDrawingToolPanel(
   const slots = createBrushSlots(state, drawingLayer);
   container.appendChild(slots.root);
 
-  // ----- Minimize button -------------------------------------------
+  // ----- Meta-tools pill (drag handle + minimize) -------------------
+  //
+  // The drag handle and the minimize button aren't drawing tools, so
+  // they sit in their own pill alongside the main one. The drag
+  // handle is a press-and-drag affordance — pressing it captures the
+  // pointer and translates both pills together.
 
-  container.appendChild(h("div", {
-    style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
-  }));
+  const metaPill = h("div", {
+    style: {
+      position: "absolute",
+      top: "calc(16px + env(safe-area-inset-top))",
+      display: "flex",
+      alignItems: "center",
+      gap: "4px",
+      padding: "6px 8px",
+      borderRadius: "12px",
+      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+      zIndex: "100",
+      userSelect: "none",
+      backdropFilter: "blur(8px)",
+    },
+  });
+  metaPill.classList.add("notebook-tool-panel");
+
+  const dragBtn = h("button", {
+    title: "Drag toolbar",
+    style: {
+      width: "36px", height: "36px", display: "flex",
+      alignItems: "center", justifyContent: "center",
+      border: "none", borderRadius: "8px", cursor: "grab",
+      background: "transparent", transition: "all 0.15s",
+      touchAction: "none",
+    },
+    children: [icon("move", 20)],
+  }) as HTMLButtonElement;
+  metaPill.appendChild(dragBtn);
 
   const minimizeBtn = h("button", {
     title: "Hide drawing toolbar",
@@ -161,7 +203,41 @@ export function createDrawingToolPanel(
     children: [icon("minimize", 20)],
     onClick: () => state.setDrawingToolbarMinimized(true),
   }) as HTMLButtonElement;
-  container.appendChild(minimizeBtn);
+  metaPill.appendChild(minimizeBtn);
+
+  // ----- Drag-to-reposition wiring ---------------------------------
+
+  let dragStartClient: { x: number; y: number } | null = null;
+  let dragStartOffset: { x: number; y: number } = { x: 0, y: 0 };
+  let dragPointerId: number | null = null;
+  function onDragPointerDown(e: PointerEvent) {
+    if (e.button !== undefined && e.button !== 0) return;
+    dragPointerId = e.pointerId;
+    dragStartClient = { x: e.clientX, y: e.clientY };
+    dragStartOffset = { ...state.drawingToolbarOffset };
+    try { dragBtn.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    dragBtn.style.cursor = "grabbing";
+    e.preventDefault();
+  }
+  function onDragPointerMove(e: PointerEvent) {
+    if (dragStartClient === null) return;
+    if (e.pointerId !== dragPointerId) return;
+    const dx = e.clientX - dragStartClient.x;
+    const dy = e.clientY - dragStartClient.y;
+    state.setDrawingToolbarOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
+  }
+  function onDragPointerUp(e: PointerEvent) {
+    if (dragStartClient === null) return;
+    if (e.pointerId !== dragPointerId) return;
+    try { dragBtn.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    dragStartClient = null;
+    dragPointerId = null;
+    dragBtn.style.cursor = "grab";
+  }
+  dragBtn.addEventListener("pointerdown", onDragPointerDown);
+  dragBtn.addEventListener("pointermove", onDragPointerMove);
+  dragBtn.addEventListener("pointerup", onDragPointerUp);
+  dragBtn.addEventListener("pointercancel", onDragPointerUp);
 
   // ----- Restore pill (shown when minimized) -----------------------
 
@@ -316,16 +392,35 @@ export function createDrawingToolPanel(
     const parent = container.parentElement;
     const parentW = parent ? parent.clientWidth : window.innerWidth;
     const center = inset + (parentW - inset) / 2;
-    container.style.left = center + "px";
+    const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
+    // Top edge of both pills is at the safe-area inset; an extra Y
+    // offset pushes them down (or up) when the user drags.
+    const topAnchor = `calc(16px + env(safe-area-inset-top) + ${offset.y}px)`;
+    container.style.left = (center + offset.x) + "px";
+    container.style.top = topAnchor;
     container.style.transform = "translateX(-50%)";
     container.style.background = state.theme.uiBackground;
     container.style.color = state.theme.foreground;
+    // The meta pill sits to the right of the main pill; lay it out
+    // by reading the main pill's right edge after layout settles.
+    const place = () => {
+      const r = container.getBoundingClientRect();
+      const parentRect = parent ? parent.getBoundingClientRect() : { left: 0, top: 0 };
+      metaPill.style.left = (r.right - parentRect.left + 8) + "px";
+      metaPill.style.top = topAnchor;
+      metaPill.style.transform = "none";
+      metaPill.style.background = state.theme.uiBackground;
+      metaPill.style.color = state.theme.foreground;
+    };
+    place();
+    requestAnimationFrame(place);
     if (lassoFlyoutOpen) positionLassoFlyout();
   }
 
   function applyMinimizedState(): void {
     const minimized = state.drawingToolbarMinimized;
     container.style.display = minimized ? "none" : "flex";
+    metaPill.style.display = minimized ? "none" : "flex";
     restorePill.style.display = minimized ? "flex" : "none";
     restorePill.style.background = state.theme.uiBackground;
     restorePill.style.color = state.theme.foreground;
@@ -355,7 +450,12 @@ export function createDrawingToolPanel(
       if (!lassoLive) closeLassoFlyout();
     }
     updateActiveClasses();
-    applyLayout();
+    if (keys.includes("drawingToolbarOffset") || keys.includes("theme") ||
+        keys.includes("drawingToolbarMinimized")) {
+      applyLayout();
+    } else {
+      applyLayout();
+    }
     if (keys.includes("drawingToolbarMinimized") || keys.includes("theme")) {
       applyMinimizedState();
     }
@@ -373,5 +473,5 @@ export function createDrawingToolPanel(
   flyoutGroup.appendChild(slots.flyout);
   flyoutGroup.appendChild(lassoFlyout);
 
-  return { root: container, flyout: flyoutGroup, restorePill };
+  return { root: container, metaPill, flyout: flyoutGroup, restorePill };
 }

@@ -47,7 +47,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "bookmarks" | "brainstormMode" | "creatingDragArea" | "theme"
   | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
-  | "drawingToolbarMinimized";
+  | "drawingToolbarMinimized" | "drawingToolbarOffset";
 
 /** Default brush-slot preset. Slots 1–3 default to "auto" color so
  *  they track the active theme's foreground; slot 4 (highlighter) is
@@ -80,13 +80,18 @@ export class DrawingState extends EventTarget {
   brushSlots: DrawingSlot[] = DEFAULT_BRUSH_SLOTS.map((s) => ({ ...s }));
   activeBrushSlot = 0;
   /** Hold duration (ms) that promotes an in-flight stroke into a
-   *  lasso. Exposed via the lasso flyout's slider (500–2000 ms).
-   *  Default matches the engine's built-in constant. */
-  lassoHoldMs = 1500;
+   *  lasso. Exposed via the lasso flyout's slider (500–2000 ms). */
+  lassoHoldMs = 500;
 
   /** When true, the top drawing pill is hidden and a one-item pencil
    *  pill appears beside the bottom toolbar. Session-only state. */
   drawingToolbarMinimized = true;
+
+  /** Offset (CSS px) from the top-center anchor for the drawing
+   *  toolbar. Set by the drag-handle in the meta-tools group; default
+   *  zero leaves the toolbar at its original top-center position.
+   *  Session-only state — resets when the notebook re-mounts. */
+  drawingToolbarOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   // Layers are notebook-level; they host every shape type, not just
   // drawings. Shapes carry `layerId` via ShapeBase; the renderer
@@ -203,9 +208,23 @@ export class DrawingState extends EventTarget {
     this.notify("drawingSubTool");
   }
 
+  setDrawingToolbarOffset(x: number, y: number) {
+    if (this.drawingToolbarOffset.x === x && this.drawingToolbarOffset.y === y) return;
+    this.drawingToolbarOffset = { x, y };
+    this.notify("drawingToolbarOffset");
+  }
+
   setDrawingToolbarMinimized(b: boolean) {
     if (this.drawingToolbarMinimized === b) return;
     this.drawingToolbarMinimized = b;
+    // When the user hides the drawing toolbar, fall back to Select so
+    // they aren't trapped with an active draw / erase / slice tool
+    // they can no longer see or change.
+    if (b && this.tool === "pen") {
+      this.tool = "select";
+      this.notify("tool");
+      this.notify("drawingMode");
+    }
     this.notify("drawingToolbarMinimized");
   }
 

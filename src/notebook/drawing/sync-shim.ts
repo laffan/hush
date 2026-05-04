@@ -111,6 +111,12 @@ export interface ShimState {
   addEventListener(type: string, listener: (e: CustomEvent) => void): void;
   removeEventListener(type: string, listener: (e: CustomEvent) => void): void;
   notify(key: string): void;
+  /** Hush's snapshot-based undo manager. Drawing-mode actions feed
+   *  into this so 2-finger taps, ⌘Z, and engine-driven mutations all
+   *  share one history. */
+  recordHistory(): void;
+  undo(): void;
+  redo(): void;
 }
 
 /** Create the shim. Subscribes to state's `"change"` events and
@@ -163,6 +169,13 @@ export function createSyncShim({
   /** Reentrancy guard so `onEngineStrokeAdded` doesn't cause its own
    *  notify to re-enter the diff loop. */
   let suppressDiff = false;
+  /** True while diffAndApply is running. Engine callbacks fired as a
+   *  consequence (e.g. an `engine.removeStrokes` triggers an
+   *  `onStrokesRemoved`) read this so they can skip Hush-side history
+   *  recording — the state.shapes change driving the diff was already
+   *  produced by an undo / redo / external mutation, recording again
+   *  would clobber the redo stack. */
+  let inDiff = false;
   /** Drag pause guard. Hush's select-drag routes through the engine's
    *  previewTransform for DrawShapes, so we don't want the shim to
    *  see per-frame state.shapes.points mutations and push each one
@@ -303,6 +316,10 @@ export function createSyncShim({
   // ---------- internal: state → engine ----------
 
   function diffAndApply() {
+    inDiff = true;
+    try { _diffAndApply(); } finally { inDiff = false; }
+  }
+  function _diffAndApply() {
     // Walk state.shapes once. For each DrawShape compare against
     // lastSeen by identity. Classify into add / update / skip.
     const currentHushIds = new Set<string>();
@@ -446,6 +463,7 @@ export function createSyncShim({
    *  state.shapes, issues one fullRebake. */
   function bulkReplaceFromState() {
     batching = true;
+    inDiff = true;
     try {
       // Clear everything the engine knows.
       const existingEngineIds = engine.getStrokes().map((s) => s.id);
@@ -467,6 +485,7 @@ export function createSyncShim({
       engine.fullRebake();
     } finally {
       batching = false;
+      inDiff = false;
     }
   }
 
@@ -630,5 +649,10 @@ export function createSyncShim({
     getHushStrokeId,
     pauseForDrag,
     resumeForDrag,
+    /** True when the shim is mid-diff (state→engine sync). Engine
+     *  callbacks fired during this window represent reflections of an
+     *  external state change (typically undo/redo), not user actions,
+     *  so the drawing layer should skip recording history. */
+    isDiffing: () => inDiff,
   };
 }

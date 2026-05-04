@@ -58,7 +58,7 @@ export function createStrokeEngine(opts: {
   setStrokesStyle(ids: number[] | Set<number>, patch: object): void;
   setStrokesStyleMap(map: Map<number, object>): void;
   previewTransform(idsSet: Set<number>, descriptor: object | null): void;
-  commitTransform(idsSet: Set<number>, fn: (x: number, y: number) => [number, number]): void;
+  commitTransform(idsSet: Set<number>, fn: (x: number, y: number) => [number, number], sizeScale?: number): void;
   clear(): void;
   fullRebake(): void;
   getLayers(): { id: number; name: string; locked: boolean; hidden: boolean }[];

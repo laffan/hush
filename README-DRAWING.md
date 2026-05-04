@@ -13,7 +13,7 @@ src/notebook/drawing/
   sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff, no-op fast path)
   brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
-  tool-panel.ts          Top pill (always visible by default — hidden when minimized): Lasso, Erase, Slice, brush slots, lasso hold-time flyout, minimize button, and the restore pencil pill mounted next to the bottom toolbar
+  tool-panel.ts          Top pill (Lasso, Erase, Slice, brush slots, lasso hold-time flyout) plus a sibling meta-tools pill (drag handle + minimize) and the restore pencil pill mounted next to the bottom toolbar
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
   engine/
@@ -22,9 +22,9 @@ src/notebook/drawing/
     stroke-geometry.js   Perfect-freehand integration, bbox, tile hashing, culling
     stroke-atlas.js      PNG atlas loader, per-brush tint cache
     stroke-erase.js      Pixel-test erase (full) + slice (split at cut)
-    selection.js         Polygon lasso, move / delete, rotation, square resize handles, previewTransform
-    gestures.js          Multi-touch recogniser: 2-/3-finger tap → undo/redo, 2-finger drag → pan
-    history.js           Engine-local undo stack
+    selection.js         Polygon lasso, move / delete, proportional resize handles, rotation handle, previewTransform
+    gestures.js          Multi-touch recogniser: 2-/3-finger tap → undo/redo (routed through Hush's snapshot stack), 2-finger drag → pan
+    history.js           Legacy engine command stack — no longer wired; left in place pending removal
     layers.js            Engine-local layer record (id, locked, hidden). Mirrored from notebook state.
     brushes/             brush-1.png ... brush-5.png — the atlases the renderer samples from
 ```
@@ -82,7 +82,7 @@ Targeted deltas have been applied to `engine/` so the port stays as close as pos
 
 Drawing is always on-deck: the top pill is rendered at all times and picking any of its buttons flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool from the bottom toolbar (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the pill visually dims (buttons at 0.6 opacity).
 
-The pill ends with a **minimize** button. Clicking it flips `state.drawingToolbarMinimized = true`, which hides the pill (`display: none`) and shows a separate one-item pencil pill positioned 10 px to the right of the bottom toolbar. Clicking the pencil flips the flag back. The flag is session-only (not persisted) and now defaults to `true` — fresh notebooks open with only the pencil pill visible, so users who don't draw aren't met with a full toolbar they have to dismiss. The restore pill's left edge tracks the bottom toolbar's right edge via a `ResizeObserver` + state-change hook in `notes-canvas.ts` so it stays glued in place as theme / sidebar / brainstorm width changes shift the bottom toolbar around.
+A second **meta-tools pill** sits to the right of the main pill carrying the **drag handle** (a 4-direction arrow icon — press and drag to reposition both pills as a unit, persisting the offset on `state.drawingToolbarOffset`) and a **minimize** button. Clicking minimize flips `state.drawingToolbarMinimized = true`, which hides both pills (`display: none`) and shows a separate one-item pencil pill positioned 10 px to the right of the bottom toolbar. Clicking the pencil flips the flag back. Minimize also reverts `state.tool` to `"select"` if the user was mid-pen, so they aren't trapped with an active draw / erase / slice tool they can no longer see. The flag is session-only (not persisted) and defaults to `true` — fresh notebooks open with only the pencil pill visible, so users who don't draw aren't met with a full toolbar they have to dismiss. The restore pill's left edge tracks the bottom toolbar's right edge via a `ResizeObserver` + state-change hook in `notes-canvas.ts` so it stays glued in place as theme / sidebar / brainstorm width changes shift the bottom toolbar around.
 
 | Sub-tool | Engine behavior |
 |----------|-----------------|
@@ -95,7 +95,7 @@ Draw has no dedicated button — the active brush slot indicates it. Clicking an
 
 `enterDrawingMode()` / `exitDrawingMode()` still exist on `DrawingState` for the double-click-on-stroke path and for external callers, but the UI never surfaces them as a toggle.
 
-**Long-press → lasso handoff.** While the user is drawing, a 1.5-s hold (or whatever `state.lassoHoldMs` currently is) without drift cancels the in-flight stroke and promotes the gesture into a lasso. The drawing layer saves the previous sub-tool, flips to `select` for the duration of the selection (so the stroke engine stops accepting new draws), and flashes a small "Selecting" pill to the left of the anchor for acknowledgement. Tapping empty canvas while a selection exists (a `onLassoComplete({ selected: false })` from the engine) restores the previous sub-tool so the user drops straight back into drawing.
+**Long-press → lasso handoff.** While the user is drawing, a 0.5-s hold (or whatever `state.lassoHoldMs` currently is) without drift cancels the in-flight stroke and promotes the gesture into a lasso. The drawing layer saves the previous sub-tool, flips to `select` for the duration of the selection (so the stroke engine stops accepting new draws), and flashes a small "Selecting" pill to the left of the anchor for acknowledgement. Tapping empty canvas while a selection exists (a `onLassoComplete({ selected: false })` from the engine) restores the previous sub-tool so the user drops straight back into drawing.
 
 ### Brush slots
 
@@ -143,9 +143,17 @@ When the drawing selection is live, flyout edits restyle the selection in place 
 
 1. `snapshotSelectedStyle()` — capture the pre-edit styles.
 2. `applyStyleToSelection(patch)` — live preview. No history entry yet.
-3. `commitStyleHistory(before)` — push a single undo entry spanning the whole session. No-op if nothing changed.
+3. `commitStyleHistory(before)` — record one snapshot via `state.recordHistory()` if anything actually changed. No-op otherwise.
 
 Slider inputs open a session on their first `input` event of a drag and commit on `change` (fired on pointer release) so a slider sweep produces one undo entry, not one per frame.
+
+### Selection bbox: resize, rotate, undo
+
+`selection.js` paints a dashed bbox with **eight square resize handles** (corners + edge mid-points) and a **rotation handle** as a small circle hovering above the top edge with a tether down to the bbox. Resize is always **proportional** — corner handles project the cursor onto the diagonal anchor→handle vector; edge mid-handles propagate their single-axis scale to the locked axis. The engine's `commitTransform(ids, fn, sizeScale)` accepts an optional uniform size scale so the brush stamp itself widens or narrows with the bbox, not just the underlying point positions. Rotation rotates the chrome via an SVG `transform="rotate(angle, cx, cy)"` for live feedback and bakes the rotated points on commit; the bbox is then recomputed axis-aligned from the new points.
+
+### Undo / redo
+
+Drawing-mode actions (add stroke, erase, slice, transform, restyle) flow into Hush's snapshot-based `UndoManager` — the same stack that backs `⌘Z` for every other notebook action. Engine callbacks bridge their mutations into `state.shapes` via the sync shim and then call `state.recordHistory()` to capture a checkpoint. The shim exposes `isDiffing()` so engine callbacks fired as a consequence of a state→engine reflection (e.g. an undo restoring `state.shapes` triggers `engine.removeStrokes` which fires `onStrokesRemoved`) skip recording; otherwise an undo would clobber the redo stack. The 2- and 3-finger touch taps in `engine/gestures.js` call `state.undo()` / `state.redo()` directly. The legacy engine-local command stack (`engine/history.js`) is no longer wired.
 
 ## Development rules
 

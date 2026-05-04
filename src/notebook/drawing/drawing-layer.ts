@@ -21,7 +21,6 @@
 import type { Camera, DrawingSlot } from "../types";
 import type { CanvasTheme } from "../themes";
 import { createStrokeEngine } from "./engine/stroke.js";
-import { createHistory } from "./engine/history.js";
 import { createSelectionEngine } from "./engine/selection.js";
 import { createGestures } from "./engine/gestures.js";
 import { createSyncShim } from "./sync-shim";
@@ -152,8 +151,6 @@ export function createDrawingLayer({
 
   // ---------- engine ----------
 
-  const history = createHistory();
-
   // Forward-ref so onStrokeAdded can reach the shim, which is
   // constructed after the engine (since the shim needs the engine).
   const shimBox: { current: ReturnType<typeof createSyncShim> | null } = { current: null };
@@ -191,74 +188,51 @@ export function createDrawingLayer({
       flashSelectHint(point);
     },
     onStrokeAdded: (stroke: EngineStroke, _index: number) => {
-      // Always bridge to state.shapes so autosave, Dropbox sync, and
-      // panes see the new drawing. History push still happens on the
-      // engine side so drawing-mode undo works as expected; when the
-      // user is outside drawing mode, Hush's own undo-manager won't
-      // see this push (a separate concern — step 9).
-      if (history.isReplaying()) return;
       const shim = shimBox.current;
-      if (shim) shim.onEngineStrokeAdded(stroke);
-      history.push({
-        undo: () => strokeEngine.removeStrokes([stroke.id]),
-        redo: () => strokeEngine.insertStrokeAt(stroke, _index),
-      });
+      if (!shim) return;
+      // Skip during shim-driven sync (state→engine reflections of an
+      // undo/redo or external mutation). Recording would clobber the
+      // redo stack and double-up the snapshot the user just stepped
+      // away from.
+      if (shim.isDiffing()) return;
+      shim.onEngineStrokeAdded(stroke);
+      state.recordHistory();
     },
     onStrokesRemoved: (removed: { stroke: EngineStroke; index: number }[]) => {
-      if (history.isReplaying()) return;
-      const snapshot = removed.slice();
       const shim = shimBox.current;
-      if (shim) shim.onEngineStrokesRemoved(removed.map((r) => r.stroke.id));
-      // When strokes disappear via an external path (Hush's trash
-      // button, the Delete shortcut), the engine's selection engine
-      // still thinks those ids are selected — so the SVG bbox and
-      // handles linger pointing at nothing. refreshBBox recomputes
-      // against the current strokes list; any now-missing ids drop
-      // out, which also clears the bbox when every selected stroke
-      // was deleted. Internal paths (the engine's own Delete-key
-      // handler) clear their selection directly, so this guard only
-      // matters for externally-driven removals.
+      if (!shim) return;
+      if (shim.isDiffing()) {
+        // Still refresh the engine selection's bbox so handles drop
+        // when the strokes underneath them disappear.
+        const sel = selectionBox.current;
+        if (sel) sel.refreshBBox();
+        return;
+      }
+      shim.onEngineStrokesRemoved(removed.map((r) => r.stroke.id));
+      // Engine selection's bbox can outlive the strokes it points at
+      // (Hush's trash, Delete shortcut, etc.). Recompute against the
+      // current strokes list so handles drop when their target's gone.
       const sel = selectionBox.current;
       if (sel) sel.refreshBBox();
-      history.push({
-        undo: () => {
-          for (const r of snapshot) strokeEngine.insertStrokeAt(r.stroke, r.index);
-        },
-        redo: () => strokeEngine.removeStrokes(snapshot.map((r) => r.stroke.id)),
-      });
+      state.recordHistory();
     },
     onStrokesTransformed: (entries: { id: number; before: EngineStroke["points"]; after: EngineStroke["points"] }[]) => {
-      if (history.isReplaying()) return;
-      const snapshot = entries.slice();
       const shim = shimBox.current;
-      if (shim) shim.onEngineStrokesTransformed(entries.map((e) => e.id));
-      history.push({
-        undo: () => { for (const e of snapshot) strokeEngine.setStrokePoints(e.id, e.before); },
-        redo: () => { for (const e of snapshot) strokeEngine.setStrokePoints(e.id, e.after); },
-      });
+      if (!shim) return;
+      if (shim.isDiffing()) return;
+      shim.onEngineStrokesTransformed(entries.map((e) => e.id));
+      state.recordHistory();
     },
     onStrokesSliced: ({ removed, added }: {
       removed: { stroke: EngineStroke; originalIndex: number }[];
       added: { stroke: EngineStroke; finalIndex: number }[];
     }) => {
-      if (history.isReplaying()) return;
-      const r = removed.slice();
-      const a = added.slice();
       const shim = shimBox.current;
-      if (shim) {
-        shim.onEngineStrokesRemoved(r.map((x) => x.stroke.id));
-        for (const x of a) shim.onEngineStrokeAdded(x.stroke);
-      }
-      history.push({
-        undo: () => {
-          if (a.length) strokeEngine.removeStrokes(a.map((x) => x.stroke.id));
-          for (const x of r) strokeEngine.insertStrokeAt(x.stroke, x.originalIndex);
-        },
-        redo: () => {
-          if (r.length) strokeEngine.removeStrokes(r.map((x) => x.stroke.id));
-          for (const x of a) strokeEngine.insertStrokeAt(x.stroke, x.finalIndex);
-        },
-      });
+      if (!shim) return;
+      if (shim.isDiffing()) return;
+      shim.onEngineStrokesRemoved(removed.map((x) => x.stroke.id));
+      for (const x of added) shim.onEngineStrokeAdded(x.stroke);
+      state.recordHistory();
     },
   });
 
@@ -349,8 +323,8 @@ export function createDrawingLayer({
     pointToLocal,
     strokeEngine,
     selectionEngine,
-    onUndo: () => history.undo(),
-    onRedo: () => history.redo(),
+    onUndo: () => state.undo(),
+    onRedo: () => state.redo(),
     onPanStart: () => { onTouchPanStart && onTouchPanStart(); },
     onPanMove: (dx: number, dy: number) => { onTouchPanMove && onTouchPanMove(dx, dy); },
     onPanEnd: () => { onTouchPanEnd && onTouchPanEnd(); },
@@ -646,16 +620,22 @@ export function createDrawingLayer({
     strokeEngine.renderBrushSwatch(slot.brushId, color, ctx, cssW / 2, cssH / 2, size, slot.mode);
   }
 
-  function undo() { history.undo(); }
-  function redo() { history.redo(); }
-  function canUndo() { return history.canUndo(); }
-  function canRedo() { return history.canRedo(); }
+  // Drawing undo / redo route through Hush's snapshot stack so 2- and
+  // 3-finger gesture taps, ⌘Z, and any non-drawing notebook action all
+  // share one history. The shim's isDiffing flag keeps engine
+  // callbacks from re-recording during the resulting state→engine
+  // reflection.
+  function undo() { state.undo(); }
+  function redo() { state.redo(); }
+  function canUndo() { return (state as unknown as { canUndo: boolean }).canUndo; }
+  function canRedo() { return (state as unknown as { canRedo: boolean }).canRedo; }
 
   // Retroactive selection styling — see selection-style.ts for the
   // snapshot → apply → commit pattern. Closed over the same engines
-  // and history this file uses for everything else.
+  // and shim this file uses for everything else.
   const selectionStyle = createSelectionStyleSession({
-    selectionEngine, strokeEngine, shimBox, themeRef, history,
+    selectionEngine, strokeEngine, shimBox, themeRef,
+    recordHistory: () => state.recordHistory(),
   });
   const { hasSelection, snapshotSelectedStyle, applyStyleToSelection, commitStyleHistory } = selectionStyle;
 

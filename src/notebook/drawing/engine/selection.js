@@ -35,6 +35,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const HANDLE_SIZE = 10;   // comfortable touch target; slightly larger than hush's canvas 7px
 const HANDLE_HALF = HANDLE_SIZE / 2;
 const MIN_SCALE = 0.05;
+// Rotation handle: a small circle floating above the top edge of the
+// bbox. ROTATE_OFFSET is the pixel gap between the bbox top and the
+// handle's center. Sized a touch larger than the resize handles so
+// it reads as a different affordance.
+const ROTATE_HANDLE_R = 7;
+const ROTATE_OFFSET = 24;
 
 const HANDLE_SPEC = [
   { name: 'nw', sx: 0, sy: 0 },
@@ -116,6 +122,20 @@ export function createSelectionEngine({
     handleNodes[spec.name] = c;
   }
 
+  // Rotation handle — circle hovering above the top edge with a thin
+  // tether down to the bbox so it reads as part of the selection
+  // chrome. Drag rotates the selected strokes around the bbox center.
+  const rotateTether = document.createElementNS(SVG_NS, 'line');
+  rotateTether.setAttribute('class', 'handle-tether');
+  rotateTether.setAttribute('stroke', 'currentColor');
+  rotateTether.setAttribute('stroke-width', '1');
+  bboxGroup.appendChild(rotateTether);
+  const rotateHandle = document.createElementNS(SVG_NS, 'circle');
+  rotateHandle.setAttribute('class', 'handle rotate');
+  rotateHandle.setAttribute('r', ROTATE_HANDLE_R);
+  rotateHandle.dataset.handle = 'rotate';
+  bboxGroup.appendChild(rotateHandle);
+
   // Hush delta #9: the red-X delete badge is hidden. Hush surfaces
   // delete through the shared selection toolbar's trash icon, so an
   // extra delete affordance attached to the engine's bbox is redundant.
@@ -130,7 +150,7 @@ export function createSelectionEngine({
   // ---------- state ----------
   const state = {
     active: false,               // whether the select tool is active
-    mode: 'idle',                // 'idle' | 'lasso' | 'move' | 'resize'
+    mode: 'idle',                // 'idle' | 'lasso' | 'move' | 'resize' | 'rotate'
     lassoPts: [],
     selectedIds: new Set(),
     bbox: null,                  // { x, y, w, h }
@@ -139,6 +159,8 @@ export function createSelectionEngine({
     resizeHandle: null,          // 'nw' | 'n' | ... when mode==='resize'
     bboxAtDragStart: null,       // bbox snapshot for resize math
     lastTransform: null,         // last applied transform (for commit)
+    rotateAnchor: null,          // { x, y } center of rotation
+    rotateStartAngle: 0,         // angle (rad) of cursor at rotation start
   };
 
   // ---------- helpers ----------
@@ -166,6 +188,15 @@ export function createSelectionEngine({
       n.setAttribute('x', hx - HANDLE_HALF);
       n.setAttribute('y', hy - HANDLE_HALF);
     }
+    // Rotation handle floats above the top-center edge.
+    const rcx = x + w / 2;
+    const rcy = y - ROTATE_OFFSET;
+    rotateHandle.setAttribute('cx', rcx);
+    rotateHandle.setAttribute('cy', rcy);
+    rotateTether.setAttribute('x1', rcx);
+    rotateTether.setAttribute('y1', y);
+    rotateTether.setAttribute('x2', rcx);
+    rotateTether.setAttribute('y2', rcy + ROTATE_HANDLE_R);
     deleteBtn.setAttribute('transform', `translate(${x + w + 14}, ${y - 14})`);
   }
 
@@ -192,6 +223,9 @@ export function createSelectionEngine({
   function clearSelection() {
     state.selectedIds.clear();
     state.bbox = null;
+    // Drop any leftover rotation transform from a previous gesture so
+    // the chrome reads axis-aligned the next time a selection lands.
+    bboxGroup.removeAttribute('transform');
     updateBBoxView();
   }
 
@@ -268,12 +302,27 @@ export function createSelectionEngine({
     const locksX = hspec.sx === 0.5;
     const locksY = hspec.sy === 0.5;
 
-    let sx = locksX ? 1 : (cursor.x - ax) / (hx0 - ax || 1);
-    let sy = locksY ? 1 : (cursor.y - ay) / (hy0 - ay || 1);
-
+    // Proportional resize: a single uniform scale factor drives both
+    // axes regardless of which handle the user grabbed. For corners
+    // we project the cursor onto the line from the anchor to the
+    // original handle position — the natural diagonal feel. For edge
+    // mid-handles, the active axis's signed scale propagates to the
+    // locked axis so both grow / shrink together.
+    let s;
+    if (locksX && !locksY) {
+      s = (cursor.y - ay) / (hy0 - ay || 1);
+    } else if (locksY && !locksX) {
+      s = (cursor.x - ax) / (hx0 - ax || 1);
+    } else {
+      const dx = cursor.x - ax, dy = cursor.y - ay;
+      const ox = hx0 - ax, oy = hy0 - ay;
+      const len2 = ox * ox + oy * oy;
+      s = (dx * ox + dy * oy) / (len2 || 1);
+    }
     // prevent pathological flips/zeroing while still allowing mirroring past the anchor
-    if (Math.abs(sx) < MIN_SCALE) sx = sx < 0 ? -MIN_SCALE : MIN_SCALE;
-    if (Math.abs(sy) < MIN_SCALE) sy = sy < 0 ? -MIN_SCALE : MIN_SCALE;
+    if (Math.abs(s) < MIN_SCALE) s = s < 0 ? -MIN_SCALE : MIN_SCALE;
+    const sx = s;
+    const sy = s;
 
     state.lastTransform = { kind: 'scale', sx, sy, ax, ay };
     strokeEngine.previewTransform(state.selectedIds, state.lastTransform);
@@ -292,6 +341,21 @@ export function createSelectionEngine({
     updateBBoxView();
   }
 
+  function applyRotatePreview(cursor) {
+    const a = state.rotateAnchor;
+    if (!a) return;
+    const cur = Math.atan2(cursor.y - a.y, cursor.x - a.x);
+    const angle = cur - state.rotateStartAngle;
+    state.lastTransform = { kind: 'rotate', angle, ax: a.x, ay: a.y };
+    strokeEngine.previewTransform(state.selectedIds, state.lastTransform);
+    // Rotate the bbox chrome (rect + handles + rotation handle) so
+    // visual feedback tracks the strokes during the gesture. The
+    // transform is reset on commit; the bbox itself is then recomputed
+    // axis-aligned from the rotated points.
+    const deg = (angle * 180) / Math.PI;
+    bboxGroup.setAttribute('transform', `rotate(${deg} ${a.x} ${a.y})`);
+  }
+
   function commitDrag() {
     const t = state.lastTransform;
     if (!t) return;
@@ -299,10 +363,22 @@ export function createSelectionEngine({
       strokeEngine.commitTransform(state.selectedIds, (x, y) => [x + t.dx, y + t.dy]);
     } else if (t.kind === 'scale') {
       const { sx, sy, ax, ay } = t;
+      // Proportional resize: pass the magnitude as the size scale so
+      // the engine also widens / narrows the brush stamp itself, not
+      // just the point positions. sx === sy in this codepath.
+      const sizeScale = Math.abs(sx);
       strokeEngine.commitTransform(state.selectedIds, (x, y) => [
         ax + (x - ax) * sx,
         ay + (y - ay) * sy,
-      ]);
+      ], sizeScale);
+    } else if (t.kind === 'rotate') {
+      const { angle, ax, ay } = t;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      strokeEngine.commitTransform(state.selectedIds, (x, y) => {
+        const dx = x - ax, dy = y - ay;
+        return [ax + dx * cos - dy * sin, ay + dx * sin + dy * cos];
+      });
     }
     state.lastTransform = null;
     recomputeBBoxFromSelection();
@@ -334,6 +410,15 @@ export function createSelectionEngine({
 
     if (target === 'move') {
       state.mode = 'move';
+      return;
+    }
+
+    if (target === 'rotate') {
+      state.mode = 'rotate';
+      const cx = state.bbox ? state.bbox.x + state.bbox.w / 2 : p.x;
+      const cy = state.bbox ? state.bbox.y + state.bbox.h / 2 : p.y;
+      state.rotateAnchor = { x: cx, y: cy };
+      state.rotateStartAngle = Math.atan2(p.y - cy, p.x - cx);
       return;
     }
 
@@ -372,6 +457,10 @@ export function createSelectionEngine({
       applyResizePreview(state.resizeHandle, p);
       return;
     }
+    if (state.mode === 'rotate') {
+      applyRotatePreview(p);
+      return;
+    }
   }
 
   function onPointerUp(e) {
@@ -386,11 +475,16 @@ export function createSelectionEngine({
       selectFromLasso();
       return;
     }
-    if (prevMode === 'move' || prevMode === 'resize') {
+    if (prevMode === 'move' || prevMode === 'resize' || prevMode === 'rotate') {
       state.mode = 'idle';
       commitDrag();
       state.resizeHandle = null;
       state.bboxAtDragStart = null;
+      state.rotateAnchor = null;
+      // Snap the chrome's rotation transform back; the points are
+      // baked at their rotated positions and the bbox is recomputed
+      // axis-aligned.
+      bboxGroup.removeAttribute('transform');
       return;
     }
     state.mode = 'idle';
@@ -460,15 +554,17 @@ export function createSelectionEngine({
     cancelActive() {
       if (state.mode === 'idle') return;
       // If a live preview transform is applied, undo it in the DOM.
-      if (state.mode === 'move' || state.mode === 'resize') {
+      if (state.mode === 'move' || state.mode === 'resize' || state.mode === 'rotate') {
         strokeEngine.previewTransform(state.selectedIds, null);
         state.lastTransform = null;
+        bboxGroup.removeAttribute('transform');
         recomputeBBoxFromSelection();
       }
       state.mode = 'idle';
       state.dragPointerId = null;
       state.resizeHandle = null;
       state.bboxAtDragStart = null;
+      state.rotateAnchor = null;
       clearLasso();
     },
   };

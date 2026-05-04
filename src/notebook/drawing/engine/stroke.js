@@ -62,7 +62,7 @@ const isIOS =
   /iPad|iPhone|iPod/.test(ua) ||
   (/Macintosh/.test(ua) && 'ontouchend' in document);
 
-const LONG_PRESS_MS_DEFAULT = 1500;
+const LONG_PRESS_MS_DEFAULT = 500;
 const LONG_PRESS_MOVE_THRESHOLD_2 = 16; // 4px
 
 export function createStrokeEngine({
@@ -362,6 +362,13 @@ export function createStrokeEngine({
   function onPointerMove(e) {
     if (e.pointerId === state.suppressedPointerId) return;
     if (!state.active) return;
+    // Only the pointer that started the stroke extends it. Without
+    // this, a second finger landing on the canvas (e.g. during a
+    // 2-finger undo gesture) appends its position to the active
+    // stroke — the user sees a stray straight line between fingers.
+    // The gesture recogniser cancels the stroke once it qualifies as
+    // a tap, but a single pointermove can land first.
+    if (state.activePointerId !== null && e.pointerId !== state.activePointerId) return;
     const events = !isIOS && typeof e.getCoalescedEvents === 'function'
       ? e.getCoalescedEvents()
       : [e];
@@ -422,6 +429,11 @@ export function createStrokeEngine({
       return;
     }
     if (!state.active) return;
+    // Mirror the pointermove guard: only the active pointer's lift
+    // commits the stroke. Ignoring foreign pointerups stops a second
+    // finger lifting (during a 2-finger undo) from extending and
+    // committing the in-flight stroke.
+    if (state.activePointerId !== null && e.pointerId !== state.activePointerId) return;
     try { svg.releasePointerCapture(e.pointerId); } catch {}
     extendStroke(getPoint(e));
     endStroke();
@@ -468,12 +480,13 @@ export function createStrokeEngine({
     }
   }
 
-  function commitTransform(idsSet, fn) {
+  function commitTransform(idsSet, fn, sizeScale) {
     const entries = [];
     // Gather the tiles both before and after the transform so rebake sweeps
     // clean the old position and paints the new one in one pass.
     const dirty = new Set();
     if (state.previewingTiles) for (const k of state.previewingTiles) dirty.add(k);
+    const scale = (typeof sizeScale === 'number' && sizeScale > 0) ? sizeScale : 1;
     for (const s of state.strokes) {
       if (!idsSet.has(s.id)) continue;
       const before = s.points;
@@ -482,6 +495,10 @@ export function createStrokeEngine({
         return { x, y, pressure: p.pressure };
       });
       s.points = after;
+      // Proportional resize also scales the brush thickness so
+      // strokes shrink / grow visually as their bbox does. Caller
+      // omits sizeScale (or passes 1) for translation-only commits.
+      if (scale !== 1) s.size = Math.max(0.5, s.size * scale);
       // Re-index at the new bbox; collect both old and new tiles as dirty.
       if (s.tiles) for (const k of s.tiles) dirty.add(k);
       renderer.removeFromIndex(s);
