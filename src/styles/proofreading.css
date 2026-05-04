@@ -1,0 +1,72 @@
+/* ===== Proofreading: harper-core grammar underlines, tooltip, modal ===== */
+
+/* Issues from harper underline as a thick solid orange line. We use
+   `text-decoration` so the underline tracks each word's visible glyph
+   range; `text-decoration-thickness: 3px` gives the requested weight
+   without making CodeMirror lay out an extra row. */
+.hush-grammar-error {
+  text-decoration: underline solid #f59e0b;
+  text-decoration-thickness: 3px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
+[data-theme="dark"] .hush-grammar-error {
+  text-decoration-color: #fbbf24;
+}
+
+/* Hover tooltip surfaced by the grammar plugin. */
+.cm-tooltip .hush-grammar-tooltip {
+  max-width: 360px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.cm-tooltip .hush-grammar-tooltip-message { font-weight: 600; }
+.cm-tooltip .hush-grammar-tooltip-suggestions { margin-top: 4px; opacity: 0.8; }
+
+/* "Proofreading…" centered loading modal. Mounted into <body> by the
+   plugin so it floats above everything (sidebar, panes, command
+   palette is a different surface) for the entire span between toggling
+   the mode on and the underlines appearing. */
+.hush-proofread-loading-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-family: var(--font-family, system-ui, sans-serif);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+  z-index: var(--z-overlay);
+  white-space: nowrap;
+}
+.hush-proofread-loading-modal.visible {
+  opacity: 1;
+}
+.hush-proofread-loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: hush-proofread-spin 0.8s linear infinite;
+}
+@keyframes hush-proofread-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* The Proofread tab's per-rule row styles live in
+   src/settings/settings-window.css — that window runs in its own
+   WebviewWindow and never loads main.css. */

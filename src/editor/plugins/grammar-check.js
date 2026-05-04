@@ -1,0 +1,212 @@
+/**
+ * Grammar side of Proofread mode.
+ *
+ * Calls the `check_grammar` Tauri command (`harper-core` Rust crate) on
+ * a 1.5s debounce after edits. Results are cached per `EditorView` in a
+ * `WeakMap` so the buffer only re-lints after actual changes. A
+ * companion `hoverTooltip` reuses the same cache to surface the harper
+ * message + suggestions on hover.
+ *
+ * The very first run after toggling proofread on bypasses the debounce —
+ * harper's curated dictionary takes a few seconds to build, and waiting
+ * 1.5 s before that work begins makes the mode feel broken. A centered
+ * "Proofreading…" modal stays up across the whole span (toggle → underline
+ * paint) so the user never wonders whether anything is happening.
+ *
+ * Doc-only — the toggle short-circuits when a notebook is open.
+ */
+import { ViewPlugin, Decoration, hoverTooltip } from "@codemirror/view";
+import { RangeSetBuilder, Annotation } from "@codemirror/state";
+
+export const grammarRedecorate = Annotation.define();
+
+const DEBOUNCE_MS = 1500;
+const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+
+const _viewState = new WeakMap();
+let _activeRunCount = 0;
+let _modalEl = null;
+
+/** Show / hide the centered "Proofreading…" modal. Mounted on <body>
+ *  the first time it's needed so it floats above every other surface
+ *  for the duration of the run. */
+export function setProofreadLoadingModal(visible) {
+  if (!_modalEl) {
+    if (!visible) return;
+    _modalEl = document.createElement("div");
+    _modalEl.className = "hush-proofread-loading-modal";
+    const spinner = document.createElement("span");
+    spinner.className = "hush-proofread-loading-spinner";
+    const label = document.createElement("span");
+    label.textContent = "Proofreading…";
+    _modalEl.appendChild(spinner);
+    _modalEl.appendChild(label);
+    document.body.appendChild(_modalEl);
+  }
+  _modalEl.classList.toggle("visible", visible);
+}
+
+async function runGrammarCheck(text, disabledRules) {
+  if (!IS_TAURI) return [];
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const result = await invoke("check_grammar", {
+      text,
+      disabledRules: disabledRules || [],
+    });
+    return Array.isArray(result) ? result : [];
+  } catch (e) {
+    console.warn("check_grammar failed:", e);
+    return [];
+  }
+}
+
+export function createGrammarCheckPlugin(stateRef) {
+  return ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.view = view;
+        this._wasActive = !!stateRef.proofreadMode;
+        this._timer = null;
+        _viewState.set(view, { issues: [], lastText: null, runId: 0 });
+        this.decorations = Decoration.none;
+        if (stateRef.proofreadMode) this.runCheckNow();
+      }
+
+      destroy() {
+        if (this._timer) clearTimeout(this._timer);
+        _viewState.delete(this.view);
+      }
+
+      update(update) {
+        const active = !!stateRef.proofreadMode;
+        const flipped = active !== this._wasActive;
+        this._wasActive = active;
+
+        const annot = update.transactions.some(
+          (tr) => tr.annotation(grammarRedecorate),
+        );
+
+        if (!active && flipped) {
+          if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+          const s = _viewState.get(this.view);
+          if (s) { s.issues = []; s.lastText = null; }
+          this.decorations = Decoration.none;
+          return;
+        }
+
+        if (active && flipped) {
+          // Toggle just flipped on — fire immediately so the loading
+          // modal is up across the whole cold-start dictionary build,
+          // not after a 1.5 s pause.
+          if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+          this.runCheckNow();
+        } else if (active && update.docChanged) {
+          this.scheduleCheck();
+        }
+
+        if (annot || update.viewportChanged || flipped) {
+          this.decorations = this.buildDecorations();
+        }
+      }
+
+      scheduleCheck() {
+        if (this._timer) clearTimeout(this._timer);
+        this._timer = setTimeout(() => { this.runCheckNow(); }, DEBOUNCE_MS);
+      }
+
+      async runCheckNow() {
+        if (!stateRef.proofreadMode) return;
+        const s = _viewState.get(this.view);
+        if (!s) return;
+        const text = this.view.state.doc.toString();
+        if (text === s.lastText) return;
+        const myRun = ++s.runId;
+        const disabledRules = stateRef.settings?.proofreadDisabledRules || [];
+        _activeRunCount++;
+        if (_activeRunCount === 1) setProofreadLoadingModal(true);
+        // Yield two animation frames before kicking off the Rust call.
+        // The first lets the browser commit the layout that includes
+        // the freshly-mounted modal; the second guarantees a paint has
+        // happened before any synchronous IPC scheduling spikes the
+        // main thread.
+        await new Promise((r) => requestAnimationFrame(r));
+        await new Promise((r) => requestAnimationFrame(r));
+        try {
+          const issues = await runGrammarCheck(text, disabledRules);
+          if (myRun !== s.runId) return;
+          if (!stateRef.proofreadMode) return;
+          s.issues = issues;
+          s.lastText = text;
+          try {
+            this.view.dispatch({ annotations: grammarRedecorate.of(true) });
+          } catch (_) { /* view destroyed */ }
+          // Hold the modal across one paint frame so the underlines
+          // are visibly rendered before it disappears. Without this
+          // the modal can vanish a frame before the orange ink lands,
+          // which reads as nothing happening.
+          await new Promise((r) => requestAnimationFrame(r));
+        } finally {
+          _activeRunCount = Math.max(0, _activeRunCount - 1);
+          if (_activeRunCount === 0) setProofreadLoadingModal(false);
+        }
+      }
+
+      buildDecorations() {
+        if (!stateRef.proofreadMode) return Decoration.none;
+        const s = _viewState.get(this.view);
+        if (!s || !s.issues.length) return Decoration.none;
+        const docLen = this.view.state.doc.length;
+        const builder = new RangeSetBuilder();
+        const sorted = [...s.issues].sort((a, b) => a.from - b.from);
+        for (const issue of sorted) {
+          if (issue.from < 0 || issue.to > docLen || issue.from >= issue.to) continue;
+          builder.add(
+            issue.from,
+            issue.to,
+            Decoration.mark({
+              class: "hush-grammar-error",
+              attributes: {
+                "data-grammar-message": issue.message || "",
+                "data-grammar-suggestions": (issue.suggestions || []).join(" | "),
+              },
+            }),
+          );
+        }
+        return builder.finish();
+      }
+    },
+    { decorations: (v) => v.decorations },
+  );
+}
+
+/** Hover tooltip showing the grammar message + suggestions. */
+export function createGrammarHoverTooltip(stateRef) {
+  return hoverTooltip((view, pos) => {
+    if (!stateRef.proofreadMode) return null;
+    const s = _viewState.get(view);
+    if (!s || !s.issues.length) return null;
+    const issue = s.issues.find((i) => pos >= i.from && pos <= i.to);
+    if (!issue) return null;
+    return {
+      pos: issue.from,
+      end: issue.to,
+      above: true,
+      create() {
+        const dom = document.createElement("div");
+        dom.className = "hush-grammar-tooltip";
+        const msg = document.createElement("div");
+        msg.className = "hush-grammar-tooltip-message";
+        msg.textContent = issue.message || "Grammar issue";
+        dom.appendChild(msg);
+        if (issue.suggestions && issue.suggestions.length) {
+          const sug = document.createElement("div");
+          sug.className = "hush-grammar-tooltip-suggestions";
+          sug.textContent = "Suggestions: " + issue.suggestions.slice(0, 5).join(", ");
+          dom.appendChild(sug);
+        }
+        return { dom };
+      },
+    };
+  }, { hoverTime: 250 });
+}

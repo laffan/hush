@@ -36,6 +36,15 @@ export function toggleDry(state) {
   state.updateSettings({ dryMode: state.dryMode });
 }
 
+export function toggleProofread(state) {
+  if (state.currentNotebookFileId) return;
+  state.proofreadMode = !state.proofreadMode;
+  state.emit("mode-changed");
+  // Deliberately not persisted — see the matching note in state.js.
+  // Each session starts with proofread off so the cold-start dictionary
+  // build doesn't gate startup.
+}
+
 export function toggleFocus(state) {
   state.focusMode = !state.focusMode;
   state.emit("mode-changed");

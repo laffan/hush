@@ -64,6 +64,8 @@ All shortcuts are customizable in Settings.
 
 **Tooltips** — Off by default for a clean reading surface. Enable **Show tooltips** in Settings > General to surface labels + shortcut hints on every sidebar, pane header, and notebook toolbar button.
 
+**Proofread mode** — Single doc-only toggle that runs the document through the [`harper-core`](https://github.com/Automattic/harper) Rust crate and underlines spelling + grammar issues in a thick orange line. Off by default and intentionally not remembered between sessions, since the first lint after enabling it has to build harper's curated dictionary (a few seconds of work). Flip via the command palette (**Proofread mode**, the **Aa** icon with a shallow cross laid over it). The first lint runs immediately on toggle; subsequent edits are debounced to 1.5 s. A centered "Proofreading…" card stays up across the whole span between the toggle and the underlines actually painting. Hover an underline for a tooltip with the rule's message and replacement suggestions. Settings > Proofread carries a checkbox per harper rule, each with a one-line description — *Long Sentences* ships off because it's noisy for longform writing; the rest are on by default. Notebooks are intentionally skipped for now.
+
 ## Installation
 
 Requires [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/).

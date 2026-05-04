@@ -81,6 +81,12 @@ export class AppState {
     this.focusMode = false;
     this.zenFocus = false;
     this.isFullscreen = false;
+    // Doc-only Proofread mode (harper-core via the `check_grammar`
+    // Tauri command). Intentionally NOT persisted between sessions —
+    // the first lint after enabling it has to build harper's curated
+    // dictionary, which adds a noticeable startup pause. Each session
+    // starts off; the user re-enables when they want it.
+    this.proofreadMode = false;
 
     // Autosave interval
     this.autosaveInterval = null;
@@ -660,6 +666,7 @@ export class AppState {
   togglePrivate() { _modes.togglePrivate(this); }
   toggleTypewriter() { _modes.toggleTypewriter(this); }
   toggleDry() { _modes.toggleDry(this); }
+  toggleProofread() { _modes.toggleProofread(this); }
   toggleFocus() { _modes.toggleFocus(this); }
   toggleZenFocus() { _modes.toggleZenFocus(this); }
   toggleFullscreen() { _modes.toggleFullscreen(this); }

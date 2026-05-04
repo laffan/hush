@@ -180,6 +180,11 @@ export function createDefaultSettings() {
     shortcutNbGroup: "Mod+G",
     shortcutNbUngroup: "Mod+Shift+G",
 
+    // Proofread mode (harper-core). The mode toggle itself isn't
+    // persisted (each session starts off — see state-modes.js), but
+    // the per-rule disable list is.
+    proofreadDisabledRules: ["LongSentences"],
+
     // Session state
     lastFileId: null,
     lastProjectId: null,

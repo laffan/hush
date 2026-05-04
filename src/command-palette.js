@@ -66,6 +66,11 @@ const icons = {
   export: wrapSvg(svgInner(exportRaw)),
   styles: wrapSvg(svgInner(stylesRaw)),
   zotero: wrapSvg(svgInner(zoteroRaw)),
+  // "Aa" with a shallow cross laid over the letters — two near-flat
+  // lines mirrored about the horizontal axis. Stroke-only paths so it
+  // picks up `stroke: currentColor; fill: none` from the palette icon
+  // CSS without per-row overrides.
+  proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="2" y1="14" x2="22" y2="10"/><line x1="2" y1="10" x2="22" y2="14"/></svg>`,
   doc: typeIcons.document,
   notebook: typeIcons.notebook,
   project: typeIcons.project,
@@ -212,6 +217,8 @@ function buildCommands(state) {
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",
       action: (s) => s.emit("toggle-outline-panel") },
+    { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
+      action: (s) => s.toggleProofread() },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: null, shortcutKey: null, ctx: "pane",
@@ -457,6 +464,7 @@ function docModeTurnoffs(state) {
     { flag: "typewriterMode", label: "Turn off Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", action: (s) => s.toggleTypewriter() },
     { flag: "dryMode", label: "Turn off Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", action: (s) => s.toggleDry() },
     { flag: "focusMode", label: "Turn off Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
+    { flag: "proofreadMode", label: "Turn off Proofread mode", icon: icons.proofread, action: (s) => s.toggleProofread() },
   ];
   return modes
     .filter(m => state[m.flag])

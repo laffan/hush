@@ -37,6 +37,7 @@ export {
 } from "./settings-tabs-shortcuts.js";
 export { renderSyncTab } from "./settings-tabs-sync.js";
 export { renderZoteroTab } from "./settings-tabs-zotero.js";
+export { renderProofreadTab, bindProofreadTab } from "./settings-tabs-proofread.js";
 
 // ===== General Tab =====
 export function renderGeneralTab(settings) {
