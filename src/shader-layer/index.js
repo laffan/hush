@@ -31,12 +31,12 @@ export const SHADER_LAYERS = [
   { id: "css-vignette-scanlines", name: "Vignette + Scanlines (CSS)",
     family: "css",
     load: () => import("./layers/css-vignette-scanlines.js") },
-  { id: "css-crt-flicker", name: "CRT Flicker (CSS)",
+  { id: "css-phosphor-scanlines", name: "Phosphor Scanlines (CSS)",
     family: "css",
-    load: () => import("./layers/css-crt-flicker.js") },
-  { id: "webgl-crt", name: "CRT — Scanlines + Curvature (WebGL2)",
+    load: () => import("./layers/css-phosphor-scanlines.js") },
+  { id: "webgl-neon-bloom", name: "Neon Bloom (WebGL2)",
     family: "webgl2",
-    load: () => import("./layers/webgl-crt.js") },
+    load: () => import("./layers/webgl-neon-bloom.js") },
 ];
 
 let _state = null;
@@ -68,16 +68,17 @@ function ensureHost(container) {
     ].join(";");
     wantContainer.appendChild(host);
   } else {
-    // Fullscreen — covers everything UI-chrome (editor, panes, sidebars,
-    // buttons, overlays, popovers) but stays below modal backdrops
-    // (--z-modal: 500) so the style modal / command palette / settings
-    // stay legible while open. pointer-events: none means the host never
-    // intercepts clicks — every chrome element beneath remains
-    // interactive even though it's visually under the shader.
+    // Fullscreen — covers all UI chrome including the floating sidebar
+    // toggle (which lives at --z-modal: 500). Modal *content*
+    // (--z-modal-content: 510) stays above the shader so style modal,
+    // settings, etc. remain visually clean and interactive while open.
+    // pointer-events: none means the host never intercepts clicks —
+    // every chrome element beneath remains interactive even when
+    // visually under the shader.
     host.style.cssText = [
       "position:fixed",
       "inset:0",
-      "z-index:450",
+      "z-index:501",
       "pointer-events:none",
       "overflow:hidden",
     ].join(";");
@@ -139,6 +140,45 @@ export function unmountShaderLayer() {
   if (host) host.remove();
   _state = null;
   _hostContainer = null;
+}
+
+/** Belt-and-suspenders cleanup. Each layer's dispose() should already
+ *  scrub everything it added, but if something glitched mid-mount or a
+ *  caller forced a teardown via dev tools, this finds and removes any
+ *  shader-layer-* artifacts still lingering on the page.
+ *
+ *  Safe to call any time; idempotent. Exposed on window for "pull the
+ *  plug" use from the dev console:
+ *      window.__hushShaderPanicCleanup()
+ */
+export function panicCleanup() {
+  // Drop any active state without trying to call into a layer that
+  // might already be in a bad shape.
+  _state = null;
+  _hostContainer = null;
+  // Remove the host element regardless of state tracking.
+  document.getElementById(HOST_ID)?.remove();
+  // Remove any injected stylesheets shipped by layers (their ids all
+  // start with "shader-layer-").
+  document.querySelectorAll('style[id^="shader-layer-"]').forEach(el => el.remove());
+  // Strip any scope classes the layers might have added.
+  document.querySelectorAll('[class*="shader-layer-"]').forEach(el => {
+    const classes = Array.from(el.classList).filter(c => c.startsWith("shader-layer-"));
+    classes.forEach(c => el.classList.remove(c));
+  });
+  // Clear any custom properties set on documentElement / body / known
+  // scope candidates. We can't enumerate per-element setProperty values
+  // generically, but layers set them on body or modal preview pane,
+  // both of which we can scrub directly.
+  for (const el of [document.documentElement, document.body]) {
+    for (const prop of Array.from(el.style)) {
+      if (prop.startsWith("--shader-layer-")) el.style.removeProperty(prop);
+    }
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.__hushShaderPanicCleanup = panicCleanup;
 }
 
 function clampIntensity(v) {
