@@ -8,6 +8,32 @@ import { applyAppearance } from "./settings/settings-ui.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { themeBackgrounds, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 
+// Tracks whether the shader-layer module has ever been loaded this session.
+// We only `import()` it when a style with shaderLayer.enabled === true is
+// applied, so users who never opt in don't pay for the chunk.
+let _shaderModulePromise = null;
+function loadShaderModule() {
+  if (!_shaderModulePromise) _shaderModulePromise = import("./shader-layer/index.js");
+  return _shaderModulePromise;
+}
+
+function syncShaderLayerForStyle(style) {
+  const cfg = style && style.shaderLayer;
+  if (!cfg || !cfg.enabled || !cfg.layerId) {
+    // Only touch the shader subsystem if it's already been loaded this
+    // session — otherwise importing it just to call unmount would defeat
+    // the whole "free when off" premise.
+    if (_shaderModulePromise) {
+      loadShaderModule().then(m => m.unmountShaderLayer()).catch(() => {});
+    }
+    return;
+  }
+  loadShaderModule().then(m => m.applyShaderLayer({
+    layerId: cfg.layerId,
+    intensity: typeof cfg.intensity === "number" ? cfg.intensity : 0.5,
+  })).catch(e => console.warn("shader layer mount failed", e));
+}
+
 /** Surface the user's "Focus mode opacity" setting as a CSS variable so
  *  every dim target (the sentence-mask in the editor, every floating
  *  pane that isn't the active one) reads the same value. */
@@ -39,11 +65,13 @@ export function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
     state.emit("theme-changed");
     updatePrivateBoxColor(state);
+    syncShaderLayerForStyle(null);
     return;
   }
 
   const style = (state.settings.styles || []).find(s => s.id === styleId);
   if (!style) return;
+  syncShaderLayerForStyle(style);
 
   // Apply style overrides
   document.body.classList.add("style-active");

@@ -14,6 +14,8 @@ import {
   themeBackgrounds,
   themeForegrounds,
 } from "./styles-panel-shared.js";
+import { renderShaderSection, bindShaderSection } from "./style-modal-shader.js";
+import { bindCustomDropdown } from "./custom-dropdown.js";
 
 // ── lorem ipsum preview text ───────────────────────────────────────────────────
 const PREVIEW_MD = `# The Art of Writing
@@ -337,6 +339,8 @@ export function openStyleModal(state, existingStyle, onDone) {
               </div>
             </div>
 
+            ${renderShaderSection(draft)}
+
             <div class="style-modal-section">
               <h3 class="style-modal-section-title">Colors</h3>
               <div class="style-color-tabs">
@@ -599,6 +603,8 @@ export function openStyleModal(state, existingStyle, onDone) {
       scheduleSave();
     });
 
+    bindShaderSection(backdrop, draft, scheduleSave);
+
     backdrop.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
       input.addEventListener("input", () => {
         const key = input.dataset.colorKey;
@@ -641,59 +647,3 @@ function fmtInline(text) {
     .replace(/~~(.+?)~~/g, '<del>$1</del>');
 }
 
-// ── shared custom dropdown ─────────────────────────────────────────────────────
-function bindCustomDropdown(dropdown, onSelect, opts) {
-  if (!dropdown) return;
-  const selected = dropdown.querySelector(".custom-dropdown-selected");
-  const optionsList = dropdown.querySelector(".custom-dropdown-options");
-  const onClose = opts && opts.onClose;
-  const onHover = opts && opts.onHover;
-
-  function closeDropdown() {
-    if (!dropdown.classList.contains("open")) return;
-    dropdown.classList.remove("open");
-    if (onClose) onClose();
-  }
-
-  selected.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const isOpen = dropdown.classList.contains("open");
-    // Closing every other open dropdown also clears their hover preview.
-    document.querySelectorAll(".custom-dropdown.open").forEach(d => {
-      if (d !== dropdown) d.classList.remove("open");
-    });
-    if (isOpen) {
-      closeDropdown();
-    } else {
-      dropdown.classList.add("open");
-      setTimeout(() => {
-        document.addEventListener("mousedown", function handler(e2) {
-          if (!dropdown.contains(e2.target)) { closeDropdown(); document.removeEventListener("mousedown", handler); }
-        });
-      }, 0);
-    }
-  });
-
-  optionsList.querySelectorAll(".custom-dropdown-option").forEach(opt => {
-    opt.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const value = opt.dataset.value;
-      dropdown.dataset.value = value;
-      selected.textContent = opt.textContent;
-      const optFont = opt.style.fontFamily;
-      if (optFont) selected.style.fontFamily = optFont;
-      optionsList.querySelectorAll(".custom-dropdown-option").forEach(o => o.classList.remove("selected"));
-      opt.classList.add("selected");
-      closeDropdown();
-      if (onSelect) onSelect(value);
-    });
-    if (onHover) {
-      opt.addEventListener("mouseenter", () => onHover(opt.dataset.value));
-    }
-  });
-  if (onHover) {
-    // Cursor leaves the entire option list — clear the hover preview so
-    // the pane snaps back to the committed draft state.
-    optionsList.addEventListener("mouseleave", () => onHover(null));
-  }
-}

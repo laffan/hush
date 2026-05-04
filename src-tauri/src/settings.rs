@@ -429,6 +429,19 @@ pub struct Style {
     pub underline_headers: Option<bool>,
     #[serde(default)]
     pub header_scale: Option<f64>,
+    #[serde(default)]
+    pub shader_layer: Option<ShaderLayer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShaderLayer {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub layer_id: Option<String>,
+    #[serde(default)]
+    pub intensity: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
