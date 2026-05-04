@@ -590,24 +590,18 @@ export function createSelectionEngine({
     },
     // External-drag bridge: lets Hush's drag pipeline (which mutates
     // state.shapes per pointermove for non-stroke selection chrome)
-    // also slide the engine's bbox + handles along, so the visual
-    // representations of a stroke selection move together. Without
-    // this the engine bbox stays anchored at the pre-drag position
-    // until the Hush flow commits.
+    // hide the engine's bbox + handles for the duration. We hide
+    // rather than track because the symmetry with engine-driven
+    // drags (where Hush hides its own chrome) reads better than two
+    // bboxes trying to follow the same gesture along slightly
+    // different paths.
     beginExternalDrag() {
-      state.bboxAtDragStart = state.bbox ? { ...state.bbox } : null;
-    },
-    updateExternalDrag(dx, dy) {
-      const b = state.bboxAtDragStart;
-      if (!b) return;
-      state.bbox = { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h };
-      updateBBoxView();
+      bboxGroup.setAttribute('visibility', 'hidden');
     },
     endExternalDrag() {
-      state.bboxAtDragStart = null;
       // Hush's commit has already moved the underlying stroke points
       // via engine.commitTransform; recompute against them so the
-      // bbox lines up with the strokes' final positions.
+      // bbox lines up with the strokes' final positions, then unhide.
       recomputeBBoxFromSelection();
     },
     cancelActive() {

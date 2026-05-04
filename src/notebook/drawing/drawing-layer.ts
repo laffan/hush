@@ -489,9 +489,11 @@ export function createDrawingLayer({
     dragTotalDx = 0;
     dragTotalDy = 0;
     shim.pauseForDrag();
-    // Snapshot the engine bbox so updateSelectionDrag can slide it
-    // along with Hush's drag — keeps the engine bbox + handles in
-    // lockstep with Hush's gray group highlight + selection toolbar.
+    // Hide the engine's bbox + handles for the duration of Hush's
+    // drag; Hush owns the visual feedback while the gesture runs
+    // and the engine bbox reappears at the committed position on
+    // release. Mirrors how Hush hides its chrome during engine
+    // drags.
     selectionEngine.beginExternalDrag();
     // If previewTransform throws we've already paused the shim — resume
     // so the caller's missing endSelectionDrag doesn't leave us stuck.
@@ -504,7 +506,6 @@ export function createDrawingLayer({
     dragTotalDx = totalDx;
     dragTotalDy = totalDy;
     strokeEngine.previewTransform(dragEngineIds, { kind: "move", dx: totalDx, dy: totalDy });
-    selectionEngine.updateExternalDrag(totalDx, totalDy);
   }
 
   function endSelectionDrag(): void {

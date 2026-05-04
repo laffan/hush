@@ -20,7 +20,6 @@ export function createSelectionEngine(opts: {
   setSelectedIds(ids: Iterable<number>): void;
   setBboxClickable(enabled: boolean): void;
   beginExternalDrag(): void;
-  updateExternalDrag(dx: number, dy: number): void;
   endExternalDrag(): void;
   refreshBBox(): void;
   cancelActive(): void;
