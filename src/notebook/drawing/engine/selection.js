@@ -570,6 +570,16 @@ export function createSelectionEngine({
         recomputeBBoxFromSelection();
       }
     },
+    // Toggle whether the bbox rect itself absorbs clicks. The handles
+    // and rotate handle stay interactive regardless; this only
+    // controls the dashed body. Pen-mode lasso uses bbox-as-grab to
+    // move the selection (auto). Hush's regular Select tool wants the
+    // bbox transparent so click-and-drag on a stroke routes through
+    // Hush's normal drag handler — without this, the bbox covers the
+    // strokes underneath and steals the gesture.
+    setBboxClickable(enabled) {
+      bboxRect.style.pointerEvents = enabled ? 'auto' : 'none';
+    },
     cancelActive() {
       if (state.mode === 'idle') return;
       // If a live preview transform is applied, undo it in the DOM.

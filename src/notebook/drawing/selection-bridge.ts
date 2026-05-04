@@ -16,6 +16,7 @@ interface SelectionEngine {
   activate(): void;
   deactivate(): void;
   setSelectedIds(ids: Iterable<number>): void;
+  setBboxClickable(enabled: boolean): void;
 }
 
 interface ShimRef {
@@ -35,8 +36,12 @@ export function createSelectionBridge(deps: {
     if (!keys.includes("selectedIds") && !keys.includes("shapes") &&
         !keys.includes("tool") && !keys.includes("drawingSubTool")) return;
     if (bridging) return;
-    // Pen-mode lasso owns its own selection — leave it alone.
-    if (state.tool === "pen" && state.drawingSubTool === "select") return;
+    // Pen-mode lasso owns its own selection — leave it alone, but
+    // restore the bbox-as-grab behaviour the lasso flow expects.
+    if (state.tool === "pen" && state.drawingSubTool === "select") {
+      selectionEngine.setBboxClickable(true);
+      return;
+    }
     // Pen-mode drawing / erasing / slicing should never carry
     // selection chrome from a prior Hush selection.
     if (state.tool === "pen" && state.drawingSubTool !== "select") {
@@ -55,6 +60,9 @@ export function createSelectionBridge(deps: {
       if (drawIds.size > 0) {
         selectionEngine.activate();
         selectionEngine.setSelectedIds(drawIds);
+        // Keep handles interactive but let the bbox body pass clicks
+        // through, so click-on-stroke routes through Hush's drag.
+        selectionEngine.setBboxClickable(false);
       } else {
         selectionEngine.setSelectedIds(new Set());
         selectionEngine.deactivate();

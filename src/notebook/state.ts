@@ -49,13 +49,15 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
   | "drawingToolbarMinimized" | "drawingToolbarOffset";
 
-/** Default brush-slot preset. Slots 1–3 default to "auto" color so
- *  they track the active theme's foreground; slot 4 (highlighter) is
- *  yellow because theme-fg highlighters vanish on dark themes. */
+/** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
+ *  the active theme's foreground. Slots 2 and 3 carry an explicit
+ *  red and blue so a fresh notebook offers a useful palette out of
+ *  the box; slot 4 (highlighter) is yellow because theme-fg
+ *  highlighters vanish on dark themes. */
 const DEFAULT_BRUSH_SLOTS: DrawingSlot[] = [
   { brushId: "brush-1", color: "auto",    size: 4,  streamline: 0.35, spacing: 0.12, mode: "normal" },
-  { brushId: "brush-2", color: "auto",    size: 8,  streamline: 0.35, spacing: 0.12, mode: "normal" },
-  { brushId: "brush-3", color: "auto",    size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-2", color: "#ef4444", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-3", color: "#3b82f6", size: 25, streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-highlighter", color: "#fde047", size: 20, streamline: 0.35, spacing: 0.10, mode: "highlighter" },
 ];
 

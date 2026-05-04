@@ -307,6 +307,13 @@ export function createStrokeEngine({
       if (L && (L.locked || L.hidden)) return;
     }
     if (e.button !== undefined && e.button !== 0) return;
+    // Selection chrome (handles, bbox, lasso path) lives inside the
+    // SVG with `pointer-events: auto` so it stays interactive while
+    // the SVG root is non-capturing in non-pen modes. Pointerdowns on
+    // those elements still bubble to this listener; without this
+    // bail, every handle click would also seed a brand-new stroke at
+    // the click position.
+    if (e.target !== svg) return;
     // Defensive: if a stroke is already in flight from a different
     // pointer, treat the new contact as the start of a multi-touch
     // gesture (the gestures recogniser may also intercept this in its

@@ -15,6 +15,7 @@ export function createSelectionEngine(opts: {
   hasSelection(): boolean;
   getSelectedIds(): Set<number>;
   setSelectedIds(ids: Iterable<number>): void;
+  setBboxClickable(enabled: boolean): void;
   refreshBBox(): void;
   cancelActive(): void;
 };
