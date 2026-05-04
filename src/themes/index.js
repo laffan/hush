@@ -19,6 +19,22 @@ import { smoothy } from "./smoothy.js";
 import { solarizedLight } from "./solarized-light.js";
 import { tomorrow } from "./tomorrow.js";
 
+// Imported from the VSCode-Ultimate-Themes-Pack
+import { akariNight } from "./akari-night.js";
+import { auroraBorealis } from "./aurora-borealis.js";
+import { aurumDusk } from "./aurum-dusk.js";
+import { calmDark } from "./calm-dark.js";
+import { darkGreenJungle } from "./dark-green-jungle.js";
+import { eyeComfortDarkPro } from "./eye-comfort-dark-pro.js";
+import { ghibliForestDark } from "./ghibli-forest-dark.js";
+import { mapleLight } from "./maple-light.js";
+import { midnightFrost } from "./midnight-frost.js";
+import { midnightGlow } from "./midnight-glow.js";
+import { nuttyLight } from "./nutty-light.js";
+import { pokemonColor } from "./pokemon-color.js";
+import { softContrast } from "./soft-contrast.js";
+import { solsticeEstival } from "./solstice-estival.js";
+
 export const themeList = [
   // Light themes — headingColor matches each theme's accent/keyword tones
   { id: "ayuLight", name: "Ayu Light", type: "light", extension: ayuLight, headingColor: "#ff9940" },
@@ -27,6 +43,11 @@ export const themeList = [
   { id: "rosePineDawn", name: "Rosé Pine Dawn", type: "light", extension: rosePineDawn, headingColor: "#907aa9" },
   { id: "solarizedLight", name: "Solarized Light", type: "light", extension: solarizedLight, headingColor: "#268bd2" },
   { id: "smoothy", name: "Smoothy", type: "light", extension: smoothy, headingColor: "#5a67d8" },
+  { id: "auroraBorealis", name: "Aurora Borealis", type: "light", extension: auroraBorealis, headingColor: "#5e81ac" },
+  { id: "mapleLight", name: "Maple Light", type: "light", extension: mapleLight, headingColor: "#726293" },
+  { id: "nuttyLight", name: "Nutty Light", type: "light", extension: nuttyLight, headingColor: "#7A3F7D" },
+  { id: "softContrast", name: "Soft Contrast", type: "light", extension: softContrast, headingColor: "#1F6AA5" },
+  { id: "solsticeEstival", name: "Solstice Estival", type: "light", extension: solsticeEstival, headingColor: "#68685F" },
 
   // Dark themes
   { id: "amy", name: "Amy", type: "dark", extension: amy, headingColor: "#ff6600" },
@@ -39,6 +60,15 @@ export const themeList = [
   { id: "dracula", name: "Dracula", type: "dark", extension: dracula, headingColor: "#bd93f9" },
   { id: "espresso", name: "Espresso", type: "dark", extension: espresso, headingColor: "#c5956b" },
   { id: "tomorrow", name: "Tomorrow", type: "dark", extension: tomorrow, headingColor: "#7aa6da" },
+  { id: "akariNight", name: "Akari Night", type: "dark", extension: akariNight, headingColor: "#E26A3B" },
+  { id: "aurumDusk", name: "Aurum Dusk", type: "dark", extension: aurumDusk, headingColor: "#c99d5a" },
+  { id: "calmDark", name: "Calm Dark", type: "dark", extension: calmDark, headingColor: "#dedbd3" },
+  { id: "darkGreenJungle", name: "Dark Green Jungle", type: "dark", extension: darkGreenJungle, headingColor: "#a2d99a" },
+  { id: "eyeComfortDarkPro", name: "Eye Comfort Dark Pro", type: "dark", extension: eyeComfortDarkPro, headingColor: "#569cd6" },
+  { id: "ghibliForestDark", name: "Ghibli Forest (Dark)", type: "dark", extension: ghibliForestDark, headingColor: "#B88FB8" },
+  { id: "midnightFrost", name: "Midnight Frost", type: "dark", extension: midnightFrost, headingColor: "#00bff9" },
+  { id: "midnightGlow", name: "Midnight Glow", type: "dark", extension: midnightGlow, headingColor: "#97EE91" },
+  { id: "pokemonColor", name: "Pokemon Color", type: "dark", extension: pokemonColor, headingColor: "#FBA54C" },
 ];
 
 export function getThemeById(id) {

@@ -41,6 +41,11 @@ export const themeBackgrounds = {
   smoothy: "#ffffff", amy: "#200020", barf: "#15191e", bespin: "#2e241d",
   birdsOfParadise: "#3b2627", boysAndGirls: "#000205", cobalt: "#00254b",
   coolGlow: "#060521", espresso: "#ffffff", tomorrow: "#ffffff",
+  akariNight: "#171b22", auroraBorealis: "#eceff4", aurumDusk: "#1a1614",
+  calmDark: "#191f22", darkGreenJungle: "#18211e", eyeComfortDarkPro: "#1e1e1e",
+  ghibliForestDark: "#1e2a24", mapleLight: "#fffffe", midnightFrost: "#011627",
+  midnightGlow: "#27273a", nuttyLight: "#fffef9", pokemonColor: "#2b2b2b",
+  softContrast: "#f5f3ee", solsticeEstival: "#f0eee7",
 };
 
 export const themeForegrounds = {
@@ -49,4 +54,9 @@ export const themeForegrounds = {
   smoothy: "#333333", amy: "#d0d0ff", barf: "#d4d4d4", bespin: "#baae9e",
   birdsOfParadise: "#e6e1c4", boysAndGirls: "#e0e0e0", cobalt: "#e1efff",
   coolGlow: "#aebbc5", espresso: "#535353", tomorrow: "#4d4d4c",
+  akariNight: "#e6ded3", auroraBorealis: "#2e3440", aurumDusk: "#f2e8dc",
+  calmDark: "#e6e2d9", darkGreenJungle: "#d4d4d4", eyeComfortDarkPro: "#d4d4d4",
+  ghibliForestDark: "#e8dfd0", mapleLight: "#475569", midnightFrost: "#a7dbf7",
+  midnightGlow: "#fcf6ff", nuttyLight: "#2a1f16", pokemonColor: "#eeffff",
+  softContrast: "#2b2b2b", solsticeEstival: "#1b3c3c",
 };

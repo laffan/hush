@@ -21,13 +21,20 @@ export const fontFallbacks = {
   "iA Writer Quattro": "'iA Writer Quattro', 'Helvetica Neue', 'Arial', sans-serif",
 };
 
-// Known theme background colors — must match thememirror's actual settings.background
+// Known theme background colors — must match each theme's `settings.background`
+// in src/themes/<theme>.js.
 export const themeBackgrounds = {
   dracula: "#2d2f3f", ayuLight: "#fcfcfc", clouds: "#ffffff",
   noctisLilac: "#f2f1f8", rosePineDawn: "#faf4ed", solarizedLight: "#fef7e5",
   smoothy: "#ffffff", amy: "#200020", barf: "#15191e", bespin: "#2e241d",
   birdsOfParadise: "#3b2627", boysAndGirls: "#000205", cobalt: "#00254b",
   coolGlow: "#060521", espresso: "#ffffff", tomorrow: "#ffffff",
+  // VSCode-Ultimate-Themes-Pack imports
+  akariNight: "#171b22", auroraBorealis: "#eceff4", aurumDusk: "#1a1614",
+  calmDark: "#191f22", darkGreenJungle: "#18211e", eyeComfortDarkPro: "#1e1e1e",
+  ghibliForestDark: "#1e2a24", mapleLight: "#fffffe", midnightFrost: "#011627",
+  midnightGlow: "#27273a", nuttyLight: "#fffef9", pokemonColor: "#2b2b2b",
+  softContrast: "#f5f3ee", solsticeEstival: "#f0eee7",
 };
 
 export function hexLuminance(hex) {
