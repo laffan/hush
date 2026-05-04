@@ -69,13 +69,16 @@ function ensureHost(container) {
     ].join(";");
     wantContainer.appendChild(host);
   } else {
-    // Fullscreen — covers writing surfaces, stays below sidebar (200) and
-    // every modal layer. pointer-events: none so the editor still
-    // receives clicks even when an opaque layer sits on top.
+    // Fullscreen — covers everything UI-chrome (editor, panes, sidebars,
+    // buttons, overlays, popovers) but stays below modal backdrops
+    // (--z-modal: 500) so the style modal / command palette / settings
+    // stay legible while open. pointer-events: none means the host never
+    // intercepts clicks — every chrome element beneath remains
+    // interactive even though it's visually under the shader.
     host.style.cssText = [
       "position:fixed",
       "inset:0",
-      "z-index:100",
+      "z-index:450",
       "pointer-events:none",
       "overflow:hidden",
       "contain:strict",

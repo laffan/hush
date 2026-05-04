@@ -7,9 +7,11 @@
  * ctx.onVisible callback installed by the registry: when the user tabs
  * away the loop stops cold.
  *
- * No editor pixels are read — this is pure overlay alpha composited via
- * mix-blend-mode: screen so dust appears as bright specks regardless of
- * the underlying theme.
+ * Blend mode is `difference` so the dust shows up regardless of the
+ * underlying theme — bright specks against dark editors, dark specks
+ * against light editors. (Earlier `screen` blend with white particles
+ * was invisible on light themes; `difference` always produces a
+ * high-contrast result.)
  */
 
 const TARGET_FPS = 12;
@@ -20,10 +22,12 @@ const FLICKER_PERIOD_MS = 1700;
 export default function mount(host, ctx) {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
-  // Screen blend mode means white pixels brighten the editor and black
-  // pixels are no-ops — we only draw bright specks, so the entire canvas
-  // can stay transparent except where dust lives.
-  canvas.style.mixBlendMode = "screen";
+  // `difference` inverts wherever a dust pixel lands: bright specks on
+  // dark backgrounds, dark specks on light. Transparent pixels (alpha
+  // 0) are no-ops, so empty regions of the canvas leave the editor
+  // untouched. This replaces the earlier `screen` mode, which made
+  // white dust invisible on light themes.
+  canvas.style.mixBlendMode = "difference";
   host.appendChild(canvas);
 
   const c2d = canvas.getContext("2d", { alpha: true });
@@ -85,9 +89,13 @@ export default function mount(host, ctx) {
     // ~0.85 so the entire dust field pulses gently. Period is several
     // seconds so it reads as analog warmth, not seizure-trigger.
     const flicker = 0.7 + 0.3 * Math.sin((t / FLICKER_PERIOD_MS) * Math.PI * 2);
-    const baseAlpha = 0.4 + intensity * 0.5;
+    const baseAlpha = 0.55 + intensity * 0.45; // 0.55..1.0 — bumped from
+                                               // 0.4..0.9 so `difference`
+                                               // reads at low intensities
     c2d.globalAlpha = baseAlpha * flicker;
-    c2d.fillStyle = "#fff8e8"; // warm white — reads as film grain, not pixels
+    // Pure white maximises the swing under `difference` — every channel
+    // inverts to (255 - bg) which always lands far from the bg color.
+    c2d.fillStyle = "#ffffff";
 
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];

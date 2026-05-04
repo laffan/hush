@@ -1,18 +1,32 @@
 /**
- * WebGL2 layer: CRT effect — barrel-distorted UVs, scanlines, slot mask,
- * and a soft vignette around the curved edge.
+ * WebGL2 layer: CRT effect.
  *
- * Procedural-only — the shader does NOT sample editor pixels. That means
- * text glyphs stay crisp (the CRT bars composite over them via screen /
- * multiply blend modes set on the canvas element) and the entire shader
- * pass costs one fullscreen quad: a few microseconds even on iPad.
+ * The effect math is ported from CRTFilterWebGL by Ichiaka, MIT-licensed:
+ *   https://github.com/Ichiaka/CRTFilter
+ *   Copyright (c) 2025 Aka — MIT License
  *
- * The rAF loop is gated on visibility + focus through ctx.onVisible.
- * When the user tabs away the GPU goes quiet.
+ * Adaptation note: CRTFilter is a true post-processing filter — it samples
+ * a source canvas and applies effects to those pixels. In Hush the
+ * "screen" is a CodeMirror DOM editor (or a notebook canvas), and
+ * capturing it as a GL texture every frame would dominate the frame
+ * budget. So the port treats the source as `vec3(1.0)` (a fully bright
+ * canvas) and emits a multiplicative mask: each fragment outputs `col`
+ * with alpha 1.0, the canvas is composited via `mix-blend-mode: multiply`,
+ * and the editor pixels are darkened wherever scanlines / mask / signal
+ * loss / vignette want them darker. col = 1.0 means "no change" so the
+ * editor stays crisp through the gaps.
  *
- * If WebGL2 isn't available (very old WebKit), we fall back to mounting
- * a static CSS scanline so the user still sees *something* rather than
- * silently nothing.
+ * The effects that need a real source (chromatic aberration, glow on
+ * bright pixels, horizontal-tearing texture sampling) are dropped — they
+ * have no visible work to do without one. Everything else (curvature,
+ * scanlines, retrace lines, dot mask, signal loss, flicker, contrast,
+ * vignette) ports cleanly.
+ *
+ * `intensity` 0 → mask is identically vec3(1.0) → editor untouched.
+ * `intensity` 1 → strong CRT.
+ *
+ * Procedural-only also means: no DOM capture, no html2canvas, no
+ * texSubImage2D every frame — single fullscreen quad, ~1ms even on iPad.
  */
 
 const VERT = `#version 300 es
@@ -28,66 +42,96 @@ precision highp float;
 in vec2 v_uv;
 out vec4 outColor;
 
-uniform float u_time;       // seconds since mount
-uniform float u_intensity;  // 0..1
+uniform float u_time;
+uniform float u_intensity;
 uniform vec2  u_resolution;
 
-// Barrel distortion — push UVs outward from center based on r^2.
+// Barrel distortion — port of CRTFilter's barrelDistortion().
 vec2 barrel(vec2 uv, float k) {
   vec2 c = uv - 0.5;
   float r2 = dot(c, c);
   return uv + c * r2 * k;
 }
 
+// Hash for the static-noise term.
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
 void main() {
-  // Curvature scales with intensity but never gets too aggressive.
-  float k = 0.18 + u_intensity * 0.35;
+  // Curvature is gentle — we keep the *visual* warp of the scanline
+  // pattern without warping any underlying content (because there isn't
+  // any to warp). Higher intensity = more curve.
+  float k = 0.10 + u_intensity * 0.18;
   vec2 uv = barrel(v_uv, k);
 
-  // Outside-the-tube mask — pixels that fell off the curved edge go
-  // black. Soft falloff at the boundary so it doesn't read as a
-  // hard-cropped rectangle.
-  float edgeX = smoothstep(0.0, 0.02, uv.x) * smoothstep(0.0, 0.02, 1.0 - uv.x);
-  float edgeY = smoothstep(0.0, 0.02, uv.y) * smoothstep(0.0, 0.02, 1.0 - uv.y);
+  // Soft edge: corners of the post-barrel rectangle fall outside [0,1].
+  // smoothstep over a small band gives a gradient toward the corners
+  // rather than a hard mask. Crucially, the floor is non-zero — even
+  // the darkest corner stays at ~0.45 of the editor brightness, so
+  // multiply blend never produces full black.
+  float edgeX = smoothstep(-0.06, 0.04, uv.x) * smoothstep(-0.06, 0.04, 1.0 - uv.x);
+  float edgeY = smoothstep(-0.06, 0.04, uv.y) * smoothstep(-0.06, 0.04, 1.0 - uv.y);
   float edge = edgeX * edgeY;
 
-  // Horizontal scanlines — fine bars at native pixel scale.
-  float scanY = uv.y * u_resolution.y;
-  float scan = 0.5 + 0.5 * sin(scanY * 3.14159);
-  // Make the bars thicker / more visible at higher intensity.
-  float scanStrength = mix(0.08, 0.35, u_intensity);
-  float scanMul = 1.0 - scan * scanStrength;
+  // Source = pure white. All the effects below DARKEN this 1.0 to
+  // various values; the resulting col is the multiplier that blends
+  // over the editor.
+  vec3 col = vec3(1.0);
 
-  // Slot-mask shimmer — vertical RGB triad approximation. We just darken
-  // every third column slightly; the screen blend on the canvas tint
-  // produces the colored-stripe sensation when composited over text.
-  float slot = 0.92 + 0.08 * sin(uv.x * u_resolution.x * 2.0944); // 2π/3
-  float pixelMul = scanMul * slot;
+  // Static noise — small grain over the whole tube.
+  float noise = (hash21(uv * u_resolution + u_time) - 0.5);
+  col += noise * (0.05 * u_intensity);
 
-  // Vignette — same as the CSS layer but cheaper here since we already
-  // have r^2 in scope conceptually. Use the post-barrel uv so it tracks
-  // the curved edge.
-  vec2 c = uv - 0.5;
-  float vig = 1.0 - dot(c, c) * (1.2 + u_intensity * 0.8);
-  vig = clamp(vig, 0.0, 1.0);
+  // Signal loss — slowly-rolling horizontal dropout bars (CRTFilter's
+  // u_signalLoss term).
+  col *= 1.0 - (0.07 * u_intensity * abs(sin(uv.y * 60.0 + u_time * 8.0)));
 
-  // Phosphor glow — slow brightness pulse.
-  float pulse = 0.97 + 0.03 * sin(u_time * 1.7);
+  // Retrace lines — fine horizontal scanlines pinned to the target
+  // canvas resolution so each bar lands roughly one pixel tall.
+  // CRTFilter scales the multiplier by 1.9 + scanlineIntensity * sin();
+  // we rebase to "1 minus a positive bump" so 0 intensity = no scanline.
+  float scan = 0.5 - 0.5 * sin(uv.y * u_resolution.y * 3.14159 + u_time * 4.0);
+  col *= 1.0 - (0.45 * u_intensity) * scan;
 
-  // Final composite: a translucent dark bar that screens darker = scanlines,
-  // multiplied by edge mask + vignette + pulse. Alpha rises with intensity
-  // so the user can see what they're tuning.
-  float darken = (1.0 - pixelMul) * edge * vig * pulse;
-  float baseAlpha = mix(0.18, 0.55, u_intensity);
-  outColor = vec4(0.0, 0.0, 0.0, darken * baseAlpha + (1.0 - edge) * 0.85);
+  // Dot mask — vertical RGB triad approximation. With a procedural
+  // source we can't sample three offset RGB taps the way CRTFilter
+  // does, but modulating the col channels at a column-frequency gives
+  // the same colored-stripe sensation when composited over text.
+  float maskR = 1.0;
+  float maskG = 0.94 + 0.06 * sin(uv.x * u_resolution.x * 2.0944);
+  float maskB = 0.94 + 0.06 * sin(uv.x * u_resolution.x * 2.0944 + 2.0);
+  vec3 mask = mix(vec3(1.0), vec3(maskR, maskG, maskB), u_intensity * 0.7);
+  col *= mask;
+
+  // Flicker — slow brightness pulse (CRTFilter's u_flicker).
+  col *= 1.0 + (0.015 * u_intensity) * sin(u_time * 12.0);
+
+  // Vertical jitter — shift the apparent center of brightness up-and-
+  // down every few seconds. With no source to sample we approximate
+  // by darkening the strip the jitter would push out.
+  float jitter = sin(u_time * 5.0) * 0.5 + 0.5;
+  float jitterBand = smoothstep(0.45, 0.55, abs(uv.y - jitter));
+  col *= 1.0 - (0.04 * u_intensity) * jitterBand;
+
+  // Apply edge mask — corners get a soft vignette but never go fully
+  // black. Floor is 1.0 - 0.55*intensity so even at max intensity the
+  // darkest corner is ~0.45.
+  float floorBrightness = 1.0 - 0.55 * u_intensity;
+  col *= mix(floorBrightness, 1.0, edge);
+
+  // intensity = 0 → blend toward pure white = passthrough.
+  col = mix(vec3(1.0), col, u_intensity);
+
+  outColor = vec4(col, 1.0);
 }`;
 
 export default function mount(host, ctx) {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
-  // Multiply: the shader output is mostly black with darker bars, so
-  // multiplying darkens the underlying editor exactly where the bars are
-  // and leaves the rest untouched.
+  // Multiply: shader output is a brightness mask in [0..1]. Editor
+  // pixels get multiplied by the mask, so col=1.0 leaves them alone
+  // and col<1.0 darkens them. No fully-opaque corners.
   canvas.style.mixBlendMode = "multiply";
   host.appendChild(canvas);
 
@@ -118,7 +162,6 @@ export default function mount(host, ctx) {
     };
   }
 
-  // ── shader compile ──────────────────────────────────────────────────
   const program = link(gl, VERT, FRAG);
   if (!program) {
     canvas.remove();
@@ -130,7 +173,6 @@ export default function mount(host, ctx) {
   const uIntensity = gl.getUniformLocation(program, "u_intensity");
   const uRes = gl.getUniformLocation(program, "u_resolution");
 
-  // Fullscreen triangle pair — two tris cover the clip cube.
   const buf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -141,9 +183,6 @@ export default function mount(host, ctx) {
   gl.enableVertexAttribArray(aPos);
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
   let intensity = clamp(ctx.intensity);
   let visible = !document.hidden && document.hasFocus();
   let rafId = 0;
@@ -152,10 +191,9 @@ export default function mount(host, ctx) {
   function resize() {
     const w = ctx.width;
     const h = ctx.height;
-    // CRT effect doesn't benefit from full DPR — the scanline math reads
-    // the *target* resolution and we want bars roughly 1px tall on screen,
-    // so render at native CSS pixels and let the browser upsample. That
-    // saves ~4x fragment work on a Retina display with no visible loss.
+    // Render at native CSS pixels — the scanline math is keyed off
+    // u_resolution so we want bars roughly 1px tall on screen. Skipping
+    // DPR saves ~4× fragment work on Retina with no visible loss.
     canvas.width = Math.max(1, Math.floor(w));
     canvas.height = Math.max(1, Math.floor(h));
     canvas.style.width = w + "px";
@@ -170,7 +208,9 @@ export default function mount(host, ctx) {
     gl.uniform1f(uTime, t);
     gl.uniform1f(uIntensity, intensity);
     gl.uniform2f(uRes, canvas.width, canvas.height);
-    gl.clearColor(0, 0, 0, 0);
+    // Clearing to white means "no effect at all" anywhere we don't
+    // overwrite, which combined with multiply blend = passthrough.
+    gl.clearColor(1, 1, 1, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     rafId = requestAnimationFrame(draw);
@@ -191,8 +231,6 @@ export default function mount(host, ctx) {
     update({ intensity: i }) { intensity = clamp(i); },
     dispose() {
       stopLoop();
-      // Explicitly drop the GPU context — WebKit holds onto canvas-backed
-      // GPU memory longer than you'd expect otherwise.
       const lose = gl.getExtension("WEBGL_lose_context");
       try { lose && lose.loseContext(); } catch (_) {}
       canvas.remove();
