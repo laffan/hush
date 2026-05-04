@@ -312,18 +312,14 @@
 
 /* iOS-only oversized corner touch targets. Sit fully inside the pane's
    border-radius so the curve doesn't cut them off, and pick up the
-   existing `data-dir` resize wiring. The 1 px red border is a temporary
-   debug aid so the dots are visible during development; remove the
-   border once the placement is dialed in. */
+   existing `data-dir` resize wiring. */
 .fp-resize-touch {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1px solid red;
   z-index: 2;
 }
 .fp-resize-touch-nw { top: 6px;    left: 6px; }
-.fp-resize-touch-ne { top: 6px;    right: 6px; }
 .fp-resize-touch-sw { bottom: 6px; left: 6px; }
 .fp-resize-touch-se { bottom: 6px; right: 6px; }
 /* Hide the touch dots while the pane is collapsed (only the title bar

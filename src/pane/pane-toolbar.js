@@ -125,11 +125,12 @@ export function buildPaneDOM(pane, deps) {
     el.appendChild(handle);
   }
   // iOS / iPad: add larger corner touch targets nested inside the
-  // border-radius so the four corners are reachable by a fingertip
-  // without lifting the pane out of place. They share the .fp-resize
-  // class so `setupPaneResize` wires them automatically.
+  // border-radius so the corners are reachable by a fingertip without
+  // lifting the pane out of place. The top-right corner is skipped —
+  // it sits under the close button. They share the .fp-resize class so
+  // `setupPaneResize` wires them automatically.
   if (isIOS()) {
-    for (const dir of ["ne", "nw", "se", "sw"]) {
+    for (const dir of ["nw", "se", "sw"]) {
       const dot = document.createElement("div");
       dot.className = `fp-resize fp-resize-touch fp-resize-touch-${dir}`;
       dot.dataset.dir = dir;
