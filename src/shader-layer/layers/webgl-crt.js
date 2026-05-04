@@ -129,11 +129,14 @@ void main() {
 export default function mount(host, ctx) {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
-  // Multiply: shader output is a brightness mask in [0..1]. Editor
-  // pixels get multiplied by the mask, so col=1.0 leaves them alone
-  // and col<1.0 darkens them. No fully-opaque corners.
-  canvas.style.mixBlendMode = "multiply";
   host.appendChild(canvas);
+  // Blend mode lives on the HOST, not the canvas. Putting it on the
+  // canvas isolates the blend to the host's stacking context (the
+  // host's transparent background), so cleared white pixels paint
+  // opaque over the editor instead of multiplying with it. Setting it
+  // on the host blends the entire layer-as-a-unit onto everything
+  // beneath in body's stacking context — i.e. the editor.
+  host.style.mixBlendMode = "multiply";
 
   const gl = canvas.getContext("webgl2", {
     alpha: true,
@@ -234,6 +237,7 @@ export default function mount(host, ctx) {
       const lose = gl.getExtension("WEBGL_lose_context");
       try { lose && lose.loseContext(); } catch (_) {}
       canvas.remove();
+      host.style.mixBlendMode = "";
     },
   };
 }

@@ -31,9 +31,9 @@ export const SHADER_LAYERS = [
   { id: "css-vignette-scanlines", name: "Vignette + Scanlines (CSS)",
     family: "css",
     load: () => import("./layers/css-vignette-scanlines.js") },
-  { id: "canvas-dust-flicker", name: "Dust + Film Flicker (2D Canvas)",
-    family: "canvas2d",
-    load: () => import("./layers/canvas-dust-flicker.js") },
+  { id: "css-crt-flicker", name: "CRT Flicker (CSS)",
+    family: "css",
+    load: () => import("./layers/css-crt-flicker.js") },
   { id: "webgl-crt", name: "CRT — Scanlines + Curvature (WebGL2)",
     family: "webgl2",
     load: () => import("./layers/webgl-crt.js") },
@@ -65,7 +65,6 @@ function ensureHost(container) {
       "z-index:1",
       "pointer-events:none",
       "overflow:hidden",
-      "contain:strict",
     ].join(";");
     wantContainer.appendChild(host);
   } else {
@@ -81,7 +80,6 @@ function ensureHost(container) {
       "z-index:450",
       "pointer-events:none",
       "overflow:hidden",
-      "contain:strict",
     ].join(";");
     document.body.appendChild(host);
   }
