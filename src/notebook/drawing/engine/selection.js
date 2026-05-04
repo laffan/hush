@@ -91,6 +91,9 @@ export function createSelectionEngine({
   onExit,          // () => void — user hit Escape to leave select mode
   onLassoComplete, // ({ selected: boolean }) — fires at the end of every lasso
   onSelectionDeleted, // () — fires after strokes were removed from a selection
+  onDragStart,     // (kind: 'move' | 'resize' | 'rotate', ids: Set<number>) — engine-driven drag begins
+  onDragMove,      // ({ kind, dx, dy }) — engine-driven drag tick (move only emits dx/dy)
+  onDragEnd,       // () — engine-driven drag finished (committed or cancelled)
 }) {
   const selectable = isSelectable || (() => true);
   const toLocal = pointToLocal || ((p) => {
@@ -288,6 +291,7 @@ export function createSelectionEngine({
     const b = state.bboxAtDragStart;
     state.bbox = { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h };
     updateBBoxView();
+    if (onDragMove) onDragMove({ kind: 'move', dx, dy });
   }
 
   function applyResizePreview(handle, cursor) {
@@ -411,6 +415,7 @@ export function createSelectionEngine({
 
     if (target === 'move') {
       state.mode = 'move';
+      if (onDragStart) onDragStart('move', state.selectedIds);
       return;
     }
 
@@ -420,12 +425,14 @@ export function createSelectionEngine({
       const cy = state.bbox ? state.bbox.y + state.bbox.h / 2 : p.y;
       state.rotateAnchor = { x: cx, y: cy };
       state.rotateStartAngle = Math.atan2(p.y - cy, p.x - cx);
+      if (onDragStart) onDragStart('rotate', state.selectedIds);
       return;
     }
 
     if (HANDLE_SPEC.some((h) => h.name === target)) {
       state.mode = 'resize';
       state.resizeHandle = target;
+      if (onDragStart) onDragStart('resize', state.selectedIds);
       return;
     }
 
@@ -486,6 +493,7 @@ export function createSelectionEngine({
       // baked at their rotated positions and the bbox is recomputed
       // axis-aligned.
       bboxGroup.removeAttribute('transform');
+      if (onDragEnd) onDragEnd();
       return;
     }
     state.mode = 'idle';
@@ -580,10 +588,33 @@ export function createSelectionEngine({
     setBboxClickable(enabled) {
       bboxRect.style.pointerEvents = enabled ? 'auto' : 'none';
     },
+    // External-drag bridge: lets Hush's drag pipeline (which mutates
+    // state.shapes per pointermove for non-stroke selection chrome)
+    // also slide the engine's bbox + handles along, so the visual
+    // representations of a stroke selection move together. Without
+    // this the engine bbox stays anchored at the pre-drag position
+    // until the Hush flow commits.
+    beginExternalDrag() {
+      state.bboxAtDragStart = state.bbox ? { ...state.bbox } : null;
+    },
+    updateExternalDrag(dx, dy) {
+      const b = state.bboxAtDragStart;
+      if (!b) return;
+      state.bbox = { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h };
+      updateBBoxView();
+    },
+    endExternalDrag() {
+      state.bboxAtDragStart = null;
+      // Hush's commit has already moved the underlying stroke points
+      // via engine.commitTransform; recompute against them so the
+      // bbox lines up with the strokes' final positions.
+      recomputeBBoxFromSelection();
+    },
     cancelActive() {
+      const wasDragging = state.mode === 'move' || state.mode === 'resize' || state.mode === 'rotate';
       if (state.mode === 'idle') return;
       // If a live preview transform is applied, undo it in the DOM.
-      if (state.mode === 'move' || state.mode === 'resize' || state.mode === 'rotate') {
+      if (wasDragging) {
         strokeEngine.previewTransform(state.selectedIds, null);
         state.lastTransform = null;
         bboxGroup.removeAttribute('transform');
@@ -595,6 +626,7 @@ export function createSelectionEngine({
       state.bboxAtDragStart = null;
       state.rotateAnchor = null;
       clearLasso();
+      if (wasDragging && onDragEnd) onDragEnd();
     },
   };
 }

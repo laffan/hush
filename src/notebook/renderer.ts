@@ -56,6 +56,11 @@ export interface RenderState {
   /** id of a flowchart edge whose curve the cursor is hovering — the
    *  renderer paints a delete-X badge at the edge midpoint. */
   flowHoveredEdgeId?: string | null;
+  /** Live offset published by the drawing engine during a pen-mode
+   *  bbox grab. The selection chrome adds this delta to selected
+   *  stroke shapes' bounds so it tracks the engine bbox during the
+   *  gesture. Null outside an engine drag. */
+  strokeDragOffset?: { dx: number; dy: number } | null;
 }
 
 export function render(canvas: HTMLCanvasElement, state: RenderState): void {
@@ -187,11 +192,20 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   }
 
   if (selectedIds.size > 0) {
+    // Engine-driven drag (pen-mode bbox grab) publishes a live offset
+    // so Hush's group highlight + selection toolbar shift in
+    // lockstep with the engine's bbox + handles. Stroke shapes use
+    // the offset; non-strokes don't (the engine doesn't move them).
+    const drag = state.strokeDragOffset;
+    const applyDrag = (s: Shape, b: { minX: number; minY: number; maxX: number; maxY: number }) => {
+      if (!drag || s.type !== "draw") return b;
+      return { minX: b.minX + drag.dx, minY: b.minY + drag.dy, maxX: b.maxX + drag.dx, maxY: b.maxY + drag.dy };
+    };
     // Draw group bounding boxes first (behind individual highlights)
     const groupBounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
     for (const shape of shapes) {
       if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id) || !shape.groupId) continue;
-      const b = getShapeBounds(shape, state.fontFamily);
+      const b = applyDrag(shape, getShapeBounds(shape, state.fontFamily));
       const existing = groupBounds.get(shape.groupId);
       if (existing) {
         existing.minX = Math.min(existing.minX, b.minX);

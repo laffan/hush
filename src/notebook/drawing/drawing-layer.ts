@@ -274,6 +274,21 @@ export function createDrawingLayer({
       bridgeEngineSelectionToState();
       restoreFromTransientSelect();
     },
+    // Engine-driven drag (pen-mode bbox grab). Publish the live offset
+    // on state so Hush's group highlight + selection toolbar can
+    // shift their bounds by the same delta — without it, those float
+    // at the pre-drag position until the engine commits and the
+    // shapes' points actually move.
+    onDragMove: (evt: { kind: string; dx: number; dy: number }) => {
+      if (evt.kind !== "move") return;
+      state.strokeDragOffset = { dx: evt.dx, dy: evt.dy };
+      state.notify("strokeDragOffset");
+    },
+    onDragEnd: () => {
+      if (state.strokeDragOffset === null) return;
+      state.strokeDragOffset = null;
+      state.notify("strokeDragOffset");
+    },
   });
 
   /** Mirror the drawing engine's current selected ids into Hush's
@@ -473,6 +488,10 @@ export function createDrawingLayer({
     dragTotalDx = 0;
     dragTotalDy = 0;
     shim.pauseForDrag();
+    // Snapshot the engine bbox so updateSelectionDrag can slide it
+    // along with Hush's drag — keeps the engine bbox + handles in
+    // lockstep with Hush's gray group highlight + selection toolbar.
+    selectionEngine.beginExternalDrag();
     // If previewTransform throws we've already paused the shim — resume
     // so the caller's missing endSelectionDrag doesn't leave us stuck.
     try { strokeEngine.previewTransform(dragEngineIds, { kind: "move", dx: 0, dy: 0 }); }
@@ -484,12 +503,14 @@ export function createDrawingLayer({
     dragTotalDx = totalDx;
     dragTotalDy = totalDy;
     strokeEngine.previewTransform(dragEngineIds, { kind: "move", dx: totalDx, dy: totalDy });
+    selectionEngine.updateExternalDrag(totalDx, totalDy);
   }
 
   function endSelectionDrag(): void {
     if (!dragEngineIds || dragEngineIds.size === 0) {
       // No draws in the drag — nothing to commit but clear state anyway.
       dragEngineIds = null;
+      selectionEngine.endExternalDrag();
       shim.resumeForDrag();
       return;
     }
@@ -505,6 +526,9 @@ export function createDrawingLayer({
       // already has the post-drag points from hush's own per-frame
       // updates. Resume is all we need; the shim refreshes lastSeen.
     } finally {
+      // endExternalDrag recomputes the bbox from the engine's now-
+      // updated points so it lands on the final position.
+      selectionEngine.endExternalDrag();
       shim.resumeForDrag();
       dragEngineIds = null;
       dragTotalDx = 0;

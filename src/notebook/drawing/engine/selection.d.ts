@@ -8,6 +8,9 @@ export function createSelectionEngine(opts: {
   onExit?: () => void;
   onLassoComplete?: (evt: { selected: boolean }) => void;
   onSelectionDeleted?: () => void;
+  onDragStart?: (kind: "move" | "resize" | "rotate", ids: Set<number>) => void;
+  onDragMove?: (evt: { kind: string; dx: number; dy: number }) => void;
+  onDragEnd?: () => void;
 }): {
   activate(): void;
   deactivate(): void;
@@ -16,6 +19,9 @@ export function createSelectionEngine(opts: {
   getSelectedIds(): Set<number>;
   setSelectedIds(ids: Iterable<number>): void;
   setBboxClickable(enabled: boolean): void;
+  beginExternalDrag(): void;
+  updateExternalDrag(dx: number, dy: number): void;
+  endExternalDrag(): void;
   refreshBBox(): void;
   cancelActive(): void;
 };
