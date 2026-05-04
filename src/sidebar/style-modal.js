@@ -88,6 +88,9 @@ function buildDefaultDraftFromSettings(state) {
     underlineHeaders: !!s.underlineHeaders,
     headerScale: s.headerScale != null ? s.headerScale : 1.0,
     blockCursor: !!s.blockCursor,
+    // Default style's shader rides a top-level AppSettings field so
+    // it persists alongside the other Default-only knobs.
+    shaderLayer: s.shaderLayer ? { ...s.shaderLayer } : null,
   };
 }
 
@@ -176,6 +179,7 @@ export function openStyleModal(state, existingStyle, onDone) {
         underlineHeaders: !!draft.underlineHeaders,
         headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
         blockCursor: !!draft.blockCursor,
+        shaderLayer: draft.shaderLayer || null,
       });
     } else {
       const name = (draft.name || "").trim() || "Untitled";
@@ -211,6 +215,7 @@ export function openStyleModal(state, existingStyle, onDone) {
         underlineHeaders: state.settings.underlineHeaders,
         headerScale: state.settings.headerScale,
         blockCursor: state.settings.blockCursor,
+        shaderLayer: state.settings.shaderLayer || null,
       });
     } else {
       state.updateSettings({ styles: state.settings.styles });
@@ -343,7 +348,7 @@ export function openStyleModal(state, existingStyle, onDone) {
               </div>
             </div>
 
-            ${renderShaderSection(draft, isDefault)}
+            ${renderShaderSection(draft)}
 
             <div class="style-modal-section">
               <h3 class="style-modal-section-title">Colors</h3>

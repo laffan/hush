@@ -111,6 +111,9 @@ export function createDefaultSettings() {
     styles: [],
     activeStyleId: null,
     globalStyleId: null,
+    // Shader layer attached to the Default style. User styles carry
+    // their own shaderLayer field on each Style object.
+    shaderLayer: null,
 
     // Sidebar / global tooltips (controls native browser tooltips on
     // sidebar buttons, pane headers, and notebook toolbar buttons).

@@ -65,7 +65,8 @@ export function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
     state.emit("theme-changed");
     updatePrivateBoxColor(state);
-    syncShaderLayerForStyle(null);
+    // Default style's shader lives at the top level of AppSettings.
+    syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
     return;
   }
 

@@ -44,12 +44,7 @@ export function endShaderPreview(applyActiveStyle, state) {
   if (applyActiveStyle && state) applyActiveStyle(state);
 }
 
-export function renderShaderSection(draft, isDefault) {
-  // Default style intentionally has no shader — matches the "Default =
-  // no styling overrides" semantics. Shaders are styling, so they belong
-  // on a user style.
-  if (isDefault) return "";
-
+export function renderShaderSection(draft) {
   const cfg = draft.shaderLayer || {};
   const enabled = !!cfg.enabled;
   const selectedId = cfg.layerId || SHADER_LAYERS[0].id;

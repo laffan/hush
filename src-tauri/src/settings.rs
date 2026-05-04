@@ -198,6 +198,11 @@ pub struct AppSettings {
     #[serde(default)]
     pub global_style_id: Option<String>,
 
+    // Shader layer attached to the Default style. User styles carry
+    // their own shaderLayer field on the Style struct itself.
+    #[serde(default)]
+    pub shader_layer: Option<ShaderLayer>,
+
     // Outline View (right sidebar)
     #[serde(default = "default_true")]
     pub longview_show_paragraphs: bool,
@@ -539,6 +544,7 @@ impl Default for AppSettings {
             styles: Vec::new(),
             active_style_id: None,
             global_style_id: None,
+            shader_layer: None,
             longview_show_paragraphs: true,
             longview_show_numbers: true,
             longview_show_comments: false,
