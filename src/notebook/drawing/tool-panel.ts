@@ -394,6 +394,17 @@ export function createDrawingToolPanel(
       btn.style.opacity = active ? "1" : "0.6";
       btn.style.background = active ? "rgba(66, 133, 244, 0.08)" : "transparent";
     }
+    // Stateless buttons (undo / drag / minimize) — buttons don't inherit
+    // `color` from their container by default, so without an explicit
+    // theme color the SVGs render as user-agent black.
+    undoBtn.style.color = theme.foreground;
+    undoBtn.style.opacity = "0.6";
+    dragBtn.style.color = theme.foreground;
+    dragBtn.style.opacity = "0.6";
+    minimizeBtn.style.color = theme.foreground;
+    minimizeBtn.style.opacity = "0.6";
+    restorePill.style.color = theme.foreground;
+    restorePill.style.opacity = "0.6";
   }
 
   function applyActiveSlot(): void {

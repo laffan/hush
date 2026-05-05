@@ -17,6 +17,7 @@ interface SelectionEngine {
   deactivate(): void;
   setSelectedIds(ids: Iterable<number>): void;
   setBboxClickable(enabled: boolean): void;
+  setChromeHidden(hidden: boolean): void;
 }
 
 interface ShimRef {
@@ -40,14 +41,7 @@ export function createSelectionBridge(deps: {
     // restore the bbox-as-grab behaviour the lasso flow expects.
     if (state.tool === "pen" && state.drawingSubTool === "select") {
       selectionEngine.setBboxClickable(true);
-      return;
-    }
-    // Pen-mode drawing / erasing / slicing should never carry
-    // selection chrome from a prior Hush selection.
-    if (state.tool === "pen" && state.drawingSubTool !== "select") {
-      bridging = true;
-      try { selectionEngine.setSelectedIds(new Set()); selectionEngine.deactivate(); }
-      finally { bridging = false; }
+      selectionEngine.setChromeHidden(false);
       return;
     }
     const drawIds = new Set<number>();
@@ -55,6 +49,11 @@ export function createSelectionBridge(deps: {
       const eid = shimBox.current?.getEngineStrokeId(id);
       if (eid !== undefined) drawIds.add(eid);
     }
+    // Pen-mode drawing / erasing / slicing keeps the engine selection
+    // alive (so brush-slot taps and flyout edits can retroactively
+    // restyle it) but hides the chrome so handles don't intercept
+    // drawing input.
+    const inPenNonSelect = state.tool === "pen" && state.drawingSubTool !== "select";
     bridging = true;
     try {
       if (drawIds.size > 0) {
@@ -63,9 +62,11 @@ export function createSelectionBridge(deps: {
         // Keep handles interactive but let the bbox body pass clicks
         // through, so click-on-stroke routes through Hush's drag.
         selectionEngine.setBboxClickable(false);
+        selectionEngine.setChromeHidden(inPenNonSelect);
       } else {
         selectionEngine.setSelectedIds(new Set());
         selectionEngine.deactivate();
+        selectionEngine.setChromeHidden(false);
       }
     } finally {
       bridging = false;

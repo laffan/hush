@@ -122,16 +122,15 @@ export function createBrushSlots(
       children: [thumb],
       onClick: (e) => {
         e.stopPropagation();
-        const drawingActive = state.tool === "pen";
-        const wasActive = drawingActive && state.activeBrushSlot === i && state.drawingSubTool === "draw";
-        if (wasActive) {
-          // Flyout only opens on a click of the already-active slot.
-          if (flyoutOpen) closeFlyout(); else openFlyout();
-          return;
-        }
-        // Switching slots with a selection live restyles the
-        // selection to the new slot's full config.
-        if (drawingActive && state.activeBrushSlot !== i && drawingLayer.hasSelection()) {
+        // Tapping a brush slot with a live selection live-restyles
+        // every selected stroke to the slot's full config — works
+        // whether the user reached the selection via the regular
+        // Select tool or the pen-mode lasso, and whether or not the
+        // tapped slot is already the active one. Runs ahead of the
+        // wasActive flyout-toggle so re-tapping the active slot still
+        // imprints its settings on the selection (a no-op if they
+        // already match).
+        if (drawingLayer.hasSelection()) {
           const before = drawingLayer.snapshotSelectedStyle();
           const slot = state.brushSlots[i];
           drawingLayer.applyStyleToSelection({
@@ -141,6 +140,13 @@ export function createBrushSlots(
             mode: slot.mode,
           });
           drawingLayer.commitStyleHistory(before);
+        }
+        const drawingActive = state.tool === "pen";
+        const wasActive = drawingActive && state.activeBrushSlot === i && state.drawingSubTool === "draw";
+        if (wasActive) {
+          // Flyout only opens on a click of the already-active slot.
+          if (flyoutOpen) closeFlyout(); else openFlyout();
+          return;
         }
         // Picking a brush implicitly engages the drawing engine:
         // drawing-mode used to be a separate "enter pen mode" gesture,
@@ -391,6 +397,11 @@ export function createBrushSlots(
         keys.includes("tool")) {
       redrawThumbs();
       if (flyoutOpen) { applyFlyoutTheme(); syncFlyoutValues(); }
+    }
+    // Track the toolbar as it's dragged so the open flyout stays anchored
+    // to the slot row instead of stranding at the original position.
+    if (flyoutOpen && keys.includes("drawingToolbarOffset")) {
+      positionFlyout();
     }
     if (keys.includes("drawingMode") && !state.drawingMode) closeFlyout();
   }) as EventListener);

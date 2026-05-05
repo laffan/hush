@@ -166,6 +166,7 @@ export function createSelectionEngine({
     rotateAnchor: null,          // { x, y } center of rotation
     rotateStartAngle: 0,         // angle (rad) of cursor at rotation start
     externalDragging: false,     // true while Hush owns a drag; bbox stays hidden
+    chromeHidden: false,         // true while pen+draw/erase/slice — keep ids for retro styling, hide chrome
   };
 
   // ---------- helpers ----------
@@ -179,7 +180,7 @@ export function createSelectionEngine({
     // even if the bridge re-runs setSelectedIds while the gesture is
     // in flight (state.shapes mutates per pointermove → the bridge
     // listens for "shapes" → would otherwise reveal the bbox here).
-    if (state.externalDragging) {
+    if (state.externalDragging || state.chromeHidden) {
       bboxGroup.setAttribute('visibility', 'hidden');
       return;
     }
@@ -597,6 +598,16 @@ export function createSelectionEngine({
     // strokes underneath and steals the gesture.
     setBboxClickable(enabled) {
       bboxRect.style.pointerEvents = enabled ? 'auto' : 'none';
+    },
+    // Hide the bbox + handles without dropping selectedIds, so the
+    // engine's retroactive-style path (`hasSelection`, `getSelectedIds`)
+    // keeps working while the user is in pen+draw/erase/slice. Also
+    // marks the engine inactive so pointer routing falls back to
+    // 'none' and gestures don't fire on invisible handles.
+    setChromeHidden(hidden) {
+      state.chromeHidden = !!hidden;
+      if (hidden) state.active = false;
+      updateBBoxView();
     },
     // External-drag bridge: lets Hush's drag pipeline (which mutates
     // state.shapes per pointermove for non-stroke selection chrome)
