@@ -609,6 +609,16 @@ export function createSelectionEngine({
       if (hidden) state.active = false;
       updateBBoxView();
     },
+    // Toggle whether the bbox + handles capture pointer events. When
+    // disabled the chrome stays painted (the user can still see what's
+    // selected) but every pointerdown falls through to the stroke
+    // engine — used by pen+draw/erase/slice with a live retroactive
+    // selection so the user can keep tweaking brush settings against
+    // a visible selection without the handles intercepting their next
+    // stroke.
+    setChromeInteractive(enabled) {
+      bboxGroup.style.pointerEvents = enabled ? '' : 'none';
+    },
     // External-drag bridge: lets Hush's drag pipeline (which mutates
     // state.shapes per pointermove for non-stroke selection chrome)
     // hide the engine's bbox + handles for the duration. We hide

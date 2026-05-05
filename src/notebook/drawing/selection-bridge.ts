@@ -18,6 +18,7 @@ interface SelectionEngine {
   setSelectedIds(ids: Iterable<number>): void;
   setBboxClickable(enabled: boolean): void;
   setChromeHidden(hidden: boolean): void;
+  setChromeInteractive(enabled: boolean): void;
 }
 
 interface ShimRef {
@@ -42,6 +43,7 @@ export function createSelectionBridge(deps: {
     if (state.tool === "pen" && state.drawingSubTool === "select") {
       selectionEngine.setBboxClickable(true);
       selectionEngine.setChromeHidden(false);
+      selectionEngine.setChromeInteractive(true);
       return;
     }
     const drawIds = new Set<number>();
@@ -51,8 +53,10 @@ export function createSelectionBridge(deps: {
     }
     // Pen-mode drawing / erasing / slicing keeps the engine selection
     // alive (so brush-slot taps and flyout edits can retroactively
-    // restyle it) but hides the chrome so handles don't intercept
-    // drawing input.
+    // restyle it). Show the chrome as a passive visual cue but flip
+    // pointer-events off so the handles don't intercept the user's next
+    // stroke — they're only there for feedback while the user iterates
+    // on size / color / brush against the live selection.
     const inPenNonSelect = state.tool === "pen" && state.drawingSubTool !== "select";
     bridging = true;
     try {
@@ -62,11 +66,13 @@ export function createSelectionBridge(deps: {
         // Keep handles interactive but let the bbox body pass clicks
         // through, so click-on-stroke routes through Hush's drag.
         selectionEngine.setBboxClickable(false);
-        selectionEngine.setChromeHidden(inPenNonSelect);
+        selectionEngine.setChromeHidden(false);
+        selectionEngine.setChromeInteractive(!inPenNonSelect);
       } else {
         selectionEngine.setSelectedIds(new Set());
         selectionEngine.deactivate();
         selectionEngine.setChromeHidden(false);
+        selectionEngine.setChromeInteractive(true);
       }
     } finally {
       bridging = false;

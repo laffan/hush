@@ -28,6 +28,7 @@ export function createStrokeEngine(opts: {
   setTool(t: string): void;
   cancelActiveStroke(): boolean;
   setColor(c: string): void;
+  setColorAutoSource(source: "auto" | "heading" | null): void;
   setSize(n: number): void;
   setEraserSize(n: number): void;
   getEraserSize(): number;

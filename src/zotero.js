@@ -80,11 +80,31 @@ export async function downloadZoteroReferences(userId, apiKey, onProgress) {
         .filter(Boolean)
         .join("; ");
       const year = (d.date || "").match(/\d{4}/)?.[0] || "";
+      // First author's last name powers the `title (author)` format and the
+      // citekey fallback when Better BibTeX hasn't supplied one.
+      const firstCreator = (d.creators || []).find(c => c.lastName || c.name);
+      const firstAuthor = firstCreator
+        ? (firstCreator.lastName || firstCreator.name || "")
+        : "";
+      // Better BibTeX surfaces the citation key either as a top-level
+      // `citationKey` field on newer Zotero APIs or stuffed into `extra`
+      // as `Citation Key: foo2020`. Fall back to a slug otherwise.
+      let citekey = item.data.citationKey || d.citationKey || "";
+      if (!citekey && d.extra) {
+        const m = /(?:^|\n)\s*Citation Key\s*:\s*(\S+)/i.exec(d.extra);
+        if (m) citekey = m[1];
+      }
+      if (!citekey) {
+        const slug = (firstAuthor || "ref").toLowerCase().replace(/[^a-z0-9]+/g, "");
+        citekey = slug + (year || "");
+      }
       return {
         key: item.key,
         title: d.title || "Untitled",
         shortTitle: d.shortTitle || "",
         authors: creators,
+        firstAuthor,
+        citekey,
         year,
         itemType: d.itemType,
         attachments: attByParent[item.key] || [],
@@ -226,6 +246,15 @@ export async function openZoteroModal(view, state) {
           </label>
         `).join("") : ""}
       </div>
+      <div class="zotero-format-row">
+        <label>Output format:
+          <select class="zotero-format-select">
+            <option value="title">Title</option>
+            <option value="title-author">Title (Author)</option>
+            <option value="citekey">@citkey</option>
+          </select>
+        </label>
+      </div>
       <div class="zotero-page-row hidden">
         <label>Page: <input type="number" class="zotero-page-input" min="1" placeholder="1" value="1" /></label>
       </div>
@@ -247,6 +276,17 @@ export async function openZoteroModal(view, state) {
         detailEl.querySelector(".zotero-snapshot-row").classList.toggle("hidden", !isPdf);
       });
     });
+
+    const formatSelect = detailEl.querySelector(".zotero-format-select");
+    if (formatSelect) {
+      const saved = localStorage.getItem("hush_zotero_insert_format");
+      if (saved && ["title", "title-author", "citekey"].includes(saved)) {
+        formatSelect.value = saved;
+      }
+      formatSelect.addEventListener("change", () => {
+        localStorage.setItem("hush_zotero_insert_format", formatSelect.value);
+      });
+    }
 
     detailEl.querySelector(".zotero-back-btn").addEventListener("click", () => {
       renderResults(input.value);
@@ -329,11 +369,29 @@ function buildLink(ref, detailEl) {
       url = `zotero://select/library/items/${attKey}`;
     }
   }
+  const formatSelect = detailEl.querySelector(".zotero-format-select");
+  const format = (formatSelect && formatSelect.value) || "title";
+  const pageNum = isNaN(page) || page <= 0 ? 1 : page;
+  let text;
+  if (format === "citekey") {
+    // Pandoc citation syntax — leave it bare so processors recognise it.
+    // Page suffix follows the `[@key, p. N]` convention when the user
+    // asked for a specific page.
+    const cite = ref.citekey || ref.key;
+    text = isPdf && pageNum > 1 ? `[@${cite}, p. ${pageNum}]` : `@${cite}`;
+  } else if (format === "title-author") {
+    const label = ref.firstAuthor
+      ? `${ref.title} (${ref.firstAuthor})`
+      : ref.title;
+    text = `[${label}](${url})`;
+  } else {
+    text = `[${ref.title}](${url})`;
+  }
   return {
-    text: `[${ref.title}](${url})`,
+    text,
     isPdf,
     attKey,
-    page: isNaN(page) || page <= 0 ? 1 : page,
+    page: pageNum,
   };
 }
 

@@ -110,6 +110,13 @@ export function createStrokeEngine({
   const state = {
     tool: 'draw',
     color: '#111111',
+    // Theme-tracking flags for the active paint colour. Hush sets these
+    // alongside setColor() when the active brush slot uses an "auto" or
+    // "heading" sentinel; new strokes carry the matching flag forward
+    // so theme changes can retint them later (see drawing-layer's
+    // setTheme rebake path).
+    colorIsAuto: false,
+    colorIsHeading: false,
     size: 4,
     eraserSize: 16,           // dedicated eraser thickness (CSS px radius)
     brush: BRUSH_DEFS[0].id,  // id of the default brush for new strokes
@@ -343,6 +350,8 @@ export function createStrokeEngine({
       layerId: state.activeLayerId,
       isPen,
       points: [p],
+      ...(state.colorIsAuto ? { colorIsAuto: true } : {}),
+      ...(state.colorIsHeading ? { colorIsHeading: true } : {}),
     };
     state.lastRecorded = p;
     state.activePointerId = e.pointerId;
@@ -578,6 +587,15 @@ export function createStrokeEngine({
       return true;
     },
     setColor(c) { state.color = c; },
+    /** Toggle the theme-tracking flag for the next stroke. Pass
+     *  "auto" to tag with theme.foreground, "heading" for
+     *  theme.headingColor, or null/undefined for an explicit colour.
+     *  Existing strokes keep whatever flag they had — this only
+     *  affects strokes created after the call. */
+    setColorAutoSource(source) {
+      state.colorIsAuto = source === 'auto';
+      state.colorIsHeading = source === 'heading';
+    },
     setSize(n) { state.size = +n; },
     setEraserSize(n) { state.eraserSize = max(2, +n); },
     getEraserSize() { return state.eraserSize; },

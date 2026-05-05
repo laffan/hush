@@ -4,7 +4,7 @@ import type { CanvasTheme } from "./themes";
 import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
-import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton } from "./renderer-selection";
+import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot } from "./renderer-selection";
 import { drawBackground } from "./renderer-background";
 import type { FlowchartLayer } from "./flowchart";
 
@@ -18,7 +18,7 @@ export interface RenderState {
   imageCache: Map<string, HTMLImageElement>;
   theme: CanvasTheme;
   croppingImageId: string | null;
-  backgroundPattern: "grid" | "dot-grid" | "blank";
+  backgroundPattern: "grid" | "dot-grid" | "lined" | "isometric" | "blank";
   gridSpacing: number;
   gridOpacity: number;
   fontFamily: string;
@@ -244,16 +244,21 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
 
   ctx.restore();
 
-  // Hovered-edge delete button — drawn in screen space so it's a fixed
-  // size regardless of zoom. Click handling lives in
-  // DrawingState.handlePointerDown (canvas-space hit-test against
-  // getEdgeMidpoint with a 12px-screen-radius / zoom threshold).
-  if (state.flowchart && state.flowHoveredEdgeId) {
-    const mid = state.flowchart.getEdgeMidpoint(state.flowHoveredEdgeId, shapes);
-    if (mid) {
+  // Per-edge delete affordances — all drawn in screen space so they stay
+  // a fixed size regardless of zoom. Touch users tap the dot to reveal
+  // the X (which they tap again to delete); mouse users get the same X
+  // via hover (handlePointerMove sets flowHoveredEdgeId). Click handling
+  // lives in DrawingState.handlePointerDown (canvas-space hit-test
+  // against getEdgeMidpoint with a 12 px-screen-radius / zoom threshold).
+  if (state.flowchart) {
+    const hoveredId = state.flowHoveredEdgeId ?? null;
+    for (const e of state.flowchart.edges) {
+      const mid = state.flowchart.getEdgeMidpoint(e.id, shapes);
+      if (!mid) continue;
       const sx = mid.x * camera.zoom + camera.x;
       const sy = mid.y * camera.zoom + camera.y;
-      drawEdgeDeleteButton(ctx, sx, sy, theme);
+      if (e.id === hoveredId) drawEdgeDeleteButton(ctx, sx, sy, theme);
+      else drawEdgeDeleteDot(ctx, sx, sy, theme);
     }
   }
 

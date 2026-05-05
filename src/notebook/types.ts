@@ -68,6 +68,10 @@ export interface DrawShape extends ShapeBase {
   /** When true, stroke's color tracks theme.foreground. Saved as
    *  `"auto"` in the color field on disk; resolved on load. */
   colorIsAuto?: boolean;
+  /** When true, stroke's color tracks theme.headingColor — the same
+   *  hue markdown headings get in the editor. Mutually exclusive with
+   *  colorIsAuto. */
+  colorIsHeading?: boolean;
 }
 
 /** Drawing layers are a drawing-mode-only concept — notebooks have

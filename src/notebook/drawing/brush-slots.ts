@@ -20,9 +20,11 @@ import type { DrawingSlot } from "../types";
 import { h } from "../ui/dom-helpers";
 
 const SLOT_COUNT = 3;
-// Default color sentinel + explicit palette. "auto" resolves to the
-// current theme's foreground at paint time.
-const COLORS = ["auto", "#111111", "#e11d48", "#f59e0b", "#16a34a", "#2563eb", "#7c3aed", "#fde047"];
+// Default color sentinels + explicit palette. "auto" resolves to the
+// current theme's foreground (text colour) at paint time; "heading"
+// resolves to theme.headingColor (the same colour markdown headings
+// pick up in the editor). Both retint live when the theme changes.
+const COLORS = ["auto", "heading", "#111111", "#e11d48", "#f59e0b", "#16a34a", "#2563eb", "#7c3aed", "#fde047"];
 const BRUSH_IDS = ["brush-1", "brush-2", "brush-3", "brush-4", "brush-5", "brush-highlighter"];
 const MODES: { id: "normal" | "highlighter"; label: string }[] = [
   { id: "normal", label: "Pen" },
@@ -211,22 +213,27 @@ export function createBrushSlots(
   }
 
   const colorRow = h("div", {
-    style: { display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "4px" },
+    style: { display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: "4px" },
   });
   const colorBtns: { value: string; btn: HTMLButtonElement }[] = [];
   for (const value of COLORS) {
+    const isAuto = value === "auto" || value === "heading";
     const btn = h("button", {
-      title: value === "auto" ? "Default (follows theme)" : value,
+      title: value === "auto"
+        ? "Default (text colour, follows theme)"
+        : value === "heading"
+          ? "Heading colour (follows theme)"
+          : value,
       style: {
         width: "24px", height: "24px", padding: "0",
         borderRadius: "50%",
         border: "2px solid transparent",
         cursor: "pointer",
-        ...(value === "auto"
+        ...(isAuto
           ? { fontSize: "10px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center" }
           : { background: value }),
       },
-      text: value === "auto" ? "A" : undefined,
+      text: value === "auto" ? "A" : value === "heading" ? "H" : undefined,
       onClick: (e) => {
         e.stopPropagation();
         const idx = state.activeBrushSlot;
@@ -338,6 +345,9 @@ export function createBrushSlots(
       if (value === "auto") {
         btn.style.background = state.theme.canvasBackground;
         btn.style.color = state.theme.foreground;
+      } else if (value === "heading") {
+        btn.style.background = state.theme.canvasBackground;
+        btn.style.color = state.theme.headingColor;
       }
     }
     for (const { id, btn } of modeBtns) {

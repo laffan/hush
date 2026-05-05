@@ -46,12 +46,14 @@ export async function saveNoteFile(
       return { ...imgShape, dataUrl: `images/${imgFilename}` };
     }
     if (s.type === "draw") {
-      // Drawings serialize the auto-color sentinel as the literal
-      // string so theme-follow survives a round trip.
-      return {
-        ...s,
-        color: s.colorIsAuto ? "auto" : s.color,
-      };
+      // Drawings serialize the auto-colour sentinels as literal strings
+      // so theme-follow survives a round trip.
+      const colorOut = s.colorIsHeading
+        ? "heading"
+        : s.colorIsAuto
+          ? "auto"
+          : s.color;
+      return { ...s, color: colorOut };
     }
     return s;
   });
@@ -152,6 +154,7 @@ function migrateDrawShape(
   defaultLayerId: string,
 ): DrawShape {
   const colorIsAuto = raw.color === "auto";
+  const colorIsHeading = raw.color === "heading";
   const points = (raw.points || []).map((p: { x: number; y: number; pressure?: number }) => ({
     x: p.x,
     y: p.y,
@@ -160,7 +163,7 @@ function migrateDrawShape(
   const migrated: DrawShape = {
     id: raw.id,
     type: "draw",
-    color: colorIsAuto ? "#000000" : raw.color,
+    color: (colorIsAuto || colorIsHeading) ? "#000000" : raw.color,
     size: raw.size ?? raw.width ?? 4,
     brushId: raw.brushId ?? "brush-1",
     mode: raw.mode ?? "normal",
@@ -170,6 +173,7 @@ function migrateDrawShape(
     ...(raw.groupId ? { groupId: raw.groupId } : {}),
     ...(raw.pocketed ? { pocketed: raw.pocketed } : {}),
     ...(colorIsAuto ? { colorIsAuto: true } : {}),
+    ...(colorIsHeading ? { colorIsHeading: true } : {}),
   };
   return migrated;
 }

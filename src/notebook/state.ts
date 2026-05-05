@@ -40,7 +40,7 @@ export interface EditingText {
 export type ResizeHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
 const HANDLE_SIZE = 8;
 
-export type BackgroundPattern = "grid" | "dot-grid" | "blank";
+export type BackgroundPattern = "grid" | "dot-grid" | "lined" | "isometric" | "blank";
 
 type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "fontSize" | "camera" | "selectionBox" | "editingText"
@@ -818,18 +818,37 @@ export class DrawingState extends EventTarget {
       return; // commit ends the interaction; next click starts fresh
     }
 
-    // Click on the X delete-button of a hovered flowchart edge. Hit-test
-    // in canvas space (12 px screen radius / current zoom) so the target
-    // matches the on-screen circle drawn by the renderer.
-    if (this.flowHoveredEdgeId) {
-      const mid = this.flowchart.getEdgeMidpoint(this.flowHoveredEdgeId, this.shapes);
+    // Hit-test the per-edge midpoint affordance (the small touch dot, or
+    // the revealed X when an edge is already hovered). 12 px screen
+    // radius / current zoom matches the on-screen targets the renderer
+    // paints. The tap-on-dot path lets touch users summon the X without
+    // hover; the second tap on the X removes the edge.
+    {
       const r = 12 / this.camera.zoom;
-      if (mid && Math.hypot(canvasPt.x - mid.x, canvasPt.y - mid.y) < r) {
-        this.flowchart.removeEdge(this.flowHoveredEdgeId);
-        this.flowHoveredEdgeId = null;
-        this.recordHistory();
-        this.notify("shapes");
+      let hitId: string | null = null;
+      for (const e of this.flowchart.edges) {
+        const mid = this.flowchart.getEdgeMidpoint(e.id, this.shapes);
+        if (mid && Math.hypot(canvasPt.x - mid.x, canvasPt.y - mid.y) < r) {
+          hitId = e.id;
+          break;
+        }
+      }
+      if (hitId) {
+        if (this.flowHoveredEdgeId === hitId) {
+          this.flowchart.removeEdge(hitId);
+          this.flowHoveredEdgeId = null;
+          this.recordHistory();
+          this.notify("shapes");
+        } else {
+          this.flowHoveredEdgeId = hitId;
+          this.notify("shapes");
+        }
         return;
+      }
+      if (this.flowHoveredEdgeId) {
+        // Tap landed elsewhere — collapse the revealed X back to a dot.
+        this.flowHoveredEdgeId = null;
+        this.notify("shapes");
       }
     }
 

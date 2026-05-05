@@ -15,12 +15,13 @@ export interface SelectionStyleEntry {
   brushId: string;
   mode: "normal" | "highlighter";
   colorIsAuto: boolean;
+  colorIsHeading: boolean;
 }
 
 /** Style patch accepted by `applyStyleToSelection`. Any subset of
  *  fields is allowed; missing fields are left as-is on each stroke. */
 export interface SelectionStylePatch {
-  color?: string;              // "auto" or hex
+  color?: string;              // "auto", "heading", or hex
   size?: number;
   brushId?: string;
   mode?: "normal" | "highlighter";

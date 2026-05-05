@@ -52,6 +52,7 @@ export interface EngineStroke {
   points: DrawPoint[];
   // Custom fields the engine passes through untouched:
   colorIsAuto?: boolean;
+  colorIsHeading?: boolean;
   groupId?: string;
   parentId?: string;
   pocketed?: boolean;
@@ -147,12 +148,14 @@ export function createSyncShim({
   state,
   engine,
   resolveAutoColor,
+  resolveHeadingColor,
   localToWorld,
   worldToLocal,
 }: {
   state: ShimState;
   engine: EngineAdapter;
   resolveAutoColor: () => string;
+  resolveHeadingColor: () => string;
   localToWorld: (p: DrawPoint) => DrawPoint;
   worldToLocal: (p: DrawPoint) => DrawPoint;
 }) {
@@ -249,6 +252,7 @@ export function createSyncShim({
       // bounds, file I/O) sees true world coords.
       points: engineStroke.points.map(localToWorld),
       ...(engineStroke.colorIsAuto ? { colorIsAuto: true } : {}),
+      ...(engineStroke.colorIsHeading ? { colorIsHeading: true } : {}),
       ...(engineStroke.groupId ? { groupId: engineStroke.groupId } : {}),
       ...(engineStroke.parentId ? { parentId: engineStroke.parentId } : {}),
       ...(engineStroke.pocketed ? { pocketed: engineStroke.pocketed } : {}),
@@ -307,6 +311,7 @@ export function createSyncShim({
         layerId: findHushLayerIdForEngineLayer(engineStroke.layerId),
         points: engineStroke.points.map(localToWorld),
         ...(engineStroke.colorIsAuto ? { colorIsAuto: true } : {}),
+        ...(engineStroke.colorIsHeading ? { colorIsHeading: true } : {}),
         ...(engineStroke.groupId ? { groupId: engineStroke.groupId } : {}),
         ...(engineStroke.parentId ? { parentId: engineStroke.parentId } : {}),
         ...(engineStroke.pocketed ? { pocketed: engineStroke.pocketed } : {}),
@@ -412,7 +417,11 @@ export function createSyncShim({
             prev.color !== ds.color || prev.size !== ds.size ||
             prev.brushId !== ds.brushId || prev.mode !== ds.mode) {
           styleMap.set(eid, {
-            color: ds.colorIsAuto ? resolveAutoColor() : ds.color,
+            color: ds.colorIsHeading
+              ? resolveHeadingColor()
+              : ds.colorIsAuto
+                ? resolveAutoColor()
+                : ds.color,
             size: ds.size,
             brushId: ds.brushId,
             mode: ds.mode,
@@ -437,6 +446,7 @@ export function createSyncShim({
         // visual effect. `pocketed` is consulted by isStrokeHidden
         // on the next paint after we call fullRebake.
         engineStroke.colorIsAuto = ds.colorIsAuto;
+        engineStroke.colorIsHeading = ds.colorIsHeading;
         engineStroke.groupId = ds.groupId;
         engineStroke.parentId = ds.parentId;
         engineStroke.pocketed = ds.pocketed;
@@ -512,7 +522,11 @@ export function createSyncShim({
    *  Points go world → wrapper-local here. */
   function hushToEngineStroke(ds: DrawShape): EngineStroke {
     const engineId = allocExternalEngineId();
-    const color = ds.colorIsAuto ? resolveAutoColor() : ds.color;
+    const color = ds.colorIsHeading
+      ? resolveHeadingColor()
+      : ds.colorIsAuto
+        ? resolveAutoColor()
+        : ds.color;
     const engineLayerId = findEngineLayerIdForHushLayer(ds.layerId);
     return {
       id: engineId,
@@ -525,6 +539,7 @@ export function createSyncShim({
       isPen: false,
       points: ds.points.map(worldToLocal),
       ...(ds.colorIsAuto ? { colorIsAuto: true } : {}),
+      ...(ds.colorIsHeading ? { colorIsHeading: true } : {}),
       ...(ds.groupId ? { groupId: ds.groupId } : {}),
       ...(ds.parentId ? { parentId: ds.parentId } : {}),
       ...(ds.pocketed ? { pocketed: ds.pocketed } : {}),

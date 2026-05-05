@@ -147,6 +147,19 @@
 }
 .zotero-preview-link:hover { opacity: 1; }
 
+.zotero-format-row {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.zotero-format-row label { display: inline-flex; align-items: center; gap: 6px; }
+.zotero-format-select {
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: var(--fg);
+  font-size: 13px;
+}
 .zotero-page-row {
   margin-bottom: 12px;
   font-size: 13px;

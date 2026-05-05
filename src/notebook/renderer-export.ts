@@ -21,7 +21,7 @@ export function renderForExport(
     camera: Camera;
     imageCache: Map<string, HTMLImageElement>;
     theme: CanvasTheme;
-    backgroundPattern: "grid" | "dot-grid" | "blank";
+    backgroundPattern: "grid" | "dot-grid" | "lined" | "isometric" | "blank";
     gridSpacing: number;
     gridOpacity: number;
     fontFamily: string;

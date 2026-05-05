@@ -12,7 +12,7 @@ src/notebook/
   state-helpers.ts        Pure helpers (find, resize, crop, link hit-test, pocket hit-test)
   renderer.ts             Canvas 2D draw functions (pure, no side effects)
   renderer-selection.ts   Selection / group / crop / lasso-bbox highlights
-  renderer-background.ts  Grid + dot-grid background pattern
+  renderer-background.ts  Grid / dot-grid / lined / isometric background pattern
   input-handler.ts        DOM event wiring → state methods; reads shortcuts from Hush settings
   external-content.ts     Clipboard / drag-drop / file helpers
   file-io.ts              Save/open .note files (JSZip) — unused in Hush (kept for reference)

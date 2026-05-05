@@ -100,7 +100,7 @@ Draw has no dedicated button — the active brush slot indicates it. Clicking an
 
 ### Brush slots
 
-Four user-owned presets (`state.brushSlots[0..3]`). Each slot carries `{ brushId, color, size, mode, streamline, spacing }`. `color: "auto"` is a sentinel that resolves to `theme.foreground` at paint time (and tags the stroke as `colorIsAuto` so theme changes retint it).
+Four user-owned presets (`state.brushSlots[0..3]`). Each slot carries `{ brushId, color, size, mode, streamline, spacing }`. Two of the slot colours are theme sentinels: `"auto"` resolves to `theme.foreground` at paint time (tagged `colorIsAuto` on the stroke) and `"heading"` resolves to `theme.headingColor` (tagged `colorIsHeading`) — the same hue markdown headings paint in the editor. Both flags ride through the engine's stroke metadata so theme changes retint matching strokes; the engine's `setColorAutoSource(source)` carries the choice forward to freshly-drawn strokes.
 
 **Flyout behavior.** Clicking the already-active slot toggles a flyout that edits that slot in place. Clicking a different slot just switches — it does **not** open the flyout. Inside the flyout, edits also retroactively restyle any live selection; slider drags are wrapped in one style-session-per-drag so a single undo reverts the whole gesture.
 

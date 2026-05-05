@@ -32,6 +32,7 @@ interface ShimBox {
 
 interface ThemeRef {
   foreground?: string;
+  headingColor?: string;
 }
 
 export interface SelectionStyleSession {
@@ -66,6 +67,7 @@ export function createSelectionStyleSession(deps: {
         brushId: s.brush,
         mode: s.mode,
         colorIsAuto: !!s.colorIsAuto,
+        colorIsHeading: !!s.colorIsHeading,
       });
     }
     return map;
@@ -76,7 +78,13 @@ export function createSelectionStyleSession(deps: {
     const ids = selectionEngine.getSelectedIds();
     const enginePatch: Record<string, unknown> = {};
     if (patch.color !== undefined) {
-      enginePatch.color = patch.color === "auto" ? (themeRef.foreground || "#111111") : patch.color;
+      if (patch.color === "auto") {
+        enginePatch.color = themeRef.foreground || "#111111";
+      } else if (patch.color === "heading") {
+        enginePatch.color = themeRef.headingColor || themeRef.foreground || "#111111";
+      } else {
+        enginePatch.color = patch.color;
+      }
     }
     if (patch.size !== undefined) enginePatch.size = patch.size;
     if (patch.brushId !== undefined) enginePatch.brushId = patch.brushId;
@@ -84,8 +92,12 @@ export function createSelectionStyleSession(deps: {
     strokeEngine.setStrokesStyle(ids as Set<number>, enginePatch);
     if (patch.color !== undefined) {
       const isAuto = patch.color === "auto";
+      const isHeading = patch.color === "heading";
       for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-        if (ids.has(s.id)) s.colorIsAuto = isAuto;
+        if (ids.has(s.id)) {
+          s.colorIsAuto = isAuto;
+          s.colorIsHeading = isHeading;
+        }
       }
     }
     // Sync the shim so state.shapes reflects the style change —
@@ -107,7 +119,8 @@ export function createSelectionStyleSession(deps: {
       if (!b) continue;
       if (s.color !== b.color || s.size !== b.size ||
           s.brush !== b.brushId || s.mode !== b.mode ||
-          !!s.colorIsAuto !== b.colorIsAuto) { changed = true; break; }
+          !!s.colorIsAuto !== b.colorIsAuto ||
+          !!s.colorIsHeading !== b.colorIsHeading) { changed = true; break; }
     }
     if (!changed) return;
     recordHistory();

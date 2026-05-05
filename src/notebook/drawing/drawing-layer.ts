@@ -44,6 +44,11 @@ const WORLD_SIZE = 2048;
 const MAX_BACKING_PIXELS = 4096 * 4096;
 const MAX_DPR = 2;
 
+// Brush-runtime helpers (slot colour resolution, applySlot, renderSwatch,
+// theme-retint) live in `brush-runtime.ts` so this file stays under the
+// 700-line cap.
+import { applySlotToEngine, renderSwatchToCanvas, applyThemeAndRetint } from "./brush-runtime";
+
 
 /** Construction options. `state` is Hush's DrawingState (kept
  *  structural to avoid a circular import). */
@@ -425,6 +430,7 @@ export function createDrawingLayer({
     state,
     engine: engineAdapter,
     resolveAutoColor: () => themeRef.foreground || "#111111",
+    resolveHeadingColor: () => themeRef.headingColor || themeRef.foreground || "#111111",
     // Engine's coord space is wrapper-local (pointToLocal subtracts
     // origin). Hush DrawShapes must live in world coords so every
     // downstream Hush subsystem — box-select, getShapeBounds, file
@@ -453,21 +459,7 @@ export function createDrawingLayer({
   }
 
   function setTheme(next: CanvasTheme): void {
-    const fgChanged = next.foreground !== themeRef.foreground;
-    themeRef.canvasBackground = next.canvasBackground;
-    themeRef.foreground = next.foreground;
-    themeRef.accent = next.accent;
-    if (!fgChanged) return;
-    // Auto-colored strokes: update their color field to the new fg
-    // and rebake once. Explicit-color strokes are untouched.
-    let touched = false;
-    for (const s of strokeEngine.getStrokes()) {
-      if ((s as EngineStroke).colorIsAuto) {
-        (s as EngineStroke).color = next.foreground;
-        touched = true;
-      }
-    }
-    if (touched) strokeEngine.fullRebake();
+    applyThemeAndRetint(strokeEngine, themeRef, next);
   }
 
   function rebake(): void {
@@ -626,13 +618,7 @@ export function createDrawingLayer({
   }
 
   function applySlot(slot: DrawingSlot): void {
-    const color = slot.color === "auto" ? (themeRef.foreground || "#111111") : slot.color;
-    strokeEngine.setBrush(slot.brushId);
-    strokeEngine.setColor(color);
-    strokeEngine.setSize(slot.size);
-    strokeEngine.setMode(slot.mode);
-    strokeEngine.setStreamline(slot.streamline);
-    strokeEngine.setSpacing(slot.spacing);
+    applySlotToEngine(strokeEngine, themeRef, slot);
   }
 
   function setLassoHoldMs(ms: number): void {
@@ -640,22 +626,7 @@ export function createDrawingLayer({
   }
 
   function renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const cssW = canvas.clientWidth || canvas.width;
-    const cssH = canvas.clientHeight || canvas.height;
-    const dpr = window.devicePixelRatio || 1;
-    const wantW = Math.round(cssW * dpr);
-    const wantH = Math.round(cssH * dpr);
-    if (canvas.width !== wantW || canvas.height !== wantH) {
-      canvas.width = wantW;
-      canvas.height = wantH;
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cssW, cssH);
-    const color = slot.color === "auto" ? (themeRef.foreground || "#111111") : slot.color;
-    const size = Math.min(cssW, cssH);
-    strokeEngine.renderBrushSwatch(slot.brushId, color, ctx, cssW / 2, cssH / 2, size, slot.mode);
+    renderSwatchToCanvas(strokeEngine, themeRef, canvas, slot);
   }
 
   // Drawing undo / redo route through Hush's snapshot stack so 2- and

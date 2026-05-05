@@ -12,11 +12,13 @@
  *  12. Two-finger pinch fires onPinchStart / onPinchMove / onPinchEnd
  *      with client-space midpoint + spread distance. Runs alongside
  *      pan so the user can pan and zoom in the same gesture.
- *  13. Followup gating now also requires the first finger to be still
- *      (moved2 < MOVE_TOLERANCE_2) so a second finger landing during
- *      a real draw stroke doesn't cancel the stroke. SIMULTANEITY_MS
- *      bumped from 180→350 ms because natural fast 2-finger taps on
- *      iPad routinely have ~250 ms inter-finger lag.
+ *  13. Followup gating fires on any small second contact (palms still
+ *      filtered via MAX_CONTACT_SIZE) so 2-finger pan / pinch can
+ *      engage while the user is actively drawing — cancelling the
+ *      in-flight stroke on landing, since the gesture is the more
+ *      recent intent. SIMULTANEITY_MS bumped from 180→600 ms because
+ *      natural fast 2-finger taps on iPad routinely have ~250 ms
+ *      inter-finger lag.
  * ============================================================
  *
  * gestures.js — two-/three-finger tap recogniser + two-finger pan.
@@ -201,20 +203,19 @@ export function createGestures({
       gestureMode = false;
     }
 
-    // Followup (= "this is part of a multi-touch gesture") requires
-    // an existing finger that hasn't drifted. Without the stable
-    // check, a second finger landing in the middle of a real draw
-    // stroke would cancel the stroke and the user would lose their
-    // ink. With it, we only swallow strokes that the first finger
-    // hasn't actually committed to yet. We deliberately don't gate
-    // on SIMULTANEITY_MS here — that window covers the *evaluation*
+    // Followup (= "this is part of a multi-touch gesture") fires whenever
+    // a second small contact lands while another is already down — even
+    // mid-stroke. The original gate also required the first finger to
+    // be still, so 2-finger pan couldn't engage while the user was
+    // actively drawing; this version drops that to enable pan-during-
+    // draw, accepting that a deliberate second finger cancels the
+    // in-flight stroke (the user's gesture is the more recent intent).
+    // Palm contacts (`big`) still don't qualify, so a brushing palm
+    // doesn't kill the stroke. We deliberately don't gate on
+    // SIMULTANEITY_MS here — that window covers the *evaluation*
     // step (see evaluateBurst). Plenty of users tap with 400–500 ms
     // of inter-finger lag; a strict pre-gate dropped those.
-    let firstFingerStable = true;
-    for (const r of active.values()) {
-      if (r.moved2 > MOVE_TOLERANCE_2) { firstFingerStable = false; break; }
-    }
-    const isFollowup = active.size >= 1 && firstFingerStable;
+    const isFollowup = active.size >= 1 && !big;
 
     active.set(e.pointerId, {
       id: e.pointerId,

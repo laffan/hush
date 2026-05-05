@@ -63,6 +63,8 @@ function createGridPopup(state: DrawingState): HTMLElement {
     const patterns: { label: string; value: BackgroundPattern }[] = [
       { label: "Dots", value: "dot-grid" },
       { label: "Grid", value: "grid" },
+      { label: "Lined", value: "lined" },
+      { label: "Iso", value: "isometric" },
       { label: "Blank", value: "blank" },
     ];
     for (const pat of patterns) {

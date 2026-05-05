@@ -112,6 +112,29 @@ export function drawCropOverlay(ctx: CanvasRenderingContext2D, shape: ImageShape
   ctx.restore();
 }
 
+/** Small touch-friendly dot drawn at the midpoint of every flowchart edge
+ *  (except the one currently revealed as a delete-X). Tapping the dot is
+ *  the touch path to summoning the delete button — mouse users get the
+ *  same affordance via hover. Rendered in screen space; the dot's hit
+ *  target is the same 12 px-screen radius the X uses. */
+export function drawEdgeDeleteDot(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  theme: CanvasTheme,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+  ctx.fillStyle = theme.uiBackground;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = theme.foreground;
+  ctx.globalAlpha = 0.6;
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** Small circular X button drawn at the midpoint of a hovered flowchart
  *  edge. Rendered in screen space (caller passes pre-transformed sx/sy)
  *  so the affordance is a fixed size regardless of zoom. Click handling

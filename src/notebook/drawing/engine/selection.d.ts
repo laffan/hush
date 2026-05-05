@@ -19,6 +19,8 @@ export function createSelectionEngine(opts: {
   getSelectedIds(): Set<number>;
   setSelectedIds(ids: Iterable<number>): void;
   setBboxClickable(enabled: boolean): void;
+  setChromeHidden(hidden: boolean): void;
+  setChromeInteractive(enabled: boolean): void;
   beginExternalDrag(): void;
   endExternalDrag(): void;
   refreshBBox(): void;
