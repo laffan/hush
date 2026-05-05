@@ -18,6 +18,17 @@ import { createDrawingLayer } from "./drawing/drawing-layer";
 import type { DrawingLayer } from "./drawing/drawing-layer";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
 
+/** Read the user's flag-colour map from Hush settings. Notebook text
+ *  shapes mirror Docs by colouring `==FLAG==` highlights with the flag's
+ *  configured hue; falling back to undefined just means the renderer
+ *  uses its default highlight tint. */
+function getFlagColorsFromHush(): Record<string, string> | undefined {
+  const appState = (window as unknown as {
+    __hushState__?: { settings?: { flagColors?: Record<string, string> } };
+  }).__hushState__;
+  return appState?.settings?.flagColors;
+}
+
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
 let lastActiveNotebook: NotesCanvas | null = null;
@@ -509,6 +520,7 @@ export class NotesCanvas {
         flowDropTargetId: this.state.flowDropTargetId,
         flowHoveredEdgeId: this.state.flowHoveredEdgeId,
         strokeEngineDragging: this.state.strokeEngineDragging,
+        flagColors: getFlagColorsFromHush(),
       });
       this._rafId = requestAnimationFrame(loop);
     };

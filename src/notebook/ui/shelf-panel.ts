@@ -36,10 +36,52 @@ function buildLabel(text: string, max: number): { label: string; heading: boolea
   return { label: truncated, heading: !!m, blockquote };
 }
 
-/** Render a shelf-row label, painting `==highlight==` runs with a soft
- *  yellow background. Returns a span ready to drop into a row; falls
- *  back to a plain text node when there are no markers. */
-function renderLabelInline(label: string, highlightBg: string): HTMLElement | Text {
+/** Default highlight tint — matches the markdown editor's `==…==`
+ *  background so Docs and Notebook shelf rows read the same. */
+const DEFAULT_HIGHLIGHT_BG = "rgba(255, 208, 0, 0.3)";
+/** Same flag detector as `markdown.ts` — kept duplicated locally so the
+ *  shelf can resolve a flag's colour without re-running the canvas
+ *  parser. */
+const SHELF_FLAG_RE = /^([A-Za-z][A-Za-z0-9_-]{0,24})(?::[\s\S]*)?$/;
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  if (h.length !== 6) return DEFAULT_HIGHLIGHT_BG;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getHushFlagColors(): Record<string, string> {
+  const appState = (window as unknown as {
+    __hushState__?: { settings?: { flagColors?: Record<string, string> } };
+  }).__hushState__;
+  return appState?.settings?.flagColors || {};
+}
+
+/** Find the first flag in a label and return its hex colour from the
+ *  user's settings (undefined if no flag or no colour configured). The
+ *  shelf uses this to paint the leading dot. */
+function firstFlagHex(label: string, flagColors: Record<string, string>): string | undefined {
+  const re = /==([^=]+?)==/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(label)) !== null) {
+    const flag = m[1].match(SHELF_FLAG_RE);
+    if (flag) {
+      const c = flagColors[flag[1].toUpperCase()];
+      if (c) return c;
+    }
+  }
+  return undefined;
+}
+
+/** Render a shelf-row label, painting `==highlight==` runs with the
+ *  user's flag colour when the inner text matches a known flag, or the
+ *  shared default highlight tint otherwise. Returns a span ready to
+ *  drop into a row; falls back to a plain text node when there are no
+ *  markers. */
+function renderLabelInline(label: string, flagColors: Record<string, string>): HTMLElement | Text {
   if (!label.includes("==")) return document.createTextNode(label);
   const wrap = document.createElement("span");
   const re = /==([^=]+?)==/g;
@@ -48,8 +90,14 @@ function renderLabelInline(label: string, highlightBg: string): HTMLElement | Te
   while ((m = re.exec(label)) !== null) {
     if (m.index > last) wrap.appendChild(document.createTextNode(label.slice(last, m.index)));
     const hi = document.createElement("span");
+    const flag = m[1].match(SHELF_FLAG_RE);
+    let bg = DEFAULT_HIGHLIGHT_BG;
+    if (flag) {
+      const c = flagColors[flag[1].toUpperCase()];
+      if (c) bg = hexToRgba(c, 0.3);
+    }
     Object.assign(hi.style, {
-      background: highlightBg, padding: "0 2px", borderRadius: "2px",
+      background: bg, padding: "0 2px", borderRadius: "2px",
     } as Partial<CSSStyleDeclaration>);
     hi.textContent = m[1];
     wrap.appendChild(hi);
@@ -391,7 +439,8 @@ export function createShelfPanel(
     const fg = theme.foreground;
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
     const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
-    const highlightBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
+    const flagColors = getHushFlagColors();
+    const flagDotHex = firstFlagHex(node.label, flagColors);
     const isSelected = state.selectedIds.has(node.shapeId);
     // Sky-blue tinted background + accent left rail for the row whose
     // shape is currently selected on the canvas.
@@ -424,6 +473,21 @@ export function createShelfPanel(
       });
       row.appendChild(arrow);
     }
+    if (flagDotHex) {
+      const dot = h("span", {
+        style: {
+          flexShrink: "0",
+          width: "8px",
+          height: "8px",
+          borderRadius: "50%",
+          background: flagDotHex,
+          marginRight: "4px",
+          display: "inline-block",
+        },
+        attrs: { title: "Contains a flag" },
+      });
+      row.appendChild(dot);
+    }
     row.setAttribute("data-shelf-row", "1");
     row.setAttribute("data-shape-id", node.shapeId);
     // Heading rows pick up the same heading colour the canvas renderer
@@ -440,7 +504,7 @@ export function createShelfPanel(
       },
       onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0),
     });
-    labelSpan.appendChild(renderLabelInline(node.label, highlightBg));
+    labelSpan.appendChild(renderLabelInline(node.label, flagColors));
     row.appendChild(labelSpan);
     // Fall-back: clicks on the row that didn't land on the label span
     // (icon, padding) still pan. Without this the pin button + flow

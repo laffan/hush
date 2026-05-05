@@ -7,7 +7,7 @@
  * "pen") with the appropriate sub-tool.
  *
  * Contents (left → right):
- *   Lasso | Erase · Slice | Brush 1 · Brush 2 · Brush 3 · Brush 4
+ *   Undo | Brush 1 · Brush 2 · Brush 3 | Slice · Erase · Lasso
  *   then a small meta-tools cluster mounted alongside:
  *   Drag (reposition) · Minimize
  *
@@ -37,10 +37,10 @@ interface SubToolDef {
 
 const SUB_TOOLS: SubToolDef[] = [
   // Draw is the implicit default — clicking a brush slot returns the
-  // user to Draw (that's how the user exits Erase / Slice), so no
+  // user to Draw (that's how the user exits Slice / Erase), so no
   // dedicated Draw button is needed.
-  { id: "erase",  iconName: "erase",  label: "Erase",  shortcut: "E" },
   { id: "slice",  iconName: "slice",  label: "Slice",  shortcut: "X" },
+  { id: "erase",  iconName: "erase",  label: "Erase",  shortcut: "E" },
 ];
 
 export interface DrawingToolPanelHandle {
@@ -94,6 +94,56 @@ export function createDrawingToolPanel(
     state.setDrawingSubTool(sub);
   }
 
+  // ----- Undo (backup for the 2-finger tap gesture) ----------------
+  // The touch gesture isn't always reliable on every device, so a
+  // visible button gives the user a definitely-works fallback. Wired
+  // straight to Hush's snapshot-based undo so it shares the stack
+  // with ⌘Z and the gesture itself.
+
+  const undoBtn = h("button", {
+    title: "Undo",
+    style: {
+      width: "36px", height: "36px", display: "flex",
+      alignItems: "center", justifyContent: "center",
+      border: "none", borderRadius: "8px", cursor: "pointer",
+      background: "transparent", transition: "all 0.15s",
+    },
+    children: [icon("undo", 20)],
+    onClick: () => drawingLayer.undo(),
+  }) as HTMLButtonElement;
+  container.appendChild(undoBtn);
+
+  // ----- Brush slots ------------------------------------------------
+
+  // Layers live in the main notebook toolbar (not here) because
+  // layer membership applies to every shape type, not just drawings.
+  const slots = createBrushSlots(state, drawingLayer);
+  container.appendChild(slots.root);
+
+  // Divider between brushes and the destructive / select tools.
+  container.appendChild(h("div", {
+    style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
+  }));
+
+  // ----- Slice / Erase sub-tools ------------------------------------
+
+  const subToolBtns = new Map<DrawingSubTool, HTMLButtonElement>();
+  for (const def of SUB_TOOLS) {
+    const btn = h("button", {
+      title: `${def.label} (${def.shortcut})`,
+      style: {
+        width: "36px", height: "36px", display: "flex",
+        alignItems: "center", justifyContent: "center",
+        border: "none", borderRadius: "8px", cursor: "pointer",
+        background: "transparent", transition: "all 0.15s",
+      },
+      children: [icon(def.iconName, 20)],
+      onClick: () => activateDrawingSubTool(def.id),
+    }) as HTMLButtonElement;
+    subToolBtns.set(def.id, btn);
+    container.appendChild(btn);
+  }
+
   // ----- Lasso button + its flyout ----------------------------------
 
   const lassoBtn = h("button", {
@@ -118,61 +168,6 @@ export function createDrawingToolPanel(
     },
   });
   container.appendChild(lassoBtn);
-
-  // ----- Undo (backup for the 2-finger tap gesture) ----------------
-  // The touch gesture isn't always reliable on every device, so a
-  // visible button gives the user a definitely-works fallback. Wired
-  // straight to Hush's snapshot-based undo so it shares the stack
-  // with ⌘Z and the gesture itself.
-
-  const undoBtn = h("button", {
-    title: "Undo",
-    style: {
-      width: "36px", height: "36px", display: "flex",
-      alignItems: "center", justifyContent: "center",
-      border: "none", borderRadius: "8px", cursor: "pointer",
-      background: "transparent", transition: "all 0.15s",
-    },
-    children: [icon("undo", 20)],
-    onClick: () => drawingLayer.undo(),
-  }) as HTMLButtonElement;
-  container.appendChild(undoBtn);
-
-  // Divider between lasso/undo and erase/slice — groups "select"
-  // and its companion away from the destructive tools.
-  container.appendChild(h("div", {
-    style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
-  }));
-
-  // ----- Erase / Slice sub-tools ------------------------------------
-
-  const subToolBtns = new Map<DrawingSubTool, HTMLButtonElement>();
-  for (const def of SUB_TOOLS) {
-    const btn = h("button", {
-      title: `${def.label} (${def.shortcut})`,
-      style: {
-        width: "36px", height: "36px", display: "flex",
-        alignItems: "center", justifyContent: "center",
-        border: "none", borderRadius: "8px", cursor: "pointer",
-        background: "transparent", transition: "all 0.15s",
-      },
-      children: [icon(def.iconName, 20)],
-      onClick: () => activateDrawingSubTool(def.id),
-    }) as HTMLButtonElement;
-    subToolBtns.set(def.id, btn);
-    container.appendChild(btn);
-  }
-
-  container.appendChild(h("div", {
-    style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
-  }));
-
-  // ----- Brush slots ------------------------------------------------
-
-  // Layers live in the main notebook toolbar (not here) because
-  // layer membership applies to every shape type, not just drawings.
-  const slots = createBrushSlots(state, drawingLayer);
-  container.appendChild(slots.root);
 
   // ----- Meta-tools pill (drag handle + minimize) -------------------
   //

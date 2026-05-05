@@ -12,6 +12,11 @@ export interface TextRun {
   link?: string;
   /** If true, render with highlight background (==text==) */
   highlight?: boolean;
+  /** Uppercased flag name when this highlight is a recognised flag —
+   *  e.g. `==MISSING==` or `==MISSING: foo==` → `"MISSING"`. The
+   *  renderer (and shelf) resolve this against the user's flagColors
+   *  setting; the field is just the tag, not the colour. */
+  highlightFlag?: string;
 }
 
 export interface ParsedLine {
@@ -99,8 +104,16 @@ export function parseLine(line: string): ParsedLine {
   return out;
 }
 
+/** Match a bare flag highlight: `==NAME==`, `==NAME:==`, or
+ *  `==NAME: body text==`. The colon and trailing body are optional so a
+ *  bare flag still picks up its configured colour. Mirrors the Docs flag
+ *  regex in `src/editor/editor.js::createFlagHighlightPlugin`. */
+const FLAG_INNER_RE = /^([A-Za-z][A-Za-z0-9_-]{0,24})(?::([\s\S]*))?$/;
+
 /**
- * Parse inline **bold**, *italic* / _italic_, [link](url) markers into runs.
+ * Parse inline **bold**, *italic* / _italic_, [link](url), ==highlight==
+ * markers into runs. Highlights re-parse their inner text so nested
+ * formatting (bold / italic / links) survives inside ==..==.
  */
 function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
   const runs: TextRun[] = [];
@@ -122,7 +135,33 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
     } else if (match[5] !== undefined) {
       runs.push({ text: match[5], bold: false, italic: false, sizeScale, link: match[6] });
     } else if (match[7] !== undefined) {
-      runs.push({ text: match[7], bold: false, italic: false, sizeScale, highlight: true });
+      const inner = match[7];
+      // Detect flag (`==NAME==` / `==NAME: body==`) before parsing
+      // nested formatting — once recognised the flag tag rides every
+      // emitted run so the renderer / shelf can colour them uniformly.
+      const flag = inner.match(FLAG_INNER_RE);
+      const flagName = flag ? flag[1].toUpperCase() : undefined;
+      const hasBody = flag !== null && flag[2] !== undefined;
+      if (flagName) {
+        // Render `NAME` (always). When the flag has a colon we render
+        // the colon plus the nested-parsed body so `==MISSING: please
+        // **fix**==` paints "MISSING:" then italic/bold inside the body.
+        runs.push({ text: flag![1], bold: false, italic: false, sizeScale, highlight: true, highlightFlag: flagName });
+        if (hasBody) {
+          runs.push({ text: ":", bold: false, italic: false, sizeScale, highlight: true, highlightFlag: flagName });
+          const bodyRuns = parseInlineFormatting(flag![2], sizeScale);
+          for (const r of bodyRuns) {
+            runs.push({ ...r, highlight: true, highlightFlag: flagName });
+          }
+        }
+      } else {
+        // Plain highlight — recurse so nested **bold** / *italic* /
+        // [link](url) inside `==…==` survive.
+        const innerRuns = parseInlineFormatting(inner, sizeScale);
+        for (const r of innerRuns) {
+          runs.push({ ...r, highlight: true });
+        }
+      }
     }
 
     lastIndex = match.index + match[0].length;
@@ -251,10 +290,10 @@ function tokensToRuns(tokens: { word: string; run: TextRun; trailingSpace: boole
     const t = tokens[i];
     const text = (i > 0 ? " " : "") + t.word;
     const last = result[result.length - 1];
-    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.highlight === t.run.highlight) {
+    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.highlight === t.run.highlight && last.highlightFlag === t.run.highlightFlag) {
       last.text += text;
     } else {
-      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, highlight: t.run.highlight });
+      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, highlight: t.run.highlight, highlightFlag: t.run.highlightFlag });
     }
   }
   return result;

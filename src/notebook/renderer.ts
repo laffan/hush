@@ -56,6 +56,10 @@ export interface RenderState {
   /** id of a flowchart edge whose curve the cursor is hovering — the
    *  renderer paints a delete-X badge at the edge midpoint. */
   flowHoveredEdgeId?: string | null;
+  /** Flag-name → hex colour map mirrored from Hush's `flagColors`
+   *  setting. Used by the highlight painter so `==MISSING==` etc. take
+   *  on the user's configured colour instead of the default yellow. */
+  flagColors?: Record<string, string>;
   /** True while the drawing engine is mid-transform on its own bbox
    *  (pen-mode lasso grab → move / resize / rotate). The renderer
    *  suppresses the gray group highlight while this is true; the
@@ -147,7 +151,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       if (shape.id === editingShapeId) continue;
       if (pocketedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue; // drawing layer owns strokes
-      if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily);
+      if (shape.type === "text") drawTextShape(ctx, shape, theme, state.fontFamily, false, state.flagColors);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, shape.id === state.croppingImageId);
     }
   }
@@ -269,7 +273,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   if (pocketLayout.entries.length > 0) {
     ctx.save();
     ctx.translate(leftInset, 0);
-    drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache, state.drawingLayer);
+    drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache, state.drawingLayer, state.flagColors);
     ctx.restore();
   }
 
@@ -330,7 +334,30 @@ export function drawStroke(ctx: CanvasRenderingContext2D, points: Point[], color
   ctx.stroke();
 }
 
-export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, theme: CanvasTheme, fontFamily: string, omitGlyphs = false) {
+/** Default highlight tint matches the markdown editor's `==…==`
+ *  background — keeps Docs and Notebooks visually consistent. */
+const DEFAULT_HIGHLIGHT_BG = "rgba(255, 208, 0, 0.3)";
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  if (h.length !== 6) return DEFAULT_HIGHLIGHT_BG;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** Resolve a highlight run's background tint: flag colour when the
+ *  parser tagged the run with a known flag, otherwise the shared default. */
+export function resolveHighlightBg(flagName: string | undefined, flagColors: Record<string, string> | undefined): string {
+  if (flagName && flagColors) {
+    const c = flagColors[flagName];
+    if (c) return hexToRgba(c, 0.3);
+  }
+  return DEFAULT_HIGHLIGHT_BG;
+}
+
+export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, theme: CanvasTheme, fontFamily: string, omitGlyphs = false, flagColors?: Record<string, string>) {
   const baseFontSize = shape.fontSize;
   const ff = `${fontFamily}, ${FONT_FAMILY}`;
 
@@ -453,10 +480,8 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
       ctx.font = `${style} ${weight} ${fontSize}px ${ff}`;
       if (run.highlight) {
         ctx.save();
-        ctx.fillStyle = theme.accent;
-        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = resolveHighlightBg(run.highlightFlag, flagColors);
         ctx.fillRect(x, y, ctx.measureText(run.text).width, fontSize + 2);
-        ctx.globalAlpha = 1;
         ctx.restore();
       }
       if (run.link) ctx.fillStyle = theme.accent;
@@ -547,6 +572,7 @@ function drawPocketEntries(
   ctx: CanvasRenderingContext2D, entries: PocketEntry[], selectedIds: Set<string>,
   theme: CanvasTheme, fontFamily: string, imageCache: Map<string, HTMLImageElement>,
   drawingLayer?: RenderState["drawingLayer"],
+  flagColors?: Record<string, string>,
 ) {
   for (const entry of entries) {
     const b = entry.screenBounds;
@@ -576,7 +602,7 @@ function drawPocketEntries(
     }
     for (const shape of entry.shapes) {
       if (shape.type === "drag-area") continue;
-      if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily);
+      if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, false, flagColors);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false);
       // DrawShapes are handled in one pass below — we blit the whole
       // group's world bbox from the done canvas at once instead of

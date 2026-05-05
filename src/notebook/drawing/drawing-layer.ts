@@ -332,11 +332,6 @@ export function createDrawingLayer({
   }) as EventListener;
   state.addEventListener("change", onSubToolChangeForTransient);
 
-  // Bridge Hush's selectedIds → engine selection so the bbox +
-  // handles appear for strokes selected via Hush's regular Select
-  // rectangle, not just the pen-mode lasso.
-  const selectionBridge = createSelectionBridge({ state, selectionEngine, shimBox });
-
   // Two/three-finger touch → undo/redo on iPad. Two-finger drift
   // promotes the burst into a pan — forwarded up to the notebook so
   // state.camera picks up the motion.
@@ -439,6 +434,17 @@ export function createDrawingLayer({
     worldToLocal: (p) => ({ x: p.x - originX, y: p.y - originY, pressure: p.pressure }),
   });
   shimBox.current = shim;
+
+  // Bridge Hush's selectedIds → engine selection so the bbox +
+  // handles appear for strokes selected via Hush's regular Select
+  // rectangle, not just the pen-mode lasso. Attached AFTER the shim
+  // so a "shapes" notify flowing both listeners sees the shim update
+  // engine.strokes first; the bridge's bbox recompute then lands on
+  // the freshly-committed positions instead of pre-update ones.
+  // Without this ordering, a flow-snap delta applied after pointerup
+  // leaves the engine bbox at the pre-snap position until the next
+  // selection change.
+  const selectionBridge = createSelectionBridge({ state, selectionEngine, shimBox });
 
   // ---------- public API ----------
 

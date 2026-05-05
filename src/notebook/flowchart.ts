@@ -133,6 +133,13 @@ export class FlowchartLayer<S extends FlowNode> {
     this.cfg.connectMode = mode;
   }
 
+  /** Re-export the host's isFlowable predicate so callers iterating
+   *  shapes (drop-target search, hover detection) can mirror the same
+   *  filter without duplicating it. */
+  isFlowable(node: S): boolean {
+    return this.cfg.isFlowable(node);
+  }
+
   // --- State ---
 
   serialize(): FlowEdge[] {

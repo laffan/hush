@@ -53,13 +53,11 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
 /** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
  *  the active theme's foreground. Slots 2 and 3 carry an explicit
  *  red and blue so a fresh notebook offers a useful palette out of
- *  the box; slot 4 (highlighter) is yellow because theme-fg
- *  highlighters vanish on dark themes. */
+ *  the box. */
 const DEFAULT_BRUSH_SLOTS: DrawingSlot[] = [
   { brushId: "brush-1", color: "auto",    size: 4,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-2", color: "#ef4444", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-3", color: "#3b82f6", size: 25, streamline: 0.35, spacing: 0.12, mode: "normal" },
-  { brushId: "brush-highlighter", color: "#fde047", size: 20, streamline: 0.35, spacing: 0.10, mode: "highlighter" },
 ];
 
 export class DrawingState extends EventTarget {
@@ -119,13 +117,15 @@ export class DrawingState extends EventTarget {
   /** Shape ID currently being cropped, or null */
   croppingImageId: string | null = null;
 
-  /** Flowchart edges between text shapes. Drop a text shape onto another
-   *  text shape to connect them; arrows render in the canvas. Ported
-   *  from Steiner — see src/notebook/flowchart.ts for the portable API. */
+  /** Flowchart edges between text, image, and drawing shapes. Drag-areas
+   *  are deliberately excluded — dropping a shape inside a drag-area
+   *  re-parents into the container and we don't want that gesture to
+   *  also fire a flow connect. See src/notebook/flowchart.ts for the
+   *  portable API. */
   flowchart = new FlowchartLayer<Shape>({
     getBounds: (s) => getShapeBounds(s, this.fontFamily),
     getLayoutBounds: (s) => this.unionGroupBounds(s),
-    isFlowable: (s) => s.type === "text",
+    isFlowable: (s) => s.type !== "drag-area",
   });
   /** While dragging a single text shape, the id of the shape under the
    *  cursor that would be the drop-connection target (or null). */
@@ -977,21 +977,15 @@ export class DrawingState extends EventTarget {
     const canvasPt = screenToCanvas(screenPt, this.camera);
     const hit = findShapeAtPoint(canvasPt, this.shapes, this.fontFamily);
     if (hit && hit.type === "draw") {
-      // Double-click on a stroke drops straight into drawing mode —
-      // the user's asking to keep working on this drawing, not make
-      // a new text block on top of it. If the stroke is grouped,
-      // also select the whole group so a follow-up edit sees it.
-      if (hit.groupId) {
-        const groupIds = this.shapes
-          .filter((s) => s.groupId === hit.groupId)
-          .map((s) => s.id);
-        this.selectedIds = new Set(groupIds);
-        this.notify("selectedIds");
-      } else {
-        this.selectedIds = new Set([hit.id]);
-        this.notify("selectedIds");
-      }
-      if (!this.drawingMode) this.enterDrawingMode();
+      // Double-click on a stroke selects only that stroke. For a
+      // grouped stroke this lets the user reposition the individual
+      // member without disturbing the rest of the group; the stroke's
+      // `groupId` is untouched so on deselect it returns to being a
+      // normal group member. (Single-click promotes to whole-group
+      // selection — the double-click path is the only way to pick a
+      // single member out of a group.)
+      this.selectedIds = new Set([hit.id]);
+      this.notify("selectedIds");
       return;
     }
     if (hit && hit.type === "text") {
@@ -1145,19 +1139,21 @@ export class DrawingState extends EventTarget {
         // toward its original bounds (but never shrinks below them).
         this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
         this.applyCmdHeldResize();
-        // While dragging text shape(s), keep the drop-target hover up to
-        // date so the renderer can outline the prospective parent. Uses
-        // the live cursor for multi-drag so it still reads naturally when
-        // many shapes are being moved at once.
-        const draggingTextIds: string[] = [];
+        // While dragging shape(s), keep the flowchart drop-target hover
+        // up to date so the renderer can outline the prospective parent.
+        // Uses the live cursor for multi-drag so it still reads naturally
+        // when many shapes are being moved at once. All shape types are
+        // flowable now (drag-areas, images, drawings, text), so the
+        // probe scans every shape — not just text.
+        const draggingIds: string[] = [];
         for (const s of this.shapes) {
-          if (this.selectedIds.has(s.id) && s.type === "text") draggingTextIds.push(s.id);
+          if (this.selectedIds.has(s.id)) draggingIds.push(s.id);
         }
-        if (draggingTextIds.length > 0) {
+        if (draggingIds.length > 0) {
           let probe: Point;
           let exclude: string;
-          if (draggingTextIds.length === 1) {
-            const id = draggingTextIds[0];
+          if (draggingIds.length === 1) {
+            const id = draggingIds[0];
             const sh = this.shapes.find((s) => s.id === id)!;
             const b = getShapeBounds(sh, this.fontFamily);
             probe = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
@@ -1166,13 +1162,21 @@ export class DrawingState extends EventTarget {
             probe = canvasPt;
             exclude = "";
           }
-          const draggingSet = new Set(draggingTextIds);
+          const draggingSet = new Set(draggingIds);
+          // Group siblings of any dragged shape are not valid flow
+          // targets — see the matching exclusion in the drop handler.
+          const draggingGroupIds = new Set<string>();
+          for (const id of draggingIds) {
+            const sh = this.shapes.find((s) => s.id === id);
+            if (sh?.groupId) draggingGroupIds.add(sh.groupId);
+          }
           let target: Shape | null = null;
           for (let i = this.shapes.length - 1; i >= 0; i--) {
             const s = this.shapes[i];
-            if (s.type !== "text") continue;
             if (draggingSet.has(s.id)) continue;
             if (s.id === exclude) continue;
+            if (s.pocketed) continue;
+            if (s.groupId && draggingGroupIds.has(s.groupId)) continue;
             const bb = getShapeBounds(s, this.fontFamily);
             if (probe.x >= bb.minX && probe.x <= bb.maxX && probe.y >= bb.minY && probe.y <= bb.maxY) {
               target = s;
@@ -1292,14 +1296,28 @@ export class DrawingState extends EventTarget {
       //                          deleted (no arrow drawn)
       // The target is found via the live cursor position at drop time, not
       // the centroid — works the same for one or many dragged shapes.
-      const droppedTextIds: string[] = [];
+      // Collect every dropped flowable shape (all types qualify now, not
+      // just text). When the dragged selection is a single group, treat
+      // the group as one node — connect via a single lead member and
+      // translate every group sibling by the same delta so the group
+      // stays intact.
+      const droppedIds: string[] = [];
       for (const s of this.shapes) {
-        if (this.selectedIds.has(s.id) && s.type === "text") {
-          droppedTextIds.push(s.id);
+        if (this.selectedIds.has(s.id) && this.flowchart.isFlowable(s)) {
+          droppedIds.push(s.id);
         }
       }
-      if (droppedTextIds.length > 0) {
-        const droppedSet = new Set(droppedTextIds);
+      if (droppedIds.length > 0) {
+        const droppedSet = new Set(droppedIds);
+        // Group siblings of any dropped shape are not valid flow
+        // targets — double-clicking a stroke out of a group lets the
+        // user reposition it inside its own group, and dropping it on
+        // a sibling shouldn't promote that sibling to a parent.
+        const droppedGroupIds = new Set<string>();
+        for (const id of droppedIds) {
+          const sh = this.shapes.find((s) => s.id === id);
+          if (sh?.groupId) droppedGroupIds.add(sh.groupId);
+        }
         let dropPt: Point | null = null;
         if (this.canvasEl) {
           const r = this.canvasEl.getBoundingClientRect();
@@ -1311,7 +1329,9 @@ export class DrawingState extends EventTarget {
           for (let i = this.shapes.length - 1; i >= 0; i--) {
             const s = this.shapes[i];
             if (droppedSet.has(s.id)) continue;
-            if (s.type !== "text") continue;
+            if (s.pocketed) continue;
+            if (!this.flowchart.isFlowable(s)) continue;
+            if (s.groupId && droppedGroupIds.has(s.groupId)) continue;
             const b = getShapeBounds(s, this.fontFamily);
             if (
               dropPt.x >= b.minX &&
@@ -1325,13 +1345,38 @@ export class DrawingState extends EventTarget {
           }
         }
 
+        // Detect "single group" — every dropped id shares one groupId.
+        // We connect via the topmost member and translate the whole
+        // group as a unit so a group is functionally one flow node.
+        let connectIds = droppedIds;
+        let groupSiblingsByDropped = new Map<string, Set<string>>();
+        if (droppedIds.length > 1) {
+          const sample = this.shapes.find((s) => s.id === droppedIds[0]);
+          const gid = sample?.groupId;
+          if (gid && droppedIds.every((id) => {
+            const sh = this.shapes.find((s) => s.id === id);
+            return !!sh && sh.groupId === gid;
+          })) {
+            const lead = droppedIds[droppedIds.length - 1];
+            connectIds = [lead];
+            groupSiblingsByDropped.set(lead, new Set(droppedIds));
+          }
+        }
+
         if (target) {
           const appendMode = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
-          if (appendMode) {
+          // Append-merge is text→text only. For non-text targets we
+          // fall through to the normal flow-connect path so the
+          // modifier doesn't silently destroy the dropped shapes.
+          const allText = target.type === "text" && droppedIds.every((id) => {
+            const s = this.shapes.find((sh) => sh.id === id);
+            return s?.type === "text";
+          });
+          if (appendMode && allText) {
             // Concatenate dropped texts in stack order and merge into target.
             const targetId = target.id;
             const appended: string[] = [];
-            for (const id of droppedTextIds) {
+            for (const id of droppedIds) {
               const s = this.shapes.find((sh) => sh.id === id);
               if (s && s.type === "text") appended.push(s.text);
             }
@@ -1347,22 +1392,32 @@ export class DrawingState extends EventTarget {
                 }
                 return updated;
               });
-            for (const id of droppedTextIds) this.flowchart.removeNode(id);
+            for (const id of droppedIds) this.flowchart.removeNode(id);
             this.selectedIds = new Set([targetId]);
             this.notify("selectedIds");
           } else {
-            for (const droppedId of droppedTextIds) {
+            for (const droppedId of connectIds) {
               const dropped = this.shapes.find((s) => s.id === droppedId);
-              if (!dropped || dropped.type !== "text") continue;
+              if (!dropped) continue;
               const oldBounds = getShapeBounds(dropped, this.fontFamily);
               const newTL = this.flowchart.tryConnect(droppedId, target.id, this.shapes);
               if (!newTL) continue;
               const dx = newTL.minX - oldBounds.minX;
               const dy = newTL.minY - oldBounds.minY;
+              const movers = new Set<string>([droppedId]);
+              // Pull every sibling of the dropped shape's group so a
+              // group of strokes (or a mixed group) stays glued
+              // together through the snap.
+              const groupSiblings = groupSiblingsByDropped.get(droppedId);
+              if (groupSiblings) {
+                for (const id of groupSiblings) movers.add(id);
+              } else if (dropped.groupId) {
+                for (const sh of this.shapes) {
+                  if (sh.groupId === dropped.groupId) movers.add(sh.id);
+                }
+              }
               this.shapes = this.shapes.map((s) =>
-                s.id === droppedId && s.type === "text"
-                  ? { ...s, position: { x: s.position.x + dx, y: s.position.y + dy } }
-                  : s,
+                movers.has(s.id) ? moveShape(s, dx, dy) : s,
               );
               // Snapping the parent also pulls its descendants — replay their
               // existing offset so the chain stays intact. Grouped descendants

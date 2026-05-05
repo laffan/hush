@@ -170,6 +170,7 @@ function buildExportRaster(canvas: NotesCanvas, opts: ExportOptions, omitTextGly
     canvasBackgroundOverride: state.canvasBackgroundOverride,
     flowchart: state.flowchart,
     omitTextGlyphs,
+    flagColors: ((window as unknown as { __hushState__?: { settings?: { flagColors?: Record<string, string> } } }).__hushState__)?.settings?.flagColors,
   });
 
   // Strokes sit above shapes in the live view (drawing wrapper is a

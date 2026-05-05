@@ -19,7 +19,7 @@ import type { DrawingLayer } from "./drawing-layer";
 import type { DrawingSlot } from "../types";
 import { h } from "../ui/dom-helpers";
 
-const SLOT_COUNT = 4;
+const SLOT_COUNT = 3;
 // Default color sentinel + explicit palette. "auto" resolves to the
 // current theme's foreground at paint time.
 const COLORS = ["auto", "#111111", "#e11d48", "#f59e0b", "#16a34a", "#2563eb", "#7c3aed", "#fde047"];

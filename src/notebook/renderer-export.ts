@@ -31,9 +31,12 @@ export function renderForExport(
     flowchart?: FlowchartLayer<Shape>;
     /** Skip text glyphs (decorations stay). Used by the PDF exporter, which lays vector text on top. */
     omitTextGlyphs?: boolean;
+    /** Optional flag colour map; mirrors the live renderer's flag-aware
+     *  highlight tinting so exported PNG/JPG/PDF output matches the screen. */
+    flagColors?: Record<string, string>;
   },
 ): void {
-  const { shapes, camera, imageCache, theme, backgroundPattern, gridSpacing, gridOpacity, fontFamily, layers, includeBackground, canvasBackgroundOverride, flowchart, omitTextGlyphs } = opts;
+  const { shapes, camera, imageCache, theme, backgroundPattern, gridSpacing, gridOpacity, fontFamily, layers, includeBackground, canvasBackgroundOverride, flowchart, omitTextGlyphs, flagColors } = opts;
 
   if (includeBackground) {
     ctx.fillStyle = canvasBackgroundOverride || theme.canvasBackground;
@@ -83,7 +86,7 @@ export function renderForExport(
     for (const shape of layerShapes) {
       if (shape.type === "drag-area") continue;
       if (shape.type === "draw") continue;
-      if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs);
+      if (shape.type === "text") drawTextShape(ctx, shape, theme, fontFamily, omitTextGlyphs, flagColors);
       else if (shape.type === "image") drawImageShape(ctx, shape, imageCache, false);
     }
   }
