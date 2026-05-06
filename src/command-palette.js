@@ -26,6 +26,19 @@ import stylesRaw from "./sidebar/sidebar_icons/styles.svg?raw";
 import zoteroRaw from "./sidebar/sidebar_icons/zotero.svg?raw";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 
+/** Resolve the current "this file" tree-node id — the node behind
+ *  the open notebook, doc, or project (in that priority). Used to
+ *  drive desk send/copy commands. Returns null if nothing's open. */
+function currentFileTreeNodeId(s) {
+  const fileId = s.currentNotebookFileId || s.currentFileId;
+  if (fileId) {
+    const node = findNodeByFileId(s.fileTree, fileId);
+    if (node) return node.id;
+  }
+  if (s.currentProjectId) return s.currentProjectId;
+  return null;
+}
+
 /** Wrap inner SVG markup (paths / polygons / etc.) in an `<svg>` of the
  *  given viewBox so it can be dropped straight into an `iconEl`. */
 function wrapSvg(inner, viewBox = "0 0 24 24") {
@@ -235,6 +248,22 @@ function buildCommands(state) {
     { id: "nb-minimap-hide", label: "Hide minimap", icon: null, shortcutKey: null, ctx: "notebook",
       hiddenIf: (s) => !s.settings?.minimapVisible,
       action: (s) => s.toggleMinimap() },
+    { id: "desk-send", label: "Send this file to another desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.settings?.useDesks || !currentFileTreeNodeId(s),
+      action: async (s) => {
+        const id = currentFileTreeNodeId(s);
+        if (!id) return;
+        const m = await import("./sidebar/send-to-desk-modal.js");
+        m.openSendToDeskModal(s, id, "send");
+      } },
+    { id: "desk-copy", label: "Copy this file to another desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.settings?.useDesks || !currentFileTreeNodeId(s),
+      action: async (s) => {
+        const id = currentFileTreeNodeId(s);
+        if (!id) return;
+        const m = await import("./sidebar/send-to-desk-modal.js");
+        m.openSendToDeskModal(s, id, "copy");
+      } },
   ];
 
   return all.filter(cmd => {

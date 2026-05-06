@@ -292,13 +292,11 @@ export function createFilesPanel(container, state, hidePanel) {
     refreshList(state);
   });
 
-  // Delegated action handler for the sortable list
+  // Delegated action handlers
   listContainer.addEventListener("click", onActionClick);
-
-  // Delegated action handler for the flagged section
   flaggedContainerEl.addEventListener("click", onActionClick);
-
-  // Desktop thumbnail — pinned to the bottom of the panel-overlay.
+  // Option-click on a row opens the Send-to-desk modal (when desks on).
+  import("./send-to-desk-modal.js").then((m) => m.attachDeskShortcuts(listContainer, state));
   mountDesktopThumbnail(container, state);
 }
 
