@@ -123,7 +123,11 @@ export class DrawingState extends EventTarget {
    *  also fire a flow connect. See src/notebook/flowchart.ts for the
    *  portable API. */
   flowchart = new FlowchartLayer<Shape>({
-    getBounds: (s) => getShapeBounds(s, this.fontFamily),
+    // For grouped shapes (stroke clusters in particular) anchor the
+    // arrow against the union of the whole group's bounds, not just
+    // the lead member — otherwise the arrowhead lands inside the
+    // group, pointing at one stray stroke instead of the cluster.
+    getBounds: (s) => this.unionGroupBounds(s),
     getLayoutBounds: (s) => this.unionGroupBounds(s),
     isFlowable: (s) => s.type !== "drag-area",
   });
@@ -600,8 +604,11 @@ export class DrawingState extends EventTarget {
     if (this._recentEditIds.length > 16) this._recentEditIds.shift();
   }
 
-  /** Bounds of `s` unioned with its group-mates. Used as the layout footprint
-   * for tidy so siblings don't overlap items grouped with a flowchart node. */
+  /** Bounds of `s` unioned with its group-mates. Used by the flowchart
+   *  layer for both arrow anchoring (so arrows land on the group's edge,
+   *  not the lead member's) and tidy layout (so siblings don't overlap
+   *  any group member). Falls back to the shape's own bounds when it
+   *  isn't part of a group, so non-grouped shapes are unaffected. */
   private unionGroupBounds(s: Shape): { minX: number; minY: number; maxX: number; maxY: number } {
     const b = getShapeBounds(s, this.fontFamily);
     if (!s.groupId) return b;
