@@ -290,12 +290,17 @@
   position: relative;
 }
 .sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
+  /* The line lives in the gap between two consecutive doc icons. With
+     the default row height (~18 px) the gap is 15 px tall: top:-6/h:11
+     leaves ~2 px of breathing room above the lower icon and below the
+     upper one. Mild row-height drift narrows or widens that buffer but
+     the connector still reads as "almost touching" either side. */
   content: "";
   position: absolute;
   left: 30px;
-  top: -5px;
+  top: -6px;
   width: 1px;
-  height: 4px;
+  height: 11px;
   background: currentColor;
   opacity: 0.45;
   pointer-events: none;
