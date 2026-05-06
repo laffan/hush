@@ -87,6 +87,12 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
     left: "0",
     width: worldSize + "px",
     height: worldSize + "px",
+    // iPad WebKit doesn't treat an empty `<svg>` with `pointer-events: auto`
+    // as a hit target — without painted children it skips the SVG and routes
+    // pointerdowns to the underlying canvas. `bounding-box` makes the entire
+    // SVG box hit-testable regardless of its children, so the engine's
+    // pointer listener actually fires. Drawing-layer `setInputEnabled` flips
+    // this between `bounding-box` (drawing mode) and `none` (everywhere else).
     pointerEvents: "none",
     touchAction: "none",
   });

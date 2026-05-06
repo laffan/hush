@@ -455,15 +455,15 @@ export function createDrawingLayer({
   // ---------- public API ----------
 
   function setInputEnabled(enabled: boolean): void {
-    // WebKit/iPadOS: a parent with `pointer-events: none` blocks
-    // hit-testing into its children even when those children set
-    // `auto`. The wrapper defaults to `none` so empty drawing space
-    // lets clicks fall through to the notebook canvas below; flip
-    // both wrapper and SVG in lockstep so the SVG actually receives
-    // the touch while drawing mode is on.
-    const v = enabled ? "auto" : "none";
-    svg.style.pointerEvents = v;
-    wrapper.style.pointerEvents = v;
+    // Two iPad WebKit quirks fixed in lockstep:
+    //   1. A parent with `pointer-events: none` blocks hit-testing into
+    //      its children even when those children set `auto` — so the
+    //      wrapper has to flip alongside the SVG.
+    //   2. An empty `<svg>` with `pointer-events: auto` isn't a hit
+    //      target on iPad — `bounding-box` makes the entire SVG box
+    //      hit-testable regardless of (or absence of) children.
+    svg.style.pointerEvents = enabled ? "bounding-box" : "none";
+    wrapper.style.pointerEvents = enabled ? "auto" : "none";
   }
 
   function setTheme(next: CanvasTheme): void {
