@@ -172,6 +172,12 @@ async function finalizeFileDeletion(state, fileIds) {
 export async function renameTreeNode(state, nodeId, newName) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
+  // Desks are renamed through state.renameDesk so settings.desks stays
+  // in sync with the tree. Route through there if a caller hits this
+  // path with a desk node.
+  if (node.type === "desk") {
+    return state.renameDesk(nodeId, newName);
+  }
   const oldName = node.name;
   if (node.type === "image" && node.fileId) {
     const { renameImageFile } = await import("./state-images.js");

@@ -20,16 +20,16 @@ let flaggedContainerEl = null;
 let storedHidePanel = null;
 let storedState = null;
 
-// Special-node detection helpers. With desks on, ids are `__inbox__:<deskId>`
-// etc.; with desks off, the bare strings. `allSpecialIds(state, kind)`
-// returns every id of `kind` (global + per-desk) for collapsed-state
-// defaults across all desks.
+// Special-node helpers. Desks on: `__inbox__:<deskId>` etc; desks off: bare.
 const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
 const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isTrashId(id);
-const allSpecialIds = (state, kind) =>
-  state.settings?.useDesks ? [kind, ...(state.settings.desks || []).map(d => `${kind}:${d.id}`)] : [kind];
+const allSpecialIds = (s, k) => s.settings?.useDesks ? [k, ...(s.settings.desks || []).map(d => `${k}:${d.id}`)] : [k];
+// Active desk's children when desks on (wrapper hidden), else whole tree.
+const visibleTopLevel = (s) => s.settings?.useDesks
+  ? (s.fileTree.find(n => n.type === "desk" && n.id === s.settings.activeDeskId)?.children || s.fileTree)
+  : s.fileTree;
 
 function getIcon(item) {
   if (isInboxId(item.id)) return typeIcons.inbox;
@@ -161,7 +161,7 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance = null;
   }
 
-  const sortedTree = sortFlaggedItems(normalizeProjectChildren(state.fileTree));
+  const sortedTree = sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)));
 
   sortableInstance = new SortableList(listContainer, {
     data: sortedTree,
@@ -254,7 +254,10 @@ export function createFilesPanel(container, state, hidePanel) {
     onChange: (newData) => {
       enforceSpecialPositions(newData);
       normalizeProjectChildren(newData);
-      state.fileTree = newData;
+      if (state.settings?.useDesks) {
+        const active = state.fileTree.find(n => n.type === "desk" && n.id === state.settings.activeDeskId);
+        if (active) active.children = newData;
+      } else state.fileTree = newData;
       state.saveFileTree();
       state.reconcileSync();
       if (state.currentProjectId) state.openProject(state.currentProjectId);
@@ -692,7 +695,5 @@ async function openImagePreview(filename, name) {
 }
 
 function attachImageTooltipToRow(rowEl, filename, name) {
-  import("../editor/image-preview.js").then(({ attachImageHoverTooltip }) => {
-    attachImageHoverTooltip(rowEl, filename, name);
-  });
+  import("../editor/image-preview.js").then(({ attachImageHoverTooltip }) => attachImageHoverTooltip(rowEl, filename, name));
 }

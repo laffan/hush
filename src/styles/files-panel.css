@@ -669,16 +669,14 @@
   gap: 2px;
 }
 
+.desk-switcher-popover-body { display: flex; flex-direction: column; gap: 2px; }
+
 .desk-switcher-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   width: 100%;
-  padding: 6px 8px;
-  background: none;
-  border: none;
   border-radius: 4px;
-  cursor: pointer;
   color: var(--fg);
   font-family: inherit;
   font-size: 13px;
@@ -686,6 +684,37 @@
 }
 
 .desk-switcher-row:hover { background: rgba(128, 128, 128, 0.12); }
+
+.desk-switcher-row-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.desk-switcher-row.desk-switcher-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-top: 1px solid var(--panel-border, rgba(128, 128, 128, 0.2));
+  margin-top: 2px;
+  padding-top: 8px;
+}
 
 .desk-switcher-row-mark {
   width: 14px;
@@ -701,10 +730,42 @@
   white-space: nowrap;
 }
 
-.desk-switcher-add {
-  border-top: 1px solid var(--panel-border, rgba(128, 128, 128, 0.2));
-  margin-top: 2px;
-  padding-top: 8px;
+.desk-switcher-row-actions {
+  display: inline-flex;
+  gap: 2px;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.desk-switcher-row:hover .desk-switcher-row-actions,
+.desk-switcher-row:focus-within .desk-switcher-row-actions { opacity: 1; }
+
+.desk-switcher-action {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--fg);
+  opacity: 0.7;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.desk-switcher-action:hover { opacity: 1; background: rgba(128, 128, 128, 0.18); }
+
+.desk-switcher-rename-input {
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  background: var(--theme-bg, var(--bg));
+  border: 1px solid var(--fg);
+  border-radius: 3px;
+  padding: 2px 4px;
+  color: var(--fg);
+  min-width: 0;
 }
 
 /* ===== Send / Copy to desk modal ===== */

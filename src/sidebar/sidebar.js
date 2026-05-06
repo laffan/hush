@@ -379,6 +379,14 @@ export function createSidebar(container, state) {
       refreshFilesPanel(state);
     }
   });
+  // Switching desks re-roots the visible top level on the active desk,
+  // and adding/removing/renaming a desk affects the popover header.
+  state.on("active-desk-changed", () => {
+    if (activePanel === "files") refreshFilesPanel(state);
+  });
+  state.on("desks-changed", () => {
+    if (activePanel === "files") refreshFilesPanel(state);
+  });
 
   // The Local Sync list lives in settings.localSyncFolders — when the
   // settings window adds or removes one, re-render the files panel so
