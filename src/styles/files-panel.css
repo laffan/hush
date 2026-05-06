@@ -290,12 +290,12 @@
   position: relative;
 }
 .sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
-  /* Soft 5 px slab spanning the full gap between two consecutive doc
-     icons, centered on the icon's vertical axis (translateX(-50%)
-     anchors the slab on the icon center at left:30px). With the default
-     row height (~18 px) the gap is 15 px, so top:-8/h:15 sits flush on
-     either side. The 0.5 opacity keeps the slab from competing with the
-     icons themselves. */
+  /* I-beam connector linking two consecutive doc icons: a 1 px central
+     stem with 5 px horizontal feet flush against the bottom edge of the
+     upper icon and the top edge of the lower one. The shape is painted
+     via three layered linear-gradients on a single pseudo so it doesn't
+     burn the ::after slot. With the default row height (~18 px) the
+     gap is 15 px, so top:-8/h:15 sits flush on either side. */
   content: "";
   position: absolute;
   left: 30px;
@@ -303,7 +303,10 @@
   top: -8px;
   width: 5px;
   height: 15px;
-  background: currentColor;
+  background:
+    linear-gradient(currentColor, currentColor) top    / 100% 1px no-repeat,
+    linear-gradient(currentColor, currentColor) bottom / 100% 1px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
   opacity: 0.2;
   pointer-events: none;
 }
