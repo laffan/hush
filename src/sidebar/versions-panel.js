@@ -12,6 +12,7 @@ async function tauriInvoke(cmd, args) {
 let currentSnapshots = [];
 let filteredSnapshots = [];
 let searchQuery = "";
+let highlightChanges = false;
 let selectedSnapshotId = null;
 let hoveredSnapshotId = null;
 let previewOverlay = null;
@@ -31,11 +32,19 @@ export function createVersionsPanel(container, state, hidePanel) {
 
   const fileName = getActiveFileName(state) || "Versions";
 
+  const showHighlightToggle = !isNotebookMode(state);
+
   container.innerHTML = `
     <div class="versions-panel">
       <div class="panel-title"><span class="panel-title-label">Snapshots of</span><span class="panel-title-filename">${escHtml(fileName)}</span></div>
       <div class="versions-search-wrap">
         <input type="text" class="versions-search" placeholder="Search snapshots..." />
+        ${showHighlightToggle ? `
+          <label class="versions-highlight-toggle">
+            <input type="checkbox" class="versions-highlight-checkbox" />
+            <span>Highlight changes</span>
+          </label>
+        ` : ""}
       </div>
       <div class="versions-list-container">
         <div class="versions-empty">Loading...</div>
@@ -48,6 +57,15 @@ export function createVersionsPanel(container, state, hidePanel) {
     searchQuery = searchInput.value;
     applyFilter(container, state).catch((e) => console.error("Versions filter failed:", e));
   });
+
+  const highlightCheckbox = container.querySelector(".versions-highlight-checkbox");
+  if (highlightCheckbox) {
+    highlightCheckbox.checked = highlightChanges;
+    highlightCheckbox.addEventListener("change", () => {
+      highlightChanges = highlightCheckbox.checked;
+      refreshActivePreview(state);
+    });
+  }
 
   // Arrow key navigation
   keyHandler = (e) => {
@@ -233,6 +251,9 @@ function showPreview(snap, state, committed) {
   if (isNotebookMode(state)) {
     previewContainer.classList.add("version-preview-notebook");
     renderNotebookPreview(previewContainer, snap, state);
+  } else if (highlightChanges) {
+    previewContainer.classList.add("version-preview-diff");
+    renderDiffPreview(previewContainer, snap);
   } else {
     const content = document.createElement("div");
     content.className = "version-preview-content";
@@ -301,6 +322,66 @@ function renderNotebookPreview(container, snap, _state) {
   });
 }
 
+function renderDiffPreview(container, snap) {
+  const previousSnap = findPreviousSnapshot(snap.id);
+  const wrap = document.createElement("div");
+  wrap.className = "version-preview-content version-diff-body";
+
+  if (!previousSnap) {
+    const note = document.createElement("div");
+    note.className = "version-diff-note";
+    note.textContent = "First snapshot — no prior version to compare against.";
+    wrap.appendChild(note);
+
+    const plain = document.createElement("div");
+    plain.className = "version-diff-plain";
+    plain.textContent = snap.content || "";
+    wrap.appendChild(plain);
+    container.appendChild(wrap);
+    return;
+  }
+
+  // Async-import the diff so we don't load it for users who never toggle the checkbox.
+  import("./version-diff.js").then(({ diffLines }) => {
+    const entries = diffLines(previousSnap.content || "", snap.content || "");
+    for (const entry of entries) {
+      const line = document.createElement("div");
+      line.className = `diff-line diff-${entry.type}`;
+      const gutter = document.createElement("span");
+      gutter.className = "diff-gutter";
+      gutter.textContent = entry.type === "added" ? "+" : entry.type === "removed" ? "−" : " ";
+      const text = document.createElement("span");
+      text.className = "diff-text";
+      text.textContent = entry.text || "​";
+      line.appendChild(gutter);
+      line.appendChild(text);
+      wrap.appendChild(line);
+    }
+  }).catch((e) => {
+    console.error("Diff render failed:", e);
+    wrap.textContent = snap.content || "";
+  });
+
+  container.appendChild(wrap);
+}
+
+function findPreviousSnapshot(snapshotId) {
+  const idx = currentSnapshots.findIndex((s) => s.id === snapshotId);
+  if (idx === -1) return null;
+  // currentSnapshots is ordered newest-first, so the chronological predecessor
+  // sits at idx + 1.
+  return currentSnapshots[idx + 1] || null;
+}
+
+function refreshActivePreview(state) {
+  const targetId = hoveredSnapshotId !== null ? hoveredSnapshotId : selectedSnapshotId;
+  if (targetId === null) return;
+  const snap = currentSnapshots.find((s) => s.id === targetId);
+  if (!snap) return;
+  const committed = hoveredSnapshotId === null;
+  showPreview(snap, state, committed);
+}
+
 function removePreview() {
   if (previewOverlay) {
     previewOverlay.remove();
@@ -353,6 +434,7 @@ export function cleanupVersionsPanel() {
   currentSnapshots = [];
   filteredSnapshots = [];
   searchQuery = "";
+  highlightChanges = false;
   selectedSnapshotId = null;
   hoveredSnapshotId = null;
   panelContainer = null;
