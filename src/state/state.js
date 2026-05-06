@@ -580,7 +580,7 @@ export class AppState {
   }
 
   // ===== Desk + Sync Operations (delegated to sibling modules) =====
-  async setDesk(fileId) { const m = await import("./state-desk.js"); return m.setDesk(this, fileId); }
+  async setDesktop(fileId) { const m = await import("./state-desktop.js"); return m.setDesktop(this, fileId); }
   async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
   async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }

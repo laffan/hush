@@ -12,7 +12,7 @@ import { createPane } from "../pane/pane-manager.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
-import { mountDeskThumbnail, unmountDeskThumbnail, refreshDeskThumbnail } from "./desk-thumbnail.js";
+import { mountDesktopThumbnail, unmountDesktopThumbnail, refreshDesktopThumbnail } from "./desktop-thumbnail.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -273,8 +273,8 @@ export function createFilesPanel(container, state, hidePanel) {
   // Delegated action handler for the flagged section
   flaggedContainerEl.addEventListener("click", onActionClick);
 
-  // Desk thumbnail — pinned to the bottom of the panel-overlay.
-  mountDeskThumbnail(container, state);
+  // Desktop thumbnail — pinned to the bottom of the panel-overlay.
+  mountDesktopThumbnail(container, state);
 }
 
 function onActionClick(e) {
@@ -684,7 +684,7 @@ export function refreshFilesPanel(state) {
   if (root && storedState && storedHidePanel) {
     renderLocalSyncSection(root, storedState, storedHidePanel, refreshFilesPanel);
   }
-  refreshDeskThumbnail();
+  refreshDesktopThumbnail();
 }
 
 

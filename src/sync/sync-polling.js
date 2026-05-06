@@ -307,8 +307,9 @@ async function getMetaDispatcher(filename) {
       return (await import("./project-sync.js")).applyProjectsFile;
     case "styles.json":
       return (await import("./style-sync.js")).applyStylesFile;
-    case "desk.json":
-      return (await import("./desk-sync.js")).applyDeskFile;
+    case "desktop.json":
+    case "desk.json": // legacy filename — applier accepts both formats
+      return (await import("./desktop-sync.js")).applyDesktopFile;
     default:
       return null;
   }

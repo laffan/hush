@@ -333,12 +333,14 @@ pub struct AppSettings {
     pub notebook_text_styles: Vec<serde_json::Value>,
     #[serde(default)]
     pub last_notebook_id: Option<String>,
-    /// "Desk" — pins a single doc or notebook fileId for the thumbnail
-    /// at the bottom of the files panel. Synced cross-device via
-    /// `.hush/desk.json` (which carries the cross-device-stable Dropbox
-    /// `remote_id` and resolves it back to a local fileId at apply time).
-    #[serde(default)]
-    pub desk_file_id: Option<String>,
+    /// "Desktop" — pins a single doc or notebook fileId for the
+    /// thumbnail at the bottom of the files panel. Synced cross-device
+    /// via `.hush/desktop.json` (which carries the cross-device-stable
+    /// Dropbox `remote_id` and resolves it back to a local fileId at
+    /// apply time). The `deskFileId` alias keeps existing settings.json
+    /// files (pre-rename) parsing without migration.
+    #[serde(default, alias = "deskFileId")]
+    pub desktop_file_id: Option<String>,
 
     // Notebook shortcuts
     #[serde(default = "default_nb_select")]
@@ -608,7 +610,7 @@ impl Default for AppSettings {
             flow_connect_mode: default_flow_connect_mode(),
             notebook_text_styles: Vec::new(),
             last_notebook_id: None,
-            desk_file_id: None,
+            desktop_file_id: None,
             shortcut_nb_select: default_nb_select(),
             shortcut_nb_text: default_nb_text(),
             shortcut_nb_drag_area: default_nb_drag_area(),
