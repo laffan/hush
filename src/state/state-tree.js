@@ -32,10 +32,13 @@ export async function createTreeNode(state, command, type, name, parentId) {
 }
 
 export async function deleteTreeNode(state, nodeId) {
-  const { AppState } = await import("./state.js");
-  if (nodeId === AppState.INBOX_ID || nodeId === AppState.TRASH_ID || nodeId === AppState.IMAGES_ID) return;
+  // Special nodes (Inbox / Images / Trash) — global or per-desk — and
+  // top-level desk nodes themselves are not deletable through this path.
+  // Desk deletion goes through `state.deleteDesk(deskId)`.
+  if (state.isSpecialNodeId(nodeId)) return;
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
+  if (node.type === "desk") return;
   if (state.isInTrash(nodeId)) return permanentDeleteNode(state, nodeId);
   await state.syncDeleteNode(nodeId);
   // Purge any markdown refs to deleted images before detaching the node
@@ -48,7 +51,11 @@ export async function deleteTreeNode(state, nodeId) {
   const removed = removeNode(state.fileTree, nodeId);
   if (removed) {
     clearFlaggedRecursive(removed);
-    const trash = findNode(state.fileTree, AppState.TRASH_ID);
+    // Send to the active desk's Trash (or the global Trash when desks
+    // are off). For nodes that already lived inside a specific desk's
+    // trash branch, we still route to the active trash — easier to
+    // empty in one place.
+    const trash = findNode(state.fileTree, state.getTrashId());
     if (trash) (trash.children || (trash.children = [])).push(removed);
   }
   await state.saveFileTree();
@@ -75,9 +82,14 @@ async function permanentDeleteNode(state, nodeId) {
   await finalizeFileDeletion(state, docFileIds);
 }
 
-export async function emptyTrash(state) {
-  const { AppState } = await import("./state.js");
-  const trash = findNode(state.fileTree, AppState.TRASH_ID);
+export async function emptyTrash(state, deskId) {
+  // With desks on, callers can pass a specific deskId to empty just
+  // that desk's trash. Default empties the active desk's trash (or
+  // the global trash when desks are off).
+  const trashId = deskId
+    ? `__trash__:${deskId}`
+    : state.getTrashId();
+  const trash = findNode(state.fileTree, trashId);
   if (!trash?.children?.length) return;
   const docFileIds = [];
   const imageFileIds = [];

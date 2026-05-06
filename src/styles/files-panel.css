@@ -273,8 +273,10 @@
   cursor: pointer;
 }
 
-/* Trash — dimmed appearance */
-.sl-item[data-id="__trash__"] {
+/* Trash — dimmed appearance. Match the global Trash plus any per-desk
+   Trash whose data-id is `__trash__:<deskId>`. */
+.sl-item[data-id="__trash__"],
+.sl-item[data-id^="__trash__:"] {
   opacity: 0.5;
 }
 
@@ -286,10 +288,10 @@
    consecutive doc icons to signal the joined-document context; notebook
    rows in a project paint at 50 % opacity so the supplementary block
    reads as visually subordinate without an extra rule between them. */
-.sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"] {
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"] {
   position: relative;
 }
-.sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
   /* I-beam connector linking two consecutive doc icons: a 1 px central
      stem with 5 px horizontal feet flush against the bottom edge of the
      upper icon and the top edge of the lower one. The shape is painted
@@ -311,7 +313,7 @@
   pointer-events: none;
 }
 
-.sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row {
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row {
   opacity: 0.5;
 }
 

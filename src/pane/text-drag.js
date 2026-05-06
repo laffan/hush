@@ -542,7 +542,7 @@ async function saveDataUrlAsImageNode(state, rawName, dataUrl) {
       finalName = saved.filename;
     } catch (e) { console.error("save_image failed:", e); return null; }
   }
-  const images = findNode(state.fileTree, AppState.IMAGES_ID);
+  const images = findNode(state.fileTree, state.getImagesId());
   if (images) {
     const already = (images.children || []).some((c) => c.type === "image" && c.fileId === finalName);
     if (!already) {

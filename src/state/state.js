@@ -8,6 +8,7 @@ import { createDefaultSettings } from "./state-defaults.js";
 import * as _modes from "./state-modes.js";
 import * as _snapshots from "./state-snapshots.js";
 import * as _naming from "./state-naming.js";
+import * as _desks from "./state-desks.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -308,27 +309,33 @@ export class AppState {
   createManualSnapshot() { return _snapshots.createManualSnapshot(this); }
 
   // ===== Special Nodes =====
+  // Legacy global ids (used when `useDesks` is false). Per-desk
+  // namespaced ids are produced by `state-desks.js#specialNodeId`.
 
   static INBOX_ID = "__inbox__";
   static IMAGES_ID = "__images__";
   static TRASH_ID = "__trash__";
 
+  /** Resolve the special-node id for the active context. With desks
+   *  off, returns the legacy id; with desks on, the active desk's
+   *  namespaced id. */
+  getInboxId() { return _desks.activeSpecialId(this, AppState.INBOX_ID); }
+  getImagesId() { return _desks.activeSpecialId(this, AppState.IMAGES_ID); }
+  getTrashId() { return _desks.activeSpecialId(this, AppState.TRASH_ID); }
+  isSpecialNodeId(id) { return _desks.isSpecialNodeId(id); }
+
   ensureSpecialNodes() {
-    const t = this.fileTree;
-    if (!t.some(n => n.id === AppState.INBOX_ID)) t.unshift({ id: AppState.INBOX_ID, type: "project", name: "Inbox", children: [], flagged: false });
-    if (!t.some(n => n.id === AppState.IMAGES_ID)) t.push({ id: AppState.IMAGES_ID, type: "folder", name: "Images", children: [], flagged: false });
-    if (!t.some(n => n.id === AppState.TRASH_ID)) t.push({ id: AppState.TRASH_ID, type: "folder", name: "Trash", children: [], flagged: false });
-    // Enforce ordering: Inbox first, Images then Trash pinned to the tail.
-    const moveTo = (id, idx) => { const i = t.findIndex(n => n.id === id); if (i >= 0 && i !== idx) { const [n] = t.splice(i, 1); t.splice(idx, 0, n); } };
-    moveTo(AppState.INBOX_ID, 0);
-    moveTo(AppState.TRASH_ID, t.length - 1);
-    moveTo(AppState.IMAGES_ID, t.length - 2);
+    if (this.settings?.useDesks) { _desks.ensureDesksTreeSpecials(this, this.fileTree); return; }
+    _desks.ensureGlobalTreeSpecials(this.fileTree);
   }
 
+  /** True if `nodeId` lives inside any Trash folder. */
   isInTrash(nodeId) {
-    const trash = findNode(this.fileTree, AppState.TRASH_ID);
-    if (!trash || !trash.children) return false;
-    return !!findNode(trash.children, nodeId);
+    for (const trashId of _desks.allSpecialOfKind(this, AppState.TRASH_ID)) {
+      const trash = findNode(this.fileTree, trashId);
+      if (trash && trash.children && findNode(trash.children, nodeId)) return true;
+    }
+    return false;
   }
 
   // ===== File Tree Operations =====
@@ -382,7 +389,7 @@ export class AppState {
   async createNotebook(name, parentId = null, opts = {}) {
     const openImmediately = opts.openImmediately !== false;
     if (openImmediately && this.dirty) await this.saveCurrentFile();
-    const targetParent = parentId || AppState.INBOX_ID;
+    const targetParent = parentId || this.getInboxId();
     if (IS_TAURI) {
       try {
         const result = await tauriInvoke("create_notebook", { name, parentId: targetParent });
@@ -484,8 +491,8 @@ export class AppState {
       this.currentNotebookFileId = null;
     }
     if (openImmediately) this.currentLocalSync = null;
-    // Default new files go into the Inbox
-    const targetParent = parentId || AppState.INBOX_ID;
+    // Default new files go into the Inbox (active desk's Inbox when desks on)
+    const targetParent = parentId || this.getInboxId();
     let fileId;
     if (IS_TAURI) {
       try { const file = await tauriInvoke("create_file"); fileId = file.id; this.files = await tauriInvoke("list_files"); }
@@ -581,11 +588,15 @@ export class AppState {
 
   // ===== Desktop + Sync Operations (delegated to sibling modules) =====
   async setDesktop(fileId) { const m = await import("./state-desktop.js"); return m.setDesktop(this, fileId); }
-  async toggleMinimap() {
-    const next = !this.settings?.minimapVisible;
-    await this.updateSettings({ minimapVisible: next });
-    this.emit("minimap-visibility-changed", next);
-  }
+  // Desks (delegated to state-desks.js)
+  enableDesks(name) { return _desks.enableDesks(this, name); }
+  disableDesks() { return _desks.disableDesks(this); }
+  createDesk(name) { return _desks.createDesk(this, name); }
+  renameDesk(id, name) { return _desks.renameDesk(this, id, name); }
+  deleteDesk(id) { return _desks.deleteDesk(this, id); }
+  setActiveDesk(id) { return _desks.setActiveDesk(this, id); }
+  getActiveDesk() { return _desks.getActiveDesk(this); }
+  async toggleMinimap() { const n = !this.settings?.minimapVisible; await this.updateSettings({ minimapVisible: n }); this.emit("minimap-visibility-changed", n); }
   async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
   async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }

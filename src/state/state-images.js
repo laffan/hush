@@ -104,7 +104,7 @@ export async function createImageFromDataUrl(state, dataUrl, requestedName) {
   }
   dataUrlCache.set(finalName, dataUrl);
 
-  const images = findNode(state.fileTree, AppState.IMAGES_ID);
+  const images = findNode(state.fileTree, state.getImagesId());
   let isNew = false;
   if (images) {
     const already = (images.children || []).some((c) => c.type === "image" && c.fileId === finalName);
@@ -343,7 +343,7 @@ export function isLocalImageRef(state, url, context) {
 export function findImageNode(state, filename) {
   function walk(nodes) {
     for (const n of nodes || []) {
-      if (n.id === "__trash__") continue;
+      if (n.id === "__trash__" || n.id?.startsWith("__trash__:")) continue;
       if (n.type === "image" && n.fileId === filename) return n;
       const r = walk(n.children);
       if (r) return r;

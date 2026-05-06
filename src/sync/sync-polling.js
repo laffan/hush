@@ -325,11 +325,11 @@ function insertDocumentNode(state, relativePath, fileId, isNotebook, name) {
   for (const dirName of parts) {
     if (!dirName) continue;
     let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
-      || (dirName === "Inbox" && current.find(n => n.id === "__inbox__"))
-      || (dirName === "Trash" && current.find(n => n.id === "__trash__"));
+      || (dirName === "Inbox" && current.find(n => n.id === "__inbox__" || n.id?.startsWith("__inbox__:")))
+      || (dirName === "Trash" && current.find(n => n.id === "__trash__" || n.id?.startsWith("__trash__:")));
     if (!folder) {
       folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
-      const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
+      const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
       if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
       else current.push(folder);
     }
@@ -337,7 +337,7 @@ function insertDocumentNode(state, relativePath, fileId, isNotebook, name) {
     current = folder.children;
   }
   if (current.some(n => n.fileId === fileId)) return;
-  const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
+  const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
   const node = {
     id: crypto.randomUUID(),
     type: isNotebook ? "notebook" : "document",

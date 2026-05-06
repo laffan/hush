@@ -258,14 +258,15 @@ function collectFileLeaves(fileTree) {
   const out = [];
   function walk(nodes) {
     for (const n of nodes) {
-      if (n.id === "__trash__" || n.id === "__images__") continue;
+      if (n.id === "__trash__" || n.id === "__images__"
+          || n.id?.startsWith("__trash__:") || n.id?.startsWith("__images__:")) continue;
       if ((n.type === "document" || n.type === "notebook") && n.fileId) {
         out.push({ id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId });
       }
       // Inbox is internally typed as a project but functions as a
       // folder — skip the project entry but still recurse so docs that
       // live inside Inbox surface in the picker.
-      if (n.type === "project" && n.id !== "__inbox__") {
+      if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
         out.push({ id: n.id, name: n.name || "Untitled", type: "project", fileId: n.id });
       }
       if (n.children?.length) walk(n.children);

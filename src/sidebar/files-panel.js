@@ -6,7 +6,7 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren } from "../state/tree-helpers.js";
+import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
@@ -19,10 +19,21 @@ let flaggedContainerEl = null;
 let storedHidePanel = null;
 let storedState = null;
 
+// Special-node detection helpers. With desks on, ids are `__inbox__:<deskId>`
+// etc.; with desks off, the bare strings. `allSpecialIds(state, kind)`
+// returns every id of `kind` (global + per-desk) for collapsed-state
+// defaults across all desks.
+const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
+const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
+const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
+const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isTrashId(id);
+const allSpecialIds = (state, kind) =>
+  state.settings?.useDesks ? [kind, ...(state.settings.desks || []).map(d => `${kind}:${d.id}`)] : [kind];
+
 function getIcon(item) {
-  if (item.id === AppState.INBOX_ID) return typeIcons.inbox;
-  if (item.id === AppState.IMAGES_ID) return typeIcons.images;
-  if (item.id === AppState.TRASH_ID) return typeIcons.trash;
+  if (isInboxId(item.id)) return typeIcons.inbox;
+  if (isImagesId(item.id)) return typeIcons.images;
+  if (isTrashId(item.id)) return typeIcons.trash;
   // Individual image nodes render without an icon so the sidebar stays
   // readable — hovering the row is the primary affordance anyway.
   if (item.type === "image") return "";
@@ -53,7 +64,7 @@ function windowBadgesHtml(item, state) {
 
 // Hover action buttons — no rename for untitled docs or special nodes, no flag in trash
 function actionButtons(nodeId, nodeType, inTrash, item) {
-  if (nodeId === AppState.TRASH_ID) {
+  if (isTrashId(nodeId)) {
     return `<span class="tree-actions" data-node-id="${nodeId}">
       <button data-tree-action="empty-trash" class="tree-action-text" data-tooltip="Empty Trash">Empty</button>
     </span>`;
@@ -62,7 +73,7 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
   if (item?.syncFolderId && item.type === "folder") {
     return "";
   }
-  const isSpecial = nodeId === AppState.INBOX_ID || nodeId === AppState.IMAGES_ID;
+  const isSpecial = isInboxId(nodeId) || isImagesId(nodeId);
   const isDoc = nodeType === "document";
   const isImage = nodeType === "image";
   // Docs auto-derive their name from first line while still "Untitled".
@@ -153,19 +164,24 @@ export function createFilesPanel(container, state, hidePanel) {
     getId: (item) => item.id,
     getChildren: (item) => item.children || [],
     setChildren: (item, children) => { item.children = children; },
-    canNest: (item) => (item.type === "folder" || item.type === "project") && item.id !== AppState.IMAGES_ID,
+    canNest: (item) => (item.type === "folder" || item.type === "project" || item.type === "desk") && !isImagesId(item.id),
     canDrop: (draggedItem, targetItem) => {
       // Images must stay inside the Images folder — root-level drops
       // (targetItem === null) are rejected for them too.
       if (draggedItem.type === "image") {
-        return !!targetItem && targetItem.id === AppState.IMAGES_ID;
+        return !!targetItem && isImagesId(targetItem.id);
       }
+      // Desks can't be nested inside anything; their children move
+      // freely between folders/projects within a desk.
+      if (draggedItem.type === "desk") return targetItem === null;
       if (targetItem === null) {
-        // Root-level drop — the files panel accepts every non-image node.
-        return true;
+        // Root-level drop is only meaningful when desks are off; with
+        // desks on, every node belongs to a desk subtree.
+        return !state.settings?.useDesks;
       }
-      if (targetItem.id === AppState.IMAGES_ID) return draggedItem.type === "image";
+      if (isImagesId(targetItem.id)) return draggedItem.type === "image";
       if (targetItem.type === "folder") return true;
+      if (targetItem.type === "desk") return ["document", "notebook", "folder", "project"].includes(draggedItem.type);
       // Projects accept docs (joined into the editor buffer), notebooks
       // (the supplementary sidebar block under the dashed line), and
       // nested projects.
@@ -173,7 +189,8 @@ export function createFilesPanel(container, state, hidePanel) {
       return false;
     },
     canDrag: (item) => {
-      return item.id !== AppState.INBOX_ID && item.id !== AppState.IMAGES_ID && item.id !== AppState.TRASH_ID;
+      // Special nodes and desk containers themselves can't be dragged.
+      return !isAnySpecialId(item.id) && item.type !== "desk";
     },
     enableKeyboard: false,
     dragStartDelay: 180,
@@ -195,7 +212,7 @@ export function createFilesPanel(container, state, hidePanel) {
       // Clicking anywhere on a folder-like row toggles its collapsed state.
       // This applies to Inbox, Images, Trash, and any user-created folder.
       // User projects still open into project view.
-      const isFolderLike = item.type === "folder" || item.id === AppState.INBOX_ID;
+      const isFolderLike = item.type === "folder" || isInboxId(item.id) || item.type === "desk";
       if (isFolderLike) {
         if (sortableInstance) sortableInstance.toggle(item.id);
         return;
@@ -240,14 +257,18 @@ export function createFilesPanel(container, state, hidePanel) {
     },
   });
 
-  // Ensure Inbox is expanded by default
-  if (sortableInstance.state.collapsedIds.has(AppState.INBOX_ID)) {
-    sortableInstance.state.collapsedIds.delete(AppState.INBOX_ID);
+  // Ensure each Inbox is expanded by default (one global when desks
+  // are off, one per desk when on).
+  for (const id of allSpecialIds(state, AppState.INBOX_ID)) {
+    if (sortableInstance.state.collapsedIds.has(id)) {
+      sortableInstance.state.collapsedIds.delete(id);
+    }
   }
 
   // Trash and Images stay collapsed unless the user explicitly opens them
   // (mirroring each other — both are "drawer" special nodes at the tail).
-  [AppState.TRASH_ID, AppState.IMAGES_ID].forEach(id => sortableInstance.state.collapsedIds.add(id));
+  for (const id of allSpecialIds(state, AppState.TRASH_ID)) sortableInstance.state.collapsedIds.add(id);
+  for (const id of allSpecialIds(state, AppState.IMAGES_ID)) sortableInstance.state.collapsedIds.add(id);
   sortableInstance.render();
 
   // Render the virtual Flagged folder
@@ -471,31 +492,6 @@ function revealAndOpen(item, state) {
   }
 }
 
-// ===== Tree Helpers =====
-
-function enforceSpecialPositions(data) {
-  const inboxIdx = data.findIndex(n => n.id === AppState.INBOX_ID);
-  if (inboxIdx > 0) {
-    const [inbox] = data.splice(inboxIdx, 1);
-    data.unshift(inbox);
-  }
-  const trashIdx = data.findIndex(n => n.id === AppState.TRASH_ID);
-  if (trashIdx >= 0 && trashIdx < data.length - 1) {
-    const [trash] = data.splice(trashIdx, 1);
-    data.push(trash);
-  }
-  // Images stays directly above Trash.
-  const imgIdx = data.findIndex(n => n.id === AppState.IMAGES_ID);
-  if (imgIdx >= 0) {
-    const trashAt = data.findIndex(n => n.id === AppState.TRASH_ID);
-    const target = trashAt >= 0 ? trashAt : data.length;
-    if (imgIdx !== target - 1) {
-      const [img] = data.splice(imgIdx, 1);
-      const newTrashAt = data.findIndex(n => n.id === AppState.TRASH_ID);
-      data.splice(newTrashAt >= 0 ? newTrashAt : data.length, 0, img);
-    }
-  }
-}
 
 function sortFlaggedItems(tree) {
   return tree.map(node => {
@@ -650,7 +646,7 @@ function handleDelete(nodeId, state) {
 }
 
 function handleEmptyTrash(state) {
-  const trash = findNode(state.fileTree, AppState.TRASH_ID);
+  const trash = findNode(state.fileTree, state.getTrashId());
   if (!trash?.children?.length) return;
   const items = collectAllNames(trash.children);
   const itemList = items.map(n => `  \u2022 ${n}`).join("\n");

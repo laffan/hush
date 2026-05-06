@@ -346,6 +346,24 @@ pub struct AppSettings {
     /// across restarts.
     #[serde(default)]
     pub minimap_visible: bool,
+    /// "Desks" — top-level container above all other tree nodes. When
+    /// off, the tree is flat (single Inbox/Images/Trash). When on,
+    /// top-level entries are desk nodes; each has its own namespaced
+    /// special folders. Synced across devices.
+    #[serde(default)]
+    pub use_desks: bool,
+    /// Desk list. Each entry is opaque JSON `{ id, name, createdAt }`.
+    /// Empty when `use_desks` is false.
+    #[serde(default)]
+    pub desks: Vec<serde_json::Value>,
+    /// Per-desk synced metadata, keyed by desk id. Opaque JSON so the
+    /// JS side owns the shape — typical fields: active style, desktop
+    /// fileId, persisted panes.
+    #[serde(default)]
+    pub desks_meta: serde_json::Value,
+    /// Active desk id for this device. Null when desks are off.
+    #[serde(default)]
+    pub active_desk_id: Option<String>,
 
     // Notebook shortcuts
     #[serde(default = "default_nb_select")]
@@ -617,6 +635,10 @@ impl Default for AppSettings {
             last_notebook_id: None,
             desktop_file_id: None,
             minimap_visible: false,
+            use_desks: false,
+            desks: Vec::new(),
+            desks_meta: serde_json::json!({}),
+            active_desk_id: None,
             shortcut_nb_select: default_nb_select(),
             shortcut_nb_text: default_nb_text(),
             shortcut_nb_drag_area: default_nb_drag_area(),

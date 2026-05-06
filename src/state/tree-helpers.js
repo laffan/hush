@@ -88,18 +88,62 @@ export function collectFlaggedItems(nodes) {
 }
 
 /** Strip image nodes and special subtrees from a bubbled-up descendant
- *  list but otherwise preserve the original tree structure. */
+ *  list but otherwise preserve the original tree structure. Special
+ *  ids are matched by prefix to cover per-desk namespacing
+ *  (`__images__:<deskId>`, `__trash__:<deskId>`). */
 function sanitizeDescendants(nodes) {
   const out = [];
   for (const n of nodes) {
     if (n.type === "image") continue;
-    if (n.id === "__images__" || n.id === "__trash__") continue;
+    if (isImagesOrTrashId(n.id)) continue;
     out.push({
       ...n,
       children: n.children ? sanitizeDescendants(n.children) : [],
     });
   }
   return out;
+}
+
+function isImagesOrTrashId(id) {
+  if (!id) return false;
+  return id === "__images__" || id === "__trash__"
+    || id.startsWith("__images__:") || id.startsWith("__trash__:");
+}
+
+const _isInbox = (id) => id === "__inbox__" || id?.startsWith("__inbox__:");
+const _isImages = (id) => id === "__images__" || id?.startsWith("__images__:");
+const _isTrash = (id) => id === "__trash__" || id?.startsWith("__trash__:");
+
+/** Pin Inbox to the head and Images / Trash to the tail of `arr`.
+ *  Used by the SortableList onChange handler — the user can drag any
+ *  node anywhere, and we re-establish the canonical layout afterwards. */
+export function pinSpecialsInList(arr) {
+  const inboxIdx = arr.findIndex((n) => _isInbox(n.id));
+  if (inboxIdx > 0) { const [inbox] = arr.splice(inboxIdx, 1); arr.unshift(inbox); }
+  const trashIdx = arr.findIndex((n) => _isTrash(n.id));
+  if (trashIdx >= 0 && trashIdx < arr.length - 1) {
+    const [trash] = arr.splice(trashIdx, 1);
+    arr.push(trash);
+  }
+  const imgIdx = arr.findIndex((n) => _isImages(n.id));
+  if (imgIdx >= 0) {
+    const trashAt = arr.findIndex((n) => _isTrash(n.id));
+    const target = trashAt >= 0 ? trashAt : arr.length;
+    if (imgIdx !== target - 1) {
+      const [img] = arr.splice(imgIdx, 1);
+      const newTrashAt = arr.findIndex((n) => _isTrash(n.id));
+      arr.splice(newTrashAt >= 0 ? newTrashAt : arr.length, 0, img);
+    }
+  }
+}
+
+/** Pin specials at the global tree level (desks-off mode) and within
+ *  each desk node's children (desks-on mode). */
+export function enforceSpecialPositions(tree) {
+  pinSpecialsInList(tree);
+  for (const node of tree) {
+    if (node.type === "desk" && Array.isArray(node.children)) pinSpecialsInList(node.children);
+  }
 }
 
 export function findAncestorIds(nodes, targetId, path = []) {
@@ -158,7 +202,7 @@ export function normalizeProjectChildren(nodes) {
   if (!Array.isArray(nodes)) return nodes;
   for (const n of nodes) {
     if (!n || !Array.isArray(n.children)) continue;
-    if (n.type === "project" && n.id !== "__inbox__") {
+    if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
       const docs = [], notebooks = [], rest = [];
       for (const c of n.children) {
         if (c.type === "document") docs.push(c);
@@ -182,6 +226,8 @@ export function insertNode(tree, node, parentId, findNodeFn) {
 function insertBeforeTrash(tree, node) {
   // Keep both special tail nodes (Images, Trash) below any new root-level
   // insertion by preferring the earlier of the two as the insertion point.
+  // (When desks are on, the top-level tree has no global specials — the
+  // Images/Trash live inside each desk — so this falls through to push.)
   const imagesIdx = tree.findIndex(n => n.id === "__images__");
   if (imagesIdx >= 0) { tree.splice(imagesIdx, 0, node); return; }
   const trashIdx = tree.findIndex(n => n.id === "__trash__");
