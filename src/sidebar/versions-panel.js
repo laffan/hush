@@ -13,6 +13,7 @@ let currentSnapshots = [];
 let filteredSnapshots = [];
 let searchQuery = "";
 let selectedSnapshotId = null;
+let hoveredSnapshotId = null;
 let previewOverlay = null;
 let panelContainer = null;
 let panelState = null;
@@ -24,6 +25,7 @@ let keyHandler = null;
 export function createVersionsPanel(container, state, hidePanel) {
   currentSnapshots = [];
   selectedSnapshotId = null;
+  hoveredSnapshotId = null;
   panelContainer = container;
   panelState = state;
 
@@ -135,6 +137,7 @@ async function applyFilter(container, state) {
     );
   }
   selectedSnapshotId = null;
+  hoveredSnapshotId = null;
   removePreview();
   renderSnapshotList(container, state);
 }
@@ -166,6 +169,14 @@ function renderSnapshotList(container, state) {
     li.appendChild(primary);
     li.appendChild(relative);
 
+    li.addEventListener("mouseenter", () => {
+      hoverSnapshot(snap, state);
+    });
+
+    li.addEventListener("mouseleave", () => {
+      unhoverSnapshot(state);
+    });
+
     li.addEventListener("click", () => {
       selectSnapshot(snap, container, state);
     });
@@ -179,6 +190,7 @@ function renderSnapshotList(container, state) {
 
 function selectSnapshot(snap, container, state) {
   selectedSnapshotId = snap.id;
+  hoveredSnapshotId = null;
 
   // Update active state in list
   const items = container.querySelectorAll(".versions-list li");
@@ -186,10 +198,30 @@ function selectSnapshot(snap, container, state) {
     li.classList.toggle("active", li.dataset.snapshotId == snap.id);
   });
 
-  showPreview(snap, state);
+  showPreview(snap, state, true);
 }
 
-function showPreview(snap, state) {
+function hoverSnapshot(snap, state) {
+  if (snap.id === selectedSnapshotId) return;
+  hoveredSnapshotId = snap.id;
+  showPreview(snap, state, false);
+}
+
+function unhoverSnapshot(state) {
+  if (hoveredSnapshotId === null) return;
+  hoveredSnapshotId = null;
+
+  if (selectedSnapshotId !== null) {
+    const selected = filteredSnapshots.find((s) => s.id === selectedSnapshotId);
+    if (selected) {
+      showPreview(selected, state, true);
+      return;
+    }
+  }
+  removePreview();
+}
+
+function showPreview(snap, state, committed) {
   removePreview();
 
   previewOverlay = document.createElement("div");
@@ -214,19 +246,22 @@ function showPreview(snap, state) {
 
   previewOverlay.appendChild(previewContainer);
 
-  // Restore bar
-  const restoreBar = document.createElement("div");
-  restoreBar.className = "version-restore-bar";
+  if (committed) {
+    const restoreBar = document.createElement("div");
+    restoreBar.className = "version-restore-bar";
 
-  const restoreBtn = document.createElement("button");
-  restoreBtn.className = "version-restore-btn";
-  restoreBtn.textContent = `Restore current with ${formatTimestamp(snap.createdAt)} Snapshot`;
-  restoreBtn.addEventListener("click", () => {
-    restoreSnapshot(snap, state);
-  });
+    const restoreBtn = document.createElement("button");
+    restoreBtn.className = "version-restore-btn";
+    restoreBtn.textContent = `Restore current with ${formatTimestamp(snap.createdAt)} Snapshot`;
+    restoreBtn.addEventListener("click", () => {
+      restoreSnapshot(snap, state);
+    });
 
-  restoreBar.appendChild(restoreBtn);
-  previewOverlay.appendChild(restoreBar);
+    restoreBar.appendChild(restoreBtn);
+    previewOverlay.appendChild(restoreBar);
+  } else {
+    previewContainer.style.bottom = "0";
+  }
 
   document.body.appendChild(previewOverlay);
 }
@@ -319,6 +354,7 @@ export function cleanupVersionsPanel() {
   filteredSnapshots = [];
   searchQuery = "";
   selectedSnapshotId = null;
+  hoveredSnapshotId = null;
   panelContainer = null;
   panelState = null;
 }
