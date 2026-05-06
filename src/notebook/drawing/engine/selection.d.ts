@@ -21,6 +21,7 @@ export function createSelectionEngine(opts: {
   setBboxClickable(enabled: boolean): void;
   setChromeHidden(hidden: boolean): void;
   setChromeInteractive(enabled: boolean): void;
+  setEventActive(active: boolean): void;
   beginExternalDrag(): void;
   endExternalDrag(): void;
   refreshBBox(): void;

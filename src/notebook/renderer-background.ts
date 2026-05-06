@@ -32,35 +32,28 @@ export function drawBackground(ctx: CanvasRenderingContext2D, camera: Camera, w:
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
   } else if (pattern === "isometric") {
-    // Isometric grid: two diagonal sets of lines at ±30° plus a vertical
-    // set, forming the classic 60° rhombic tiling. Spacing controls the
-    // horizontal step between adjacent diagonals.
+    // Isometric grid: two sets of diagonals at ±30° from horizontal,
+    // anchored to a horizontal step. The cross-cutting vertical line
+    // is intentionally absent — the diagonals alone read as classic
+    // iso paper.
     ctx.strokeStyle = color;
     ctx.lineWidth = 0.5;
     const tan30 = Math.tan(Math.PI / 6); // ≈ 0.5774
-    // Horizontal step between parallel diagonals — measured along x at y=0.
-    const stepX = scaledSize;
-    // The diagonals have slope ±tan30, so a y-shift of h moves x by h*tan30.
-    // Pick a starting x range wide enough that lines cover the whole canvas.
-    const slack = h * tan30;
-    const startX = Math.floor((-slack + (camera.x % stepX)) / stepX) * stepX - (camera.x % stepX);
-    for (let x = startX; x < w + slack; x += stepX) {
-      // line going down-right (positive slope when y increases downward)
+    // Vertical step between parallel diagonals — measured along y at x=0.
+    // Lines slope at ±tan30 so an x-shift of w moves y by w * tan30.
+    const stepY = scaledSize;
+    const slack = w * tan30;
+    const startY = Math.floor((-slack + (camera.y % stepY)) / stepY) * stepY - (camera.y % stepY);
+    for (let y = startY; y < h + slack; y += stepY) {
+      // line going right and down (positive slope, y increases as x grows)
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x + h * tan30, h);
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y + w * tan30);
       ctx.stroke();
-      // line going down-left
+      // line going right and up (negative slope)
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x - h * tan30, h);
-      ctx.stroke();
-    }
-    // Vertical lines at the same horizontal step align the rhombi into hexagons.
-    for (let x = offsetX; x < w; x += stepX) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y - w * tan30);
       ctx.stroke();
     }
   } else {

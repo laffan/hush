@@ -609,12 +609,12 @@ export function createDrawingLayer({
 
   function setTool(tool: EngineTool): void {
     // Engine's setTool handles the draw/erase/slice/select branch for
-    // pointer capture. Selection-engine activation is orthogonal —
-    // enable it only while select is the sub-tool so lasso + bbox
-    // overlays don't intercept clicks in the other sub-tools.
+    // pointer capture. Toggle the selection engine's event-capture
+    // flag without clearing its selection — `deactivate()` would call
+    // clearSelection(), which collides with the bridge that's trying
+    // to keep the user's selection visible across brush-slot taps.
     strokeEngine.setTool(tool);
-    if (tool === "select") selectionEngine.activate();
-    else selectionEngine.deactivate();
+    selectionEngine.setEventActive(tool === "select");
   }
 
   function applySlot(slot: DrawingSlot): void {

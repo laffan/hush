@@ -56,7 +56,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
  *  the box. */
 const DEFAULT_BRUSH_SLOTS: DrawingSlot[] = [
   { brushId: "brush-1", color: "auto",    size: 4,  streamline: 0.35, spacing: 0.12, mode: "normal" },
-  { brushId: "brush-2", color: "#ef4444", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-2", color: "heading", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-3", color: "#3b82f6", size: 25, streamline: 0.35, spacing: 0.12, mode: "normal" },
 ];
 

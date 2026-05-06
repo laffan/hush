@@ -619,6 +619,20 @@ export function createSelectionEngine({
     setChromeInteractive(enabled) {
       bboxGroup.style.pointerEvents = enabled ? '' : 'none';
     },
+    // Softer counterpart to activate/deactivate: toggles whether the
+    // engine listens for pointer events without touching the
+    // selection set or bbox. Used by drawing-layer.setTool to disable
+    // lasso/bbox event capture when the user picks a non-select
+    // sub-tool, while leaving any retroactive selection alive so the
+    // brush flyout can keep restyling it.
+    setEventActive(active) {
+      state.active = !!active;
+      if (!active) {
+        state.mode = 'idle';
+        state.dragPointerId = null;
+        clearLasso();
+      }
+    },
     // External-drag bridge: lets Hush's drag pipeline (which mutates
     // state.shapes per pointermove for non-stroke selection chrome)
     // hide the engine's bbox + handles for the duration. We hide

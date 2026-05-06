@@ -374,16 +374,19 @@ function buildLink(ref, detailEl) {
   const pageNum = isNaN(page) || page <= 0 ? 1 : page;
   let text;
   if (format === "citekey") {
-    // Pandoc citation syntax — leave it bare so processors recognise it.
-    // Page suffix follows the `[@key, p. N]` convention when the user
-    // asked for a specific page.
+    // Pandoc-style citation key as a clickable link, so the user gets
+    // both the @key text Pandoc / academic processors recognise AND
+    // the Zotero deep link they can ⌘-click to jump back to.
     const cite = ref.citekey || ref.key;
-    text = isPdf && pageNum > 1 ? `[@${cite}, p. ${pageNum}]` : `@${cite}`;
+    text = `[@${cite}](${url})`;
   } else if (format === "title-author") {
-    const label = ref.firstAuthor
-      ? `${ref.title} (${ref.firstAuthor})`
-      : ref.title;
-    text = `[${label}](${url})`;
+    // Wrap just the title in the link so the author appears as adjacent
+    // plain text — keeps the link decoration unambiguous and avoids
+    // nesting parens inside the link text (which read awkwardly when
+    // the editor collapses the URL portion).
+    text = ref.firstAuthor
+      ? `[${ref.title}](${url}) (${ref.firstAuthor})`
+      : `[${ref.title}](${url})`;
   } else {
     text = `[${ref.title}](${url})`;
   }
