@@ -307,7 +307,6 @@
     linear-gradient(currentColor, currentColor) top    / 100% 1px no-repeat,
     linear-gradient(currentColor, currentColor) bottom / 100% 1px no-repeat,
     linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
-  opacity: 0.2;
   pointer-events: none;
 }
 
