@@ -709,7 +709,8 @@ button.desk-switcher-row.desk-switcher-add {
   border: none;
   cursor: pointer;
   color: inherit;
-  font: inherit;
+  font-family: inherit;
+  font-size: 13px;
   text-align: left;
   border-top: 1px solid var(--panel-border, rgba(128, 128, 128, 0.2));
   margin-top: 2px;
