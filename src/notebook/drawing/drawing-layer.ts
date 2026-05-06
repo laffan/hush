@@ -455,10 +455,19 @@ export function createDrawingLayer({
   // ---------- public API ----------
 
   function setInputEnabled(enabled: boolean): void {
+    // The SVG is nested inside a CSS-transformed wrapper that defaults
+    // to `pointer-events: none` so empty drawing areas let clicks fall
+    // through to the notebook canvas below. On WebKit / iPadOS, that
+    // `none` on the wrapper also stops hit-testing from descending into
+    // the SVG even when the SVG itself is `auto` — the pencil events
+    // landed on the underlying notebook canvas instead of the SVG, so
+    // the engine never saw them. Flip both in lockstep: wrapper `auto`
+    // + SVG `auto` while drawing, both `none` otherwise.
     svg.style.pointerEvents = enabled ? "auto" : "none";
+    wrapper.style.pointerEvents = enabled ? "auto" : "none";
     const w = window as unknown as { __hushDebug?: (s: string) => void };
     if (typeof w.__hushDebug === "function") {
-      w.__hushDebug(`drawing-layer setInputEnabled=${enabled} svg.pe=${svg.style.pointerEvents}`);
+      w.__hushDebug(`drawing-layer setInputEnabled=${enabled} svg.pe=${svg.style.pointerEvents} wrap.pe=${wrapper.style.pointerEvents}`);
     }
   }
 
