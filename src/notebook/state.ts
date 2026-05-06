@@ -55,7 +55,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
  *  red and blue so a fresh notebook offers a useful palette out of
  *  the box. */
 const DEFAULT_BRUSH_SLOTS: DrawingSlot[] = [
-  { brushId: "brush-1", color: "auto",    size: 4,  streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-1", color: "auto",    size: 3,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-2", color: "heading", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-3", color: "#3b82f6", size: 25, streamline: 0.35, spacing: 0.12, mode: "normal" },
 ];
@@ -161,7 +161,7 @@ export class DrawingState extends EventTarget {
   themeId = "default";
   backgroundPattern: BackgroundPattern = "dot-grid";
   gridSpacing = 25;
-  gridOpacity = 0.15;
+  gridOpacity = 0.40;
   fontFamily = "Inter";
   /** When the active Hush style has a `bg` override, this carries that
    *  hex into the canvas so the notebook paints with the user-chosen

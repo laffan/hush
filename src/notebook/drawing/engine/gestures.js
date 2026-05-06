@@ -12,13 +12,20 @@
  *  12. Two-finger pinch fires onPinchStart / onPinchMove / onPinchEnd
  *      with client-space midpoint + spread distance. Runs alongside
  *      pan so the user can pan and zoom in the same gesture.
- *  13. Followup gating fires on any small second contact (palms still
- *      filtered via MAX_CONTACT_SIZE) so 2-finger pan / pinch can
- *      engage while the user is actively drawing — cancelling the
- *      in-flight stroke on landing, since the gesture is the more
- *      recent intent. SIMULTANEITY_MS bumped from 180→600 ms because
- *      natural fast 2-finger taps on iPad routinely have ~250 ms
- *      inter-finger lag.
+ *  13. Followup gating fires on any second contact (palms are filtered
+ *      out before the active map even sees them, see below) so
+ *      2-finger pan / pinch can engage while the user is actively
+ *      drawing — cancelling the in-flight stroke on landing, since the
+ *      gesture is the more recent intent. SIMULTANEITY_MS bumped from
+ *      180→600 ms because natural fast 2-finger taps on iPad routinely
+ *      have ~250 ms inter-finger lag.
+ *  17. Palms (`width|height > MAX_CONTACT_SIZE`) are NOT added to the
+ *      active map. iPad palm rejection sometimes drops the pointerup
+ *      for a contact the system has already won, leaving a phantom
+ *      entry that broke `active.size === 0` resets and inflated
+ *      gesture-detection counts. Plus a stale-entry sweep on every
+ *      pointerdown drops any contact older than STALE_ENTRY_MS as a
+ *      backstop against missed lifts.
  * ============================================================
  *
  * gestures.js — two-/three-finger tap recogniser + two-finger pan.
@@ -69,6 +76,12 @@ const MAX_PAIR_DIST = 320;         // max distance (rejects spread palm contacts
 // a fingertip vs ~20–40 on the phone. 90 comfortably accepts an iPad
 // fingertip while still rejecting a palm (typically 140+).
 const MAX_CONTACT_SIZE = 90;
+// Stale-entry cutoff: any tracked contact older than this on a fresh
+// pointerdown is treated as orphaned (palm rejection sometimes drops
+// the corresponding pointerup/cancel) and pruned before the new
+// contact is processed. 5 s is well past any legitimate gesture
+// window — even a slow 3-finger redo lands within ~1 s.
+const STALE_ENTRY_MS = 5000;
 
 export function createGestures({
   getRect,
@@ -198,6 +211,36 @@ export function createGestures({
     const p = clientToLocal(e);
     const big = (e.width || 0) > MAX_CONTACT_SIZE || (e.height || 0) > MAX_CONTACT_SIZE;
 
+    // Prune any orphaned entries before deciding what kind of contact
+    // this is. iPad palm rejection occasionally drops the pointerup /
+    // pointercancel for a touch the system has already "won", which
+    // strands its record in `active` and breaks every gesture that
+    // depends on `active.size === 0` to reset state. After 5 s without
+    // a follow-up event the contact is definitely stale.
+    if (active.size > 0) {
+      for (const [pid, rec] of active) {
+        if (t - rec.down > STALE_ENTRY_MS) active.delete(pid);
+      }
+      if (active.size === 0) {
+        // Whole map was stale — fall through to the fresh-burst reset
+        // below as if nothing had been tracked.
+        gestureMode = false;
+        panning = false;
+        panStartMid = null;
+        pinching = false;
+        pinchStartDist = 0;
+        endedTaps.length = 0;
+      }
+    }
+
+    // Palms (`big`) are intentionally excluded from `active` entirely.
+    // Tracking them here would (a) inflate `active.size` so a subsequent
+    // single-finger pan would look like a 2-finger gesture, and (b)
+    // strand state when the system cancels the palm without firing
+    // pointerup. They still flow through to stroke.js's bubble-phase
+    // listener, where its own MAX_CONTACT_SIZE check rejects them.
+    if (big) return;
+
     if (active.size === 0) {
       windowStart = t;
       gestureMode = false;
@@ -210,12 +253,11 @@ export function createGestures({
     // actively drawing; this version drops that to enable pan-during-
     // draw, accepting that a deliberate second finger cancels the
     // in-flight stroke (the user's gesture is the more recent intent).
-    // Palm contacts (`big`) still don't qualify, so a brushing palm
-    // doesn't kill the stroke. We deliberately don't gate on
-    // SIMULTANEITY_MS here — that window covers the *evaluation*
-    // step (see evaluateBurst). Plenty of users tap with 400–500 ms
-    // of inter-finger lag; a strict pre-gate dropped those.
-    const isFollowup = active.size >= 1 && !big;
+    // We deliberately don't gate on SIMULTANEITY_MS here — that window
+    // covers the *evaluation* step (see evaluateBurst). Plenty of
+    // users tap with 400–500 ms of inter-finger lag; a strict pre-gate
+    // dropped those.
+    const isFollowup = active.size >= 1;
 
     active.set(e.pointerId, {
       id: e.pointerId,
@@ -228,7 +270,7 @@ export function createGestures({
       down: t,
       up: 0,
       moved2: 0,
-      tooBig: big,
+      tooBig: false,
     });
 
     // Second+ contact while finger #1 is stable → we're in a gesture.

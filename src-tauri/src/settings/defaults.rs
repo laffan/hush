@@ -278,7 +278,7 @@ pub fn default_notebook_shelf_width() -> u32 {
     280
 }
 pub fn default_notebook_grid_opacity() -> f64 {
-    0.15
+    0.40
 }
 pub fn default_notebook_font_family() -> String {
     "Inter".to_string()

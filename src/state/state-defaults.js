@@ -192,7 +192,7 @@ export function createDefaultSettings() {
     notebookThemeId: "default",
     notebookBackgroundPattern: "dot-grid",
     notebookGridSpacing: 25,
-    notebookGridOpacity: 0.15,
+    notebookGridOpacity: 0.40,
     notebookFontFamily: "Inter",
     notebookFontSize: 18,
     lastNotebookId: null,
