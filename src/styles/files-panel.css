@@ -290,18 +290,21 @@
   position: relative;
 }
 .sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
-  /* The line spans the full gap between two consecutive doc icons,
-     touching the bottom edge of the upper icon and the top edge of the
-     lower one. With the default row height (~18 px) the gap is 15 px,
-     so top:-8/h:15 lands flush on either side. */
+  /* Soft 5 px slab spanning the full gap between two consecutive doc
+     icons, centered on the icon's vertical axis (translateX(-50%)
+     anchors the slab on the icon center at left:30px). With the default
+     row height (~18 px) the gap is 15 px, so top:-8/h:15 sits flush on
+     either side. The 0.5 opacity keeps the slab from competing with the
+     icons themselves. */
   content: "";
   position: absolute;
   left: 30px;
+  transform: translateX(-50%);
   top: -8px;
-  width: 1px;
+  width: 5px;
   height: 15px;
   background: currentColor;
-  opacity: 0.45;
+  opacity: 0.5;
   pointer-events: none;
 }
 
