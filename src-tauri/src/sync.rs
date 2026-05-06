@@ -679,6 +679,15 @@ impl SyncManager {
             eprintln!("sync: clear_cursor failed: {}", e);
         }
     }
+
+    /// Wipe synced_files, every cursor, and the pending-op queue.
+    /// Pairs with `FileManager::clear_all` + `ImageManager::clear_all`
+    /// for the Settings → Sync "Clear local versions" recovery.
+    pub fn clear_all(&mut self) {
+        if let Err(e) = self.db.clear_all() {
+            eprintln!("sync: clear_all failed: {}", e);
+        }
+    }
 }
 
 fn now_secs() -> i64 {

@@ -128,6 +128,19 @@ impl ImageManager {
         Ok(())
     }
 
+    /// Wipe every image on disk. Used by the "Clear local versions"
+    /// recovery in Settings → Sync. The directory itself is preserved
+    /// so the manager doesn't need re-init.
+    pub fn clear_all(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Ok(rd) = fs::read_dir(&self.images_dir) {
+            for entry in rd.flatten() {
+                let path = entry.path();
+                if path.is_file() { let _ = fs::remove_file(&path); }
+            }
+        }
+        Ok(())
+    }
+
     /// Rename an image on disk. Returns the final name used (auto-suffixed
     /// if `new_name` already exists). Returns the existing name unchanged
     /// when rename is a no-op.

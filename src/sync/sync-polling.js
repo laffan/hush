@@ -46,6 +46,51 @@ export function triggerImmediateSync() {
   if (_state) runSyncCycle(_state);
 }
 
+/** Awaitable single cycle. Used by recovery flows that need to know
+ *  when the cursor seed finishes processing before they can run a
+ *  follow-up step (e.g. re-applying `.hush/*.json` meta files only
+ *  after every doc/notebook has landed in the tree). */
+export async function runOneCycle(state) {
+  await runSyncCycle(state);
+}
+
+// ===== Progress reporting (used by the "Clear local versions" UI) =====
+
+let _progressTotal = 0;
+let _progressDone = 0;
+
+/** Begin a new progress run with `total` expected entries. Resets the
+ *  counter and emits a progress-start event. The clear-and-reseed flow
+ *  calls this once per cycle so the settings-window UI can render a
+ *  bar and update it as entries land. */
+export function progressBegin(state, total) {
+  _progressTotal = Math.max(0, total | 0);
+  _progressDone = 0;
+  _emitProgressEvent(state, "begin");
+}
+
+export function progressEnd(state) {
+  _emitProgressEvent(state, "end");
+  _progressTotal = 0;
+  _progressDone = 0;
+}
+
+function _emitProgress(state) {
+  if (_progressTotal <= 0) return;
+  _progressDone++;
+  _emitProgressEvent(state, "tick");
+}
+
+function _emitProgressEvent(state, phase) {
+  const payload = { done: _progressDone, total: _progressTotal, phase };
+  state.emit("clear-reseed-progress", payload);
+  // Also fan out via Tauri so the settings window (separate WebviewWindow)
+  // can render a progress bar.
+  if (typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
+    import("@tauri-apps/api/event").then((m) => m.emit("clear-reseed-progress", payload)).catch(() => {});
+  }
+}
+
 export function triggerFullReconcile() {
   if (!_state) return;
   runSyncCycle(_state);
@@ -92,34 +137,50 @@ async function syncDropboxCursor(state) {
   const summary = { created: [], renamed: 0, content: [], deleted: 0 };
   let treeChanged = false;
 
+  // Each handler is wrapped in its own try/catch so one failing entry
+  // (an unreadable file, a path with hostile characters, a transient
+  // 5xx) doesn't kill the rest of the cursor pass. Without this, a
+  // single bad file aborted the entire seed and left the tree partial.
   const handlers = {
     onCreated: async (ev) => {
-      const created = await applyCreated(state, ev, dbx, invoke, downloadImage);
-      if (created) {
-        treeChanged = true;
-        summary.created.push(ev.name);
-      }
+      try {
+        const created = await applyCreated(state, ev, dbx, invoke, downloadImage);
+        if (created) {
+          treeChanged = true;
+          summary.created.push(ev.name);
+        }
+      } catch (e) { console.warn("cursor: onCreated failed:", ev.relativePath, e); }
+      _emitProgress(state);
     },
     onRenamed: async (ev) => {
-      await applyRenamed(state, ev, invoke, findNodeByFileId);
-      treeChanged = true;
-      summary.renamed++;
+      try {
+        await applyRenamed(state, ev, invoke, findNodeByFileId);
+        treeChanged = true;
+        summary.renamed++;
+      } catch (e) { console.warn("cursor: onRenamed failed:", ev.newRelativePath || ev.oldRelativePath, e); }
+      _emitProgress(state);
     },
     onContentChanged: async (ev) => {
-      const node = findNodeByFileId(state.fileTree, ev.internalId);
-      const name = node?.name || ev.relativePath;
-      const applied = await applyContentChanged(state, ev, dbx, invoke);
-      if (applied) summary.content.push(name);
+      try {
+        const node = findNodeByFileId(state.fileTree, ev.internalId);
+        const name = node?.name || ev.relativePath;
+        const applied = await applyContentChanged(state, ev, dbx, invoke);
+        if (applied) summary.content.push(name);
+      } catch (e) { console.warn("cursor: onContentChanged failed:", ev.relativePath, e); }
+      _emitProgress(state);
     },
     onDeleted: async (ev) => {
-      const node = findNodeByFileId(state.fileTree, ev.internalId);
-      if (node) {
-        removeNode(state.fileTree, node.id);
-        treeChanged = true;
-        summary.deleted++;
-      }
-      await invoke("delete_sync_file", { folderPath: "__dropbox__", internalId: ev.internalId })
-        .catch(() => {});
+      try {
+        const node = findNodeByFileId(state.fileTree, ev.internalId);
+        if (node) {
+          removeNode(state.fileTree, node.id);
+          treeChanged = true;
+          summary.deleted++;
+        }
+        await invoke("delete_sync_file", { folderPath: "__dropbox__", internalId: ev.internalId })
+          .catch(() => {});
+      } catch (e) { console.warn("cursor: onDeleted failed:", ev.relativePath, e); }
+      _emitProgress(state);
     },
     onMeta: async (ev) => {
       try {

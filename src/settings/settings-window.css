@@ -745,3 +745,63 @@ html, body {
   margin-top: 3px;
   flex-shrink: 0;
 }
+
+/* Adopt-or-wrap modal — mirror of `.tree-delete-modal-*` in
+   files-panel.css so the settings window can render the same modal
+   without depending on the main window's stylesheet. */
+.tree-delete-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tree-delete-modal {
+  background: var(--panel-bg, var(--bg, #fff));
+  border: 1px solid var(--panel-border, rgba(0, 0, 0, 0.2));
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 380px;
+  width: 90%;
+  font-family: system-ui, sans-serif;
+  color: var(--fg, #222);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.tree-delete-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.tree-delete-modal-message {
+  font-size: 12px;
+  color: var(--sidebar-fg, #555);
+  white-space: pre-wrap;
+  font-family: system-ui, sans-serif;
+  margin-bottom: 16px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.tree-delete-modal-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.tree-delete-modal-btns button {
+  padding: 6px 16px;
+  border: 1px solid var(--panel-border, rgba(0, 0, 0, 0.2));
+  background: transparent;
+  color: var(--fg, #222);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+}
+.tree-delete-modal-btns button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}

@@ -489,6 +489,11 @@ async function init() {
       }
     });
 
+    await listen("clear-local-data-request", async () => {
+      try { await (await import("./sync/sync-state.js")).clearLocalAndReseed(state); }
+      catch (e) { console.error("Clear local data failed:", e); }
+    });
+
     // Listen for OAuth callback via deep-link plugin
     try {
       const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");

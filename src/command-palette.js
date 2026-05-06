@@ -264,6 +264,14 @@ function buildCommands(state) {
         const m = await import("./sidebar/send-to-desk-modal.js");
         m.openSendToDeskModal(s, id, "copy");
       } },
+    { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+      keepOpen: true,
+      hiddenIf: (s) => !s.settings?.useDesks,
+      action: async (s, p) => (await import("./state/state-desks-ops.js")).enterConvertFolderPicker(p, s, { typeIcons, fallbackIcon: icons.files }) },
+    { id: "desk-collapse", label: "Collapse desk into folder", icon: icons.files, shortcutKey: null, ctx: "shared",
+      keepOpen: true,
+      hiddenIf: (s) => !s.settings?.useDesks || (s.settings?.desks || []).length < 2,
+      action: async (s, p) => (await import("./state/state-desks-ops.js")).enterCollapseDeskPicker(p, s, { fallbackIcon: icons.files }) },
   ];
 
   return all.filter(cmd => {

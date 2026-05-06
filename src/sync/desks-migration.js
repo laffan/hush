@@ -69,7 +69,6 @@ export async function migrateSyncFromDesks(state, deskList) {
   const { enqueueRename } = await import("./op-log.js");
   const files = await getSyncedFiles();
   let moved = 0;
-  const isSingleDesk = deskList.length === 1;
 
   for (const desk of deskList) {
     const prefix = (desk.name || "Untitled desk") + "/";
@@ -78,17 +77,11 @@ export async function migrateSyncFromDesks(state, deskList) {
       if (!oldPath.startsWith(prefix)) continue;
       const rest = oldPath.slice(prefix.length);
       // Path under one of the desk's special folders → land in the
-      // matching global special. Anything else: hoist to root if this
-      // is the only desk, otherwise keep the desk prefix as a folder.
+      // matching global special (Inbox / Images / Trash). All other
+      // paths keep the desk prefix; the local unwrap turns the desk
+      // into a folder of the same name, so the Dropbox layout matches.
       const firstSegment = rest.split("/")[0];
-      let newPath;
-      if (SPECIAL_FOLDER_NAMES.has(firstSegment)) {
-        newPath = rest;
-      } else if (isSingleDesk) {
-        newPath = rest;
-      } else {
-        newPath = prefix + rest; // unchanged: stays in the (now) folder
-      }
+      const newPath = SPECIAL_FOLDER_NAMES.has(firstSegment) ? rest : oldPath;
       if (newPath === oldPath) continue;
       try {
         await enqueueRename({ internalId: f.internalId, fromPath: oldPath, toPath: newPath });

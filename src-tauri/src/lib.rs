@@ -391,6 +391,7 @@ pub fn run() {
             sync_commands::get_dropbox_cursor,
             sync_commands::set_dropbox_cursor,
             sync_commands::clear_dropbox_cursor,
+            sync_commands::clear_local_data,
             sync_commands::find_synced_file_by_remote_id,
             sync_commands::find_synced_file_by_path,
             sync_commands::backfill_remote_id,
