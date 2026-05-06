@@ -45,9 +45,7 @@ async function init() {
   if (typeof window !== "undefined") window.__hushState__ = state;
 
   // On iOS, set html background to prevent black bars behind the webview
-  if (isIOS()) {
-    document.documentElement.classList.add("ios");
-  }
+  if (isIOS()) document.documentElement.classList.add("ios");
 
   // Apply appearance and CSS vars
   applyAppearance(state.settings.appearance || "dark");
@@ -241,8 +239,9 @@ async function init() {
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
 
-  // iOS-only on-screen Cmd button (gated by `showCmdButton` setting).
+  // iOS-only on-screen Cmd button (gated by `showCmdButton` setting); pencil bridge no-ops off-iOS.
   initCmdButton(state);
+  if (IS_TAURI) import("./notebook/pencil-bridge.js").then((m) => m.initPencilBridge?.()).catch(() => {});
 
   // Local Sync watcher — refresh the files panel when mounted folders
   // change on disk, and reload the open file if it was the one that

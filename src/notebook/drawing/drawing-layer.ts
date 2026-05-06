@@ -625,6 +625,10 @@ export function createDrawingLayer({
     strokeEngine.setLongPressMs(ms);
   }
 
+  function setPencilOnly(on: boolean): void {
+    (strokeEngine as unknown as { setPencilOnly: (b: boolean) => void }).setPencilOnly(!!on);
+  }
+
   function renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void {
     renderSwatchToCanvas(strokeEngine, themeRef, canvas, slot);
   }
@@ -664,6 +668,7 @@ export function createDrawingLayer({
     setTool,
     applySlot,
     setLassoHoldMs,
+    setPencilOnly,
     renderSwatch,
     undo,
     redo,

@@ -16,6 +16,12 @@
  *  14. Theme-tracking colour flags: `state.colorIsAuto` / `colorIsHeading`
  *      + `setColorAutoSource(source)`. Freshly-drawn strokes inherit the
  *      matching flag so theme switches can retint them.
+ *  18. Pencil-only mode: `setPencilOnly(bool)`. When enabled,
+ *      `onPointerDown` rejects every pointer whose `pointerType` is not
+ *      `"pen"` (so iPadOS finger-touches fall through to the notebook
+ *      canvas's own select / pan handling and don't seed strokes). The
+ *      tauri-plugin-pencil iOS bridge flips this on once it's loaded so
+ *      Apple Pencil is the only thing that can draw.
  *   (Deltas 4 + 5 live in selection.js + gestures.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
@@ -142,6 +148,7 @@ export function createStrokeEngine({
     longPressAnchor: null,
     longPressPointer: null,
     longPressMs: LONG_PRESS_MS_DEFAULT,  // Hush delta #11: configurable via setLongPressMs()
+    pencilOnly: false,        // Hush delta #18: when true, only pointerType="pen" can start a stroke
     previewingIds: null,      // Set<id> currently rendered to previewCanvas
     previewingTiles: null,    // tile keys currently held out of doneCanvas
   };
@@ -318,6 +325,10 @@ export function createStrokeEngine({
       const L = activeLayer();
       if (L && (L.locked || L.hidden)) return;
     }
+    // Hush delta #18: pencil-only mode rejects every non-pen contact so
+    // iPadOS finger-touches fall through to the notebook canvas's own
+    // select / pan handling. Mouse and pen still draw.
+    if (state.pencilOnly && e.pointerType !== 'pen' && e.pointerType !== 'mouse') return;
     if (e.button !== undefined && e.button !== 0) return;
     // Selection chrome (handles, bbox, lasso path) lives inside the
     // SVG with `pointer-events: auto` so it stays interactive while
@@ -628,6 +639,10 @@ export function createStrokeEngine({
       if (!Number.isFinite(n) || n <= 0) return;
       state.longPressMs = n;
     },
+    // Hush delta #18: when on, only pointerType="pen" (and mouse, for
+    // desktop) can start a stroke. Wired by the tauri-plugin-pencil
+    // iOS bridge so finger-touches don't draw on iPadOS.
+    setPencilOnly(on) { state.pencilOnly = !!on; },
     // Render a brush swatch (atlas cell 0, tinted by color) into targetCtx,
     // centered at (x, y) with the given pixel size. The caller is responsible
     // for clearing targetCtx first. `mode` governs how the thumbnail reads:

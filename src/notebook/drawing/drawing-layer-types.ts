@@ -51,6 +51,10 @@ export interface DrawingLayer {
    *  promotes into a lasso. Exposed as a user setting in the toolbar
    *  (slider 500–2000 ms). */
   setLassoHoldMs(ms: number): void;
+  /** Toggle pencil-only stroke gating. When on, only `pointerType="pen"`
+   *  (or mouse) can start a stroke; finger touches fall through to the
+   *  notebook canvas. Wired by the iOS pencil bridge. */
+  setPencilOnly(on: boolean): void;
   /** Render a swatch preview of a slot into a target canvas, using
    *  the engine's atlas. */
   renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void;

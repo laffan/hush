@@ -41,6 +41,28 @@ let lastActiveNotebook: NotesCanvas | null = null;
 export function getActiveNotebookState(): DrawingState | null {
   return lastActiveNotebook ? lastActiveNotebook.state : null;
 }
+
+/** Live registry of mounted NotesCanvas instances, used by the iOS
+ *  pencil bridge to push `pencilOnly` into every drawing layer (main
+ *  canvas + any pane snapshots) without each surface having to subscribe
+ *  individually. Module-local; populated/depopulated by the constructor
+ *  and `destroy()`. */
+const liveCanvases = new Set<NotesCanvas>();
+
+/** Module-level pencil-only flag. Default off so non-iOS platforms keep
+ *  the existing finger-as-mouse behaviour. Toggled once at startup by
+ *  `pencil-bridge.js` when the iOS plugin reports `loaded`. New canvases
+ *  read this on mount; existing canvases are updated in place by the
+ *  setter below. */
+let _pencilOnly = false;
+
+/** Apply the pencil-only flag to every mounted NotesCanvas (and future
+ *  ones). Called by the iOS pencil bridge once the native plugin is
+ *  ready. Idempotent. */
+export function setNotebookPencilOnly(on: boolean): void {
+  _pencilOnly = !!on;
+  for (const c of liveCanvases) c._applyPencilOnly(_pencilOnly);
+}
 let copyListenerAttached = false;
 
 function ensureCopyListener() {
@@ -355,8 +377,19 @@ export class NotesCanvas {
     // correct before the first state change fires.
     this._updatePatternCssVar();
 
+    // Register so the iOS pencil bridge can push `pencilOnly` across
+    // every live canvas at once.
+    liveCanvases.add(this);
+    if (_pencilOnly) this._applyPencilOnly(true);
+
     // Start render loop
     this._startRenderLoop();
+  }
+
+  /** Internal — pushed by `setNotebookPencilOnly`. Forwards to the
+   *  drawing layer so the engine drops finger touches. */
+  _applyPencilOnly(on: boolean): void {
+    if (this._drawingLayer) this._drawingLayer.setPencilOnly(on);
   }
 
   // === Public API ===
@@ -444,6 +477,7 @@ export class NotesCanvas {
     if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";
+    liveCanvases.delete(this);
     if (lastActiveNotebook === this) lastActiveNotebook = null;
     // The text-editor mirrors its active handle onto window for
     // synchronous lookups (command palette, Zotero modal). Clear it on
