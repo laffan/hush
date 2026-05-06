@@ -279,17 +279,17 @@
 }
 
 /* ===== Project children — visual cohesion cues =====
-   Inside a project, doc children render first (they feed the joined
-   editor buffer) and notebook children render below them as
-   supplementary material. A short vertical connector sits in the gap
-   between consecutive doc icons to signal the joined-document context;
-   a thin dashed rule above the first notebook breaks the supplementary
-   block off from the docs above. Both are scoped to direct children of
-   a `.sl-item[data-type="project"]` so they don't leak into folders. */
-.sl-item[data-type="project"] > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"] {
+   Inside a real user project (Inbox is typed `project` but behaves like
+   a folder, so it's excluded), doc children render first as the joined
+   editor buffer and notebook children render below as supplementary
+   material. A short vertical connector sits in the gap between
+   consecutive doc icons to signal the joined-document context; notebook
+   rows in a project paint at 50 % opacity so the supplementary block
+   reads as visually subordinate without an extra rule between them. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"] {
   position: relative;
 }
-.sl-item[data-type="project"] > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
+.sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
   content: "";
   position: absolute;
   left: 30px;
@@ -301,10 +301,8 @@
   pointer-events: none;
 }
 
-.sl-item[data-type="project"] > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="notebook"] {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px dashed rgba(128, 128, 128, 0.4);
+.sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row {
+  opacity: 0.5;
 }
 
 /* "Empty" text button on Trash hover */

@@ -145,18 +145,20 @@ export function findSyncContext(nodes, targetId) {
 }
 
 /**
- * Inside every project, push notebook children to the bottom while
+ * Inside every user project, push notebook children to the bottom while
  * preserving the user's order within each group. Documents first (they
  * feed the joined editor buffer), notebooks second (the supplementary
- * sidebar block under the dashed separator). Recurses into nested
- * containers so a project under a folder gets normalized too. Mutates
- * in place; safe to call repeatedly (idempotent).
+ * sidebar block under the dashed separator). The pinned `__inbox__`
+ * node is typed `project` for legacy reasons but behaves like a
+ * folder, so it's skipped. Recurses into nested containers so a project
+ * under a folder gets normalized too. Mutates in place; safe to call
+ * repeatedly (idempotent).
  */
 export function normalizeProjectChildren(nodes) {
   if (!Array.isArray(nodes)) return nodes;
   for (const n of nodes) {
     if (!n || !Array.isArray(n.children)) continue;
-    if (n.type === "project") {
+    if (n.type === "project" && n.id !== "__inbox__") {
       const docs = [], notebooks = [], rest = [];
       for (const c of n.children) {
         if (c.type === "document") docs.push(c);
