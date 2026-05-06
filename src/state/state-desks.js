@@ -151,6 +151,18 @@ export async function enableDesks(state, name = "Personal") {
   });
   await state.saveFileTree();
   state.emit("desks-changed");
+
+  // Migrate the Dropbox layout to match the new local tree shape.
+  // Paths get a `<deskName>/` prefix; the op-log handles the actual
+  // moves on the network side.
+  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
+    try {
+      const m = await import("../sync/desks-migration.js");
+      const r = await m.migrateSyncToDesk(state, name);
+      if (r?.moved) console.info(`desks: enqueued ${r.moved} Dropbox moves under "${name}/"`);
+    } catch (e) { console.warn("desks: sync migration (on) failed:", e); }
+    pushDesksJson(state);
+  }
 }
 
 /** Reverse the wrap. Every desk's Inbox / Images / Trash is merged
@@ -207,9 +219,28 @@ export async function disableDesks(state) {
   tree.length = 0;
   tree.push(mergedInbox, ...hoistedTopLevel, mergedImages, mergedTrash);
 
+  // Capture desk list for the sync-side migration *before* clearing it.
+  const previousDesks = (state.settings.desks || []).map((d) => ({ id: d.id, name: d.name }));
   await state.updateSettings({ useDesks: false, desks: [], activeDeskId: null, desksMeta: {} });
   await state.saveFileTree();
   state.emit("desks-changed");
+
+  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
+    try {
+      const m = await import("../sync/desks-migration.js");
+      const r = await m.migrateSyncFromDesks(state, previousDesks);
+      if (r?.moved) console.info(`desks: enqueued ${r.moved} Dropbox moves`);
+    } catch (e) { console.warn("desks: sync migration (off) failed:", e); }
+    pushDesksJson(state);
+  }
+}
+
+/** Push `.hush/desks.json` upstream so other devices learn about the
+ *  toggle / new desk list. Best-effort; logs but never throws. */
+function pushDesksJson(state) {
+  import("../sync/desks-sync.js")
+    .then((m) => m.pushDesksToDropbox(state))
+    .catch((e) => console.warn("desks: meta push failed:", e));
 }
 
 /** Add a new empty desk to the tree. Returns the new desk id. */
@@ -230,6 +261,7 @@ export async function createDesk(state, name = "Untitled desk") {
   await state.updateSettings({ desks });
   await state.saveFileTree();
   state.emit("desks-changed");
+  pushDesksJson(state);
   return id;
 }
 

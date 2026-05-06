@@ -310,6 +310,8 @@ async function getMetaDispatcher(filename) {
     case "desktop.json":
     case "desk.json": // legacy filename — applier accepts both formats
       return (await import("./desktop-sync.js")).applyDesktopFile;
+    case "desks.json":
+      return (await import("./desks-sync.js")).applyDesksFile;
     default:
       return null;
   }
