@@ -2,32 +2,38 @@
  * iOS pencil bridge — wires the `tauri-plugin-pencil` native plugin
  * (Rust shell + Swift `PencilPlugin`) into Hush's drawing layer.
  *
- * Two responsibilities:
+ * What this module owns today:
  *
- *   1. Pencil-only mode. iPadOS routinely delivers Apple Pencil
- *      contacts as `pointerType === "pen"` and finger contacts as
- *      `"touch"`, so the gating itself is done in `engine/stroke.js`
- *      via the `setPencilOnly` flag — this module just flips the flag
- *      on once the native plugin reports it has loaded. (We wait for
- *      the native handshake so the flag isn't enabled on a build that
- *      shipped without the plugin, e.g. macOS dev or a release where
- *      the iOS bridge silently failed.)
- *
- *   2. Apple Pencil double-tap. The Pencil 2nd gen / Pencil Pro
+ *   1. Apple Pencil double-tap. The Pencil 2nd gen / Pencil Pro
  *      delivers a hardware double-tap event that has no PointerEvent
  *      equivalent — it's a pure `UIPencilInteraction` signal. The
  *      Swift plugin forwards it as a `double-tap` plugin event; this
  *      module flips the active notebook's `drawingSubTool` between
  *      `"draw"` and `"erase"` whenever it fires.
  *
+ *   2. Touch-kind monitoring. Swift fires a `touch` event on every
+ *      `UITouch.began` with `data.type === "pencil" | "finger"`. We
+ *      stash the most recent value on `window.__hushLastTouchKind`
+ *      so future heuristics (e.g. an opt-in pencil-only setting) have
+ *      a confirmed signal to lean on independent of `PointerEvent.
+ *      pointerType`, which on this Tauri WKWebView build appears to
+ *      mis-classify Apple Pencil as `"touch"`.
+ *
+ * Crucially this module does NOT auto-enable `setPencilOnly(true)`
+ * anymore. Older versions of this file flipped the flag on the Swift
+ * plugin's `loaded` ping, but that locked finger AND pencil touches
+ * out on iPad whenever pointerType wasn't reliably reporting the
+ * Pencil — which appears to be the case on the current Tauri build.
+ * The hook stays in `engine/stroke.js` (delta #18) so a future
+ * settings toggle or correlated touch-kind gate can flip it on
+ * deliberately.
+ *
  * Failure mode: if the plugin isn't registered (non-iOS build, or the
  * runtime threw before `load()` completed) the listener registration
- * rejects silently and pencil-only stays off, so the user keeps the
- * existing finger-as-pen behaviour. Nothing else in Hush depends on
- * this module.
+ * rejects silently. Nothing else in Hush depends on this module.
  */
 
-import { setNotebookPencilOnly, getActiveNotebookState } from "./notes-canvas";
+import { getActiveNotebookState } from "./notes-canvas";
 
 const IS_TAURI =
   typeof window !== "undefined" &&
@@ -44,32 +50,12 @@ export async function initPencilBridge() {
   try {
     ({ addPluginListener } = await import("@tauri-apps/api/core"));
   } catch (_) {
-    // SDK missing — non-Tauri build.
-    return;
-  }
-
-  // The plugin's "loaded" event fires ~500 ms after the Swift `load()`
-  // method runs, which is our cue that the native side is wired up
-  // and dispatching touches. Until that happens we leave pencil-only
-  // off so a build without the plugin doesn't strand finger users.
-  let loaded = false;
-
-  try {
-    await addPluginListener("pencil", "loaded", () => {
-      if (loaded) return;
-      loaded = true;
-      setNotebookPencilOnly(true);
-    });
-  } catch (_) {
-    // Plugin not registered. macOS / Linux / Windows fall here.
     return;
   }
 
   // `touch` arrives on every UITouch.began with `data.type === "pencil" | "finger"`.
-  // We don't strictly need it (PointerEvent.pointerType already
-  // separates pen from touch on iPadOS), but having a confirmed signal
-  // from the Swift side makes the bridge useful for future heuristics
-  // and helps debug pointerType regressions on older iPadOS releases.
+  // Stash on window so future code (or the dev console while debugging)
+  // can sanity-check what input the user is actually using.
   try {
     await addPluginListener("pencil", "touch", (e) => {
       const kind = e?.payload?.type ?? e?.type;
@@ -77,16 +63,18 @@ export async function initPencilBridge() {
         if (typeof window !== "undefined") window.__hushLastTouchKind = kind;
       }
     });
-  } catch (_) { /* non-fatal */ }
+  } catch (_) {
+    // Plugin not registered (macOS / Linux / Windows). Bail before
+    // the double-tap subscription so we don't log noise; everything
+    // already works without the bridge on those platforms.
+    return;
+  }
 
   try {
     await addPluginListener("pencil", "double-tap", () => {
       const state = getActiveNotebookState();
       if (!state) return;
-      // Toggle between active brush and eraser. If the user is mid-
-      // selection or wasn't on a stroke sub-tool, treat the tap as
-      // "go back to drawing" so the gesture also serves as a quick
-      // re-entry into pen mode.
+      // Toggle between active brush and eraser.
       const sub = state.drawingSubTool;
       const next = sub === "erase" ? "draw" : "erase";
       if (typeof state.setDrawingSubTool === "function") {
