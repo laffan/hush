@@ -12,6 +12,17 @@
  *      The element is still created (kept out of the DOM) so the
  *      rest of the code path that references `deleteBtn.setAttribute`
  *      stays a no-op without branch changes.
+ *  15. setEventActive(bool) — softer counterpart to activate /
+ *      deactivate that toggles `state.active` (and clears any
+ *      in-flight lasso) WITHOUT clearing the selection set or bbox.
+ *      Hush's drawing-layer.setTool uses it for non-select sub-tools
+ *      so the engine stops capturing events without dropping the
+ *      user's retroactive selection.
+ *  16. setChromeInteractive(bool) — toggles pointer-events on the
+ *      bbox `<g>`. Used during pen+draw/erase/slice with a live
+ *      retroactive selection so the chrome stays painted (visual
+ *      feedback) but every pointerdown falls through to the stroke
+ *      engine, leaving the user's next stroke un-intercepted.
  * ============================================================
  *
  * selection.js — lasso + bounding box + move/resize/delete.

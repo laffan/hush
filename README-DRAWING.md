@@ -1,6 +1,6 @@
 # Notebook Drawing — Technical Overview
 
-The drawing layer adds freehand ink, erase, slice, and lasso-select tools on top of the notebook's shape-based canvas. Its top toolbar (Lasso, Erase, Slice, four brush slots) is always visible alongside the other notebook tools — there's no separate "drawing mode" to enter; clicking any drawing tool implicitly flips `state.tool = "pen"` and routes pointer events into the stroke engine. The layer lives in `src/notebook/drawing/` and is ported from a reference demo (`temp-drawing-hush-demo/`) that was a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine.
+The drawing layer adds freehand ink, erase, slice, and lasso-select tools on top of the notebook's shape-based canvas. Its top toolbar (Lasso, Erase, Slice, three brush slots) is always visible alongside the other notebook tools — there's no separate "drawing mode" to enter; clicking any drawing tool implicitly flips `state.tool = "pen"` and routes pointer events into the stroke engine. The layer lives in `src/notebook/drawing/` and is ported from a reference demo (`temp-drawing-hush-demo/`) that was a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine.
 
 The port's core goal is keeping the engine fast (bake-to-canvas with tile indexing, GPU-composited preview transforms) while making every stroke a first-class Hush shape (undo, groups, layers, shelf, pocket, floating panes).
 
@@ -13,6 +13,7 @@ src/notebook/drawing/
   selection-bridge.ts    Mirrors Hush's state.selectedIds into the engine selection so resize / rotate handles also appear under the regular Select tool, not only the pen-mode lasso
   sync-shim.ts           state.shapes[] ↔ engine.strokes bridge (identity diff, no-op fast path)
   brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
+  brush-runtime.ts       Helpers used by drawing-layer (slot colour resolution, applySlot, renderSwatch, theme retint) — extracted to keep drawing-layer.ts under the 700-line cap
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
   tool-panel.ts          Top pill (Lasso, Erase, Slice, brush slots, lasso hold-time flyout) plus a sibling meta-tools pill (drag handle + minimize) and the restore pencil pill mounted next to the bottom toolbar
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
@@ -24,7 +25,7 @@ src/notebook/drawing/
     stroke-atlas.js      PNG atlas loader, per-brush tint cache
     stroke-erase.js      Pixel-test erase (full) + slice (split at cut)
     selection.js         Polygon lasso, move / delete, proportional resize handles, rotation handle, previewTransform
-    gestures.js          Multi-touch recogniser: 2-/3-finger tap → undo/redo (routed through Hush's snapshot stack), 2-finger drag → pan
+    gestures.js          Multi-touch recogniser: 2-/3-finger tap → undo/redo (routed through Hush's snapshot stack), 2-finger drag → pan (engages even mid-stroke), pinch → zoom
     history.js           Legacy engine command stack — no longer wired; left in place pending removal
     layers.js            Engine-local layer record (id, locked, hidden). Mirrored from notebook state.
     brushes/             brush-1.png ... brush-5.png — the atlases the renderer samples from
@@ -78,6 +79,11 @@ Targeted deltas have been applied to `engine/` so the port stays as close as pos
 9. **Delete badge hidden** — the red-X bbox badge from the reference demo is created but never appended to the DOM. Delete for strokes flows through Hush's shared selection toolbar trash icon, so an engine-owned badge was redundant.
 10. **Two-finger pan** — `gestures.js` watches for two-finger drift past `PAN_START_2` and promotes the burst from tap-candidate to pan. Midpoint deltas (client space) are forwarded via `onPanStart / onPanMove / onPanEnd` so the notebook camera can track. Without this, iPad users couldn't pan while any drawing tool was active (the SVG overlay swallowed the touches).
 11. **Configurable long-press** — `stroke.js` reads its lasso hold duration from `state.longPressMs` instead of a module constant, and exposes `setLongPressMs()`. Hush drives this from the Lasso flyout's 500–2000 ms slider (`state.lassoHoldMs`).
+12. **Pinch-zoom** — `gestures.js` also fires `onPinchStart / onPinchMove / onPinchEnd` with client-space midpoint + finger-spread distance once the spread has drifted past `PINCH_START`. Runs alongside pan in the same burst — typical iPad zoom is "spread + drift" simultaneously.
+13. **Pan-during-draw** — gesture-mode promotion fires on any small second contact landing while a stroke is in flight, rather than gating on the first finger being still. The active stroke is cancelled (`strokeEngine.cancelActiveStroke()`) on landing so the user can pan with two fingers mid-stroke; palm contacts are still rejected via `MAX_CONTACT_SIZE` so a brushing palm doesn't kill the stroke. `SIMULTANEITY_MS` covers the evaluation window only (600 ms) — the pre-gate doesn't enforce it.
+14. **Theme-tracking color flags** — `stroke.js` carries two boolean flags on every active stroke (`colorIsAuto`, `colorIsHeading`) plus a `setColorAutoSource(source)` method. Hush calls it from `applySlot` whenever a brush slot uses an `"auto"` or `"heading"` sentinel, so freshly-drawn strokes inherit the matching flag and `drawing-layer.setTheme` can retint them en masse on theme switches.
+15. **Soft selection deactivate** — `selection.js` exposes `setEventActive(bool)` alongside the existing `activate / deactivate` pair. The hard `deactivate()` clears `selectedIds` (it has to, to keep the lasso-end semantics). `setEventActive(false)` only flips `state.active = false` and clears any in-flight lasso, so `drawing-layer.setTool` can disable engine event capture for non-select sub-tools without dropping the user's retroactive selection. Without this, brush-slot taps would wipe the engine selection right after the bridge re-populated it on the same tool change.
+16. **Chrome interactivity toggle** — `selection.js` exposes `setChromeInteractive(bool)` which toggles `pointerEvents` on the entire bbox `<g>`. Used by the bridge during pen+draw/erase/slice with a live retroactive selection: the chrome stays painted (the user can see what's selected while the brush flyout retints it) but every pointerdown falls through to the stroke engine, so the user's next stroke isn't intercepted by an invisible-to-them resize handle.
 
 ### Drawing tools (the top pill)
 
@@ -100,7 +106,7 @@ Draw has no dedicated button — the active brush slot indicates it. Clicking an
 
 ### Brush slots
 
-Four user-owned presets (`state.brushSlots[0..3]`). Each slot carries `{ brushId, color, size, mode, streamline, spacing }`. Two of the slot colours are theme sentinels: `"auto"` resolves to `theme.foreground` at paint time (tagged `colorIsAuto` on the stroke) and `"heading"` resolves to `theme.headingColor` (tagged `colorIsHeading`) — the same hue markdown headings paint in the editor. Both flags ride through the engine's stroke metadata so theme changes retint matching strokes; the engine's `setColorAutoSource(source)` carries the choice forward to freshly-drawn strokes.
+Three user-owned presets (`state.brushSlots[0..2]`, `SLOT_COUNT = 3`). Each slot carries `{ brushId, color, size, mode, streamline, spacing }`. The factory defaults are `auto` (theme text colour, brush-1, 4 px), `heading` (theme heading colour, brush-2, 6 px), and `#3b82f6` (blue, brush-3, 25 px). Two of the slot colours are theme sentinels: `"auto"` resolves to `theme.foreground` at paint time (tagged `colorIsAuto` on the stroke) and `"heading"` resolves to `theme.headingColor` (tagged `colorIsHeading`) — the same hue markdown headings paint in the editor. Both flags ride through the engine's stroke metadata so theme changes retint matching strokes; the engine's `setColorAutoSource(source)` carries the choice forward to freshly-drawn strokes. Picking a `heading` swatch lets users mark up text-shape annotations in the same accent the editor uses for headers, which is handy for sketchy diagrammatic emphasis on top of typed notes.
 
 **Flyout behavior.** Clicking the already-active slot toggles a flyout that edits that slot in place. Clicking a different slot just switches — it does **not** open the flyout. Inside the flyout, edits also retroactively restyle any live selection; slider drags are wrapped in one style-session-per-drag so a single undo reverts the whole gesture.
 
@@ -116,7 +122,13 @@ The dropdown is mounted on the bottom notebook toolbar and exposes per-row: radi
 
 The engine owns drawing-mode selection via `selection.js`. When it commits a lasso pick, `bridgeEngineSelectionToState` writes the hit stroke ids back to `state.selectedIds` so downstream hush UI (selection toolbar, Cmd+G, shelf highlight) treats the strokes like any other shape selection.
 
-The reverse direction is one-way: we don't push hush selection changes back into the engine (it would require resolving hush shape IDs → engine stroke IDs on every selection update, and the mode in which that matters — lasso-first workflows — always flows engine→state).
+The reverse direction is also bridged via `selection-bridge.ts`: every `selectedIds` / `tool` / `drawingSubTool` change resolves matching engine stroke ids and pushes them into `selectionEngine.setSelectedIds(...)` so the bbox + handles appear when strokes are selected via Hush's regular Select tool, not just the pen-mode lasso. Three orthogonal toggles control how the chrome is exposed in each mode:
+
+- **`setBboxClickable(bool)`** — pen+lasso turns it on so the dashed body acts as a grab-to-move target; everywhere else it's off so click-on-stroke routes through Hush's drag handler.
+- **`setChromeHidden(bool)`** — only flipped to `true` for transient cases (none currently in active use); `false` keeps the bbox visible whenever `selectedIds.size > 0`.
+- **`setChromeInteractive(bool)`** (delta #16) — pen+draw/erase/slice with a live selection sets this to `false`, leaving the bbox painted as a passive visual cue but pinning `pointer-events: none` on the `<g>` so the user's next stroke isn't intercepted by a handle.
+
+Drawing-layer's `setTool` calls `setEventActive(false)` (delta #15) for non-select sub-tools, which disables the engine's pointer-event listeners without touching the selection set — that's what keeps the user's selection alive across brush-slot taps so the flyout can keep retinting it.
 
 ### Drag performance
 

@@ -11,6 +11,11 @@
  *   8. `isStrokeHidden` also excludes strokes with `pocketed === true`
  *      so the hush pocket tray's offscreen thumbnail is the only
  *      rendering of a pocketed stroke.
+ *  11. Configurable long-press: `state.longPressMs` + `setLongPressMs()`
+ *      so Hush's Lasso flyout slider can drive the hold-to-lasso delay.
+ *  14. Theme-tracking colour flags: `state.colorIsAuto` / `colorIsHeading`
+ *      + `setColorAutoSource(source)`. Freshly-drawn strokes inherit the
+ *      matching flag so theme switches can retint them.
  *   (Deltas 4 + 5 live in selection.js + gestures.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
