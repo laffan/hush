@@ -524,7 +524,7 @@ function isItemActive(item, state) {
 
 function refreshList(state) {
   if (sortableInstance) {
-    const sorted = sortFlaggedItems(normalizeProjectChildren(state.fileTree));
+    const sorted = sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)));
     sortableInstance.setData(sorted);
   }
   renderFlaggedSection(state);
