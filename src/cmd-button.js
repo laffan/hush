@@ -1,11 +1,14 @@
 /**
  * Touch-mode floating buttons (iOS / iPadOS only).
  *
- * Two pills in the bottom-left of the editor for keyboard-free use:
+ * Three pills in the bottom-left of the editor for keyboard-free use:
  *   - ⌘ button: hold to mimic the Cmd key being pressed (drag text
  *     out of a pane, Cmd-drag to merge flowchart nodes, Cmd-click on
  *     a link, etc.).
  *   - ☰ button: tap to open the command palette.
+ *   - 📋 button: tap to paste the system clipboard into whatever
+ *     surface is currently in focus (doc editor, notebook canvas,
+ *     inline text shape, focused input/textarea/contenteditable).
  *
  * The Cmd modifier shows up on browser events as `e.metaKey`; this
  * module exposes `isCmdHeld(event)` so call sites can opt-in to "real
@@ -47,6 +50,7 @@ export function isCmdHeld(event) {
 
 let _cmdBtn = null;
 let _paletteBtn = null;
+let _pasteBtn = null;
 let _state = null;
 let _panelObserver = null;
 
@@ -89,6 +93,21 @@ function mountButtons() {
   document.body.appendChild(_paletteBtn);
   _paletteBtn.addEventListener("click", () => {
     import("./command-palette.js").then((m) => m.toggleCommandPalette?.(_state)).catch(() => {});
+  });
+
+  // 📋 button — tap to paste the OS clipboard into the active surface.
+  // Sits above the palette button. iPadOS users without a hardware
+  // keyboard need this since synthetic Cmd+V from a virtual keyboard
+  // doesn't reach CodeMirror's paste path.
+  _pasteBtn = document.createElement("button");
+  _pasteBtn.className = "cmd-floating-button cmd-paste-button";
+  _pasteBtn.setAttribute("aria-label", "Paste from clipboard");
+  _pasteBtn.title = "Paste from clipboard";
+  _pasteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z" fill="currentColor" stroke="none"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="17" x2="13" y2="17"/></svg>`;
+  document.body.appendChild(_pasteBtn);
+  _pasteBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    import("./paste-helper.js").then((m) => m.pasteAtFocus?.()).catch(() => {});
   });
 
   syncPanelOpen();
@@ -137,6 +156,7 @@ function unmountButtons() {
   setHeld(false);
   if (_cmdBtn) { _cmdBtn.remove(); _cmdBtn = null; }
   if (_paletteBtn) { _paletteBtn.remove(); _paletteBtn = null; }
+  if (_pasteBtn) { _pasteBtn.remove(); _pasteBtn = null; }
   if (_panelObserver) { _panelObserver.disconnect(); _panelObserver = null; }
 }
 
@@ -145,6 +165,7 @@ function syncPanelOpen() {
   const isOpen = !!(panel && !panel.classList.contains("hidden"));
   if (_cmdBtn) _cmdBtn.classList.toggle("panel-open", isOpen);
   if (_paletteBtn) _paletteBtn.classList.toggle("panel-open", isOpen);
+  if (_pasteBtn) _pasteBtn.classList.toggle("panel-open", isOpen);
 }
 
 function setHeld(held) {
