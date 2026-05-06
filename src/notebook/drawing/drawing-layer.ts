@@ -456,6 +456,10 @@ export function createDrawingLayer({
 
   function setInputEnabled(enabled: boolean): void {
     svg.style.pointerEvents = enabled ? "auto" : "none";
+    const w = window as unknown as { __hushDebug?: (s: string) => void };
+    if (typeof w.__hushDebug === "function") {
+      w.__hushDebug(`drawing-layer setInputEnabled=${enabled} svg.pe=${svg.style.pointerEvents}`);
+    }
   }
 
   function setTheme(next: CanvasTheme): void {

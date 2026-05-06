@@ -20,11 +20,6 @@ tauri-plugin-shell = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
-# Local iOS-only plugin for Apple Pencil and touch-type detection.
-# Compiled on every platform (the Rust shell is empty), but only the
-# Swift side is registered when targeting iOS. See `init_plugin_pencil`
-# in `src/lib.rs` and `tauri-plugin-pencil/`.
-tauri-plugin-pencil = { path = "tauri-plugin-pencil" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"

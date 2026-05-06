@@ -62,7 +62,6 @@
     "deep-link:default",
     "clipboard-manager:default",
     "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-write-text",
-    "pencil:default"
+    "clipboard-manager:allow-write-text"
   ]
 }

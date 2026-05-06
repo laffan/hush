@@ -319,24 +319,39 @@ export function createStrokeEngine({
   }
 
   // --------- pointer handlers ---------
+  function dbg(line) {
+    if (typeof window !== 'undefined' && typeof window.__hushDebug === 'function') window.__hushDebug(line);
+  }
+
   function onPointerDown(e) {
-    if (state.tool !== 'draw' && state.tool !== 'erase' && state.tool !== 'slice') return;
+    if (state.tool !== 'draw' && state.tool !== 'erase' && state.tool !== 'slice') {
+      dbg(`engine PD reject tool=${state.tool}`);
+      return;
+    }
     if (state.tool === 'draw') {
       const L = activeLayer();
-      if (L && (L.locked || L.hidden)) return;
+      if (L && (L.locked || L.hidden)) { dbg('engine PD reject layer-locked'); return; }
     }
     // Hush delta #18: pencil-only mode rejects every non-pen contact so
     // iPadOS finger-touches fall through to the notebook canvas's own
     // select / pan handling. Mouse and pen still draw.
-    if (state.pencilOnly && e.pointerType !== 'pen' && e.pointerType !== 'mouse') return;
-    if (e.button !== undefined && e.button !== 0) return;
+    if (state.pencilOnly && e.pointerType !== 'pen' && e.pointerType !== 'mouse') {
+      dbg(`engine PD reject pencilOnly pt=${e.pointerType}`);
+      return;
+    }
+    if (e.button !== undefined && e.button !== 0) { dbg(`engine PD reject btn=${e.button}`); return; }
     // Selection chrome (handles, bbox, lasso path) lives inside the
     // SVG with `pointer-events: auto` so it stays interactive while
     // the SVG root is non-capturing in non-pen modes. Pointerdowns on
     // those elements still bubble to this listener; without this
     // bail, every handle click would also seed a brand-new stroke at
     // the click position.
-    if (e.target !== svg) return;
+    if (e.target !== svg) {
+      const tn = (e.target && e.target.tagName) ? e.target.tagName : String(e.target);
+      const cls = (e.target && e.target.getAttribute) ? (e.target.getAttribute('class') || '') : '';
+      dbg(`engine PD reject target=${tn} cls="${cls}"`);
+      return;
+    }
     // Defensive: if a stroke is already in flight from a different
     // pointer, treat the new contact as the start of a multi-touch
     // gesture (the gestures recogniser may also intercept this in its
@@ -356,6 +371,7 @@ export function createStrokeEngine({
     e.preventDefault();
     const p = getPoint(e);
     const isPen = e.pointerType === 'pen';
+    dbg(`engine PD ACCEPT pt=${e.pointerType} tool=${state.tool} pid=${e.pointerId}`);
     state.active = {
       id: state.nextId++,
       tool: state.tool,
