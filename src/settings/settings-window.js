@@ -185,6 +185,20 @@ function bindAll() {
   bindCheckbox("setting-always-on-top", "alwaysOnTop");
   bindCheckbox("setting-show-tooltips", "showTooltips");
   bindCheckbox("setting-touch-mode", "touchMode");
+  // Desks toggle. The migration runs in the main window where AppState
+  // lives — emit a request and let main.js handle enable/disable.
+  const useDesksEl = document.getElementById("setting-use-desks");
+  if (useDesksEl) {
+    useDesksEl.addEventListener("change", async () => {
+      const next = useDesksEl.checked;
+      if (IS_TAURI) {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("desks-toggle-request", { enabled: next });
+      } else if (onSaveCallback) {
+        onSaveCallback({ ...settings, useDesks: next });
+      }
+    });
+  }
 
   // Editor tab — font/theme/size/line-height live in the Styles sidebar now;
   // only sticky headers, panes, typewriter and footnotes remain here.

@@ -323,3 +323,17 @@ export async function setActiveDesk(state, deskId) {
   await state.updateSettings({ activeDeskId: deskId });
   state.emit("active-desk-changed", deskId);
 }
+
+/** Listen for `desks-toggle-request` from the settings window and run
+ *  the matching enable/disable migration. Called once during boot. */
+export async function wireDesksTauri(state) {
+  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) return;
+  const { listen } = await import("@tauri-apps/api/event");
+  await listen("desks-toggle-request", async (event) => {
+    try {
+      await (event.payload?.enabled ? enableDesks(state, "Personal") : disableDesks(state));
+      state.emit("settings-changed");
+      state.emit("files-changed");
+    } catch (e) { console.error("desks toggle failed:", e); }
+  });
+}

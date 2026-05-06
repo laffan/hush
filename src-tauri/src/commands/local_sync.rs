@@ -42,6 +42,7 @@ pub fn local_sync_add(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0),
+        desk_id: None,
     };
     {
         let mut settings = state.settings.lock().unwrap();

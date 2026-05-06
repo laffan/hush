@@ -285,6 +285,18 @@ export function bindSyncTab(saveSetting, settings, render) {
       }
     });
   });
+  // Per-mount desk picker (only visible with desks on). Tags the mount
+  // so the file panel knows which desk's subtree to render it under.
+  document.querySelectorAll(".local-sync-desk-select").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      const id = sel.dataset.id;
+      const deskId = sel.value;
+      const list = (settings.localSyncFolders || []).map(f => f.id === id ? { ...f, deskId } : f);
+      settings.localSyncFolders = list;
+      await saveSetting("localSyncFolders", list);
+      await emitLocalSyncUpdated(list);
+    });
+  });
 
   function addSyncLogEntry(message) {
     const now = new Date();

@@ -106,10 +106,9 @@ async function init() {
     if (result) state.syncFileToExternal(result.fileId, result.content);
     showEditor();
   });
-  // Notebook minimap (Show/Hide minimap command palette entries).
-  // wireMinimap subscribes to notebook-open / notebook-unmount /
-  // minimap-visibility-changed and handles its own mounting.
+  // Notebook minimap + desks toggle bridge — both wire themselves to AppState.
   import("./notebook/minimap.js").then(m => m.wireMinimap(state));
+  import("./state/state-desks.js").then(m => m.wireDesksTauri(state));
   state.on("notebook-autosave", async () => {
     const result = await saveNotebook();
     if (result) {
@@ -157,13 +156,9 @@ async function init() {
   // Load current file content into the newly created editor
   // (init() already opened the last file/project — re-open only if editor wasn't set yet)
   if (state.currentNotebookFileId) {
-    // Restore last opened notebook
+    // Restore last opened notebook (minimap auto-mounts via wireMinimap)
     await mountNotebook(notebookContainer, state.currentNotebookFileId, state);
     showNotebook();
-    if (state.settings?.minimapVisible) {
-      const m = await import("./notebook/minimap.js");
-      m.mountMinimap(state, state.currentNotebookFileId);
-    }
   } else if (state.currentProjectId) {
     await state.openProject(state.currentProjectId);
   } else if (state.currentFileId) {

@@ -6,6 +6,17 @@
 
 import { escHtml, escAttr } from "./settings-tabs.js";
 
+/** Per-mount desk picker. Returns "" when desks are off. */
+function renderDeskDropdown(settings, mount) {
+  if (!settings.useDesks) return "";
+  const desks = settings.desks || [];
+  if (desks.length === 0) return "";
+  const current = mount.deskId || settings.activeDeskId || desks[0]?.id || "";
+  const opts = desks.map(d => `<option value="${escAttr(d.id)}" ${d.id === current ? "selected" : ""}>${escHtml(d.name || "Untitled desk")}</option>`).join("");
+  return `<select class="local-sync-desk-select" data-id="${escAttr(mount.id)}">${opts}</select>`;
+}
+
+
 export function renderSyncTab(settings) {
   const isConnected = !!settings.dropboxAccessToken;
   const isEnabled = !!settings.dropboxEnabled;
@@ -108,6 +119,7 @@ export function renderSyncTab(settings) {
                   <div class="local-sync-item-name">${escHtml(f.name)}</div>
                   <div class="local-sync-item-path">${escHtml(f.path)}</div>
                 </div>
+                ${renderDeskDropdown(settings, f)}
                 <button class="local-sync-remove-btn" data-id="${escAttr(f.id)}">Remove</button>
               </div>
             `).join("")}

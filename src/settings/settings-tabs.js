@@ -70,6 +70,14 @@ export function renderGeneralTab(settings) {
       </div>
       ${isIOSSettings() ? `<div class="settings-row"><label>Touch mode</label><input type="checkbox" id="setting-touch-mode" ${s.touchMode ? "checked" : ""} /></div><p class="settings-help">Adds two floating buttons to the bottom-left of the editor for keyboard-free use: a ⌘ button to hold for Cmd-drag gestures, and a menu button (☰) above it that opens the command palette.</p>` : ""}
     </div>
+    <div class="settings-section">
+      <h2>Desks</h2>
+      <div class="settings-row">
+        <label>Use Desks</label>
+        <input type="checkbox" id="setting-use-desks" ${s.useDesks ? "checked" : ""} />
+      </div>
+      <p class="settings-help">Group your files into top-level desks (each with its own Inbox and Trash). Toggling this on wraps your existing tree under a "Personal" desk; toggling it off merges every desk's specials and hoists the rest. Dropbox layout migrates accordingly.</p>
+    </div>
   `;
 }
 

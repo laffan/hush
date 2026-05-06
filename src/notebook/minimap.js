@@ -41,16 +41,19 @@ async function tauriInvoke(cmd, args) {
 
 /** Wire the minimap to a single AppState so it mounts / unmounts in
  *  response to `notebook-open` / `notebook-unmount` and the
- *  `minimap-visibility-changed` toggle. Call once during boot. */
+ *  `minimap-visibility-changed` toggle. Also mounts immediately when a
+ *  notebook is already open at call time (boot path). Call once during
+ *  boot. */
 export function wireMinimap(state) {
-  state.on("notebook-open", (fileId) => {
-    if (state.settings?.minimapVisible) mountMinimap(state, fileId);
-  });
+  state.on("notebook-open", (fileId) => { if (state.settings?.minimapVisible) mountMinimap(state, fileId); });
   state.on("notebook-unmount", () => { unmountMinimap(); });
   state.on("minimap-visibility-changed", (visible) => {
     if (visible && state.currentNotebookFileId) mountMinimap(state, state.currentNotebookFileId);
     else unmountMinimap();
   });
+  if (state.settings?.minimapVisible && state.currentNotebookFileId) {
+    mountMinimap(state, state.currentNotebookFileId);
+  }
 }
 
 /** Mount the minimap for the open notebook. Idempotent — calling while

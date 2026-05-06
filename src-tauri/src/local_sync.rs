@@ -49,6 +49,11 @@ pub struct LocalSyncFolder {
     pub path: String,
     pub name: String,
     pub added_at: i64,
+    /// Optional desk id this mount belongs to. None when desks are off
+    /// (or the user hasn't picked one yet — JS side falls back to the
+    /// active desk in that case).
+    #[serde(default)]
+    pub desk_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
