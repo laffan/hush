@@ -459,6 +459,28 @@ pub fn clear_dropbox_cursor(
     Ok(())
 }
 
+/// Wipe every locally-stored doc/notebook payload, the file tree, every
+/// image, and every sync-tracking row (synced_files, cursors, pending
+/// ops). Settings stay put. Intended as a hard recovery for sync state
+/// that's diverged from Dropbox — the next poll reseeds from scratch.
+#[tauri::command]
+pub fn clear_local_data(state: State<AppState>) -> Result<(), String> {
+    state
+        .file_manager
+        .lock()
+        .unwrap()
+        .clear_all()
+        .map_err(|e| e.to_string())?;
+    state
+        .image_manager
+        .lock()
+        .unwrap()
+        .clear_all()
+        .map_err(|e| e.to_string())?;
+    state.sync_manager.lock().unwrap().clear_all();
+    Ok(())
+}
+
 #[tauri::command]
 pub fn find_synced_file_by_remote_id(
     state: State<AppState>,

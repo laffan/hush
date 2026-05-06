@@ -172,6 +172,18 @@ impl SyncDb {
         Ok(())
     }
 
+    /// Wipe every synced-file row, every cursor, and every queued
+    /// pending op. Used by the "Clear local versions" recovery flow —
+    /// the next sync poll reseeds from Dropbox as if the device were
+    /// fresh-installed.
+    pub fn clear_all(&self) -> Result<(), rusqlite::Error> {
+        let conn = self.connect()?;
+        conn.execute("DELETE FROM synced_files", [])?;
+        conn.execute("DELETE FROM dropbox_cursor", [])?;
+        conn.execute("DELETE FROM pending_ops", [])?;
+        Ok(())
+    }
+
     pub fn update_path(&self, internal_id: &str, new_path: &str) -> Result<(), rusqlite::Error> {
         let conn = self.connect()?;
         conn.execute(

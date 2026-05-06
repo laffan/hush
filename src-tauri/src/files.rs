@@ -223,6 +223,28 @@ impl FileManager {
         write_atomic_str(&path, &serde_json::to_string(&entry)?)?;
         Ok(())
     }
+
+    /// Wipe every doc/notebook payload (`*.json` files in `files_dir`)
+    /// plus the persisted `file_tree.json`. The on-disk `images/`
+    /// subdirectory is left to `ImageManager::clear_all`. Used by the
+    /// "Clear local versions" recovery in Settings → Sync.
+    pub fn clear_all(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Ok(read_dir) = fs::read_dir(&self.files_dir) {
+            for entry in read_dir.flatten() {
+                let path = entry.path();
+                if path.is_file()
+                    && path.extension().and_then(|e| e.to_str()) == Some("json")
+                {
+                    let _ = fs::remove_file(&path);
+                }
+            }
+        }
+        let tree_path = self.tree_path();
+        if tree_path.exists() {
+            let _ = fs::remove_file(&tree_path);
+        }
+        Ok(())
+    }
 }
 
 // ===== Tree helpers =====

@@ -6,6 +6,120 @@
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 /**
+ * Indeterminate-or-determinate progress modal shown during the
+ * clear-and-reseed flow. Returns `{ update(done, total, phase), close() }`.
+ * Listens via `clear-reseed-progress` events so the caller doesn't have
+ * to manage state directly.
+ */
+function showClearProgressModal() {
+  const backdrop = document.createElement("div");
+  backdrop.className = "dbx-browser-backdrop";
+  const modal = document.createElement("div");
+  modal.className = "dbx-browser-modal";
+  modal.style.maxWidth = "440px";
+  modal.innerHTML = `
+    <div class="dbx-browser-header">
+      <span class="dbx-browser-path">Reseeding from Dropbox</span>
+    </div>
+    <div style="padding: 16px;">
+      <div id="clear-progress-label" style="margin: 0 0 10px 0; font-size: 13px;">Listing Dropbox folder…</div>
+      <div style="height: 8px; background: rgba(128,128,128,0.15); border-radius: 4px; overflow: hidden;">
+        <div id="clear-progress-bar" style="height: 100%; width: 0%; background: var(--accent, #4a90e2); transition: width 0.2s ease;"></div>
+      </div>
+      <div id="clear-progress-count" style="margin-top: 8px; font-size: 12px; opacity: 0.7;">&nbsp;</div>
+    </div>
+  `;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+
+  const labelEl = modal.querySelector("#clear-progress-label");
+  const barEl = modal.querySelector("#clear-progress-bar");
+  const countEl = modal.querySelector("#clear-progress-count");
+
+  return {
+    update(done, total, phase) {
+      if (phase === "begin") {
+        labelEl.textContent = total > 0 ? `Pulling ${total} items from Dropbox…` : "Pulling items from Dropbox…";
+      } else if (phase === "end") {
+        labelEl.textContent = "Done. Reseed complete.";
+        barEl.style.width = "100%";
+      }
+      if (total > 0) {
+        const pct = Math.min(100, Math.round((done / total) * 100));
+        barEl.style.width = pct + "%";
+        countEl.textContent = `${done} / ${total}`;
+      } else {
+        countEl.textContent = done > 0 ? `${done} processed` : "";
+      }
+    },
+    close() { backdrop.remove(); },
+  };
+}
+
+/**
+ * Hard-recovery confirmation: warn loudly, return true if the user
+ * actually wants to wipe local state. Two-step: a "Clear" button plus
+ * a typed confirmation so it can't be triggered with a stray click.
+ */
+function showClearLocalConfirmation() {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "dbx-browser-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "dbx-browser-modal";
+    modal.style.maxWidth = "440px";
+    modal.innerHTML = `
+      <div class="dbx-browser-header">
+        <span class="dbx-browser-path">Clear local versions</span>
+        <button class="dbx-browser-close">✕</button>
+      </div>
+      <div style="padding: 16px;">
+        <p style="margin: 0 0 12px 0; line-height: 1.5;">
+          This wipes every locally-stored doc, notebook, image, and sync
+          record on this device. Hush will reseed from Dropbox on the
+          next poll.
+        </p>
+        <p style="margin: 0 0 12px 0; line-height: 1.5; color: #ff4444;">
+          Anything that exists only on this device and hasn't pushed
+          yet will be lost.
+        </p>
+        <p style="margin: 0 0 8px 0; line-height: 1.5;">
+          Type <code>clear</code> below to confirm.
+        </p>
+        <input id="clear-confirm-input" type="text" autocomplete="off" spellcheck="false"
+               style="width: 100%; padding: 6px 8px; font-family: inherit; font-size: 13px;
+                      border: 1px solid var(--panel-border, rgba(0,0,0,0.2));
+                      background: transparent; color: var(--fg); border-radius: 4px;" />
+        <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+          <button id="clear-cancel" style="padding: 8px 16px; cursor: pointer;">Cancel</button>
+          <button id="clear-confirm" disabled
+                  style="padding: 8px 16px; cursor: pointer; color: #ff4444; opacity: 0.4;">
+            Clear local versions
+          </button>
+        </div>
+      </div>
+    `;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const input = modal.querySelector("#clear-confirm-input");
+    const confirmBtn = modal.querySelector("#clear-confirm");
+    input.addEventListener("input", () => {
+      const ready = input.value.trim().toLowerCase() === "clear";
+      confirmBtn.disabled = !ready;
+      confirmBtn.style.opacity = ready ? "1" : "0.4";
+    });
+    setTimeout(() => input.focus(), 0);
+
+    const close = (result) => { backdrop.remove(); resolve(result); };
+    modal.querySelector(".dbx-browser-close").addEventListener("click", () => close(false));
+    modal.querySelector("#clear-cancel").addEventListener("click", () => close(false));
+    confirmBtn.addEventListener("click", () => { if (!confirmBtn.disabled) close(true); });
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(false); });
+  });
+}
+
+/**
  * Show a confirmation dialog for unsyncing, with options to keep or remove Dropbox files.
  * Returns "keep", "remove", or null (cancelled).
  */
@@ -208,6 +322,34 @@ export function bindSyncTab(saveSetting, settings, render) {
   }
 
   // Stop syncing (unsync)
+  const syncClearLocalBtn = document.getElementById("sync-clear-local");
+  if (syncClearLocalBtn) {
+    syncClearLocalBtn.addEventListener("click", async () => {
+      const ok = await showClearLocalConfirmation();
+      if (!ok) return;
+      const status = document.getElementById("sync-auth-status");
+      if (status) { status.textContent = "Clearing local data..."; status.className = "sync-status"; }
+      try {
+        if (IS_TAURI) {
+          const { emit, listen } = await import("@tauri-apps/api/event");
+          const progress = showClearProgressModal();
+          let unlisten = null;
+          unlisten = await listen("clear-reseed-progress", (ev) => {
+            const { done, total, phase } = ev?.payload || {};
+            progress.update(done || 0, total || 0, phase);
+            if (phase === "end") {
+              setTimeout(() => { progress.close(); if (unlisten) unlisten(); }, 800);
+            }
+          });
+          await emit("clear-local-data-request");
+        }
+        if (status) { status.textContent = "Done. Reseeding from Dropbox…"; status.className = "sync-status success"; }
+      } catch (e) {
+        if (status) { status.textContent = "Clear failed: " + e.message; status.className = "sync-status error"; }
+      }
+    });
+  }
+
   const syncUnsyncBtn = document.getElementById("sync-unsync");
   if (syncUnsyncBtn) {
     syncUnsyncBtn.addEventListener("click", async () => {

@@ -15,6 +15,43 @@ import {
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
+/** Adopt-or-wrap modal rendered in the settings window's DOM. The main
+ *  window decides whether to prompt and emits `desks-adopt-prompt`; we
+ *  render here so the modal sits over the settings UI rather than
+ *  behind it (cross-window z-order on macOS). */
+function showAdoptOrWrapModal({ folderNames, deskShapedNames, onResolve }) {
+  document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
+  const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const deskShaped = new Set(deskShapedNames || []);
+  const list = folderNames.map((n) => deskShaped.has(n) ? `• ${n}  (Inbox + Trash)` : `• ${n}`).join("\n");
+  let message;
+  if (folderNames.length === 1) {
+    const tag = deskShaped.has(folderNames[0]) ? " (it has an Inbox and Trash)" : "";
+    message = `Found one top-level folder: "${folderNames[0]}"${tag}. Convert it to a desk, or wrap everything under a single "Personal" desk?`;
+  } else {
+    message = `Found these top-level folders:\n${list}\n\nConvert each to a desk, or wrap everything under a single "Personal" desk?`;
+  }
+  const backdrop = document.createElement("div");
+  backdrop.className = "tree-delete-modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="tree-delete-modal">
+      <div class="tree-delete-modal-title">Use existing folders as desks?</div>
+      <pre class="tree-delete-modal-message">${escape(message).replace(/\n/g, "<br>")}</pre>
+      <div class="tree-delete-modal-btns">
+        <button class="adopt-cancel">Cancel</button>
+        <button class="adopt-wrap">Wrap in one desk</button>
+        <button class="adopt-convert">Convert to desks</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  const pick = (mode) => { close(); onResolve?.(mode); };
+  backdrop.querySelector(".adopt-cancel").addEventListener("click", () => pick("cancel"));
+  backdrop.querySelector(".adopt-wrap").addEventListener("click", () => pick("wrap"));
+  backdrop.querySelector(".adopt-convert").addEventListener("click", () => pick("adopt"));
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) pick("cancel"); });
+}
+
 let settings = {};
 let activeTab = "general";
 let settingsRootEl = null;
@@ -192,7 +229,29 @@ function bindAll() {
     useDesksEl.addEventListener("change", async () => {
       const next = useDesksEl.checked;
       if (IS_TAURI) {
-        const { emit } = await import("@tauri-apps/api/event");
+        const { emit, listen } = await import("@tauri-apps/api/event");
+        // The main window inspects the file tree, decides whether an
+        // adopt prompt is warranted, and either fires `desks-adopt-prompt`
+        // (we render the modal locally in this window) or just runs the
+        // toggle. `desks-toggle-rejected` un-flips the checkbox.
+        const disposers = [];
+        const dispose = () => { for (const fn of disposers.splice(0)) try { fn(); } catch (_) {} };
+        disposers.push(await listen("desks-toggle-rejected", () => {
+          useDesksEl.checked = !next;
+          dispose();
+        }));
+        disposers.push(await listen("desks-adopt-prompt", async (ev) => {
+          const folderNames = ev?.payload?.folderNames || [];
+          showAdoptOrWrapModal({
+            folderNames,
+            onResolve: async (mode) => {
+              await emit("desks-adopt-resolve", { mode });
+              if (mode === "cancel") useDesksEl.checked = !next;
+              dispose();
+            },
+          });
+        }));
+        setTimeout(dispose, 120000);
         await emit("desks-toggle-request", { enabled: next });
       } else if (onSaveCallback) {
         onSaveCallback({ ...settings, useDesks: next });

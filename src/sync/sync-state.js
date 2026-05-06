@@ -530,6 +530,142 @@ export async function disconnectSync(state, removeFromDropbox) {
   dbx.clearTokens();
 }
 
+/**
+ * Hard-recovery: wipe every locally-stored doc, notebook, image, and
+ * sync record on this device, then trigger an immediate poll so the
+ * cursor reseeds from Dropbox. Settings (theme, auth tokens, dropbox
+ * config, zotero, etc.) are preserved — only the file/sync state is
+ * cleared. The next poll's seed treats every Dropbox entry as a
+ * Created event, so `insertDocumentNode` rebuilds the tree from the
+ * current Dropbox paths.
+ *
+ * Pre-seeds the global Inbox / Images / Trash specials so a Dropbox
+ * path of `Inbox/foo.md` routes into `__inbox__` instead of creating
+ * a plain folder named "Inbox". Without this, image inserts would
+ * silently no-op (the image handler bails when `__images__` is
+ * missing) and Inbox/Trash would lose their special behavior.
+ */
+export async function clearLocalAndReseed(state) {
+  if (!IS_TAURI) return;
+  const sp = await import("./sync-polling.js");
+  sp.stopSyncPolling();
+  await tauriInvoke("clear_local_data");
+
+  // Drop desks first so `ensureSpecialNodes` takes the desks-off
+  // branch and seeds the flat global specials. Other session
+  // pointers go too — they reference files we just wiped.
+  state.fileTree = [];
+  state.currentFileId = null;
+  state.currentNotebookFileId = null;
+  state.currentProjectId = null;
+  state.dirty = false;
+  await state.updateSettings({
+    useDesks: false, desks: [], activeDeskId: null, desksMeta: {},
+    lastFileId: null, lastProjectId: null, lastNotebookId: null,
+    desktopFileId: null,
+  });
+
+  // Re-instate the empty global specials so reseed routes into them.
+  if (typeof state.ensureSpecialNodes === "function") {
+    state.ensureSpecialNodes();
+  } else {
+    const _desks = await import("../state/state-desks.js");
+    _desks.ensureGlobalTreeSpecials(state.fileTree);
+  }
+  await state.saveFileTree();
+
+  state.files = await tauriInvoke("list_files");
+  state.emit("desks-changed");
+  state.emit("files-changed");
+  state.emit("file-opened", null);
+
+  // Pre-count the Dropbox entries so we can drive a progress bar in
+  // the settings window. One extra recursive list before the actual
+  // cycle — slower than just letting the seed drain itself, but worth
+  // it for the user-visible feedback. Failures are non-fatal: we just
+  // run with `total = 0` and the UI shows an indeterminate state.
+  let total = 0;
+  try {
+    const dbx = await import("./dropbox.js");
+    const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
+    const root = base === "/" ? "" : base;
+    let data = await dbx.listFolderRaw(root, { recursive: true, includeDeleted: false });
+    total += countSyncableEntries(data.entries);
+    while (data.has_more) {
+      const resp = await dbx.listFolderContinueRaw(data.cursor);
+      if (!resp.ok) break;
+      data = await resp.json();
+      total += countSyncableEntries(data.entries);
+    }
+  } catch (e) { console.warn("clear: pre-count failed:", e); }
+  sp.progressBegin(state, total);
+
+  // Run one full poll cycle synchronously so we know when the cursor
+  // seed has finished processing every Dropbox entry. The seed loops
+  // internally on `has_more`, so a single call drains the whole listing.
+  sp.startSyncPolling(state);
+  try { await sp.runOneCycle(state); } catch (e) { console.warn("seed cycle failed:", e); }
+  sp.progressEnd(state);
+
+  // Now re-apply `.hush/*.json` meta in dependency order. During the
+  // seed, meta files arrive interleaved with doc/notebook entries and
+  // their appliers can no-op silently when the referenced folder
+  // hasn't landed yet (`applyProjectsFile` skips unmatched paths,
+  // `applyDesksFile` won't wrap if a desk's expected children aren't
+  // there). A second pass — now that every doc/notebook is in the
+  // tree — promotes folders to projects, restores desks, and so on.
+  await reapplyHushMetaFiles(state);
+
+  state.files = await tauriInvoke("list_files");
+  state.emit("files-changed");
+}
+
+const META_REAPPLY_ORDER = [
+  // desks first so the tree shape settles before projects look for
+  // folder paths inside desks.
+  ["desks.json",     "./desks-sync.js",    "applyDesksFile"],
+  ["projects.json",  "./project-sync.js",  "applyProjectsFile"],
+  ["panes.json",     "./pane-sync.js",     "applyPanesFile"],
+  ["styles.json",    "./style-sync.js",    "applyStylesFile"],
+  ["desktop.json",   "./desktop-sync.js",  "applyDesktopFile"],
+];
+
+/** Count Dropbox listing entries that the cursor consumer would
+ *  actually act on (skips folders, deleted markers, hushproject
+ *  stubs, and image-classification falls through to false). Used to
+ *  produce a `total` for the clear/reseed progress bar. */
+function countSyncableEntries(entries) {
+  if (!Array.isArray(entries)) return 0;
+  const IMG_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "heif", "avif", "tif", "tiff"];
+  let n = 0;
+  for (const e of entries) {
+    if (e[".tag"] !== "file") continue;
+    const lower = (e.name || "").toLowerCase();
+    if (lower.endsWith(".hushproject")) continue;
+    if (lower.endsWith(".md") || lower.endsWith(".hushnote")) { n++; continue; }
+    if (IMG_EXTS.some((x) => lower.endsWith(`.${x}`))) { n++; continue; }
+    // .hush/*.json meta also goes through the consumer (onMeta).
+    const path = (e.path_display || "").toLowerCase();
+    if (path.includes("/.hush/") && lower.endsWith(".json")) n++;
+  }
+  return n;
+}
+
+async function reapplyHushMetaFiles(state) {
+  const base = (state.settings?.dropboxSyncPath || "").replace(/\/+$/, "");
+  const root = base === "/" ? "" : base;
+  const dbx = await import("./dropbox.js");
+  for (const [filename, modPath, fnName] of META_REAPPLY_ORDER) {
+    try {
+      const payload = await dbx.downloadFile(`${root}/.hush/${filename}`);
+      if (payload == null) continue;
+      const mod = await import(/* @vite-ignore */ modPath);
+      const fn = mod[fnName];
+      if (typeof fn === "function") await fn(state, payload);
+    } catch (_) { /* not present on Dropbox or transient — skip */ }
+  }
+}
+
 // Re-export image sync helpers so older imports keep resolving.
 export { syncCreateImage, syncDeleteImage } from "./sync-images.js";
 

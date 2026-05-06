@@ -97,6 +97,17 @@ export function renderSyncTab(settings) {
         <p class="settings-help">Stop syncing and return to local-only mode.</p>
         <button id="sync-unsync" class="sync-danger-btn">Stop Syncing</button>
       </div>
+      <div class="settings-section">
+        <h2>Clear local versions</h2>
+        <p class="settings-help">
+          Wipe every locally-stored doc, notebook, image, and sync record
+          on this device. The next sync poll reseeds from Dropbox. Use
+          this to recover when the local file tree has diverged from
+          what's on Dropbox. Files that exist only on this device and
+          haven't been pushed will be lost.
+        </p>
+        <button id="sync-clear-local" class="sync-danger-btn">Clear local versions</button>
+      </div>
     `;
   }
 
