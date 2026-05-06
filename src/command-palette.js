@@ -229,9 +229,16 @@ function buildCommands(state) {
       action: (s) => s.emit("notebook-toggle-shelf") },
     { id: "nb-brainstorm", label: "Start brainstorm", icon: null, shortcutKey: "shortcutNbBrainstorm", ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-brainstorm") },
+    { id: "nb-minimap-show", label: "Show minimap", icon: null, shortcutKey: null, ctx: "notebook",
+      hiddenIf: (s) => !!s.settings?.minimapVisible,
+      action: (s) => s.toggleMinimap() },
+    { id: "nb-minimap-hide", label: "Hide minimap", icon: null, shortcutKey: null, ctx: "notebook",
+      hiddenIf: (s) => !s.settings?.minimapVisible,
+      action: (s) => s.toggleMinimap() },
   ];
 
   return all.filter(cmd => {
+    if (typeof cmd.hiddenIf === "function" && cmd.hiddenIf(state)) return false;
     if (cmd.ctx === "shared") return true;
     if (cmd.ctx === "doc") return !inNotebook;
     if (cmd.ctx === "notebook") return inNotebook;

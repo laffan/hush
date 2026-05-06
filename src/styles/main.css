@@ -25,6 +25,7 @@
 @import './sticky-headers.css';
 @import './command-palette.css';
 @import './notebook.css';
+@import './minimap.css';
 @import './floating-pane.css';
 @import './image-preview.css';
 @import './notebook-export.css';

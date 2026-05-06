@@ -579,8 +579,13 @@ export class AppState {
     }
   }
 
-  // ===== Desk + Sync Operations (delegated to sibling modules) =====
+  // ===== Desktop + Sync Operations (delegated to sibling modules) =====
   async setDesktop(fileId) { const m = await import("./state-desktop.js"); return m.setDesktop(this, fileId); }
+  async toggleMinimap() {
+    const next = !this.settings?.minimapVisible;
+    await this.updateSettings({ minimapVisible: next });
+    this.emit("minimap-visibility-changed", next);
+  }
   async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
   async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }

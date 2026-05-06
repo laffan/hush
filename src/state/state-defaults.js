@@ -39,6 +39,10 @@ export function createDefaultSettings() {
     // at the bottom of the files panel. Synced via `.hush/desktop.json`.
     // Null when no desktop is assigned.
     desktopFileId: null,
+    // Notebook-only floating minimap widget. Off by default; toggled
+    // via the command palette ("Show minimap" / "Hide minimap"). The
+    // widget unmounts itself whenever a non-notebook is open.
+    minimapVisible: false,
     // Shortcuts — General
     shortcutOpenEditor: "CmdOrCtrl+Shift+H",
     shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",

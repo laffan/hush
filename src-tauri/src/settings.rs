@@ -341,6 +341,11 @@ pub struct AppSettings {
     /// files (pre-rename) parsing without migration.
     #[serde(default, alias = "deskFileId")]
     pub desktop_file_id: Option<String>,
+    /// Notebook-only floating minimap widget. Off by default; toggled
+    /// via the command palette. Persisted so the user's choice rides
+    /// across restarts.
+    #[serde(default)]
+    pub minimap_visible: bool,
 
     // Notebook shortcuts
     #[serde(default = "default_nb_select")]
@@ -611,6 +616,7 @@ impl Default for AppSettings {
             notebook_text_styles: Vec::new(),
             last_notebook_id: None,
             desktop_file_id: None,
+            minimap_visible: false,
             shortcut_nb_select: default_nb_select(),
             shortcut_nb_text: default_nb_text(),
             shortcut_nb_drag_area: default_nb_drag_area(),
