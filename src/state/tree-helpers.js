@@ -24,10 +24,16 @@ export function removeNode(nodes, id) {
   return null;
 }
 
+/**
+ * Collect fileIds of every `document` descendant. Notebooks are skipped:
+ * the project's joined editor buffer is text-only, so notebook files
+ * inside a project surface as sidebar children rather than feeding the
+ * editor stream.
+ */
 export function collectDocumentIds(nodes) {
   const ids = [];
   for (const n of nodes) {
-    if ((n.type === "document" || n.type === "notebook") && n.fileId) ids.push(n.fileId);
+    if (n.type === "document" && n.fileId) ids.push(n.fileId);
     if (n.children) ids.push(...collectDocumentIds(n.children));
   }
   return ids;
@@ -136,6 +142,32 @@ export function findSyncContext(nodes, targetId) {
   }
   const result = search(nodes, null, []);
   return result === undefined ? null : result;
+}
+
+/**
+ * Inside every project, push notebook children to the bottom while
+ * preserving the user's order within each group. Documents first (they
+ * feed the joined editor buffer), notebooks second (the supplementary
+ * sidebar block under the dashed separator). Recurses into nested
+ * containers so a project under a folder gets normalized too. Mutates
+ * in place; safe to call repeatedly (idempotent).
+ */
+export function normalizeProjectChildren(nodes) {
+  if (!Array.isArray(nodes)) return nodes;
+  for (const n of nodes) {
+    if (!n || !Array.isArray(n.children)) continue;
+    if (n.type === "project") {
+      const docs = [], notebooks = [], rest = [];
+      for (const c of n.children) {
+        if (c.type === "document") docs.push(c);
+        else if (c.type === "notebook") notebooks.push(c);
+        else rest.push(c);
+      }
+      n.children = [...docs, ...notebooks, ...rest];
+    }
+    normalizeProjectChildren(n.children);
+  }
+  return nodes;
 }
 
 export function insertNode(tree, node, parentId, findNodeFn) {

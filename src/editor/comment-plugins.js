@@ -48,8 +48,13 @@ export function createMultiLineCommentPlugin() {
   );
 }
 
-// Plugin that handles the "comment after" marker: ---% makes everything after it semi-gray
+// Plugin that handles the "comment after" marker: ---% makes everything
+// after it semi-gray, scoped to the current doc segment in project view.
+// In a project the joined editor buffer concatenates several files
+// separated by `---hush-separator---` lines, so the dim must close at
+// the next separator rather than running through to the buffer end.
 export function createCommentAfterPlugin() {
+  const SEPARATOR_LINE = "---hush-separator---";
   return ViewPlugin.fromClass(
     class {
       constructor(view) {
@@ -63,13 +68,23 @@ export function createCommentAfterPlugin() {
       buildDecorations(view) {
         const builder = new RangeSetBuilder();
         const doc = view.state.doc;
-        const text = doc.toString();
-        const marker = "---%";
-        const idx = text.indexOf(marker);
-        if (idx !== -1) {
-          // Apply dim styling from the marker to end of document
-          const markerLine = doc.lineAt(idx);
-          builder.add(markerLine.from, doc.length, Decoration.mark({ attributes: { style: "opacity: 0.35" } }));
+        let activeFrom = -1;
+        for (let i = 1; i <= doc.lines; i++) {
+          const line = doc.line(i);
+          const trimmed = line.text.trim();
+          if (activeFrom !== -1) {
+            if (trimmed === SEPARATOR_LINE) {
+              if (line.from > activeFrom) {
+                builder.add(activeFrom, line.from, Decoration.mark({ attributes: { style: "opacity: 0.35" } }));
+              }
+              activeFrom = -1;
+            }
+            continue;
+          }
+          if (line.text.includes("---%")) activeFrom = line.from;
+        }
+        if (activeFrom !== -1 && doc.length > activeFrom) {
+          builder.add(activeFrom, doc.length, Decoration.mark({ attributes: { style: "opacity: 0.35" } }));
         }
         return builder.finish();
       }

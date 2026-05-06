@@ -24,6 +24,7 @@ export function renderList(items, container, path, ctx) {
     li.dataset.path = itemPath.join("/");
     li.dataset.depth = String(path.length);
     li.dataset.canNest = String(isNestable);
+    if (item && typeof item.type === "string") li.dataset.type = item.type;
 
     if (state.selectedPath && pathsEqual(itemPath, state.selectedPath)) {
       li.classList.add("selected");

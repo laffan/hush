@@ -14,15 +14,20 @@ let showingSelection = false;
 export function countWords(text) {
   if (!text) return 0;
   // The `---%` marker dims everything from the start of its line to the
-  // end of the document in the editor (see comment-plugins.js).
-  // Mirror that: anything past the marker is editorial gray-out, not
-  // prose. Slice it off before any other stripping so a `---%` sitting
-  // inside a multi-line comment is treated the same as the editor does.
-  let cleaned = text;
-  const tailMatch = cleaned.match(/(^|\n)[^\n]*---%/);
-  if (tailMatch) {
-    cleaned = cleaned.slice(0, tailMatch.index + (tailMatch[1] ? 1 : 0));
-  }
+  // end of the document in the editor (see comment-plugins.js). Mirror
+  // that: drop the dimmed region before any other stripping so a `---%`
+  // sitting inside a multi-line comment is treated the same as the
+  // editor does. In project mode the joined buffer concatenates multiple
+  // docs separated by `---hush-separator---`; `---%` only dims through
+  // to the next separator, so split per segment and trim each.
+  let cleaned = (text.includes("---hush-separator---")
+      ? text.split(/(?=^---hush-separator---$)/m)
+      : [text])
+    .map((seg) => {
+      const m = seg.match(/(^|\n)[^\n]*---%/);
+      return m ? seg.slice(0, m.index + (m[1] ? 1 : 0)) : seg;
+    })
+    .join("");
   // Strip %% comments %% and inline image refs before counting — comments
   // are editorial notes, not prose, and image markdown isn't "words".
   cleaned = cleaned

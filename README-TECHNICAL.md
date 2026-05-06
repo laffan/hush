@@ -221,7 +221,7 @@ On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invok
 
 **File tree:** `AppState.fileTree` holds a nested tree of documents, folders, projects, and images. Each node: `{ id, type, name, fileId?, children[] }`. Persisted via `file_tree.json` (backend) or `localStorage` (web). Three special nodes are auto-created if missing and pinned in place: **Inbox** (root position 0, accepts new docs/notebooks), **Images** (second-to-last, holds every `image` node dropped into a doc), and **Trash** (last).
 
-**Project state:** When a project is selected (`currentProjectId`), the editor shows all child documents joined by separator markers. `openProject()` loads and concatenates content; `saveProjectContent()` splits on separators and saves each part back.
+**Project state:** When a project is selected (`currentProjectId`), the editor shows all child *documents* joined by separator markers. Notebook children of a project are intentionally excluded from the joined buffer — they ride along as supplementary material in the sidebar instead. `openProject()` loads and concatenates document content; `saveProjectContent()` splits on separators and saves each part back. `state.projectDocIds` only carries doc fileIds, so the split-and-save pipeline never sees a notebook envelope.
 
 Tree traversal utilities live in `state/tree-helpers.js` (`findNode`, `removeNode`, `collectDocumentIds`, `insertAfter`, etc.).
 
@@ -247,7 +247,7 @@ The CodeMirror 6 instance is configured with:
 **Sibling modules.** Two CodeMirror plugins were extracted to keep `editor.js` under the line limit:
 
 - **`editor/heading-indent.js`** — `headingIndentPlugin` (collapses `#` markers when the cursor isn't on the heading line) plus the hang-indent helpers for wrapped list lines (`measureListMarkerPx`, `listIndentLineDeco`, `blockquoteLineDeco`).
-- **`editor/comment-plugins.js`** — `createMultiLineCommentPlugin` (multi-line `%%…%%` blocks) and `createCommentAfterPlugin` (the `---%` end-of-document dim marker).
+- **`editor/comment-plugins.js`** — `createMultiLineCommentPlugin` (multi-line `%%…%%` blocks) and `createCommentAfterPlugin` (the `---%` end-of-document dim marker, scoped per file in project view — the dim closes at the next `---hush-separator---` line so a `---%` in one project doc no longer bleeds across the boundary into the next).
 
 Both are re-exported from `editor.js` so external imports keep working.
 
@@ -302,7 +302,7 @@ Nested tree view with four node types:
 - **Documents** — Markdown files. Click to open in the editor.
 - **Notebooks** — Canvas-based visual notes. Click to open in the notebook view. See [README-NOTEBOOK.md](README-NOTEBOOK.md).
 - **Folders** — Containers for organizing. Drag-and-drop reordering.
-- **Projects** — Ordered containers whose children display as a single document with separators.
+- **Projects** — Ordered containers whose document children concatenate into one editor buffer with dashed separators between them. Notebook children are accepted too but render as a supplementary block in the sidebar — sorted below all docs under a thin dashed line — and stay self-contained (clicked → opens the canvas) instead of feeding the joined buffer. `files-panel.js::normalizeProjectChildren` runs after every drag-drop and on initial render so the docs-first / notebooks-after order is canonical, and the per-row vertical-line connector + dashed break are pure CSS hanging off `data-type` attributes set in `sortable-list/rendering.js`. Consecutive doc rows inside a project carry a 1 px × 4 px vertical line over the gap between icons (`.sl-item[data-type="project"] > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before`); the first notebook after the doc block gets a 1 px dashed border-top in the same selector chain.
 
 Four icon-only "New" buttons (Doc, Notebook, Folder, Project) at the top; the button type is surfaced via tooltip. All types share a hover menu (rename, duplicate, delete). Active item shown bold and underlined. Rendered via the `SortableList` component.
 
@@ -457,7 +457,7 @@ ViewPlugin that shows the current heading hierarchy pinned to the top of the edi
 
 Optional live word count pinned to the top of the text column. When `wordCountVisible` is true, a small pill (`#word-count-display`) is absolutely positioned relative to `.cm-scroller`, horizontally centered in the column, and stacked into the same vertical slot used by the Ratchet timer. When Ratchet mode is active the two elements coexist: the timer renders first and the word count renders directly below it, styled identically (same background, padding, typography, and theme variable hookups as `.ratchet-timer`). When Ratchet is off, the word count takes the slot alone.
 
-Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a whitespace-split after stripping comment markers (`%%...%%`), inline code fences, image markdown, and any text past the line containing the `---%` end-of-document gray-out marker — editorial notes don't inflate the total. In project mode the separators are skipped. Selection changes trigger a recompute too — partly so the project per-doc number tracks separator crossings, partly so a `.has-selection` class flips on the pill the moment the user has something selected. The plugin reads `wordCountVisible` from state and responds to `settings-changed` / `mode-changed` events; toggling is handled by the `toggleWordCount` command, bound by default to `Cmd+Shift+W` and surfaced in the command palette.
+Counting is debounced (~100ms) off the CodeMirror `docChanged` update and uses a whitespace-split after stripping comment markers (`%%...%%`), inline code fences, image markdown, and any text past the line containing the `---%` end-of-document gray-out marker — editorial notes don't inflate the total. In project mode the separators are skipped, and the `---%` strip is applied per segment (split on `---hush-separator---` first, trim each, rejoin) so a marker in one project doc doesn't drop the rest of the project's word count. Selection changes trigger a recompute too — partly so the project per-doc number tracks separator crossings, partly so a `.has-selection` class flips on the pill the moment the user has something selected. The plugin reads `wordCountVisible` from state and responds to `settings-changed` / `mode-changed` events; toggling is handled by the `toggleWordCount` command, bound by default to `Cmd+Shift+W` and surfaced in the command palette.
 
 **Format.** `recompute()` builds a `[[count, label], …]` array and `formatCounts` joins each pair as `"<n> <label>"` with `" / "` between them. Each slot carries its own label so the pill is self-describing:
 

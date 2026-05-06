@@ -6,7 +6,7 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { findNode, collectFlaggedItems, findAncestorIds } from "../state/tree-helpers.js";
+import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
@@ -146,7 +146,7 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance = null;
   }
 
-  const sortedTree = sortFlaggedItems(state.fileTree);
+  const sortedTree = sortFlaggedItems(normalizeProjectChildren(state.fileTree));
 
   sortableInstance = new SortableList(listContainer, {
     data: sortedTree,
@@ -166,7 +166,10 @@ export function createFilesPanel(container, state, hidePanel) {
       }
       if (targetItem.id === AppState.IMAGES_ID) return draggedItem.type === "image";
       if (targetItem.type === "folder") return true;
-      if (targetItem.type === "project") return draggedItem.type === "document" || draggedItem.type === "project";
+      // Projects accept docs (joined into the editor buffer), notebooks
+      // (the supplementary sidebar block under the dashed line), and
+      // nested projects.
+      if (targetItem.type === "project") return ["document", "notebook", "project"].includes(draggedItem.type);
       return false;
     },
     canDrag: (item) => {
@@ -229,6 +232,7 @@ export function createFilesPanel(container, state, hidePanel) {
 
     onChange: (newData) => {
       enforceSpecialPositions(newData);
+      normalizeProjectChildren(newData);
       state.fileTree = newData;
       state.saveFileTree();
       state.reconcileSync();
@@ -243,14 +247,12 @@ export function createFilesPanel(container, state, hidePanel) {
 
   // Trash and Images stay collapsed unless the user explicitly opens them
   // (mirroring each other — both are "drawer" special nodes at the tail).
-  sortableInstance.state.collapsedIds.add(AppState.TRASH_ID);
-  sortableInstance.state.collapsedIds.add(AppState.IMAGES_ID);
+  [AppState.TRASH_ID, AppState.IMAGES_ID].forEach(id => sortableInstance.state.collapsedIds.add(id));
   sortableInstance.render();
 
   // Render the virtual Flagged folder
   renderFlaggedSection(state);
 
-  // Bind create buttons
   btnRow.querySelector("#tree-new-doc").addEventListener("click", () => state.newFile());
   btnRow.querySelector("#tree-new-notebook").addEventListener("click", async () => {
     await state.createNotebook("New Notebook");
@@ -521,7 +523,7 @@ function isItemActive(item, state) {
 
 function refreshList(state) {
   if (sortableInstance) {
-    const sorted = sortFlaggedItems(state.fileTree);
+    const sorted = sortFlaggedItems(normalizeProjectChildren(state.fileTree));
     sortableInstance.setData(sorted);
   }
   renderFlaggedSection(state);

@@ -278,6 +278,35 @@
   opacity: 0.5;
 }
 
+/* ===== Project children — visual cohesion cues =====
+   Inside a project, doc children render first (they feed the joined
+   editor buffer) and notebook children render below them as
+   supplementary material. A short vertical connector sits in the gap
+   between consecutive doc icons to signal the joined-document context;
+   a thin dashed rule above the first notebook breaks the supplementary
+   block off from the docs above. Both are scoped to direct children of
+   a `.sl-item[data-type="project"]` so they don't leak into folders. */
+.sl-item[data-type="project"] > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"] {
+  position: relative;
+}
+.sl-item[data-type="project"] > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before {
+  content: "";
+  position: absolute;
+  left: 30px;
+  top: -5px;
+  width: 1px;
+  height: 4px;
+  background: currentColor;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sl-item[data-type="project"] > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="notebook"] {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(128, 128, 128, 0.4);
+}
+
 /* "Empty" text button on Trash hover */
 .tree-action-text {
   background: none;
