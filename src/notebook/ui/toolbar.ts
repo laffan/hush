@@ -152,24 +152,11 @@ export function createToolbar(state: DrawingState): HTMLElement {
   const bookmarksEl = createBookmarksPanel(state);
   const layersEl = createLayersPanel(state);
 
-  // Grab tool — persistent pan mode. Toggles `state.isPanning`, which
-  // every pointer handler (notebook canvas + drawing engine) already
-  // consults. Exists so iPad users without a keyboard can reach the
-  // same panning affordance space-bar holders get on desktop.
-  const grabBtn = h("button", {
-    title: "Pan (hold space)",
-    style: {
-      width: "36px", height: "36px", display: "flex",
-      alignItems: "center", justifyContent: "center",
-      border: "none", borderRadius: "8px", cursor: "pointer",
-      background: "transparent", transition: "all 0.15s",
-    },
-    children: [icon("grab", 20)],
-    onClick: () => {
-      state.isPanning = !state.isPanning;
-      state.notify("isPanning");
-    },
-  });
+  // Pan: keyboard shortcut (space) and two-finger drag are the only
+  // entry points now — the dedicated grab button was removed when the
+  // bottom toolbar was attached to the drawing toolbar (the combined
+  // unit is too wide to keep a button that's already covered by other
+  // gestures).
 
   const container = h("div", {
     style: {
@@ -180,7 +167,6 @@ export function createToolbar(state: DrawingState): HTMLElement {
       backdropFilter: "blur(8px)",
     },
     children: [
-      grabBtn,
       ...TOOLS.map(makeBtn),
       spacer,
       layersEl.root,
@@ -188,6 +174,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
       gridPopup,
     ],
   });
+  container.classList.add("notebook-toolbar");
 
   const gridBtnEl = (gridPopup as any)._gridBtn as HTMLElement;
 
@@ -195,12 +182,17 @@ export function createToolbar(state: DrawingState): HTMLElement {
     const theme = state.theme;
     container.style.background = theme.uiBackground;
 
-    // Center toolbar between sidebar inset and right edge of parent
+    // Center toolbar between sidebar inset and right edge of parent,
+    // then apply the user's drag offset so the combined toolbar (this
+    // pill + the drawing pill that anchors to its right edge) moves
+    // as a single unit when the hamburger drag tab is dragged.
     const inset = state.leftInset || 0;
     const parentW = container.parentElement?.clientWidth || window.innerWidth;
     const center = inset + (parentW - inset) / 2;
-    container.style.left = center + "px";
+    const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
+    container.style.left = (center + offset.x) + "px";
     container.style.transform = "translateX(-50%)";
+    container.style.bottom = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
 
     const fg = theme.foreground;
     const accent = theme.accent;
@@ -215,10 +207,6 @@ export function createToolbar(state: DrawingState): HTMLElement {
       btn.style.color = active ? accent : fg;
       btn.style.opacity = active ? "1" : "0.6";
     }
-    // Grab: always visible. Active reflects state.isPanning — whether
-    // panning was entered via this button or via the space bar.
-    grabBtn.style.color = state.isPanning ? accent : fg;
-    grabBtn.style.opacity = state.isPanning ? "1" : "0.6";
     gridBtnEl.style.color = fg;
     gridBtnEl.style.opacity = "0.6";
   }

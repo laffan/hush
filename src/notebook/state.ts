@@ -84,9 +84,10 @@ export class DrawingState extends EventTarget {
    *  lasso. Exposed via the lasso flyout's slider (500–2000 ms). */
   lassoHoldMs = 500;
 
-  /** When true, the top drawing pill is hidden and a one-item pencil
-   *  pill appears beside the bottom toolbar. Session-only state. */
-  drawingToolbarMinimized = true;
+  /** Legacy field kept only for type compatibility — the drawing
+   *  toolbar is always visible now (attached to the bottom toolbar
+   *  with a hamburger drag-tab at the end). Always false. */
+  drawingToolbarMinimized = false;
 
   /** Offset (CSS px) from the top-center anchor for the drawing
    *  toolbar. Set by the drag-handle in the meta-tools group; default

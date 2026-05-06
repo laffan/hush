@@ -15,7 +15,7 @@ src/notebook/drawing/
   brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
   brush-runtime.ts       Helpers used by drawing-layer (slot colour resolution, applySlot, renderSwatch, theme retint) — extracted to keep drawing-layer.ts under the 700-line cap
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
-  tool-panel.ts          Top pill (Lasso, Erase, Slice, brush slots, lasso hold-time flyout) plus a sibling meta-tools pill (drag handle + minimize) and the restore pencil pill mounted next to the bottom toolbar
+  tool-panel.ts          Drawing pill (Undo, brush slots, Slice, Erase, Lasso) anchored to the right edge of the bottom toolbar, plus a gray hamburger drag-tab at its right end (drag = move the combined toolbar)
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
   pencil-bridge.js (sibling, in src/notebook/) — staged JS for the Pencil bridge; currently inert because the native plugin is not registered (see "Apple Pencil bridge" below)
@@ -97,7 +97,7 @@ The plugin is **not** registered in `src-tauri/src/lib.rs` or `Cargo.toml` right
 
 Drawing is always on-deck: the top pill is rendered at all times and picking any of its buttons flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool from the bottom toolbar (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the pill visually dims (buttons at 0.6 opacity).
 
-A second **meta-tools pill** sits to the right of the main pill carrying the **drag handle** (a 4-direction arrow icon — press and drag to reposition both pills as a unit, persisting the offset on `state.drawingToolbarOffset`) and a **minimize** button. Clicking minimize flips `state.drawingToolbarMinimized = true`, which hides both pills (`display: none`) and shows a separate one-item pencil pill positioned 10 px to the right of the bottom toolbar. Clicking the pencil flips the flag back. Minimize also reverts `state.tool` to `"select"` if the user was mid-pen, so they aren't trapped with an active draw / erase / slice tool they can no longer see. The flag is session-only (not persisted) and defaults to `true` — fresh notebooks open with only the pencil pill visible, so users who don't draw aren't met with a full toolbar they have to dismiss. The restore pill's left edge tracks the bottom toolbar's right edge via a `ResizeObserver` + state-change hook in `notes-canvas.ts` so it stays glued in place as theme / sidebar / brainstorm width changes shift the bottom toolbar around.
+The drawing pill anchors to the right edge of the bottom toolbar with a 10 px gap so the two pills read as one combined toolbar. A small gray pill abutting the drawing pill's right edge — the **hamburger drag-tab** — is the only chrome that's visually distinct from the rest of the toolbar; press-and-drag on it updates `state.drawingToolbarOffset`, which both the bottom toolbar and the drawing pill consume so the entire combined toolbar moves as a unit. There's no minimize/restore: the drawing tools are always visible. A `ResizeObserver` on the bottom toolbar drives a `relayout()` callback that re-anchors the drawing pill (and its hamburger) whenever sidebar / theme / leftInset shifts change the bottom toolbar's width.
 
 | Sub-tool | Engine behavior |
 |----------|-----------------|

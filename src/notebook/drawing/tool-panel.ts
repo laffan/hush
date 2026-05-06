@@ -1,20 +1,16 @@
 /* src/notebook/drawing/tool-panel.ts
  *
- * Top-centered drawing toolbar. Visible at all times — drawing tools
- * are now always accessible rather than gated behind a "pen mode"
- * toggle. Clicking any button here (lasso, erase, slice, or a brush
- * slot) implicitly routes input to the drawing engine (state.tool =
- * "pen") with the appropriate sub-tool.
+ * Drawing toolbar. Sits at the bottom of the notebook, anchored to the
+ * right edge of the bottom toolbar with a 10 px gap so the two pills
+ * read as one combined toolbar. Always visible — there's no minimize
+ * state any more, just a gray hamburger drag-tab at the right end that
+ * lets the user reposition the entire combined toolbar (both pills
+ * move in lockstep via `state.drawingToolbarOffset`).
  *
  * Contents (left → right):
  *   Undo | Brush 1 · Brush 2 · Brush 3 | Slice · Erase · Lasso
- *   then a small meta-tools cluster mounted alongside:
- *   Drag (reposition) · Minimize
- *
- * The meta-tools cluster sits in its own pill — minimize and drag
- * aren't drawing tools, so they don't share the line with brush
- * slots. The drag handle is a press-and-drag affordance that moves
- * both pills together.
+ * Then a separate gray pill, abutting the right edge, with a hamburger
+ * icon — the drag handle.
  *
  * The lasso button exposes its own small flyout (click to activate,
  * click-again to toggle) letting the user dial in how long a held
@@ -44,19 +40,20 @@ const SUB_TOOLS: SubToolDef[] = [
 ];
 
 export interface DrawingToolPanelHandle {
-  /** The pill-shaped panel that sits at the top of the notebook —
-   *  contains the drawing tools (lasso / erase / slice / brushes). */
+  /** Pill containing the drawing tools (undo, brushes, slice/erase/lasso). */
   root: HTMLElement;
-  /** Meta-tools pill (drag handle + minimize). Mounted alongside the
-   *  main pill so the two travel together when dragged. */
-  metaPill: HTMLElement;
+  /** Gray hamburger drag tab — visually abuts the right edge of `root`
+   *  but is a separate element so its theme can diverge. */
+  dragTab: HTMLElement;
   /** Flyouts (brush edit + lasso settings). Append separately — they
    *  can extend past the pill and position themselves relative to
    *  their shared parent. */
   flyout: HTMLElement;
-  /** One-item pill (pencil icon) shown only while the main panel is
-   *  minimized. Caller mounts it next to the bottom toolbar. */
-  restorePill: HTMLElement;
+  /** Recompute the drawing pill's anchor position. The pill anchors
+   *  to the right edge of the bottom toolbar, so a width change in
+   *  the bottom toolbar (theme switch, layers panel content change,
+   *  leftInset shift) needs to nudge this pill back into place. */
+  relayout(): void;
 }
 
 export function createDrawingToolPanel(
@@ -66,7 +63,7 @@ export function createDrawingToolPanel(
   const container = h("div", {
     style: {
       position: "absolute",
-      top: "calc(16px + env(safe-area-inset-top))",
+      bottom: "calc(16px + env(safe-area-inset-bottom))",
       display: "flex",
       alignItems: "center",
       gap: "4px",
@@ -95,10 +92,6 @@ export function createDrawingToolPanel(
   }
 
   // ----- Undo (backup for the 2-finger tap gesture) ----------------
-  // The touch gesture isn't always reliable on every device, so a
-  // visible button gives the user a definitely-works fallback. Wired
-  // straight to Hush's snapshot-based undo so it shares the stack
-  // with ⌘Z and the gesture itself.
 
   const undoBtn = h("button", {
     title: "Undo",
@@ -115,12 +108,9 @@ export function createDrawingToolPanel(
 
   // ----- Brush slots ------------------------------------------------
 
-  // Layers live in the main notebook toolbar (not here) because
-  // layer membership applies to every shape type, not just drawings.
   const slots = createBrushSlots(state, drawingLayer);
   container.appendChild(slots.root);
 
-  // Divider between brushes and the destructive / select tools.
   container.appendChild(h("div", {
     style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
   }));
@@ -158,8 +148,6 @@ export function createDrawingToolPanel(
     onClick: () => {
       const alreadyActive = state.tool === "pen" && state.drawingSubTool === "select";
       if (alreadyActive) {
-        // Mirror the brush-slot pattern: clicking the already-active
-        // tool toggles its flyout.
         if (lassoFlyoutOpen) closeLassoFlyout(); else openLassoFlyout();
         return;
       }
@@ -169,55 +157,33 @@ export function createDrawingToolPanel(
   });
   container.appendChild(lassoBtn);
 
-  // ----- Meta-tools pill (drag handle + minimize) -------------------
+  // ----- Hamburger drag tab (replaces the meta-tools pill) ----------
   //
-  // The drag handle and the minimize button aren't drawing tools, so
-  // they sit in their own pill alongside the main one. The drag
-  // handle is a press-and-drag affordance — pressing it captures the
-  // pointer and translates both pills together.
+  // A small gray pill abutting the right edge of the drawing toolbar.
+  // Press-and-drag updates `state.drawingToolbarOffset`, which both
+  // this pill *and* the bottom toolbar consume — so the combined
+  // toolbar moves as one unit.
 
-  const metaPill = h("div", {
-    style: {
-      position: "absolute",
-      top: "calc(16px + env(safe-area-inset-top))",
-      display: "flex",
-      alignItems: "center",
-      gap: "4px",
-      padding: "6px 8px",
-      borderRadius: "12px",
-      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-      zIndex: "100",
-      userSelect: "none",
-      backdropFilter: "blur(8px)",
-    },
-  });
-  metaPill.classList.add("notebook-tool-panel");
-
-  const dragBtn = h("button", {
+  const dragTab = h("button", {
     title: "Drag toolbar",
     style: {
-      width: "36px", height: "36px", display: "flex",
+      position: "absolute",
+      bottom: "calc(16px + env(safe-area-inset-bottom))",
+      width: "32px", height: "48px",
+      display: "flex",
       alignItems: "center", justifyContent: "center",
-      border: "none", borderRadius: "8px", cursor: "grab",
-      background: "transparent", transition: "all 0.15s",
+      border: "none",
+      borderRadius: "0 12px 12px 0",
+      cursor: "grab",
+      transition: "background 0.15s",
       touchAction: "none",
+      zIndex: "100",
+      padding: "0",
+      userSelect: "none",
     },
-    children: [icon("move", 20)],
+    children: [icon("menu", 18)],
   }) as HTMLButtonElement;
-  metaPill.appendChild(dragBtn);
-
-  const minimizeBtn = h("button", {
-    title: "Hide drawing toolbar",
-    style: {
-      width: "36px", height: "36px", display: "flex",
-      alignItems: "center", justifyContent: "center",
-      border: "none", borderRadius: "8px", cursor: "pointer",
-      background: "transparent", transition: "all 0.15s",
-    },
-    children: [icon("minimize", 20)],
-    onClick: () => state.setDrawingToolbarMinimized(true),
-  }) as HTMLButtonElement;
-  metaPill.appendChild(minimizeBtn);
+  dragTab.classList.add("notebook-tool-panel-drag-tab");
 
   // ----- Drag-to-reposition wiring ---------------------------------
 
@@ -229,8 +195,8 @@ export function createDrawingToolPanel(
     dragPointerId = e.pointerId;
     dragStartClient = { x: e.clientX, y: e.clientY };
     dragStartOffset = { ...state.drawingToolbarOffset };
-    try { dragBtn.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    dragBtn.style.cursor = "grabbing";
+    try { dragTab.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    dragTab.style.cursor = "grabbing";
     e.preventDefault();
   }
   function onDragPointerMove(e: PointerEvent) {
@@ -243,37 +209,15 @@ export function createDrawingToolPanel(
   function onDragPointerUp(e: PointerEvent) {
     if (dragStartClient === null) return;
     if (e.pointerId !== dragPointerId) return;
-    try { dragBtn.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    try { dragTab.releasePointerCapture(e.pointerId); } catch { /* noop */ }
     dragStartClient = null;
     dragPointerId = null;
-    dragBtn.style.cursor = "grab";
+    dragTab.style.cursor = "grab";
   }
-  dragBtn.addEventListener("pointerdown", onDragPointerDown);
-  dragBtn.addEventListener("pointermove", onDragPointerMove);
-  dragBtn.addEventListener("pointerup", onDragPointerUp);
-  dragBtn.addEventListener("pointercancel", onDragPointerUp);
-
-  // ----- Restore pill (shown when minimized) -----------------------
-
-  const restorePill = h("button", {
-    title: "Show drawing toolbar",
-    style: {
-      position: "absolute",
-      bottom: "calc(16px + env(safe-area-inset-bottom))",
-      width: "48px", height: "48px",
-      display: "none",
-      alignItems: "center", justifyContent: "center",
-      border: "none", borderRadius: "12px", cursor: "pointer",
-      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-      backdropFilter: "blur(8px)",
-      padding: "6px 8px",
-      zIndex: "100",
-      userSelect: "none",
-    },
-    children: [icon("pen", 20)],
-    onClick: () => state.setDrawingToolbarMinimized(false),
-  }) as HTMLButtonElement;
-  restorePill.classList.add("notebook-tool-panel");
+  dragTab.addEventListener("pointerdown", onDragPointerDown);
+  dragTab.addEventListener("pointermove", onDragPointerMove);
+  dragTab.addEventListener("pointerup", onDragPointerUp);
+  dragTab.addEventListener("pointercancel", onDragPointerUp);
 
   // ----- Lasso flyout (hold-duration slider) ------------------------
 
@@ -321,7 +265,6 @@ export function createDrawingToolPanel(
   lassoFlyout.appendChild(lassoSliderRow);
 
   function formatHoldMs(ms: number): string {
-    // 1 decimal when there's a fractional part, whole seconds otherwise.
     const s = ms / 1000;
     return (Math.round(s * 10) / 10).toFixed(s === Math.round(s) ? 0 : 1) + "s";
   }
@@ -339,8 +282,10 @@ export function createDrawingToolPanel(
     const parentRect = parent.getBoundingClientRect();
     const btnRect = lassoBtn.getBoundingClientRect();
     const centerX = btnRect.left + btnRect.width / 2 - parentRect.left;
+    // Anchor above the lasso button (toolbar lives at the bottom now).
     lassoFlyout.style.left = `${centerX}px`;
-    lassoFlyout.style.top = `${btnRect.bottom - parentRect.top + 8}px`;
+    lassoFlyout.style.bottom = `${parentRect.bottom - btnRect.top + 8}px`;
+    lassoFlyout.style.top = "auto";
     lassoFlyout.style.transform = "translateX(-50%)";
   }
 
@@ -364,8 +309,6 @@ export function createDrawingToolPanel(
     if (!lassoFlyoutOpen) return;
     const t = e.target as Node;
     if (lassoFlyout.contains(t) || lassoBtn.contains(t)) return;
-    // Ignore clicks in any chrome cluster — matches the brush-flyout
-    // close-suppression rules so the two panels coexist.
     let el: HTMLElement | null = t as HTMLElement;
     while (el && el !== document.body) {
       const cls = el.classList;
@@ -382,8 +325,6 @@ export function createDrawingToolPanel(
   function updateActiveClasses(): void {
     const theme = state.theme;
     const drawing = state.tool === "pen";
-    // Lasso is active only while the drawing engine is active AND
-    // the sub-tool is select.
     const lassoActive = drawing && state.drawingSubTool === "select";
     lassoBtn.style.color = lassoActive ? theme.accent : theme.foreground;
     lassoBtn.style.opacity = lassoActive ? "1" : "0.6";
@@ -394,17 +335,8 @@ export function createDrawingToolPanel(
       btn.style.opacity = active ? "1" : "0.6";
       btn.style.background = active ? "rgba(66, 133, 244, 0.08)" : "transparent";
     }
-    // Stateless buttons (undo / drag / minimize) — buttons don't inherit
-    // `color` from their container by default, so without an explicit
-    // theme color the SVGs render as user-agent black.
     undoBtn.style.color = theme.foreground;
     undoBtn.style.opacity = "0.6";
-    dragBtn.style.color = theme.foreground;
-    dragBtn.style.opacity = "0.6";
-    minimizeBtn.style.color = theme.foreground;
-    minimizeBtn.style.opacity = "0.6";
-    restorePill.style.color = theme.foreground;
-    restorePill.style.opacity = "0.6";
   }
 
   function applyActiveSlot(): void {
@@ -413,43 +345,40 @@ export function createDrawingToolPanel(
   }
 
   function applyLayout(): void {
-    const inset = state.leftInset || 0;
     const parent = container.parentElement;
-    const parentW = parent ? parent.clientWidth : window.innerWidth;
-    const center = inset + (parentW - inset) / 2;
+    if (!parent) return;
     const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
-    // Top edge of both pills is at the safe-area inset; an extra Y
-    // offset pushes them down (or up) when the user drags.
-    const topAnchor = `calc(16px + env(safe-area-inset-top) + ${offset.y}px)`;
-    container.style.left = (center + offset.x) + "px";
-    container.style.top = topAnchor;
-    container.style.transform = "translateX(-50%)";
+    const bottomAnchor = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
+    container.style.bottom = bottomAnchor;
     container.style.background = state.theme.uiBackground;
     container.style.color = state.theme.foreground;
-    // The meta pill sits to the right of the main pill; lay it out
-    // by reading the main pill's right edge after layout settles.
+    // Find the bottom toolbar's right edge in container-local coords
+    // and anchor the drawing pill 10 px past it. The bottom toolbar
+    // applies the same offset, so the relative position is stable —
+    // dragging the hamburger moves both pills together.
     const place = () => {
-      const r = container.getBoundingClientRect();
-      const parentRect = parent ? parent.getBoundingClientRect() : { left: 0, top: 0 };
-      metaPill.style.left = (r.right - parentRect.left + 8) + "px";
-      metaPill.style.top = topAnchor;
-      metaPill.style.transform = "none";
-      metaPill.style.background = state.theme.uiBackground;
-      metaPill.style.color = state.theme.foreground;
+      const bottomToolbar = parent.querySelector<HTMLElement>(":scope > .notebook-toolbar");
+      const parentRect = parent.getBoundingClientRect();
+      let leftPx: number;
+      if (bottomToolbar) {
+        const tbRect = bottomToolbar.getBoundingClientRect();
+        leftPx = tbRect.right - parentRect.left + 10;
+      } else {
+        leftPx = parentRect.width / 2;
+      }
+      container.style.left = leftPx + "px";
+      container.style.transform = "none";
+      // Drag tab abuts the right edge of the drawing pill.
+      const cRect = container.getBoundingClientRect();
+      dragTab.style.left = (cRect.right - parentRect.left) + "px";
+      dragTab.style.bottom = bottomAnchor;
+      dragTab.style.transform = "none";
+      dragTab.style.background = "rgba(127,127,127,0.18)";
+      dragTab.style.color = state.theme.foreground;
     };
     place();
     requestAnimationFrame(place);
     if (lassoFlyoutOpen) positionLassoFlyout();
-  }
-
-  function applyMinimizedState(): void {
-    const minimized = state.drawingToolbarMinimized;
-    container.style.display = minimized ? "none" : "flex";
-    metaPill.style.display = minimized ? "none" : "flex";
-    restorePill.style.display = minimized ? "flex" : "none";
-    restorePill.style.background = state.theme.uiBackground;
-    restorePill.style.color = state.theme.foreground;
-    if (minimized && lassoFlyoutOpen) closeLassoFlyout();
   }
 
   state.addEventListener("change", ((e: CustomEvent) => {
@@ -459,44 +388,25 @@ export function createDrawingToolPanel(
       applyActiveSlot();
       drawingLayer.setTool(state.drawingSubTool);
     }
-    // Brush-slot edits (size / streamline / spacing / color / brushId /
-    // mode slider updates in the flyout) and slot activation both need
-    // the engine's current-slot config to refresh. Without this branch
-    // the engine keeps drawing at whatever size was last pushed by a
-    // tool-change event — so a slider drag looks like it's doing
-    // nothing until some other state nudge happens to trigger apply.
     if (keys.includes("activeBrushSlot") || keys.includes("brushSlots")) {
       applyActiveSlot();
     }
-    // Close the lasso flyout if the user navigates away from lasso —
-    // leaving pen mode, or switching to a different sub-tool.
     if (lassoFlyoutOpen) {
       const lassoLive = state.tool === "pen" && state.drawingSubTool === "select";
       if (!lassoLive) closeLassoFlyout();
     }
     updateActiveClasses();
-    if (keys.includes("drawingToolbarOffset") || keys.includes("theme") ||
-        keys.includes("drawingToolbarMinimized")) {
-      applyLayout();
-    } else {
-      applyLayout();
-    }
-    if (keys.includes("drawingToolbarMinimized") || keys.includes("theme")) {
-      applyMinimizedState();
-    }
+    applyLayout();
   }) as EventListener);
 
   updateActiveClasses();
   applyLayout();
-  applyMinimizedState();
   applyActiveSlot();
   drawingLayer.setTool(state.drawingSubTool);
 
-  // Two flyouts share the same "wider than the pill" parent slot.
-  // Callers mount both alongside the pill root.
   const flyoutGroup = h("div", { style: { position: "relative" } });
   flyoutGroup.appendChild(slots.flyout);
   flyoutGroup.appendChild(lassoFlyout);
 
-  return { root: container, metaPill, flyout: flyoutGroup, restorePill };
+  return { root: container, dragTab, flyout: flyoutGroup, relayout: applyLayout };
 }

@@ -64,6 +64,8 @@ const PATHS: Record<string, string> = {
   // Move / drag — 4-direction arrows from a center cross. Used as the
   // grab handle for repositioning the drawing toolbar.
   "move": `<path d="M12 4 V20 M4 12 H20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9 7 L12 4 L15 7 M9 17 L12 20 L15 17 M7 9 L4 12 L7 15 M17 9 L20 12 L17 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  // Menu / hamburger — three horizontal lines. Used as the toolbar drag tab.
+  "menu": `<path d="M5 7 H19 M5 12 H19 M5 17 H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
   // Undo — counter-clockwise curl with an arrowhead returning left.
   "undo": `<path d="M9 14 L4 9 L9 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9 H14 A6 6 0 0 1 14 21 H10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Grab / hand gesture — paths lifted from temp-icons/drag-hand-gesture.svg,

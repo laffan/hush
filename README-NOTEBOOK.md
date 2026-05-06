@@ -39,7 +39,7 @@ src/notebook/
     drawing-layer.ts       Engine-backed drawing layer + public API
     sync-shim.ts           state.shapes[] ↔ engine.strokes bridge
     brush-slots.ts         Toolbar slot row + brush-edit flyout
-    tool-panel.ts          Top draw pill: Lasso, Erase, Slice, brush slots, lasso hold-time flyout, plus a minimize button + restore pencil pill mounted alongside the bottom toolbar
+    tool-panel.ts          Drawing pill anchored to the bottom toolbar: Undo, brush slots, Slice, Erase, Lasso, lasso hold-time flyout, plus a gray hamburger drag-tab at the right end
     layers-panel.ts        Layers dropdown (notebook-level, used by every shape type)
     engine/                Stroke engine (ported; 8 documented deltas)
 ```

@@ -242,12 +242,12 @@ export class NotesCanvas {
 
     // Top tool panel + brush-slot flyout. The panel is a pill; the
     // flyout is wider and mounts alongside so it isn't clipped by
-    // the pill's overflow. Both live inside `container`. The meta
-    // pill (drag handle + minimize) sits to the right of the main
-    // pill and travels with it when dragged.
+    // the pill's overflow. Both live inside `container`. The drawing
+    // pill anchors itself to the right edge of the bottom toolbar at
+    // layout time; the dragTab (gray hamburger) is appended further
+    // below alongside the rest of the bottom-bar UI.
     const drawingChrome = createDrawingToolPanel(this.state, this._drawingLayer);
     container.appendChild(drawingChrome.root);
-    container.appendChild(drawingChrome.metaPill);
     container.appendChild(drawingChrome.flyout);
 
     // Route Hush select-drag through the drawing engine's preview
@@ -316,35 +316,22 @@ export class NotesCanvas {
     const bottomToolbar = createToolbar(this.state);
     container.appendChild(bottomToolbar);
 
-    // Mount the drawing-toolbar restore pill (pencil) next to the
-    // bottom toolbar; the layout function below positions it to the
-    // right of the bottom toolbar with a 10px gap whenever shown.
-    container.appendChild(drawingChrome.restorePill);
-    const positionRestorePill = () => {
-      if (!this.state.drawingToolbarMinimized) return;
-      const tbRect = bottomToolbar.getBoundingClientRect();
-      const parentRect = container.getBoundingClientRect();
-      const left = tbRect.right - parentRect.left + 10;
-      drawingChrome.restorePill.style.left = `${left}px`;
-      drawingChrome.restorePill.style.transform = "none";
-    };
-    this.state.addEventListener("change", ((e: CustomEvent) => {
-      const keys: string[] = (e.detail && e.detail.keys) || [];
-      if (keys.includes("drawingToolbarMinimized") || keys.includes("theme") ||
-          keys.includes("isPanning") || keys.includes("brainstormMode") ||
-          keys.includes("tool")) {
-        // Defer to next frame so the bottom toolbar has rendered any
-        // size changes (active tool tints don't change width, but
-        // theme/leftInset shifts do).
-        requestAnimationFrame(positionRestorePill);
-      }
-    }) as EventListener);
+    // Drawing toolbar now anchors itself to the right edge of the
+    // bottom toolbar (see tool-panel.ts::applyLayout). Its hamburger
+    // drag tab — which replaces the old meta-pill drag handle — is
+    // mounted in the same parent so it can sit flush against the
+    // drawing pill's right edge. Both pills' positions read
+    // `state.drawingToolbarOffset`, so a drag from the hamburger
+    // moves the entire combined toolbar as a unit. Resize observers
+    // below keep the drawing pill's anchor honest as the bottom
+    // toolbar grows / shrinks (theme + leftInset shifts).
+    container.appendChild(drawingChrome.dragTab);
     if (typeof ResizeObserver !== "undefined") {
-      const ro = new ResizeObserver(() => positionRestorePill());
+      const ro = new ResizeObserver(() => drawingChrome.relayout());
       ro.observe(bottomToolbar);
       ro.observe(container);
     }
-    requestAnimationFrame(positionRestorePill);
+    requestAnimationFrame(() => drawingChrome.relayout());
 
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);
