@@ -92,6 +92,22 @@ body.notebook-mode .column-resizer {
 /* Drawing overlay — classes used by the engine's selection.js and
  * stroke.js inside the drawing layer. Scoped to the wrapper class
  * so rules don't collide with any other notebook SVG. */
+
+/* iPad WebKit hit-testing: the SVG root is set to `pointer-events:
+ * bounding-box` while drawing mode is on so the engine's pointerdown
+ * listener fires on empty areas (an empty `<svg>` with `auto` isn't
+ * a hit target on iPad). That value inherits down to descendants,
+ * which means an invisible `bboxGroup` <g> still claims hits on its
+ * own bounding box and routes them away from the SVG root. Reset all
+ * structural SVG children to `pointer-events: none`; the rules below
+ * for `.bbox` and `.handle` opt their interactive children back in to
+ * `auto`, so resize handles + the bbox-as-grab stay clickable. */
+.notebook-drawing-wrapper svg g,
+.notebook-drawing-wrapper svg .lasso,
+.notebook-drawing-wrapper svg .delete-btn {
+  pointer-events: none;
+}
+
 .notebook-drawing-wrapper .lasso {
   fill: rgba(66, 133, 244, 0.08);
   stroke: #4285f4;
