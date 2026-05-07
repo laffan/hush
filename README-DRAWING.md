@@ -18,8 +18,7 @@ src/notebook/drawing/
   tool-panel.ts          Drawing pill (Undo, brush slots, Slice, Erase, Lasso) anchored to the right edge of the bottom toolbar, plus a gray hamburger drag-tab at its right end (drag = move the combined toolbar)
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
-  pencil-bridge.js (sibling, in src/notebook/) — staged JS for the Pencil bridge; currently inert because the native plugin is not registered (see "Apple Pencil bridge" below)
-  drawing-debug-hud.js (sibling) — on-screen pointer/touch logger with copy-to-clipboard, mounted on iOS dev builds to debug the bridge
+  pencil-bridge.js (sibling, in src/notebook/) — flips `setPencilOnly(true)` on iOS Tauri builds so finger contacts can't seed strokes; PointerEvent.pointerType is reliable on iPad WKWebView so this needs no native plugin
   engine/
     stroke.js            Stroke engine entry: pointerdown/move/up → active stroke → done canvas; configurable long-press-ms
     stroke-render.js     Draws stamps into the done canvas via the brush atlas
@@ -87,11 +86,11 @@ Targeted deltas have been applied to `engine/` so the port stays as close as pos
 15. **Soft selection deactivate** — `selection.js` exposes `setEventActive(bool)` alongside the existing `activate / deactivate` pair. The hard `deactivate()` clears `selectedIds` (it has to, to keep the lasso-end semantics). `setEventActive(false)` only flips `state.active = false` and clears any in-flight lasso, so `drawing-layer.setTool` can disable engine event capture for non-select sub-tools without dropping the user's retroactive selection. Without this, brush-slot taps would wipe the engine selection right after the bridge re-populated it on the same tool change.
 16. **Chrome interactivity toggle** — `selection.js` exposes `setChromeInteractive(bool)` which toggles `pointerEvents` on the entire bbox `<g>`. Used by the bridge during pen+draw/erase/slice with a live retroactive selection: the chrome stays painted (the user can see what's selected while the brush flyout retints it) but every pointerdown falls through to the stroke engine, so the user's next stroke isn't intercepted by an invisible-to-them resize handle.
 
-### Apple Pencil bridge (iOS only) — staged, currently disabled
+### Apple Pencil gating (iOS)
 
-A native plugin scaffold lives at `src-tauri/tauri-plugin-pencil/` (Swift `PencilPlugin` + Rust shell). It's intended to surface two iPadOS signals that `PointerEvent` doesn't expose reliably on this Tauri WKWebView build: per-touch `UITouch.type` (`"pencil"` vs `"finger"`) and the Apple Pencil 2nd gen / Pro hardware double-tap. The JS-side bridge module (`src/notebook/pencil-bridge.js`) stashes the most recent touch kind on `window.__hushLastTouchKind` and routes `double-tap` into a draw / erase toggle on the active notebook.
+On iOS Tauri builds, finger touches don't draw — only Apple Pencil and mouse can seed strokes. The gate lives at the engine level: `engine/stroke.js` carries a `setPencilOnly(bool)` flag (delta #18) that rejects every non-pen, non-mouse `pointerdown`. `src/notebook/pencil-bridge.js` flips that flag on once at startup if the runtime is iOS — no native plugin involved, since `PointerEvent.pointerType` reliably reports `"pen"` for Apple Pencil and `"touch"` for finger on this iPad WKWebView build.
 
-The plugin is **not** registered in `src-tauri/src/lib.rs` or `Cargo.toml` right now. Loading it broke drawing on iPad in initial testing — likely because the recogniser attached to the WKWebView's scrollView interferes with how Hush's existing canvas + SVG event pipeline receives touches. The engine still carries a `setPencilOnly(bool)` hook (delta #18) that filters out non-pen contacts in `onPointerDown` so a later integration can flip it on once the bridge is debugged with `src/notebook/drawing-debug-hud.js` (the on-screen log overlay enabled in iOS dev builds).
+A native plugin scaffold (`src-tauri/tauri-plugin-pencil/`, Swift `PencilPlugin` + Rust shell) is staged but **not registered**: an earlier attempt to load it correlated with iPad drawing breaking entirely (likely because the Swift `UIGestureRecognizer` attached to the WKWebView scrollView interferes with how the page receives touches). The plugin is the right place to hook the Apple Pencil 2nd gen / Pro hardware double-tap (which has no `PointerEvent` equivalent), but enabling it is a separate test cycle.
 
 ### Drawing tools (the top pill)
 

@@ -228,12 +228,7 @@ export class NotesCanvas {
         // canvas owns input for pan. Without the isPanning check,
         // holding space over a drawing would do nothing because the
         // SVG was still swallowing the pointerdown.
-        const enabled = this.state.drawingMode && !this.state.isPanning;
-        const w = window as unknown as { __hushDebug?: (s: string) => void };
-        if (typeof w.__hushDebug === "function") {
-          w.__hushDebug(`canvas state drawingMode=${this.state.drawingMode} tool=${this.state.tool} subTool=${this.state.drawingSubTool} isPanning=${this.state.isPanning} → enabled=${enabled}`);
-        }
-        this._drawingLayer.setInputEnabled(enabled);
+        this._drawingLayer.setInputEnabled(this.state.drawingMode && !this.state.isPanning);
       }
       if (keys.includes("lassoHoldMs")) {
         this._drawingLayer.setLassoHoldMs(this.state.lassoHoldMs);
