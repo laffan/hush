@@ -8,9 +8,9 @@
  * pipeline's "paint every non-pocketed stroke into a target ctx"
  * helper.
  *
- * The functions close over the canvases and origin offsets at factory
- * time; DPR is read via a getter so the layer's MAX_BACKING_PIXELS
- * cap can move under us between calls.
+ * Origin, worldSize, and DPR are read via getters every call — the
+ * drawing layer re-anchors the wrapper world-origin to follow the
+ * camera, so any of these can shift between calls.
  */
 
 export interface WorldBbox {
@@ -24,12 +24,16 @@ export interface PocketBlitOptions {
   doneCanvas: HTMLCanvasElement;
   pocketStash: HTMLCanvasElement;
   pocketStashCtx: CanvasRenderingContext2D;
-  /** World-space origin of the done / stash canvases. Both canvases
-   *  cover the rect [origin, origin + worldSize] at the current DPR. */
-  originX: number;
-  originY: number;
-  /** Side length (CSS px) of the world rect that the canvases back. */
-  worldSize: number;
+  /** Live world-space origin of the done / stash canvases. Both
+   *  canvases cover the rect [origin, origin + worldSize] at the
+   *  current DPR. The drawing layer re-anchors origin as the camera
+   *  pans, so this is read every call. */
+  getOriginX: () => number;
+  getOriginY: () => number;
+  /** Live side length (CSS px) of the world rect the canvases back.
+   *  Grows when the camera zooms out so the canvas keeps covering the
+   *  visible viewport. */
+  getWorldSize: () => number;
   /** Live DPR of the canvases. The drawing layer caps DPR for memory
    *  safety, so we re-read every call instead of caching. */
   getDpr: () => number;
@@ -53,15 +57,15 @@ export interface PocketBlit {
 }
 
 export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
-  const { doneCanvas, pocketStash, pocketStashCtx, originX, originY, worldSize, getDpr } = opts;
+  const { doneCanvas, pocketStash, pocketStashCtx, getOriginX, getOriginY, getWorldSize, getDpr } = opts;
 
   function blitWorldRegion(
     ctx: CanvasRenderingContext2D,
     worldBbox: WorldBbox,
   ): void {
     const dpr = getDpr();
-    const sx = (worldBbox.minX - originX) * dpr;
-    const sy = (worldBbox.minY - originY) * dpr;
+    const sx = (worldBbox.minX - getOriginX()) * dpr;
+    const sy = (worldBbox.minY - getOriginY()) * dpr;
     const w = worldBbox.maxX - worldBbox.minX;
     const h = worldBbox.maxY - worldBbox.minY;
     const sw = w * dpr;
@@ -77,13 +81,13 @@ export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
 
   function blitDoneCanvasAtWorldOrigin(ctx: CanvasRenderingContext2D): void {
     if (doneCanvas.width === 0 || doneCanvas.height === 0) return;
-    ctx.drawImage(doneCanvas, originX, originY, worldSize, worldSize);
+    ctx.drawImage(doneCanvas, getOriginX(), getOriginY(), getWorldSize(), getWorldSize());
   }
 
   function stashPocketRegion(worldBbox: WorldBbox): void {
     const dpr = getDpr();
-    const sx = Math.max(0, Math.floor((worldBbox.minX - originX) * dpr));
-    const sy = Math.max(0, Math.floor((worldBbox.minY - originY) * dpr));
+    const sx = Math.max(0, Math.floor((worldBbox.minX - getOriginX()) * dpr));
+    const sy = Math.max(0, Math.floor((worldBbox.minY - getOriginY()) * dpr));
     const sw = Math.ceil((worldBbox.maxX - worldBbox.minX) * dpr);
     const sh = Math.ceil((worldBbox.maxY - worldBbox.minY) * dpr);
     if (sw <= 0 || sh <= 0) return;
@@ -93,8 +97,8 @@ export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
 
   function unstashPocketRegion(worldBbox: WorldBbox): void {
     const dpr = getDpr();
-    const sx = Math.max(0, Math.floor((worldBbox.minX - originX) * dpr));
-    const sy = Math.max(0, Math.floor((worldBbox.minY - originY) * dpr));
+    const sx = Math.max(0, Math.floor((worldBbox.minX - getOriginX()) * dpr));
+    const sy = Math.max(0, Math.floor((worldBbox.minY - getOriginY()) * dpr));
     const sw = Math.ceil((worldBbox.maxX - worldBbox.minX) * dpr);
     const sh = Math.ceil((worldBbox.maxY - worldBbox.minY) * dpr);
     if (sw <= 0 || sh <= 0) return;

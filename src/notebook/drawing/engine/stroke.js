@@ -22,6 +22,10 @@
  *      canvas's own select / pan handling and don't seed strokes). The
  *      tauri-plugin-pencil iOS bridge flips this on once it's loaded so
  *      Apple Pencil is the only thing that can draw.
+ *  20. `translateAllStrokePoints(dx, dy)` and `renderStrokeTo(ctx, s)`
+ *      so the host can re-anchor the wrapper world-origin (canvas
+ *      backing follows the camera) without losing strokes outside the
+ *      original 2048-px box.
  *   (Deltas 4 + 5 live in selection.js + gestures.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
@@ -392,7 +396,16 @@ export function createStrokeEngine({
       ...(state.colorIsAuto ? { colorIsAuto: true } : {}),
       ...(state.colorIsHeading ? { colorIsHeading: true } : {}),
     };
-    state.lastRecorded = p;
+    // `lastRecorded` is the threshold reference for the
+    // close-enough-to-replace check in extendStroke. Store a
+    // *copy* of p, not the reference itself — `state.active.points`
+    // already holds the original p, and a re-anchor's bulk shift
+    // walks both `state.strokes` and `state.active.points` to
+    // translate each point. If `lastRecorded` shared the same
+    // object, the explicit shift on `state.lastRecorded` would
+    // double-shift that one point and the user would see it drift
+    // away from the rest of the stroke as the camera pans.
+    state.lastRecorded = { x: p.x, y: p.y };
     state.activePointerId = e.pointerId;
     state.suppressedPointerId = null;
     state.dirty = true;
@@ -419,7 +432,9 @@ export function createStrokeEngine({
       a.points[a.points.length - 1] = p;
     } else {
       a.points.push(p);
-      state.lastRecorded = p;
+      // Copy, not the same reference — see onPointerDown for the
+      // re-anchor double-shift this avoids.
+      state.lastRecorded = { x: p.x, y: p.y };
     }
     state.dirty = true;
     if (state.longPressTimer && state.longPressAnchor) {
@@ -830,6 +845,65 @@ export function createStrokeEngine({
     // insert. See INTEGRATION-PLAN.md.
     fullRebake() {
       renderer.fullRebake();
+    },
+
+    // Hush delta #20: shift every stored stroke's points by (dx, dy)
+    // in engine-local coords. The host calls this when it re-anchors
+    // the wrapper world-origin so the canvas backing follows the
+    // camera; the world positions stay constant because the host also
+    // shifts originX/originY by (-dx, -dy) at the same time. Active
+    // stroke + lastRecorded + longPressAnchor get the same shift so a
+    // re-anchor that lands mid-stroke (rare — gesture-pan cancels the
+    // active stroke first) doesn't snap the live overlay. The caller
+    // is expected to follow up with `fullRebake()`; we drop preview
+    // bookkeeping here because the cached tile keys are stale at the
+    // new origin, and clear the live + preview canvases because their
+    // pixels were stamped at the OLD local coords. If an active
+    // stroke is in flight, scheduleRender() so the next rAF re-stamps
+    // it at the new local coords — without that the user's last
+    // committed line would visibly smear for a frame against the
+    // world during a camera pan that triggers a re-anchor.
+    translateAllStrokePoints(dx, dy) {
+      if (dx === 0 && dy === 0) return;
+      for (const s of state.strokes) {
+        const pts = s.points;
+        for (let i = 0; i < pts.length; i++) {
+          pts[i].x += dx;
+          pts[i].y += dy;
+        }
+      }
+      if (state.active) {
+        const pts = state.active.points;
+        for (let i = 0; i < pts.length; i++) {
+          pts[i].x += dx;
+          pts[i].y += dy;
+        }
+      }
+      if (state.lastRecorded) {
+        state.lastRecorded.x += dx;
+        state.lastRecorded.y += dy;
+      }
+      if (state.longPressAnchor) {
+        state.longPressAnchor.x += dx;
+        state.longPressAnchor.y += dy;
+      }
+      state.previewingIds = null;
+      state.previewingTiles = null;
+      clearCtx(liveCtx);
+      clearCtx(previewCtx);
+      if (state.active) {
+        state.dirty = true;
+        scheduleRender();
+      }
+    },
+
+    // Hush delta #20: render a single stroke into an arbitrary ctx.
+    // Used by the host to repaint pocketed strokes (which are excluded
+    // from the done canvas via delta #8) into the pocket stash after
+    // a re-anchor has invalidated stash pixel positions.
+    renderStrokeTo(ctx, stroke) {
+      if (!stroke) return;
+      renderer.renderStroke(ctx, stroke);
     },
 
     // --- layers ---
