@@ -166,6 +166,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // iOS-only Apple Pencil bridge. No-op on every other platform —
+        // the plugin's iOS registration is gated behind
+        // `cfg(target_os = "ios")` inside the crate, so registering it
+        // unconditionally here is safe and keeps the macOS build clean.
+        .plugin(tauri_plugin_pencil::init())
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),

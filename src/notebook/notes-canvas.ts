@@ -63,6 +63,42 @@ export function setNotebookPencilOnly(on: boolean): void {
   _pencilOnly = !!on;
   for (const c of liveCanvases) c._applyPencilOnly(_pencilOnly);
 }
+
+/** Last non-erase sub-tool we routed away from when the user toggled
+ *  into the eraser via the Apple Pencil double-tap. Defaults to "draw"
+ *  so the very first toggle from a clean session — pencil → erase →
+ *  pencil — lands the user back on the brush. */
+let _lastNonEraseSubTool: "draw" | "erase" | "slice" | "select" = "draw";
+
+/** Apple Pencil 2nd-gen / Pencil Pro double-tap handler. Toggles the
+ *  active notebook between the eraser and whatever non-erase sub-tool
+ *  the user was last on (typically `draw`, which preserves their
+ *  active brush slot). Routed in via `pencil-bridge.js` listening to
+ *  the iOS plugin's `double-tap` event.
+ *
+ *  Routes to the most-recently interacted-with notebook (matches the
+ *  copy/paste routing convention) and falls back to the first live
+ *  canvas if no pointer interaction has happened yet. No-op if no
+ *  notebook is mounted — the user could be in a Doc when the Pencil
+ *  fires, in which case we silently drop the gesture rather than
+ *  surface a tool change in an unrelated surface. */
+export function toggleNotebookEraser(): void {
+  const target = lastActiveNotebook ?? liveCanvases.values().next().value ?? null;
+  if (!target) return;
+  const s = target.state;
+  if (s.tool !== "pen") {
+    s.tool = "pen";
+    s.notify("tool");
+    s.notify("drawingMode");
+  }
+  if (s.drawingSubTool === "erase") {
+    s.setDrawingSubTool(_lastNonEraseSubTool || "draw");
+  } else {
+    _lastNonEraseSubTool = s.drawingSubTool;
+    s.setDrawingSubTool("erase");
+  }
+}
+
 let copyListenerAttached = false;
 
 function ensureCopyListener() {

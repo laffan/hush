@@ -89,9 +89,15 @@ Targeted deltas have been applied to `engine/` so the port stays as close as pos
 
 ### Apple Pencil gating (iOS)
 
-On iOS Tauri builds, finger touches don't draw — only Apple Pencil and mouse can seed strokes. The gate lives at the engine level: `engine/stroke.js` carries a `setPencilOnly(bool)` flag (delta #18) that rejects every non-pen, non-mouse `pointerdown`. `src/notebook/pencil-bridge.js` flips that flag on once at startup if the runtime is iOS — no native plugin involved, since `PointerEvent.pointerType` reliably reports `"pen"` for Apple Pencil and `"touch"` for finger on this iPad WKWebView build.
+On iOS Tauri builds, finger touches don't draw — only Apple Pencil and mouse can seed strokes. The gate lives at the engine level: `engine/stroke.js` carries a `setPencilOnly(bool)` flag (delta #18) that rejects every non-pen, non-mouse `pointerdown`. `src/notebook/pencil-bridge.js` flips that flag on once at startup if the runtime is iOS — no native code involved for the gate itself, since `PointerEvent.pointerType` reliably reports `"pen"` for Apple Pencil and `"touch"` for finger on this iPad WKWebView build.
 
-A native plugin scaffold (`src-tauri/tauri-plugin-pencil/`, Swift `PencilPlugin` + Rust shell) is staged but **not registered**: an earlier attempt to load it correlated with iPad drawing breaking entirely (likely because the Swift `UIGestureRecognizer` attached to the WKWebView scrollView interferes with how the page receives touches). The plugin is the right place to hook the Apple Pencil 2nd gen / Pro hardware double-tap (which has no `PointerEvent` equivalent), but enabling it is a separate test cycle.
+### Apple Pencil double-tap (iOS)
+
+The Apple Pencil 2nd-gen / Pencil Pro squeeze gesture has no `PointerEvent` equivalent, so it goes through a native plugin: `src-tauri/tauri-plugin-pencil/` (Swift `PencilPlugin` + Rust shell). The plugin attaches a `UIPencilInteraction` directly to the WKWebView and triggers a `double-tap` plugin event each time the sensor fires; `pencil-bridge.js` registers a listener on that event and calls `toggleNotebookEraser()` from `notes-canvas.ts`, which flips the active notebook between the eraser and whatever non-erase sub-tool the user was last on (typically `draw`, which preserves their active brush slot).
+
+An earlier iteration of the Swift plugin also attached a passive `UIGestureRecognizer` to the WKWebView's `scrollView` for finger-vs-pencil detection. That gesture chain interfered with how the page received touches and broke iPad drawing entirely, so it has been removed; the plugin's only responsibility now is the double-tap event. `UIPencilInteraction` is attached to the webview itself, not the scrollView, and does not affect touch delivery.
+
+The plugin is registered unconditionally from `src-tauri/src/lib.rs` (`tauri_plugin_pencil::init()`); on every non-iOS target the plugin's iOS hook is gated behind `cfg(target_os = "ios")` so the macOS build stays a no-op. Listener registration is permitted via the `pencil:default` capability in `src-tauri/capabilities/default.json`.
 
 ### Drawing tools (the bottom pill)
 
