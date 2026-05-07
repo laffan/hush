@@ -521,6 +521,14 @@ export function createDrawingLayer({
     //      hit-testable regardless of (or absence of) children.
     svg.style.pointerEvents = enabled ? "bounding-box" : "none";
     wrapper.style.pointerEvents = enabled ? "auto" : "none";
+    // The stroke engine's pointermove listener lives on `document.body`,
+    // so disabling the SVG's pointer-events doesn't actually stop the
+    // engine from extending an in-flight stroke when input is taken
+    // away from us mid-gesture (e.g. user holds space to pan while
+    // still pressing the pen). Cancel the in-flight stroke explicitly
+    // so a desktop spacebar-drag pan can't keep stamping new stamps
+    // along the cursor's screen path until the next pointerup.
+    if (!enabled) (strokeEngine as unknown as { cancelActiveStroke: () => boolean }).cancelActiveStroke();
   }
 
   function setTheme(next: CanvasTheme): void {
