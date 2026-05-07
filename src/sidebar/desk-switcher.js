@@ -62,6 +62,12 @@ function detachListeners() {
 
 function render() {
   if (!_container || !_state) return;
+  // DEBUG: log render() calls so we can see what's churning while
+  // the rename input has focus. Remove after diagnosis.
+  const renaming = !!_container.querySelector(".desk-switcher-rename-input");
+  if (renaming) {
+    console.info("[desk-switcher] render() during rename\n", new Error().stack);
+  }
   const desks = _state.settings?.desks || [];
   if (desks.length < 2) {
     _container.style.display = "none";
@@ -199,6 +205,14 @@ function beginInlineRename(deskId) {
   nameEl.replaceWith(input);
   input.focus();
   input.select();
+  // DEBUG: trace what causes the input to lose focus while typing.
+  // Remove after diagnosis.
+  input.addEventListener("focusout", (ev) => {
+    console.warn("[desk-switcher] input focusout, relatedTarget:", ev.relatedTarget, "active:", document.activeElement);
+  });
+  input.addEventListener("input", () => {
+    console.info("[desk-switcher] input keystroke, value=", input.value, "focused=", document.activeElement === input);
+  });
   // The input lives inside the row's `<button data-action="pick">`,
   // so a click that lands on it would otherwise bubble up to the
   // popover handler and be interpreted as "pick this desk" — closing
@@ -240,7 +254,14 @@ async function runDeleteDesk(deskId) {
 function closePopover() {
   if (!_container) return;
   const popover = _container.querySelector(".desk-switcher-popover");
-  if (popover) popover.remove();
+  if (popover) {
+    // DEBUG: stack trace logged so the user can see who's calling close
+    // while the rename input has focus. Remove after diagnosis.
+    if (popover.querySelector(".desk-switcher-rename-input")) {
+      console.warn("[desk-switcher] closePopover called while renaming\n", new Error().stack);
+    }
+    popover.remove();
+  }
   if (_outsideClickHandler) {
     document.removeEventListener("click", _outsideClickHandler, true);
     _outsideClickHandler = null;
