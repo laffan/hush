@@ -3,7 +3,7 @@
  * Each function takes the AppState instance as the first argument.
  */
 
-import { findNode, findNodeByFileId, removeNode, insertNode, insertAfter, collectDocumentIds, enforceSpecialPositions } from "./tree-helpers.js";
+import { findNode, findNodeByFileId, removeNode, insertNode, insertAfter, collectDocumentIds, enforceSpecialPositions, uniqueChildName, findParentOfNode } from "./tree-helpers.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -14,21 +14,23 @@ async function tauriInvoke(cmd, args) {
 
 export async function createTreeNode(state, command, type, name, parentId) {
   const { AppState } = await import("./state.js");
+  // Avoid same-type sibling collisions so two folders/projects can't
+  // share a name (which would map to the same Dropbox path).
+  const parentNode = parentId ? findNode(state.fileTree, parentId) : { children: state.fileTree };
+  const finalName = uniqueChildName(parentNode, name, type);
   if (IS_TAURI) {
     try {
-      const created = await tauriInvoke(command, { name, parentId });
+      const created = await tauriInvoke(command, { name: finalName, parentId });
       state.fileTree = await tauriInvoke("get_file_tree");
-      // The Rust `create_folder` / `create_project` handlers append to
-      // the parent's children array, which puts the new node *after*
-      // the per-desk Inbox/Images/Trash. Re-pin the specials so the
-      // sidebar shows the new entry above them.
+      // Rust `create_folder` / `create_project` append to children, so
+      // re-pin specials so the new entry sits above Inbox/Images/Trash.
       enforceSpecialPositions(state.fileTree);
       await state.saveFileTree();
       state.syncCreateNode(created.id, type);
       return created;
     } catch (e) { console.error(`Create ${type} failed:`, e); }
   } else {
-    const node = { id: crypto.randomUUID(), type, name, children: [], flagged: false };
+    const node = { id: crypto.randomUUID(), type, name: finalName, children: [], flagged: false };
     insertNode(state.fileTree, node, parentId, findNode);
     enforceSpecialPositions(state.fileTree);
     state._saveTreeLocal();
@@ -194,21 +196,26 @@ export async function renameTreeNode(state, nodeId, newName) {
     state.emit("files-changed");
     return;
   }
-  node.name = newName;
+  // Same-type siblings can't share a name (would map to the same
+  // Dropbox path). Auto-suffix on collision; the node's own id is
+  // excluded from the check so the rename is a no-op when the user
+  // re-types the existing name.
+  const parent = findParentOfNode(state.fileTree, nodeId);
+  const finalName = uniqueChildName(parent, newName, node.type, nodeId);
+  if (finalName === oldName) return;
+  node.name = finalName;
   if ((node.type === "document" || node.type === "notebook") && node.fileId) {
     if (IS_TAURI) {
-      try { await tauriInvoke("rename_file", { id: node.fileId, name: newName }); state.files = await tauriInvoke("list_files"); }
+      try { await tauriInvoke("rename_file", { id: node.fileId, name: finalName }); state.files = await tauriInvoke("list_files"); }
       catch (e) { console.error("Rename failed:", e); }
     } else {
       const file = state.files.find((f) => f.id === node.fileId);
-      if (file) file.name = newName;
+      if (file) file.name = finalName;
       state._saveFilesLocal();
     }
   }
   await state.saveFileTree();
-  if (oldName !== newName) {
-    state.syncRenameNode(nodeId, oldName, node.type);
-  }
+  state.syncRenameNode(nodeId, oldName, node.type);
 }
 
 export async function toggleFlagged(state, nodeId) {

@@ -223,6 +223,43 @@ export function insertNode(tree, node, parentId, findNodeFn) {
   else { insertBeforeTrash(tree, node); }
 }
 
+/** Walk the tree and return the parent node that directly contains
+ *  the child with `targetId`. Returns null when the node lives at the
+ *  top level (no parent) or isn't found at all. */
+export function findParentOfNode(nodes, targetId) {
+  for (const n of nodes) {
+    if (Array.isArray(n.children)) {
+      if (n.children.some((c) => c?.id === targetId)) return n;
+      const deeper = findParentOfNode(n.children, targetId);
+      if (deeper) return deeper;
+    }
+  }
+  return null;
+}
+
+/** Return a name that doesn't collide with any same-type sibling
+ *  inside `parent`. If `baseName` is free we return it unchanged;
+ *  otherwise we append " (2)" / " (3)" until something fits. Used
+ *  on create + rename so a folder can't end up with two children of
+ *  the same type sharing a name (which would map to the same Dropbox
+ *  path). `excludeId` skips one child from the check — used by rename
+ *  so a node doesn't see itself as a conflict. */
+export function uniqueChildName(parent, baseName, type, excludeId = null) {
+  const siblings = (parent?.children) || [];
+  const taken = new Set();
+  for (const c of siblings) {
+    if (!c || c.id === excludeId) continue;
+    if (c.type !== type) continue;
+    if (c.name) taken.add(c.name);
+  }
+  if (!taken.has(baseName)) return baseName;
+  for (let i = 2; i < 1000; i++) {
+    const cand = `${baseName} (${i})`;
+    if (!taken.has(cand)) return cand;
+  }
+  return baseName;
+}
+
 function insertBeforeTrash(tree, node) {
   // Keep both special tail nodes (Images, Trash) below any new root-level
   // insertion by preferring the earlier of the two as the insertion point.

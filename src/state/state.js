@@ -2,7 +2,7 @@
  * Central application state management
  */
 
-import { findNode, removeNode, collectDocumentIds, findNodeByFileId, insertAfter, insertNode } from "./tree-helpers.js";
+import { findNode, removeNode, collectDocumentIds, findNodeByFileId, insertAfter, insertNode, uniqueChildName } from "./tree-helpers.js";
 import { openProject as _openProject, saveProjectContent as _saveProjectContent } from "./state-project.js";
 import { createDefaultSettings } from "./state-defaults.js";
 import * as _modes from "./state-modes.js";
@@ -387,9 +387,10 @@ export class AppState {
     const openImmediately = opts.openImmediately !== false;
     if (openImmediately && this.dirty) await this.saveCurrentFile();
     const targetParent = parentId || this.getInboxId();
+    const finalName = uniqueChildName(findNode(this.fileTree, targetParent), name, "notebook");
     if (IS_TAURI) {
       try {
-        const result = await tauriInvoke("create_notebook", { name, parentId: targetParent });
+        const result = await tauriInvoke("create_notebook", { name: finalName, parentId: targetParent });
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
         this.emit("files-changed");
@@ -397,7 +398,7 @@ export class AppState {
         const nbNode = findNodeByFileId(this.fileTree, result.file.id);
         if (nbNode) this.syncCreateFile(nbNode.id, result.file.id, result.file.content || "[]");
         if (openImmediately) await this.openNotebook(result.file.id);
-        return { fileId: result.file.id, name: result.node?.name || name };
+        return { fileId: result.file.id, name: result.node?.name || finalName };
       } catch (e) { console.error("Create notebook failed:", e); }
     }
   }
@@ -495,7 +496,9 @@ export class AppState {
       try { const file = await tauriInvoke("create_file"); fileId = file.id; this.files = await tauriInvoke("list_files"); }
       catch (e) { console.error("Create file failed:", e); return; }
     } else { fileId = this._createLocalFile().id; }
-    const treeNode = { id: crypto.randomUUID(), type: "document", name: "Untitled", fileId, children: [], flagged: false };
+    const initialName = uniqueChildName(findNode(this.fileTree, targetParent), "Untitled", "document");
+    if (initialName !== "Untitled" && IS_TAURI) try { await tauriInvoke("rename_file", { id: fileId, name: initialName }); this.files = await tauriInvoke("list_files"); } catch (_) {}
+    const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
     insertNode(this.fileTree, treeNode, targetParent, findNode);
     await this.saveFileTree();
     // Propagate new file to external filesystem if inside a synced folder

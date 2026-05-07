@@ -296,6 +296,12 @@ export async function listFolderRecursive(path) {
         dropboxPath: display,
         modified: entry.server_modified,
         tag: cls.tag,
+        // `id` + `rev` let `performInitialSync` register entries via
+        // `register_synced_file_full` so the cursor seed's echo
+        // suppression matches and we don't get a second tree node /
+        // Tauri file for every just-downloaded item.
+        id: entry.id || "",
+        rev: entry.rev || "",
       });
     }
 
