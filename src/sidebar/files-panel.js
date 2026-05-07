@@ -20,16 +20,20 @@ let flaggedContainerEl = null;
 let storedHidePanel = null;
 let storedState = null;
 
-// Special-node helpers. Desks on: `__inbox__:<deskId>` etc; desks off: bare.
+// Per-desk specials: `<kind>:<deskId>`; bare ids only surface for the
+// one boot tick before `migrateLegacyTreeIfNeeded` runs.
 const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
 const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isTrashId(id);
-const allSpecialIds = (s, k) => s.settings?.useDesks ? [k, ...(s.settings.desks || []).map(d => `${k}:${d.id}`)] : [k];
-// Active desk's children when desks on (wrapper hidden), else whole tree.
-const visibleTopLevel = (s) => s.settings?.useDesks
-  ? (s.fileTree.find(n => n.type === "desk" && n.id === s.settings.activeDeskId)?.children || s.fileTree)
-  : s.fileTree;
+const allSpecialIds = (s, k) => [k, ...(s.settings?.desks || []).map(d => `${k}:${d.id}`)];
+// Render the active desk's children only (the desk wrapper stays out
+// of the panel). Pre-migration boot tick falls back to the raw tree.
+const visibleTopLevel = (s) => {
+  const desks = s.fileTree.filter(n => n.type === "desk");
+  const active = desks.find(n => n.id === s.settings?.activeDeskId) || desks[0];
+  return active ? (active.children || []) : s.fileTree;
+};
 
 function getIcon(item) {
   if (isInboxId(item.id)) return typeIcons.inbox;
@@ -175,14 +179,10 @@ export function createFilesPanel(container, state, hidePanel) {
       if (draggedItem.type === "image") {
         return !!targetItem && isImagesId(targetItem.id);
       }
-      // Desks can't be nested inside anything; their children move
-      // freely between folders/projects within a desk.
+      // Desks can't be nested; root-level drops are rejected since
+      // every node must live inside a desk.
       if (draggedItem.type === "desk") return targetItem === null;
-      if (targetItem === null) {
-        // Root-level drop is only meaningful when desks are off; with
-        // desks on, every node belongs to a desk subtree.
-        return !state.settings?.useDesks;
-      }
+      if (targetItem === null) return false;
       if (isImagesId(targetItem.id)) return draggedItem.type === "image";
       if (targetItem.type === "folder") return true;
       if (targetItem.type === "desk") return ["document", "notebook", "folder", "project"].includes(draggedItem.type);
@@ -254,10 +254,9 @@ export function createFilesPanel(container, state, hidePanel) {
     onChange: (newData) => {
       enforceSpecialPositions(newData);
       normalizeProjectChildren(newData);
-      if (state.settings?.useDesks) {
-        const active = state.fileTree.find(n => n.type === "desk" && n.id === state.settings.activeDeskId);
-        if (active) active.children = newData;
-      } else state.fileTree = newData;
+      const active = state.fileTree.find(n => n.type === "desk" && n.id === state.settings?.activeDeskId)
+        || state.fileTree.find(n => n.type === "desk");
+      if (active) active.children = newData; else state.fileTree = newData;
       state.saveFileTree();
       state.reconcileSync();
       if (state.currentProjectId) state.openProject(state.currentProjectId);

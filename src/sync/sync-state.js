@@ -551,27 +551,25 @@ export async function clearLocalAndReseed(state) {
   sp.stopSyncPolling();
   await tauriInvoke("clear_local_data");
 
-  // Drop desks first so `ensureSpecialNodes` takes the desks-off
-  // branch and seeds the flat global specials. Other session
-  // pointers go too — they reference files we just wiped.
+  // Wipe every session pointer — the files they reference are gone —
+  // and clear the desk list so the wrap below picks up a fresh
+  // "Personal" desk (matching what a brand-new install would build).
   state.fileTree = [];
   state.currentFileId = null;
   state.currentNotebookFileId = null;
   state.currentProjectId = null;
   state.dirty = false;
   await state.updateSettings({
-    useDesks: false, desks: [], activeDeskId: null, desksMeta: {},
+    desks: [], activeDeskId: null, desksMeta: {},
     lastFileId: null, lastProjectId: null, lastNotebookId: null,
     desktopFileId: null,
   });
 
-  // Re-instate the empty global specials so reseed routes into them.
-  if (typeof state.ensureSpecialNodes === "function") {
-    state.ensureSpecialNodes();
-  } else {
-    const _desks = await import("../state/state-desks.js");
-    _desks.ensureGlobalTreeSpecials(state.fileTree);
-  }
+  // Wrap the empty tree under a default desk so reseed routes into the
+  // namespaced specials (`__inbox__:<deskId>` etc) instead of the bare
+  // legacy ids the seed walker would otherwise create.
+  const _desks = await import("../state/state-desks.js");
+  await _desks.enableDesks(state, "Personal");
   await state.saveFileTree();
 
   state.files = await tauriInvoke("list_files");

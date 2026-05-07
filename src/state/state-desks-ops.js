@@ -4,8 +4,12 @@
  *     (or project) into a top-level desk. Inner Inbox/Trash/Images
  *     subfolders matched by name become per-desk specials.
  *   - `collapseDeskToFolder(state, deskId)` demotes a top-level desk back
- *     to a regular folder placed inside another desk. Per-desk specials
- *     become plain folders/projects (fresh ids).
+ *     to a regular folder placed inside another desk. Refuses to run
+ *     while the source desk's Inbox or Trash hold any items — those
+ *     specials are dropped on collapse, so silently merging their
+ *     contents into the destination would be a data-loss surprise.
+ *     Images survive the collapse as a plain folder so existing
+ *     image refs still resolve.
  *
  * Both operations:
  *   - update `settings.desks` and the file tree,
@@ -35,7 +39,6 @@ async function tauriInvoke(cmd, args) {
  *  Trash / Images subfolders (matched by name) become per-desk
  *  specials. */
 export async function convertFolderToDesk(state, folderId) {
-  if (!state?.settings?.useDesks) throw new Error("desks not enabled");
   const tree = state.fileTree || [];
 
   // Locate parent desk + the folder under it. Direct-children only.
@@ -97,15 +100,40 @@ export async function convertFolderToDesk(state, folderId) {
   pushDesksJson(state);
 }
 
+/** Returns the per-desk specials that still hold items, keyed by the
+ *  bare kind ("__inbox__" / "__trash__"). Used to gate the collapse
+ *  operation — Inbox + Trash must be empty so dropping them on the way
+ *  through doesn't quietly destroy data. */
+function nonEmptyBlockingSpecials(desk) {
+  const blocking = [];
+  for (const c of (desk?.children || [])) {
+    const parsed = parseSpecialNodeId(c?.id);
+    if (!parsed) continue;
+    if (parsed.kind !== "__inbox__" && parsed.kind !== "__trash__") continue;
+    if ((c.children || []).length > 0) blocking.push(parsed.kind);
+  }
+  return blocking;
+}
+
 /** Demote a desk back into a regular folder placed inside another
- *  desk. Per-desk specials become plain folders/projects with fresh
- *  ids; the destination desk's own specials are left untouched. */
+ *  desk. Refuses while the source desk's Inbox or Trash carry any
+ *  items — collapse trims those specials, so the caller has to clear
+ *  them first. Images and other content survive as plain folders/
+ *  projects with fresh ids. */
 export async function collapseDeskToFolder(state, deskId) {
-  if (!state?.settings?.useDesks) throw new Error("desks not enabled");
   const tree = state.fileTree || [];
   const deskIdx = tree.findIndex((n) => n.type === "desk" && n.id === deskId);
   if (deskIdx < 0) throw new Error("desk not found");
   const desk = tree[deskIdx];
+
+  const blocking = nonEmptyBlockingSpecials(desk);
+  if (blocking.length > 0) {
+    const labels = blocking.map((k) => (k === "__inbox__" ? "Inbox" : "Trash"));
+    const err = new Error(`Empty ${labels.join(" and ")} before collapsing this desk.`);
+    err.code = "desk-collapse-blocked";
+    err.blockingSpecials = labels;
+    throw err;
+  }
 
   // Pick a destination: active desk if it's not the one being collapsed,
   // otherwise the first remaining desk. Bail when there's no other desk.
@@ -115,9 +143,10 @@ export async function collapseDeskToFolder(state, deskId) {
 
   tree.splice(deskIdx, 1);
 
-  // Demote the desk node into a folder. Inner per-desk specials become
-  // regular folders/projects with fresh non-special ids so subsequent
-  // checks via `isSpecialNodeId` see them as ordinary nodes.
+  // Demote the desk node into a folder. Per-desk Inbox + Trash are
+  // dropped (already verified empty above). Images survives as a plain
+  // folder when non-empty so its image refs still resolve via the
+  // global Images-folder lookup.
   const folder = {
     id: uid(), type: "folder", name: desk.name || "Untitled desk",
     children: [], flagged: !!desk.flagged, createdAt: desk.createdAt,
@@ -126,12 +155,9 @@ export async function collapseDeskToFolder(state, deskId) {
     if (!c) continue;
     const parsed = parseSpecialNodeId(c.id);
     if (parsed) {
-      // Empty per-desk specials get dropped — they'd just clutter the
-      // resulting folder. Non-empty ones survive as plain folders/projects.
+      if (parsed.kind === "__inbox__" || parsed.kind === "__trash__") continue;
       if (!(c.children || []).length) continue;
       c.id = uid();
-      // Inbox stays a project so its joined-buffer behaviour is preserved
-      // if the user later promotes it again or moves it around.
       folder.children.push(c);
     } else {
       folder.children.push(c);
@@ -229,7 +255,10 @@ export function enterConvertFolderPicker(palette, state, { typeIcons, fallbackIc
   palette.setItems(items, "Convert folder to desk…");
 }
 
-/** Swap the palette into "pick a desk to collapse" mode. */
+/** Swap the palette into "pick a desk to collapse" mode. The collapse
+ *  gate (Inbox + Trash must be empty) is enforced inside
+ *  `collapseDeskToFolder`; if it trips, surface the message via
+ *  `window.alert` so the user knows what to clear before retrying. */
 export function enterCollapseDeskPicker(palette, state, { fallbackIcon } = {}) {
   const desks = state.settings?.desks || [];
   const items = desks.map((d) => ({
@@ -237,7 +266,13 @@ export function enterCollapseDeskPicker(palette, state, { fallbackIcon } = {}) {
     label: d.name || "Untitled desk",
     icon: fallbackIcon || null,
     shortcutKey: null,
-    action: () => collapseDeskToFolder(state, d.id).catch((e) => console.error("collapse failed:", e)),
+    action: () => collapseDeskToFolder(state, d.id).catch((e) => {
+      if (e?.code === "desk-collapse-blocked") {
+        window.alert(e.message || "Empty Inbox and Trash before collapsing this desk.");
+      } else {
+        console.error("collapse failed:", e);
+      }
+    }),
   }));
   palette.setItems(items, "Collapse desk into folder…");
 }

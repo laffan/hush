@@ -346,14 +346,16 @@ pub struct AppSettings {
     /// across restarts.
     #[serde(default)]
     pub minimap_visible: bool,
-    /// "Desks" — top-level container above all other tree nodes. When
-    /// off, the tree is flat (single Inbox/Images/Trash). When on,
-    /// top-level entries are desk nodes; each has its own namespaced
-    /// special folders. Synced across devices.
-    #[serde(default)]
+    /// "Desks" — top-level containers above all other tree nodes.
+    /// Always-on; the field is retained as a deprecated boolean so
+    /// settings.json files written by older builds still parse, but
+    /// the JS side ignores its value and treats desks as structural.
+    #[serde(default = "default_true")]
     pub use_desks: bool,
     /// Desk list. Each entry is opaque JSON `{ id, name, createdAt }`.
-    /// Empty when `use_desks` is false.
+    /// Always carries at least one entry once the boot migration runs;
+    /// fresh installs see the JS layer seed a default "Personal" desk
+    /// before any file operations land.
     #[serde(default)]
     pub desks: Vec<serde_json::Value>,
     /// Per-desk synced metadata, keyed by desk id. Opaque JSON so the
@@ -635,7 +637,7 @@ impl Default for AppSettings {
             last_notebook_id: None,
             desktop_file_id: None,
             minimap_visible: false,
-            use_desks: false,
+            use_desks: true,
             desks: Vec::new(),
             desks_meta: serde_json::json!({}),
             active_desk_id: None,

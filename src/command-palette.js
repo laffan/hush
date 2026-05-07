@@ -248,8 +248,13 @@ function buildCommands(state) {
     { id: "nb-minimap-hide", label: "Hide minimap", icon: null, shortcutKey: null, ctx: "notebook",
       hiddenIf: (s) => !s.settings?.minimapVisible,
       action: (s) => s.toggleMinimap() },
+    { id: "desk-new", label: "New desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const id = await s.createDesk("Untitled desk");
+        if (id) await s.setActiveDesk(id);
+      } },
     { id: "desk-send", label: "Send this file to another desk", icon: icons.files, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !s.settings?.useDesks || !currentFileTreeNodeId(s),
+      hiddenIf: (s) => (s.settings?.desks || []).length < 2 || !currentFileTreeNodeId(s),
       action: async (s) => {
         const id = currentFileTreeNodeId(s);
         if (!id) return;
@@ -257,7 +262,7 @@ function buildCommands(state) {
         m.openSendToDeskModal(s, id, "send");
       } },
     { id: "desk-copy", label: "Copy this file to another desk", icon: icons.files, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !s.settings?.useDesks || !currentFileTreeNodeId(s),
+      hiddenIf: (s) => (s.settings?.desks || []).length < 2 || !currentFileTreeNodeId(s),
       action: async (s) => {
         const id = currentFileTreeNodeId(s);
         if (!id) return;
@@ -266,11 +271,10 @@ function buildCommands(state) {
       } },
     { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
-      hiddenIf: (s) => !s.settings?.useDesks,
       action: async (s, p) => (await import("./state/state-desks-ops.js")).enterConvertFolderPicker(p, s, { typeIcons, fallbackIcon: icons.files }) },
     { id: "desk-collapse", label: "Collapse desk into folder", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
-      hiddenIf: (s) => !s.settings?.useDesks || (s.settings?.desks || []).length < 2,
+      hiddenIf: (s) => (s.settings?.desks || []).length < 2,
       action: async (s, p) => (await import("./state/state-desks-ops.js")).enterCollapseDeskPicker(p, s, { fallbackIcon: icons.files }) },
   ];
 

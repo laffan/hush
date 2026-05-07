@@ -25,12 +25,14 @@ let _overlayEl = null;
 /** Wire option-click on file-panel rows to open the Send-to-desk
  *  modal. Captured at pointerdown so it pre-empts the SortableList's
  *  click → openFile / toggle behaviour. Idempotent — safe to call on
- *  every panel rebuild. */
+ *  every panel rebuild. No-ops while there's only one desk (no target
+ *  to send to). */
 export function attachDeskShortcuts(container, state) {
   if (container._deskShortcutsAttached) return;
   container._deskShortcutsAttached = true;
   container.addEventListener("pointerdown", (e) => {
-    if (!state?.settings?.useDesks || !e.altKey || e.button !== 0) return;
+    if (!e.altKey || e.button !== 0) return;
+    if ((state?.settings?.desks || []).length < 2) return;
     const nodeId = e.target.closest(".sl-item")?.dataset.id;
     if (!nodeId || state.isSpecialNodeId(nodeId)) return;
     const node = findNode(state.fileTree, nodeId);
@@ -41,13 +43,12 @@ export function attachDeskShortcuts(container, state) {
 }
 
 export function openSendToDeskModal(state, nodeId, mode) {
-  if (!state?.settings?.useDesks) return;
   const node = findNode(state.fileTree, nodeId);
   if (!node || node.type === "image" || node.type === "desk") return;
   if (state.isSpecialNodeId(nodeId)) return;
 
   const sourceDeskId = findContainingDeskId(state.fileTree, nodeId);
-  const targets = (state.settings.desks || []).filter((d) => d.id !== sourceDeskId);
+  const targets = (state.settings?.desks || []).filter((d) => d.id !== sourceDeskId);
   if (targets.length === 0) return;
 
   closeModal();

@@ -6,11 +6,11 @@
 
 import { escHtml, escAttr } from "./settings-tabs.js";
 
-/** Per-mount desk picker. Returns "" when desks are off. */
+/** Per-mount desk picker. Hidden while there's only one desk — picking
+ *  among a single option is just visual noise. */
 function renderDeskDropdown(settings, mount) {
-  if (!settings.useDesks) return "";
   const desks = settings.desks || [];
-  if (desks.length === 0) return "";
+  if (desks.length < 2) return "";
   const current = mount.deskId || settings.activeDeskId || desks[0]?.id || "";
   const opts = desks.map(d => `<option value="${escAttr(d.id)}" ${d.id === current ? "selected" : ""}>${escHtml(d.name || "Untitled desk")}</option>`).join("");
   return `<select class="local-sync-desk-select" data-id="${escAttr(mount.id)}">${opts}</select>`;

@@ -43,15 +43,15 @@ export function createDefaultSettings() {
     // via the command palette ("Show minimap" / "Hide minimap"). The
     // widget unmounts itself whenever a non-notebook is open.
     minimapVisible: false,
-    // "Desks" — top-level container above all other tree nodes. When
-    // off, the tree is flat (single global Inbox/Images/Trash). When
-    // on, the top level is one or more desk nodes, each with its own
-    // namespaced special folders. Synced across devices.
-    useDesks: false,
-    // Desk list (synced via `.hush/desks.json` once Phase 7 lands; for
-    // now persisted alongside the rest of settings). One entry per
-    // desk: { id, name, createdAt }. Always at least one entry when
-    // `useDesks` is true; ignored otherwise.
+    // "Desks" — top-level container above all other tree nodes. The
+    // top level is always one or more desk nodes, each with its own
+    // namespaced Inbox/Images/Trash. Sessions started before desks
+    // became always-on are wrapped under a single "Personal" desk on
+    // first boot. The legacy `useDesks` flag stays in storage as a
+    // deprecated boolean so older settings.json files still parse.
+    useDesks: true,
+    // Desk list (synced via `.hush/desks.json`). One entry per desk:
+    // `{ id, name, createdAt }`. Always at least one entry.
     desks: [],
     // Per-desk synced metadata, keyed by desk id. Carries the slot of
     // settings that diverge per desk: active style, desktop slot,
@@ -59,10 +59,9 @@ export function createDefaultSettings() {
     // Local-only fields like lastFileId / scrollPosition stay on the
     // top-level `settings` so they per-device-per-window restore.
     desksMeta: {},
-    // Active desk id for this device. Null when `useDesks` is off.
-    // Persisted as a regular setting so the choice rides across
-    // restarts; it's intentionally NOT considered a synced field by
-    // other devices (each device picks its own active desk).
+    // Active desk id for this device. Persisted as a regular setting so
+    // the choice rides across restarts; intentionally NOT considered a
+    // synced field — each device picks its own active desk.
     activeDeskId: null,
     // Shortcuts — General
     shortcutOpenEditor: "CmdOrCtrl+Shift+H",

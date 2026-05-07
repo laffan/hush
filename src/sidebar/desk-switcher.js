@@ -1,7 +1,8 @@
 /**
  * Desk switcher — sidebar header that surfaces the active desk's name
  * with a dropdown of every desk plus an "Add desk" entry. Hidden when
- * `settings.useDesks` is false.
+ * the user only has one desk (the structural default) so single-desk
+ * sessions don't carry an empty-looking switcher.
  *
  * The header is mounted above the create-buttons row in the files
  * panel. Clicking the header toggles a popover with one row per desk
@@ -61,13 +62,14 @@ function detachListeners() {
 
 function render() {
   if (!_container || !_state) return;
-  if (!_state.settings?.useDesks) {
+  const desks = _state.settings?.desks || [];
+  if (desks.length < 2) {
     _container.style.display = "none";
     _container.innerHTML = "";
     return;
   }
   _container.style.display = "";
-  const active = (_state.settings.desks || []).find((d) => d.id === _state.settings.activeDeskId);
+  const active = desks.find((d) => d.id === _state.settings.activeDeskId);
   const label = active?.name || "Desk";
   _container.innerHTML = `
     <button class="desk-switcher-header" type="button">

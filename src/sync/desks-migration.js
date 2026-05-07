@@ -1,25 +1,22 @@
 /**
- * Dropbox layout migrations for the Desks feature.
+ * Dropbox layout migration for the Desks feature.
  *
- * When the user toggles desks on, every existing top-level synced
+ * When the boot-time always-on migration runs on a device that
+ * previously synced under the flat layout, every top-level synced
  * file has to be moved under `<DeskName>/...` on Dropbox so the remote
- * layout matches the new local tree shape. Toggling off reverses it
- * (with the Inbox / Images / Trash subfolders folded into the global
- * specials).
+ * layout matches the new local tree shape.
  *
  * Each move is enqueued through the existing op-log so the drain
  * worker handles retries, idempotency, and ordering. Local sync map
  * paths update through `rename_sync_file` as the moves succeed (the
  * cursor delta will see the rev unchanged for our own writes and skip).
  *
- * The migration is local-first: callers run it after `enableDesks` /
- * `disableDesks` have already mutated the local tree. Cross-device
- * sync of the `useDesks` flag itself rides `.hush/desks.json`; the
- * receiving device performs the local tree wrap (no Dropbox writes,
- * since the source device already pushed the moves).
+ * The migration is local-first: callers run it after `enableDesks`
+ * has already mutated the local tree. Cross-device sync of the desk
+ * list itself rides `.hush/desks.json`; the receiving device performs
+ * the local tree wrap (no Dropbox writes, since the source device
+ * already pushed the moves).
  */
-
-const SPECIAL_FOLDER_NAMES = new Set(["Inbox", "Images", "Trash"]);
 
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -47,49 +44,6 @@ export async function migrateSyncToDesk(state, deskName) {
       moved += 1;
     } catch (e) {
       console.warn("desk migration: rename enqueue failed for", oldPath, e);
-    }
-  }
-  triggerDrain(state);
-  return { moved };
-}
-
-/** Reverse of `migrateSyncToDesk`. For every desk represented in the
- *  current sync map (paths that start with `<deskName>/`), strip the
- *  prefix on Inbox / Images / Trash subfolders so the contents merge
- *  into the global specials, and leave the rest under a top-level
- *  folder named after the desk.
- *
- *  When there's exactly one desk, the desk prefix is stripped entirely
- *  so all content unwraps to the root.
- */
-export async function migrateSyncFromDesks(state, deskList) {
-  if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return { moved: 0 };
-  if (!Array.isArray(deskList) || deskList.length === 0) return { moved: 0 };
-
-  const { enqueueRename } = await import("./op-log.js");
-  const files = await getSyncedFiles();
-  let moved = 0;
-
-  for (const desk of deskList) {
-    const prefix = (desk.name || "Untitled desk") + "/";
-    for (const f of files) {
-      const oldPath = f.relativePath || "";
-      if (!oldPath.startsWith(prefix)) continue;
-      const rest = oldPath.slice(prefix.length);
-      // Path under one of the desk's special folders → land in the
-      // matching global special (Inbox / Images / Trash). All other
-      // paths keep the desk prefix; the local unwrap turns the desk
-      // into a folder of the same name, so the Dropbox layout matches.
-      const firstSegment = rest.split("/")[0];
-      const newPath = SPECIAL_FOLDER_NAMES.has(firstSegment) ? rest : oldPath;
-      if (newPath === oldPath) continue;
-      try {
-        await enqueueRename({ internalId: f.internalId, fromPath: oldPath, toPath: newPath });
-        await renameSyncFile(state, f.internalId, oldPath, newPath);
-        moved += 1;
-      } catch (e) {
-        console.warn("desk migration (off): rename enqueue failed for", oldPath, e);
-      }
     }
   }
   triggerDrain(state);

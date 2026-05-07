@@ -2,18 +2,20 @@
  * Desks sync via `.hush/desks.json`.
  *
  * Carries the synced part of the Desks data model across devices:
- *   - `useDesks` flag
  *   - the `desks` list ({ id, name, createdAt })
  *   - per-desk metadata (`desksMeta` — active style, desktop slot,
  *     persisted panes once those become per-desk in a follow-up)
+ *   - the legacy `useDesks` flag, kept in the payload only so older
+ *     peers that still gate on it parse modern files cleanly. Always
+ *     emitted as `true`; ignored on apply.
  *
  * Local-only state (the active desk id, last-opened file per desk)
  * stays out of this payload — every device picks its own active desk.
  *
- * On apply, when the receiving device sees `useDesks` flip from off
- * to on, it runs the local tree wrap (no Dropbox writes — the source
- * device already enqueued the moves). When `useDesks` flips off, the
- * receiving device runs the local unwrap.
+ * Apply just merges the incoming desk list into local settings and
+ * runs the local wrap if the tree happens to be flat (e.g. an older
+ * peer published a `useDesks: false` payload before this device
+ * migrated). The unwrap branch is gone — desks are structural now.
  */
 
 const DESKS_FILENAME = "desks.json";
@@ -24,7 +26,7 @@ export async function serializeDesks(state) {
   return JSON.stringify({
     format: "hush-desks",
     version: FORMAT_VERSION,
-    useDesks: !!s.useDesks,
+    useDesks: true,
     desks: Array.isArray(s.desks) ? s.desks : [],
     desksMeta: s.desksMeta || {},
     updatedAt: Math.floor(Date.now() / 1000),
@@ -44,34 +46,33 @@ export async function applyDesksFile(state, payload) {
   catch { return { applied: 0, error: "parse" }; }
   if (!parsed || parsed.format !== "hush-desks") return { applied: 0, error: "format" };
 
-  const wasOn = !!state.settings?.useDesks;
-  const willBeOn = !!parsed.useDesks;
-
-  // Apply the synced fields. Local activeDeskId is preserved when
-  // possible (defaults to first desk if the previous active is gone).
+  // Merge the incoming desk list. If the payload is empty (e.g. an
+  // older peer that still serialized `useDesks: false` with no desks),
+  // keep whatever desks we already have — the receiving device's
+  // structural always-on guarantee owns the local list in that case.
   const incomingDesks = Array.isArray(parsed.desks) ? parsed.desks : [];
+  const desks = incomingDesks.length > 0
+    ? incomingDesks
+    : (state.settings?.desks || []);
+
   let activeDeskId = state.settings?.activeDeskId || null;
-  if (willBeOn && (!activeDeskId || !incomingDesks.some((d) => d.id === activeDeskId))) {
-    activeDeskId = incomingDesks[0]?.id || null;
+  if (!activeDeskId || !desks.some((d) => d.id === activeDeskId)) {
+    activeDeskId = desks[0]?.id || null;
   }
-  if (!willBeOn) activeDeskId = null;
 
   await state.updateSettings({
-    useDesks: willBeOn,
-    desks: incomingDesks,
+    useDesks: true,
+    desks,
     desksMeta: parsed.desksMeta || {},
     activeDeskId,
   }, { fromSync: true });
 
-  // Local tree shape: wrap on flip-on, unwrap on flip-off. The Dropbox
-  // moves themselves arrive separately via the cursor delta; we only
-  // need to mutate the local fileTree to match the new shape.
-  if (!wasOn && willBeOn) {
+  // If the local tree is still flat (legacy from a peer that hadn't
+  // migrated yet), wrap it now under the first synced desk. The
+  // Dropbox moves themselves arrive separately via the cursor delta.
+  if (!state.fileTree.some((n) => n.type === "desk") && desks[0]) {
     const _desks = await import("../state/state-desks.js");
-    await wrapTreeLocally(state, incomingDesks, _desks);
-  } else if (wasOn && !willBeOn) {
-    const _desks = await import("../state/state-desks.js");
-    await unwrapTreeLocally(state, _desks);
+    await wrapTreeLocally(state, desks, _desks);
   }
   state.emit("desks-changed");
   state.emit("files-changed");
@@ -97,32 +98,6 @@ async function wrapTreeLocally(state, desks, _desks) {
   if (trash) { trash.id = `__trash__:${target.id}`; desk.children.push(trash); }
   _desks.ensureDeskSpecials(desk);
   t.push(desk);
-  await state.saveFileTree();
-}
-
-/** Local-only mirror of `disableDesks`. */
-async function unwrapTreeLocally(state, _desks) {
-  const t = state.fileTree;
-  const desks = t.filter((n) => n.type === "desk");
-  if (desks.length === 0) return;
-  const inbox = { id: "__inbox__", type: "project", name: "Inbox", children: [], flagged: false };
-  const images = { id: "__images__", type: "folder", name: "Images", children: [], flagged: false };
-  const trash = { id: "__trash__", type: "folder", name: "Trash", children: [], flagged: false };
-  const hoisted = [];
-  const isSingleDesk = desks.length === 1;
-  for (const d of desks) {
-    const nonSpecials = [];
-    for (const c of (d.children || [])) {
-      if (c.id?.startsWith("__inbox__:")) inbox.children.push(...(c.children || []));
-      else if (c.id?.startsWith("__images__:")) images.children.push(...(c.children || []));
-      else if (c.id?.startsWith("__trash__:")) trash.children.push(...(c.children || []));
-      else nonSpecials.push(c);
-    }
-    if (isSingleDesk || nonSpecials.length === 0) hoisted.push(...nonSpecials);
-    else hoisted.push({ id: crypto.randomUUID(), type: "folder", name: d.name || "Untitled desk", children: nonSpecials, flagged: false });
-  }
-  t.length = 0;
-  t.push(inbox, ...hoisted, images, trash);
   await state.saveFileTree();
 }
 

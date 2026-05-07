@@ -152,6 +152,7 @@ export class AppState {
         Object.assign(this.settings, await tauriInvoke("get_settings"));
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
+        await _desks.migrateLegacyTreeIfNeeded(this);
         this.ensureSpecialNodes();
         await this.saveFileTree();
 
@@ -228,12 +229,13 @@ export class AppState {
       this.fileTree = this.files.map(f => ({ id: crypto.randomUUID(), type: "document", name: f.name, fileId: f.id, children: [], flagged: false }));
       this._saveTreeLocal();
     }
+    const savedSettings = localStorage.getItem("hush_settings");
+    if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
+    _desks.migrateLegacyTreeIfNeeded(this).catch(() => {});
     this.ensureSpecialNodes();
     this._saveTreeLocal();
     if (this.files.length > 0) this.currentFileId = this.files[0].id;
     else this._createLocalFile();
-    const savedSettings = localStorage.getItem("hush_settings");
-    if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
   }
 
   _createLocalFile() {
@@ -309,9 +311,8 @@ export class AppState {
   createManualSnapshot() { return _snapshots.createManualSnapshot(this); }
 
   // ===== Special Nodes =====
-  // Legacy global ids (used when `useDesks` is false). Per-desk
-  // namespaced ids are produced by `state-desks.js#specialNodeId`.
-
+  // Bare-id constants. Per-desk namespaced ids `<kind>:<deskId>` are
+  // produced by `state-desks.js#specialNodeId`.
   static INBOX_ID = "__inbox__";
   static IMAGES_ID = "__images__";
   static TRASH_ID = "__trash__";
@@ -325,8 +326,7 @@ export class AppState {
   isSpecialNodeId(id) { return _desks.isSpecialNodeId(id); }
 
   ensureSpecialNodes() {
-    if (this.settings?.useDesks) { _desks.ensureDesksTreeSpecials(this, this.fileTree); return; }
-    _desks.ensureGlobalTreeSpecials(this.fileTree);
+    _desks.ensureDesksTreeSpecials(this, this.fileTree);
   }
 
   /** True if `nodeId` lives inside any Trash folder. */
@@ -590,7 +590,6 @@ export class AppState {
   async setDesktop(fileId) { const m = await import("./state-desktop.js"); return m.setDesktop(this, fileId); }
   // Desks (delegated to state-desks.js)
   enableDesks(name) { return _desks.enableDesks(this, name); }
-  disableDesks() { return _desks.disableDesks(this); }
   createDesk(name) { return _desks.createDesk(this, name); }
   renameDesk(id, name) { return _desks.renameDesk(this, id, name); }
   deleteDesk(id) { return _desks.deleteDesk(this, id); }
