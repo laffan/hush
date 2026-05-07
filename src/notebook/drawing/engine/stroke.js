@@ -396,7 +396,16 @@ export function createStrokeEngine({
       ...(state.colorIsAuto ? { colorIsAuto: true } : {}),
       ...(state.colorIsHeading ? { colorIsHeading: true } : {}),
     };
-    state.lastRecorded = p;
+    // `lastRecorded` is the threshold reference for the
+    // close-enough-to-replace check in extendStroke. Store a
+    // *copy* of p, not the reference itself — `state.active.points`
+    // already holds the original p, and a re-anchor's bulk shift
+    // walks both `state.strokes` and `state.active.points` to
+    // translate each point. If `lastRecorded` shared the same
+    // object, the explicit shift on `state.lastRecorded` would
+    // double-shift that one point and the user would see it drift
+    // away from the rest of the stroke as the camera pans.
+    state.lastRecorded = { x: p.x, y: p.y };
     state.activePointerId = e.pointerId;
     state.suppressedPointerId = null;
     state.dirty = true;
@@ -423,7 +432,9 @@ export function createStrokeEngine({
       a.points[a.points.length - 1] = p;
     } else {
       a.points.push(p);
-      state.lastRecorded = p;
+      // Copy, not the same reference — see onPointerDown for the
+      // re-anchor double-shift this avoids.
+      state.lastRecorded = { x: p.x, y: p.y };
     }
     state.dirty = true;
     if (state.longPressTimer && state.longPressAnchor) {
