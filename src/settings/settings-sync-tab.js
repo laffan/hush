@@ -155,6 +155,49 @@ async function gatherSyncDiagnostics() {
   lines.push(`=== Recent sync log (last 20 of ${syncLog.length}) ===`);
   for (const entry of syncLog.slice(-20)) lines.push(`  ${entry}`);
 
+  // In-memory sync trace (initial sync + cursor decisions). Captured by
+  // sync-trace.js, populated from initial-sync.js and dropbox-cursor.js.
+  // Lets us see, per Dropbox entry, whether find_by_remote_id matched
+  // the registration that performInitialSync just made.
+  let trace = [];
+  try {
+    const m = await import("../sync/sync-trace.js");
+    trace = m.getTrace();
+  } catch (_) {}
+  lines.push("");
+  lines.push(`=== Sync trace (last ${trace.length} entries; live since app start) ===`);
+  if (trace.length === 0) lines.push("(empty)");
+  for (const t of trace) lines.push(`  ${t}`);
+
+  // Live cross-check: list Dropbox now and, for each entry, look up the
+  // synced_files row by remote_id. If a row that should be registered
+  // returns null here, the registration didn't take. This is the
+  // definitive check for the iPad-first-sync duplication.
+  if (settings?.dropboxAccessToken && settings?.dropboxSyncPath) {
+    lines.push("");
+    lines.push("=== Live Dropbox listing × find_by_remote_id ===");
+    try {
+      const dbx = await import("../sync/dropbox.js");
+      if (settings.dropboxAccessToken) {
+        dbx.setTokens(settings.dropboxAccessToken, settings.dropboxRefreshToken);
+      }
+      const base = (settings.dropboxSyncPath || "").replace(/\/+$/, "");
+      const root = base === "/" ? "" : base;
+      const remote = await dbx.listFolderRecursive(root || "");
+      lines.push(`(${remote.length} entries)`);
+      for (const e of remote) {
+        if (e.isDirectory) continue;
+        if (!e.id) { lines.push(`  ⚠ ${e.relativePath} has no Dropbox id`); continue; }
+        const hit = await invoke("find_synced_file_by_remote_id", { remoteId: e.id }).catch(() => null);
+        const byPath = await invoke("find_synced_file_by_path", { syncFolderId: SYNC_FOLDER_ID, relativePath: e.relativePath }).catch(() => null);
+        const flag = hit ? "" : (byPath ? "  ← byRemote MISS, byPath HIT" : "  ← BOTH MISS");
+        lines.push(`  ${e.relativePath}  id=${e.id.slice(-12)}  rev=${(e.rev || "").slice(0, 12)}  → byRemote=${hit?.internalId?.slice(0, 8) || "null"} byPath=${byPath?.internalId?.slice(0, 8) || "null"}${flag}`);
+      }
+    } catch (e) {
+      lines.push(`(live listing failed: ${e?.message || e})`);
+    }
+  }
+
   return lines.join("\n");
 }
 

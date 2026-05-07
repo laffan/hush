@@ -151,6 +151,10 @@ export async function performInitialSync(state, dropboxPath) {
       const resp = await uploadContent(dbx, fullPath, content, path);
       uploaded.push(path);
       if (file.fileId) {
+        const { traceSync } = await import("./sync-trace.js");
+        traceSync("initial.upload+register", {
+          internal: file.fileId, path, remoteId: resp?.id, rev: resp?.rev,
+        });
         await tauriInvoke("register_synced_file_full", {
           internalId: file.fileId, syncFolderId: SYNC_FOLDER_ID,
           relativePath: path, content,
@@ -188,6 +192,10 @@ export async function performInitialSync(state, dropboxPath) {
       const content = await downloadContent(dbx, entry.dropboxPath, entry.relativePath);
       const file = await tauriInvoke("create_file");
       await tauriInvoke("save_file", { id: file.id, content });
+      const { traceSync } = await import("./sync-trace.js");
+      traceSync("initial.download+register", {
+        internal: file.id, path: entry.relativePath, remoteId: entry.id, rev: entry.rev,
+      });
       await tauriInvoke("register_synced_file_full", {
         internalId: file.id, syncFolderId: SYNC_FOLDER_ID,
         relativePath: entry.relativePath, content,
@@ -195,6 +203,21 @@ export async function performInitialSync(state, dropboxPath) {
         rev: entry.rev || "",
         syncedAt: serverModifiedSecs(entry.modified) || Math.floor(Date.now() / 1000),
       });
+      // Verify the registration committed by reading it back. Logs a
+      // mismatch trace if either the row is missing or remote_id stored
+      // differs from what we passed — that's the smoking gun for the
+      // iPad-first-sync duplication.
+      try {
+        const verify = await tauriInvoke("get_sync_file_info", { internalId: file.id });
+        if (!verify) {
+          traceSync("initial.verify.MISS", { internal: file.id, path: entry.relativePath });
+        } else if (verify.remoteId !== (entry.id || "")) {
+          traceSync("initial.verify.MISMATCH", {
+            internal: file.id,
+            stored: verify.remoteId, expected: entry.id,
+          });
+        }
+      } catch (_) {}
       insertIntoTree(state.fileTree, entry.relativePath, file.id, entry.name);
       downloaded.push(entry.relativePath);
     } catch (e) { console.error(`Download failed for ${entry.relativePath}:`, e); }

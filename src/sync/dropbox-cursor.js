@@ -172,6 +172,7 @@ async function continueAndProcess(state, dbx, base, cursor, handlers, count) {
 async function processEntries(state, entries, base, handlers) {
   const baseLower = base.toLowerCase();
   const { wasOurFileRev } = await import("./meta-sync.js");
+  const { traceSync } = await import("./sync-trace.js");
 
   for (const entry of entries) {
     const tag = entry[".tag"];
@@ -182,6 +183,7 @@ async function processEntries(state, entries, base, handlers) {
       const info = await tauriInvoke("find_synced_file_by_path", {
         syncFolderId: SYNC_FOLDER_ID, relativePath: rel,
       });
+      traceSync("cursor.deleted", { rel, foundInternal: info?.internalId });
       if (info && handlers.onDeleted) {
         await handlers.onDeleted({ internalId: info.internalId, relativePath: rel });
       }
@@ -200,6 +202,7 @@ async function processEntries(state, entries, base, handlers) {
     // Meta files (.hush/*.json — pane sync, future workspace state) bypass
     // the synced_files identity table since they aren't user content.
     if (kind === "meta") {
+      traceSync("cursor.meta", { rel, rev: entry.rev });
       if (handlers.onMeta) {
         await handlers.onMeta({
           relativePath: rel,
@@ -212,6 +215,10 @@ async function processEntries(state, entries, base, handlers) {
     }
 
     let info = await tauriInvoke("find_synced_file_by_remote_id", { remoteId: entry.id });
+    traceSync("cursor.entry", {
+      kind, rel, id: entry.id, rev: entry.rev,
+      byRemote: info?.internalId || "null",
+    });
 
     if (!info) {
       // Fall back to path lookup for legacy entries (pre-cursor) whose
@@ -219,6 +226,7 @@ async function processEntries(state, entries, base, handlers) {
       info = await tauriInvoke("find_synced_file_by_path", {
         syncFolderId: SYNC_FOLDER_ID, relativePath: rel,
       });
+      traceSync("cursor.byPath", { rel, found: info?.internalId || "null" });
       if (info) {
         await tauriInvoke("backfill_remote_id", {
           internalId: info.internalId, remoteId: entry.id, rev: entry.rev || "",
@@ -228,6 +236,7 @@ async function processEntries(state, entries, base, handlers) {
     }
 
     if (!info) {
+      traceSync("cursor.→onCreated", { rel, id: entry.id });
       if (handlers.onCreated) {
         await handlers.onCreated({
           remoteId: entry.id,
@@ -251,11 +260,13 @@ async function processEntries(state, entries, base, handlers) {
       (info.lastKnownRev && info.lastKnownRev === entry.rev) ||
       wasOurFileRev(info.internalId, entry.rev)
     )) {
+      traceSync("cursor.echoSuppressed", { rel, rev: entry.rev });
       continue;
     }
 
     // Path differs → rename.
     if (info.relativePath !== rel) {
+      traceSync("cursor.→onRenamed", { from: info.relativePath, to: rel });
       if (handlers.onRenamed) {
         await handlers.onRenamed({
           internalId: info.internalId,
@@ -271,6 +282,7 @@ async function processEntries(state, entries, base, handlers) {
     }
 
     // Same path, different rev → content change.
+    traceSync("cursor.→onContentChanged", { rel, rev: entry.rev });
     if (handlers.onContentChanged) {
       await handlers.onContentChanged({
         internalId: info.internalId,
