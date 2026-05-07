@@ -319,10 +319,12 @@ export function createDrawingToolPanel(
     lassoFlyout.style.left = `${centerX}px`;
     lassoFlyout.style.transform = "translateX(-50%)";
     // If the toolbar's vertical center sits in the top half of the
-    // parent, push the flyout down; otherwise push up. Default toolbar
-    // position is at the bottom, so we land on the "push up" branch.
-    const btnCenterY = btnRect.top + btnRect.height / 2 - parentRect.top;
-    if (btnCenterY < parentRect.height / 2) {
+    // window, push the flyout down; otherwise push up. Window height
+    // is the right reference here — the flyout's own parent is a
+    // zero-height relative-positioned wrapper, so its midline isn't
+    // meaningful.
+    const btnCenterY = btnRect.top + btnRect.height / 2;
+    if (btnCenterY < window.innerHeight / 2) {
       lassoFlyout.style.top = `${btnRect.bottom - parentRect.top + 8}px`;
       lassoFlyout.style.bottom = "auto";
     } else {

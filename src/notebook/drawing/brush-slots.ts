@@ -396,11 +396,12 @@ export function createBrushSlots(
     const centerX = btnRect.left + btnRect.width / 2 - parentRect.left;
     flyout.style.left = `${centerX}px`;
     flyout.style.transform = "translateX(-50%)";
-    // Toolbar center in the top half of the parent → push the flyout
-    // down; otherwise push up. Default toolbar position is at the
-    // bottom, so we land on the "push up" branch.
-    const rowCenterY = rowRect.top + rowRect.height / 2 - parentRect.top;
-    if (rowCenterY < parentRect.height / 2) {
+    // Toolbar center in the top half of the window → push the flyout
+    // down; otherwise push up. Window height is the right reference
+    // here — the flyout's own parent is a zero-height
+    // relative-positioned wrapper, so its midline isn't meaningful.
+    const rowCenterY = rowRect.top + rowRect.height / 2;
+    if (rowCenterY < window.innerHeight / 2) {
       flyout.style.top = `${rowRect.bottom - parentRect.top + 8}px`;
       flyout.style.bottom = "auto";
     } else {
