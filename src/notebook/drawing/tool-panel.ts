@@ -187,6 +187,39 @@ export function createDrawingToolPanel(
 
   // ----- Drag-to-reposition wiring ---------------------------------
 
+  /** Clamp a desired (x, y) offset so the combined toolbar's bbox stays
+   *  inside its parent. Reads the current rendered bbox of the bottom
+   *  toolbar + drag tab (which together span the assembly's full
+   *  extent) and back-projects to the natural offset = 0 position so
+   *  the math is independent of where the assembly currently sits. */
+  function clampOffset(desiredX: number, desiredY: number): { x: number; y: number } {
+    const parent = container.parentElement;
+    if (!parent) return { x: desiredX, y: desiredY };
+    const bottomToolbar = parent.querySelector<HTMLElement>(":scope > .notebook-toolbar");
+    if (!bottomToolbar) return { x: desiredX, y: desiredY };
+    const parentRect = parent.getBoundingClientRect();
+    const tbRect = bottomToolbar.getBoundingClientRect();
+    const dragTabRect = dragTab.getBoundingClientRect();
+    if (tbRect.width === 0 || dragTabRect.width === 0) return { x: desiredX, y: desiredY };
+    const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
+    // Parent-local bounds of the assembly at offset (0, 0).
+    const natLeft = (tbRect.left - parentRect.left) - cur.x;
+    const natRight = (dragTabRect.right - parentRect.left) - cur.x;
+    const natTop = (tbRect.top - parentRect.top) - cur.y;
+    const natBottom = (Math.max(tbRect.bottom, dragTabRect.bottom) - parentRect.top) - cur.y;
+    const leftBound = state.leftInset || 0;
+    let minX = leftBound - natLeft;
+    let maxX = parentRect.width - natRight;
+    if (minX > maxX) { const m = (minX + maxX) / 2; minX = maxX = m; }
+    let minY = -natTop;
+    let maxY = parentRect.height - natBottom;
+    if (minY > maxY) { const m = (minY + maxY) / 2; minY = maxY = m; }
+    return {
+      x: Math.max(minX, Math.min(maxX, desiredX)),
+      y: Math.max(minY, Math.min(maxY, desiredY)),
+    };
+  }
+
   let dragStartClient: { x: number; y: number } | null = null;
   let dragStartOffset: { x: number; y: number } = { x: 0, y: 0 };
   let dragPointerId: number | null = null;
@@ -204,7 +237,8 @@ export function createDrawingToolPanel(
     if (e.pointerId !== dragPointerId) return;
     const dx = e.clientX - dragStartClient.x;
     const dy = e.clientY - dragStartClient.y;
-    state.setDrawingToolbarOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
+    const clamped = clampOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
+    state.setDrawingToolbarOffset(clamped.x, clamped.y);
   }
   function onDragPointerUp(e: PointerEvent) {
     if (dragStartClient === null) return;
@@ -282,11 +316,19 @@ export function createDrawingToolPanel(
     const parentRect = parent.getBoundingClientRect();
     const btnRect = lassoBtn.getBoundingClientRect();
     const centerX = btnRect.left + btnRect.width / 2 - parentRect.left;
-    // Anchor above the lasso button (toolbar lives at the bottom now).
     lassoFlyout.style.left = `${centerX}px`;
-    lassoFlyout.style.bottom = `${parentRect.bottom - btnRect.top + 8}px`;
-    lassoFlyout.style.top = "auto";
     lassoFlyout.style.transform = "translateX(-50%)";
+    // If the toolbar's vertical center sits in the top half of the
+    // parent, push the flyout down; otherwise push up. Default toolbar
+    // position is at the bottom, so we land on the "push up" branch.
+    const btnCenterY = btnRect.top + btnRect.height / 2 - parentRect.top;
+    if (btnCenterY < parentRect.height / 2) {
+      lassoFlyout.style.top = `${btnRect.bottom - parentRect.top + 8}px`;
+      lassoFlyout.style.bottom = "auto";
+    } else {
+      lassoFlyout.style.bottom = `${parentRect.bottom - btnRect.top + 8}px`;
+      lassoFlyout.style.top = "auto";
+    }
   }
 
   function openLassoFlyout(): void {
@@ -377,7 +419,18 @@ export function createDrawingToolPanel(
       dragTab.style.color = state.theme.foreground;
     };
     place();
-    requestAnimationFrame(place);
+    requestAnimationFrame(() => {
+      place();
+      // Keep the offset inside the parent on layout changes (e.g.
+      // window resize after a drag). Equal-value short-circuit in
+      // setDrawingToolbarOffset prevents an infinite notify loop when
+      // the offset is already in bounds.
+      const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
+      const c = clampOffset(cur.x, cur.y);
+      if (c.x !== cur.x || c.y !== cur.y) {
+        state.setDrawingToolbarOffset(c.x, c.y);
+      }
+    });
     if (lassoFlyoutOpen) positionLassoFlyout();
   }
 

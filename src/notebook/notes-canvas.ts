@@ -64,17 +64,21 @@ export function setNotebookPencilOnly(on: boolean): void {
   for (const c of liveCanvases) c._applyPencilOnly(_pencilOnly);
 }
 
-/** Last non-erase sub-tool we routed away from when the user toggled
- *  into the eraser via the Apple Pencil double-tap. Defaults to "draw"
- *  so the very first toggle from a clean session — pencil → erase →
- *  pencil — lands the user back on the brush. */
-let _lastNonEraseSubTool: "draw" | "erase" | "slice" | "select" = "draw";
+/** Last eraser-class sub-tool the user picked. Tracks slice / erase so
+ *  the Apple Pencil double-tap can flip the user back into whichever
+ *  eraser they were last using. Defaults to "erase" — the more common
+ *  pick — so a fresh session that's never touched slice still hands
+ *  the user a working eraser on the first squeeze. Updated whenever a
+ *  notebook's drawingSubTool transitions into either eraser; see the
+ *  per-canvas listener in NotesCanvas's constructor. */
+let _lastEraserSubTool: "erase" | "slice" = "erase";
 
 /** Apple Pencil 2nd-gen / Pencil Pro double-tap handler. Toggles the
- *  active notebook between the eraser and whatever non-erase sub-tool
- *  the user was last on (typically `draw`, which preserves their
- *  active brush slot). Routed in via `pencil-bridge.js` listening to
- *  the iOS plugin's `double-tap` event.
+ *  active notebook between the user's last-used eraser type (slice or
+ *  erase, defaulting to erase) and the active brush — the brush's
+ *  configuration lives on `state.activeBrushSlot`, so flipping back to
+ *  `draw` restores everything the user had set up. Routed in via
+ *  `pencil-bridge.js` listening to the iOS plugin's `double-tap` event.
  *
  *  Routes to the most-recently interacted-with notebook (matches the
  *  copy/paste routing convention) and falls back to the first live
@@ -91,11 +95,11 @@ export function toggleNotebookEraser(): void {
     s.notify("tool");
     s.notify("drawingMode");
   }
-  if (s.drawingSubTool === "erase") {
-    s.setDrawingSubTool(_lastNonEraseSubTool || "draw");
+  const sub = s.drawingSubTool;
+  if (sub === "erase" || sub === "slice") {
+    s.setDrawingSubTool("draw");
   } else {
-    _lastNonEraseSubTool = s.drawingSubTool;
-    s.setDrawingSubTool("erase");
+    s.setDrawingSubTool(_lastEraserSubTool);
   }
 }
 
@@ -176,6 +180,19 @@ export class NotesCanvas {
 
     // Image cache management
     this.state.addEventListener("change", () => this._syncImageCache());
+
+    // Track the user's most-recent eraser pick so the Apple Pencil
+    // double-tap can flip back into that specific eraser instead of
+    // always landing on "erase". The double-tap itself goes through
+    // setDrawingSubTool too, so this listener also picks up double-tap
+    // transitions — harmless, since the value being recorded matches
+    // the destination the toggle just chose.
+    this.state.addEventListener("change", ((e: CustomEvent) => {
+      const keys: string[] = e.detail?.keys || [];
+      if (!keys.includes("drawingSubTool")) return;
+      const sub = this.state.drawingSubTool;
+      if (sub === "erase" || sub === "slice") _lastEraserSubTool = sub;
+    }) as EventListener);
 
     // Apply theme to container
     this.state.addEventListener("change", () => {

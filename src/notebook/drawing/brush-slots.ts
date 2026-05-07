@@ -391,13 +391,22 @@ export function createBrushSlots(
     const parent = flyout.parentElement;
     if (!parent) return;
     const parentRect = parent.getBoundingClientRect();
-    // Position below the slot row, centered on the active slot.
     const activeBtn = slotBtns[state.activeBrushSlot];
     const btnRect = activeBtn.getBoundingClientRect();
     const centerX = btnRect.left + btnRect.width / 2 - parentRect.left;
     flyout.style.left = `${centerX}px`;
-    flyout.style.top = `${rowRect.bottom - parentRect.top + 8}px`;
     flyout.style.transform = "translateX(-50%)";
+    // Toolbar center in the top half of the parent → push the flyout
+    // down; otherwise push up. Default toolbar position is at the
+    // bottom, so we land on the "push up" branch.
+    const rowCenterY = rowRect.top + rowRect.height / 2 - parentRect.top;
+    if (rowCenterY < parentRect.height / 2) {
+      flyout.style.top = `${rowRect.bottom - parentRect.top + 8}px`;
+      flyout.style.bottom = "auto";
+    } else {
+      flyout.style.bottom = `${parentRect.bottom - rowRect.top + 8}px`;
+      flyout.style.top = "auto";
+    }
   }
 
   state.addEventListener("change", ((e: CustomEvent) => {
