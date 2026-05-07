@@ -67,13 +67,36 @@ export async function applyDesksFile(state, payload) {
     activeDeskId,
   }, { fromSync: true });
 
+  const _desks = await import("../state/state-desks.js");
   // If the local tree is still flat (legacy from a peer that hadn't
   // migrated yet), wrap it now under the first synced desk. The
   // Dropbox moves themselves arrive separately via the cursor delta.
   if (!state.fileTree.some((n) => n.type === "desk") && desks[0]) {
-    const _desks = await import("../state/state-desks.js");
     await wrapTreeLocally(state, desks, _desks);
   }
+  // Add tree nodes for any incoming desks the local tree doesn't carry
+  // yet, plus rename existing ones whose name changed remotely. Without
+  // this, an "Add desk" performed on another device leaves the receiving
+  // tree without a desk node, and cursor-delivered files would land in
+  // a plain folder named after the desk instead of inside the desk.
+  let treeChanged = false;
+  for (const d of desks) {
+    if (!d?.id) continue;
+    const existing = state.fileTree.find((n) => n.type === "desk" && n.id === d.id);
+    if (existing) {
+      if (d.name && existing.name !== d.name) { existing.name = d.name; treeChanged = true; }
+      continue;
+    }
+    const desk = {
+      id: d.id, type: "desk", name: d.name || "Untitled desk",
+      children: [], flagged: false,
+      createdAt: d.createdAt || Math.floor(Date.now() / 1000),
+    };
+    _desks.ensureDeskSpecials(desk);
+    state.fileTree.push(desk);
+    treeChanged = true;
+  }
+  if (treeChanged) await state.saveFileTree();
   state.emit("desks-changed");
   state.emit("files-changed");
   return { applied: 1 };

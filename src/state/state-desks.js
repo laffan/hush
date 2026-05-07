@@ -191,6 +191,21 @@ export async function createDesk(state, name = "Untitled desk") {
   await state.updateSettings({ desks });
   await state.saveFileTree();
   state.emit("desks-changed");
+  // Push the desk skeleton to Dropbox so other devices land it under
+  // the same path layout — and so `Inbox/` / `Trash/` show up on the
+  // remote tree even before the user drops a file inside them.
+  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
+    try {
+      const { enqueueCreateFolder, triggerDrain } = await import("../sync/op-log.js");
+      await enqueueCreateFolder({ path: name });
+      for (const child of (desk.children || [])) {
+        const childName = child?.name;
+        if (!childName) continue;
+        await enqueueCreateFolder({ path: `${name}/${childName}` });
+      }
+      triggerDrain(state);
+    } catch (e) { console.warn("desks: skeleton enqueue failed:", e); }
+  }
   pushDesksJson(state);
   return id;
 }
@@ -198,11 +213,24 @@ export async function createDesk(state, name = "Untitled desk") {
 export async function renameDesk(state, deskId, newName) {
   const desk = (state.fileTree || []).find((n) => n.type === "desk" && n.id === deskId);
   if (!desk) return;
+  const oldName = desk.name;
+  if (!newName || newName === oldName) return;
   desk.name = newName;
   const desks = (state.settings.desks || []).map((d) => d.id === deskId ? { ...d, name: newName } : d);
   await state.updateSettings({ desks });
   await state.saveFileTree();
   state.emit("desks-changed");
+  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
+    try {
+      const { enqueueRenameDir, triggerDrain } = await import("../sync/op-log.js");
+      await enqueueRenameDir({ fromPath: oldName, toPath: newName });
+      // Update every synced_files row that lives under the old desk
+      // prefix so future content writes land at the renamed path.
+      await rewriteSyncPathsPrefix(state, `${oldName}/`, `${newName}/`);
+      triggerDrain(state);
+    } catch (e) { console.warn("desks: rename enqueue failed:", e); }
+  }
+  pushDesksJson(state);
 }
 
 /** Delete a desk and all of its content. The very last desk can't be
@@ -213,6 +241,8 @@ export async function deleteDesk(state, deskId) {
   if (desks.length <= 1) throw new Error("cannot delete the last desk");
   const idx = tree.findIndex((n) => n.type === "desk" && n.id === deskId);
   if (idx < 0) return;
+  const desk = tree[idx];
+  const deskName = desk.name;
   tree.splice(idx, 1);
 
   const remaining = (state.settings.desks || []).filter((d) => d.id !== deskId);
@@ -226,6 +256,38 @@ export async function deleteDesk(state, deskId) {
   await state.saveFileTree();
   state.emit("desks-changed");
   if (activeDeskId !== state.settings.activeDeskId) state.emit("active-desk-changed", activeDeskId);
+  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath && deskName) {
+    try {
+      const { enqueueDeleteDir, triggerDrain } = await import("../sync/op-log.js");
+      await enqueueDeleteDir({ path: deskName });
+      triggerDrain(state);
+    } catch (e) { console.warn("desks: delete enqueue failed:", e); }
+  }
+  pushDesksJson(state);
+}
+
+/** Rewrite every `synced_files.relative_path` whose value starts with
+ *  `oldPrefix` so it carries `newPrefix` instead. Used by `renameDesk`
+ *  to keep the local sync map in step with the rename op the drain
+ *  worker is about to push to Dropbox. */
+async function rewriteSyncPathsPrefix(state, oldPrefix, newPrefix) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  let files = [];
+  try { files = await invoke("get_synced_files", { syncFolderId: "__dropbox_sync__" }) || []; }
+  catch (e) { console.warn("desks rename: get_synced_files failed:", e); return; }
+  for (const f of files) {
+    const oldPath = f.relativePath || "";
+    if (!oldPath.startsWith(oldPrefix)) continue;
+    const newPath = newPrefix + oldPath.slice(oldPrefix.length);
+    try {
+      await invoke("rename_sync_file", {
+        folderPath: state.settings.dropboxSyncPath || "",
+        oldRelative: oldPath,
+        newRelative: newPath,
+        internalId: f.internalId,
+      });
+    } catch (e) { console.warn("desks rename: rename_sync_file failed:", oldPath, e); }
+  }
 }
 
 /** Every special-node id of `kind` currently in the tree (one per desk).
