@@ -118,19 +118,30 @@ export function stopSyncPolling() {
 // finishes.
 let _initialSyncBarrier = false;
 
-/** Block / unblock cursor cycles while `performInitialSync` is running.
- *  Call with `true` before `await performInitialSync(...)`, then `false`
- *  in a `finally`. While set, scheduled cycles are no-ops; on release
- *  we kick a fresh cycle so the just-registered files get checked
- *  against Dropbox via the cursor seed (which echo-suppresses them now
- *  that their `synced_files` rows exist). */
+/** Block / unblock cursor cycles AND op-log drain while
+ *  `performInitialSync` is running. Call with `true` before
+ *  `await performInitialSync(...)`, then `false` in a `finally`. While
+ *  set, scheduled cycles are no-ops AND queued ops are held — that
+ *  prevents a racy autosave from uploading content to a pre-rename
+ *  path while performInitialSync is mid-collision-rename. On release
+ *  we kick a fresh cycle and a drain so anything queued during the
+ *  barrier window catches up using the post-rename `info.relativePath`. */
 export function setInitialSyncBarrier(active) {
   _initialSyncBarrier = !!active;
   if (!active && _state) {
-    // Just-cleared barrier — schedule a fresh cycle. setTimeout instead
-    // of immediate so the post-initial-sync state has settled.
-    setTimeout(() => runSyncCycle(_state), 100);
+    // Just-cleared barrier — schedule a fresh cycle and drain. setTimeout
+    // instead of immediate so the post-initial-sync state has settled.
+    setTimeout(() => {
+      runSyncCycle(_state);
+      import("./op-log.js").then(({ triggerDrain }) => triggerDrain(_state)).catch(() => {});
+    }, 100);
   }
+}
+
+/** Public predicate so op-log can ask whether the drain is currently
+ *  paused for an in-flight initial sync. */
+export function isInitialSyncBarrierActive() {
+  return _initialSyncBarrier;
 }
 
 async function runSyncCycle(state) {

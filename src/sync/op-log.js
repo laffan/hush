@@ -144,6 +144,17 @@ export function triggerDrain(state) {
 async function drainOnce(state) {
   if (_draining || !state) return;
   if (!state.settings?.dropboxEnabled || !state.settings?.dropboxSyncPath) return;
+  // While performInitialSync is running, hold drain. A racy autosave
+  // fired between settings activation and performInitialSync's
+  // collision-rename pass could otherwise enqueue an upload op with the
+  // pre-rename path (e.g. "Personal/Inbox/New Notebook.hushnote") and
+  // execute it before performInitialSync renames the local node + uploads
+  // to the suffixed path. Result: iPad's upload lands at Mac's path and
+  // overwrites Mac's content. By gating the drain, by the time the queue
+  // executes the file is already registered with the suffixed path, so
+  // executeUpload's `info.relativePath` resolution picks the right path.
+  const sp = await import("./sync-polling.js");
+  if (sp.isInitialSyncBarrierActive && sp.isInitialSyncBarrierActive()) return;
   _draining = true;
   try {
     while (true) {

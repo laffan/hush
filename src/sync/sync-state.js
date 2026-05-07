@@ -251,10 +251,16 @@ export async function reconcileSync(state) {
     }
   }
 
-  // Refresh the projects + styles meta files on first sync after a
-  // reconnect. Cheap (one upload each); ensures a brand-new device
-  // ends up with `.hush/*.json` populated even if the user hasn't
-  // touched anything yet this session.
+  // Refresh the meta files on first sync after a reconnect. Cheap (one
+  // upload each); ensures a brand-new device ends up with `.hush/*.json`
+  // populated even if the user hasn't touched anything yet this session.
+  // Desks.json is critical for newly-synced peers — without it they see
+  // Mac's `<DeskName>/Inbox/...` paths as plain top-level folders rather
+  // than desks.
+  try {
+    const { pushDesksToDropbox } = await import("./desks-sync.js");
+    await pushDesksToDropbox(state);
+  } catch (_) {}
   try {
     const { pushProjectsToDropbox } = await import("./project-sync.js");
     await pushProjectsToDropbox(state);
