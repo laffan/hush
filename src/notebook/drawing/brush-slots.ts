@@ -18,6 +18,7 @@ import type { DrawingState } from "../state";
 import type { DrawingLayer } from "./drawing-layer";
 import type { DrawingSlot } from "../types";
 import { h } from "../ui/dom-helpers";
+import { createMiniPalette } from "./mini-palette";
 
 const SLOT_COUNT = 3;
 // Default color sentinels + explicit palette. "auto" resolves to the
@@ -294,202 +295,19 @@ export function createBrushSlots(
   flyout.appendChild(section("Mode", [modeRow]));
 
   // ---------- mini-palette ----------
-  // Thin 15-px strip pinned next to the active brush slot. Four color
-  // shortcuts (A / H / red / blue) plus a draggable size readout. The
-  // strip's long axis runs parallel to the toolbar — horizontal mode →
-  // 15 px tall, vertical mode → 15 px wide. Hidden when the full
-  // flyout is open or the user isn't on the brush sub-tool.
-
-  const MINI_COLORS: { value: string; label?: string }[] = [
-    { value: "auto", label: "A" },
-    { value: "heading", label: "H" },
-    { value: "#e11d48" },
-    { value: "#2563eb" },
-  ];
-
-  const miniPalette = h("div", {
-    style: {
-      position: "absolute",
-      display: "none",
-      flexDirection: "row",
-      zIndex: "150",
-      userSelect: "none",
-      overflow: "hidden",
-      borderRadius: "3px",
-      boxShadow: "0 2px 6px rgba(0,0,0,0.18)",
-    },
+  // Lives in src/notebook/drawing/mini-palette.ts. The thin 15-px
+  // strip sits on the toolbar's outside edge and shows A / H / Red
+  // color shortcuts plus a draggable size readout for the active
+  // brush. We pass the slot button list and a flyout-state probe so
+  // it can hide while the full flyout is open.
+  const mini = createMiniPalette({
+    state,
+    drawingLayer,
+    slotBtns,
+    isFlyoutOpen: () => flyoutOpen,
   });
-  miniPalette.addEventListener("pointerdown", (e) => e.stopPropagation());
-
-  const miniColorBtns: { value: string; el: HTMLButtonElement }[] = [];
-  for (const c of MINI_COLORS) {
-    const el = h("button", {
-      title: c.value === "auto"
-        ? "Default (text colour)"
-        : c.value === "heading"
-          ? "Heading colour"
-          : c.value,
-      style: {
-        width: "15px",
-        height: "15px",
-        flex: "0 0 15px",
-        border: "none",
-        cursor: "pointer",
-        padding: "0",
-        margin: "0",
-        font: "700 9px/1 system-ui, sans-serif",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxSizing: "border-box",
-      },
-      text: c.label,
-      onClick: (e) => {
-        e.stopPropagation();
-        const idx = state.activeBrushSlot;
-        const slot = state.brushSlots[idx];
-        if (slot.color === c.value) return;
-        if (drawingLayer.hasSelection()) {
-          const before = drawingLayer.snapshotSelectedStyle();
-          drawingLayer.applyStyleToSelection({ color: c.value });
-          drawingLayer.commitStyleHistory(before);
-        }
-        state.updateBrushSlot(idx, { color: c.value });
-      },
-    }) as HTMLButtonElement;
-    miniColorBtns.push({ value: c.value, el });
-    miniPalette.appendChild(el);
-  }
-
-  const sizeCell = h("div", {
-    style: {
-      width: "22px",
-      height: "15px",
-      flex: "0 0 22px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      font: "600 9px/1 system-ui, sans-serif",
-      fontVariantNumeric: "tabular-nums",
-      cursor: "ns-resize",
-      touchAction: "none",
-      boxSizing: "border-box",
-    },
-  }) as HTMLElement;
-  miniPalette.appendChild(sizeCell);
-
-  // Size cell drag — vertical drag in horizontal mode, horizontal drag
-  // in vertical mode. Either way, "outward from the bar's near edge"
-  // grows the size. We map drag distance at 4 px / unit so a small
-  // gesture nudges by a few units.
-  let sizeDragStart: { axis: "x" | "y"; pos: number; value: number; sign: number } | null = null;
-  let sizeSessionBeforeMini: ReturnType<DrawingLayer["snapshotSelectedStyle"]> | null = null;
-  sizeCell.addEventListener("pointerdown", (e) => {
-    if (e.button !== undefined && e.button !== 0) return;
-    const idx = state.activeBrushSlot;
-    const value = state.brushSlots[idx].size;
-    sizeDragStart = state.drawingToolbarVertical
-      ? { axis: "x", pos: e.clientX, value, sign: 1 }
-      : { axis: "y", pos: e.clientY, value, sign: -1 };
-    if (drawingLayer.hasSelection()) {
-      sizeSessionBeforeMini = drawingLayer.snapshotSelectedStyle();
-    }
-    try { sizeCell.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    e.preventDefault();
-  });
-  sizeCell.addEventListener("pointermove", (e) => {
-    if (!sizeDragStart) return;
-    const cur = sizeDragStart.axis === "y" ? e.clientY : e.clientX;
-    const delta = (cur - sizeDragStart.pos) * sizeDragStart.sign;
-    const v = Math.max(1, Math.min(48, Math.round(sizeDragStart.value + delta / 4)));
-    const idx = state.activeBrushSlot;
-    if (state.brushSlots[idx].size === v) return;
-    state.updateBrushSlot(idx, { size: v });
-    if (sizeSessionBeforeMini) drawingLayer.applyStyleToSelection({ size: v });
-  });
-  function endSizeDrag(e: PointerEvent) {
-    if (!sizeDragStart) return;
-    sizeDragStart = null;
-    try { sizeCell.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    if (sizeSessionBeforeMini) {
-      drawingLayer.commitStyleHistory(sizeSessionBeforeMini);
-      sizeSessionBeforeMini = null;
-    }
-  }
-  sizeCell.addEventListener("pointerup", endSizeDrag);
-  sizeCell.addEventListener("pointercancel", endSizeDrag);
-
-  function syncMiniPaletteVisuals(): void {
-    const slot = state.brushSlots[state.activeBrushSlot];
-    const theme = state.theme;
-    for (const { value, el } of miniColorBtns) {
-      if (value === "auto") {
-        el.style.background = theme.canvasBackground;
-        el.style.color = theme.foreground;
-      } else if (value === "heading") {
-        el.style.background = theme.canvasBackground;
-        el.style.color = theme.headingColor;
-      } else {
-        el.style.background = value;
-        el.style.color = "transparent";
-      }
-      const active = slot.color === value;
-      el.style.boxShadow = active ? `inset 0 0 0 2px ${theme.accent}` : "none";
-    }
-    sizeCell.textContent = String(slot.size);
-    sizeCell.style.background = theme.uiBackground;
-    sizeCell.style.color = theme.foreground;
-  }
-
-  function positionMiniPalette(): void {
-    const parent = miniPalette.parentElement;
-    if (!parent) return;
-    const parentRect = parent.getBoundingClientRect();
-    const activeBtn = slotBtns[state.activeBrushSlot];
-    const btnRect = activeBtn.getBoundingClientRect();
-    if (btnRect.width === 0) return;
-    miniPalette.style.left = "auto";
-    miniPalette.style.right = "auto";
-    miniPalette.style.top = "auto";
-    miniPalette.style.bottom = "auto";
-    if (state.drawingToolbarVertical) {
-      // 15-px-wide strip running top-to-bottom on the canvas-facing
-      // side of the toolbar.
-      const centerY = btnRect.top + btnRect.height / 2 - parentRect.top;
-      miniPalette.style.top = `${centerY}px`;
-      miniPalette.style.transform = "translateY(-50%)";
-      const btnCenterX = btnRect.left + btnRect.width / 2;
-      if (btnCenterX < window.innerWidth / 2) {
-        miniPalette.style.left = `${btnRect.right - parentRect.left}px`;
-      } else {
-        miniPalette.style.right = `${parentRect.right - btnRect.left}px`;
-      }
-    } else {
-      // 15-px-tall strip running left-to-right on the canvas-facing
-      // side of the toolbar.
-      const centerX = btnRect.left + btnRect.width / 2 - parentRect.left;
-      miniPalette.style.left = `${centerX}px`;
-      miniPalette.style.transform = "translateX(-50%)";
-      const btnCenterY = btnRect.top + btnRect.height / 2;
-      if (btnCenterY < window.innerHeight / 2) {
-        miniPalette.style.top = `${btnRect.bottom - parentRect.top}px`;
-      } else {
-        miniPalette.style.bottom = `${parentRect.bottom - btnRect.top}px`;
-      }
-    }
-  }
-
-  function updateMiniPalette(): void {
-    const live = state.tool === "pen" && state.drawingSubTool === "draw" && !flyoutOpen;
-    if (!live) {
-      miniPalette.style.display = "none";
-      return;
-    }
-    miniPalette.style.display = "flex";
-    miniPalette.style.flexDirection = state.drawingToolbarVertical ? "column" : "row";
-    syncMiniPaletteVisuals();
-    positionMiniPalette();
-  }
+  const miniPalette = mini.root;
+  const updateMiniPalette = mini.update;
 
   // Slider retroactive styling: session opens on first `input` event
   // of a drag and commits on `change` (fired on pointer release).

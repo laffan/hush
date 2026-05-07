@@ -66,6 +66,9 @@ const PATHS: Record<string, string> = {
   "move": `<path d="M12 4 V20 M4 12 H20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9 7 L12 4 L15 7 M9 17 L12 20 L15 17 M7 9 L4 12 L7 15 M17 9 L20 12 L17 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Menu / hamburger — three horizontal lines. Used as the toolbar drag tab.
   "menu": `<path d="M5 7 H19 M5 12 H19 M5 17 H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  // Rotate — circular arrow with a return tip in the upper-right corner.
+  // Ported from temp/temp-icons/rotate.svg, retargeted to currentColor.
+  "rotate": `<path d="M21.8883 13.5C21.1645 18.3113 17.013 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C16.1006 2 19.6248 4.46819 21.1679 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 8H21.4C21.7314 8 22 7.73137 22 7.4V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Undo — counter-clockwise curl with an arrowhead returning left.
   "undo": `<path d="M9 14 L4 9 L9 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9 H14 A6 6 0 0 1 14 21 H10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   // Grab / hand gesture — paths lifted from temp-icons/drag-hand-gesture.svg,

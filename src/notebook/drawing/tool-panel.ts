@@ -95,22 +95,10 @@ export function createDrawingToolPanel(
     state.setDrawingSubTool(sub);
   }
 
-  // ----- Undo (backup for the 2-finger tap gesture) ----------------
-
-  const undoBtn = h("button", {
-    title: "Undo",
-    style: {
-      width: "36px", height: "36px", display: "flex",
-      alignItems: "center", justifyContent: "center",
-      border: "none", borderRadius: "8px", cursor: "pointer",
-      background: "transparent", transition: "all 0.15s",
-    },
-    children: [icon("undo", 20)],
-    onClick: () => drawingLayer.undo(),
-  }) as HTMLButtonElement;
-  container.appendChild(undoBtn);
-
   // ----- Brush slots ------------------------------------------------
+  // (Undo lives in the iPad touch-mode floating button stack — see
+  //  src/cmd-button.js — instead of taking a slot here. Desktop users
+  //  rely on the Cmd+Z keyboard shortcut.)
 
   const slots = createBrushSlots(state, drawingLayer);
   container.appendChild(slots.root);
@@ -212,8 +200,47 @@ export function createDrawingToolPanel(
       padding: "0",
       userSelect: "none",
     },
-    children: [icon("menu", 18)],
-    onClick: () => state.setDrawingToolbarVertical(!state.drawingToolbarVertical),
+    children: [icon("rotate", 18)],
+    onClick: () => {
+      // Capture the bottom toolbar's pre-toggle center in parent
+      // coords. After the orientation flip, we'll set the drag offset
+      // so the new (column ↔ row) toolbar lands as close to that
+      // center as the parent allows. Without this, flipping orientation
+      // snaps the toolbar all the way to the new natural anchor — a
+      // jarring jump from wherever the user had dragged it.
+      const parent = container.parentElement;
+      const bottomToolbar = parent?.querySelector<HTMLElement>(":scope > .notebook-toolbar");
+      let savedCenter: { x: number; y: number } | null = null;
+      if (parent && bottomToolbar) {
+        const parentRect = parent.getBoundingClientRect();
+        const tbRect = bottomToolbar.getBoundingClientRect();
+        if (tbRect.width > 0) {
+          savedCenter = {
+            x: tbRect.left + tbRect.width / 2 - parentRect.left,
+            y: tbRect.top + tbRect.height / 2 - parentRect.top,
+          };
+        }
+      }
+      state.setDrawingToolbarVertical(!state.drawingToolbarVertical);
+      if (!savedCenter || !parent || !bottomToolbar) return;
+      // state.notify uses queueMicrotask, so the orientation-flip
+      // listeners fire on the next microtask. We queue ours after, so
+      // by the time it runs the new styles are already applied — and
+      // since both microtasks finish before paint, the user never
+      // sees the toolbar at the natural anchor; it goes straight to
+      // the preserved center.
+      const sc = savedCenter;
+      queueMicrotask(() => {
+        const parentRect = parent.getBoundingClientRect();
+        const tbRect = bottomToolbar.getBoundingClientRect();
+        if (tbRect.width === 0) return;
+        const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
+        const natCx = (tbRect.left + tbRect.width / 2 - parentRect.left) - cur.x;
+        const natCy = (tbRect.top + tbRect.height / 2 - parentRect.top) - cur.y;
+        const desired = clampOffset(sc.x - natCx, sc.y - natCy);
+        state.setDrawingToolbarOffset(desired.x, desired.y);
+      });
+    },
   }) as HTMLButtonElement;
   toggleTab.classList.add("notebook-tool-panel-toggle-tab");
 
@@ -432,8 +459,6 @@ export function createDrawingToolPanel(
       btn.style.opacity = active ? "1" : "0.6";
       btn.style.background = active ? "rgba(66, 133, 244, 0.08)" : "transparent";
     }
-    undoBtn.style.color = theme.foreground;
-    undoBtn.style.opacity = "0.6";
   }
 
   function applyActiveSlot(): void {

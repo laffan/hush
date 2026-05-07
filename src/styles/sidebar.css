@@ -186,6 +186,11 @@
   bottom: calc(20px + (36px + 12px) * 2 + env(safe-area-inset-bottom, 0px));
 }
 
+.cmd-floating-button.cmd-undo-button {
+  /* Stack above the paste button (fourth pill from the bottom). */
+  bottom: calc(20px + (36px + 12px) * 3 + env(safe-area-inset-bottom, 0px));
+}
+
 .cmd-floating-button.panel-open {
   left: calc(50px + var(--panel-width, 300px) + 20px);
 }

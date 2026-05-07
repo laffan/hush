@@ -64,6 +64,18 @@ export function setNotebookPencilOnly(on: boolean): void {
   for (const c of liveCanvases) c._applyPencilOnly(_pencilOnly);
 }
 
+/** Notebook undo, exposed for the iPad touch-mode floating undo button.
+ *  Routes the call to the most-recently interacted-with notebook (same
+ *  routing the copy/paste path uses). Returns true if a notebook
+ *  handled the undo, false if no notebook is mounted (so the caller
+ *  can fall back to a doc-side path if it has one). */
+export function notebookUndo(): boolean {
+  const target = lastActiveNotebook ?? liveCanvases.values().next().value ?? null;
+  if (!target) return false;
+  target.state.undo();
+  return true;
+}
+
 /** Last eraser-class sub-tool the user picked. Tracks slice / erase so
  *  the Apple Pencil double-tap can flip the user back into whichever
  *  eraser they were last using. Defaults to "erase" — the more common

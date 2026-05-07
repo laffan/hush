@@ -241,10 +241,11 @@ export class DrawingState extends EventTarget {
   setDrawingToolbarVertical(b: boolean) {
     if (this.drawingToolbarVertical === b) return;
     this.drawingToolbarVertical = b;
-    // Toggling orientation invalidates the dragged offset (the natural
-    // anchor swaps from bottom-center to left-center). Reset to zero so
-    // the toolbar lands at a sensible default position; clamp will
-    // pull it back inside the parent if anything overflows.
+    // The natural anchor swaps (bottom-center ↔ left-center), so the
+    // dragged offset's interpretation changes too. Reset to zero —
+    // the toolbar's click handler in tool-panel.ts captures the bar's
+    // pre-toggle screen center and computes a fresh offset on the
+    // post-layout pass that puts the bar back near where it was.
     this.drawingToolbarOffset = { x: 0, y: 0 };
     this.notify("drawingToolbarVertical");
     this.notify("drawingToolbarOffset");

@@ -51,6 +51,7 @@ export function isCmdHeld(event) {
 let _cmdBtn = null;
 let _paletteBtn = null;
 let _pasteBtn = null;
+let _undoBtn = null;
 let _state = null;
 let _panelObserver = null;
 
@@ -110,6 +111,29 @@ function mountButtons() {
     import("./paste-helper.js").then((m) => m.pasteAtFocus?.()).catch(() => {});
   });
 
+  // ↶ button — undo. Sits above the paste pill (fourth from the
+  // bottom). Notebook context calls state.undo() directly via the
+  // exported `notebookUndo`; doc context falls back to a synthetic
+  // Cmd+Z keydown on the focused element so CodeMirror's history
+  // keymap picks it up.
+  _undoBtn = document.createElement("button");
+  _undoBtn.className = "cmd-floating-button cmd-undo-button";
+  _undoBtn.setAttribute("aria-label", "Undo");
+  _undoBtn.title = "Undo";
+  _undoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9L9 4"/><path d="M4 9H14a6 6 0 0 1 0 12H10"/></svg>`;
+  document.body.appendChild(_undoBtn);
+  _undoBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    import("./notebook/notes-canvas").then((m) => {
+      if (m.notebookUndo?.()) return;
+      const target = document.activeElement || document.body;
+      target.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "z", code: "KeyZ", keyCode: 90, metaKey: true, ctrlKey: true,
+        bubbles: true, cancelable: true,
+      }));
+    }).catch(() => {});
+  });
+
   syncPanelOpen();
   const panel = document.getElementById("panel-overlay");
   if (panel) {
@@ -157,6 +181,7 @@ function unmountButtons() {
   if (_cmdBtn) { _cmdBtn.remove(); _cmdBtn = null; }
   if (_paletteBtn) { _paletteBtn.remove(); _paletteBtn = null; }
   if (_pasteBtn) { _pasteBtn.remove(); _pasteBtn = null; }
+  if (_undoBtn) { _undoBtn.remove(); _undoBtn = null; }
   if (_panelObserver) { _panelObserver.disconnect(); _panelObserver = null; }
 }
 
@@ -166,6 +191,7 @@ function syncPanelOpen() {
   if (_cmdBtn) _cmdBtn.classList.toggle("panel-open", isOpen);
   if (_paletteBtn) _paletteBtn.classList.toggle("panel-open", isOpen);
   if (_pasteBtn) _pasteBtn.classList.toggle("panel-open", isOpen);
+  if (_undoBtn) _undoBtn.classList.toggle("panel-open", isOpen);
 }
 
 function setHeld(held) {
