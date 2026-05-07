@@ -182,17 +182,35 @@ export function createToolbar(state: DrawingState): HTMLElement {
     const theme = state.theme;
     container.style.background = theme.uiBackground;
 
-    // Center toolbar between sidebar inset and right edge of parent,
-    // then apply the user's drag offset so the combined toolbar (this
-    // pill + the drawing pill that anchors to its right edge) moves
-    // as a single unit when the hamburger drag tab is dragged.
+    // Reset both axis anchors before re-applying — flipping
+    // orientation otherwise leaves a stale axis pinned.
+    container.style.left = "auto";
+    container.style.right = "auto";
+    container.style.top = "auto";
+    container.style.bottom = "auto";
+    container.style.transform = "none";
+
     const inset = state.leftInset || 0;
-    const parentW = container.parentElement?.clientWidth || window.innerWidth;
-    const center = inset + (parentW - inset) / 2;
     const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
-    container.style.left = (center + offset.x) + "px";
-    container.style.transform = "translateX(-50%)";
-    container.style.bottom = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
+
+    if (state.drawingToolbarVertical) {
+      // Pin to the left edge with the toolbar laid out top-to-bottom.
+      // Vertical-center between the parent's top and bottom; the y
+      // component of the drag offset shifts that center up / down.
+      container.style.flexDirection = "column";
+      const parentEl = container.parentElement;
+      const parentH = parentEl?.clientHeight || window.innerHeight;
+      container.style.top = ((parentH / 2) + offset.y) + "px";
+      container.style.transform = "translateY(-50%)";
+      container.style.left = `calc(${inset}px + 16px + ${offset.x}px)`;
+    } else {
+      container.style.flexDirection = "row";
+      const parentW = container.parentElement?.clientWidth || window.innerWidth;
+      const center = inset + (parentW - inset) / 2;
+      container.style.left = (center + offset.x) + "px";
+      container.style.transform = "translateX(-50%)";
+      container.style.bottom = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
+    }
 
     const fg = theme.foreground;
     const accent = theme.accent;

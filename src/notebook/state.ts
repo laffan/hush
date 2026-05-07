@@ -48,6 +48,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
   | "drawingToolbarMinimized" | "drawingToolbarOffset"
+  | "drawingToolbarVertical"
   | "strokeEngineDragging";
 
 /** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
@@ -94,6 +95,13 @@ export class DrawingState extends EventTarget {
    *  zero leaves the toolbar at its original top-center position.
    *  Session-only state — resets when the notebook re-mounts. */
   drawingToolbarOffset: { x: number; y: number } = { x: 0, y: 0 };
+
+  /** When true, the combined drawing toolbar lays out vertically and
+   *  pins to the left edge of the canvas instead of the bottom.
+   *  Toggled by the orientation tab attached to the far end of the
+   *  toolbar (mirrors the drag tab's gray pill style). Session-only
+   *  state — resets when the notebook re-mounts. */
+  drawingToolbarVertical = false;
 
   /** True while the drawing engine is mid-transform (move / resize /
    *  rotate) on its own bbox. Hush's group highlight + selection
@@ -227,6 +235,18 @@ export class DrawingState extends EventTarget {
   setDrawingToolbarOffset(x: number, y: number) {
     if (this.drawingToolbarOffset.x === x && this.drawingToolbarOffset.y === y) return;
     this.drawingToolbarOffset = { x, y };
+    this.notify("drawingToolbarOffset");
+  }
+
+  setDrawingToolbarVertical(b: boolean) {
+    if (this.drawingToolbarVertical === b) return;
+    this.drawingToolbarVertical = b;
+    // Toggling orientation invalidates the dragged offset (the natural
+    // anchor swaps from bottom-center to left-center). Reset to zero so
+    // the toolbar lands at a sensible default position; clamp will
+    // pull it back inside the parent if anything overflows.
+    this.drawingToolbarOffset = { x: 0, y: 0 };
+    this.notify("drawingToolbarVertical");
     this.notify("drawingToolbarOffset");
   }
 

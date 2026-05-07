@@ -374,6 +374,7 @@ export class NotesCanvas {
     // below keep the drawing pill's anchor honest as the bottom
     // toolbar grows / shrinks (theme + leftInset shifts).
     container.appendChild(drawingChrome.dragTab);
+    container.appendChild(drawingChrome.toggleTab);
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(() => drawingChrome.relayout());
       ro.observe(bottomToolbar);
