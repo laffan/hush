@@ -41,7 +41,8 @@ src/notebook/
     brush-slots.ts         Toolbar slot row + brush-edit flyout
     tool-panel.ts          Drawing pill anchored to the bottom toolbar: Undo, brush slots, Slice, Erase, Lasso, lasso hold-time flyout, plus a gray hamburger drag-tab at the right end
     layers-panel.ts        Layers dropdown (notebook-level, used by every shape type)
-    engine/                Stroke engine (ported; 8 documented deltas)
+    engine/                Stroke engine (ported; ~18 documented deltas — see README-DRAWING.md)
+  pencil-bridge.js         Flips `setPencilOnly(true)` on iOS Tauri so finger contacts can't draw
 ```
 
 ### Integration with Hush
@@ -104,7 +105,7 @@ Notebook shortcuts are registered in the Hush shortcut system:
 | `shortcutNbGroup` | `Mod+G` | Group selected shapes |
 | `shortcutNbUngroup` | `Mod+Shift+G` | Ungroup selected shapes |
 
-Draw sub-tools (Lasso, Erase, Slice, brush slots) are reached through the always-visible top pill — no keyboard shortcuts; the E/X hints in the button tooltips are placeholders. Hold space to pan; the grab button in the bottom toolbar does the same thing persistently for pointer-only use.
+Draw sub-tools (Lasso, Erase, Slice, brush slots) are reached through the always-visible drawing pill attached to the right edge of the bottom toolbar — no keyboard shortcuts; the E/X hints in the button tooltips are placeholders. Hold space (or two-finger drag) to pan.
 
 These appear in Settings > Shortcuts > Notebooks and are stored in `AppSettings` (Rust) alongside the editor shortcuts. The input handler reads them from Hush settings at mount time via the `NotebookShortcuts` interface.
 
@@ -219,7 +220,7 @@ Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`). Co
 
 ### Drawing
 
-The top-centered pill is always visible and carries Lasso, Erase, Slice, and three brush slots. There is no "drawing mode" to enter — clicking any of those tools (or double-clicking an existing stroke) implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the pill visually dims.
+A drawing pill attached to the right edge of the bottom toolbar is always visible — it carries Undo, three brush slots, Slice, Erase, and Lasso. There is no "drawing mode" to enter — clicking any of those tools implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the pill visually dims. A small gray hamburger tab abuts the drawing pill's right edge; press-and-drag on it moves the entire combined toolbar (bottom + drawing pill) together via `state.drawingToolbarOffset`.
 
 A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 500). Tapping the already-active Lasso button toggles the flyout open.
 

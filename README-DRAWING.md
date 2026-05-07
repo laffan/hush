@@ -1,6 +1,6 @@
 # Notebook Drawing — Technical Overview
 
-The drawing layer adds freehand ink, erase, slice, and lasso-select tools on top of the notebook's shape-based canvas. Its top toolbar (Lasso, Erase, Slice, three brush slots) is always visible alongside the other notebook tools — there's no separate "drawing mode" to enter; clicking any drawing tool implicitly flips `state.tool = "pen"` and routes pointer events into the stroke engine. The layer lives in `src/notebook/drawing/` and is ported from a reference demo (`temp-drawing-hush-demo/`) that was a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine.
+The drawing layer adds freehand ink, erase, slice, and lasso-select tools on top of the notebook's shape-based canvas. Its toolbar (Undo, three brush slots, Slice, Erase, Lasso) is anchored to the right edge of the bottom toolbar with a 10 px gap, so the two pills read as one combined toolbar. There's no separate "drawing mode" to enter — clicking any drawing tool implicitly flips `state.tool = "pen"` and routes pointer events into the stroke engine. The layer lives in `src/notebook/drawing/` and is ported from a reference demo (`temp-drawing-hush-demo/`) that was a standalone [Perfect Freehand](https://github.com/steveruizok/perfect-freehand) + offscreen-bake stroke engine.
 
 The port's core goal is keeping the engine fast (bake-to-canvas with tile indexing, GPU-composited preview transforms) while making every stroke a first-class Hush shape (undo, groups, layers, shelf, pocket, floating panes).
 
@@ -18,7 +18,6 @@ src/notebook/drawing/
   tool-panel.ts          Drawing pill (Undo, brush slots, Slice, Erase, Lasso) anchored to the right edge of the bottom toolbar, plus a gray hamburger drag-tab at its right end (drag = move the combined toolbar)
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
-  pencil-bridge.js (sibling, in src/notebook/) — flips `setPencilOnly(true)` on iOS Tauri builds so finger contacts can't seed strokes; PointerEvent.pointerType is reliable on iPad WKWebView so this needs no native plugin
   engine/
     stroke.js            Stroke engine entry: pointerdown/move/up → active stroke → done canvas; configurable long-press-ms
     stroke-render.js     Draws stamps into the done canvas via the brush atlas
@@ -30,6 +29,8 @@ src/notebook/drawing/
     history.js           Legacy engine command stack — no longer wired; left in place pending removal
     layers.js            Engine-local layer record (id, locked, hidden). Mirrored from notebook state.
     brushes/             brush-1.png ... brush-5.png — the atlases the renderer samples from
+
+src/notebook/pencil-bridge.js  Flips `setPencilOnly(true)` on iOS Tauri at startup so iPad finger contacts can't seed strokes
 ```
 
 ## Architecture
@@ -92,9 +93,9 @@ On iOS Tauri builds, finger touches don't draw — only Apple Pencil and mouse c
 
 A native plugin scaffold (`src-tauri/tauri-plugin-pencil/`, Swift `PencilPlugin` + Rust shell) is staged but **not registered**: an earlier attempt to load it correlated with iPad drawing breaking entirely (likely because the Swift `UIGestureRecognizer` attached to the WKWebView scrollView interferes with how the page receives touches). The plugin is the right place to hook the Apple Pencil 2nd gen / Pro hardware double-tap (which has no `PointerEvent` equivalent), but enabling it is a separate test cycle.
 
-### Drawing tools (the top pill)
+### Drawing tools (the bottom pill)
 
-Drawing is always on-deck: the top pill is rendered at all times and picking any of its buttons flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool from the bottom toolbar (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the pill visually dims (buttons at 0.6 opacity).
+Drawing is always on-deck: the drawing pill is rendered at all times alongside the bottom toolbar, and picking any of its buttons flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool from the bottom toolbar (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the pill visually dims (buttons at 0.6 opacity).
 
 The drawing pill anchors to the right edge of the bottom toolbar with a 10 px gap so the two pills read as one combined toolbar. A small gray pill abutting the drawing pill's right edge — the **hamburger drag-tab** — is the only chrome that's visually distinct from the rest of the toolbar; press-and-drag on it updates `state.drawingToolbarOffset`, which both the bottom toolbar and the drawing pill consume so the entire combined toolbar moves as a unit. There's no minimize/restore: the drawing tools are always visible. A `ResizeObserver` on the bottom toolbar drives a `relayout()` callback that re-anchors the drawing pill (and its hamburger) whenever sidebar / theme / leftInset shifts change the bottom toolbar's width.
 
@@ -107,7 +108,7 @@ The drawing pill anchors to the right edge of the bottom toolbar with a 10 px ga
 
 Draw has no dedicated button — the active brush slot indicates it. Clicking any brush returns the user to Draw (that's how they exit Erase/Slice). Lasso is the first button in the pill; clicking it activates select, clicking the already-active Lasso toggles a flyout with a single slider (500–2000 ms) for the hold-to-lasso duration.
 
-`enterDrawingMode()` / `exitDrawingMode()` still exist on `DrawingState` for the double-click-on-stroke path and for external callers, but the UI never surfaces them as a toggle.
+`enterDrawingMode()` / `exitDrawingMode()` still exist on `DrawingState` as stable entry points for external callers, but the UI never surfaces them as a toggle.
 
 **Long-press → lasso handoff.** While the user is drawing, a 0.5-s hold (or whatever `state.lassoHoldMs` currently is) without drift cancels the in-flight stroke and promotes the gesture into a lasso. The drawing layer saves the previous sub-tool, flips to `select` for the duration of the selection (so the stroke engine stops accepting new draws), and flashes a small "Selecting" pill to the left of the anchor for acknowledgement. Tapping empty canvas while a selection exists (a `onLassoComplete({ selected: false })` from the engine) restores the previous sub-tool so the user drops straight back into drawing.
 
@@ -149,9 +150,9 @@ Instead, hush's select-drag routes DrawShape moves through `engine.previewTransf
 
 A drag of 500 strokes runs at the same frame rate as a single-stroke drag.
 
-### Double-click into drawing
+### Double-click on a stroke
 
-Double-clicking a `DrawShape` (or any stroke in a group) selects it group-aware and calls `enterDrawingMode()`. This replaces hush's default double-click behavior (which creates a new text shape) for the drawing case specifically. The user can then pick a brush / eraser / etc. from the top pill; exiting drawing is a matter of clicking another top-level tool.
+Double-clicking a `DrawShape` (including a stroke that lives inside a group) selects only that single stroke — the click reaches `DrawingState.handleDoubleClick`, which sets `selectedIds = { hit.id }` without changing the stroke's `groupId`. That's the only path for picking one member out of a group; single-click promotes to whole-group selection. The double-click path replaces Hush's default double-click behaviour (which would create a new text shape) for the drawing case specifically.
 
 ### Pocket stash
 
