@@ -51,53 +51,27 @@ export async function applyDesksFile(state, payload) {
   // keep whatever desks we already have — the receiving device's
   // structural always-on guarantee owns the local list in that case.
   const incomingDesks = Array.isArray(parsed.desks) ? parsed.desks : [];
-  const desks = incomingDesks.length > 0
-    ? incomingDesks
-    : (state.settings?.desks || []);
-
-  let activeDeskId = state.settings?.activeDeskId || null;
-  if (!activeDeskId || !desks.some((d) => d.id === activeDeskId)) {
-    activeDeskId = desks[0]?.id || null;
-  }
-
-  // Per-desk meta is merged key-by-key rather than replaced wholesale
-  // so a payload from one device can't blow away another device's
-  // saved choices for desks the sender hasn't touched yet. Within an
-  // entry, last writer wins on a per-field basis. The metadata is
-  // small enough that we don't bother with per-field timestamps.
-  const localMeta = state.settings?.desksMeta || {};
-  const remoteMeta = parsed.desksMeta && typeof parsed.desksMeta === "object"
-    ? parsed.desksMeta : {};
-  const validIds = new Set(desks.map((d) => d.id));
-  const mergedMeta = {};
-  for (const id of validIds) {
-    const a = localMeta[id];
-    const b = remoteMeta[id];
-    if (a && b) mergedMeta[id] = { ...a, ...b };
-    else if (a || b) mergedMeta[id] = a || b;
-  }
-
-  await state.updateSettings({
-    useDesks: true,
-    desks,
-    desksMeta: mergedMeta,
-    activeDeskId,
-  }, { fromSync: true });
-
   const _desks = await import("../state/state-desks.js");
+
   // If the local tree is still flat (legacy from a peer that hadn't
   // migrated yet), wrap it now under the first synced desk. The
   // Dropbox moves themselves arrive separately via the cursor delta.
-  if (!state.fileTree.some((n) => n.type === "desk") && desks[0]) {
-    await wrapTreeLocally(state, desks, _desks);
+  if (!state.fileTree.some((n) => n.type === "desk") && incomingDesks[0]) {
+    await wrapTreeLocally(state, incomingDesks, _desks);
   }
+
+  // Same-name reconciliation: if both devices independently created a
+  // desk with the same name, merge them by reassigning the local
+  // desk's id (and its per-desk specials) to the incoming id. This is
+  // the "we both made a 'Personal' desk on first boot" case.
+  const renamedDeskIds = _desks.reassignDeskIdByName(state, incomingDesks);
+
   // Add tree nodes for any incoming desks the local tree doesn't carry
-  // yet, plus rename existing ones whose name changed remotely. Without
-  // this, an "Add desk" performed on another device leaves the receiving
-  // tree without a desk node, and cursor-delivered files would land in
-  // a plain folder named after the desk instead of inside the desk.
-  let treeChanged = false;
-  for (const d of desks) {
+  // yet. For each new desk, absorb any same-named "ghost" folder the
+  // cursor delta may have built before this payload arrived (the
+  // <DeskName>/Inbox/Doc.md events that arrived before .hush/desks.json).
+  let treeChanged = renamedDeskIds.size > 0;
+  for (const d of incomingDesks) {
     if (!d?.id) continue;
     const existing = state.fileTree.find((n) => n.type === "desk" && n.id === d.id);
     if (existing) {
@@ -111,8 +85,62 @@ export async function applyDesksFile(state, payload) {
     };
     _desks.ensureDeskSpecials(desk);
     state.fileTree.push(desk);
+    _desks.absorbMatchingFolder(state, desk);
     treeChanged = true;
   }
+  // One more pass: for desks we already had, sweep up any matching
+  // folders that may be sitting at the top level or nested inside
+  // another desk. Catches the case where the file events arrived
+  // before applyDesksFile ever ran (or before this fix landed).
+  if (_desks.reconcileDesksWithStrayFolders(state) > 0) treeChanged = true;
+
+  // Preserve any local desks the incoming list didn't mention. Without
+  // this the receiving device would lose desks it created but never
+  // had the chance to publish — e.g. if a desk was added between
+  // sync cycles.
+  const localDeskIds = state.fileTree.filter((n) => n.type === "desk").map((n) => n.id);
+  const incomingIds = new Set(incomingDesks.map((d) => d?.id).filter(Boolean));
+  const mergedDesks = [...incomingDesks];
+  for (const id of localDeskIds) {
+    if (incomingIds.has(id)) continue;
+    const node = state.fileTree.find((n) => n.id === id);
+    mergedDesks.push({
+      id, name: node?.name || "Untitled desk",
+      createdAt: node?.createdAt || Math.floor(Date.now() / 1000),
+    });
+  }
+  const desks = mergedDesks.length > 0 ? mergedDesks : (state.settings?.desks || []);
+
+  let activeDeskId = state.settings?.activeDeskId || null;
+  if (renamedDeskIds.has(activeDeskId)) activeDeskId = renamedDeskIds.get(activeDeskId);
+  if (!activeDeskId || !desks.some((d) => d.id === activeDeskId)) {
+    activeDeskId = desks[0]?.id || null;
+  }
+
+  // Per-desk meta is merged key-by-key rather than replaced wholesale
+  // so a payload from one device can't blow away another device's
+  // saved choices for desks the sender hasn't touched yet. Within an
+  // entry, last writer wins on a per-field basis.
+  const localMeta = state.settings?.desksMeta || {};
+  const remoteMeta = parsed.desksMeta && typeof parsed.desksMeta === "object"
+    ? parsed.desksMeta : {};
+  const validIds = new Set(desks.map((d) => d.id));
+  const mergedMeta = {};
+  for (const id of validIds) {
+    const oldId = [...renamedDeskIds.entries()].find(([_, v]) => v === id)?.[0];
+    const a = localMeta[id] || (oldId ? localMeta[oldId] : undefined);
+    const b = remoteMeta[id];
+    if (a && b) mergedMeta[id] = { ...a, ...b };
+    else if (a || b) mergedMeta[id] = a || b;
+  }
+
+  await state.updateSettings({
+    useDesks: true,
+    desks,
+    desksMeta: mergedMeta,
+    activeDeskId,
+  }, { fromSync: true });
+
   if (treeChanged) await state.saveFileTree();
   state.emit("desks-changed");
   state.emit("files-changed");

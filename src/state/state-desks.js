@@ -338,6 +338,109 @@ export function ensureDesksTreeSpecials(state, tree) {
   for (const d of desks) ensureDeskSpecials(d);
 }
 
+/** True when `node` looks like an unwrapped desk skeleton — a regular
+ *  folder/project that contains an `Inbox` subfolder. The cursor
+ *  delivers `<DeskName>/Inbox/Doc.md` for files inside a desk; if the
+ *  receiving device hasn't applied desks.json yet, `insertDocumentNode`
+ *  builds a plain folder + Inbox subfolder. That's the shape we want
+ *  to absorb into a freshly-created (or already-empty) desk node. */
+function looksLikeUnwrappedDeskSkeleton(node) {
+  if (!node) return false;
+  if (node.type !== "folder" && node.type !== "project") return false;
+  if (isSpecialNodeId(node.id)) return false;
+  const kids = node.children || [];
+  return kids.some((c) => c?.name === "Inbox");
+}
+
+/** Walk the tree (top level + inside every desk) for a folder/project
+ *  whose name matches `desk.name` and looks like a desk skeleton. The
+ *  first hit gets removed from its parent and its children get merged
+ *  into `desk` — Inbox/Images/Trash subfolders are re-namespaced under
+ *  the desk's id (their contents merge into any existing per-desk
+ *  specials). Returns true when something was absorbed. */
+export function absorbMatchingFolder(state, desk) {
+  const tree = state.fileTree;
+  function findInArr(arr) {
+    for (let i = 0; i < arr.length; i++) {
+      const n = arr[i];
+      if (!n) continue;
+      if (n.name === desk.name && looksLikeUnwrappedDeskSkeleton(n)) {
+        const [removed] = arr.splice(i, 1);
+        return removed;
+      }
+      if (Array.isArray(n.children)) {
+        const found = findInArr(n.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  const folder = findInArr(tree);
+  if (!folder) return false;
+  const mergeKnownSpecial = (child, kind) => {
+    const newId = specialNodeId(kind, desk.id);
+    const existing = desk.children.find((x) => x.id === newId);
+    if (existing) {
+      existing.children = [...(existing.children || []), ...(child.children || [])];
+    } else {
+      child.id = newId;
+      if (kind === "__inbox__") child.type = "project";
+      desk.children.push(child);
+    }
+  };
+  for (const c of (folder.children || [])) {
+    if (!c) continue;
+    if (isSpecialNodeId(c.id)) continue; // belongs to another desk
+    if (c.name === "Inbox" && (c.type === "folder" || c.type === "project")) mergeKnownSpecial(c, "__inbox__");
+    else if (c.name === "Images" && c.type === "folder") mergeKnownSpecial(c, "__images__");
+    else if (c.name === "Trash" && c.type === "folder") mergeKnownSpecial(c, "__trash__");
+    else desk.children.push(c);
+  }
+  ensureDeskSpecials(desk);
+  return true;
+}
+
+/** Walk every desk in the tree and absorb any same-named folder
+ *  skeleton sitting beside or inside another desk. Used both at boot
+ *  (to recover trees that were broken before this fix landed) and
+ *  inside `applyDesksFile` after creating new desk nodes. Returns the
+ *  number of absorptions performed. */
+export function reconcileDesksWithStrayFolders(state) {
+  const desks = (state.fileTree || []).filter((n) => n.type === "desk");
+  let absorbed = 0;
+  for (const d of desks) {
+    while (absorbMatchingFolder(state, d)) absorbed++;
+  }
+  return absorbed;
+}
+
+/** Reassign a local desk's id to match an incoming desk that shares
+ *  the same name. Used during sync apply when both devices created an
+ *  identically-named desk independently — without this they'd accumulate
+ *  duplicate desks. The local content stays in place; only the id
+ *  (and the per-desk special ids) change. Returns the old → new id
+ *  mapping so the caller can migrate `desksMeta` keyed by the old id. */
+export function reassignDeskIdByName(state, incomingDesks) {
+  const tree = state.fileTree || [];
+  const renamed = new Map();
+  const incomingIds = new Set(incomingDesks.map((d) => d?.id).filter(Boolean));
+  for (const d of incomingDesks) {
+    if (!d?.id) continue;
+    if (tree.some((n) => n.type === "desk" && n.id === d.id)) continue;
+    const match = tree.find((n) => n.type === "desk" && n.name === d.name && !incomingIds.has(n.id));
+    if (!match) continue;
+    const oldId = match.id;
+    match.id = d.id;
+    if (d.createdAt) match.createdAt = d.createdAt;
+    for (const c of (match.children || [])) {
+      const parsed = parseSpecialNodeId(c?.id);
+      if (parsed) c.id = specialNodeId(parsed.kind, d.id);
+    }
+    renamed.set(oldId, d.id);
+  }
+  return renamed;
+}
+
 export async function setActiveDesk(state, deskId) {
   const desks = state.settings?.desks || [];
   if (!desks.some((d) => d.id === deskId)) return;
@@ -376,13 +479,18 @@ export async function setDeskGlobalStyleId(state, styleId) {
 /** Boot migration. Pre-always-on installs persist a flat tree with
  *  bare `__inbox__` / `__images__` / `__trash__` ids at the top level.
  *  Wrap that into a default "Personal" desk so the rest of the app
- *  always sees the desks-on shape. Idempotent — bails when the tree
- *  already carries a desk node. */
+ *  always sees the desks-on shape. Also runs `reconcileDesksWithStrayFolders`
+ *  so a tree that was broken by an earlier sync (cursor delta arriving
+ *  before desks.json) can self-heal on the next boot. Idempotent —
+ *  bails when the tree already carries a desk node and no strays. */
 export async function migrateLegacyTreeIfNeeded(state) {
   const tree = state.fileTree || [];
   if (tree.some((n) => n.type === "desk")) {
     if (!state.settings?.useDesks) {
       try { await state.updateSettings({ useDesks: true }); } catch (_) {}
+    }
+    if (reconcileDesksWithStrayFolders(state) > 0) {
+      try { await state.saveFileTree(); } catch (_) {}
     }
     return false;
   }
