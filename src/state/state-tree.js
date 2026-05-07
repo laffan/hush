@@ -3,7 +3,7 @@
  * Each function takes the AppState instance as the first argument.
  */
 
-import { findNode, findNodeByFileId, removeNode, insertNode, insertAfter, collectDocumentIds } from "./tree-helpers.js";
+import { findNode, findNodeByFileId, removeNode, insertNode, insertAfter, collectDocumentIds, enforceSpecialPositions } from "./tree-helpers.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -18,13 +18,19 @@ export async function createTreeNode(state, command, type, name, parentId) {
     try {
       const created = await tauriInvoke(command, { name, parentId });
       state.fileTree = await tauriInvoke("get_file_tree");
-      state.emit("files-changed");
+      // The Rust `create_folder` / `create_project` handlers append to
+      // the parent's children array, which puts the new node *after*
+      // the per-desk Inbox/Images/Trash. Re-pin the specials so the
+      // sidebar shows the new entry above them.
+      enforceSpecialPositions(state.fileTree);
+      await state.saveFileTree();
       state.syncCreateNode(created.id, type);
       return created;
     } catch (e) { console.error(`Create ${type} failed:`, e); }
   } else {
     const node = { id: crypto.randomUUID(), type, name, children: [], flagged: false };
     insertNode(state.fileTree, node, parentId, findNode);
+    enforceSpecialPositions(state.fileTree);
     state._saveTreeLocal();
     state.emit("files-changed");
     return node;

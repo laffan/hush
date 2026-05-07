@@ -316,9 +316,28 @@ async function executeUpload(state, op, dbx) {
     if (hash && hash === info.lastSyncedHash) return;
   }
 
-  const fullPath = fullDbxPath(state, op.path);
+  // First-time uploads (no SQLite info yet) recompute the path from
+  // the live tree at drain time. Without this a rename that fired
+  // between `syncCreateFile` enqueueing and the drain — common when
+  // first-line auto-rename catches the user mid-typing — would land
+  // the file at the stale name on Dropbox, since `syncRenameNode`
+  // silently no-ops while info is null.
+  let path = op.path;
+  if (!info) {
+    try {
+      const { findNodeByFileId, findSyncContext } = await import("../state/tree-helpers.js");
+      const node = findNodeByFileId(state.fileTree, op.internalId);
+      const ctx = node ? findSyncContext(state.fileTree, node.id) : null;
+      if (ctx?.relativePath && node) {
+        const ext = node.type === "notebook" ? ".hushnote" : ".md";
+        path = `${ctx.relativePath}${ext}`;
+      }
+    } catch (e) { /* fall back to op.path */ }
+  }
+
+  const fullPath = fullDbxPath(state, path);
   let resp;
-  if (op.path.endsWith(".hushnote")) {
+  if (path.endsWith(".hushnote")) {
     const { packNotebook } = await import("./notebook-sync.js");
     const zipData = await packNotebook(file.content);
     resp = await dbx.uploadBinary(fullPath, zipData);
@@ -336,7 +355,7 @@ async function executeUpload(state, op, dbx) {
   await tauriInvoke("register_synced_file_full", {
     internalId: op.internalId,
     syncFolderId: SYNC_FOLDER_ID,
-    relativePath: op.path,
+    relativePath: path,
     content: file.content,
     remoteId,
     rev,

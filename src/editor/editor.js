@@ -342,11 +342,22 @@ export function createEditor(container, state) {
   // to avoid the per-keystroke sync churn the old always-rename path
   // caused on Dropbox.
   let prevCursorLine = 1;
+  // Debounced first-line rename. The cursor-leaves-line-1 / blur /
+  // autosave-not-on-line-1 triggers below cover most cases, but a user
+  // who types a title and never moves their cursor would otherwise
+  // never see the file rename. After ~1.5 s of typing idle we run the
+  // same `maybeRenameFromFirstLine` flow as the other triggers.
+  let titleDebounceTimer = null;
+  const TITLE_DEBOUNCE_MS = 1500;
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       state.markDirty();
       state.trackKeystroke();
       scheduleWordCountRecompute(state);
+      if (titleDebounceTimer) clearTimeout(titleDebounceTimer);
+      titleDebounceTimer = setTimeout(() => {
+        queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); });
+      }, TITLE_DEBOUNCE_MS);
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
     } else if (update.selectionSet) {
       // Selection changes feed the word count for two reasons:

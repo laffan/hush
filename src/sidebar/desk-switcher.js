@@ -179,17 +179,30 @@ function beginInlineRename(deskId) {
   nameEl.replaceWith(input);
   input.focus();
   input.select();
+  // The input lives inside the row's `<button data-action="pick">`,
+  // so a click that lands on it would otherwise bubble up to the
+  // popover handler and be interpreted as "pick this desk" — closing
+  // the popover before the user can press Enter. Stop click /
+  // mousedown / keydown from bubbling so the row's pick / outside-click
+  // chain doesn't fire while the user is editing.
+  const stop = (ev) => ev.stopPropagation();
+  input.addEventListener("click", stop);
+  input.addEventListener("mousedown", stop);
+  let committing = false;
   const commit = async (save) => {
+    if (committing) return;
+    committing = true;
     const next = input.value.trim();
     if (save && next && next !== current) {
       try { await _state.renameDesk(deskId, next); } catch (e) { console.warn("rename desk failed:", e); }
     }
-    // The desks-changed listener re-renders the header; we also re-open
-    // the popover so the user sees the result.
+    // The desks-changed listener re-renders the header; reopen the
+    // popover after a save so the user sees the result.
     closePopover();
     if (save) openPopover();
   };
   input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
     if (e.key === "Enter") { e.preventDefault(); commit(true); }
     else if (e.key === "Escape") { e.preventDefault(); commit(false); }
   });

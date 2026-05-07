@@ -350,12 +350,9 @@ export class AppState {
   }
 
   // ===== Tree Operations (delegated to state-tree.js) =====
-  async createFolder(name, parentId = null) {
-    const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_folder", "folder", name, parentId);
-  }
-  async createProject(name, parentId = null) {
-    const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_project", "project", name, parentId);
-  }
+  _activeDeskParent(parentId) { return parentId || _desks.getActiveDesk(this)?.id || null; }
+  async createFolder(name, parentId = null) { const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_folder", "folder", name, this._activeDeskParent(parentId)); }
+  async createProject(name, parentId = null) { const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_project", "project", name, this._activeDeskParent(parentId)); }
   async deleteTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.deleteTreeNode(this, nodeId); }
   async emptyTrash() { const m = await import("./state-tree.js"); return m.emptyTrash(this); }
   async renameTreeNode(nodeId, newName) { const m = await import("./state-tree.js"); return m.renameTreeNode(this, nodeId, newName); }

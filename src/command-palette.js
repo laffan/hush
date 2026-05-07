@@ -15,6 +15,8 @@ import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.j
 import { openInNewWindow } from "./multi-window.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
+import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
+import paneRaw from "./sidebar/sidebar_icons/pane.svg?raw";
 import ratchetRaw from "./sidebar/sidebar_icons/ratchet.svg?raw";
 import privateRaw from "./sidebar/sidebar_icons/private.svg?raw";
 import typewriterRaw from "./sidebar/sidebar_icons/typewriter.svg?raw";
@@ -70,6 +72,8 @@ function paneAnchorClickPoint(state) {
 const icons = {
   newFile: wrapSvg(svgInner(newFileRaw)),
   files: wrapSvg(svgInner(filesRaw)),
+  desk: wrapSvg(svgInner(deskRaw)),
+  pane: wrapSvg(svgInner(paneRaw)),
   ratchet: wrapSvg(svgInner(ratchetRaw)),
   private: wrapSvg(svgInner(privateRaw)),
   typewriter: wrapSvg(svgInner(typewriterRaw)),
@@ -116,7 +120,7 @@ function buildCommands(state) {
       action: (s) => s.newFile() },
     { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: null, ctx: "shared",
       action: (s) => s.createNotebook("New Notebook") },
-    { id: "new-doc-pane", label: "New document as pane", icon: icons.doc, shortcutKey: null, ctx: "shared",
+    { id: "new-doc-pane", label: "New document as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const created = await s.newFile(null, { openImmediately: false });
         if (created) {
@@ -124,7 +128,7 @@ function buildCommands(state) {
           createPane(created.fileId, created.name, "document", x, y);
         }
       } },
-    { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.notebook, shortcutKey: null, ctx: "shared",
+    { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const created = await s.createNotebook("New Notebook", null, { openImmediately: false });
         if (created) {
@@ -139,7 +143,7 @@ function buildCommands(state) {
         else if (f.type === "project") s.openProject(f.fileId);
         else s.openFile(f.fileId);
       }, { includeProjects: true }) },
-    { id: "open-pane", label: "Open document or notebook as pane", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "open-pane", label: "Open document or notebook as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {
         // Place the pane in the gap opposite the editor column shift —
@@ -234,7 +238,7 @@ function buildCommands(state) {
       action: (s) => s.toggleProofread() },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
-    { id: "fit-pane-gap", label: "Fit pane to gap", icon: null, shortcutKey: null, ctx: "pane",
+    { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",
       action: () => fitActivePaneToGap() },
 
     // === NOTEBOOK ONLY ===
@@ -248,12 +252,12 @@ function buildCommands(state) {
     { id: "nb-minimap-hide", label: "Hide minimap", icon: null, shortcutKey: null, ctx: "notebook",
       hiddenIf: (s) => !s.settings?.minimapVisible,
       action: (s) => s.toggleMinimap() },
-    { id: "desk-new", label: "New desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "desk-new", label: "New desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const id = await s.createDesk("Untitled desk");
         if (id) await s.setActiveDesk(id);
       } },
-    { id: "desk-send", label: "Send this file to another desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "desk-send", label: "Send this file to another desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => (s.settings?.desks || []).length < 2 || !currentFileTreeNodeId(s),
       action: async (s) => {
         const id = currentFileTreeNodeId(s);
@@ -261,7 +265,7 @@ function buildCommands(state) {
         const m = await import("./sidebar/send-to-desk-modal.js");
         m.openSendToDeskModal(s, id, "send");
       } },
-    { id: "desk-copy", label: "Copy this file to another desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "desk-copy", label: "Copy this file to another desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => (s.settings?.desks || []).length < 2 || !currentFileTreeNodeId(s),
       action: async (s) => {
         const id = currentFileTreeNodeId(s);
@@ -269,13 +273,13 @@ function buildCommands(state) {
         const m = await import("./sidebar/send-to-desk-modal.js");
         m.openSendToDeskModal(s, id, "copy");
       } },
-    { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.files, shortcutKey: null, ctx: "shared",
+    { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keepOpen: true,
-      action: async (s, p) => (await import("./state/state-desks-ops.js")).enterConvertFolderPicker(p, s, { typeIcons, fallbackIcon: icons.files }) },
-    { id: "desk-collapse", label: "Collapse desk into folder", icon: icons.files, shortcutKey: null, ctx: "shared",
+      action: async (s, p) => (await import("./state/state-desks-ops.js")).enterConvertFolderPicker(p, s, { typeIcons, fallbackIcon: icons.desk }) },
+    { id: "desk-collapse", label: "Collapse desk into folder", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       hiddenIf: (s) => (s.settings?.desks || []).length < 2,
-      action: async (s, p) => (await import("./state/state-desks-ops.js")).enterCollapseDeskPicker(p, s, { fallbackIcon: icons.files }) },
+      action: async (s, p) => (await import("./state/state-desks-ops.js")).enterCollapseDeskPicker(p, s, { fallbackIcon: icons.desk }) },
   ];
 
   return all.filter(cmd => {
