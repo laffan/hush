@@ -145,10 +145,20 @@ export async function enableDesks(state, name = "Personal") {
   t.push(desk);
 
   const desks = [{ id: deskId, name, createdAt: desk.createdAt }];
+  // Seed the per-desk style choice from the user's existing global so
+  // the first boot after the per-desk migration keeps painting with
+  // whatever they had selected before.
+  const seededMeta = { ...(state.settings?.desksMeta || {}) };
+  if (!seededMeta[deskId]) {
+    seededMeta[deskId] = {
+      globalStyleId: state.settings?.globalStyleId || null,
+    };
+  }
   await state.updateSettings({
     useDesks: true,
     desks,
     activeDeskId: deskId,
+    desksMeta: seededMeta,
   });
   await state.saveFileTree();
   state.emit("desks-changed");
@@ -188,7 +198,12 @@ export async function createDesk(state, name = "Untitled desk") {
   ensureDeskSpecials(desk);
   state.fileTree.push(desk);
   const desks = [...(state.settings.desks || []), { id, name, createdAt: desk.createdAt }];
-  await state.updateSettings({ desks });
+  // Seed the per-desk meta with an explicit `globalStyleId: null` so a
+  // brand-new desk starts on the Default style instead of inheriting
+  // the user's top-level legacy fallback. The user's first style pick
+  // for this desk overwrites the null.
+  const meta = { ...(state.settings.desksMeta || {}), [id]: { globalStyleId: null } };
+  await state.updateSettings({ desks, desksMeta: meta });
   await state.saveFileTree();
   state.emit("desks-changed");
   // Push the desk skeleton to Dropbox so other devices land it under
@@ -329,6 +344,33 @@ export async function setActiveDesk(state, deskId) {
   if (state.settings?.activeDeskId === deskId) return;
   await state.updateSettings({ activeDeskId: deskId });
   state.emit("active-desk-changed", deskId);
+}
+
+/** Read the active desk's saved global style id. Falls back to the
+ *  legacy top-level `settings.globalStyleId` when no per-desk choice
+ *  exists yet (first run after the per-desk migration). */
+export function getDeskGlobalStyleId(state) {
+  const desk = getActiveDesk(state);
+  const meta = state.settings?.desksMeta || {};
+  const perDesk = desk ? meta[desk.id]?.globalStyleId : undefined;
+  if (perDesk !== undefined) return perDesk || null;
+  return state.settings?.globalStyleId || null;
+}
+
+/** Write the active desk's global style id into desksMeta. Pushes
+ *  desks.json so the choice rides cross-device. Top-level
+ *  `settings.globalStyleId` is left untouched as a per-device legacy
+ *  fallback. */
+export async function setDeskGlobalStyleId(state, styleId) {
+  const desk = getActiveDesk(state);
+  if (!desk) {
+    await state.updateSettings({ globalStyleId: styleId || null });
+    return;
+  }
+  const meta = { ...(state.settings?.desksMeta || {}) };
+  meta[desk.id] = { ...(meta[desk.id] || {}), globalStyleId: styleId || null };
+  await state.updateSettings({ desksMeta: meta });
+  pushDesksJson(state);
 }
 
 /** Boot migration. Pre-always-on installs persist a flat tree with

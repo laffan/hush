@@ -157,7 +157,12 @@ export function bindStylesPanel(state, panel) {
         state.updateSettings({ activeStyleId: id || null });
         await setLockedStyleId(state, id || null);
       } else {
-        state.updateSettings({ activeStyleId: id || null, globalStyleId: id || null });
+        // Per-desk style: write the choice into desksMeta so it sticks
+        // when the user switches desks (and rides cross-device sync via
+        // desks.json), then reflect the selection in the runtime
+        // `activeStyleId` so the editor repaints immediately.
+        state.updateSettings({ activeStyleId: id || null });
+        await state.setDeskGlobalStyleId(id || null);
       }
       state.emit("style-changed");
       panel.innerHTML = renderStylesPanel(state);
@@ -230,7 +235,22 @@ export function bindStylesPanel(state, panel) {
         const updates = { styles };
         if (state.settings.activeStyleId === id) updates.activeStyleId = null;
         if (state.settings.globalStyleId === id) updates.globalStyleId = null;
+        // Strip the deleted style from every desk's saved choice so a
+        // desk switch doesn't try to reactivate a style that's gone.
+        const meta = state.settings.desksMeta || {};
+        const nextMeta = {};
+        let metaChanged = false;
+        for (const [k, v] of Object.entries(meta)) {
+          if (v?.globalStyleId === id) { nextMeta[k] = { ...v, globalStyleId: null }; metaChanged = true; }
+          else nextMeta[k] = v;
+        }
+        if (metaChanged) updates.desksMeta = nextMeta;
         state.updateSettings(updates);
+        if (metaChanged) {
+          import("../sync/desks-sync.js")
+            .then(m => m.pushDesksToDropbox(state))
+            .catch(e => console.warn("desks: meta push (style delete) failed:", e));
+        }
         state.emit("style-changed");
         panel.innerHTML = renderStylesPanel(state);
         bindStylesPanel(state, panel);

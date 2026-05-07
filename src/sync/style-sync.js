@@ -1,10 +1,15 @@
 /**
  * Style sync via `.hush/styles.json`.
  *
- * Carries the user's named styles plus the active and global pointers.
- * Merge is additive by `id` (a style edited on one device shows up on
- * the other), with the most-recently-edited entry winning for any
- * overlapping ids. The active and global pointers are last-writer-wins.
+ * Carries the user's named styles. Merge is additive by `id` (a style
+ * edited on one device shows up on the other), with the most-recently-
+ * edited entry winning for any overlapping ids.
+ *
+ * The active-style pointer is now per-desk and rides `.hush/desks.json`
+ * via `desksMeta[<deskId>].globalStyleId`, so this file no longer
+ * carries the global pointer. The legacy `activeStyleId` /
+ * `globalStyleId` fields are still emitted (always null) and tolerated
+ * on receive so older clients don't crash.
  */
 
 const STYLES_FILENAME = "styles.json";
@@ -17,8 +22,10 @@ export function serializeStyles(settings) {
     format: "hush-styles",
     version: FORMAT_VERSION,
     styles: Array.isArray(settings?.styles) ? settings.styles : [],
-    activeStyleId: settings?.activeStyleId ?? null,
-    globalStyleId: settings?.globalStyleId ?? null,
+    // Legacy fields retained as null so older builds don't trip on a
+    // schema mismatch. Per-desk pointer lives in `.hush/desks.json`.
+    activeStyleId: null,
+    globalStyleId: null,
   }, null, 2);
 }
 
@@ -80,10 +87,18 @@ export async function applyStylesFile(state, payload) {
 
   const update = {};
   if (!sameContent) update.styles = merged;
-  if (parsed.activeStyleId !== undefined && parsed.activeStyleId !== state.settings.activeStyleId) {
-    update.activeStyleId = parsed.activeStyleId;
-  }
-  if (parsed.globalStyleId !== undefined && parsed.globalStyleId !== state.settings.globalStyleId) {
+  // The active/global pointers are per-desk now; any non-null value in
+  // the payload comes from a pre-migration peer. Apply it only when we
+  // don't already have a per-desk choice for the active desk so a fresh
+  // device coming online still picks up something sensible.
+  const havePerDeskChoice = (() => {
+    const meta = state.settings?.desksMeta || {};
+    const activeId = state.settings?.activeDeskId;
+    return activeId ? meta[activeId]?.globalStyleId !== undefined : false;
+  })();
+  if (!havePerDeskChoice
+      && parsed.globalStyleId !== undefined
+      && parsed.globalStyleId !== state.settings.globalStyleId) {
     update.globalStyleId = parsed.globalStyleId;
   }
   if (Object.keys(update).length === 0) {

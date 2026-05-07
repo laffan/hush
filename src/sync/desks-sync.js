@@ -60,10 +60,27 @@ export async function applyDesksFile(state, payload) {
     activeDeskId = desks[0]?.id || null;
   }
 
+  // Per-desk meta is merged key-by-key rather than replaced wholesale
+  // so a payload from one device can't blow away another device's
+  // saved choices for desks the sender hasn't touched yet. Within an
+  // entry, last writer wins on a per-field basis. The metadata is
+  // small enough that we don't bother with per-field timestamps.
+  const localMeta = state.settings?.desksMeta || {};
+  const remoteMeta = parsed.desksMeta && typeof parsed.desksMeta === "object"
+    ? parsed.desksMeta : {};
+  const validIds = new Set(desks.map((d) => d.id));
+  const mergedMeta = {};
+  for (const id of validIds) {
+    const a = localMeta[id];
+    const b = remoteMeta[id];
+    if (a && b) mergedMeta[id] = { ...a, ...b };
+    else if (a || b) mergedMeta[id] = a || b;
+  }
+
   await state.updateSettings({
     useDesks: true,
     desks,
-    desksMeta: parsed.desksMeta || {},
+    desksMeta: mergedMeta,
     activeDeskId,
   }, { fromSync: true });
 

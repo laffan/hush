@@ -44,6 +44,17 @@ export function applyFocusModeOpacity(state) {
   document.documentElement.style.setProperty("--focus-mode-opacity", String(opacity));
 }
 
+/** Pull the active desk's saved global style id and pin it as the
+ *  runtime `activeStyleId` if it isn't already. Emits `style-changed`
+ *  so the editor / panes / shader runtime repaint. Used by the
+ *  file-open and desk-switch handlers in main.js. */
+export function applyDeskGlobalStyle(state) {
+  const next = state.getDeskGlobalStyleId();
+  if (state.settings.activeStyleId === next) return;
+  state.updateSettings({ activeStyleId: next });
+  state.emit("style-changed");
+}
+
 export function applyActiveStyle(state) {
   const styleId = state.settings.activeStyleId;
   if (!styleId) {

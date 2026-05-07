@@ -1,6 +1,7 @@
 import { createEditor } from "./editor/editor.js";
 import { createSidebar } from "./sidebar/sidebar.js";
 import { AppState } from "./state/state.js";
+import { findNodeByFileId } from "./state/tree-helpers.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
 import { applyAppearance, isIOS, openSettingsWindow } from "./settings/settings-ui.js";
 import { getThemeById } from "./themes/index.js";
@@ -14,7 +15,7 @@ import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, a
 import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, previewNotebookStyle, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
-import { applyActiveStyle, applyFocusModeOpacity, handleOAuthCode } from "./style-application.js";
+import { applyActiveStyle, applyFocusModeOpacity, applyDeskGlobalStyle, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
 import {
@@ -519,14 +520,7 @@ async function init() {
   // Auto-apply locked style when opening a document, or revert to global style
   state.on("file-opened", () => {
     if (!state.currentFileId || !state.fileTree) return;
-    function findLockedStyle(nodes) {
-      for (const n of nodes) {
-        if (n.fileId === state.currentFileId) return n.lockedStyleId || null;
-        if (n.children) { const r = findLockedStyle(n.children); if (r) return r; }
-      }
-      return null;
-    }
-    const lockedId = findLockedStyle(state.fileTree);
+    const lockedId = findNodeByFileId(state.fileTree, state.currentFileId)?.lockedStyleId || null;
     if (lockedId) {
       // This document has a locked style — apply it
       if (lockedId === "__default__") {
@@ -543,13 +537,17 @@ async function init() {
         }
       }
     } else {
-      // No lock — revert to the user's global style choice
-      const globalId = state.settings.globalStyleId || null;
-      if (state.settings.activeStyleId !== globalId) {
-        state.updateSettings({ activeStyleId: globalId });
-        state.emit("style-changed");
-      }
+      // No lock — revert to the active desk's saved style (per-desk via
+      // desksMeta in `.hush/desks.json`).
+      applyDeskGlobalStyle(state);
     }
+  });
+
+  // Switching desks repaints the editor with the new desk's saved
+  // style; locked-style files win (file-opened above handles them).
+  state.on("active-desk-changed", () => {
+    const node = state.currentFileId ? findNodeByFileId(state.fileTree, state.currentFileId) : null;
+    if (!node?.lockedStyleId) applyDeskGlobalStyle(state);
   });
 
   // Style changes (from sidebar or settings)

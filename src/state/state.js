@@ -595,6 +595,8 @@ export class AppState {
   deleteDesk(id) { return _desks.deleteDesk(this, id); }
   setActiveDesk(id) { return _desks.setActiveDesk(this, id); }
   getActiveDesk() { return _desks.getActiveDesk(this); }
+  getDeskGlobalStyleId() { return _desks.getDeskGlobalStyleId(this); }
+  setDeskGlobalStyleId(id) { return _desks.setDeskGlobalStyleId(this, id); }
   async toggleMinimap() { const n = !this.settings?.minimapVisible; await this.updateSettings({ minimapVisible: n }); this.emit("minimap-visibility-changed", n); }
   async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }

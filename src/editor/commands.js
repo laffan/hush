@@ -112,7 +112,8 @@ function switchStyleByIndex(state, index) {
   // Index beyond available styles — ignore silently
   if (index > 0 && !styles[index - 1]) return true;
   if (state.settings.activeStyleId !== targetId) {
-    state.updateSettings({ activeStyleId: targetId, globalStyleId: targetId });
+    state.updateSettings({ activeStyleId: targetId });
+    state.setDeskGlobalStyleId(targetId);
     state.emit("style-changed");
   }
   return true;
