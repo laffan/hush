@@ -234,10 +234,24 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // Paint every stroke into doneCtx from scratch. Does not touch the index;
   // used by texture-slider changes where the stroke geometry is unchanged but
   // every brush bitmap has been invalidated.
+  //
+  // Off-canvas strokes are skipped via a bbox-vs-canvas-rect cull. The host
+  // re-anchors the canvas to follow the camera, so on a notebook with
+  // hundreds of strokes spread across a wide world the cull can drop most
+  // of them per rebake — turning a worst-case linear scan over N stamps
+  // into work proportional to the visible footprint. Strokes without a
+  // computed bbox (newly inserted, pre-index) fall back to the unconditional
+  // path so we don't silently drop them.
   function repaintAll() {
     clearCtx(doneCtx);
+    const t = doneCtx.getTransform();
+    const dpr = t.a || 1;
+    const rectW = doneCtx.canvas.width / dpr;
+    const rectH = doneCtx.canvas.height / dpr;
     for (const s of getStrokes()) {
       if (!visible(s)) continue;
+      const b = s.bbox;
+      if (b && (b.maxX < 0 || b.maxY < 0 || b.minX > rectW || b.minY > rectH)) continue;
       renderStroke(doneCtx, s);
     }
   }

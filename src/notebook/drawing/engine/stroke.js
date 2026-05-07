@@ -846,7 +846,12 @@ export function createStrokeEngine({
     // active stroke first) doesn't snap the live overlay. The caller
     // is expected to follow up with `fullRebake()`; we drop preview
     // bookkeeping here because the cached tile keys are stale at the
-    // new origin.
+    // new origin, and clear the live + preview canvases because their
+    // pixels were stamped at the OLD local coords. If an active
+    // stroke is in flight, scheduleRender() so the next rAF re-stamps
+    // it at the new local coords — without that the user's last
+    // committed line would visibly smear for a frame against the
+    // world during a camera pan that triggers a re-anchor.
     translateAllStrokePoints(dx, dy) {
       if (dx === 0 && dy === 0) return;
       for (const s of state.strokes) {
@@ -873,6 +878,12 @@ export function createStrokeEngine({
       }
       state.previewingIds = null;
       state.previewingTiles = null;
+      clearCtx(liveCtx);
+      clearCtx(previewCtx);
+      if (state.active) {
+        state.dirty = true;
+        scheduleRender();
+      }
     },
 
     // Hush delta #20: render a single stroke into an arbitrary ctx.

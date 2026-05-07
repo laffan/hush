@@ -22,16 +22,27 @@ import type { Camera } from "../types";
 import type { EngineStroke } from "./sync-shim";
 
 /** Smallest world-space side length the canvas backing will use. At
- *  zoom=1 this gives DPR=2 on retina (2048*2 = 4096 backing) for
- *  crisp strokes near the camera. */
+ *  zoom=1 with a viewport of 1280 px or smaller this gives DPR=2 on
+ *  retina (2048*2 = 4096 backing) for crisp strokes near the camera.
+ *  Larger viewports grow above this floor and accept a lower DPR. */
 export const WORLD_SIZE_MIN = 2048;
 /** Multiplier on the visible viewport when picking the canvas world
- *  size: the canvas covers `factor × visible-viewport` so strokes
- *  drawn near the screen edges have headroom before re-anchor. */
-const VIEWPORT_COVERAGE_FACTOR = 1.25;
+ *  size: the canvas covers `factor × viewport` so strokes drawn near
+ *  the screen edges have headroom before re-anchor. Must satisfy
+ *  `factor > 1 / (1 - 2·marginFrac)` so a freshly-centered re-anchor
+ *  has slack greater than the margin — otherwise `needsReanchor`
+ *  fires immediately on the next frame and we re-anchor every pan
+ *  step (the bug introduced in the first cut of this controller).
+ *  With marginFrac = 0.10, factor must exceed 1.25; 1.5 leaves a
+ *  comfortable buffer so each re-anchor buys ~17 % of viewport in
+ *  pan distance before the next one. */
+const VIEWPORT_COVERAGE_FACTOR = 1.5;
 /** Re-anchor when the visible viewport's world bbox comes within
- *  REANCHOR_MARGIN_FRAC × current worldSize of any canvas edge. */
-const REANCHOR_MARGIN_FRAC = 0.15;
+ *  REANCHOR_MARGIN_FRAC × current worldSize of any canvas edge.
+ *  Smaller margin = more slack between re-anchors but less safety
+ *  if the user pans faster than expected. 0.10 pairs with the
+ *  factor above to put each re-anchor ~17% of viewport apart. */
+const REANCHOR_MARGIN_FRAC = 0.10;
 /** Re-resize when the wanted world size differs from the current
  *  one by more than this ratio. Avoids re-bakes for tiny zoom
  *  nudges that don't actually need a different size. */
@@ -112,12 +123,18 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
   }
 
   function restashPocketedStrokes(): void {
+    const strokes = strokeEngine.getStrokes();
+    let anyPocketed = false;
+    for (const s of strokes) {
+      if (s.pocketed) { anyPocketed = true; break; }
+    }
+    if (!anyPocketed) return;
     const dpr = getDpr();
     pocketStashCtx.save();
     pocketStashCtx.setTransform(1, 0, 0, 1, 0, 0);
     pocketStashCtx.clearRect(0, 0, pocketStash.width, pocketStash.height);
     pocketStashCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    for (const s of strokeEngine.getStrokes()) {
+    for (const s of strokes) {
       if (s.pocketed) strokeEngine.renderStrokeTo(pocketStashCtx, s);
     }
     pocketStashCtx.restore();
@@ -133,15 +150,27 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     const newOriginY = vpCenterY - newSize / 2;
     const dx = anchor.originX - newOriginX;
     const dy = anchor.originY - newOriginY;
+    const sizeChanged = Math.abs(newSize - anchor.worldSize) > 0.5;
+    // No-op skip: if the camera lands exactly where we are anchored
+    // and worldSize doesn't want to change, the translate / rebake
+    // would all be busy work. ensureCoverage's predicate normally
+    // catches this, but a small floating-point difference can let a
+    // call through; the early return keeps the steady-state path
+    // free of canvas operations.
+    if (!sizeChanged && Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
     strokeEngine.translateAllStrokePoints(dx, dy);
     anchor.originX = newOriginX;
     anchor.originY = newOriginY;
-    const sizeChanged = Math.abs(newSize - anchor.worldSize) > 0.5;
     anchor.worldSize = newSize;
     if (sizeChanged) {
       sizeCanvases();
+      // engine.resize() also clears live + preview and rebakes.
       strokeEngine.resize(anchor.worldSize, anchor.worldSize);
     } else {
+      // Same canvas dimensions — only the local-coord frame moved.
+      // `translateAllStrokePoints` already cleared the live + preview
+      // overlays (their stamps were at OLD local coords); fullRebake
+      // repaints the done canvas at the new local positions.
       strokeEngine.fullRebake();
     }
     restashPocketedStrokes();
