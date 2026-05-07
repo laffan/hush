@@ -101,8 +101,41 @@ export function stopSyncPolling() {
   import("./op-log.js").then(({ stopDrainWorker }) => stopDrainWorker());
 }
 
+// ===== Initial-sync barrier =====
+//
+// `performInitialSync` and the cursor seed both register downloads via
+// `register_synced_file_full`. If the cursor cycle starts while the
+// initial sync is still in its upload phase, `find_by_remote_id` returns
+// null for entries the initial sync hasn't yet downloaded — and the
+// cycle dispatches `applyCreated` which creates a *second* internal
+// file for the same Dropbox file. Result: two `synced_files` rows with
+// the same `remote_id` and two tree nodes.
+//
+// The race is real because the activation flow fires `settings-changed`
+// (which kicks off the cycle's 500 ms timer) BEFORE `dropbox-sync-start`
+// (which runs `performInitialSync`). A barrier set by the
+// dropbox-sync-start handler blocks the cycle until the initial sync
+// finishes.
+let _initialSyncBarrier = false;
+
+/** Block / unblock cursor cycles while `performInitialSync` is running.
+ *  Call with `true` before `await performInitialSync(...)`, then `false`
+ *  in a `finally`. While set, scheduled cycles are no-ops; on release
+ *  we kick a fresh cycle so the just-registered files get checked
+ *  against Dropbox via the cursor seed (which echo-suppresses them now
+ *  that their `synced_files` rows exist). */
+export function setInitialSyncBarrier(active) {
+  _initialSyncBarrier = !!active;
+  if (!active && _state) {
+    // Just-cleared barrier — schedule a fresh cycle. setTimeout instead
+    // of immediate so the post-initial-sync state has settled.
+    setTimeout(() => runSyncCycle(_state), 100);
+  }
+}
+
 async function runSyncCycle(state) {
   if (syncing) return;
+  if (_initialSyncBarrier) return;
   if (!state.settings.dropboxEnabled || !state.settings.dropboxSyncPath) return;
   syncing = true;
   try {

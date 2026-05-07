@@ -438,6 +438,16 @@ async function init() {
     await listen("dropbox-sync-start", async (event) => {
       const { path } = event.payload || {};
       if (path) {
+        // Block the cursor cycle while the initial sync runs. Without
+        // this, the `settings-changed` listener fired by `saveSetting`
+        // (just before this event) has already armed the polling
+        // timer, and the seed cycle that fires 500 ms later would race
+        // performInitialSync's downloads — find_by_remote_id returns
+        // null for entries the initial sync hasn't registered yet, and
+        // applyCreated creates a duplicate internal file per such
+        // entry. The barrier holds the cycle until we're done.
+        const sp = await import("./sync/sync-polling.js");
+        sp.setInitialSyncBarrier(true);
         try {
           // Reload settings from backend to ensure tokens are current
           const { invoke } = await import("@tauri-apps/api/core");
@@ -468,10 +478,15 @@ async function init() {
             await invoke("save_settings", { settings: s });
           }
           // Start polling
-          const sp = await import("./sync/sync-polling.js");
           sp.startSyncPolling(state);
         } catch (e) {
           console.error("Initial sync failed:", e);
+        } finally {
+          // Release the barrier — the post-clear hook in
+          // setInitialSyncBarrier kicks an immediate cycle so the
+          // just-registered files get checked via the cursor seed
+          // (and echo-suppress cleanly).
+          sp.setInitialSyncBarrier(false);
         }
       }
     });
