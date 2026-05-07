@@ -47,7 +47,7 @@ const MAX_DPR = 2;
 // Brush-runtime helpers (slot colour resolution, applySlot, renderSwatch,
 // theme-retint) live in `brush-runtime.ts` so this file stays under the
 // 700-line cap.
-import { applySlotToEngine, renderSwatchToCanvas, applyThemeAndRetint } from "./brush-runtime";
+import { applySlotToEngine, renderSwatchToCanvas, renderDemoStrokeToCanvas, applyThemeAndRetint } from "./brush-runtime";
 
 
 /** Construction options. `state` is Hush's DrawingState (kept
@@ -637,9 +637,9 @@ export function createDrawingLayer({
     (strokeEngine as unknown as { setPencilOnly: (b: boolean) => void }).setPencilOnly(!!on);
   }
 
-  function renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void {
-    renderSwatchToCanvas(strokeEngine, themeRef, canvas, slot);
-  }
+  const renderSwatch = (c: HTMLCanvasElement, slot: DrawingSlot) => renderSwatchToCanvas(strokeEngine, themeRef, c, slot);
+  const renderDemoStroke = (c: HTMLCanvasElement, slot: DrawingSlot) => renderDemoStrokeToCanvas(strokeEngine, themeRef, c, slot);
+
 
   // Drawing undo / redo route through Hush's snapshot stack so 2- and
   // 3-finger gesture taps, ⌘Z, and any non-drawing notebook action all
@@ -678,6 +678,7 @@ export function createDrawingLayer({
     setLassoHoldMs,
     setPencilOnly,
     renderSwatch,
+    renderDemoStroke,
     undo,
     redo,
     canUndo,

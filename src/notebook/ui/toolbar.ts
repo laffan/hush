@@ -161,7 +161,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
   const container = h("div", {
     style: {
       position: "absolute", bottom: "calc(16px + env(safe-area-inset-bottom))",
-      display: "flex", alignItems: "center", gap: "4px", padding: "6px 8px",
+      display: "flex", alignItems: "center", gap: "4px", padding: "1px 8px",
       borderRadius: "12px",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)", zIndex: "100", userSelect: "none",
       backdropFilter: "blur(8px)",
@@ -209,7 +209,11 @@ export function createToolbar(state: DrawingState): HTMLElement {
       const center = inset + (parentW - inset) / 2;
       container.style.left = (center + offset.x) + "px";
       container.style.transform = "translateX(-50%)";
-      container.style.bottom = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
+      // Default anchor is the *top* of the canvas so the bar sits at
+      // the user's typical hand-rest position instead of crowding the
+      // bottom-line of the writing surface. offset.y stays "drag down
+      // = positive" — added directly to the top distance.
+      container.style.top = `calc(20px + ${offset.y}px)`;
     }
 
     const fg = theme.foreground;

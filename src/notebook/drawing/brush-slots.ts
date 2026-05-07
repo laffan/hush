@@ -19,6 +19,7 @@ import type { DrawingLayer } from "./drawing-layer";
 import type { DrawingSlot } from "../types";
 import { h } from "../ui/dom-helpers";
 import { createMiniPalette } from "./mini-palette";
+import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
 
 const SLOT_COUNT = 3;
 // Default color sentinels + explicit palette. "auto" resolves to the
@@ -51,6 +52,7 @@ export function createBrushSlots(
   state: DrawingState,
   drawingLayer: DrawingLayer,
 ): BrushSlotsHandle {
+  ensureFlyoutSliderStyle();
   const root = h("div", {
     style: { display: "flex", alignItems: "center", gap: "6px" },
   });
@@ -108,13 +110,17 @@ export function createBrushSlots(
   });
 
   // ---------- slot row ----------
+  // Thumb canvases are 26 px (down from 32) so the slim 1-px-padded
+  // toolbar still has room for a centered preview without bleeding
+  // into the rounded button corners. Buttons stay at 36 px so the
+  // tap target hasn't shrunk.
   const slotBtns: HTMLButtonElement[] = [];
   const slotThumbs: HTMLCanvasElement[] = [];
   for (let i = 0; i < SLOT_COUNT; i++) {
     const thumb = document.createElement("canvas");
-    thumb.width = 32; thumb.height = 32;
+    thumb.width = 26; thumb.height = 26;
     Object.assign(thumb.style, {
-      width: "32px", height: "32px", display: "block",
+      width: "26px", height: "26px", display: "block",
     });
     slotThumbs.push(thumb);
 
@@ -289,10 +295,30 @@ export function createBrushSlots(
     modeRow.appendChild(btn);
   }
 
-  flyout.appendChild(section("Pen", [sizeRow.root, streamRow.root, spacingRow.root]));
+  // Demo stroke replaces the "Pen" section header — a live preview of
+  // the active slot's brush, color, size, and spacing so the user can
+  // see what they're configuring.
+  const demoStroke = document.createElement("canvas");
+  Object.assign(demoStroke.style, {
+    width: "100%", height: "48px", display: "block",
+    marginBottom: "10px", borderRadius: "6px",
+  });
+  flyout.appendChild(demoStroke);
+  flyout.appendChild(section(null, [sizeRow.root, streamRow.root, spacingRow.root]));
   flyout.appendChild(section("Brush", [brushGrid]));
   flyout.appendChild(section("Color", [colorRow]));
   flyout.appendChild(section("Mode", [modeRow]));
+
+  function redrawDemoStroke(): void {
+    if (!flyoutOpen) return;
+    if (demoStroke.clientWidth === 0) {
+      // Flyout was just shown — clientWidth resolves on the next
+      // layout pass. Retry once a frame is on the books.
+      requestAnimationFrame(redrawDemoStroke);
+      return;
+    }
+    drawingLayer.renderDemoStroke(demoStroke, state.brushSlots[state.activeBrushSlot]);
+  }
 
   // ---------- mini-palette ----------
   // Lives in src/notebook/drawing/mini-palette.ts. The thin 15-px
@@ -349,6 +375,13 @@ export function createBrushSlots(
     flyout.style.background = theme.uiBackground;
     flyout.style.border = `1px solid ${theme.uiBorder}`;
     flyout.style.color = theme.foreground;
+    // Tint the demo canvas to match the canvas background so the
+    // stroke reads exactly as it would on the real surface.
+    demoStroke.style.background = theme.canvasBackground;
+    demoStroke.style.border = `1px solid ${theme.uiBorder}`;
+    applyFlyoutSliderTheme(sizeRow.input, theme.accent);
+    applyFlyoutSliderTheme(streamRow.input, theme.accent);
+    applyFlyoutSliderTheme(spacingRow.input, theme.accent);
   }
 
   function syncFlyoutValues(): void {
@@ -380,6 +413,7 @@ export function createBrushSlots(
       btn.style.borderColor = active ? state.theme.accent : "rgba(0,0,0,0.12)";
     }
     redrawBrushCells();
+    redrawDemoStroke();
   }
 
   function redrawBrushCells(): void {
@@ -484,13 +518,15 @@ export function createBrushSlots(
 
   // ---------- helpers ----------
 
-  function section(title: string, children: HTMLElement[]): HTMLElement {
+  function section(title: string | null, children: HTMLElement[]): HTMLElement {
     const sec = h("div", { style: { marginBottom: "12px" } });
-    const t = h("div", {
-      text: title,
-      style: { fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.04em", opacity: "0.7", marginBottom: "6px" },
-    });
-    sec.appendChild(t);
+    if (title !== null) {
+      const t = h("div", {
+        text: title,
+        style: { fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.04em", opacity: "0.7", marginBottom: "6px" },
+      });
+      sec.appendChild(t);
+    }
     for (const c of children) sec.appendChild(c);
     return sec;
   }
@@ -506,6 +542,7 @@ export function createBrushSlots(
       attrs: { type: "range", min: String(min), max: String(max), step: String(step) },
       style: { width: "100%" },
     }) as HTMLInputElement;
+    input.classList.add("notebook-flyout-slider");
     input.value = String(initial);
     const val = h("span", {
       text: String(initial),

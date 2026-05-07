@@ -1,17 +1,18 @@
 /* src/notebook/drawing/mini-palette.ts
  *
  * Thin (15 px thick) strip pinned next to the active brush slot on
- * the toolbar's outside edge — the side facing the screen edge,
- * opposite the canvas. Carries three color shortcuts (A / H / Red)
- * and a draggable size readout (number; press-and-drag changes the
- * value). Hidden when the full brush flyout is open or the user
- * isn't on the brush sub-tool.
+ * the toolbar's canvas-facing edge — opposite the nearest screen
+ * edge so it never sits "outside" the writing surface. Carries three
+ * color shortcuts (A / H / Red) and a draggable size readout
+ * (number; press-and-drag changes the value). Hidden when the full
+ * brush flyout is open or the user isn't on the brush sub-tool.
  *
  * The strip's long axis runs parallel to the toolbar — horizontal
  * mode → 15 px tall, vertical mode → 15 px wide. The corner touching
- * the toolbar paints square; the outside corners stay rounded so the
- * strip reads as an extension of the bar rather than a free-floating
- * pill.
+ * the toolbar paints square; the canvas-side corners stay rounded so
+ * the strip reads as an extension of the bar rather than a
+ * free-floating pill. Anchors against the drawing pill's outer rect
+ * (not the brush button) so it doesn't sit inside the pill's padding.
  */
 
 import type { DrawingState } from "../state";
@@ -158,17 +159,17 @@ export function createMiniPalette(opts: {
   sizeCell.addEventListener("pointerup", endSizeDrag);
   sizeCell.addEventListener("pointercancel", endSizeDrag);
 
-  /** Pick the strip's anchor side so it sits on the *outside* edge of
-   *  the toolbar — the side facing the nearest screen edge, opposite
-   *  the canvas. Returns "below" / "above" in horizontal mode and
-   *  "right" / "left" in vertical. */
-  function outsideSide(btnRect: DOMRect): "above" | "below" | "left" | "right" {
+  /** Pick the strip's anchor side. The strip sits on the toolbar's
+   *  *canvas-facing* side — opposite the nearest screen edge — so it
+   *  never blocks the writing surface from above (or wherever the
+   *  user has dragged the bar). */
+  function attachSide(btnRect: DOMRect): "above" | "below" | "left" | "right" {
     if (state.drawingToolbarVertical) {
       const cx = btnRect.left + btnRect.width / 2;
-      return cx < window.innerWidth / 2 ? "left" : "right";
+      return cx < window.innerWidth / 2 ? "right" : "left";
     }
     const cy = btnRect.top + btnRect.height / 2;
-    return cy < window.innerHeight / 2 ? "above" : "below";
+    return cy < window.innerHeight / 2 ? "below" : "above";
   }
 
   function syncVisuals(side: "above" | "below" | "left" | "right"): void {
@@ -191,8 +192,7 @@ export function createMiniPalette(opts: {
     sizeCell.textContent = String(slot.size);
     sizeCell.style.background = theme.uiBackground;
     sizeCell.style.color = theme.foreground;
-    // Keep the corners flush against the toolbar (the side touching
-    // the bar) and rounded on the outside edge.
+    // Square the corners on the bar-touching edge; round the outside.
     const r = "3px";
     if (side === "below") root.style.borderRadius = `0 0 ${r} ${r}`;
     else if (side === "above") root.style.borderRadius = `${r} ${r} 0 0`;
@@ -207,6 +207,11 @@ export function createMiniPalette(opts: {
     const activeBtn = slotBtns[state.activeBrushSlot];
     const btnRect = activeBtn.getBoundingClientRect();
     if (btnRect.width === 0) return;
+    // Touch the *drawing pill's* edge, not the button's — the pill's
+    // padding wraps every button, so anchoring to the button would
+    // park the strip inside that padding (overlapping the bar).
+    const pill = activeBtn.closest(".notebook-tool-panel") as HTMLElement | null;
+    const pillRect = pill ? pill.getBoundingClientRect() : btnRect;
     root.style.left = "auto";
     root.style.right = "auto";
     root.style.top = "auto";
@@ -216,18 +221,18 @@ export function createMiniPalette(opts: {
       root.style.top = `${centerY}px`;
       root.style.transform = "translateY(-50%)";
       if (side === "right") {
-        root.style.left = `${btnRect.right - parentRect.left}px`;
+        root.style.left = `${pillRect.right - parentRect.left}px`;
       } else {
-        root.style.right = `${parentRect.right - btnRect.left}px`;
+        root.style.right = `${parentRect.right - pillRect.left}px`;
       }
     } else {
       const centerX = btnRect.left + btnRect.width / 2 - parentRect.left;
       root.style.left = `${centerX}px`;
       root.style.transform = "translateX(-50%)";
       if (side === "below") {
-        root.style.top = `${btnRect.bottom - parentRect.top}px`;
+        root.style.top = `${pillRect.bottom - parentRect.top}px`;
       } else {
-        root.style.bottom = `${parentRect.bottom - btnRect.top}px`;
+        root.style.bottom = `${parentRect.bottom - pillRect.top}px`;
       }
     }
   }
@@ -247,7 +252,7 @@ export function createMiniPalette(opts: {
       requestAnimationFrame(update);
       return;
     }
-    const side = outsideSide(btnRect);
+    const side = attachSide(btnRect);
     syncVisuals(side);
     position(side);
   }

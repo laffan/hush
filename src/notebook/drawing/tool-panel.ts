@@ -23,6 +23,7 @@ import type { DrawingSubTool } from "../types";
 import { h } from "../ui/dom-helpers";
 import { icon } from "../ui/icons";
 import { createBrushSlots } from "./brush-slots";
+import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
 
 interface SubToolDef {
   id: DrawingSubTool;
@@ -64,6 +65,7 @@ export function createDrawingToolPanel(
   state: DrawingState,
   drawingLayer: DrawingLayer,
 ): DrawingToolPanelHandle {
+  ensureFlyoutSliderStyle();
   const container = h("div", {
     style: {
       position: "absolute",
@@ -71,7 +73,7 @@ export function createDrawingToolPanel(
       display: "flex",
       alignItems: "center",
       gap: "4px",
-      padding: "6px 8px",
+      padding: "1px 8px",
       borderRadius: "12px",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
       zIndex: "100",
@@ -150,12 +152,12 @@ export function createDrawingToolPanel(
   });
   container.appendChild(lassoBtn);
 
-  // ----- Hamburger drag tab (replaces the meta-tools pill) ----------
+  // ----- Hamburger drag tab -----------------------------------------
   //
-  // A small gray pill abutting the right edge of the drawing toolbar.
-  // Press-and-drag updates `state.drawingToolbarOffset`, which both
-  // this pill *and* the bottom toolbar consume — so the combined
-  // toolbar moves as one unit.
+  // Sits at the *left* end of the combined toolbar — the side opposite
+  // the drawing pill. Press-and-drag updates state.drawingToolbarOffset,
+  // which both this pill *and* the bottom toolbar consume so the
+  // combined assembly moves as one unit.
 
   const dragTab = h("button", {
     title: "Drag toolbar",
@@ -165,7 +167,7 @@ export function createDrawingToolPanel(
       display: "flex",
       alignItems: "center", justifyContent: "center",
       border: "none",
-      borderRadius: "0 12px 12px 0",
+      borderRadius: "12px 0 0 12px",
       cursor: "grab",
       transition: "background 0.15s",
       touchAction: "none",
@@ -179,10 +181,10 @@ export function createDrawingToolPanel(
 
   // ----- Orientation toggle tab -------------------------------------
   //
-  // Mirrors the drag tab's gray-pill styling but lives at the *other*
-  // end of the combined toolbar (left side in horizontal mode, top in
-  // vertical mode). Clicking flips state.drawingToolbarVertical, which
-  // re-layouts the bottom toolbar + drawing pill + both tabs.
+  // Mirrors the drag tab's gray-pill styling but lives at the *right*
+  // end of the combined toolbar (top in vertical mode). Clicking flips
+  // state.drawingToolbarVertical, which re-layouts the bottom toolbar
+  // + drawing pill + both tabs.
 
   const toggleTab = h("button", {
     title: "Toggle orientation",
@@ -192,7 +194,7 @@ export function createDrawingToolPanel(
       display: "flex",
       alignItems: "center", justifyContent: "center",
       border: "none",
-      borderRadius: "12px 0 0 12px",
+      borderRadius: "0 12px 12px 0",
       cursor: "pointer",
       transition: "background 0.15s",
       touchAction: "none",
@@ -351,6 +353,7 @@ export function createDrawingToolPanel(
     attrs: { type: "range", min: "500", max: "2000", step: "50" },
     style: { width: "100%" },
   }) as HTMLInputElement;
+  lassoSlider.classList.add("notebook-flyout-slider");
   lassoSlider.value = String(state.lassoHoldMs);
   const lassoReadout = h("span", {
     text: formatHoldMs(state.lassoHoldMs),
@@ -375,6 +378,7 @@ export function createDrawingToolPanel(
     lassoFlyout.style.background = theme.uiBackground;
     lassoFlyout.style.border = `1px solid ${theme.uiBorder}`;
     lassoFlyout.style.color = theme.foreground;
+    applyFlyoutSliderTheme(lassoSlider, theme.accent);
   }
 
   function positionLassoFlyout(): void {
@@ -492,24 +496,26 @@ export function createDrawingToolPanel(
       separator.style.height = "24px";
       separator.style.margin = "0 4px";
     }
-    // Drag tab and toggle tab both pivot on orientation: in horizontal
-    // they're vertical strips on either short edge; in vertical they
-    // become horizontal strips at top / bottom.
+    // Drag tab and toggle tab both pivot on orientation. The drag tab
+    // sits at the *opening* end of the assembly (left in horizontal,
+    // top in vertical) and the toggle tab at the *closing* end (right
+    // / bottom). Border-radius rounds the outside corner of each tab
+    // and squares the bar-touching one.
     const tabSharedBg = "rgba(127,127,127,0.18)";
     if (vertical) {
       dragTab.style.width = "48px";
       dragTab.style.height = "32px";
-      dragTab.style.borderRadius = "0 0 12px 12px";
+      dragTab.style.borderRadius = "12px 12px 0 0";
       toggleTab.style.width = "48px";
       toggleTab.style.height = "32px";
-      toggleTab.style.borderRadius = "12px 12px 0 0";
+      toggleTab.style.borderRadius = "0 0 12px 12px";
     } else {
       dragTab.style.width = "32px";
       dragTab.style.height = "48px";
-      dragTab.style.borderRadius = "0 12px 12px 0";
+      dragTab.style.borderRadius = "12px 0 0 12px";
       toggleTab.style.width = "32px";
       toggleTab.style.height = "48px";
-      toggleTab.style.borderRadius = "12px 0 0 12px";
+      toggleTab.style.borderRadius = "0 12px 12px 0";
     }
     dragTab.style.background = tabSharedBg;
     dragTab.style.color = state.theme.foreground;
@@ -543,40 +549,40 @@ export function createDrawingToolPanel(
           container.style.left = "16px";
         }
         container.style.top = topPx + "px";
-        // Toggle tab attaches to the top of the bottom toolbar.
+        // Drag tab attaches to the top of the bottom toolbar.
         if (bottomToolbar) {
           const tbRect = bottomToolbar.getBoundingClientRect();
-          toggleTab.style.left = (tbRect.left - parentRect.left) + "px";
-          toggleTab.style.top = (tbRect.top - parentRect.top - 32) + "px";
+          dragTab.style.left = (tbRect.left - parentRect.left) + "px";
+          dragTab.style.top = (tbRect.top - parentRect.top - 32) + "px";
         }
-        // Drag tab attaches to the bottom of the drawing pill.
+        // Toggle tab attaches to the bottom of the drawing pill.
         const cRect = container.getBoundingClientRect();
-        dragTab.style.left = (cRect.left - parentRect.left) + "px";
-        dragTab.style.top = (cRect.bottom - parentRect.top) + "px";
+        toggleTab.style.left = (cRect.left - parentRect.left) + "px";
+        toggleTab.style.top = (cRect.bottom - parentRect.top) + "px";
       } else {
         // Drawing pill sits to the right of the bottom toolbar with
         // a 10 px gap. The bottom toolbar's own .update() pins it to
-        // the user-offset bottom-center anchor.
+        // the user-offset top-center anchor.
         let leftPx: number;
         if (bottomToolbar) {
           const tbRect = bottomToolbar.getBoundingClientRect();
           leftPx = tbRect.right - parentRect.left + 10;
-          container.style.bottom = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
+          container.style.top = `calc(20px + ${offset.y}px)`;
         } else {
           leftPx = parentRect.width / 2;
-          container.style.bottom = "16px";
+          container.style.top = "20px";
         }
         container.style.left = leftPx + "px";
-        // Toggle tab abuts the left edge of the bottom toolbar.
+        // Drag tab abuts the left edge of the bottom toolbar.
         if (bottomToolbar) {
           const tbRect = bottomToolbar.getBoundingClientRect();
-          toggleTab.style.left = (tbRect.left - parentRect.left - 32) + "px";
-          toggleTab.style.bottom = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
+          dragTab.style.left = (tbRect.left - parentRect.left - 32) + "px";
+          dragTab.style.top = `calc(20px + ${offset.y}px)`;
         }
-        // Drag tab abuts the right edge of the drawing pill.
+        // Toggle tab abuts the right edge of the drawing pill.
         const cRect = container.getBoundingClientRect();
-        dragTab.style.left = (cRect.right - parentRect.left) + "px";
-        dragTab.style.bottom = `calc(16px + env(safe-area-inset-bottom) - ${offset.y}px)`;
+        toggleTab.style.left = (cRect.right - parentRect.left) + "px";
+        toggleTab.style.top = `calc(20px + ${offset.y}px)`;
       }
     };
     place();

@@ -58,6 +58,11 @@ export interface DrawingLayer {
   /** Render a swatch preview of a slot into a target canvas, using
    *  the engine's atlas. */
   renderSwatch(canvas: HTMLCanvasElement, slot: DrawingSlot): void;
+  /** Render a horizontal demo stroke for the slot, walking stamps from
+   *  the canvas's left edge to its right edge so thickness, color, and
+   *  spacing all read at a glance. The flyout uses this in place of a
+   *  static "Pen" header. */
+  renderDemoStroke(canvas: HTMLCanvasElement, slot: DrawingSlot): void;
   /** Drawing-mode undo / redo. Separate from Hush's notebook undo
    *  stack for now — see INTEGRATION-PLAN.md → shortcuts. */
   undo(): void;
