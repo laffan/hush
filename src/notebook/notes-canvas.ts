@@ -306,9 +306,28 @@ export class NotesCanvas {
     // pill anchors itself to the right edge of the bottom toolbar at
     // layout time; the dragTab (gray hamburger) is appended further
     // below alongside the rest of the bottom-bar UI.
-    const drawingChrome = createDrawingToolPanel(this.state, this._drawingLayer);
-    container.appendChild(drawingChrome.root);
+    // The drawing-tools controller appends its buttons (divider,
+    // brush slots, slice / erase, lasso) directly to the bottom
+    // toolbar so the bar reads as one continuous strip — no
+    // inter-pill shadow seam. The end-cap tabs (drag, rotate,
+    // bg-settings) are returned separately and mounted alongside.
+    // Bottom toolbar must already exist before we get here.
+    container.appendChild(createSelectionToolbar(this.state));
+    container.appendChild(createTextEditor(this.state));
+    container.appendChild(createBrainstormInput(this.state));
+    const bottomToolbar = createToolbar(this.state);
+    container.appendChild(bottomToolbar);
+    const drawingChrome = createDrawingToolPanel(this.state, this._drawingLayer, bottomToolbar);
     container.appendChild(drawingChrome.flyout);
+    container.appendChild(drawingChrome.dragTab);
+    container.appendChild(drawingChrome.toggleTab);
+    container.appendChild(drawingChrome.bgSettingsTab);
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => drawingChrome.relayout());
+      ro.observe(bottomToolbar);
+      ro.observe(container);
+    }
+    requestAnimationFrame(() => drawingChrome.relayout());
 
     // Route Hush select-drag through the drawing engine's preview
     // pipeline for DrawShapes. Without this, dragging N selected
@@ -369,30 +388,6 @@ export class NotesCanvas {
         return appState?.settings?.notebookShelfWidth;
       })(),
     };
-
-    container.appendChild(createSelectionToolbar(this.state));
-    container.appendChild(createTextEditor(this.state));
-    container.appendChild(createBrainstormInput(this.state));
-    const bottomToolbar = createToolbar(this.state);
-    container.appendChild(bottomToolbar);
-
-    // Drawing toolbar now anchors itself to the right edge of the
-    // bottom toolbar (see tool-panel.ts::applyLayout). Its hamburger
-    // drag tab — which replaces the old meta-pill drag handle — is
-    // mounted in the same parent so it can sit flush against the
-    // drawing pill's right edge. Both pills' positions read
-    // `state.drawingToolbarOffset`, so a drag from the hamburger
-    // moves the entire combined toolbar as a unit. Resize observers
-    // below keep the drawing pill's anchor honest as the bottom
-    // toolbar grows / shrinks (theme + leftInset shifts).
-    container.appendChild(drawingChrome.dragTab);
-    container.appendChild(drawingChrome.toggleTab);
-    if (typeof ResizeObserver !== "undefined") {
-      const ro = new ResizeObserver(() => drawingChrome.relayout());
-      ro.observe(bottomToolbar);
-      ro.observe(container);
-    }
-    requestAnimationFrame(() => drawingChrome.relayout());
 
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);

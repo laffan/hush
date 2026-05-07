@@ -43,10 +43,9 @@ export function createLayersPanel(state: DrawingState): LayersPanelHandle {
 
   const panel = h("div", {
     style: {
-      // Anchor above the trigger button; matches the Bookmarks panel
-      // so it reads consistent in the bottom notebook toolbar.
-      position: "absolute", bottom: "100%", left: "0",
-      marginBottom: "6px",
+      // Position is set by positionPanel() so the popup follows the
+      // toolbar's proximity rule (away from the nearest screen edge).
+      position: "absolute",
       minWidth: "280px",
       padding: "6px",
       borderRadius: "10px",
@@ -71,6 +70,40 @@ export function createLayersPanel(state: DrawingState): LayersPanelHandle {
     if (open && e.key === "Escape") { open = false; render(); }
   });
 
+  /** Position the popup against the trigger button on the side
+   *  *opposite* the nearest screen edge. Mirrors the brush / lasso
+   *  flyout proximity rule so every popup in the toolbar swings the
+   *  same way. */
+  function positionPanel(): void {
+    panel.style.left = "auto";
+    panel.style.right = "auto";
+    panel.style.top = "auto";
+    panel.style.bottom = "auto";
+    panel.style.marginTop = "0";
+    panel.style.marginBottom = "0";
+    panel.style.marginLeft = "0";
+    panel.style.marginRight = "0";
+    const btnRect = toggleBtn.getBoundingClientRect();
+    if (btnRect.width === 0) return;
+    if (state.drawingToolbarVertical) {
+      panel.style.top = "0";
+      const cx = btnRect.left + btnRect.width / 2;
+      if (cx < window.innerWidth / 2) {
+        panel.style.left = "100%"; panel.style.marginLeft = "6px";
+      } else {
+        panel.style.right = "100%"; panel.style.marginRight = "6px";
+      }
+    } else {
+      panel.style.left = "0";
+      const cy = btnRect.top + btnRect.height / 2;
+      if (cy < window.innerHeight / 2) {
+        panel.style.top = "100%"; panel.style.marginTop = "6px";
+      } else {
+        panel.style.bottom = "100%"; panel.style.marginBottom = "6px";
+      }
+    }
+  }
+
   function render() {
     const theme = state.theme;
     toggleBtn.style.color = theme.foreground;
@@ -82,6 +115,7 @@ export function createLayersPanel(state: DrawingState): LayersPanelHandle {
     panel.style.border = `1px solid ${theme.uiBorder}`;
     panel.style.color = theme.foreground;
     if (!open) return;
+    positionPanel();
 
     clearChildren(panel);
 
@@ -239,6 +273,11 @@ export function createLayersPanel(state: DrawingState): LayersPanelHandle {
       render();
     } else if (open && (keys.includes("layers") || keys.includes("activeLayerId"))) {
       render();
+    }
+    // Toolbar drag / orientation flip changes which screen edge is
+    // closest, so the popup might need to swing to the other side.
+    if (open && (keys.includes("drawingToolbarOffset") || keys.includes("drawingToolbarVertical"))) {
+      positionPanel();
     }
   }) as EventListener);
 

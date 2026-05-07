@@ -39,7 +39,11 @@ src/notebook/
     drawing-layer.ts       Engine-backed drawing layer + public API
     sync-shim.ts           state.shapes[] ↔ engine.strokes bridge
     brush-slots.ts         Toolbar slot row + brush-edit flyout
-    tool-panel.ts          Drawing pill anchored to the bottom toolbar: Undo, brush slots, Slice, Erase, Lasso, lasso hold-time flyout, plus a gray hamburger drag-tab at the right end
+    tool-panel.ts          Drawing-tools controller: appends the divider, brush slots, Slice, Erase, Lasso directly to the bottom toolbar so the assembly is one continuous bar, then mounts the three gray-pill end-caps (drag, rotate, bg-settings) and the lasso hold-time flyout
+    pocket-blit.ts         Pocket / done-canvas blit helpers (4 functions) extracted from drawing-layer.ts
+    selection-drag.ts      Hush↔engine select-drag controller — pause-shim, hide-chrome, commit-on-release ladder
+    flyout-styles.ts       Injects the 15-px-thick squared-thumb stylesheet that brush + lasso flyout sliders share
+    mini-palette.ts        15-px-thick A/H/Red + size shortcut strip pinned to the active brush slot
     layers-panel.ts        Layers dropdown (notebook-level, used by every shape type)
     engine/                Stroke engine (ported; ~18 documented deltas — see README-DRAWING.md)
   pencil-bridge.js         Flips `setPencilOnly(true)` on iOS Tauri so finger contacts can't draw
@@ -105,7 +109,7 @@ Notebook shortcuts are registered in the Hush shortcut system:
 | `shortcutNbGroup` | `Mod+G` | Group selected shapes |
 | `shortcutNbUngroup` | `Mod+Shift+G` | Ungroup selected shapes |
 
-Draw sub-tools (Lasso, Erase, Slice, brush slots) are reached through the always-visible drawing pill attached to the right edge of the bottom toolbar — no keyboard shortcuts; the E/X hints in the button tooltips are placeholders. Hold space (or two-finger drag) to pan.
+Draw sub-tools (Lasso, Erase, Slice, brush slots) are reached through the right half of the unified toolbar (past the divider) — no keyboard shortcuts; the E/X hints in the button tooltips are placeholders. Hold space (or two-finger drag) to pan.
 
 These appear in Settings > Shortcuts > Notebooks and are stored in `AppSettings` (Rust) alongside the editor shortcuts. The input handler reads them from Hush settings at mount time via the `NotebookShortcuts` interface.
 

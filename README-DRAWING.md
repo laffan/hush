@@ -15,7 +15,11 @@ src/notebook/drawing/
   brush-urls.ts          Resolves brush-N PNG atlases via Vite asset imports
   brush-runtime.ts       Helpers used by drawing-layer (slot colour resolution, applySlot, renderSwatch, theme retint) — extracted to keep drawing-layer.ts under the 700-line cap
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
-  tool-panel.ts          Drawing pill (Undo, brush slots, Slice, Erase, Lasso) anchored to the right edge of the bottom toolbar, plus a gray hamburger drag-tab at its right end (drag = move the combined toolbar)
+  tool-panel.ts          Drawing-tools controller: appends divider + brush slots + Slice / Erase / Lasso directly to the bottom toolbar (no separate pill), then mounts three gray-pill end-caps — drag + rotate on the left, Background settings on the right
+  pocket-blit.ts         Pocket / done-canvas blit helpers extracted from drawing-layer.ts
+  selection-drag.ts      Hush↔engine select-drag controller (pause-shim, hide-chrome, commit-on-release)
+  mini-palette.ts        15-px-thick A/H/Red + size shortcut strip pinned to the active brush
+  flyout-styles.ts       15-px squared-thumb stylesheet shared by every drawing flyout slider
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
   engine/
@@ -86,10 +90,13 @@ Targeted deltas have been applied to `engine/` so the port stays as close as pos
 14. **Theme-tracking color flags** — `stroke.js` carries two boolean flags on every active stroke (`colorIsAuto`, `colorIsHeading`) plus a `setColorAutoSource(source)` method. Hush calls it from `applySlot` whenever a brush slot uses an `"auto"` or `"heading"` sentinel, so freshly-drawn strokes inherit the matching flag and `drawing-layer.setTheme` can retint them en masse on theme switches.
 15. **Soft selection deactivate** — `selection.js` exposes `setEventActive(bool)` alongside the existing `activate / deactivate` pair. The hard `deactivate()` clears `selectedIds` (it has to, to keep the lasso-end semantics). `setEventActive(false)` only flips `state.active = false` and clears any in-flight lasso, so `drawing-layer.setTool` can disable engine event capture for non-select sub-tools without dropping the user's retroactive selection. Without this, brush-slot taps would wipe the engine selection right after the bridge re-populated it on the same tool change.
 16. **Chrome interactivity toggle** — `selection.js` exposes `setChromeInteractive(bool)` which toggles `pointerEvents` on the entire bbox `<g>`. Used by the bridge during pen+draw/erase/slice with a live retroactive selection: the chrome stays painted (the user can see what's selected while the brush flyout retints it) but every pointerdown falls through to the stroke engine, so the user's next stroke isn't intercepted by an invisible-to-them resize handle.
+17. **Finger hold-to-select (pencil-only mode)** — In pencil-only mode, finger contacts now arm the long-press timer at the touch position without seeding an active stroke (`state.fingerHoldPointer` tracks the candidate). Drift past `LONG_PRESS_MOVE_THRESHOLD` or release before the timer cancels the gesture quietly; on timeout the existing `onLongPress` handoff promotes the finger pointer into a lasso. A second finger landing during a hold cancels the candidate so the gesture recogniser can claim the burst.
 
 ### Apple Pencil gating (iOS)
 
-On iOS Tauri builds, finger touches don't draw — only Apple Pencil and mouse can seed strokes. The gate lives at the engine level: `engine/stroke.js` carries a `setPencilOnly(bool)` flag (delta #18) that rejects every non-pen, non-mouse `pointerdown`. `src/notebook/pencil-bridge.js` flips that flag on once at startup if the runtime is iOS — no native code involved for the gate itself, since `PointerEvent.pointerType` reliably reports `"pen"` for Apple Pencil and `"touch"` for finger on this iPad WKWebView build.
+On iOS Tauri builds, finger touches don't *draw* — only Apple Pencil and mouse can seed strokes. The gate lives at the engine level: `engine/stroke.js` carries a `setPencilOnly(bool)` flag (delta #18) that rejects every non-pen, non-mouse `pointerdown` for the stroke path. `src/notebook/pencil-bridge.js` flips that flag on once at startup if the runtime is iOS — no native code involved for the gate itself, since `PointerEvent.pointerType` reliably reports `"pen"` for Apple Pencil and `"touch"` for finger on this iPad WKWebView build.
+
+Fingers can still trigger **hold-to-select** even with pencil-only on (delta #19). A finger contact in pencil-only mode arms the long-press timer at the touch position *without* seeding an active stroke; drift past `LONG_PRESS_MOVE_THRESHOLD` or release before the timer cancels the gesture. On timeout the existing `onLongPress` handoff promotes the finger pointer into a lasso pointer (the selection engine takes over capture from there). A second finger landing during a hold kills the candidate so the gesture recogniser can claim the burst (pan / pinch / 2-3 finger tap).
 
 ### Apple Pencil double-tap (iOS)
 
@@ -101,9 +108,14 @@ The plugin is registered unconditionally from `src-tauri/src/lib.rs` (`tauri_plu
 
 ### Drawing tools (the bottom pill)
 
-Drawing is always on-deck: the drawing pill is rendered at all times alongside the bottom toolbar, and picking any of its buttons flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool from the bottom toolbar (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the pill visually dims (buttons at 0.6 opacity).
+Drawing is always on-deck: the drawing buttons live in the right half of the unified bar (past the divider that separates main canvas tools from drawing tools), and picking any of them flips `state.tool = "pen"` implicitly with the matching sub-tool. Leaving drawing happens when the user picks a non-drawing tool to the left of the divider (Select / Text / Drag Area / Brainstorm) — which flips `state.tool` back and the drawing buttons visually dim (opacity 0.6).
 
-The drawing pill anchors to the right edge of the bottom toolbar with a 10 px gap so the two pills read as one combined toolbar. A small gray pill abutting the drawing pill's right edge — the **hamburger drag-tab** — is the only chrome that's visually distinct from the rest of the toolbar; press-and-drag on it updates `state.drawingToolbarOffset`, which both the bottom toolbar and the drawing pill consume so the entire combined toolbar moves as a unit. There's no minimize/restore: the drawing tools are always visible. A `ResizeObserver` on the bottom toolbar drives a `relayout()` callback that re-anchors the drawing pill (and its hamburger) whenever sidebar / theme / leftInset shifts change the bottom toolbar's width.
+The bar is one DOM element so there's no inter-pill shadow seam, and three gray-pill end-caps anchor to the canvas container as siblings of the bar:
+- **Drag** (leftmost) — press-and-drag updates `state.drawingToolbarOffset`, which `toolbar.ts` and `tool-panel.ts` both consume so the bar and every end-cap move as one unit.
+- **Rotate** (next to drag) — flips `state.drawingToolbarVertical`. The handler captures the bar's pre-toggle screen center and queues a microtask that, after the orientation listeners apply new styles, sets a fresh offset preserving the saved center (clamped). Two microtasks land before paint, so the user sees the bar move from old position straight to preserved position with no intermediate flash.
+- **Background settings** (right end-cap) — opens the canvas pattern / spacing / opacity popup. Like the brush + lasso flyouts, it follows the proximity rule (away from the nearest screen edge).
+
+Each end-cap's perpendicular dimension matches the bar's: 38 px tall in horizontal mode, 52 px wide in vertical, so the assembly reads as one continuous strip. A `ResizeObserver` on the bottom toolbar drives a `relayout()` callback that re-anchors every end-cap whenever sidebar / theme / leftInset shifts change the bar's dimensions. `clampOffset` folds all three end-caps + the bar into one bbox so neither edge can be dragged off-screen.
 
 | Sub-tool | Engine behavior |
 |----------|-----------------|

@@ -1,20 +1,19 @@
 /* src/notebook/drawing/tool-panel.ts
  *
- * Drawing toolbar. Sits at the bottom of the notebook, anchored to the
- * right edge of the bottom toolbar with a 10 px gap so the two pills
- * read as one combined toolbar. Always visible — there's no minimize
- * state any more, just a gray hamburger drag-tab at the right end that
- * lets the user reposition the entire combined toolbar (both pills
- * move in lockstep via `state.drawingToolbarOffset`).
+ * Drawing-tools controller for the notebook bar. After the toolbar
+ * merge there's no longer a separate "drawing pill" — the divider,
+ * brush slots, slice / erase, and lasso buttons all get appended
+ * directly to the bottom toolbar so the bar reads as one continuous
+ * strip with no shadow seam.
  *
- * Contents (left → right):
- *   Undo | Brush 1 · Brush 2 · Brush 3 | Slice · Erase · Lasso
- * Then a separate gray pill, abutting the right edge, with a hamburger
- * icon — the drag handle.
+ * The three end-caps live as siblings of the bar inside the canvas
+ * container:
+ *   [drag][rotate]  — the bar itself  —  [bg-settings]
+ * Drag and rotate hug the bar's opening edge (left in horizontal,
+ * top in vertical); bg-settings hugs the closing edge.
  *
- * The lasso button exposes its own small flyout (click to activate,
- * click-again to toggle) letting the user dial in how long a held
- * stroke needs to be before it promotes into a lasso.
+ * The lasso button still owns its own flyout (click to activate,
+ * click-again to toggle the hold-duration slider).
  */
 
 import type { DrawingState } from "../state";
@@ -24,6 +23,7 @@ import { h } from "../ui/dom-helpers";
 import { icon } from "../ui/icons";
 import { createBrushSlots } from "./brush-slots";
 import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
+import { createBgSettingsPopup } from "../ui/bg-settings-popup";
 
 interface SubToolDef {
   id: DrawingSubTool;
@@ -33,57 +33,41 @@ interface SubToolDef {
 }
 
 const SUB_TOOLS: SubToolDef[] = [
-  // Draw is the implicit default — clicking a brush slot returns the
-  // user to Draw (that's how the user exits Slice / Erase), so no
-  // dedicated Draw button is needed.
   { id: "slice",  iconName: "slice",  label: "Slice",  shortcut: "X" },
   { id: "erase",  iconName: "erase",  label: "Erase",  shortcut: "E" },
 ];
 
 export interface DrawingToolPanelHandle {
-  /** Pill containing the drawing tools (undo, brushes, slice/erase/lasso). */
-  root: HTMLElement;
-  /** Gray hamburger drag tab — visually abuts the right edge of `root`
-   *  but is a separate element so its theme can diverge. */
+  /** Drag tab — left end-cap in horizontal mode, top in vertical. */
   dragTab: HTMLElement;
-  /** Gray orientation-toggle tab — mirrors the drag tab on the *other*
-   *  end of the combined toolbar. Click flips between horizontal and
-   *  vertical layout. */
+  /** Orientation toggle tab — sits next to the drag tab on the
+   *  opening edge of the bar. */
   toggleTab: HTMLElement;
-  /** Flyouts (brush edit + lasso settings). Append separately — they
-   *  can extend past the pill and position themselves relative to
-   *  their shared parent. */
+  /** Background-settings tab — right end-cap in horizontal mode,
+   *  bottom in vertical. */
+  bgSettingsTab: HTMLElement;
+  /** Wrapper holding every drawing flyout (brush edit, mini-palette,
+   *  lasso settings, bg-settings popup). Append once to the canvas
+   *  container so each child can position absolutely against it. */
   flyout: HTMLElement;
-  /** Recompute the drawing pill's anchor position. The pill anchors
-   *  to the right edge of the bottom toolbar, so a width change in
-   *  the bottom toolbar (theme switch, layers panel content change,
-   *  leftInset shift) needs to nudge this pill back into place. */
+  /** Recompute end-cap positions after the bar resizes (theme switch,
+   *  layers panel content change, leftInset shift). */
   relayout(): void;
 }
+
+/** Width of an end-cap perpendicular to the bar's main axis. The
+ *  long-axis dimension flips per orientation (38 in horizontal, 52
+ *  in vertical) to match the bar's perpendicular thickness. */
+const END_CAP_DEPTH = 32;
+const BAR_HEIGHT_HORIZONTAL = 38;
+const BAR_WIDTH_VERTICAL = 52;
 
 export function createDrawingToolPanel(
   state: DrawingState,
   drawingLayer: DrawingLayer,
+  bottomToolbar: HTMLElement,
 ): DrawingToolPanelHandle {
   ensureFlyoutSliderStyle();
-  const container = h("div", {
-    style: {
-      position: "absolute",
-      bottom: "calc(16px + env(safe-area-inset-bottom))",
-      display: "flex",
-      alignItems: "center",
-      gap: "4px",
-      padding: "1px 8px",
-      // Inner pills run flush in the combined toolbar — the drag tab
-      // and rotate tab on either end carry the rounded corners.
-      borderRadius: "0",
-      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-      zIndex: "100",
-      userSelect: "none",
-      backdropFilter: "blur(8px)",
-    },
-  });
-  container.classList.add("notebook-tool-panel");
 
   /** Route a sub-tool activation through the drawing engine. Clicking
    *  any drawing-engine tool (lasso / erase / slice / brush) flips
@@ -99,25 +83,21 @@ export function createDrawingToolPanel(
     state.setDrawingSubTool(sub);
   }
 
-  // ----- Brush slots ------------------------------------------------
-  // (Undo lives in the iPad touch-mode floating button stack — see
-  //  src/cmd-button.js — instead of taking a slot here. Desktop users
-  //  rely on the Cmd+Z keyboard shortcut.)
+  // ----- Divider + brush slots + slice/erase + lasso ----------------
+  // All appended directly to the bottom toolbar so the assembly is
+  // one continuous bar (no inter-pill shadow seam).
 
-  // Single divider in the combined toolbar — sits at the joining
-  // point between the bottom toolbar (Background Settings is its
-  // last button) and the drawing pill (Brush 1 follows the divider).
-  // The previous brush↔eraser separator went away when the two pills
-  // merged into one continuous bar.
+  // Single divider in the combined bar — separates the main canvas
+  // tools (select / text / drag-area / brainstorm / layers /
+  // bookmarks) from the drawing tools (brushes / slice / erase /
+  // lasso). Bg-settings now lives as a right end-cap, not in the bar.
   const separator = h("div", {
     style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
   });
-  container.appendChild(separator);
+  bottomToolbar.appendChild(separator);
 
   const slots = createBrushSlots(state, drawingLayer);
-  container.appendChild(slots.root);
-
-  // ----- Slice / Erase sub-tools ------------------------------------
+  bottomToolbar.appendChild(slots.root);
 
   const subToolBtns = new Map<DrawingSubTool, HTMLButtonElement>();
   for (const def of SUB_TOOLS) {
@@ -133,10 +113,8 @@ export function createDrawingToolPanel(
       onClick: () => activateDrawingSubTool(def.id),
     }) as HTMLButtonElement;
     subToolBtns.set(def.id, btn);
-    container.appendChild(btn);
+    bottomToolbar.appendChild(btn);
   }
-
-  // ----- Lasso button + its flyout ----------------------------------
 
   const lassoBtn = h("button", {
     title: "Lasso select",
@@ -157,70 +135,41 @@ export function createDrawingToolPanel(
       if (lassoFlyoutOpen) closeLassoFlyout();
     },
   });
-  container.appendChild(lassoBtn);
+  bottomToolbar.appendChild(lassoBtn);
 
-  // ----- Hamburger drag tab -----------------------------------------
-  //
-  // Sits at the *left* end of the combined toolbar — the side opposite
-  // the drawing pill. Press-and-drag updates state.drawingToolbarOffset,
-  // which both this pill *and* the bottom toolbar consume so the
-  // combined assembly moves as one unit.
+  // ----- End-cap tabs (drag, rotate, bg-settings) -------------------
+
+  const tabBaseStyle = {
+    position: "absolute" as const,
+    display: "flex" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    border: "none",
+    transition: "background 0.15s",
+    touchAction: "none" as const,
+    zIndex: "100",
+    padding: "0",
+    userSelect: "none" as const,
+  };
 
   const dragTab = h("button", {
     title: "Drag toolbar",
-    style: {
-      position: "absolute",
-      width: "32px", height: "38px",
-      display: "flex",
-      alignItems: "center", justifyContent: "center",
-      border: "none",
-      borderRadius: "12px 0 0 12px",
-      cursor: "grab",
-      transition: "background 0.15s",
-      touchAction: "none",
-      zIndex: "100",
-      padding: "0",
-      userSelect: "none",
-    },
+    style: { ...tabBaseStyle, width: `${END_CAP_DEPTH}px`, height: `${BAR_HEIGHT_HORIZONTAL}px`, borderRadius: "12px 0 0 12px", cursor: "grab" },
     children: [icon("menu", 18)],
   }) as HTMLButtonElement;
   dragTab.classList.add("notebook-tool-panel-drag-tab");
 
-  // ----- Orientation toggle tab -------------------------------------
-  //
-  // Mirrors the drag tab's gray-pill styling but lives at the *right*
-  // end of the combined toolbar (top in vertical mode). Clicking flips
-  // state.drawingToolbarVertical, which re-layouts the bottom toolbar
-  // + drawing pill + both tabs.
-
   const toggleTab = h("button", {
     title: "Toggle orientation",
-    style: {
-      position: "absolute",
-      width: "32px", height: "38px",
-      display: "flex",
-      alignItems: "center", justifyContent: "center",
-      border: "none",
-      borderRadius: "0 12px 12px 0",
-      cursor: "pointer",
-      transition: "background 0.15s",
-      touchAction: "none",
-      zIndex: "100",
-      padding: "0",
-      userSelect: "none",
-    },
+    style: { ...tabBaseStyle, width: `${END_CAP_DEPTH}px`, height: `${BAR_HEIGHT_HORIZONTAL}px`, borderRadius: "0", cursor: "pointer" },
     children: [icon("rotate", 18)],
     onClick: () => {
-      // Capture the bottom toolbar's pre-toggle center in parent
-      // coords. After the orientation flip, we'll set the drag offset
-      // so the new (column ↔ row) toolbar lands as close to that
-      // center as the parent allows. Without this, flipping orientation
-      // snaps the toolbar all the way to the new natural anchor — a
-      // jarring jump from wherever the user had dragged it.
-      const parent = container.parentElement;
-      const bottomToolbar = parent?.querySelector<HTMLElement>(":scope > .notebook-toolbar");
+      // Capture the bar's pre-toggle screen center so we can preserve
+      // it on the next microtask — without this, flipping orientation
+      // snaps the toolbar all the way to the new natural anchor.
+      const parent = bottomToolbar.parentElement;
       let savedCenter: { x: number; y: number } | null = null;
-      if (parent && bottomToolbar) {
+      if (parent) {
         const parentRect = parent.getBoundingClientRect();
         const tbRect = bottomToolbar.getBoundingClientRect();
         if (tbRect.width > 0) {
@@ -231,13 +180,7 @@ export function createDrawingToolPanel(
         }
       }
       state.setDrawingToolbarVertical(!state.drawingToolbarVertical);
-      if (!savedCenter || !parent || !bottomToolbar) return;
-      // state.notify uses queueMicrotask, so the orientation-flip
-      // listeners fire on the next microtask. We queue ours after, so
-      // by the time it runs the new styles are already applied — and
-      // since both microtasks finish before paint, the user never
-      // sees the toolbar at the natural anchor; it goes straight to
-      // the preserved center.
+      if (!savedCenter || !parent) return;
       const sc = savedCenter;
       queueMicrotask(() => {
         const parentRect = parent.getBoundingClientRect();
@@ -253,32 +196,27 @@ export function createDrawingToolPanel(
   }) as HTMLButtonElement;
   toggleTab.classList.add("notebook-tool-panel-toggle-tab");
 
-  // ----- Drag-to-reposition wiring ---------------------------------
+  const bgSettings = createBgSettingsPopup(state);
+  const bgSettingsTab = bgSettings.tab;
 
-  /** Clamp a desired (x, y) offset so the combined toolbar's bbox stays
-   *  inside its parent. Reads the current rendered bbox of the bottom
-   *  toolbar + drag tab (which together span the assembly's full
-   *  extent) and back-projects to the natural offset = 0 position so
-   *  the math is independent of where the assembly currently sits. */
+  // ----- Drag-to-reposition wiring + clamp --------------------------
+
+  /** Clamp an offset so the assembly (bar + 3 end-caps) stays inside
+   *  its parent. */
   function clampOffset(desiredX: number, desiredY: number): { x: number; y: number } {
-    const parent = container.parentElement;
+    const parent = bottomToolbar.parentElement;
     if (!parent) return { x: desiredX, y: desiredY };
-    const bottomToolbar = parent.querySelector<HTMLElement>(":scope > .notebook-toolbar");
-    if (!bottomToolbar) return { x: desiredX, y: desiredY };
     const parentRect = parent.getBoundingClientRect();
     const tbRect = bottomToolbar.getBoundingClientRect();
-    const dragTabRect = dragTab.getBoundingClientRect();
-    const toggleTabRect = toggleTab.getBoundingClientRect();
-    if (tbRect.width === 0 || dragTabRect.width === 0) return { x: desiredX, y: desiredY };
+    if (tbRect.width === 0) return { x: desiredX, y: desiredY };
+    const dragR = dragTab.getBoundingClientRect();
+    const togR = toggleTab.getBoundingClientRect();
+    const bgR = bgSettingsTab.getBoundingClientRect();
     const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
-    // Assembly spans from the toggle tab (far end, opposite the drag
-    // tab) through the bottom toolbar, drawing pill, and drag tab.
-    // Take the union so neither tab can be dragged past the parent.
-    const left = Math.min(tbRect.left, dragTabRect.left, toggleTabRect.left);
-    const right = Math.max(tbRect.right, dragTabRect.right, toggleTabRect.right);
-    const top = Math.min(tbRect.top, dragTabRect.top, toggleTabRect.top);
-    const bottom = Math.max(tbRect.bottom, dragTabRect.bottom, toggleTabRect.bottom);
-    // Parent-local bounds of the assembly at offset (0, 0).
+    const left = Math.min(tbRect.left, dragR.left, togR.left, bgR.left);
+    const right = Math.max(tbRect.right, dragR.right, togR.right, bgR.right);
+    const top = Math.min(tbRect.top, dragR.top, togR.top, bgR.top);
+    const bottom = Math.max(tbRect.bottom, dragR.bottom, togR.bottom, bgR.bottom);
     const natLeft = (left - parentRect.left) - cur.x;
     const natRight = (right - parentRect.left) - cur.x;
     const natTop = (top - parentRect.top) - cur.y;
@@ -309,16 +247,14 @@ export function createDrawingToolPanel(
     e.preventDefault();
   }
   function onDragPointerMove(e: PointerEvent) {
-    if (dragStartClient === null) return;
-    if (e.pointerId !== dragPointerId) return;
+    if (dragStartClient === null || e.pointerId !== dragPointerId) return;
     const dx = e.clientX - dragStartClient.x;
     const dy = e.clientY - dragStartClient.y;
     const clamped = clampOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
     state.setDrawingToolbarOffset(clamped.x, clamped.y);
   }
   function onDragPointerUp(e: PointerEvent) {
-    if (dragStartClient === null) return;
-    if (e.pointerId !== dragPointerId) return;
+    if (dragStartClient === null || e.pointerId !== dragPointerId) return;
     try { dragTab.releasePointerCapture(e.pointerId); } catch { /* noop */ }
     dragStartClient = null;
     dragPointerId = null;
@@ -334,24 +270,18 @@ export function createDrawingToolPanel(
   let lassoFlyoutOpen = false;
   const lassoFlyout = h("div", {
     style: {
-      position: "absolute",
-      display: "none",
-      minWidth: "220px",
-      padding: "12px 14px",
-      borderRadius: "12px",
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-      zIndex: "200",
-      backdropFilter: "blur(8px)",
-      userSelect: "none",
+      position: "absolute", display: "none", minWidth: "220px",
+      padding: "12px 14px", borderRadius: "12px",
+      boxShadow: "0 4px 20px rgba(0,0,0,0.15)", zIndex: "200",
+      backdropFilter: "blur(8px)", userSelect: "none",
     },
   });
   lassoFlyout.addEventListener("pointerdown", (e) => e.stopPropagation());
 
-  const lassoLabelRow = h("div", {
-    style: { fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.04em", opacity: "0.7", marginBottom: "6px" },
+  lassoFlyout.appendChild(h("div", {
     text: "Hold to select",
-  });
-  lassoFlyout.appendChild(lassoLabelRow);
+    style: { fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.04em", opacity: "0.7", marginBottom: "6px" },
+  }));
 
   const lassoSliderRow = h("div", {
     style: { display: "grid", gridTemplateColumns: "1fr 48px", alignItems: "center", gap: "10px" },
@@ -393,20 +323,16 @@ export function createDrawingToolPanel(
     if (!parent) return;
     const parentRect = parent.getBoundingClientRect();
     const btnRect = lassoBtn.getBoundingClientRect();
-    // Reset the four anchors before re-applying the right pair so a
-    // mode flip doesn't leave a stale axis pinned.
     lassoFlyout.style.left = "auto";
     lassoFlyout.style.right = "auto";
     lassoFlyout.style.top = "auto";
     lassoFlyout.style.bottom = "auto";
     if (state.drawingToolbarVertical) {
-      // Vertical toolbar: flyout flies to the side, picking the side
-      // farther from the nearest screen edge.
       const centerY = btnRect.top + btnRect.height / 2 - parentRect.top;
       lassoFlyout.style.top = `${centerY}px`;
       lassoFlyout.style.transform = "translateY(-50%)";
-      const btnCenterX = btnRect.left + btnRect.width / 2;
-      if (btnCenterX < window.innerWidth / 2) {
+      const cx = btnRect.left + btnRect.width / 2;
+      if (cx < window.innerWidth / 2) {
         lassoFlyout.style.left = `${btnRect.right - parentRect.left + 8}px`;
       } else {
         lassoFlyout.style.right = `${parentRect.right - btnRect.left + 8}px`;
@@ -415,8 +341,8 @@ export function createDrawingToolPanel(
       const centerX = btnRect.left + btnRect.width / 2 - parentRect.left;
       lassoFlyout.style.left = `${centerX}px`;
       lassoFlyout.style.transform = "translateX(-50%)";
-      const btnCenterY = btnRect.top + btnRect.height / 2;
-      if (btnCenterY < window.innerHeight / 2) {
+      const cy = btnRect.top + btnRect.height / 2;
+      if (cy < window.innerHeight / 2) {
         lassoFlyout.style.top = `${btnRect.bottom - parentRect.top + 8}px`;
       } else {
         lassoFlyout.style.bottom = `${parentRect.bottom - btnRect.top + 8}px`;
@@ -455,7 +381,7 @@ export function createDrawingToolPanel(
     closeLassoFlyout();
   });
 
-  // ----- Panel layout + active-state wiring -------------------------
+  // ----- Active-state classes + layout ------------------------------
 
   function updateActiveClasses(): void {
     const theme = state.theme;
@@ -477,132 +403,94 @@ export function createDrawingToolPanel(
     if (slot) drawingLayer.applySlot(slot);
   }
 
-  function applyLayout(): void {
-    const parent = container.parentElement;
-    if (!parent) return;
-    const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
-    const vertical = state.drawingToolbarVertical;
-    container.style.background = state.theme.uiBackground;
-    container.style.color = state.theme.foreground;
-    container.style.flexDirection = vertical ? "column" : "row";
-    // Reset both axis anchors before re-applying — a mode flip
-    // otherwise leaves a stale axis pinned.
-    container.style.left = "auto";
-    container.style.right = "auto";
-    container.style.top = "auto";
-    container.style.bottom = "auto";
-    container.style.transform = "none";
-    // Vertical separator → horizontal separator (and the gutter
-    // margin flips axes too).
+  function styleEndCaps(vertical: boolean): void {
+    const tabBg = "rgba(127,127,127,0.18)";
+    const fg = state.theme.foreground;
     if (vertical) {
+      // Drag and rotate stack at the top of the bar; bg-settings sits
+      // at the bottom. Long axis = bar's perpendicular thickness (52).
+      dragTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
+      dragTab.style.height = `${END_CAP_DEPTH}px`;
+      dragTab.style.borderRadius = "12px 12px 0 0";
+      toggleTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
+      toggleTab.style.height = `${END_CAP_DEPTH}px`;
+      toggleTab.style.borderRadius = "0";
+      bgSettingsTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
+      bgSettingsTab.style.height = `${END_CAP_DEPTH}px`;
+      bgSettingsTab.style.borderRadius = "0 0 12px 12px";
       separator.style.width = "24px";
       separator.style.height = "1px";
       separator.style.margin = "4px 0";
     } else {
+      dragTab.style.width = `${END_CAP_DEPTH}px`;
+      dragTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
+      dragTab.style.borderRadius = "12px 0 0 12px";
+      toggleTab.style.width = `${END_CAP_DEPTH}px`;
+      toggleTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
+      toggleTab.style.borderRadius = "0";
+      bgSettingsTab.style.width = `${END_CAP_DEPTH}px`;
+      bgSettingsTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
+      bgSettingsTab.style.borderRadius = "0 12px 12px 0";
       separator.style.width = "1px";
       separator.style.height = "24px";
       separator.style.margin = "0 4px";
     }
-    // Drag tab and toggle tab both pivot on orientation. The drag tab
-    // sits at the *opening* end of the assembly (left in horizontal,
-    // top in vertical) and the toggle tab at the *closing* end (right
-    // / bottom). Border-radius rounds the outside corner of each tab
-    // and squares the bar-touching one.
-    const tabSharedBg = "rgba(127,127,127,0.18)";
-    // Tab perpendicular dimension matches the bar's perpendicular
-    // dimension so the end-caps read as extensions of the bar:
-    //   horizontal → height 38 px (button 36 + 1 + 1 padding)
-    //   vertical   → width 52 px (button 36 + 8 + 8 padding)
-    if (vertical) {
-      dragTab.style.width = "52px";
-      dragTab.style.height = "32px";
-      dragTab.style.borderRadius = "12px 12px 0 0";
-      toggleTab.style.width = "52px";
-      toggleTab.style.height = "32px";
-      toggleTab.style.borderRadius = "0 0 12px 12px";
-    } else {
-      dragTab.style.width = "32px";
-      dragTab.style.height = "38px";
-      dragTab.style.borderRadius = "12px 0 0 12px";
-      toggleTab.style.width = "32px";
-      toggleTab.style.height = "38px";
-      toggleTab.style.borderRadius = "0 12px 12px 0";
-    }
-    dragTab.style.background = tabSharedBg;
-    dragTab.style.color = state.theme.foreground;
-    toggleTab.style.background = tabSharedBg;
-    toggleTab.style.color = state.theme.foreground;
+    dragTab.style.background = tabBg;
+    dragTab.style.color = fg;
+    toggleTab.style.background = tabBg;
+    toggleTab.style.color = fg;
+    bgSettings.refreshTheme();
+  }
+
+  function applyLayout(): void {
+    const parent = bottomToolbar.parentElement;
+    if (!parent) return;
+    const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
+    const vertical = state.drawingToolbarVertical;
+    styleEndCaps(vertical);
 
     const place = () => {
-      const bottomToolbar = parent.querySelector<HTMLElement>(":scope > .notebook-toolbar");
       const parentRect = parent.getBoundingClientRect();
+      const tbRect = bottomToolbar.getBoundingClientRect();
       // Reset tab anchors each pass.
-      dragTab.style.left = "auto";
-      dragTab.style.right = "auto";
-      dragTab.style.top = "auto";
-      dragTab.style.bottom = "auto";
-      dragTab.style.transform = "none";
-      toggleTab.style.left = "auto";
-      toggleTab.style.right = "auto";
-      toggleTab.style.top = "auto";
-      toggleTab.style.bottom = "auto";
-      toggleTab.style.transform = "none";
-
+      for (const tab of [dragTab, toggleTab, bgSettingsTab]) {
+        tab.style.left = "auto";
+        tab.style.right = "auto";
+        tab.style.top = "auto";
+        tab.style.bottom = "auto";
+        tab.style.transform = "none";
+      }
       if (vertical) {
-        // Drawing pill sits below the bottom toolbar (vertical stack).
-        let topPx: number;
-        if (bottomToolbar) {
-          const tbRect = bottomToolbar.getBoundingClientRect();
-          topPx = tbRect.bottom - parentRect.top;
-          container.style.left = (tbRect.left - parentRect.left) + "px";
-        } else {
-          topPx = parentRect.height / 2;
-          container.style.left = "16px";
-        }
-        container.style.top = topPx + "px";
-        // Drag tab attaches to the top of the bottom toolbar.
-        if (bottomToolbar) {
-          const tbRect = bottomToolbar.getBoundingClientRect();
-          dragTab.style.left = (tbRect.left - parentRect.left) + "px";
-          dragTab.style.top = (tbRect.top - parentRect.top - 32) + "px";
-        }
-        // Toggle tab attaches to the bottom of the drawing pill.
-        const cRect = container.getBoundingClientRect();
-        toggleTab.style.left = (cRect.left - parentRect.left) + "px";
-        toggleTab.style.top = (cRect.bottom - parentRect.top) + "px";
+        const tbLeft = tbRect.left - parentRect.left;
+        const tbTop = tbRect.top - parentRect.top;
+        // Drag and rotate stack above the bar; drag is outermost.
+        dragTab.style.left = tbLeft + "px";
+        dragTab.style.top = (tbTop - END_CAP_DEPTH * 2) + "px";
+        toggleTab.style.left = tbLeft + "px";
+        toggleTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
+        // Bg-settings hangs below the bar.
+        bgSettingsTab.style.left = tbLeft + "px";
+        bgSettingsTab.style.top = (tbRect.bottom - parentRect.top) + "px";
       } else {
-        // Drawing pill sits to the right of the bottom toolbar with
-        // a 10 px gap. The bottom toolbar's own .update() pins it to
-        // the user-offset top-center anchor.
-        let leftPx: number;
-        if (bottomToolbar) {
-          const tbRect = bottomToolbar.getBoundingClientRect();
-          leftPx = tbRect.right - parentRect.left;
-          container.style.top = `calc(20px + ${offset.y}px)`;
-        } else {
-          leftPx = parentRect.width / 2;
-          container.style.top = "20px";
-        }
-        container.style.left = leftPx + "px";
-        // Drag tab abuts the left edge of the bottom toolbar.
-        if (bottomToolbar) {
-          const tbRect = bottomToolbar.getBoundingClientRect();
-          dragTab.style.left = (tbRect.left - parentRect.left - 32) + "px";
-          dragTab.style.top = `calc(20px + ${offset.y}px)`;
-        }
-        // Toggle tab abuts the right edge of the drawing pill.
-        const cRect = container.getBoundingClientRect();
-        toggleTab.style.left = (cRect.right - parentRect.left) + "px";
-        toggleTab.style.top = `calc(20px + ${offset.y}px)`;
+        const offsetCalc = `calc(20px + ${offset.y}px)`;
+        const tbLeft = tbRect.left - parentRect.left;
+        // Drag and rotate sit to the *left* of the bar, drag outermost.
+        dragTab.style.left = (tbLeft - END_CAP_DEPTH * 2) + "px";
+        dragTab.style.top = offsetCalc;
+        toggleTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
+        toggleTab.style.top = offsetCalc;
+        // Bg-settings sits to the right of the bar.
+        bgSettingsTab.style.left = (tbRect.right - parentRect.left) + "px";
+        bgSettingsTab.style.top = offsetCalc;
       }
     };
     place();
     requestAnimationFrame(() => {
       place();
-      // Keep the offset inside the parent on layout changes (e.g.
-      // window resize after a drag). Equal-value short-circuit in
-      // setDrawingToolbarOffset prevents an infinite notify loop when
-      // the offset is already in bounds.
+      // Keep the offset inside the parent on layout changes (window
+      // resize, sidebar inset shift, orientation flip). The
+      // setDrawingToolbarOffset short-circuit prevents a notify loop
+      // when the offset is already in bounds.
       const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
       const c = clampOffset(cur.x, cur.y);
       if (c.x !== cur.x || c.y !== cur.y) {
@@ -610,6 +498,7 @@ export function createDrawingToolPanel(
       }
     });
     if (lassoFlyoutOpen) positionLassoFlyout();
+    bgSettings.reposition();
   }
 
   state.addEventListener("change", ((e: CustomEvent) => {
@@ -639,6 +528,7 @@ export function createDrawingToolPanel(
   flyoutGroup.appendChild(slots.flyout);
   flyoutGroup.appendChild(slots.miniPalette);
   flyoutGroup.appendChild(lassoFlyout);
+  flyoutGroup.appendChild(bgSettings.popup);
 
-  return { root: container, dragTab, toggleTab, flyout: flyoutGroup, relayout: applyLayout };
+  return { dragTab, toggleTab, bgSettingsTab, flyout: flyoutGroup, relayout: applyLayout };
 }
