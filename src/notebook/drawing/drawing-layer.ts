@@ -32,17 +32,17 @@ import { createSelectionBridge } from "./selection-bridge";
 import type { DrawingLayer, EngineTool, SelectionStyleEntry, SelectionStylePatch } from "./drawing-layer-types";
 import { createPocketBlit } from "./pocket-blit";
 import { createSelectionDragController } from "./selection-drag";
+import { createReanchor, WORLD_SIZE_MIN } from "./re-anchor";
+import type { AnchorState } from "./re-anchor";
 
 // Re-export so callers that imported these from drawing-layer.ts keep working.
 export type { DrawingLayer, SelectionStyleEntry, SelectionStylePatch };
 
 
-/** Initial wrapper size. Covers the viewport on typical displays with
- *  room for drift. Canvas grows dynamically if strokes extend. */
-const WORLD_SIZE = 2048;
 /** Per-canvas memory cap. 4096×4096 = 16 MP. iPad-safe across the
  *  range; beyond it the backing DPR degrades rather than the canvas
- *  blowing up its context. */
+ *  blowing up its context. The re-anchor controller (`re-anchor.ts`)
+ *  picks worldSize relative to the camera; DPR follows from this cap. */
 const MAX_BACKING_PIXELS = 4096 * 4096;
 const MAX_DPR = 2;
 
@@ -91,13 +91,23 @@ export function createDrawingLayer({
 
   // ---------- DOM: transform wrapper + engine stage ----------
 
-  const dom = createDrawingDom(container, WORLD_SIZE);
+  // World-space anchor + size of the canvas backing. Initial values
+  // come from the DOM factory (centered on the current viewport at
+  // WORLD_SIZE_MIN); both shift over the lifetime of the layer as
+  // the re-anchor controller follows the camera. Held in a single
+  // mutable record so every closure reading origin / worldSize sees
+  // the live values without indirection through individual getters.
+  const dom = createDrawingDom(container, WORLD_SIZE_MIN);
   const {
     wrapper, doneCanvas, previewCanvas, liveCanvas,
     pocketStash, pocketStashCtx,
     svg, eraserCursor, selectionLayer, selectHint,
-    originX, originY,
   } = dom;
+  const anchor: AnchorState = {
+    originX: dom.originX,
+    originY: dom.originY,
+    worldSize: WORLD_SIZE_MIN,
+  };
 
   // Tracks the sub-tool the user was on before the long-press handoff
   // promoted them into select mode. Restored when the lasso misses or
@@ -116,8 +126,8 @@ export function createDrawingLayer({
   let selectHintTimer: ReturnType<typeof setTimeout> | null = null;
   function flashSelectHint(localPt: { x: number; y: number }): void {
     // engine-local → container-screen coords: reverse of pointToLocal.
-    const cx = (localPt.x + originX) * cameraRef.zoom + cameraRef.x;
-    const cy = (localPt.y + originY) * cameraRef.zoom + cameraRef.y;
+    const cx = (localPt.x + anchor.originX) * cameraRef.zoom + cameraRef.x;
+    const cy = (localPt.y + anchor.originY) * cameraRef.zoom + cameraRef.y;
     // Small gap so the pill doesn't overlap the cursor anchor.
     selectHint.style.left = (cx - 10) + "px";
     selectHint.style.top = cy + "px";
@@ -134,18 +144,20 @@ export function createDrawingLayer({
 
   function currentDpr(): number {
     const native = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    const maxFit = Math.sqrt(MAX_BACKING_PIXELS / (WORLD_SIZE * WORLD_SIZE));
+    const maxFit = Math.sqrt(MAX_BACKING_PIXELS / (anchor.worldSize * anchor.worldSize));
     return Math.min(native, maxFit);
   }
 
-  // Pocket / done-canvas blit helpers live in pocket-blit.ts. They
-  // close over the canvases and origin offsets at factory time; DPR
-  // is read live so MAX_BACKING_PIXELS clamping moves under us.
+  // Pocket / done-canvas blit helpers live in pocket-blit.ts. Origin,
+  // worldSize, and DPR are read via getters every call — the layer
+  // re-anchors mid-session so any of these can shift between calls.
   // Created up here so the sync-shim's `engineAdapter` (further down)
   // can wire stash / unstash directly into the pocket pipeline.
   const { blitWorldRegion, blitDoneCanvasAtWorldOrigin, stashPocketRegion, unstashPocketRegion } = createPocketBlit({
     doneCanvas, pocketStash, pocketStashCtx,
-    originX, originY, worldSize: WORLD_SIZE,
+    getOriginX: () => anchor.originX,
+    getOriginY: () => anchor.originY,
+    getWorldSize: () => anchor.worldSize,
     getDpr: currentDpr,
   });
 
@@ -155,18 +167,32 @@ export function createDrawingLayer({
     const screenY = clientPt.y - rect.top;
     const worldX = (screenX - cameraRef.x) / cameraRef.zoom;
     const worldY = (screenY - cameraRef.y) / cameraRef.zoom;
-    return { x: worldX - originX, y: worldY - originY };
+    return { x: worldX - anchor.originX, y: worldY - anchor.originY };
+  }
+
+  function applyWrapperTransform(cam: Camera): void {
+    const tx = cam.x + anchor.originX * cam.zoom;
+    const ty = cam.y + anchor.originY * cam.zoom;
+    wrapper.style.transform = `translate(${tx}px, ${ty}px) scale(${cam.zoom})`;
   }
 
   function setCamera(next: Camera): void {
     cameraRef.x = next.x;
     cameraRef.y = next.y;
     cameraRef.zoom = next.zoom;
-    const tx = next.x + originX * next.zoom;
-    const ty = next.y + originY * next.zoom;
-    wrapper.style.transform = `translate(${tx}px, ${ty}px) scale(${next.zoom})`;
+    // Hot path on every pan/zoom frame: see whether the camera
+    // viewport is still well inside the canvas backing. If yes, just
+    // update the wrapper's CSS transform — GPU-composited and free.
+    // If the viewport is drifting toward the canvas edge (or the
+    // zoom level wants a different canvas size), re-anchor first.
+    ensureCoverage(next);
+    applyWrapperTransform(next);
   }
-  setCamera(camera);
+  // Apply the initial camera transform directly. ensureCoverage()
+  // can't run yet because the stroke engine isn't constructed; the
+  // first proper setCamera (or resize-driven re-anchor) takes care
+  // of any drift once everything is wired.
+  applyWrapperTransform(camera);
 
   // ---------- engine ----------
 
@@ -389,31 +415,49 @@ export function createDrawingLayer({
     if (added) selectionEngine.refreshBBox();
   }
 
-  // ---------- canvas sizing ----------
+  // ---------- canvas sizing + re-anchoring ----------
 
   function sizeCanvases(): void {
     const dpr = currentDpr();
+    const w = anchor.worldSize;
+    const px = Math.round(w * dpr);
     for (const c of [doneCanvas, previewCanvas, liveCanvas]) {
-      c.width = Math.round(WORLD_SIZE * dpr);
-      c.height = Math.round(WORLD_SIZE * dpr);
+      c.width = px;
+      c.height = px;
       c.style.left = "0px";
       c.style.top = "0px";
-      c.style.width = WORLD_SIZE + "px";
-      c.style.height = WORLD_SIZE + "px";
+      c.style.width = w + "px";
+      c.style.height = w + "px";
     }
-    // Keep stash in lockstep with done canvas dimensions. `canvas.width
-    // = ...` also clears content, which we accept on resize — any
-    // stashed pocketed strokes lose their capture. A subsequent
-    // rebake doesn't restore them (they're hidden in engine). Pocket
-    // tray will render empty for those strokes until repocketed; in
-    // practice resize is rare and users can re-pocket as needed.
-    if (pocketStash.width !== doneCanvas.width || pocketStash.height !== doneCanvas.height) {
-      pocketStash.width = doneCanvas.width;
-      pocketStash.height = doneCanvas.height;
+    wrapper.style.width = w + "px";
+    wrapper.style.height = w + "px";
+    svg.setAttribute("viewBox", `0 0 ${w} ${w}`);
+    svg.style.width = w + "px";
+    svg.style.height = w + "px";
+    if (pocketStash.width !== px || pocketStash.height !== px) {
+      pocketStash.width = px;
+      pocketStash.height = px;
     }
   }
   sizeCanvases();
-  strokeEngine.resize(WORLD_SIZE, WORLD_SIZE);
+  strokeEngine.resize(anchor.worldSize, anchor.worldSize);
+
+  // Re-anchor controller (`re-anchor.ts`): on every camera change,
+  // checks whether the visible viewport is still well inside the
+  // canvas backing. Cheap fast-path return when it is; otherwise
+  // shifts origin, scales the canvas to the current zoom, translates
+  // every stroke by the origin delta, and rebakes. The mutable
+  // `anchor` record is shared with the layer's other closures so a
+  // re-anchor's mutation propagates without re-binding callbacks.
+  const reanchorCtl = createReanchor({
+    anchor,
+    strokeEngine: strokeEngine as unknown as Parameters<typeof createReanchor>[0]["strokeEngine"],
+    refreshSelectionBBox: () => selectionEngine.refreshBBox(),
+    pocketStash, pocketStashCtx,
+    sizeCanvases,
+    getDpr: currentDpr,
+  });
+  function ensureCoverage(cam: Camera): void { reanchorCtl.ensureCoverage(cam); }
 
   // ---------- sync shim ----------
   //
@@ -449,8 +493,8 @@ export function createDrawingLayer({
     // downstream Hush subsystem — box-select, getShapeBounds, file
     // I/O — can treat them like any other shape. Translate here at
     // the boundary.
-    localToWorld: (p) => ({ x: p.x + originX, y: p.y + originY, pressure: p.pressure }),
-    worldToLocal: (p) => ({ x: p.x - originX, y: p.y - originY, pressure: p.pressure }),
+    localToWorld: (p) => ({ x: p.x + anchor.originX, y: p.y + anchor.originY, pressure: p.pressure }),
+    worldToLocal: (p) => ({ x: p.x - anchor.originX, y: p.y - anchor.originY, pressure: p.pressure }),
   });
   shimBox.current = shim;
 

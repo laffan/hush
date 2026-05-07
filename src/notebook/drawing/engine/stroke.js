@@ -22,6 +22,10 @@
  *      canvas's own select / pan handling and don't seed strokes). The
  *      tauri-plugin-pencil iOS bridge flips this on once it's loaded so
  *      Apple Pencil is the only thing that can draw.
+ *  20. `translateAllStrokePoints(dx, dy)` and `renderStrokeTo(ctx, s)`
+ *      so the host can re-anchor the wrapper world-origin (canvas
+ *      backing follows the camera) without losing strokes outside the
+ *      original 2048-px box.
  *   (Deltas 4 + 5 live in selection.js + gestures.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
@@ -830,6 +834,54 @@ export function createStrokeEngine({
     // insert. See INTEGRATION-PLAN.md.
     fullRebake() {
       renderer.fullRebake();
+    },
+
+    // Hush delta #20: shift every stored stroke's points by (dx, dy)
+    // in engine-local coords. The host calls this when it re-anchors
+    // the wrapper world-origin so the canvas backing follows the
+    // camera; the world positions stay constant because the host also
+    // shifts originX/originY by (-dx, -dy) at the same time. Active
+    // stroke + lastRecorded + longPressAnchor get the same shift so a
+    // re-anchor that lands mid-stroke (rare — gesture-pan cancels the
+    // active stroke first) doesn't snap the live overlay. The caller
+    // is expected to follow up with `fullRebake()`; we drop preview
+    // bookkeeping here because the cached tile keys are stale at the
+    // new origin.
+    translateAllStrokePoints(dx, dy) {
+      if (dx === 0 && dy === 0) return;
+      for (const s of state.strokes) {
+        const pts = s.points;
+        for (let i = 0; i < pts.length; i++) {
+          pts[i].x += dx;
+          pts[i].y += dy;
+        }
+      }
+      if (state.active) {
+        const pts = state.active.points;
+        for (let i = 0; i < pts.length; i++) {
+          pts[i].x += dx;
+          pts[i].y += dy;
+        }
+      }
+      if (state.lastRecorded) {
+        state.lastRecorded.x += dx;
+        state.lastRecorded.y += dy;
+      }
+      if (state.longPressAnchor) {
+        state.longPressAnchor.x += dx;
+        state.longPressAnchor.y += dy;
+      }
+      state.previewingIds = null;
+      state.previewingTiles = null;
+    },
+
+    // Hush delta #20: render a single stroke into an arbitrary ctx.
+    // Used by the host to repaint pocketed strokes (which are excluded
+    // from the done canvas via delta #8) into the pocket stash after
+    // a re-anchor has invalidated stash pixel positions.
+    renderStrokeTo(ctx, stroke) {
+      if (!stroke) return;
+      renderer.renderStroke(ctx, stroke);
     },
 
     // --- layers ---

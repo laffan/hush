@@ -17,6 +17,7 @@ src/notebook/drawing/
   brush-slots.ts         Toolbar slot row + the brush-edit flyout (size / stream / spacing / brush / color / mode)
   tool-panel.ts          Drawing-tools controller: appends divider + brush slots + Slice / Erase / Lasso directly to the bottom toolbar (no separate pill), then mounts three gray-pill end-caps — drag + rotate on the left, Background settings on the right
   pocket-blit.ts         Pocket / done-canvas blit helpers extracted from drawing-layer.ts
+  re-anchor.ts           Camera-following controller: shifts wrapper world-origin (and grows worldSize at low zoom) so the canvas backing always covers the visible viewport
   selection-drag.ts      Hush↔engine select-drag controller (pause-shim, hide-chrome, commit-on-release)
   mini-palette.ts        15-px-thick A/H/Red + size shortcut strip pinned to the active brush
   flyout-styles.ts       15-px squared-thumb stylesheet shared by every drawing flyout slider
@@ -68,7 +69,25 @@ Invariants (documented in the file header and required on every change):
 4. **Mutations route through engine methods.** Style patches go through `setStrokesStyleMap`; point edits through `setStrokePoints`; inserts/removes through `insertStrokeAt` / `removeStrokes`. Never poke `strokes[]` directly — the engine maintains bbox + tile indexes that need to stay in sync.
 5. **Bulk loads pause per-stroke rebakes.** File-open inserts N strokes with rebakes suppressed and calls `fullRebake()` once at the end.
 
-World-coord translation is also at the shim boundary: `DrawShape.points` are stored in world coords; the engine's stage is a CSS-transformed wrapper and expects local coords. The shim applies `worldToLocal` on ingest and `localToWorld` on emit.
+World-coord translation is also at the shim boundary: `DrawShape.points` are stored in world coords; the engine's stage is a CSS-transformed wrapper and expects local coords. The shim applies `worldToLocal` on ingest and `localToWorld` on emit. The wrapper's world-space anchor (`originX`, `originY`) is mutable and shifts at runtime — see "Re-anchoring" below.
+
+### Re-anchoring (infinite canvas)
+
+The drawing engine renders into a fixed-pixel canvas wrapped in a CSS-transformed div. The wrapper is GPU-composited as the camera pans and zooms — fast — but the canvas backing covers a finite world rect `[origin, origin + worldSize]`. To make the surface effectively infinite without giving up the GPU pan, `re-anchor.ts` slides the origin (and grows `worldSize` at low zoom) so the visible viewport always lands inside the backing.
+
+`ensureCoverage(camera)` runs on every `setCamera` call. The fast path is a cheap predicate: if the camera viewport sits well inside the canvas with `REANCHOR_MARGIN_FRAC × worldSize` (15%) of slack on every side, and `worldSize` is within `RESIZE_RATIO_THRESHOLD` (1.4×) of what the current zoom wants, return immediately — the existing wrapper transform handles the motion. Otherwise:
+
+1. Pick a new `worldSize` from `wantWorldSize(zoom)` — `max(WORLD_SIZE_MIN, longest visible side / zoom × 1.25)`. At zoom=1 this stays at 2048 (DPR=2 against `MAX_BACKING_PIXELS = 4096²`); at zoom=0.25 it grows to ~9600 with DPR auto-degrading to ~0.4 — fine because zoomed-out strokes are subpixel anyway.
+2. Pick a new `originX, originY` centered on the camera's current world viewport.
+3. Call `engine.translateAllStrokePoints(oldOrigin - newOrigin)` (delta #20) so every stroke's local coords shift to keep its world position constant.
+4. Resize the three stage canvases + pocket stash + wrapper + svg if `worldSize` changed.
+5. `fullRebake()` (or the engine's own `resize()` rebake) repaints the done canvas at the new origin.
+6. Walk pocketed strokes (hidden from done via delta #8) and re-render them into the pocket stash via `renderStrokeTo` (delta #20) — the stash bitmap was at old origin/dpr.
+7. `selectionEngine.refreshBBox()` so any visible bbox lands at the new local coords.
+
+Cost is O(N strokes) per re-anchor. The 15% margin keeps it amortized cheap — the user pans ~70% of the canvas before crossing the threshold. Steady-state pan/zoom is unchanged: same single CSS transform on the wrapper, no engine work.
+
+`originX`, `originY`, and `worldSize` are held in a single mutable `AnchorState` record shared across `pointToLocal`, `applyWrapperTransform`, the pocket-blit getters, and the sync-shim's `localToWorld` / `worldToLocal` closures so a re-anchor's mutation propagates without re-binding callbacks.
 
 ### The engine (deltas from the reference demo)
 
@@ -91,6 +110,7 @@ Targeted deltas have been applied to `engine/` so the port stays as close as pos
 15. **Soft selection deactivate** — `selection.js` exposes `setEventActive(bool)` alongside the existing `activate / deactivate` pair. The hard `deactivate()` clears `selectedIds` (it has to, to keep the lasso-end semantics). `setEventActive(false)` only flips `state.active = false` and clears any in-flight lasso, so `drawing-layer.setTool` can disable engine event capture for non-select sub-tools without dropping the user's retroactive selection. Without this, brush-slot taps would wipe the engine selection right after the bridge re-populated it on the same tool change.
 16. **Chrome interactivity toggle** — `selection.js` exposes `setChromeInteractive(bool)` which toggles `pointerEvents` on the entire bbox `<g>`. Used by the bridge during pen+draw/erase/slice with a live retroactive selection: the chrome stays painted (the user can see what's selected while the brush flyout retints it) but every pointerdown falls through to the stroke engine, so the user's next stroke isn't intercepted by an invisible-to-them resize handle.
 17. **Finger hold-to-select (pencil-only mode)** — In pencil-only mode, finger contacts now arm the long-press timer at the touch position without seeding an active stroke (`state.fingerHoldPointer` tracks the candidate). Drift past `LONG_PRESS_MOVE_THRESHOLD` or release before the timer cancels the gesture quietly; on timeout the existing `onLongPress` handoff promotes the finger pointer into a lasso. A second finger landing during a hold cancels the candidate so the gesture recogniser can claim the burst.
+18. **`translateAllStrokePoints` + `renderStrokeTo`** (source-side delta #20) — `stroke.js` exposes a bulk point-shift method and a single-stroke render helper so the host's re-anchor controller can slide the wrapper origin (and re-render pocketed strokes into the stash at new pixel positions) without poking the engine's internals. See "Re-anchoring" above for the full lifecycle.
 
 ### Apple Pencil gating (iOS)
 
