@@ -241,7 +241,14 @@ export async function applyRemotePanes(payloadString, deps) {
         if (r.attached !== undefined) existing.attached = r.attached;
         if (r.pinned !== undefined) existing.pinned = r.pinned;
         if (r.collapsed !== undefined) existing.collapsed = r.collapsed;
-        if (r.fontSize !== null) existing.fontSize = r.fontSize;
+        if (r.fontSize !== null) {
+          existing.fontSize = r.fontSize;
+          // Re-apply the CSS var so the visual updates without waiting
+          // for a remount. Without this the new size only takes effect
+          // after the user toggles the +/- popover or restarts.
+          const { applyPaneFontSize } = await import("../pane/pane-size-popover.js");
+          applyPaneFontSize(existing);
+        }
         if (r.width != null && r.width > 0) {
           existing.width = r.width;
           if (existing.el) existing.el.style.width = r.width + "px";
@@ -253,7 +260,13 @@ export async function applyRemotePanes(payloadString, deps) {
         if (r.editorScrollTop != null) {
           existing.editorScrollTop = r.editorScrollTop;
           if (existing.editor && existing.editor.setScrollTop) {
-            try { existing.editor.setScrollTop(r.editorScrollTop); } catch (_) {}
+            // Defer two frames so the editor has measured its viewport
+            // before we set scrollTop. CodeMirror sometimes resets
+            // scrollTop to 0 during its first layout pass; the rAFs let
+            // that pass complete first.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              try { existing.editor.setScrollTop(r.editorScrollTop); } catch (_) {}
+            }));
           }
         }
         matched++;
@@ -419,7 +432,13 @@ export async function applyPanesFile(_state, payload) {
         if (opts.canvasX != null) pane._canvasX = opts.canvasX;
         if (opts.canvasY != null) pane._canvasY = opts.canvasY;
         if (opts.scrollRelY != null) pane._scrollRelY = opts.scrollRelY;
-        if (opts.fontSize != null) pane.fontSize = opts.fontSize;
+        if (opts.fontSize != null) {
+          pane.fontSize = opts.fontSize;
+          // Cascade the CSS var so the new pane paints at the synced size
+          // immediately rather than at the document default.
+          const { applyPaneFontSize } = await import("../pane/pane-size-popover.js");
+          applyPaneFontSize(pane);
+        }
         if (typeof opts.width === "number" && opts.width > 0) {
           pane.width = opts.width;
           if (pane.el) pane.el.style.width = opts.width + "px";
@@ -431,11 +450,12 @@ export async function applyPanesFile(_state, payload) {
         if (typeof opts.editorScrollTop === "number") {
           pane.editorScrollTop = opts.editorScrollTop;
           if (pane.editor && pane.editor.setScrollTop) {
-            // Defer one frame so the editor has loaded its content
-            // before we ask it to scroll.
-            requestAnimationFrame(() => {
+            // Defer two frames so CodeMirror has measured its viewport.
+            // One rAF isn't always enough — the first frame after content
+            // load can reset scrollTop to 0 during layout.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
               try { pane.editor.setScrollTop(opts.editorScrollTop); } catch (_) {}
-            });
+            }));
           }
         }
         return pane;

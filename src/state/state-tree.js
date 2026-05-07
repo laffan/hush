@@ -228,7 +228,8 @@ export async function toggleFlagged(state, nodeId) {
 /** Convert a Folder ↔ Project. The two types are structurally
  *  identical in the tree (children stay put); only the `type` field
  *  changes. Project → Folder loses ordering and the joined preview but
- *  no files are deleted. */
+ *  no files are deleted. The full project list is re-pushed via
+ *  `.hush/projects.json` so other devices learn about the conversion. */
 export async function convertContainerType(state, nodeId, targetType) {
   if (targetType !== "folder" && targetType !== "project") return;
   const node = findNode(state.fileTree, nodeId);
@@ -238,6 +239,11 @@ export async function convertContainerType(state, nodeId, targetType) {
   node.type = targetType;
   await state.saveFileTree();
   state.emit("files-changed");
+  // Re-push the projects registry so peers see the converted node. Both
+  // directions: a new project gets added to the list, a demoted one is
+  // dropped from it. Receiving devices fold the list (`applyProjectsFile`
+  // flips matching folders to projects on import).
+  state.syncProjectOrdering(nodeId);
 }
 
 export async function duplicateTreeNode(state, nodeId) {

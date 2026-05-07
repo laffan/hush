@@ -76,6 +76,17 @@ function findNodeByPath(fileTree, folderPath) {
  *   * added   — placeholder project node created (folder didn't exist
  *               yet because cursor hasn't pulled it down; rare)
  *   * applied — total entries successfully applied (matched + added)
+ *
+ * Apply policy is union: any project listed in the remote payload is
+ * promoted locally. Local projects that aren't in the remote list are
+ * left as projects — we don't demote them to folders. This protects
+ * against concurrent-create races where two devices each promote a
+ * different folder; pure strict apply would oscillate (each device
+ * demotes the other's new project until the next push catches up).
+ *
+ * Trade-off: a project demoted to folder on one device doesn't propagate
+ * to peers — the user has to demote on each device. Folder → project
+ * (the more common direction) does propagate.
  */
 export async function applyProjectsFile(state, payload) {
   let parsed;
