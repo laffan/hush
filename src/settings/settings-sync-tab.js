@@ -4,6 +4,159 @@
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+const SYNC_FOLDER_ID = "__dropbox_sync__";
+
+/**
+ * Snapshot the local sync state into a plain-text report. Temporary
+ * debug surface — bug-hunt for the iPad-first-sync duplication where we
+ * suspect either (a) downloads are not registering with full
+ * `remote_id`/`rev` (so the cursor seed re-imports them) or (b)
+ * `.hush/desks.json` lands mid-seed and reshapes the tree under a
+ * different parent path. Both cases show up here as either a
+ * `remote_id` group with >1 row, a `relative_path` group with >1 row,
+ * or two tree nodes pointing at the same `fileId`.
+ */
+async function gatherSyncDiagnostics() {
+  if (!IS_TAURI) return "Diagnostics only available in the Tauri app.";
+  const { invoke } = await import("@tauri-apps/api/core");
+  const lines = [];
+
+  const settings = await invoke("get_settings").catch(() => ({}));
+  lines.push("=== HUSH SYNC DIAGNOSTICS ===");
+  lines.push(`Time: ${new Date().toISOString()}`);
+  lines.push(`Sync folder: ${settings?.dropboxSyncPath || "(none)"}`);
+  lines.push(`Sync enabled: ${!!settings?.dropboxEnabled}`);
+
+  // Cursor state
+  let cursor = null;
+  try { cursor = await invoke("get_dropbox_cursor", { syncFolderId: SYNC_FOLDER_ID }); } catch (_) {}
+  if (cursor) {
+    const c = cursor.cursor || "";
+    lines.push(`Cursor present: ${c.length} chars (head=${c.slice(0, 24)}…)`);
+    lines.push(`Cursor root: ${cursor.rootPath || "(empty)"}`);
+  } else {
+    lines.push("Cursor present: NO (next poll will seed)");
+  }
+
+  // Synced files
+  let files = [];
+  try { files = await invoke("get_synced_files", { syncFolderId: SYNC_FOLDER_ID }) || []; } catch (_) {}
+  lines.push("");
+  lines.push(`=== synced_files (${files.length} rows) ===`);
+  lines.push("internal_id  remote_id              rev          relative_path");
+  for (const f of files) {
+    const iid = (f.internalId || "").slice(0, 12);
+    const rid = (f.remoteId || "").slice(0, 22) || "(empty)";
+    const rev = (f.lastKnownRev || "").slice(0, 12) || "(empty)";
+    lines.push(`${iid.padEnd(12)} ${rid.padEnd(22)} ${rev.padEnd(12)} ${f.relativePath || ""}`);
+  }
+
+  // Duplicates by remote_id
+  const byRemote = new Map();
+  for (const f of files) {
+    const k = f.remoteId || "(empty)";
+    if (!byRemote.has(k)) byRemote.set(k, []);
+    byRemote.get(k).push(f);
+  }
+  const dupRemote = [...byRemote.entries()].filter(([k, arr]) => k !== "(empty)" && arr.length > 1);
+  const emptyRemoteCount = (byRemote.get("(empty)") || []).length;
+  lines.push("");
+  lines.push(`=== Duplicates by remote_id (${dupRemote.length} groups; ${emptyRemoteCount} rows have empty remote_id) ===`);
+  if (dupRemote.length === 0) lines.push("(none)");
+  for (const [rid, arr] of dupRemote) {
+    lines.push(`  ${rid} → ${arr.length} rows:`);
+    for (const f of arr) lines.push(`    internal=${(f.internalId || "").slice(0, 12)} path=${f.relativePath || ""}`);
+  }
+
+  // Duplicates by relative_path
+  const byPath = new Map();
+  for (const f of files) {
+    const k = (f.relativePath || "").toLowerCase();
+    if (!byPath.has(k)) byPath.set(k, []);
+    byPath.get(k).push(f);
+  }
+  const dupPath = [...byPath.entries()].filter(([_, arr]) => arr.length > 1);
+  lines.push("");
+  lines.push(`=== Duplicates by relative_path (${dupPath.length} groups) ===`);
+  if (dupPath.length === 0) lines.push("(none)");
+  for (const [p, arr] of dupPath) {
+    lines.push(`  ${p} → ${arr.length} rows:`);
+    for (const f of arr) lines.push(`    internal=${(f.internalId || "").slice(0, 12)} remote=${(f.remoteId || "").slice(0, 22)}`);
+  }
+
+  // File tree
+  let tree = [];
+  try { tree = await invoke("get_file_tree") || []; } catch (_) {}
+  lines.push("");
+  lines.push("=== Tree (files / folders / desks; first 200 lines) ===");
+  const treeLines = [];
+  function walk(nodes, depth) {
+    for (const n of nodes || []) {
+      const indent = "  ".repeat(depth);
+      const tag = n.type || "?";
+      const fid = n.fileId ? ` fileId=${n.fileId.slice(0, 12)}` : "";
+      const id = ` id=${(n.id || "").slice(0, 12)}`;
+      treeLines.push(`${indent}- [${tag}] ${n.name || "(unnamed)"}${id}${fid}`);
+      if (Array.isArray(n.children)) walk(n.children, depth + 1);
+    }
+  }
+  walk(tree, 0);
+  for (const ln of treeLines.slice(0, 200)) lines.push(ln);
+  if (treeLines.length > 200) lines.push(`(... ${treeLines.length - 200} more lines truncated)`);
+
+  // Tree fileId duplicates
+  const fileIdNodes = new Map();
+  function collectFileIds(nodes, path) {
+    for (const n of nodes || []) {
+      const here = path ? `${path}/${n.name}` : n.name;
+      if (n.fileId) {
+        if (!fileIdNodes.has(n.fileId)) fileIdNodes.set(n.fileId, []);
+        fileIdNodes.get(n.fileId).push({ path: here, type: n.type, nodeId: n.id });
+      }
+      if (Array.isArray(n.children)) collectFileIds(n.children, here);
+    }
+  }
+  collectFileIds(tree, "");
+  const dupFileId = [...fileIdNodes.entries()].filter(([_, arr]) => arr.length > 1);
+  lines.push("");
+  lines.push(`=== Duplicates by tree fileId (${dupFileId.length} groups) ===`);
+  if (dupFileId.length === 0) lines.push("(none)");
+  for (const [fid, arr] of dupFileId) {
+    lines.push(`  fileId=${fid.slice(0, 12)} → ${arr.length} nodes:`);
+    for (const x of arr) lines.push(`    ${x.type} @ ${x.path} (node=${x.nodeId.slice(0, 12)})`);
+  }
+
+  // Tree nodes whose fileId has no synced_files row (orphans)
+  const syncedFileIds = new Set(files.map(f => f.internalId));
+  const orphanNodes = [...fileIdNodes.entries()].filter(([fid, _]) => !syncedFileIds.has(fid));
+  lines.push("");
+  lines.push(`=== Tree nodes with no synced_files row (${orphanNodes.length}) ===`);
+  if (orphanNodes.length === 0) lines.push("(none)");
+  for (const [fid, arr] of orphanNodes) {
+    for (const x of arr) lines.push(`  ${x.type} @ ${x.path} (fileId=${fid.slice(0, 12)})`);
+  }
+
+  // Pending ops queue
+  let ops = [];
+  try { ops = await invoke("peek_pending_ops", { limit: 50 }) || []; } catch (_) {}
+  lines.push("");
+  lines.push(`=== pending_ops (${ops.length} rows; up to 50 shown) ===`);
+  for (const op of ops) {
+    const internal = op.internalId || "";
+    const newPath = op.newPath || "";
+    const attempts = op.attempts ?? 0;
+    const lastErr = op.lastError || "";
+    lines.push(`  #${op.id} ${op.kind.padEnd(14)} internal=${internal.slice(0, 12).padEnd(12)} ${op.path}${newPath ? ` → ${newPath}` : ""}${attempts ? ` attempts=${attempts}` : ""}${lastErr ? ` err=${lastErr}` : ""}`);
+  }
+
+  // Recent sync log
+  const syncLog = settings?.dropboxSyncLog || [];
+  lines.push("");
+  lines.push(`=== Recent sync log (last 20 of ${syncLog.length}) ===`);
+  for (const entry of syncLog.slice(-20)) lines.push(`  ${entry}`);
+
+  return lines.join("\n");
+}
 
 /**
  * Indeterminate-or-determinate progress modal shown during the
@@ -346,6 +499,49 @@ export function bindSyncTab(saveSetting, settings, render) {
         if (status) { status.textContent = "Done. Reseeding from Dropbox…"; status.className = "sync-status success"; }
       } catch (e) {
         if (status) { status.textContent = "Clear failed: " + e.message; status.className = "sync-status error"; }
+      }
+    });
+  }
+
+  // Sync diagnostics (debug). Temporary UI for chasing duplication bugs.
+  const syncDiagRefresh = document.getElementById("sync-diag-refresh");
+  const syncDiagCopy = document.getElementById("sync-diag-copy");
+  const syncDiagOutput = document.getElementById("sync-diag-output");
+  const syncDiagStatus = document.getElementById("sync-diag-status");
+  if (syncDiagRefresh && syncDiagOutput) {
+    syncDiagRefresh.addEventListener("click", async () => {
+      if (syncDiagStatus) { syncDiagStatus.textContent = "Gathering…"; syncDiagStatus.className = "sync-status"; }
+      try {
+        const text = await gatherSyncDiagnostics();
+        syncDiagOutput.value = text;
+        if (syncDiagStatus) { syncDiagStatus.textContent = ""; syncDiagStatus.className = "sync-status"; }
+      } catch (e) {
+        syncDiagOutput.value = "Diagnostics failed: " + (e?.message || e);
+        if (syncDiagStatus) { syncDiagStatus.textContent = "Failed."; syncDiagStatus.className = "sync-status error"; }
+      }
+    });
+  }
+  if (syncDiagCopy && syncDiagOutput) {
+    syncDiagCopy.addEventListener("click", async () => {
+      const text = syncDiagOutput.value || "";
+      if (!text) {
+        if (syncDiagStatus) { syncDiagStatus.textContent = "Nothing to copy — tap Refresh first."; syncDiagStatus.className = "sync-status"; }
+        return;
+      }
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // iOS Safari fallback: select + execCommand
+          syncDiagOutput.removeAttribute("readonly");
+          syncDiagOutput.focus();
+          syncDiagOutput.select();
+          document.execCommand("copy");
+          syncDiagOutput.setAttribute("readonly", "true");
+        }
+        if (syncDiagStatus) { syncDiagStatus.textContent = "Copied."; syncDiagStatus.className = "sync-status success"; }
+      } catch (e) {
+        if (syncDiagStatus) { syncDiagStatus.textContent = "Copy failed: " + (e?.message || e); syncDiagStatus.className = "sync-status error"; }
       }
     });
   }

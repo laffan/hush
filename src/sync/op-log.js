@@ -316,13 +316,18 @@ async function executeUpload(state, op, dbx) {
     if (hash && hash === info.lastSyncedHash) return;
   }
 
-  // First-time uploads (no SQLite info yet) recompute the path from
-  // the live tree at drain time. Without this a rename that fired
-  // between `syncCreateFile` enqueueing and the drain — common when
-  // first-line auto-rename catches the user mid-typing — would land
-  // the file at the stale name on Dropbox, since `syncRenameNode`
-  // silently no-ops while info is null.
-  let path = op.path;
+  // Resolve the destination path at drain time, NOT enqueue time. When
+  // `info` exists, its `relativePath` reflects every rename op that has
+  // already drained, which is exactly the path we want to upload to.
+  // Using `op.path` here would re-write content to the stale pre-rename
+  // path — and since the file was just moved away by the rename, the
+  // upload would create a brand-new Dropbox file at that path
+  // (the "title rename produces three files" race).
+  // For first-time uploads (no SQLite info yet) recompute from the live
+  // tree — without this a rename that fired between `syncCreateFile`
+  // enqueueing and the drain (common when first-line auto-rename catches
+  // the user mid-typing) would land the file at the stale name.
+  let path = info?.relativePath || op.path;
   if (!info) {
     try {
       const { findNodeByFileId, findSyncContext } = await import("../state/tree-helpers.js");

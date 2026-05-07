@@ -93,6 +93,23 @@ export function renderSyncTab(settings) {
         </div>
       </div>
       <div class="settings-section">
+        <h2>Sync diagnostics (debug)</h2>
+        <p class="settings-help">
+          Temporary: dumps the local synced-file table, file tree, pending ops,
+          and cursor state so duplication / divergence bugs can be diagnosed.
+          Tap <strong>Refresh</strong> to populate, then <strong>Copy</strong>
+          to copy the report to the clipboard.
+        </p>
+        <div class="sync-btn-row">
+          <button id="sync-diag-refresh" class="sync-inline-btn">Refresh</button>
+          <button id="sync-diag-copy" class="sync-inline-btn">Copy</button>
+        </div>
+        <textarea id="sync-diag-output" readonly
+          style="width:100%; min-height:220px; margin-top:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: pre; overflow: auto;"
+          placeholder="Tap Refresh to gather diagnostics."></textarea>
+        <div id="sync-diag-status" class="sync-status"></div>
+      </div>
+      <div class="settings-section">
         <h2>Disconnect</h2>
         <p class="settings-help">Stop syncing and return to local-only mode.</p>
         <button id="sync-unsync" class="sync-danger-btn">Stop Syncing</button>

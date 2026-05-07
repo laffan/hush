@@ -4,13 +4,6 @@
  * Documents → .md files, Notebooks → .hushnote (zip) files, Projects → .hushproject (JSON) files.
  */
 
-import {
-  uploadImage,
-  downloadImage,
-  insertImageIntoTree,
-} from "./sync-images.js";
-import { sha256Hex, markOurFileRev } from "./meta-sync.js";
-
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 
@@ -51,23 +44,6 @@ async function uploadContent(dbx, fullPath, content, relativePath) {
     return dbx.uploadBinary(fullPath, zipData);
   }
   return dbx.uploadFile(fullPath, content);
-}
-
-/** Convert a Dropbox `server_modified` ISO string to Unix seconds. */
-function serverModifiedSecs(iso) {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
-}
-
-/** Download content from Dropbox, unpacking notebooks from zip. */
-async function downloadContent(dbx, dropboxPath, relativePath) {
-  if (isNotebookPath(relativePath)) {
-    const { unpackNotebook } = await import("./notebook-sync.js");
-    const zipData = await dbx.downloadBinary(dropboxPath);
-    return unpackNotebook(zipData);
-  }
-  return dbx.downloadFile(dropboxPath);
 }
 
 /**
@@ -125,96 +101,55 @@ export { generateSyncPreview, performInitialSync } from "./initial-sync.js";
 // ===== Ongoing Sync Operations =====
 
 /**
- * Per-fileId upload serializer. Without this, fast autosaves (e.g. a
- * notebook drawing session that emits 2 s autosaves while each upload
- * takes >2 s) stack uploads in flight. That stack produces three
- * downstream bugs: (1) `update_sync_state` runs in completion order
- * rather than start order, leaving `last_known_rev` lagging the actual
- * Dropbox state; (2) the cursor poll then sees a "different rev" for
- * our own write and treats it as an external change → destructive
- * notebook reload; (3) network bandwidth is wasted re-uploading content
- * that's already stale. Per-file serialization fixes all three with a
- * one-slot pending queue: while one upload is in flight, the next call
- * replaces a single pending payload, and that payload fires when the
- * in-flight upload's rev has been recorded.
- */
-const _inflightUploads = new Map();   // fileId → Promise
-const _pendingUploads = new Map();    // fileId → { state, content }
-
-/**
- * Push a single file's content to Dropbox after an edit.
+ * Push a single file's content to Dropbox after an edit by enqueuing an
+ * upload op on the durable op-log. The drain worker picks up ops in
+ * insertion order, so a content upload enqueued after a rename for the
+ * same file literally cannot race past it — closing the
+ * "title-rename produces three files" race where an autosave fired
+ * mid-rename and uploaded to the pre-rename path, creating a fresh file
+ * at that path on Dropbox.
  *
  * The cursor consumer is the only path for *pulling* remote changes, so
- * this function only handles the push half. The response's `rev` is
- * recorded as `last_known_rev` so that when the cursor delta later
- * reports our own write, echo suppression skips it instead of looping.
+ * this function only handles the push half. The op-log's `executeUpload`
+ * records the response's `rev` as `last_known_rev` so that when the
+ * cursor delta later reports our own write, echo suppression skips it
+ * instead of looping.
  *
- * If a remote change happened between our last sync and this upload,
- * our upload overwrites it. Concurrent edits from different devices are
- * recoverable from the Versions panel.
+ * `content` is intentionally ignored — `executeUpload` re-reads from disk
+ * at drain time so the freshest content always wins. The parameter is
+ * kept for caller compatibility.
  */
-export function syncFileToExternal(state, fileId, content) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return Promise.resolve();
-  if (!state.settings.dropboxSyncPath) return Promise.resolve();
+// eslint-disable-next-line no-unused-vars
+export async function syncFileToExternal(state, fileId, content) {
+  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  if (!state.settings.dropboxSyncPath) return;
+  if (!fileId) return;
 
-  // If an upload for this file is already running, stash the latest
-  // content as the next-up. Repeated calls during the in-flight window
-  // collapse into a single pending slot — the most recent content wins.
-  if (_inflightUploads.has(fileId)) {
-    _pendingUploads.set(fileId, { state, content });
-    return _inflightUploads.get(fileId);
-  }
-
-  const p = _runUpload(state, fileId, content).finally(() => {
-    _inflightUploads.delete(fileId);
-    const pending = _pendingUploads.get(fileId);
-    if (pending) {
-      _pendingUploads.delete(fileId);
-      // Fire the pending upload through the same path so the slot can
-      // refill again if more saves arrived during this run.
-      syncFileToExternal(pending.state, fileId, pending.content);
-    }
-  });
-  _inflightUploads.set(fileId, p);
-  return p;
-}
-
-async function _runUpload(state, fileId, content) {
-  const dropboxPath = state.settings.dropboxSyncPath;
   try {
-    const info = await tauriInvoke("get_sync_file_info", { internalId: fileId });
-    if (!info) return;
-
-    // Hash gate: skip the upload entirely when local content matches
-    // what we last pushed for this file. Backstops project mode (where
-    // `saveProjectContent` re-pushes every doc in the project on every
-    // save) and any future caller that hands us unchanged content. The
-    // cursor still has the right rev because we don't mint a new one.
-    const localHash = await sha256Hex(content);
-    if (localHash && info.lastSyncedHash && localHash === info.lastSyncedHash) {
-      return;
+    // Best-effort path hint for the executor. Prefer the sync map's
+    // current relative_path (which reflects any rename that already
+    // drained); fall back to a tree-derived path for brand-new files
+    // not yet registered. The executor re-resolves this at drain time
+    // via the same logic, so a stale hint is harmless.
+    const info = await tauriInvoke("get_sync_file_info", { internalId: fileId }).catch(() => null);
+    let path = info?.relativePath || "";
+    if (!path) {
+      try {
+        const { findNodeByFileId, findSyncContext } = await import("../state/tree-helpers.js");
+        const node = findNodeByFileId(state.fileTree, fileId);
+        const ctx = node ? findSyncContext(state.fileTree, node.id) : null;
+        if (ctx?.relativePath && node) {
+          const ext = node.type === "notebook" ? ".hushnote" : ".md";
+          path = `${ctx.relativePath}${ext}`;
+        }
+      } catch (_) { /* leave path empty; executor will recompute */ }
     }
 
-    const dbx = await import("./dropbox.js");
-    const basePath = dropboxPath === "/" ? "" : dropboxPath;
-    const fullPath = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
-
-    const uploadResp = await uploadContent(dbx, fullPath, content, info.relativePath);
-    const uploadedAt = serverModifiedSecs(uploadResp?.server_modified)
-      || Math.floor(Date.now() / 1000);
-    await tauriInvoke("update_sync_state", {
-      internalId: fileId,
-      content,
-      rev: uploadResp?.rev || "",
-      syncedAt: uploadedAt,
-    });
-
-    // Stash the rev in the per-file recent-revs ring so the cursor's
-    // echo-suppression survives the rev-race even when a later push
-    // overwrites the SQLite `last_known_rev`.
-    markOurFileRev(fileId, uploadResp?.rev || "");
+    const { enqueueUpload, triggerDrain } = await import("./op-log.js");
+    await enqueueUpload({ internalId: fileId, path });
+    triggerDrain(state);
   } catch (e) {
-    console.error("Sync write failed:", e);
+    console.error("Sync write enqueue failed:", e);
   }
 }
 
