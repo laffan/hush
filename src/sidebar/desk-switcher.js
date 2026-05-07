@@ -71,13 +71,33 @@ function render() {
   _container.style.display = "";
   const active = desks.find((d) => d.id === _state.settings.activeDeskId);
   const label = active?.name || "Desk";
-  _container.innerHTML = `
-    <button class="desk-switcher-header" type="button">
-      <span class="desk-switcher-name">${escHtml(label)}</span>
-      <span class="desk-switcher-caret">${CHEVRON}</span>
-    </button>
-  `;
-  _container.querySelector(".desk-switcher-header").addEventListener("click", togglePopover);
+  // Update the header in place rather than nuking _container.innerHTML
+  // — that would destroy any open popover (and the rename input inside
+  // it). A sync apply firing desks-changed while the user is renaming
+  // a desk would otherwise close the popover before they could press
+  // Enter, losing the typed value.
+  let header = _container.querySelector(".desk-switcher-header");
+  if (!header) {
+    header = document.createElement("button");
+    header.className = "desk-switcher-header";
+    header.type = "button";
+    header.innerHTML = `<span class="desk-switcher-name"></span><span class="desk-switcher-caret">${CHEVRON}</span>`;
+    header.addEventListener("click", togglePopover);
+    _container.insertBefore(header, _container.firstChild);
+  }
+  const nameSpan = header.querySelector(".desk-switcher-name");
+  if (nameSpan && nameSpan.textContent !== label) nameSpan.textContent = label;
+  // Refresh the popover body too, but only when one is open AND no
+  // rename input is active. The active-rename case is left alone so
+  // typing isn't interrupted; the user's commit (Enter / blur / Esc)
+  // closes the popover normally and the next open will pick up the
+  // new desk list.
+  const popover = _container.querySelector(".desk-switcher-popover");
+  if (popover && !popover.querySelector(".desk-switcher-rename-input")) {
+    const fresh = buildPopoverBody(_state);
+    popover.innerHTML = "";
+    popover.appendChild(fresh);
+  }
 }
 
 function togglePopover(e) {
