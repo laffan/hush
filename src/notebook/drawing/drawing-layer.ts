@@ -30,6 +30,8 @@ import { createDrawingDom } from "./drawing-layer-dom";
 import { createSelectionStyleSession } from "./selection-style";
 import { createSelectionBridge } from "./selection-bridge";
 import type { DrawingLayer, EngineTool, SelectionStyleEntry, SelectionStylePatch } from "./drawing-layer-types";
+import { createPocketBlit } from "./pocket-blit";
+import { createSelectionDragController } from "./selection-drag";
 
 // Re-export so callers that imported these from drawing-layer.ts keep working.
 export type { DrawingLayer, SelectionStyleEntry, SelectionStylePatch };
@@ -135,6 +137,17 @@ export function createDrawingLayer({
     const maxFit = Math.sqrt(MAX_BACKING_PIXELS / (WORLD_SIZE * WORLD_SIZE));
     return Math.min(native, maxFit);
   }
+
+  // Pocket / done-canvas blit helpers live in pocket-blit.ts. They
+  // close over the canvases and origin offsets at factory time; DPR
+  // is read live so MAX_BACKING_PIXELS clamping moves under us.
+  // Created up here so the sync-shim's `engineAdapter` (further down)
+  // can wire stash / unstash directly into the pocket pipeline.
+  const { blitWorldRegion, blitDoneCanvasAtWorldOrigin, stashPocketRegion, unstashPocketRegion } = createPocketBlit({
+    doneCanvas, pocketStash, pocketStashCtx,
+    originX, originY, worldSize: WORLD_SIZE,
+    getDpr: currentDpr,
+  });
 
   function pointToLocal(clientPt: { x: number; y: number }): { x: number; y: number } {
     const rect = container.getBoundingClientRect();
@@ -476,144 +489,19 @@ export function createDrawingLayer({
 
   // ----- hush select-drag integration -----
   //
-  // During drag: the shim is paused so state.shapes point updates
-  // don't spam setStrokePoints on the engine. The engine's preview
-  // canvas renders the selected strokes with the current (dx, dy)
-  // transform, which is O(1) per frame instead of O(strokes × tiles).
-  let dragEngineIds: Set<number> | null = null;
-  let dragTotalDx = 0;
-  let dragTotalDy = 0;
+  // Routes DrawShape moves through the engine's previewTransform — see
+  // src/notebook/drawing/selection-drag.ts for the pause-shim, hide-
+  // chrome, commit-on-release ladder. Naive per-frame setStrokePoints
+  // craters above ~20 strokes; the controller keeps it O(1) per frame.
+  const selectionDrag = createSelectionDragController({
+    strokeEngine: strokeEngine as unknown as Parameters<typeof createSelectionDragController>[0]["strokeEngine"],
+    selectionEngine,
+    shim,
+  });
+  const beginSelectionDrag = selectionDrag.begin;
+  const updateSelectionDrag = selectionDrag.update;
+  const endSelectionDrag = selectionDrag.end;
 
-  function beginSelectionDrag(hushIds: Iterable<string>): void {
-    const ids = new Set<number>();
-    for (const hid of hushIds) {
-      const eid = shim.getEngineStrokeId(hid);
-      if (eid !== undefined) ids.add(eid);
-    }
-    if (ids.size === 0) return;
-    dragEngineIds = ids;
-    dragTotalDx = 0;
-    dragTotalDy = 0;
-    shim.pauseForDrag();
-    // Hide the engine's bbox + handles for the duration of Hush's
-    // drag; Hush owns the visual feedback while the gesture runs
-    // and the engine bbox reappears at the committed position on
-    // release. Mirrors how Hush hides its chrome during engine
-    // drags.
-    selectionEngine.beginExternalDrag();
-    // If previewTransform throws we've already paused the shim — resume
-    // so the caller's missing endSelectionDrag doesn't leave us stuck.
-    try { strokeEngine.previewTransform(dragEngineIds, { kind: "move", dx: 0, dy: 0 }); }
-    catch (e) { console.warn("beginSelectionDrag: previewTransform failed:", e); shim.resumeForDrag(); dragEngineIds = null; }
-  }
-
-  function updateSelectionDrag(totalDx: number, totalDy: number): void {
-    if (!dragEngineIds || dragEngineIds.size === 0) return;
-    dragTotalDx = totalDx;
-    dragTotalDy = totalDy;
-    strokeEngine.previewTransform(dragEngineIds, { kind: "move", dx: totalDx, dy: totalDy });
-  }
-
-  function endSelectionDrag(): void {
-    if (!dragEngineIds || dragEngineIds.size === 0) {
-      // No draws in the drag — nothing to commit but clear state anyway.
-      dragEngineIds = null;
-      selectionEngine.endExternalDrag();
-      shim.resumeForDrag();
-      return;
-    }
-    // try/finally guarantees the shim resumes even if commit / preview
-    // clear throws — leaving it paused would silently freeze every
-    // future state→engine sync.
-    try {
-      const dx = dragTotalDx, dy = dragTotalDy;
-      strokeEngine.commitTransform(dragEngineIds, (x, y) => [x + dx, y + dy]);
-      // Clear the preview back to done canvas.
-      strokeEngine.previewTransform(dragEngineIds, null);
-      // Don't bridge via onEngineStrokesTransformed here — state.shapes
-      // already has the post-drag points from hush's own per-frame
-      // updates. Resume is all we need; the shim refreshes lastSeen.
-    } finally {
-      // endExternalDrag recomputes the bbox from the engine's now-
-      // updated points so it lands on the final position.
-      selectionEngine.endExternalDrag();
-      shim.resumeForDrag();
-      dragEngineIds = null;
-      dragTotalDx = 0;
-      dragTotalDy = 0;
-    }
-  }
-
-  /** Done canvas covers world [originX..originX+WORLD_SIZE] ×
-   *  [originY..originY+WORLD_SIZE] at `currentDpr()` backing density.
-   *  World point (wx, wy) → bitmap px ((wx - originX) * dpr, ...).
-   *  Caller has already applied its own transform (e.g. pocket
-   *  translate+scale); we just need to blit to dest-world-coords
-   *  that match the bbox.
-   *
-   *  Reads from the POCKET STASH canvas. Pocketed strokes are
-   *  absent from the done canvas (engine delta #8) but present on
-   *  the stash (captured at pocket-in, before rebake). Non-pocketed
-   *  strokes are absent from the stash — only the pocket-tray
-   *  render path calls this method, and pocketed strokes are the
-   *  only ones that should appear there. */
-  function blitWorldRegion(
-    ctx: CanvasRenderingContext2D,
-    worldBbox: { minX: number; minY: number; maxX: number; maxY: number },
-  ): void {
-    const dpr = currentDpr();
-    const sx = (worldBbox.minX - originX) * dpr;
-    const sy = (worldBbox.minY - originY) * dpr;
-    const w = worldBbox.maxX - worldBbox.minX;
-    const h = worldBbox.maxY - worldBbox.minY;
-    const sw = w * dpr;
-    const sh = h * dpr;
-    if (sx + sw <= 0 || sy + sh <= 0 || sx >= pocketStash.width || sy >= pocketStash.height) return;
-    if (w <= 0 || h <= 0) return;
-    ctx.drawImage(
-      pocketStash,
-      sx, sy, sw, sh,
-      worldBbox.minX, worldBbox.minY, w, h,
-    );
-  }
-
-  function blitDoneCanvasAtWorldOrigin(ctx: CanvasRenderingContext2D): void {
-    // Done canvas covers world rect [originX..originX+WORLD_SIZE] ×
-    // [originY..originY+WORLD_SIZE]. Caller's ctx is already in world
-    // coords, so paint the canvas at (originX, originY) at world size.
-    if (doneCanvas.width === 0 || doneCanvas.height === 0) return;
-    ctx.drawImage(doneCanvas, originX, originY, WORLD_SIZE, WORLD_SIZE);
-  }
-
-  /** Copy a world-bbox region from the done canvas to the pocket
-   *  stash. Called by the sync shim right before the engine
-   *  full-rebakes and removes the stroke from done. */
-  function stashPocketRegion(worldBbox: {
-    minX: number; minY: number; maxX: number; maxY: number;
-  }): void {
-    const dpr = currentDpr();
-    const sx = Math.max(0, Math.floor((worldBbox.minX - originX) * dpr));
-    const sy = Math.max(0, Math.floor((worldBbox.minY - originY) * dpr));
-    const sw = Math.ceil((worldBbox.maxX - worldBbox.minX) * dpr);
-    const sh = Math.ceil((worldBbox.maxY - worldBbox.minY) * dpr);
-    if (sw <= 0 || sh <= 0) return;
-    if (sx >= doneCanvas.width || sy >= doneCanvas.height) return;
-    pocketStashCtx.drawImage(doneCanvas, sx, sy, sw, sh, sx, sy, sw, sh);
-  }
-
-  /** Clear a world-bbox region from the pocket stash. Called on
-   *  unpocket so the stash doesn't accumulate stale pixels. */
-  function unstashPocketRegion(worldBbox: {
-    minX: number; minY: number; maxX: number; maxY: number;
-  }): void {
-    const dpr = currentDpr();
-    const sx = Math.max(0, Math.floor((worldBbox.minX - originX) * dpr));
-    const sy = Math.max(0, Math.floor((worldBbox.minY - originY) * dpr));
-    const sw = Math.ceil((worldBbox.maxX - worldBbox.minX) * dpr);
-    const sh = Math.ceil((worldBbox.maxY - worldBbox.minY) * dpr);
-    if (sw <= 0 || sh <= 0) return;
-    pocketStashCtx.clearRect(sx, sy, sw, sh);
-  }
 
   function setTool(tool: EngineTool): void {
     // Engine's setTool handles the draw/erase/slice/select branch for

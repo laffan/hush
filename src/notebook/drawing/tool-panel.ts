@@ -74,7 +74,9 @@ export function createDrawingToolPanel(
       alignItems: "center",
       gap: "4px",
       padding: "1px 8px",
-      borderRadius: "12px",
+      // Inner pills run flush in the combined toolbar — the drag tab
+      // and rotate tab on either end carry the rounded corners.
+      borderRadius: "0",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
       zIndex: "100",
       userSelect: "none",
@@ -102,13 +104,18 @@ export function createDrawingToolPanel(
   //  src/cmd-button.js — instead of taking a slot here. Desktop users
   //  rely on the Cmd+Z keyboard shortcut.)
 
-  const slots = createBrushSlots(state, drawingLayer);
-  container.appendChild(slots.root);
-
+  // Single divider in the combined toolbar — sits at the joining
+  // point between the bottom toolbar (Background Settings is its
+  // last button) and the drawing pill (Brush 1 follows the divider).
+  // The previous brush↔eraser separator went away when the two pills
+  // merged into one continuous bar.
   const separator = h("div", {
     style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
   });
   container.appendChild(separator);
+
+  const slots = createBrushSlots(state, drawingLayer);
+  container.appendChild(slots.root);
 
   // ----- Slice / Erase sub-tools ------------------------------------
 
@@ -163,7 +170,7 @@ export function createDrawingToolPanel(
     title: "Drag toolbar",
     style: {
       position: "absolute",
-      width: "32px", height: "48px",
+      width: "32px", height: "38px",
       display: "flex",
       alignItems: "center", justifyContent: "center",
       border: "none",
@@ -190,7 +197,7 @@ export function createDrawingToolPanel(
     title: "Toggle orientation",
     style: {
       position: "absolute",
-      width: "32px", height: "48px",
+      width: "32px", height: "38px",
       display: "flex",
       alignItems: "center", justifyContent: "center",
       border: "none",
@@ -502,19 +509,23 @@ export function createDrawingToolPanel(
     // / bottom). Border-radius rounds the outside corner of each tab
     // and squares the bar-touching one.
     const tabSharedBg = "rgba(127,127,127,0.18)";
+    // Tab perpendicular dimension matches the bar's perpendicular
+    // dimension so the end-caps read as extensions of the bar:
+    //   horizontal → height 38 px (button 36 + 1 + 1 padding)
+    //   vertical   → width 52 px (button 36 + 8 + 8 padding)
     if (vertical) {
-      dragTab.style.width = "48px";
+      dragTab.style.width = "52px";
       dragTab.style.height = "32px";
       dragTab.style.borderRadius = "12px 12px 0 0";
-      toggleTab.style.width = "48px";
+      toggleTab.style.width = "52px";
       toggleTab.style.height = "32px";
       toggleTab.style.borderRadius = "0 0 12px 12px";
     } else {
       dragTab.style.width = "32px";
-      dragTab.style.height = "48px";
+      dragTab.style.height = "38px";
       dragTab.style.borderRadius = "12px 0 0 12px";
       toggleTab.style.width = "32px";
-      toggleTab.style.height = "48px";
+      toggleTab.style.height = "38px";
       toggleTab.style.borderRadius = "0 12px 12px 0";
     }
     dragTab.style.background = tabSharedBg;
@@ -542,7 +553,7 @@ export function createDrawingToolPanel(
         let topPx: number;
         if (bottomToolbar) {
           const tbRect = bottomToolbar.getBoundingClientRect();
-          topPx = tbRect.bottom - parentRect.top + 10;
+          topPx = tbRect.bottom - parentRect.top;
           container.style.left = (tbRect.left - parentRect.left) + "px";
         } else {
           topPx = parentRect.height / 2;
@@ -566,7 +577,7 @@ export function createDrawingToolPanel(
         let leftPx: number;
         if (bottomToolbar) {
           const tbRect = bottomToolbar.getBoundingClientRect();
-          leftPx = tbRect.right - parentRect.left + 10;
+          leftPx = tbRect.right - parentRect.left;
           container.style.top = `calc(20px + ${offset.y}px)`;
         } else {
           leftPx = parentRect.width / 2;

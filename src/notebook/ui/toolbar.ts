@@ -162,7 +162,9 @@ export function createToolbar(state: DrawingState): HTMLElement {
     style: {
       position: "absolute", bottom: "calc(16px + env(safe-area-inset-bottom))",
       display: "flex", alignItems: "center", gap: "4px", padding: "1px 8px",
-      borderRadius: "12px",
+      // Flush with the drawing pill on the right and the drag tab on
+      // the left — they form one continuous bar.
+      borderRadius: "0",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)", zIndex: "100", userSelect: "none",
       backdropFilter: "blur(8px)",
     },

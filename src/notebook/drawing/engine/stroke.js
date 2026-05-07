@@ -149,6 +149,8 @@ export function createStrokeEngine({
     longPressPointer: null,
     longPressMs: LONG_PRESS_MS_DEFAULT,  // Hush delta #11: configurable via setLongPressMs()
     pencilOnly: false,        // Hush delta #18: when true, only pointerType="pen" can start a stroke
+    fingerHoldPointer: null,  // Hush delta #19: pointerId of a finger waiting on the long-press timer
+                              // (pencil-only mode lets fingers hold-to-select without drawing)
     previewingIds: null,      // Set<id> currently rendered to previewCanvas
     previewingTiles: null,    // tile keys currently held out of doneCanvas
   };
@@ -325,10 +327,31 @@ export function createStrokeEngine({
       const L = activeLayer();
       if (L && (L.locked || L.hidden)) return;
     }
-    // Hush delta #18: pencil-only mode rejects every non-pen contact so
-    // iPadOS finger-touches fall through to the notebook canvas's own
-    // select / pan handling. Mouse and pen still draw.
-    if (state.pencilOnly && e.pointerType !== 'pen' && e.pointerType !== 'mouse') return;
+    // Hush delta #18: pencil-only mode rejects every non-pen contact
+    // for *drawing*. Hush delta #19: fingers can still hold-to-select
+    // — we arm the long-press timer on a finger contact without
+    // seeding an active stroke. A drift or release before the timer
+    // fires drops the gesture; on timeout the existing onLongPress
+    // handoff promotes the finger into a lasso pointer.
+    if (state.pencilOnly && e.pointerType !== 'pen' && e.pointerType !== 'mouse') {
+      if (state.tool !== 'draw' && state.tool !== 'erase' && state.tool !== 'slice') return;
+      if (e.button !== undefined && e.button !== 0) return;
+      if (e.target !== svg) return;
+      // A second finger landing while a hold is in flight is the
+      // start of a multi-touch gesture — drop the candidate hold so
+      // the gesture recogniser can claim the burst.
+      if (state.fingerHoldPointer !== null) {
+        cancelLongPress();
+        state.fingerHoldPointer = null;
+        return;
+      }
+      try { svg.setPointerCapture(e.pointerId); } catch {}
+      e.preventDefault();
+      const fp = getPoint(e);
+      state.fingerHoldPointer = e.pointerId;
+      armLongPress(fp, e.pointerId);
+      return;
+    }
     if (e.button !== undefined && e.button !== 0) return;
     // Selection chrome (handles, bbox, lasso path) lives inside the
     // SVG with `pointer-events: auto` so it stays interactive while
@@ -408,6 +431,21 @@ export function createStrokeEngine({
 
   function onPointerMove(e) {
     if (e.pointerId === state.suppressedPointerId) return;
+    // Hush delta #19: finger-hold drift cancellation. A finger that
+    // wandered too far before the long-press timer fires drops the
+    // gesture quietly — same threshold as the pen long-press.
+    if (state.fingerHoldPointer !== null && e.pointerId === state.fingerHoldPointer) {
+      if (state.longPressTimer && state.longPressAnchor) {
+        const fp = getPoint(e);
+        const ax = fp.x - state.longPressAnchor.x;
+        const ay = fp.y - state.longPressAnchor.y;
+        if (ax * ax + ay * ay > LONG_PRESS_MOVE_THRESHOLD_2) {
+          cancelLongPress();
+          state.fingerHoldPointer = null;
+        }
+      }
+      return;
+    }
     if (!state.active) return;
     // Only the pointer that started the stroke extends it. Without
     // this, a second finger landing on the canvas (e.g. during a
@@ -471,8 +509,20 @@ export function createStrokeEngine({
   function onPointerUp(e) {
     if (e.pointerId === state.suppressedPointerId) {
       state.suppressedPointerId = null;
+      // Long-press fired and the lasso took over; clear the finger
+      // tracker too in case this pointer was the held finger.
+      if (state.fingerHoldPointer === e.pointerId) state.fingerHoldPointer = null;
       svg.classList.remove('erasing');
       eraserCursor.setAttribute('visibility', 'hidden');
+      return;
+    }
+    // Hush delta #19: finger lifted before the long-press fired —
+    // drop the gesture quietly. Don't fall through to the stroke
+    // commit branch (there's no active stroke to commit).
+    if (state.fingerHoldPointer !== null && e.pointerId === state.fingerHoldPointer) {
+      cancelLongPress();
+      state.fingerHoldPointer = null;
+      try { svg.releasePointerCapture(e.pointerId); } catch {}
       return;
     }
     if (!state.active) return;
@@ -587,6 +637,13 @@ export function createStrokeEngine({
     // recogniser when a second finger lands to promote the burst into a
     // multi-touch gesture.
     cancelActiveStroke() {
+      // Hush delta #19: a second finger landing also kills any
+      // pending finger-hold so the multi-touch gesture (pan / pinch /
+      // tap) wins over the lasso handoff.
+      if (state.fingerHoldPointer !== null) {
+        cancelLongPress();
+        state.fingerHoldPointer = null;
+      }
       if (!state.active) return false;
       // For an erase/slice drag, drop the snapshot without firing — the
       // multi-touch gesture is going to undo any change the first finger did.
