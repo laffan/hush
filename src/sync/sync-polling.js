@@ -414,7 +414,33 @@ function insertDocumentNode(state, relativePath, fileId, isNotebook, name) {
 }
 
 function insertImageNode(state, filename) {
-  const images = state.fileTree.find(n => n.id === "__images__");
+  // Always-on desks: Images lives at `__images__:<deskId>` inside each
+  // desk. Resolve via state.getImagesId() so the right desk's Images
+  // folder receives the node; fall back to a recursive search when the
+  // active desk's id can't be resolved (very early boot / corrupt
+  // state) so an image still lands somewhere visible.
+  let images = null;
+  const targetId = typeof state.getImagesId === "function" ? state.getImagesId() : "__images__";
+  function findById(nodes, id) {
+    for (const n of nodes || []) {
+      if (n.id === id) return n;
+      const found = findById(n.children, id);
+      if (found) return found;
+    }
+    return null;
+  }
+  images = findById(state.fileTree, targetId);
+  if (!images) {
+    function findByPrefix(nodes) {
+      for (const n of nodes || []) {
+        if (n.id === "__images__" || n.id?.startsWith("__images__:")) return n;
+        const found = findByPrefix(n.children);
+        if (found) return found;
+      }
+      return null;
+    }
+    images = findByPrefix(state.fileTree);
+  }
   if (!images) return;
   if (!Array.isArray(images.children)) images.children = [];
   if (images.children.some(c => c.type === "image" && c.fileId === filename)) return;

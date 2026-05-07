@@ -74,6 +74,10 @@ async function downloadContent(dbx, dropboxPath, relativePath) {
  * Build a flat map of files and directories from the file tree.
  * Documents become "Name.md", Notebooks become "Name.hushnote",
  * Projects get a ".hushproject" metadata file, Folders become directories.
+ *
+ * Desks contribute their name as a top-level path segment so
+ * `Personal/Inbox/Doc.md` lands under `<deskName>/...` on Dropbox —
+ * matching what `findSyncContext` produces for new uploads.
  */
 export function buildSyncManifest(fileTree) {
   const manifest = { files: [], directories: [] };
@@ -89,6 +93,10 @@ export function buildSyncManifest(fileTree) {
         // Image filenames stay verbatim — they *are* the stable id.
         const relPath = parentPath ? `${parentPath}/${node.fileId}` : node.fileId;
         manifest.files.push({ nodeId: node.id, fileId: node.fileId, relativePath: relPath, type: "image" });
+      } else if (node.type === "desk") {
+        const dirPath = parentPath ? `${parentPath}/${name}` : name;
+        manifest.directories.push(dirPath);
+        if (node.children) walk(node.children, dirPath);
       } else if (node.type === "project") {
         // Project ordering now lives in `.hush/projects.json` rather
         // than per-folder `.hushproject` files. The folder itself is
@@ -263,20 +271,24 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
   const fileName = rawFileName.replace(/\.(md|hushnote)$/, "");
   let current = fileTree;
 
+  const isInboxNode = (n) => n.id === "__inbox__" || n.id?.startsWith("__inbox__:");
+  const isTrashNode = (n) => n.id === "__trash__" || n.id?.startsWith("__trash__:");
   for (const dirName of parts) {
     if (!dirName) continue;
-    // Match any container node by name (folder, project, or any non-document/notebook).
-    // Also match special nodes by ID as fallback (Inbox = __inbox__, Trash = __trash__).
+    // Match any container node by name (folder, project, desk, or any
+    // non-document/notebook). Also match per-desk specials by id prefix
+    // so namespaced inboxes / trashes reattach instead of spawning a
+    // duplicate "Inbox" folder beside them.
     let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
-      || (dirName === "Inbox" && current.find(n => n.id === "__inbox__"))
-      || (dirName === "Trash" && current.find(n => n.id === "__trash__"));
+      || (dirName === "Inbox" && current.find(isInboxNode))
+      || (dirName === "Trash" && current.find(isTrashNode));
     if (!folder) {
       folder = {
         id: crypto.randomUUID(), type: "folder", name: dirName,
         children: [], flagged: false,
       };
       // Insert before Trash to keep Trash last
-      const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
+      const trashIdx = current.findIndex(n => isTrashNode(n) || n.name === "Trash");
       if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
       else current.push(folder);
     }
@@ -288,7 +300,7 @@ function insertIntoTree(fileTree, relativePath, fileId, displayName) {
   if (current.some(n => n.fileId === fileId)) return;
 
   // Insert before Trash if we're at the top level
-  const trashIdx = current.findIndex(n => n.id === "__trash__" || n.name === "Trash");
+  const trashIdx = current.findIndex(n => isTrashNode(n) || n.name === "Trash");
   const node = {
     id: crypto.randomUUID(), type: isNotebook ? "notebook" : "document",
     name: displayName || fileName, fileId,
