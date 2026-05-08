@@ -251,24 +251,36 @@ export async function reconcileSync(state) {
     }
   }
 
-  // Refresh the meta files on first sync after a reconnect. Cheap (one
-  // upload each); ensures a brand-new device ends up with `.hush/*.json`
-  // populated even if the user hasn't touched anything yet this session.
-  // Desks.json is critical for newly-synced peers — without it they see
-  // Mac's `<DeskName>/Inbox/...` paths as plain top-level folders rather
-  // than desks.
-  try {
+  // Refresh the meta files on first sync after a reconnect — but only
+  // when Dropbox doesn't already have a copy. Without this guard the
+  // second device to activate sync overwrites the first's `.hush/*.json`
+  // with its own (less complete) state, then echo-suppresses its own
+  // upload when the cursor seed fetches it back. Result: the publisher's
+  // payload never reaches the consumer, and a desk Mac created looks
+  // like a stray top-level folder on iPad. Push-only-if-absent is the
+  // bootstrap path; subsequent edits push via createDesk / renameDesk /
+  // applyDesksFile's merge-back.
+  await pushMetaIfAbsent(state, dbx, basePath, ".hush/desks.json", async () => {
     const { pushDesksToDropbox } = await import("./desks-sync.js");
-    await pushDesksToDropbox(state);
-  } catch (_) {}
-  try {
+    return pushDesksToDropbox(state);
+  });
+  await pushMetaIfAbsent(state, dbx, basePath, ".hush/projects.json", async () => {
     const { pushProjectsToDropbox } = await import("./project-sync.js");
-    await pushProjectsToDropbox(state);
-  } catch (_) {}
-  try {
+    return pushProjectsToDropbox(state);
+  });
+  await pushMetaIfAbsent(state, dbx, basePath, ".hush/styles.json", async () => {
     const { pushStylesToDropbox } = await import("./style-sync.js");
-    await pushStylesToDropbox(state);
-  } catch (_) {}
+    return pushStylesToDropbox(state);
+  });
+}
+
+async function pushMetaIfAbsent(state, dbx, basePath, relPath, pushFn) {
+  try {
+    const fullPath = basePath ? `${basePath}/${relPath}` : `/${relPath}`;
+    const meta = await dbx.getMetadata(fullPath).catch(() => null);
+    if (meta) return; // Dropbox already has it — let the cursor seed apply it.
+    await pushFn();
+  } catch (_) { /* push best-effort */ }
 }
 
 // Note: `checkDropboxChanges` and `diffDropboxSync` were removed. They've

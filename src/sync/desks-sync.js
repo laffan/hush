@@ -144,6 +144,16 @@ export async function applyDesksFile(state, payload) {
   if (treeChanged) await state.saveFileTree();
   state.emit("desks-changed");
   state.emit("files-changed");
+
+  // Merge-back: if our local list ended up larger than what Dropbox sent
+  // (we had desks the sender hadn't published yet, e.g. simultaneous
+  // first-activation race), push the merged list back so peers see the
+  // full union. Without this, a desk created on the second-activated
+  // device would never reach the first.
+  if (desks.length > incomingDesks.length) {
+    pushDesksToDropbox(state).catch((e) => console.warn("desks: merge-back push failed:", e));
+  }
+
   return { applied: 1 };
 }
 
