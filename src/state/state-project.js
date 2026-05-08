@@ -53,7 +53,10 @@ export async function openProject(state, projectId) {
   } else { ordered = state.projectDocIds.map(fid => state.files.find(e => e.id === fid)).filter(Boolean); }
   if (state.editor) state.editor.setContent(ordered.map(e => e.content).join(SEPARATOR));
   state.emit("file-opened");
-  state.updateSettings({ lastProjectId: projectId, lastFileId: null });
+  // Clear lastNotebookId so a notebook the user had open before
+  // switching to this project doesn't reopen on next launch (init
+  // checks lastNotebookId before lastProjectId).
+  state.updateSettings({ lastProjectId: projectId, lastFileId: null, lastNotebookId: null });
 }
 
 export async function saveProjectContent(state) {

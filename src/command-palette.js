@@ -190,7 +190,9 @@ function buildCommands(state) {
       } },
     { id: "style-unlock", label: "Unlock style from document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !getLockedStyleId(s),
-      action: async (s) => { await setLockedStyleId(s, null); } },
+      // After clearing the lock, fall back to the active desk's saved
+      // style (file-opened does the same on switches; here we don't fire it).
+      action: async (s) => { await setLockedStyleId(s, null); (await import("./style-application.js")).applyDeskGlobalStyle(s); } },
     { id: "zotero", label: "Zotero: Insert reference", icon: icons.zotero, shortcutKey: "shortcutZotero", ctx: "shared",
       action: async (s) => {
         const { openZoteroModal } = await import("./zotero.js");

@@ -4,8 +4,17 @@
  * AppState instance as the first argument.
  */
 
-import { findNode, findNodeByFileId, insertNode, uniqueChildName } from "./tree-helpers.js";
+import { findNode, findNodeByFileId, insertNode, removeNode, uniqueChildName } from "./tree-helpers.js";
 import * as _naming from "./state-naming.js";
+
+/** A doc is "empty Untitled" when it carries the placeholder name and
+ *  has no actual content. Such docs are user noise — created when the
+ *  app spins up a fresh slot but the user never typed into it — so we
+ *  skip saving / syncing them and prune any survivors at boot. */
+function isEmptyUntitled(name, content) {
+  if (name && name !== "Untitled") return false;
+  return !content || !content.trim();
+}
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -27,6 +36,11 @@ export async function saveCurrentFile(state) {
   if (state._isPullLockedForCurrent()) return;
   const content = state.editor.getContent();
   state.dirty = false;
+  // Empty Untitled docs aren't worth saving or syncing — the user never
+  // gave them a title or content, so writing them to disk just produces
+  // ghost files that haunt the next session.
+  const node = findNodeByFileId(state.fileTree, state.currentFileId);
+  if (isEmptyUntitled(node?.name, content)) return;
   if (IS_TAURI) {
     try {
       await tauriInvoke("save_file", { id: state.currentFileId, content });
@@ -87,8 +101,13 @@ export async function newFile(state, parentId = null, opts = {}) {
   const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
   insertNode(state.fileTree, treeNode, targetParent, findNode);
   await state.saveFileTree();
-  // Propagate new file to external filesystem if inside a synced folder
-  state.syncCreateFile(treeNode.id, fileId, initialContent);
+  // Propagate new file to external filesystem if inside a synced folder.
+  // Brand-new empty Untitled docs are skipped so they don't pollute Dropbox
+  // until the user actually puts something in them; the first non-empty
+  // save will create the remote file via syncFileToExternal.
+  if (!isEmptyUntitled(initialName, initialContent)) {
+    state.syncCreateFile(treeNode.id, fileId, initialContent);
+  }
   if (openImmediately) {
     state.currentFileId = fileId;
     state.currentProjectId = null;
@@ -124,7 +143,41 @@ export async function openFile(state, id) {
     if (file) { state.currentFileId = file.id; if (state.editor) state.editor.setContent(file.content); }
   }
   state.emit("file-opened");
-  state.updateSettings({ lastFileId: state.currentFileId, lastProjectId: null });
+  // Clear the notebook + project pointers so the "restore last file"
+  // branch on next launch picks the doc, not whichever notebook the
+  // user happened to have open before they switched away. (init reads
+  // lastNotebookId first; without this clear, a stale id wins.)
+  state.updateSettings({ lastFileId: state.currentFileId, lastProjectId: null, lastNotebookId: null });
+}
+
+/** Walk the loaded files + tree and drop any empty Untitled docs that
+ *  survived a previous session. Called once during init() after the tree
+ *  has been hydrated so the next "restore last file" branch never lands
+ *  on a placeholder doc the user never used. */
+export async function pruneEmptyUntitled(state) {
+  if (!Array.isArray(state.files) || state.files.length === 0) return;
+  const targets = [];
+  for (const file of state.files) {
+    if (!isEmptyUntitled(file?.name, file?.content)) continue;
+    const node = findNodeByFileId(state.fileTree, file.id);
+    targets.push({ fileId: file.id, nodeId: node?.id || null });
+  }
+  if (!targets.length) return;
+  for (const { fileId, nodeId } of targets) {
+    if (IS_TAURI) {
+      try { await tauriInvoke("delete_file", { id: fileId }); }
+      catch (e) { console.warn("prune empty Untitled failed:", e); }
+    }
+    if (nodeId) removeNode(state.fileTree, nodeId);
+  }
+  if (IS_TAURI) {
+    try { state.files = await tauriInvoke("list_files"); }
+    catch (_) {}
+  } else {
+    state.files = state.files.filter((f) => !targets.some((t) => t.fileId === f.id));
+    state._saveFilesLocal();
+  }
+  try { await state.saveFileTree(); } catch (_) {}
 }
 
 export async function deleteFile(state, id) {

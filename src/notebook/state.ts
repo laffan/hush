@@ -978,15 +978,17 @@ export class DrawingState extends EventTarget {
             this.selectedIds = new Set(groupMembers);
             this.notify("selectedIds");
           }
-          this._isDragging = true;
-          this._dragStart = canvasPt;
-          this._dragOrigin = canvasPt;
-          // Normal drag (not from pocket): fire the hook right away.
-          if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
-          this._dragStartFired = true;
-          this._setupDragAreaResize();
-          this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
 
+          // Option-drag clone runs BEFORE the drag-start hook, not
+          // after. The sync-shim's `pauseForDrag` (wired into
+          // onShapeDragStart) freezes the state→engine diff for the
+          // duration of the drag — so any DrawShapes pushed into
+          // `state.shapes` after that pause are invisible to the
+          // bake engine until the drag ends. The result the user
+          // saw was a single moving selection bbox (rendered from
+          // shape points by the regular renderer) with no actual
+          // strokes underneath. Clone first, swap the selection,
+          // then let the drag begin with the new shape ids.
           if (e.altKey) {
             const currentSelected = this.selectedIds.has(hitShape.id) ? this.selectedIds : new Set(groupMembers);
             const clones: Shape[] = [];
@@ -1005,6 +1007,15 @@ export class DrawingState extends EventTarget {
             this.notify("shapes");
             this.notify("selectedIds");
           }
+
+          this._isDragging = true;
+          this._dragStart = canvasPt;
+          this._dragOrigin = canvasPt;
+          // Normal drag (not from pocket): fire the hook right away.
+          if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
+          this._dragStartFired = true;
+          this._setupDragAreaResize();
+          this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
         }
       } else {
         if (!e.shiftKey) { this.selectedIds = new Set(); this.notify("selectedIds"); }
@@ -1380,7 +1391,14 @@ export class DrawingState extends EventTarget {
             if (s.pocketed) continue;
             if (!this.flowchart.isFlowable(s)) continue;
             if (s.groupId && droppedGroupIds.has(s.groupId)) continue;
-            const b = getShapeBounds(s, this.fontFamily);
+            // Grouped shapes (stroke clusters in particular) test
+            // against the group's union, not the individual member's
+            // own bounds. Without this, a drop inside a sparse stroke
+            // group's bounding box could miss every stroke and find
+            // no target. Non-grouped shapes use their own bounds.
+            const b = s.groupId
+              ? this.unionGroupBounds(s)
+              : getShapeBounds(s, this.fontFamily);
             if (
               dropPt.x >= b.minX &&
               dropPt.x <= b.maxX &&
@@ -1390,6 +1408,22 @@ export class DrawingState extends EventTarget {
               target = s;
               break;
             }
+          }
+          // For stroke groups (and any other grouped shape), the
+          // flowchart's logical "node" is the *group*, not the
+          // individual stroke under the cursor. Promote the target
+          // to the group's lead member so the resulting edge is
+          // stable: future renders anchor against the union via
+          // unionGroupBounds, and removing any one stroke from the
+          // cluster won't orphan the arrow because the lead is the
+          // last (topmost) stroke in the group's draw order.
+          if (target && target.groupId) {
+            const groupId = target.groupId;
+            let lead: Shape | null = null;
+            for (let i = this.shapes.length - 1; i >= 0; i--) {
+              if (this.shapes[i].groupId === groupId) { lead = this.shapes[i]; break; }
+            }
+            if (lead) target = lead;
           }
         }
 

@@ -155,6 +155,10 @@ export class AppState {
         this.fileTree = await tauriInvoke("get_file_tree");
         await _desks.migrateLegacyTreeIfNeeded(this);
         this.ensureSpecialNodes();
+        // Drop any empty Untitled docs that survived the last session
+        // (created by `newFile` but never typed into). Runs before the
+        // "restore last file" branch so we don't land on a ghost.
+        await _files.pruneEmptyUntitled(this);
         await this.saveFileTree();
 
         // Restore session state from settings
@@ -234,6 +238,8 @@ export class AppState {
     if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
     _desks.migrateLegacyTreeIfNeeded(this).catch(() => {});
     this.ensureSpecialNodes();
+    // Drop any empty Untitled docs that survived the last session.
+    _files.pruneEmptyUntitled(this).catch(() => {});
     this._saveTreeLocal();
     if (this.files.length > 0) this.currentFileId = this.files[0].id;
     else this._createLocalFile();

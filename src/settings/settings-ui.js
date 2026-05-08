@@ -49,8 +49,7 @@ export async function openSettingsWindow(state) {
 async function openSettingsModal(state) {
   // If already open, focus it
   if (settingsModal) {
-    settingsModal.remove();
-    settingsModal = null;
+    closeSettingsModal();
     return;
   }
 
@@ -75,18 +74,31 @@ async function openSettingsModal(state) {
   document.body.appendChild(modal);
   settingsModal = modal;
 
-  // Close button
-  modal.querySelector(".settings-modal-close").addEventListener("click", () => {
-    modal.remove();
+  // Block keyboard / pointer routing into the editor while the modal is
+  // up. Without this, hardware-keyboard typing on iPad reaches the
+  // CodeMirror editor that's still focused beneath the backdrop.
+  const appRoot = document.getElementById("app");
+  if (appRoot) appRoot.setAttribute("inert", "");
+  if (state?.editor?.view?.contentDOM) {
+    try { state.editor.view.contentDOM.blur(); } catch (_) {}
+  }
+  if (document.activeElement instanceof HTMLElement) {
+    try { document.activeElement.blur(); } catch (_) {}
+  }
+
+  function closeSettingsModal() {
+    if (!settingsModal) return;
+    settingsModal.remove();
     settingsModal = null;
-  });
+    if (appRoot) appRoot.removeAttribute("inert");
+  }
+
+  // Close button
+  modal.querySelector(".settings-modal-close").addEventListener("click", closeSettingsModal);
 
   // Close on backdrop click
   modal.addEventListener("click", (e) => {
-    if (e.target === modal) {
-      modal.remove();
-      settingsModal = null;
-    }
+    if (e.target === modal) closeSettingsModal();
   });
 
   // Render settings into the modal root

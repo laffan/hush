@@ -474,6 +474,13 @@ pub struct ShaderLayer {
     pub layer_id: Option<String>,
     #[serde(default)]
     pub intensity: Option<f64>,
+    /// Per-layer knob values keyed by the layer's settings-schema id
+    /// (e.g. `glow`, `scanlineColor`). Serde silently drops fields
+    /// that aren't on the struct, so without this slot the modal's
+    /// slider/color pickers were round-tripping back to the layer
+    /// defaults on every save/load cycle.
+    #[serde(default)]
+    pub options: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

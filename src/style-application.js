@@ -58,24 +58,64 @@ export function applyDeskGlobalStyle(state) {
 export function applyActiveStyle(state) {
   const styleId = state.settings.activeStyleId;
   if (!styleId) {
-    // Default style — use standard editor settings, remove style overrides
-    document.documentElement.style.removeProperty("--style-bg");
-    document.documentElement.style.removeProperty("--style-fg");
-    document.documentElement.style.removeProperty("--style-cursor");
-    document.documentElement.style.removeProperty("--selection");
-    document.body.classList.remove("style-active");
-    // Clear editor overrides
-    const cmEditor = document.querySelector('.cm-editor');
-    if (cmEditor) {
-      cmEditor.style.backgroundColor = '';
-      cmEditor.style.color = '';
+    // Default style — use standard editor settings, then layer the
+    // user's per-appearance Default-style colour overrides on top.
+    // Resolve which palette to read first so we know whether each
+    // override (bg/fg/cursor/selection) has a value or should fall
+    // back to the resolved theme's stock colour.
+    let appearance = state.settings.appearance || "dark";
+    if (appearance === "auto") {
+      appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
-    // Re-apply standard settings
+    const defaultColors = appearance === "dark"
+      ? (state.settings.defaultDarkColors || {})
+      : (state.settings.defaultLightColors || {});
+
+    document.body.classList.remove("style-active");
+    const cmEditor = document.querySelector('.cm-editor');
+    // Re-apply standard settings (theme + font + size live here)
     applyAppearance(state.settings.appearance || "dark");
     applyFontFamily(state.settings.fontFamily);
     document.documentElement.style.setProperty("--font-size", state.settings.fontSize + "px");
     document.documentElement.style.setProperty("--line-height", state.settings.lineHeight);
     state.emit("theme-changed");
+
+    // Background override — fall back to the resolved theme's bg.
+    if (defaultColors.bg) {
+      document.documentElement.style.setProperty("--bg", defaultColors.bg);
+      document.documentElement.style.setProperty("--style-bg", defaultColors.bg);
+      if (cmEditor) cmEditor.style.backgroundColor = defaultColors.bg;
+    } else {
+      const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
+      const themeBg = themeBackgrounds[themeId];
+      if (themeBg) document.documentElement.style.setProperty("--bg", themeBg);
+      document.documentElement.style.removeProperty("--style-bg");
+      if (cmEditor) cmEditor.style.backgroundColor = '';
+    }
+    // Foreground override — scoped to the editor (sidebar / panels
+    // keep the global --fg) so it matches the user-style branch.
+    if (defaultColors.fg) {
+      document.documentElement.style.setProperty("--style-fg", defaultColors.fg);
+      if (cmEditor) cmEditor.style.color = defaultColors.fg;
+      if (!defaultColors.cursor) {
+        document.documentElement.style.setProperty("--cursor", defaultColors.fg);
+      }
+    } else {
+      document.documentElement.style.removeProperty("--style-fg");
+      if (cmEditor) cmEditor.style.color = '';
+    }
+    if (defaultColors.cursor) {
+      document.documentElement.style.setProperty("--cursor", defaultColors.cursor);
+      document.documentElement.style.setProperty("--style-cursor", defaultColors.cursor);
+    } else {
+      document.documentElement.style.removeProperty("--style-cursor");
+    }
+    if (defaultColors.selection) {
+      document.documentElement.style.setProperty("--selection", defaultColors.selection);
+    } else {
+      document.documentElement.style.removeProperty("--selection");
+    }
+
     updatePrivateBoxColor(state);
     // Default style's shader lives at the top level of AppSettings.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });

@@ -321,7 +321,15 @@ export function bindInputEvents(
     if (!cd) return;
 
     const rawText = extractTextFromDataTransfer(cd);
-    const env = tryDecode(rawText) ?? tryDecode((window as any).__hushNotebookClipboard ?? "");
+    // The window stash is a same-session safety net for when the OS
+    // clipboard write was rejected. If the OS clipboard now carries
+    // *anything* — even plain text from another app — that's the
+    // real payload and the stash must yield. Otherwise an in-app copy
+    // followed by an external copy would still paste the in-app
+    // shapes, because `tryDecode(rawText)` returns null for the
+    // external text and the `??` would fall straight through to the
+    // stale envelope.
+    const env = tryDecode(rawText) ?? (rawText ? null : tryDecode((window as any).__hushNotebookClipboard ?? ""));
     if (env) {
       markPasted();
       state.pasteEnvelope(env);
@@ -408,9 +416,12 @@ async function asyncCanvasPaste(state: DrawingState) {
 
   const text = await readClipboardText();
 
-  // Same-session fallback: if the OS clipboard is empty (or stripped the
-  // JSON), use the stash we wrote on copy.
-  const env = tryDecode(text) ?? tryDecode((window as any).__hushNotebookClipboard ?? "");
+  // Same-session fallback: only consult the stash when the OS clipboard
+  // truly returned nothing. Any non-empty text wins — without this gate
+  // an in-app copy persisted across subsequent external copies (the
+  // foreign text decoded as `null`, and the `??` fell straight through
+  // to the stale shape envelope).
+  const env = tryDecode(text) ?? (text ? null : tryDecode((window as any).__hushNotebookClipboard ?? ""));
   if (env) {
     markPasted();
     state.pasteEnvelope(env);
