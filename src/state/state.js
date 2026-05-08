@@ -425,6 +425,12 @@ export class AppState {
   getActiveDesk() { return _desks.getActiveDesk(this); }
   getDeskGlobalStyleId() { return _desks.getDeskGlobalStyleId(this); }
   setDeskGlobalStyleId(id) { return _desks.setDeskGlobalStyleId(this, id); }
+  // Per-desk "last opened file" — see state-desks.js. Each open path
+  // (openFile / openNotebook) records into the active desk; switching
+  // desks restores the matching file via main.js's active-desk-changed
+  // handler.
+  getDeskLastFile(deskId) { return _desks.getDeskLastFile(this, deskId); }
+  recordActiveDeskLastFile(fileId, type) { return _desks.recordActiveDeskLastFile(this, fileId, type); }
   async toggleMinimap() { const n = !this.settings?.minimapVisible; await this.updateSettings({ minimapVisible: n }); this.emit("minimap-visibility-changed", n); }
   async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }

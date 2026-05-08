@@ -118,7 +118,12 @@ export async function newFile(state, parentId = null, opts = {}) {
     }
   }
   state.emit("files-changed");
-  if (openImmediately) state.emit("file-opened");
+  if (openImmediately) {
+    state.emit("file-opened");
+    // Record into the active desk so a desk switch round-trips back
+    // to this brand-new doc (matches the openFile path).
+    state.recordActiveDeskLastFile(fileId, "document");
+  }
   return { fileId, name: treeNode.name };
 }
 
@@ -148,6 +153,9 @@ export async function openFile(state, id) {
   // user happened to have open before they switched away. (init reads
   // lastNotebookId first; without this clear, a stale id wins.)
   state.updateSettings({ lastFileId: state.currentFileId, lastProjectId: null, lastNotebookId: null });
+  // Per-desk last-file: switching back to this desk later should land
+  // here, not on the desk's first inbox item. Synced via desks.json.
+  state.recordActiveDeskLastFile(state.currentFileId, "document");
 }
 
 /** Walk the loaded files + tree and drop any empty Untitled docs that
@@ -249,6 +257,9 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
       const nbNode = findNodeByFileId(state.fileTree, result.file.id);
       if (nbNode) state.syncCreateFile(nbNode.id, result.file.id, initialContent);
       if (openImmediately) await state.openNotebook(result.file.id);
+      // openNotebook records via recordActiveDeskLastFile; nothing to
+      // do here when openImmediately is false (the notebook isn't the
+      // user's "current" file in that case).
       return { fileId: result.file.id, name: result.node?.name || finalName };
     } catch (e) { console.error("Create notebook failed:", e); }
   }
@@ -271,4 +282,5 @@ export async function openNotebook(state, fileId) {
 
   state.emit("notebook-open", fileId);
   state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId });
+  state.recordActiveDeskLastFile(fileId, "notebook");
 }

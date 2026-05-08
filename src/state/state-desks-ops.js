@@ -276,3 +276,56 @@ export function enterCollapseDeskPicker(palette, state, { fallbackIcon } = {}) {
   }));
   palette.setItems(items, "Collapse desk into folder…");
 }
+
+/** Drive the editor view to the desk's last-opened file when the user
+ *  switches desks. Resolution priority: the per-desk last-file slot
+ *  (synced via desks.json), then the first doc/notebook in that desk's
+ *  Inbox, then a fresh empty doc in the Inbox. Without this, the active
+ *  editor would keep showing the previous desk's file after a switch. */
+export async function openLastFileForDesk(state, deskId) {
+  const tree = state.fileTree || [];
+  const desk = tree.find((n) => n.type === "desk" && n.id === deskId);
+  if (!desk) return;
+
+  // 1. Try the saved per-desk last file. Verify it still exists in this
+  //    desk's subtree — a remote rename / delete or a sync-translated
+  //    payload that resolved to a file outside the desk shouldn't drag
+  //    the editor away from the desk's own content.
+  const last = state.getDeskLastFile?.(deskId);
+  if (last?.fileId && last?.type) {
+    const node = findNodeInSubtree(desk.children, (n) =>
+      (n.type === "document" || n.type === "notebook") && n.fileId === last.fileId
+    );
+    if (node) {
+      if (last.type === "notebook") await state.openNotebook(node.fileId);
+      else await state.openFile(node.fileId);
+      return;
+    }
+  }
+
+  // 2. First child of the desk's Inbox.
+  const inboxId = `__inbox__:${desk.id}`;
+  const inbox = (desk.children || []).find((n) => n.id === inboxId);
+  const inboxKid = (inbox?.children || []).find((n) => n.type === "document" || n.type === "notebook");
+  if (inboxKid?.fileId) {
+    if (inboxKid.type === "notebook") await state.openNotebook(inboxKid.fileId);
+    else await state.openFile(inboxKid.fileId);
+    return;
+  }
+
+  // 3. Empty desk — spin a fresh doc in the inbox so the editor lands
+  //    on something rather than continuing to show the previous desk's
+  //    file. Mirrors the boot fallback in init().
+  await state.newFile(inboxId);
+}
+
+/** Walk a tree subtree (depth-first) for the first node matching `test`. */
+function findNodeInSubtree(nodes, test) {
+  if (!Array.isArray(nodes)) return null;
+  for (const n of nodes) {
+    if (test(n)) return n;
+    const child = findNodeInSubtree(n.children, test);
+    if (child) return child;
+  }
+  return null;
+}

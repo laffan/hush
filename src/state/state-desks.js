@@ -449,6 +449,36 @@ export async function setActiveDesk(state, deskId) {
   state.emit("active-desk-changed", deskId);
 }
 
+/** Per-desk "last-opened file" slot. Lives on `desksMeta[deskId]` so
+ *  it round-trips through `.hush/desks.json` like the per-desk style
+ *  choice — `desks-sync.js` translates the local fileId ↔ Dropbox
+ *  remote_id at serialize / apply time. Type routes the open path
+ *  (document / notebook); projects stay local-per-device since their
+ *  cross-device identity is path-based and out of scope here. */
+export function getDeskLastFile(state, deskId) {
+  const meta = state.settings?.desksMeta || {};
+  const entry = deskId ? meta[deskId] : null;
+  if (!entry) return null;
+  const fileId = entry.lastFileId || null;
+  const type = entry.lastFileType || null;
+  if (!fileId || !type) return null;
+  return { fileId, type };
+}
+
+/** Update the active desk's last-file slot and push the change through
+ *  desks.json so other devices catch up. No-ops when there's no active
+ *  desk yet (e.g. brand-new install before the migration runs). */
+export async function recordActiveDeskLastFile(state, fileId, type) {
+  const desk = getActiveDesk(state);
+  if (!desk) return;
+  const meta = { ...(state.settings?.desksMeta || {}) };
+  const existing = meta[desk.id] || {};
+  if (existing.lastFileId === fileId && existing.lastFileType === type) return;
+  meta[desk.id] = { ...existing, lastFileId: fileId || null, lastFileType: fileId ? type : null };
+  await state.updateSettings({ desksMeta: meta });
+  pushDesksJson(state);
+}
+
 /** Read the active desk's saved global style id. Falls back to the
  *  legacy top-level `settings.globalStyleId` when no per-desk choice
  *  exists yet (first run after the per-desk migration). */

@@ -3,23 +3,70 @@
  *
  * Carries the synced part of the Desks data model across devices:
  *   - the `desks` list ({ id, name, createdAt })
- *   - per-desk metadata (`desksMeta` — active style, desktop slot,
- *     persisted panes once those become per-desk in a follow-up)
+ *   - per-desk metadata (`desksMeta` — active style, last-opened file)
  *   - the legacy `useDesks` flag, kept in the payload only so older
  *     peers that still gate on it parse modern files cleanly. Always
  *     emitted as `true`; ignored on apply.
  *
- * Local-only state (the active desk id, last-opened file per desk)
- * stays out of this payload — every device picks its own active desk.
+ * The active desk id is intentionally local-per-device.
  *
- * Apply just merges the incoming desk list into local settings and
- * runs the local wrap if the tree happens to be flat (e.g. an older
- * peer published a `useDesks: false` payload before this device
- * migrated). The unwrap branch is gone — desks are structural now.
+ * Per-desk last-opened file: stored locally as `lastFileId` (the
+ * device's own UUID) but published on the wire as `lastFileRemoteId`
+ * (Dropbox's cross-device-stable id). `metaToWire` does the translate
+ * on serialize; the apply branch resolves the remote id back to a
+ * local fileId via `find_synced_file_by_remote_id`. Files without a
+ * remote_id (Local Sync, never-synced) ride as null and the receiving
+ * device falls back to "first inbox item" when the user switches in.
+ *
+ * Apply merges the incoming desk list into local settings and runs
+ * the local wrap if the tree happens to be flat (e.g. an older peer
+ * published a `useDesks: false` payload before this device migrated).
  */
 
 const DESKS_FILENAME = "desks.json";
 const FORMAT_VERSION = 1;
+
+async function tauriInvoke(cmd, args) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke(cmd, args);
+}
+
+/** Translate a local fileId → its Dropbox `remote_id` for the wire
+ *  format. Returns null when the file isn't tracked in the sync map
+ *  (Local Sync, never-synced) — those entries can't be resolved on
+ *  the receiving device, so the slot rides as null. */
+async function fileIdToRemoteId(fileId) {
+  if (!fileId) return null;
+  try {
+    const info = await tauriInvoke("get_sync_file_info", { internalId: fileId });
+    return info?.remoteId || null;
+  } catch (_) { return null; }
+}
+
+/** Build the per-desk meta payload for the wire. The local format
+ *  carries `lastFileId` (a per-device UUID); the wire format carries
+ *  `lastFileRemoteId` (Dropbox-stable). `lastFileType` rides through
+ *  unchanged so the receiving device knows which open path to take.
+ *  We also keep the local `lastFileId` in the wire so a peer that hits
+ *  back-to-back syncs without translating gets a sane fallback, but
+ *  the apply path always prefers `lastFileRemoteId` when present. */
+async function metaToWire(meta) {
+  const out = {};
+  for (const [deskId, entry] of Object.entries(meta || {})) {
+    if (!entry || typeof entry !== "object") continue;
+    const wire = { ...entry };
+    if (entry.lastFileId) {
+      const remote = await fileIdToRemoteId(entry.lastFileId);
+      if (remote) wire.lastFileRemoteId = remote;
+      // Strip the device-local lastFileId from the published payload —
+      // peer's fileId map doesn't know our UUIDs and a stale value
+      // there would only confuse the apply branch.
+      delete wire.lastFileId;
+    }
+    out[deskId] = wire;
+  }
+  return out;
+}
 
 export async function serializeDesks(state) {
   const s = state?.settings || {};
@@ -28,7 +75,7 @@ export async function serializeDesks(state) {
     version: FORMAT_VERSION,
     useDesks: true,
     desks: Array.isArray(s.desks) ? s.desks : [],
-    desksMeta: s.desksMeta || {},
+    desksMeta: await metaToWire(s.desksMeta || {}),
     updatedAt: Math.floor(Date.now() / 1000),
   }, null, 2);
 }
@@ -130,8 +177,26 @@ export async function applyDesksFile(state, payload) {
     const oldId = [...renamedDeskIds.entries()].find(([_, v]) => v === id)?.[0];
     const a = localMeta[id] || (oldId ? localMeta[oldId] : undefined);
     const b = remoteMeta[id];
-    if (a && b) mergedMeta[id] = { ...a, ...b };
-    else if (a || b) mergedMeta[id] = a || b;
+    let merged;
+    if (a && b) merged = { ...a, ...b };
+    else if (a || b) merged = a || b;
+    if (merged) {
+      // Translate the wire's `lastFileRemoteId` back to a local fileId.
+      // Resolution happens via the sync map, so untracked files (Local
+      // Sync, never-synced) leave the slot null and the receiving
+      // device falls back to "first inbox item" on a desk switch.
+      // Important: only override the local `lastFileId` when the
+      // resolution succeeds — a peer with no remote_id for its choice
+      // shouldn't blow away our resolvable choice.
+      if (merged.lastFileRemoteId) {
+        let info = null;
+        try { info = await tauriInvoke("find_synced_file_by_remote_id", { remoteId: merged.lastFileRemoteId }); }
+        catch (_) { /* ignore */ }
+        if (info?.internalId) merged.lastFileId = info.internalId;
+        else if (a?.lastFileId) merged.lastFileId = a.lastFileId;
+      }
+      mergedMeta[id] = merged;
+    }
   }
 
   await state.updateSettings({
