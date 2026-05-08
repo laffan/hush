@@ -30,7 +30,7 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 - **Pin** — Keeps a pane visible across document switches (blue border). Unpinning returns it to its original document.
 - **Duplicate** — Creates a copy of a pane owned by the current document. Useful for bringing a pinned reference into a new context.
 - **Real-time sync** — Edits in a pane propagate to the main editor if the same file is open, and vice versa.
-- **Locked styles** — When a document or notebook has "Lock Style to Document" enabled, any pane showing that file adopts that locked style (theme, font, sizing) instead of the session's active style.
+- **Locked styles** — Run **Lock style to document** from the command palette on any doc or notebook to pin its current style; from then on, panes showing that file adopt the locked style (theme, font, sizing) instead of the session's active style. **Unlock style from document** clears it.
 - **Cross-device sync** — Pane size, anchoring, collapsed/pinned state, and the editor scroll position round-trip to other devices via `.hush/panes.json`. Position (x/y) stays per-device since viewports differ; anything that lands off-screen on a smaller display is nudged back into view.
 
 **Desktop** — Pin one doc or notebook as the "desktop": a clickable thumbnail at the bottom of the files sidebar that always reflects its latest content. Click to open. Two command-palette entries manage the slot — **Use this file as desktop** assigns the currently-open file, **Clear desktop** clears it. The desktop is synced across devices.

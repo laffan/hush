@@ -44,13 +44,6 @@ export function renderGeneralTab(settings) {
   const s = settings;
   return `
     <div class="settings-section">
-      <h2>Appearance</h2>
-      <div class="settings-row">
-        <label>Color scheme</label>
-        <select id="setting-appearance">${["light","dark","auto"].map(v => `<option value="${v}" ${s.appearance === v ? "selected" : ""}>${v === "auto" ? "Automatic" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select>
-      </div>
-    </div>
-    <div class="settings-section">
       <h2>Visibility</h2>
       <div class="settings-row">
         <label>App visibility</label>

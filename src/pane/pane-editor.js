@@ -71,9 +71,10 @@ export function createPaneEditor(container, appState, onChange, opts) {
     destroy: () => view.destroy(),
     /** Reconfigure theme from the given settings. When `lockedStyleId` is
      *  provided, the pane uses that style instead of the session's active
-     *  style — this is how panes showing a document with "Lock Style to
-     *  Document" enabled end up with the locked style even when the main
-     *  editor is showing something else. */
+     *  style — this is how panes showing a document with a locked style
+     *  (set via the command palette's "Lock style to document" entry)
+     *  end up with that style even when the main editor is showing
+     *  something else. */
     reconfigureTheme: (settings, lockedStyleId) => {
       const effective = lockedStyleId
         ? resolveLockedStyleSettings(settings, lockedStyleId)

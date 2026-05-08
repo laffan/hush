@@ -13,6 +13,7 @@ import { getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
 import { openInNewWindow } from "./multi-window.js";
+import { getLockedStyleId, setLockedStyleId } from "./sidebar/styles-panel.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
@@ -181,6 +182,15 @@ function buildCommands(state) {
       action: (s) => s.emit("toggle-left-panel") },
     { id: "styles", label: "Styles", icon: icons.styles, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-styles-panel") },
+    { id: "style-lock", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),
+      action: async (s) => {
+        const activeId = s.settings.activeStyleId || null;
+        await setLockedStyleId(s, activeId || "__default__");
+      } },
+    { id: "style-unlock", label: "Unlock style from document", icon: icons.styles, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.currentFileId || !getLockedStyleId(s),
+      action: async (s) => { await setLockedStyleId(s, null); } },
     { id: "zotero", label: "Zotero: Insert reference", icon: icons.zotero, shortcutKey: "shortcutZotero", ctx: "shared",
       action: async (s) => {
         const { openZoteroModal } = await import("./zotero.js");

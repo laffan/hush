@@ -188,7 +188,6 @@ function bindAll() {
 
   // Editor tab — font/theme/size/line-height live in the Styles sidebar now;
   // only sticky headers, panes, typewriter and footnotes remain here.
-  bindSelect("setting-appearance", "appearance");
   bindCheckbox("setting-make-space-for-panes", "makeSpaceForPanes");
   bindSelect("setting-make-space-direction", "makeSpaceDirection");
   bindCheckbox("setting-sticky-headers", "stickyHeaders");

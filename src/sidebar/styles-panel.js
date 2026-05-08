@@ -1,6 +1,8 @@
 /**
- * Styles panel — sidebar list of style presets, the lock toggle, and the
- * thin entry point into the style-edit modal (which lives in style-modal.js).
+ * Styles panel — sidebar list of style presets, the appearance toggle
+ * (light / dark / auto), and the thin entry point into the style-edit
+ * modal (which lives in style-modal.js). The "Lock style to document"
+ * action lives in the command palette (command-palette.js).
  *
  * Editing UI uses a two-column modal: settings on the left, live preview on
  * the right. Color overrides are split into Light / Dark tabs so every
@@ -15,6 +17,17 @@ import {
   themeForegrounds,
 } from "./styles-panel-shared.js";
 import { openStyleModal } from "./style-modal.js";
+import { applyAppearance } from "../settings/settings-ui.js";
+import appearanceLightRaw from "./sidebar_icons/appearance-light.svg?raw";
+import appearanceDarkRaw from "./sidebar_icons/appearance-dark.svg?raw";
+import appearanceAutoRaw from "./sidebar_icons/appearance-auto.svg?raw";
+
+const APPEARANCE_ICONS = {
+  light: appearanceLightRaw,
+  dark: appearanceDarkRaw,
+  auto: appearanceAutoRaw,
+};
+const APPEARANCE_LABELS = { light: "Light", dark: "Dark", auto: "Automatic" };
 
 /** Format a shortcut string for inline display (e.g. "Mod+1" → "⌘1"). */
 function formatShortcutBadge(raw) {
@@ -44,21 +57,12 @@ export function resolveStyleForAppearance(style, appearance) {
 export function renderStylesPanel(state) {
   const styles = state.settings.styles || [];
   const activeId = state.settings.activeStyleId;
-  const lockedId = getLockedStyleId(state);
-  const isLocked = !!lockedId;
+  const appearance = state.settings.appearance || "auto";
 
-  let html = `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
-
-  // Lock toggle — always visible, above the style list
-  html += `<div class="style-lock-toggle">
-    <label class="style-lock-label">
-      <span class="style-lock-text">Lock Style to Document</span>
-      <span class="style-lock-switch${isLocked ? ' active' : ''}" id="style-lock-switch">
-        <span class="style-lock-knob"></span>
-      </span>
-    </label>
-  </div>`;
-
+  // The panel uses a flex column so the new-style + appearance footer
+  // can pin to the bottom of the visible body while the list scrolls
+  // independently above it.
+  let html = `<div class="styles-panel-root">`;
   html += `<div class="style-list-sidebar">`;
 
   // Shortcut setting keys for style slots (Default + first 4 styles)
@@ -76,14 +80,18 @@ export function renderStylesPanel(state) {
     </span>
   </div>`;
 
+  // Resolve "auto" once for the swatch defaults so every row matches
+  // whatever the appearance toggle just emitted.
+  const resolvedAppearance = appearance === "auto"
+    ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : appearance;
   for (let i = 0; i < styles.length; i++) {
     const st = styles[i];
     migrateStyle(st);
     const isActive = activeId === st.id;
-    const appearance = state.settings.appearance || "dark";
     const { themeId, colors } = resolveStyleForAppearance(st, appearance);
-    const bg = colors.bg || themeBackgrounds[themeId] || (appearance === "light" ? "#fafafa" : "#1a1a1a");
-    const fg = colors.fg || themeForegrounds[themeId] || (appearance === "light" ? "#1a1a1a" : "#e0e0e0");
+    const bg = colors.bg || themeBackgrounds[themeId] || (resolvedAppearance === "light" ? "#fafafa" : "#1a1a1a");
+    const fg = colors.fg || themeForegrounds[themeId] || (resolvedAppearance === "light" ? "#1a1a1a" : "#e0e0e0");
     const fontSize = st.fontSize || state.settings.fontSize || 20;
     const badge = i < 4 ? formatShortcutBadge(state.settings[styleShortcutKeys[i + 1]]) : "";
     html += `<div class="style-sidebar-item${isActive ? ' active' : ''}" data-style-id="${st.id}"
@@ -106,6 +114,21 @@ export function renderStylesPanel(state) {
 
   html += `</div>`;
 
+  // Footer — pinned to the bottom of the panel via flex `margin-top:
+  // auto`. Hosts the create-new-style button plus the light/dark/auto
+  // appearance segmented control.
+  html += `<div class="styles-panel-footer">`;
+  html += `<button class="new-style-sidebar-btn" id="new-style-btn">+ New Style</button>`;
+  html += `<div class="style-appearance-toggle" role="group" aria-label="Appearance">`;
+  for (const mode of ["light", "dark", "auto"]) {
+    const active = appearance === mode ? " active" : "";
+    html += `<button type="button" class="style-appearance-btn${active}" data-appearance="${mode}" title="${APPEARANCE_LABELS[mode]}" aria-label="${APPEARANCE_LABELS[mode]}" aria-pressed="${appearance === mode}">${APPEARANCE_ICONS[mode]}</button>`;
+  }
+  html += `</div>`;
+  html += `</div>`;
+
+  html += `</div>`; // /.styles-panel-root
+
   return html;
 }
 
@@ -123,7 +146,7 @@ export function getLockedStyleId(state) {
 }
 
 /** Set or clear the locked style on the current document's tree node. */
-async function setLockedStyleId(state, styleId) {
+export async function setLockedStyleId(state, styleId) {
   if (!state.currentFileId || !state.fileTree) return;
   function search(nodes) {
     for (const n of nodes) {
@@ -184,23 +207,22 @@ export function bindStylesPanel(state, panel) {
     });
   });
 
-  // Lock toggle — always visible; toggles lock for the current document
-  const lockSwitch = panel.querySelector("#style-lock-switch");
-  if (lockSwitch) {
-    lockSwitch.addEventListener("click", async () => {
-      const lockedId = getLockedStyleId(state);
-      if (lockedId) {
-        // Turn OFF — clear the lock
-        await setLockedStyleId(state, null);
-      } else {
-        // Turn ON — lock the currently active style (even if null/default)
-        const activeId = state.settings.activeStyleId || null;
-        await setLockedStyleId(state, activeId || "__default__");
-      }
+  // Appearance segmented control — switches the app appearance (light /
+  // dark / auto) and re-renders the panel so the swatches repaint.
+  panel.querySelectorAll(".style-appearance-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const mode = btn.dataset.appearance;
+      if (!mode || state.settings.appearance === mode) return;
+      state.updateSettings({ appearance: mode });
+      applyAppearance(mode);
+      // applyActiveStyle reads the current appearance to pick light vs
+      // dark theme; trigger a repaint of the editor surface too.
+      state.emit("style-changed");
+      state.emit("theme-changed");
       panel.innerHTML = renderStylesPanel(state);
       bindStylesPanel(state, panel);
     });
-  }
+  });
 
   panel.querySelectorAll(".style-sidebar-actions button").forEach(btn => {
     btn.addEventListener("click", (e) => {

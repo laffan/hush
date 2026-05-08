@@ -8,6 +8,7 @@ import { createVersionsPanel, cleanupVersionsPanel } from "./versions-panel.js";
 import { exportCurrentFile } from "./sidebar-export.js";
 import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
 import { createPanelResizer, applyPanelWidth, positionPanelResizer } from "./panel-resizer.js";
+import { mountDeskSwitcher } from "./desk-switcher.js";
 import filesRaw from "./sidebar_icons/files.svg?raw";
 import versionsRaw from "./sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar_icons/export.svg?raw";
@@ -176,6 +177,23 @@ export function createSidebar(container, state) {
     updatePinBtnVisibility();
   });
 
+  /** Build (once) and return the body container that every panel renders
+   *  into. The header above it owns the desk switcher so it stays put as
+   *  the user moves between Files / Styles / Versions. */
+  function getPanelBody() {
+    let body = panelOverlay.querySelector(".panel-overlay-body");
+    if (body) return body;
+    panelOverlay.innerHTML = "";
+    const header = document.createElement("div");
+    header.className = "panel-overlay-header";
+    body = document.createElement("div");
+    body.className = "panel-overlay-body";
+    panelOverlay.appendChild(header);
+    panelOverlay.appendChild(body);
+    mountDeskSwitcher(header, state);
+    return body;
+  }
+
   function showPanel(name, content) {
     if (activePanel === name) {
       hidePanel();
@@ -183,7 +201,8 @@ export function createSidebar(container, state) {
     }
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = name;
-    panelOverlay.innerHTML = content;
+    const body = getPanelBody();
+    body.innerHTML = content;
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
     // Recalculate column centering for inset mode
@@ -207,16 +226,17 @@ export function createSidebar(container, state) {
     }
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = "files";
-    panelOverlay.innerHTML = "";
+    const body = getPanelBody();
+    body.innerHTML = "";
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
-    createFilesPanel(panelOverlay, state, hidePanel);
+    createFilesPanel(body, state, hidePanel);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
   container.querySelector('[data-action="styles"]').addEventListener("click", () => {
     showPanel("styles", renderStylesPanel(state));
-    bindStylesPanel(state, panelOverlay);
+    bindStylesPanel(state, panelOverlay.querySelector(".panel-overlay-body"));
   });
 
   container.querySelector('[data-action="versions"]').addEventListener("click", () => {
@@ -226,10 +246,11 @@ export function createSidebar(container, state) {
       return;
     }
     activePanel = "versions";
-    panelOverlay.innerHTML = "";
+    const body = getPanelBody();
+    body.innerHTML = "";
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
-    createVersionsPanel(panelOverlay, state, hidePanel);
+    createVersionsPanel(body, state, hidePanel);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
@@ -437,10 +458,11 @@ export function createSidebar(container, state) {
   state.on("show-files-panel", () => {
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = "files";
-    panelOverlay.innerHTML = "";
+    const body = getPanelBody();
+    body.innerHTML = "";
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
-    createFilesPanel(panelOverlay, state, hidePanel);
+    createFilesPanel(body, state, hidePanel);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 
@@ -485,7 +507,7 @@ export function createSidebar(container, state) {
   // --- Command palette events ---
   state.on("show-styles-panel", () => {
     showPanel("styles", renderStylesPanel(state));
-    bindStylesPanel(state, panelOverlay);
+    bindStylesPanel(state, panelOverlay.querySelector(".panel-overlay-body"));
     container.classList.add("visible");
   });
 
@@ -505,10 +527,11 @@ export function createSidebar(container, state) {
       return;
     }
     activePanel = "versions";
-    panelOverlay.innerHTML = "";
+    const body = getPanelBody();
+    body.innerHTML = "";
     panelOverlay.classList.remove("hidden");
     container.classList.add("visible");
-    createVersionsPanel(panelOverlay, state, hidePanel);
+    createVersionsPanel(body, state, hidePanel);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
   });
 

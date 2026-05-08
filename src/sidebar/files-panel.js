@@ -13,7 +13,6 @@ import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDele
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { mountDesktopThumbnail, unmountDesktopThumbnail, refreshDesktopThumbnail } from "./desktop-thumbnail.js";
-import { mountDeskSwitcher } from "./desk-switcher.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -126,9 +125,6 @@ export function createFilesPanel(container, state, hidePanel) {
   storedHidePanel = hidePanel;
   storedState = state;
   container.innerHTML = "";
-
-  // Desk switcher — sits at the top of the panel; auto-hides when off.
-  mountDeskSwitcher(container, state);
 
   // Create buttons row
   const btnRow = document.createElement("div");

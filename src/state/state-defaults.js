@@ -6,7 +6,7 @@
 export function createDefaultSettings() {
   return {
     visibility: "menubar",
-    appearance: "dark",
+    appearance: "auto",
     touchMode: false,
     lightTheme: "ayuLight",
     darkTheme: "dracula",
