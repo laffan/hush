@@ -3,8 +3,6 @@
  * Handles OAuth connect, folder browse, test connection, disconnect, unsync.
  */
 
-import { gatherSyncDiagnostics } from "./sync-diagnostics.js";
-
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 /**
@@ -348,49 +346,6 @@ export function bindSyncTab(saveSetting, settings, render) {
         if (status) { status.textContent = "Done. Reseeding from Dropbox…"; status.className = "sync-status success"; }
       } catch (e) {
         if (status) { status.textContent = "Clear failed: " + e.message; status.className = "sync-status error"; }
-      }
-    });
-  }
-
-  // Sync diagnostics (debug). Temporary UI for chasing duplication bugs.
-  const syncDiagRefresh = document.getElementById("sync-diag-refresh");
-  const syncDiagCopy = document.getElementById("sync-diag-copy");
-  const syncDiagOutput = document.getElementById("sync-diag-output");
-  const syncDiagStatus = document.getElementById("sync-diag-status");
-  if (syncDiagRefresh && syncDiagOutput) {
-    syncDiagRefresh.addEventListener("click", async () => {
-      if (syncDiagStatus) { syncDiagStatus.textContent = "Gathering…"; syncDiagStatus.className = "sync-status"; }
-      try {
-        const text = await gatherSyncDiagnostics();
-        syncDiagOutput.value = text;
-        if (syncDiagStatus) { syncDiagStatus.textContent = ""; syncDiagStatus.className = "sync-status"; }
-      } catch (e) {
-        syncDiagOutput.value = "Diagnostics failed: " + (e?.message || e);
-        if (syncDiagStatus) { syncDiagStatus.textContent = "Failed."; syncDiagStatus.className = "sync-status error"; }
-      }
-    });
-  }
-  if (syncDiagCopy && syncDiagOutput) {
-    syncDiagCopy.addEventListener("click", async () => {
-      const text = syncDiagOutput.value || "";
-      if (!text) {
-        if (syncDiagStatus) { syncDiagStatus.textContent = "Nothing to copy — tap Refresh first."; syncDiagStatus.className = "sync-status"; }
-        return;
-      }
-      try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-        } else {
-          // iOS Safari fallback: select + execCommand
-          syncDiagOutput.removeAttribute("readonly");
-          syncDiagOutput.focus();
-          syncDiagOutput.select();
-          document.execCommand("copy");
-          syncDiagOutput.setAttribute("readonly", "true");
-        }
-        if (syncDiagStatus) { syncDiagStatus.textContent = "Copied."; syncDiagStatus.className = "sync-status success"; }
-      } catch (e) {
-        if (syncDiagStatus) { syncDiagStatus.textContent = "Copy failed: " + (e?.message || e); syncDiagStatus.className = "sync-status error"; }
       }
     });
   }

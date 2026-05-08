@@ -149,6 +149,48 @@ The iPad uses the same JS code path; correctness should be identical. Difference
 
 ---
 
+### 11. Second-device first activation — no duplicates, desks survive
+
+**Why:** Activation fires `settings-changed` (which arms the polling timer) before `dropbox-sync-start` (which runs `performInitialSync`). Without the initial-sync barrier, the cursor cycle wakes during the upload phase, hits Mac's entries before their downloads register, and dispatches `applyCreated` for each — producing duplicate `synced_files` rows + tree nodes.
+
+1. On **Mac**, fresh install. Create files in Personal/Inbox plus a second desk (`The Second Desk`) with a file inside.
+2. Activate sync. Wait for upload to complete.
+3. On **iPad**, fresh install. Create one local file in Personal/Inbox.
+4. Activate sync to the same Dropbox folder.
+5. After the cursor seed completes, inspect `sync.db`:
+   ```sql
+   SELECT internal_id, remote_id, relative_path FROM synced_files;
+   SELECT remote_id, COUNT(*) FROM synced_files GROUP BY remote_id HAVING COUNT(*) > 1;
+   ```
+
+**Pass:** No `remote_id` group has >1 row. The iPad's tree has Personal desk + The Second Desk (as a desk, not a folder), each with the right files inside. Mac's `pending_ops` shows no leftover ops.
+
+---
+
+### 12. Second-device collision rename — no overwrite
+
+**Why:** Both devices independently create a file named "New Notebook" before activating sync. `performInitialSync`'s collision detector renames the local copy to `New Notebook (2)` mid-iteration. A racy autosave between activation and that rename used to enqueue an upload op against the pre-rename path; routing content uploads through the op-log + gating drain on the barrier closes that race.
+
+1. **Mac**: create `New Notebook` in Personal/Inbox. Add unique content. Activate sync.
+2. **iPad**: create another `New Notebook` in Personal/Inbox. Add different unique content. Activate sync.
+3. After sync settles on both devices, open both notebooks on each device.
+
+**Pass:** Both devices show two notebooks, one named "New Notebook" with Mac's content and one named "New Notebook (2)" with iPad's content. Neither side's content is gone.
+
+---
+
+### 13. Two devices, two extra desks each — merge-back converges
+
+**Why:** Both devices have a local-only desk Mac/iPad doesn't know about. The `pushMetaIfAbsent` guard in `reconcileSync` prevents the second-activated device from overwriting the first's `desks.json`, but the second device's local-only desk also has to land on Dropbox. `applyDesksFile` re-publishes the merged list when `desks.length > incomingDesks.length`.
+
+1. **Mac**: Personal + `Mac's Desk` (each with at least one doc). Activate sync.
+2. **iPad**: Personal + `iPad's Desk` (each with at least one doc). Activate sync.
+3. Wait through one cursor cycle on each device (~10 s).
+
+**Pass:** Both devices show three desks in the desk switcher (Personal, Mac's Desk, iPad's Desk). Files are in their original desks. Dropbox has `/Personal/`, `/Mac's Desk/`, `/iPad's Desk/` directories, no `/Personal/Mac's Desk/` or `/Personal/iPad's Desk/` shadows.
+
+---
+
 ## What success looks like, in one sentence per area
 
 - **Renames**: one event in, one event out, same `remote_id` throughout, exactly one file on each device.
@@ -156,3 +198,4 @@ The iPad uses the same JS code path; correctness should be identical. Difference
 - **External edits**: pulled via cursor with a Versions snapshot, editor lock prevents keystroke races.
 - **Migration**: legacy `sync_map.json` becomes `sync.db` rows; duplicate paths land in `sync_orphans` for review.
 - **Echo suppression**: own writes are recognized by `rev` match and skipped — no pull-back loops.
+- **First activation on a second device**: no duplicate rows, desks arrive as desks, name collisions auto-suffix without losing either side's content.

@@ -294,10 +294,6 @@ async function applyCreated(state, ev, dbx, invoke, downloadImage) {
 
   const file = await invoke("create_file");
   await invoke("save_file", { id: file.id, content });
-  const { traceSync } = await import("./sync-trace.js");
-  traceSync("applyCreated.register", {
-    internal: file.id, path: ev.relativePath, remoteId: ev.remoteId, rev: ev.rev,
-  });
   await invoke("register_synced_file_full", {
     internalId: file.id,
     syncFolderId: SYNC_FOLDER_ID,
