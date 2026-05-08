@@ -5,14 +5,14 @@
  */
 export function createDefaultSettings() {
   return {
-    visibility: "menubar",
+    visibility: "both",
     appearance: "auto",
     touchMode: false,
     lightTheme: "ayuLight",
     darkTheme: "dracula",
-    fontSize: 20,
+    fontSize: 18,
     lineHeight: 1.6,
-    fontFamily: "Source Sans Pro",
+    fontFamily: "iA Writer Quattro",
     normalizeHeaders: false,
     normalizeHeaderColor: false,
     underlineHeaders: false,
@@ -22,7 +22,7 @@ export function createDefaultSettings() {
     makeSpaceForPanes: true,
     makeSpaceDirection: "right",
     stickyHeaders: false,
-    blockCursor: false,
+    blockCursor: true,
     blockCursorColor: null,
     typewriterLineOpacity: 0.08,
     padding: 50,

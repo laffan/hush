@@ -61,7 +61,7 @@ export function renderGeneralTab(settings) {
         <label>Show tooltips</label>
         <input type="checkbox" id="setting-show-tooltips" ${s.showTooltips ? "checked" : ""} />
       </div>
-      ${isIOSSettings() ? `<div class="settings-row"><label>Touch mode</label><input type="checkbox" id="setting-touch-mode" ${s.touchMode ? "checked" : ""} /></div><p class="settings-help">Adds two floating buttons to the bottom-left of the editor for keyboard-free use: a ⌘ button to hold for Cmd-drag gestures, and a menu button (☰) above it that opens the command palette.</p>` : ""}
+      ${isIOSSettings() ? `<div class="settings-row"><label>Touch mode</label><input type="checkbox" id="setting-touch-mode" ${s.touchMode ? "checked" : ""} /></div>` : ""}
     </div>
   `;
 }
