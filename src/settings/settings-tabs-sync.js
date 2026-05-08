@@ -111,35 +111,6 @@ export function renderSyncTab(settings) {
     `;
   }
 
-  // ── Diagnostics section (always shown so it's reachable from iPad) ──
-  html += `
-    <div class="settings-section">
-      <h2>Sync Diagnostics</h2>
-      <p class="settings-help">
-        Captures a snapshot of the local sync state — file tree, sync map,
-        pending op queue, in-memory event trace, and (if connected) a live
-        Dropbox listing cross-checked against the local DB. Use this to
-        debug situations like desks turning into folders or files
-        landing under the wrong path.
-      </p>
-      <div class="sync-btn-row">
-        <button id="sync-diag-run" class="sync-inline-btn">Run diagnostics</button>
-        <button id="sync-diag-copy" class="sync-inline-btn" style="display:none;">Copy</button>
-        <button id="sync-diag-clear-trace" class="sync-inline-btn">Clear trace</button>
-      </div>
-      <div id="sync-diag-status" class="sync-status" style="margin-top:6px;"></div>
-      <textarea id="sync-diag-output"
-                readonly
-                spellcheck="false"
-                style="display:none; width:100%; min-height:280px; max-height:60vh;
-                       margin-top:10px; padding:8px; box-sizing:border-box;
-                       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                       font-size:11px; line-height:1.4; color: var(--fg);
-                       background: rgba(0,0,0,0.04); border:1px solid var(--panel-border, rgba(0,0,0,0.2));
-                       border-radius:4px; resize: vertical; white-space: pre;"></textarea>
-    </div>
-  `;
-
   // ── Local Sync section (desktop only) ──
   html += `
     <div class="settings-section local-sync-section">

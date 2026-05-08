@@ -21,10 +21,6 @@
 const DESKS_FILENAME = "desks.json";
 const FORMAT_VERSION = 1;
 
-function _trace(label, detail) {
-  import("./sync-trace.js").then((m) => m.traceSync(label, detail)).catch(() => {});
-}
-
 export async function serializeDesks(state) {
   const s = state?.settings || {};
   return JSON.stringify({
@@ -47,11 +43,8 @@ export async function pushDesksToDropbox(state) {
 export async function applyDesksFile(state, payload) {
   let parsed;
   try { parsed = JSON.parse(payload); }
-  catch { _trace("applyDesksFile.parse-fail"); return { applied: 0, error: "parse" }; }
-  if (!parsed || parsed.format !== "hush-desks") {
-    _trace("applyDesksFile.format-fail", { format: parsed?.format });
-    return { applied: 0, error: "format" };
-  }
+  catch { return { applied: 0, error: "parse" }; }
+  if (!parsed || parsed.format !== "hush-desks") return { applied: 0, error: "format" };
 
   // Merge the incoming desk list. If the payload is empty (e.g. an
   // older peer that still serialized `useDesks: false` with no desks),
@@ -59,11 +52,6 @@ export async function applyDesksFile(state, payload) {
   // structural always-on guarantee owns the local list in that case.
   const incomingDesks = Array.isArray(parsed.desks) ? parsed.desks : [];
   const _desks = await import("../state/state-desks.js");
-  _trace("applyDesksFile.enter", {
-    incoming: incomingDesks.map((d) => d?.name).join(","),
-    localDesks: state.fileTree.filter((n) => n.type === "desk").map((n) => n.name).join(","),
-    localTopLevelStragglers: state.fileTree.filter((n) => n.type !== "desk").map((n) => `${n.name}[${n.type}]`).join(","),
-  });
 
   // If the local tree is still flat (legacy from a peer that hadn't
   // migrated yet), wrap it now under the first synced desk. The

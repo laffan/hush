@@ -350,67 +350,6 @@ export function bindSyncTab(saveSetting, settings, render) {
     });
   }
 
-  // ── Sync diagnostics — gather a snapshot for debugging desk/sync bugs ──
-  const diagRunBtn = document.getElementById("sync-diag-run");
-  const diagOutEl = document.getElementById("sync-diag-output");
-  const diagCopyBtn = document.getElementById("sync-diag-copy");
-  const diagClearBtn = document.getElementById("sync-diag-clear-trace");
-  const diagStatus = document.getElementById("sync-diag-status");
-  function setDiagStatus(msg, kind = "") {
-    if (!diagStatus) return;
-    diagStatus.textContent = msg || "";
-    diagStatus.className = `sync-status${kind ? " " + kind : ""}`;
-  }
-  if (diagRunBtn && diagOutEl && diagCopyBtn) {
-    diagRunBtn.addEventListener("click", async () => {
-      setDiagStatus("Gathering…");
-      diagRunBtn.disabled = true;
-      try {
-        const { gatherSyncDiagnostics } = await import("./sync-diagnostics.js");
-        const text = await gatherSyncDiagnostics(settings);
-        diagOutEl.value = text;
-        diagOutEl.style.display = "block";
-        diagCopyBtn.style.display = "";
-        const lines = text.split("\n").length;
-        setDiagStatus(`Snapshot ready (${lines} lines).`, "success");
-      } catch (e) {
-        setDiagStatus("Diagnostics failed: " + (e?.message || e), "error");
-      } finally {
-        diagRunBtn.disabled = false;
-      }
-    });
-  }
-  if (diagCopyBtn && diagOutEl) {
-    diagCopyBtn.addEventListener("click", async () => {
-      const text = diagOutEl.value || "";
-      let copied = false;
-      try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-          copied = true;
-        }
-      } catch (_) { copied = false; }
-      if (!copied) {
-        // Fallback: select all so the user can long-press / Cmd-C.
-        diagOutEl.focus();
-        diagOutEl.select();
-        try { copied = document.execCommand("copy"); } catch (_) {}
-      }
-      setDiagStatus(copied ? "Copied to clipboard." : "Couldn't copy automatically — select and copy manually.", copied ? "success" : "");
-    });
-  }
-  if (diagClearBtn) {
-    diagClearBtn.addEventListener("click", async () => {
-      try {
-        const m = await import("../sync/sync-trace.js");
-        m.clearTrace();
-        setDiagStatus("Trace cleared.", "success");
-      } catch (_) {
-        setDiagStatus("Couldn't clear trace.", "error");
-      }
-    });
-  }
-
   const syncUnsyncBtn = document.getElementById("sync-unsync");
   if (syncUnsyncBtn) {
     syncUnsyncBtn.addEventListener("click", async () => {

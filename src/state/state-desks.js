@@ -24,11 +24,6 @@
 
 const SPECIAL_KINDS = ["__inbox__", "__images__", "__trash__"];
 
-function _trace(label, detail) {
-  // Loaded lazily so this module's existing import surface stays clean.
-  import("../sync/sync-trace.js").then((m) => m.traceSync(label, detail)).catch(() => {});
-}
-
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -328,15 +323,22 @@ export function ensureDesksTreeSpecials(state, tree) {
   const desks = tree.filter((n) => n.type === "desk");
   const target = desks.find((d) => d.id === state.settings?.activeDeskId) || desks[0];
   if (target) {
-    const stragglers = tree.filter((n) => n.type !== "desk" && !isSpecialNodeId(n.id));
-    if (stragglers.length > 0) {
-      _trace("ensureDesksTreeSpecials.stuff", {
-        target: target.name,
-        targetId: target.id,
-        stragglers: stragglers.map((s) => `${s.name}[${s.type}]`).join(","),
-        knownDeskNames: (state.settings?.desks || []).map((d) => d.name).join(","),
-      });
-    }
+    // A top-level non-desk node whose name matches a known desk is an
+    // unfinished sync absorption (cursor delivered `<DeskName>/...` files
+    // before / instead of applyDesksFile reaching the local tree). Folding
+    // those into the active desk would nest them under the wrong path,
+    // and the next `reconcileSync` would push physical Dropbox moves to
+    // match — which is how `/Personal/School/...` appeared in the wild.
+    // Leave them alone; `reconcileDesksWithStrayFolders` (re-run on every
+    // boot via `migrateLegacyTreeIfNeeded`) will absorb them into the
+    // correct desk.
+    const knownDeskNames = new Set((state.settings?.desks || []).map((d) => d?.name).filter(Boolean));
+    for (const d of desks) if (d?.name) knownDeskNames.add(d.name);
+    const stragglers = tree.filter((n) =>
+      n.type !== "desk"
+      && !isSpecialNodeId(n.id)
+      && !knownDeskNames.has(n.name)
+    );
     for (const s of stragglers) {
       const idx = tree.indexOf(s);
       if (idx >= 0) tree.splice(idx, 1);
@@ -352,17 +354,20 @@ export function ensureDesksTreeSpecials(state, tree) {
 }
 
 /** True when `node` looks like an unwrapped desk skeleton — a regular
- *  folder/project that contains an `Inbox` subfolder. The cursor
- *  delivers `<DeskName>/Inbox/Doc.md` for files inside a desk; if the
- *  receiving device hasn't applied desks.json yet, `insertDocumentNode`
- *  builds a plain folder + Inbox subfolder. That's the shape we want
- *  to absorb into a freshly-created (or already-empty) desk node. */
+ *  folder/project (i.e. not a special) that we should absorb into a
+ *  freshly-created (or already-empty) desk of the same name. The
+ *  caller already gates on `n.name === desk.name`, so any non-special
+ *  folder/project that survives that name match is treated as the
+ *  desk's stand-in: an earlier shape required an `Inbox` child, but
+ *  desks whose Mac-side layout puts a project at the root (no Inbox)
+ *  came down via initialSync's `insertIntoTree` as a plain folder
+ *  with the project inside, and that variant is just as much an
+ *  unwrapped desk as the Inbox-rooted one. */
 function looksLikeUnwrappedDeskSkeleton(node) {
   if (!node) return false;
   if (node.type !== "folder" && node.type !== "project") return false;
   if (isSpecialNodeId(node.id)) return false;
-  const kids = node.children || [];
-  return kids.some((c) => c?.name === "Inbox");
+  return true;
 }
 
 /** Walk the tree (top level + inside every desk) for a folder/project
@@ -373,29 +378,23 @@ function looksLikeUnwrappedDeskSkeleton(node) {
  *  specials). Returns true when something was absorbed. */
 export function absorbMatchingFolder(state, desk) {
   const tree = state.fileTree;
-  let foundParent = null; // parent array we plucked from (for trace context)
-  function findInArr(arr, parentLabel) {
+  function findInArr(arr) {
     for (let i = 0; i < arr.length; i++) {
       const n = arr[i];
       if (!n) continue;
       if (n.name === desk.name && looksLikeUnwrappedDeskSkeleton(n)) {
         const [removed] = arr.splice(i, 1);
-        foundParent = parentLabel;
         return removed;
       }
       if (Array.isArray(n.children)) {
-        const found = findInArr(n.children, `${parentLabel}>${n.name}[${n.type}]`);
+        const found = findInArr(n.children);
         if (found) return found;
       }
     }
     return null;
   }
-  const folder = findInArr(tree, "(root)");
+  const folder = findInArr(tree);
   if (!folder) return false;
-  _trace("absorbMatchingFolder.hit", {
-    deskName: desk.name, deskId: desk.id, foundUnder: foundParent,
-    folderType: folder.type, kids: (folder.children || []).map((c) => c?.name).join(","),
-  });
   const mergeKnownSpecial = (child, kind) => {
     const newId = specialNodeId(kind, desk.id);
     const existing = desk.children.find((x) => x.id === newId);
@@ -430,7 +429,6 @@ export function reconcileDesksWithStrayFolders(state) {
   for (const d of desks) {
     while (absorbMatchingFolder(state, d)) absorbed++;
   }
-  if (absorbed > 0) _trace("reconcileDesksWithStrayFolders", { absorbed });
   return absorbed;
 }
 
@@ -512,12 +510,8 @@ export async function migrateLegacyTreeIfNeeded(state) {
     if (reconcileDesksWithStrayFolders(state) > 0) {
       try { await state.saveFileTree(); } catch (_) {}
     }
-    _trace("migrateLegacyTreeIfNeeded.skip", {
-      desks: tree.filter((n) => n.type === "desk").map((n) => `${n.name}[${n.id}]`).join(","),
-    });
     return false;
   }
-  _trace("migrateLegacyTreeIfNeeded.wrap", { topLevel: tree.length });
   await enableDesks(state, "Personal");
   return true;
 }
