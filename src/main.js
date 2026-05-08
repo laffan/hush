@@ -437,57 +437,41 @@ async function init() {
     // Listen for Dropbox sync start from settings window
     await listen("dropbox-sync-start", async (event) => {
       const { path } = event.payload || {};
-      if (path) {
-        // Block the cursor cycle while the initial sync runs. Without
-        // this, the `settings-changed` listener fired by `saveSetting`
-        // (just before this event) has already armed the polling
-        // timer, and the seed cycle that fires 500 ms later would race
-        // performInitialSync's downloads — find_by_remote_id returns
-        // null for entries the initial sync hasn't registered yet, and
-        // applyCreated creates a duplicate internal file per such
-        // entry. The barrier holds the cycle until we're done.
-        const sp = await import("./sync/sync-polling.js");
-        sp.setInitialSyncBarrier(true);
-        try {
-          // Reload settings from backend to ensure tokens are current
-          const { invoke } = await import("@tauri-apps/api/core");
-          state.settings = await invoke("get_settings");
-          const dbx = await import("./sync/dropbox.js");
-          if (state.settings.dropboxAccessToken) {
-            dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
-          }
-          // Perform initial full sync and log results
-          const { performInitialSync } = await import("./sync/sync-state.js");
-          const result = await performInitialSync(state, path);
-          // Write sync log entries
-          const logEntries = [];
-          if (result.uploaded.length > 0) {
-            for (const f of result.uploaded) logEntries.push(`Uploaded ${f}`);
-          }
-          if (result.downloaded.length > 0) {
-            for (const f of result.downloaded) logEntries.push(`Downloaded ${f}`);
-          }
-          if (logEntries.length > 0) {
-            const s = await invoke("get_settings");
-            const log = s.dropboxSyncLog || [];
-            const now = new Date();
-            const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-            for (const entry of logEntries) log.push(`${ts}  ${entry}`);
-            if (log.length > 50) log.splice(0, log.length - 50);
-            s.dropboxSyncLog = log;
-            await invoke("save_settings", { settings: s });
-          }
-          // Start polling
-          sp.startSyncPolling(state);
-        } catch (e) {
-          console.error("Initial sync failed:", e);
-        } finally {
-          // Release the barrier — the post-clear hook in
-          // setInitialSyncBarrier kicks an immediate cycle so the
-          // just-registered files get checked via the cursor seed
-          // (and echo-suppress cleanly).
-          sp.setInitialSyncBarrier(false);
+      if (!path) return;
+      // Barrier blocks the cursor cycle (already armed by the prior
+      // settings-changed event) so it can't race performInitialSync's
+      // download phase and create duplicate `synced_files` rows.
+      const sp = await import("./sync/sync-polling.js");
+      sp.setInitialSyncBarrier(true);
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        state.settings = await invoke("get_settings");
+        const dbx = await import("./sync/dropbox.js");
+        if (state.settings.dropboxAccessToken) {
+          dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
         }
+        const { performInitialSync } = await import("./sync/sync-state.js");
+        const result = await performInitialSync(state, path);
+        const logEntries = [
+          ...result.uploaded.map((f) => `Uploaded ${f}`),
+          ...result.downloaded.map((f) => `Downloaded ${f}`),
+        ];
+        if (logEntries.length > 0) {
+          const s = await invoke("get_settings");
+          const log = s.dropboxSyncLog || [];
+          const ts = new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+          for (const entry of logEntries) log.push(`${ts}  ${entry}`);
+          if (log.length > 50) log.splice(0, log.length - 50);
+          s.dropboxSyncLog = log;
+          await invoke("save_settings", { settings: s });
+        }
+        sp.startSyncPolling(state);
+      } catch (e) {
+        console.error("Initial sync failed:", e);
+      } finally {
+        // Release — the barrier setter kicks an immediate cycle + drain
+        // so anything queued during the barrier window catches up.
+        sp.setInitialSyncBarrier(false);
       }
     });
 
