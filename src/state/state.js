@@ -2,13 +2,14 @@
  * Central application state management
  */
 
-import { findNode, removeNode, collectDocumentIds, findNodeByFileId, insertAfter, insertNode, uniqueChildName } from "./tree-helpers.js";
+import { findNode } from "./tree-helpers.js";
 import { openProject as _openProject, saveProjectContent as _saveProjectContent } from "./state-project.js";
 import { createDefaultSettings } from "./state-defaults.js";
 import * as _modes from "./state-modes.js";
 import * as _snapshots from "./state-snapshots.js";
 import * as _naming from "./state-naming.js";
 import * as _desks from "./state-desks.js";
+import * as _files from "./state-files.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -372,7 +373,7 @@ export class AppState {
   }
   async saveProjectContent() { return _saveProjectContent(this); }
 
-  // ===== Notebook Operations =====
+  // ===== Notebook Operations (delegated to state-files.js) =====
 
   /** Create a new notebook.
    *  @param {string} name           Display name for the new notebook.
@@ -383,104 +384,12 @@ export class AppState {
    *    (used by the "New Notebook as Pane" command palette entry).
    *  @returns {Promise<{ fileId: string, name: string } | undefined>}
    */
-  async createNotebook(name, parentId = null, opts = {}) {
-    const openImmediately = opts.openImmediately !== false;
-    if (openImmediately && this.dirty) await this.saveCurrentFile();
-    const targetParent = parentId || this.getInboxId();
-    const finalName = uniqueChildName(findNode(this.fileTree, targetParent), name, "notebook");
-    if (IS_TAURI) {
-      try {
-        const result = await tauriInvoke("create_notebook", { name: finalName, parentId: targetParent });
-        // Imported notebooks pass `initialContent` (the unpacked .hushnote
-        // JSON envelope). Overwrite the empty default before syncing so
-        // the imported shapes are what propagate.
-        let initialContent = result.file.content || "[]";
-        if (typeof opts.initialContent === "string" && opts.initialContent.length > 0) {
-          initialContent = opts.initialContent;
-          try { await tauriInvoke("save_file", { id: result.file.id, content: initialContent }); }
-          catch (e) { console.error("Save imported notebook content failed:", e); }
-        }
-        this.files = await tauriInvoke("list_files");
-        this.fileTree = await tauriInvoke("get_file_tree");
-        this.emit("files-changed");
-        // Propagate new notebook to Dropbox sync
-        const nbNode = findNodeByFileId(this.fileTree, result.file.id);
-        if (nbNode) this.syncCreateFile(nbNode.id, result.file.id, initialContent);
-        if (openImmediately) await this.openNotebook(result.file.id);
-        return { fileId: result.file.id, name: result.node?.name || finalName };
-      } catch (e) { console.error("Create notebook failed:", e); }
-    }
-  }
+  createNotebook(name, parentId = null, opts = {}) { return _files.createNotebook(this, name, parentId, opts); }
+  openNotebook(fileId) { return _files.openNotebook(this, fileId); }
 
-  async openNotebook(fileId) {
-    if (this.ratchetMode) return;
-    // Save current file/notebook before switching
-    if (this.dirty) await this.saveCurrentFile();
-    if (this.currentNotebookFileId) {
-      // Unmount the current notebook (save handled by notebook-bridge)
-      this.emit("notebook-unmount");
-    }
+  // ===== File Operations (delegated to state-files.js) =====
 
-    this.currentFileId = null;
-    this.currentProjectId = null;
-    this.projectDocIds = [];
-    this.currentNotebookFileId = fileId;
-    this.currentLocalSync = null;
-
-    this.emit("notebook-open", fileId);
-    this.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId });
-  }
-
-  // ===== File Operations =====
-
-  async saveCurrentFile() {
-    if (this.currentProjectId) return this.saveProjectContent();
-    if (this.currentLocalSync) {
-      const m = await import("../sync/local-sync.js");
-      return m.saveCurrentLocalSync(this);
-    }
-    if (!this.currentFileId || !this.editor) return;
-    // A pull is in flight for the current file: don't upload the editor's
-    // pre-pull buffer over the just-arriving remote content. The pull
-    // releases the lock and clears `dirty`, so we'll resume normally.
-    if (this._isPullLockedForCurrent()) return;
-    const content = this.editor.getContent();
-    this.dirty = false;
-    if (IS_TAURI) {
-      try {
-        await tauriInvoke("save_file", { id: this.currentFileId, content });
-        this.files = await tauriInvoke("list_files");
-        this.syncFileToExternal(this.currentFileId, content);
-      } catch (e) { console.error("Save failed:", e); }
-    } else {
-      const file = this.files.find((f) => f.id === this.currentFileId);
-      if (file) {
-        file.content = content;
-        file.modified = Math.floor(Date.now() / 1000);
-        // Seed name from first line on the very first save. Subsequent
-        // renames go through maybeRenameFromFirstLine() which fires at
-        // stable moments (cursor off line 1, editor blur).
-        if (!file.name || file.name === "Untitled") file.name = _naming.deriveName(content);
-        this._saveFilesLocal();
-      }
-    }
-    if (_naming.updateTreeNodeNameByFileId(this, this.currentFileId)) {
-      this.emit("files-changed");
-    }
-    // Autosave-path rename: update the filename to track the first line,
-    // but only when the cursor has moved off it. While the user is still
-    // typing in the title, we deliberately skip — preserves the old
-    // behavior's "name follows first line" feel without the per-keystroke
-    // sync churn that made Dropbox see phantom new files.
-    if (!_naming.cursorOnFirstLine(this)) {
-      await this.maybeRenameFromFirstLine();
-    }
-  }
-
-  maybeRenameFromFirstLine() { return _naming.maybeRenameFromFirstLine(this); }
-  maybeRenameFileFromContent(fileId, content) { return _naming.maybeRenameFileFromContent(this, fileId, content); }
-  _deriveName(content) { return _naming.deriveName(content); }
-
+  saveCurrentFile() { return _files.saveCurrentFile(this); }
   /** Create a new document.
    *  @param {string|null} parentId  Tree node to insert under (defaults to Inbox).
    *  @param {object} [opts]
@@ -489,119 +398,15 @@ export class AppState {
    *    to it (used by the "New Doc as Pane" command palette entry).
    *  @returns {Promise<{ fileId: string, name: string } | undefined>}
    */
-  async newFile(parentId = null, opts = {}) {
-    const openImmediately = opts.openImmediately !== false;
-    if (openImmediately && this.dirty) await this.saveCurrentFile();
-    // Unmount any active notebook (only when actually switching to the new file)
-    if (openImmediately && this.currentNotebookFileId) {
-      this.emit("notebook-unmount");
-      this.currentNotebookFileId = null;
-    }
-    if (openImmediately) this.currentLocalSync = null;
-    // Default new files go into the Inbox (active desk's Inbox when desks on)
-    const targetParent = parentId || this.getInboxId();
-    let fileId;
-    if (IS_TAURI) {
-      try { const file = await tauriInvoke("create_file"); fileId = file.id; this.files = await tauriInvoke("list_files"); }
-      catch (e) { console.error("Create file failed:", e); return; }
-    } else { fileId = this._createLocalFile().id; }
-    // Imported docs ship with their original basename via `opts.initialName`;
-    // brand-new docs fall back to "Untitled" and get uniquified.
-    const baseName = (typeof opts.initialName === "string" && opts.initialName.trim()) ? opts.initialName.trim() : "Untitled";
-    const initialName = uniqueChildName(findNode(this.fileTree, targetParent), baseName, "document");
-    if (initialName !== "Untitled" && IS_TAURI) try { await tauriInvoke("rename_file", { id: fileId, name: initialName }); this.files = await tauriInvoke("list_files"); } catch (_) {}
-    const initialContent = (typeof opts.initialContent === "string") ? opts.initialContent : "";
-    if (initialContent && IS_TAURI) {
-      try { await tauriInvoke("save_file", { id: fileId, content: initialContent }); }
-      catch (e) { console.error("Save initial content failed:", e); }
-    }
-    const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
-    insertNode(this.fileTree, treeNode, targetParent, findNode);
-    await this.saveFileTree();
-    // Propagate new file to external filesystem if inside a synced folder
-    this.syncCreateFile(treeNode.id, fileId, initialContent);
-    if (openImmediately) {
-      this.currentFileId = fileId;
-      this.currentProjectId = null;
-      this.projectDocIds = [];
-      if (this.editor) {
-        this.editor.setContent(initialContent);
-        this.editor.focus();
-      }
-    }
-    this.emit("files-changed");
-    if (openImmediately) this.emit("file-opened");
-    return { fileId, name: treeNode.name };
-  }
+  newFile(parentId = null, opts = {}) { return _files.newFile(this, parentId, opts); }
+  openFile(id) { return _files.openFile(this, id); }
+  deleteFile(id) { return _files.deleteFile(this, id); }
+  renameFile(id, newName) { return _files.renameFile(this, id, newName); }
+  duplicateFile(id) { return _files.duplicateFile(this, id); }
 
-  async openFile(id) {
-    // Ratchet mode pins the user to the active file — opening another
-    // would let them step around the forward-only lock.
-    if (this.ratchetMode) return;
-    if (this.dirty) await this.saveCurrentFile();
-    // Unmount any active notebook
-    if (this.currentNotebookFileId) {
-      this.emit("notebook-unmount");
-      this.currentNotebookFileId = null;
-    }
-    this.currentProjectId = null;
-    this.projectDocIds = [];
-    this.currentLocalSync = null;
-    if (IS_TAURI) {
-      try { const file = await tauriInvoke("load_file", { id }); this.currentFileId = file.id; if (this.editor) this.editor.setContent(file.content); }
-      catch (e) { console.error("Load file failed:", e); }
-    } else {
-      const file = this.files.find((f) => f.id === id);
-      if (file) { this.currentFileId = file.id; if (this.editor) this.editor.setContent(file.content); }
-    }
-    this.emit("file-opened");
-    this.updateSettings({ lastFileId: this.currentFileId, lastProjectId: null });
-  }
-
-  async deleteFile(id) {
-    if (IS_TAURI) {
-      try { await tauriInvoke("delete_file", { id }); this.files = await tauriInvoke("list_files"); }
-      catch (e) { console.error("Delete failed:", e); }
-    } else { this.files = this.files.filter((f) => f.id !== id); this._saveFilesLocal(); }
-    if (this.currentFileId === id) {
-      if (this.files.length > 0) await this.openFile(this.files[0].id);
-      else await this.newFile();
-    }
-    this.emit("files-changed");
-  }
-
-  async renameFile(id, newName) {
-    if (IS_TAURI) {
-      try { await tauriInvoke("rename_file", { id, name: newName }); this.files = await tauriInvoke("list_files"); }
-      catch (e) { console.error("Rename failed:", e); }
-    } else {
-      const file = this.files.find((f) => f.id === id);
-      if (file) { file.name = newName; this._saveFilesLocal(); }
-    }
-    this.emit("files-changed");
-  }
-
-  async duplicateFile(id) {
-    if (IS_TAURI) {
-      try {
-        const source = await tauriInvoke("load_file", { id });
-        const newFile = await tauriInvoke("create_file");
-        await tauriInvoke("save_file", { id: newFile.id, content: source.content });
-        this.files = await tauriInvoke("list_files");
-        this.emit("files-changed");
-        return newFile.id;
-      } catch (e) { console.error("Duplicate failed:", e); }
-    } else {
-      const source = this.files.find((f) => f.id === id);
-      if (source) {
-        const newId = crypto.randomUUID();
-        this.files.unshift({ id: newId, name: source.name + " copy", content: source.content, modified: Math.floor(Date.now() / 1000) });
-        this._saveFilesLocal();
-        this.emit("files-changed");
-        return newId;
-      }
-    }
-  }
+  maybeRenameFromFirstLine() { return _naming.maybeRenameFromFirstLine(this); }
+  maybeRenameFileFromContent(fileId, content) { return _naming.maybeRenameFileFromContent(this, fileId, content); }
+  _deriveName(content) { return _naming.deriveName(content); }
 
   // ===== Desktop + Sync Operations (delegated to sibling modules) =====
   async setDesktop(fileId) { const m = await import("./state-desktop.js"); return m.setDesktop(this, fileId); }
