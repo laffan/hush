@@ -184,13 +184,12 @@ function buildCommands(state) {
       action: (s) => s.emit("show-styles-panel") },
     { id: "style-lock", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),
-      action: async (s) => {
-        const activeId = s.settings.activeStyleId || null;
-        await setLockedStyleId(s, activeId || "__default__");
-      } },
+      action: async (s) => { await setLockedStyleId(s, s.settings.activeStyleId || "__default__"); } },
     { id: "style-unlock", label: "Unlock style from document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !getLockedStyleId(s),
-      action: async (s) => { await setLockedStyleId(s, null); } },
+      // After clearing the lock, fall back to the active desk's saved
+      // style (file-opened does the same on switches; here we don't fire it).
+      action: async (s) => { await setLockedStyleId(s, null); (await import("./style-application.js")).applyDeskGlobalStyle(s); } },
     { id: "zotero", label: "Zotero: Insert reference", icon: icons.zotero, shortcutKey: "shortcutZotero", ctx: "shared",
       action: async (s) => {
         const { openZoteroModal } = await import("./zotero.js");
@@ -331,6 +330,12 @@ function collectFileLeaves(fileTree) {
   return out;
 }
 
+/** Active desk's children — Cmd+O / "Open as pane…" scope to this so the picker only surfaces files from the desk the user is in. */
+function activeDeskSubtree(s) {
+  const t = s.fileTree || [], d = t.filter((n) => n.type === "desk");
+  return d.length ? ((d.find((x) => x.id === s.settings?.activeDeskId) || d[0]).children || []) : t;
+}
+
 /** Open a file picker filtered to documents (in doc mode) or notebooks
  *  (in notebook mode), excluding the currently-open file, and append the
  *  current selection to whichever the user picks. */
@@ -338,7 +343,7 @@ function enterSendSelectedPicker(palette, state) {
   const inNotebook = !!state.currentNotebookFileId;
   const wantedType = inNotebook ? "notebook" : "document";
   const currentId = inNotebook ? state.currentNotebookFileId : state.currentFileId;
-  const leaves = collectFileLeaves(state.fileTree)
+  const leaves = collectFileLeaves(activeDeskSubtree(state))
     .filter((f) => f.type === wantedType && f.fileId !== currentId);
   const items = leaves.map((f) => ({
     id: "send-target-" + f.id,
@@ -356,7 +361,7 @@ function enterSendSelectedPicker(palette, state) {
  *  `includeProjects` is opt-in because the floating-pane path doesn't
  *  support project types — only the main editor can host the joined view. */
 function enterFilePicker(palette, state, placeholder, onPick, { includeProjects = false } = {}) {
-  let leaves = collectFileLeaves(state.fileTree);
+  let leaves = collectFileLeaves(activeDeskSubtree(state));
   if (!includeProjects) leaves = leaves.filter((f) => f.type !== "project");
   const items = leaves.map((f) => ({
     id: "file-" + f.id,

@@ -438,6 +438,15 @@ export class DrawingState extends EventTarget {
   private _isPanningActive = false;
   private _panStart: Point = { x: 0, y: 0 };
   private _cameraStart: Camera = { x: 0, y: 0, zoom: 1 };
+  /** PointerId captured on the pointerdown that started the pan. Subsequent
+   *  pointermoves are filtered against this id so a second contact (a palm
+   *  contact, the user's other thumb, etc.) firing its own pointermove on
+   *  the captured canvas can't yank the camera back to that finger's
+   *  position. iPad WKWebView occasionally delivers pointermoves from the
+   *  non-captured pointer to the same target, which made spacebar-drag
+   *  jumpy on iPad even though it was smooth on Mac (where the cursor is
+   *  the only pointer in flight). */
+  private _panPointerId: number | null = null;
   private _selectStart: Point | null = null;
   private _isDragging = false;
   private _dragStart: Point = { x: 0, y: 0 };
@@ -837,6 +846,7 @@ export class DrawingState extends EventTarget {
       this._isPanningActive = true;
       this._panStart = { x: e.clientX, y: e.clientY };
       this._cameraStart = { ...this.camera };
+      this._panPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       return;
     }
@@ -899,6 +909,7 @@ export class DrawingState extends EventTarget {
       this._isPanningActive = true;
       this._panStart = { x: e.clientX, y: e.clientY };
       this._cameraStart = { ...this.camera };
+      this._panPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       return;
     }
@@ -978,15 +989,17 @@ export class DrawingState extends EventTarget {
             this.selectedIds = new Set(groupMembers);
             this.notify("selectedIds");
           }
-          this._isDragging = true;
-          this._dragStart = canvasPt;
-          this._dragOrigin = canvasPt;
-          // Normal drag (not from pocket): fire the hook right away.
-          if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
-          this._dragStartFired = true;
-          this._setupDragAreaResize();
-          this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
 
+          // Option-drag clone runs BEFORE the drag-start hook, not
+          // after. The sync-shim's `pauseForDrag` (wired into
+          // onShapeDragStart) freezes the state→engine diff for the
+          // duration of the drag — so any DrawShapes pushed into
+          // `state.shapes` after that pause are invisible to the
+          // bake engine until the drag ends. The result the user
+          // saw was a single moving selection bbox (rendered from
+          // shape points by the regular renderer) with no actual
+          // strokes underneath. Clone first, swap the selection,
+          // then let the drag begin with the new shape ids.
           if (e.altKey) {
             const currentSelected = this.selectedIds.has(hitShape.id) ? this.selectedIds : new Set(groupMembers);
             const clones: Shape[] = [];
@@ -1005,6 +1018,15 @@ export class DrawingState extends EventTarget {
             this.notify("shapes");
             this.notify("selectedIds");
           }
+
+          this._isDragging = true;
+          this._dragStart = canvasPt;
+          this._dragOrigin = canvasPt;
+          // Normal drag (not from pocket): fire the hook right away.
+          if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
+          this._dragStartFired = true;
+          this._setupDragAreaResize();
+          this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
         }
       } else {
         if (!e.shiftKey) { this.selectedIds = new Set(); this.notify("selectedIds"); }
@@ -1051,6 +1073,15 @@ export class DrawingState extends EventTarget {
     const canvasPt = screenToCanvas(screenPt, this.camera);
 
     if (this._isPanningActive) {
+      // Filter to the pointer that started the pan. iPad occasionally
+      // delivers pointermoves from a second contact (palm, other thumb,
+      // gesture-recogniser stragglers) to the captured canvas, and
+      // computing the pan delta against the original `_panStart` from
+      // a different pointer's clientX yanks the camera back toward that
+      // finger's position — the "jumpy / undoes the last drag" report
+      // on iPad. Mac mouse drags only ever fire one pointer so the
+      // bug was invisible there.
+      if (this._panPointerId !== null && e.pointerId !== this._panPointerId) return;
       const dx = e.clientX - this._panStart.x;
       const dy = e.clientY - this._panStart.y;
       this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom };
@@ -1283,7 +1314,15 @@ export class DrawingState extends EventTarget {
     // consumed and cleared the snapshot.)
     this._preTouchSelectedIds = null;
 
-    if (this._isPanningActive) { this._isPanningActive = false; return; }
+    if (this._isPanningActive) {
+      // Only the pointer that started the pan can end it. A stray
+      // pointerup from a non-tracked contact otherwise drops the pan
+      // mid-drag.
+      if (this._panPointerId !== null && e.pointerId !== this._panPointerId) return;
+      this._isPanningActive = false;
+      this._panPointerId = null;
+      return;
+    }
 
     // Pocket drag pending: click without movement — just select, no move
     if (this._pocketDragPending) {
@@ -1380,7 +1419,14 @@ export class DrawingState extends EventTarget {
             if (s.pocketed) continue;
             if (!this.flowchart.isFlowable(s)) continue;
             if (s.groupId && droppedGroupIds.has(s.groupId)) continue;
-            const b = getShapeBounds(s, this.fontFamily);
+            // Grouped shapes (stroke clusters in particular) test
+            // against the group's union, not the individual member's
+            // own bounds. Without this, a drop inside a sparse stroke
+            // group's bounding box could miss every stroke and find
+            // no target. Non-grouped shapes use their own bounds.
+            const b = s.groupId
+              ? this.unionGroupBounds(s)
+              : getShapeBounds(s, this.fontFamily);
             if (
               dropPt.x >= b.minX &&
               dropPt.x <= b.maxX &&
@@ -1390,6 +1436,22 @@ export class DrawingState extends EventTarget {
               target = s;
               break;
             }
+          }
+          // For stroke groups (and any other grouped shape), the
+          // flowchart's logical "node" is the *group*, not the
+          // individual stroke under the cursor. Promote the target
+          // to the group's lead member so the resulting edge is
+          // stable: future renders anchor against the union via
+          // unionGroupBounds, and removing any one stroke from the
+          // cluster won't orphan the arrow because the lead is the
+          // last (topmost) stroke in the group's draw order.
+          if (target && target.groupId) {
+            const groupId = target.groupId;
+            let lead: Shape | null = null;
+            for (let i = this.shapes.length - 1; i >= 0; i--) {
+              if (this.shapes[i].groupId === groupId) { lead = this.shapes[i]; break; }
+            }
+            if (lead) target = lead;
           }
         }
 
@@ -1628,6 +1690,7 @@ export class DrawingState extends EventTarget {
     }
     if (this._isPanningActive) {
       this._isPanningActive = false;
+      this._panPointerId = null;
       changed = true;
     }
     if (changed) this.notify("shapes");

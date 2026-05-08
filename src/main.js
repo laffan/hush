@@ -543,10 +543,13 @@ async function init() {
   });
 
   // Switching desks repaints the editor with the new desk's saved
-  // style; locked-style files win (file-opened above handles them).
-  state.on("active-desk-changed", () => {
+  // style and lands the user on whatever they last had open there —
+  // without the file-open the editor would keep showing the previous
+  // desk's file, which reads as a glitch ("did the switch even happen?").
+  state.on("active-desk-changed", async (deskId) => {
     const node = state.currentFileId ? findNodeByFileId(state.fileTree, state.currentFileId) : null;
     if (!node?.lockedStyleId) applyDeskGlobalStyle(state);
+    await (await import("./state/state-desks-ops.js")).openLastFileForDesk(state, deskId || state.settings.activeDeskId);
   });
 
   // Style changes (from sidebar or settings)

@@ -107,7 +107,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--panel-border, rgba(0, 0, 0, 0.1));
+  /* Border picks up var(--fg) at low opacity so both light and dark
+     themes get a meaningfully visible edge. Matches the touch-mode
+     pills (.cmd-floating-button) so the two pill families read as one
+     family of chrome. */
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 25%, transparent);
   border-radius: 50%;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
@@ -154,7 +158,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--panel-border, rgba(0, 0, 0, 0.1));
+  /* Same fg-tinted border as .sidebar-floating-toggle — keeps the two
+     pill families visually consistent across light, dark, and sepia
+     themes. */
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 25%, transparent);
   border-radius: 50%;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);

@@ -206,7 +206,14 @@ export function openStyleModal(state, existingStyle, onDone) {
         else state.settings.styles.push(draft);
       }
     }
+    // The active-style chain (`style-changed` → `applyActiveStyle` →
+    // `theme-changed`) is what repaints the editor surface. We also
+    // emit `settings-changed` so editor.js's settings-changed listener
+    // re-runs (font-size / line-height / highlight / block-cursor) —
+    // without this, edits to those knobs were not picked up live and
+    // only landed once the user re-selected the style from the sidebar.
     state.emit("style-changed");
+    state.emit("settings-changed");
   }
 
   function commitDraft() {

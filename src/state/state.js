@@ -155,6 +155,10 @@ export class AppState {
         this.fileTree = await tauriInvoke("get_file_tree");
         await _desks.migrateLegacyTreeIfNeeded(this);
         this.ensureSpecialNodes();
+        // Drop any empty Untitled docs that survived the last session
+        // (created by `newFile` but never typed into). Runs before the
+        // "restore last file" branch so we don't land on a ghost.
+        await _files.pruneEmptyUntitled(this);
         await this.saveFileTree();
 
         // Restore session state from settings
@@ -234,6 +238,8 @@ export class AppState {
     if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
     _desks.migrateLegacyTreeIfNeeded(this).catch(() => {});
     this.ensureSpecialNodes();
+    // Drop any empty Untitled docs that survived the last session.
+    _files.pruneEmptyUntitled(this).catch(() => {});
     this._saveTreeLocal();
     if (this.files.length > 0) this.currentFileId = this.files[0].id;
     else this._createLocalFile();
@@ -419,6 +425,12 @@ export class AppState {
   getActiveDesk() { return _desks.getActiveDesk(this); }
   getDeskGlobalStyleId() { return _desks.getDeskGlobalStyleId(this); }
   setDeskGlobalStyleId(id) { return _desks.setDeskGlobalStyleId(this, id); }
+  // Per-desk "last opened file" — see state-desks.js. Each open path
+  // (openFile / openNotebook) records into the active desk; switching
+  // desks restores the matching file via main.js's active-desk-changed
+  // handler.
+  getDeskLastFile(deskId) { return _desks.getDeskLastFile(this, deskId); }
+  recordActiveDeskLastFile(fileId, type) { return _desks.recordActiveDeskLastFile(this, fileId, type); }
   async toggleMinimap() { const n = !this.settings?.minimapVisible; await this.updateSettings({ minimapVisible: n }); this.emit("minimap-visibility-changed", n); }
   async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }

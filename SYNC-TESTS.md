@@ -191,6 +191,20 @@ The iPad uses the same JS code path; correctness should be identical. Difference
 
 ---
 
+### 14. Second-device receives a desk whose content has no Inbox child
+
+**Why:** The earlier `looksLikeUnwrappedDeskSkeleton` gate required an `Inbox` sub-child to recognize a top-level orphan as an absorbable desk skeleton. A Mac-organized desk that holds a project (or any folder) at its root, with no Inbox folder, would arrive on iPad as an orphan that the gate refused to absorb — the new desk landed empty next to the orphan. On a subsequent reboot, `ensureDesksTreeSpecials` would fold the orphan into the active desk and `reconcileSync` would push physical Dropbox moves to make `/Personal/<DeskName>/...`. Both halves have to be tested.
+
+1. **Mac**: Personal + a second desk `School` containing a project `Loss Paper` with one or more docs/notebooks inside. The desk's Inbox stays empty. Activate sync; wait for upload.
+2. **iPad**: fresh install. Activate sync. Wait through `performInitialSync` + the first cursor cycle (~15 s).
+3. Inspect iPad's tree: the School desk should now contain `Loss Paper` (and its docs), no orphan top-level "School" folder.
+4. Restart iPad. Inspect the tree again — still correct.
+5. Inspect Dropbox: still `/Personal/...` and `/School/Loss Paper/...`. **No `/Personal/School/...`.**
+
+**Pass:** No empty desks; no orphan top-level folders; the per-desk last-file slot resolves and switching desks lands the editor on the right file. Across a restart, no Dropbox moves fire.
+
+---
+
 ## What success looks like, in one sentence per area
 
 - **Renames**: one event in, one event out, same `remote_id` throughout, exactly one file on each device.
