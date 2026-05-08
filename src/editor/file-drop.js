@@ -16,6 +16,7 @@
 
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic", ".heif", ".avif", ".tif", ".tiff"];
+const NOTEBOOK_EXTENSIONS = [".hushnote"];
 
 function getExtension(name) {
   const i = name.lastIndexOf(".");
@@ -26,17 +27,37 @@ function isTextFile(file) {
   return TEXT_EXTENSIONS.includes(getExtension(file.name)) || file.type.startsWith("text/");
 }
 
+function isNotebookFile(file) {
+  return NOTEBOOK_EXTENSIONS.includes(getExtension(file.name));
+}
+
+function isImportableFile(file) {
+  return isTextFile(file) || isNotebookFile(file);
+}
+
 function isImageFile(file) {
   return IMAGE_EXTENSIONS.includes(getExtension(file.name)) || (file.type || "").startsWith("image/");
 }
 
 function findTextFile(e) {
-  const files = e.dataTransfer?.files;
+  const files = e.dataTransfer?.types;
   if (!files) return null;
-  for (let i = 0; i < files.length; i++) {
-    if (isTextFile(files[i])) return files[i];
+  const list = e.dataTransfer?.files;
+  if (!list) return null;
+  for (let i = 0; i < list.length; i++) {
+    if (isTextFile(list[i])) return list[i];
   }
   return null;
+}
+
+function findImportableFiles(e) {
+  const list = e.dataTransfer?.files;
+  if (!list) return [];
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    if (isImportableFile(list[i])) out.push(list[i]);
+  }
+  return out;
 }
 
 export function hasAcceptableDragPayload(e) {
@@ -72,29 +93,119 @@ export function setupFileDrop(state) {
   }, true);
 
   // ── Sidebar import overlay (lives inside #panel-overlay) ─────────
+  // The overlay is a non-blocking visual hint — the actual drop is handled
+  // at the panel level so the row under the cursor can route the file
+  // into the right folder/project/desk. Pointer events fall through to
+  // the rows so they can highlight individually as the cursor moves.
   const panelOverlay = document.getElementById("panel-overlay");
   const importOverlay = document.createElement("div");
   importOverlay.className = "drop-import-overlay hidden";
   importOverlay.innerHTML = `<span class="drop-zone-label">Import file</span>`;
   panelOverlay.appendChild(importOverlay);
 
-  importOverlay.addEventListener("dragover", (e) => {
+  let lastDropTargetRow = null;
+  function clearRowHighlight() {
+    if (lastDropTargetRow) {
+      lastDropTargetRow.classList.remove("drop-target");
+      lastDropTargetRow = null;
+    }
+  }
+  function filesPanelMounted() {
+    return !!panelOverlay.querySelector(".tree-create-btns");
+  }
+  // Images is reserved for image attachments and Trash is reserved for
+  // deletion — neither should accept imported docs / notebooks. Match
+  // the same id convention the files-panel uses (`__images__` /
+  // `__trash__`, with optional per-desk `:<deskId>` suffixes).
+  const isImagesId = (id) => id === "__images__" || id?.startsWith?.("__images__:");
+  const isTrashId = (id) => id === "__trash__" || id?.startsWith?.("__trash__:");
+  function isInsideReserved(nodeId) {
+    if (!nodeId) return false;
+    if (isImagesId(nodeId) || isTrashId(nodeId)) return true;
+    let cur = findParent(state.fileTree, nodeId);
+    while (cur) {
+      if (isImagesId(cur.id) || isTrashId(cur.id)) return true;
+      cur = findParent(state.fileTree, cur.id);
+    }
+    return false;
+  }
+  /** Resolve the target row under the pointer to a tree-node id that
+   *  accepts new children (folder / project / desk / Inbox). Returns the
+   *  active desk's Inbox when the pointer is over an empty area, a
+   *  non-container row, or a row inside the reserved Images / Trash
+   *  subtrees. */
+  function resolveDropParent(e) {
+    const row = e.target?.closest?.(".sl-item");
+    if (!row) return state.getInboxId();
+    const id = row.dataset.id;
+    const node = id ? findTreeNode(state.fileTree, id) : null;
+    if (!node) return state.getInboxId();
+    // Reject the row outright when it's Images, Trash, or anything
+    // nested within them — fall back to Inbox so the user still gets
+    // a sensible landing spot.
+    if (isInsideReserved(node.id)) return state.getInboxId();
+    if (node.type === "folder" || node.type === "project" || node.type === "desk") return node.id;
+    // Document / notebook / image rows → fall back to their parent.
+    const parent = findParent(state.fileTree, node.id);
+    if (parent && !isInsideReserved(parent.id) &&
+        (parent.type === "folder" || parent.type === "project" || parent.type === "desk")) {
+      return parent.id;
+    }
+    return state.getInboxId();
+  }
+  function findTreeNode(nodes, id) {
+    for (const n of nodes || []) {
+      if (n.id === id) return n;
+      const r = findTreeNode(n.children, id);
+      if (r) return r;
+    }
+    return null;
+  }
+  function findParent(nodes, id) {
+    for (const n of nodes || []) {
+      if (Array.isArray(n.children)) {
+        if (n.children.some((c) => c?.id === id)) return n;
+        const deeper = findParent(n.children, id);
+        if (deeper) return deeper;
+      }
+    }
+    return null;
+  }
+  function highlightTargetRow(parentId) {
+    clearRowHighlight();
+    if (!parentId) return;
+    const row = panelOverlay.querySelector(`.sl-item[data-id="${parentId}"]`);
+    if (row) {
+      row.classList.add("drop-target");
+      lastDropTargetRow = row;
+    }
+  }
+
+  panelOverlay.addEventListener("dragover", (e) => {
+    if (!filesPanelMounted()) return;
+    if (!e.dataTransfer?.types?.includes?.("Files")) return;
     e.preventDefault();
-    e.stopPropagation();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    importOverlay.classList.add("drop-zone-active");
+    const parentId = resolveDropParent(e);
+    highlightTargetRow(parentId);
   });
-  importOverlay.addEventListener("dragleave", () => {
-    importOverlay.classList.remove("drop-zone-active");
+  panelOverlay.addEventListener("dragleave", (e) => {
+    // Only clear when the pointer actually leaves the overlay element.
+    if (e.target === panelOverlay) clearRowHighlight();
   });
-  importOverlay.addEventListener("drop", async (e) => {
+  panelOverlay.addEventListener("drop", async (e) => {
+    if (!filesPanelMounted()) return;
+    const importable = findImportableFiles(e);
+    if (importable.length === 0) return;
     e.preventDefault();
     e.stopPropagation();
+    const parentId = resolveDropParent(e);
+    clearRowHighlight();
     hideImport();
-    const file = findTextFile(e);
-    if (!file) return;
-    const content = await file.text();
-    await importAsNewDocument(state, content);
+    for (const file of importable) {
+      try { await importFileIntoTree(state, file, parentId); }
+      catch (err) { console.error("Sidebar import failed:", err); }
+    }
   });
 
   // ── Editor drop handler (doc mode) ───────────────────────────────
@@ -138,7 +249,7 @@ export function setupFileDrop(state) {
   document.addEventListener("dragenter", (e) => {
     if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
     dragCounter++;
-    if (dragCounter === 1 && !panelOverlay.classList.contains("hidden")) {
+    if (dragCounter === 1 && !panelOverlay.classList.contains("hidden") && filesPanelMounted()) {
       importOverlay.classList.remove("hidden");
     }
   });
@@ -157,12 +268,20 @@ export function setupFileDrop(state) {
   }
 }
 
-async function importAsNewDocument(state, text) {
-  await state.newFile();
-  if (state.editor) {
-    state.editor.setContent(text);
-    state.markDirty();
-    await state.saveCurrentFile();
+/** Import a single dropped file into the tree under `parentId`. Handles
+ *  both plain-text docs (`.md`, `.txt`) and notebooks (`.hushnote` —
+ *  unpacked via the same sync helper Dropbox uses). */
+async function importFileIntoTree(state, file, parentId) {
+  const baseName = file.name.replace(/\.[^.]+$/, "") || "Imported";
+  if (isNotebookFile(file)) {
+    const buf = await file.arrayBuffer();
+    const { unpackNotebook } = await import("../sync/notebook-sync.js");
+    const content = await unpackNotebook(new Uint8Array(buf));
+    return state.createNotebook(baseName, parentId, { openImmediately: false, initialContent: content });
+  }
+  if (isTextFile(file)) {
+    const text = await file.text();
+    return state.newFile(parentId, { openImmediately: false, initialContent: text, initialName: baseName });
   }
 }
 

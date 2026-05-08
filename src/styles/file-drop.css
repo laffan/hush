@@ -1,5 +1,7 @@
 /* ===== File Drop — Sidebar Import Overlay ===== */
-/* Sits inside #panel-overlay and covers just the sidebar panel area */
+/* Sits inside #panel-overlay as a non-blocking visual hint; the actual
+   drop is handled at the panel level so individual rows can light up
+   under the cursor and route the file into the right folder. */
 .drop-import-overlay {
   position: absolute;
   top: 0;
@@ -8,12 +10,14 @@
   bottom: 0;
   z-index: 10;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
+  padding-bottom: 18px;
   border: 2px dashed var(--panel-border, rgba(128, 128, 128, 0.3));
   border-radius: 8px;
   margin: 8px;
-  background: var(--panel-bg, rgba(25, 25, 25, 0.5));
+  background: transparent;
+  pointer-events: none;
   transition: border-color 0.15s;
 }
 
@@ -21,19 +25,22 @@
   display: none;
 }
 
-.drop-import-overlay.drop-zone-active {
-  border-color: var(--fg, #e0e0e0);
-}
-
 .drop-zone-label {
   font-family: var(--font-family, sans-serif);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--fg, #e0e0e0);
   opacity: 0.5;
   pointer-events: none;
   user-select: none;
+  background: var(--theme-bg, var(--bg));
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
-.drop-zone-active .drop-zone-label {
-  opacity: 1;
+/* Row that will receive the imported file, lit up while the cursor is
+   over a folder / project / desk row (or any non-container row that
+   resolves to its parent folder). */
+.sl-item.drop-target > .sl-item-content {
+  background: rgba(128, 128, 128, 0.22);
+  border-radius: 4px;
 }

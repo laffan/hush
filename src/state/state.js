@@ -391,12 +391,21 @@ export class AppState {
     if (IS_TAURI) {
       try {
         const result = await tauriInvoke("create_notebook", { name: finalName, parentId: targetParent });
+        // Imported notebooks pass `initialContent` (the unpacked .hushnote
+        // JSON envelope). Overwrite the empty default before syncing so
+        // the imported shapes are what propagate.
+        let initialContent = result.file.content || "[]";
+        if (typeof opts.initialContent === "string" && opts.initialContent.length > 0) {
+          initialContent = opts.initialContent;
+          try { await tauriInvoke("save_file", { id: result.file.id, content: initialContent }); }
+          catch (e) { console.error("Save imported notebook content failed:", e); }
+        }
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
         this.emit("files-changed");
         // Propagate new notebook to Dropbox sync
         const nbNode = findNodeByFileId(this.fileTree, result.file.id);
-        if (nbNode) this.syncCreateFile(nbNode.id, result.file.id, result.file.content || "[]");
+        if (nbNode) this.syncCreateFile(nbNode.id, result.file.id, initialContent);
         if (openImmediately) await this.openNotebook(result.file.id);
         return { fileId: result.file.id, name: result.node?.name || finalName };
       } catch (e) { console.error("Create notebook failed:", e); }
@@ -496,19 +505,27 @@ export class AppState {
       try { const file = await tauriInvoke("create_file"); fileId = file.id; this.files = await tauriInvoke("list_files"); }
       catch (e) { console.error("Create file failed:", e); return; }
     } else { fileId = this._createLocalFile().id; }
-    const initialName = uniqueChildName(findNode(this.fileTree, targetParent), "Untitled", "document");
+    // Imported docs ship with their original basename via `opts.initialName`;
+    // brand-new docs fall back to "Untitled" and get uniquified.
+    const baseName = (typeof opts.initialName === "string" && opts.initialName.trim()) ? opts.initialName.trim() : "Untitled";
+    const initialName = uniqueChildName(findNode(this.fileTree, targetParent), baseName, "document");
     if (initialName !== "Untitled" && IS_TAURI) try { await tauriInvoke("rename_file", { id: fileId, name: initialName }); this.files = await tauriInvoke("list_files"); } catch (_) {}
+    const initialContent = (typeof opts.initialContent === "string") ? opts.initialContent : "";
+    if (initialContent && IS_TAURI) {
+      try { await tauriInvoke("save_file", { id: fileId, content: initialContent }); }
+      catch (e) { console.error("Save initial content failed:", e); }
+    }
     const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
     insertNode(this.fileTree, treeNode, targetParent, findNode);
     await this.saveFileTree();
     // Propagate new file to external filesystem if inside a synced folder
-    this.syncCreateFile(treeNode.id, fileId, "");
+    this.syncCreateFile(treeNode.id, fileId, initialContent);
     if (openImmediately) {
       this.currentFileId = fileId;
       this.currentProjectId = null;
       this.projectDocIds = [];
       if (this.editor) {
-        this.editor.setContent("");
+        this.editor.setContent(initialContent);
         this.editor.focus();
       }
     }
