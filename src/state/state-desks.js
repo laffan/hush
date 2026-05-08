@@ -24,6 +24,11 @@
 
 const SPECIAL_KINDS = ["__inbox__", "__images__", "__trash__"];
 
+function _trace(label, detail) {
+  // Loaded lazily so this module's existing import surface stays clean.
+  import("../sync/sync-trace.js").then((m) => m.traceSync(label, detail)).catch(() => {});
+}
+
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -324,6 +329,14 @@ export function ensureDesksTreeSpecials(state, tree) {
   const target = desks.find((d) => d.id === state.settings?.activeDeskId) || desks[0];
   if (target) {
     const stragglers = tree.filter((n) => n.type !== "desk" && !isSpecialNodeId(n.id));
+    if (stragglers.length > 0) {
+      _trace("ensureDesksTreeSpecials.stuff", {
+        target: target.name,
+        targetId: target.id,
+        stragglers: stragglers.map((s) => `${s.name}[${s.type}]`).join(","),
+        knownDeskNames: (state.settings?.desks || []).map((d) => d.name).join(","),
+      });
+    }
     for (const s of stragglers) {
       const idx = tree.indexOf(s);
       if (idx >= 0) tree.splice(idx, 1);
@@ -360,23 +373,29 @@ function looksLikeUnwrappedDeskSkeleton(node) {
  *  specials). Returns true when something was absorbed. */
 export function absorbMatchingFolder(state, desk) {
   const tree = state.fileTree;
-  function findInArr(arr) {
+  let foundParent = null; // parent array we plucked from (for trace context)
+  function findInArr(arr, parentLabel) {
     for (let i = 0; i < arr.length; i++) {
       const n = arr[i];
       if (!n) continue;
       if (n.name === desk.name && looksLikeUnwrappedDeskSkeleton(n)) {
         const [removed] = arr.splice(i, 1);
+        foundParent = parentLabel;
         return removed;
       }
       if (Array.isArray(n.children)) {
-        const found = findInArr(n.children);
+        const found = findInArr(n.children, `${parentLabel}>${n.name}[${n.type}]`);
         if (found) return found;
       }
     }
     return null;
   }
-  const folder = findInArr(tree);
+  const folder = findInArr(tree, "(root)");
   if (!folder) return false;
+  _trace("absorbMatchingFolder.hit", {
+    deskName: desk.name, deskId: desk.id, foundUnder: foundParent,
+    folderType: folder.type, kids: (folder.children || []).map((c) => c?.name).join(","),
+  });
   const mergeKnownSpecial = (child, kind) => {
     const newId = specialNodeId(kind, desk.id);
     const existing = desk.children.find((x) => x.id === newId);
@@ -411,6 +430,7 @@ export function reconcileDesksWithStrayFolders(state) {
   for (const d of desks) {
     while (absorbMatchingFolder(state, d)) absorbed++;
   }
+  if (absorbed > 0) _trace("reconcileDesksWithStrayFolders", { absorbed });
   return absorbed;
 }
 
@@ -492,8 +512,12 @@ export async function migrateLegacyTreeIfNeeded(state) {
     if (reconcileDesksWithStrayFolders(state) > 0) {
       try { await state.saveFileTree(); } catch (_) {}
     }
+    _trace("migrateLegacyTreeIfNeeded.skip", {
+      desks: tree.filter((n) => n.type === "desk").map((n) => `${n.name}[${n.id}]`).join(","),
+    });
     return false;
   }
+  _trace("migrateLegacyTreeIfNeeded.wrap", { topLevel: tree.length });
   await enableDesks(state, "Personal");
   return true;
 }

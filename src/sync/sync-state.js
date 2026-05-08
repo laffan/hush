@@ -7,6 +7,10 @@
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 
+function _trace(label, detail) {
+  import("./sync-trace.js").then((m) => m.traceSync(label, detail)).catch(() => {});
+}
+
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);
@@ -212,6 +216,11 @@ export async function reconcileSync(state) {
   const docs = collectDocs(state.fileTree);
   const manifest = buildSyncManifest(state.fileTree);
   const expectedPaths = new Map(manifest.files.filter(f => f.fileId).map(f => [f.fileId, f.relativePath]));
+  _trace("reconcileSync.enter", {
+    docs: docs.length,
+    manifestDirs: manifest.directories.length,
+    manifestFiles: manifest.files.length,
+  });
 
   for (const doc of docs) {
     const expectedPath = expectedPaths.get(doc.fileId);
@@ -225,13 +234,19 @@ export async function reconcileSync(state) {
       try { const file = await tauriInvoke("load_file", { id: doc.fileId }); content = file.content || ""; } catch (_) {}
       const fullPath = basePath ? `${basePath}/${expectedPath}` : `/${expectedPath}`;
       try {
+        _trace("reconcileSync.upload-fresh", { name: doc.name, path: expectedPath });
         await uploadContent(dbx, fullPath, content, expectedPath);
         await tauriInvoke("register_synced_file", {
           internalId: doc.fileId, syncFolderId: SYNC_FOLDER_ID,
           relativePath: expectedPath, content,
         });
-      } catch (_) {}
+      } catch (e) { _trace("reconcileSync.upload-fresh.fail", { path: expectedPath, err: String(e?.message || e) }); }
     } else if (info.relativePath !== expectedPath) {
+      _trace("reconcileSync.move", {
+        name: doc.name,
+        from: info.relativePath,
+        to: expectedPath,
+      });
       const oldFull = basePath ? `${basePath}/${info.relativePath}` : `/${info.relativePath}`;
       const newFull = basePath ? `${basePath}/${expectedPath}` : `/${expectedPath}`;
       try {
@@ -240,7 +255,7 @@ export async function reconcileSync(state) {
         // 409 = conflict (destination already exists or source missing).
         // Verify the file exists at the expected path; if so, just update the map.
         const meta = await dbx.getMetadata(newFull).catch(() => null);
-        if (!meta) continue; // neither location works — skip
+        if (!meta) { _trace("reconcileSync.move.skip-no-dest", { from: info.relativePath, to: expectedPath }); continue; }
       }
       try {
         await tauriInvoke("rename_sync_file", {

@@ -19,6 +19,10 @@ import { pullDropboxCursor } from "./dropbox-cursor.js";
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 
+function _trace(label, detail) {
+  import("./sync-trace.js").then((m) => m.traceSync(label, detail)).catch(() => {});
+}
+
 let syncPollTimer = null;
 let syncing = false;
 let _state = null;
@@ -188,6 +192,7 @@ async function syncDropboxCursor(state) {
   const handlers = {
     onCreated: async (ev) => {
       try {
+        _trace("cursor.onCreated", { path: ev.relativePath, kind: ev.kind, remoteId: ev.remoteId });
         const created = await applyCreated(state, ev, dbx, invoke, downloadImage);
         if (created) {
           treeChanged = true;
@@ -227,20 +232,26 @@ async function syncDropboxCursor(state) {
       _emitProgress(state);
     },
     onMeta: async (ev) => {
+      const filename = ev.relativePath.split("/").pop();
       try {
         const { isOurRev } = await import("./meta-sync.js");
-        if (isOurRev(ev.rev)) return; // our own upload echoing back
+        if (isOurRev(ev.rev)) {
+          _trace("cursor.onMeta.echo", { filename });
+          return; // our own upload echoing back
+        }
 
-        const filename = ev.relativePath.split("/").pop();
         const dispatcher = await getMetaDispatcher(filename);
-        if (!dispatcher) return; // unknown meta file — ignore for forward-compat
+        if (!dispatcher) { _trace("cursor.onMeta.skip-unknown", { filename }); return; }
 
+        _trace("cursor.onMeta.apply", { filename });
         const payload = await dbx.downloadFile(ev.dropboxPath);
         const result = await dispatcher(state, payload);
+        _trace("cursor.onMeta.applied", { filename, result: JSON.stringify(result) });
         if (result && (result.matched || result.added || result.applied)) {
           showSyncIndicator("pulled", `${filename} (${result.matched || 0}/${result.added || 0})`);
         }
       } catch (e) {
+        _trace("cursor.onMeta.fail", { filename, err: String(e?.message || e) });
         console.warn("cursor: meta apply failed:", e);
       }
     },
@@ -429,16 +440,24 @@ function insertDocumentNode(state, relativePath, fileId, isNotebook, name) {
   const rawFileName = parts.pop();
   const fileName = (rawFileName || name || "Untitled").replace(/\.(md|hushnote)$/, "");
   let current = state.fileTree;
+  const isRoot = () => current === state.fileTree;
   for (const dirName of parts) {
     if (!dirName) continue;
     let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
       || (dirName === "Inbox" && current.find(n => n.id === "__inbox__" || n.id?.startsWith("__inbox__:")))
       || (dirName === "Trash" && current.find(n => n.id === "__trash__" || n.id?.startsWith("__trash__:")));
     if (!folder) {
+      const orphanAtRoot = isRoot();
       folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
       const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
       if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
       else current.push(folder);
+      if (orphanAtRoot) {
+        _trace("insertDocumentNode.orphan-root", {
+          dirName, path: relativePath,
+          knownDeskNames: (state.settings?.desks || []).map((d) => d.name).join(","),
+        });
+      }
     }
     if (!Array.isArray(folder.children)) folder.children = [];
     current = folder.children;
