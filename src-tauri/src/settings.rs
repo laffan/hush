@@ -22,6 +22,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub touch_mode: bool,
 
+    // iPad-only — hide the system top status bar (time/battery/wifi) and
+    // the Stage-Manager corner resize handle. Defaults to true. The
+    // toggle only surfaces in the iPad settings UI.
+    #[serde(default = "default_true")]
+    pub hide_system_chrome: bool,
+
     // Editor > Themes
     #[serde(default = "default_light_theme")]
     pub light_theme: String,
@@ -506,6 +512,7 @@ impl Default for AppSettings {
             visibility: default_visibility(),
             appearance: default_appearance(),
             touch_mode: false,
+            hide_system_chrome: true,
             light_theme: default_light_theme(),
             dark_theme: default_dark_theme(),
             font_size: default_font_size(),

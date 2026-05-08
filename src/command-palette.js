@@ -8,8 +8,9 @@
 import { openFindReplace, openFindAll } from "./editor/find-replace.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
+import { canUseAsNote, isDesktopTauri } from "./command-palette-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
-import { getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition } from "./pane/pane-manager.js";
+import { getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition, replacePaneContent } from "./pane/pane-manager.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
 import { openInNewWindow } from "./multi-window.js";
@@ -95,20 +96,6 @@ const icons = {
   trash: typeIcons.trash,
 };
 
-/** Detect whether we're running on a desktop Tauri build that supports
- *  spawning additional windows. Multi-window is desktop-only — iOS /
- *  iPadOS Tauri intentionally exposes a single window surface. */
-function isDesktopTauri() {
-  if (typeof window === "undefined") return false;
-  if (!window.__TAURI_INTERNALS__) return false;
-  const ua = navigator.userAgent || "";
-  if (/iPad|iPhone|iPod/.test(ua)) return false;
-  const platform = navigator.platform || "";
-  const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
-  if (/Mac/i.test(platform) && tp > 0) return false; // iPadOS reporting as Mac
-  return true;
-}
-
 // Context: "shared" = always shown, "doc" = doc/project only, "notebook" = notebook only
 function buildCommands(state) {
   const inNotebook = !!state.currentNotebookFileId;
@@ -185,6 +172,12 @@ function buildCommands(state) {
     { id: "style-lock", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),
       action: async (s) => { await setLockedStyleId(s, s.settings.activeStyleId || "__default__"); } },
+    { id: "use-as-note", label: "Use as note", icon: icons.doc, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !canUseAsNote(s, false),
+      action: async (s) => { const n = findNodeByFileId(s.fileTree, s.currentFileId); if (n) await s.toggleUseAsNote(n.id); } },
+    { id: "stop-use-as-note", label: "Stop using as note", icon: icons.doc, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !canUseAsNote(s, true),
+      action: async (s) => { const n = findNodeByFileId(s.fileTree, s.currentFileId); if (n) await s.toggleUseAsNote(n.id); } },
     { id: "style-unlock", label: "Unlock style from document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !getLockedStyleId(s),
       // After clearing the lock, fall back to the active desk's saved
@@ -249,6 +242,12 @@ function buildCommands(state) {
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",
       action: () => fitActivePaneToGap() },
+    { id: "replace-pane-content", label: "Replace pane content", icon: icons.pane, shortcutKey: null, ctx: "pane",
+      keepOpen: true,
+      action: (s, p) => enterFilePicker(p, s, "Replace pane content with…", (f) => {
+        const id = getActivePaneId();
+        if (id) replacePaneContent(id, f.fileId, f.name, f.type);
+      }) },
 
     // === NOTEBOOK ONLY ===
     { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",

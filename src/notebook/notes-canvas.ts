@@ -29,6 +29,16 @@ function getFlagColorsFromHush(): Record<string, string> | undefined {
   return appState?.settings?.flagColors;
 }
 
+/** Mirror Hush's `touchMode` setting into the render state so the
+ *  flowchart-edge delete dot only paints in Touch mode (mouse users
+ *  already get the X on hover). */
+function getTouchModeFromHush(): boolean {
+  const appState = (window as unknown as {
+    __hushState__?: { settings?: { touchMode?: boolean } };
+  }).__hushState__;
+  return !!appState?.settings?.touchMode;
+}
+
 /** The notebook instance that most recently received a pointer interaction.
  *  The document-level "copy" listener below routes Cmd+C to this one. */
 let lastActiveNotebook: NotesCanvas | null = null;
@@ -603,6 +613,7 @@ export class NotesCanvas {
         flowHoveredEdgeId: this.state.flowHoveredEdgeId,
         strokeEngineDragging: this.state.strokeEngineDragging,
         flagColors: getFlagColorsFromHush(),
+        touchMode: getTouchModeFromHush(),
       });
       this._rafId = requestAnimationFrame(loop);
     };

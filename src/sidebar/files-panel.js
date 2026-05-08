@@ -6,7 +6,7 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions } from "../state/tree-helpers.js";
+import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
@@ -67,7 +67,7 @@ function windowBadgesHtml(item, state) {
 }
 
 // Hover action buttons — no rename for untitled docs or special nodes, no flag in trash
-function actionButtons(nodeId, nodeType, inTrash, item) {
+function actionButtons(nodeId, nodeType, inTrash, item, inProject) {
   if (isTrashId(nodeId)) {
     return `<span class="tree-actions" data-node-id="${nodeId}">
       <button data-tree-action="empty-trash" class="tree-action-text" data-tooltip="Empty Trash">Empty</button>
@@ -107,8 +107,10 @@ function actionButtons(nodeId, nodeType, inTrash, item) {
       <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
     </button>`;
   }
+  // "Use as note" — paper icon, doc-in-project only.
+  const noteBtn = (isDoc && inProject && !inTrash) ? `<button class="tree-action-note${item?.useAsNote ? " active" : ""}" data-tree-action="use-as-note" data-tooltip="${item?.useAsNote ? "Stop using as note" : "Use as note"}"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></button>` : "";
   return `<span class="tree-actions" data-node-id="${nodeId}">
-    ${flagBtn}${renameBtn}${convertBtn}${dupBtn}${delBtn}
+    ${flagBtn}${renameBtn}${noteBtn}${convertBtn}${dupBtn}${delBtn}
   </span>`;
 }
 
@@ -199,9 +201,11 @@ export function createFilesPanel(container, state, hidePanel) {
       const icon = getIcon(item);
       const isActive = isItemActive(item, state);
       const inTrash = state.isInTrash(item.id);
+      const _p = item.type === "document" ? findParentOfNode(state.fileTree, item.id) : null;
+      const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
       const el = document.createElement("span");
       el.className = "tree-item-row" + (isActive ? " active" : "");
-      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item)}`;
+      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
       if (item.type === "image" && item.fileId) {
         attachImageTooltipToRow(el, item.fileId, item.name);
       }
@@ -318,6 +322,8 @@ function onActionClick(e) {
     handleDelete(nodeId, storedState);
   } else if (action === "flag") {
     storedState.toggleFlagged(nodeId).then(() => refreshList(storedState));
+  } else if (action === "use-as-note") {
+    storedState.toggleUseAsNote(nodeId).then(() => refreshList(storedState));
   } else if (action === "reveal-in-finder") {
     handleRevealInFinder(nodeId, storedState);
   } else if (action === "empty-trash") {

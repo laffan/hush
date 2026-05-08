@@ -10,6 +10,11 @@ identifier = "allow-remove-listener"
 description = "Allow JS to remove a previously registered plugin-event listener."
 commands.allow = ["removeListener"]
 
+[[permission]]
+identifier = "allow-set-chrome-hidden"
+description = "Allow JS to ask the iPad shell to hide / show the system status bar and the Stage Manager resize handle."
+commands.allow = ["set_chrome_hidden"]
+
 [default]
-description = "Default permissions: allow JS to subscribe to and unsubscribe from this plugin's events."
-permissions = ["allow-register-listener", "allow-remove-listener"]
+description = "Default permissions: allow JS to subscribe to and unsubscribe from this plugin's events, and toggle iPad system chrome."
+permissions = ["allow-register-listener", "allow-remove-listener", "allow-set-chrome-hidden"]

@@ -119,7 +119,7 @@ export class FlowchartLayer<S extends FlowNode> {
       isFlowable: config.isFlowable ?? (() => true),
       gapX: config.gapX ?? 60,
       gapY: config.gapY ?? 16,
-      tidyGapX: config.tidyGapX ?? 150,
+      tidyGapX: config.tidyGapX ?? 90,
       tidyGapY: config.tidyGapY ?? 25,
       arrowColor: config.arrowColor ?? "#666",
       arrowWidth: config.arrowWidth ?? 1.5,

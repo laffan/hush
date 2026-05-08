@@ -8,6 +8,7 @@ export function createDefaultSettings() {
     visibility: "both",
     appearance: "auto",
     touchMode: false,
+    hideSystemChrome: true,
     lightTheme: "ayuLight",
     darkTheme: "dracula",
     fontSize: 18,

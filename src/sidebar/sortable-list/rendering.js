@@ -25,6 +25,10 @@ export function renderList(items, container, path, ctx) {
     li.dataset.depth = String(path.length);
     li.dataset.canNest = String(isNestable);
     if (item && typeof item.type === "string") li.dataset.type = item.type;
+    // Mark "Use as Note" docs so the project-children CSS can paint
+    // them at 50 % opacity alongside notebooks. Persisted on the tree
+    // node and read straight off the rendered item.
+    if (item && item.useAsNote) li.dataset.useAsNote = "true";
 
     if (state.selectedPath && pathsEqual(itemPath, state.selectedPath)) {
       li.classList.add("selected");

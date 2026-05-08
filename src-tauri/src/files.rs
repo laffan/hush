@@ -41,6 +41,7 @@ impl FileManager {
                     flagged: false,
                     sync_folder_id: None,
                     locked_style_id: None,
+                    use_as_note: false,
                 })
                 .collect();
             self.save_file_tree(&tree)?;
@@ -69,6 +70,7 @@ impl FileManager {
             flagged: false,
             sync_folder_id: None,
             locked_style_id: None,
+            use_as_note: false,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());
@@ -90,6 +92,7 @@ impl FileManager {
             flagged: false,
             sync_folder_id: None,
             locked_style_id: None,
+            use_as_note: false,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());
@@ -116,6 +119,7 @@ impl FileManager {
             flagged: false,
             sync_folder_id: None,
             locked_style_id: None,
+            use_as_note: false,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());

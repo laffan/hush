@@ -38,13 +38,40 @@ function isIOS() {
 }
 
 let _initialised = false;
+let _lastChromeHidden = null;
 
-export function initPencilBridge() {
+/** Push the current "hide system chrome" setting to the iPad shell.
+ *  iPadOS doesn't expose a runtime toggle for the status bar or the
+ *  Stage Manager resize handle, so the plugin's Swift side swizzles
+ *  `prefersStatusBarHidden` + `prefersHomeIndicatorAutoHidden` and
+ *  pins the scene size restrictions while chrome is hidden. */
+export async function applyChromeHidden(hidden) {
+  if (!IS_TAURI || !isIOS()) return;
+  if (_lastChromeHidden === hidden) return;
+  _lastChromeHidden = hidden;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("plugin:pencil|set_chrome_hidden", { hidden });
+  } catch (err) {
+    console.warn("[pencil-bridge] set_chrome_hidden failed:", err);
+  }
+}
+
+export function initPencilBridge(state) {
   if (_initialised) return;
   _initialised = true;
   if (!IS_TAURI) return;
   if (!isIOS()) return;
   setNotebookPencilOnly(true);
+
+  // Push the Hide System Chrome setting to the iPad shell on boot and
+  // on every settings change. Wired here so main.js doesn't need its
+  // own pencil-bridge import side-channel.
+  if (state) {
+    const push = () => applyChromeHidden(state.settings.hideSystemChrome !== false);
+    push();
+    state.on("settings-changed", push);
+  }
 
   // Subscribe to the native plugin's `double-tap` event. The plugin
   // permissions toml allows registerListener / removeListener; the

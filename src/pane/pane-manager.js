@@ -199,6 +199,40 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
  *  pane visibility after merging remote panes from another device. */
 export { onContextChange as refreshPaneContextVisibility };
 
+/** Swap the file currently displayed in `paneId` for a different one,
+ *  preserving the pane's position, size, attach, pin, and ownerContext.
+ *  Called from the command palette's "Replace pane content" entry. */
+export async function replacePaneContent(paneId, fileId, fileName, fileType) {
+  const pane = panes.get(paneId);
+  if (!pane) return;
+  // Persist whatever is in the pane right now before tearing it down.
+  await savePaneContent(pane);
+  // Detach listeners + the canvas/scroll attach loop. Rebuilt by loadPaneContent.
+  if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
+  if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
+  if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
+  if (pane.attached) stopAttachSync(pane);
+  if (pane.editor) { try { pane.editor.destroy(); } catch (_) {} pane.editor = null; }
+  if (pane.notebook) { try { pane.notebook.destroy(); } catch (_) {} pane.notebook = null; }
+  // Reset content area so the new editor/notebook mounts into a clean DOM.
+  if (pane._content) pane._content.replaceChildren();
+
+  pane.fileId = fileId;
+  pane.fileName = fileName;
+  pane.fileType = fileType;
+  pane.dirty = false;
+  pane.editorScrollTop = 0;
+  pane.localSync = null;
+  pane.zotero = null;
+
+  // Update the title bar text without rebuilding the toolbar.
+  const titleLink = pane._titlebar?.querySelector(".fp-title-link");
+  if (titleLink) titleLink.textContent = fileName;
+
+  await loadPaneContent(pane);
+  schedulePersist();
+}
+
 export function closePane(id) {
   const pane = panes.get(id);
   if (!pane) return;

@@ -33,7 +33,10 @@ export function removeNode(nodes, id) {
 export function collectDocumentIds(nodes) {
   const ids = [];
   for (const n of nodes) {
-    if (n.type === "document" && n.fileId) ids.push(n.fileId);
+    // Docs flagged `useAsNote: true` ride alongside the project as
+    // supplementary material — they should not feed the joined editor
+    // buffer (matching the existing notebook-in-project behaviour).
+    if (n.type === "document" && n.fileId && !n.useAsNote) ids.push(n.fileId);
     if (n.children) ids.push(...collectDocumentIds(n.children));
   }
   return ids;
@@ -205,8 +208,11 @@ export function normalizeProjectChildren(nodes) {
     if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
       const docs = [], notebooks = [], rest = [];
       for (const c of n.children) {
-        if (c.type === "document") docs.push(c);
-        else if (c.type === "notebook") notebooks.push(c);
+        // Docs marked `useAsNote: true` sort with notebooks (under the
+        // joined buffer at 50 % opacity) so a project can carry both
+        // the doc's main flow and supplementary notes side by side.
+        if (c.type === "document" && !c.useAsNote) docs.push(c);
+        else if (c.type === "notebook" || (c.type === "document" && c.useAsNote)) notebooks.push(c);
         else rest.push(c);
       }
       n.children = [...docs, ...notebooks, ...rest];

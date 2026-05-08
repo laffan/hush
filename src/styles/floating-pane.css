@@ -219,7 +219,7 @@
 }
 
 .floating-pane-content .cm-scroller {
-  padding: 8px 12px;
+  padding: 8px 12px 100px;
   overflow: auto;
 }
 

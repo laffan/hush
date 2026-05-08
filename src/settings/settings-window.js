@@ -185,6 +185,7 @@ function bindAll() {
   bindCheckbox("setting-always-on-top", "alwaysOnTop");
   bindCheckbox("setting-show-tooltips", "showTooltips");
   bindCheckbox("setting-touch-mode", "touchMode");
+  bindCheckbox("setting-hide-system-chrome", "hideSystemChrome");
 
   // Editor tab — font/theme/size/line-height live in the Styles sidebar now;
   // only sticky headers, panes, typewriter and footnotes remain here.

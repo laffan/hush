@@ -66,6 +66,12 @@ export interface RenderState {
    *  engine bbox is the only chrome on the canvas during the
    *  gesture. */
   strokeEngineDragging?: boolean;
+  /** Hush's iPad Touch-mode flag, mirrored into the render state by
+   *  notes-canvas.ts. The flowchart edge-delete dot is a touch-only
+   *  affordance (mouse hover already reveals the same X) so we hide
+   *  the dot when the user isn't on a touch device — the X still
+   *  shows up via the existing pointermove path. */
+  touchMode?: boolean;
 }
 
 export function render(canvas: HTMLCanvasElement, state: RenderState): void {
@@ -252,13 +258,17 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   // against getEdgeMidpoint with a 12 px-screen-radius / zoom threshold).
   if (state.flowchart) {
     const hoveredId = state.flowHoveredEdgeId ?? null;
+    const touch = !!state.touchMode;
     for (const e of state.flowchart.edges) {
       const mid = state.flowchart.getEdgeMidpoint(e.id, shapes);
       if (!mid) continue;
       const sx = mid.x * camera.zoom + camera.x;
       const sy = mid.y * camera.zoom + camera.y;
+      // Hovered edges always paint the X (mouse hover or touch tap).
+      // The persistent dot is only a touch affordance — mouse users
+      // discover the X via hover so the dot just adds visual noise.
       if (e.id === hoveredId) drawEdgeDeleteButton(ctx, sx, sy, theme);
-      else drawEdgeDeleteDot(ctx, sx, sy, theme);
+      else if (touch) drawEdgeDeleteDot(ctx, sx, sy, theme);
     }
   }
 

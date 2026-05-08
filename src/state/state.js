@@ -364,6 +364,7 @@ export class AppState {
   async emptyTrash() { const m = await import("./state-tree.js"); return m.emptyTrash(this); }
   async renameTreeNode(nodeId, newName) { const m = await import("./state-tree.js"); return m.renameTreeNode(this, nodeId, newName); }
   async toggleFlagged(nodeId) { const m = await import("./state-tree.js"); return m.toggleFlagged(this, nodeId); }
+  async toggleUseAsNote(nodeId) { const m = await import("./state-tree.js"); return m.toggleUseAsNote(this, nodeId); }
   async duplicateTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.duplicateTreeNode(this, nodeId); }
   async convertContainerType(nodeId, targetType) { const m = await import("./state-tree.js"); return m.convertContainerType(this, nodeId, targetType); }
 

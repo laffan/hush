@@ -143,6 +143,13 @@ export function updateColumnResizers(state) {
     if (scroller) {
       scroller.style.paddingLeft = leftPad + "px";
       scroller.style.paddingRight = rightPad + "px";
+      // 100 px bottom pad for plain docs so the last line doesn't sit
+      // flush against the editor floor when the user has scrolled to
+      // the end. Skip in projects (extra space between concatenated
+      // docs would read as a gap) and in notebook mode (no scroller
+      // there anyway).
+      const isPlainDoc = !state.currentNotebookFileId && !state.currentProjectId;
+      scroller.style.paddingBottom = isPlainDoc ? "100px" : "";
     }
     if (state.editor && state.editor.view) state.editor.view.requestMeasure();
     state.emit("layout-changed");

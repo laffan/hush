@@ -225,6 +225,30 @@ export async function toggleFlagged(state, nodeId) {
   await state.saveFileTree();
 }
 
+/** Flip a doc inside a project between "main flow" (joins the project's
+ *  editor buffer) and "Use as Note" (sorts with notebooks under the
+ *  buffer at 50 % opacity). No-op for non-document nodes. The flag is
+ *  persisted on the tree node and round-trips through `save_file_tree`
+ *  alongside flagged / lockedStyleId. */
+export async function toggleUseAsNote(state, nodeId) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node || node.type !== "document") return;
+  node.useAsNote = !node.useAsNote;
+  // Re-normalize so the sidebar order tracks the new flag immediately.
+  const { normalizeProjectChildren } = await import("./tree-helpers.js");
+  normalizeProjectChildren(state.fileTree);
+  await state.saveFileTree();
+  state.emit("files-changed");
+  // If the user is currently viewing the project this doc lives in,
+  // re-open it so the joined buffer drops (or re-includes) the doc.
+  if (state.currentProjectId) {
+    const project = findNode(state.fileTree, state.currentProjectId);
+    if (project && project.children?.some((c) => c.id === nodeId)) {
+      await state.openProject(state.currentProjectId);
+    }
+  }
+}
+
 /** Convert a Folder ↔ Project. The two types are structurally
  *  identical in the tree (children stay put); only the `type` field
  *  changes. Project → Folder loses ordering and the joined preview but

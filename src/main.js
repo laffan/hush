@@ -242,7 +242,7 @@ async function init() {
 
   // iOS-only on-screen Cmd button (gated by `showCmdButton` setting); plus pencil bridge on iOS Tauri.
   initCmdButton(state);
-  if (IS_TAURI) import("./notebook/pencil-bridge.js").then((m) => m.initPencilBridge?.()).catch(() => {});
+  if (IS_TAURI) import("./notebook/pencil-bridge.js").then((m) => m.initPencilBridge?.(state)).catch(() => {});
 
   // Local Sync watcher — refresh the files panel when mounted folders
   // change on disk, and reload the open file if it was the one that

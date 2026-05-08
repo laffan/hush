@@ -159,11 +159,11 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       padding: "0", color: theme.foreground,
     };
     const items: { iconName: string; title: string; action: () => void }[] = [
+      { iconName: "align-left", title: "Align left", action: () => state.alignSelected("left") },
+      { iconName: "align-vertical-spacing", title: "Distribute vertically", action: () => state.distributeSelected("vertical") },
       { iconName: "align-top", title: "Align top", action: () => state.alignSelected("top") },
       { iconName: "align-bottom", title: "Align bottom", action: () => state.alignSelected("bottom") },
-      { iconName: "align-left", title: "Align left", action: () => state.alignSelected("left") },
       { iconName: "align-right", title: "Align right", action: () => state.alignSelected("right") },
-      { iconName: "align-vertical-spacing", title: "Distribute vertically", action: () => state.distributeSelected("vertical") },
       { iconName: "align-horizontal-spacing", title: "Distribute horizontally", action: () => state.distributeSelected("horizontal") },
     ];
     const panel = h("div", {

@@ -72,6 +72,11 @@ pub struct TreeNode {
     pub sync_folder_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locked_style_id: Option<String>,
+    // Doc-only — when set on a doc inside a project, the doc rides as
+    // a "note" alongside notebooks (50 % opacity, sorted under the
+    // joined buffer) instead of feeding the joined editor stream.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub use_as_note: bool,
 }
 
 pub fn get_data_dir() -> PathBuf {

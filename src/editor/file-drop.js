@@ -311,21 +311,32 @@ function appendToEditor(state, text) {
 async function insertImagesAtDrop(state, files, clientX, clientY) {
   if (!state.editor) return;
   const view = state.editor.view;
-  const { buildImageMarkdown } = await import("../state/state-images.js");
   // Pick the insertion point — the coordinate under the cursor, or the
   // selection head if the coord lies between lines.
   let pos = view.posAtCoords({ x: clientX, y: clientY });
   if (pos == null) pos = view.posAtCoords({ x: clientX, y: clientY }, false);
   if (pos == null) pos = view.state.selection.main.head;
+  await insertImagesAtPos(state, view, files, pos, state.currentLocalSync);
+}
 
+/** Save each File to the Images folder (or sibling folder for Local Sync)
+ *  and insert markdown refs at `pos` in the given CodeMirror view. Shared
+ *  by drag-drop (drop coords) and the paste handler (cursor head).
+ *  `localSync` accepts either `{ folderId, relPath }` (whole file path —
+ *  baseDir is derived from it) or `{ folderId, baseDir }` (already
+ *  derived). */
+export async function insertImagesAtPos(state, view, files, pos, localSync) {
+  if (!view) return;
+  const { buildImageMarkdown } = await import("../state/state-images.js");
   const chunks = [];
-  // Local Sync docs: write each image as a sibling file inside the
-  // mounted folder so refs stay relative and the file remains portable
-  // (the same `.md` opened in another editor still resolves images).
-  const ls = state.currentLocalSync;
-  if (ls?.folderId && ls?.relPath) {
-    const slash = ls.relPath.lastIndexOf("/");
-    const baseDir = slash >= 0 ? ls.relPath.slice(0, slash) : "";
+  if (localSync?.folderId && (localSync.relPath || typeof localSync.baseDir === "string")) {
+    let baseDir;
+    if (typeof localSync.baseDir === "string") {
+      baseDir = localSync.baseDir;
+    } else {
+      const slash = localSync.relPath.lastIndexOf("/");
+      baseDir = slash >= 0 ? localSync.relPath.slice(0, slash) : "";
+    }
     const { writeFileBytes } = await import("../sync/local-sync.js");
     const { isImageFile } = await import("../state/state-images.js");
     for (const file of files) {
@@ -334,12 +345,12 @@ async function insertImagesAtDrop(state, files, clientX, clientY) {
         const buf = await file.arrayBuffer();
         const bytes = Array.from(new Uint8Array(buf));
         const target = baseDir ? `${baseDir}/${file.name}` : file.name;
-        const finalRel = await writeFileBytes(ls.folderId, target, bytes);
+        const finalRel = await writeFileBytes(localSync.folderId, target, bytes);
         const finalName = (finalRel || target).split("/").pop();
         const altSrc = finalName.replace(/\.[^.]+$/, "") || "image";
         chunks.push(buildImageMarkdown(altSrc, finalName));
       } catch (e) {
-        console.error("Local Sync image drop failed:", e);
+        console.error("Local Sync image insert failed:", e);
       }
     }
   } else {
@@ -350,7 +361,6 @@ async function insertImagesAtDrop(state, files, clientX, clientY) {
   }
   if (!chunks.length) return;
   const line = view.state.doc.lineAt(pos);
-  // Insert on its own line — add newlines if needed so markdown parses correctly.
   const atLineStart = pos === line.from;
   const atLineEnd = pos === line.to;
   const prefix = atLineStart ? "" : (atLineEnd ? "\n" : "\n");

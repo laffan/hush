@@ -25,6 +25,7 @@ import { buildCodeMirrorKeymap } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 import { headingIndentPlugin } from "./heading-indent.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
+import { createImagePasteExtension } from "./image-paste.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 
 // Re-export for callers that imported these from editor.js historically.
@@ -293,6 +294,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createLinkDecoratorPlugin(state),
     createCheckboxListPlugin(),
     createImageDecoratorPlugin(state, getImageContext),
+    createImagePasteExtension(state, { getImageContext }),
     headingIndentPlugin,
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),

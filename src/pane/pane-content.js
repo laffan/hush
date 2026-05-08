@@ -194,6 +194,13 @@ async function loadNotebookPane(pane) {
   if (snapshot) {
     canvas.loadShapes(snapshot.shapes, snapshot.layers);
     canvas.state.flowchart.deserialize(snapshot.flowEdges);
+    // Bookmarks ride alongside shapes through the same JSON envelope; without
+    // this the pane's local state stays empty and a save from the pane
+    // would overwrite the disk file with no bookmarks (silent loss).
+    if (Array.isArray(snapshot.bookmarks)) {
+      canvas.state.bookmarks = snapshot.bookmarks;
+      canvas.state.notify("bookmarks");
+    }
   }
 
   // Center the pane on the same canvas point the notebook would show
@@ -278,6 +285,11 @@ export async function savePaneContent(pane) {
           shapes: pane.notebook.getShapes(),
           layers: pane.notebook.state.layers,
           flowEdges: pane.notebook.state.flowchart.serialize(),
+          // Persist bookmarks + camera so a pane save doesn't drop the
+          // user's saved viewports. Without these the pane path silently
+          // loses every bookmark the moment it autosaves the file.
+          bookmarks: pane.notebook.state.bookmarks,
+          camera: pane.notebook.state.camera,
         });
       }
       if (pane.localSync) {
@@ -381,6 +393,11 @@ export function syncNotebookFromPane(pane) {
     // Mirror flowchart edges too — without this, edges added in the
     // pane wouldn't surface in the main canvas (or vice versa below).
     mainCanvas.state.flowchart.deserialize(pane.notebook.state.flowchart.serialize());
+    // Bookmarks travel with the canvas state too — sync them so a
+    // bookmark added in the pane appears in the main toolbar (and the
+    // disk write from either side keeps both in lockstep).
+    mainCanvas.state.bookmarks = JSON.parse(JSON.stringify(pane.notebook.state.bookmarks || []));
+    mainCanvas.state.notify("bookmarks");
     // Defer reset: loadShapes triggers change events via queueMicrotask,
     // so syncing must stay true until those microtasks have fired.
     queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
@@ -406,6 +423,8 @@ export function syncNotebookToPane(pane) {
     const shapes = mainCanvas.getShapes();
     pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
     pane.notebook.state.flowchart.deserialize(mainCanvas.state.flowchart.serialize());
+    pane.notebook.state.bookmarks = JSON.parse(JSON.stringify(mainCanvas.state.bookmarks || []));
+    pane.notebook.state.notify("bookmarks");
     pane.dirty = false;
     queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
     deferred = true;

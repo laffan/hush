@@ -45,12 +45,18 @@ export function registerNotebookDropTarget(canvasEl, state) {
  *   Called after a successful drop, with `true` when the source should be
  *   removed (Shift was held at pointerup).
  */
-export function startTextDrag({ text, shapes, anchorId, image, initialEvent, onDrop }) {
+export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop }) {
   // Normalise: derive the text payload from shapes when needed, ordered
   // top-to-bottom / left-to-right so CM drops land in reading order.
   const hasShapes = Array.isArray(shapes) && shapes.length > 0;
   const fallbackText = image && !text ? `![${image.name || "image"}](${image.name || "image"})` : (text || "");
   const joined = hasShapes ? joinShapesForText(shapes) : fallbackText;
+  // `editorText` (when set) overrides the joined payload for drops into
+  // a CodeMirror editor — used by the flowchart-aware drag to surface
+  // the dragged subtree as a nested markdown list. Notebook-side drops
+  // still consume the original `shapes` verbatim, so the notebook
+  // round-trip isn't affected.
+  const editorPayload = editorText || joined;
   if (active) return;
   if (!joined && !image) return;
 
@@ -148,7 +154,7 @@ export function startTextDrag({ text, shapes, anchorId, image, initialEvent, onD
       if (image) {
         insertImageIntoEditor(target.view, image, e.clientX, e.clientY);
       } else {
-        insertIntoEditor(target.view, joined, e.clientX, e.clientY);
+        insertIntoEditor(target.view, editorPayload, e.clientX, e.clientY);
       }
     } else if (target.kind === "nb") {
       if (image) {
@@ -213,12 +219,41 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
       ? selected.map(cloneShapePayload)
       : [cloneShapePayload(hit)];
 
+    // Flowchart-aware editor payload — when any dragged shape is part
+    // of a flowchart (has children or a parent), expand the set to
+    // include every descendant and render it as a nested markdown
+    // list. Notebook-side drops still consume the original `shapes`
+    // verbatim, so the same drag carries both forms — outline for
+    // editors, flat shapes for canvases.
+    let editorText;
+    const flow = state.flowchart;
+    if (flow) {
+      const touchesFlow = shapes.some((s) =>
+        flow.childrenOf(s.id).length > 0 || flow.parentOf(s.id) != null
+      );
+      if (touchesFlow) {
+        const allIds = new Set(shapes.map((s) => s.id));
+        const queue = [...allIds];
+        while (queue.length > 0) {
+          const cur = queue.pop();
+          for (const c of flow.childrenOf(cur)) {
+            if (!allIds.has(c)) { allIds.add(c); queue.push(c); }
+          }
+        }
+        const expanded = state.shapes
+          .filter((s) => s.type === "text" && allIds.has(s.id))
+          .map(cloneShapePayload);
+        editorText = buildFlowchartOutline(expanded, flow.edges || [], hit.id);
+      }
+    }
+
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
     startTextDrag({
       shapes,
       anchorId: hit.id,
+      editorText,
       initialEvent: e,
       onDrop: (deleteSource) => {
         if (!deleteSource) return;
@@ -299,6 +334,50 @@ function cloneShapePayload(s) {
     color: s.color,
     backgroundColor: s.backgroundColor,
   };
+}
+
+/** Render `shapes` as a nested markdown list, using `edges` to nest
+ *  children under their parents. Roots = shapes whose parent isn't in
+ *  the supplied set; siblings are ordered positionally; multi-line
+ *  shape text hangs continuation lines under the bullet. Used when a
+ *  Cmd-drag from the notebook touches a flowchart node so the doc
+ *  receives the subtree as an outline rather than concatenated text. */
+function buildFlowchartOutline(shapes, edges, anchorId) {
+  const byId = new Map(shapes.map((s) => [s.id, s]));
+  const ids = new Set(shapes.map((s) => s.id));
+  const parentOfMap = new Map();
+  for (const e of edges) parentOfMap.set(e.to, e.from);
+
+  const roots = shapes.filter((s) => {
+    const p = parentOfMap.get(s.id);
+    return !p || !ids.has(p);
+  });
+  roots.sort((a, b) => {
+    if (a.id === anchorId) return -1;
+    if (b.id === anchorId) return 1;
+    return (a.position.y - b.position.y) || (a.position.x - b.position.x);
+  });
+
+  const lines = [];
+  function walk(id, depth) {
+    const sh = byId.get(id);
+    if (!sh) return;
+    const indent = "  ".repeat(depth);
+    const text = (sh.text || "").trim();
+    const tLines = text ? text.split("\n") : [""];
+    lines.push(`${indent}- ${tLines[0]}`);
+    for (let i = 1; i < tLines.length; i++) lines.push(`${indent}  ${tLines[i]}`);
+    const childIds = edges.filter((e) => e.from === id).map((e) => e.to).filter((c) => ids.has(c));
+    childIds.sort((a, b) => {
+      const sa = byId.get(a);
+      const sb = byId.get(b);
+      if (!sa || !sb) return 0;
+      return (sa.position.y - sb.position.y) || (sa.position.x - sb.position.x);
+    });
+    for (const c of childIds) walk(c, depth + 1);
+  }
+  for (const r of roots) walk(r.id, 0);
+  return lines.join("\n");
 }
 
 /** Sort shapes top-to-bottom / left-to-right and join their text. */

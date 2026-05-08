@@ -313,8 +313,19 @@
   pointer-events: none;
 }
 
-.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row {
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row,
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"][data-use-as-note="true"] > .sl-item-content .tree-item-row {
   opacity: 0.5;
+}
+
+/* "Use as Note" docs sort with notebooks under the joined buffer, so
+   the doc-doc connector should NOT render across the boundary into a
+   note (or between two consecutive notes). */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"][data-use-as-note="true"]::before {
+  display: none;
+}
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"][data-use-as-note="true"] + .sl-item[data-type="document"]::before {
+  display: none;
 }
 
 /* "Empty" text button on Trash hover */
