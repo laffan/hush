@@ -54,8 +54,9 @@ class PencilPlugin: Plugin {
 
     // Tauri command — JS calls
     //   invoke("plugin:pencil|set_chrome_hidden", { hidden: true })
-    // to flip the iPad status bar + Stage Manager resize handle on/off.
-    @objc public func set_chrome_hidden(_ invoke: Invoke) throws {
+    // which Tauri's runtime maps (snake_case → camelCase) to this
+    // method. The Rust side proxies via `run_mobile_plugin`.
+    @objc public func setChromeHidden(_ invoke: Invoke) throws {
         struct Args: Decodable { let hidden: Bool }
         let args = try invoke.parseArgs(Args.self)
         chromeHidden = args.hidden
