@@ -149,20 +149,28 @@ function nextSiblingElement(el) {
 function collectListItems(listNode, items, fallbackDepth, ctx) {
   const ordered = listNode.tagName === "OL";
   for (const child of listNode.children) {
-    if (child.tagName !== "LI") continue;
-    const aria = parseInt(child.getAttribute("aria-level") || "", 10);
-    const depth = (!Number.isNaN(aria) && aria > 0) ? aria - 1 : fallbackDepth;
-    let content = "";
-    const nested = [];
-    for (const sub of child.childNodes) {
-      if (sub.nodeType === 1 && (sub.tagName === "UL" || sub.tagName === "OL")) {
-        nested.push(sub);
-      } else {
-        content += renderNode(sub, ctx);
+    if (child.tagName === "LI") {
+      const aria = parseInt(child.getAttribute("aria-level") || "", 10);
+      const depth = (!Number.isNaN(aria) && aria > 0) ? aria - 1 : fallbackDepth;
+      let content = "";
+      const nested = [];
+      for (const sub of child.childNodes) {
+        if (sub.nodeType === 1 && (sub.tagName === "UL" || sub.tagName === "OL")) {
+          nested.push(sub);
+        } else {
+          content += renderNode(sub, ctx);
+        }
       }
+      items.push({ depth, ordered, content });
+      for (const sub of nested) collectListItems(sub, items, depth + 1, ctx);
+    } else if (child.tagName === "UL" || child.tagName === "OL") {
+      // Invalid-HTML pattern Google Docs emits on copy: a <ul>/<ol> as a
+      // direct child of another <ul>/<ol>, without an intervening <li>.
+      // The HTML5 parser preserves it verbatim, so we recurse explicitly
+      // and treat the inner list as one level deeper than this one. The
+      // <li>'s own aria-level (read above) still wins when present.
+      collectListItems(child, items, fallbackDepth + 1, ctx);
     }
-    items.push({ depth, ordered, content });
-    for (const sub of nested) collectListItems(sub, items, depth + 1, ctx);
   }
 }
 
