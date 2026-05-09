@@ -35,13 +35,20 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── editor.js
 │   ├── heading-indent.js              (extracted from editor.js)
 │   ├── comment-plugins.js             (extracted from editor.js)
+│   ├── markdown-highlight.js          (extracted from editor.js — getMarkdownHighlight + resolveHeaderColorOverride)
 │   ├── modes.js
 │   ├── formatting.js
 │   ├── sentence-navigator.js
 │   ├── find-replace.js
 │   ├── file-drop.js
 │   ├── image-preview.js
+│   ├── image-paste.js
 │   ├── zen-focus.js
+│   ├── google-docs/                   (Phase 1 paste/copy bridge — see README)
+│   │   ├── html-to-markdown.js
+│   │   ├── markdown-to-html.js
+│   │   ├── paste-extension.js
+│   │   └── copy-command.js
 │   └── plugins/
 │       ├── callouts.js
 │       ├── dry-highlight.js
@@ -516,6 +523,17 @@ CodeMirror plugin for project mode. `createProjectViewField` (StateField) replac
 ### File Drop (`editor/file-drop.js`)
 
 Four context-aware drop targets. When the **files** panel is open, a non-blocking "Import file" overlay appears inside `#panel-overlay` and the panel itself listens for drops; the row under the cursor lights up via `.sl-item.drop-target` and resolves to a folder / project / desk parent (non-container rows fall back to their parent, empty space falls back to the active desk's Inbox). `.md` / `.txt` files become docs via `state.newFile(parentId, { initialContent, initialName })`; `.hushnote` files are unpacked through `unpackNotebook` (the same helper Dropbox sync uses) and land via `state.createNotebook(name, parentId, { initialContent })`. In doc mode, drops on the editor append text content for `.md`/`.txt` files; image drops (PNG/JPG/GIF/WebP/SVG/etc.) are routed through `state.createImageFromFile()` which saves the binary via `save_image` and inserts a standard `![alt](filename.png)` reference at the cursor coordinate (see "Doc Images" below). In notebook mode, the canvas handles drops natively (images become image shapes, text files become text shapes); holding Cmd/Ctrl while dropping plain text wraps it in a markdown blockquote and creates the resulting TextShape at 14 px instead of the default 18. Doc panes get their own drop wiring via `attachPaneTextDrop` (in `pane/pane-editor.js`) — the main editor's drop net only covers `#editor-container` so without this drops on a floating doc pane fell through. The two payload-classification helpers (`hasAcceptableDragPayload`, `readDragText`) are shared exports of `file-drop.js`. Tauri's built-in drag-drop is disabled so DOM events reach the webview.
+
+### Google Docs Paste / Copy (`editor/google-docs/`)
+
+Phase 1 of the Google Docs integration — clipboard-only formatting bridge, no auth or API yet. Four files keep the conversion paths separate so each can be tested in isolation and Phase 2 (the Google Docs API + OAuth round-trip) can layer on top without touching the converters.
+
+- **`html-to-markdown.js`** — pure converter. Walks the DOM produced by `DOMParser` and emits Hush-flavoured markdown. Handles `<h1>`–`<h6>`, `<p>`, `<ul>`/`<ol>`/`<li>` (nested via `listStack` depth), `<blockquote>`, `<a>`, `<br>`, `<hr>`, `<code>`/`<pre>`, plus the inline emphasis tags (`<b>`, `<strong>`, `<i>`, `<em>`, `<s>`, `<del>`, `<mark>`). Google Docs's quirks are special-cased on the way in: the `<b id="docs-internal-guid-…">` envelope is unwrapped before block walking (otherwise every block would render as bold), inline-styled `<span style="font-weight:700">` / `font-style:italic` / `text-decoration:line-through` are detected via small style regexes alongside the standard tags, `<span style="background-color:…">` (non-white / non-transparent) becomes `==highlight==`, and `https://www.google.com/url?q=…` redirect links are peeled back to the real destination via `URL.searchParams`. Returns `null` when the input doesn't contain any of `RICH_TAG_RE`'s tokens, so plain-text pastes fall through to CodeMirror's default path untouched.
+- **`markdown-to-html.js`** — pure converter for the copy commands. Two-pass: `parseBlocks` walks lines into block objects (`heading`, `paragraph`, `blockquote`, `list`, `code`, `hr`), then `renderBlock` + `renderInline` emit HTML. Lists nest by leading-whitespace depth via `nestList`, which keeps a stack of open sublists and pops back when the next entry's indent regresses. Inline order matters: code spans first (so emphasis runs don't reach into them), then links (anchored on a non-`!` lookbehind so image refs aren't matched), then `==highlight==` → `<mark style="background-color:#fff475">`, then `~~strike~~`, bold, italic. `%%comments%%` (single- and multi-line) are stripped by a leading regex pass before `parseBlocks` runs.
+- **`paste-extension.js`** — `createGoogleDocsPasteExtension()` returns an `EditorView.domEventHandlers` paste listener. Reads `clipboardData.getData("text/html")`, hands it to `htmlToMarkdown`, and on a non-null result calls `event.preventDefault()` and dispatches a single `view.dispatch({ changes, selection })` to insert the markdown at the cursor. Mounted on the main editor (`createEditor`'s extension list) and on every floating pane (`createBaseExtensions`) — registered *after* `createImagePasteExtension` in both lists so a clipboard payload with image bytes still wins for the image-paste path.
+- **`copy-command.js`** — exports `copyAsGoogleDoc(view)` and `copyAsHtml(view)`. Both pull the active selection (or the whole document if `sel.empty`) and run it through `markdownToHtml`. The Google Doc variant writes a `ClipboardItem` with both `text/html` (rich for Google Docs / Word / Notion) and `text/plain` (the original markdown for terminals, code editors, etc.); the HTML variant calls `navigator.clipboard.writeText` with the HTML *source* so users can paste the markup itself into a code editor or blog draft. Both share `execCommand("copy")` fallback paths (a hidden `contenteditable` div for rich, a hidden `textarea` for plain) for older WKWebViews that ship without `ClipboardItem` / `writeText`. A small toast (`.gdocs-copy-toast`, reusing the `.style-locked-toast` styling) confirms the copy. The two command-palette entries (**Copy as Google Doc**, **Copy as HTML**, both `ctx: "doc"`) dynamic-import the module so users who never run the command pay nothing at startup.
+
+Phase 2 will add `google-docs/auth.js` (OAuth PKCE), `google-docs/api.js` (Documents API client), and a sync layer that maps a Hush doc to a Google Docs document id with bidirectional change propagation. The current converters are deliberately structured as pure functions so the same `htmlToMarkdown` / `markdownToHtml` pair can sit on either side of the API boundary later.
 
 ### Doc Images (`editor/plugins/image-decorator.js`, `editor/image-preview.js`, `state/state-images.js`)
 

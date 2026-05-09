@@ -85,10 +85,8 @@ const icons = {
   export: wrapSvg(svgInner(exportRaw)),
   styles: wrapSvg(svgInner(stylesRaw)),
   zotero: wrapSvg(svgInner(zoteroRaw)),
-  // "Aa" with a shallow cross laid over the letters — two near-flat
-  // lines mirrored about the horizontal axis. Stroke-only paths so it
-  // picks up `stroke: currentColor; fill: none` from the palette icon
-  // CSS without per-row overrides.
+  // "Aa" with a shallow cross laid over it. Stroke-only — picks up
+  // `stroke: currentColor; fill: none` from the palette icon CSS.
   proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="2" y1="14" x2="22" y2="10"/><line x1="2" y1="10" x2="22" y2="14"/></svg>`,
   doc: typeIcons.document,
   notebook: typeIcons.notebook,
@@ -238,6 +236,10 @@ function buildCommands(state) {
       action: (s) => s.emit("toggle-outline-panel") },
     { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
+    { id: "copy-as-google-doc", label: "Copy as Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
+      action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
+    { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
+      action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsHtml(s.editor.view)) },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",
