@@ -14,9 +14,11 @@ const headingMarkerHideDeco = Decoration.replace({});
 // wrapped lines sit exactly under the first character of content — not under
 // the marker, and not visibly offset as `ch` units would cause in
 // proportional fonts. On top of the hang-indent we also push the marker
-// itself in from the left margin by LIST_LEFT_INDENT_PX so list blocks read
-// as visually offset blocks (closer to Google Docs' ~50px) rather than
-// hugging the column edge at the natural 2-char marker width.
+// itself in from the left margin by LIST_LEFT_INDENT_PX per nesting level so
+// list blocks read as visually offset blocks (closer to Google Docs' ~50px)
+// rather than hugging the column edge — and each nested level steps in
+// another LIST_LEFT_INDENT_PX so depth is visible at a glance instead of
+// being conveyed by the source's 2-space leading whitespace alone.
 const LIST_LEFT_INDENT_PX = 30;
 
 let _listMarkerMeasureCtx = null;
@@ -30,11 +32,19 @@ function measureListMarkerPx(view, text) {
   return _listMarkerMeasureCtx.measureText(text).width;
 }
 
-function listIndentLineDeco(markerPx) {
-  const padding = LIST_LEFT_INDENT_PX + markerPx;
+// Treat each tab and each pair of leading spaces as one nesting level so
+// 2-space and tab-indented lists both step in cleanly. Mixed indentation
+// gets a best-effort sum.
+function listNestingDepth(leading) {
+  const tabs = (leading.match(/\t/g) || []).length;
+  const spaces = leading.length - tabs;
+  return tabs + Math.floor(spaces / 2);
+}
+
+function listIndentLineDeco(paddingPx, textIndentPx) {
   return Decoration.line({
     class: "list-indent",
-    attributes: { style: `padding-left: ${padding}px; text-indent: -${markerPx}px;` },
+    attributes: { style: `padding-left: ${paddingPx}px; text-indent: -${textIndentPx}px;` },
   });
 }
 
@@ -89,9 +99,19 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
           builder.add(line.from, line.from, blockquoteLineDeco);
         } else if (listMatch) {
           // Hang-indent wrapped lines by the actual pixel width of the
-          // marker + space so continuation lines line up with the content.
-          const markerPx = measureListMarkerPx(view, listMatch[0]);
-          builder.add(line.from, line.from, listIndentLineDeco(markerPx));
+          // marker + space so continuation lines line up with the content,
+          // and step the marker itself in by LIST_LEFT_INDENT_PX per nesting
+          // level. The negative text-indent absorbs the source's leading
+          // whitespace + marker so the rendered marker lands at the depth
+          // offset regardless of how many spaces sit in front of it in
+          // markdown source.
+          const leading = listMatch[1];
+          const markerOnly = listMatch[2] + listMatch[3];
+          const fullPrefixPx = measureListMarkerPx(view, listMatch[0]);
+          const markerOnlyPx = measureListMarkerPx(view, markerOnly);
+          const depth = listNestingDepth(leading);
+          const padding = LIST_LEFT_INDENT_PX * (depth + 1) + markerOnlyPx;
+          builder.add(line.from, line.from, listIndentLineDeco(padding, fullPrefixPx));
         }
         pos = line.to + 1;
       }
