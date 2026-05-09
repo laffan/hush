@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use crate::atomic::write_atomic_str;
 
 mod defaults;
+mod types;
 use defaults::*;
+pub use types::{Style, ShaderLayer, CustomFlag, SyncFolder, GoogleDocLink};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +78,22 @@ pub struct AppSettings {
     pub dropbox_enabled: bool,
     #[serde(default)]
     pub dropbox_sync_log: Vec<String>, // Recent sync events for display
+
+    // Google Docs (OAuth PKCE) — per-document link, no auto-sync.
+    // The user explicitly drives push/pull from a link bar; tokens live
+    // here, per-doc links live in a sibling map (`google_doc_links`).
+    #[serde(default)]
+    pub google_access_token: Option<String>,
+    #[serde(default)]
+    pub google_refresh_token: Option<String>,
+    #[serde(default)]
+    pub google_token_expires_at: Option<i64>, // unix seconds
+    #[serde(default)]
+    pub google_account_email: Option<String>,
+    #[serde(default)]
+    pub google_doc_links: std::collections::HashMap<String, GoogleDocLink>,
+    #[serde(default)]
+    pub google_sync_log: Vec<String>,
 
     // Legacy fields — kept for serde backward-compat (ignored)
     #[serde(default)]
@@ -432,80 +450,6 @@ pub struct AppSettings {
     pub data_dir: PathBuf,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Style {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub theme_id: Option<String>,
-    #[serde(default)]
-    pub font_family: Option<String>,
-    #[serde(default)]
-    pub font_size: Option<u32>,
-    #[serde(default)]
-    pub line_height: Option<f64>,
-    #[serde(default)]
-    pub color_overrides: std::collections::HashMap<String, String>,
-    #[serde(default)]
-    pub light_theme_id: Option<String>,
-    #[serde(default)]
-    pub dark_theme_id: Option<String>,
-    #[serde(default)]
-    pub light_colors: std::collections::HashMap<String, String>,
-    #[serde(default)]
-    pub dark_colors: std::collections::HashMap<String, String>,
-    #[serde(default)]
-    pub block_cursor: Option<bool>,
-    #[serde(default)]
-    pub block_cursor_color: Option<String>,
-    #[serde(default)]
-    pub suppress_header_size: Option<bool>,
-    #[serde(default)]
-    pub suppress_header_color: Option<bool>,
-    #[serde(default)]
-    pub underline_headers: Option<bool>,
-    #[serde(default)]
-    pub header_scale: Option<f64>,
-    #[serde(default)]
-    pub shader_layer: Option<ShaderLayer>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ShaderLayer {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub layer_id: Option<String>,
-    #[serde(default)]
-    pub intensity: Option<f64>,
-    /// Per-layer knob values keyed by the layer's settings-schema id
-    /// (e.g. `glow`, `scanlineColor`). Serde silently drops fields
-    /// that aren't on the struct, so without this slot the modal's
-    /// slider/color pickers were round-tripping back to the layer
-    /// defaults on every save/load cycle.
-    #[serde(default)]
-    pub options: std::collections::HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomFlag {
-    pub name: String,
-    pub color: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncFolder {
-    pub id: String,
-    pub path: String,
-    pub sync_type: String, // "local" or "dropbox"
-    pub name: String,
-}
-
-
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -534,6 +478,12 @@ impl Default for AppSettings {
             dropbox_sync_path: None,
             dropbox_enabled: false,
             dropbox_sync_log: Vec::new(),
+            google_access_token: None,
+            google_refresh_token: None,
+            google_token_expires_at: None,
+            google_account_email: None,
+            google_doc_links: std::collections::HashMap::new(),
+            google_sync_log: Vec::new(),
             sync_folders: Vec::new(),
             dropbox_token: None,
             local_sync_folders: Vec::new(),

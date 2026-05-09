@@ -1,33 +1,49 @@
 /**
- * Sync settings tab — Dropbox connect / pick folder / actively-syncing
- * states, plus the desktop-only Local Sync section. Extracted from
- * settings-tabs.js.
+ * Sync settings tab — split into three sub-tabs (Dropbox / Google /
+ * Local). The outer `renderSyncTab` paints the sub-nav at the top and
+ * delegates the body to the active sub-tab's renderer; bindings live in
+ * `settings-sync-tab.js` (Dropbox + Local) and `settings-sync-tab.js`'s
+ * `bindGoogleSubTab` (Google).
+ *
+ * Active sub-tab is module-local — the binding side calls
+ * `setSyncSubTab(id)` followed by the parent `render()` to switch.
  */
 
 import { escHtml, escAttr } from "./settings-tabs.js";
 
-/** Per-mount desk picker. Hidden while there's only one desk — picking
- *  among a single option is just visual noise. */
-function renderDeskDropdown(settings, mount) {
-  const desks = settings.desks || [];
-  if (desks.length < 2) return "";
-  const current = mount.deskId || settings.activeDeskId || desks[0]?.id || "";
-  const opts = desks.map(d => `<option value="${escAttr(d.id)}" ${d.id === current ? "selected" : ""}>${escHtml(d.name || "Untitled desk")}</option>`).join("");
-  return `<select class="local-sync-desk-select" data-id="${escAttr(mount.id)}">${opts}</select>`;
+let _activeSubTab = "dropbox"; // "dropbox" | "google" | "local"
+
+export function getSyncSubTab() { return _activeSubTab; }
+export function setSyncSubTab(id) {
+  if (id === "dropbox" || id === "google" || id === "local") _activeSubTab = id;
 }
 
+function subTabNav() {
+  const tab = (id, label) => `<button class="sync-subtab${_activeSubTab === id ? " active" : ""}" data-sync-subtab="${id}">${label}</button>`;
+  return `<div class="sync-subtab-nav">
+    ${tab("dropbox", "Dropbox Sync")}
+    ${tab("google", "Google Sync")}
+    ${tab("local", "Local Sync")}
+  </div>`;
+}
 
 export function renderSyncTab(settings) {
+  let body = "";
+  if (_activeSubTab === "dropbox") body = renderDropboxSubTab(settings);
+  else if (_activeSubTab === "google") body = renderGoogleSubTab(settings);
+  else body = renderLocalSyncSubTab(settings);
+  return subTabNav() + `<div class="sync-subtab-body">${body}</div>`;
+}
+
+// ===== Dropbox =====
+
+function renderDropboxSubTab(settings) {
   const isConnected = !!settings.dropboxAccessToken;
   const isEnabled = !!settings.dropboxEnabled;
   const syncPath = settings.dropboxSyncPath || "";
   const syncLog = settings.dropboxSyncLog || [];
-  const localSyncFolders = settings.localSyncFolders || [];
-
   let html = "";
-
   if (!isConnected) {
-    // ---- Not connected ----
     html += `
       <div class="settings-section">
         <h2>Dropbox Sync</h2>
@@ -40,7 +56,6 @@ export function renderSyncTab(settings) {
       </div>
     `;
   } else if (!isEnabled || !syncPath) {
-    // ---- Connected, choosing folder ----
     html += `
       <div class="settings-section">
         <h2>Dropbox Sync</h2>
@@ -63,7 +78,6 @@ export function renderSyncTab(settings) {
       </div>
     `;
   } else {
-    // ---- Actively syncing ----
     html += `
       <div class="settings-section">
         <h2>Dropbox Sync</h2>
@@ -110,9 +124,95 @@ export function renderSyncTab(settings) {
       </div>
     `;
   }
+  return html;
+}
 
-  // ── Local Sync section (desktop only) ──
-  html += `
+// ===== Google =====
+
+function renderGoogleSubTab(settings) {
+  const isConnected = !!settings.googleAccessToken || !!settings.googleRefreshToken;
+  const email = settings.googleAccountEmail || "";
+  const linkCount = Object.keys(settings.googleDocLinks || {}).length;
+  const log = settings.googleSyncLog || [];
+  let html = "";
+  if (!isConnected) {
+    html += `
+      <div class="settings-section">
+        <h2>Google Sync</h2>
+        <p class="settings-help">
+          Connect a Google account to link individual Hush documents to
+          Google Docs. Unlike Dropbox sync, Google Sync is per-document
+          and user-driven — each linked doc shows a bar above the editor
+          with explicit Push and Pull buttons. There is no automatic
+          syncing or conflict detection; both Hush and Google Docs keep
+          version history if you change your mind.
+        </p>
+        <button id="google-connect" class="sync-action-btn">Connect Google account</button>
+        <div id="google-auth-status" class="sync-status"></div>
+      </div>
+    `;
+  } else {
+    html += `
+      <div class="settings-section">
+        <h2>Google Sync</h2>
+        <div class="sync-info-box">
+          <div class="sync-info-row">
+            <span class="sync-info-label">Status</span>
+            <span class="sync-info-value" id="google-connection-status">Connected</span>
+          </div>
+          <div class="sync-info-row">
+            <span class="sync-info-label">Account</span>
+            <span class="sync-info-value">${email ? escHtml(email) : "(unknown)"}</span>
+          </div>
+          <div class="sync-info-row">
+            <span class="sync-info-label">Linked documents</span>
+            <span class="sync-info-value">${linkCount}</span>
+          </div>
+        </div>
+        <div class="sync-btn-row">
+          <button id="google-test-connection" class="sync-inline-btn">Test Connection</button>
+        </div>
+        <div id="google-auth-status" class="sync-status"></div>
+      </div>
+      <div class="settings-section">
+        <h2>Activity Log</h2>
+        <div class="sync-log-box" id="google-sync-log-box">
+          ${log.length > 0
+            ? log.slice(-20).reverse().map(entry => `<div class="sync-log-entry">${escHtml(entry)}</div>`).join("")
+            : `<div class="sync-log-empty">No Google Docs activity yet.</div>`
+          }
+        </div>
+        <div class="sync-btn-row">
+          <button id="google-clear-log" class="sync-inline-btn">Clear log</button>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h2>Disconnect</h2>
+        <p class="settings-help">
+          Revokes the Google access token, clears stored credentials, and
+          forgets every per-document link. The Google Docs themselves are
+          untouched.
+        </p>
+        <button id="google-disconnect" class="sync-danger-btn">Disconnect Google account</button>
+      </div>
+    `;
+  }
+  return html;
+}
+
+// ===== Local =====
+
+function renderDeskDropdown(settings, mount) {
+  const desks = settings.desks || [];
+  if (desks.length < 2) return "";
+  const current = mount.deskId || settings.activeDeskId || desks[0]?.id || "";
+  const opts = desks.map(d => `<option value="${escAttr(d.id)}" ${d.id === current ? "selected" : ""}>${escHtml(d.name || "Untitled desk")}</option>`).join("");
+  return `<select class="local-sync-desk-select" data-id="${escAttr(mount.id)}">${opts}</select>`;
+}
+
+function renderLocalSyncSubTab(settings) {
+  const localSyncFolders = settings.localSyncFolders || [];
+  return `
     <div class="settings-section local-sync-section">
       <h2>Local Sync</h2>
       <p class="settings-help">
@@ -138,6 +238,4 @@ export function renderSyncTab(settings) {
       <button id="local-sync-add" class="sync-action-btn">Add folder</button>
     </div>
   `;
-
-  return html;
 }

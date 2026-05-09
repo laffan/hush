@@ -53,16 +53,19 @@ function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
 }
 
-/** createPane treats (x, y) as a click-point and centres the pane on
- *  it. To land a pane's *top-left* at the position computed by
- *  `getInitialPanePosition`, pre-add half the default size so the
- *  centring math cancels out. */
+/** createPane centres on (x,y); pre-add half the default size so the
+ *  pane's top-left lands at `getInitialPanePosition`'s point. */
 function paneAnchorClickPoint(state) {
   const pos = getInitialPanePosition(state);
-  return {
-    x: pos.x + PANE_DEFAULT_WIDTH / 2,
-    y: pos.y + PANE_TITLEBAR_HEIGHT / 2,
-  };
+  return { x: pos.x + PANE_DEFAULT_WIDTH / 2, y: pos.y + PANE_TITLEBAR_HEIGHT / 2 };
+}
+
+/** Lazy-import a Google Docs link-command and return an action fn that
+ *  surfaces auth/API errors via window.alert (cheap, accessible). */
+function _gdocAction(method) {
+  return (s) => import("./google-docs/link-command.js")
+    .then((m) => m[method](s))
+    .catch((e) => { if (e) { console.error("[google-docs]", e); window.alert(e.message || String(e)); } });
 }
 
 /** Each icon is the full `<svg …>…</svg>` markup so a row can drop it
@@ -71,27 +74,16 @@ function paneAnchorClickPoint(state) {
  *  inbox / images / trash glyphs are reused verbatim from the sidebar
  *  via `typeIcons` so the palette and the file tree show the exact
  *  same visual language. */
+const _wrapIcon = (raw) => wrapSvg(svgInner(raw));
 const icons = {
-  newFile: wrapSvg(svgInner(newFileRaw)),
-  files: wrapSvg(svgInner(filesRaw)),
-  desk: wrapSvg(svgInner(deskRaw)),
-  pane: wrapSvg(svgInner(paneRaw)),
-  ratchet: wrapSvg(svgInner(ratchetRaw)),
-  private: wrapSvg(svgInner(privateRaw)),
-  typewriter: wrapSvg(svgInner(typewriterRaw)),
-  dry: wrapSvg(svgInner(dryRaw)),
-  focus: wrapSvg(svgInner(focusRaw)),
-  versions: wrapSvg(svgInner(versionsRaw)),
-  export: wrapSvg(svgInner(exportRaw)),
-  styles: wrapSvg(svgInner(stylesRaw)),
-  zotero: wrapSvg(svgInner(zoteroRaw)),
-  // "Aa" with a shallow cross laid over it. Stroke-only — picks up
-  // `stroke: currentColor; fill: none` from the palette icon CSS.
+  newFile: _wrapIcon(newFileRaw), files: _wrapIcon(filesRaw), desk: _wrapIcon(deskRaw),
+  pane: _wrapIcon(paneRaw), ratchet: _wrapIcon(ratchetRaw), private: _wrapIcon(privateRaw),
+  typewriter: _wrapIcon(typewriterRaw), dry: _wrapIcon(dryRaw), focus: _wrapIcon(focusRaw),
+  versions: _wrapIcon(versionsRaw), export: _wrapIcon(exportRaw), styles: _wrapIcon(stylesRaw),
+  zotero: _wrapIcon(zoteroRaw),
+  // Stroke-only "Aa" with a shallow cross overlay; picks up `stroke: currentColor`.
   proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="2" y1="14" x2="22" y2="10"/><line x1="2" y1="10" x2="22" y2="14"/></svg>`,
-  doc: typeIcons.document,
-  notebook: typeIcons.notebook,
-  project: typeIcons.project,
-  trash: typeIcons.trash,
+  doc: typeIcons.document, notebook: typeIcons.notebook, project: typeIcons.project, trash: typeIcons.trash,
 };
 
 // Context: "shared" = always shown, "doc" = doc/project only, "notebook" = notebook only
@@ -240,6 +232,11 @@ function buildCommands(state) {
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
     { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsHtml(s.editor.view)) },
+    { id: "google-import", label: "Import from Google Doc", icon: icons.export, shortcutKey: null, ctx: "shared", action: _gdocAction("importFromGoogleDoc") },
+    { id: "google-link", label: "Link Document to Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("linkCurrentDocument") },
+    { id: "google-unlink", label: "Unlink Document from Google Doc", icon: icons.trash, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("unlinkCurrentDocument") },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",
@@ -411,18 +408,16 @@ let filteredCommands = [];
 let allCommands = [];
 let keyboardNav = false;
 // When the palette opens over an active notebook text editor, we suspend
-// that editor's commit-on-blur so the user can navigate to "Insert
-// Reference" (or any command) without their text shape quietly
-// committing. The handle is remembered here so close() can restore it.
+// that editor's commit-on-blur so navigating to a command doesn't
+// quietly commit the text shape. The handle is restored in close().
 let suspendedNotebookText = null;
 
 function isOpen() { return overlay !== null; }
 function close() {
   if (overlay) { overlay.remove(); overlay = null; }
-  // If the palette opened over an active notebook text shape, hand
-  // focus back and resume its normal blur-commit behaviour. Actions
-  // that need the editor to stay alive (Zotero) null this reference
-  // out before calling close() so this branch no-ops for them.
+  // Hand focus back to a suspended notebook text editor and resume
+  // its blur-commit. Actions that need the editor alive (Zotero) null
+  // suspendedNotebookText before calling close() so this no-ops.
   if (suspendedNotebookText) {
     const h = suspendedNotebookText;
     suspendedNotebookText = null;

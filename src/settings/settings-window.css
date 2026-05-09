@@ -563,6 +563,27 @@ html, body {
 .sync-status.success { color: #4caf50; }
 .sync-status.error { color: #e53935; }
 
+/* Sub-tab nav (Dropbox / Google / Local). Sits at the top of the Sync
+ * panel and switches the body without leaving the Sync top-level tab. */
+.sync-subtab-nav {
+  display: flex; gap: 4px;
+  border-bottom: 1px solid var(--panel-border);
+  margin-bottom: 16px;
+}
+.sync-subtab {
+  background: transparent; color: var(--fg);
+  border: none; border-bottom: 2px solid transparent;
+  padding: 8px 14px; cursor: pointer;
+  font-size: 13px; font-family: system-ui, sans-serif;
+  opacity: 0.7;
+}
+.sync-subtab:hover { opacity: 1; background: rgba(128, 128, 128, 0.06); }
+.sync-subtab.active {
+  border-bottom-color: var(--fg);
+  opacity: 1;
+}
+.sync-subtab-body { display: block; }
+
 /* Local Sync list */
 .local-sync-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .local-sync-item {

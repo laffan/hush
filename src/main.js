@@ -61,6 +61,8 @@ async function init() {
   const editor = createEditor(editorContainer, state);
   state.setEditor(editor);
 
+  import("./google-docs/link-bar.js").then((m) => m.initLinkBar(state)).catch((e) => console.warn("[google-docs] link-bar mount failed", e));
+
   // Cmd-drag a selection out of the main editor to drop into a pane or
   // notebook canvas (same behaviour as pane editors).
   const { attachEditorTextDrag } = await import("./pane/text-drag.js");
@@ -493,26 +495,25 @@ async function init() {
       catch (e) { console.error("Clear local data failed:", e); }
     });
 
-    // Listen for OAuth callback via deep-link plugin
+    // OAuth callback (deep link). Dropbox + Google share this path —
+    // the URL prefix tells us which provider to dispatch to.
     try {
       const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
       await onOpenUrl(async (urls) => {
         for (const url of urls) {
-          if (url.startsWith("hushwriter://auth/callback")) {
-            const params = new URLSearchParams(url.split("?")[1] || "");
-            const code = params.get("code");
-            if (code) await handleOAuthCode(state, invoke, code);
-          }
+          const provider = url.startsWith("hushwriter://auth/google/callback") ? "google"
+            : url.startsWith("hushwriter://auth/callback") ? "dropbox" : null;
+          if (!provider) continue;
+          const code = new URLSearchParams(url.split("?")[1] || "").get("code");
+          if (code) await handleOAuthCode(state, invoke, code, provider);
         }
       });
-    } catch (e) {
-      console.error("Deep-link setup failed:", e);
-    }
+    } catch (e) { console.error("Deep-link setup failed:", e); }
 
-    // Also listen for oauth-callback event (from Rust deep-link handler)
+    // Also listen for oauth-callback event (from Rust deep-link handler).
     await listen("oauth-callback", async (event) => {
-      const { code } = event.payload || {};
-      if (code) await handleOAuthCode(state, invoke, code);
+      const { code, provider } = event.payload || {};
+      if (code) await handleOAuthCode(state, invoke, code, provider || "dropbox");
     });
   }
 

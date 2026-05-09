@@ -206,21 +206,23 @@ export function applyActiveStyle(state) {
   }
 }
 
-/** Handle an OAuth authorization code from a deep-link callback. */
-export async function handleOAuthCode(state, invoke, code) {
+/** Handle an OAuth authorization code from a deep-link callback.
+ *  `provider` is "dropbox" or "google"; defaults to dropbox for old call sites. */
+export async function handleOAuthCode(state, invoke, code, provider = "dropbox") {
   try {
     const verifier = sessionStorage.getItem("hush_oauth_verifier");
-    const { getRedirectUri } = await import("./sync/dropbox.js");
-    const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || getRedirectUri();
-    if (verifier) {
-      const dbx = await import("./sync/dropbox.js");
-      await dbx.completeOAuthFlow(code, verifier, redirectUri);
-      sessionStorage.removeItem("hush_oauth_verifier");
-      sessionStorage.removeItem("hush_oauth_redirect");
-      state.settings = await invoke("get_settings");
-      state.emit("settings-changed");
-    }
+    if (!verifier) return;
+    const mod = provider === "google"
+      ? await import("./google-docs/auth.js")
+      : await import("./sync/dropbox.js");
+    const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || mod.getRedirectUri();
+    await mod.completeOAuthFlow(code, verifier, redirectUri);
+    sessionStorage.removeItem("hush_oauth_verifier");
+    sessionStorage.removeItem("hush_oauth_redirect");
+    sessionStorage.removeItem("hush_oauth_provider");
+    state.settings = await invoke("get_settings");
+    state.emit("settings-changed");
   } catch (e) {
-    console.error("OAuth callback failed:", e);
+    console.error(`OAuth callback failed (${provider}):`, e);
   }
 }

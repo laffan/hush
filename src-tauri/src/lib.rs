@@ -198,7 +198,11 @@ pub fn run() {
                 }
             }
 
-            // Handle deep-link URLs (e.g. hushwriter://auth/callback?code=xxx)
+            // Handle deep-link URLs. Supports both Dropbox
+            // (`hushwriter://auth/callback?code=…`) and Google
+            // (`hushwriter://auth/google/callback?code=…`); the emitted
+            // event carries a `provider` field so the listening settings
+            // window can dispatch to the right OAuth completion path.
             // Must be set up before the desktop block borrows _app.
             {
                 let handle = _app.handle().clone();
@@ -206,11 +210,21 @@ pub fn run() {
                     if let Some(urls) = event.payload().strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
                         for url_str in urls.split(',') {
                             let url_str = url_str.trim().trim_matches('"');
-                            if url_str.starts_with("hushwriter://auth/callback") {
+                            let provider = if url_str.starts_with("hushwriter://auth/google/callback") {
+                                Some("google")
+                            } else if url_str.starts_with("hushwriter://auth/callback") {
+                                Some("dropbox")
+                            } else {
+                                None
+                            };
+                            if let Some(p) = provider {
                                 if let Some(query) = url_str.split('?').nth(1) {
                                     for param in query.split('&') {
                                         if let Some(code) = param.strip_prefix("code=") {
-                                            let _ = handle.emit("oauth-callback", serde_json::json!({ "code": code }));
+                                            let _ = handle.emit(
+                                                "oauth-callback",
+                                                serde_json::json!({ "code": code, "provider": p }),
+                                            );
                                         }
                                     }
                                 }
@@ -374,6 +388,16 @@ pub fn run() {
             commands::snapshots::delete_document_snapshots,
             sync_commands::exchange_dropbox_token,
             sync_commands::refresh_dropbox_token,
+            commands::google_docs::exchange_google_token,
+            commands::google_docs::refresh_google_token,
+            commands::google_docs::revoke_google_tokens,
+            commands::google_docs::set_google_account_email,
+            commands::google_docs::set_google_doc_link,
+            commands::google_docs::get_google_doc_link,
+            commands::google_docs::clear_google_doc_link,
+            commands::google_docs::list_google_doc_links,
+            commands::google_docs::append_google_sync_log,
+            commands::google_docs::clear_google_sync_log,
             sync_commands::scan_sync_folder,
             sync_commands::register_synced_file,
             sync_commands::register_synced_image,
