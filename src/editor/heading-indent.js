@@ -13,7 +13,12 @@ const headingMarkerHideDeco = Decoration.replace({});
 // width via an offscreen canvas using the editor's computed font, so the
 // wrapped lines sit exactly under the first character of content — not under
 // the marker, and not visibly offset as `ch` units would cause in
-// proportional fonts.
+// proportional fonts. On top of the hang-indent we also push the marker
+// itself in from the left margin by LIST_LEFT_INDENT_PX so list blocks read
+// as visually offset blocks (closer to Google Docs' ~50px) rather than
+// hugging the column edge at the natural 2-char marker width.
+const LIST_LEFT_INDENT_PX = 30;
+
 let _listMarkerMeasureCtx = null;
 
 function measureListMarkerPx(view, text) {
@@ -25,10 +30,11 @@ function measureListMarkerPx(view, text) {
   return _listMarkerMeasureCtx.measureText(text).width;
 }
 
-function listIndentLineDeco(px) {
+function listIndentLineDeco(markerPx) {
+  const padding = LIST_LEFT_INDENT_PX + markerPx;
   return Decoration.line({
     class: "list-indent",
-    attributes: { style: `padding-left: ${px}px; text-indent: -${px}px;` },
+    attributes: { style: `padding-left: ${padding}px; text-indent: -${markerPx}px;` },
   });
 }
 
