@@ -42,7 +42,7 @@ export function htmlToMarkdown(html) {
     gdocs.remove();
   }
 
-  const out = renderChildren(root, { listStack: [], inPre: false });
+  const out = renderChildren(root, { inPre: false });
   return out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
 }
 
@@ -72,7 +72,7 @@ function renderNode(node, ctx) {
     case "P": case "DIV":
       return blockPara(node, ctx);
     case "UL": case "OL":
-      return blockList(node, ctx, tag === "OL");
+      return blockListGroup(node, ctx);
     case "LI":
       // Bare <li> outside a list — render as a plain bullet.
       return "- " + renderChildren(node, ctx).trim() + "\n";
@@ -101,35 +101,69 @@ function blockPara(node, ctx) {
   return "\n\n" + inner + "\n\n";
 }
 
-function blockList(node, ctx, ordered) {
-  const depth = ctx.listStack.length;
-  ctx.listStack.push({ ordered, idx: 1 });
-  let out = depth === 0 ? "\n" : "\n";
-  for (const child of node.children) {
-    if (child.tagName === "LI") out += renderListItem(child, ctx, ordered, depth);
+// Block-level entry point for a <ul>/<ol>. Coalesces consecutive sibling
+// list elements into one logical list group — Google Docs emits each list
+// item as its own <ul>/<ol> with `aria-level` on the <li> indicating
+// visual depth, so without this every item would render at the top level.
+// Standard nested-<ul>-inside-<li> markup also passes through here; depths
+// fall back to ancestor-list count when `aria-level` isn't present.
+function blockListGroup(firstList, ctx) {
+  if (firstList.getAttribute("data-hush-consumed") === "true") return "";
+  const groupRoots = [firstList];
+  let next = nextSiblingElement(firstList);
+  while (next && (next.tagName === "UL" || next.tagName === "OL")) {
+    groupRoots.push(next);
+    next.setAttribute("data-hush-consumed", "true");
+    next = nextSiblingElement(next);
   }
-  ctx.listStack.pop();
-  return depth === 0 ? out + "\n" : out;
+  const items = [];
+  for (const root of groupRoots) collectListItems(root, items, 0, ctx);
+  if (!items.length) return "";
+  // Renormalise depth values to a contiguous 0..N range so visually-
+  // jumped levels (e.g. aria-level=1 → aria-level=3) collapse cleanly.
+  const sorted = [...new Set(items.map((it) => it.depth))].sort((a, b) => a - b);
+  const depthMap = new Map(sorted.map((d, i) => [d, i]));
+  for (const it of items) it.depth = depthMap.get(it.depth);
+  // Per-depth ordered counters; popping deeper counters when depth
+  // decreases so a later sibling group restarts numbering.
+  const counters = [];
+  let out = "\n\n";
+  for (const it of items) {
+    while (counters.length <= it.depth) counters.push(1);
+    while (counters.length > it.depth + 1) counters.pop();
+    const indent = "  ".repeat(it.depth);
+    const marker = it.ordered ? `${counters[it.depth]++}.` : "-";
+    const content = it.content.replace(/\s*\n\s*/g, " ").replace(/^\s+|\s+$/g, "");
+    if (!content) continue;
+    out += `${indent}${marker} ${content}\n`;
+  }
+  return out + "\n";
 }
 
-function renderListItem(node, ctx, ordered, depth) {
-  const indent = "  ".repeat(depth);
-  const top = ctx.listStack[ctx.listStack.length - 1];
-  const marker = ordered ? `${top.idx++}.` : "-";
-  let primary = "";
-  let nested = "";
-  for (const child of node.childNodes) {
-    if (child.nodeType === 1 && (child.tagName === "UL" || child.tagName === "OL")) {
-      nested += renderNode(child, ctx);
-    } else {
-      primary += renderNode(child, ctx);
+function nextSiblingElement(el) {
+  let n = el.nextSibling;
+  while (n && n.nodeType === 3 && /^\s*$/.test(n.nodeValue || "")) n = n.nextSibling;
+  return (n && n.nodeType === 1) ? n : null;
+}
+
+function collectListItems(listNode, items, fallbackDepth, ctx) {
+  const ordered = listNode.tagName === "OL";
+  for (const child of listNode.children) {
+    if (child.tagName !== "LI") continue;
+    const aria = parseInt(child.getAttribute("aria-level") || "", 10);
+    const depth = (!Number.isNaN(aria) && aria > 0) ? aria - 1 : fallbackDepth;
+    let content = "";
+    const nested = [];
+    for (const sub of child.childNodes) {
+      if (sub.nodeType === 1 && (sub.tagName === "UL" || sub.tagName === "OL")) {
+        nested.push(sub);
+      } else {
+        content += renderNode(sub, ctx);
+      }
     }
+    items.push({ depth, ordered, content });
+    for (const sub of nested) collectListItems(sub, items, depth + 1, ctx);
   }
-  primary = primary.replace(/\s*\n\s*/g, " ").replace(/^\s+|\s+$/g, "");
-  if (!primary && !nested) return "";
-  let line = `${indent}${marker} ${primary}\n`;
-  if (nested) line += nested.replace(/^\n+/, "").replace(/\n+$/, "\n");
-  return line;
 }
 
 function blockQuote(node, ctx) {
