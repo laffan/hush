@@ -245,17 +245,20 @@ export function computeNotebookSettings(state, lockedStyleId) {
   // Style background override — when the active style has a `bg` set,
   // pipe it through so the canvas paints the user-chosen background
   // instead of the resolved notebook theme's stock canvasBackground.
-  // Empty string = no override.
+  // Empty string = no override. The Default style's `bg` lives on
+  // AppSettings.defaultLight/DarkColors instead of a style entry, so
+  // handle that branch explicitly.
   let canvasBackgroundOverride = "";
+  let bgColors = null;
   if (s.activeStyleId && s.styles) {
     const style = s.styles.find((st) => st.id === s.activeStyleId);
     if (style) {
-      const colors = appearance === "dark"
-        ? (style.darkColors || {})
-        : (style.lightColors || {});
-      if (colors.bg) canvasBackgroundOverride = colors.bg;
+      bgColors = appearance === "dark" ? style.darkColors : style.lightColors;
     }
+  } else {
+    bgColors = appearance === "dark" ? s.defaultDarkColors : s.defaultLightColors;
   }
+  if (bgColors?.bg) canvasBackgroundOverride = bgColors.bg;
 
   return {
     appearanceMode: appearance,

@@ -175,8 +175,13 @@ impl FileManager {
             .ok()
             .and_then(|s| serde_json::from_str::<FileEntry>(&s).ok())
             .map(|e| e.name);
+        // Notebook payloads are JSON envelopes; deriving a name from them
+        // produces garbage like `{"format":"hushnote"...`. Notebooks are
+        // identified by the tree-node name, so leaving "Untitled" on the
+        // FileEntry is harmless (callers fall back to the tree node).
         let name = match existing_name {
             Some(n) if n != "Untitled" => n,
+            _ if looks_like_notebook_content(content) => "Untitled".to_string(),
             _ => derive_name(content),
         };
         let entry = FileEntry {
@@ -328,5 +333,16 @@ fn derive_name(content: &str) -> String {
     } else {
         format!("{}...", &clean[..20])
     }
+}
+
+fn looks_like_notebook_content(content: &str) -> bool {
+    let trimmed = content.trim_start();
+    // Current envelope form (encodeNotebookContent in notebook-content.ts).
+    if trimmed.starts_with("{\"format\":\"hushnote\"") {
+        return true;
+    }
+    // Legacy bare Shape[] form: empty notebook is "[]"; a populated one
+    // begins with "[{". decodeNotebookContent still accepts both.
+    trimmed == "[]" || trimmed.starts_with("[{")
 }
 

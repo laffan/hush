@@ -85,8 +85,10 @@ export function createPaneEditor(container, appState, onChange, opts) {
       const nh = style?.suppressHeaderSize ?? effective.normalizeHeaders;
       const nhc = style?.suppressHeaderColor ?? effective.normalizeHeaderColor;
       const hScale = style?.headerScale ?? effective.headerScale ?? 1.0;
-      const headerOverride = (style && ((effective.appearance === "dark" ? style.darkColors : style.lightColors)?.header))
-        || undefined;
+      const headerOverrideSource = style
+        ? (effective.appearance === "dark" ? style.darkColors : style.lightColors)
+        : (effective.appearance === "dark" ? effective.defaultDarkColors : effective.defaultLightColors);
+      const headerOverride = headerOverrideSource?.header || undefined;
       view.dispatch({
         effects: [
           themeComp.reconfigure(t ? t.extension : []),
@@ -168,19 +170,22 @@ function applyStyleColorsToView(view, style, settings) {
   const fallbackBg = themeBackgrounds[
     appearance === "dark" ? settings.darkTheme : settings.lightTheme
   ] || null;
-  // No active style → strip any prior overrides so the theme's own
-  // palette shows through cleanly.
-  if (!style) {
-    root.style.backgroundColor = "";
-    root.style.color = "";
-    root.style.removeProperty("--style-fg");
-    root.style.removeProperty("--cursor");
-    root.style.removeProperty("--selection");
-    if (wrapper) wrapper.style.backgroundColor = fallbackBg || "";
-    return;
+  // Resolve overrides + theme. The Default style (no `style` arg) keeps
+  // its bg/fg/cursor/selection on AppSettings.defaultLight/DarkColors —
+  // mirror style-application.js::applyActiveStyle so panes pick up those
+  // overrides too. Without this branch, default-style overrides repaint
+  // the main editor but never reach panes.
+  let themeId, overrides;
+  if (style) {
+    const resolved = resolveStyleForAppearance(style, settings.appearance);
+    themeId = resolved.themeId;
+    overrides = resolved.colors || {};
+  } else {
+    themeId = appearance === "dark" ? settings.darkTheme : settings.lightTheme;
+    overrides = (appearance === "dark"
+      ? settings.defaultDarkColors
+      : settings.defaultLightColors) || {};
   }
-  const { themeId, colors } = resolveStyleForAppearance(style, settings.appearance);
-  const overrides = colors || {};
   const effectiveBg = overrides.bg || themeBackgrounds[themeId] || fallbackBg;
   if (overrides.bg) {
     root.style.backgroundColor = overrides.bg;
