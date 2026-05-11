@@ -82,6 +82,13 @@ pub struct AppSettings {
     // Google Docs (OAuth PKCE) — per-document link, no auto-sync.
     // The user explicitly drives push/pull from a link bar; tokens live
     // here, per-doc links live in a sibling map (`google_doc_links`).
+    // Client credentials live here too (entered in Settings > Sync >
+    // Google Sync) so each user supplies their own OAuth client rather
+    // than embedding one at build time.
+    #[serde(default)]
+    pub google_client_id: Option<String>,
+    #[serde(default)]
+    pub google_client_secret: Option<String>,
     #[serde(default)]
     pub google_access_token: Option<String>,
     #[serde(default)]
@@ -478,6 +485,8 @@ impl Default for AppSettings {
             dropbox_sync_path: None,
             dropbox_enabled: false,
             dropbox_sync_log: Vec::new(),
+            google_client_id: None,
+            google_client_secret: None,
             google_access_token: None,
             google_refresh_token: None,
             google_token_expires_at: None,

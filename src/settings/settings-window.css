@@ -145,6 +145,26 @@ html, body {
 }
 .settings-row input[type="number"] { text-align: right; }
 
+/* Stacked row — label on its own line above a full-width input. Used
+ * for OAuth credential entry where the values are long. */
+.settings-row-stacked {
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+}
+.settings-row-stacked label { font-size: 13px; font-weight: 500; }
+.settings-input {
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.settings-input:focus { border-color: rgba(128, 128, 128, 0.5); }
+
 .settings-row select option {
   background: var(--bg);
   color: var(--fg);

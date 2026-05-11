@@ -3,9 +3,12 @@
  * `sync/dropbox.js` so the two providers behave the same way at the
  * `handleOAuthCode` dispatch level.
  *
- * Build-time config:
- *   - VITE_GOOGLE_CLIENT_ID            — required, your OAuth client id
- *   - VITE_GOOGLE_REDIRECT_URI         — defaults to `hushwriter://auth/google/callback`
+ * Credentials live in `AppSettings` (entered by the user in Settings >
+ * Sync > Google Sync — Client ID + optional Client Secret), so each
+ * install supplies its own OAuth client rather than embedding one at
+ * build time. The redirect URI is fixed at `hushwriter://auth/google/callback`
+ * for production; dev installs that need to use the loopback flow can
+ * override via the optional `VITE_GOOGLE_REDIRECT_URI` env var.
  *
  * Scopes requested (read+write to whatever Hush links to):
  *   - https://www.googleapis.com/auth/drive          full Drive R/W
@@ -16,26 +19,25 @@
  * access for files the app created or that the user explicitly picked
  * via Google Picker. Since Hush's link flow uses our own picker (a small
  * Drive `files.list` modal — see `picker.js`), we'd be locked out of
- * existing user-created docs without `drive`. Phase 2 takes the broader
- * scope; future work could swap to Picker + `drive.file` for tighter
- * permissions.
+ * existing user-created docs without `drive`.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-const CLIENT_ID = typeof import.meta !== "undefined"
-  ? import.meta.env.VITE_GOOGLE_CLIENT_ID || ""
+// Dev override for the redirect URI — only needed if the user wires
+// the loopback flow into the OAuth client. Production always uses the
+// custom-scheme deep link.
+const DEV_REDIRECT_URI_OVERRIDE = typeof import.meta !== "undefined"
+  ? (import.meta.env.VITE_GOOGLE_REDIRECT_URI || "")
   : "";
-
-const REDIRECT_URI = typeof import.meta !== "undefined"
-  ? import.meta.env.VITE_GOOGLE_REDIRECT_URI || "hushwriter://auth/google/callback"
-  : "hushwriter://auth/google/callback";
+const PRODUCTION_REDIRECT_URI = "hushwriter://auth/google/callback";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/userinfo.email",
 ].join(" ");
 
+let _clientId = null; // loaded on demand from settings
 let _accessToken = null;
 let _refreshToken = null;
 let _expiresAt = 0; // unix seconds
@@ -43,8 +45,22 @@ let _refreshing = null;
 
 export function getAccessToken() { return _accessToken; }
 export function hasTokens() { return !!_accessToken || !!_refreshToken; }
-export function getRedirectUri() { return REDIRECT_URI; }
-export function getClientId() { return CLIENT_ID; }
+export function getRedirectUri() {
+  return DEV_REDIRECT_URI_OVERRIDE || PRODUCTION_REDIRECT_URI;
+}
+// Resolve the user-entered client id from settings. Cached after first
+// read; explicit clear via `setClientId(null)` on credential edits.
+export async function getClientId() {
+  if (_clientId) return _clientId;
+  if (!IS_TAURI) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const settings = await invoke("get_settings");
+    _clientId = settings.googleClientId || null;
+    return _clientId;
+  } catch (_) { return null; }
+}
+export function setClientId(v) { _clientId = v || null; }
 
 export function clearTokens() {
   _accessToken = null;
@@ -74,7 +90,7 @@ async function refreshAccessToken() {
       if (!IS_TAURI) throw new Error("Google token refresh requires Tauri");
       if (!_refreshToken) throw new Error("No Google refresh token stored");
       const { invoke } = await import("@tauri-apps/api/core");
-      const newToken = await invoke("refresh_google_token", { clientId: CLIENT_ID });
+      const newToken = await invoke("refresh_google_token");
       _accessToken = newToken;
       // Re-pull expiry from settings — Rust updates it on the same call.
       try {
@@ -138,17 +154,19 @@ function base64UrlEncode(bytes) {
 // ===== OAuth flow =====
 
 export async function startOAuthFlow() {
-  if (!CLIENT_ID) {
-    throw new Error("VITE_GOOGLE_CLIENT_ID is not set. Add it to your .env file.");
+  const clientId = await getClientId();
+  if (!clientId) {
+    throw new Error("Google Client ID is not set. Enter your OAuth credentials in Settings > Sync > Google Sync.");
   }
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
+  const redirectUri = getRedirectUri();
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: clientId,
     response_type: "code",
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri,
     scope: SCOPES,
     access_type: "offline",
     prompt: "consent", // force a refresh_token on every consent
@@ -163,7 +181,7 @@ export async function startOAuthFlow() {
   } else {
     window.open(authUrl, "_blank");
   }
-  return { codeVerifier, redirectUri: REDIRECT_URI };
+  return { codeVerifier, redirectUri };
 }
 
 export async function completeOAuthFlow(code, codeVerifier, redirectUri) {
@@ -173,7 +191,6 @@ export async function completeOAuthFlow(code, codeVerifier, redirectUri) {
     code,
     codeVerifier,
     redirectUri,
-    clientId: CLIENT_ID,
   });
   _accessToken = result.access_token;
   _refreshToken = result.refresh_token || _refreshToken;

@@ -499,6 +499,55 @@ export function bindSyncTab(saveSetting, settings, render) {
 // ===== Google sub-tab bindings =====
 
 function bindGoogleSubTab(saveSetting, settings, render) {
+  // ===== Credential form (Save / Cancel) =====
+  // The form surfaces either when no client id is saved or when the
+  // user clicked "Edit credentials". Save persists both fields (a blank
+  // secret means "keep what's stored") then flips back to the normal
+  // connect / connected view.
+  const credsSaveBtn = document.getElementById("google-creds-save");
+  if (credsSaveBtn) {
+    credsSaveBtn.addEventListener("click", async () => {
+      const idEl = document.getElementById("google-client-id");
+      const secretEl = document.getElementById("google-client-secret");
+      const id = (idEl?.value || "").trim();
+      const status = document.getElementById("google-auth-status");
+      if (!id) {
+        if (status) { status.textContent = "Client ID is required."; status.className = "sync-status error"; }
+        idEl?.focus();
+        return;
+      }
+      const rawSecret = secretEl?.value || "";
+      const isMask = rawSecret === "••••••••";
+      const secret = isMask ? (settings.googleClientSecret || "") : rawSecret.trim();
+      await saveSetting("googleClientId", id);
+      await saveSetting("googleClientSecret", secret);
+      // Tell auth.js's in-memory cache to re-read from settings.
+      try {
+        const auth = await import("../google-docs/auth.js");
+        auth.setClientId(id);
+      } catch (_) {}
+      const { setEditingGoogleCreds } = await import("./settings-tabs-sync.js");
+      setEditingGoogleCreds(false);
+      render();
+    });
+  }
+  const credsCancelBtn = document.getElementById("google-creds-cancel");
+  if (credsCancelBtn) {
+    credsCancelBtn.addEventListener("click", async () => {
+      const { setEditingGoogleCreds } = await import("./settings-tabs-sync.js");
+      setEditingGoogleCreds(false);
+      render();
+    });
+  }
+  const editCredsBtn = document.getElementById("google-edit-credentials");
+  if (editCredsBtn) {
+    editCredsBtn.addEventListener("click", async () => {
+      const { setEditingGoogleCreds } = await import("./settings-tabs-sync.js");
+      setEditingGoogleCreds(true);
+      render();
+    });
+  }
+
   // Connect: starts the OAuth PKCE flow, listens for the callback event,
   // refreshes settings on completion. Mirrors `sync-connect-dropbox`.
   const connectBtn = document.getElementById("google-connect");

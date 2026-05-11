@@ -131,73 +131,149 @@ function renderDropboxSubTab(settings) {
 
 function renderGoogleSubTab(settings) {
   const isConnected = !!settings.googleAccessToken || !!settings.googleRefreshToken;
+  const hasCredentials = !!(settings.googleClientId && settings.googleClientId.trim());
   const email = settings.googleAccountEmail || "";
   const linkCount = Object.keys(settings.googleDocLinks || {}).length;
   const log = settings.googleSyncLog || [];
-  let html = "";
+
+  // The credential form takes over when the user clicks "Edit
+  // credentials" OR when no client id is saved yet.
+  if (_editingGoogleCreds || !hasCredentials) {
+    return renderGoogleCredentialForm(settings, /* editing= */ hasCredentials);
+  }
+
+  // State B — credentials saved, not yet connected. Surface the Connect
+  // button alongside an "Edit credentials" affordance.
   if (!isConnected) {
-    html += `
+    return `
       <div class="settings-section">
         <h2>Google Sync</h2>
         <p class="settings-help">
-          Connect a Google account to link individual Hush documents to
-          Google Docs. Unlike Dropbox sync, Google Sync is per-document
-          and user-driven — each linked doc shows a bar above the editor
-          with explicit Push and Pull buttons. There is no automatic
-          syncing or conflict detection; both Hush and Google Docs keep
-          version history if you change your mind.
+          Connect your Google account to link individual Hush documents to
+          Google Docs. Each linked doc shows a bar above the editor with
+          explicit Push and Pull buttons. There is no automatic syncing or
+          conflict detection; both Hush and Google Docs keep version
+          history if you change your mind.
         </p>
-        <button id="google-connect" class="sync-action-btn">Connect Google account</button>
-        <div id="google-auth-status" class="sync-status"></div>
-      </div>
-    `;
-  } else {
-    html += `
-      <div class="settings-section">
-        <h2>Google Sync</h2>
         <div class="sync-info-box">
           <div class="sync-info-row">
-            <span class="sync-info-label">Status</span>
-            <span class="sync-info-value" id="google-connection-status">Connected</span>
-          </div>
-          <div class="sync-info-row">
-            <span class="sync-info-label">Account</span>
-            <span class="sync-info-value">${email ? escHtml(email) : "(unknown)"}</span>
-          </div>
-          <div class="sync-info-row">
-            <span class="sync-info-label">Linked documents</span>
-            <span class="sync-info-value">${linkCount}</span>
+            <span class="sync-info-label">OAuth client</span>
+            <span class="sync-info-value">${escHtml(maskedClientId(settings.googleClientId))}</span>
           </div>
         </div>
         <div class="sync-btn-row">
-          <button id="google-test-connection" class="sync-inline-btn">Test Connection</button>
+          <button id="google-connect" class="sync-action-btn">Connect Google account</button>
+          <button id="google-edit-credentials" class="sync-inline-btn">Edit credentials</button>
         </div>
         <div id="google-auth-status" class="sync-status"></div>
-      </div>
-      <div class="settings-section">
-        <h2>Activity Log</h2>
-        <div class="sync-log-box" id="google-sync-log-box">
-          ${log.length > 0
-            ? log.slice(-20).reverse().map(entry => `<div class="sync-log-entry">${escHtml(entry)}</div>`).join("")
-            : `<div class="sync-log-empty">No Google Docs activity yet.</div>`
-          }
-        </div>
-        <div class="sync-btn-row">
-          <button id="google-clear-log" class="sync-inline-btn">Clear log</button>
-        </div>
-      </div>
-      <div class="settings-section">
-        <h2>Disconnect</h2>
-        <p class="settings-help">
-          Revokes the Google access token, clears stored credentials, and
-          forgets every per-document link. The Google Docs themselves are
-          untouched.
-        </p>
-        <button id="google-disconnect" class="sync-danger-btn">Disconnect Google account</button>
       </div>
     `;
   }
-  return html;
+
+  // State C — fully connected. Show status, log, edit-creds + disconnect.
+  return `
+    <div class="settings-section">
+      <h2>Google Sync</h2>
+      <div class="sync-info-box">
+        <div class="sync-info-row">
+          <span class="sync-info-label">Status</span>
+          <span class="sync-info-value" id="google-connection-status">Connected</span>
+        </div>
+        <div class="sync-info-row">
+          <span class="sync-info-label">Account</span>
+          <span class="sync-info-value">${email ? escHtml(email) : "(unknown)"}</span>
+        </div>
+        <div class="sync-info-row">
+          <span class="sync-info-label">Linked documents</span>
+          <span class="sync-info-value">${linkCount}</span>
+        </div>
+        <div class="sync-info-row">
+          <span class="sync-info-label">OAuth client</span>
+          <span class="sync-info-value">${escHtml(maskedClientId(settings.googleClientId))}</span>
+        </div>
+      </div>
+      <div class="sync-btn-row">
+        <button id="google-test-connection" class="sync-inline-btn">Test Connection</button>
+        <button id="google-edit-credentials" class="sync-inline-btn">Edit credentials</button>
+      </div>
+      <div id="google-auth-status" class="sync-status"></div>
+    </div>
+    <div class="settings-section">
+      <h2>Activity Log</h2>
+      <div class="sync-log-box" id="google-sync-log-box">
+        ${log.length > 0
+          ? log.slice(-20).reverse().map(entry => `<div class="sync-log-entry">${escHtml(entry)}</div>`).join("")
+          : `<div class="sync-log-empty">No Google Docs activity yet.</div>`
+        }
+      </div>
+      <div class="sync-btn-row">
+        <button id="google-clear-log" class="sync-inline-btn">Clear log</button>
+      </div>
+    </div>
+    <div class="settings-section">
+      <h2>Disconnect</h2>
+      <p class="settings-help">
+        Revokes the Google access token and forgets every per-document
+        link. Your saved OAuth credentials remain so you can re-connect
+        without re-entering them; the Google Docs themselves are untouched.
+      </p>
+      <button id="google-disconnect" class="sync-danger-btn">Disconnect Google account</button>
+    </div>
+  `;
+}
+
+// Module-local flag flipped by "Edit credentials" so the next render
+// surfaces the form even though credentials are already saved.
+let _editingGoogleCreds = false;
+export function setEditingGoogleCreds(v) { _editingGoogleCreds = !!v; }
+
+function renderGoogleCredentialForm(settings, editing) {
+  const clientId = settings.googleClientId || "";
+  const hasSecret = !!(settings.googleClientSecret && settings.googleClientSecret.trim());
+  return `
+    <div class="settings-section">
+      <h2>Google Sync</h2>
+      <p class="settings-help">
+        Hush uses your own Google Cloud OAuth client so each install
+        authenticates against an account you control. Create a
+        <strong>Desktop application</strong> OAuth client at
+        <code>console.cloud.google.com/apis/credentials</code>, enable the
+        <strong>Google Drive API</strong> on the project, and register
+        <code>${escHtml(getProductionRedirectUri())}</code> as an
+        authorised redirect URI. Then paste the client id and secret below.
+      </p>
+      <div class="settings-row settings-row-stacked">
+        <label for="google-client-id">Client ID</label>
+        <input id="google-client-id" type="text" autocomplete="off" spellcheck="false"
+               class="settings-input" value="${escAttr(clientId)}"
+               placeholder="123456-abc.apps.googleusercontent.com" />
+      </div>
+      <div class="settings-row settings-row-stacked">
+        <label for="google-client-secret">Client Secret <span class="settings-hint">(optional for some client types)</span></label>
+        <input id="google-client-secret" type="password" autocomplete="off" spellcheck="false"
+               class="settings-input" value="${hasSecret ? "••••••••" : ""}"
+               placeholder="${hasSecret ? "stored — leave blank to keep" : "GOCSPX-…"}" />
+      </div>
+      <div class="sync-btn-row">
+        <button id="google-creds-save" class="sync-action-btn">Save credentials</button>
+        ${editing ? `<button id="google-creds-cancel" class="sync-inline-btn">Cancel</button>` : ""}
+      </div>
+      <div id="google-auth-status" class="sync-status"></div>
+    </div>
+  `;
+}
+
+function maskedClientId(id) {
+  if (!id) return "(unset)";
+  if (id.length < 16) return id;
+  return id.slice(0, 12) + "…" + id.slice(-12);
+}
+
+// Mirror auth.js's logic for the production redirect URI so the form
+// help text shows the exact string the user needs to register.
+function getProductionRedirectUri() {
+  const dev = (typeof import.meta !== "undefined" ? import.meta.env.VITE_GOOGLE_REDIRECT_URI : "") || "";
+  return dev || "hushwriter://auth/google/callback";
 }
 
 // ===== Local =====

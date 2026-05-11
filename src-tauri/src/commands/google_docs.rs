@@ -17,18 +17,34 @@ pub async fn exchange_google_token(
     code: String,
     code_verifier: String,
     redirect_uri: String,
-    client_id: String,
 ) -> Result<serde_json::Value, String> {
+    // Read client credentials from settings. Google's Desktop-app OAuth
+    // clients still require the secret in the token-exchange POST even
+    // with PKCE — it's documented "not really secret" since it ships
+    // with the app, but the form needs it. Native / UWP clients with no
+    // secret simply leave the field empty (we don't include it).
+    let (client_id, client_secret) = {
+        let settings = state.settings.lock().unwrap();
+        (
+            settings.google_client_id.clone().ok_or("Google Client ID is not set")?,
+            settings.google_client_secret.clone(),
+        )
+    };
+    let mut form: Vec<(&str, &str)> = vec![
+        ("code", code.as_str()),
+        ("grant_type", "authorization_code"),
+        ("code_verifier", code_verifier.as_str()),
+        ("redirect_uri", redirect_uri.as_str()),
+        ("client_id", client_id.as_str()),
+    ];
+    let secret_str = client_secret.as_deref().unwrap_or("");
+    if !secret_str.trim().is_empty() {
+        form.push(("client_secret", secret_str));
+    }
     let client = reqwest::Client::new();
     let resp = client
         .post("https://oauth2.googleapis.com/token")
-        .form(&[
-            ("code", code.as_str()),
-            ("grant_type", "authorization_code"),
-            ("code_verifier", code_verifier.as_str()),
-            ("redirect_uri", redirect_uri.as_str()),
-            ("client_id", client_id.as_str()),
-        ])
+        .form(&form)
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
@@ -63,22 +79,31 @@ pub async fn exchange_google_token(
 #[tauri::command]
 pub async fn refresh_google_token(
     state: State<'_, AppState>,
-    client_id: String,
 ) -> Result<String, String> {
-    let refresh_token = {
+    let (refresh_token, client_id, client_secret) = {
         let settings = state.settings.lock().unwrap();
-        settings.google_refresh_token.clone()
-            .ok_or("No Google refresh token stored")?
+        (
+            settings.google_refresh_token.clone()
+                .ok_or("No Google refresh token stored")?,
+            settings.google_client_id.clone()
+                .ok_or("Google Client ID is not set")?,
+            settings.google_client_secret.clone(),
+        )
     };
 
+    let mut form: Vec<(&str, &str)> = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token.as_str()),
+        ("client_id", client_id.as_str()),
+    ];
+    let secret_str = client_secret.as_deref().unwrap_or("");
+    if !secret_str.trim().is_empty() {
+        form.push(("client_secret", secret_str));
+    }
     let client = reqwest::Client::new();
     let resp = client
         .post("https://oauth2.googleapis.com/token")
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token.as_str()),
-            ("client_id", client_id.as_str()),
-        ])
+        .form(&form)
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
