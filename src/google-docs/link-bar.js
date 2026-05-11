@@ -73,6 +73,7 @@ function refresh() {
   el.style.display = "";
   el.innerHTML = `
     <a class="gdoc-link-bar-chip" href="#" target="_blank" rel="noopener" title="Open in Google Docs">${ICON_LINK}<span class="gdoc-link-bar-title">${escHtml(link.title || "Linked Google Doc")}</span></a>
+    <span class="gdoc-link-bar-status"></span>
     <div class="gdoc-link-bar-actions">
       <button class="gdoc-link-bar-btn" data-action="pull" title="Replace Hush document with Google Doc content">Pull</button>
       <button class="gdoc-link-bar-btn" data-action="push" title="Replace Google Doc with Hush document content">Push</button>
@@ -99,21 +100,30 @@ async function onAction(action, link) {
   if (!_state || _busy) return;
   if (action === "unlink") {
     if (!window.confirm("Unlink this document from Google Docs?\n\nThe Hush document and the Google Doc are both kept; only the link between them is forgotten.")) return;
-    const { clearLink } = await import("./link-store.js");
-    await clearLink(_state, _state.currentFileId);
-    appendLog(_state, `Unlinked "${link.title}"`);
-    showToast("Unlinked");
+    setBusy(true);
+    setStatus("Unlinking…", "working");
+    try {
+      const { clearLink } = await import("./link-store.js");
+      await clearLink(_state, _state.currentFileId);
+      appendLog(_state, `Unlinked "${link.title}"`);
+      // No need to clear status — refresh() runs on settings-changed
+      // and the bar is gone now anyway.
+    } catch (e) {
+      setStatus(`Failed: ${e.message || e}`, "error", 4000);
+      appendLog(_state, `Unlink failed: ${e.message || e}`);
+    } finally { setBusy(false); }
     return;
   }
   if (action === "push") {
     if (!window.confirm(`Replace the Google Doc "${link.title}" with the current Hush document?\n\nGoogle Docs version history is your undo.`)) return;
     setBusy(true);
+    setStatus("Sending…", "working");
     try {
       const { pushToGoogleDoc } = await import("./link-command.js");
       await pushToGoogleDoc(_state, link);
-      showToast("Pushed to Google Doc");
+      setStatus("Sent ✓", "success", 2000);
     } catch (e) {
-      showToast(`Push failed: ${e.message || e}`, /* error= */ true);
+      setStatus(`Failed: ${e.message || e}`, "error", 5000);
       appendLog(_state, `Push failed: ${e.message || e}`);
     } finally { setBusy(false); }
     return;
@@ -121,12 +131,13 @@ async function onAction(action, link) {
   if (action === "pull") {
     if (!window.confirm(`Replace the current Hush document with the Google Doc "${link.title}"?\n\nHush version history is your undo.`)) return;
     setBusy(true);
+    setStatus("Receiving…", "working");
     try {
       const { pullFromGoogleDoc } = await import("./link-command.js");
       await pullFromGoogleDoc(_state, link);
-      showToast("Pulled from Google Doc");
+      setStatus("Received ✓", "success", 2000);
     } catch (e) {
-      showToast(`Pull failed: ${e.message || e}`, /* error= */ true);
+      setStatus(`Failed: ${e.message || e}`, "error", 5000);
       appendLog(_state, `Pull failed: ${e.message || e}`);
     } finally { setBusy(false); }
     return;
@@ -141,15 +152,27 @@ function setBusy(b) {
   el.querySelectorAll(".gdoc-link-bar-btn").forEach((btn) => { btn.disabled = b; });
 }
 
-function showToast(label, isError = false) {
-  document.querySelectorAll(".gdoc-link-toast").forEach((el) => el.remove());
-  const toast = document.createElement("div");
-  toast.className = `style-locked-toast gdoc-link-toast${isError ? " error" : ""}`;
-  toast.textContent = label;
-  document.body.appendChild(toast);
-  toast.offsetHeight; // eslint-disable-line no-unused-expressions
-  toast.classList.add("visible");
-  setTimeout(() => { toast.classList.remove("visible"); setTimeout(() => toast.remove(), 300); }, isError ? 4000 : 1800);
+let _statusTimer = null;
+/** Update the inline status line. `mode` is "working" | "success" |
+ *  "error". When `autoClearMs` is set, the status fades out after that
+ *  many milliseconds so success/failure messages don't linger. */
+function setStatus(text, mode, autoClearMs) {
+  const el = document.getElementById(HOST_ID);
+  if (!el) return;
+  const statusEl = el.querySelector(".gdoc-link-bar-status");
+  if (!statusEl) return;
+  if (_statusTimer) { clearTimeout(_statusTimer); _statusTimer = null; }
+  statusEl.textContent = text || "";
+  statusEl.classList.toggle("visible", !!text);
+  statusEl.classList.toggle("success", mode === "success");
+  statusEl.classList.toggle("error", mode === "error");
+  if (autoClearMs && text) {
+    _statusTimer = setTimeout(() => {
+      statusEl.classList.remove("visible", "success", "error");
+      statusEl.textContent = "";
+      _statusTimer = null;
+    }, autoClearMs);
+  }
 }
 
 function escHtml(s) {

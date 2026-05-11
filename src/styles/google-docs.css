@@ -178,13 +178,18 @@
   color: var(--sidebar-fg);
   background: var(--theme-bg, var(--bg));
   user-select: none;
+  /* The Tauri title-bar drag region (#drag-region, z-index 80,
+   * -webkit-app-region: drag) sits on top of this gutter on macOS and
+   * captures clicks for window-dragging. Opt out so the buttons get
+   * pointer events. */
+  -webkit-app-region: no-drag;
 }
 .gdoc-link-bar.gdoc-link-bar-busy { opacity: 0.55; }
 
 /* Title chip — plain text + small two-arrow icon, no background. */
 .gdoc-link-bar-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  flex: 1; min-width: 0;
+  flex: 0 1 auto; min-width: 0;
   text-decoration: none;
   color: inherit;
   opacity: 0.65;
@@ -197,9 +202,25 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* Action cluster — pull · push · unlink, separated by middle dots. */
+/* In-flight status pill — plain italic text right of the title.
+ * Empty when idle so the bar reads as just title + actions. */
+.gdoc-link-bar-status {
+  flex: 0 1 auto; min-width: 0;
+  font-style: italic;
+  opacity: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: opacity 200ms ease;
+}
+.gdoc-link-bar-status.visible { opacity: 0.75; }
+.gdoc-link-bar-status.success { color: #4caf50; opacity: 1; font-style: normal; }
+.gdoc-link-bar-status.error { color: #ff6b6b; opacity: 1; font-style: normal; }
+
+/* Action cluster — pull · push · unlink, separated by middle dots.
+ * `margin-left: auto` pushes it to the far right regardless of how
+ * much room the chip + status need. */
 .gdoc-link-bar-actions {
   flex: none;
+  margin-left: auto;
   display: inline-flex; align-items: center; gap: 0;
 }
 .gdoc-link-bar-actions > .gdoc-link-bar-btn + .gdoc-link-bar-btn::before {
