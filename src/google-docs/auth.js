@@ -76,12 +76,23 @@ async function ensureTokens() {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const settings = await invoke("get_settings");
-    if (settings.googleAccessToken) {
+    // Diagnostic: log what we got back so a stuck `requireConnection` is
+    // easier to debug. The console output is one line at module-cache
+    // priming time and never repeats once tokens are in memory.
+    console.log("[google-docs] ensureTokens read settings:", {
+      hasAccessToken: !!settings?.googleAccessToken,
+      hasRefreshToken: !!settings?.googleRefreshToken,
+      tokenExpiresAt: settings?.googleTokenExpiresAt || null,
+      accountEmail: settings?.googleAccountEmail || null,
+    });
+    if (settings?.googleAccessToken) {
       _accessToken = settings.googleAccessToken;
       _refreshToken = settings.googleRefreshToken || null;
       _expiresAt = settings.googleTokenExpiresAt || 0;
     }
-  } catch (_) { /* ignore */ }
+  } catch (e) {
+    console.warn("[google-docs] ensureTokens failed:", e);
+  }
 }
 
 /** Async variant of `hasTokens()` for callers that may be running in a

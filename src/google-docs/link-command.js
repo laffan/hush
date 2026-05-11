@@ -47,7 +47,21 @@ async function requireConnection() {
   // cache hasn't been primed from settings yet (Settings vs. main editor
   // each get their own module instance).
   if (!(await hasTokensAsync())) {
-    throw new Error("Connect Google Docs in Settings > Sync > Google Sync first.");
+    // Read settings directly so the popup tells the user *why* the gate
+    // failed — usually one of: client id missing, tokens missing on
+    // disk, or settings invoke failed entirely.
+    let diag = "";
+    if (typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const s = await invoke("get_settings");
+        if (!s?.googleClientId) diag = " (no Client ID saved — paste credentials in Settings > Sync > Google Sync)";
+        else if (!s?.googleAccessToken && !s?.googleRefreshToken) diag = " (credentials saved but no OAuth tokens — click Connect in Settings > Sync > Google Sync)";
+      } catch (e) {
+        diag = ` (couldn't read settings: ${e?.message || e})`;
+      }
+    }
+    throw new Error("Connect Google Docs in Settings > Sync > Google Sync first." + diag);
   }
 }
 
