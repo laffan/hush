@@ -4,12 +4,173 @@
 // here: push/pull are user-driven whole-document replaces, modelled on
 // the link bar UI rather than the Dropbox cursor pipeline.
 
-use tauri::State;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::time::{Duration, Instant};
+
+use tauri::{AppHandle, Emitter, State};
 
 use crate::settings::GoogleDocLink;
 use crate::AppState;
 
-// ===== Google OAuth =====
+// ===== Google OAuth loopback listener =====
+
+/// Start an ephemeral HTTP listener on `127.0.0.1:<random>` and return
+/// the chosen port. Google's OAuth-for-Desktop policy requires loopback
+/// redirects rather than custom URI schemes (custom schemes are only
+/// supported for iOS / Android / UWP clients) — register `http://127.0.0.1`
+/// as the redirect URI on your OAuth client and Google wildcards the
+/// port at runtime.
+///
+/// The listener accepts a single inbound connection, parses the OAuth
+/// callback's `code` (or `error`) param out of the query string, writes
+/// a tiny "you can close this window" HTML page back, and emits an
+/// `oauth-callback` event with the captured code so the existing
+/// settings-window dispatcher can complete the flow exactly like the
+/// deep-link path used to. A 5-minute timeout cleans up if no callback
+/// arrives (the user closed the browser tab, etc.).
+#[tauri::command]
+pub fn start_google_oauth_listener(handle: AppHandle) -> Result<u16, String> {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to bind loopback listener: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| e.to_string())?
+        .port();
+    listener.set_nonblocking(true).ok();
+
+    std::thread::spawn(move || {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(300);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    handle_oauth_callback_request(&mut stream, &handle);
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if start.elapsed() > timeout {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(150));
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    Ok(port)
+}
+
+fn handle_oauth_callback_request(stream: &mut std::net::TcpStream, handle: &AppHandle) {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .ok();
+    let mut buf = [0u8; 8192];
+    let n = stream.read(&mut buf).unwrap_or(0);
+    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+
+    let (code, error) = parse_code_and_error(&req);
+
+    // Write a friendly response page so the browser shows something
+    // useful regardless of outcome.
+    let body = if code.is_some() {
+        SUCCESS_HTML.to_string()
+    } else {
+        format!(
+            "{}<p style=\"color:#ff6b6b;font-size:13px;margin-top:12px\">{}</p>{}",
+            ERROR_HTML_PREFIX,
+            html_escape(error.as_deref().unwrap_or("No authorization code received.")),
+            ERROR_HTML_SUFFIX,
+        )
+    };
+    let resp = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    let _ = stream.write_all(resp.as_bytes());
+    let _ = stream.flush();
+
+    if let Some(c) = code {
+        let _ = handle.emit(
+            "oauth-callback",
+            serde_json::json!({ "code": c, "provider": "google" }),
+        );
+    }
+}
+
+// Parses `code` + `error` from the request line `GET /?…&code=…&… HTTP/1.1`.
+// Hand-rolled because the OAuth callback format is fixed and shapeless
+// enough that pulling in a URL crate would be overkill.
+fn parse_code_and_error(req: &str) -> (Option<String>, Option<String>) {
+    let first_line = match req.lines().next() {
+        Some(s) => s,
+        None => return (None, None),
+    };
+    let path = match first_line.split_whitespace().nth(1) {
+        Some(p) => p,
+        None => return (None, None),
+    };
+    let query = match path.split_once('?') {
+        Some((_, q)) => q,
+        None => return (None, None),
+    };
+    let mut code = None;
+    let mut error = None;
+    for pair in query.split('&') {
+        let (key, value) = match pair.split_once('=') {
+            Some(kv) => kv,
+            None => continue,
+        };
+        match key {
+            "code" => code = Some(url_decode(value)),
+            "error" => error = Some(url_decode(value)),
+            _ => {}
+        }
+    }
+    (code, error)
+}
+
+fn url_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'+' {
+            out.push(' ');
+            i += 1;
+        } else if b == b'%' && i + 2 < bytes.len() {
+            let h1 = bytes[i + 1] as char;
+            let h2 = bytes[i + 2] as char;
+            if let Some(d1) = h1.to_digit(16) {
+                if let Some(d2) = h2.to_digit(16) {
+                    out.push(((d1 << 4) | d2) as u8 as char);
+                    i += 3;
+                    continue;
+                }
+            }
+            out.push('%');
+            i += 1;
+        } else {
+            out.push(b as char);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+const SUCCESS_HTML: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Hush — Connected</title><style>body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0}.card{text-align:center;padding:40px;border-radius:12px;background:#16213e;max-width:400px}h1{font-size:1.4em;margin:0 0 12px}p{opacity:0.7;margin:0;line-height:1.5}</style></head><body><div class=\"card\"><h1>Connected!</h1><p>You can close this window and return to Hush.</p></div></body></html>";
+
+const ERROR_HTML_PREFIX: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Hush — Authorization Failed</title><style>body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0}.card{text-align:center;padding:40px;border-radius:12px;background:#16213e;max-width:400px}h1{font-size:1.4em;margin:0 0 12px}p{opacity:0.7;margin:0;line-height:1.5}</style></head><body><div class=\"card\"><h1>Authorization failed</h1>";
+const ERROR_HTML_SUFFIX: &str = "</div></body></html>";
+
+// ===== Google OAuth (token exchange / refresh) =====
 
 #[tauri::command]
 pub async fn exchange_google_token(

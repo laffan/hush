@@ -495,17 +495,16 @@ async function init() {
       catch (e) { console.error("Clear local data failed:", e); }
     });
 
-    // OAuth callback (deep link). Dropbox + Google share this path —
-    // the URL prefix tells us which provider to dispatch to.
+    // Dropbox OAuth callback (deep link). Google uses a loopback HTTP
+    // listener (see commands/google_docs.rs) instead — its code arrives
+    // via the same `oauth-callback` event below, no deep-link needed.
     try {
       const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
       await onOpenUrl(async (urls) => {
         for (const url of urls) {
-          const provider = url.startsWith("hushwriter://auth/google/callback") ? "google"
-            : url.startsWith("hushwriter://auth/callback") ? "dropbox" : null;
-          if (!provider) continue;
+          if (!url.startsWith("hushwriter://auth/callback")) continue;
           const code = new URLSearchParams(url.split("?")[1] || "").get("code");
-          if (code) await handleOAuthCode(state, invoke, code, provider);
+          if (code) await handleOAuthCode(state, invoke, code, "dropbox");
         }
       });
     } catch (e) { console.error("Deep-link setup failed:", e); }

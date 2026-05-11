@@ -36,21 +36,16 @@
     var params = new URLSearchParams(window.location.search);
     var code = params.get("code");
     var error = params.get("error");
-    // The OAuth `state` param is set to "google" by the Google flow so we
-    // can dispatch to the right Tauri deep-link path here in dev. Dropbox
-    // doesn't set `state`, so we fall back to the original Dropbox path.
-    var stateParam = params.get("state");
-    var providerLabel = stateParam === "google" ? "Google" : "Dropbox";
-    var deepLinkPath = stateParam === "google"
-      ? "hushwriter://auth/google/callback"
-      : "hushwriter://auth/callback";
+    // Dropbox-only — Google OAuth uses a Rust-side loopback HTTP
+    // listener that intercepts the redirect directly. This page only
+    // sees Dropbox callbacks now.
     var titleEl = document.getElementById("title");
     var msgEl = document.getElementById("message");
 
     if (error) {
       titleEl.textContent = "Authorization Failed";
       msgEl.textContent = error === "access_denied"
-        ? ("You declined the " + providerLabel + " authorization. You can close this window.")
+        ? "You declined the Dropbox authorization. You can close this window."
         : "Error: " + error + ". You can close this window.";
       msgEl.classList.add("error");
     } else if (code) {
@@ -59,7 +54,7 @@
       // that the settings window is listening for.
       titleEl.textContent = "Connected!";
       msgEl.textContent = "Returning to Hush...";
-      window.location.href = deepLinkPath + "?code=" + encodeURIComponent(code);
+      window.location.href = "hushwriter://auth/callback?code=" + encodeURIComponent(code);
 
       // If the redirect doesn't work (scheme not registered), show fallback
       setTimeout(function() {

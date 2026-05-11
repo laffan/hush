@@ -1,14 +1,20 @@
 /**
- * Google OAuth 2.0 PKCE flow + token cache. Mirrors the structure of
- * `sync/dropbox.js` so the two providers behave the same way at the
- * `handleOAuthCode` dispatch level.
+ * Google OAuth 2.0 PKCE flow + token cache. Structurally similar to
+ * `sync/dropbox.js`, but the redirect channel is different: Google's
+ * OAuth-for-Desktop policy requires *loopback* redirects (custom URI
+ * schemes are only supported on iOS / Android / UWP), so Hush spins up
+ * a one-shot HTTP listener on `127.0.0.1:<random>` in Rust for the
+ * duration of the flow. The listener catches Google's redirect, parses
+ * the `code`, and emits `oauth-callback` — exactly the same event the
+ * Dropbox deep-link path emits — so the settings-window dispatcher's
+ * downstream logic doesn't care which transport delivered the code.
  *
  * Credentials live in `AppSettings` (entered by the user in Settings >
  * Sync > Google Sync — Client ID + optional Client Secret), so each
  * install supplies its own OAuth client rather than embedding one at
- * build time. The redirect URI is fixed at `hushwriter://auth/google/callback`
- * for production; dev installs that need to use the loopback flow can
- * override via the optional `VITE_GOOGLE_REDIRECT_URI` env var.
+ * build time. The user registers `http://127.0.0.1` (no port) as the
+ * authorised redirect URI on their OAuth client; Google wildcards the
+ * port at runtime, so the ephemeral listener works on every launch.
  *
  * Scopes requested (read+write to whatever Hush links to):
  *   - https://www.googleapis.com/auth/drive          full Drive R/W
@@ -24,14 +30,6 @@
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-// Dev override for the redirect URI — only needed if the user wires
-// the loopback flow into the OAuth client. Production always uses the
-// custom-scheme deep link.
-const DEV_REDIRECT_URI_OVERRIDE = typeof import.meta !== "undefined"
-  ? (import.meta.env.VITE_GOOGLE_REDIRECT_URI || "")
-  : "";
-const PRODUCTION_REDIRECT_URI = "hushwriter://auth/google/callback";
-
 const SCOPES = [
   "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/userinfo.email",
@@ -42,11 +40,15 @@ let _accessToken = null;
 let _refreshToken = null;
 let _expiresAt = 0; // unix seconds
 let _refreshing = null;
+let _activeRedirectUri = null; // set during startOAuthFlow, read on completeOAuthFlow
 
 export function getAccessToken() { return _accessToken; }
 export function hasTokens() { return !!_accessToken || !!_refreshToken; }
+/** Last redirect URI handed to Google, so completeOAuthFlow can pass
+ *  the same string back in the token-exchange request. Google rejects
+ *  the exchange if the two don't match exactly. */
 export function getRedirectUri() {
-  return DEV_REDIRECT_URI_OVERRIDE || PRODUCTION_REDIRECT_URI;
+  return _activeRedirectUri || "http://127.0.0.1";
 }
 // Resolve the user-entered client id from settings. Cached after first
 // read; explicit clear via `setClientId(null)` on credential edits.
@@ -158,9 +160,21 @@ export async function startOAuthFlow() {
   if (!clientId) {
     throw new Error("Google Client ID is not set. Enter your OAuth credentials in Settings > Sync > Google Sync.");
   }
+  if (!IS_TAURI) {
+    throw new Error("Google Sync requires the desktop app — the loopback listener needs native sockets.");
+  }
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
-  const redirectUri = getRedirectUri();
+
+  // Start an ephemeral loopback listener and use the picked port as the
+  // redirect URI. The user has registered `http://127.0.0.1` on their
+  // OAuth client; Google wildcards the port on loopback redirects so
+  // any port works.
+  const { invoke } = await import("@tauri-apps/api/core");
+  const port = await invoke("start_google_oauth_listener");
+  const redirectUri = `http://127.0.0.1:${port}/`;
+  _activeRedirectUri = redirectUri;
+
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: "code",
@@ -171,16 +185,13 @@ export async function startOAuthFlow() {
     access_type: "offline",
     prompt: "consent", // force a refresh_token on every consent
     include_granted_scopes: "true",
-    state: "google", // dispatch hint for the shared OAuth callback
+    state: "google", // identifies us in the shared `oauth-callback` event
   });
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 
-  if (IS_TAURI) {
-    const opener = await import("@tauri-apps/plugin-opener");
-    await opener.openUrl(authUrl);
-  } else {
-    window.open(authUrl, "_blank");
-  }
+  const opener = await import("@tauri-apps/plugin-opener");
+  await opener.openUrl(authUrl);
+
   return { codeVerifier, redirectUri };
 }
 

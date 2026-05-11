@@ -235,13 +235,24 @@ function renderGoogleCredentialForm(settings, editing) {
       <h2>Google Sync</h2>
       <p class="settings-help">
         Hush uses your own Google Cloud OAuth client so each install
-        authenticates against an account you control. Create a
-        <strong>Desktop application</strong> OAuth client at
-        <code>console.cloud.google.com/apis/credentials</code>, enable the
-        <strong>Google Drive API</strong> on the project, and register
-        <code>${escHtml(getProductionRedirectUri())}</code> as an
-        authorised redirect URI. Then paste the client id and secret below.
+        authenticates against an account you control. Setup:
       </p>
+      <ol class="settings-help-list">
+        <li>At <code>console.cloud.google.com/apis/credentials</code>,
+          create credentials → <strong>OAuth client ID</strong> →
+          application type <strong>Desktop app</strong>.</li>
+        <li>Under <strong>Authorised redirect URIs</strong>, add
+          <code>http://127.0.0.1</code> (no port). Google wildcards the
+          port for loopback URIs, so Hush can use any free port at
+          runtime.</li>
+        <li>Enable the <strong>Google Drive API</strong> on the same
+          Cloud project (APIs &amp; Services → Library).</li>
+        <li>Configure the <strong>OAuth consent screen</strong> with at
+          least an app name + your support email, and add your Gmail
+          account to the <strong>Test users</strong> list while the
+          screen is still in Testing.</li>
+        <li>Paste the Client ID and Secret below.</li>
+      </ol>
       <div class="settings-row settings-row-stacked">
         <label for="google-client-id">Client ID</label>
         <input id="google-client-id" type="text" autocomplete="off" spellcheck="false"
@@ -267,13 +278,6 @@ function maskedClientId(id) {
   if (!id) return "(unset)";
   if (id.length < 16) return id;
   return id.slice(0, 12) + "…" + id.slice(-12);
-}
-
-// Mirror auth.js's logic for the production redirect URI so the form
-// help text shows the exact string the user needs to register.
-function getProductionRedirectUri() {
-  const dev = (typeof import.meta !== "undefined" ? import.meta.env.VITE_GOOGLE_REDIRECT_URI : "") || "";
-  return dev || "hushwriter://auth/google/callback";
 }
 
 // ===== Local =====
