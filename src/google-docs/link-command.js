@@ -29,7 +29,7 @@ import {
   replaceDocumentContent,
   getDocumentMeta,
 } from "./api.js";
-import { hasTokens } from "./auth.js";
+import { hasTokensAsync } from "./auth.js";
 import { openGoogleDocPicker } from "./picker.js";
 import { openSourceOfTruthModal } from "./source-of-truth-modal.js";
 import { setLink, clearLink, appendLog, getLink } from "./link-store.js";
@@ -42,8 +42,11 @@ void listDocuments;
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-function requireConnection() {
-  if (!hasTokens()) {
+async function requireConnection() {
+  // Async because this may run in a window whose auth.js module-local
+  // cache hasn't been primed from settings yet (Settings vs. main editor
+  // each get their own module instance).
+  if (!(await hasTokensAsync())) {
     throw new Error("Connect Google Docs in Settings > Sync > Google Sync first.");
   }
 }
@@ -64,7 +67,7 @@ function currentDocName(state) {
 // ===== Phase 2a: Import =====
 
 export async function importFromGoogleDoc(state) {
-  requireConnection();
+  await requireConnection();
   const picked = await openGoogleDocPicker({ allowCreate: false });
   if (!picked) return;
   const html = await exportAsHtml(picked.id);
@@ -81,7 +84,7 @@ export async function importFromGoogleDoc(state) {
 // ===== Phase 2b: Link / Unlink / Push / Pull =====
 
 export async function linkCurrentDocument(state) {
-  requireConnection();
+  await requireConnection();
   const fileId = currentDocFileId(state);
   if (!fileId) {
     throw new Error("Open a Hush document first to link it to a Google Doc.");
@@ -136,7 +139,7 @@ export async function unlinkCurrentDocument(state) {
 }
 
 export async function pushToGoogleDoc(state, link) {
-  requireConnection();
+  await requireConnection();
   if (!link?.docId) throw new Error("No Google Doc linked to this document.");
   const md = state.editor?.view?.state?.doc?.toString() || "";
   const html = markdownToHtmlForGDoc(md);
@@ -152,7 +155,7 @@ export async function pushToGoogleDoc(state, link) {
 }
 
 export async function pullFromGoogleDoc(state, link) {
-  requireConnection();
+  await requireConnection();
   if (!link?.docId) throw new Error("No Google Doc linked to this document.");
   // Fetch the meta first so a deleted / inaccessible doc is reported
   // cleanly before we touch the editor buffer.

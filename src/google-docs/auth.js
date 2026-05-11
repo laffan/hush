@@ -84,6 +84,16 @@ async function ensureTokens() {
   } catch (_) { /* ignore */ }
 }
 
+/** Async variant of `hasTokens()` for callers that may be running in a
+ *  window whose module-local cache hasn't been primed yet (the Settings
+ *  window populates `_accessToken` on a successful OAuth completion, but
+ *  the main editor's copy of this module starts empty). Loads from
+ *  settings on demand, then reports. */
+export async function hasTokensAsync() {
+  await ensureTokens();
+  return !!_accessToken || !!_refreshToken;
+}
+
 async function refreshAccessToken() {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
