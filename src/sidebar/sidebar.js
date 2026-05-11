@@ -416,10 +416,18 @@ export function createSidebar(container, state) {
   // no-op (the render functions guard against missing containers), and
   // the user still gets a fresh fetch next time they open the panel.
   let _lastLocalSyncSerialised = JSON.stringify(state.settings.localSyncFolders || []);
+  let _lastGoogleLinksSerialised = JSON.stringify(state.settings.googleDocLinks || {});
   state.on("settings-changed", () => {
     const next = JSON.stringify(state.settings.localSyncFolders || []);
     if (next !== _lastLocalSyncSerialised) {
       _lastLocalSyncSerialised = next;
+      refreshFilesPanel(state);
+    }
+    // Files panel also paints a small link badge on docs that carry a
+    // Google Doc link, so re-render when that map changes.
+    const nextGdoc = JSON.stringify(state.settings.googleDocLinks || {});
+    if (nextGdoc !== _lastGoogleLinksSerialised) {
+      _lastGoogleLinksSerialised = nextGdoc;
       refreshFilesPanel(state);
     }
   });

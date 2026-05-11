@@ -35,6 +35,18 @@ export function escHtml(str) {
   return div.innerHTML;
 }
 
+/** Small two-arrow badge for documents that carry a Google Doc link.
+ *  Slots in between the type icon and the name so the row reads as
+ *  "doc icon + link badge + name". Empty string for non-doc rows or
+ *  unlinked docs. */
+export function googleLinkBadgeHtml(item, state) {
+  if (item.type !== "document" || !item.fileId) return "";
+  const link = state?.settings?.googleDocLinks?.[item.fileId];
+  if (!link) return "";
+  const tip = escHtml(`Linked to Google Doc: ${link.title || "Untitled"}`);
+  return `<svg class="tree-gdoc-link" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><title>${tip}</title><path d="M3.5 10.5 V1.5 M1.5 3.5 L3.5 1.5 L5.5 3.5"/><path d="M8.5 1.5 V10.5 M6.5 8.5 L8.5 10.5 L10.5 8.5"/></svg>`;
+}
+
 export function escAttrValue(str) {
   return String(str ?? "").replace(/"/g, "&quot;").replace(/&/g, "&amp;");
 }

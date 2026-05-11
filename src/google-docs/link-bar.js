@@ -1,96 +1,85 @@
 /**
- * Link bar — the floating chrome above the editor that surfaces a
- * document's Google Doc link. Visible only when the current Hush doc
- * has a link in `settings.googleDocLinks`.
+ * Link bar — the slim, transparent chrome anchored to the top of the
+ * editor whenever the current Hush doc is linked to a Google Doc.
  *
- * Layout:
- *   [ Google Doc title chip ────────── ] [Pull] [Push] [Unlink]
+ *   ⤴⤵ Linked doc title                       Pull · Push · Unlink
  *
- * The title chip is a link to the Google Doc in the user's browser.
- * Pull/Push each prompt for confirmation (both are destructive whole-
- * document replaces — Hush's versioning is the safety net) and run via
- * the link-command flows.
+ * Mounting: the bar is a child of `#editor-container` (sibling of
+ * `.cm-editor`), positioned `absolute; top: 0`. CodeMirror's
+ * `.cm-scroller` already reserves `padding-top: calc(var(--padding) +
+ * 30px)` at the top of the editor so the bar sits in that gutter
+ * without overlapping text. `#editor-container` is the editor's
+ * stacking context, so the sidebar — which lives outside that context
+ * — can't paint over it.
+ *
+ * Content width is synced to the text column on every `layout-changed`
+ * event by copying `.cm-scroller`'s padding-left/right onto the bar,
+ * so the chip and buttons line up with the first and last columns of
+ * text. Hides automatically while a notebook or project is open
+ * (neither maps to a single GDoc).
  */
 import { getLink, appendLog } from "./link-store.js";
 import { viewUrl } from "./api.js";
 
 const HOST_ID = "gdoc-link-bar";
-
 let _state = null;
-let _lastFileId = null;
 let _busy = false;
 
 export function initLinkBar(state) {
   _state = state;
-  // First-time mount: hide.
-  ensureHostHidden();
   state.on("file-opened", refresh);
   state.on("settings-changed", refresh);
-  // Pull lock release / file content set should also re-evaluate (the
-  // link doesn't change, but the chip's title is read from settings —
-  // refresh covers all the cases).
-  state.on("doc-content-changed", refreshChrome);
+  state.on("layout-changed", syncColumnPadding);
+  window.addEventListener("resize", syncColumnPadding);
   refresh();
 }
 
 function ensureHost() {
-  let host = document.getElementById(HOST_ID);
-  if (!host) {
-    host = document.createElement("div");
-    host.id = HOST_ID;
-    host.className = "gdoc-link-bar";
-    host.style.display = "none";
-    const editorContainer = document.getElementById("editor-container");
-    if (editorContainer && editorContainer.parentNode) {
-      editorContainer.parentNode.insertBefore(host, editorContainer);
-    } else {
-      document.body.appendChild(host);
-    }
-  }
-  return host;
+  let el = document.getElementById(HOST_ID);
+  if (el) return el;
+  el = document.createElement("div");
+  el.id = HOST_ID;
+  el.className = "gdoc-link-bar";
+  el.style.display = "none";
+  const container = document.getElementById("editor-container");
+  if (container) container.appendChild(el);
+  return el;
 }
 
-function ensureHostHidden() {
-  const host = ensureHost();
-  host.style.display = "none";
+function syncColumnPadding() {
+  const el = document.getElementById(HOST_ID);
+  if (!el) return;
+  const scroller = document.querySelector("#editor-container .cm-scroller");
+  if (!scroller) return;
+  el.style.paddingLeft = scroller.style.paddingLeft || "";
+  el.style.paddingRight = scroller.style.paddingRight || "";
 }
 
-// Re-render the bar based on the current file's link state. Called on
-// every file switch and settings change; idempotent.
 function refresh() {
   if (!_state) return;
-  const host = ensureHost();
+  const el = ensureHost();
   const fileId = _state.currentFileId;
-  // Hide while a notebook or project is open — neither maps to a single
-  // GDoc, and a project's joined buffer would push the wrong content.
   if (!fileId || _state.currentNotebookFileId || _state.currentProjectId) {
-    host.style.display = "none";
-    host.innerHTML = "";
-    _lastFileId = null;
+    el.style.display = "none";
+    el.innerHTML = "";
     return;
   }
   const link = getLink(_state, fileId);
   if (!link) {
-    host.style.display = "none";
-    host.innerHTML = "";
-    _lastFileId = fileId;
+    el.style.display = "none";
+    el.innerHTML = "";
     return;
   }
-  _lastFileId = fileId;
-  host.style.display = "";
-  host.innerHTML = `
-    <a class="gdoc-link-bar-chip" href="#" target="_blank" rel="noopener">
-      <span class="gdoc-link-bar-icon" aria-hidden="true">${ICON_DOC}</span>
-      <span class="gdoc-link-bar-title">${escHtml(link.title || "Linked Google Doc")}</span>
-    </a>
+  el.style.display = "";
+  el.innerHTML = `
+    <a class="gdoc-link-bar-chip" href="#" target="_blank" rel="noopener" title="Open in Google Docs">${ICON_LINK}<span class="gdoc-link-bar-title">${escHtml(link.title || "Linked Google Doc")}</span></a>
     <div class="gdoc-link-bar-actions">
       <button class="gdoc-link-bar-btn" data-action="pull" title="Replace Hush document with Google Doc content">Pull</button>
       <button class="gdoc-link-bar-btn" data-action="push" title="Replace Google Doc with Hush document content">Push</button>
-      <button class="gdoc-link-bar-btn gdoc-link-bar-btn-secondary" data-action="unlink" title="Forget the link (does not change either document)">Unlink</button>
+      <button class="gdoc-link-bar-btn" data-action="unlink" title="Forget the link (does not change either document)">Unlink</button>
     </div>
   `;
-  const chipEl = host.querySelector(".gdoc-link-bar-chip");
-  chipEl.href = viewUrl(link.docId);
+  const chipEl = el.querySelector(".gdoc-link-bar-chip");
   chipEl.addEventListener("click", async (e) => {
     e.preventDefault();
     try {
@@ -100,20 +89,16 @@ function refresh() {
       window.open(viewUrl(link.docId), "_blank");
     }
   });
-  host.querySelectorAll(".gdoc-link-bar-btn").forEach((btn) => {
+  el.querySelectorAll(".gdoc-link-bar-btn").forEach((btn) => {
     btn.addEventListener("click", () => onAction(btn.dataset.action, link));
   });
+  syncColumnPadding();
 }
-
-// Lighter-weight refresh — used on `doc-content-changed` so the chrome
-// doesn't keep rebinding on every keystroke. Currently a no-op since
-// the chip displays the static linked title; kept for forward-compat.
-function refreshChrome() { /* intentionally empty */ }
 
 async function onAction(action, link) {
   if (!_state || _busy) return;
   if (action === "unlink") {
-    if (!confirmDialog("Unlink this document from Google Docs?\n\nThe Hush document and the Google Doc are both kept; only the link between them is forgotten.")) return;
+    if (!window.confirm("Unlink this document from Google Docs?\n\nThe Hush document and the Google Doc are both kept; only the link between them is forgotten.")) return;
     const { clearLink } = await import("./link-store.js");
     await clearLink(_state, _state.currentFileId);
     appendLog(_state, `Unlinked "${link.title}"`);
@@ -121,7 +106,7 @@ async function onAction(action, link) {
     return;
   }
   if (action === "push") {
-    if (!confirmDialog(`Replace the Google Doc "${link.title}" with the current Hush document?\n\nGoogle Docs version history is your undo.`)) return;
+    if (!window.confirm(`Replace the Google Doc "${link.title}" with the current Hush document?\n\nGoogle Docs version history is your undo.`)) return;
     setBusy(true);
     try {
       const { pushToGoogleDoc } = await import("./link-command.js");
@@ -134,7 +119,7 @@ async function onAction(action, link) {
     return;
   }
   if (action === "pull") {
-    if (!confirmDialog(`Replace the current Hush document with the Google Doc "${link.title}"?\n\nHush version history is your undo.`)) return;
+    if (!window.confirm(`Replace the current Hush document with the Google Doc "${link.title}"?\n\nHush version history is your undo.`)) return;
     setBusy(true);
     try {
       const { pullFromGoogleDoc } = await import("./link-command.js");
@@ -150,16 +135,10 @@ async function onAction(action, link) {
 
 function setBusy(b) {
   _busy = b;
-  const host = ensureHost();
-  host.classList.toggle("gdoc-link-bar-busy", b);
-  host.querySelectorAll(".gdoc-link-bar-btn").forEach((btn) => { btn.disabled = b; });
-}
-
-function confirmDialog(message) {
-  // Plain `window.confirm` keeps the modal accessible, matches Hush's
-  // existing pattern (delete prompts, etc.), and stays out of the link
-  // bar's own bounds so it can sit above any pane chrome.
-  return window.confirm(message);
+  const el = document.getElementById(HOST_ID);
+  if (!el) return;
+  el.classList.toggle("gdoc-link-bar-busy", b);
+  el.querySelectorAll(".gdoc-link-bar-btn").forEach((btn) => { btn.disabled = b; });
 }
 
 function showToast(label, isError = false) {
@@ -177,5 +156,6 @@ function escHtml(s) {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Inline SVG — same stroke-only style as the rest of Hush's chrome.
-const ICON_DOC = `<svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 1.5h6.5L13 5v9a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 3 14V1.5zM9 1.5V5h4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+/** Two-arrow link icon (one up, one down) — mirrors the sidebar
+ *  decorator that marks files with a Google Doc link. */
+const ICON_LINK = `<svg class="gdoc-link-bar-icon" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 V1.5 M1.5 3.5 L3.5 1.5 L5.5 3.5"/><path d="M8.5 1.5 V10.5 M6.5 8.5 L8.5 10.5 L10.5 8.5"/></svg>`;

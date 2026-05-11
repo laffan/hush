@@ -161,50 +161,78 @@
 }
 
 /* ---- Link bar (top of editor) -------------------------------------- */
-
+/* Anchored to the top of #editor-container (which is the editor's
+ * stacking context, so the sidebar can't paint over it). Padding-left
+ * / padding-right are synced from .cm-scroller at runtime so the chip
+ * and buttons line up with the first and last columns of text. */
 .gdoc-link-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 14px;
-  background: color-mix(in srgb, var(--panel-bg, var(--bg)) 60%, transparent);
-  border-bottom: 1px solid var(--panel-border);
-  color: var(--fg);
-  font-size: 12px;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 5;
+  display: flex; align-items: center; gap: 12px;
+  padding-top: 8px;
+  padding-bottom: 4px;
+  font-family: var(--font-family);
+  font-size: 11px;
+  color: var(--sidebar-fg);
+  pointer-events: none;
+  user-select: none;
 }
-.gdoc-link-bar.gdoc-link-bar-busy { opacity: 0.7; pointer-events: none; }
+.gdoc-link-bar > * { pointer-events: auto; }
+.gdoc-link-bar.gdoc-link-bar-busy { opacity: 0.55; }
+
+/* Title chip — plain text + small two-arrow icon, no background. */
 .gdoc-link-bar-chip {
   display: inline-flex; align-items: center; gap: 6px;
+  flex: 1; min-width: 0;
   text-decoration: none;
-  color: var(--fg);
-  background: rgba(128, 128, 128, 0.08);
-  border: 1px solid var(--panel-border);
-  border-radius: 999px;
-  padding: 3px 10px;
-  max-width: 60ch;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  color: inherit;
+  opacity: 0.65;
+  overflow: hidden; white-space: nowrap;
 }
-.gdoc-link-bar-chip:hover { background: rgba(128, 128, 128, 0.14); }
-.gdoc-link-bar-icon { display: inline-flex; opacity: 0.85; }
+.gdoc-link-bar-chip:hover { opacity: 1; }
+.gdoc-link-bar-icon { flex: none; opacity: 0.9; }
 .gdoc-link-bar-title {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* Action cluster — pull · push · unlink, separated by middle dots. */
 .gdoc-link-bar-actions {
-  margin-left: auto;
-  display: inline-flex; align-items: center; gap: 6px;
+  flex: none;
+  display: inline-flex; align-items: center; gap: 0;
+}
+.gdoc-link-bar-actions > .gdoc-link-bar-btn + .gdoc-link-bar-btn::before {
+  content: "·";
+  display: inline-block;
+  padding: 0 8px;
+  opacity: 0.4;
 }
 .gdoc-link-bar-btn {
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  color: var(--fg);
-  border-radius: 6px;
-  padding: 3px 10px;
-  font-size: 12px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.65;
   cursor: pointer;
 }
-.gdoc-link-bar-btn:hover:not(:disabled) { background: rgba(128, 128, 128, 0.1); }
-.gdoc-link-bar-btn:disabled { opacity: 0.4; cursor: default; }
-.gdoc-link-bar-btn-secondary { color: var(--sidebar-fg); }
+.gdoc-link-bar-btn:hover:not(:disabled) {
+  opacity: 1;
+  text-decoration: underline;
+}
+.gdoc-link-bar-btn:disabled { opacity: 0.3; cursor: default; text-decoration: none; }
 
-/* Toast variant for the link bar's push/pull/unlink confirmations.
- * Reuses the existing .style-locked-toast pattern, with an .error
- * modifier for failures. */
 .gdoc-link-toast.error { color: #ff6b6b; }
+
+/* Files-panel badge for documents with a Google Doc link. Slots in
+ * between the doc icon and the name. */
+.tree-item-row .tree-gdoc-link {
+  flex: none;
+  opacity: 0.55;
+  margin: 0 4px 0 2px;
+  vertical-align: middle;
+}
+.tree-item-row:hover .tree-gdoc-link { opacity: 0.85; }
+.tree-item-row.active .tree-gdoc-link { opacity: 0.9; }

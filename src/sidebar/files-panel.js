@@ -9,7 +9,7 @@ import { AppState } from "../state/state.js";
 import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { mountDesktopThumbnail, unmountDesktopThumbnail, refreshDesktopThumbnail } from "./desktop-thumbnail.js";
@@ -205,7 +205,7 @@ export function createFilesPanel(container, state, hidePanel) {
       const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
       const el = document.createElement("span");
       el.className = "tree-item-row" + (isActive ? " active" : "");
-      el.innerHTML = `${icon}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+      el.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
       if (item.type === "image" && item.fileId) {
         attachImageTooltipToRow(el, item.fileId, item.name);
       }
