@@ -18,7 +18,7 @@ export function paneIndicatorsFor(item, state) {
   if (!ctxPanes.length) return null;
   const hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
   const strip = document.createElement("span");
-  strip.className = "tree-pane-indicators" + (hidden ? " hidden" : "");
+  strip.className = "tree-pane-indicators" + (hidden ? " dimmed" : "");
   for (const p of ctxPanes) {
     const cell = document.createElement("span");
     cell.className = "tree-pane-cell";

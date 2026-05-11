@@ -140,33 +140,38 @@
   min-width: 0;
 }
 
-/* Stack the filename row over the pane indicator strip when a file
-   has at least one floating pane open. The wrapper is added by
-   files-panel.js only for rows that need it; rows without panes stay
-   single-line. */
+/* Wrapper around a filename row that owns at least one floating
+   pane. The strip is positioned absolutely below the row so the
+   wrapper contributes only the row's natural height to layout —
+   otherwise the parent's `align-items: center` would pull the
+   filename text up. The sibling rule below pads the sl-item to
+   leave visible space for the absolutely positioned strip. */
 .tree-item-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  position: relative;
+  display: block;
   width: 100%;
   min-width: 0;
 }
 
+.sl-item:has(.tree-pane-indicators) {
+  padding-bottom: 15px;
+}
+
 .tree-pane-indicators {
+  position: absolute;
+  top: 100%;
+  left: 18px;     /* flush with the first character of the filename */
+  margin-top: 2px;
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  /* Sits directly under the filename — past the 12 px type icon and
-     its 6 px gap so the left edge of the strip lines up with the
-     first character of the file name. */
-  margin: 2px 0 2px 18px;
   transition: opacity 0.12s ease;
 }
 
 .tree-pane-cell {
   box-sizing: border-box;
-  width: 5px;
-  height: 7px;
+  width: 6px;
+  height: 9px;
   border: 1px solid currentColor;
   border-radius: 2px;
   background: transparent;
@@ -174,7 +179,7 @@
   flex: 0 0 auto;
 }
 
-.tree-pane-indicators.hidden {
+.tree-pane-indicators.dimmed {
   opacity: 0.3;
 }
 
