@@ -1,22 +1,19 @@
 /**
- * Link bar — the slim, transparent chrome anchored to the top of the
- * editor whenever the current Hush doc is linked to a Google Doc.
+ * Link bar — the slim chrome anchored to the top of the editor column
+ * whenever the current Hush doc is linked to a Google Doc.
  *
- *   ⤴⤵ Linked doc title                       Pull · Push · Unlink
+ *   ⤴⤵ Linked doc title    Sending…           Pull · Push · Unlink
  *
- * Mounting: the bar is a child of `#editor-container` (sibling of
- * `.cm-editor`), positioned `absolute; top: 0`. CodeMirror's
- * `.cm-scroller` already reserves `padding-top: calc(var(--padding) +
- * 30px)` at the top of the editor so the bar sits in that gutter
- * without overlapping text. `#editor-container` is the editor's
- * stacking context, so the sidebar — which lives outside that context
- * — can't paint over it.
- *
- * Content width is synced to the text column on every `layout-changed`
- * event by copying `.cm-scroller`'s padding-left/right onto the bar,
- * so the chip and buttons line up with the first and last columns of
- * text. Hides automatically while a notebook or project is open
- * (neither maps to a single GDoc).
+ * Mounting: the bar is a child of `<body>` (not `#editor-container`)
+ * with `position: fixed` and a z-index above `#drag-region` (z: 80).
+ * Mounting at body level is required so the bar's z-index isn't
+ * trapped inside `#editor-container`'s `z-index: 0` stacking context —
+ * the drag region's `-webkit-app-region: drag` would otherwise capture
+ * every click in the title-bar strip on macOS. The bar's left/right
+ * offsets and inner padding are synced from `.cm-scroller`'s viewport
+ * rect + computed padding on every `layout-changed` so the chip and
+ * buttons line up with the first and last columns of editor text,
+ * even when panels open/close or the column is resized.
  */
 import { getLink, appendLog } from "./link-store.js";
 import { viewUrl } from "./api.js";
@@ -29,8 +26,8 @@ export function initLinkBar(state) {
   _state = state;
   state.on("file-opened", refresh);
   state.on("settings-changed", refresh);
-  state.on("layout-changed", syncColumnPadding);
-  window.addEventListener("resize", syncColumnPadding);
+  state.on("layout-changed", syncLayout);
+  window.addEventListener("resize", syncLayout);
   refresh();
 }
 
@@ -41,16 +38,22 @@ function ensureHost() {
   el.id = HOST_ID;
   el.className = "gdoc-link-bar";
   el.style.display = "none";
-  const container = document.getElementById("editor-container");
-  if (container) container.appendChild(el);
+  document.body.appendChild(el);
   return el;
 }
 
-function syncColumnPadding() {
+// Position the bar over the editor column: outer left/right match the
+// scroller's viewport edges, padding-left/right match the scroller's
+// internal padding so the chip + buttons land flush with the first /
+// last columns of text.
+function syncLayout() {
   const el = document.getElementById(HOST_ID);
-  if (!el) return;
+  if (!el || el.style.display === "none") return;
   const scroller = document.querySelector("#editor-container .cm-scroller");
   if (!scroller) return;
+  const rect = scroller.getBoundingClientRect();
+  el.style.left = `${Math.max(0, rect.left)}px`;
+  el.style.right = `${Math.max(0, window.innerWidth - rect.right)}px`;
   el.style.paddingLeft = scroller.style.paddingLeft || "";
   el.style.paddingRight = scroller.style.paddingRight || "";
 }
@@ -93,21 +96,23 @@ function refresh() {
   el.querySelectorAll(".gdoc-link-bar-btn").forEach((btn) => {
     btn.addEventListener("click", () => onAction(btn.dataset.action, link));
   });
-  syncColumnPadding();
+  syncLayout();
 }
 
 async function onAction(action, link) {
   if (!_state || _busy) return;
+  // Push / Pull / Unlink fire immediately — no confirm dialogs. Both
+  // sides keep version history, so undo is "Hush Versions panel" or
+  // "Google Docs File > Version history".
   if (action === "unlink") {
-    if (!window.confirm("Unlink this document from Google Docs?\n\nThe Hush document and the Google Doc are both kept; only the link between them is forgotten.")) return;
     setBusy(true);
     setStatus("Unlinking…", "working");
     try {
       const { clearLink } = await import("./link-store.js");
       await clearLink(_state, _state.currentFileId);
       appendLog(_state, `Unlinked "${link.title}"`);
-      // No need to clear status — refresh() runs on settings-changed
-      // and the bar is gone now anyway.
+      // No status reset — refresh() fires on settings-changed and the
+      // bar removes itself.
     } catch (e) {
       setStatus(`Failed: ${e.message || e}`, "error", 4000);
       appendLog(_state, `Unlink failed: ${e.message || e}`);
@@ -115,7 +120,6 @@ async function onAction(action, link) {
     return;
   }
   if (action === "push") {
-    if (!window.confirm(`Replace the Google Doc "${link.title}" with the current Hush document?\n\nGoogle Docs version history is your undo.`)) return;
     setBusy(true);
     setStatus("Sending…", "working");
     try {
@@ -129,7 +133,6 @@ async function onAction(action, link) {
     return;
   }
   if (action === "pull") {
-    if (!window.confirm(`Replace the current Hush document with the Google Doc "${link.title}"?\n\nHush version history is your undo.`)) return;
     setBusy(true);
     setStatus("Receiving…", "working");
     try {

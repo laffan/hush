@@ -161,15 +161,16 @@
 }
 
 /* ---- Link bar (top of editor) -------------------------------------- */
-/* Anchored to the top of #editor-container (the editor's stacking
- * context, so the sidebar can't paint over it). Padding-left/right are
- * synced from .cm-scroller at runtime so the chip and buttons line up
- * with the first and last columns of text. Solid background matching
- * the doc keeps scrolling content from showing through. */
+/* Body-level fixed bar over the editor column. Mounting at body level
+ * is required so the bar can stack above `#drag-region` (z-index 80,
+ * `-webkit-app-region: drag`), which would otherwise capture every
+ * click in the macOS title-bar strip. left/right offsets and inner
+ * padding are synced from .cm-scroller's viewport rect + computed
+ * padding so the chip and buttons line up with the text column. */
 .gdoc-link-bar {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  z-index: 10;
+  position: fixed;
+  top: 0;
+  z-index: 90; /* above #drag-region (80), below shelf/sidebar (150/200) */
   display: flex; align-items: center; gap: 12px;
   padding-top: 8px;
   padding-bottom: 4px;
@@ -178,10 +179,6 @@
   color: var(--sidebar-fg);
   background: var(--theme-bg, var(--bg));
   user-select: none;
-  /* The Tauri title-bar drag region (#drag-region, z-index 80,
-   * -webkit-app-region: drag) sits on top of this gutter on macOS and
-   * captures clicks for window-dragging. Opt out so the buttons get
-   * pointer events. */
   -webkit-app-region: no-drag;
 }
 .gdoc-link-bar.gdoc-link-bar-busy { opacity: 0.55; }
