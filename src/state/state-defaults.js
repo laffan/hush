@@ -36,10 +36,12 @@ export function createDefaultSettings() {
     // App-wide saved text-style presets for notebook text shapes.
     // Each entry: { id, color, backgroundColor, fontSize }.
     notebookTextStyles: [],
-    // "Desktop" — pinned doc or notebook fileId surfaced as a thumbnail
-    // at the bottom of the files panel. Synced via `.hush/desktop.json`.
-    // Null when no desktop is assigned.
-    desktopFileId: null,
+    // Per-context "panes are hidden" flags. Keyed by `pane.ownerContext`
+    // (`doc:<id>`, `nb:<id>`, `pj:<id>`); each present key means panes
+    // owned by or pinned into that context are hidden until **Show
+    // panes** is run again, and the sidebar's per-file indicator
+    // collapses to a thin strip.
+    panesHiddenByContext: {},
     // Notebook-only floating minimap widget. Off by default; toggled
     // via the command palette ("Show minimap" / "Hide minimap"). The
     // widget unmounts itself whenever a non-notebook is open.

@@ -8,9 +8,26 @@
 import { openFindReplace, openFindAll } from "./editor/find-replace.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
-import { canUseAsNote, isDesktopTauri } from "./command-palette-helpers.js";
+import {
+  canUseAsNote,
+  isDesktopTauri,
+  formatShortcutKeys,
+  collectFileLeaves,
+  activeDeskSubtree,
+} from "./command-palette-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
-import { getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition, replacePaneContent } from "./pane/pane-manager.js";
+import {
+  getActivePaneId,
+  fitActivePaneToGap,
+  createPane,
+  getInitialPanePosition,
+  replacePaneContent,
+  contextIdForFile,
+  getPanesForContext,
+  clearPanesForContext,
+  copyPanesBetweenContexts,
+} from "./pane/pane-manager.js";
+import { arePanesHiddenForActive, setPanesHiddenForContext } from "./state/state-panes.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
 import { openInNewWindow } from "./multi-window.js";
@@ -41,6 +58,20 @@ function currentFileTreeNodeId(s) {
   }
   if (s.currentProjectId) return s.currentProjectId;
   return null;
+}
+
+/** Mirror of pane-manager's getCurrentContext — used to gate the
+ *  pane-management palette entries. Returns "" when nothing is open. */
+function activeContextId(s) {
+  if (s.currentNotebookFileId) return "nb:" + s.currentNotebookFileId;
+  if (s.currentProjectId) return "pj:" + s.currentProjectId;
+  if (s.currentFileId) return "doc:" + s.currentFileId;
+  return "";
+}
+
+function activeContextHasPanes(s) {
+  const ctx = activeContextId(s);
+  return ctx ? getPanesForContext(ctx).length > 0 : false;
 }
 
 /** Wrap inner SVG markup (paths / polygons / etc.) in an `<svg>` of the
@@ -185,14 +216,6 @@ function buildCommands(state) {
       } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
-    { id: "desktop-set", label: "Use this file as desktop", icon: icons.files, shortcutKey: null, ctx: "shared",
-      action: (s) => {
-        const fileId = s.currentNotebookFileId || s.currentFileId;
-        if (!fileId || s.currentProjectId) return;
-        s.setDesktop(fileId);
-      } },
-    { id: "desktop-clear", label: "Clear desktop", icon: icons.trash, shortcutKey: null, ctx: "shared",
-      action: (s) => s.setDesktop(null) },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("export-current-file") },
     { id: "fullscreen", label: "Toggle fullscreen", icon: null, shortcutKey: "shortcutOpenFullscreen", ctx: "shared",
@@ -248,6 +271,25 @@ function buildCommands(state) {
         if (id) replacePaneContent(id, f.fileId, f.name, f.type);
       }) },
 
+    // === PANE SET (current document's panes) ===
+    { id: "panes-hide", label: "Hide panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !activeContextHasPanes(s) || arePanesHiddenForActive(s),
+      action: (s) => s.hidePanesForActive() },
+    { id: "panes-show", label: "Show panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !activeContextHasPanes(s) || !arePanesHiddenForActive(s),
+      action: (s) => s.showPanesForActive() },
+    { id: "panes-clear", label: "Clear panes", icon: icons.trash, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !activeContextHasPanes(s),
+      action: (s) => { const ctx = activeContextId(s); if (ctx) clearPanesForContext(ctx); } },
+    { id: "panes-copy-to", label: "Copy panes to Document", icon: icons.pane, shortcutKey: null, ctx: "shared",
+      keepOpen: true,
+      hiddenIf: (s) => !activeContextHasPanes(s),
+      action: (s, p) => enterPaneCopyPicker(p, s, /*switchAfter=*/false) },
+    { id: "panes-switch-to", label: "Switch panes to Document", icon: icons.pane, shortcutKey: null, ctx: "shared",
+      keepOpen: true,
+      hiddenIf: (s) => !activeContextHasPanes(s),
+      action: (s, p) => enterPaneCopyPicker(p, s, /*switchAfter=*/true) },
+
     // === NOTEBOOK ONLY ===
     { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-shelf") },
@@ -300,38 +342,32 @@ function buildCommands(state) {
   });
 }
 
-/** Walk the file tree and return real document/notebook leaves plus
- *  user-created project nodes, skipping the Images, Trash, and Inbox
- *  subtrees. Inbox is internally typed as a project but functions as a
- *  folder, so it's filtered out of the picker — only "real" projects
- *  (the ones the user can click in the sidebar to open the joined view)
- *  appear here. */
-function collectFileLeaves(fileTree) {
-  const out = [];
-  function walk(nodes) {
-    for (const n of nodes) {
-      if (n.id === "__trash__" || n.id === "__images__"
-          || n.id?.startsWith("__trash__:") || n.id?.startsWith("__images__:")) continue;
-      if ((n.type === "document" || n.type === "notebook") && n.fileId) {
-        out.push({ id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId });
-      }
-      // Inbox is internally typed as a project but functions as a
-      // folder — skip the project entry but still recurse so docs that
-      // live inside Inbox surface in the picker.
-      if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
-        out.push({ id: n.id, name: n.name || "Untitled", type: "project", fileId: n.id });
-      }
-      if (n.children?.length) walk(n.children);
-    }
-  }
-  walk(fileTree || []);
-  return out;
-}
-
-/** Active desk's children — Cmd+O / "Open as pane…" scope to this so the picker only surfaces files from the desk the user is in. */
-function activeDeskSubtree(s) {
-  const t = s.fileTree || [], d = t.filter((n) => n.type === "desk");
-  return d.length ? ((d.find((x) => x.id === s.settings?.activeDeskId) || d[0]).children || []) : t;
+/** Copy or switch the current document's panes into another doc/notebook.
+ *  `switchAfter` is true for *Switch panes to Document* — clears the
+ *  source after copying and opens the target so the panes ride along. */
+function enterPaneCopyPicker(palette, state, switchAfter) {
+  const currentFileId = state.currentNotebookFileId || state.currentFileId;
+  const items = collectFileLeaves(activeDeskSubtree(state))
+    .filter((f) => (f.type === "document" || f.type === "notebook") && f.fileId !== currentFileId)
+    .map((f) => ({
+      id: "pane-copy-target-" + f.id,
+      label: f.name,
+      icon: f.type === "notebook" ? icons.notebook : icons.doc,
+      shortcutKey: null,
+      action: async () => {
+        const sourceCtx = activeContextId(state);
+        const targetCtx = contextIdForFile(f.fileId, f.type);
+        if (!sourceCtx || !targetCtx || sourceCtx === targetCtx) return;
+        if (switchAfter) await setPanesHiddenForContext(state, targetCtx, false);
+        await copyPanesBetweenContexts(sourceCtx, targetCtx);
+        if (switchAfter) {
+          clearPanesForContext(sourceCtx);
+          if (f.type === "notebook") state.openNotebook(f.fileId);
+          else state.openFile(f.fileId);
+        }
+      },
+    }));
+  palette.setItems(items, switchAfter ? "Switch panes to…" : "Copy panes to…");
 }
 
 /** Open a file picker filtered to documents (in doc mode) or notebooks
@@ -369,37 +405,6 @@ function enterFilePicker(palette, state, placeholder, onPick, { includeProjects 
     action: () => onPick(f),
   }));
   palette.setItems(items, placeholder);
-}
-
-/** Format a stored shortcut string into keycap HTML. */
-function formatShortcutKeys(raw) {
-  if (!raw) return "";
-  const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
-  const parts = raw.split("+");
-  return parts.map(p => {
-    let label = p;
-    if (isMac) {
-      if (/^(CmdOrCtrl|Mod)$/i.test(p)) label = "\u2318";
-      else if (/^Shift$/i.test(p)) label = "\u21e7";
-      else if (/^Alt$/i.test(p)) label = "\u2325";
-      else if (/^ArrowUp$/i.test(p)) label = "\u2191";
-      else if (/^ArrowDown$/i.test(p)) label = "\u2193";
-      else if (/^ArrowLeft$/i.test(p)) label = "\u2190";
-      else if (/^ArrowRight$/i.test(p)) label = "\u2192";
-      else if (p === "\\\\") label = "\\";
-      else label = p.length === 1 ? p.toUpperCase() : p;
-    } else {
-      if (/^(CmdOrCtrl|Mod)$/i.test(p)) label = "Ctrl";
-      else if (/^ArrowUp$/i.test(p)) label = "\u2191";
-      else if (/^ArrowDown$/i.test(p)) label = "\u2193";
-      else if (/^ArrowLeft$/i.test(p)) label = "\u2190";
-      else if (/^ArrowRight$/i.test(p)) label = "\u2192";
-      else label = p.length === 1 ? p.toUpperCase() : p;
-    }
-    const el = document.createElement("span");
-    el.textContent = label;
-    return `<kbd>${el.innerHTML}</kbd>`;
-  }).join("");
 }
 
 let overlay = null;

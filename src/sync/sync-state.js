@@ -339,7 +339,6 @@ export async function clearLocalAndReseed(state) {
   await state.updateSettings({
     desks: [], activeDeskId: null, desksMeta: {},
     lastFileId: null, lastProjectId: null, lastNotebookId: null,
-    desktopFileId: null,
   });
 
   // Wrap the empty tree under a default desk so reseed routes into the
@@ -402,7 +401,6 @@ const META_REAPPLY_ORDER = [
   ["projects.json",  "./project-sync.js",  "applyProjectsFile"],
   ["panes.json",     "./pane-sync.js",     "applyPanesFile"],
   ["styles.json",    "./style-sync.js",    "applyStylesFile"],
-  ["desktop.json",   "./desktop-sync.js",  "applyDesktopFile"],
 ];
 
 /** Count Dropbox listing entries that the cursor consumer would

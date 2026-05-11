@@ -140,6 +140,60 @@
   min-width: 0;
 }
 
+/* Stack the filename row over the pane indicator strip when a file
+   has at least one floating pane open. The wrapper is added by
+   files-panel.js only for rows that need it; rows without panes stay
+   single-line. */
+.tree-item-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.tree-pane-indicators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 2px 0 2px 22px; /* align under the filename, past the icon */
+  transition: height 0.12s ease, opacity 0.12s ease;
+}
+
+.tree-pane-cell {
+  width: 7px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.55;
+  flex: 0 0 auto;
+}
+
+.tree-pane-indicators.hidden {
+  height: 2px;
+  opacity: 0.5;
+  overflow: hidden;
+  align-items: flex-start;
+}
+
+.tree-pane-indicators.hidden .tree-pane-cell {
+  height: 2px;
+}
+
+.tree-pane-tooltip {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  white-space: nowrap;
+  display: none;
+}
+
 .tree-create-btns,
 .tree-create-btns button,
 .flagged-section-root {
@@ -555,75 +609,6 @@
 
 .backup-modal-btns button:hover { background: rgba(128, 128, 128, 0.15); }
 .backup-modal-btns button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* ===== Desktop thumbnail ===== */
-/* Pinned to the bottom of the panel-overlay (which is position: fixed,
-   so absolute children sit relative to its viewport box and do not
-   scroll with the file list). The list scrolls behind it via the
-   bottom padding added to .tree-list-root when a desktop is present. */
-.desktop-thumbnail {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  height: 120px;
-  padding: 8px 10px;
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  background: var(--theme-bg, var(--bg));
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  z-index: 5;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.desktop-thumbnail:hover {
-  background: rgba(128, 128, 128, 0.08);
-  border-color: var(--fg);
-}
-
-.desktop-thumbnail:focus-visible {
-  outline: none;
-  border-color: var(--fg);
-}
-
-.desktop-thumbnail-body {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  min-height: 0;
-  overflow: hidden;
-  border-radius: 4px;
-}
-
-.desktop-thumbnail-text {
-  flex: 1;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--fg);
-  font-family: var(--font-family, "Source Sans Pro", sans-serif);
-  white-space: pre-wrap;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 6;
-  -webkit-box-orient: vertical;
-}
-
-.desktop-thumbnail-canvas {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  display: block;
-  border-radius: 4px;
-  /* The thumbnail body owns the layout; the canvas paints into the box
-     verbatim. Using object-fit ensures the rendered bitmap is centered
-     and never stretched even before a ResizeObserver-driven repaint
-     catches up. */
-  object-fit: contain;
-}
 
 /* ===== Desk switcher ===== */
 /* Header at the top of the files panel showing the active desk's name

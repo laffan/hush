@@ -13,10 +13,9 @@
  *   3. Click + drag pans the live camera so the clicked world point
  *      lands at the centre of the live viewport.
  *
- * The implementation lifts the minimap projection that previously lived
- * inside `desktop-thumbnail.js` so the desktop thumbnail can stay a
- * pure preview (and so the minimap can be toggled independently of the
- * desktop pin).
+ * The implementation is a standalone projection of the open notebook
+ * scene so the minimap can be toggled independently of any other
+ * snapshot surface.
  */
 
 let _container = null;       // outer floating box

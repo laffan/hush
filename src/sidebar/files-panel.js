@@ -9,10 +9,10 @@ import { AppState } from "../state/state.js";
 import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
+import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
-import { mountDesktopThumbnail, unmountDesktopThumbnail, refreshDesktopThumbnail } from "./desktop-thumbnail.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -203,13 +203,16 @@ export function createFilesPanel(container, state, hidePanel) {
       const inTrash = state.isInTrash(item.id);
       const _p = item.type === "document" ? findParentOfNode(state.fileTree, item.id) : null;
       const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
-      const el = document.createElement("span");
-      el.className = "tree-item-row" + (isActive ? " active" : "");
-      el.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
-      if (item.type === "image" && item.fileId) {
-        attachImageTooltipToRow(el, item.fileId, item.name);
-      }
-      return el;
+      const row = document.createElement("span");
+      row.className = "tree-item-row" + (isActive ? " active" : "");
+      row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+      if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
+      const indicators = paneIndicatorsFor(item, state);
+      if (!indicators) return row;
+      const wrap = document.createElement("span");
+      wrap.className = "tree-item-cell";
+      wrap.append(row, indicators);
+      return wrap;
     },
 
     onClick: (item) => {
@@ -297,9 +300,9 @@ export function createFilesPanel(container, state, hidePanel) {
   // Delegated action handlers
   listContainer.addEventListener("click", onActionClick);
   flaggedContainerEl.addEventListener("click", onActionClick);
+  attachPaneIndicatorTooltip(listContainer);
   // Option-click on a row opens the Send-to-desk modal (when desks on).
   import("./send-to-desk-modal.js").then((m) => m.attachDeskShortcuts(listContainer, state));
-  mountDesktopThumbnail(container, state);
 }
 
 function onActionClick(e) {
@@ -680,15 +683,11 @@ export function refreshFilesPanel(state) {
   // still works if the cached container got out of sync (e.g. the panel
   // was rebuilt from outside createFilesPanel).
   const cached = getLocalSyncContainer();
-  const root = cached?.isConnected
-    ? cached
-    : document.querySelector(".local-sync-root");
+  const root = cached?.isConnected ? cached : document.querySelector(".local-sync-root");
   if (root && storedState && storedHidePanel) {
     renderLocalSyncSection(root, storedState, storedHidePanel, refreshFilesPanel);
   }
-  refreshDesktopThumbnail();
 }
-
 
 async function openImagePreview(filename, name) {
   const { openImagePreviewModal } = await import("../editor/image-preview.js");

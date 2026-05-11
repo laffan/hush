@@ -93,10 +93,27 @@ function getCurrentContext() {
   return "";
 }
 
-/** Hide non-pinned panes that don't belong to the new context; show ones that do. */
+/** Hide non-pinned panes that don't belong to the new context; show ones that do.
+ *  When the active context is marked hidden via `panesHiddenByContext`,
+ *  every pane that would normally participate in it (owned or pinned)
+ *  is forced off-screen instead — the **Show panes** command lifts the
+ *  flag and re-runs this pass. */
 function onContextChange() {
   const ctx = getCurrentContext();
+  const hiddenMap = appState?.settings?.panesHiddenByContext || {};
+  const ctxHidden = !!hiddenMap[ctx];
   for (const [, pane] of panes) {
+    const participatesInCtx = pane.pinned || pane.ownerContext === ctx;
+    if (ctxHidden && participatesInCtx) {
+      pane.el.style.display = "none";
+      if (pane.attached) stopAttachSync(pane);
+      if (activePaneId === pane.id) {
+        pane.el.classList.remove("active");
+        if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
+        setActivePaneId(null);
+      }
+      continue;
+    }
     if (pane.pinned) {
       // Pinned panes stay visible in every context
       pane.el.style.display = "";
@@ -130,7 +147,10 @@ function notifyLayoutChange() {
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
   // Surface pane-set changes to the notebook shelf (and any other
   // listener) so its pane rows can refresh on create/close/show/hide.
-  if (appState && typeof appState.emit === "function") appState.emit("notebook-pane-changed");
+  if (appState && typeof appState.emit === "function") {
+    appState.emit("notebook-pane-changed");
+    appState.emit("panes-changed");
+  }
 }
 
 export function destroyPaneManager() {
@@ -291,6 +311,91 @@ export function deactivateAllPanes() {
 export function getActivePaneId() { return activePaneId; }
 export function hasPanes() { return panes.size > 0; }
 export function isPaneActive() { return activePaneId !== null; }
+
+/** Build the context id that a pane owned by the given file/project
+ *  would use — mirrors `getCurrentContext`'s format. */
+export function contextIdForFile(fileId, fileType) {
+  if (!fileId) return "";
+  if (fileType === "notebook") return "nb:" + fileId;
+  if (fileType === "project") return "pj:" + fileId;
+  return "doc:" + fileId;
+}
+
+/** Return the pane summaries (id, fileName, fileType) for every pane
+ *  whose `ownerContext` matches the given context id. Used by the
+ *  sidebar to paint a row of squares under a file's name. */
+export function getPanesForContext(contextId) {
+  if (!contextId) return [];
+  const out = [];
+  for (const [, p] of panes) {
+    if (p.ownerContext !== contextId) continue;
+    out.push({
+      id: p.id,
+      fileId: p.fileId,
+      fileName: p.fileName || "Untitled",
+      fileType: p.fileType,
+      pinned: !!p.pinned,
+    });
+  }
+  return out;
+}
+
+/** Close every pane in the given context. Used by **Clear panes**. */
+export function clearPanesForContext(contextId) {
+  if (!contextId) return 0;
+  const victims = [];
+  for (const [id, p] of panes) if (p.ownerContext === contextId) victims.push(id);
+  for (const id of victims) closePane(id);
+  return victims.length;
+}
+
+/** Re-create every pane currently owned by `sourceContextId` under
+ *  `targetContextId`, preserving layout (size, position, anchoring,
+ *  pinned, collapsed). Existing panes in the target context are left
+ *  alone — the copies stack onto whatever is already there. */
+export async function copyPanesBetweenContexts(sourceContextId, targetContextId) {
+  if (!sourceContextId || !targetContextId || sourceContextId === targetContextId) return 0;
+  const originals = [];
+  for (const [, p] of panes) if (p.ownerContext === sourceContextId) originals.push(p);
+  let n = 0;
+  for (const src of originals) {
+    const created = await createPane(
+      src.fileId,
+      src.fileName,
+      src.fileType,
+      src.x + DEFAULT_WIDTH / 2,
+      src.y + TITLEBAR_HEIGHT / 2,
+      { ownerContext: targetContextId, allowDuplicate: true, skipFocus: true },
+    );
+    if (!created) continue;
+    created.width = src.width;
+    created.height = src.height;
+    if (created.el) {
+      created.el.style.width = src.width + "px";
+      created.el.style.height = src.height + "px";
+    }
+    if (src.attached) {
+      created.attached = true;
+      const aBtn = created.el?.querySelector(".fp-btn-attach");
+      if (aBtn) aBtn.classList.add("attach-active");
+    }
+    if (src.pinned) {
+      created.pinned = true;
+      created.el?.classList.add("pinned");
+      const pBtn = created.el?.querySelector(".fp-btn-pin");
+      if (pBtn) pBtn.classList.add("pin-active");
+    }
+    if (src.collapsed) {
+      created.collapsed = true;
+      created._savedHeight = created.height;
+      created.el?.classList.add("collapsed");
+      if (created.el) created.el.style.height = TITLEBAR_HEIGHT + "px";
+    }
+    n++;
+  }
+  if (n > 0) schedulePersist();
+  return n;
+}
 
 /**
  * Snapshot of panes currently visible on the notebook canvas — used by

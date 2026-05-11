@@ -448,6 +448,15 @@ export function createSidebar(container, state) {
     }
   });
 
+  // Pane set changes (create / close / hide / show) flip the per-row
+  // indicator strip on or off, so the files panel needs to repaint.
+  state.on("panes-changed", () => {
+    if (activePanel === "files") refreshFilesPanel(state);
+  });
+  state.on("panes-hidden-changed", () => {
+    if (activePanel === "files") refreshFilesPanel(state);
+  });
+
   state.on("dropbox-status-changed", () => {
     if (activePanel === "files") {
       refreshFilesPanel(state);

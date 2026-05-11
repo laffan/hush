@@ -415,8 +415,7 @@ export class AppState {
   maybeRenameFileFromContent(fileId, content) { return _naming.maybeRenameFileFromContent(this, fileId, content); }
   _deriveName(content) { return _naming.deriveName(content); }
 
-  // ===== Desktop + Sync Operations (delegated to sibling modules) =====
-  async setDesktop(fileId) { const m = await import("./state-desktop.js"); return m.setDesktop(this, fileId); }
+  // ===== Sync Operations (delegated to sibling modules) =====
   // Desks (delegated to state-desks.js)
   enableDesks(name) { return _desks.enableDesks(this, name); }
   createDesk(name) { return _desks.createDesk(this, name); }
@@ -433,6 +432,10 @@ export class AppState {
   getDeskLastFile(deskId) { return _desks.getDeskLastFile(this, deskId); }
   recordActiveDeskLastFile(fileId, type) { return _desks.recordActiveDeskLastFile(this, fileId, type); }
   async toggleMinimap() { const n = !this.settings?.minimapVisible; await this.updateSettings({ minimapVisible: n }); this.emit("minimap-visibility-changed", n); }
+
+  // ===== Pane visibility (delegated to state-panes.js) =====
+  async hidePanesForActive() { const m = await import("./state-panes.js"); return m.hidePanesForActive(this); }
+  async showPanesForActive() { const m = await import("./state-panes.js"); return m.showPanesForActive(this); }
   async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
   async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
   async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }

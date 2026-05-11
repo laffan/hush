@@ -364,12 +364,12 @@ pub struct AppSettings {
     pub notebook_text_styles: Vec<serde_json::Value>,
     #[serde(default)]
     pub last_notebook_id: Option<String>,
-    /// "Desktop" — pins a single doc or notebook fileId for the
-    /// thumbnail at the bottom of the files panel. Synced cross-device
-    /// via `.hush/desktop.json` (which carries the cross-device-stable
-    /// Dropbox `remote_id` and resolves it back to a local fileId at
-    /// apply time). The `deskFileId` alias keeps existing settings.json
-    /// files (pre-rename) parsing without migration.
+    /// Legacy single-slot "desktop" pin (a thumbnail at the bottom of
+    /// the files panel). The feature is gone — replaced by per-row
+    /// pane indicators driven by `panes_hidden_by_context` — but the
+    /// field stays in the struct so existing settings.json files keep
+    /// parsing on first launch. Always serialized as null; the JS side
+    /// ignores it.
     #[serde(default, alias = "deskFileId")]
     pub desktop_file_id: Option<String>,
     /// Notebook-only floating minimap widget. Off by default; toggled
@@ -390,8 +390,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub desks: Vec<serde_json::Value>,
     /// Per-desk synced metadata, keyed by desk id. Opaque JSON so the
-    /// JS side owns the shape — typical fields: active style, desktop
-    /// fileId, persisted panes.
+    /// JS side owns the shape — typical fields: active style, last
+    /// opened file, persisted panes.
     #[serde(default)]
     pub desks_meta: serde_json::Value,
     /// Active desk id for this device. Null when desks are off.
@@ -422,6 +422,16 @@ pub struct AppSettings {
     // JS serializes/deserializes the list of pane objects.
     #[serde(default)]
     pub persisted_panes: Vec<serde_json::Value>,
+
+    /// Per-context "panes are hidden" flags, keyed by `pane.ownerContext`
+    /// (`doc:<id>` / `nb:<id>` / `pj:<id>`). Each truthy entry means the
+    /// corresponding doc/notebook is in "file" mode — panes that would
+    /// normally participate in that context stay off-screen until the
+    /// flag is cleared via the command palette's **Show panes** entry.
+    /// Local-only by design (not part of the cross-device pane sync
+    /// payload).
+    #[serde(default)]
+    pub panes_hidden_by_context: serde_json::Value,
 
     // Session state (persisted across restarts)
     #[serde(default)]
@@ -586,6 +596,7 @@ impl Default for AppSettings {
             block_cursor_color: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
+            panes_hidden_by_context: serde_json::json!({}),
             window_width: None,
             window_height: None,
             window_x: None,
