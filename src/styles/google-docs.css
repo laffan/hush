@@ -161,24 +161,24 @@
 }
 
 /* ---- Link bar (top of editor) -------------------------------------- */
-/* Anchored to the top of #editor-container (which is the editor's
- * stacking context, so the sidebar can't paint over it). Padding-left
- * / padding-right are synced from .cm-scroller at runtime so the chip
- * and buttons line up with the first and last columns of text. */
+/* Anchored to the top of #editor-container (the editor's stacking
+ * context, so the sidebar can't paint over it). Padding-left/right are
+ * synced from .cm-scroller at runtime so the chip and buttons line up
+ * with the first and last columns of text. Solid background matching
+ * the doc keeps scrolling content from showing through. */
 .gdoc-link-bar {
   position: absolute;
   top: 0; left: 0; right: 0;
-  z-index: 5;
+  z-index: 10;
   display: flex; align-items: center; gap: 12px;
   padding-top: 8px;
   padding-bottom: 4px;
   font-family: var(--font-family);
   font-size: 11px;
   color: var(--sidebar-fg);
-  pointer-events: none;
+  background: var(--theme-bg, var(--bg));
   user-select: none;
 }
-.gdoc-link-bar > * { pointer-events: auto; }
 .gdoc-link-bar.gdoc-link-bar-busy { opacity: 0.55; }
 
 /* Title chip — plain text + small two-arrow icon, no background. */
@@ -189,6 +189,7 @@
   color: inherit;
   opacity: 0.65;
   overflow: hidden; white-space: nowrap;
+  cursor: pointer;
 }
 .gdoc-link-bar-chip:hover { opacity: 1; }
 .gdoc-link-bar-icon { flex: none; opacity: 0.9; }
@@ -206,11 +207,12 @@
   display: inline-block;
   padding: 0 8px;
   opacity: 0.4;
+  pointer-events: none;
 }
 .gdoc-link-bar-btn {
   background: none;
   border: none;
-  padding: 0;
+  padding: 2px 0;
   margin: 0;
   font: inherit;
   font-size: 11px;
