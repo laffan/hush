@@ -156,28 +156,26 @@
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  margin: 2px 0 2px 22px; /* align under the filename, past the icon */
-  transition: height 0.12s ease, opacity 0.12s ease;
+  /* Sits directly under the filename — past the 12 px type icon and
+     its 6 px gap so the left edge of the strip lines up with the
+     first character of the file name. */
+  margin: 2px 0 2px 18px;
+  transition: opacity 0.12s ease;
 }
 
 .tree-pane-cell {
-  width: 7px;
-  height: 9px;
-  border-radius: 1px;
-  background: currentColor;
+  box-sizing: border-box;
+  width: 5px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: transparent;
   opacity: 0.55;
   flex: 0 0 auto;
 }
 
 .tree-pane-indicators.hidden {
-  height: 2px;
-  opacity: 0.5;
-  overflow: hidden;
-  align-items: flex-start;
-}
-
-.tree-pane-indicators.hidden .tree-pane-cell {
-  height: 2px;
+  opacity: 0.3;
 }
 
 .tree-pane-tooltip {
