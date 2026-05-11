@@ -64,8 +64,16 @@ function matchKey(ownerContext, fileType, fileId, attKey) {
  * Serialize the local panes map into the cross-device payload string.
  * Skips panes that can't be represented across devices: local-sync,
  * not-yet-synced, projects (no Dropbox file backs a project context).
+ *
+ * The payload also carries `hiddenOwners` — a list of
+ * `{ kind, remoteId }` entries derived from
+ * `state.settings.panesHiddenByContext` so the "Hide / Show panes"
+ * choice rides cross-device alongside the panes themselves. Each
+ * locally-hidden context whose backing file has a Dropbox identity is
+ * translated to its `remoteId`; projects and local-sync-only contexts
+ * are skipped because they have no stable cross-device identity.
  */
-export async function serializePanesForSync(panesMap) {
+export async function serializePanesForSync(panesMap, state = null) {
   const out = [];
 
   // Pre-resolve all referenced fileIds to remote_ids in one batch via
@@ -130,10 +138,22 @@ export async function serializePanesForSync(panesMap) {
     });
   }
 
+  const hiddenOwners = [];
+  const localHidden = state?.settings?.panesHiddenByContext || {};
+  for (const [ctxId, flag] of Object.entries(localHidden)) {
+    if (!flag) continue;
+    const { kind, id } = parseOwnerContext(ctxId);
+    if (kind !== "doc" && kind !== "nb") continue; // pj has no Dropbox identity
+    const info = await tauriInvoke("get_sync_file_info", { internalId: id }).catch(() => null);
+    if (!info?.remoteId) continue; // local-sync / never-synced — skip
+    hiddenOwners.push({ kind, remoteId: info.remoteId });
+  }
+
   return JSON.stringify({
     format: "hush-panes",
     version: PANES_FORMAT_VERSION,
     panes: out,
+    hiddenOwners,
   }, null, 2);
 }
 
@@ -147,7 +167,7 @@ export async function serializePanesForSync(panesMap) {
  * setting a flag the persist hook checks).
  */
 export async function applyRemotePanes(payloadString, deps) {
-  const { panes, createPaneFn, recoverOffscreenFn, suppressPersist } = deps;
+  const { panes, createPaneFn, recoverOffscreenFn, suppressPersist, state } = deps;
 
   let parsed;
   try { parsed = JSON.parse(payloadString); }
@@ -303,7 +323,48 @@ export async function applyRemotePanes(payloadString, deps) {
     recoverOffscreenFn(newlyAdded);
   }
 
+  // Merge the remote `hiddenOwners` list into `panesHiddenByContext`.
+  // Field is optional (older clients omit it) so absence leaves the
+  // local map alone. When present, the remote view replaces every
+  // locally-hidden context whose backing file has a Dropbox identity;
+  // local-sync / never-synced / project contexts are preserved since
+  // they have no cross-device identity in this payload.
+  if (state && Array.isArray(parsed.hiddenOwners)) {
+    await mergeRemoteHiddenContexts(state, parsed.hiddenOwners);
+  }
+
   return { matched, added, skipped };
+}
+
+async function mergeRemoteHiddenContexts(state, hiddenOwners) {
+  const newMap = {};
+  const localMap = state.settings?.panesHiddenByContext || {};
+  // Preserve local entries the remote can't represent.
+  for (const [ctxId, flag] of Object.entries(localMap)) {
+    if (!flag) continue;
+    const { kind, id } = parseOwnerContext(ctxId);
+    if (kind === "pj") { newMap[ctxId] = true; continue; }
+    if (kind !== "doc" && kind !== "nb") continue;
+    const info = await tauriInvoke("get_sync_file_info", { internalId: id }).catch(() => null);
+    if (!info?.remoteId) { newMap[ctxId] = true; continue; } // local-only, keep
+    // Otherwise the remote payload is authoritative for this entry.
+  }
+  // Layer the remote view on top.
+  for (const e of hiddenOwners) {
+    if (!e || (e.kind !== "doc" && e.kind !== "nb") || !e.remoteId) continue;
+    const local = await tauriInvoke("find_synced_file_by_remote_id", { remoteId: e.remoteId })
+      .catch(() => null);
+    if (!local?.internalId) continue;
+    newMap[buildOwnerContext(e.kind, local.internalId)] = true;
+  }
+  // Stable-stringify for cheap equality so we skip a no-op write.
+  const prev = JSON.stringify(localMap);
+  const next = JSON.stringify(newMap);
+  if (prev === next) return;
+  await state.updateSettings({ panesHiddenByContext: newMap }, { fromSync: true });
+  const { refreshPaneContextVisibility } = await import("../pane/pane-manager.js");
+  refreshPaneContextVisibility();
+  state.emit("panes-hidden-changed", null);
 }
 
 // ===== Viewport recovery =====
@@ -384,7 +445,7 @@ export { markOurRev, isOurRev } from "./meta-sync.js";
  * the silent arg-drop bug where the second arg (payload) gets thrown
  * away and JSON.parse ends up trying to parse the AppState object.
  */
-export async function applyPanesFile(_state, payload) {
+export async function applyPanesFile(state, payload) {
   const { panes } = await import("../pane/pane-state.js");
   const { suppressPersist } = await import("../pane/pane-persistence.js");
   const { createPane, refreshPaneContextVisibility } = await import("../pane/pane-manager.js");
@@ -394,6 +455,7 @@ export async function applyPanesFile(_state, payload) {
 
   const result = await applyRemotePanes(payload, {
     panes,
+    state,
     suppressPersist,
     createPaneFn: async (opts) => {
       try {

@@ -428,8 +428,12 @@ pub struct AppSettings {
     /// corresponding doc/notebook is in "file" mode — panes that would
     /// normally participate in that context stay off-screen until the
     /// flag is cleared via the command palette's **Show panes** entry.
-    /// Local-only by design (not part of the cross-device pane sync
-    /// payload).
+    /// Rides cross-device alongside the panes themselves (see
+    /// `serializePanesForSync` / `applyRemotePanes`): the JS layer
+    /// translates each local-id key to its Dropbox `remoteId` and
+    /// embeds a `hiddenOwners` list in `.hush/panes.json`. Local-Sync /
+    /// project contexts have no cross-device identity so their entries
+    /// stay per-device.
     #[serde(default)]
     pub panes_hidden_by_context: serde_json::Value,
 

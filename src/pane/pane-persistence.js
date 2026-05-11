@@ -91,7 +91,7 @@ export function persistPanesNow() {
 
 async function pushPanesToDropbox() {
   const { serializePanesForSync, enqueuePaneUpload } = await import("../sync/pane-sync.js");
-  const payload = await serializePanesForSync(panes);
+  const payload = await serializePanesForSync(panes, appState);
   await enqueuePaneUpload(payload);
 }
 
