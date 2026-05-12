@@ -146,3 +146,9 @@ body.notebook-mode .column-resizer {
 .notebook-drawing-wrapper .delete-btn { cursor: pointer; }
 .notebook-drawing-wrapper .delete-btn circle { fill: #ea4335; }
 .notebook-drawing-wrapper .delete-btn path { stroke: #fff; stroke-width: 2; stroke-linecap: round; fill: none; }
+
+/* Toolbar collapse marker — applied/removed by toolbar.ts and
+   tool-panel.ts. `!important` is needed because every tool button and
+   panel root carries an inline `display: flex` (set at construction
+   time) that would otherwise beat a plain class rule. */
+.notebook-toolbar-collapse-hidden { display: none !important; }

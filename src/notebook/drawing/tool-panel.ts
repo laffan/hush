@@ -224,15 +224,19 @@ export function createDrawingToolPanel(
     const parentRect = parent.getBoundingClientRect();
     const tbRect = bottomToolbar.getBoundingClientRect();
     if (tbRect.width === 0) return { x: desiredX, y: desiredY };
-    const dragR = dragTab.getBoundingClientRect();
-    const togR = toggleTab.getBoundingClientRect();
-    const bgR = bgSettingsTab.getBoundingClientRect();
-    const colR = collapseTab.getBoundingClientRect();
+    // Skip end-caps that are display:none — getBoundingClientRect
+    // returns (0,0,0,0) for them and would pin the clamp to the
+    // viewport's top-left corner, locking dragging to one direction
+    // while the toolbar is collapsed.
+    const rects = [tbRect, dragTab.getBoundingClientRect(), collapseTab.getBoundingClientRect()];
+    if (!state.drawingToolbarCollapsed) {
+      rects.push(toggleTab.getBoundingClientRect(), bgSettingsTab.getBoundingClientRect());
+    }
     const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
-    const left = Math.min(tbRect.left, dragR.left, togR.left, bgR.left, colR.left);
-    const right = Math.max(tbRect.right, dragR.right, togR.right, bgR.right, colR.right);
-    const top = Math.min(tbRect.top, dragR.top, togR.top, bgR.top, colR.top);
-    const bottom = Math.max(tbRect.bottom, dragR.bottom, togR.bottom, bgR.bottom, colR.bottom);
+    const left = Math.min(...rects.map((r) => r.left));
+    const right = Math.max(...rects.map((r) => r.right));
+    const top = Math.min(...rects.map((r) => r.top));
+    const bottom = Math.max(...rects.map((r) => r.bottom));
     const natLeft = (left - parentRect.left) - cur.x;
     const natRight = (right - parentRect.left) - cur.x;
     const natTop = (top - parentRect.top) - cur.y;
@@ -485,8 +489,9 @@ export function createDrawingToolPanel(
     // Rotate + bg-settings hide entirely while collapsed — only the
     // drag handle, the active tool button (handled by the bar's own
     // child-visibility logic), and the collapse tab stay visible.
-    toggleTab.style.display = collapsed ? "none" : "";
-    bgSettingsTab.style.display = collapsed ? "none" : "";
+    // Class-based so the inline `display: flex` survives the toggle.
+    toggleTab.classList.toggle("notebook-toolbar-collapse-hidden", collapsed);
+    bgSettingsTab.classList.toggle("notebook-toolbar-collapse-hidden", collapsed);
 
     const place = () => {
       const parentRect = parent.getBoundingClientRect();
@@ -591,6 +596,14 @@ export function createDrawingToolPanel(
   // (select / text / drag-area / brainstorm / layers / bookmarks) are
   // owned by toolbar.ts which runs the same collapse-vs-active filter
   // in its own `update()` pass.
+  // Visibility is toggled via a CSS class (`!important display:none`)
+  // rather than inline `style.display`, because every bar child was
+  // constructed with inline `display: flex` and clearing the inline
+  // style would lose that flex layout and stack children vertically.
+  const HIDE_CLASS = "notebook-toolbar-collapse-hidden";
+  function setHidden(el: HTMLElement, hidden: boolean): void {
+    el.classList.toggle(HIDE_CLASS, hidden);
+  }
   function applyCollapseVisibility(): void {
     const collapsed = state.drawingToolbarCollapsed;
     const activeSub: string | null = state.tool === "pen" ? state.drawingSubTool : null;
@@ -599,28 +612,28 @@ export function createDrawingToolPanel(
       : null;
 
     if (!collapsed) {
-      separator.style.display = "";
-      slots.root.style.display = "";
-      for (const slotEl of Array.from(slots.root.children) as HTMLElement[]) slotEl.style.display = "";
-      lassoBtn.style.display = "";
-      for (const btn of subToolBtns.values()) btn.style.display = "";
+      setHidden(separator, false);
+      setHidden(slots.root, false);
+      for (const slotEl of Array.from(slots.root.children) as HTMLElement[]) setHidden(slotEl, false);
+      setHidden(lassoBtn, false);
+      for (const btn of subToolBtns.values()) setHidden(btn, false);
       return;
     }
 
-    separator.style.display = "none";
+    setHidden(separator, true);
     // Brush-slot row survives only when "draw" is active; within it,
     // hide every non-active slot.
     if (activeSub === "draw" && brushEl) {
-      slots.root.style.display = "";
+      setHidden(slots.root, false);
       for (const slotEl of Array.from(slots.root.children) as HTMLElement[]) {
-        slotEl.style.display = slotEl === brushEl ? "" : "none";
+        setHidden(slotEl, slotEl !== brushEl);
       }
     } else {
-      slots.root.style.display = "none";
+      setHidden(slots.root, true);
     }
-    lassoBtn.style.display = activeSub === "select" ? "" : "none";
+    setHidden(lassoBtn, activeSub !== "select");
     for (const [id, btn] of subToolBtns) {
-      btn.style.display = activeSub === id ? "" : "none";
+      setHidden(btn, activeSub !== id);
     }
   }
 

@@ -122,6 +122,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
     const fg = theme.foreground;
     const accent = theme.accent;
     const collapsed = state.drawingToolbarCollapsed;
+    // Class-based hide (see notebook.css) so each button's inline
+    // `display: flex` survives — clearing the inline style would
+    // stack icons vertically instead of laying them out in a row.
+    const HIDE = "notebook-toolbar-collapse-hidden";
 
     for (const [key, btn] of buttons) {
       let active: boolean;
@@ -134,12 +138,12 @@ export function createToolbar(state: DrawingState): HTMLElement {
       btn.style.opacity = active ? "1" : "0.6";
       // Collapsed: only the active main tool stays in the bar — its
       // sibling buttons and the Layers / Bookmarks panel triggers hide.
-      btn.style.display = !collapsed || active ? "" : "none";
+      btn.classList.toggle(HIDE, collapsed && !active);
     }
     // Layers + Bookmarks panel triggers are siblings of the tool
     // buttons — neither is a "tool", so both hide while collapsed.
-    layersEl.root.style.display = collapsed ? "none" : "";
-    bookmarksEl.style.display = collapsed ? "none" : "";
+    layersEl.root.classList.toggle(HIDE, collapsed);
+    bookmarksEl.classList.toggle(HIDE, collapsed);
   }
 
   state.addEventListener("change", update);

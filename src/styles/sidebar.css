@@ -481,20 +481,21 @@ html.phone .sidebar-panel-resizer {
   display: none;
 }
 
-/* Touch-mode pills along the bottom-right edge of the viewport. Only
-   the palette + paste pair render on phone (cmd-button.js skips the
-   ⌘ and ↶ pills); both are repositioned from the bottom-left stack to
-   a horizontal row hugging the right edge. Hidden while the panel is
-   open since the panel fills the screen. */
+/* Touch-mode pills along the bottom edge of the viewport. Only the
+   palette + paste pair render on phone (cmd-button.js skips the ⌘
+   and ↶ pills); both are repositioned from the bottom-left stack to
+   a horizontal pair centered horizontally. Pair width = 36 + 12 + 36
+   = 84 px → each pill's left edge sits 42 px / 6 px from the centre.
+   Hidden while the panel is open since the panel fills the screen. */
 html.phone .cmd-floating-button.cmd-palette-button {
-  left: auto;
-  right: 20px;
+  right: auto;
+  left: calc(50% + 6px);
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
 html.phone .cmd-floating-button.cmd-paste-button {
-  left: auto;
-  right: calc(20px + 36px + 12px);
+  right: auto;
+  left: calc(50% - 42px);
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
