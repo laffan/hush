@@ -26,6 +26,7 @@ import {
 import "./font-imports.js";
 
 async function init() {
+  const dbg = (l, p) => { try { window.__hushDebugLog?.(l, p ?? ""); } catch (_) {} };
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   const state = new AppState();
 
@@ -41,6 +42,7 @@ async function init() {
   }
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
   await state.init({ initialFile });
+  dbg("state.init", { treeLen: state.fileTree?.length, desks: state.settings.desks?.length, IS_TAURI });
   // Expose on window so lazy helpers (e.g. pane/text-drag.js's notebook-to-
   // doc image path) can reach the live AppState without a hard import cycle.
   if (typeof window !== "undefined") window.__hushState__ = state;
@@ -690,10 +692,9 @@ async function init() {
       }
     };
     window.addEventListener("focus", maybeReconcile);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") maybeReconcile();
-    });
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") maybeReconcile(); });
   }
+  setTimeout(() => { try { window.__hushClearErrorOverlay?.(); } catch (_) {} }, 1500);
 }
 
-init().catch(console.error);
+init().catch((e) => { console.error(e); try { window.__hushDebugLog?.("init-fatal", e?.stack || String(e)); } catch (_) {} });

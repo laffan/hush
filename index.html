@@ -6,6 +6,67 @@
   <title>Hush</title>
   <!-- Fonts bundled locally via @fontsource packages -->
   <link rel="stylesheet" href="/src/styles/main.css" />
+  <!-- Early on-screen error overlay so init failures are visible on
+       devices without a console (iOS / iPadOS). Reset by main.js once
+       the editor mounts cleanly. Toggle off by setting
+       window.__hushSuppressErrorOverlay = true before main.js runs. -->
+  <script>
+    (function() {
+      var box = null;
+      function ensureBox() {
+        if (box) return box;
+        box = document.createElement("div");
+        box.id = "hush-error-overlay";
+        box.style.cssText = [
+          "position:fixed", "inset:0", "z-index:2147483647",
+          "background:#1a0000", "color:#ffb4b4",
+          "font:12px/1.45 -apple-system,SF Mono,Menlo,monospace",
+          "padding:18px", "overflow:auto",
+          "-webkit-user-select:text", "user-select:text",
+          "white-space:pre-wrap", "word-break:break-word"
+        ].join(";");
+        var hdr = document.createElement("div");
+        hdr.style.cssText = "font-weight:700;margin-bottom:8px;color:#ff7676;";
+        hdr.textContent = "Hush init error — open and read on iPad to debug:";
+        box.appendChild(hdr);
+        if (document.body) document.body.appendChild(box);
+        else document.addEventListener("DOMContentLoaded", function(){ document.body.appendChild(box); });
+        return box;
+      }
+      function log(label, e) {
+        if (window.__hushSuppressErrorOverlay) return;
+        var msg = "";
+        try {
+          if (e && e.stack) msg = e.stack;
+          else if (e && e.message) msg = e.message;
+          else msg = String(e);
+        } catch (_) { msg = "(unprintable)"; }
+        var line = document.createElement("div");
+        line.style.cssText = "margin:8px 0;padding:8px;background:rgba(255,180,180,0.06);border-left:3px solid #ff7676;";
+        line.textContent = "[" + label + "] " + msg;
+        ensureBox().appendChild(line);
+      }
+      window.addEventListener("error", function(e) {
+        log("error", e.error || e.message || e);
+      });
+      window.addEventListener("unhandledrejection", function(e) {
+        log("rejection", (e && (e.reason || e)) || "(no reason)");
+      });
+      window.__hushDebugLog = function(label, payload) {
+        if (window.__hushSuppressErrorOverlay) return;
+        var line = document.createElement("div");
+        line.style.cssText = "margin:6px 0;padding:6px;background:rgba(180,255,180,0.04);border-left:3px solid #6ade6a;color:#bce8bc;";
+        var body = "";
+        try { body = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2); }
+        catch (_) { body = String(payload); }
+        line.textContent = "[" + label + "] " + body;
+        ensureBox().appendChild(line);
+      };
+      window.__hushClearErrorOverlay = function() {
+        if (box) { box.remove(); box = null; }
+      };
+    })();
+  </script>
 </head>
 <body>
   <div id="app">
