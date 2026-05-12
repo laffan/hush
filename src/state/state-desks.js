@@ -558,6 +558,57 @@ export async function migrateLegacyTreeIfNeeded(state) {
     }
     return false;
   }
+
+  // Folders-only tree (no desks, no top-level files): the cursor seed
+  // pulled content down with desk-shaped paths but the tree didn't
+  // get its top-level segments minted as desk nodes (older client, or
+  // a reseed that ran before the per-folder desk promotion landed).
+  // Promote in place instead of wrapping — wrapping would invoke
+  // `migrateSyncToDesk` which moves every Dropbox path under a
+  // `Personal/` prefix and produces the `/Personal/Personal/...`
+  // corruption pattern in the wild.
+  const topLevelFiles = tree.filter((n) => n.type === "document" || n.type === "notebook");
+  const topLevelFolders = tree.filter((n) => n.type === "folder" || n.type === "project");
+  if (topLevelFolders.length > 0 && topLevelFiles.length === 0) {
+    let activeId = null;
+    for (const folder of topLevelFolders) {
+      // Promote the folder node itself to a desk: stable id stays, but
+      // type flips and the special children get re-namespaced.
+      const deskId = folder.id;
+      folder.type = "desk";
+      folder.createdAt = folder.createdAt || Math.floor(Date.now() / 1000);
+      if (Array.isArray(folder.children)) {
+        for (const c of folder.children) {
+          if (!c) continue;
+          if (c.name === "Inbox" && (c.type === "folder" || c.type === "project")) {
+            c.id = specialNodeId("__inbox__", deskId);
+            c.type = "project";
+          } else if (c.name === "Images" && c.type === "folder") {
+            c.id = specialNodeId("__images__", deskId);
+          } else if (c.name === "Trash" && c.type === "folder") {
+            c.id = specialNodeId("__trash__", deskId);
+          }
+        }
+      }
+      ensureDeskSpecials(folder);
+      if (!activeId) activeId = deskId;
+    }
+    const desksRegistry = topLevelFolders.map((d) => ({
+      id: d.id, name: d.name, createdAt: d.createdAt,
+    }));
+    const meta = { ...(state.settings?.desksMeta || {}) };
+    for (const d of topLevelFolders) {
+      if (!meta[d.id]) meta[d.id] = { globalStyleId: null };
+    }
+    await state.updateSettings({
+      useDesks: true, desks: desksRegistry,
+      desksMeta: meta, activeDeskId: activeId,
+    });
+    await state.saveFileTree();
+    state.emit?.("desks-changed");
+    return true;
+  }
+
   await enableDesks(state, "Personal");
   return true;
 }

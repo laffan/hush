@@ -214,31 +214,90 @@ export async function applyDeskFile(state, payload, relativePath) {
 }
 
 /**
- * After a Clear Local Versions reseed completes, the cursor has populated
- * the tree from Dropbox but desks may be in three states:
- *   1. Have a `.hushdesk` → applied already, fully resolved.
- *   2. Don't have one → either the user created the folder manually, or
- *      an older client created the folder without a `.hushdesk`. Mint
- *      a fresh uuid and push it so the desk gains canonical identity.
- *   3. Have one but it failed to land (shouldn't happen if cursor seed
- *      ran cleanly; fall through to case 2 for safety).
+ * After a Clear Local Versions reseed completes, the cursor has built
+ * the tree from Dropbox. Top-level folders were created as desk nodes
+ * by `insertDocumentNode` already, but a few things still need to
+ * happen before the reseed can declare itself done:
  *
- * Also enqueues create_folder ops for any desk missing Inbox/Trash so a
- * bare top-level folder converges to the standard desk shape.
+ *   1. `settings.desks` (the registry the sidebar / active-desk lookup
+ *      reads) needs to be populated from the tree's desk nodes — the
+ *      reseed left it empty.
+ *   2. `settings.activeDeskId` must point at an existing desk so a
+ *      desk switcher render doesn't pick a missing id.
+ *   3. Each desk needs Inbox / Trash / Images specials (the cursor
+ *      seed may not have created them if no files arrived inside).
+ *   4. Empty top-level folders that don't yet exist as tree desk
+ *      nodes (rare — only if the user pre-created a folder in
+ *      Dropbox with no content inside) still need to be discovered;
+ *      they appear in the recursive listing as `folder` entries.
+ *
+ * Without (1) and (2), the next boot's `migrateLegacyTreeIfNeeded`
+ * sees `settings.desks = []` paired with a tree full of desk nodes
+ * and the boot path stays in a weird half-state. With them, the
+ * tree, the settings, and the Dropbox layout are all in agreement.
  */
 export async function finalizeDesks(state) {
   if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
   const _desks = await import("../state/state-desks.js");
+
+  // Discover any top-level folder that wasn't represented in the tree
+  // because no files inside arrived (empty-folder case). The recursive
+  // listing was already done by `clearLocalAndReseed`'s pre-count, but
+  // we re-list non-recursively here since that's cheap.
+  try {
+    const dbx = await import("./dropbox.js");
+    const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
+    const root = base === "/" ? "" : base;
+    const data = await dbx.listFolderRaw(root, { recursive: false, includeDeleted: false });
+    for (const e of (data?.entries || [])) {
+      if (e[".tag"] !== "folder") continue;
+      const folderName = e.name;
+      if (!folderName || folderName.startsWith(".")) continue;
+      const exists = (state.fileTree || []).some(
+        (n) => (n.type === "desk" || n.type === "folder") && n.name === folderName
+      );
+      if (!exists) {
+        const deskId = crypto.randomUUID();
+        const desk = {
+          id: deskId, type: "desk", name: folderName,
+          children: [], flagged: false,
+          createdAt: Math.floor(Date.now() / 1000),
+        };
+        _desks.ensureDeskSpecials(desk);
+        state.fileTree.push(desk);
+      }
+    }
+  } catch (e) { console.warn("finalize: empty-folder discovery failed:", e); }
+
   const desks = (state.fileTree || []).filter((n) => n.type === "desk");
   for (const desk of desks) {
     _desks.ensureDeskSpecials(desk);
-    // No createdAt is the smoking gun for "this desk was minted locally
-    // during the seed for a folder with no .hushdesk". Push it so it
-    // gets a canonical record on Dropbox.
-    if (!desk.createdAt) {
-      desk.createdAt = Math.floor(Date.now() / 1000);
-    }
+    if (!desk.createdAt) desk.createdAt = Math.floor(Date.now() / 1000);
   }
+
+  // Populate the settings registry from the tree so subsequent boots
+  // see a consistent picture. Per-desk style/last-file metadata can
+  // live in an empty stub here; `applyDeskFile` will fill in the
+  // remote-published values as each `.hushdesk` lands via the cursor.
+  const desksRegistry = desks.map((d) => ({
+    id: d.id, name: d.name, createdAt: d.createdAt || Math.floor(Date.now() / 1000),
+  }));
+  const meta = { ...(state.settings?.desksMeta || {}) };
+  for (const d of desks) {
+    if (!meta[d.id]) meta[d.id] = { globalStyleId: null };
+  }
+  const activeDeskId = state.settings?.activeDeskId && desks.some((d) => d.id === state.settings.activeDeskId)
+    ? state.settings.activeDeskId
+    : (desks[0]?.id || null);
+
+  await state.updateSettings({
+    desks: desksRegistry,
+    desksMeta: meta,
+    activeDeskId,
+  }, { fromSync: true });
+
+  await state.saveFileTree();
+  state.emit("desks-changed");
 }
 
 /**

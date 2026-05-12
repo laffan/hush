@@ -529,18 +529,39 @@ function insertDocumentNode(state, relativePath, fileId, isNotebook, name) {
   const rawFileName = parts.pop();
   const fileName = (rawFileName || name || "Untitled").replace(/\.(md|hushnote)$/, "");
   let current = state.fileTree;
-  for (const dirName of parts) {
+  let parent = null; // null = top level
+  for (let depth = 0; depth < parts.length; depth++) {
+    const dirName = parts[depth];
     if (!dirName) continue;
+    const isTopLevel = depth === 0;
     let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
       || (dirName === "Inbox" && current.find(n => n.id === "__inbox__" || n.id?.startsWith("__inbox__:")))
       || (dirName === "Trash" && current.find(n => n.id === "__trash__" || n.id?.startsWith("__trash__:")));
     if (!folder) {
-      folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
-      const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
-      if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
-      else current.push(folder);
+      if (isTopLevel) {
+        // Top-level path segment = desk (per the .hushdesk model).
+        // Mint a temp id; the matching `<DeskName>/.hushdesk` event
+        // will reassign it to the canonical id when it arrives via
+        // onDeskMeta. Inbox / Trash / Images specials get namespaced
+        // under this desk via ensureDeskSpecials so subsequent
+        // matches inside the loop find them by `__inbox__:<id>`.
+        const deskId = crypto.randomUUID();
+        folder = {
+          id: deskId, type: "desk", name: dirName,
+          children: [], flagged: false,
+          createdAt: Math.floor(Date.now() / 1000),
+        };
+        ensureSeedDeskSpecials(folder, deskId);
+        current.push(folder);
+      } else {
+        folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
+        const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
+        if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
+        else current.push(folder);
+      }
     }
     if (!Array.isArray(folder.children)) folder.children = [];
+    parent = folder;
     current = folder.children;
   }
   if (current.some(n => n.fileId === fileId)) return;
@@ -555,6 +576,19 @@ function insertDocumentNode(state, relativePath, fileId, isNotebook, name) {
   };
   if (trashIdx >= 0) current.splice(trashIdx, 0, node);
   else current.push(node);
+}
+
+/** Mint the three special children (Inbox / Trash / Images) for a
+ *  freshly-created desk node during a cursor seed. Inline copy of the
+ *  per-desk specials block so we don't pull in the full state-desks
+ *  module from inside the cursor handler. */
+function ensureSeedDeskSpecials(desk, deskId) {
+  const wantInbox = !desk.children.some(c => c.id === `__inbox__:${deskId}`);
+  const wantImages = !desk.children.some(c => c.id === `__images__:${deskId}`);
+  const wantTrash = !desk.children.some(c => c.id === `__trash__:${deskId}`);
+  if (wantInbox) desk.children.unshift({ id: `__inbox__:${deskId}`, type: "project", name: "Inbox", children: [], flagged: false });
+  if (wantImages) desk.children.push({ id: `__images__:${deskId}`, type: "folder", name: "Images", children: [], flagged: false });
+  if (wantTrash) desk.children.push({ id: `__trash__:${deskId}`, type: "folder", name: "Trash", children: [], flagged: false });
 }
 
 function insertImageNode(state, filename) {
