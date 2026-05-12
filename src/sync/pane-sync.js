@@ -29,7 +29,53 @@
 
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 const PANES_PATH = ".hush/panes.json";
-const PANES_FORMAT_VERSION = 1;
+// v2 adds `ownerDeskId` + `ownerInnerPath` for project-scoped panes,
+// keyed on the desk's stable id rather than a folder-name path so
+// desk renames don't orphan pane records. The apply branch reads
+// both v1 (ownerRemoteId only) and v2 (with the desk-relative fields).
+const PANES_FORMAT_VERSION = 2;
+
+/** Walk the tree to find a node by id; return both the node and its
+ *  enclosing desk + inner-path. Used to translate a local project
+ *  id into the cross-device `{deskId, innerPath}` key. */
+function locateNodeInDesk(fileTree, nodeId) {
+  function walk(nodes, deskId, innerParts) {
+    for (const n of nodes || []) {
+      if (n.type === "desk") {
+        const hit = walk(n.children || [], n.id, []);
+        if (hit) return hit;
+        continue;
+      }
+      const here = [...innerParts, n.name];
+      if (n.id === nodeId) return { node: n, deskId, innerPath: here.join("/") };
+      if (n.children?.length) {
+        const hit = walk(n.children, deskId, here);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+  return walk(fileTree || [], "", []);
+}
+
+/** Inverse of `locateNodeInDesk`: given `{deskId, innerPath}`, find
+ *  the local project node and return its id (or null if missing —
+ *  the project's folder may not have synced down yet). */
+function findProjectIdByDeskInner(fileTree, deskId, innerPath) {
+  if (!deskId || !innerPath) return null;
+  const desk = (fileTree || []).find(n => n.type === "desk" && n.id === deskId);
+  if (!desk) return null;
+  const parts = innerPath.split("/");
+  let cursor = desk.children || [];
+  let found = null;
+  for (const name of parts) {
+    const next = cursor.find(n => (n.type === "folder" || n.type === "project") && n.name === name);
+    if (!next) return null;
+    found = next;
+    cursor = next.children || [];
+  }
+  return found?.type === "project" ? found.id : null;
+}
 
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -108,15 +154,22 @@ export async function serializePanesForSync(panesMap, state = null) {
 
     const owner = parseOwnerContext(pane.ownerContext);
     let ownerRemoteId = "";
+    let ownerDeskId = "";
+    let ownerInnerPath = "";
     if (owner.kind === "doc" || owner.kind === "nb") {
       const ownerInfo = await tauriInvoke("get_sync_file_info", { internalId: owner.id })
         .catch(() => null);
       if (!ownerInfo || !ownerInfo.remoteId) continue; // owner not synced — drop
       ownerRemoteId = ownerInfo.remoteId;
     } else if (owner.kind === "pj") {
-      // Projects don't have a Dropbox file (they're folders + .hushproject).
-      // Skip pj-scoped panes for now; future work could map by folder path.
-      continue;
+      // Project-scoped panes: the owner is a folder, not a file, so
+      // there's no remote_id. The stable cross-device key is the
+      // enclosing desk's id + the inner path from the desk's root.
+      // Skip projects that live outside a desk (legacy flat trees).
+      const located = state?.fileTree ? locateNodeInDesk(state.fileTree, owner.id) : null;
+      if (!located || !located.deskId || !located.innerPath) continue;
+      ownerDeskId = located.deskId;
+      ownerInnerPath = located.innerPath;
     }
 
     out.push({
@@ -124,6 +177,8 @@ export async function serializePanesForSync(panesMap, state = null) {
       fileType: pane.fileType,
       ownerKind: owner.kind,
       ownerRemoteId,
+      ownerDeskId,
+      ownerInnerPath,
       attached: !!pane.attached,
       pinned: !!pane.pinned,
       collapsed: !!pane.collapsed,
@@ -143,10 +198,15 @@ export async function serializePanesForSync(panesMap, state = null) {
   for (const [ctxId, flag] of Object.entries(localHidden)) {
     if (!flag) continue;
     const { kind, id } = parseOwnerContext(ctxId);
-    if (kind !== "doc" && kind !== "nb") continue; // pj has no Dropbox identity
-    const info = await tauriInvoke("get_sync_file_info", { internalId: id }).catch(() => null);
-    if (!info?.remoteId) continue; // local-sync / never-synced — skip
-    hiddenOwners.push({ kind, remoteId: info.remoteId });
+    if (kind === "doc" || kind === "nb") {
+      const info = await tauriInvoke("get_sync_file_info", { internalId: id }).catch(() => null);
+      if (!info?.remoteId) continue;
+      hiddenOwners.push({ kind, remoteId: info.remoteId });
+    } else if (kind === "pj" && state?.fileTree) {
+      const located = locateNodeInDesk(state.fileTree, id);
+      if (!located || !located.deskId || !located.innerPath) continue;
+      hiddenOwners.push({ kind, deskId: located.deskId, innerPath: located.innerPath });
+    }
   }
 
   return JSON.stringify({
@@ -209,7 +269,15 @@ export async function applyRemotePanes(payloadString, deps) {
     }
 
     let ownerContext = "";
-    if (p.ownerKind && p.ownerRemoteId) {
+    if (p.ownerKind === "pj" && p.ownerDeskId && p.ownerInnerPath) {
+      // Project-scoped pane (v2 schema). Resolve the project by
+      // {deskId, innerPath}; skip if the folder hasn't synced down.
+      const localProjectId = state?.fileTree
+        ? findProjectIdByDeskInner(state.fileTree, p.ownerDeskId, p.ownerInnerPath)
+        : null;
+      if (!localProjectId) { skipped++; continue; }
+      ownerContext = buildOwnerContext("pj", localProjectId);
+    } else if (p.ownerKind && p.ownerRemoteId) {
       const ownerLocal = await tauriInvoke("find_synced_file_by_remote_id", {
         remoteId: p.ownerRemoteId,
       }).catch(() => null);
@@ -339,11 +407,18 @@ export async function applyRemotePanes(payloadString, deps) {
 async function mergeRemoteHiddenContexts(state, hiddenOwners) {
   const newMap = {};
   const localMap = state.settings?.panesHiddenByContext || {};
-  // Preserve local entries the remote can't represent.
+  // Preserve local entries the remote can't represent (local-only or
+  // project entries whose folder hasn't synced down yet).
   for (const [ctxId, flag] of Object.entries(localMap)) {
     if (!flag) continue;
     const { kind, id } = parseOwnerContext(ctxId);
-    if (kind === "pj") { newMap[ctxId] = true; continue; }
+    if (kind === "pj") {
+      // Carry over unless the remote authoritative list re-asserts it.
+      // Project entries can be remote-represented now (deskId +
+      // innerPath); the layer-on pass below overwrites in that case.
+      newMap[ctxId] = true;
+      continue;
+    }
     if (kind !== "doc" && kind !== "nb") continue;
     const info = await tauriInvoke("get_sync_file_info", { internalId: id }).catch(() => null);
     if (!info?.remoteId) { newMap[ctxId] = true; continue; } // local-only, keep
@@ -351,11 +426,16 @@ async function mergeRemoteHiddenContexts(state, hiddenOwners) {
   }
   // Layer the remote view on top.
   for (const e of hiddenOwners) {
-    if (!e || (e.kind !== "doc" && e.kind !== "nb") || !e.remoteId) continue;
-    const local = await tauriInvoke("find_synced_file_by_remote_id", { remoteId: e.remoteId })
-      .catch(() => null);
-    if (!local?.internalId) continue;
-    newMap[buildOwnerContext(e.kind, local.internalId)] = true;
+    if (!e) continue;
+    if ((e.kind === "doc" || e.kind === "nb") && e.remoteId) {
+      const local = await tauriInvoke("find_synced_file_by_remote_id", { remoteId: e.remoteId })
+        .catch(() => null);
+      if (!local?.internalId) continue;
+      newMap[buildOwnerContext(e.kind, local.internalId)] = true;
+    } else if (e.kind === "pj" && e.deskId && e.innerPath) {
+      const pid = findProjectIdByDeskInner(state.fileTree, e.deskId, e.innerPath);
+      if (pid) newMap[buildOwnerContext("pj", pid)] = true;
+    }
   }
   // Stable-stringify for cheap equality so we skip a no-op write.
   const prev = JSON.stringify(localMap);

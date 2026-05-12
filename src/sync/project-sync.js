@@ -1,10 +1,15 @@
 /**
  * Project sync via `.hush/projects.json`.
  *
- * Replaces the per-folder `.hushproject` files. A project is a tree
- * folder distinguished by being listed in this registry. The receiving
- * device finds the matching folder by relativePath and converts its
- * tree node type from "folder" to "project", applying the ordering.
+ * A project is a tree folder distinguished by being listed in this
+ * registry. v2 of the schema keys each entry on
+ * `{ deskId, innerPath, ordering }` rather than a name-based
+ * `folderPath` so that renaming a desk's top-level folder doesn't
+ * orphan the project entry. The desk id is stable across renames; the
+ * inner path runs from the desk's root down to the project folder.
+ *
+ * Apply reads both v1 (legacy `folderPath`) and v2 (`deskId` +
+ * `innerPath`); push always writes v2.
  *
  * The legacy `.hushproject` files still on Dropbox are ignored on the
  * receive side (the cursor consumer skips kind="hushproject"). They're
@@ -12,37 +17,48 @@
  */
 
 const PROJECTS_FILENAME = "projects.json";
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
 
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);
 }
 
-/** Walk the tree collecting `{relativePath, ordering}` entries for every
- *  project node. The path-builder mirrors `findSyncContext`'s logic so
- *  the entries map to the same Dropbox paths the rest of sync uses. */
+/** Walk the tree collecting `{deskId, innerPath, ordering}` entries for
+ *  every project node. Projects are always nested inside a desk node
+ *  (or in the legacy flat-tree case under no desk at all, in which
+ *  case `deskId` is empty and `innerPath` is the absolute path). */
 export function serializeProjects(fileTree) {
   const out = [];
 
-  function walk(nodes, pathParts) {
+  function walk(nodes, deskId, innerParts) {
     if (!Array.isArray(nodes)) return;
     for (const node of nodes) {
-      // Skip special nodes (Inbox, Trash, Images) — they don't sync as
-      // projects even if their type were ever "project".
       if (node.id === "__inbox__" || node.id === "__trash__" || node.id === "__images__") continue;
+      if (node.id?.startsWith("__inbox__:") || node.id?.startsWith("__trash__:") || node.id?.startsWith("__images__:")) continue;
 
-      const path = [...pathParts, node.name].join("/");
+      if (node.type === "desk") {
+        // Reset the inner path at the desk boundary; the desk's id is
+        // the new key prefix.
+        if (node.children?.length) walk(node.children, node.id, []);
+        continue;
+      }
+
+      const nextInner = [...innerParts, node.name];
       if (node.type === "project") {
         const ordering = (node.children || [])
           .filter(c => c.type === "document" || c.type === "notebook")
           .map(c => c.name);
-        out.push({ folderPath: path, ordering });
+        out.push({
+          deskId: deskId || "",
+          innerPath: nextInner.join("/"),
+          ordering,
+        });
       }
-      if (node.children?.length) walk(node.children, [...pathParts, node.name]);
+      if (node.children?.length) walk(node.children, deskId, nextInner);
     }
   }
-  walk(fileTree, []);
+  walk(fileTree, "", []);
 
   return JSON.stringify({
     format: "hush-projects",
@@ -61,13 +77,25 @@ function findNodeByPath(fileTree, folderPath) {
     if (!Array.isArray(cursor)) return null;
     const name = parts[i];
     const node = cursor.find(n =>
-      (n.type === "folder" || n.type === "project") && n.name === name
+      (n.type === "folder" || n.type === "project" || n.type === "desk") && n.name === name
     );
     if (!node) return null;
     found = node;
     cursor = node.children || [];
   }
   return found;
+}
+
+/** Resolve a `{deskId, innerPath}` pair to a tree node. Walks down
+ *  from the desk's children using the inner path's name segments.
+ *  Falls back to a tree-wide name walk when `deskId` is empty (legacy
+ *  v1 entries arrive with an absolute path string). */
+function findNodeByDeskInner(fileTree, deskId, innerPath) {
+  if (!deskId) return findNodeByPath(fileTree, innerPath || "");
+  const desk = (fileTree || []).find(n => n.type === "desk" && n.id === deskId);
+  if (!desk) return null;
+  if (!innerPath) return desk;
+  return findNodeByPath(desk.children || [], innerPath);
 }
 
 /**
@@ -101,8 +129,11 @@ export async function applyProjectsFile(state, payload) {
   let treeChanged = false;
 
   for (const entry of parsed.projects) {
-    if (!entry || !entry.folderPath) continue;
-    const node = findNodeByPath(state.fileTree, entry.folderPath);
+    if (!entry) continue;
+    // v2: deskId + innerPath; v1: folderPath
+    const node = entry.deskId || entry.innerPath !== undefined
+      ? findNodeByDeskInner(state.fileTree, entry.deskId, entry.innerPath || "")
+      : (entry.folderPath ? findNodeByPath(state.fileTree, entry.folderPath) : null);
     if (!node) {
       // The folder hasn't synced down yet. We could create a placeholder,
       // but it's cleaner to wait for the cursor to bring the folder in
@@ -110,6 +141,7 @@ export async function applyProjectsFile(state, payload) {
       // event that triggers a re-pull) we'll resolve it. Skip silently.
       continue;
     }
+    if (node.type === "desk") continue; // never demote a desk to a project
     if (node.type !== "project") {
       node.type = "project";
       treeChanged = true;
