@@ -39,7 +39,7 @@ src/notebook/
     drawing-layer.ts       Engine-backed drawing layer + public API
     sync-shim.ts           state.shapes[] ↔ engine.strokes bridge
     brush-slots.ts         Toolbar slot row + brush-edit flyout
-    tool-panel.ts          Drawing-tools controller: appends the divider, brush slots, Slice, Erase, Lasso directly to the bottom toolbar so the assembly is one continuous bar, then mounts the three gray-pill end-caps (drag, rotate, bg-settings) and the lasso hold-time flyout
+    tool-panel.ts          Drawing-tools controller: appends the divider, brush slots, Slice, Erase, Lasso directly to the bottom toolbar so the assembly is one continuous bar, then mounts the four gray-pill end-caps (drag, rotate, bg-settings, collapse) and the lasso hold-time flyout
     pocket-blit.ts         Pocket / done-canvas blit helpers (4 functions) extracted from drawing-layer.ts
     selection-drag.ts      Hush↔engine select-drag controller — pause-shim, hide-chrome, commit-on-release ladder
     flyout-styles.ts       Injects the 15-px-thick squared-thumb stylesheet that brush + lasso flyout sliders share
@@ -224,7 +224,7 @@ Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`). Co
 
 ### Drawing
 
-A drawing pill attached to the right edge of the bottom toolbar is always visible — it carries Undo, three brush slots, Slice, Erase, and Lasso. There is no "drawing mode" to enter — clicking any of those tools implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the pill visually dims. A small gray hamburger tab abuts the drawing pill's right edge; press-and-drag on it moves the entire combined toolbar (bottom + drawing pill) together via `state.drawingToolbarOffset`.
+The drawing tools (three brush slots, Slice, Erase, Lasso) are appended directly onto the bottom toolbar past a 1-px divider so the assembly reads as one continuous bar. There is no "drawing mode" to enter — clicking any of those tools implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the drawing tools visually dim. Four gray end-cap tabs flank the bar — drag and rotate on the opening edge, bg-settings and collapse on the closing edge. Press-and-drag on the hamburger drag tab moves the entire assembly (bar + end-caps) together via `state.drawingToolbarOffset`; the rotate tab flips orientation between horizontal and vertical (`state.drawingToolbarVertical`); the collapse tab (two arrows pointing at each other) hides every bar child except the currently-active tool, plus the rotate and bg-settings tabs themselves, leaving a minimal `[drag][active tool][collapse]` trio (`state.drawingToolbarCollapsed`).
 
 A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 500). Tapping the already-active Lasso button toggles the flyout open.
 
