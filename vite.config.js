@@ -3,18 +3,17 @@ import { resolve } from "path";
 
 // `tauri ios dev` (and `tauri android dev`) sets `TAURI_DEV_HOST` to
 // the Mac's LAN IP and expects the dev server to be reachable there
-// so the iPad / Android device can fetch the bundle. Without this,
-// Vite listens on 127.0.0.1 only and the device sees a hang.
-const host = process.env.TAURI_DEV_HOST;
+// so the iPad / Android device can fetch the bundle. Build / desktop
+// dev paths stay on the original loopback-only config so nothing in
+// the production build pipeline is touched.
+const tauriHost = process.env.TAURI_DEV_HOST;
+const server = tauriHost
+  ? { host: tauriHost, port: 5173, strictPort: true, hmr: { protocol: "ws", host: tauriHost, port: 5174 } }
+  : { port: 5173, strictPort: true };
 
 export default defineConfig({
   clearScreen: false,
-  server: {
-    host: host || false,
-    port: 5173,
-    strictPort: true,
-    hmr: host ? { protocol: "ws", host, port: 5174 } : undefined,
-  },
+  server,
   envPrefix: ["VITE_", "TAURI_"],
   build: {
     target: ["es2021", "chrome100", "safari15"],
