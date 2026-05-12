@@ -3,7 +3,7 @@ import { createSidebar } from "./sidebar/sidebar.js";
 import { AppState } from "./state/state.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
 import { setupTauriIntegration } from "./tauri-bridge.js";
-import { applyAppearance, isIOS, openSettingsWindow } from "./settings/settings-ui.js";
+import { applyAppearance, isIOS, isPhone, openSettingsWindow } from "./settings/settings-ui.js";
 import { getThemeById } from "./themes/index.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
@@ -47,6 +47,7 @@ async function init() {
 
   // On iOS, set html background to prevent black bars behind the webview
   if (isIOS()) document.documentElement.classList.add("ios");
+  if (isPhone()) document.documentElement.classList.add("phone");
 
   // Apply appearance and CSS vars
   applyAppearance(state.settings.appearance || "dark");

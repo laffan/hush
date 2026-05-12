@@ -17,6 +17,17 @@ export function isIOS() {
   return /Mac/i.test(platform) && tp > 0;
 }
 
+/** Detect a phone-sized screen — iPhone explicitly, or any iOS device with
+ *  a short viewport. iPads in portrait sit around 810 px on the short
+ *  axis; iPhones max out around 430 px. The 600 px threshold sits well
+ *  between the two and only activates the phone-only layout adjustments
+ *  for the narrow form factor — iPads keep their existing chrome. */
+export function isPhone() {
+  if (/iPhone|iPod/.test(navigator.userAgent || "")) return true;
+  if (!isIOS()) return false;
+  return Math.min(window.innerWidth, window.innerHeight) < 600;
+}
+
 let settingsModal = null;
 
 export async function openSettingsWindow(state) {

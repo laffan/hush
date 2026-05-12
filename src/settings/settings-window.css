@@ -53,6 +53,12 @@ html, body {
   height: 100%;
 }
 
+/* Phone-only dropdown that replaces the left tab column. Hidden by
+   default; CSS below promotes it on `html.phone`. */
+.settings-tabs-dropdown {
+  display: none;
+}
+
 .settings-tabs {
   width: 140px;
   min-width: 140px;
@@ -883,4 +889,44 @@ html, body {
 }
 .tree-delete-modal-btns button:hover {
   background: rgba(128, 128, 128, 0.15);
+}
+
+/* ===== Phone — tab sidebar collapses into a top dropdown ===== */
+/* The 140-px tab column squeezed the content area too far on a phone;
+   replace it with a single-line <select> above the panel. The select
+   is rendered alongside the sidebar buttons and CSS picks which one
+   is visible. */
+html.phone .settings-layout {
+  flex-direction: column;
+}
+
+html.phone .settings-tabs {
+  display: none;
+}
+
+html.phone .settings-tabs-dropdown {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--tab-bg);
+  border: none;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 14px;
+  /* Right padding clears both the native chevron and the modal's
+     absolute-positioned close button (28×28 px at right:12). */
+  padding-right: 52px;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 0;
+}
+
+html.phone .settings-content {
+  padding: 16px 18px 50px;
+}
+
+html.phone .settings-panel {
+  max-width: none;
 }

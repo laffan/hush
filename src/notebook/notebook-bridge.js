@@ -61,6 +61,14 @@ export async function mountNotebook(container, fileId, state) {
   };
   canvasInstance = new NotesCanvas(container, shortcuts);
 
+  // Phones default the canvas toolbar to vertical — the horizontal bar
+  // doesn't fit the narrow viewport. State is session-only so flipping
+  // back to horizontal stays put for the rest of the session.
+  try {
+    const { isPhone } = await import("../settings/settings-ui.js");
+    if (isPhone()) canvasInstance.state.setDrawingToolbarVertical(true);
+  } catch (_) {}
+
   // Load notebook contents (shapes + layers + flowchart edges) from the
   // backing file. The envelope format is parsed by `decodeNotebookContent`,
   // which tolerates the legacy bare-Shape[] form for older notebooks.

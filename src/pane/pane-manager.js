@@ -101,7 +101,11 @@ function getCurrentContext() {
 function onContextChange() {
   const ctx = getCurrentContext();
   const hiddenMap = appState?.settings?.panesHiddenByContext || {};
-  const ctxHidden = !!hiddenMap[ctx];
+  // Phone viewports are too narrow for floating panes — force-hide every
+  // context without touching the persisted map (which rides Dropbox sync
+  // to other devices, where panes are still wanted).
+  const phone = document.documentElement.classList.contains("phone");
+  const ctxHidden = phone || !!hiddenMap[ctx];
   for (const [, pane] of panes) {
     const participatesInCtx = pane.pinned || pane.ownerContext === ctx;
     if (ctxHidden && participatesInCtx) {

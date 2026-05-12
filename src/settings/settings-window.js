@@ -104,18 +104,24 @@ export async function initSettingsInto(rootEl, saveCallback) {
 function render() {
   const root = settingsRootEl || document.getElementById("settings-root");
   if (!root) return;
+  const tabs = [
+    ["general", "General"],
+    ["editor", "Editor"],
+    ["shortcuts", "Shortcuts"],
+    ["dry", "D.R.Y."],
+    ["proofread", "Proofread"],
+    ["flags", "Flags"],
+    ["privacy", "Privacy"],
+    ["sync", "Sync"],
+    ["zotero", "Zotero"],
+  ];
   root.innerHTML = `
     <div class="settings-layout">
+      <select class="settings-tabs-dropdown" id="settings-tabs-dropdown">
+        ${tabs.map(([id, label]) => `<option value="${id}"${activeTab === id ? " selected" : ""}>${label}</option>`).join("")}
+      </select>
       <div class="settings-tabs">
-        ${tabBtn("general", "General", tabIcons.general)}
-        ${tabBtn("editor", "Editor", tabIcons.editor)}
-        ${tabBtn("shortcuts", "Shortcuts", tabIcons.shortcuts)}
-        ${tabBtn("dry", "D.R.Y.", tabIcons.dry)}
-        ${tabBtn("proofread", "Proofread", tabIcons.proofread)}
-        ${tabBtn("flags", "Flags", tabIcons.flags)}
-        ${tabBtn("privacy", "Privacy", tabIcons.privacy)}
-        ${tabBtn("sync", "Sync", tabIcons.sync)}
-        ${tabBtn("zotero", "Zotero", tabIcons.zotero)}
+        ${tabs.map(([id, label]) => tabBtn(id, label, tabIcons[id])).join("")}
       </div>
       <div class="settings-content">
         <div class="settings-panel${activeTab === 'general' ? ' active' : ''}" id="panel-general">
@@ -179,6 +185,15 @@ function bindAll() {
       render();
     });
   });
+  // Phone-only tab dropdown — the sidebar is hidden by CSS at narrow
+  // widths and this select takes its place above the panel.
+  const tabsDropdown = document.getElementById("settings-tabs-dropdown");
+  if (tabsDropdown) {
+    tabsDropdown.addEventListener("change", () => {
+      activeTab = tabsDropdown.value;
+      render();
+    });
+  }
 
   // General tab
   bindSelect("setting-visibility", "visibility");

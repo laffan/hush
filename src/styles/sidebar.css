@@ -461,3 +461,22 @@ body.notebook-mode #panel-overlay.panel-inset {
   margin-bottom: 16px;
   font-family: system-ui, sans-serif;
 }
+
+/* ===== Phone — fill-width sidebar, toggle on the right border ===== */
+/* Filenames were being cut off because --panel-width defaulted to 300 px.
+   On phones the panel grows to whatever's left after the 50-px icon
+   column and the 36-px floating toggle. The toggle anchors to the
+   panel's right edge so it visually "rests on" the border. */
+html.phone {
+  --panel-width: calc(100vw - 50px - 36px) !important;
+}
+
+html.phone .sidebar-floating-toggle.panel-open {
+  left: calc(100vw - 36px);
+}
+
+/* No drag-resize on phone — the panel auto-fills, the resizer would
+   only confuse touch interaction. */
+html.phone .sidebar-panel-resizer {
+  display: none;
+}
