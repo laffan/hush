@@ -31,6 +31,7 @@ export function serializeStyles(settings) {
 
 export async function pushStylesToDropbox(state) {
   if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
+  if (state.runtime?.reseedActive) return;
   const payload = serializeStyles(state.settings);
   const { enqueueMetaUpload } = await import("./meta-sync.js");
   await enqueueMetaUpload(STYLES_FILENAME, payload);

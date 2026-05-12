@@ -84,7 +84,7 @@ export function persistPanesNow() {
   // Cross-device pane sync — fire-and-forget; the op log handles retry.
   // Only the platform-stable subset of fields (anchoring + identity, no
   // pixel layout) gets uploaded; see pane-sync.js.
-  if (appState.settings?.dropboxEnabled && appState.settings?.dropboxSyncPath) {
+  if (appState.settings?.dropboxEnabled && appState.settings?.dropboxSyncPath && !appState.runtime?.reseedActive) {
     pushPanesToDropbox().catch((e) => console.warn("pane sync upload failed:", e));
   }
 }

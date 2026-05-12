@@ -144,6 +144,12 @@ export function triggerDrain(state) {
 async function drainOnce(state) {
   if (_draining || !state) return;
   if (!state.settings?.dropboxEnabled || !state.settings?.dropboxSyncPath) return;
+  // Reseed in flight: queued ops are about to be invalidated and
+  // `clear_local_data` will DELETE the pending_ops table. Don't drain
+  // in the window between the user confirming and the wipe landing —
+  // executing here would push pre-clear paths to Dropbox just before
+  // the cursor seed pulls Dropbox down.
+  if (state.runtime?.reseedActive) return;
   // While performInitialSync is running, hold drain. A racy autosave
   // fired between settings activation and performInitialSync's
   // collision-rename pass could otherwise enqueue an upload op with the

@@ -230,6 +230,10 @@ export async function syncFileToExternal(state, fileId, content) {
   if (!IS_TAURI || !state.settings.dropboxEnabled) return;
   if (!state.settings.dropboxSyncPath) return;
   if (!fileId) return;
+  // Reseed in flight: any enqueue here would push half-built state up
+  // to Dropbox before the cursor seed has finished rebuilding the
+  // local tree to match.
+  if (state.runtime?.reseedActive) return;
 
   try {
     // Best-effort path hint for the executor. Prefer the sync map's
@@ -302,6 +306,11 @@ export async function reconcileSync(state) {
   if (!IS_TAURI || !state.settings.dropboxEnabled) return;
   const dropboxPath = state.settings.dropboxSyncPath;
   if (!dropboxPath) return;
+  // Reseed in flight: buildSyncManifest reads the live tree, which is
+  // being rebuilt by the cursor seed. Moving entries on Dropbox to
+  // match a transient mid-reseed shape is exactly the corruption the
+  // reseed flag exists to prevent.
+  if (state.runtime?.reseedActive) return;
 
   const dbx = await import("./dropbox.js");
   const basePath = dropboxPath === "/" ? "" : dropboxPath;
@@ -431,74 +440,124 @@ export async function disconnectSync(state, removeFromDropbox) {
 export async function clearLocalAndReseed(state) {
   if (!IS_TAURI) return;
   const sp = await import("./sync-polling.js");
-  sp.stopSyncPolling();
-  await tauriInvoke("clear_local_data");
 
-  // Wipe every session pointer — the files they reference are gone —
-  // and clear the desk list so the wrap below picks up a fresh
-  // "Personal" desk (matching what a brand-new install would build).
-  state.fileTree = [];
-  state.currentFileId = null;
-  state.currentNotebookFileId = null;
-  state.currentProjectId = null;
-  state.dirty = false;
-  await state.updateSettings({
-    desks: [], activeDeskId: null, desksMeta: {},
-    lastFileId: null, lastProjectId: null, lastNotebookId: null,
-  });
+  // 1. Raise the barrier BEFORE doing anything else. From this moment
+  //    until we lower it at the very end, no autosave / op-log drain /
+  //    push-meta / reconcile can run. See the gates in
+  //    state-files.js#saveCurrentFile, op-log.js#drainOnce,
+  //    sync-state.js#syncFileToExternal/reconcileSync, and the various
+  //    push* functions in desks-sync / project-sync / style-sync /
+  //    pane-persistence.
+  state.runtime.reseedActive = true;
+  sp.progressBegin(state, 0, "Preparing reseed…");
 
-  // Wrap the empty tree under a default desk so reseed routes into the
-  // namespaced specials (`__inbox__:<deskId>` etc) instead of the bare
-  // legacy ids the seed walker would otherwise create.
-  const _desks = await import("../state/state-desks.js");
-  await _desks.enableDesks(state, "Personal");
-  await state.saveFileTree();
+  try {
+    // 2. Stop the timer and wait for any in-flight cycle to settle.
+    //    `stopSyncPolling` only clears the interval; if the polling
+    //    callback is mid-await we need to let it finish before wiping
+    //    the database under it.
+    sp.stopSyncPolling();
+    sp.progressPhase(state, "Waiting for in-flight sync to settle…");
+    await sp.waitForCycleIdle(2000);
 
-  state.files = await tauriInvoke("list_files");
-  state.emit("desks-changed");
-  state.emit("files-changed");
-  state.emit("file-opened", null);
+    // 3. Close the open file in the editor BEFORE the wipe so the user
+    //    doesn't see stale text against a freshly-pulled tree, and so
+    //    a stray keystroke can't ride the editor buffer into a new file
+    //    we just downloaded. `setContent("")` resets the buffer; the
+    //    `markDirty` guard in state.js skips because reseedActive=true.
+    if (state.editor && typeof state.editor.setContent === "function") {
+      try { state.editor.setContent(""); } catch (_) {}
+    }
+    state.currentFileId = null;
+    state.currentNotebookFileId = null;
+    state.currentProjectId = null;
+    state.dirty = false;
 
-  // Pre-count the Dropbox entries so we can drive a progress bar in
-  // the settings window. One extra recursive list before the actual
-  // cycle — slower than just letting the seed drain itself, but worth
-  // it for the user-visible feedback. Failures are non-fatal: we just
-  // run with `total = 0` and the UI shows an indeterminate state.
-  let total = 0;
+    // 4. Check whether Dropbox publishes a desks.json BEFORE we wipe.
+    //    If it does, we'll let `applyDesksFile` build the desk list
+    //    from scratch instead of wrapping the empty tree under a
+    //    phantom "Personal" desk that would survive the merge and get
+    //    pushed back to Dropbox as an extra entry.
+    const remoteHasDesks = await dropboxHasDesksJson(state).catch(() => false);
+
+    await tauriInvoke("clear_local_data");
+
+    state.fileTree = [];
+    await state.updateSettings({
+      desks: [], activeDeskId: null, desksMeta: {},
+      lastFileId: null, lastProjectId: null, lastNotebookId: null,
+    });
+
+    if (!remoteHasDesks) {
+      // No desks.json on Dropbox — wrap with a single Personal desk so
+      // the cursor seed's `Inbox/Trash/Images` routing finds the
+      // per-desk specials instead of inventing top-level legacy ids.
+      const _desks = await import("../state/state-desks.js");
+      await _desks.enableDesks(state, "Personal");
+    }
+    await state.saveFileTree();
+
+    state.files = await tauriInvoke("list_files");
+    state.emit("desks-changed");
+    state.emit("files-changed");
+    state.emit("file-opened", null);
+
+    // 5. Pre-count Dropbox entries so the progress bar is determinate.
+    let total = 0;
+    try {
+      const dbx = await import("./dropbox.js");
+      const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
+      const root = base === "/" ? "" : base;
+      let data = await dbx.listFolderRaw(root, { recursive: true, includeDeleted: false });
+      total += countSyncableEntries(data.entries);
+      while (data.has_more) {
+        const resp = await dbx.listFolderContinueRaw(data.cursor);
+        if (!resp.ok) break;
+        data = await resp.json();
+        total += countSyncableEntries(data.entries);
+      }
+    } catch (e) { console.warn("clear: pre-count failed:", e); }
+    sp.progressBegin(state, total, total > 0 ? `Pulling ${total} items from Dropbox…` : "Pulling items from Dropbox…");
+
+    // 6. Run one full cycle. The cursor seed loops internally on
+    //    `has_more`, so a single call drains the whole listing. Push
+    //    paths (reconcile, op-log drain, push-meta) are still gated by
+    //    `reseedActive` so this is a pull-only pass.
+    sp.startSyncPolling(state);
+    try { await sp.runOneCycle(state); } catch (e) { console.warn("seed cycle failed:", e); }
+
+    // 7. Re-apply `.hush/*.json` meta in dependency order so any meta
+    //    file that landed before its referent (e.g. desks.json before
+    //    the matching desk's folder) gets a clean second pass against
+    //    the now-complete tree.
+    sp.progressPhase(state, "Restoring desks and projects…");
+    await reapplyHushMetaFiles(state);
+
+    state.files = await tauriInvoke("list_files");
+    state.emit("files-changed");
+    sp.progressPhase(state, "Reseed complete.");
+  } finally {
+    // 8. Lower the barrier so the normal polling cycle (reconcile,
+    //    op-log drain, push-meta) resumes. Emit `end` *after* the flag
+    //    flips so the modal's Done button doesn't enable while writes
+    //    are still gated.
+    state.runtime.reseedActive = false;
+    sp.progressEnd(state, "Reseed complete.");
+  }
+}
+
+/** Check whether Dropbox already has a `.hush/desks.json`. Used by
+ *  `clearLocalAndReseed` to decide whether to wrap the empty tree
+ *  under a default Personal desk. Returns false on any error so the
+ *  fallback path (wrap) still runs in degraded conditions. */
+async function dropboxHasDesksJson(state) {
   try {
     const dbx = await import("./dropbox.js");
-    const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
+    const base = (state?.settings?.dropboxSyncPath || "").replace(/\/+$/, "");
     const root = base === "/" ? "" : base;
-    let data = await dbx.listFolderRaw(root, { recursive: true, includeDeleted: false });
-    total += countSyncableEntries(data.entries);
-    while (data.has_more) {
-      const resp = await dbx.listFolderContinueRaw(data.cursor);
-      if (!resp.ok) break;
-      data = await resp.json();
-      total += countSyncableEntries(data.entries);
-    }
-  } catch (e) { console.warn("clear: pre-count failed:", e); }
-  sp.progressBegin(state, total, total > 0 ? `Pulling ${total} items from Dropbox…` : "Pulling items from Dropbox…");
-
-  // Run one full poll cycle synchronously so we know when the cursor
-  // seed has finished processing every Dropbox entry. The seed loops
-  // internally on `has_more`, so a single call drains the whole listing.
-  sp.startSyncPolling(state);
-  try { await sp.runOneCycle(state); } catch (e) { console.warn("seed cycle failed:", e); }
-
-  // Re-apply `.hush/*.json` meta in dependency order. During the
-  // seed, meta files arrive interleaved with doc/notebook entries and
-  // their appliers can no-op silently when the referenced folder
-  // hasn't landed yet (`applyProjectsFile` skips unmatched paths,
-  // `applyDesksFile` won't wrap if a desk's expected children aren't
-  // there). A second pass — now that every doc/notebook is in the
-  // tree — promotes folders to projects, restores desks, and so on.
-  sp.progressPhase(state, "Restoring desks and projects…");
-  await reapplyHushMetaFiles(state);
-
-  state.files = await tauriInvoke("list_files");
-  state.emit("files-changed");
-  sp.progressEnd(state, "Reseed complete.");
+    const meta = await dbx.getMetadata(`${root}/.hush/desks.json`).catch(() => null);
+    return !!meta;
+  } catch (_) { return false; }
 }
 
 const META_REAPPLY_ORDER = [

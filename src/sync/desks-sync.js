@@ -82,6 +82,9 @@ export async function serializeDesks(state) {
 
 export async function pushDesksToDropbox(state) {
   if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
+  // Reseed in flight: the local desk list is mid-rebuild. A push here
+  // would write our half-built state over Dropbox's authoritative copy.
+  if (state.runtime?.reseedActive) return;
   const payload = await serializeDesks(state);
   const { enqueueMetaUpload } = await import("./meta-sync.js");
   await enqueueMetaUpload(DESKS_FILENAME, payload);

@@ -30,6 +30,11 @@ export async function saveCurrentFile(state) {
     return m.saveCurrentLocalSync(state);
   }
   if (!state.currentFileId || !state.editor) return;
+  // Clear-and-reseed is in flight: the local file pointer is being
+  // rebuilt from Dropbox. An autosave here would push the editor's
+  // pre-reseed buffer over the just-pulled remote content (or, worse,
+  // resurrect a file we just wiped from the sync map).
+  if (state.runtime?.reseedActive) return;
   // A pull is in flight for the current file: don't upload the editor's
   // pre-pull buffer over the just-arriving remote content. The pull
   // releases the lock and clears `dirty`, so we'll resume normally.

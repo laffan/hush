@@ -167,6 +167,17 @@ export function stopSyncPolling() {
   import("./op-log.js").then(({ stopDrainWorker }) => stopDrainWorker());
 }
 
+/** Poll the in-flight cycle flag and resolve when it's clear (or the
+ *  deadline expires). Used by the reseed flow so the wipe doesn't run
+ *  under a still-executing `syncDropboxCursor` that would then try to
+ *  apply events against the now-empty sync map. */
+export async function waitForCycleIdle(maxMs = 2000) {
+  const deadline = Date.now() + Math.max(0, maxMs | 0);
+  while (syncing && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 // ===== Initial-sync barrier =====
 //
 // `performInitialSync` and the cursor seed both register downloads via
@@ -216,7 +227,11 @@ async function runSyncCycle(state) {
   if (!state.settings.dropboxEnabled || !state.settings.dropboxSyncPath) return;
   syncing = true;
   try {
-    if (!_startupReconcileDone) {
+    // Reseed in flight: skip the startup reconcile (it would push our
+    // half-built tree shape) but allow the cursor pull so the seed can
+    // continue feeding entries into the modal's progress meter.
+    const inReseed = !!state.runtime?.reseedActive;
+    if (!_startupReconcileDone && !inReseed) {
       _startupReconcileDone = true;
       const { reconcileSync } = await import("./sync-state.js");
       await reconcileSync(state);

@@ -139,6 +139,13 @@ export class AppState {
       localSyncWriteFlag: 0,
       syncPulling: false,
       syncPullingFileId: null,
+      // Set true for the entire duration of a Clear Local Versions
+      // reseed. Every Dropbox-writing path (autosave, op-log enqueue,
+      // reconcileSync, pushDesks/Projects/Styles, applyDesksFile's
+      // merge-back) must check this flag and bail. Without the gate,
+      // half-built tree state leaks back to Dropbox mid-reseed and
+      // corrupts the source of truth we're trying to mirror from.
+      reseedActive: false,
     };
   }
 
@@ -285,6 +292,11 @@ export class AppState {
 
   markDirty() {
     if (this._isPullLockedForCurrent()) return;
+    // Reseed in flight: any setContent() the reseed performs (clearing
+    // the editor, swapping in fresh content) is system-driven, not a
+    // user edit. Marking dirty here would queue a phantom autosave the
+    // moment reseedActive flips back to false.
+    if (this.runtime?.reseedActive) return;
     this.dirty = true;
   }
 

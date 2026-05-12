@@ -153,6 +153,7 @@ export async function applyProjectsFile(state, payload) {
  */
 export async function pushProjectsToDropbox(state) {
   if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
+  if (state.runtime?.reseedActive) return;
   const payload = serializeProjects(state.fileTree);
   const { enqueueMetaUpload } = await import("./meta-sync.js");
   await enqueueMetaUpload(PROJECTS_FILENAME, payload);
