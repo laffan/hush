@@ -54,25 +54,39 @@ export async function runOneCycle(state) {
   await runSyncCycle(state);
 }
 
-// ===== Progress reporting (used by the "Clear local versions" UI) =====
+// ===== Progress reporting (used by the "Clear local versions" UI and
+//       the new Force Sync flow) =====
+//
+// Progress events fan out via the `sync-progress` Tauri event so the
+// settings window (a separate WebviewWindow) can drive a bar. The
+// in-window state.emit channel keeps the legacy `clear-reseed-progress`
+// name so anything still listening to it keeps working.
 
 let _progressTotal = 0;
 let _progressDone = 0;
+let _progressLabel = "";
 
 /** Begin a new progress run with `total` expected entries. Resets the
- *  counter and emits a progress-start event. The clear-and-reseed flow
- *  calls this once per cycle so the settings-window UI can render a
- *  bar and update it as entries land. */
-export function progressBegin(state, total) {
+ *  counter and emits a `begin` event. */
+export function progressBegin(state, total, label) {
   _progressTotal = Math.max(0, total | 0);
   _progressDone = 0;
+  if (label != null) _progressLabel = label;
   _emitProgressEvent(state, "begin");
 }
 
-export function progressEnd(state) {
+export function progressEnd(state, label) {
+  if (label != null) _progressLabel = label;
   _emitProgressEvent(state, "end");
   _progressTotal = 0;
   _progressDone = 0;
+  _progressLabel = "";
+}
+
+/** Update the human-readable phase label without resetting counts. */
+export function progressPhase(state, label) {
+  _progressLabel = label || "";
+  _emitProgressEvent(state, "phase");
 }
 
 function _emitProgress(state) {
@@ -82,13 +96,65 @@ function _emitProgress(state) {
 }
 
 function _emitProgressEvent(state, phase) {
-  const payload = { done: _progressDone, total: _progressTotal, phase };
+  const payload = { done: _progressDone, total: _progressTotal, phase, label: _progressLabel };
   state.emit("clear-reseed-progress", payload);
-  // Also fan out via Tauri so the settings window (separate WebviewWindow)
-  // can render a progress bar.
   if (typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
-    import("@tauri-apps/api/event").then((m) => m.emit("clear-reseed-progress", payload)).catch(() => {});
+    import("@tauri-apps/api/event").then((m) => {
+      m.emit("clear-reseed-progress", payload);
+      m.emit("sync-progress", payload);
+    }).catch(() => {});
   }
+}
+
+/**
+ * Manual full-cycle sync invoked from the settings window's "Force
+ * sync" button. Runs the same reconcile + cursor-pull pass that the
+ * 10 s timer would, but with progress events fanned out so the user
+ * sees what's happening. Pre-counts Dropbox entries to drive a
+ * determinate bar through the cursor-pull phase.
+ */
+export async function runForceSync(state) {
+  if (!IS_TAURI) return { ok: false };
+  if (!state.settings.dropboxEnabled || !state.settings.dropboxSyncPath) return { ok: false };
+
+  progressBegin(state, 0, "Scanning Dropbox…");
+
+  let total = 0;
+  try {
+    const dbx = await import("./dropbox.js");
+    const { countSyncableEntries } = await import("./sync-state.js");
+    const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
+    const root = base === "/" ? "" : base;
+    let data = await dbx.listFolderRaw(root, { recursive: true, includeDeleted: false });
+    total += countSyncableEntries(data.entries);
+    while (data.has_more) {
+      const resp = await dbx.listFolderContinueRaw(data.cursor);
+      if (!resp.ok) break;
+      data = await resp.json();
+      total += countSyncableEntries(data.entries);
+    }
+  } catch (e) { console.warn("force sync: pre-count failed:", e); }
+
+  progressPhase(state, "Reconciling local tree…");
+  try {
+    const { reconcileSync } = await import("./sync-state.js");
+    await reconcileSync(state);
+  } catch (e) { console.warn("force sync: reconcile failed:", e); }
+
+  // Switch to a determinate run for the cursor-pull phase.
+  _progressTotal = Math.max(0, total | 0);
+  _progressDone = 0;
+  progressPhase(state, total > 0 ? `Checking ${total} items on Dropbox…` : "Checking Dropbox for changes…");
+  try { await runOneCycle(state); } catch (e) { console.warn("force sync: cycle failed:", e); }
+
+  progressPhase(state, "Pushing pending changes…");
+  try {
+    const { triggerDrain } = await import("./op-log.js");
+    triggerDrain(state);
+  } catch (_) {}
+
+  progressEnd(state, "Sync complete.");
+  return { ok: true };
 }
 
 export function triggerFullReconcile() {

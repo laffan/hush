@@ -692,6 +692,30 @@ html, body {
 }
 .sync-preview-box p { margin: 2px 0; }
 
+/* Clear-local preview modal (desks + folders breakdown) */
+.sync-preview-summary {
+  margin: 6px 0 4px; padding: 10px 12px;
+  background: rgba(128,128,128,0.08); border-radius: 6px;
+}
+.sync-preview-summary-detail { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+.sync-preview-list {
+  list-style: none; margin: 6px 0 0; padding: 0;
+  border: 1px solid var(--panel-border); border-radius: 6px;
+  max-height: 180px; overflow-y: auto;
+}
+.sync-preview-item {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; padding: 6px 10px; font-size: 12px;
+  border-bottom: 1px solid rgba(128,128,128,0.12);
+}
+.sync-preview-item:last-child { border-bottom: none; }
+.sync-preview-name { font-weight: 500; }
+.sync-preview-counts { opacity: 0.75; font-size: 11px; }
+.sync-preview-empty {
+  padding: 10px 12px; font-size: 12px; opacity: 0.6;
+  border: 1px dashed var(--panel-border); border-radius: 6px;
+}
+
 /* Info box (active sync status) */
 .sync-info-box {
   padding: 12px 14px; border: 1px solid var(--panel-border);

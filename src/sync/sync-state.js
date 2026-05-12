@@ -97,6 +97,112 @@ export function buildSyncManifest(fileTree) {
 // that still import them from this module.
 export { generateSyncPreview, performInitialSync } from "./initial-sync.js";
 
+/**
+ * Inspect Dropbox before `clearLocalAndReseed` so the user can see what
+ * the reseed is about to pull down. Returns:
+ *   {
+ *     totalFiles: number,    // .md + .hushnote count
+ *     totalImages: number,
+ *     desks: [{ name, docs, notebooks, images, total }],   // declared in .hush/desks.json
+ *     loose: [{ name, docs, notebooks, images, total }],   // top-level folders not in desks.json
+ *     rootFiles: { docs, notebooks, images, total },        // files at the sync root
+ *     hasDesksJson: boolean,
+ *     declaredDesks: [{ id, name }],
+ *     metaCount: number,
+ *   }
+ *
+ * Empty desks declared in `desks.json` are surfaced too so an empty
+ * placeholder desk doesn't silently vanish from the preview.
+ */
+export async function generateClearLocalPreview(state) {
+  if (!IS_TAURI) return null;
+  if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return null;
+
+  const dbx = await import("./dropbox.js");
+  const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
+  const root = base === "/" ? "" : base;
+
+  const entries = [];
+  let data = await dbx.listFolderRaw(root, { recursive: true, includeDeleted: false });
+  entries.push(...(data.entries || []));
+  while (data.has_more) {
+    const resp = await dbx.listFolderContinueRaw(data.cursor);
+    if (!resp.ok) break;
+    data = await resp.json();
+    entries.push(...(data.entries || []));
+  }
+
+  let declaredDesks = [];
+  let hasDesksJson = false;
+  try {
+    const payload = await dbx.downloadFile(`${root}/.hush/desks.json`);
+    const parsed = JSON.parse(payload);
+    if (parsed && parsed.format === "hush-desks" && Array.isArray(parsed.desks)) {
+      hasDesksJson = true;
+      declaredDesks = parsed.desks.map((d) => ({ id: d.id, name: d.name || "Untitled desk" }));
+    }
+  } catch (_) { /* desks.json absent — reseed will wrap loose folders under default Personal */ }
+
+  const IMG_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "heif", "avif", "tif", "tiff"];
+  const buckets = new Map();
+  const rootFiles = { docs: 0, notebooks: 0, images: 0, total: 0 };
+  let metaCount = 0;
+  let totalFiles = 0;
+  let totalImages = 0;
+
+  for (const e of entries) {
+    if (e[".tag"] !== "file") continue;
+    let rel = e.path_display || "";
+    if (root) {
+      if (rel.toLowerCase().startsWith(root.toLowerCase() + "/")) rel = rel.slice(root.length + 1);
+      else continue;
+    } else {
+      rel = rel.replace(/^\/+/, "");
+    }
+    if (!rel) continue;
+
+    const lower = (e.name || "").toLowerCase();
+    if (rel.startsWith(".hush/") && lower.endsWith(".json")) { metaCount++; continue; }
+    if (lower.endsWith(".hushproject")) continue;
+
+    const parts = rel.split("/");
+    const isTopLevel = parts.length === 1;
+    const top = isTopLevel ? null : parts[0];
+
+    const bucket = isTopLevel ? rootFiles : (buckets.get(top) || { docs: 0, notebooks: 0, images: 0, total: 0 });
+
+    if (lower.endsWith(".md")) { bucket.docs++; bucket.total++; totalFiles++; }
+    else if (lower.endsWith(".hushnote")) { bucket.notebooks++; bucket.total++; totalFiles++; }
+    else if (IMG_EXTS.some((x) => lower.endsWith(`.${x}`))) { bucket.images++; bucket.total++; totalImages++; }
+    else continue;
+
+    if (!isTopLevel) buckets.set(top, bucket);
+  }
+
+  const declaredNames = new Set(declaredDesks.map((d) => d.name));
+  const desks = [];
+  const loose = [];
+  for (const [name, counts] of buckets) {
+    const row = { name, ...counts };
+    if (declaredNames.has(name)) desks.push(row);
+    else loose.push(row);
+  }
+  for (const d of declaredDesks) {
+    if (!desks.some((x) => x.name === d.name)) {
+      desks.push({ name: d.name, docs: 0, notebooks: 0, images: 0, total: 0 });
+    }
+  }
+
+  desks.sort((a, b) => a.name.localeCompare(b.name));
+  loose.sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    totalFiles, totalImages,
+    desks, loose, rootFiles,
+    hasDesksJson, declaredDesks, metaCount,
+  };
+}
+
 
 // ===== Ongoing Sync Operations =====
 
@@ -372,26 +478,27 @@ export async function clearLocalAndReseed(state) {
       total += countSyncableEntries(data.entries);
     }
   } catch (e) { console.warn("clear: pre-count failed:", e); }
-  sp.progressBegin(state, total);
+  sp.progressBegin(state, total, total > 0 ? `Pulling ${total} items from Dropbox…` : "Pulling items from Dropbox…");
 
   // Run one full poll cycle synchronously so we know when the cursor
   // seed has finished processing every Dropbox entry. The seed loops
   // internally on `has_more`, so a single call drains the whole listing.
   sp.startSyncPolling(state);
   try { await sp.runOneCycle(state); } catch (e) { console.warn("seed cycle failed:", e); }
-  sp.progressEnd(state);
 
-  // Now re-apply `.hush/*.json` meta in dependency order. During the
+  // Re-apply `.hush/*.json` meta in dependency order. During the
   // seed, meta files arrive interleaved with doc/notebook entries and
   // their appliers can no-op silently when the referenced folder
   // hasn't landed yet (`applyProjectsFile` skips unmatched paths,
   // `applyDesksFile` won't wrap if a desk's expected children aren't
   // there). A second pass — now that every doc/notebook is in the
   // tree — promotes folders to projects, restores desks, and so on.
+  sp.progressPhase(state, "Restoring desks and projects…");
   await reapplyHushMetaFiles(state);
 
   state.files = await tauriInvoke("list_files");
   state.emit("files-changed");
+  sp.progressEnd(state, "Reseed complete.");
 }
 
 const META_REAPPLY_ORDER = [
@@ -407,7 +514,7 @@ const META_REAPPLY_ORDER = [
  *  actually act on (skips folders, deleted markers, hushproject
  *  stubs, and image-classification falls through to false). Used to
  *  produce a `total` for the clear/reseed progress bar. */
-function countSyncableEntries(entries) {
+export function countSyncableEntries(entries) {
   if (!Array.isArray(entries)) return 0;
   const IMG_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "heif", "avif", "tif", "tiff"];
   let n = 0;

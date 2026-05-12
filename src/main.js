@@ -491,9 +491,9 @@ async function init() {
     });
 
     await listen("clear-local-data-request", async () => {
-      try { await (await import("./sync/sync-state.js")).clearLocalAndReseed(state); }
-      catch (e) { console.error("Clear local data failed:", e); }
-    });
+      try { await (await import("./sync/sync-state.js")).clearLocalAndReseed(state); } catch (e) { console.error("Clear local data failed:", e); } });
+    await listen("force-sync-request", async () => {
+      try { await (await import("./sync/sync-polling.js")).runForceSync(state); } catch (e) { console.error("Force sync failed:", e); } });
 
     // Dropbox OAuth callback (deep link). Google uses a loopback HTTP
     // listener (see commands/google_docs.rs) instead — its code arrives

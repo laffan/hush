@@ -107,6 +107,15 @@ function renderDropboxSubTab(settings) {
         </div>
       </div>
       <div class="settings-section">
+        <h2>Force sync</h2>
+        <p class="settings-help">
+          Run the standard reconcile + cursor pull right now instead of
+          waiting for the next 10-second poll. A progress bar tracks the
+          check so you can see when it finishes.
+        </p>
+        <button id="sync-force" class="sync-action-btn">Force sync now</button>
+      </div>
+      <div class="settings-section">
         <h2>Disconnect</h2>
         <p class="settings-help">Stop syncing and return to local-only mode.</p>
         <button id="sync-unsync" class="sync-danger-btn">Stop Syncing</button>
@@ -115,12 +124,13 @@ function renderDropboxSubTab(settings) {
         <h2>Clear local versions</h2>
         <p class="settings-help">
           Wipe every locally-stored doc, notebook, image, and sync record
-          on this device. The next sync poll reseeds from Dropbox. Use
-          this to recover when the local file tree has diverged from
-          what's on Dropbox. Files that exist only on this device and
-          haven't been pushed will be lost.
+          on this device, then reseed from Dropbox. You'll see a preview
+          of what's on Dropbox (including which top-level folders will
+          become desks) before anything is touched, and a progress bar
+          while the reseed runs. Anything that exists only on this device
+          and hasn't been pushed will be lost.
         </p>
-        <button id="sync-clear-local" class="sync-danger-btn">Clear local versions</button>
+        <button id="sync-clear-local" class="sync-danger-btn">Clear local versions…</button>
       </div>
     `;
   }
