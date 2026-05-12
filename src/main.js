@@ -26,7 +26,6 @@ import {
 import "./font-imports.js";
 
 async function init() {
-  const dbg = (l, p) => { try { window.__hushDebugLog?.(l, p ?? ""); } catch (_) {} };
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   const state = new AppState();
 
@@ -42,7 +41,6 @@ async function init() {
   }
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
   await state.init({ initialFile });
-  dbg("state.init", { treeLen: state.fileTree?.length, desks: state.settings.desks?.length, IS_TAURI });
   // Expose on window so lazy helpers (e.g. pane/text-drag.js's notebook-to-
   // doc image path) can reach the live AppState without a hard import cycle.
   if (typeof window !== "undefined") window.__hushState__ = state;
@@ -492,21 +490,23 @@ async function init() {
       }
     });
 
-    await listen("clear-local-data-request", async () => {
-      try { await (await import("./sync/sync-state.js")).clearLocalAndReseed(state); } catch (e) { console.error("Clear local data failed:", e); } });
-    await listen("force-sync-request", async () => {
-      try { await (await import("./sync/sync-polling.js")).runForceSync(state); } catch (e) { console.error("Force sync failed:", e); } });
+    await listen("clear-local-data-request", async () => { try { await (await import("./sync/sync-state.js")).clearLocalAndReseed(state); } catch (e) { console.error("Clear local data failed:", e); } });
+    await listen("force-sync-request", async () => { try { await (await import("./sync/sync-polling.js")).runForceSync(state); } catch (e) { console.error("Force sync failed:", e); } });
 
     // Dropbox OAuth callback (deep link). Google uses a loopback HTTP
     // listener (see commands/google_docs.rs) instead — its code arrives
     // via the same `oauth-callback` event below, no deep-link needed.
+    // iOS fires both paths for the same code; the second `handleOAuthCode`
+    // sees "code already used" and we swallow that rather than bubble up.
     try {
       const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
       await onOpenUrl(async (urls) => {
         for (const url of urls) {
           if (!url.startsWith("hushwriter://auth/callback")) continue;
           const code = new URLSearchParams(url.split("?")[1] || "").get("code");
-          if (code) await handleOAuthCode(state, invoke, code, "dropbox");
+          if (code) {
+            try { await handleOAuthCode(state, invoke, code, "dropbox"); } catch (e) { console.warn("OAuth deep-link completion failed:", e); }
+          }
         }
       });
     } catch (e) { console.error("Deep-link setup failed:", e); }
@@ -514,7 +514,7 @@ async function init() {
     // Also listen for oauth-callback event (from Rust deep-link handler).
     await listen("oauth-callback", async (event) => {
       const { code, provider } = event.payload || {};
-      if (code) await handleOAuthCode(state, invoke, code, provider || "dropbox");
+      if (code) { try { await handleOAuthCode(state, invoke, code, provider || "dropbox"); } catch (e) { console.warn("OAuth event completion failed:", e); } }
     });
   }
 
@@ -694,7 +694,6 @@ async function init() {
     window.addEventListener("focus", maybeReconcile);
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") maybeReconcile(); });
   }
-  setTimeout(() => { try { window.__hushClearErrorOverlay?.(); } catch (_) {} }, 1500);
 }
 
-init().catch((e) => { console.error(e); try { window.__hushDebugLog?.("init-fatal", e?.stack || String(e)); } catch (_) {} });
+init().catch(console.error);
