@@ -69,21 +69,19 @@ function renderError(modal, title, message, onClose) {
 
 function renderClearPreview(modal, preview, onCancel, onConfirm) {
   const totalAll = preview.totalFiles + preview.totalImages;
-  const deskRows = preview.desks.map((d) => `
-    <li class="sync-preview-item">
-      <span class="sync-preview-name">${escHtml(d.name)}</span>
-      <span class="sync-preview-counts">${formatCounts(d)}</span>
-    </li>`).join("");
-  const looseRows = preview.loose.map((d) => `
-    <li class="sync-preview-item">
-      <span class="sync-preview-name">${escHtml(d.name)}</span>
-      <span class="sync-preview-counts">${formatCounts(d)}</span>
-    </li>`).join("");
+  const deskRows = preview.desks.map((d) => {
+    const flag = d.hasHushDesk ? "" : ` <span style="opacity:0.55; font-style:italic;">(will mint .hushdesk)</span>`;
+    return `
+      <li class="sync-preview-item">
+        <span class="sync-preview-name">${escHtml(d.name)}${flag}</span>
+        <span class="sync-preview-counts">${formatCounts(d)}</span>
+      </li>`;
+  }).join("");
 
   const rootCount = preview.rootFiles?.total || 0;
-  const desksNote = preview.hasDesksJson
-    ? `Dropbox declares <strong>${preview.declaredDesks.length}</strong> desk${preview.declaredDesks.length === 1 ? "" : "s"} in <code>.hush/desks.json</code>. These will be restored on reseed.`
-    : `No <code>.hush/desks.json</code> on Dropbox. Top-level folders below will be loaded under a single <strong>Personal</strong> desk.`;
+  const desksNote = preview.desks.length > 0
+    ? `Every top-level folder on Dropbox is a desk. <strong>${preview.desks.length}</strong> desk${preview.desks.length === 1 ? "" : "s"} will be restored.`
+    : `No top-level folders on Dropbox. A single <strong>Personal</strong> desk will be created.`;
 
   modal.innerHTML = `
     <div class="dbx-browser-header">
@@ -105,11 +103,7 @@ function renderClearPreview(modal, preview, onCancel, onConfirm) {
       </div>
       <p style="margin: 14px 0 6px 0;">${desksNote}</p>
       ${deskRows ? `<ul class="sync-preview-list">${deskRows}</ul>` : `<p class="sync-preview-empty">No desks detected.</p>`}
-      ${looseRows ? `
-        <p style="margin: 14px 0 6px 0;">Other top-level folders on Dropbox (no matching desk):</p>
-        <ul class="sync-preview-list">${looseRows}</ul>
-      ` : ""}
-      ${rootCount > 0 ? `<p style="margin: 12px 0 0 0;">Plus <strong>${rootCount}</strong> file${rootCount === 1 ? "" : "s"} at the sync root.</p>` : ""}
+      ${rootCount > 0 ? `<p style="margin: 12px 0 0 0;">Plus <strong>${rootCount}</strong> file${rootCount === 1 ? "" : "s"} at the sync root (will land in the active desk's Inbox).</p>` : ""}
       <p style="margin: 18px 0 8px 0;">Type <code>clear</code> below to confirm.</p>
       <input id="clear-confirm-input" type="text" autocomplete="off" spellcheck="false"
              style="width: 100%; padding: 6px 8px; font-family: inherit; font-size: 13px;

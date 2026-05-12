@@ -176,12 +176,22 @@ export async function enableDesks(state, name = "Personal") {
   }
 }
 
-/** Push `.hush/desks.json` upstream so other devices learn about the
- *  current desk list. Best-effort; logs but never throws. */
+/** Push every desk's `<DeskName>/.hushdesk` upstream so other devices
+ *  learn about the current desk list. Best-effort; logs but never
+ *  throws. The pre-`.hushdesk` schema used a single `.hush/desks.json`;
+ *  see `desk-sync.js` for the new layout. */
 function pushDesksJson(state) {
-  import("../sync/desks-sync.js")
-    .then((m) => m.pushDesksToDropbox(state))
+  import("../sync/desk-sync.js")
+    .then((m) => m.pushAllDesks(state))
     .catch((e) => console.warn("desks: meta push failed:", e));
+}
+
+/** Push a single desk's `.hushdesk` — used by createDesk/renameDesk so
+ *  we don't republish the entire desk list for a single-desk change. */
+function pushSingleDesk(state, desk) {
+  import("../sync/desk-sync.js")
+    .then((m) => m.pushDesk(state, desk))
+    .catch((e) => console.warn("desks: single push failed:", e));
 }
 
 /** Add a new empty desk to the tree. Returns the new desk id. */
@@ -206,9 +216,10 @@ export async function createDesk(state, name = "Untitled desk") {
   await state.updateSettings({ desks, desksMeta: meta });
   await state.saveFileTree();
   state.emit("desks-changed");
-  // Push the desk skeleton to Dropbox so other devices land it under
-  // the same path layout — and so `Inbox/` / `Trash/` show up on the
-  // remote tree even before the user drops a file inside them.
+  // Push the desk skeleton to Dropbox: the folder itself, Inbox /
+  // Trash subfolders, and the desk's .hushdesk identity file. The
+  // single .hush/desks.json registry is gone — each desk owns its
+  // metadata file alongside its content.
   if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
     try {
       const { enqueueCreateFolder, triggerDrain } = await import("../sync/op-log.js");
@@ -221,7 +232,7 @@ export async function createDesk(state, name = "Untitled desk") {
       triggerDrain(state);
     } catch (e) { console.warn("desks: skeleton enqueue failed:", e); }
   }
-  pushDesksJson(state);
+  pushSingleDesk(state, desk);
   return id;
 }
 
@@ -245,7 +256,10 @@ export async function renameDesk(state, deskId, newName) {
       triggerDrain(state);
     } catch (e) { console.warn("desks: rename enqueue failed:", e); }
   }
-  pushDesksJson(state);
+  // Republish the desk's .hushdesk so the `name` field inside matches
+  // the new folder name. The rename_dir op moves the existing file
+  // along with the folder; this push updates its content.
+  pushSingleDesk(state, desk);
 }
 
 /** Delete a desk and all of its content. The very last desk can't be
@@ -278,7 +292,9 @@ export async function deleteDesk(state, deskId) {
       triggerDrain(state);
     } catch (e) { console.warn("desks: delete enqueue failed:", e); }
   }
-  pushDesksJson(state);
+  // No metadata push needed on delete: enqueueDeleteDir removes the
+  // folder including the `.hushdesk` inside, and other devices learn
+  // about the deletion via the cursor delta.
 }
 
 /** Rewrite every `synced_files.relative_path` whose value starts with

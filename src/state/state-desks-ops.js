@@ -223,8 +223,8 @@ async function rewriteSyncPaths(state, transform) {
 }
 
 function pushDesksJson(state) {
-  import("../sync/desks-sync.js")
-    .then((m) => m.pushDesksToDropbox(state))
+  import("../sync/desk-sync.js")
+    .then((m) => m.pushAllDesks(state))
     .catch((e) => console.warn("desk op: meta push failed:", e));
 }
 

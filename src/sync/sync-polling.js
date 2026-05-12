@@ -325,6 +325,22 @@ async function syncDropboxCursor(state) {
         console.warn("cursor: meta apply failed:", e);
       }
     },
+    onDeskMeta: async (ev) => {
+      try {
+        const { isOurRev } = await import("./meta-sync.js");
+        if (isOurRev(ev.rev)) return;
+        const payload = await dbx.downloadFile(ev.dropboxPath);
+        const { applyDeskFile } = await import("./desk-sync.js");
+        const result = await applyDeskFile(state, payload, ev.relativePath);
+        if (result?.applied) {
+          treeChanged = true;
+          showSyncIndicator("pulled", `desk ${ev.relativePath.split("/")[0]}`);
+        }
+      } catch (e) {
+        console.warn("cursor: deskmeta apply failed:", e);
+      }
+      _emitProgress(state);
+    },
   };
 
   try {
@@ -494,7 +510,13 @@ async function getMetaDispatcher(filename) {
     case "styles.json":
       return (await import("./style-sync.js")).applyStylesFile;
     case "desks.json":
-      return (await import("./desks-sync.js")).applyDesksFile;
+      // Legacy: the new schema stores desk identity in per-folder
+      // .hushdesk files. The reconcile pass runs migrateFromDesksJson
+      // to convert any remaining desks.json into .hushdesk files and
+      // delete the legacy file. If the cursor delivers this file
+      // before migration runs, ignore it — applyDeskFile will hydrate
+      // each desk individually as their .hushdesk arrives.
+      return null;
     default:
       return null;
   }

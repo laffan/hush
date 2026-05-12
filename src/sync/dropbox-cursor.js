@@ -34,12 +34,16 @@ async function tauriInvoke(cmd, args) {
 
 function classifyEntry(name, relativePath) {
   const lower = (name || "").toLowerCase();
-  // `.hush/*.json` is the meta channel — single-device-config files
-  // synced through the same cursor. Currently `panes.json`; future
-  // meta files (workspace state, etc.) join here without expanding the
-  // dispatch surface.
+  // `.hush/*.json` is the global meta channel — single-device-config files
+  // synced through the same cursor (panes.json, projects.json, styles.json).
   if (relativePath && relativePath.startsWith(".hush/") && lower.endsWith(".json")) {
     return "meta";
+  }
+  // `<DeskName>/.hushdesk` is the per-desk identity file — desks are
+  // discovered via their folder, but their cross-device id + style +
+  // last-opened-file metadata rides in this companion file.
+  if (lower === ".hushdesk" && relativePath && relativePath.split("/").length === 2) {
+    return "deskmeta";
   }
   if (lower.endsWith(".hushproject")) return "hushproject";
   if (lower.endsWith(".hushnote")) return "hushnote";
@@ -202,6 +206,20 @@ async function processEntries(state, entries, base, handlers) {
     if (kind === "meta") {
       if (handlers.onMeta) {
         await handlers.onMeta({
+          relativePath: rel,
+          dropboxPath: entry.path_display,
+          rev: entry.rev || "",
+          serverModified: serverModifiedSecs(entry.server_modified),
+        });
+      }
+      continue;
+    }
+
+    // Per-desk metadata (<DeskName>/.hushdesk). Each desk owns its own
+    // identity file rather than sharing a single .hush/desks.json.
+    if (kind === "deskmeta") {
+      if (handlers.onDeskMeta) {
+        await handlers.onDeskMeta({
           relativePath: rel,
           dropboxPath: entry.path_display,
           rev: entry.rev || "",

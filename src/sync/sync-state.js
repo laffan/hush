@@ -98,21 +98,21 @@ export function buildSyncManifest(fileTree) {
 export { generateSyncPreview, performInitialSync } from "./initial-sync.js";
 
 /**
- * Inspect Dropbox before `clearLocalAndReseed` so the user can see what
- * the reseed is about to pull down. Returns:
+ * Inspect Dropbox before `clearLocalAndReseed`. Every top-level folder
+ * is a desk — that's the new single source of truth for desk identity,
+ * replacing the old `.hush/desks.json` registry that could drift out of
+ * step with the folder layout.
+ *
+ * Returns:
  *   {
- *     totalFiles: number,    // .md + .hushnote count
- *     totalImages: number,
- *     desks: [{ name, docs, notebooks, images, total }],   // declared in .hush/desks.json
- *     loose: [{ name, docs, notebooks, images, total }],   // top-level folders not in desks.json
- *     rootFiles: { docs, notebooks, images, total },        // files at the sync root
- *     hasDesksJson: boolean,
- *     declaredDesks: [{ id, name }],
+ *     totalFiles, totalImages,
+ *     desks: [{ name, docs, notebooks, images, total, hasHushDesk }],
+ *     rootFiles: { docs, notebooks, images, total },
  *     metaCount: number,
  *   }
  *
- * Empty desks declared in `desks.json` are surfaced too so an empty
- * placeholder desk doesn't silently vanish from the preview.
+ * `hasHushDesk` flags desks whose folder doesn't yet carry a `.hushdesk`
+ * — the reseed will mint one. Empty folders still appear as desks.
  */
 export async function generateClearLocalPreview(state) {
   if (!IS_TAURI) return null;
@@ -132,19 +132,26 @@ export async function generateClearLocalPreview(state) {
     entries.push(...(data.entries || []));
   }
 
-  let declaredDesks = [];
-  let hasDesksJson = false;
-  try {
-    const payload = await dbx.downloadFile(`${root}/.hush/desks.json`);
-    const parsed = JSON.parse(payload);
-    if (parsed && parsed.format === "hush-desks" && Array.isArray(parsed.desks)) {
-      hasDesksJson = true;
-      declaredDesks = parsed.desks.map((d) => ({ id: d.id, name: d.name || "Untitled desk" }));
+  // Seed the desk bucket map with every top-level folder. A folder
+  // with no files inside is still a desk and should show up empty
+  // rather than vanish.
+  const buckets = new Map(); // name -> { docs, notebooks, images, total, hasHushDesk }
+  for (const e of entries) {
+    if (e[".tag"] !== "folder") continue;
+    if (!e.path_display) continue;
+    let rel = e.path_display;
+    if (root) {
+      if (rel.toLowerCase().startsWith(root.toLowerCase() + "/")) rel = rel.slice(root.length + 1);
+      else continue;
+    } else {
+      rel = rel.replace(/^\/+/, "");
     }
-  } catch (_) { /* desks.json absent — reseed will wrap loose folders under default Personal */ }
+    if (!rel || rel.includes("/")) continue; // top-level only
+    if (rel === ".hush" || rel.startsWith(".")) continue;
+    buckets.set(rel, { docs: 0, notebooks: 0, images: 0, total: 0, hasHushDesk: false });
+  }
 
   const IMG_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "heif", "avif", "tif", "tiff"];
-  const buckets = new Map();
   const rootFiles = { docs: 0, notebooks: 0, images: 0, total: 0 };
   let metaCount = 0;
   let totalFiles = 0;
@@ -169,38 +176,32 @@ export async function generateClearLocalPreview(state) {
     const isTopLevel = parts.length === 1;
     const top = isTopLevel ? null : parts[0];
 
-    const bucket = isTopLevel ? rootFiles : (buckets.get(top) || { docs: 0, notebooks: 0, images: 0, total: 0 });
+    // `.hushdesk` flag on the matching desk bucket; not counted as content.
+    if (!isTopLevel && lower === ".hushdesk" && parts.length === 2) {
+      const bucket = buckets.get(top);
+      if (bucket) bucket.hasHushDesk = true;
+      continue;
+    }
+
+    let bucket;
+    if (isTopLevel) {
+      bucket = rootFiles;
+    } else {
+      bucket = buckets.get(top) || { docs: 0, notebooks: 0, images: 0, total: 0, hasHushDesk: false };
+      buckets.set(top, bucket);
+    }
 
     if (lower.endsWith(".md")) { bucket.docs++; bucket.total++; totalFiles++; }
     else if (lower.endsWith(".hushnote")) { bucket.notebooks++; bucket.total++; totalFiles++; }
     else if (IMG_EXTS.some((x) => lower.endsWith(`.${x}`))) { bucket.images++; bucket.total++; totalImages++; }
     else continue;
-
-    if (!isTopLevel) buckets.set(top, bucket);
   }
 
-  const declaredNames = new Set(declaredDesks.map((d) => d.name));
   const desks = [];
-  const loose = [];
-  for (const [name, counts] of buckets) {
-    const row = { name, ...counts };
-    if (declaredNames.has(name)) desks.push(row);
-    else loose.push(row);
-  }
-  for (const d of declaredDesks) {
-    if (!desks.some((x) => x.name === d.name)) {
-      desks.push({ name: d.name, docs: 0, notebooks: 0, images: 0, total: 0 });
-    }
-  }
-
+  for (const [name, counts] of buckets) desks.push({ name, ...counts });
   desks.sort((a, b) => a.name.localeCompare(b.name));
-  loose.sort((a, b) => a.name.localeCompare(b.name));
 
-  return {
-    totalFiles, totalImages,
-    desks, loose, rootFiles,
-    hasDesksJson, declaredDesks, metaCount,
-  };
+  return { totalFiles, totalImages, desks, rootFiles, metaCount };
 }
 
 
@@ -312,6 +313,16 @@ export async function reconcileSync(state) {
   // reseed flag exists to prevent.
   if (state.runtime?.reseedActive) return;
 
+  // One-shot migration off `.hush/desks.json`: if the legacy file is
+  // still on Dropbox, hydrate each local desk with its id+createdAt+
+  // meta from the legacy entry, push a `<DeskName>/.hushdesk` for
+  // each, then delete `desks.json`. Idempotent — the next call finds
+  // the legacy file gone and returns immediately.
+  try {
+    const { migrateFromDesksJson } = await import("./desk-sync.js");
+    await migrateFromDesksJson(state);
+  } catch (e) { console.warn("reconcile: desks.json migration failed:", e); }
+
   const dbx = await import("./dropbox.js");
   const basePath = dropboxPath === "/" ? "" : dropboxPath;
 
@@ -375,10 +386,12 @@ export async function reconcileSync(state) {
   // like a stray top-level folder on iPad. Push-only-if-absent is the
   // bootstrap path; subsequent edits push via createDesk / renameDesk /
   // applyDesksFile's merge-back.
-  await pushMetaIfAbsent(state, dbx, basePath, ".hush/desks.json", async () => {
-    const { pushDesksToDropbox } = await import("./desks-sync.js");
-    return pushDesksToDropbox(state);
-  });
+  // Each desk's `.hushdesk` is pushed via createDesk / renameDesk / the
+  // bootstrap pass below — see desk-sync.js. No global desks.json.
+  try {
+    const { pushAllDesks } = await import("./desk-sync.js");
+    await pushAllDesks(state);
+  } catch (e) { console.warn("reconcile: pushAllDesks failed:", e); }
   await pushMetaIfAbsent(state, dbx, basePath, ".hush/projects.json", async () => {
     const { pushProjectsToDropbox } = await import("./project-sync.js");
     return pushProjectsToDropbox(state);
@@ -473,12 +486,12 @@ export async function clearLocalAndReseed(state) {
     state.currentProjectId = null;
     state.dirty = false;
 
-    // 4. Check whether Dropbox publishes a desks.json BEFORE we wipe.
-    //    If it does, we'll let `applyDesksFile` build the desk list
-    //    from scratch instead of wrapping the empty tree under a
-    //    phantom "Personal" desk that would survive the merge and get
+    // 4. Check whether Dropbox already has top-level desk folders. If
+    //    it does, we'll let the cursor seed + onDeskMeta build the
+    //    desk list from scratch instead of wrapping the empty tree
+    //    under a phantom "Personal" desk that would survive and get
     //    pushed back to Dropbox as an extra entry.
-    const remoteHasDesks = await dropboxHasDesksJson(state).catch(() => false);
+    const remoteHasDesks = await dropboxHasAnyDesks(state).catch(() => false);
 
     await tauriInvoke("clear_local_data");
 
@@ -527,11 +540,28 @@ export async function clearLocalAndReseed(state) {
     try { await sp.runOneCycle(state); } catch (e) { console.warn("seed cycle failed:", e); }
 
     // 7. Re-apply `.hush/*.json` meta in dependency order so any meta
-    //    file that landed before its referent (e.g. desks.json before
-    //    the matching desk's folder) gets a clean second pass against
+    //    file that landed before its referent (e.g. projects.json
+    //    before the matching folder) gets a clean second pass against
     //    the now-complete tree.
     sp.progressPhase(state, "Restoring desks and projects…");
     await reapplyHushMetaFiles(state);
+
+    // 7b. Promote any top-level folder that's still a plain "folder"
+    //     node (because the cursor seed pulled files in before the
+    //     desk-aware folder shape was recognised) into a desk, and
+    //     ensure every desk has an Inbox / Trash skeleton + a
+    //     `.hushdesk`. Then re-publish so Dropbox catches up.
+    try {
+      const { finalizeDesks, pushAllDesks } = await import("./desk-sync.js");
+      await finalizeDesks(state);
+      // Temporarily drop the reseed barrier just for the bootstrap
+      // push: every desk needs a .hushdesk visible on Dropbox before
+      // we declare the reseed complete. Push goes through the op-log
+      // which checks reseedActive, so we toggle the flag inline.
+      state.runtime.reseedActive = false;
+      try { await pushAllDesks(state); }
+      finally { state.runtime.reseedActive = true; }
+    } catch (e) { console.warn("clear: finalize desks failed:", e); }
 
     state.files = await tauriInvoke("list_files");
     state.emit("files-changed");
@@ -546,24 +576,29 @@ export async function clearLocalAndReseed(state) {
   }
 }
 
-/** Check whether Dropbox already has a `.hush/desks.json`. Used by
+/** Check whether Dropbox has any top-level desk folder. Used by
  *  `clearLocalAndReseed` to decide whether to wrap the empty tree
- *  under a default Personal desk. Returns false on any error so the
- *  fallback path (wrap) still runs in degraded conditions. */
-async function dropboxHasDesksJson(state) {
+ *  under a default Personal desk. A top-level folder counts as a
+ *  desk regardless of whether it has a `.hushdesk` yet (the seed
+ *  promotes folders to desks; `.hushdesk` files arrive as metadata
+ *  via the cursor's onDeskMeta handler). Returns false on any error
+ *  so the fallback path (wrap) still runs in degraded conditions. */
+async function dropboxHasAnyDesks(state) {
   try {
     const dbx = await import("./dropbox.js");
     const base = (state?.settings?.dropboxSyncPath || "").replace(/\/+$/, "");
     const root = base === "/" ? "" : base;
-    const meta = await dbx.getMetadata(`${root}/.hush/desks.json`).catch(() => null);
-    return !!meta;
+    const data = await dbx.listFolderRaw(root, { recursive: false, includeDeleted: false });
+    const entries = data?.entries || [];
+    return entries.some((e) => e[".tag"] === "folder" && e.name && !e.name.startsWith("."));
   } catch (_) { return false; }
 }
 
 const META_REAPPLY_ORDER = [
-  // desks first so the tree shape settles before projects look for
-  // folder paths inside desks.
-  ["desks.json",     "./desks-sync.js",    "applyDesksFile"],
+  // Per-desk identity (<DeskName>/.hushdesk) is applied inline during
+  // the cursor seed via `onDeskMeta`, and finalizeDesks below promotes
+  // any folder without one. The global `.hush/*.json` meta files are
+  // applied here in dependency order.
   ["projects.json",  "./project-sync.js",  "applyProjectsFile"],
   ["panes.json",     "./pane-sync.js",     "applyPanesFile"],
   ["styles.json",    "./style-sync.js",    "applyStylesFile"],

@@ -269,8 +269,8 @@ export function bindStylesPanel(state, panel) {
         if (metaChanged) updates.desksMeta = nextMeta;
         state.updateSettings(updates);
         if (metaChanged) {
-          import("../sync/desks-sync.js")
-            .then(m => m.pushDesksToDropbox(state))
+          import("../sync/desk-sync.js")
+            .then(m => m.pushAllDesks(state))
             .catch(e => console.warn("desks: meta push (style delete) failed:", e));
         }
         state.emit("style-changed");
