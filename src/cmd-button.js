@@ -73,17 +73,27 @@ function applyButtonVisibility() {
 }
 
 function mountButtons() {
-  if (_cmdBtn) return;
+  if (_paletteBtn) return;
 
-  // ⌘ button — hold to engage Cmd
-  _cmdBtn = document.createElement("button");
-  _cmdBtn.className = "cmd-floating-button";
-  _cmdBtn.setAttribute("aria-label", "Hold to press Cmd");
-  _cmdBtn.setAttribute("aria-pressed", "false");
-  _cmdBtn.title = "Hold to press Cmd";
-  _cmdBtn.textContent = "⌘";
-  document.body.appendChild(_cmdBtn);
-  wireCmdHold(_cmdBtn);
+  // On a phone the on-screen keyboard already shows a Cmd-on-tab gesture,
+  // and the realistic Cmd-modified flows (drag from sidebar, flowchart
+  // merges) all live in the panel-covered area. Same logic for Undo —
+  // it's a notebook-only convenience that's redundant on a phone where
+  // panes/drawing are de-emphasized anyway. Skip both pills entirely;
+  // CSS pushes the remaining palette + paste pair to the bottom-right.
+  const phone = document.documentElement.classList.contains("phone");
+
+  if (!phone) {
+    // ⌘ button — hold to engage Cmd
+    _cmdBtn = document.createElement("button");
+    _cmdBtn.className = "cmd-floating-button";
+    _cmdBtn.setAttribute("aria-label", "Hold to press Cmd");
+    _cmdBtn.setAttribute("aria-pressed", "false");
+    _cmdBtn.title = "Hold to press Cmd";
+    _cmdBtn.textContent = "⌘";
+    document.body.appendChild(_cmdBtn);
+    wireCmdHold(_cmdBtn);
+  }
 
   // ☰ button — tap to open command palette
   _paletteBtn = document.createElement("button");
@@ -111,28 +121,30 @@ function mountButtons() {
     import("./paste-helper.js").then((m) => m.pasteAtFocus?.()).catch(() => {});
   });
 
-  // ↶ button — undo. Sits above the paste pill (fourth from the
-  // bottom). Notebook context calls state.undo() directly via the
-  // exported `notebookUndo`; doc context falls back to a synthetic
-  // Cmd+Z keydown on the focused element so CodeMirror's history
-  // keymap picks it up.
-  _undoBtn = document.createElement("button");
-  _undoBtn.className = "cmd-floating-button cmd-undo-button";
-  _undoBtn.setAttribute("aria-label", "Undo");
-  _undoBtn.title = "Undo";
-  _undoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9L9 4"/><path d="M4 9H14a6 6 0 0 1 0 12H10"/></svg>`;
-  document.body.appendChild(_undoBtn);
-  _undoBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    import("./notebook/notes-canvas").then((m) => {
-      if (m.notebookUndo?.()) return;
-      const target = document.activeElement || document.body;
-      target.dispatchEvent(new KeyboardEvent("keydown", {
-        key: "z", code: "KeyZ", keyCode: 90, metaKey: true, ctrlKey: true,
-        bubbles: true, cancelable: true,
-      }));
-    }).catch(() => {});
-  });
+  if (!phone) {
+    // ↶ button — undo. Sits above the paste pill (fourth from the
+    // bottom). Notebook context calls state.undo() directly via the
+    // exported `notebookUndo`; doc context falls back to a synthetic
+    // Cmd+Z keydown on the focused element so CodeMirror's history
+    // keymap picks it up.
+    _undoBtn = document.createElement("button");
+    _undoBtn.className = "cmd-floating-button cmd-undo-button";
+    _undoBtn.setAttribute("aria-label", "Undo");
+    _undoBtn.title = "Undo";
+    _undoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9L9 4"/><path d="M4 9H14a6 6 0 0 1 0 12H10"/></svg>`;
+    document.body.appendChild(_undoBtn);
+    _undoBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      import("./notebook/notes-canvas").then((m) => {
+        if (m.notebookUndo?.()) return;
+        const target = document.activeElement || document.body;
+        target.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "z", code: "KeyZ", keyCode: 90, metaKey: true, ctrlKey: true,
+          bubbles: true, cancelable: true,
+        }));
+      }).catch(() => {});
+    });
+  }
 
   syncPanelOpen();
   const panel = document.getElementById("panel-overlay");

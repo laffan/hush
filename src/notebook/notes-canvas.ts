@@ -332,6 +332,7 @@ export class NotesCanvas {
     container.appendChild(drawingChrome.dragTab);
     container.appendChild(drawingChrome.toggleTab);
     container.appendChild(drawingChrome.bgSettingsTab);
+    container.appendChild(drawingChrome.collapseTab);
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(() => drawingChrome.relayout());
       ro.observe(bottomToolbar);

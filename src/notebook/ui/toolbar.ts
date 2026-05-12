@@ -121,6 +121,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
 
     const fg = theme.foreground;
     const accent = theme.accent;
+    const collapsed = state.drawingToolbarCollapsed;
 
     for (const [key, btn] of buttons) {
       let active: boolean;
@@ -131,7 +132,14 @@ export function createToolbar(state: DrawingState): HTMLElement {
       }
       btn.style.color = active ? accent : fg;
       btn.style.opacity = active ? "1" : "0.6";
+      // Collapsed: only the active main tool stays in the bar — its
+      // sibling buttons and the Layers / Bookmarks panel triggers hide.
+      btn.style.display = !collapsed || active ? "" : "none";
     }
+    // Layers + Bookmarks panel triggers are siblings of the tool
+    // buttons — neither is a "tool", so both hide while collapsed.
+    layersEl.root.style.display = collapsed ? "none" : "";
+    bookmarksEl.style.display = collapsed ? "none" : "";
   }
 
   state.addEventListener("change", update);

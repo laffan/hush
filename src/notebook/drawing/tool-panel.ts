@@ -46,6 +46,9 @@ export interface DrawingToolPanelHandle {
   /** Background-settings tab — right end-cap in horizontal mode,
    *  bottom in vertical. */
   bgSettingsTab: HTMLElement;
+  /** Collapse / expand tab — sits past bg-settings on the closing
+   *  edge. Toggles `drawingToolbarCollapsed`. */
+  collapseTab: HTMLElement;
   /** Wrapper holding every drawing flyout (brush edit, mini-palette,
    *  lasso settings, bg-settings popup). Append once to the canvas
    *  container so each child can position absolutely against it. */
@@ -199,6 +202,18 @@ export function createDrawingToolPanel(
   const bgSettings = createBgSettingsPopup(state);
   const bgSettingsTab = bgSettings.tab;
 
+  // Collapse / expand tab — sits past bg-settings on the closing edge.
+  // Tapping it flips `drawingToolbarCollapsed`; the rest of the toolbar
+  // hides except the currently active tool button, leaving a minimal
+  // [drag][active tool][collapse] trio.
+  const collapseTab = h("button", {
+    title: "Collapse toolbar",
+    style: { ...tabBaseStyle, width: `${END_CAP_DEPTH}px`, height: `${BAR_HEIGHT_HORIZONTAL}px`, borderRadius: "0 12px 12px 0", cursor: "pointer" },
+    children: [icon("toolbar-collapse", 18)],
+    onClick: () => state.setDrawingToolbarCollapsed(!state.drawingToolbarCollapsed),
+  }) as HTMLButtonElement;
+  collapseTab.classList.add("notebook-tool-panel-collapse-tab");
+
   // ----- Drag-to-reposition wiring + clamp --------------------------
 
   /** Clamp an offset so the assembly (bar + 3 end-caps) stays inside
@@ -212,11 +227,12 @@ export function createDrawingToolPanel(
     const dragR = dragTab.getBoundingClientRect();
     const togR = toggleTab.getBoundingClientRect();
     const bgR = bgSettingsTab.getBoundingClientRect();
+    const colR = collapseTab.getBoundingClientRect();
     const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
-    const left = Math.min(tbRect.left, dragR.left, togR.left, bgR.left);
-    const right = Math.max(tbRect.right, dragR.right, togR.right, bgR.right);
-    const top = Math.min(tbRect.top, dragR.top, togR.top, bgR.top);
-    const bottom = Math.max(tbRect.bottom, dragR.bottom, togR.bottom, bgR.bottom);
+    const left = Math.min(tbRect.left, dragR.left, togR.left, bgR.left, colR.left);
+    const right = Math.max(tbRect.right, dragR.right, togR.right, bgR.right, colR.right);
+    const top = Math.min(tbRect.top, dragR.top, togR.top, bgR.top, colR.top);
+    const bottom = Math.max(tbRect.bottom, dragR.bottom, togR.bottom, bgR.bottom, colR.bottom);
     const natLeft = (left - parentRect.left) - cur.x;
     const natRight = (right - parentRect.left) - cur.x;
     const natTop = (top - parentRect.top) - cur.y;
@@ -406,18 +422,27 @@ export function createDrawingToolPanel(
   function styleEndCaps(vertical: boolean): void {
     const tabBg = "rgba(127,127,127,0.18)";
     const fg = state.theme.foreground;
+    const collapsed = state.drawingToolbarCollapsed;
+    // When collapsed, the closing-edge cap is the collapse tab itself
+    // (drag is the opening cap, rotate + bg-settings are hidden). When
+    // expanded, the closing cap is the collapse tab and bg-settings
+    // sits just before it without a rounded outer corner.
     if (vertical) {
-      // Drag and rotate stack at the top of the bar; bg-settings sits
-      // at the bottom. Long axis = bar's perpendicular thickness (52).
+      // Drag (+ rotate when expanded) stack at the top; bg-settings +
+      // collapse stack at the bottom. Long axis = bar's perpendicular
+      // thickness (52).
       dragTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
       dragTab.style.height = `${END_CAP_DEPTH}px`;
-      dragTab.style.borderRadius = "12px 12px 0 0";
+      dragTab.style.borderRadius = collapsed ? "12px 12px 0 0" : "12px 12px 0 0";
       toggleTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
       toggleTab.style.height = `${END_CAP_DEPTH}px`;
       toggleTab.style.borderRadius = "0";
       bgSettingsTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
       bgSettingsTab.style.height = `${END_CAP_DEPTH}px`;
-      bgSettingsTab.style.borderRadius = "0 0 12px 12px";
+      bgSettingsTab.style.borderRadius = "0";
+      collapseTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
+      collapseTab.style.height = `${END_CAP_DEPTH}px`;
+      collapseTab.style.borderRadius = "0 0 12px 12px";
       separator.style.width = "24px";
       separator.style.height = "1px";
       separator.style.margin = "4px 0";
@@ -430,7 +455,10 @@ export function createDrawingToolPanel(
       toggleTab.style.borderRadius = "0";
       bgSettingsTab.style.width = `${END_CAP_DEPTH}px`;
       bgSettingsTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
-      bgSettingsTab.style.borderRadius = "0 12px 12px 0";
+      bgSettingsTab.style.borderRadius = "0";
+      collapseTab.style.width = `${END_CAP_DEPTH}px`;
+      collapseTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
+      collapseTab.style.borderRadius = "0 12px 12px 0";
       separator.style.width = "1px";
       separator.style.height = "24px";
       separator.style.margin = "0 4px";
@@ -439,6 +467,10 @@ export function createDrawingToolPanel(
     dragTab.style.color = fg;
     toggleTab.style.background = tabBg;
     toggleTab.style.color = fg;
+    collapseTab.style.background = tabBg;
+    collapseTab.style.color = fg;
+    collapseTab.title = collapsed ? "Expand toolbar" : "Collapse toolbar";
+    collapseTab.replaceChildren(icon(collapsed ? "toolbar-expand" : "toolbar-collapse", 18));
     bgSettings.refreshTheme();
   }
 
@@ -449,11 +481,18 @@ export function createDrawingToolPanel(
     const vertical = state.drawingToolbarVertical;
     styleEndCaps(vertical);
 
+    const collapsed = state.drawingToolbarCollapsed;
+    // Rotate + bg-settings hide entirely while collapsed — only the
+    // drag handle, the active tool button (handled by the bar's own
+    // child-visibility logic), and the collapse tab stay visible.
+    toggleTab.style.display = collapsed ? "none" : "";
+    bgSettingsTab.style.display = collapsed ? "none" : "";
+
     const place = () => {
       const parentRect = parent.getBoundingClientRect();
       const tbRect = bottomToolbar.getBoundingClientRect();
       // Reset tab anchors each pass.
-      for (const tab of [dragTab, toggleTab, bgSettingsTab]) {
+      for (const tab of [dragTab, toggleTab, bgSettingsTab, collapseTab]) {
         tab.style.left = "auto";
         tab.style.right = "auto";
         tab.style.top = "auto";
@@ -463,25 +502,50 @@ export function createDrawingToolPanel(
       if (vertical) {
         const tbLeft = tbRect.left - parentRect.left;
         const tbTop = tbRect.top - parentRect.top;
-        // Drag and rotate stack above the bar; drag is outermost.
-        dragTab.style.left = tbLeft + "px";
-        dragTab.style.top = (tbTop - END_CAP_DEPTH * 2) + "px";
-        toggleTab.style.left = tbLeft + "px";
-        toggleTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
-        // Bg-settings hangs below the bar.
-        bgSettingsTab.style.left = tbLeft + "px";
-        bgSettingsTab.style.top = (tbRect.bottom - parentRect.top) + "px";
+        // Drag is outermost above the bar; rotate stacks between drag
+        // and bar when expanded. Collapsed → drag sits directly above.
+        if (collapsed) {
+          dragTab.style.left = tbLeft + "px";
+          dragTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
+        } else {
+          dragTab.style.left = tbLeft + "px";
+          dragTab.style.top = (tbTop - END_CAP_DEPTH * 2) + "px";
+          toggleTab.style.left = tbLeft + "px";
+          toggleTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
+        }
+        // Bg-settings + collapse hang below the bar (collapse outermost).
+        if (!collapsed) {
+          bgSettingsTab.style.left = tbLeft + "px";
+          bgSettingsTab.style.top = (tbRect.bottom - parentRect.top) + "px";
+          collapseTab.style.left = tbLeft + "px";
+          collapseTab.style.top = (tbRect.bottom - parentRect.top + END_CAP_DEPTH) + "px";
+        } else {
+          collapseTab.style.left = tbLeft + "px";
+          collapseTab.style.top = (tbRect.bottom - parentRect.top) + "px";
+        }
       } else {
         const offsetCalc = `calc(20px + ${offset.y}px)`;
         const tbLeft = tbRect.left - parentRect.left;
-        // Drag and rotate sit to the *left* of the bar, drag outermost.
-        dragTab.style.left = (tbLeft - END_CAP_DEPTH * 2) + "px";
-        dragTab.style.top = offsetCalc;
-        toggleTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
-        toggleTab.style.top = offsetCalc;
-        // Bg-settings sits to the right of the bar.
-        bgSettingsTab.style.left = (tbRect.right - parentRect.left) + "px";
-        bgSettingsTab.style.top = offsetCalc;
+        if (collapsed) {
+          dragTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
+          dragTab.style.top = offsetCalc;
+        } else {
+          dragTab.style.left = (tbLeft - END_CAP_DEPTH * 2) + "px";
+          dragTab.style.top = offsetCalc;
+          toggleTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
+          toggleTab.style.top = offsetCalc;
+        }
+        // Bg-settings sits flush to the right of the bar, then collapse
+        // takes the outermost slot. Collapsed → collapse sits flush.
+        if (!collapsed) {
+          bgSettingsTab.style.left = (tbRect.right - parentRect.left) + "px";
+          bgSettingsTab.style.top = offsetCalc;
+          collapseTab.style.left = (tbRect.right - parentRect.left + END_CAP_DEPTH) + "px";
+          collapseTab.style.top = offsetCalc;
+        } else {
+          collapseTab.style.left = (tbRect.right - parentRect.left) + "px";
+          collapseTab.style.top = offsetCalc;
+        }
       }
     };
     place();
@@ -516,10 +580,52 @@ export function createDrawingToolPanel(
       if (!lassoLive) closeLassoFlyout();
     }
     updateActiveClasses();
+    if (keys.includes("drawingToolbarCollapsed")) applyCollapseVisibility();
     applyLayout();
   }) as EventListener);
 
+  // ----- Collapsed-mode bar children --------------------------------
+  // While collapsed, only the currently-active drawing tool button
+  // stays visible from the drawing-side of the bar; separator, brush
+  // slots row, and any inactive sub-tools hide. The main-side children
+  // (select / text / drag-area / brainstorm / layers / bookmarks) are
+  // owned by toolbar.ts which runs the same collapse-vs-active filter
+  // in its own `update()` pass.
+  function applyCollapseVisibility(): void {
+    const collapsed = state.drawingToolbarCollapsed;
+    const activeSub: string | null = state.tool === "pen" ? state.drawingSubTool : null;
+    const brushEl = (state.tool === "pen" && state.drawingSubTool === "draw")
+      ? (slots.root.children[state.activeBrushSlot] as HTMLElement | undefined) ?? null
+      : null;
+
+    if (!collapsed) {
+      separator.style.display = "";
+      slots.root.style.display = "";
+      for (const slotEl of Array.from(slots.root.children) as HTMLElement[]) slotEl.style.display = "";
+      lassoBtn.style.display = "";
+      for (const btn of subToolBtns.values()) btn.style.display = "";
+      return;
+    }
+
+    separator.style.display = "none";
+    // Brush-slot row survives only when "draw" is active; within it,
+    // hide every non-active slot.
+    if (activeSub === "draw" && brushEl) {
+      slots.root.style.display = "";
+      for (const slotEl of Array.from(slots.root.children) as HTMLElement[]) {
+        slotEl.style.display = slotEl === brushEl ? "" : "none";
+      }
+    } else {
+      slots.root.style.display = "none";
+    }
+    lassoBtn.style.display = activeSub === "select" ? "" : "none";
+    for (const [id, btn] of subToolBtns) {
+      btn.style.display = activeSub === id ? "" : "none";
+    }
+  }
+
   updateActiveClasses();
+  applyCollapseVisibility();
   applyLayout();
   applyActiveSlot();
   drawingLayer.setTool(state.drawingSubTool);
@@ -530,5 +636,5 @@ export function createDrawingToolPanel(
   flyoutGroup.appendChild(lassoFlyout);
   flyoutGroup.appendChild(bgSettings.popup);
 
-  return { dragTab, toggleTab, bgSettingsTab, flyout: flyoutGroup, relayout: applyLayout };
+  return { dragTab, toggleTab, bgSettingsTab, collapseTab, flyout: flyoutGroup, relayout: applyLayout };
 }

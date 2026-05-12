@@ -480,3 +480,24 @@ html.phone .sidebar-floating-toggle.panel-open {
 html.phone .sidebar-panel-resizer {
   display: none;
 }
+
+/* Touch-mode pills along the bottom-right edge of the viewport. Only
+   the palette + paste pair render on phone (cmd-button.js skips the
+   ⌘ and ↶ pills); both are repositioned from the bottom-left stack to
+   a horizontal row hugging the right edge. Hidden while the panel is
+   open since the panel fills the screen. */
+html.phone .cmd-floating-button.cmd-palette-button {
+  left: auto;
+  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+html.phone .cmd-floating-button.cmd-paste-button {
+  left: auto;
+  right: calc(20px + 36px + 12px);
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+html.phone .cmd-floating-button.panel-open {
+  display: none;
+}

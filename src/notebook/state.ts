@@ -48,7 +48,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
   | "drawingToolbarMinimized" | "drawingToolbarOffset"
-  | "drawingToolbarVertical"
+  | "drawingToolbarVertical" | "drawingToolbarCollapsed"
   | "strokeEngineDragging";
 
 /** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
@@ -102,6 +102,13 @@ export class DrawingState extends EventTarget {
    *  toolbar (mirrors the drag tab's gray pill style). Session-only
    *  state — resets when the notebook re-mounts. */
   drawingToolbarVertical = false;
+
+  /** When true, the toolbar collapses down to just the drag handle,
+   *  the currently active tool button, and the collapse/expand tab
+   *  itself — every other tool button and end-cap is hidden. Toggled
+   *  by the collapse tab attached past the bg-settings end-cap.
+   *  Session-only state — resets when the notebook re-mounts. */
+  drawingToolbarCollapsed = false;
 
   /** True while the drawing engine is mid-transform (move / resize /
    *  rotate) on its own bbox. Hush's group highlight + selection
@@ -249,6 +256,12 @@ export class DrawingState extends EventTarget {
     this.drawingToolbarOffset = { x: 0, y: 0 };
     this.notify("drawingToolbarVertical");
     this.notify("drawingToolbarOffset");
+  }
+
+  setDrawingToolbarCollapsed(b: boolean) {
+    if (this.drawingToolbarCollapsed === b) return;
+    this.drawingToolbarCollapsed = b;
+    this.notify("drawingToolbarCollapsed");
   }
 
   setDrawingToolbarMinimized(b: boolean) {
