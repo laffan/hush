@@ -361,6 +361,70 @@ export function distributeShapes(
   }
 }
 
+/** Lay the selection out in an evenly-spaced grid centred on the current
+ *  selection's bounding box. Cell dimensions are sized to the widest /
+ *  tallest shape so every shape fits — each shape is then centred inside
+ *  its cell. Grid shape defaults to as-square-as-possible
+ *  (`cols = ceil(sqrt(n))`); reading order (top→bottom, left→right) is
+ *  preserved so the post-arrange layout matches the user's mental map. */
+export function arrangeShapesAsGrid(
+  shapes: Shape[],
+  fontFamily?: string,
+  gap: number = 20,
+): Shape[] {
+  if (shapes.length < 2) return shapes;
+  const items = shapes.map((s, i) => ({ i, s, b: getShapeBounds(s, fontFamily) }));
+
+  let selMinX = Infinity, selMinY = Infinity, selMaxX = -Infinity, selMaxY = -Infinity;
+  let cellW = 0, cellH = 0;
+  for (const { b } of items) {
+    if (b.minX < selMinX) selMinX = b.minX;
+    if (b.minY < selMinY) selMinY = b.minY;
+    if (b.maxX > selMaxX) selMaxX = b.maxX;
+    if (b.maxY > selMaxY) selMaxY = b.maxY;
+    cellW = Math.max(cellW, b.maxX - b.minX);
+    cellH = Math.max(cellH, b.maxY - b.minY);
+  }
+  const centerX = (selMinX + selMaxX) / 2;
+  const centerY = (selMinY + selMaxY) / 2;
+
+  // Sort by current reading order — group into row-bands using a slack of
+  // ~60% of the tallest cell so a slightly-misaligned row still reads as
+  // one row, then sort left-to-right inside each band.
+  const tolerance = Math.max(cellH * 0.6, 1);
+  items.sort((a, b) => {
+    const dy = a.b.minY - b.b.minY;
+    if (Math.abs(dy) > tolerance) return dy;
+    return a.b.minX - b.b.minX;
+  });
+
+  const n = items.length;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const rows = Math.ceil(n / cols);
+
+  const totalW = cols * cellW + (cols - 1) * gap;
+  const totalH = rows * cellH + (rows - 1) * gap;
+  const startX = centerX - totalW / 2;
+  const startY = centerY - totalH / 2;
+
+  const deltas = new Map<number, { dx: number; dy: number }>();
+  items.forEach((item, idx) => {
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    const cellCx = startX + col * (cellW + gap) + cellW / 2;
+    const cellCy = startY + row * (cellH + gap) + cellH / 2;
+    const currCx = (item.b.minX + item.b.maxX) / 2;
+    const currCy = (item.b.minY + item.b.maxY) / 2;
+    deltas.set(item.i, { dx: cellCx - currCx, dy: cellCy - currCy });
+  });
+
+  return shapes.map((s, i) => {
+    const d = deltas.get(i);
+    if (!d || (d.dx === 0 && d.dy === 0)) return s;
+    return shiftShape(s, d.dx, d.dy);
+  });
+}
+
 function shiftShape(shape: Shape, dx: number, dy: number): Shape {
   switch (shape.type) {
     case "draw":

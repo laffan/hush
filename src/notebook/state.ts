@@ -4,8 +4,8 @@ import type {
 } from "./types";
 import { COLOR_PALETTE } from "./types";
 import {
-  alignShapes, boundsOverlap, distributeShapes, generateId,
-  getShapeBounds, hitTestShape,
+  alignShapes, arrangeShapesAsGrid, boundsOverlap, distributeShapes,
+  generateId, getShapeBounds, hitTestShape,
   pointInBounds, screenToCanvas,
 } from "./utils";
 import { UndoManager } from "./undo-manager";
@@ -2069,6 +2069,16 @@ export class DrawingState extends EventTarget {
     if (selected.length < 3) return;
     const distributed = distributeShapes(selected, axis);
     const map = new Map(distributed.map((s) => [s.id, s]));
+    this.shapes = this.shapes.map((s) => map.get(s.id) || s);
+    this.recordHistory();
+    this.notify("shapes");
+  }
+
+  arrangeSelectedAsGrid() {
+    const selected = this.shapes.filter((s) => this.selectedIds.has(s.id));
+    if (selected.length < 2) return;
+    const arranged = arrangeShapesAsGrid(selected, this.fontFamily);
+    const map = new Map(arranged.map((s) => [s.id, s]));
     this.shapes = this.shapes.map((s) => map.get(s.id) || s);
     this.recordHistory();
     this.notify("shapes");

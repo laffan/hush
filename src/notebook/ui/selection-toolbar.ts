@@ -165,6 +165,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       { iconName: "align-bottom", title: "Align bottom", action: () => state.alignSelected("bottom") },
       { iconName: "align-right", title: "Align right", action: () => state.alignSelected("right") },
       { iconName: "align-horizontal-spacing", title: "Distribute horizontally", action: () => state.distributeSelected("horizontal") },
+      { iconName: "arrange-grid", title: "Arrange as grid", action: () => state.arrangeSelectedAsGrid() },
     ];
     const panel = h("div", {
       style: { position: "absolute", top: "-40px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "2px", padding: "4px 6px", background: theme.uiBackground, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`, zIndex: "300" },
