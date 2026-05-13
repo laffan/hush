@@ -66,13 +66,10 @@ export interface RenderState {
    *  engine bbox is the only chrome on the canvas during the
    *  gesture. */
   strokeEngineDragging?: boolean;
-  /** id of the drag-area currently in reorder mode (solid accent
-   *  outline + swap-on-drop). Null / unset means reorder mode is off. */
+  /** Reorder mode: active drag-area id (solid accent outline + swap-on-drop). */
   reorderDragAreaId?: string | null;
-  /** Ghost rectangles for the live reorder hover. Painted as dashed
-   *  translucent outlines above the shape pass to telegraph where
-   *  each side of the swap will land on drop. */
-  reorderPreview?: { ghostA: Bounds; ghostB: Bounds } | null;
+  /** Reorder hover preview: boundary rects + baked clones at swap destinations. */
+  reorderPreview?: { ghostA: Bounds; ghostB: Bounds; draggedShapes: Shape[]; targetShapes: Shape[] } | null;
   /** Hush's iPad Touch-mode flag, mirrored into the render state by
    *  notes-canvas.ts. The flowchart edge-delete dot is a touch-only
    *  affordance (mouse hover already reveals the same X) so we hide
@@ -256,8 +253,14 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       }
     }
 
-    // Reorder-mode ghost preview — dashed rects above the shape pass.
+    // Reorder-mode ghost preview — translucent shape clones at the swap
+    // destinations, framed by dashed accent boundary rects.
     if (state.reorderPreview) {
+      const prev = ctx.globalAlpha;
+      ctx.globalAlpha = prev * 0.55;
+      for (const s of state.reorderPreview.draggedShapes) drawGhostShape(ctx, s, state, theme);
+      for (const s of state.reorderPreview.targetShapes) drawGhostShape(ctx, s, state, theme);
+      ctx.globalAlpha = prev;
       drawReorderPreview(ctx, state.reorderPreview.ghostA, state.reorderPreview.ghostB, theme.accent, camera.zoom);
     }
   }
@@ -309,6 +312,14 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   if (selectionBox) drawSelectionBox(ctx, selectionBox, camera);
 }
 
+// Reorder-preview ghost — paints a clone via main-pass draw fns; strokes fall back to a polyline.
+function drawGhostShape(ctx: CanvasRenderingContext2D, s: Shape, state: RenderState, theme: CanvasTheme): void {
+  if (s.type === "text") drawTextShape(ctx, s, theme, state.fontFamily, false, state.flagColors);
+  else if (s.type === "image") drawImageShape(ctx, s, state.imageCache, false);
+  else if (s.type === "drag-area") drawDragArea(ctx, s);
+  else if (s.type === "draw") drawStroke(ctx, s.points, s.color || theme.foreground, 3);
+}
+
 // === Draw helpers (pure Canvas 2D — no framework dependencies) ===
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -324,8 +335,6 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-// `reorderActive` swaps the dashed gray outline for a solid theme-accent
-// border so the active reorder container is unmistakeable.
 export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape, reorderActive = false, reorderAccent?: string) {
   const { position, width, height, strokeColor, backgroundColor, borderRadius } = shape;
   ctx.save();

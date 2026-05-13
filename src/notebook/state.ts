@@ -516,11 +516,18 @@ export class DrawingState extends EventTarget {
    *  target. Members of a group resolve to the group's lead member id —
    *  the renderer follows the same group expansion. */
   reorderHoverTargetId: string | null = null;
-  /** Ghost rectangles drawn while reorder mode has a live hover target.
-   *  `ghostA` is the dragged unit's footprint at the target's current
-   *  position; `ghostB` is the target unit's footprint at the dragged
-   *  unit's pre-drag position. Null when no preview should paint. */
-  reorderPreview: { ghostA: Bounds; ghostB: Bounds } | null = null;
+  /** Ghost preview drawn while reorder mode has a live hover target.
+   *  `ghostA` / `ghostB` are the boundary rectangles for each side of
+   *  the swap; `draggedShapes` / `targetShapes` are positioned clones
+   *  used by the renderer to paint the shape *contents* (text glyphs,
+   *  images, strokes) at the swap destination so the user can see what
+   *  will move, not just where. Null when no preview should paint. */
+  reorderPreview: {
+    ghostA: Bounds;
+    ghostB: Bounds;
+    draggedShapes: Shape[];
+    targetShapes: Shape[];
+  } | null = null;
 
   // Pocket drag state
   private _pocketDragPending = false;
@@ -1892,9 +1899,14 @@ export class DrawingState extends EventTarget {
     this.notify("reorderPreview");
   }
 
-  /** Recompute the ghost rectangles for the live reorder hover. Both
+  /** Recompute the ghost preview for the live reorder hover. Both
    *  dragged + target are expanded to their full group footprint so
-   *  the preview shows the cluster that will actually move on drop. */
+   *  the preview shows the cluster that will actually move on drop;
+   *  positioned shape clones are baked at the swap destinations so the
+   *  renderer can paint actual contents (text, images, strokes) at
+   *  reduced opacity. Cached at hover-change time and left untouched
+   *  while the cursor stays over the same target — both the rect
+   *  outlines and the shape clones live in absolute world coords. */
   private _recomputeReorderPreview() {
     if (!this.reorderHoverTargetId) { this.reorderPreview = null; return; }
     const target = this.shapes.find((s) => s.id === this.reorderHoverTargetId);
@@ -1919,9 +1931,27 @@ export class DrawingState extends EventTarget {
     }
     const dW = dMaxX - dMinX, dH = dMaxY - dMinY;
     const tW = tMaxX - tMinX, tH = tMaxY - tMinY;
+    const dxD = tMinX - dMinX, dyD = tMinY - dMinY;
+    const dxT = dMinX - tMinX, dyT = dMinY - tMinY;
+    const draggedShapes: Shape[] = [];
+    for (const id of this._reorderOrigBounds.keys()) {
+      const live = this.shapes.find((x) => x.id === id);
+      if (!live) continue;
+      const orig = this._reorderOrigBounds.get(id)!;
+      const curr = getShapeBounds(live, this.fontFamily);
+      const dx = (orig.minX + dxD) - curr.minX;
+      const dy = (orig.minY + dyD) - curr.minY;
+      draggedShapes.push(moveShape({ ...live }, dx, dy));
+    }
+    const targetShapes: Shape[] = [];
+    for (const s of targetSet) {
+      targetShapes.push(moveShape({ ...s }, dxT, dyT));
+    }
     this.reorderPreview = {
       ghostA: { minX: tMinX, minY: tMinY, maxX: tMinX + dW, maxY: tMinY + dH },
       ghostB: { minX: dMinX, minY: dMinY, maxX: dMinX + tW, maxY: dMinY + tH },
+      draggedShapes,
+      targetShapes,
     };
   }
 
