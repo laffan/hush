@@ -363,9 +363,11 @@ export function distributeShapes(
 
 /** Lay the supplied shapes out in an evenly-spaced grid centred on
  *  `centerPoint` (defaulting to the centroid of the shapes' current
- *  bounding box). Cell dimensions are sized to the widest / tallest
- *  shape so every shape fits — each shape is then centred inside its
- *  cell. Grid shape defaults to as-square-as-possible
+ *  bounding box). Groups are treated as one cell unit — every member
+ *  of a `groupId` shares one cell and translates by the same delta so
+ *  the cluster stays intact. Cell dimensions size to the widest /
+ *  tallest unit (group bounds union, or ungrouped shape bounds) so
+ *  nothing overflows. Grid shape defaults to as-square-as-possible
  *  (`cols = ceil(sqrt(n))`); reading order (top→bottom, left→right) is
  *  preserved so the post-arrange layout matches the user's mental map. */
 export function arrangeShapesAsGrid(
@@ -375,32 +377,67 @@ export function arrangeShapesAsGrid(
   centerPoint?: Point,
 ): Shape[] {
   if (shapes.length < 2) return shapes;
-  const items = shapes.map((s, i) => ({ i, s, b: getShapeBounds(s, fontFamily) }));
+
+  // Bucket shapes into units. A unit is either one ungrouped shape or
+  // every member of one groupId — both treated as a single cell.
+  type Unit = { ids: string[]; bounds: Bounds };
+  const groupBuckets = new Map<string, string[]>();
+  const ungrouped: string[] = [];
+  for (const s of shapes) {
+    if (s.groupId) {
+      let bucket = groupBuckets.get(s.groupId);
+      if (!bucket) { bucket = []; groupBuckets.set(s.groupId, bucket); }
+      bucket.push(s.id);
+    } else {
+      ungrouped.push(s.id);
+    }
+  }
+  const shapeById = new Map(shapes.map((s) => [s.id, s]));
+  function unionBounds(ids: string[]): Bounds {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const id of ids) {
+      const s = shapeById.get(id);
+      if (!s) continue;
+      const b = getShapeBounds(s, fontFamily);
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+    }
+    return { minX, minY, maxX, maxY };
+  }
+  const units: Unit[] = [];
+  for (const id of ungrouped) units.push({ ids: [id], bounds: unionBounds([id]) });
+  for (const ids of groupBuckets.values()) units.push({ ids, bounds: unionBounds(ids) });
+
+  // Single-unit selection (e.g. drag-area holding one big group) has
+  // nothing to arrange — return the shapes untouched.
+  if (units.length < 2) return shapes;
 
   let selMinX = Infinity, selMinY = Infinity, selMaxX = -Infinity, selMaxY = -Infinity;
   let cellW = 0, cellH = 0;
-  for (const { b } of items) {
-    if (b.minX < selMinX) selMinX = b.minX;
-    if (b.minY < selMinY) selMinY = b.minY;
-    if (b.maxX > selMaxX) selMaxX = b.maxX;
-    if (b.maxY > selMaxY) selMaxY = b.maxY;
-    cellW = Math.max(cellW, b.maxX - b.minX);
-    cellH = Math.max(cellH, b.maxY - b.minY);
+  for (const u of units) {
+    if (u.bounds.minX < selMinX) selMinX = u.bounds.minX;
+    if (u.bounds.minY < selMinY) selMinY = u.bounds.minY;
+    if (u.bounds.maxX > selMaxX) selMaxX = u.bounds.maxX;
+    if (u.bounds.maxY > selMaxY) selMaxY = u.bounds.maxY;
+    cellW = Math.max(cellW, u.bounds.maxX - u.bounds.minX);
+    cellH = Math.max(cellH, u.bounds.maxY - u.bounds.minY);
   }
   const centerX = centerPoint ? centerPoint.x : (selMinX + selMaxX) / 2;
   const centerY = centerPoint ? centerPoint.y : (selMinY + selMaxY) / 2;
 
-  // Sort by current reading order — group into row-bands using a slack of
-  // ~60% of the tallest cell so a slightly-misaligned row still reads as
-  // one row, then sort left-to-right inside each band.
+  // Sort units by current reading order — row-band grouping uses ~60%
+  // of the tallest cell as the band tolerance so slightly-misaligned
+  // rows still read as one row, then left-to-right inside each band.
   const tolerance = Math.max(cellH * 0.6, 1);
-  items.sort((a, b) => {
-    const dy = a.b.minY - b.b.minY;
+  units.sort((a, b) => {
+    const dy = a.bounds.minY - b.bounds.minY;
     if (Math.abs(dy) > tolerance) return dy;
-    return a.b.minX - b.b.minX;
+    return a.bounds.minX - b.bounds.minX;
   });
 
-  const n = items.length;
+  const n = units.length;
   const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
   const rows = Math.ceil(n / cols);
 
@@ -409,19 +446,21 @@ export function arrangeShapesAsGrid(
   const startX = centerX - totalW / 2;
   const startY = centerY - totalH / 2;
 
-  const deltas = new Map<number, { dx: number; dy: number }>();
-  items.forEach((item, idx) => {
+  const deltas = new Map<string, { dx: number; dy: number }>();
+  units.forEach((u, idx) => {
     const col = idx % cols;
     const row = Math.floor(idx / cols);
     const cellCx = startX + col * (cellW + gap) + cellW / 2;
     const cellCy = startY + row * (cellH + gap) + cellH / 2;
-    const currCx = (item.b.minX + item.b.maxX) / 2;
-    const currCy = (item.b.minY + item.b.maxY) / 2;
-    deltas.set(item.i, { dx: cellCx - currCx, dy: cellCy - currCy });
+    const currCx = (u.bounds.minX + u.bounds.maxX) / 2;
+    const currCy = (u.bounds.minY + u.bounds.maxY) / 2;
+    const dx = cellCx - currCx;
+    const dy = cellCy - currCy;
+    for (const id of u.ids) deltas.set(id, { dx, dy });
   });
 
-  return shapes.map((s, i) => {
-    const d = deltas.get(i);
+  return shapes.map((s) => {
+    const d = deltas.get(s.id);
     if (!d || (d.dx === 0 && d.dy === 0)) return s;
     return shiftShape(s, d.dx, d.dy);
   });
