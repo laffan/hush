@@ -204,7 +204,7 @@ export function bindInputEvents(
     // editable-focus guard below so the gesture works even if some
     // peripheral input has stolen focus on this device.
     if (e.key === "Escape" && state.reorderDragAreaId) {
-      state.toggleReorderMode(state.reorderDragAreaId);
+      state.exitReorderMode();
       e.preventDefault();
       return;
     }

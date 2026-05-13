@@ -368,13 +368,15 @@ export function distributeShapes(
  *  the cluster stays intact. Cell dimensions size to the widest /
  *  tallest unit (group bounds union, or ungrouped shape bounds) so
  *  nothing overflows. Grid shape defaults to as-square-as-possible
- *  (`cols = ceil(sqrt(n))`); reading order (top→bottom, left→right) is
- *  preserved so the post-arrange layout matches the user's mental map. */
+ *  (`cols = ceil(sqrt(n))`) unless `cols` is supplied explicitly;
+ *  reading order (top→bottom, left→right) is preserved so the
+ *  post-arrange layout matches the user's mental map. */
 export function arrangeShapesAsGrid(
   shapes: Shape[],
   fontFamily?: string,
   gap: number = 20,
   centerPoint?: Point,
+  cols?: number,
 ): Shape[] {
   if (shapes.length < 2) return shapes;
 
@@ -438,18 +440,18 @@ export function arrangeShapesAsGrid(
   });
 
   const n = units.length;
-  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
-  const rows = Math.ceil(n / cols);
+  const colCount = Math.max(1, Math.min(n, cols ?? Math.ceil(Math.sqrt(n))));
+  const rows = Math.ceil(n / colCount);
 
-  const totalW = cols * cellW + (cols - 1) * gap;
+  const totalW = colCount * cellW + (colCount - 1) * gap;
   const totalH = rows * cellH + (rows - 1) * gap;
   const startX = centerX - totalW / 2;
   const startY = centerY - totalH / 2;
 
   const deltas = new Map<string, { dx: number; dy: number }>();
   units.forEach((u, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
+    const col = idx % colCount;
+    const row = Math.floor(idx / colCount);
     const cellCx = startX + col * (cellW + gap) + cellW / 2;
     const cellCy = startY + row * (cellH + gap) + cellH / 2;
     const currCx = (u.bounds.minX + u.bounds.maxX) / 2;

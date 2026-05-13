@@ -2,10 +2,10 @@ import type { DrawingState } from "../state";
 import { h } from "./dom-helpers";
 
 /** Floating banner pinned to the top-centre of the canvas while reorder
- *  mode is active. Spells out the modal behaviour ("drag items onto
- *  each other to swap") and offers an explicit Exit button so the user
- *  isn't trapped — the same gesture happens on Esc and on toggling the
- *  Reorder button on the drag-area's selection toolbar. */
+ *  mode is active. Spells out the modal behaviour (swap or ripple,
+ *  depending on which sub-mode is active) and offers an explicit Exit
+ *  button so the user isn't trapped — the same gesture happens on Esc
+ *  and on re-clicking the matching toolbar button. */
 export function createReorderBanner(state: DrawingState): HTMLElement {
   const container = h("div", {
     style: {
@@ -21,7 +21,7 @@ export function createReorderBanner(state: DrawingState): HTMLElement {
     },
   });
 
-  const label = h("span", { text: "Reorder mode — drag an item onto another to swap places" });
+  const label = h("span", { text: "" });
   container.appendChild(label);
 
   const exitBtn = h("button", {
@@ -36,15 +36,16 @@ export function createReorderBanner(state: DrawingState): HTMLElement {
     },
   });
   exitBtn.appendChild(document.createTextNode("Exit ×"));
-  exitBtn.addEventListener("click", () => {
-    if (state.reorderDragAreaId) state.toggleReorderMode(state.reorderDragAreaId);
-  });
+  exitBtn.addEventListener("click", () => state.exitReorderMode());
   container.appendChild(exitBtn);
 
   function update() {
     const active = !!state.reorderDragAreaId;
     if (!active) { container.style.display = "none"; return; }
     container.style.display = "inline-flex";
+    label.textContent = state.reorderMode === "ripple"
+      ? "Ripple-reorder mode — drag an item onto another to insert it there"
+      : "Swap-reorder mode — drag an item onto another to swap places";
     const theme = state.theme;
     container.style.background = theme.accent;
     // Pick the first text-friendly contrast for the accent badge — most
