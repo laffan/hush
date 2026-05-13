@@ -361,16 +361,18 @@ export function distributeShapes(
   }
 }
 
-/** Lay the selection out in an evenly-spaced grid centred on the current
- *  selection's bounding box. Cell dimensions are sized to the widest /
- *  tallest shape so every shape fits — each shape is then centred inside
- *  its cell. Grid shape defaults to as-square-as-possible
+/** Lay the supplied shapes out in an evenly-spaced grid centred on
+ *  `centerPoint` (defaulting to the centroid of the shapes' current
+ *  bounding box). Cell dimensions are sized to the widest / tallest
+ *  shape so every shape fits — each shape is then centred inside its
+ *  cell. Grid shape defaults to as-square-as-possible
  *  (`cols = ceil(sqrt(n))`); reading order (top→bottom, left→right) is
  *  preserved so the post-arrange layout matches the user's mental map. */
 export function arrangeShapesAsGrid(
   shapes: Shape[],
   fontFamily?: string,
   gap: number = 20,
+  centerPoint?: Point,
 ): Shape[] {
   if (shapes.length < 2) return shapes;
   const items = shapes.map((s, i) => ({ i, s, b: getShapeBounds(s, fontFamily) }));
@@ -385,8 +387,8 @@ export function arrangeShapesAsGrid(
     cellW = Math.max(cellW, b.maxX - b.minX);
     cellH = Math.max(cellH, b.maxY - b.minY);
   }
-  const centerX = (selMinX + selMaxX) / 2;
-  const centerY = (selMinY + selMaxY) / 2;
+  const centerX = centerPoint ? centerPoint.x : (selMinX + selMaxX) / 2;
+  const centerY = centerPoint ? centerPoint.y : (selMinY + selMaxY) / 2;
 
   // Sort by current reading order — group into row-bands using a slack of
   // ~60% of the tallest cell so a slightly-misaligned row still reads as

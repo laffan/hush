@@ -165,7 +165,6 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       { iconName: "align-bottom", title: "Align bottom", action: () => state.alignSelected("bottom") },
       { iconName: "align-right", title: "Align right", action: () => state.alignSelected("right") },
       { iconName: "align-horizontal-spacing", title: "Distribute horizontally", action: () => state.distributeSelected("horizontal") },
-      { iconName: "arrange-grid", title: "Arrange as grid", action: () => state.arrangeSelectedAsGrid() },
     ];
     const panel = h("div", {
       style: { position: "absolute", top: "-40px", left: "50%", transform: "translateX(-50%)", display: "flex", gap: "2px", padding: "4px 6px", background: theme.uiBackground, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`, zIndex: "300" },
@@ -503,6 +502,26 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       container.appendChild(makeIconBtn("tidy", "Tidy subtree", () => {
         for (const id of tidyableIds) state.tidySubtree(id);
       }));
+    }
+
+    // Drag-area-only actions: arranging the children in a grid, and
+    // toggling reorder mode (drag-and-swap children instead of routing
+    // through the flowchart drop path). Sit between the Colors picker
+    // and the trash button on a single-drag-area selection.
+    if (selected.length === 1 && selected[0].type === "drag-area") {
+      const dragArea = selected[0];
+      container.appendChild(makeIconBtn("grid-mode", "Arrange children as grid", () => {
+        state.arrangeDragAreaAsGrid(dragArea.id);
+      }));
+      const reorderActive = state.reorderDragAreaId === dragArea.id;
+      const reorderBtn = makeIconBtn("item-swap", reorderActive ? "Exit reorder mode" : "Reorder children (swap on drop)", () => {
+        state.toggleReorderMode(dragArea.id);
+      });
+      if (reorderActive) {
+        reorderBtn.style.background = state.theme.accent;
+        reorderBtn.style.color = "#fff";
+      }
+      container.appendChild(reorderBtn);
     }
 
     container.appendChild(makeIconBtn("trash", "Delete", () => state.deleteSelected()));

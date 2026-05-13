@@ -49,7 +49,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
   | "drawingToolbarMinimized" | "drawingToolbarOffset"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
-  | "strokeEngineDragging";
+  | "strokeEngineDragging" | "reorderDragAreaId";
 
 /** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
  *  the active theme's foreground. Slots 2 and 3 carry an explicit
@@ -497,6 +497,20 @@ export class DrawingState extends EventTarget {
    *  window-level keydown / keyup hook in input-handler so the drag-area
    *  reacts in real time. */
   private _dragCmdHeld = false;
+
+  /** Drag-area whose children are being interactively reordered. While
+   *  set, dragging one child onto another swaps their on-canvas
+   *  positions instead of going through the flowchart drop path; null
+   *  means reorder mode is off. Toggled from the selection toolbar
+   *  (see `toggleReorderMode`). */
+  reorderDragAreaId: string | null = null;
+  /** Top-left bounds of every dragged child captured at pointerDown for
+   *  the duration of an active reorder gesture. Empty otherwise. The
+   *  swap path uses these to send the dragged shape to the target's TL
+   *  and the target back to the dragged shape's pre-drag TL; the
+   *  cursor-only-revert path uses them to snap the dragged shape back
+   *  when the user drops in empty space. */
+  private _reorderOrigPositions = new Map<string, Point>();
 
   // Pocket drag state
   private _pocketDragPending = false;
@@ -1039,6 +1053,7 @@ export class DrawingState extends EventTarget {
           if (this.onShapeDragStart) this.onShapeDragStart(this.selectedIds);
           this._dragStartFired = true;
           this._setupDragAreaResize();
+          this._captureReorderOrigins();
           this._dragCmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
         }
       } else {
@@ -1237,9 +1252,14 @@ export class DrawingState extends EventTarget {
         // when many shapes are being moved at once. All shape types are
         // flowable now (drag-areas, images, drawings, text), so the
         // probe scans every shape — not just text.
+        // Reorder mode pre-empts the flowchart drop path entirely, so
+        // skip the hover probe to avoid showing a misleading
+        // "prospective parent" outline during a swap drag.
         const draggingIds: string[] = [];
-        for (const s of this.shapes) {
-          if (this.selectedIds.has(s.id)) draggingIds.push(s.id);
+        if (!this.reorderDragAreaId) {
+          for (const s of this.shapes) {
+            if (this.selectedIds.has(s.id)) draggingIds.push(s.id);
+          }
         }
         if (draggingIds.length > 0) {
           let probe: Point;
@@ -1368,6 +1388,17 @@ export class DrawingState extends EventTarget {
         this.recordHistory();
         this.notify("shapes");
         this.notify("selectedIds");
+        return;
+      }
+
+      // Reorder mode: a drag of one or more children of the active
+      // reorder drag-area resolves either as a positional swap (dropped
+      // on another child) or a snap-back to the pre-drag location
+      // (dropped anywhere else). Either way we pre-empt re-parenting
+      // and the flowchart drop path so dragging in reorder mode stays
+      // a pure reordering gesture.
+      if (this.reorderDragAreaId && this._reorderOrigPositions.size > 0) {
+        this._handleReorderDrop(e);
         return;
       }
 
@@ -1787,6 +1818,80 @@ export class DrawingState extends EventTarget {
     }
   }
 
+  /** Snapshot the pre-drag top-left of every selected child of the
+   *  active reorder drag-area. Captured at pointerDown so the drop
+   *  handler can either swap (dragged ↔ target) or restore (drop in
+   *  empty space) using positions that don't drift as the drag moves. */
+  private _captureReorderOrigins() {
+    this._reorderOrigPositions.clear();
+    if (!this.reorderDragAreaId) return;
+    for (const s of this.shapes) {
+      if (this.selectedIds.has(s.id) && s.parentId === this.reorderDragAreaId) {
+        const b = getShapeBounds(s, this.fontFamily);
+        this._reorderOrigPositions.set(s.id, { x: b.minX, y: b.minY });
+      }
+    }
+  }
+
+  /** Resolve a drop while reorder mode is active. Single-shape drag
+   *  onto another sibling-child of the same reorder drag-area swaps
+   *  their on-canvas positions; any other outcome (multi-shape drag,
+   *  drop in empty canvas, drop on non-sibling) snaps every dragged
+   *  child back to its pre-drag location. Either way we record one
+   *  history entry and notify. */
+  private _handleReorderDrop(e: PointerEvent) {
+    const draggedIds = Array.from(this._reorderOrigPositions.keys());
+    let target: Shape | null = null;
+    if (this.canvasEl && draggedIds.length === 1) {
+      const r = this.canvasEl.getBoundingClientRect();
+      const dropPt = screenToCanvas(
+        { x: e.clientX - r.left, y: e.clientY - r.top },
+        this.camera,
+      );
+      const draggedSet = new Set(draggedIds);
+      for (let i = this.shapes.length - 1; i >= 0; i--) {
+        const s = this.shapes[i];
+        if (draggedSet.has(s.id)) continue;
+        if (s.parentId !== this.reorderDragAreaId) continue;
+        const b = getShapeBounds(s, this.fontFamily);
+        if (dropPt.x >= b.minX && dropPt.x <= b.maxX && dropPt.y >= b.minY && dropPt.y <= b.maxY) {
+          target = s;
+          break;
+        }
+      }
+    }
+
+    if (target && draggedIds.length === 1) {
+      const draggedId = draggedIds[0];
+      const draggedOrig = this._reorderOrigPositions.get(draggedId)!;
+      const targetBounds = getShapeBounds(target, this.fontFamily);
+      const targetTL: Point = { x: targetBounds.minX, y: targetBounds.minY };
+      const targetId = target.id;
+      this.shapes = this.shapes.map((s) => {
+        if (s.id === draggedId) {
+          const b = getShapeBounds(s, this.fontFamily);
+          return moveShape(s, targetTL.x - b.minX, targetTL.y - b.minY);
+        }
+        if (s.id === targetId) {
+          const b = getShapeBounds(s, this.fontFamily);
+          return moveShape(s, draggedOrig.x - b.minX, draggedOrig.y - b.minY);
+        }
+        return s;
+      });
+    } else {
+      this.shapes = this.shapes.map((s) => {
+        const orig = this._reorderOrigPositions.get(s.id);
+        if (!orig) return s;
+        const b = getShapeBounds(s, this.fontFamily);
+        return moveShape(s, orig.x - b.minX, orig.y - b.minY);
+      });
+    }
+    this._reorderOrigPositions.clear();
+    this.flowDropTargetId = null;
+    this.recordHistory();
+    this.notify("shapes");
+  }
+
   /** IDs of every shape that the active drag is moving — selection +
    *  children of selected drag-areas + flow descendants + group followers
    *  of those descendants. Mirrors the move set built each frame in
@@ -1896,6 +2001,13 @@ export class DrawingState extends EventTarget {
       .map((s) => s.parentId && deletingIds.has(s.parentId) ? { ...s, parentId: undefined } : s);
     // Drop any flowchart edges that referenced the deleted nodes.
     for (const id of deletingIds) this.flowchart.removeNode(id);
+    // If the active reorder drag-area got deleted, exit the mode so we
+    // don't keep painting a solid outline against a phantom id.
+    if (this.reorderDragAreaId && deletingIds.has(this.reorderDragAreaId)) {
+      this.reorderDragAreaId = null;
+      this._reorderOrigPositions.clear();
+      this.notify("reorderDragAreaId");
+    }
     this.selectedIds = new Set();
     this.recordHistory();
     this.notify("shapes");
@@ -2074,14 +2186,57 @@ export class DrawingState extends EventTarget {
     this.notify("shapes");
   }
 
-  arrangeSelectedAsGrid() {
-    const selected = this.shapes.filter((s) => this.selectedIds.has(s.id));
-    if (selected.length < 2) return;
-    const arranged = arrangeShapesAsGrid(selected, this.fontFamily);
+  /** Arrange every direct child of the supplied drag-area into an
+   *  as-square-as-possible grid centred on the drag-area itself, and
+   *  grow the drag-area to wrap the resulting cluster (with 16 px
+   *  breathing room) if the grid overflows its current bounds. The
+   *  drag-area is never shrunk — any extra space the user reserved
+   *  manually is preserved. */
+  arrangeDragAreaAsGrid(dragAreaId: string) {
+    const da = this.shapes.find((s) => s.id === dragAreaId);
+    if (!da || da.type !== "drag-area") return;
+    const children = this.shapes.filter((s) => s.parentId === dragAreaId);
+    if (children.length < 2) return;
+    const center: Point = {
+      x: da.position.x + da.width / 2,
+      y: da.position.y + da.height / 2,
+    };
+    const arranged = arrangeShapesAsGrid(children, this.fontFamily, 20, center);
     const map = new Map(arranged.map((s) => [s.id, s]));
-    this.shapes = this.shapes.map((s) => map.get(s.id) || s);
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of arranged) {
+      const b = getShapeBounds(s, this.fontFamily);
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+    }
+    const PAD = 16;
+    const newMinX = Math.min(da.position.x, minX - PAD);
+    const newMinY = Math.min(da.position.y, minY - PAD);
+    const newMaxX = Math.max(da.position.x + da.width, maxX + PAD);
+    const newMaxY = Math.max(da.position.y + da.height, maxY + PAD);
+
+    this.shapes = this.shapes.map((s) => {
+      if (s.id === dragAreaId && s.type === "drag-area") {
+        return { ...s, position: { x: newMinX, y: newMinY }, width: newMaxX - newMinX, height: newMaxY - newMinY };
+      }
+      return map.get(s.id) || s;
+    });
     this.recordHistory();
     this.notify("shapes");
+  }
+
+  /** Toggle reorder mode for the supplied drag-area. While active, the
+   *  drag-area paints a solid accent outline and dragging one of its
+   *  children onto another swaps their on-canvas positions instead of
+   *  routing through the flowchart drop path. Calling with the same id
+   *  again exits the mode; calling with a different id switches focus. */
+  toggleReorderMode(dragAreaId: string) {
+    this.reorderDragAreaId = this.reorderDragAreaId === dragAreaId ? null : dragAreaId;
+    this._reorderOrigPositions.clear();
+    this.notify("reorderDragAreaId");
   }
 
   // === Bookmarks ===

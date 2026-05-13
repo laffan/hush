@@ -5,6 +5,7 @@ import { DrawingState } from "./state";
 import { render } from "./renderer";
 import { bindInputEvents, type NotebookShortcuts } from "./input-handler";
 import { createToolbar } from "./ui/toolbar";
+import { createReorderBanner } from "./ui/reorder-banner";
 import { createSelectionToolbar } from "./ui/selection-toolbar";
 import { createShelfPanel, type ShelfPanelEl } from "./ui/shelf-panel";
 import { createShelfResizer } from "./ui/shelf-resizer";
@@ -325,6 +326,7 @@ export class NotesCanvas {
     container.appendChild(createSelectionToolbar(this.state));
     container.appendChild(createTextEditor(this.state));
     container.appendChild(createBrainstormInput(this.state));
+    container.appendChild(createReorderBanner(this.state));
     const bottomToolbar = createToolbar(this.state);
     container.appendChild(bottomToolbar);
     const drawingChrome = createDrawingToolPanel(this.state, this._drawingLayer, bottomToolbar);
@@ -613,6 +615,7 @@ export class NotesCanvas {
         flowDropTargetId: this.state.flowDropTargetId,
         flowHoveredEdgeId: this.state.flowHoveredEdgeId,
         strokeEngineDragging: this.state.strokeEngineDragging,
+        reorderDragAreaId: this.state.reorderDragAreaId,
         flagColors: getFlagColorsFromHush(),
         touchMode: getTouchModeFromHush(),
       });

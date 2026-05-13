@@ -200,6 +200,14 @@ export function bindInputEvents(
       if (e.key === "Escape") { state.endEditingText(); }
       return;
     }
+    // Esc exits reorder mode at any time — checked before the
+    // editable-focus guard below so the gesture works even if some
+    // peripheral input has stolen focus on this device.
+    if (e.key === "Escape" && state.reorderDragAreaId) {
+      state.toggleReorderMode(state.reorderDragAreaId);
+      e.preventDefault();
+      return;
+    }
     // Skip if focus is in any editable area. .cm-content (the main document
     // editor) is contentEditable but is neither INPUT nor TEXTAREA; without
     // this guard the canvas handler would swallow space keystrokes meant

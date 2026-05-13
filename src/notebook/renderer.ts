@@ -66,6 +66,9 @@ export interface RenderState {
    *  engine bbox is the only chrome on the canvas during the
    *  gesture. */
   strokeEngineDragging?: boolean;
+  /** id of the drag-area currently in reorder mode (solid accent
+   *  outline + swap-on-drop). Null / unset means reorder mode is off. */
+  reorderDragAreaId?: string | null;
   /** Hush's iPad Touch-mode flag, mirrored into the render state by
    *  notes-canvas.ts. The flowchart edge-delete dot is a touch-only
    *  affordance (mouse hover already reveals the same X) so we hide
@@ -136,7 +139,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     const layerShapes = shapesByLayer.get(layer.id);
     if (!layerShapes || !layerShapes.length) continue;
     for (const shape of layerShapes) {
-      if (shape.type === "drag-area" && !pocketedIds.has(shape.id)) drawDragArea(ctx, shape);
+      if (shape.type === "drag-area" && !pocketedIds.has(shape.id)) {
+        drawDragArea(ctx, shape, state.reorderDragAreaId === shape.id, theme.accent);
+      }
     }
   }
 
@@ -310,12 +315,21 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape) {
+export function drawDragArea(
+  ctx: CanvasRenderingContext2D,
+  shape: DragAreaShape,
+  reorderActive = false,
+  reorderAccent?: string,
+) {
   const { position, width, height, strokeColor, backgroundColor, borderRadius } = shape;
   ctx.save();
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 4]);
+  // Reorder mode swaps the dashed gray outline for a solid theme-accent
+  // border so the user can see at a glance which container is in
+  // reorder mode and that the normal flowchart drop behaviour is
+  // disabled inside it.
+  ctx.strokeStyle = reorderActive ? (reorderAccent || strokeColor) : strokeColor;
+  ctx.lineWidth = reorderActive ? 3 : 2;
+  if (!reorderActive) ctx.setLineDash([8, 4]);
   ctx.fillStyle = backgroundColor;
   ctx.beginPath();
   roundRect(ctx, position.x, position.y, width, height, borderRadius);
