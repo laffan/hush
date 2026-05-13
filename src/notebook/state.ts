@@ -1,5 +1,5 @@
 import type {
-  Camera, CameraBookmark, DragAreaShape, DrawingSlot, DrawingSubTool,
+  Bounds, Camera, CameraBookmark, DragAreaShape, DrawingSlot, DrawingSubTool,
   ImageShape, Layer, Point, SelectionBox, Shape, TextShape, Tool,
 } from "./types";
 import { COLOR_PALETTE } from "./types";
@@ -49,7 +49,8 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
   | "drawingToolbarMinimized" | "drawingToolbarOffset"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
-  | "strokeEngineDragging" | "reorderDragAreaId";
+  | "strokeEngineDragging" | "reorderDragAreaId"
+  | "reorderHoverTargetId" | "reorderPreview";
 
 /** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
  *  the active theme's foreground. Slots 2 and 3 carry an explicit
@@ -504,13 +505,22 @@ export class DrawingState extends EventTarget {
    *  means reorder mode is off. Toggled from the selection toolbar
    *  (see `toggleReorderMode`). */
   reorderDragAreaId: string | null = null;
-  /** Top-left bounds of every dragged child captured at pointerDown for
-   *  the duration of an active reorder gesture. Empty otherwise. The
-   *  swap path uses these to send the dragged shape to the target's TL
-   *  and the target back to the dragged shape's pre-drag TL; the
-   *  cursor-only-revert path uses them to snap the dragged shape back
-   *  when the user drops in empty space. */
-  private _reorderOrigPositions = new Map<string, Point>();
+  /** Full pre-drag bounds of every dragged child captured at pointerDown
+   *  for the duration of an active reorder gesture. Empty otherwise.
+   *  Bounds (not just TL) so the renderer can paint a same-shape ghost
+   *  preview at the target's position without re-deriving dimensions. */
+  private _reorderOrigBounds = new Map<string, Bounds>();
+  /** id of the sibling-child currently under the cursor while a reorder
+   *  drag is in flight. Drives the ghost-preview overlay and the
+   *  swap-on-drop hit-test. Null when the cursor isn't over a valid
+   *  target. Members of a group resolve to the group's lead member id —
+   *  the renderer follows the same group expansion. */
+  reorderHoverTargetId: string | null = null;
+  /** Ghost rectangles drawn while reorder mode has a live hover target.
+   *  `ghostA` is the dragged unit's footprint at the target's current
+   *  position; `ghostB` is the target unit's footprint at the dragged
+   *  unit's pre-drag position. Null when no preview should paint. */
+  reorderPreview: { ghostA: Bounds; ghostB: Bounds } | null = null;
 
   // Pocket drag state
   private _pocketDragPending = false;
@@ -1300,6 +1310,14 @@ export class DrawingState extends EventTarget {
             this.flowDropTargetId = newId;
           }
         }
+        // Reorder mode runs its own hover probe so the ghost preview
+        // updates every frame the cursor moves over a sibling-child.
+        // Lives outside the flowchart-only `draggingIds` branch since
+        // reorder mode intentionally empties that list — the probe
+        // still needs to fire on every move.
+        if (this.reorderDragAreaId && this._reorderOrigBounds.size > 0) {
+          this._handleReorderHover(canvasPt);
+        }
         this.notify("shapes");
       }
       return;
@@ -1397,7 +1415,7 @@ export class DrawingState extends EventTarget {
       // (dropped anywhere else). Either way we pre-empt re-parenting
       // and the flowchart drop path so dragging in reorder mode stays
       // a pure reordering gesture.
-      if (this.reorderDragAreaId && this._reorderOrigPositions.size > 0) {
+      if (this.reorderDragAreaId && this._reorderOrigBounds.size > 0) {
         this._handleReorderDrop(e);
         return;
       }
@@ -1818,37 +1836,125 @@ export class DrawingState extends EventTarget {
     }
   }
 
-  /** Snapshot the pre-drag top-left of every selected child of the
+  /** Snapshot the full pre-drag bounds of every selected child of the
    *  active reorder drag-area. Captured at pointerDown so the drop
-   *  handler can either swap (dragged ↔ target) or restore (drop in
-   *  empty space) using positions that don't drift as the drag moves. */
+   *  handler can swap (dragged ↔ target) or restore (drop in empty
+   *  space) using positions that don't drift as the drag moves, and so
+   *  the ghost-preview overlay can paint same-sized outlines at both
+   *  endpoints. */
   private _captureReorderOrigins() {
-    this._reorderOrigPositions.clear();
+    this._reorderOrigBounds.clear();
     if (!this.reorderDragAreaId) return;
     for (const s of this.shapes) {
       if (this.selectedIds.has(s.id) && s.parentId === this.reorderDragAreaId) {
-        const b = getShapeBounds(s, this.fontFamily);
-        this._reorderOrigPositions.set(s.id, { x: b.minX, y: b.minY });
+        this._reorderOrigBounds.set(s.id, { ...getShapeBounds(s, this.fontFamily) });
       }
     }
   }
 
-  /** Resolve a drop while reorder mode is active. Single-shape drag
-   *  onto another sibling-child of the same reorder drag-area swaps
-   *  their on-canvas positions; any other outcome (multi-shape drag,
-   *  drop in empty canvas, drop on non-sibling) snaps every dragged
-   *  child back to its pre-drag location. Either way we record one
-   *  history entry and notify. */
+  /** Snap every dragged child back to the pre-drag bounds captured by
+   *  `_captureReorderOrigins`. Used by the drop handler when the
+   *  gesture isn't a clean single-unit-onto-single-unit swap (drop in
+   *  empty canvas, incoherent multi-select, etc.). */
+  private _restoreReorderOrigins() {
+    this.shapes = this.shapes.map((s) => {
+      const orig = this._reorderOrigBounds.get(s.id);
+      if (!orig) return s;
+      const b = getShapeBounds(s, this.fontFamily);
+      return moveShape(s, orig.minX - b.minX, orig.minY - b.minY);
+    });
+  }
+
+  /** Hit-test the cursor against every sibling-child of the active
+   *  reorder drag-area. Updates `reorderHoverTargetId` and the matching
+   *  `reorderPreview` ghost rectangles. Called from `handlePointerMove`
+   *  while a reorder drag is in flight; cheap enough to run every
+   *  frame (one parent-id filter + axis-aligned bbox test per shape). */
+  private _handleReorderHover(canvasPt: Point) {
+    if (!this.reorderDragAreaId || this._reorderOrigBounds.size === 0) return;
+    const draggedIds = new Set(this._reorderOrigBounds.keys());
+    let hit: Shape | null = null;
+    for (let i = this.shapes.length - 1; i >= 0; i--) {
+      const s = this.shapes[i];
+      if (draggedIds.has(s.id)) continue;
+      if (s.parentId !== this.reorderDragAreaId) continue;
+      const b = getShapeBounds(s, this.fontFamily);
+      if (canvasPt.x >= b.minX && canvasPt.x <= b.maxX && canvasPt.y >= b.minY && canvasPt.y <= b.maxY) {
+        hit = s;
+        break;
+      }
+    }
+    const newId = hit?.id ?? null;
+    if (newId === this.reorderHoverTargetId) return;
+    this.reorderHoverTargetId = newId;
+    this._recomputeReorderPreview();
+    this.notify("reorderHoverTargetId");
+    this.notify("reorderPreview");
+  }
+
+  /** Recompute the ghost rectangles for the live reorder hover. Both
+   *  dragged + target are expanded to their full group footprint so
+   *  the preview shows the cluster that will actually move on drop. */
+  private _recomputeReorderPreview() {
+    if (!this.reorderHoverTargetId) { this.reorderPreview = null; return; }
+    const target = this.shapes.find((s) => s.id === this.reorderHoverTargetId);
+    if (!target) { this.reorderPreview = null; return; }
+    const targetSet = target.groupId
+      ? this.shapes.filter((s) => s.groupId === target.groupId)
+      : [target];
+    let tMinX = Infinity, tMinY = Infinity, tMaxX = -Infinity, tMaxY = -Infinity;
+    for (const s of targetSet) {
+      const b = getShapeBounds(s, this.fontFamily);
+      if (b.minX < tMinX) tMinX = b.minX;
+      if (b.minY < tMinY) tMinY = b.minY;
+      if (b.maxX > tMaxX) tMaxX = b.maxX;
+      if (b.maxY > tMaxY) tMaxY = b.maxY;
+    }
+    let dMinX = Infinity, dMinY = Infinity, dMaxX = -Infinity, dMaxY = -Infinity;
+    for (const b of this._reorderOrigBounds.values()) {
+      if (b.minX < dMinX) dMinX = b.minX;
+      if (b.minY < dMinY) dMinY = b.minY;
+      if (b.maxX > dMaxX) dMaxX = b.maxX;
+      if (b.maxY > dMaxY) dMaxY = b.maxY;
+    }
+    const dW = dMaxX - dMinX, dH = dMaxY - dMinY;
+    const tW = tMaxX - tMinX, tH = tMaxY - tMinY;
+    this.reorderPreview = {
+      ghostA: { minX: tMinX, minY: tMinY, maxX: tMinX + dW, maxY: tMinY + dH },
+      ghostB: { minX: dMinX, minY: dMinY, maxX: dMinX + tW, maxY: dMinY + tH },
+    };
+  }
+
+  /** Resolve a drop while reorder mode is active. A coherent dragged
+   *  unit (single shape, or every selected shape sharing one groupId)
+   *  dropped onto another sibling-child swaps the two units in place:
+   *  the dragged unit's bounds-TL slides to the target unit's
+   *  bounds-TL, the target unit's bounds-TL slides back to the dragged
+   *  unit's pre-drag TL, and the relative offsets between members of
+   *  each unit are preserved. Any other outcome (incoherent dragged
+   *  selection, drop on empty canvas, drop on a non-sibling) snaps
+   *  every dragged child back to its captured origin. Either way one
+   *  history entry is recorded. */
   private _handleReorderDrop(e: PointerEvent) {
-    const draggedIds = Array.from(this._reorderOrigPositions.keys());
+    const draggedIds = Array.from(this._reorderOrigBounds.keys());
+    if (draggedIds.length === 0) {
+      this._reorderOrigBounds.clear();
+      this.flowDropTargetId = null;
+      return;
+    }
+    const draggedSet = new Set(draggedIds);
+    const draggedShapes = this.shapes.filter((s) => draggedSet.has(s.id));
+    const dGid = draggedShapes[0]?.groupId;
+    const isCoherent = draggedIds.length === 1
+      || (!!dGid && draggedShapes.every((s) => s.groupId === dGid));
+
     let target: Shape | null = null;
-    if (this.canvasEl && draggedIds.length === 1) {
+    if (isCoherent && this.canvasEl) {
       const r = this.canvasEl.getBoundingClientRect();
       const dropPt = screenToCanvas(
         { x: e.clientX - r.left, y: e.clientY - r.top },
         this.camera,
       );
-      const draggedSet = new Set(draggedIds);
       for (let i = this.shapes.length - 1; i >= 0; i--) {
         const s = this.shapes[i];
         if (draggedSet.has(s.id)) continue;
@@ -1861,35 +1967,46 @@ export class DrawingState extends EventTarget {
       }
     }
 
-    if (target && draggedIds.length === 1) {
-      const draggedId = draggedIds[0];
-      const draggedOrig = this._reorderOrigPositions.get(draggedId)!;
-      const targetBounds = getShapeBounds(target, this.fontFamily);
-      const targetTL: Point = { x: targetBounds.minX, y: targetBounds.minY };
-      const targetId = target.id;
+    if (isCoherent && target) {
+      const targetSet = target.groupId
+        ? new Set(this.shapes.filter((s) => s.groupId === target!.groupId).map((s) => s.id))
+        : new Set<string>([target.id]);
+      let dMinX = Infinity, dMinY = Infinity;
+      for (const b of this._reorderOrigBounds.values()) {
+        if (b.minX < dMinX) dMinX = b.minX;
+        if (b.minY < dMinY) dMinY = b.minY;
+      }
+      let tMinX = Infinity, tMinY = Infinity;
+      for (const s of this.shapes) {
+        if (!targetSet.has(s.id)) continue;
+        const b = getShapeBounds(s, this.fontFamily);
+        if (b.minX < tMinX) tMinX = b.minX;
+        if (b.minY < tMinY) tMinY = b.minY;
+      }
+      const dxD = tMinX - dMinX, dyD = tMinY - dMinY;
+      const dxT = dMinX - tMinX, dyT = dMinY - tMinY;
       this.shapes = this.shapes.map((s) => {
-        if (s.id === draggedId) {
+        if (draggedSet.has(s.id)) {
+          const orig = this._reorderOrigBounds.get(s.id)!;
           const b = getShapeBounds(s, this.fontFamily);
-          return moveShape(s, targetTL.x - b.minX, targetTL.y - b.minY);
+          return moveShape(s, (orig.minX + dxD) - b.minX, (orig.minY + dyD) - b.minY);
         }
-        if (s.id === targetId) {
-          const b = getShapeBounds(s, this.fontFamily);
-          return moveShape(s, draggedOrig.x - b.minX, draggedOrig.y - b.minY);
+        if (targetSet.has(s.id)) {
+          return moveShape(s, dxT, dyT);
         }
         return s;
       });
     } else {
-      this.shapes = this.shapes.map((s) => {
-        const orig = this._reorderOrigPositions.get(s.id);
-        if (!orig) return s;
-        const b = getShapeBounds(s, this.fontFamily);
-        return moveShape(s, orig.x - b.minX, orig.y - b.minY);
-      });
+      this._restoreReorderOrigins();
     }
-    this._reorderOrigPositions.clear();
+    this._reorderOrigBounds.clear();
+    this.reorderHoverTargetId = null;
+    this.reorderPreview = null;
     this.flowDropTargetId = null;
     this.recordHistory();
     this.notify("shapes");
+    this.notify("reorderHoverTargetId");
+    this.notify("reorderPreview");
   }
 
   /** IDs of every shape that the active drag is moving — selection +
@@ -2005,8 +2122,12 @@ export class DrawingState extends EventTarget {
     // don't keep painting a solid outline against a phantom id.
     if (this.reorderDragAreaId && deletingIds.has(this.reorderDragAreaId)) {
       this.reorderDragAreaId = null;
-      this._reorderOrigPositions.clear();
+      this._reorderOrigBounds.clear();
+      this.reorderHoverTargetId = null;
+      this.reorderPreview = null;
       this.notify("reorderDragAreaId");
+      this.notify("reorderHoverTargetId");
+      this.notify("reorderPreview");
     }
     this.selectedIds = new Set();
     this.recordHistory();
@@ -2235,8 +2356,12 @@ export class DrawingState extends EventTarget {
    *  again exits the mode; calling with a different id switches focus. */
   toggleReorderMode(dragAreaId: string) {
     this.reorderDragAreaId = this.reorderDragAreaId === dragAreaId ? null : dragAreaId;
-    this._reorderOrigPositions.clear();
+    this._reorderOrigBounds.clear();
+    this.reorderHoverTargetId = null;
+    this.reorderPreview = null;
     this.notify("reorderDragAreaId");
+    this.notify("reorderHoverTargetId");
+    this.notify("reorderPreview");
   }
 
   // === Bookmarks ===

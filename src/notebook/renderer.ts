@@ -1,10 +1,10 @@
 import { FONT_FAMILY, LINE_HEIGHT_RATIO, COLOR_PALETTE } from "./types";
-import type { Camera, DragAreaShape, ImageShape, Layer, Point, SelectionBox, Shape, TextShape } from "./types";
+import type { Bounds, Camera, DragAreaShape, ImageShape, Layer, Point, SelectionBox, Shape, TextShape } from "./types";
 import type { CanvasTheme } from "./themes";
 import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
-import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot } from "./renderer-selection";
+import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview } from "./renderer-selection";
 import { drawBackground } from "./renderer-background";
 import type { FlowchartLayer } from "./flowchart";
 
@@ -69,6 +69,10 @@ export interface RenderState {
   /** id of the drag-area currently in reorder mode (solid accent
    *  outline + swap-on-drop). Null / unset means reorder mode is off. */
   reorderDragAreaId?: string | null;
+  /** Ghost rectangles for the live reorder hover. Painted as dashed
+   *  translucent outlines above the shape pass to telegraph where
+   *  each side of the swap will land on drop. */
+  reorderPreview?: { ghostA: Bounds; ghostB: Bounds } | null;
   /** Hush's iPad Touch-mode flag, mirrored into the render state by
    *  notes-canvas.ts. The flowchart edge-delete dot is a touch-only
    *  affordance (mouse hover already reveals the same X) so we hide
@@ -251,6 +255,11 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
         drawSelectionHighlight(ctx, shape, camera.zoom, theme.accent, state.fontFamily);
       }
     }
+
+    // Reorder-mode ghost preview — dashed rects above the shape pass.
+    if (state.reorderPreview) {
+      drawReorderPreview(ctx, state.reorderPreview.ghostA, state.reorderPreview.ghostB, theme.accent, camera.zoom);
+    }
   }
 
   ctx.restore();
@@ -315,18 +324,11 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-export function drawDragArea(
-  ctx: CanvasRenderingContext2D,
-  shape: DragAreaShape,
-  reorderActive = false,
-  reorderAccent?: string,
-) {
+// `reorderActive` swaps the dashed gray outline for a solid theme-accent
+// border so the active reorder container is unmistakeable.
+export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape, reorderActive = false, reorderAccent?: string) {
   const { position, width, height, strokeColor, backgroundColor, borderRadius } = shape;
   ctx.save();
-  // Reorder mode swaps the dashed gray outline for a solid theme-accent
-  // border so the user can see at a glance which container is in
-  // reorder mode and that the normal flowchart drop behaviour is
-  // disabled inside it.
   ctx.strokeStyle = reorderActive ? (reorderAccent || strokeColor) : strokeColor;
   ctx.lineWidth = reorderActive ? 3 : 2;
   if (!reorderActive) ctx.setLineDash([8, 4]);

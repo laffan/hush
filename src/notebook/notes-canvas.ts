@@ -616,6 +616,7 @@ export class NotesCanvas {
         flowHoveredEdgeId: this.state.flowHoveredEdgeId,
         strokeEngineDragging: this.state.strokeEngineDragging,
         reorderDragAreaId: this.state.reorderDragAreaId,
+        reorderPreview: this.state.reorderPreview,
         flagColors: getFlagColorsFromHush(),
         touchMode: getTouchModeFromHush(),
       });

@@ -1,6 +1,37 @@
-import type { Camera, ImageShape, SelectionBox, Shape } from "./types";
+import type { Bounds, Camera, ImageShape, SelectionBox, Shape } from "./types";
 import type { CanvasTheme } from "./themes";
 import { getShapeBounds } from "./utils";
+
+/** Translucent dashed ghost previewing where a reorder swap will land.
+ *  Drawn in canvas space (caller has the world transform applied) so
+ *  the dash scales with zoom — divide pattern + line width by zoom to
+ *  match the rest of the selection chrome's screen-stable look. Two
+ *  rects are shown: the dragged unit at the target's slot, and the
+ *  target unit at the dragged unit's pre-drag slot. */
+export function drawReorderPreview(
+  ctx: CanvasRenderingContext2D,
+  ghostA: Bounds,
+  ghostB: Bounds,
+  accentColor: string,
+  zoom: number,
+): void {
+  ctx.save();
+  ctx.setLineDash([6 / zoom, 4 / zoom]);
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.strokeStyle = accentColor;
+  for (const b of [ghostA, ghostB]) {
+    ctx.beginPath();
+    ctx.rect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+    ctx.globalAlpha = 0.1;
+    ctx.fillStyle = accentColor;
+    ctx.fill();
+    ctx.globalAlpha = 0.7;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+  ctx.restore();
+}
 
 export function drawSelectionHighlight(ctx: CanvasRenderingContext2D, shape: Shape, zoom: number, accentColor: string, fontFamily?: string) {
   const bounds = getShapeBounds(shape, fontFamily);
