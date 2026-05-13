@@ -30,6 +30,7 @@ src/notebook/
     shelf-panel.ts         Right-side hierarchical shape browser
     text-editor.ts         Inline textarea overlay for text shapes
     brainstorm-input.ts    Persistent input for brainstorm mode
+    reorder-banner.ts      Top-of-canvas "Reorder mode" pill + Exit button
     status-bar.ts          Zoom / shape count / selection count
     icons.ts               SVG icon system (currentColor theming)
     dom-helpers.ts         h() element builder, setStyles(), clearChildren()
@@ -178,7 +179,7 @@ Two sibling files keep `renderer.ts` under the line limit while preserving purit
 |------|-------------|
 | `TextShape` | Positioned text with markdown rendering, optional background color, auto-fit or manual width |
 | `ImageShape` | Positioned image from base64 dataUrl, with optional non-destructive crop region |
-| `DragAreaShape` | Dashed container box that parents shapes dropped inside it. Created by dragging out an area with the Drag Area tool, *or* by selecting 2+ shapes and clicking the Drag Area button in the bottom toolbar — the latter wraps the selection (16 px padding) and re-parents every selected shape into the new container in one shot. See `DrawingState.wrapSelectionInDragArea()` in `state.ts`. Holding `⌘` (or the Touch-mode `⌘` button) while dragging a child of a drag-area grows the area live to wrap the moving cluster (selection + group + flowchart descendants) with 20 px breathing room — `DrawingState.applyCmdHeldResize()` mutates the area's bounds each frame from the cmd-toggle key listeners in `input-handler.ts`. Releasing `⌘` contracts the area back, capped at the bounds it had at drag-start. |
+| `DragAreaShape` | Dashed container box that parents shapes dropped inside it. Created by dragging out an area with the Drag Area tool, *or* by selecting 2+ shapes and clicking the Drag Area button in the bottom toolbar — the latter wraps the selection (16 px padding) and re-parents every selected shape into the new container in one shot. See `DrawingState.wrapSelectionInDragArea()` in `state.ts`. Holding `⌘` (or the Touch-mode `⌘` button) while dragging a child of a drag-area grows the area live to wrap the moving cluster (selection + group + flowchart descendants) with 20 px breathing room — `DrawingState.applyCmdHeldResize()` mutates the area's bounds each frame from the cmd-toggle key listeners in `input-handler.ts`. Releasing `⌘` contracts the area back, capped at the bounds it had at drag-start. Selecting a single drag-area exposes two container actions on the selection toolbar — **Arrange as grid** and **Reorder mode** — both detailed in their own section below. |
 | `DrawShape` | Freehand stroke — array of points + brushId + size + mode. Rendered by the drawing engine (see [README-DRAWING.md](README-DRAWING.md)). |
 
 All shapes extend `ShapeBase`: `{ id, color, parentId?, groupId?, pocketed?, layerId? }`.
@@ -221,6 +222,25 @@ Portable layer ported from the Steiner project (`src/notebook/flowchart.ts`). Co
 **Group anchoring.** `DrawingState` wires the flowchart layer with `getBounds: unionGroupBounds` so arrows anchor against the union of any group the endpoint belongs to (stroke clusters in particular). Without that the connect path elects one group member as the lead and the arrowhead lands inside the cluster — pointing at one stray stroke instead of the group's edge. Non-grouped shapes are unaffected: `unionGroupBounds` falls back to `getShapeBounds` when `groupId` is unset.
 
 **Persistence.** Edges are JSON-serialised by `flowchart.serialize()` and round-trip through the same `notebook-content.ts` envelope used for shapes + layers (see "File storage" above). Legacy notebooks (bare `Shape[]` array) decode with `flowEdges = undefined`, which the deserialiser treats as "no edges" — no migration needed.
+
+### Drag-area actions
+
+A single drag-area selection surfaces two container-scoped actions on the selection toolbar (`ui/selection-toolbar.ts`), sitting between the Colors picker and the Trash button: **Arrange as grid** and **Reorder mode**.
+
+**Arrange as grid** is a one-shot — clicking the `grid-mode` button calls `DrawingState.arrangeDragAreaAsGrid(dragAreaId)`, which delegates the geometry to `arrangeShapesAsGrid(children, fontFamily, gap, centerPoint)` in `utils.ts`. The function buckets shapes into **units** first: each ungrouped shape is its own unit, each `groupId` is one unit whose bounds are the union of its members. Cell dimensions size to the widest / tallest unit, the grid shape defaults to as-square-as-possible (`cols = ceil(sqrt(n))`), and units are sorted by current reading order (row-bands with a `cellH × 0.6` tolerance, then left-to-right inside each band) so the post-arrange layout matches the user's mental map. Each unit's members translate by a single shared delta so groups arrive fully intact. After placement, the drag-area is grown — never shrunk — to wrap the result with 16 px of breathing room.
+
+**Reorder mode** is modal — `DrawingState.toggleReorderMode(id)` flips `state.reorderDragAreaId` between the drag-area's id and null. While set:
+
+- `renderer.ts::drawDragArea` paints the active drag-area with a solid 3 px theme-accent border instead of the default dashed gray, so the modal container is unmistakeable.
+- `ui/reorder-banner.ts` mounts a top-of-canvas pill ("Reorder mode — drag an item onto another to swap places") with an explicit **Exit ×** button. The same exit gesture happens on `Esc` (handled in `input-handler.ts`'s top-of-`keydown` slot, ahead of the editable-focus guard so a stale input can't trap the user) and on re-clicking the toolbar button.
+- The pointerMove flowchart-hover probe is skipped (`!state.reorderDragAreaId` gate around the `draggingIds` collector) so the "prospective parent" outline doesn't mislead the user mid-swap.
+- The pointerUp drop path pre-empts re-parenting and the flowchart drop entirely: `_handleReorderDrop` either swaps the dragged unit with whatever sibling-child of the same drag-area is under the cursor, or snaps every dragged child back to its pre-drag location (drop in empty canvas, or an "incoherent" multi-select that spans multiple groupIds).
+
+**Group-aware swap.** Both sides of the swap expand to their full group on drop. The "dragged unit" is a single shape *or* every selected shape sharing one `groupId` (selection promotion already pulls all group members when the user pointer-downs on any one of them); the "target unit" is the cursor-hit shape, expanded to its `groupId` siblings if any. Uniform deltas (`tMinX - dMinX, tMinY - dMinY` and its negation) shift every member so relative offsets within each group are preserved.
+
+**Ghost preview.** `_handleReorderHover` runs every pointermove during a reorder drag and updates `state.reorderHoverTargetId`. On change, `_recomputeReorderPreview` bakes positioned `Shape` clones at the swap destinations — `draggedShapes` shifted to the target's slot, `targetShapes` shifted to the dragged unit's pre-drag slot — plus the matching `ghostA` / `ghostB` boundary rectangles. The renderer dims `globalAlpha` to 0.55 and re-uses `drawTextShape` / `drawImageShape` / `drawDragArea` / `drawStroke` to paint the clones, then frames them with `drawReorderPreview` (dashed accent rects from `renderer-selection.ts`). Stroke ghosts fall back to the plain `drawStroke` polyline since the textured drawing-engine canvas isn't reachable from the main render pass — fine for a translucent preview. The preview is cached at hover-change time and lives in absolute world coords so it stays put while the cursor keeps moving inside the same target's hit area.
+
+**Lifecycle.** `deleteSelected` auto-exits reorder mode when the active drag-area is the one being deleted (otherwise the solid border would paint against a phantom id). On drop, `_handleReorderDrop` clears `_reorderOrigBounds`, `reorderHoverTargetId`, and `reorderPreview` before recording history. The snapshot itself stores full pre-drag `Bounds` (not just TL) so the renderer can paint same-sized ghosts and the swap math can shift groups uniformly.
 
 ### Drawing
 
