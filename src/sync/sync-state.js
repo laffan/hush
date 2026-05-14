@@ -454,6 +454,17 @@ export async function clearLocalAndReseed(state) {
   if (!IS_TAURI) return;
   const sp = await import("./sync-polling.js");
 
+  // 0. Re-entry guard. A second invocation while the first is still in
+  //    flight (the user double-clicked "Clear and reseed", or the IPC
+  //    fired twice) would race the wipe against the seed and corrupt
+  //    sync.db. Refuse with a console warning so the symptom is
+  //    visible — silently returning would leave the user wondering
+  //    why nothing happened.
+  if (state.runtime?.reseedActive) {
+    console.warn("clearLocalAndReseed: already in flight, ignoring re-entry");
+    return;
+  }
+
   // 1. Raise the barrier BEFORE doing anything else. From this moment
   //    until we lower it at the very end, no autosave / op-log drain /
   //    push-meta / reconcile can run. See the gates in
@@ -463,6 +474,24 @@ export async function clearLocalAndReseed(state) {
   //    pane-persistence.
   state.runtime.reseedActive = true;
   sp.progressBegin(state, 0, "Preparing reseed…");
+
+  // Safety net: if anything inside the try below hangs indefinitely
+  // (a stalled fetch with no timeout, a never-resolving listFolder),
+  // the `finally` below never fires and the barrier stays pinned —
+  // every subsequent save / sync silently no-ops. After
+  // RESEED_HARD_DEADLINE the watchdog lowers the barrier so user
+  // edits and pending ops can resume. The reseed UI may still be
+  // wedged at that point, but at least data isn't being silently
+  // dropped on the floor.
+  const RESEED_HARD_DEADLINE_MS = 180_000;
+  const safetyTimer = setTimeout(() => {
+    if (state.runtime?.reseedActive) {
+      console.warn(
+        "clearLocalAndReseed: hard deadline reached, lowering barrier"
+      );
+      state.runtime.reseedActive = false;
+    }
+  }, RESEED_HARD_DEADLINE_MS);
 
   try {
     // 2. Stop the timer and wait for any in-flight cycle to settle.
@@ -554,13 +583,18 @@ export async function clearLocalAndReseed(state) {
     try {
       const { finalizeDesks, pushAllDesks } = await import("./desk-sync.js");
       await finalizeDesks(state);
-      // Temporarily drop the reseed barrier just for the bootstrap
-      // push: every desk needs a .hushdesk visible on Dropbox before
-      // we declare the reseed complete. Push goes through the op-log
-      // which checks reseedActive, so we toggle the flag inline.
+      // Drop the reseed barrier so pushAllDesks's op-log enqueue +
+      // drain can run. We leave it down through the remaining
+      // bookkeeping below — the outer `finally` is now the single
+      // source of truth for lowering it, instead of the previous
+      // brittle `false → true → false` toggle (which left the
+      // barrier pinned `true` if anything between the inner
+      // `finally` and the outer `finally` hung). The polling-cycle
+      // gates won't do harm here: reconcileSync has already run via
+      // the seed pass, the cursor pull is idempotent, and the only
+      // queued ops are our own desk metadata pushes.
       state.runtime.reseedActive = false;
-      try { await pushAllDesks(state); }
-      finally { state.runtime.reseedActive = true; }
+      await pushAllDesks(state);
     } catch (e) { console.warn("clear: finalize desks failed:", e); }
 
     state.files = await tauriInvoke("list_files");
@@ -568,9 +602,11 @@ export async function clearLocalAndReseed(state) {
     sp.progressPhase(state, "Reseed complete.");
   } finally {
     // 8. Lower the barrier so the normal polling cycle (reconcile,
-    //    op-log drain, push-meta) resumes. Emit `end` *after* the flag
-    //    flips so the modal's Done button doesn't enable while writes
-    //    are still gated.
+    //    op-log drain, push-meta) resumes. Idempotent — the inner
+    //    block above already set it to false on the happy path, but
+    //    setting again on throw / early-exit is the load-bearing
+    //    guarantee.
+    clearTimeout(safetyTimer);
     state.runtime.reseedActive = false;
     sp.progressEnd(state, "Reseed complete.");
   }

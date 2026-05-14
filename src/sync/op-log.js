@@ -396,11 +396,17 @@ async function executeUploadPayload(state, op, dbx) {
   }
   const fullPath = fullDbxPath(state, op.path);
   const resp = await dbx.uploadFile(fullPath, op.payload);
-  // Meta files (`.hush/*.json`) aren't tracked in `synced_files` so they
-  // don't get the SQLite-backed echo suppression that user content does.
-  // Stash the response rev in pane-sync's in-memory set instead so the
-  // cursor consumer skips when our own upload comes back as a delta.
-  if (op.path && op.path.startsWith(".hush/") && resp?.rev) {
+  // `.hush/*.json` meta and `<DeskName>/.hushdesk` identity files aren't
+  // tracked in `synced_files` so they don't get the SQLite-backed echo
+  // suppression that user content does. Stash the response rev in the
+  // shared in-memory ring so the cursor consumer skips when our own
+  // upload comes back as a delta. The desk path was previously omitted
+  // here, which made every .hushdesk push echo back through
+  // `applyDeskFile` and could leave settings.desks with a stale id when
+  // by-name reassignment fired.
+  const isHushMeta = !!op.path && op.path.startsWith(".hush/");
+  const isDeskMeta = !!op.path && op.path.endsWith("/.hushdesk");
+  if ((isHushMeta || isDeskMeta) && resp?.rev) {
     const { markOurRev } = await import("./pane-sync.js");
     markOurRev(resp.rev);
   }
