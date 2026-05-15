@@ -358,6 +358,18 @@
   padding-bottom: calc(var(--lv-line-gap, 2px) / 2);
 }
 
+/* Paragraph currently nearest the editor cursor — picked up by the
+   selectionchange/scroll handlers in longview.js. The outline-color
+   styled background reads on both dark and light themes and stays
+   subtle so the rest of the outline still reads as a body block. */
+.longview-line.is-current-paragraph {
+  background: color-mix(in srgb, var(--lv-position-color, currentColor) 20%, transparent);
+  color: var(--fg);
+  border-left: 2px solid var(--lv-position-color, currentColor);
+  margin-left: -4px;
+  padding-left: 2px;
+}
+
 /* Callout backgrounds */
 .longview-callout-bg {
   border-radius: 2px;

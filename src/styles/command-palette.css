@@ -103,6 +103,24 @@
   margin-left: auto;
 }
 
+/* File picker rows surface the pane indicators (same 5×7 outlined
+   squares as the files sidebar) on the right edge of the row. The
+   nested .tree-pane-indicators was originally absolutely positioned
+   for the sidebar — reset it back to inline flow inside the palette. */
+.cmd-palette-pane-indicators {
+  flex-shrink: 0;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg);
+}
+.cmd-palette-pane-indicators .tree-pane-indicators {
+  position: static;
+  margin: 0;
+  left: auto;
+  top: auto;
+}
+
 .cmd-palette-shortcut kbd {
   display: inline-flex;
   align-items: center;

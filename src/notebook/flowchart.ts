@@ -370,22 +370,41 @@ export class FlowchartLayer<S extends FlowNode> {
     // bad data could yield cycles and this recursion has no other backstop.
     const visited = new Set<string>();
 
+    type Dir = "right" | "left" | "up" | "down";
+    // Direction the children of `id` flow in, inferred from current
+    // positions. Mirrors `geometryClosest`'s axis pick so Tidy preserves
+    // whatever direction the user already wired; falls back to the parent's
+    // direction (or "right") when the node has no placed children yet.
+    const directionOf = (id: string, fallback: Dir): Dir => {
+      const parent = byId.get(id);
+      const kids = parent ? (this.childrenOf(id).map((cid) => byId.get(cid)).filter(Boolean) as S[]) : [];
+      if (!parent || kids.length === 0) return fallback;
+      const pb = this.cfg.getBounds(parent);
+      const pcx = (pb.minX + pb.maxX) / 2, pcy = (pb.minY + pb.maxY) / 2;
+      let sumX = 0, sumY = 0;
+      for (const k of kids) {
+        const kb = this.cfg.getBounds(k);
+        sumX += (kb.minX + kb.maxX) / 2; sumY += (kb.minY + kb.maxY) / 2;
+      }
+      const dx = sumX / kids.length - pcx, dy = sumY / kids.length - pcy;
+      if (Math.abs(dy) > Math.abs(dx)) return dy > 0 ? "down" : "up";
+      return dx >= 0 ? "right" : "left";
+    };
+
     // Recursively assign each node a top-left (minX, minY) in a coordinate
-    // system local to the subtree (subtree's own top-left == (0, 0)).
-    // Returns the subtree's bounding-box size.
-    const layout = (id: string): { width: number; height: number } => {
+    // system local to the subtree. `parentDir` is the direction this node
+    // attaches to its parent on — children inherit it unless their own
+    // current geometry overrides via directionOf.
+    const layout = (id: string, parentDir: Dir): { width: number; height: number } => {
       if (visited.has(id)) return { width: 0, height: 0 };
       visited.add(id);
       const node = byId.get(id);
       if (!node) return { width: 0, height: 0 };
       const nb = this.cfg.getBounds(node);
       const lb = this.cfg.getLayoutBounds(node);
-      const lw = lb.maxX - lb.minX;
-      const lh = lb.maxY - lb.minY;
-      // Node's offset within its layout box — non-zero when group-mates
-      // extend past the node's own bounds.
-      const offX = nb.minX - lb.minX;
-      const offY = nb.minY - lb.minY;
+      const lw = lb.maxX - lb.minX, lh = lb.maxY - lb.minY;
+      // Node's offset within its layout box (>0 when group-mates extend past it).
+      const offX = nb.minX - lb.minX, offY = nb.minY - lb.minY;
 
       const childIds = this.childrenOf(id).filter((c) => byId.has(c) && !visited.has(c));
       if (childIds.length === 0) {
@@ -393,40 +412,38 @@ export class FlowchartLayer<S extends FlowNode> {
         return { width: lw, height: lh };
       }
 
+      const dir = directionOf(id, parentDir);
+      const horiz = dir === "right" || dir === "left";
       const childSizes: { id: string; width: number; height: number }[] = [];
-      for (const cid of childIds) {
-        childSizes.push({ id: cid, ...layout(cid) });
-      }
+      for (const cid of childIds) childSizes.push({ id: cid, ...layout(cid, dir) });
 
-      // Combined height of children stacked with gapY between subtree boxes.
-      let stackedH = 0;
+      // Stack siblings along the secondary axis; step the primary axis once.
+      let stackedSec = 0, maxPri = 0;
       for (let i = 0; i < childSizes.length; i++) {
-        stackedH += childSizes[i].height;
-        if (i < childSizes.length - 1) stackedH += gapY;
+        const c = childSizes[i];
+        stackedSec += horiz ? c.height : c.width;
+        if (i < childSizes.length - 1) stackedSec += gapY;
+        const pri = horiz ? c.width : c.height;
+        if (pri > maxPri) maxPri = pri;
       }
-      // The maximum child subtree width (children may have different depths).
-      let maxChildW = 0;
-      for (const c of childSizes) {
-        if (c.width > maxChildW) maxChildW = c.width;
-      }
-
-      const subtreeH = Math.max(lh, stackedH);
-      const subtreeW = lw + gapX + maxChildW;
-
-      // Place this node's layout box at left edge, centered vertically within
-      // the subtree. The node itself sits at its offset inside that box.
-      out.set(id, { minX: offX, minY: (subtreeH - lh) / 2 + offY });
-
-      // Place each child subtree to the right and stack them vertically,
-      // centered against the subtree's vertical span.
-      const childOffsetX = lw + gapX;
-      let cursorY = (subtreeH - stackedH) / 2;
+      const nodePri = horiz ? lw : lh, nodeSec = horiz ? lh : lw;
+      const subtreePri = nodePri + gapX + maxPri;
+      const subtreeSec = Math.max(nodeSec, stackedSec);
+      // For left/up flow, the node sits past the children (children leading).
+      const nodePriOffset = (dir === "left" || dir === "up") ? (gapX + maxPri) : 0;
+      const nodeSecOffset = (subtreeSec - nodeSec) / 2;
+      out.set(id, horiz
+        ? { minX: nodePriOffset + offX, minY: nodeSecOffset + offY }
+        : { minX: nodeSecOffset + offX, minY: nodePriOffset + offY });
+      const childPriBase = (dir === "left" || dir === "up") ? 0 : (nodePri + gapX);
+      let cursorSec = (subtreeSec - stackedSec) / 2;
       for (const ch of childSizes) {
-        shiftSubtree(ch.id, childOffsetX, cursorY);
-        cursorY += ch.height + gapY;
+        if (horiz) shiftSubtree(ch.id, childPriBase, cursorSec);
+        else shiftSubtree(ch.id, cursorSec, childPriBase);
+        cursorSec += (horiz ? ch.height : ch.width) + gapY;
       }
 
-      return { width: subtreeW, height: subtreeH };
+      return horiz ? { width: subtreePri, height: subtreeSec } : { width: subtreeSec, height: subtreePri };
     };
 
     // Translate every position already assigned within the subtree of `id`.
@@ -448,7 +465,10 @@ export class FlowchartLayer<S extends FlowNode> {
       }
     };
 
-    layout(rootId);
+    // Root node has no parent edge to inherit from — seed it with the
+    // direction implied by its own children, defaulting to "right" for
+    // the legacy layout when the root has no current children placed.
+    layout(rootId, directionOf(rootId, "right"));
 
     // Anchor: shift the whole layout so the root keeps its current top-left.
     const rootBounds = this.cfg.getBounds(root);

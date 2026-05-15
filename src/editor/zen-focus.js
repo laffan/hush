@@ -20,6 +20,7 @@ import { EditorView } from "@codemirror/view";
 import { EditorState, EditorSelection } from "@codemirror/state";
 import { createBaseExtensions } from "./editor.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
+import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { panes } from "../pane/pane-state.js";
 import { getActivePaneId } from "../pane/pane-manager.js";
 
@@ -180,7 +181,17 @@ export function enterZenFocus(state) {
       clamp(seed.anchor, 0, seed.content.length),
       clamp(seed.head,   0, seed.content.length),
     ),
-    extensions: [...extensions, createFocusModePlugin(state), recentre],
+    extensions: [
+      ...extensions,
+      createFocusModePlugin(state),
+      // Replace the raw `---hush-separator---` line with the dashed
+      // block widget so project-view zens look like the main editor.
+      // The separator filter rides along so accidental keystrokes can't
+      // delete or duplicate one inside Zen.
+      createProjectViewField(state),
+      createSeparatorFilter(state),
+      recentre,
+    ],
   });
   const zenView = new EditorView({ state: editorState, parent: stage });
 

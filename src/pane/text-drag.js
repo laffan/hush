@@ -300,6 +300,9 @@ export function attachEditorTextDrag(view, containerEl) {
     const text = view.state.sliceDoc(sel.from, sel.to);
     const from = sel.from;
     const to = sel.to;
+    // Blur the source editor so CM's pointer-driven selection extension doesn't grow as the ghost drags out.
+    try { view.contentDOM.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { view.contentDOM.blur(); } catch (_) {}
     startTextDrag({
       text,
       initialEvent: e,

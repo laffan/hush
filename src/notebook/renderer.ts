@@ -583,27 +583,25 @@ const POCKET_BLUE_HIGHLIGHT = "rgba(66, 153, 225, 0.30)";
 
 function drawPocketTray(
   ctx: CanvasRenderingContext2D, _w: number, h: number,
-  isDragging: boolean, hasPocketed: boolean, leftInset = 0,
-  proximity = 0,
+  isDragging: boolean, hasPocketed: boolean, leftInset = 0, proximity = 0,
 ) {
   ctx.save();
   const x = leftInset;
-  // While dragging, the tray fades in with proximity (0 when far, 0.5 over
-  // the pocket itself). Outside of drags, use the idle/hasPocketed treatment.
+  const cs = getComputedStyle(document.documentElement);
+  const trayBg = (cs.getPropertyValue("--theme-bg") || cs.getPropertyValue("--bg") || "#f4f4f5").trim() || "#f4f4f5";
+  ctx.globalAlpha = isDragging ? Math.min(1, 0.85 * proximity + 0.15) : 1;
+  ctx.fillStyle = trayBg; ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
   if (isDragging) {
     ctx.globalAlpha = 0.5 * proximity;
-    ctx.fillStyle = POCKET_BLUE;
-    ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
-  } else {
-    ctx.fillStyle = POCKET_BLUE;
-    ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
-    if (hasPocketed) {
-      const gradient = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH, 0, x + POCKET_TRAY_WIDTH + 6, 0);
-      gradient.addColorStop(0, "rgba(66, 153, 225, 0.06)");
-      gradient.addColorStop(1, "transparent");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, 6, h);
-    }
+    ctx.fillStyle = POCKET_BLUE_HIGHLIGHT;
+    ctx.fillRect(x + POCKET_TRAY_WIDTH - 4, 0, 4, h);
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.18)"; ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, 1, h);
+  if (!isDragging && hasPocketed) {
+    const g = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH + 1, 0, x + POCKET_TRAY_WIDTH + 7, 0);
+    g.addColorStop(0, "rgba(0, 0, 0, 0.08)"); g.addColorStop(1, "transparent");
+    ctx.fillStyle = g; ctx.fillRect(x + POCKET_TRAY_WIDTH + 1, 0, 6, h);
   }
   ctx.restore();
 }

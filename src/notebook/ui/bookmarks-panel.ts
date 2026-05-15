@@ -72,6 +72,23 @@ export function createBookmarksPanel(state: DrawingState): HTMLElement {
     if (e.key === "Escape") { isOpen = false; adding = false; rebuild(); }
   });
 
+  // Option/Alt + 1..5 jumps to bookmarks 1..5 from anywhere on the
+  // canvas. The handler skips when an input/textarea owns focus so we
+  // don't intercept the same chord while the user is typing a name or
+  // editing a text shape.
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const n = Number(e.key);
+    if (!Number.isInteger(n) || n < 1 || n > 5) return;
+    const bm = state.bookmarks[n - 1];
+    if (!bm) return;
+    e.preventDefault();
+    state.goToBookmark(bm);
+  });
+
   function rebuild() {
     const theme = state.theme;
     const fg = theme.foreground;

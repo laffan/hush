@@ -503,6 +503,17 @@ export function getDeskLastFile(state, deskId) {
  *  desks.json so other devices catch up. No-ops when there's no active
  *  desk yet (e.g. brand-new install before the migration runs). */
 export async function recordActiveDeskLastFile(state, fileId, type) {
+  // Update the global MRU first (per-device, not synced) so the
+  // Cmd+O picker can sort by recency even when the user hops between
+  // desks. Capped so settings.json doesn't grow unbounded.
+  if (fileId) {
+    const prev = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
+    const next = [fileId, ...prev.filter((id) => id !== fileId)].slice(0, 50);
+    if (next.length !== prev.length || next[0] !== prev[0]) {
+      await state.updateSettings({ recentFileIds: next });
+    }
+  }
+
   const desk = getActiveDesk(state);
   if (!desk) return;
   const meta = { ...(state.settings?.desksMeta || {}) };

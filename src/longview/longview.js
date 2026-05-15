@@ -44,8 +44,11 @@ export const LONGVIEW_DEFAULTS = {
  */
 export function createLongView(container, state) {
   let headingEntries = []; // { offset, element }
+  let paragraphEntries = []; // { offset, element }
   let activeHeadingEl = null;
+  let activeParagraphEl = null;
   let scrollHandler = null;
+  let selectionHandler = null;
 
   function getSettings() {
     return { ...LONGVIEW_DEFAULTS, ...state.settings };
@@ -136,6 +139,7 @@ export function createLongView(container, state) {
     content.style.setProperty("--lv-position-color", s.longviewCurrentPositionColor);
 
     headingEntries = [];
+    paragraphEntries = [];
     let currentLevel = 0;
     let flowEl = null;
     const fragments = tokenizeContent(text, headings, flags);
@@ -185,11 +189,13 @@ export function createLongView(container, state) {
           flowEl = createSectionStructure(result.container, currentLevel);
         }
         if (s.longviewShowParagraphs) {
-          for (const line of tokenizeLines(frag.text)) {
+          for (const entry of tokenizeLinesWithOffsets(frag.text, frag.startOffset || 0)) {
             const p = document.createElement("p");
             p.className = "longview-line";
-            p.textContent = line;
+            p.dataset.offset = String(entry.offset);
+            p.textContent = entry.line;
             flowEl.appendChild(p);
+            paragraphEntries.push({ offset: entry.offset, element: p });
           }
         }
       } else if (frag.type === "flag") {
@@ -312,6 +318,9 @@ export function createLongView(container, state) {
     if (scrollHandler) {
       state.editor?.view?.scrollDOM?.removeEventListener("scroll", scrollHandler);
     }
+    if (selectionHandler) {
+      document.removeEventListener("selectionchange", selectionHandler);
+    }
     scrollHandler = () => {
       if (!state.editor) return;
       const view = state.editor.view;
@@ -322,15 +331,41 @@ export function createLongView(container, state) {
       const y = rect.top + rect.height / 3; // 1/3 down viewport
       const pos = view.posAtCoords({ x, y });
       if (pos != null) {
-        highlightHeadingForOffset(pos);
+        highlightForOffset(pos);
       }
     };
+    // Document-level `selectionchange` is the simplest cross-source
+    // cursor hook — fires on arrow keys, clicks, and pointer drags
+    // inside CodeMirror's contentDOM. We pick up the live cursor from
+    // the editor's own selection state to avoid round-tripping through
+    // window.getSelection() ranges.
+    selectionHandler = () => {
+      if (!state.editor) return;
+      const view = state.editor.view;
+      if (!view.hasFocus) return;
+      highlightForOffset(view.state.selection.main.head);
+    };
     state.editor?.view?.scrollDOM?.addEventListener("scroll", scrollHandler);
+    document.addEventListener("selectionchange", selectionHandler);
     // Initial highlight
     if (state.editor) {
       const pos = state.editor.view.state.selection.main.head;
-      highlightHeadingForOffset(pos);
+      highlightForOffset(pos);
     }
+  }
+
+  /** Update both the active heading and the active paragraph for the
+   *  given source offset, then scroll the outline so the active row is
+   *  visible. Drives both editor-scroll and cursor-change handlers. */
+  function highlightForOffset(offset) {
+    highlightHeadingForOffset(offset);
+    highlightParagraphForOffset(offset);
+    // Prefer scrolling the paragraph into view when paragraphs are
+    // rendered; otherwise fall back to the heading. Both branches share
+    // the same scroll container (.longview-content) which scrolls
+    // independently of the rest of the panel chrome.
+    const target = activeParagraphEl || activeHeadingEl;
+    if (target) scrollIntoLongView(target);
   }
 
   function highlightHeadingForOffset(offset) {
@@ -349,6 +384,21 @@ export function createLongView(container, state) {
     setActiveHeading(candidate);
   }
 
+  function highlightParagraphForOffset(offset) {
+    if (paragraphEntries.length === 0) {
+      setActiveParagraph(null);
+      return;
+    }
+    // Pick the closest paragraph entry by offset.
+    let best = paragraphEntries[0];
+    let bestDist = Math.abs(best.offset - offset);
+    for (const entry of paragraphEntries) {
+      const d = Math.abs(entry.offset - offset);
+      if (d < bestDist) { best = entry; bestDist = d; }
+    }
+    setActiveParagraph(best.element);
+  }
+
   function setActiveHeading(el) {
     if (activeHeadingEl === el) return;
     if (activeHeadingEl) activeHeadingEl.classList.remove("is-active");
@@ -356,13 +406,40 @@ export function createLongView(container, state) {
     if (activeHeadingEl) activeHeadingEl.classList.add("is-active");
   }
 
+  function setActiveParagraph(el) {
+    if (activeParagraphEl === el) return;
+    if (activeParagraphEl) activeParagraphEl.classList.remove("is-current-paragraph");
+    activeParagraphEl = el;
+    if (activeParagraphEl) activeParagraphEl.classList.add("is-current-paragraph");
+  }
+
+  /** Scroll the outline's content area so `el` sits roughly mid-viewport.
+   *  Plain scrollIntoView would also nudge the *page* (the panel sits in
+   *  a parent that scrolls) — instead we scroll just the longview-content
+   *  container, which keeps the options panel pinned at the top. */
+  function scrollIntoLongView(el) {
+    const scroller = container.querySelector(".longview-content");
+    if (!scroller || !scroller.contains(el)) return;
+    const elRect = el.getBoundingClientRect();
+    const sRect = scroller.getBoundingClientRect();
+    if (elRect.top >= sRect.top && elRect.bottom <= sRect.bottom) return;
+    const offsetTop = el.offsetTop;
+    scroller.scrollTop = offsetTop - scroller.clientHeight / 2 + el.offsetHeight / 2;
+  }
+
   function destroy() {
     if (scrollHandler && state.editor) {
       state.editor.view?.scrollDOM?.removeEventListener("scroll", scrollHandler);
     }
+    if (selectionHandler) {
+      document.removeEventListener("selectionchange", selectionHandler);
+    }
     headingEntries = [];
+    paragraphEntries = [];
     activeHeadingEl = null;
+    activeParagraphEl = null;
     scrollHandler = null;
+    selectionHandler = null;
   }
 
   // Listen for content changes to auto-refresh
@@ -430,6 +507,25 @@ function tokenizeLines(text) {
     .filter(l => l.length > 0 && !l.startsWith("#"))
     .map(l => sanitizeLine(l))
     .filter(l => l.length > 0);
+}
+
+/** Like tokenizeLines but preserves each surviving line's start
+ *  offset (in the original document) so the outline can highlight the
+ *  paragraph nearest the cursor. */
+function tokenizeLinesWithOffsets(text, baseOffset) {
+  const normalized = text.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const out = [];
+  let cursor = 0;
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (trimmed.length > 0 && !trimmed.startsWith("#")) {
+      const clean = sanitizeLine(trimmed);
+      if (clean.length > 0) out.push({ line: clean, offset: baseOffset + cursor });
+    }
+    cursor += raw.length + 1; // +1 for the \n we split on
+  }
+  return out;
 }
 
 function createSectionStructure(container, level) {
