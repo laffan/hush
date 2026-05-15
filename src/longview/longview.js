@@ -12,6 +12,7 @@ import {
   getFirstWords,
 } from "./longview-parser.js";
 import { CALLOUT_COLORS, getCalloutColor } from "../editor/plugins/callouts.js";
+import { getActiveTheme } from "../themes/index.js";
 
 /** Default flag colors */
 const DEFAULT_FLAG_COLORS = {
@@ -137,6 +138,11 @@ export function createLongView(container, state) {
     content.style.setProperty("--lv-flag-font", s.longviewFlagFontSize + "px");
     content.style.setProperty("--lv-line-gap", s.longviewLineGap + "px");
     content.style.setProperty("--lv-position-color", s.longviewCurrentPositionColor);
+    // Active theme's heading colour drives the current-paragraph wash.
+    const activeTheme = getActiveTheme(state.settings);
+    if (activeTheme && activeTheme.headingColor) {
+      content.style.setProperty("--lv-heading-color", activeTheme.headingColor);
+    }
 
     headingEntries = [];
     paragraphEntries = [];
@@ -194,6 +200,13 @@ export function createLongView(container, state) {
             p.className = "longview-line";
             p.dataset.offset = String(entry.offset);
             p.textContent = entry.line;
+            // Click navigates the editor to this paragraph; mirrors the
+            // heading-click behaviour so the whole outline is interactive.
+            p.addEventListener("click", (e) => {
+              e.stopPropagation();
+              scrollToOffset(state, entry.offset);
+              setActiveParagraph(p);
+            });
             flowEl.appendChild(p);
             paragraphEntries.push({ offset: entry.offset, element: p });
           }
@@ -389,14 +402,17 @@ export function createLongView(container, state) {
       setActiveParagraph(null);
       return;
     }
-    // Pick the closest paragraph entry by offset.
-    let best = paragraphEntries[0];
-    let bestDist = Math.abs(best.offset - offset);
+    // Pick the last paragraph whose offset is ≤ the cursor position —
+    // matches how headings track. `Math.abs` would oscillate at the
+    // boundary between two paragraphs (the next paragraph's start is
+    // closer than the current one's start once the cursor is past the
+    // midpoint), which is what made click-once feel half-resolved.
+    let candidate = paragraphEntries[0];
     for (const entry of paragraphEntries) {
-      const d = Math.abs(entry.offset - offset);
-      if (d < bestDist) { best = entry; bestDist = d; }
+      if (entry.offset <= offset) candidate = entry;
+      else break;
     }
-    setActiveParagraph(best.element);
+    setActiveParagraph(candidate.element);
   }
 
   function setActiveHeading(el) {

@@ -152,3 +152,30 @@ body.notebook-mode .column-resizer {
    panel root carries an inline `display: flex` (set at construction
    time) that would otherwise beat a plain class rule. */
 .notebook-toolbar-collapse-hidden { display: none !important; }
+
+/* Bookmark-jump confirmation toast — fades in/out on Option+1..5.
+   Positioned at the top of the canvas so it doesn't fight the bottom
+   pocket tray or the side shelves. */
+.bookmark-jump-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  padding: 8px 14px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  font-family: system-ui, -apple-system, sans-serif;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 9999;
+  white-space: nowrap;
+}
+.bookmark-jump-toast.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

@@ -581,28 +581,30 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
 const POCKET_BLUE = "rgba(66, 153, 225, 0.18)";
 const POCKET_BLUE_HIGHLIGHT = "rgba(66, 153, 225, 0.30)";
 
+// Bounded tray, mirrored from the right-side shelf style.
 function drawPocketTray(
   ctx: CanvasRenderingContext2D, _w: number, h: number,
-  isDragging: boolean, hasPocketed: boolean, leftInset = 0, proximity = 0,
+  isDragging: boolean, _hasPocketed: boolean, leftInset = 0, proximity = 0,
 ) {
   ctx.save();
-  const x = leftInset;
   const cs = getComputedStyle(document.documentElement);
   const trayBg = (cs.getPropertyValue("--theme-bg") || cs.getPropertyValue("--bg") || "#f4f4f5").trim() || "#f4f4f5";
+  const borderColor = (cs.getPropertyValue("--panel-border") || "rgba(128,128,128,0.3)").trim() || "rgba(128,128,128,0.3)";
+  const x = leftInset, y = 20, w = POCKET_TRAY_WIDTH, hh = Math.max(0, h - 40), r = 12;
   ctx.globalAlpha = isDragging ? Math.min(1, 0.85 * proximity + 0.15) : 1;
-  ctx.fillStyle = trayBg; ctx.fillRect(x, 0, POCKET_TRAY_WIDTH, h);
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + hh - r); ctx.quadraticCurveTo(x + w, y + hh, x + w - r, y + hh);
+  ctx.lineTo(x, y + hh); ctx.closePath();
+  ctx.fillStyle = trayBg; ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = borderColor; ctx.stroke();
   if (isDragging) {
     ctx.globalAlpha = 0.5 * proximity;
     ctx.fillStyle = POCKET_BLUE_HIGHLIGHT;
-    ctx.fillRect(x + POCKET_TRAY_WIDTH - 4, 0, 4, h);
+    ctx.fillRect(x + w - 4, y + 1, 4, hh - 2);
   }
   ctx.globalAlpha = 1;
-  ctx.fillStyle = "rgba(0, 0, 0, 0.18)"; ctx.fillRect(x + POCKET_TRAY_WIDTH, 0, 1, h);
-  if (!isDragging && hasPocketed) {
-    const g = ctx.createLinearGradient(x + POCKET_TRAY_WIDTH + 1, 0, x + POCKET_TRAY_WIDTH + 7, 0);
-    g.addColorStop(0, "rgba(0, 0, 0, 0.08)"); g.addColorStop(1, "transparent");
-    ctx.fillStyle = g; ctx.fillRect(x + POCKET_TRAY_WIDTH + 1, 0, 6, h);
-  }
   ctx.restore();
 }
 

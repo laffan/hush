@@ -370,80 +370,85 @@ export class FlowchartLayer<S extends FlowNode> {
     // bad data could yield cycles and this recursion has no other backstop.
     const visited = new Set<string>();
 
-    type Dir = "right" | "left" | "up" | "down";
-    // Direction the children of `id` flow in, inferred from current
-    // positions. Mirrors `geometryClosest`'s axis pick so Tidy preserves
-    // whatever direction the user already wired; falls back to the parent's
-    // direction (or "right") when the node has no placed children yet.
-    const directionOf = (id: string, fallback: Dir): Dir => {
-      const parent = byId.get(id);
-      const kids = parent ? (this.childrenOf(id).map((cid) => byId.get(cid)).filter(Boolean) as S[]) : [];
-      if (!parent || kids.length === 0) return fallback;
-      const pb = this.cfg.getBounds(parent);
-      const pcx = (pb.minX + pb.maxX) / 2, pcy = (pb.minY + pb.maxY) / 2;
-      let sumX = 0, sumY = 0;
-      for (const k of kids) {
-        const kb = this.cfg.getBounds(k);
-        sumX += (kb.minX + kb.maxX) / 2; sumY += (kb.minY + kb.maxY) / 2;
-      }
-      const dx = sumX / kids.length - pcx, dy = sumY / kids.length - pcy;
+    type Side = "right" | "left" | "up" | "down";
+    interface ChildBox { id: string; w: number; h: number; nodeLeft: number; nodeTop: number; }
+    const sideOf = (p: S, c: S): Side => {
+      const pb = this.cfg.getBounds(p), cb = this.cfg.getBounds(c);
+      const dx = (cb.minX + cb.maxX) / 2 - (pb.minX + pb.maxX) / 2;
+      const dy = (cb.minY + cb.maxY) / 2 - (pb.minY + pb.maxY) / 2;
       if (Math.abs(dy) > Math.abs(dx)) return dy > 0 ? "down" : "up";
       return dx >= 0 ? "right" : "left";
     };
+    const cx = (s: S) => { const b = this.cfg.getBounds(s); return (b.minX + b.maxX) / 2; };
+    const cy = (s: S) => { const b = this.cfg.getBounds(s); return (b.minY + b.maxY) / 2; };
 
-    // Recursively assign each node a top-left (minX, minY) in a coordinate
-    // system local to the subtree. `parentDir` is the direction this node
-    // attaches to its parent on — children inherit it unless their own
-    // current geometry overrides via directionOf.
-    const layout = (id: string, parentDir: Dir): { width: number; height: number } => {
-      if (visited.has(id)) return { width: 0, height: 0 };
+    const layout = (id: string, _parentSide: Side): { width: number; height: number; nodeLeft: number; nodeTop: number } => {
+      if (visited.has(id)) return { width: 0, height: 0, nodeLeft: 0, nodeTop: 0 };
       visited.add(id);
       const node = byId.get(id);
-      if (!node) return { width: 0, height: 0 };
-      const nb = this.cfg.getBounds(node);
-      const lb = this.cfg.getLayoutBounds(node);
+      if (!node) return { width: 0, height: 0, nodeLeft: 0, nodeTop: 0 };
+      const nb = this.cfg.getBounds(node), lb = this.cfg.getLayoutBounds(node);
       const lw = lb.maxX - lb.minX, lh = lb.maxY - lb.minY;
-      // Node's offset within its layout box (>0 when group-mates extend past it).
       const offX = nb.minX - lb.minX, offY = nb.minY - lb.minY;
 
       const childIds = this.childrenOf(id).filter((c) => byId.has(c) && !visited.has(c));
       if (childIds.length === 0) {
         out.set(id, { minX: offX, minY: offY });
-        return { width: lw, height: lh };
+        return { width: lw, height: lh, nodeLeft: 0, nodeTop: 0 };
       }
 
-      const dir = directionOf(id, parentDir);
-      const horiz = dir === "right" || dir === "left";
-      const childSizes: { id: string; width: number; height: number }[] = [];
-      for (const cid of childIds) childSizes.push({ id: cid, ...layout(cid, dir) });
-
-      // Stack siblings along the secondary axis; step the primary axis once.
-      let stackedSec = 0, maxPri = 0;
-      for (let i = 0; i < childSizes.length; i++) {
-        const c = childSizes[i];
-        stackedSec += horiz ? c.height : c.width;
-        if (i < childSizes.length - 1) stackedSec += gapY;
-        const pri = horiz ? c.width : c.height;
-        if (pri > maxPri) maxPri = pri;
+      // Bucket each child by its current side relative to `node` and
+      // recurse with that side (grandchildren inherit it).
+      const buckets: Record<Side, ChildBox[]> = { right: [], left: [], up: [], down: [] };
+      for (const cid of childIds) {
+        const side = sideOf(node, byId.get(cid)!);
+        const sz = layout(cid, side);
+        buckets[side].push({ id: cid, w: sz.width, h: sz.height, nodeLeft: sz.nodeLeft, nodeTop: sz.nodeTop });
       }
-      const nodePri = horiz ? lw : lh, nodeSec = horiz ? lh : lw;
-      const subtreePri = nodePri + gapX + maxPri;
-      const subtreeSec = Math.max(nodeSec, stackedSec);
-      // For left/up flow, the node sits past the children (children leading).
-      const nodePriOffset = (dir === "left" || dir === "up") ? (gapX + maxPri) : 0;
-      const nodeSecOffset = (subtreeSec - nodeSec) / 2;
-      out.set(id, horiz
-        ? { minX: nodePriOffset + offX, minY: nodeSecOffset + offY }
-        : { minX: nodeSecOffset + offX, minY: nodePriOffset + offY });
-      const childPriBase = (dir === "left" || dir === "up") ? 0 : (nodePri + gapX);
-      let cursorSec = (subtreeSec - stackedSec) / 2;
-      for (const ch of childSizes) {
-        if (horiz) shiftSubtree(ch.id, childPriBase, cursorSec);
-        else shiftSubtree(ch.id, cursorSec, childPriBase);
-        cursorSec += (horiz ? ch.height : ch.width) + gapY;
-      }
+      // Reading order: vertical for L/R, horizontal for U/D.
+      buckets.right.sort((a, b) => cy(byId.get(a.id)!) - cy(byId.get(b.id)!));
+      buckets.left.sort((a, b) => cy(byId.get(a.id)!) - cy(byId.get(b.id)!));
+      buckets.down.sort((a, b) => cx(byId.get(a.id)!) - cx(byId.get(b.id)!));
+      buckets.up.sort((a, b) => cx(byId.get(a.id)!) - cx(byId.get(b.id)!));
 
-      return horiz ? { width: subtreePri, height: subtreeSec } : { width: subtreeSec, height: subtreePri };
+      const stackV = (a: ChildBox[]) => a.reduce((r, c, i) => ({ w: Math.max(r.w, c.w), h: r.h + c.h + (i ? gapY : 0) }), { w: 0, h: 0 });
+      const stackH = (a: ChildBox[]) => a.reduce((r, c, i) => ({ w: r.w + c.w + (i ? gapY : 0), h: Math.max(r.h, c.h) }), { w: 0, h: 0 });
+      const sR = stackV(buckets.right), sL = stackV(buckets.left);
+      const sD = stackH(buckets.down), sU = stackH(buckets.up);
+
+      const innerW = Math.max(lw, sU.w, sD.w), innerH = Math.max(lh, sR.h, sL.h);
+      const leftExt  = buckets.left.length  ? gapX + sL.w : 0;
+      const rightExt = buckets.right.length ? gapX + sR.w : 0;
+      const upExt    = buckets.up.length    ? gapX + sU.h : 0;
+      const downExt  = buckets.down.length  ? gapX + sD.h : 0;
+      const totalW = leftExt + innerW + rightExt;
+      const totalH = upExt + innerH + downExt;
+
+      const nodeLeft = leftExt + (innerW - lw) / 2;
+      const nodeTop  = upExt   + (innerH - lh) / 2;
+      out.set(id, { minX: nodeLeft + offX, minY: nodeTop + offY });
+
+      let cur = nodeTop + (lh - sR.h) / 2;
+      for (const c of buckets.right) {
+        shiftSubtree(c.id, nodeLeft + lw + gapX - c.nodeLeft, cur - c.nodeTop);
+        cur += c.h + gapY;
+      }
+      cur = nodeTop + (lh - sL.h) / 2;
+      for (const c of buckets.left) {
+        shiftSubtree(c.id, (nodeLeft - gapX - c.w) - c.nodeLeft, cur - c.nodeTop);
+        cur += c.h + gapY;
+      }
+      cur = nodeLeft + (lw - sD.w) / 2;
+      for (const c of buckets.down) {
+        shiftSubtree(c.id, cur - c.nodeLeft, nodeTop + lh + gapX - c.nodeTop);
+        cur += c.w + gapY;
+      }
+      cur = nodeLeft + (lw - sU.w) / 2;
+      for (const c of buckets.up) {
+        shiftSubtree(c.id, cur - c.nodeLeft, (nodeTop - gapX - c.h) - c.nodeTop);
+        cur += c.w + gapY;
+      }
+      return { width: totalW, height: totalH, nodeLeft, nodeTop };
     };
 
     // Translate every position already assigned within the subtree of `id`.
@@ -465,10 +470,8 @@ export class FlowchartLayer<S extends FlowNode> {
       }
     };
 
-    // Root node has no parent edge to inherit from — seed it with the
-    // direction implied by its own children, defaulting to "right" for
-    // the legacy layout when the root has no current children placed.
-    layout(rootId, directionOf(rootId, "right"));
+    // Root has no parent side to inherit; sideOf bucketing takes over per-child.
+    layout(rootId, "right");
 
     // Anchor: shift the whole layout so the root keeps its current top-left.
     const rootBounds = this.cfg.getBounds(root);
