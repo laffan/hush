@@ -309,48 +309,60 @@ export class FlowchartLayer<S extends FlowNode> {
     shapes: S[],
   ): { minX: number; minY: number } {
     const tb = this.cfg.getBounds(target);
+    const db = this.cfg.getBounds(dropped);
+    const dw = db.maxX - db.minX, dh = db.maxY - db.minY;
 
-    // Stack below any existing children of target (other than the dropped one).
-    let baseY = tb.minY;
+    // Default to the side the target itself is attached to from its
+    // parent — "any new parent/child connection inherits the parent's
+    // attachment side". Roots (no parent) fall back to right.
+    let side: "right" | "left" | "up" | "down" = "right";
+    const pid = this.parentOf(target.id);
+    if (pid) {
+      const parent = shapes.find((s) => s.id === pid);
+      if (parent) side = this._sideOfChild(parent, target);
+    }
+    // Stack behind existing same-side children so siblings don't pile up.
+    const sameSide: FlowBounds[] = [];
     for (const cid of this.childrenOf(target.id)) {
       if (cid === dropped.id) continue;
       const c = shapes.find((s) => s.id === cid);
       if (!c) continue;
-      const cb = this.cfg.getBounds(c);
-      if (cb.maxY + this.cfg.gapY > baseY) baseY = cb.maxY + this.cfg.gapY;
+      if (this._sideOfChild(target, c) === side) sameSide.push(this.cfg.getBounds(c));
     }
-    return {
-      minX: tb.maxX + this.cfg.gapX,
-      minY: baseY,
-    };
+    if (side === "right" || side === "left") {
+      let baseY = tb.minY;
+      for (const cb of sameSide) if (cb.maxY + this.cfg.gapY > baseY) baseY = cb.maxY + this.cfg.gapY;
+      const x = side === "right" ? tb.maxX + this.cfg.gapX : tb.minX - this.cfg.gapX - dw;
+      return { minX: x, minY: baseY };
+    }
+    let baseX = tb.minX;
+    for (const cb of sameSide) if (cb.maxX + this.cfg.gapY > baseX) baseX = cb.maxX + this.cfg.gapY;
+    const y = side === "down" ? tb.maxY + this.cfg.gapX : tb.minY - this.cfg.gapX - dh;
+    return { minX: baseX, minY: y };
+  }
+
+  /** Closest cardinal side of `parent` that `child` currently sits on.
+   *  Mirrors geometryClosest's axis pick. Shared between tidy + tryConnect. */
+  private _sideOfChild(parent: S, child: S): "right" | "left" | "up" | "down" {
+    const pb = this.cfg.getBounds(parent), cb = this.cfg.getBounds(child);
+    const dx = (cb.minX + cb.maxX) / 2 - (pb.minX + pb.maxX) / 2;
+    const dy = (cb.minY + cb.maxY) / 2 - (pb.minY + pb.maxY) / 2;
+    if (Math.abs(dy) > Math.abs(dx)) return dy > 0 ? "down" : "up";
+    return dx >= 0 ? "right" : "left";
   }
 
   // --- Tidy ---
 
   /**
-   * Re-layout the subtree rooted at `rootId`. The root stays anchored at its
-   * current top-left; every descendant is repositioned so that:
-   *   - Each child's left edge sits `tidyGapX` past its parent's right edge.
-   *   - Sibling subtrees are stacked vertically with `tidyGapY` between their
-   *     bounding boxes — which guarantees no overlap regardless of how deep
-   *     or wide individual subtrees grow, since each subtree occupies a
-   *     disjoint horizontal band relative to its siblings.
-   *   - Each parent is vertically centered against the block of its children.
-   *
-   * Nodes can be any size at any level; sibling stacking uses the full
-   * subtree bounding box (not just the child node's own bounds) so that a
-   * deep child subtree can't collide with a shallow sibling beside it.
-   *
-   * Returns a Map<id, { minX, minY }> giving the new top-left of the root
-   * and every descendant. Empty if `rootId` isn't in `shapes`. The caller
-   * applies the move via the same delta pattern as `tryConnect`:
-   *
-   *   for (const [id, tl] of layout) {
-   *     const old = getBounds(byId.get(id)!);
-   *     translate(id, tl.minX - old.minX, tl.minY - old.minY);
-   *   }
-   *
-   * Per-call gap overrides are accepted via `opts`.
+   * Re-layout the subtree rooted at `rootId`, anchoring the root at its
+   * current top-left. Each child is placed on whichever side it currently
+   * occupies (right / left / down / up) — preserving the user's wiring —
+   * with reading order kept (top-to-bottom for L/R, left-to-right for
+   * U/D). Node centers are aligned with the parent's mid-line so single
+   * chains stay straight; sibling stacks distribute around that mid-line.
+   * Per-call gap overrides accepted via `opts`. Returns the new top-left
+   * for every shape in the subtree; the caller applies the delta the
+   * same way as `tryConnect`.
    */
   tidy(
     rootId: string,
@@ -371,84 +383,71 @@ export class FlowchartLayer<S extends FlowNode> {
     const visited = new Set<string>();
 
     type Side = "right" | "left" | "up" | "down";
-    interface ChildBox { id: string; w: number; h: number; nodeLeft: number; nodeTop: number; }
-    const sideOf = (p: S, c: S): Side => {
-      const pb = this.cfg.getBounds(p), cb = this.cfg.getBounds(c);
-      const dx = (cb.minX + cb.maxX) / 2 - (pb.minX + pb.maxX) / 2;
-      const dy = (cb.minY + cb.maxY) / 2 - (pb.minY + pb.maxY) / 2;
-      if (Math.abs(dy) > Math.abs(dx)) return dy > 0 ? "down" : "up";
-      return dx >= 0 ? "right" : "left";
-    };
+    interface CB { id: string; w: number; h: number; nodeLeft: number; nodeTop: number; nodeW: number; nodeH: number; }
     const cx = (s: S) => { const b = this.cfg.getBounds(s); return (b.minX + b.maxX) / 2; };
     const cy = (s: S) => { const b = this.cfg.getBounds(s); return (b.minY + b.maxY) / 2; };
 
-    const layout = (id: string, _parentSide: Side): { width: number; height: number; nodeLeft: number; nodeTop: number } => {
-      if (visited.has(id)) return { width: 0, height: 0, nodeLeft: 0, nodeTop: 0 };
+    // Place node at (0, 0); position children around it so node centers
+    // align with parent's mid-line (single child → straight line; multi
+    // children → averaged so the spread is centered). Track the
+    // resulting bbox dynamically and normalize at the end.
+    const layout = (id: string, _parentSide: Side): { width: number; height: number; nodeLeft: number; nodeTop: number; nodeW: number; nodeH: number } => {
+      if (visited.has(id)) return { width: 0, height: 0, nodeLeft: 0, nodeTop: 0, nodeW: 0, nodeH: 0 };
       visited.add(id);
       const node = byId.get(id);
-      if (!node) return { width: 0, height: 0, nodeLeft: 0, nodeTop: 0 };
+      if (!node) return { width: 0, height: 0, nodeLeft: 0, nodeTop: 0, nodeW: 0, nodeH: 0 };
       const nb = this.cfg.getBounds(node), lb = this.cfg.getLayoutBounds(node);
       const lw = lb.maxX - lb.minX, lh = lb.maxY - lb.minY;
       const offX = nb.minX - lb.minX, offY = nb.minY - lb.minY;
+      out.set(id, { minX: offX, minY: offY });
 
       const childIds = this.childrenOf(id).filter((c) => byId.has(c) && !visited.has(c));
-      if (childIds.length === 0) {
-        out.set(id, { minX: offX, minY: offY });
-        return { width: lw, height: lh, nodeLeft: 0, nodeTop: 0 };
-      }
+      if (childIds.length === 0) return { width: lw, height: lh, nodeLeft: 0, nodeTop: 0, nodeW: lw, nodeH: lh };
 
-      // Bucket each child by its current side relative to `node` and
-      // recurse with that side (grandchildren inherit it).
-      const buckets: Record<Side, ChildBox[]> = { right: [], left: [], up: [], down: [] };
+      const buckets: Record<Side, CB[]> = { right: [], left: [], up: [], down: [] };
       for (const cid of childIds) {
-        const side = sideOf(node, byId.get(cid)!);
+        const side = this._sideOfChild(node, byId.get(cid)!);
         const sz = layout(cid, side);
-        buckets[side].push({ id: cid, w: sz.width, h: sz.height, nodeLeft: sz.nodeLeft, nodeTop: sz.nodeTop });
+        buckets[side].push({ id: cid, w: sz.width, h: sz.height, nodeLeft: sz.nodeLeft, nodeTop: sz.nodeTop, nodeW: sz.nodeW, nodeH: sz.nodeH });
       }
-      // Reading order: vertical for L/R, horizontal for U/D.
       buckets.right.sort((a, b) => cy(byId.get(a.id)!) - cy(byId.get(b.id)!));
       buckets.left.sort((a, b) => cy(byId.get(a.id)!) - cy(byId.get(b.id)!));
       buckets.down.sort((a, b) => cx(byId.get(a.id)!) - cx(byId.get(b.id)!));
       buckets.up.sort((a, b) => cx(byId.get(a.id)!) - cx(byId.get(b.id)!));
 
-      const stackV = (a: ChildBox[]) => a.reduce((r, c, i) => ({ w: Math.max(r.w, c.w), h: r.h + c.h + (i ? gapY : 0) }), { w: 0, h: 0 });
-      const stackH = (a: ChildBox[]) => a.reduce((r, c, i) => ({ w: r.w + c.w + (i ? gapY : 0), h: Math.max(r.h, c.h) }), { w: 0, h: 0 });
-      const sR = stackV(buckets.right), sL = stackV(buckets.left);
-      const sD = stackH(buckets.down), sU = stackH(buckets.up);
+      let bx0 = 0, by0 = 0, bx1 = lw, by1 = lh;
+      // Stack along the perpendicular axis (vertical for R/L, horizontal
+      // for U/D). The stack origin is picked so the AVERAGE of child
+      // node-centers equals the parent's mid-line — for a single child
+      // this collapses to "align child node center with parent" (straight
+      // line); for multiple it spreads them around the parent.
+      const placeStack = (arr: CB[], horiz: boolean, primary: (c: CB) => number) => {
+        if (arr.length === 0) return;
+        const sizes = arr.map((c) => horiz ? c.w : c.h);
+        const offs: number[] = []; let acc = 0;
+        for (let i = 0; i < arr.length; i++) { offs.push(acc); acc += sizes[i] + gapY; }
+        let sumCenters = 0;
+        for (let i = 0; i < arr.length; i++) {
+          const c = arr[i];
+          sumCenters += offs[i] + (horiz ? c.nodeLeft + c.nodeW / 2 : c.nodeTop + c.nodeH / 2);
+        }
+        const start = (horiz ? lw : lh) / 2 - sumCenters / arr.length;
+        for (let i = 0; i < arr.length; i++) {
+          const c = arr[i];
+          const dx = horiz ? start + offs[i] : primary(c) - c.nodeLeft;
+          const dy = horiz ? primary(c) - c.nodeTop : start + offs[i];
+          shiftSubtree(c.id, dx, dy);
+          bx0 = Math.min(bx0, dx); bx1 = Math.max(bx1, dx + c.w);
+          by0 = Math.min(by0, dy); by1 = Math.max(by1, dy + c.h);
+        }
+      };
+      placeStack(buckets.right, false, () => lw + gapX);
+      placeStack(buckets.left,  false, (c) => -gapX - c.nodeW);
+      placeStack(buckets.down,  true,  () => lh + gapX);
+      placeStack(buckets.up,    true,  (c) => -gapX - c.nodeH);
 
-      const innerW = Math.max(lw, sU.w, sD.w), innerH = Math.max(lh, sR.h, sL.h);
-      const leftExt  = buckets.left.length  ? gapX + sL.w : 0;
-      const rightExt = buckets.right.length ? gapX + sR.w : 0;
-      const upExt    = buckets.up.length    ? gapX + sU.h : 0;
-      const downExt  = buckets.down.length  ? gapX + sD.h : 0;
-      const totalW = leftExt + innerW + rightExt;
-      const totalH = upExt + innerH + downExt;
-
-      const nodeLeft = leftExt + (innerW - lw) / 2;
-      const nodeTop  = upExt   + (innerH - lh) / 2;
-      out.set(id, { minX: nodeLeft + offX, minY: nodeTop + offY });
-
-      let cur = nodeTop + (lh - sR.h) / 2;
-      for (const c of buckets.right) {
-        shiftSubtree(c.id, nodeLeft + lw + gapX - c.nodeLeft, cur - c.nodeTop);
-        cur += c.h + gapY;
-      }
-      cur = nodeTop + (lh - sL.h) / 2;
-      for (const c of buckets.left) {
-        shiftSubtree(c.id, (nodeLeft - gapX - c.w) - c.nodeLeft, cur - c.nodeTop);
-        cur += c.h + gapY;
-      }
-      cur = nodeLeft + (lw - sD.w) / 2;
-      for (const c of buckets.down) {
-        shiftSubtree(c.id, cur - c.nodeLeft, nodeTop + lh + gapX - c.nodeTop);
-        cur += c.w + gapY;
-      }
-      cur = nodeLeft + (lw - sU.w) / 2;
-      for (const c of buckets.up) {
-        shiftSubtree(c.id, cur - c.nodeLeft, (nodeTop - gapX - c.h) - c.nodeTop);
-        cur += c.w + gapY;
-      }
-      return { width: totalW, height: totalH, nodeLeft, nodeTop };
+      if (bx0 !== 0 || by0 !== 0) shiftSubtree(id, -bx0, -by0);
+      return { width: bx1 - bx0, height: by1 - by0, nodeLeft: -bx0, nodeTop: -by0, nodeW: lw, nodeH: lh };
     };
 
     // Translate every position already assigned within the subtree of `id`.
