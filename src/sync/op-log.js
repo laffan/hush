@@ -143,24 +143,10 @@ export function triggerDrain(state) {
 
 async function drainOnce(state) {
   if (_draining || !state) return;
-  if (!state.settings?.dropboxEnabled || !state.settings?.dropboxSyncPath) return;
-  // Reseed in flight: queued ops are about to be invalidated and
-  // `clear_local_data` will DELETE the pending_ops table. Don't drain
-  // in the window between the user confirming and the wipe landing —
-  // executing here would push pre-clear paths to Dropbox just before
-  // the cursor seed pulls Dropbox down.
-  if (state.runtime?.reseedActive) return;
-  // While performInitialSync is running, hold drain. A racy autosave
-  // fired between settings activation and performInitialSync's
-  // collision-rename pass could otherwise enqueue an upload op with the
-  // pre-rename path (e.g. "Personal/Inbox/New Notebook.hushnote") and
-  // execute it before performInitialSync renames the local node + uploads
-  // to the suffixed path. Result: iPad's upload lands at Mac's path and
-  // overwrites Mac's content. By gating the drain, by the time the queue
-  // executes the file is already registered with the suffixed path, so
-  // executeUpload's `info.relativePath` resolution picks the right path.
-  const sp = await import("./sync-polling.js");
-  if (sp.isInitialSyncBarrierActive && sp.isInitialSyncBarrierActive()) return;
+  // All write-side gating (sync configured, reseed, initial-sync
+  // barrier) lives in sync-gate. One check, one place to update.
+  const { isSyncWriteGated } = await import("./sync-gate.js");
+  if (await isSyncWriteGated(state)) return;
   _draining = true;
   try {
     while (true) {
@@ -358,13 +344,35 @@ async function executeUpload(state, op, dbx) {
   }
 
   const fullPath = fullDbxPath(state, path);
+  // Rev-gated upload: pass our last known rev so Dropbox returns 409
+  // if the remote has moved. Empty rev → first upload, uses overwrite
+  // mode (no remote to conflict with).
+  const updateRev = info?.lastKnownRev || "";
   let resp;
-  if (path.endsWith(".hushnote")) {
-    const { packNotebook } = await import("./notebook-sync.js");
-    const zipData = await packNotebook(file.content);
-    resp = await dbx.uploadBinary(fullPath, zipData);
-  } else {
-    resp = await dbx.uploadFile(fullPath, file.content);
+  try {
+    if (path.endsWith(".hushnote")) {
+      const { packNotebook } = await import("./notebook-sync.js");
+      const zipData = await packNotebook(file.content);
+      resp = await dbx.uploadBinary(fullPath, zipData, updateRev);
+    } else {
+      resp = await dbx.uploadFile(fullPath, file.content, updateRev);
+    }
+  } catch (e) {
+    if (e && e.name === "DropboxRevConflictError") {
+      const { handleUploadConflict } = await import("./sync-state.js");
+      // Returning vs throwing here matters: returning marks the op
+      // succeeded (it'll be dropped from the queue), throwing leaves
+      // it queued for retry. handleUploadConflict prompts the user;
+      // it either re-enqueues a fresh upload or accepts remote.
+      await handleUploadConflict(state, {
+        internalId: op.internalId,
+        relativePath: path,
+        fullPath,
+        localContent: file.content,
+      });
+      return;
+    }
+    throw e;
   }
 
   // Record the new rev so the cursor consumer can recognize our own
@@ -395,7 +403,12 @@ async function executeUploadPayload(state, op, dbx) {
     throw new Error("upload_payload op missing payload");
   }
   const fullPath = fullDbxPath(state, op.path);
-  const resp = await dbx.uploadFile(fullPath, op.payload);
+  // Meta payloads (.hush/*.json, .hushdesk) aren't rev-tracked: they're
+  // small, additive-merge on apply, and a stray clobber is recoverable
+  // because every device republishes them on the next change. Use
+  // unconditional overwrite (rev="") so longpoll-driven pushes don't
+  // 409 each other.
+  const resp = await dbx.uploadFile(fullPath, op.payload, "");
   // `.hush/*.json` meta and `<DeskName>/.hushdesk` identity files aren't
   // tracked in `synced_files` so they don't get the SQLite-backed echo
   // suppression that user content does. Stash the response rev in the

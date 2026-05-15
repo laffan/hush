@@ -26,7 +26,8 @@ async function tauriInvoke(cmd, args) {
 /** Move every top-level synced path under `<deskName>/`. Skips paths
  *  that already start with the prefix (idempotent). */
 export async function migrateSyncToDesk(state, deskName) {
-  if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return { moved: 0 };
+  const { isSyncWriteGatedSync } = await import("./sync-gate.js");
+  if (isSyncWriteGatedSync(state)) return { moved: 0 };
   if (!deskName) return { moved: 0 };
   const prefix = deskName + "/";
   const files = await getSyncedFiles();

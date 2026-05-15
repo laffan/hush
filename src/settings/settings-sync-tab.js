@@ -340,6 +340,54 @@ export function bindSyncTab(saveSetting, settings, render) {
     });
   });
 
+  // Populate the pending-ops box (best-effort, fire-and-forget).
+  // Settings runs in a separate WebviewWindow so we reach the queue
+  // directly via the Tauri command and ask the main window to drain
+  // via an event.
+  refreshPendingOpsBox();
+
+  const retryBtn = document.getElementById("sync-retry-pending");
+  if (retryBtn) {
+    retryBtn.addEventListener("click", async () => {
+      try {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("sync-trigger-drain");
+        retryBtn.textContent = "Retrying…";
+        setTimeout(() => {
+          retryBtn.textContent = "Retry now";
+          refreshPendingOpsBox();
+        }, 800);
+      } catch (e) { console.warn("retry pending failed:", e); }
+    });
+  }
+
+  async function refreshPendingOpsBox() {
+    const box = document.getElementById("sync-pending-box");
+    if (!box || !IS_TAURI) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const ops = await invoke("peek_pending_ops", { limit: 25 });
+      if (!Array.isArray(ops) || ops.length === 0) {
+        box.innerHTML = `<div class="sync-log-empty">Queue is empty.</div>`;
+        return;
+      }
+      box.innerHTML = ops.map((op) => {
+        const target = op.newPath ? `${op.path} → ${op.newPath}` : op.path;
+        const meta = [`#${op.id}`, op.kind];
+        if (op.attempts > 0) meta.push(`${op.attempts} attempt${op.attempts > 1 ? "s" : ""}`);
+        const lastErr = op.lastError ? `<div class="sync-pending-error">${escHtml2(op.lastError)}</div>` : "";
+        return `<div class="sync-log-entry"><div><strong>${escHtml2(op.kind)}</strong> ${escHtml2(target || "")}</div>
+          <div class="sync-pending-meta">${meta.map(escHtml2).join(" · ")}</div>${lastErr}</div>`;
+      }).join("");
+    } catch (e) {
+      box.innerHTML = `<div class="sync-log-empty">Unable to read queue (${escHtml2(String(e?.message || e))}).</div>`;
+    }
+  }
+
+  function escHtml2(s) {
+    return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
   function addSyncLogEntry(message) {
     const now = new Date();
     const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });

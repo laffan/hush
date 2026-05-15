@@ -56,7 +56,13 @@ export function isOurRev(rev) {
 
 /** fileId → { set: Set<rev>, order: rev[] } */
 const _fileRevs = new Map();
-const PER_FILE_REVS_MAX = 16;
+// Increased from 16 → 64 in the 2026-05 audit pass. With three active
+// devices (desktop + iPad + iPhone) a slow device's cursor can lag
+// far enough behind that the ring would roll over before it caught up
+// to a rev we wrote — that device would then pull-back its own old
+// rev as a "foreign change." 64 slots covers a comfortably long lag
+// without measurably affecting memory.
+const PER_FILE_REVS_MAX = 64;
 
 /**
  * Record a rev we just successfully uploaded for `fileId`. The ring

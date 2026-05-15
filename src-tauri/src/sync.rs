@@ -427,19 +427,6 @@ impl SyncManager {
         Ok(())
     }
 
-    pub fn write_project_json(
-        folder_path: &str,
-        relative_path: &str,
-        doc_names: &[String],
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let dir = PathBuf::from(folder_path).join(relative_path);
-        fs::create_dir_all(&dir)?;
-        let json_path = dir.join(".hush-project.json");
-        let data = serde_json::json!({ "ordering": doc_names });
-        write_atomic_str(&json_path, &serde_json::to_string_pretty(&data)?)?;
-        Ok(())
-    }
-
     pub fn check_all_external_changes(&self, folder: &SyncFolder) -> Vec<ExternalChange> {
         let mut changes = Vec::new();
         let entries = match self.db.list_folder(&folder.id) {

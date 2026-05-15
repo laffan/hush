@@ -76,14 +76,36 @@ Eleven tests covering: SQLite roundtrip, LIKE escape for paths with `_`, JSON mi
 
 ---
 
-### 5. Edit while offline → reconnect → no duplicate, no overwrite
+### 5. Edit while offline → reconnect → conflict prompt fires
 
-1. **Mac** offline. Edit `Today.md`. Save.
+1. **Mac** offline. Edit `Today.md` with the file open in the editor. Save.
 2. While Mac is still offline, on **iPad** edit `Today.md` differently and save.
 3. Reconnect the Mac.
-4. Mac's `syncFileToExternal` uploads its content. iPad's cursor delta arrives, sees a different rev, pulls Mac's content. Or vice versa depending on order.
+4. Mac's `syncFileToExternal` uploads with `mode: update` against its
+   stale `last_known_rev`. Dropbox returns 409 conflict. The conflict
+   handler downloads iPad's content and — because `Today.md` is open
+   in the editor on Mac — fires the **Sync conflict** modal with both
+   versions inline.
+5. Pick "Keep my version" → Mac's content uploads with iPad's rev as
+   the new base; iPad's prior content is in Versions on Mac.
+   Pick "Keep the other version" → Mac's editor swaps to iPad's
+   content; Mac's prior content is in Versions.
 
-**Pass:** No duplicate file is created (single `remote_id` and `internal_id`). The losing side's prior content is in the Versions panel.
+**Pass:** No duplicate file is created. The chosen side wins on
+Dropbox; the losing side's content is reachable from the Versions
+panel for that file on the chosen device.
+
+### 5b. Conflict on a file that's not open — auto-accept remote
+
+1. Repeat scenario 5 but leave `Today.md` **closed** on Mac (have
+   some other doc open in the editor when you reconnect).
+2. Reconnect Mac. The 409 fires the same conflict path, but since the
+   file isn't open in any editor or pane, the handler skips the modal
+   and accepts the remote content silently.
+
+**Pass:** Mac's local content for the closed file becomes iPad's
+content; Mac's prior content is preserved in the Versions panel for
+that file. No modal interrupts the user.
 
 ---
 
@@ -104,10 +126,43 @@ Eleven tests covering: SQLite roundtrip, LIKE escape for paths with `_`, JSON mi
 **Why:** Validates the third party use case the user mentioned.
 
 1. Open the Dropbox folder in any other markdown editor (iA Writer, Obsidian, BBEdit, plain TextEdit). Modify `Today.md`. Save.
-2. Wait ≤10 seconds.
+2. Within ~1–2 s the longpoll loop should wake and pull the change.
 3. Hush should pull the change automatically — sidebar unchanged (no duplicate, no rename), open editor (if this file is open) updates with a "Synced ↓" toast.
 
-**Pass:** Content updates in Hush without rename or duplicate. The Versions panel for that file gains an entry containing the previous content.
+**Pass:** Content updates in Hush within seconds, without rename or duplicate. The Versions panel for that file gains an entry containing the previous content.
+
+### 7b. Cross-folder move on another device reparents locally
+
+**Why:** Pre-audit, a remote move between folders updated only the
+name; the file stayed under its old parent locally, and the next
+`reconcileSync` pushed it back to the old path on Dropbox.
+
+1. On **iPad**, move `Today.md` from `Personal/Inbox/` to
+   `Personal/Archive/` (drag in the sidebar).
+2. Wait for one longpoll cycle on Mac (~1–2 s).
+3. Mac's sidebar should show `Today.md` now under
+   `Personal/Archive/`, not `Personal/Inbox/`.
+4. Open `sync.db`: `SELECT relative_path FROM synced_files WHERE …;`
+   reflects the new path.
+5. Wait through a force-sync. Inspect Dropbox: file stays at
+   `Personal/Archive/Today.md`. No move back to `Personal/Inbox/` fires.
+
+**Pass:** Tree reparents; Dropbox layout is stable across the next
+reconcile.
+
+### 7c. Notebook pull mid-stroke doesn't clobber
+
+**Why:** Pre-audit, `notebook-sync-reload` fired without the pull
+lock; the 2 s notebook autosave could capture the post-reload buffer
+and upload it, erasing the user's in-progress shape from both sides.
+
+1. On **iPad**, open a notebook and start drawing a stroke.
+2. On **Mac**, open the same notebook, add a distinct shape, save.
+3. While iPad is mid-stroke, the cursor pull from Mac's save lands.
+
+**Pass:** iPad's stroke completes and is preserved. After the next
+iPad autosave, both Mac's shape and iPad's stroke are on the canvas
+on both devices.
 
 ---
 
@@ -205,11 +260,31 @@ The iPad uses the same JS code path; correctness should be identical. Difference
 
 ---
 
+### 15. Pending queue UI surfaces stuck ops
+
+1. Disable the network on **Mac** and rename a file — the rename
+   queues but can't drain.
+2. Open Settings → Sync → Dropbox. The **Pending sync queue** section
+   should show one row: kind = `rename`, target path = the rename
+   target, attempts incrementing if the drain has retried since
+   enqueue.
+3. Click **Retry now**. Without network, it stays queued; restore
+   network and click again — the row disappears within a couple of
+   seconds.
+
+**Pass:** Stuck ops are visible without opening sync.db; restoring
+connectivity + clicking Retry drains the queue.
+
+---
+
 ## What success looks like, in one sentence per area
 
 - **Renames**: one event in, one event out, same `remote_id` throughout, exactly one file on each device.
 - **Offline mutations**: queued in `pending_ops`, drained on reconnect, no data loss.
-- **External edits**: pulled via cursor with a Versions snapshot, editor lock prevents keystroke races.
+- **External edits**: pulled via cursor with a Versions snapshot, editor / notebook lock prevents keystroke races.
 - **Migration**: legacy `sync_map.json` becomes `sync.db` rows; duplicate paths land in `sync_orphans` for review.
 - **Echo suppression**: own writes are recognized by `rev` match and skipped — no pull-back loops.
 - **First activation on a second device**: no duplicate rows, desks arrive as desks, name collisions auto-suffix without losing either side's content.
+- **Concurrent edits across three devices**: rev-gated uploads catch conflicts; the conflict modal surfaces them when the file is open; auto-snapshot-and-accept-remote when it's not.
+- **Cross-folder moves**: tree reparents on receive; reconcile never undoes a move.
+- **Longpoll change detection**: typical receiving latency is 1–2 s; safety-net poll at 60 s catches stuck longpolls.

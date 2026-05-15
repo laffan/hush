@@ -178,7 +178,16 @@ export async function performInitialSync(state, dropboxPath) {
           filename: finalName, syncFolderId: SYNC_FOLDER_ID,
           relativePath: entry.relativePath,
         });
-        insertImageIntoTree(state.fileTree, finalName);
+        // Route to the desk implied by the path's first segment, if any.
+        const parts = entry.relativePath.split("/");
+        let preferDeskId = null;
+        if (parts.length >= 2) {
+          const deskNode = (state.fileTree || []).find(
+            (n) => n.type === "desk" && n.name === parts[0]
+          );
+          if (deskNode) preferDeskId = deskNode.id;
+        }
+        insertImageIntoTree(state.fileTree, finalName, preferDeskId);
         downloaded.push(entry.relativePath);
       } catch (e) { console.error(`Image download failed for ${entry.relativePath}:`, e); }
       continue;

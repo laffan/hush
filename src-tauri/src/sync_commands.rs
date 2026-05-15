@@ -279,16 +279,6 @@ pub fn create_sync_file(
 }
 
 #[tauri::command]
-pub fn write_project_json(
-    folder_path: String,
-    relative_path: String,
-    doc_names: Vec<String>,
-) -> Result<(), String> {
-    SyncManager::write_project_json(&folder_path, &relative_path, &doc_names)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub fn check_sync_changes(
     state: State<AppState>,
 ) -> Result<Vec<ExternalChange>, String> {

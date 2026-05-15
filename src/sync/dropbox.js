@@ -338,19 +338,50 @@ export async function downloadBinary(path) {
   return await resp.arrayBuffer();
 }
 
+/** Error subclass thrown when Dropbox rejects an upload because the
+ *  `update` precondition doesn't match (409 with tag = "conflict").
+ *  The op-log catches this specifically and runs the conflict path
+ *  instead of leaving the op in the queue. */
+export class DropboxRevConflictError extends Error {
+  constructor(path, rev, body) {
+    super(`Dropbox rev conflict at ${path} (rev=${rev || "<none>"})`);
+    this.name = "DropboxRevConflictError";
+    this.path = path;
+    this.rev = rev || "";
+    this.body = body;
+  }
+}
+
+/** Build the upload `mode` arg. `rev` empty / nullish → "overwrite"
+ *  (first upload after install, or echo backfill). `rev` set →
+ *  `{ ".tag": "update", "update": rev }` so Dropbox rejects with 409
+ *  when the remote has moved since we last read it. */
+function buildUploadMode(rev) {
+  if (!rev) return "overwrite";
+  return { ".tag": "update", "update": rev };
+}
+
 /**
  * Upload (or overwrite) a file with binary content (Uint8Array/ArrayBuffer).
+ * Pass `rev` to gate the upload on a known remote revision; on
+ * mismatch the call throws `DropboxRevConflictError`.
  */
-export async function uploadBinary(path, data) {
+export async function uploadBinary(path, data, rev = "") {
   const resp = await dbxFetch("https://content.dropboxapi.com/2/files/upload", {
     method: "POST",
     headers: {
-      "Dropbox-API-Arg": JSON.stringify({ path, mode: "overwrite", autorename: false, mute: true }),
+      "Dropbox-API-Arg": JSON.stringify({ path, mode: buildUploadMode(rev), autorename: false, mute: true }),
       "Content-Type": "application/octet-stream",
     },
     body: data,
   });
-  if (!resp.ok) throw new Error(`Dropbox upload failed: ${resp.status}`);
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    if (resp.status === 409 && isUpdateConflict(body)) {
+      throw new DropboxRevConflictError(path, rev, body);
+    }
+    throw new Error(`Dropbox upload failed: ${resp.status}`);
+  }
   return await resp.json();
 }
 
@@ -395,6 +426,49 @@ export async function listFolderContinueRaw(cursor) {
 }
 
 /**
+ * Block server-side until Dropbox sees changes against `cursor`, or
+ * `timeoutSecs` (30–480) elapses. Returns `{ changes, backoff? }`.
+ *   * `changes: true` — there's work; caller runs the cursor pull.
+ *   * `changes: false` + optional `backoff` (secs) — nothing happened
+ *     within the timeout. Caller should wait `backoff` (default 0)
+ *     and longpoll again.
+ *
+ * Longpoll uses the unauthenticated `notify.dropboxapi.com` host (no
+ * Bearer header required — Dropbox identifies the user by the cursor
+ * itself). The 502 retry pattern below handles the occasional gateway
+ * blip without bubbling up to the caller.
+ */
+export async function listFolderLongpoll(cursor, timeoutSecs = 90) {
+  const body = JSON.stringify({ cursor, timeout: Math.max(30, Math.min(480, timeoutSecs | 0)) });
+  // Use a plain fetch — longpoll endpoint refuses auth headers.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let resp;
+    try {
+      resp = await fetch("https://notify.dropboxapi.com/2/files/list_folder/longpoll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+    } catch (e) {
+      // Network blip — let the caller fall back to a short delay + retry.
+      throw e;
+    }
+    if (resp.status === 502 || resp.status === 503) {
+      // Transient gateway error. Brief backoff and retry.
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      continue;
+    }
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`Dropbox longpoll ${resp.status}: ${txt}`);
+    }
+    return resp.json();
+  }
+  // Exhausted retries — surface as a fallback-trigger error.
+  throw new Error("Dropbox longpoll: repeated gateway errors");
+}
+
+/**
  * Get file metadata (server_modified, content_hash, etc.) without downloading.
  */
 export async function getMetadata(path) {
@@ -408,19 +482,44 @@ export async function getMetadata(path) {
 }
 
 /**
- * Upload (or overwrite) a file with text content.
+ * Upload (or overwrite) a file with text content. Pass `rev` to gate
+ * the upload on a known remote revision; on mismatch the call throws
+ * `DropboxRevConflictError`.
  */
-export async function uploadFile(path, content) {
+export async function uploadFile(path, content, rev = "") {
   const resp = await dbxFetch("https://content.dropboxapi.com/2/files/upload", {
     method: "POST",
     headers: {
-      "Dropbox-API-Arg": JSON.stringify({ path, mode: "overwrite", autorename: false, mute: true }),
+      "Dropbox-API-Arg": JSON.stringify({ path, mode: buildUploadMode(rev), autorename: false, mute: true }),
       "Content-Type": "application/octet-stream",
     },
     body: content,
   });
-  if (!resp.ok) throw new Error(`Dropbox upload failed: ${resp.status}`);
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    if (resp.status === 409 && isUpdateConflict(body)) {
+      throw new DropboxRevConflictError(path, rev, body);
+    }
+    throw new Error(`Dropbox upload failed: ${resp.status}`);
+  }
   return await resp.json();
+}
+
+/** Recognise the specific 409 shape Dropbox returns when `mode: update`
+ *  fails its precondition. The full body shape is
+ *  `{ error_summary, error: { ".tag": "path", path: { ".tag": "conflict", conflict: { ".tag": "file" } } } }`
+ *  but we accept any "conflict" tag inside the nested path error
+ *  since the precise wrapper has shifted across Dropbox API versions. */
+function isUpdateConflict(body) {
+  const err = body?.error;
+  if (!err) return false;
+  const top = err[".tag"];
+  if (top === "path") {
+    const inner = err.path?.[".tag"];
+    if (inner === "conflict") return true;
+  }
+  if (top === "conflict") return true;
+  return false;
 }
 
 /**

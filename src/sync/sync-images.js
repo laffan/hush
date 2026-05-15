@@ -59,12 +59,14 @@ export async function downloadImage(dbx, dropboxPath, requestedFilename) {
 }
 
 /**
- * Drop a downloaded image into the pinned `__images__` folder. Skips when
- * the folder is missing (state.js seeds it at startup so this should
- * always exist) or when an entry with the same fileId is already there.
+ * Drop a downloaded image into an Images folder. With desks on, walks
+ * the tree for any `__images__:<deskId>` node (preferring `preferDeskId`
+ * if supplied, falling back to the first match). With desks off, falls
+ * back to the bare `__images__` legacy id. Skips when no folder is
+ * found or when an entry with the same fileId is already there.
  */
-export function insertImageIntoTree(fileTree, filename) {
-  const images = fileTree.find((n) => n.id === IMAGES_NODE_ID);
+export function insertImageIntoTree(fileTree, filename, preferDeskId = null) {
+  const images = findImagesFolder(fileTree, preferDeskId);
   if (!images) return;
   if (!Array.isArray(images.children)) images.children = [];
   if (images.children.some((c) => c.type === "image" && c.fileId === filename)) return;
@@ -78,12 +80,51 @@ export function insertImageIntoTree(fileTree, filename) {
   });
 }
 
+/** Locate the Images folder for `preferDeskId` (when set), else the
+ *  first `__images__:<deskId>` we see, else the legacy bare-id node. */
+function findImagesFolder(fileTree, preferDeskId) {
+  function walk(nodes, predicate) {
+    for (const n of nodes || []) {
+      if (predicate(n)) return n;
+      const hit = walk(n.children, predicate);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (preferDeskId) {
+    const wanted = `__images__:${preferDeskId}`;
+    const hit = walk(fileTree, (n) => n.id === wanted);
+    if (hit) return hit;
+  }
+  const anyPerDesk = walk(fileTree, (n) => typeof n.id === "string" && n.id.startsWith("__images__:"));
+  if (anyPerDesk) return anyPerDesk;
+  return walk(fileTree, (n) => n.id === IMAGES_NODE_ID);
+}
+
+/** Return the name of the desk that owns `preferDeskId`, or the active
+ *  desk if `preferDeskId` is null. Returns "" when desks are off. */
+function deskFolderNameForState(state, preferDeskId) {
+  const tree = state?.fileTree || [];
+  const id = preferDeskId || state?.settings?.activeDeskId || null;
+  if (!id) {
+    const anyDesk = tree.find((n) => n.type === "desk");
+    return anyDesk?.name || "";
+  }
+  const match = tree.find((n) => n.type === "desk" && n.id === id);
+  return match?.name || "";
+}
+
 /**
  * Push a newly-created local image to Dropbox. Called from
- * `state-images.js::createImageFromFile` after the image binary lands on
- * disk and the tree node is added.
+ * `state-images.js::createImageFromFile` after the image binary lands
+ * on disk and the tree node is added.
+ *
+ * With desks on, the image lands under `<DeskName>/Images/<filename>`
+ * so the Dropbox layout mirrors the per-desk `__images__:<deskId>`
+ * tree node. With desks off (or before the first desk is created), it
+ * falls back to top-level `Images/<filename>`.
  */
-export async function syncCreateImage(state, filename) {
+export async function syncCreateImage(state, filename, ownerDeskId = null) {
   if (!IS_TAURI || !state.settings.dropboxEnabled) return;
   const dropboxPath = state.settings.dropboxSyncPath;
   if (!dropboxPath || !filename) return;
@@ -91,13 +132,14 @@ export async function syncCreateImage(state, filename) {
   const dbx = await import("./dropbox.js");
   const { SYNC_FOLDER_ID } = await import("./sync-state.js");
   const basePath = dropboxPath === "/" ? "" : dropboxPath;
-  const relPath = `Images/${filename}`;
+  const deskName = deskFolderNameForState(state, ownerDeskId);
+  const relPath = deskName ? `${deskName}/Images/${filename}` : `Images/${filename}`;
   const fullPath = basePath ? `${basePath}/${relPath}` : `/${relPath}`;
 
   try {
-    // Make sure the Images directory exists on Dropbox (no-op if it does).
-    const imagesDir = basePath ? `${basePath}/Images` : `/Images`;
-    await dbx.createFolder(imagesDir).catch(() => {});
+    const imagesDirRel = deskName ? `${deskName}/Images` : `Images`;
+    const imagesDirFull = basePath ? `${basePath}/${imagesDirRel}` : `/${imagesDirRel}`;
+    await dbx.createFolder(imagesDirFull).catch(() => {});
     await uploadImage(dbx, fullPath, filename);
     await tauriInvoke("register_synced_image", {
       filename, syncFolderId: SYNC_FOLDER_ID, relativePath: relPath,

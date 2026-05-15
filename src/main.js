@@ -493,6 +493,13 @@ async function init() {
 
     await listen("clear-local-data-request", async () => { try { await (await import("./sync/sync-state.js")).clearLocalAndReseed(state); } catch (e) { console.error("Clear local data failed:", e); } });
     await listen("force-sync-request", async () => { try { await (await import("./sync/sync-polling.js")).runForceSync(state); } catch (e) { console.error("Force sync failed:", e); } });
+    // Settings window's "Retry now" button under the Pending sync queue.
+    await listen("sync-trigger-drain", async () => {
+      try {
+        const { triggerDrain } = await import("./sync/op-log.js");
+        triggerDrain(state);
+      } catch (e) { console.warn("sync-trigger-drain failed:", e); }
+    });
 
     // Dropbox OAuth callback (deep link). Google uses a loopback HTTP
     // listener (see commands/google_docs.rs) instead — its code arrives

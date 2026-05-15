@@ -160,6 +160,22 @@
   cursor: pointer;
 }
 
+/* Sync conflict modal — reuses the .gdoc-sot-* shell with a wider
+ * container and inline content previews. */
+.sync-conflict-modal { max-width: 720px; }
+.sync-conflict-preview {
+  margin: 8px 0 0; padding: 8px;
+  background: rgba(128, 128, 128, 0.08);
+  border-radius: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.35;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  color: var(--fg);
+}
+
 /* ---- Link bar (top of editor) -------------------------------------- */
 /* Body-level fixed bar over the editor column. Mounting at body level
  * is required so the bar can stack above `#drag-region` (z-index 80,

@@ -25,8 +25,17 @@ let _state = null;
 
 let _dropboxConnected = true;
 let _healthCheckCounter = 0;
-const HEALTH_CHECK_INTERVAL = 6; // every 60s (6 × 10s ticks)
+const HEALTH_CHECK_INTERVAL = 1; // safety-net poll runs every 60 s, so
+                                 // one tick per safety pass is right.
 let _startupReconcileDone = false;
+
+// Longpoll loop bookkeeping. The loop runs in its own async task; we
+// just hold an `active` flag and a generation counter so a stop +
+// restart doesn't end up with two loops racing.
+let _longpollActive = false;
+let _longpollGen = 0;
+const SAFETY_POLL_MS = 60_000;   // backstop in case longpoll is wedged
+const LONGPOLL_TIMEOUT_S = 90;    // server-side wait per longpoll call
 
 export function isDropboxConnected() {
   return _dropboxConnected;
@@ -36,8 +45,16 @@ export function startSyncPolling(state) {
   if (syncPollTimer) return;
   _state = state;
   _startupReconcileDone = false;
-  syncPollTimer = setInterval(() => runSyncCycle(state), 10000);
+  // Safety-net poll. Longpoll wakes the cycle on every actual change;
+  // this catches the edge case where the longpoll connection silently
+  // dies (NAT timeout, sleep / wake, ISP middlebox). 60 s cadence is
+  // generous — it's not the primary change-detection path.
+  syncPollTimer = setInterval(() => runSyncCycle(state), SAFETY_POLL_MS);
   setTimeout(() => runSyncCycle(state), 500);
+  // Kick off the longpoll loop. The loop self-feeds: each completed
+  // longpoll either fires a cycle (if changes) or re-enters immediately
+  // (if not), so we never hold a stale connection.
+  startLongPollLoop(state);
   // Drain any ops queued while sync was paused (or by a previous session).
   import("./op-log.js").then(({ startDrainWorker }) => startDrainWorker(state));
 }
@@ -164,7 +181,75 @@ export function triggerFullReconcile() {
 
 export function stopSyncPolling() {
   if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+  _longpollActive = false;
+  _longpollGen++; // any in-flight loop bails when its generation mismatches.
   import("./op-log.js").then(({ stopDrainWorker }) => stopDrainWorker());
+}
+
+/**
+ * Longpoll loop. Asks Dropbox's `notify.dropboxapi.com` to block until
+ * it sees changes against the stored cursor (or `LONGPOLL_TIMEOUT_S`
+ * elapses). On `changes: true` we run the cursor pull immediately; on
+ * `changes: false` we re-enter the longpoll. Errors fall back to a
+ * short sleep — the safety-net 60 s poll will catch us up.
+ *
+ * The loop is gated by `_longpollActive` + the generation counter. A
+ * `stopSyncPolling` bumps the generation; any in-flight loop notices
+ * on its next iteration and exits.
+ */
+async function startLongPollLoop(state) {
+  if (_longpollActive) return;
+  _longpollActive = true;
+  const myGen = ++_longpollGen;
+
+  // Brief warmup — let `startSyncPolling`'s initial 500 ms reconcile-
+  // cycle land and persist a cursor before we ask longpoll to watch it.
+  await new Promise((r) => setTimeout(r, 1500));
+
+  while (_longpollActive && myGen === _longpollGen) {
+    if (!state.settings.dropboxEnabled || !state.settings.dropboxSyncPath) {
+      await new Promise((r) => setTimeout(r, 5000));
+      continue;
+    }
+    if (_initialSyncBarrier || state.runtime?.reseedActive) {
+      // Hold off entirely during initial sync / reseed — both manage
+      // their own cursor pulls and our wake-ups would just race them.
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
+
+    // Read the stored cursor; without one we can't longpoll, so fall
+    // back to a short delay until `runSyncCycle` seeds a cursor.
+    let cursor = null;
+    try {
+      const stored = await (await import("@tauri-apps/api/core")).invoke("get_dropbox_cursor", { syncFolderId: SYNC_FOLDER_ID });
+      cursor = stored?.cursor || null;
+    } catch (_) { cursor = null; }
+    if (!cursor) {
+      await new Promise((r) => setTimeout(r, 3000));
+      continue;
+    }
+
+    try {
+      const dbx = await import("./dropbox.js");
+      const res = await dbx.listFolderLongpoll(cursor, LONGPOLL_TIMEOUT_S);
+      if (myGen !== _longpollGen) break;
+      if (res?.changes) {
+        await runSyncCycle(state);
+      }
+      // Optional server-recommended backoff in seconds.
+      const backoff = (res && typeof res.backoff === "number") ? Math.max(0, res.backoff) : 0;
+      if (backoff > 0) await new Promise((r) => setTimeout(r, backoff * 1000));
+    } catch (e) {
+      // Network blip / token refresh hiccup / gateway error — sleep
+      // briefly and try again. The safety-net interval still catches
+      // changes while we're recovering.
+      if (myGen !== _longpollGen) break;
+      console.warn("longpoll error, backing off:", e?.message || e);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+  _longpollActive = false;
 }
 
 /** Poll the in-flight cycle flag and resolve when it's clear (or the
@@ -239,11 +324,18 @@ async function runSyncCycle(state) {
 
     await syncDropboxCursor(state);
 
+    // Each safety-net poll also re-tests the connection. The longpoll
+    // loop is the primary change-detection path; this catches outright
+    // disconnects (token revoked, account deleted) on the slow timer.
     _healthCheckCounter++;
     if (_healthCheckCounter >= HEALTH_CHECK_INTERVAL) {
       _healthCheckCounter = 0;
       await checkDropboxHealth(state);
     }
+    // Kickstart the longpoll loop if it died (e.g. the user reconnected
+    // after a long offline stretch — the loop sleeps but doesn't
+    // self-resurrect from offline).
+    if (!_longpollActive) startLongPollLoop(state);
   } catch (e) {
     console.error("Sync poll error:", e);
   } finally {
@@ -372,7 +464,7 @@ async function applyCreated(state, ev, dbx, invoke, downloadImage) {
       await invoke("register_synced_image", {
         filename: finalName, syncFolderId: SYNC_FOLDER_ID, relativePath: ev.relativePath,
       });
-      insertImageNode(state, finalName);
+      insertImageNode(state, finalName, ev.relativePath);
       return true;
     } catch (e) {
       console.error("cursor: image create failed:", e);
@@ -408,14 +500,8 @@ async function applyCreated(state, ev, dbx, invoke, downloadImage) {
 async function applyRenamed(state, ev, invoke, findNodeByFileId) {
   // Update the sync map to reflect the new path. We don't move the file
   // on Dropbox — Dropbox already reported the rename; we're just catching
-  // up locally. The Rust side would also try fs::rename, but Rust's
-  // `rename_external_file` is gated on "if old path exists" so it's a no-op
-  // here. Use update_sync_state to refresh path + rev atomically.
+  // up locally.
   const node = findNodeByFileId(state.fileTree, ev.internalId);
-  // Walk the tree to put the node under the right parent if depth changed.
-  // Rather than reparenting (complex; deferred), we update name + path-only.
-  // If the user wants moves across folders to reflect on iPad → Mac, that's
-  // a follow-up after this stage.
   await invoke("rename_sync_file", {
     folderPath: "__dropbox__",
     oldRelative: ev.oldRelativePath,
@@ -433,21 +519,85 @@ async function applyRenamed(state, ev, invoke, findNodeByFileId) {
       syncedAt: ev.serverModified || Math.floor(Date.now() / 1000),
     });
   }
-  if (node) {
-    const newName = ev.newRelativePath.split("/").pop().replace(/\.(md|hushnote)$/, "");
-    if (node.name !== newName) node.name = newName;
+
+  if (!node) return;
+
+  // Path-aware update: when the parent path changed (cross-folder move
+  // on another device), reparent the local node so `buildSyncManifest`
+  // doesn't read a stale tree and have `reconcileSync` push the file
+  // back to its old folder on the next cycle.
+  const oldParts = ev.oldRelativePath.split("/");
+  const newParts = ev.newRelativePath.split("/");
+  const oldParent = oldParts.slice(0, -1).join("/");
+  const newParent = newParts.slice(0, -1).join("/");
+  const newName = newParts[newParts.length - 1].replace(/\.(md|hushnote)$/, "");
+
+  if (oldParent !== newParent) {
+    // Detach from current parent.
+    const { removeNode } = await import("../state/tree-helpers.js");
+    removeNode(state.fileTree, node.id);
+    node.name = newName;
+    // Re-insert under the new parent using the same desk-aware logic
+    // as a fresh create event. The target parent's intermediate
+    // folders are created if missing.
+    insertExistingNode(state, ev.newRelativePath, node);
+    return;
   }
+
+  if (node.name !== newName) node.name = newName;
+}
+
+/** Insert an existing tree node under the parent indicated by
+ *  `relativePath` (last segment is the filename). Mirrors
+ *  `insertDocumentNode` but takes a pre-built node instead of
+ *  minting one. */
+function insertExistingNode(state, relativePath, node) {
+  const parts = relativePath.split("/");
+  parts.pop(); // drop the filename segment
+  let current = state.fileTree;
+  for (let depth = 0; depth < parts.length; depth++) {
+    const dirName = parts[depth];
+    if (!dirName) continue;
+    const isTopLevel = depth === 0;
+    let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
+      || (dirName === "Inbox" && current.find(n => n.id === "__inbox__" || n.id?.startsWith("__inbox__:")))
+      || (dirName === "Trash" && current.find(n => n.id === "__trash__" || n.id?.startsWith("__trash__:")));
+    if (!folder) {
+      if (isTopLevel) {
+        const deskId = crypto.randomUUID();
+        folder = {
+          id: deskId, type: "desk", name: dirName,
+          children: [], flagged: false,
+          createdAt: Math.floor(Date.now() / 1000),
+        };
+        ensureSeedDeskSpecials(folder, deskId);
+        current.push(folder);
+      } else {
+        folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
+        const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
+        if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
+        else current.push(folder);
+      }
+    }
+    if (!Array.isArray(folder.children)) folder.children = [];
+    current = folder.children;
+  }
+  const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
+  if (trashIdx >= 0) current.splice(trashIdx, 0, node);
+  else current.push(node);
 }
 
 async function applyContentChanged(state, ev, dbx, invoke) {
   if (ev.kind === "image") return false; // images are content-immutable on rename
 
-  // If the file is currently open in the editor, hold the pull lock
-  // across the full pull (download + persist + setContent) so any
-  // in-flight save / keystroke for this file is suppressed for the whole
-  // window. Without this, the user's pre-pull buffer can ride out the
+  // If the file is currently open (in the editor for docs, or as the
+  // active notebook canvas for .hushnote), hold the pull lock across
+  // the full pull (download + persist + reload). Without this, the
+  // user's pre-pull buffer / mid-stroke shape can ride out the
   // download via autosave and overwrite what we just pulled.
-  const isOpen = state.currentFileId === ev.internalId && state.editor;
+  const isDocOpen = state.currentFileId === ev.internalId && state.editor;
+  const isNotebookOpen = ev.kind === "hushnote" && state.currentNotebookFileId === ev.internalId;
+  const isOpen = isDocOpen || isNotebookOpen;
   if (isOpen) state.acquirePullLock(ev.internalId);
 
   try {
@@ -477,18 +627,18 @@ async function applyContentChanged(state, ev, dbx, invoke) {
       syncedAt: ev.serverModified || Math.floor(Date.now() / 1000),
     });
 
-    if (isOpen) {
+    if (isDocOpen) {
       state.editor.setContent(content);
       // We just synced the editor's content with the remote. Clear dirty
       // so the next autosave doesn't push the same content right back.
       state.dirty = false;
     }
-    // Notebooks have their own canvas; the open-editor branch above
-    // wouldn't fire since `state.currentFileId` is null while a notebook
-    // is open. Emit `notebook-sync-reload` so notebook-bridge can swap
-    // shapes in place if the changed file is the open notebook.
-    if (ev.kind === "hushnote" && state.currentNotebookFileId === ev.internalId) {
+    // Notebooks: swap shapes in place. The pull lock is held across
+    // this so a concurrent notebook autosave (2 s timer) can't fire
+    // its post-reload buffer back up.
+    if (isNotebookOpen) {
       state.emit("notebook-sync-reload", content);
+      state.dirty = false;
     }
     state.files = await invoke("list_files");
     return true;
@@ -591,14 +741,14 @@ function ensureSeedDeskSpecials(desk, deskId) {
   if (wantTrash) desk.children.push({ id: `__trash__:${deskId}`, type: "folder", name: "Trash", children: [], flagged: false });
 }
 
-function insertImageNode(state, filename) {
-  // Always-on desks: Images lives at `__images__:<deskId>` inside each
-  // desk. Resolve via state.getImagesId() so the right desk's Images
-  // folder receives the node; fall back to a recursive search when the
-  // active desk's id can't be resolved (very early boot / corrupt
-  // state) so an image still lands somewhere visible.
-  let images = null;
-  const targetId = typeof state.getImagesId === "function" ? state.getImagesId() : "__images__";
+function insertImageNode(state, filename, relativePath = "") {
+  // Routing priority:
+  //   1. Per-desk Images folder identified by the relativePath's first
+  //      segment (e.g. "Personal/Images/foo.png" → desk named
+  //      "Personal" → its `__images__:<deskId>`).
+  //   2. The active desk's Images folder via state.getImagesId().
+  //   3. Any `__images__:<deskId>` we can find.
+  //   4. The bare-id `__images__` legacy node.
   function findById(nodes, id) {
     for (const n of nodes || []) {
       if (n.id === id) return n;
@@ -607,7 +757,25 @@ function insertImageNode(state, filename) {
     }
     return null;
   }
-  images = findById(state.fileTree, targetId);
+  let images = null;
+  if (relativePath) {
+    const parts = relativePath.split("/");
+    if (parts.length >= 2) {
+      const deskName = parts[0];
+      const deskNode = (state.fileTree || []).find(
+        (n) => n.type === "desk" && n.name === deskName
+      );
+      if (deskNode) {
+        images = (deskNode.children || []).find(
+          (c) => c.id === `__images__:${deskNode.id}`
+        ) || null;
+      }
+    }
+  }
+  if (!images) {
+    const targetId = typeof state.getImagesId === "function" ? state.getImagesId() : "__images__";
+    images = findById(state.fileTree, targetId);
+  }
   if (!images) {
     function findByPrefix(nodes) {
       for (const n of nodes || []) {

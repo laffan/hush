@@ -79,8 +79,8 @@ export async function serializeDesk(state, desk) {
 /** Push a single desk's `.hushdesk` to Dropbox via the op-log. Skipped
  *  during reseed so half-built tree shapes don't leak back. */
 export async function pushDesk(state, desk) {
-  if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
-  if (state.runtime?.reseedActive) return;
+  const { isSyncWriteGatedSync } = await import("./sync-gate.js");
+  if (isSyncWriteGatedSync(state)) return;
   if (!desk || !desk.name) return;
   const payload = await serializeDesk(state, desk);
   if (!payload) return;
@@ -94,8 +94,8 @@ export async function pushDesk(state, desk) {
  *  off `desks.json` and as the "publish the list" entry point that the
  *  rest of the codebase replaces `pushDesksToDropbox` with. */
 export async function pushAllDesks(state) {
-  if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
-  if (state.runtime?.reseedActive) return;
+  const { isSyncWriteGatedSync } = await import("./sync-gate.js");
+  if (isSyncWriteGatedSync(state)) return;
   const desks = (state.fileTree || []).filter((n) => n.type === "desk");
   for (const desk of desks) {
     try { await pushDesk(state, desk); }
@@ -310,8 +310,8 @@ export async function finalizeDesks(state) {
  * Idempotent: a second call notices the legacy file is gone and exits.
  */
 export async function migrateFromDesksJson(state) {
-  if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return false;
-  if (state.runtime?.reseedActive) return false;
+  const { isSyncWriteGatedSync } = await import("./sync-gate.js");
+  if (isSyncWriteGatedSync(state)) return false;
 
   const dbx = await import("./dropbox.js");
   const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");

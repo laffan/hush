@@ -1,7 +1,9 @@
 /**
  * Sync state operations — full tree sync to Dropbox.
  * Syncs all documents, folders, projects, and notebooks as a mirror backup.
- * Documents → .md files, Notebooks → .hushnote (zip) files, Projects → .hushproject (JSON) files.
+ * Documents → .md files, Notebooks → .hushnote (zip) files.
+ * Project membership / ordering lives in `.hush/projects.json`; legacy
+ * `.hushproject` files on Dropbox are skipped on receive.
  */
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -228,13 +230,9 @@ export async function generateClearLocalPreview(state) {
  */
 // eslint-disable-next-line no-unused-vars
 export async function syncFileToExternal(state, fileId, content) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
-  if (!state.settings.dropboxSyncPath) return;
-  if (!fileId) return;
-  // Reseed in flight: any enqueue here would push half-built state up
-  // to Dropbox before the cursor seed has finished rebuilding the
-  // local tree to match.
-  if (state.runtime?.reseedActive) return;
+  if (!IS_TAURI || !fileId) return;
+  const { isSyncWriteGatedSync } = await import("./sync-gate.js");
+  if (isSyncWriteGatedSync(state)) return;
 
   try {
     // Best-effort path hint for the executor. Prefer the sync map's
@@ -262,6 +260,160 @@ export async function syncFileToExternal(state, fileId, content) {
   } catch (e) {
     console.error("Sync write enqueue failed:", e);
   }
+}
+
+/**
+ * Conflict resolver: called by the op-log when a rev-gated upload
+ * comes back with 409 `conflict`. The remote has a newer rev than we
+ * thought, so we pull the remote content, snapshot the local copy
+ * for recovery, then decide what to do:
+ *
+ *   - File is open in the editor (or as the active notebook): prompt
+ *     the user. "Keep mine" re-enqueues an upload using the freshly-
+ *     pulled rev; "Keep remote" applies the remote content locally;
+ *     "Open Versions" surfaces the Versions panel for this file.
+ *   - File is not open: auto-accept the remote and snapshot local.
+ *     The user can recover via Versions if they care.
+ *
+ * Either branch leaves Dropbox holding exactly one revision and the
+ * local sync map up-to-date with that rev. The conflicting op is
+ * NOT requeued automatically when "Keep remote" wins — the user
+ * explicitly chose to drop their write.
+ */
+export async function handleUploadConflict(state, { internalId, relativePath, fullPath, localContent }) {
+  if (!IS_TAURI) return;
+  const dbx = await import("./dropbox.js");
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
+
+  // Step 1: fetch the remote's current state. The cursor will report
+  // this eventually too, but we need rev + content immediately so the
+  // conflict prompt can show it.
+  let remoteMeta;
+  try { remoteMeta = await dbx.getMetadata(fullPath); }
+  catch (_) { remoteMeta = null; }
+  if (!remoteMeta || !remoteMeta.rev) {
+    // Remote disappeared (or returned no metadata). Treat as a normal
+    // first-upload by clearing our rev so the next drain uses
+    // overwrite mode. The user's content is preserved on this device.
+    try {
+      await tauriInvoke("update_sync_state", {
+        internalId, content: localContent, rev: "", syncedAt: Math.floor(Date.now() / 1000),
+      });
+    } catch (_) {}
+    return;
+  }
+
+  const isNotebook = relativePath.endsWith(".hushnote");
+  let remoteContent;
+  try {
+    if (isNotebook) {
+      const buf = await dbx.downloadBinary(fullPath);
+      const { unpackNotebook } = await import("./notebook-sync.js");
+      remoteContent = await unpackNotebook(new Uint8Array(buf));
+    } else {
+      remoteContent = await dbx.downloadFile(fullPath);
+    }
+  } catch (e) {
+    console.warn("conflict: remote download failed, leaving op requeued:", e);
+    throw e;
+  }
+
+  // Snapshot the local content unconditionally — the user can always
+  // recover whichever side they didn't pick. Bypass
+  // `accept_external_change` (which would also overwrite the on-disk
+  // content) and call `create_snapshot` directly.
+  try {
+    if (localContent && localContent.length > 0) {
+      await tauriInvoke("create_snapshot", { documentId: internalId, content: localContent });
+    }
+  } catch (_) {}
+
+  const node = findNodeByFileId(state.fileTree, internalId);
+  const fileName = node?.name || relativePath.split("/").pop();
+  const isOpen = state.currentFileId === internalId || state.currentNotebookFileId === internalId;
+
+  let choice = "remote"; // default for closed files
+  if (isOpen) {
+    try {
+      const { openSyncConflictModal } = await import("./sync-conflict-modal.js");
+      const result = await openSyncConflictModal({
+        fileName,
+        localPreview: previewFor(localContent, isNotebook),
+        remotePreview: previewFor(remoteContent, isNotebook),
+        internalId,
+      });
+      if (result === "local" || result === "remote" || result === "versions") choice = result;
+      else choice = "remote";
+    } catch (e) {
+      console.warn("conflict modal failed, defaulting to remote:", e);
+    }
+  }
+
+  if (choice === "versions") {
+    // Apply remote (so the editor doesn't sit on a divergent copy);
+    // open the Versions panel so the user can compare and restore
+    // whichever side they prefer.
+    await _applyRemoteSide(state, internalId, remoteContent, remoteMeta);
+    state.emit("show-versions-panel");
+    return;
+  }
+
+  if (choice === "remote") {
+    await _applyRemoteSide(state, internalId, remoteContent, remoteMeta);
+    return;
+  }
+
+  // "local" — re-enqueue the upload, now anchored against the remote's
+  // current rev so Dropbox accepts. The drain runs again on the next
+  // triggerDrain (sync-mutations or our explicit call below).
+  await tauriInvoke("update_sync_state", {
+    internalId, content: localContent, rev: remoteMeta.rev,
+    syncedAt: Math.floor(Date.now() / 1000),
+  });
+  const { enqueueUpload, triggerDrain } = await import("./op-log.js");
+  await enqueueUpload({ internalId, path: relativePath });
+  triggerDrain(state);
+}
+
+async function _applyRemoteSide(state, internalId, content, remoteMeta) {
+  await tauriInvoke("accept_external_change", { internalId, content, syncedAt: null });
+  await tauriInvoke("update_sync_state", {
+    internalId, content, rev: remoteMeta.rev || "",
+    syncedAt: serverModifiedSecsFromMeta(remoteMeta),
+  });
+  if (state.currentFileId === internalId && state.editor) {
+    state.acquirePullLock(internalId);
+    try { state.editor.setContent(content); state.dirty = false; }
+    finally { state.releasePullLock(); }
+  }
+  if (state.currentNotebookFileId === internalId) {
+    state.emit("notebook-sync-reload", content);
+  }
+  state.files = await tauriInvoke("list_files");
+  state.emit("files-changed");
+}
+
+function serverModifiedSecsFromMeta(meta) {
+  if (!meta?.server_modified) return Math.floor(Date.now() / 1000);
+  const t = Date.parse(meta.server_modified);
+  return Number.isFinite(t) ? Math.floor(t / 1000) : Math.floor(Date.now() / 1000);
+}
+
+function previewFor(content, isNotebook) {
+  if (typeof content !== "string") return "";
+  if (isNotebook) {
+    try {
+      const parsed = JSON.parse(content);
+      const shapes = Array.isArray(parsed?.shapes) ? parsed.shapes : (Array.isArray(parsed) ? parsed : []);
+      const text = shapes
+        .filter((s) => s?.type === "text" && s.text)
+        .slice(0, 8)
+        .map((s) => s.text)
+        .join("\n---\n");
+      return text || `[notebook with ${shapes.length} shapes]`;
+    } catch { return "[notebook]"; }
+  }
+  return content;
 }
 
 /**
@@ -304,14 +456,10 @@ export {
  * Reconcile sync state after a tree reorganization (drag-and-drop).
  */
 export async function reconcileSync(state) {
-  if (!IS_TAURI || !state.settings.dropboxEnabled) return;
+  if (!IS_TAURI) return;
+  const { isSyncWriteGatedSync } = await import("./sync-gate.js");
+  if (isSyncWriteGatedSync(state)) return;
   const dropboxPath = state.settings.dropboxSyncPath;
-  if (!dropboxPath) return;
-  // Reseed in flight: buildSyncManifest reads the live tree, which is
-  // being rebuilt by the cursor seed. Moving entries on Dropbox to
-  // match a transient mid-reseed shape is exactly the corruption the
-  // reseed flag exists to prevent.
-  if (state.runtime?.reseedActive) return;
 
   // One-shot migration off `.hush/desks.json`: if the legacy file is
   // still on Dropbox, hydrate each local desk with its id+createdAt+

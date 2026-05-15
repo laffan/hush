@@ -107,6 +107,20 @@ function renderDropboxSubTab(settings) {
         </div>
       </div>
       <div class="settings-section">
+        <h2>Pending sync queue</h2>
+        <p class="settings-help">
+          Operations queued for Dropbox. Rows with attempts &gt; 0 or an
+          error are waiting on a retry — usually because the network was
+          down. Click <strong>Retry now</strong> to kick the drain.
+        </p>
+        <div class="sync-log-box" id="sync-pending-box">
+          <div class="sync-log-empty">Loading…</div>
+        </div>
+        <div class="sync-btn-row" style="margin-top:8px;">
+          <button id="sync-retry-pending" class="sync-inline-btn">Retry now</button>
+        </div>
+      </div>
+      <div class="settings-section">
         <h2>Force sync</h2>
         <p class="settings-help">
           Run the standard reconcile + cursor pull right now instead of

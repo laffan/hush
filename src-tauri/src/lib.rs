@@ -406,7 +406,6 @@ pub fn run() {
             sync_commands::rename_sync_directory,
             sync_commands::delete_sync_directory,
             sync_commands::create_sync_file,
-            sync_commands::write_project_json,
             sync_commands::check_sync_changes,
             sync_commands::diff_sync_folder,
             sync_commands::accept_external_change,

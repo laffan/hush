@@ -279,8 +279,11 @@ export class AppState {
       if (this.dirty) {
         this.saveCurrentFile();
       }
-      // Notebook autosave is handled via the "notebook-autosave" event
-      if (this.currentNotebookFileId) {
+      // Notebook autosave is handled via the "notebook-autosave" event.
+      // Skip when a pull lock is held for this notebook — the canvas
+      // is mid-reload and an autosave between save_file and the reload
+      // would race the just-arrived remote content back over the wire.
+      if (this.currentNotebookFileId && !this._isPullLockedForCurrent()) {
         this.emit("notebook-autosave");
       }
     }, 2000);
@@ -304,6 +307,10 @@ export class AppState {
     if (!this.runtime.syncPulling) return false;
     const key = this.runtime.syncPullingFileId;
     if (key === this.currentFileId) return true;
+    // Notebooks autosave every 2 s via a separate event; without this
+    // arm, a remote pull mid-stroke can race the autosave and erase
+    // the user's in-progress shapes from both sides.
+    if (key && key === this.currentNotebookFileId) return true;
     // Local-sync uses a synthetic key since those files don't have a
     // Hush fileId.
     if (this.currentLocalSync) {
