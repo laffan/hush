@@ -262,6 +262,7 @@ export function createFilesPanel(container, state, hidePanel) {
       if (active) active.children = newData; else state.fileTree = newData;
       state.saveFileTree();
       state.reconcileSync();
+      state.syncProjectOrdering(state.currentProjectId || null);
       if (state.currentProjectId) state.openProject(state.currentProjectId);
     },
   });

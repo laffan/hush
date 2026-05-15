@@ -437,69 +437,13 @@ async function init() {
       updatePrivateBoxColor(state);
     });
 
-    // Listen for Dropbox sync start from settings window
-    await listen("dropbox-sync-start", async (event) => {
-      const { path } = event.payload || {};
-      if (!path) return;
-      // Barrier blocks the cursor cycle (already armed by the prior
-      // settings-changed event) so it can't race performInitialSync's
-      // download phase and create duplicate `synced_files` rows.
-      const sp = await import("./sync/sync-polling.js");
-      sp.setInitialSyncBarrier(true);
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        state.settings = await invoke("get_settings");
-        const dbx = await import("./sync/dropbox.js");
-        if (state.settings.dropboxAccessToken) {
-          dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
-        }
-        const { performInitialSync } = await import("./sync/sync-state.js");
-        const result = await performInitialSync(state, path);
-        const logEntries = [
-          ...result.uploaded.map((f) => `Uploaded ${f}`),
-          ...result.downloaded.map((f) => `Downloaded ${f}`),
-        ];
-        if (logEntries.length > 0) {
-          const s = await invoke("get_settings");
-          const log = s.dropboxSyncLog || [];
-          const ts = new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-          for (const entry of logEntries) log.push(`${ts}  ${entry}`);
-          if (log.length > 50) log.splice(0, log.length - 50);
-          s.dropboxSyncLog = log;
-          await invoke("save_settings", { settings: s });
-        }
-        sp.startSyncPolling(state);
-      } catch (e) {
-        console.error("Initial sync failed:", e);
-      } finally {
-        // Release — the barrier setter kicks an immediate cycle + drain
-        // so anything queued during the barrier window catches up.
-        sp.setInitialSyncBarrier(false);
-      }
-    });
-
-    // Listen for Dropbox sync stop from settings window
-    await listen("dropbox-sync-stop", async (event) => {
-      const { removeFromDropbox } = event.payload || {};
-      try {
-        const sp = await import("./sync/sync-polling.js");
-        sp.stopSyncPolling();
-        const { disconnectSync } = await import("./sync/sync-state.js");
-        await disconnectSync(state, removeFromDropbox);
-      } catch (e) {
-        console.error("Sync disconnect failed:", e);
-      }
-    });
-
-    await listen("clear-local-data-request", async () => { try { await (await import("./sync/sync-state.js")).clearLocalAndReseed(state); } catch (e) { console.error("Clear local data failed:", e); } });
-    await listen("force-sync-request", async () => { try { await (await import("./sync/sync-polling.js")).runForceSync(state); } catch (e) { console.error("Force sync failed:", e); } });
-    // Settings window's "Retry now" button under the Pending sync queue.
-    await listen("sync-trigger-drain", async () => {
-      try {
-        const { triggerDrain } = await import("./sync/op-log.js");
-        triggerDrain(state);
-      } catch (e) { console.warn("sync-trigger-drain failed:", e); }
-    });
+    // Sync event listeners (dropbox-sync-start/stop, clear, force,
+    // retry) live in sync/sync-event-bindings.js to keep this file
+    // under the 700-line build cap.
+    try {
+      const { wireSyncEventBindings } = await import("./sync/sync-event-bindings.js");
+      await wireSyncEventBindings(state);
+    } catch (e) { console.error("sync event bindings failed:", e); }
 
     // Dropbox OAuth callback (deep link). Google uses a loopback HTTP
     // listener (see commands/google_docs.rs) instead — its code arrives

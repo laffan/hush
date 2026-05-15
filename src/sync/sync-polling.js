@@ -15,6 +15,12 @@
  */
 
 import { pullDropboxCursor } from "./dropbox-cursor.js";
+import {
+  insertDocumentNode,
+  insertImageNode,
+  insertExistingNode,
+} from "./sync-tree-insert.js";
+import { showSyncIndicator, appendSyncLog } from "./sync-feedback.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
@@ -450,11 +456,39 @@ async function syncDropboxCursor(state) {
       if (summary.deleted) parts.push(`${summary.deleted} deleted`);
       showSyncIndicator("pulled", parts.join(" / "));
     }
+    // If the cycle imported any new docs/folders, re-apply
+    // `.hush/projects.json` against the now-complete tree. Without
+    // this, a folder that arrives AFTER its projects.json entry
+    // (common when one device promotes a folder while the other is
+    // offline) stays a plain folder forever — the cursor only
+    // re-fires meta when projects.json itself changes again.
+    if (summary.created.length) {
+      await reapplyProjectsAfterCreates(state, dbx).catch((e) =>
+        console.warn("cursor: post-create projects reapply failed:", e));
+    }
     updateDropboxStatus(state, true);
   } catch (e) {
     console.error("Dropbox cursor sync failed:", e);
     updateDropboxStatus(state, false);
   }
+}
+
+/** Re-download and re-apply `.hush/projects.json` against the current
+ *  tree. Used when a cursor pull imported new folders that may match
+ *  pending entries in the projects registry. Idempotent — entries
+ *  that already match a project-typed node are no-ops. */
+async function reapplyProjectsAfterCreates(state, dbx) {
+  if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
+  const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
+  const root = base === "/" ? "" : base;
+  const path = `${root}/.hush/projects.json`;
+  let payload;
+  try { payload = await dbx.downloadFile(path); } catch { return; }
+  if (!payload) return;
+  try {
+    const { applyProjectsFile } = await import("./project-sync.js");
+    await applyProjectsFile(state, payload);
+  } catch (_) { /* best-effort */ }
 }
 
 async function applyCreated(state, ev, dbx, invoke, downloadImage) {
@@ -547,46 +581,6 @@ async function applyRenamed(state, ev, invoke, findNodeByFileId) {
   if (node.name !== newName) node.name = newName;
 }
 
-/** Insert an existing tree node under the parent indicated by
- *  `relativePath` (last segment is the filename). Mirrors
- *  `insertDocumentNode` but takes a pre-built node instead of
- *  minting one. */
-function insertExistingNode(state, relativePath, node) {
-  const parts = relativePath.split("/");
-  parts.pop(); // drop the filename segment
-  let current = state.fileTree;
-  for (let depth = 0; depth < parts.length; depth++) {
-    const dirName = parts[depth];
-    if (!dirName) continue;
-    const isTopLevel = depth === 0;
-    let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
-      || (dirName === "Inbox" && current.find(n => n.id === "__inbox__" || n.id?.startsWith("__inbox__:")))
-      || (dirName === "Trash" && current.find(n => n.id === "__trash__" || n.id?.startsWith("__trash__:")));
-    if (!folder) {
-      if (isTopLevel) {
-        const deskId = crypto.randomUUID();
-        folder = {
-          id: deskId, type: "desk", name: dirName,
-          children: [], flagged: false,
-          createdAt: Math.floor(Date.now() / 1000),
-        };
-        ensureSeedDeskSpecials(folder, deskId);
-        current.push(folder);
-      } else {
-        folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
-        const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
-        if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
-        else current.push(folder);
-      }
-    }
-    if (!Array.isArray(folder.children)) folder.children = [];
-    current = folder.children;
-  }
-  const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
-  if (trashIdx >= 0) current.splice(trashIdx, 0, node);
-  else current.push(node);
-}
-
 async function applyContentChanged(state, ev, dbx, invoke) {
   if (ev.kind === "image") return false; // images are content-immutable on rename
 
@@ -672,130 +666,6 @@ async function getMetaDispatcher(filename) {
   }
 }
 
-// ===== Tree insertion helpers =====
-
-function insertDocumentNode(state, relativePath, fileId, isNotebook, name) {
-  const parts = relativePath.split("/");
-  const rawFileName = parts.pop();
-  const fileName = (rawFileName || name || "Untitled").replace(/\.(md|hushnote)$/, "");
-  let current = state.fileTree;
-  let parent = null; // null = top level
-  for (let depth = 0; depth < parts.length; depth++) {
-    const dirName = parts[depth];
-    if (!dirName) continue;
-    const isTopLevel = depth === 0;
-    let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
-      || (dirName === "Inbox" && current.find(n => n.id === "__inbox__" || n.id?.startsWith("__inbox__:")))
-      || (dirName === "Trash" && current.find(n => n.id === "__trash__" || n.id?.startsWith("__trash__:")));
-    if (!folder) {
-      if (isTopLevel) {
-        // Top-level path segment = desk (per the .hushdesk model).
-        // Mint a temp id; the matching `<DeskName>/.hushdesk` event
-        // will reassign it to the canonical id when it arrives via
-        // onDeskMeta. Inbox / Trash / Images specials get namespaced
-        // under this desk via ensureDeskSpecials so subsequent
-        // matches inside the loop find them by `__inbox__:<id>`.
-        const deskId = crypto.randomUUID();
-        folder = {
-          id: deskId, type: "desk", name: dirName,
-          children: [], flagged: false,
-          createdAt: Math.floor(Date.now() / 1000),
-        };
-        ensureSeedDeskSpecials(folder, deskId);
-        current.push(folder);
-      } else {
-        folder = { id: crypto.randomUUID(), type: "folder", name: dirName, children: [], flagged: false };
-        const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
-        if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
-        else current.push(folder);
-      }
-    }
-    if (!Array.isArray(folder.children)) folder.children = [];
-    parent = folder;
-    current = folder.children;
-  }
-  if (current.some(n => n.fileId === fileId)) return;
-  const trashIdx = current.findIndex(n => n.id === "__trash__" || n.id?.startsWith("__trash__:") || n.name === "Trash");
-  const node = {
-    id: crypto.randomUUID(),
-    type: isNotebook ? "notebook" : "document",
-    name: fileName,
-    fileId,
-    children: [],
-    flagged: false,
-  };
-  if (trashIdx >= 0) current.splice(trashIdx, 0, node);
-  else current.push(node);
-}
-
-/** Mint the three special children (Inbox / Trash / Images) for a
- *  freshly-created desk node during a cursor seed. Inline copy of the
- *  per-desk specials block so we don't pull in the full state-desks
- *  module from inside the cursor handler. */
-function ensureSeedDeskSpecials(desk, deskId) {
-  const wantInbox = !desk.children.some(c => c.id === `__inbox__:${deskId}`);
-  const wantImages = !desk.children.some(c => c.id === `__images__:${deskId}`);
-  const wantTrash = !desk.children.some(c => c.id === `__trash__:${deskId}`);
-  if (wantInbox) desk.children.unshift({ id: `__inbox__:${deskId}`, type: "project", name: "Inbox", children: [], flagged: false });
-  if (wantImages) desk.children.push({ id: `__images__:${deskId}`, type: "folder", name: "Images", children: [], flagged: false });
-  if (wantTrash) desk.children.push({ id: `__trash__:${deskId}`, type: "folder", name: "Trash", children: [], flagged: false });
-}
-
-function insertImageNode(state, filename, relativePath = "") {
-  // Routing priority:
-  //   1. Per-desk Images folder identified by the relativePath's first
-  //      segment (e.g. "Personal/Images/foo.png" → desk named
-  //      "Personal" → its `__images__:<deskId>`).
-  //   2. The active desk's Images folder via state.getImagesId().
-  //   3. Any `__images__:<deskId>` we can find.
-  //   4. The bare-id `__images__` legacy node.
-  function findById(nodes, id) {
-    for (const n of nodes || []) {
-      if (n.id === id) return n;
-      const found = findById(n.children, id);
-      if (found) return found;
-    }
-    return null;
-  }
-  let images = null;
-  if (relativePath) {
-    const parts = relativePath.split("/");
-    if (parts.length >= 2) {
-      const deskName = parts[0];
-      const deskNode = (state.fileTree || []).find(
-        (n) => n.type === "desk" && n.name === deskName
-      );
-      if (deskNode) {
-        images = (deskNode.children || []).find(
-          (c) => c.id === `__images__:${deskNode.id}`
-        ) || null;
-      }
-    }
-  }
-  if (!images) {
-    const targetId = typeof state.getImagesId === "function" ? state.getImagesId() : "__images__";
-    images = findById(state.fileTree, targetId);
-  }
-  if (!images) {
-    function findByPrefix(nodes) {
-      for (const n of nodes || []) {
-        if (n.id === "__images__" || n.id?.startsWith("__images__:")) return n;
-        const found = findByPrefix(n.children);
-        if (found) return found;
-      }
-      return null;
-    }
-    images = findByPrefix(state.fileTree);
-  }
-  if (!images) return;
-  if (!Array.isArray(images.children)) images.children = [];
-  if (images.children.some(c => c.type === "image" && c.fileId === filename)) return;
-  images.children.push({
-    id: crypto.randomUUID(), type: "image", name: filename,
-    fileId: filename, children: [], flagged: false,
-  });
-}
-
 // ===== Health + indicator =====
 
 async function checkDropboxHealth(state) {
@@ -816,41 +686,6 @@ function updateDropboxStatus(state, connected) {
   }
 }
 
-function showSyncIndicator(direction, detail) {
-  const existing = document.querySelector(".sync-indicator");
-  if (existing) existing.remove();
-
-  const el = document.createElement("div");
-  el.className = "sync-indicator";
-  el.textContent = direction === "pulled" ? "Synced ↓" : "Synced ↑";
-  document.body.appendChild(el);
-  setTimeout(() => { if (el.parentNode) el.remove(); }, 3000);
-
-  appendSyncLog(direction === "pulled" ? `Downloaded ${detail || "changes"}` : `Uploaded ${detail || "changes"}`);
-}
-
-let _pendingLogMessages = [];
-let _logFlushTimer = null;
-
-function appendSyncLog(message) {
-  _pendingLogMessages.push(message);
-  if (_logFlushTimer) clearTimeout(_logFlushTimer);
-  _logFlushTimer = setTimeout(flushSyncLog, 2000);
-}
-
-async function flushSyncLog() {
-  _logFlushTimer = null;
-  if (!IS_TAURI || _pendingLogMessages.length === 0) return;
-  const messages = _pendingLogMessages.splice(0);
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const s = await invoke("get_settings");
-    const log = s.dropboxSyncLog || [];
-    const now = new Date();
-    const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    for (const msg of messages) log.push(`${ts}  ${msg}`);
-    if (log.length > 50) log.splice(0, log.length - 50);
-    s.dropboxSyncLog = log;
-    await invoke("save_settings", { settings: s });
-  } catch (_) {}
-}
+// `showSyncIndicator`, `appendSyncLog`, and the log flush timer live
+// in `sync-feedback.js` so this file stays under the 700-line cap.
+// They're imported at the top.

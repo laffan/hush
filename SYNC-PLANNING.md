@@ -179,6 +179,33 @@ row with `attempts > 0` or `last_error != null` appears beneath the
 recent-activity list with kind, target path, attempt count, and the
 last error. A "Retry now" button kicks the drain.
 
+### j. Project ordering propagates on sidebar reorder
+
+Pre-audit: dragging a doc to reorder it inside a project saved the
+tree locally and ran `reconcileSync`, but `reconcileSync`'s
+`pushMetaIfAbsent` only republishes `.hush/projects.json` when Dropbox
+*doesn't already have a copy* — true on first activation, false ever
+after. Subsequent reorders never reached other devices.
+
+Post-audit: `files-panel.js#onChange` calls
+`state.syncProjectOrdering(state.currentProjectId || null)` after
+every drag-reorder, which always re-serialises and pushes the full
+projects registry through the op-log.
+
+### k. Late-arriving folders pick up their project status
+
+Pre-audit: `applyProjectsFile` looks up each entry's folder by
+`{deskId, innerPath}` and silently skips entries whose folder hasn't
+synced down yet. Once skipped, the entry stays skipped — the cursor
+only re-fires `.hush/projects.json` when *that file* changes, not
+when a folder it references arrives.
+
+Post-audit: `syncDropboxCursor` calls
+`reapplyProjectsAfterCreates(state, dbx)` whenever a cycle imported
+any new docs/folders. It re-downloads `projects.json` and re-runs
+`applyProjectsFile` against the now-complete tree. Idempotent — a
+folder that's already a project is a no-op.
+
 ## The Data Model
 
 ### `synced_files`

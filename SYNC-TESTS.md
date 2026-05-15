@@ -260,7 +260,35 @@ The iPad uses the same JS code path; correctness should be identical. Difference
 
 ---
 
-### 15. Pending queue UI surfaces stuck ops
+### 15. Folder→project + reorder propagates
+
+**Why:** Sidebar drag-reorders inside a project used to save locally
+but never push `.hush/projects.json`; the rev-on-promotion path also
+silently skipped entries whose folder hadn't synced down yet.
+
+1. On **Mac**, create a folder `Story`, add three docs (`a`, `b`, `c`).
+   Convert the folder to a project (hover-revealed arrow icon).
+2. Wait one cursor cycle on **iPad**. `Story` should appear as a
+   project there, with the three docs in the same order.
+3. On Mac, drag the docs into a new order (`c`, `a`, `b`).
+4. Wait one cursor cycle on iPad. The order should match.
+
+**Pass:** Both promotion and subsequent reorders propagate within
+one cycle.
+
+### 15b. Late folder arrival still promotes to project
+
+1. On **Mac**, take iPad offline (cellular off).
+2. Create `Story` folder, add docs, promote to project. Wait for
+   the upload + cursor pull on Mac to complete.
+3. Bring iPad back online. `Story` should arrive and immediately
+   show as a project, not as a plain folder.
+
+**Pass:** The post-create reapply of projects.json catches the
+folder up to its project status without requiring a manual
+re-promote on iPad.
+
+### 16. Pending queue UI surfaces stuck ops
 
 1. Disable the network on **Mac** and rename a file — the rename
    queues but can't drain.
