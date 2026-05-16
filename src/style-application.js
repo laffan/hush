@@ -35,13 +35,18 @@ function syncShaderLayerForStyle(style) {
   })).catch(e => console.warn("shader layer mount failed", e));
 }
 
-/** Surface the user's "Focus mode opacity" setting as a CSS variable so
- *  every dim target (the sentence-mask in the editor, every floating
- *  pane that isn't the active one) reads the same value. */
+/** Publish the editor opacity CSS variables — `--focus-mode-opacity`
+ *  for the focus-mode sentence dim (and pane background dim), plus
+ *  `--comment-opacity` for the body of `%%…%%` comments. Called once
+ *  at startup and on every `settings-changed` so the matching sliders
+ *  drive both values without any direct DOM coupling. */
 export function applyFocusModeOpacity(state) {
-  const v = state.settings.focusModeOpacity;
-  const opacity = (typeof v === "number" && v >= 0 && v <= 1) ? v : 0.5;
-  document.documentElement.style.setProperty("--focus-mode-opacity", String(opacity));
+  const fv = state.settings.focusModeOpacity;
+  const fo = (typeof fv === "number" && fv >= 0 && fv <= 1) ? fv : 0.5;
+  document.documentElement.style.setProperty("--focus-mode-opacity", String(fo));
+  const cv = state.settings.commentOpacity;
+  const co = (typeof cv === "number" && cv >= 0 && cv <= 1) ? cv : 0.5;
+  document.documentElement.style.setProperty("--comment-opacity", String(co));
 }
 
 /** Pull the active desk's saved global style id and pin it as the

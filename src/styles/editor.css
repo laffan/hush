@@ -143,37 +143,98 @@ body.cmd-held .column-resizer,
   transition: opacity 0s;
 }
 
-/* Column mover — small grip sitting just above the top of the column
-   while "Make space for panes" is active. Drag horizontally to slide
-   the column left/right without resizing it. Follows the resizers'
-   cmd-to-reveal convention so the writing surface stays clean. */
+/* Column mover — vertical grip sitting just outside one of the column
+   resizers while "Make space for panes" is active. Drag horizontally
+   to slide the column left/right without changing its width. Reveal
+   matches the resizers: hidden by default, faded in on body.cmd-held
+   or while the user is actually dragging. The pill is rotated 90° so
+   its long axis runs vertical and aligns with the resize bars.        */
 .column-mover {
   position: fixed;
-  top: 8px;
-  width: 40px;
-  height: 14px;
+  /* Long axis = vertical. The two dimensions are swapped from a
+     horizontal grip: 14 px wide, 40 px tall. */
+  width: 14px;
+  height: 40px;
   cursor: grab;
   z-index: 50;
   border-radius: 4px;
   background: transparent;
   transition: opacity 0.2s ease;
-  opacity: 0.35;
+  display: none;
 }
-.column-mover:hover, .column-mover.dragging { opacity: 1; }
+body.cmd-held .column-mover,
+.column-mover.dragging {
+  display: block;
+  opacity: 1;
+}
+.column-mover:hover { cursor: grab; }
 .column-mover.dragging { cursor: grabbing; }
-body.typing-fade .column-mover { opacity: 0; pointer-events: none; }
 .column-mover::after {
   content: "";
   position: absolute;
-  top: 5px;
-  left: 8px;
-  right: 8px;
-  height: 4px;
+  left: 5px;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
   border-radius: 2px;
   background: var(--fg, currentColor);
-  opacity: 0.45;
+  opacity: 0.35;
 }
+.column-mover:hover::after { opacity: 0.6; }
 .column-mover.dragging::after { opacity: 0.7; }
+
+/* Cmd-held over-editor sliders — a single row of quick controls
+   (Focus dim opacity, Zen font size) pinned to the bottom of the
+   viewport. Hidden by default; faded in while body.cmd-held is set,
+   matching the column-resizers' reveal so all the modifier-gated
+   editing controls share one mental model. */
+.cmd-held-sliders {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: none;
+  gap: 18px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-bg, var(--bg)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg, currentColor) 18%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: var(--z-modal);
+  /* Sit above the zen overlay so the controls remain reachable while
+     Zen is active (Zen uses its own stacking; this lifts above it). */
+  pointer-events: auto;
+  font: 500 12px/1 var(--font-family);
+  color: var(--fg);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+body.cmd-held .cmd-held-sliders {
+  display: flex;
+  opacity: 1;
+}
+.cmd-held-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cmd-held-slider-label {
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+  min-width: 36px;
+}
+.cmd-held-slider-group input[type="range"] {
+  width: 120px;
+  accent-color: var(--accent, currentColor);
+  cursor: pointer;
+}
+.cmd-held-slider-readout {
+  opacity: 0.55;
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Rendered markdown links (when cursor is outside) */
 .cm-link-rendered {

@@ -213,6 +213,12 @@ export function enterZenFocus(state) {
   });
   const zenView = new EditorView({ state: editorState, parent: stage });
 
+  // Column resizers — mirror the main editor's cmd-held grip handles
+  // so the user can re-flow Zen's column width without leaving the
+  // overlay. Writes through to `state.settings.columnWidth` so the
+  // change carries over when Zen closes.
+  const zenResizerCleanup = installZenResizers(state, overlay, stage);
+
   const onKeydown = (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -262,6 +268,7 @@ export function enterZenFocus(state) {
     onMouseMove,
     onModeChanged,
     wasFocusMode,
+    zenResizerCleanup,
   };
 }
 
@@ -279,6 +286,7 @@ export function exitZenFocus(state) {
   if (a.onModeChanged) state.off("mode-changed", a.onModeChanged);
   if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; }
 
+  if (a.zenResizerCleanup) { try { a.zenResizerCleanup(); } catch (_) {} }
   a.zenView.destroy();
   a.overlay.remove();
   document.body.classList.remove("zen-focus-active");
@@ -293,6 +301,86 @@ export function exitZenFocus(state) {
 
 export function toggleZenFocus(state) {
   state.toggleZenFocus();
+}
+
+/** Install two column-resizers inside the Zen overlay. They share the
+ *  main editor's `columnWidth` setting so resizing in either context
+ *  affects the other on subsequent visits. The handles are mounted
+ *  inside `overlay` (not body) so they tear down with the overlay.
+ *  Returns a cleanup function to remove the global listeners. */
+function installZenResizers(state, overlay, stage) {
+  const left = document.createElement("div");
+  left.className = "column-resizer left";
+  const right = document.createElement("div");
+  right.className = "column-resizer right";
+  overlay.appendChild(left);
+  overlay.appendChild(right);
+
+  let hideTimeout = null;
+  const showBoth = () => {
+    clearTimeout(hideTimeout);
+    left.classList.add("hover");
+    right.classList.add("hover");
+  };
+  const hideBoth = () => {
+    hideTimeout = setTimeout(() => {
+      left.classList.remove("hover");
+      right.classList.remove("hover");
+    }, 200);
+  };
+  left.addEventListener("mouseenter", showBoth);
+  left.addEventListener("mouseleave", hideBoth);
+  right.addEventListener("mouseenter", showBoth);
+  right.addEventListener("mouseleave", hideBoth);
+
+  function applyLayout() {
+    const w = overlay.clientWidth || window.innerWidth;
+    const colW = Math.max(200, Math.min(w - 40, Number(state.settings.columnWidth) || 800));
+    const sidePad = Math.max(20, Math.floor((w - colW) / 2));
+    // Drive the stage width directly so changes from the resizers
+    // apply instantly without depending on a global CSS-var update.
+    stage.style.width = colW + "px";
+    // Position the resizers 10 px outside the stage's edges to match
+    // the main editor's resizer geometry.
+    left.style.left = (sidePad - 10) + "px";
+    right.style.left = (w - sidePad + 10) + "px";
+  }
+  applyLayout();
+  const onResize = () => applyLayout();
+  window.addEventListener("resize", onResize);
+
+  function makeDraggable(el, isLeft) {
+    el.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = Number(state.settings.columnWidth) || 800;
+      el.classList.add("dragging");
+      showBoth();
+
+      function onMove(e2) {
+        const delta = isLeft ? startX - e2.clientX : e2.clientX - startX;
+        const newWidth = Math.max(300, Math.min(window.innerWidth - 100, startWidth + delta * 2));
+        state.settings.columnWidth = newWidth;
+        applyLayout();
+      }
+      function onUp() {
+        el.classList.remove("dragging");
+        hideBoth();
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        state.updateSettings({ columnWidth: state.settings.columnWidth });
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+  makeDraggable(left, true);
+  makeDraggable(right, false);
+
+  return () => {
+    window.removeEventListener("resize", onResize);
+    clearTimeout(hideTimeout);
+  };
 }
 
 function showHint(hint) {

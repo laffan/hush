@@ -47,11 +47,21 @@
 }
 
 .zen-focus-stage {
-  width: min(100%, 760px);
+  /* Track the editor's --column-width so resizing in Zen matches the
+     main editor. Capped at 100 % to keep narrow viewports tidy. */
+  width: min(100%, var(--column-width, 800px));
   height: 100%;
   display: flex;
   align-items: stretch;
   justify-content: center;
+}
+
+/* Column resizers inside the Zen overlay — share the visual treatment
+   and cmd-held reveal of the main editor resizers so dragging the
+   column width is identical to normal mode. The overlay paints above
+   `body.cmd-held` so an inner copy of the class flip is unnecessary. */
+.zen-focus-overlay .column-resizer {
+  z-index: 4;
 }
 
 /* Shadow CodeMirror styling — applies to the .cm-editor created
@@ -88,6 +98,15 @@ body.zen-focus-active .ratchet-timer,
 body.zen-focus-active .word-count-display,
 body.zen-focus-active .sidebar-floating-toggle,
 body.zen-focus-active .typewriter-boundary {
+  display: none !important;
+}
+
+/* Hide the main editor's column resizers + mover while Zen is open —
+   Zen mounts its own pair inside the overlay so two sets stacking
+   would just confuse the click path. The cmd-held floating sliders
+   stay visible because they're useful in Zen too (Zen font size!). */
+body.zen-focus-active > .column-resizer,
+body.zen-focus-active > .column-mover {
   display: none !important;
 }
 

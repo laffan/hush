@@ -206,6 +206,9 @@ pub fn default_focus_mode_opacity() -> f64 {
 pub fn default_typewriter_line_opacity() -> f64 {
     0.08
 }
+pub fn default_comment_opacity() -> f64 {
+    0.5
+}
 pub fn default_shortcut_zotero() -> String {
     "Mod+Shift+I".to_string()
 }

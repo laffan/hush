@@ -15,6 +15,7 @@ import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, a
 import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, previewNotebookStyle, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
+import { initCmdHeldSliders } from "./cmd-held-sliders.js";
 import { applyActiveStyle, applyFocusModeOpacity, applyDeskGlobalStyle, handleOAuthCode } from "./style-application.js";
 import { installWindowShortcuts, installActivationFocus } from "./window-shortcuts.js";
 import { setTooltipsEnabled } from "./tooltips.js";
@@ -245,6 +246,7 @@ async function init() {
 
   // iOS-only on-screen Cmd button (gated by `showCmdButton` setting); plus pencil bridge on iOS Tauri.
   initCmdButton(state);
+  initCmdHeldSliders(state);
   if (IS_TAURI) import("./notebook/pencil-bridge.js").then((m) => m.initPencilBridge?.(state)).catch(() => {});
 
   // Local Sync watcher — refresh the files panel when mounted folders
@@ -323,11 +325,8 @@ async function init() {
   window.addEventListener("resize", updatePanelMode);
   state.on("settings-changed", updatePanelMode);
 
-  // Re-apply column layout when settings change (e.g. makeSpaceForPanes toggled)
-  state.on("settings-changed", () => { if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler(); });
-
-  // Keep --focus-mode-opacity in sync with the slider in Settings > Editor.
-  state.on("settings-changed", () => applyFocusModeOpacity(state));
+  // Re-apply column layout (makeSpaceForPanes etc.) + keep CSS vars in sync.
+  state.on("settings-changed", () => { if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler(); applyFocusModeOpacity(state); });
 
   // Mirror the "Show Tooltips" setting into the global tooltip helper so
   // every gated [data-tooltip] element gets / loses its native title attr.

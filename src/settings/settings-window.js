@@ -209,6 +209,7 @@ function bindAll() {
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));
+  bindSlider("setting-comment-opacity", "commentOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-zen-focus-font-size", "zenFocusFontSize", "px");
   bindSlider("setting-notebook-text-max-width", "notebookTextMaxWidth", "px");
   bindSelect("setting-flow-connect-mode", "flowConnectMode");

@@ -190,12 +190,30 @@ export function updateColumnResizers(state) {
     }
 
     // Mover handle — only meaningful when the make-space layout is
-    // active. Float it just above the top of the column so it sits
-    // out of the way until the user reaches for it.
+    // active. Sits vertically centred just outside the *outer* column
+    // resizer (the one on the side with extra room — in "right" mode
+    // that's the left edge, in "left" mode the right edge) with a 5 px
+    // gap to the resizer. Reveal follows the resizers' cmd-held rule
+    // via CSS so it stays invisible during normal writing.
     if (makeSpaceActive && showResizers) {
       moverHandle.style.display = "";
-      const midX = leftPad + colW / 2;
-      moverHandle.style.left = (midX - 20) + "px";
+      // 14 px wide handle (rotated), centred vertically; sit 5 px out
+      // from the resizer rail. Each resizer's hit zone is 40 px wide
+      // (20 px padding either side of a 2 px stroke), with the stroke
+      // at `left + 19`. The handle anchors against that stroke.
+      const handleWidth = 14;
+      const gap = 5;
+      const HANDLE_HEIGHT = 40;
+      if (direction === "right") {
+        // Column shifted right; gap on the left → place handle just
+        // outside the left resizer (i.e. further left).
+        const railX = leftPad - 10 + 19; // resizer's painted line
+        moverHandle.style.left = (railX - gap - handleWidth) + "px";
+      } else {
+        const railX = (w - rightPad + 10) + 19;
+        moverHandle.style.left = (railX + gap) + "px";
+      }
+      moverHandle.style.top = `calc(50% - ${HANDLE_HEIGHT / 2}px)`;
     } else {
       moverHandle.style.display = "none";
     }
