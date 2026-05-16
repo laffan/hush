@@ -114,51 +114,29 @@ export function bindSyncTab(saveSetting, settings, render) {
     });
   }
 
-  // Browse folder (initial setup or change folder)
+  // Browse folder (initial setup or change folder). Opens the Dropbox
+  // folder browser; on selection, hands off to the preview-confirm-
+  // progress modal flow in `settings-sync-modals.js`. The user sees
+  // detected desks before sync runs, and the modal emits
+  // `dropbox-sync-start` itself (not us) so the progress listener is
+  // wired before the run begins.
   async function handleFolderBrowse() {
     try {
       const { openDropboxBrowser } = await import("../sync/dropbox-browser.js");
       const result = await openDropboxBrowser();
       if (!result) return;
-
-      const status = document.getElementById("sync-auth-status");
       const path = result.path;
 
-      const previewEl = document.getElementById("sync-preview");
-      if (previewEl) {
-        previewEl.style.display = "";
-        previewEl.innerHTML = `<h3>Preview</h3><p>Scanning...</p>`;
-        try {
-          const { generateSyncPreview } = await import("../sync/sync-state.js");
-          const { invoke } = await import("@tauri-apps/api/core");
-          const fileTree = await invoke("get_file_tree");
-          const preview = await generateSyncPreview({ fileTree, settings }, path);
-          let html = `<h3>Preview</h3>`;
-          if (preview.toUpload.length > 0)
-            html += `<p><strong>${preview.toUpload.length}</strong> file${preview.toUpload.length !== 1 ? "s" : ""} will be uploaded</p>`;
-          if (preview.toDownload.length > 0)
-            html += `<p><strong>${preview.toDownload.length}</strong> file${preview.toDownload.length !== 1 ? "s" : ""} will be downloaded</p>`;
-          if (preview.unchanged > 0)
-            html += `<p><strong>${preview.unchanged}</strong> file${preview.unchanged !== 1 ? "s" : ""} already in sync</p>`;
-          if (!preview.toUpload.length && !preview.toDownload.length && !preview.unchanged)
-            html += `<p>Your library will be uploaded to this folder.</p>`;
-          previewEl.innerHTML = html;
-        } catch (e) {
-          previewEl.innerHTML = `<h3>Preview</h3><p>Could not generate preview.</p>`;
-        }
+      const { runInitialSyncFlow } = await import("./settings-sync-modals.js");
+      const ok = await runInitialSyncFlow(settings, path);
+      if (ok) {
+        // Persist sync config only after the user confirms — cancel
+        // at the preview step leaves the prior state untouched.
+        await saveSetting("dropboxSyncPath", path);
+        await saveSetting("dropboxEnabled", true);
+        addSyncLogEntry(`Sync started to ${path}`);
       }
-
-      await saveSetting("dropboxSyncPath", path);
-      await saveSetting("dropboxEnabled", true);
-      addSyncLogEntry(`Sync started to ${path}`);
-
-      if (status) { status.textContent = "Starting sync..."; status.className = "sync-status"; }
-      if (IS_TAURI) {
-        const { emit } = await import("@tauri-apps/api/event");
-        await emit("dropbox-sync-start", { path });
-      }
-      if (status) { status.textContent = ""; }
-      setTimeout(() => render(), 1500);
+      render();
     } catch (e) {
       console.error("Dropbox browse failed:", e);
       const status = document.getElementById("sync-auth-status");

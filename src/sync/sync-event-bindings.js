@@ -34,6 +34,15 @@ export async function wireSyncEventBindings(state) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       state.settings = await invoke("get_settings");
+      // Persist the sync config the modal handed us. The settings
+      // window now defers the save until after the user confirms the
+      // preview, so this write is what flips Dropbox sync "on" for
+      // the runtime — `startSyncPolling` below reads these.
+      if (state.settings.dropboxSyncPath !== path || !state.settings.dropboxEnabled) {
+        state.settings.dropboxSyncPath = path;
+        state.settings.dropboxEnabled = true;
+        try { await invoke("save_settings", { settings: state.settings }); } catch (_) {}
+      }
       const dbx = await import("./dropbox.js");
       if (state.settings.dropboxAccessToken) {
         dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);

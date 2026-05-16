@@ -249,6 +249,95 @@ export async function runClearLocalFlow(settings) {
 }
 
 /**
+ * Initial-sync flow: pick a Dropbox folder, scan it, show the user
+ * which desks were detected, then run `performInitialSync` (via the
+ * `dropbox-sync-start` event) and watch the progress bar.
+ *
+ * Returns true if the sync ran to completion, false if the user
+ * cancelled at the preview step.
+ */
+export async function runInitialSyncFlow(settings, dropboxPath) {
+  const { backdrop, modal } = mountModal(540);
+  const close = () => { backdrop.remove(); };
+
+  renderLoading(modal, "Connect Dropbox sync");
+
+  let preview = null;
+  try {
+    const { generateClearLocalPreview } = await import("../sync/sync-state.js");
+    // Reuse the same preview function as Clear Local Versions —
+    // it scans the chosen folder for top-level "desk" folders, file
+    // counts, etc. Passing the explicit path overrides the
+    // settings.dropboxSyncPath that isn't saved yet.
+    const previewSettings = { ...settings, dropboxEnabled: true, dropboxSyncPath: dropboxPath };
+    preview = await generateClearLocalPreview({ settings: previewSettings });
+    if (!preview) {
+      renderError(modal, "Connect Dropbox sync",
+        "Could not read the chosen folder. Pick a different folder and try again.", close);
+      return false;
+    }
+  } catch (e) {
+    renderError(modal, "Connect Dropbox sync",
+      `Could not list Dropbox: ${e?.message || e}`, close);
+    return false;
+  }
+
+  const confirmed = await new Promise((resolve) => {
+    renderInitialPreview(modal, preview, dropboxPath,
+      () => resolve(false), () => resolve(true));
+  });
+  if (!confirmed) { close(); return false; }
+
+  renderProgress(modal, "Syncing with Dropbox");
+  await driveProgress(modal, async () => {
+    if (!IS_TAURI) return;
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit("dropbox-sync-start", { path: dropboxPath });
+  });
+  close();
+  return true;
+}
+
+function renderInitialPreview(modal, preview, dropboxPath, onCancel, onConfirm) {
+  const totalAll = preview.totalFiles + preview.totalImages;
+  const deskRows = preview.desks.map((d) => `
+    <li class="sync-preview-item">
+      <span class="sync-preview-name">${escHtml(d.name)}</span>
+      <span class="sync-preview-counts">${formatCounts(d)}</span>
+    </li>`).join("");
+
+  const rootCount = preview.rootFiles?.total || 0;
+  const desksNote = preview.desks.length > 0
+    ? `Hush will create <strong>${preview.desks.length}</strong> desk${preview.desks.length === 1 ? "" : "s"} matching the top-level folder${preview.desks.length === 1 ? "" : "s"} on Dropbox.`
+    : `No top-level folders on Dropbox yet. Your existing <strong>Personal</strong> desk will be used as the upload target.`;
+
+  modal.innerHTML = `
+    <div class="dbx-browser-header">
+      <span class="dbx-browser-path">Connect Dropbox sync</span>
+      <button class="dbx-browser-close">✕</button>
+    </div>
+    <div class="sync-preview-body" style="padding: 16px 18px; overflow-y: auto; font-size: 13px; line-height: 1.55;">
+      <p style="margin: 0 0 10px 0;">Selected folder: <code>${escHtml(dropboxPath || "/")}</code></p>
+      <div class="sync-preview-summary">
+        <div><strong>${totalAll}</strong> file${totalAll === 1 ? "" : "s"} on Dropbox</div>
+        <div class="sync-preview-summary-detail">${preview.totalFiles} doc/notebook · ${preview.totalImages} image${preview.totalImages === 1 ? "" : "s"}${preview.metaCount ? ` · ${preview.metaCount} meta` : ""}</div>
+      </div>
+      <p style="margin: 14px 0 6px 0;">${desksNote}</p>
+      ${deskRows ? `<ul class="sync-preview-list">${deskRows}</ul>` : ""}
+      ${rootCount > 0 ? `<p style="margin: 12px 0 0 0;">Plus <strong>${rootCount}</strong> file${rootCount === 1 ? "" : "s"} sitting at the sync root (will land in the active desk's Inbox).</p>` : ""}
+      <p style="margin: 14px 0 0 0; opacity: 0.7;">Local content already in this device's library will be uploaded into the matching desk by name. Anything missing on either side gets pulled across.</p>
+    </div>
+    <div class="dbx-browser-footer" style="justify-content: flex-end; gap: 8px;">
+      <button class="settings-sync-modal-cancel" style="padding: 8px 16px; cursor: pointer;">Cancel</button>
+      <button class="settings-sync-modal-confirm sync-action-btn">Start sync</button>
+    </div>
+  `;
+  modal.querySelector(".dbx-browser-close").addEventListener("click", onCancel);
+  modal.querySelector(".settings-sync-modal-cancel").addEventListener("click", onCancel);
+  modal.querySelector(".settings-sync-modal-confirm").addEventListener("click", onConfirm);
+}
+
+/**
  * Force Sync flow. Triggers a reconcile + cursor pull in the main
  * window and watches `clear-reseed-progress` to drive the bar.
  */

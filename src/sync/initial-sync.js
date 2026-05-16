@@ -4,11 +4,21 @@
  * goes through the cursor delta + op-log paths in sync-state.js /
  * sync-polling.js / op-log.js. Extracted from sync-state.js to keep
  * that file under the line-limit cap.
+ *
+ * **Desk handling.** Every top-level folder under the sync root is a
+ * desk (per the `.hushdesk` model). On first sync, we pre-create
+ * matching desk nodes locally for every top-level folder Dropbox has
+ * so that the recursive insert below routes content into the right
+ * desk. After the download loop, `finalizeDesks` populates
+ * `settings.desks` and picks an active desk; on the receiving side
+ * `.hushdesk` files arrive via the cursor seed (after this returns)
+ * and reassign temp desk ids to their canonical ones.
  */
 
 import { uploadImage, downloadImage, insertImageIntoTree } from "./sync-images.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { buildSyncManifest } from "./sync-state.js";
+import { insertDocumentNode, ensureSeedDeskSpecials } from "./sync-tree-insert.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
@@ -45,7 +55,10 @@ function serverModifiedSecs(iso) {
 }
 
 /**
- * Generate a sync preview: what will be uploaded and what will be downloaded.
+ * Generate a sync preview: what will be uploaded and what will be
+ * downloaded. Used by the inline preview panel; the modal flow uses
+ * `generateClearLocalPreview` from `sync-state.js` instead (richer
+ * per-desk breakdown).
  */
 export async function generateSyncPreview(state, dropboxPath) {
   if (!IS_TAURI) return { toUpload: [], toDownload: [], unchanged: 0 };
@@ -76,30 +89,79 @@ export async function generateSyncPreview(state, dropboxPath) {
   return { toUpload, toDownload, unchanged };
 }
 
+/** Pre-create a desk node for every top-level Dropbox folder that
+ *  doesn't already exist as a desk locally. With the default seed
+ *  this means: existing "Personal" desk stays, plus any extra
+ *  top-level folders on Dropbox become new desks. Without this step
+ *  the recursive insert would create plain folders that the sidebar
+ *  doesn't render (it only shows the active desk's children). */
+function ensureDeskSkeletonsForDropbox(state, remoteEntries) {
+  const tree = state.fileTree || [];
+  const topLevelFolders = new Set();
+  for (const e of remoteEntries) {
+    if (!e.isDirectory) continue;
+    const parts = (e.relativePath || "").split("/");
+    if (parts.length !== 1) continue;
+    const name = parts[0];
+    if (!name || name.startsWith(".")) continue;
+    topLevelFolders.add(name);
+  }
+  let created = 0;
+  for (const name of topLevelFolders) {
+    const existsAsDesk = tree.some((n) => n.type === "desk" && n.name === name);
+    if (existsAsDesk) continue;
+    // If a non-desk node with the same name exists at root (rare —
+    // could happen from a prior aborted sync), promote it.
+    const existingFolder = tree.find((n) => n.name === name && n.type === "folder");
+    if (existingFolder) {
+      existingFolder.type = "desk";
+      if (!existingFolder.createdAt) existingFolder.createdAt = Math.floor(Date.now() / 1000);
+      if (!Array.isArray(existingFolder.children)) existingFolder.children = [];
+      ensureSeedDeskSpecials(existingFolder, existingFolder.id);
+      created++;
+      continue;
+    }
+    const desk = {
+      id: crypto.randomUUID(), type: "desk", name,
+      children: [], flagged: false,
+      createdAt: Math.floor(Date.now() / 1000),
+    };
+    ensureSeedDeskSpecials(desk, desk.id);
+    tree.push(desk);
+    created++;
+  }
+  return created;
+}
+
 /**
- * Perform initial full sync — push local to Dropbox, pull new Dropbox files.
- * Returns { uploaded: string[], downloaded: string[] } with filenames.
+ * Perform initial full sync — push local to Dropbox, pull new Dropbox
+ * files. Returns `{ uploaded: string[], downloaded: string[], desksCreated }`.
  *
  * The cursor seed runs immediately after this returns; for that to
- * recognize our just-uploaded / just-downloaded entries (and skip
- * them via echo suppression instead of re-creating duplicates), we
- * register every file with `register_synced_file_full` carrying the
- * Dropbox `id` + `rev`.
+ * recognize our just-uploaded / just-downloaded entries (and skip them
+ * via echo suppression instead of re-creating duplicates), we register
+ * every file with `register_synced_file_full` carrying the Dropbox
+ * `id` + `rev`.
+ *
+ * Progress is emitted via `sync-polling.js#progressBegin/Phase/_emitProgress/End`
+ * so the modal's progress bar driver can listen to `clear-reseed-progress`.
  */
 export async function performInitialSync(state, dropboxPath) {
-  if (!IS_TAURI) return { uploaded: [], downloaded: [] };
+  if (!IS_TAURI) return { uploaded: [], downloaded: [], desksCreated: 0 };
   const dbx = await import("./dropbox.js");
+  const sp = await import("./sync-polling.js");
 
   const basePath = dropboxPath === "/" ? "" : dropboxPath;
-  const manifest = buildSyncManifest(state.fileTree);
   const uploaded = [];
   const downloaded = [];
 
   if (basePath) await dbx.createFolder(basePath).catch(() => {});
 
+  sp.progressBegin(state, 0, "Scanning Dropbox…");
+
   // List Dropbox first so the upload phase can detect collisions and
-  // suffix the local name instead of clobbering a remote file with the
-  // same path.
+  // suffix the local name; the recursive entries also drive the
+  // desk-skeleton step below.
   let remoteEntries = [];
   try { remoteEntries = await dbx.listFolderRecursive(basePath || ""); } catch (_) {}
   const remoteByPath = new Map();
@@ -107,15 +169,54 @@ export async function performInitialSync(state, dropboxPath) {
     if (!e.isDirectory && e.relativePath) remoteByPath.set(e.relativePath, e);
   }
 
+  // Promote / create desk nodes BEFORE buildSyncManifest reads the
+  // tree, so any local content already under a folder that's actually
+  // a desk on Dropbox uploads under the right desk path.
+  const desksCreated = ensureDeskSkeletonsForDropbox(state, remoteEntries);
+  const manifest = buildSyncManifest(state.fileTree);
+
   for (const dir of manifest.directories) {
     const fullDir = basePath ? `${basePath}/${dir}` : `/${dir}`;
     await dbx.createFolder(fullDir).catch(() => {});
   }
 
+  // Determinate progress for the rest of the run: uploads + downloads.
+  const downloadCandidates = remoteEntries.filter((e) =>
+    !e.isDirectory && e.tag !== "hushproject"
+  ).length;
+  const uploadCandidates = manifest.files.length;
+  const totalSteps = uploadCandidates + downloadCandidates;
+  sp.progressBegin(state, totalSteps, totalSteps > 0
+    ? `Syncing ${totalSteps} item${totalSteps === 1 ? "" : "s"}…`
+    : "No items to sync.");
+
   // Upload local files. If a remote entry already lives at the same
-  // path, suffix the local name so we don't overwrite Dropbox's copy
-  // (the original remote will still come down via the download phase
-  // below as a separate file).
+  // path, suffix the local name so we don't overwrite Dropbox's copy.
+  await uploadLocalFiles(state, dbx, manifest, basePath, remoteByPath, uploaded, sp);
+
+  // Pull remotes that aren't in our manifest. Register with full
+  // payload so the cursor seed echo-suppresses these on its first pass.
+  const manifestPaths = new Set(manifest.files.map(f => f.relativePath));
+  await downloadRemoteFiles(state, dbx, remoteEntries, basePath, manifestPaths, downloaded, sp);
+
+  // Now that the tree has desks + content, populate the desks
+  // registry and pick an active desk. Without this the sidebar's
+  // desk switcher would show empty even though the tree has desks.
+  try {
+    const { finalizeDesks } = await import("./desk-sync.js");
+    await finalizeDesks(state);
+  } catch (e) { console.warn("initial sync: finalizeDesks failed:", e); }
+
+  await state.saveFileTree();
+  state.files = await tauriInvoke("list_files");
+  state.emit("desks-changed");
+  state.emit("files-changed");
+
+  sp.progressEnd(state, "Initial sync complete.");
+  return { uploaded, downloaded, desksCreated };
+}
+
+async function uploadLocalFiles(state, dbx, manifest, basePath, remoteByPath, uploaded, sp) {
   for (const file of manifest.files) {
     if (file.type === "image" && file.fileId) {
       const fullPath = basePath ? `${basePath}/${file.relativePath}` : `/${file.relativePath}`;
@@ -127,6 +228,7 @@ export async function performInitialSync(state, dropboxPath) {
           relativePath: file.relativePath,
         });
       } catch (e) { console.error(`Image upload failed for ${file.relativePath}:`, e); }
+      sp.progressTick(state);
       continue;
     }
     let content = file.content || "";
@@ -134,7 +236,7 @@ export async function performInitialSync(state, dropboxPath) {
       try {
         const fileData = await tauriInvoke("load_file", { id: file.fileId });
         content = fileData.content || "";
-      } catch (_) { continue; }
+      } catch (_) { sp.progressTick(state); continue; }
     }
     let path = file.relativePath;
     if (remoteByPath.has(path)) {
@@ -161,15 +263,15 @@ export async function performInitialSync(state, dropboxPath) {
       }
       remoteByPath.set(path, { relativePath: path });
     } catch (e) { console.error(`Upload failed for ${path}:`, e); }
+    sp.progressTick(state);
   }
+}
 
-  // Pull remotes that aren't in our manifest. Register with full
-  // payload so the cursor seed echo-suppresses these on its first pass.
-  const manifestPaths = new Set(manifest.files.map(f => f.relativePath));
+async function downloadRemoteFiles(state, dbx, remoteEntries, basePath, manifestPaths, downloaded, sp) {
   for (const entry of remoteEntries) {
     if (entry.isDirectory || !entry.dropboxPath) continue;
     if (entry.tag === "hushproject") continue;
-    if (manifestPaths.has(entry.relativePath)) continue;
+    if (manifestPaths.has(entry.relativePath)) { sp.progressTick(state); continue; }
 
     if (entry.tag === "image") {
       try {
@@ -178,7 +280,6 @@ export async function performInitialSync(state, dropboxPath) {
           filename: finalName, syncFolderId: SYNC_FOLDER_ID,
           relativePath: entry.relativePath,
         });
-        // Route to the desk implied by the path's first segment, if any.
         const parts = entry.relativePath.split("/");
         let preferDeskId = null;
         if (parts.length >= 2) {
@@ -190,6 +291,7 @@ export async function performInitialSync(state, dropboxPath) {
         insertImageIntoTree(state.fileTree, finalName, preferDeskId);
         downloaded.push(entry.relativePath);
       } catch (e) { console.error(`Image download failed for ${entry.relativePath}:`, e); }
+      sp.progressTick(state);
       continue;
     }
 
@@ -204,15 +306,15 @@ export async function performInitialSync(state, dropboxPath) {
         rev: entry.rev || "",
         syncedAt: serverModifiedSecs(entry.modified) || Math.floor(Date.now() / 1000),
       });
-      insertIntoTree(state.fileTree, entry.relativePath, file.id, entry.name);
+      // Use the desk-aware insertion helper from sync-tree-insert.js so
+      // top-level path segments become desk nodes (not plain folders),
+      // matching what the cursor consumer does for `Created` events.
+      const isNotebook = entry.relativePath.endsWith(".hushnote");
+      insertDocumentNode(state, entry.relativePath, file.id, isNotebook, entry.name);
       downloaded.push(entry.relativePath);
     } catch (e) { console.error(`Download failed for ${entry.relativePath}:`, e); }
+    sp.progressTick(state);
   }
-
-  await state.saveFileTree();
-  state.files = await tauriInvoke("list_files");
-  state.emit("files-changed");
-  return { uploaded, downloaded };
 }
 
 /** Pick a "Foo (2).md"-style suffix that doesn't collide with anything
@@ -226,49 +328,4 @@ function uniqueRemotePath(relativePath, remoteByPath) {
     if (!remoteByPath.has(candidate)) return candidate;
   }
   return relativePath;
-}
-
-/**
- * Insert a downloaded file into the file tree, merging with existing
- * folders/projects (including special nodes like Inbox and Trash).
- * Creates intermediate folder nodes only if no match exists.
- * Trash is always kept as the last item.
- */
-function insertIntoTree(fileTree, relativePath, fileId, displayName) {
-  const parts = relativePath.split("/");
-  const rawFileName = parts.pop();
-  const isNotebook = rawFileName.endsWith(".hushnote");
-  const fileName = rawFileName.replace(/\.(md|hushnote)$/, "");
-  let current = fileTree;
-
-  const isInboxNode = (n) => n.id === "__inbox__" || n.id?.startsWith("__inbox__:");
-  const isTrashNode = (n) => n.id === "__trash__" || n.id?.startsWith("__trash__:");
-  for (const dirName of parts) {
-    if (!dirName) continue;
-    let folder = current.find(n => n.type !== "document" && n.type !== "notebook" && n.name === dirName)
-      || (dirName === "Inbox" && current.find(isInboxNode))
-      || (dirName === "Trash" && current.find(isTrashNode));
-    if (!folder) {
-      folder = {
-        id: crypto.randomUUID(), type: "folder", name: dirName,
-        children: [], flagged: false,
-      };
-      const trashIdx = current.findIndex(n => isTrashNode(n) || n.name === "Trash");
-      if (trashIdx >= 0) current.splice(trashIdx, 0, folder);
-      else current.push(folder);
-    }
-    if (!Array.isArray(folder.children)) folder.children = [];
-    current = folder.children;
-  }
-
-  if (current.some(n => n.fileId === fileId)) return;
-
-  const trashIdx = current.findIndex(n => isTrashNode(n) || n.name === "Trash");
-  const node = {
-    id: crypto.randomUUID(), type: isNotebook ? "notebook" : "document",
-    name: displayName || fileName, fileId,
-    children: [], flagged: false,
-  };
-  if (trashIdx >= 0) current.splice(trashIdx, 0, node);
-  else current.push(node);
 }

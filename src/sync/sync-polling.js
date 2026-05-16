@@ -112,6 +112,10 @@ export function progressPhase(state, label) {
   _emitProgressEvent(state, "phase");
 }
 
+export function progressTick(state) {
+  _emitProgress(state);
+}
+
 function _emitProgress(state) {
   if (_progressTotal <= 0) return;
   _progressDone++;
