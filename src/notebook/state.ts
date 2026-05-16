@@ -70,7 +70,7 @@ export class DrawingState extends EventTarget {
   selectedIds: Set<string> = new Set();
   tool: Tool = "select";
   color = "#000000";
-  fontSize = 18;
+  fontSize = 16;
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;

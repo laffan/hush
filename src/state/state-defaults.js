@@ -210,7 +210,7 @@ export function createDefaultSettings() {
     notebookGridSpacing: 25,
     notebookGridOpacity: 0.20,
     notebookFontFamily: "Inter",
-    notebookFontSize: 18,
+    notebookFontSize: 16,
     lastNotebookId: null,
 
     // Notebook shortcuts
