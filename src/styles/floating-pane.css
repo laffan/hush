@@ -200,18 +200,37 @@
   box-shadow: inset 1px 0 0 #e44b3a;
 }
 
-/* Resize handles and drag-grab cursor disabled — gutter geometry is
-   driven by the doc text, not the user dragging the pane around. */
-.floating-pane.gutter .fp-resize {
+/* Gutter geometry is driven by the doc: height tracks the doc text,
+   y tracks doc scroll. So lock height-affecting resize handles and the
+   title-bar drag cursor — but keep the e/w handles so the user can
+   still pick a width that suits the gutter. */
+.floating-pane.gutter .fp-resize-n,
+.floating-pane.gutter .fp-resize-s,
+.floating-pane.gutter .fp-resize-ne,
+.floating-pane.gutter .fp-resize-nw,
+.floating-pane.gutter .fp-resize-se,
+.floating-pane.gutter .fp-resize-sw,
+.floating-pane.gutter .fp-resize-touch {
   display: none;
 }
 
-.floating-pane.gutter .floating-pane-titlebar {
+.floating-pane.gutter .floating-pane-titlebar,
+.floating-pane.gutter .floating-pane-titlebar:active {
   cursor: default;
 }
 
-.floating-pane.gutter .floating-pane-titlebar:active {
-  cursor: default;
+/* Notebook toolbar (+ its end-caps) inside a gutter pane rides with the
+   doc scroll so it stays visible no matter how far down the user has
+   scrolled. The scroll handler writes `--gutter-scroll` on the pane
+   root; CSS translates each toolbar piece by that offset. Composes
+   cleanly with the toolbar's own `transform: translateX(-50%)` because
+   `translate` and `transform` are independent properties. */
+.floating-pane.gutter .notebook-toolbar,
+.floating-pane.gutter .notebook-tool-panel-drag-tab,
+.floating-pane.gutter .notebook-tool-panel-toggle-tab,
+.floating-pane.gutter .notebook-tool-panel-bg-settings-tab,
+.floating-pane.gutter .notebook-tool-panel-collapse-tab {
+  translate: 0 var(--gutter-scroll, 0px);
 }
 
 /* ── Pinned pane (global / cross-document) — blue border ──────────── */

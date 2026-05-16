@@ -259,6 +259,7 @@ function buildCommands(state) {
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",
+      hiddenIf: () => isActivePaneAGutter(),
       action: () => fitActivePaneToGap() },
     { id: "replace-pane-content", label: "Replace pane content", icon: icons.pane, shortcutKey: null, ctx: "pane",
       keepOpen: true,

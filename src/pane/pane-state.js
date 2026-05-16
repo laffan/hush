@@ -29,7 +29,11 @@ export function bumpZCounter() { return ++zCounter; }
 // stacks by focus order. Kept exported as 0 so any legacy importers
 // still resolve.
 export const PINNED_Z_OFFSET = 0;
-export function zForPane(_pane) {
+// Gutter panes ride below every other pane — they're chrome attached
+// to the doc, not free-floating reference content.
+export const GUTTER_Z = 100;
+export function zForPane(pane) {
+  if (pane && pane.gutter) return GUTTER_Z;
   return bumpZCounter();
 }
 

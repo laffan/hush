@@ -13,18 +13,33 @@
  * notebook — the gutter is meant to host visual notes that ride
  * alongside long-form writing.
  */
-import { panes, activePaneId, appState } from "./pane-state.js";
+import { panes, activePaneId, appState, GUTTER_Z, zForPane } from "./pane-state.js";
 import { stopAttachSync } from "./pane-attach-sync.js";
 import { schedulePersist } from "./pane-persistence.js";
 
 const VIEWPORT_TOP_MARGIN = 60;
+
+/** Does any pane in the active doc context already wear the gutter
+ *  crown? Only one per doc — the gutter is meant as doc chrome, not
+ *  another stacking surface to manage. */
+function docHasGutter() {
+  if (!appState) return false;
+  const ctx = appState.currentFileId ? "doc:" + appState.currentFileId : "";
+  if (!ctx) return false;
+  for (const [, p] of panes) {
+    if (p.gutter && p.ownerContext === ctx) return true;
+  }
+  return false;
+}
 
 export function canUseActivePaneAsGutter() {
   if (!appState || appState.currentNotebookFileId) return false;
   if (!activePaneId) return false;
   const pane = panes.get(activePaneId);
   if (!pane || pane.fileType !== "notebook") return false;
-  return !pane.gutter;
+  if (pane.gutter) return false;
+  if (docHasGutter()) return false;
+  return true;
 }
 
 export function isActivePaneAGutter() {
@@ -75,6 +90,11 @@ function applyGutterFrame(pane) {
   pane.height = height;
   pane.el.style.top = y + "px";
   pane.el.style.height = height + "px";
+  // Notebook toolbar piggybacks on this CSS variable so it slides with
+  // the doc scroll — see floating-pane.css.
+  const scroller = getScroller();
+  const scrollTop = scroller ? scroller.scrollTop : 0;
+  pane.el.style.setProperty("--gutter-scroll", scrollTop + "px");
 }
 
 function startGutterSync(pane) {
@@ -150,6 +170,9 @@ export function useActivePaneAsGutter() {
   pane.gutterSide = side;
   pane.el.classList.add("gutter", "gutter-" + side);
   pane.el.classList.remove("gutter-" + (side === "left" ? "right" : "left"));
+  // Gutter panes always sit below free-floating panes — the doc chrome
+  // shouldn't cover the user's reference panes.
+  pane.el.style.zIndex = GUTTER_Z;
 
   applyGutterFrame(pane);
   startGutterSync(pane);
@@ -189,6 +212,9 @@ export function stopActivePaneAsGutter() {
   const y = VIEWPORT_TOP_MARGIN;
   pane.y = y;
   pane.el.style.top = y + "px";
+  pane.el.style.removeProperty("--gutter-scroll");
+  // Lift the pane back into the bumped z-band; gutter z is fixed low.
+  pane.el.style.zIndex = zForPane(pane);
 
   schedulePersist();
   return true;
@@ -203,6 +229,7 @@ export function restoreGutterLayout(pane) {
   const side = pane.gutterSide || detectGutterSide(pane);
   pane.gutterSide = side;
   pane.el.classList.add("gutter", "gutter-" + side);
+  pane.el.style.zIndex = GUTTER_Z;
   applyGutterFrame(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
 }
