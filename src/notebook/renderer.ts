@@ -115,7 +115,6 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   ctx.save();
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
-  if (state.shadowHeaders?.length) drawShadowHeaders(ctx, state.shadowHeaders, theme, state.fontFamily, canvas.clientWidth);
   // Build layer order (bottom-first for paint order). If no layers
   // were provided, fall back to a single synthetic layer that contains
   // every shape — same visual result as the pre-layers behavior.
@@ -266,6 +265,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   }
 
   ctx.restore();
+  if (state.shadowHeaders?.length) drawShadowHeaders(ctx, state.shadowHeaders, theme, state.fontFamily, camera.y, w, h);
 
   // Per-edge delete affordances — all drawn in screen space so they stay
   // a fixed size regardless of zoom. Touch users tap the dot to reveal

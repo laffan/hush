@@ -265,11 +265,15 @@ export function useActivePaneAsGutter() {
 
   applyGutterGeometry(pane);
   syncCameraFromScroll(pane);
-  // Seed the header snapshot before wiring listeners so the first
-  // doc-content-changed has a baseline to diff against.
-  pane._gutterHeaders = scanDocHeaders();
-  publishShadowHeaders(pane, pane._gutterHeaders);
   startGutterSync(pane);
+  // Seed the header snapshot on the next frame so CodeMirror has
+  // measured line positions (lineBlockAt(...).top is otherwise zero
+  // for lines below the initially-visible region).
+  requestAnimationFrame(() => {
+    if (!pane.gutter || !panes.has(pane.id)) return;
+    pane._gutterHeaders = scanDocHeaders();
+    publishShadowHeaders(pane, pane._gutterHeaders);
+  });
 
   schedulePersist();
   return true;
@@ -327,9 +331,12 @@ export function restoreGutterLayout(pane) {
   }
   applyGutterGeometry(pane);
   syncCameraFromScroll(pane);
-  pane._gutterHeaders = scanDocHeaders();
-  publishShadowHeaders(pane, pane._gutterHeaders);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
+  requestAnimationFrame(() => {
+    if (!pane.gutter || !panes.has(pane.id)) return;
+    pane._gutterHeaders = scanDocHeaders();
+    publishShadowHeaders(pane, pane._gutterHeaders);
+  });
 }
 
 export function teardownGutterListeners(pane) {

@@ -2,29 +2,43 @@ import type { Bounds, Camera, ImageShape, SelectionBox, Shape } from "./types";
 import type { CanvasTheme } from "./themes";
 import { getShapeBounds } from "./utils";
 
-/** Draw faded doc headings inside a gutter pane. Drawn in world
- *  coords (the renderer's camera transform is already applied), so
- *  each entry sits at the same vertical position as its doc header. */
+/** Draw faded doc headings inside a gutter pane. Drawn in screen space
+ *  with manual vertical offset (cameraY) so the canvas scroll carries
+ *  them along but horizontal camera-pan does not — they stay pinned to
+ *  the pane's left edge regardless of where the user has panned the
+ *  canvas. A faint horizontal rule sits above each so the section
+ *  break reads at a glance even off-screen horizontally. */
 export function drawShadowHeaders(
   ctx: CanvasRenderingContext2D,
   headers: { y: number; level: number; text: string }[],
   theme: CanvasTheme,
   fontFamily: string,
+  cameraY: number,
   canvasW: number,
+  canvasH: number,
 ): void {
   ctx.save();
-  ctx.fillStyle = theme.foreground;
-  ctx.globalAlpha = 0.3;
   ctx.textBaseline = "top";
   for (const h of headers) {
+    const y = cameraY + h.y; // canvas-pixel y
+    if (y < -40 || y > canvasH + 4) continue; // skip off-screen
     const fontPx = h.level <= 1 ? 18 : h.level === 2 ? 15 : 13;
+    // Rule above the header text (4px gap)
+    ctx.strokeStyle = theme.foreground;
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y - 4);
+    ctx.lineTo(canvasW, y - 4);
+    ctx.stroke();
+    // Header text
+    ctx.fillStyle = theme.foreground;
+    ctx.globalAlpha = 0.4;
     ctx.font = `600 ${fontPx}px ${fontFamily}, system-ui, sans-serif`;
     let text = h.text;
-    // Truncate to canvas width minus a margin — cheap char cap, no
-    // measureText loop.
     const maxChars = Math.max(8, Math.floor((canvasW - 24) / (fontPx * 0.55)));
     if (text.length > maxChars) text = text.slice(0, maxChars - 1) + "…";
-    ctx.fillText(text, 8, h.y);
+    ctx.fillText(text, 8, y);
   }
   ctx.restore();
 }
