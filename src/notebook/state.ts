@@ -166,6 +166,15 @@ export class DrawingState extends EventTarget {
   /** Pixel offset from the left edge for the sidebar/panel. The pocket
    *  tray and toolbar center themselves relative to this value. */
   leftInset = 0;
+  /** Pixel offset from the top of the canvas where the visible viewport
+   *  starts. The pocket tray and entries shift down by this amount so
+   *  they remain reachable in a gutter pane whose canvas is taller than
+   *  the window. 0 = canvas top is at viewport top (the usual case). */
+  topInset = 0;
+  /** Height of the visible viewport in screen pixels. Used to clamp the
+   *  pocket tray height in a gutter pane. 0 = unset; the renderer falls
+   *  back to the canvas's own clientHeight. */
+  viewportHeight = 0;
 
   // Hooks driven by notes-canvas to route DrawShape drags through
   // the drawing engine's preview pipeline. See drawing-layer.ts
@@ -996,7 +1005,7 @@ export class DrawingState extends EventTarget {
 
       // Check pocketed shapes first (screen-space hit test, offset by sidebar inset)
       const pocketPt = { x: screenPt.x - this.leftInset, y: screenPt.y };
-      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily);
+      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily, this.topInset);
       if (pocketHit) {
         const next = e.shiftKey ? new Set(this.selectedIds) : new Set<string>();
         const allSel = e.shiftKey && pocketHit.every((id) => next.has(id));
@@ -1009,7 +1018,7 @@ export class DrawingState extends EventTarget {
         canvas.setPointerCapture(e.pointerId);
         return;
       }
-      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily);
+      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily, this.topInset);
       // Exclude pocketed shapes (rendered elsewhere) and shapes on
       // hidden layers (invisible → unclickable).
       const hiddenLayerIds = this._hiddenLayerIds();

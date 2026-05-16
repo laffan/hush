@@ -95,6 +95,15 @@ function applyGutterFrame(pane) {
   const scroller = getScroller();
   const scrollTop = scroller ? scroller.scrollTop : 0;
   pane.el.style.setProperty("--gutter-scroll", scrollTop + "px");
+  // Pocket tray / entries are canvas-rendered, so they can't ride the
+  // CSS variable. Plumb the same offset into the notebook state and
+  // poke the render loop. viewportHeight clamps the tray so it doesn't
+  // run off the bottom of a doc-tall canvas.
+  if (pane.notebook && pane.notebook.state) {
+    pane.notebook.state.topInset = scrollTop;
+    pane.notebook.state.viewportHeight = window.innerHeight;
+    pane.notebook.state.notify("camera");
+  }
 }
 
 function startGutterSync(pane) {
@@ -213,6 +222,13 @@ export function stopActivePaneAsGutter() {
   pane.y = y;
   pane.el.style.top = y + "px";
   pane.el.style.removeProperty("--gutter-scroll");
+  // Reset the canvas-side pocket insets so the tray returns to its
+  // canvas-anchored position.
+  if (pane.notebook && pane.notebook.state) {
+    pane.notebook.state.topInset = 0;
+    pane.notebook.state.viewportHeight = 0;
+    pane.notebook.state.notify("camera");
+  }
   // Lift the pane back into the bumped z-band; gutter z is fixed low.
   pane.el.style.zIndex = zForPane(pane);
 

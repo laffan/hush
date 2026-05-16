@@ -233,6 +233,18 @@
   translate: 0 var(--gutter-scroll, 0px);
 }
 
+/* The shelf inside a gutter pane is clamped to viewport height and
+   anchored to the doc scroll so it stays usable in a pane that's much
+   taller than the window. `bottom: auto` overrides the panel's own
+   inline `bottom` so the explicit height applies. The pocket tray /
+   entries are canvas-rendered — see state.topInset / viewportHeight
+   plumbing in renderer.ts. */
+.floating-pane.gutter .notebook-shelf {
+  top: calc(var(--gutter-scroll, 0px) + env(safe-area-inset-top) + 20px) !important;
+  bottom: auto !important;
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px) !important;
+}
+
 /* ── Pinned pane (global / cross-document) — blue border ──────────── */
 /* Earlier styling tinted the titlebar blue; the user moved the
    "this pane persists across documents" affordance to the pane border

@@ -609,6 +609,8 @@ export class NotesCanvas {
         pocketProximity: this.state.pocketProximity,
         pocketInZone: this.state.pocketInZone,
         leftInset: this.state.leftInset,
+        topInset: this.state.topInset,
+        viewportHeight: this.state.viewportHeight,
         // Inject DPR so renderer.ts stays free of `window` reads.
         dpr: window.devicePixelRatio || 1,
         flowchart: this.state.flowchart,

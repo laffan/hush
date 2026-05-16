@@ -135,6 +135,7 @@ export function createShelfPanel(
   const panel = h("div", {
     style: { position: "absolute", top: "calc(env(safe-area-inset-top) + 20px)", right: "env(safe-area-inset-right)", bottom: "calc(env(safe-area-inset-bottom) + 20px)", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
   });
+  panel.classList.add("notebook-shelf");
 
   const grip = h("button", {
     text: "\u2039",
