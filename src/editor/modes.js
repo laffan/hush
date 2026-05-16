@@ -91,17 +91,31 @@ export function updateColumnResizers(state) {
     clearTimeout(hideTimeout);
     leftResizer.classList.add("hover");
     rightResizer.classList.add("hover");
+    // Surface the mover handles alongside the resize bars — the user
+    // sees both means of repositioning together rather than discovering
+    // the small movers separately.
+    moverLeft.classList.add("hover");
+    moverRight.classList.add("hover");
   }
   function hideBoth() {
     hideTimeout = setTimeout(() => {
       leftResizer.classList.remove("hover");
       rightResizer.classList.remove("hover");
+      moverLeft.classList.remove("hover");
+      moverRight.classList.remove("hover");
     }, 200);
   }
   leftResizer.addEventListener("mouseenter", showBoth);
   leftResizer.addEventListener("mouseleave", hideBoth);
   rightResizer.addEventListener("mouseenter", showBoth);
   rightResizer.addEventListener("mouseleave", hideBoth);
+  // Hovering either mover keeps the entire affordance set visible —
+  // moving between a resize bar and a mover (or back) never blinks
+  // the chrome on or off.
+  moverLeft.addEventListener("mouseenter", showBoth);
+  moverLeft.addEventListener("mouseleave", hideBoth);
+  moverRight.addEventListener("mouseenter", showBoth);
+  moverRight.addEventListener("mouseleave", hideBoth);
 
   function applyColumnLayout() {
     const w = window.innerWidth;

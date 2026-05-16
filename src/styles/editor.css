@@ -146,9 +146,10 @@ body.cmd-held .column-resizer,
 /* Column mover — vertical grip sitting just outside one of the column
    resizers while "Make space for panes" is active. Drag horizontally
    to slide the column left/right without changing its width. Reveal
-   matches the resizers: hidden by default, faded in on body.cmd-held
-   or while the user is actually dragging. The pill is rotated 90° so
-   its long axis runs vertical and aligns with the resize bars.        */
+   matches the resizers: hidden by default, surfaced only when Cmd is
+   held AND the user is hovering either a resizer rail or a mover
+   handle itself. The pill is rotated 90° so its long axis runs
+   vertical and aligns with the resize bars.                          */
 .column-mover {
   position: fixed;
   /* Long axis = vertical. The two dimensions are swapped from a
@@ -162,7 +163,8 @@ body.cmd-held .column-resizer,
   transition: opacity 0.2s ease;
   display: none;
 }
-body.cmd-held .column-mover,
+body.cmd-held .column-mover.hover,
+body.cmd-held .column-mover:hover,
 .column-mover.dragging {
   display: block;
   opacity: 1;
