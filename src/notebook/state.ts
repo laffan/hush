@@ -171,6 +171,11 @@ export class DrawingState extends EventTarget {
    *  driven by the doc scrollTop, zoom is locked at 1, and focusShape
    *  resolves to a doc scroll. Camera.x still pans freely. */
   gutterScrollDOM: HTMLElement | null = null;
+  /** Faded doc headings rendered into the gutter canvas. World-y maps
+   *  1:1 to doc-content-y under the gutter geometry, so `y` here is
+   *  consumed directly by the renderer after the camera transform.
+   *  Owned by pane-gutter.js — overwritten on every doc-change. */
+  shadowHeaders: { y: number; level: number; text: string }[] = [];
 
   // Hooks driven by notes-canvas to route DrawShape drags through
   // the drawing engine's preview pipeline. See drawing-layer.ts

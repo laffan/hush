@@ -23,11 +23,21 @@ import { stopAttachSync } from "./pane-attach-sync.js";
 import { schedulePersist } from "./pane-persistence.js";
 
 const VIEWPORT_TOP_MARGIN = 60;
-/** Top inset for the gutter pane — leaves the title-bar drag region
- *  visible above. Mirrors the editor's scroller padding-top so world-y
- *  0 lines up with the top of the doc text. */
-const PANE_TOP_INSET = 30;
 const PANE_BOTTOM_INSET = 12;
+
+/** Read the cm-scroller's vertical padding so the gutter pane can sit
+ *  flush against the actual top of the doc text — that way world-y
+ *  inside the canvas maps 1:1 to doc-content-y, which keeps the
+ *  shadow-header math simple. */
+function getScrollerPadding() {
+  const scroller = getScroller();
+  if (!scroller) return { top: 0, bottom: 0 };
+  const cs = getComputedStyle(scroller);
+  return {
+    top: parseFloat(cs.paddingTop) || 0,
+    bottom: parseFloat(cs.paddingBottom) || 0,
+  };
+}
 
 /** Does any pane in the active doc context already wear the gutter
  *  crown? Only one per doc — the gutter is meant as doc chrome, not
@@ -68,6 +78,61 @@ function getContentEl() {
     || document.querySelector("#editor-container .cm-content");
 }
 
+/** Walk the doc, return the y position + text + level of every ATX
+ *  heading (`#`, `##`, …). y is doc-content-y, which under our gutter
+ *  geometry equals world-y in the canvas. */
+function scanDocHeaders() {
+  const view = appState?.editor?.view;
+  if (!view) return [];
+  const headers = [];
+  const doc = view.state.doc;
+  for (let i = 1; i <= doc.lines; i++) {
+    const line = doc.line(i);
+    const m = line.text.match(/^(#{1,6})\s+(\S.*)$/);
+    if (!m) continue;
+    const block = view.lineBlockAt(line.from);
+    headers.push({ y: block.top, level: m[1].length, text: m[2] });
+  }
+  return headers;
+}
+
+/** Push the current header snapshot into the notebook state so the
+ *  canvas renderer can draw the shadow headers, and rebroadcast the
+ *  "camera" notify so the change picks up on the next frame. */
+function publishShadowHeaders(pane, headers) {
+  if (!pane.notebook || !pane.notebook.state) return;
+  pane.notebook.state.shadowHeaders = headers;
+  pane.notebook.state.notify("camera");
+}
+
+/** Re-align gutter shapes when the doc text changes the y position of
+ *  one or more headings. For each shape, the section it sits in (the
+ *  header at-or-above its world-y in the *previous* snapshot) defines
+ *  the delta to apply. New headings (or removed ones) skip the shift
+ *  pass — we just re-snapshot and let future edits track from there. */
+function reflowShapesForHeaderShift(pane, prev, next) {
+  if (!pane.notebook || !pane.notebook.state) return;
+  if (prev.length !== next.length) return;
+  if (prev.length === 0) return;
+  const shapes = pane.notebook.state.shapes;
+  let mutated = false;
+  for (let i = 0; i < shapes.length; i++) {
+    const s = shapes[i];
+    // Find the index of the largest header at-or-above this shape's y
+    // in the *previous* snapshot — that's the section it belongs to.
+    let idx = -1;
+    for (let h = 0; h < prev.length; h++) {
+      if (prev[h].y <= s.position.y) idx = h; else break;
+    }
+    if (idx < 0) continue;
+    const delta = next[idx].y - prev[idx].y;
+    if (delta === 0) continue;
+    s.position = { x: s.position.x, y: s.position.y + delta };
+    mutated = true;
+  }
+  if (mutated) pane.notebook.state.notify("shapes");
+}
+
 function detectGutterSide(pane) {
   const content = getContentEl();
   let textCenter = window.innerWidth / 2;
@@ -79,10 +144,14 @@ function detectGutterSide(pane) {
   return paneCenter < textCenter ? "left" : "right";
 }
 
-/** Pane geometry — fixed in the viewport, no doc-scroll math. */
+/** Pane geometry — pinned to the visible doc text area so world-y
+ *  in the canvas maps 1:1 to doc-content-y. */
 function applyGutterGeometry(pane) {
-  const y = PANE_TOP_INSET;
-  const h = Math.max(120, window.innerHeight - PANE_TOP_INSET - PANE_BOTTOM_INSET);
+  const scroller = getScroller();
+  const rect = scroller ? scroller.getBoundingClientRect() : { top: 0, height: window.innerHeight };
+  const pad = getScrollerPadding();
+  const y = rect.top + pad.top;
+  const h = Math.max(120, rect.height - pad.top - pad.bottom - PANE_BOTTOM_INSET);
   pane.y = y;
   pane.height = h;
   pane.el.style.top = y + "px";
@@ -114,8 +183,30 @@ function startGutterSync(pane) {
     if (!pane.gutter || !panes.has(pane.id)) return;
     applyGutterGeometry(pane);
     syncCameraFromScroll(pane);
+    // Re-measure header positions too — line wrapping changes with width.
+    const next = scanDocHeaders();
+    reflowShapesForHeaderShift(pane, pane._gutterHeaders || [], next);
+    pane._gutterHeaders = next;
+    publishShadowHeaders(pane, next);
   };
   window.addEventListener("resize", pane._gutterWindowHandler);
+
+  // Watch for doc edits so header shifts can propagate into shape
+  // positions and the shadow-header overlay stays in sync.
+  pane._gutterDocChangeHandler = () => {
+    if (!pane.gutter || !panes.has(pane.id)) return;
+    // Defer one frame so CodeMirror has updated its line measurements
+    // before we read lineBlockAt(...).top — reading mid-update returns
+    // pre-edit positions and the delta comes out as zero.
+    requestAnimationFrame(() => {
+      if (!pane.gutter || !panes.has(pane.id)) return;
+      const next = scanDocHeaders();
+      reflowShapesForHeaderShift(pane, pane._gutterHeaders || [], next);
+      pane._gutterHeaders = next;
+      publishShadowHeaders(pane, next);
+    });
+  };
+  appState.on("doc-content-changed", pane._gutterDocChangeHandler);
 }
 
 function stopGutterSync(pane) {
@@ -127,6 +218,10 @@ function stopGutterSync(pane) {
   if (pane._gutterWindowHandler) {
     window.removeEventListener("resize", pane._gutterWindowHandler);
     pane._gutterWindowHandler = null;
+  }
+  if (pane._gutterDocChangeHandler) {
+    appState?.off?.("doc-content-changed", pane._gutterDocChangeHandler);
+    pane._gutterDocChangeHandler = null;
   }
 }
 
@@ -170,6 +265,10 @@ export function useActivePaneAsGutter() {
 
   applyGutterGeometry(pane);
   syncCameraFromScroll(pane);
+  // Seed the header snapshot before wiring listeners so the first
+  // doc-content-changed has a baseline to diff against.
+  pane._gutterHeaders = scanDocHeaders();
+  publishShadowHeaders(pane, pane._gutterHeaders);
   startGutterSync(pane);
 
   schedulePersist();
@@ -206,9 +305,11 @@ export function stopActivePaneAsGutter() {
   pane.el.style.top = y + "px";
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = null;
+    pane.notebook.state.shadowHeaders = [];
     if (prev.camera) pane.notebook.state.camera = { ...prev.camera };
     pane.notebook.state.notify("camera");
   }
+  pane._gutterHeaders = null;
   pane.el.style.zIndex = zForPane(pane);
 
   schedulePersist();
@@ -226,6 +327,8 @@ export function restoreGutterLayout(pane) {
   }
   applyGutterGeometry(pane);
   syncCameraFromScroll(pane);
+  pane._gutterHeaders = scanDocHeaders();
+  publishShadowHeaders(pane, pane._gutterHeaders);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
 }
 
@@ -234,5 +337,6 @@ export function teardownGutterListeners(pane) {
   if (pane._gutterScrollHandler) stopGutterSync(pane);
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = null;
+    pane.notebook.state.shadowHeaders = [];
   }
 }

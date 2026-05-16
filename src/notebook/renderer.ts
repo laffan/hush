@@ -4,7 +4,7 @@ import type { CanvasTheme } from "./themes";
 import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
-import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview } from "./renderer-selection";
+import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview, drawShadowHeaders } from "./renderer-selection";
 import { drawBackground } from "./renderer-background";
 import type { FlowchartLayer } from "./flowchart";
 
@@ -27,7 +27,7 @@ export interface RenderState {
   pocketProximity?: number;
   // True while the drag cursor sits inside the pocket drop zone.
   pocketInZone?: boolean;
-  leftInset: number;
+  leftInset: number; shadowHeaders?: { y: number; level: number; text: string }[];
   /** Layer list, top-first. Used to iterate shapes in layer order
    *  and skip shapes on hidden layers. Optional: falls back to
    *  single-pass iteration when absent (tests, legacy callers). */
@@ -115,7 +115,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   ctx.save();
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
-
+  if (state.shadowHeaders?.length) drawShadowHeaders(ctx, state.shadowHeaders, theme, state.fontFamily, canvas.clientWidth);
   // Build layer order (bottom-first for paint order). If no layers
   // were provided, fall back to a single synthetic layer that contains
   // every shape — same visual result as the pre-layers behavior.
