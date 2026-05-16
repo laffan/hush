@@ -60,6 +60,8 @@ pub struct AppSettings {
     pub make_space_for_panes: bool,
     #[serde(default = "default_make_space_direction")]
     pub make_space_direction: String,
+    #[serde(default)]
+    pub make_space_column_offset: f64,
     #[serde(default = "default_typewriter_line_opacity")]
     pub typewriter_line_opacity: f64,
     #[serde(default = "default_focus_mode_opacity")]
@@ -491,6 +493,7 @@ impl Default for AppSettings {
             default_dark_colors: std::collections::HashMap::new(),
             make_space_for_panes: true,
             make_space_direction: default_make_space_direction(),
+            make_space_column_offset: 0.0,
             typewriter_line_opacity: default_typewriter_line_opacity(),
             focus_mode_opacity: default_focus_mode_opacity(),
             padding: default_padding(),

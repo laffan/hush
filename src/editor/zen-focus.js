@@ -98,6 +98,12 @@ function writeBack(source, content, anchor, head) {
       changes: { from: 0, to: len, insert: content },
       selection: { anchor: a, head: h },
     });
+    // Zen always centres the cursor; on exit, replacing the whole doc
+    // would otherwise leave the editor scrolled to the top. Recentre
+    // here (and again on the next two frames — CM settles its measure
+    // pass asynchronously) so the user returns to roughly where they
+    // were writing.
+    centerCursor(v, h);
     v.focus();
     return;
   }
@@ -110,6 +116,7 @@ function writeBack(source, content, anchor, head) {
       changes: { from: 0, to: len, insert: content },
       selection: { anchor: a, head: h },
     });
+    centerCursor(v, h);
     v.focus();
     return;
   }
@@ -125,6 +132,17 @@ function writeBack(source, content, anchor, head) {
 }
 
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n | 0)); }
+
+function centerCursor(view, pos) {
+  const dispatchCenter = () => {
+    try {
+      view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+    } catch (_) { /* view destroyed */ }
+  };
+  dispatchCenter();
+  requestAnimationFrame(dispatchCenter);
+  setTimeout(dispatchCenter, 60);
+}
 
 export function enterZenFocus(state) {
   if (active) return;

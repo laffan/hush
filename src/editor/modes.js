@@ -62,6 +62,7 @@ export function getPanelWidthPx() {
 
 export function updateColumnResizers(state) {
   document.querySelectorAll(".column-resizer").forEach((el) => el.remove());
+  document.querySelectorAll(".column-mover").forEach((el) => el.remove());
   if (state.runtime.columnResizeHandler) {
     window.removeEventListener("resize", state.runtime.columnResizeHandler);
   }
@@ -70,9 +71,16 @@ export function updateColumnResizers(state) {
   leftResizer.className = "column-resizer left";
   const rightResizer = document.createElement("div");
   rightResizer.className = "column-resizer right";
+  // Mover handle — surfaces only while the "Make space for panes"
+  // layout is engaged (doc + a visible pane). Drag horizontally to
+  // reposition the column without changing its width.
+  const moverHandle = document.createElement("div");
+  moverHandle.className = "column-mover";
+  moverHandle.title = "Drag to reposition column";
 
   document.body.appendChild(leftResizer);
   document.body.appendChild(rightResizer);
+  document.body.appendChild(moverHandle);
   let hideTimeout = null;
   function showBoth() {
     clearTimeout(hideTimeout);
@@ -125,12 +133,19 @@ export function updateColumnResizers(state) {
     const makeSpace = state.settings.makeSpaceForPanes !== false;
     const direction = state.settings.makeSpaceDirection === "left" ? "left" : "right";
     const hasDocPane = !!state.runtime.hasVisibleDocPane;
-    if (makeSpace && hasDocPane && !state.currentNotebookFileId && availableWidth > colW + minPad * 2) {
+    const makeSpaceActive = makeSpace && hasDocPane && !state.currentNotebookFileId && availableWidth > colW + minPad * 2;
+    if (makeSpaceActive) {
+      // Allow the user to drag the column horizontally. The persisted
+      // offset is clamped against the remaining slack so the column
+      // can't slide off-screen or under the pane.
+      const slack = availableWidth - colW - minPad * 2;
+      const rawOff = Number(state.settings.makeSpaceColumnOffset || 0);
+      const off = Math.max(0, Math.min(slack, rawOff));
       if (direction === "left") {
-        leftPad = minPad + leftInsetOffset;
+        leftPad = minPad + leftInsetOffset + off;
         rightPad = w - colW - leftPad;
       } else {
-        rightPad = minPad + rightInsetOffset;
+        rightPad = minPad + rightInsetOffset + off;
         leftPad = w - colW - rightPad;
       }
     } else {
@@ -151,7 +166,17 @@ export function updateColumnResizers(state) {
       const isPlainDoc = !state.currentNotebookFileId && !state.currentProjectId;
       scroller.style.paddingBottom = isPlainDoc ? "100px" : "";
     }
-    if (state.editor && state.editor.view) state.editor.view.requestMeasure();
+    if (state.editor && state.editor.view) {
+      // requestMeasure alone is not always enough after padding changes
+      // — WebKit caches the painted layer with the old line geometry,
+      // so scrolling reveals fragments of text at the previous wrap
+      // positions for a few seconds before the next viewport refresh
+      // forces a repaint. Dispatching a no-op transaction triggers a
+      // full viewport rebuild (CM treats it as a doc-change-like
+      // update) which forces the surrounding layer to invalidate now.
+      state.editor.view.dispatch({});
+      state.editor.view.requestMeasure();
+    }
     state.emit("layout-changed");
 
     if (showResizers) {
@@ -162,6 +187,17 @@ export function updateColumnResizers(state) {
     } else {
       leftResizer.style.display = "none";
       rightResizer.style.display = "none";
+    }
+
+    // Mover handle — only meaningful when the make-space layout is
+    // active. Float it just above the top of the column so it sits
+    // out of the way until the user reaches for it.
+    if (makeSpaceActive && showResizers) {
+      moverHandle.style.display = "";
+      const midX = leftPad + colW / 2;
+      moverHandle.style.left = (midX - 20) + "px";
+    } else {
+      moverHandle.style.display = "none";
     }
   }
 
@@ -200,6 +236,36 @@ export function updateColumnResizers(state) {
 
   makeDraggable(leftResizer, true);
   makeDraggable(rightResizer, false);
+
+  // Mover drag — slide the column horizontally without changing width.
+  // Direction-aware: in "right" mode the offset feeds the right pad
+  // (sliding the column further left as the user drags left); in
+  // "left" mode it feeds the left pad.
+  moverHandle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const direction = state.settings.makeSpaceDirection === "left" ? "left" : "right";
+    const startX = e.clientX;
+    const startOffset = Number(state.settings.makeSpaceColumnOffset || 0);
+    moverHandle.classList.add("dragging");
+
+    function onMove(e2) {
+      const delta = e2.clientX - startX;
+      // "right" direction means the column shifts left as `off` grows
+      // (rightPad += off). Invert so dragging the handle right slides
+      // the column right.
+      const signed = direction === "right" ? -delta : delta;
+      state.settings.makeSpaceColumnOffset = Math.max(0, startOffset + signed);
+      if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    }
+    function onUp() {
+      moverHandle.classList.remove("dragging");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      state.updateSettings({ makeSpaceColumnOffset: state.settings.makeSpaceColumnOffset });
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
 }
 
 export function updateRatchetTimer(state) {

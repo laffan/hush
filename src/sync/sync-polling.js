@@ -357,6 +357,7 @@ async function syncDropboxCursor(state) {
       if (summary.renamed) parts.push(`${summary.renamed} renamed`);
       if (summary.deleted) parts.push(`${summary.deleted} deleted`);
       showSyncIndicator("pulled", parts.join(" / "));
+      try { state.emit("dropbox-sync-success", { direction: "down" }); } catch (_) {}
     }
     updateDropboxStatus(state, true);
   } catch (e) {

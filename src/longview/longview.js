@@ -607,7 +607,7 @@ function createFlagElement(flag, settings, state) {
   const baseMessage = flag.message.split("|")[0]?.trim() ?? flag.message;
   const messageText = isMissing
     ? (baseMessage || "Missing")
-    : getFirstWords(baseMessage, 10);
+    : (baseMessage ? getFirstWords(baseMessage, 10) : flag.type);
 
   if (settings.longviewShowFlagTypes && flag.type !== "COMMENT") {
     const typeSpan = document.createElement("span");

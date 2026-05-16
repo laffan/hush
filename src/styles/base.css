@@ -17,10 +17,10 @@
   --accent: #666;
   --private-box: #e0e0e0;
   --font-family: 'Source Sans Pro', 'Helvetica Neue', 'Arial', sans-serif;
-  --font-size: 20px;
-  --line-height: 1.6;
+  --font-size: 16px;
+  --line-height: 1.5;
   --padding: 50px;
-  --column-width: 600px;
+  --column-width: 800px;
 
   /* ===== z-index scale =====
    *

@@ -143,6 +143,38 @@ body.cmd-held .column-resizer,
   transition: opacity 0s;
 }
 
+/* Column mover — small grip sitting just above the top of the column
+   while "Make space for panes" is active. Drag horizontally to slide
+   the column left/right without resizing it. Follows the resizers'
+   cmd-to-reveal convention so the writing surface stays clean. */
+.column-mover {
+  position: fixed;
+  top: 8px;
+  width: 40px;
+  height: 14px;
+  cursor: grab;
+  z-index: 50;
+  border-radius: 4px;
+  background: transparent;
+  transition: opacity 0.2s ease;
+  opacity: 0.35;
+}
+.column-mover:hover, .column-mover.dragging { opacity: 1; }
+.column-mover.dragging { cursor: grabbing; }
+body.typing-fade .column-mover { opacity: 0; pointer-events: none; }
+.column-mover::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 8px;
+  right: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fg, currentColor);
+  opacity: 0.45;
+}
+.column-mover.dragging::after { opacity: 0.7; }
+
 /* Rendered markdown links (when cursor is outside) */
 .cm-link-rendered {
   text-decoration: underline;

@@ -37,7 +37,7 @@ export function createMultiLineCommentPlugin() {
           const closeLine = view.state.doc.lineAt(close).number;
           if (openLine !== closeLine) {
             builder.add(open, open + 2, Decoration.mark({ attributes: { style: "opacity: 0.2" } }));
-            builder.add(open + 2, close, Decoration.mark({ attributes: { style: "opacity: 0.4" } }));
+            builder.add(open + 2, close, Decoration.mark({ attributes: { style: "opacity: 0.5" } }));
             builder.add(close, close + 2, Decoration.mark({ attributes: { style: "opacity: 0.2" } }));
           }
         }

@@ -141,6 +141,41 @@
   left: calc(50px + var(--panel-width, 300px) + 20px);
 }
 
+/* Dropbox sync indicator — 10 px dot pinned directly under the sidebar
+   floating toggle. Shares the toggle's horizontal anchor (centred on
+   the same column) so it slides with the toggle as the panel opens /
+   closes / resizes. Hidden by default; shown when sync is connected.
+   Pulses on every successful sync pass. */
+.sidebar-sync-dot {
+  position: fixed;
+  /* Toggle is centred at top: 50% via translateY(-50%) and is 36 px
+     tall. Park the dot 14 px below the toggle's bottom edge (= 50%
+     + 18 px toggle half + 14 px gap). */
+  top: calc(50% + 32px);
+  left: calc(20px + 18px);
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg, #888);
+  opacity: 0;
+  pointer-events: none;
+  z-index: var(--z-modal);
+  transition: opacity 0.2s ease, left 0s;
+  -webkit-app-region: no-drag;
+}
+.sidebar-sync-dot.visible { opacity: 0.45; }
+.sidebar-sync-dot.panel-open {
+  left: calc(50px + var(--panel-width, 300px) + 20px + 18px);
+}
+.sidebar-sync-dot.pulse { animation: hush-sync-dot-pulse 0.8s ease-out; }
+@keyframes hush-sync-dot-pulse {
+  0%   { transform: translateX(-50%) scale(1);   opacity: 0.45; }
+  35%  { transform: translateX(-50%) scale(1.6); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1);   opacity: 0.45; }
+}
+body.typing-fade .sidebar-sync-dot.visible { opacity: 0; }
+
 /* iOS Cmd button — same pill geometry as the sidebar floating toggle
    but anchored to the bottom-left of the viewport. Mirrors the toggle's
    offset rules so the two buttons share a column when both are visible

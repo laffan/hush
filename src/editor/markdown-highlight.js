@@ -62,7 +62,7 @@ export function getMarkdownHighlight(normalizeHeaders, headingColor, headerScale
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "calc(var(--font-size) * 0.9)" },
     // Custom syntax: %% comments %% — content dimmed; markers nearly invisible
-    { tag: commentTag, opacity: "0.4" },
+    { tag: commentTag, opacity: "0.5" },
     { tag: commentMarkTag, opacity: "0.2" },
     // Custom syntax: == highlight == — highlighted background (flag-typed highlights get per-flag color from plugin)
     { tag: highlightTag, borderRadius: "2px" },

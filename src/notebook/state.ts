@@ -23,7 +23,8 @@ import type { AppearanceMode, CanvasTheme } from "./themes";
 import { THEMES, getEffectiveVariant } from "./themes";
 import {
   autoFitWidth, findShapeAtPoint, findPocketedShapeAtScreen,
-  hitTestLink, normalizeBox, moveShape,
+  hitTestLink, hitTestTaskCheckbox, toggleTaskLine,
+  normalizeBox, moveShape,
   applyResize, applyCropResize, openExternalUrl,
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
@@ -1023,6 +1024,26 @@ export class DrawingState extends EventTarget {
       if (hitShape && hitShape.type === "text" && cmdHeld) {
         const link = hitTestLink(canvasPt, hitShape);
         if (link) { openExternalUrl(link); return; }
+      }
+
+      // Markdown checkbox toggle — a plain click directly on the
+      // `[ ]` / `[x]` glyph flips the task state. Sits ahead of the
+      // regular select/edit branch so the click doesn't drag-select
+      // or start text editing.
+      if (hitShape && hitShape.type === "text" && !e.shiftKey && !e.altKey) {
+        const taskIdx = hitTestTaskCheckbox(canvasPt, hitShape, this.fontFamily);
+        if (taskIdx != null) {
+          const nextText = toggleTaskLine(hitShape.text, taskIdx);
+          if (nextText != null) {
+            const id = hitShape.id;
+            this.shapes = this.shapes.map((s) =>
+              s.id === id && s.type === "text" ? { ...s, text: nextText } : s,
+            );
+            this.recordHistory();
+            this.notify("shapes");
+            return;
+          }
+        }
       }
 
       if (hitShape) {
