@@ -116,7 +116,16 @@ export function applyActiveStyle(state) {
       document.documentElement.style.removeProperty("--selection");
     }
 
-    updatePrivateBoxColor(state);
+    // Pass the resolved bg (override or theme) through so the sidebar
+    // and other --theme-bg consumers track the default style's bg
+    // override. Without this, updatePrivateBoxColor falls back to the
+    // raw theme bg when no activeStyleId is set, leaving the sidebar
+    // mismatched with the editor.
+    {
+      const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
+      const resolvedBg = defaultColors.bg || themeBackgrounds[themeId];
+      updatePrivateBoxColor(state, resolvedBg);
+    }
     // Default style's shader lives at the top level of AppSettings.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
     return;

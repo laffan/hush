@@ -66,8 +66,16 @@
   background: var(--selection, rgba(128, 128, 128, 0.3)) !important;
 }
 
+/* CodeMirror's drawSelection() paints its own selection layer, so
+   browser-native ::selection rendering on top of it produced a
+   doubled rectangle in project view (where block-replace decorations
+   shift native selection off by a line). Make native selection
+   transparent and let drawSelection own the visuals. */
 #editor-container ::selection {
-  background: var(--selection, rgba(128, 128, 128, 0.3));
+  background: transparent;
+}
+#editor-container ::-moz-selection {
+  background: transparent;
 }
 
 #editor-container .cm-gutters {

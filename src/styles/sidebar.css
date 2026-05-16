@@ -107,15 +107,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Border picks up var(--fg) at low opacity so both light and dark
-     themes get a meaningfully visible edge. Matches the touch-mode
-     pills (.cmd-floating-button) so the two pill families read as one
-     family of chrome. */
-  border: 1px solid color-mix(in srgb, var(--fg, #888) 25%, transparent);
+  /* Opaque border + chevron so the toggle reads clearly against busy
+     canvases (notebook backgrounds, post-processing shader layers).
+     Border uses --fg directly rather than the alpha-blended variant
+     so it draws a solid edge in every theme. */
+  border: 1px solid var(--fg, #888);
   border-radius: 50%;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
-  opacity: 0.85;
+  opacity: 1;
   cursor: pointer;
   padding: 0;
   backdrop-filter: blur(8px);

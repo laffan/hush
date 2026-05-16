@@ -28,6 +28,7 @@ import {
   copyPanesBetweenContexts,
 } from "./pane/pane-manager.js";
 import { arePanesHiddenForActive, setPanesHiddenForContext } from "./state/state-panes.js";
+import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
 import { openInNewWindow } from "./multi-window.js";
@@ -397,11 +398,14 @@ function enterSendSelectedPicker(palette, state) {
 function enterFilePicker(palette, state, placeholder, onPick, { includeProjects = false } = {}) {
   let leaves = collectFileLeaves(activeDeskSubtree(state));
   if (!includeProjects) leaves = leaves.filter((f) => f.type !== "project");
+  // Sort MRU-first; files not in the MRU keep their tree order behind it.
+  const recents = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
+  const rank = new Map(recents.map((id, i) => [id, i]));
+  leaves = leaves.slice().sort((a, b) => (rank.get(a.fileId) ?? Infinity) - (rank.get(b.fileId) ?? Infinity));
   const items = leaves.map((f) => ({
-    id: "file-" + f.id,
-    label: f.name,
+    id: "file-" + f.id, label: f.name, shortcutKey: null,
     icon: f.type === "notebook" ? icons.notebook : f.type === "project" ? icons.project : icons.doc,
-    shortcutKey: null,
+    paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type === "notebook" ? "notebook" : "document" }, state),
     action: () => onPick(f),
   }));
   palette.setItems(items, placeholder);
@@ -582,11 +586,8 @@ function open(state) {
     close() { close(); },
   };
 
-  // The keyboardNav flag is cleared lazily inside the row pointerenter
-  // handler (mouse pointer only). Avoiding an overlay-wide pointermove
-  // listener matters on iPad — pointermove fires for every touch frame,
-  // even when the callback would early-return, and the dispatch alone
-  // was enough to make scrolling commit only at touch release.
+  // keyboardNav clears in the row pointerenter handler (mouse only);
+  // an overlay-wide pointermove would fire per touch frame on iPad.
 
   input.addEventListener("input", () => {
     const q = input.value.trim().toLowerCase();
@@ -666,24 +667,22 @@ function renderList(listEl, state) {
       shortcutEl.innerHTML = formatShortcutKeys(shortcutRaw);
       row.appendChild(shortcutEl);
     }
+    // File-picker rows surface pane indicators on the right.
+    if (cmd.paneIndicators instanceof Node) {
+      const wrap = document.createElement("span");
+      wrap.className = "cmd-palette-pane-indicators";
+      wrap.appendChild(cmd.paneIndicators);
+      row.appendChild(wrap);
+    }
     row.addEventListener("click", () => {
       const run = listEl.__runCommand;
       if (run) run(cmd);
       else { close(); cmd.action(state); }
     });
-    // Hover behaviour: only react to real mouse pointers. On iOS the
-    // synthetic mouseenter fires for every row your finger crosses
-    // during a touch scroll; toggling an `.active` class across every
-    // row each time triggers a full reflow per crossed row, which is
-    // what made scrolling visibly stutter.
-    //
-    // While keyboard nav is engaged, ignore pointerenter entirely —
-    // pointerenter fires on the row that re-renders under a stationary
-    // cursor after each ArrowUp/Down, which would otherwise yank the
-    // highlight back to the mouse position. The overlay-level
-    // `mousemove` listener clears `keyboardNav` once the user actually
-    // moves the mouse again (mousemove is mouse-only, so iPad touch
-    // scrolling never trips it).
+    // Mouse-only hover handling: iOS synthetic mouseenter would cause
+    // a full reflow per crossed row on touch scrolls, and keyboard-nav
+    // would otherwise yank the highlight back to the cursor's resting
+    // position (cleared by the overlay's mousemove listener).
     row.addEventListener("pointerenter", (e) => {
       if (e.pointerType && e.pointerType !== "mouse") return;
       if (keyboardNav) return;

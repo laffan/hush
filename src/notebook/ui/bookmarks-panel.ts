@@ -72,6 +72,26 @@ export function createBookmarksPanel(state: DrawingState): HTMLElement {
     if (e.key === "Escape") { isOpen = false; adding = false; rebuild(); }
   });
 
+  // Option/Alt + 1..5 jumps to bookmarks 1..5 from anywhere on the
+  // canvas. We key off e.code ("Digit1"..."Digit5") rather than e.key
+  // because Alt+1 on macOS emits "¡", not "1". Skipped when an
+  // input/textarea owns focus so the same chord doesn't fire while
+  // the user is typing.
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const m = /^Digit([1-5])$/.exec(e.code);
+    if (!m) return;
+    const n = Number(m[1]);
+    const bm = state.bookmarks[n - 1];
+    if (!bm) return;
+    e.preventDefault();
+    state.goToBookmark(bm);
+    showBookmarkJumpToast(`${n}. ${bm.name}`);
+  });
+
   function rebuild() {
     const theme = state.theme;
     const fg = theme.foreground;
@@ -158,4 +178,27 @@ export function createBookmarksPanel(state: DrawingState): HTMLElement {
   }) as EventListener);
   rebuild();
   return container;
+}
+
+let _bookmarkToastEl: HTMLDivElement | null = null;
+let _bookmarkToastTimer: number | null = null;
+
+/** Brief floating confirmation that fades in then out — surfaced by
+ *  the Option+1..5 jump so the user gets feedback even when the
+ *  bookmarks dropdown is closed. */
+function showBookmarkJumpToast(label: string): void {
+  if (!_bookmarkToastEl) {
+    _bookmarkToastEl = document.createElement("div");
+    _bookmarkToastEl.className = "bookmark-jump-toast";
+    document.body.appendChild(_bookmarkToastEl);
+  }
+  _bookmarkToastEl.textContent = label;
+  // Force reflow before flipping the visible class so the transition runs.
+  void _bookmarkToastEl.offsetWidth;
+  _bookmarkToastEl.classList.add("visible");
+  if (_bookmarkToastTimer != null) clearTimeout(_bookmarkToastTimer);
+  _bookmarkToastTimer = window.setTimeout(() => {
+    if (_bookmarkToastEl) _bookmarkToastEl.classList.remove("visible");
+    _bookmarkToastTimer = null;
+  }, 1200);
 }

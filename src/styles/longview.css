@@ -358,6 +358,15 @@
   padding-bottom: calc(var(--lv-line-gap, 2px) / 2);
 }
 
+/* Paragraph currently nearest the editor cursor — picked up by the
+   selectionchange/scroll handlers in longview.js. Low-opacity wash of
+   the heading colour with no border, so it reads as a subtle accent
+   rather than a competing block. */
+.longview-line.is-current-paragraph {
+  background: color-mix(in srgb, var(--lv-heading-color, var(--lv-position-color, currentColor)) 14%, transparent);
+  color: var(--fg);
+}
+
 /* Callout backgrounds */
 .longview-callout-bg {
   border-radius: 2px;

@@ -650,7 +650,12 @@
   opacity: 0.6;
 }
 
-.desk-switcher-header:hover .desk-switcher-caret { opacity: 1; }
+/* :hover guarded behind hover-capable devices so iOS Safari doesn't
+   treat the header as a "hoverable" target that needs two taps (first
+   to fake-hover, second to click). */
+@media (hover: hover) {
+  .desk-switcher-header:hover .desk-switcher-caret { opacity: 1; }
+}
 
 .desk-switcher-popover {
   position: absolute;
