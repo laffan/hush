@@ -111,6 +111,9 @@ function onContextChange() {
     if (ctxHidden && participatesInCtx) {
       pane.el.style.display = "none";
       if (pane.attached) stopAttachSync(pane);
+      if (pane.gutter) {
+        import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+      }
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
         if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
@@ -135,6 +138,9 @@ function onContextChange() {
     } else {
       pane.el.style.display = "none";
       if (pane.attached) stopAttachSync(pane);
+      if (pane.gutter) {
+        import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+      }
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
         if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
@@ -268,6 +274,9 @@ export function closePane(id) {
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
+  if (pane.gutter) {
+    import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+  }
   if (pane.editor) pane.editor.destroy();
   if (pane.notebook) pane.notebook.destroy();
   pane.el.remove();
