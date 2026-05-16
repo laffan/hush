@@ -242,7 +242,7 @@ function buildCommands(state) {
       action: (s) => s.toggleTypewriter() },
     { id: "dry", label: "Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", ctx: "doc",
       action: (s) => s.toggleDry() },
-    { id: "focus", label: "Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",
+    { id: "focus", label: "Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", ctx: "doc",
       action: (s) => s.toggleFocus() },
     { id: "zen", label: "Zen Focus", icon: icons.focus, shortcutKey: "shortcutZenFocus", ctx: "shared",
       action: (s) => s.toggleZenFocus() },
@@ -536,7 +536,7 @@ function docModeTurnoffs(state) {
     { flag: "privateMode", label: "Turn off Private mode", icon: icons.private, shortcutKey: "shortcutTogglePrivate", action: (s) => s.togglePrivate() },
     { flag: "typewriterMode", label: "Turn off Typewriter mode", icon: icons.typewriter, shortcutKey: "shortcutTypewriter", action: (s) => s.toggleTypewriter() },
     { flag: "dryMode", label: "Turn off Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", action: (s) => s.toggleDry() },
-    { flag: "focusMode", label: "Turn off Highlight sentence", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
+    { flag: "focusMode", label: "Turn off Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
     { flag: "proofreadMode", label: "Turn off Proofread mode", icon: icons.proofread, action: (s) => s.toggleProofread() },
   ];
   return modes

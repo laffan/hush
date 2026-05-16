@@ -122,6 +122,8 @@ pub struct AppSettings {
     pub always_on_top: bool,
     #[serde(default = "default_column_width")]
     pub column_width: u32,
+    #[serde(default)]
+    pub zen_column_width: Option<u32>,
     #[serde(default = "default_sidebar_panel_width")]
     pub sidebar_panel_width: u32,
 
@@ -518,6 +520,7 @@ impl Default for AppSettings {
             local_sync_folders: Vec::new(),
             always_on_top: false,
             column_width: default_column_width(),
+            zen_column_width: None,
             sidebar_panel_width: default_sidebar_panel_width(),
             shortcut_open_editor: default_shortcut_open(),
             shortcut_open_fullscreen: default_shortcut_fullscreen(),

@@ -183,37 +183,70 @@ body.cmd-held .column-mover,
 .column-mover:hover::after { opacity: 0.6; }
 .column-mover.dragging::after { opacity: 0.7; }
 
-/* Cmd-held over-editor sliders — a single row of quick controls
-   (Focus dim opacity, Zen font size) pinned to the bottom of the
-   viewport. Hidden by default; faded in while body.cmd-held is set,
-   matching the column-resizers' reveal so all the modifier-gated
-   editing controls share one mental model. */
-.cmd-held-sliders {
+/* Zen-mode quick-controls — a caret pinned to the bottom-centre of the
+   viewport that fades in while Cmd is held; hovering it reveals a
+   horizontal pill carrying Dim + Font sliders. Zen mode owns both
+   affordances entirely: the wrap is `display: none` everywhere else
+   so the normal editor stays uncluttered. The Zen overlay's bottom
+   curtain fades the canvas down to --bg right here, so no border is
+   needed on the pill. */
+.cmd-held-sliders-wrap {
   position: fixed;
   left: 50%;
-  bottom: 18px;
+  bottom: 0;
   transform: translateX(-50%);
   display: none;
-  gap: 18px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--theme-bg, var(--bg)) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--fg, currentColor) 18%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: var(--z-modal);
-  /* Sit above the zen overlay so the controls remain reachable while
-     Zen is active (Zen uses its own stacking; this lifts above it). */
+  flex-direction: column;
+  align-items: center;
+  /* Above --z-modal-top (zen overlay) so the controls reach the user. */
+  z-index: calc(var(--z-modal-top) + 1);
+  pointer-events: none;
+}
+body.zen-focus-active .cmd-held-sliders-wrap { display: flex; }
+
+/* Caret — small chevron that only paints when Cmd is held. Hover
+   target sits flush at the screen edge with generous padding so the
+   user can dock the cursor there without precision. */
+.cmd-held-sliders-caret {
   pointer-events: auto;
-  font: 500 12px/1 var(--font-family);
+  padding: 6px 18px 8px 18px;
+  font: 600 18px/1 var(--font-family);
   color: var(--fg);
   opacity: 0;
   transition: opacity 0.18s ease;
+  cursor: pointer;
+  user-select: none;
 }
-body.cmd-held .cmd-held-sliders {
+body.zen-focus-active.cmd-held .cmd-held-sliders-caret { opacity: 0.45; }
+body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-caret { opacity: 0.8; }
+
+/* Pill — hidden until the wrap is hovered (caret OR pill itself).
+   No border; Zen's bottom curtain already isolates it from content. */
+.cmd-held-sliders {
+  pointer-events: auto;
   display: flex;
-  opacity: 1;
+  gap: 18px;
+  margin-bottom: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-bg, var(--bg)) 92%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font: 500 12px/1 var(--font-family);
+  color: var(--fg);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  /* Block pointer until the parent wrap is hovered so the pill isn't
+     a click target while it's still invisible. */
+  visibility: hidden;
 }
+body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
 .cmd-held-slider-group {
   display: flex;
   align-items: center;
@@ -222,7 +255,7 @@ body.cmd-held .cmd-held-sliders {
 .cmd-held-slider-label {
   opacity: 0.6;
   letter-spacing: 0.02em;
-  min-width: 36px;
+  min-width: 30px;
 }
 .cmd-held-slider-group input[type="range"] {
   width: 120px;

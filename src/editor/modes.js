@@ -71,16 +71,21 @@ export function updateColumnResizers(state) {
   leftResizer.className = "column-resizer left";
   const rightResizer = document.createElement("div");
   rightResizer.className = "column-resizer right";
-  // Mover handle — surfaces only while the "Make space for panes"
-  // layout is engaged (doc + a visible pane). Drag horizontally to
-  // reposition the column without changing its width.
-  const moverHandle = document.createElement("div");
-  moverHandle.className = "column-mover";
-  moverHandle.title = "Drag to reposition column";
+  // Mover handles — a pair that surfaces only while the "Make space
+  // for panes" layout is engaged (doc + a visible pane). One sits
+  // *outside* each column resizer; either can be dragged horizontally
+  // to slide the column without changing its width.
+  const moverLeft = document.createElement("div");
+  moverLeft.className = "column-mover left";
+  moverLeft.title = "Drag to reposition column";
+  const moverRight = document.createElement("div");
+  moverRight.className = "column-mover right";
+  moverRight.title = "Drag to reposition column";
 
   document.body.appendChild(leftResizer);
   document.body.appendChild(rightResizer);
-  document.body.appendChild(moverHandle);
+  document.body.appendChild(moverLeft);
+  document.body.appendChild(moverRight);
   let hideTimeout = null;
   function showBoth() {
     clearTimeout(hideTimeout);
@@ -189,14 +194,14 @@ export function updateColumnResizers(state) {
       rightResizer.style.display = "none";
     }
 
-    // Mover handle — only meaningful when the make-space layout is
-    // active. Sits vertically centred just outside the *outer* column
-    // resizer (the one on the side with extra room — in "right" mode
-    // that's the left edge, in "left" mode the right edge) with a 5 px
-    // gap to the resizer. Reveal follows the resizers' cmd-held rule
-    // via CSS so it stays invisible during normal writing.
+    // Mover handles — only meaningful when the make-space layout is
+    // active. One sits vertically centred *outside* each column
+    // resizer (5 px gap to the resizer rail). Reveal follows the
+    // resizers' cmd-held rule via CSS so they stay invisible during
+    // normal writing.
     if (makeSpaceActive && showResizers) {
-      moverHandle.style.display = "";
+      moverLeft.style.display = "";
+      moverRight.style.display = "";
       // 14 px wide handle (rotated), centred vertically; sit 5 px out
       // from the resizer rail. Each resizer's hit zone is 40 px wide
       // (20 px padding either side of a 2 px stroke), with the stroke
@@ -204,18 +209,16 @@ export function updateColumnResizers(state) {
       const handleWidth = 14;
       const gap = 5;
       const HANDLE_HEIGHT = 40;
-      if (direction === "right") {
-        // Column shifted right; gap on the left → place handle just
-        // outside the left resizer (i.e. further left).
-        const railX = leftPad - 10 + 19; // resizer's painted line
-        moverHandle.style.left = (railX - gap - handleWidth) + "px";
-      } else {
-        const railX = (w - rightPad + 10) + 19;
-        moverHandle.style.left = (railX + gap) + "px";
-      }
-      moverHandle.style.top = `calc(50% - ${HANDLE_HEIGHT / 2}px)`;
+      const leftRailX = leftPad - 10 + 19;
+      const rightRailX = (w - rightPad + 10) + 19;
+      // Outside the left resizer = further left; outside the right = further right.
+      moverLeft.style.left = (leftRailX - gap - handleWidth) + "px";
+      moverRight.style.left = (rightRailX + gap) + "px";
+      moverLeft.style.top = `calc(50% - ${HANDLE_HEIGHT / 2}px)`;
+      moverRight.style.top = `calc(50% - ${HANDLE_HEIGHT / 2}px)`;
     } else {
-      moverHandle.style.display = "none";
+      moverLeft.style.display = "none";
+      moverRight.style.display = "none";
     }
   }
 
@@ -256,34 +259,35 @@ export function updateColumnResizers(state) {
   makeDraggable(rightResizer, false);
 
   // Mover drag — slide the column horizontally without changing width.
-  // Direction-aware: in "right" mode the offset feeds the right pad
-  // (sliding the column further left as the user drags left); in
-  // "left" mode it feeds the left pad.
-  moverHandle.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    const direction = state.settings.makeSpaceDirection === "left" ? "left" : "right";
-    const startX = e.clientX;
-    const startOffset = Number(state.settings.makeSpaceColumnOffset || 0);
-    moverHandle.classList.add("dragging");
+  // Either handle drives the same offset; the "right" make-space
+  // direction inverts the sign so dragging right always slides the
+  // column right.
+  function installMoverDrag(handle) {
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const direction = state.settings.makeSpaceDirection === "left" ? "left" : "right";
+      const startX = e.clientX;
+      const startOffset = Number(state.settings.makeSpaceColumnOffset || 0);
+      handle.classList.add("dragging");
 
-    function onMove(e2) {
-      const delta = e2.clientX - startX;
-      // "right" direction means the column shifts left as `off` grows
-      // (rightPad += off). Invert so dragging the handle right slides
-      // the column right.
-      const signed = direction === "right" ? -delta : delta;
-      state.settings.makeSpaceColumnOffset = Math.max(0, startOffset + signed);
-      if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
-    }
-    function onUp() {
-      moverHandle.classList.remove("dragging");
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      state.updateSettings({ makeSpaceColumnOffset: state.settings.makeSpaceColumnOffset });
-    }
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  });
+      function onMove(e2) {
+        const delta = e2.clientX - startX;
+        const signed = direction === "right" ? -delta : delta;
+        state.settings.makeSpaceColumnOffset = Math.max(0, startOffset + signed);
+        if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+      }
+      function onUp() {
+        handle.classList.remove("dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        state.updateSettings({ makeSpaceColumnOffset: state.settings.makeSpaceColumnOffset });
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+  installMoverDrag(moverLeft);
+  installMoverDrag(moverRight);
 }
 
 export function updateRatchetTimer(state) {

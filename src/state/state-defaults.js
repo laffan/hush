@@ -39,6 +39,10 @@ export function createDefaultSettings() {
     dropboxToken: null,
     alwaysOnTop: false,
     columnWidth: 800,
+    // Zen mode keeps its own column width so resizing inside the
+    // overlay doesn't reflow the everyday editor. Null = fall back to
+    // columnWidth on first use, then persist independently.
+    zenColumnWidth: null,
     sidebarPanelWidth: 300,
     notebookShelfWidth: 280,
     // App-wide saved text-style presets for notebook text shapes.
@@ -83,7 +87,7 @@ export function createDefaultSettings() {
     shortcutTypewriter: "Mod+Shift+T",
     shortcutNewFile: "Mod+N",
     shortcutToggleDry: "Mod+Shift+R",
-    shortcutToggleFocus: "Mod+Shift+Y",
+    shortcutToggleFocus: "Mod+S",
     shortcutToggleWordCount: "Mod+Shift+W",
     shortcutZenFocus: "Mod+Shift+S",
     zenFocusFontSize: 30,
@@ -114,7 +118,9 @@ export function createDefaultSettings() {
 
     // Shortcuts — Additional editing actions
     shortcutSelectParagraph: "Mod+Shift+L",
-    shortcutSave: "Mod+S",
+    // Save is autosave-driven; the explicit shortcut is intentionally
+    // unbound by default so it doesn't compete with Focus mode (Mod+S).
+    shortcutSave: "",
     shortcutFindNext: "Ctrl+R",
     shortcutFindPrev: "Ctrl+Shift+R",
     shortcutJoinLines: "Mod+J",

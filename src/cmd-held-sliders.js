@@ -1,24 +1,36 @@
 /**
- * Cmd-held over-editor sliders.
+ * Zen-only quick controls.
  *
- * A thin row pinned to the bottom of the viewport that fades in
- * whenever `body.cmd-held` is set. Surfaces two live controls without
- * leaving the editor:
+ * Two affordances live in this module, both gated to Zen mode:
  *
- *   • Focus mode dimmed opacity (mirrors the Settings > Editor slider).
- *   • Zen Focus font size (mirrors Settings > Editor > Zen Focus).
+ *   • A small `^` caret pinned to the bottom-centre of the viewport
+ *     that fades in while `body.cmd-held` is set.
+ *   • A horizontal pill carrying Dim opacity + Font size sliders that
+ *     reveals on caret hover (and stays revealed while the pointer is
+ *     on the pill itself).
  *
- * Both sliders write back to `state.settings` and emit `settings-changed`
- * so the existing CSS-var hooks (`--focus-mode-opacity`, `--zen-font-size`)
- * pick up the value on every input frame. Settings remain editable
- * from the Settings window — this is just a faster path.
+ * The pill writes back to `state.settings.focusModeOpacity` and
+ * `state.settings.zenFocusFontSize` so the same values surfaced in the
+ * Settings window update live — and vice versa.
  */
 
 export function initCmdHeldSliders(state) {
   if (typeof document === "undefined") return;
 
-  const root = document.createElement("div");
-  root.className = "cmd-held-sliders";
+  // Wrapper hosts both the caret and the pill so the `:hover` rule on
+  // the wrap can keep the pill open while the pointer is anywhere
+  // inside the column.
+  const wrap = document.createElement("div");
+  wrap.className = "cmd-held-sliders-wrap";
+
+  const caret = document.createElement("div");
+  caret.className = "cmd-held-sliders-caret";
+  caret.setAttribute("aria-hidden", "true");
+  caret.textContent = "︿";
+  wrap.appendChild(caret);
+
+  const pill = document.createElement("div");
+  pill.className = "cmd-held-sliders";
 
   const dimGroup = makeSliderGroup({
     label: "Dim",
@@ -28,24 +40,22 @@ export function initCmdHeldSliders(state) {
     onChange: (v) => state.updateSettings({ focusModeOpacity: clamp01(v) }),
   });
 
-  const zenGroup = makeSliderGroup({
-    label: "Zen size",
+  const fontGroup = makeSliderGroup({
+    label: "Font",
     min: 18, max: 72, step: 1,
     value: Number(state.settings.zenFocusFontSize) || 30,
     format: (v) => `${Math.round(v)}px`,
     onChange: (v) => state.updateSettings({ zenFocusFontSize: Math.round(v) }),
   });
 
-  root.appendChild(dimGroup.el);
-  root.appendChild(zenGroup.el);
-  document.body.appendChild(root);
+  pill.appendChild(dimGroup.el);
+  pill.appendChild(fontGroup.el);
+  wrap.appendChild(pill);
+  document.body.appendChild(wrap);
 
-  // Keep the sliders in sync if the user opens Settings and drags the
-  // matching slider there — the floating control should reflect the
-  // current value the next time the user holds Cmd.
   state.on("settings-changed", () => {
     dimGroup.set(clamp01(state.settings.focusModeOpacity ?? 0.5));
-    zenGroup.set(Number(state.settings.zenFocusFontSize) || 30);
+    fontGroup.set(Number(state.settings.zenFocusFontSize) || 30);
   });
 }
 

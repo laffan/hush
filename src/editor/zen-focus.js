@@ -333,9 +333,15 @@ function installZenResizers(state, overlay, stage) {
   right.addEventListener("mouseenter", showBoth);
   right.addEventListener("mouseleave", hideBoth);
 
+  function readZenWidth() {
+    const z = Number(state.settings.zenColumnWidth);
+    if (Number.isFinite(z) && z > 0) return z;
+    return Number(state.settings.columnWidth) || 800;
+  }
+
   function applyLayout() {
     const w = overlay.clientWidth || window.innerWidth;
-    const colW = Math.max(200, Math.min(w - 40, Number(state.settings.columnWidth) || 800));
+    const colW = Math.max(200, Math.min(w - 40, readZenWidth()));
     const sidePad = Math.max(20, Math.floor((w - colW) / 2));
     // Drive the stage width directly so changes from the resizers
     // apply instantly without depending on a global CSS-var update.
@@ -353,14 +359,17 @@ function installZenResizers(state, overlay, stage) {
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();
       const startX = e.clientX;
-      const startWidth = Number(state.settings.columnWidth) || 800;
+      const startWidth = readZenWidth();
       el.classList.add("dragging");
       showBoth();
 
       function onMove(e2) {
         const delta = isLeft ? startX - e2.clientX : e2.clientX - startX;
         const newWidth = Math.max(300, Math.min(window.innerWidth - 100, startWidth + delta * 2));
-        state.settings.columnWidth = newWidth;
+        // Update in-memory only during the drag — settings.zenColumnWidth
+        // gets persisted on pointerup so the autosave + sync paths don't
+        // fire on every pixel.
+        state.settings.zenColumnWidth = newWidth;
         applyLayout();
       }
       function onUp() {
@@ -368,7 +377,7 @@ function installZenResizers(state, overlay, stage) {
         hideBoth();
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
-        state.updateSettings({ columnWidth: state.settings.columnWidth });
+        state.updateSettings({ zenColumnWidth: state.settings.zenColumnWidth });
       }
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);

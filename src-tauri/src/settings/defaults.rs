@@ -134,7 +134,7 @@ pub fn default_shortcut_toggle_dry() -> String {
     "Mod+Shift+R".to_string()
 }
 pub fn default_shortcut_toggle_focus() -> String {
-    "Mod+Shift+Y".to_string()
+    "Mod+S".to_string()
 }
 pub fn default_shortcut_toggle_word_count() -> String {
     "Mod+Shift+W".to_string()
@@ -228,7 +228,9 @@ pub fn default_shortcut_select_paragraph() -> String {
     "Mod+Shift+L".to_string()
 }
 pub fn default_shortcut_save() -> String {
-    "Mod+S".to_string()
+    // Unbound by default — autosave handles persistence and Focus mode
+    // now owns Mod+S. Users can rebind from Settings > Shortcuts.
+    "".to_string()
 }
 pub fn default_shortcut_find_next() -> String {
     // Ctrl+R / Ctrl+Shift+R on every platform (not Cmd) so they don't
