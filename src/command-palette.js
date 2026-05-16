@@ -17,16 +17,11 @@ import {
 } from "./command-palette-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import {
-  getActivePaneId,
-  fitActivePaneToGap,
-  createPane,
-  getInitialPanePosition,
-  replacePaneContent,
-  contextIdForFile,
-  getPanesForContext,
-  clearPanesForContext,
+  getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition,
+  replacePaneContent, contextIdForFile, getPanesForContext, clearPanesForContext,
   copyPanesBetweenContexts,
 } from "./pane/pane-manager.js";
+import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
 import { arePanesHiddenForActive, setPanesHiddenForContext } from "./state/state-panes.js";
 import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
@@ -271,6 +266,10 @@ function buildCommands(state) {
         const id = getActivePaneId();
         if (id) replacePaneContent(id, f.fileId, f.name, f.type);
       }) },
+    { id: "pane-gutter-on", label: "Use Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane",
+      hiddenIf: () => !canUseActivePaneAsGutter(), action: () => useActivePaneAsGutter() },
+    { id: "pane-gutter-off", label: "Stop using Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane",
+      hiddenIf: () => !isActivePaneAGutter(), action: () => stopActivePaneAsGutter() },
 
     // === PANE SET (current document's panes) ===
     { id: "panes-hide", label: "Hide panes", icon: icons.pane, shortcutKey: null, ctx: "shared",

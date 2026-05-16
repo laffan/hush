@@ -167,6 +167,10 @@ export function toggleCollapse(pane) {
 }
 
 async function toggleAttach(pane) {
+  if (pane.gutter) {
+    const { stopActivePaneAsGutter } = await import("./pane-gutter.js");
+    stopActivePaneAsGutter();
+  }
   if (pane.pinned) {
     if (!confirm("This pane is pinned globally. Attaching will remove the pin. Continue?")) return;
     setPinned(pane, false);
@@ -216,7 +220,11 @@ async function toggleAttach(pane) {
   schedulePersist();
 }
 
-function togglePinned(pane, onContextChange) {
+async function togglePinned(pane, onContextChange) {
+  if (pane.gutter) {
+    const { stopActivePaneAsGutter } = await import("./pane-gutter.js");
+    stopActivePaneAsGutter();
+  }
   if (pane.attached) {
     if (!confirm("This pane is attached. Pinning will remove the attachment. Continue?")) return;
     pane.attached = false;

@@ -129,6 +129,9 @@ function onContextChange() {
         if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
       }
+      if (pane.gutter) {
+        import("./pane-gutter.js").then(({ restoreGutterLayout }) => restoreGutterLayout(pane));
+      }
     } else {
       pane.el.style.display = "none";
       if (pane.attached) stopAttachSync(pane);

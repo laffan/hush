@@ -185,6 +185,35 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Gutter pane ──────────────────────────────────────────────────────
+   "Use Pane as Gutter" pins a notebook pane to the side of the doc text:
+   tall, full-height, with the edge facing the text painted red so the
+   pane reads as part of the writing surface rather than a free-floater. */
+
+.floating-pane.gutter.gutter-left {
+  border-right-color: #e44b3a;
+  box-shadow: inset -1px 0 0 #e44b3a;
+}
+
+.floating-pane.gutter.gutter-right {
+  border-left-color: #e44b3a;
+  box-shadow: inset 1px 0 0 #e44b3a;
+}
+
+/* Resize handles and drag-grab cursor disabled — gutter geometry is
+   driven by the doc text, not the user dragging the pane around. */
+.floating-pane.gutter .fp-resize {
+  display: none;
+}
+
+.floating-pane.gutter .floating-pane-titlebar {
+  cursor: default;
+}
+
+.floating-pane.gutter .floating-pane-titlebar:active {
+  cursor: default;
+}
+
 /* ── Pinned pane (global / cross-document) — blue border ──────────── */
 /* Earlier styling tinted the titlebar blue; the user moved the
    "this pane persists across documents" affordance to the pane border

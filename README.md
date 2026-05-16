@@ -28,6 +28,7 @@ A minimal, distraction-free writing app for macOS. Hush lives in your menu bar a
 
 - **Attach** — Anchors a pane to the document scroll (docs) or canvas position (notebooks) so it moves with the content.
 - **Pin** — Keeps a pane visible across document switches (blue border). Unpinning returns it to its original document.
+- **Use as Gutter** — Doc-only command on a selected notebook pane that promotes it into a vertical gutter alongside the writing surface: the pane moves to the top of the doc text area, stretches to the height of the text column, and paints the edge facing the doc red so it reads as part of the writing surface. **Stop using Pane as Gutter** restores the pane's prior width / height / position and drops it back to the current viewport.
 - **Duplicate** — Creates a copy of a pane owned by the current document. Useful for bringing a pinned reference into a new context.
 - **Real-time sync** — Edits in a pane propagate to the main editor if the same file is open, and vice versa.
 - **Locked styles** — Run **Lock style to document** from the command palette on any doc or notebook to pin its current style; from then on, panes showing that file adopt the locked style (theme, font, sizing) instead of the session's active style. **Unlock style from document** clears it.
