@@ -1825,9 +1825,18 @@ export class DrawingState extends EventTarget {
     e.preventDefault();
     if (!this.canvasEl) return;
     // Gutter mode: redirect the wheel into the host doc's scroller so
-    // the canvas + doc stay in lockstep. Zoom is disabled in gutter mode.
+    // the canvas + doc stay in lockstep, and apply horizontal delta to
+    // camera.x so trackpad horizontal-swipes still pan the canvas
+    // sideways. Zoom is disabled — a Mac trackpad pinch fires wheel
+    // events with ctrlKey=true and a synthetic deltaY representing the
+    // pinch amount; we drop those so they don't yank the doc scroll.
     if (this.gutterScrollDOM) {
-      this.gutterScrollDOM.scrollBy({ top: e.deltaY, left: 0, behavior: "auto" });
+      if (e.ctrlKey) return;
+      if (e.deltaY) this.gutterScrollDOM.scrollTop += e.deltaY;
+      if (e.deltaX) {
+        this.camera = { x: this.camera.x - e.deltaX, y: 0, zoom: 1 };
+        this.notify("camera");
+      }
       return;
     }
     const rect = this.canvasEl.getBoundingClientRect();
@@ -2758,11 +2767,14 @@ export class DrawingState extends EventTarget {
     // stay locked at 0 / 1). The doc scroll handler will repaint the
     // gutter at its new pane.y on the next tick.
     if (this.gutterScrollDOM) {
-      const canvasRect = this.canvasEl?.getBoundingClientRect();
-      const canvasTopViewport = canvasRect ? canvasRect.top : 0;
+      // Canvas-pixel-y == doc-content-y under the gutter lock, so the
+      // shape's world cy is also its doc-content-y. Aim for the
+      // viewport vertical centre and snap there in one step (smooth
+      // scroll fights any user interaction that happens mid-animation).
+      const scrollerRect = this.gutterScrollDOM.getBoundingClientRect();
       const viewportH = window.innerHeight || h;
-      const targetScrollTop = this.gutterScrollDOM.scrollTop + canvasTopViewport + cy - viewportH / 2;
-      this.gutterScrollDOM.scrollTo({ top: Math.max(0, targetScrollTop), behavior: "smooth" });
+      const target = Math.max(0, scrollerRect.top + cy - viewportH / 2);
+      this.gutterScrollDOM.scrollTop = target;
       this.camera = { x: (left + w - right) / 2 - cx, y: 0, zoom: 1 };
     } else {
       this.camera = {

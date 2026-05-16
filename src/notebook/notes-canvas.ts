@@ -239,6 +239,7 @@ export class NotesCanvas {
     // world point under the gesture's start midpoint stays under the
     // user's current midpoint.
     let touchGestureCamStart: { x: number; y: number; zoom: number } | null = null;
+    let touchGestureScrollTop = 0;
     let touchPinchStartMid = { x: 0, y: 0 };
     let touchPinchStartDist = 0;
     let touchPinching = false;
@@ -249,12 +250,21 @@ export class NotesCanvas {
       camera: this.state.camera,
       onTouchPanStart: () => {
         if (!touchGestureCamStart) touchGestureCamStart = { ...this.state.camera };
+        touchGestureScrollTop = this.state.gutterScrollDOM?.scrollTop || 0;
       },
       onTouchPanMove: (dx, dy) => {
         if (!touchGestureCamStart) return;
         // Pinch path owns the camera while it's active — the pinch
         // formula already accounts for midpoint translation.
         if (touchPinching) return;
+        // Gutter mode: vertical drag scrolls the host doc 1:1; horizontal
+        // still pans camera.x, camera.y/zoom stay locked.
+        if (this.state.gutterScrollDOM) {
+          this.state.gutterScrollDOM.scrollTop = touchGestureScrollTop - dy;
+          this.state.camera = { x: touchGestureCamStart.x + dx, y: 0, zoom: 1 };
+          this.state.notify("camera");
+          return;
+        }
         this.state.camera = {
           x: touchGestureCamStart.x + dx,
           y: touchGestureCamStart.y + dy,
@@ -274,6 +284,16 @@ export class NotesCanvas {
       onTouchPinchMove: (mid, dist) => {
         if (!touchGestureCamStart || touchPinchStartDist <= 0) return;
         const cs = touchGestureCamStart;
+        // Gutter mode: zoom is disabled. Pinch becomes pure pan —
+        // midpoint dy → doc scroll, dx → camera.x.
+        if (this.state.gutterScrollDOM) {
+          const dx = mid.x - touchPinchStartMid.x;
+          const dy = mid.y - touchPinchStartMid.y;
+          this.state.gutterScrollDOM.scrollTop = touchGestureScrollTop - dy;
+          this.state.camera = { x: cs.x + dx, y: 0, zoom: 1 };
+          this.state.notify("camera");
+          return;
+        }
         const rawScale = dist / touchPinchStartDist;
         // Match the wheel handler's zoom envelope: [0.25, 1].
         const newZoom = Math.min(1, Math.max(0.25, cs.zoom * rawScale));

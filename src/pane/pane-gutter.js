@@ -84,26 +84,53 @@ function computeGutterFrame() {
   return { y, height };
 }
 
-function applyGutterFrame(pane) {
-  const { y, height } = computeGutterFrame();
+/** Reposition the gutter pane to follow the doc scroll. Cheap; runs on
+ *  every scroll tick. Does not touch pane.height — resizing on every
+ *  scroll fights CodeMirror's incremental-measurement and causes drift
+ *  on long docs. Height is owned by applyGutterHeight + the ResizeObserver. */
+function applyGutterY(pane) {
+  const scroller = getScroller();
+  if (!scroller) return;
+  const rect = scroller.getBoundingClientRect();
+  const y = rect.top - scroller.scrollTop;
   pane.y = y;
-  pane.height = height;
   pane.el.style.top = y + "px";
-  pane.el.style.height = height + "px";
   // Notebook toolbar piggybacks on this CSS variable so it slides with
   // the doc scroll — see floating-pane.css.
-  const scroller = getScroller();
-  const scrollTop = scroller ? scroller.scrollTop : 0;
+  const scrollTop = scroller.scrollTop;
   pane.el.style.setProperty("--gutter-scroll", scrollTop + "px");
   // Pocket tray / entries are canvas-rendered, so they can't ride the
   // CSS variable. Plumb the same offset into the notebook state and
   // poke the render loop. viewportHeight clamps the tray so it doesn't
-  // run off the bottom of a doc-tall canvas.
+  // run off the bottom of a doc-tall canvas. Camera is also defensively
+  // re-locked here in case something pushed y/zoom off.
   if (pane.notebook && pane.notebook.state) {
-    pane.notebook.state.topInset = scrollTop;
-    pane.notebook.state.viewportHeight = window.innerHeight;
-    pane.notebook.state.notify("camera");
+    const st = pane.notebook.state;
+    st.topInset = scrollTop;
+    st.viewportHeight = window.innerHeight;
+    if (st.camera.y !== 0 || st.camera.zoom !== 1) {
+      st.camera = { x: st.camera.x, y: 0, zoom: 1 };
+    }
+    st.notify("camera");
   }
+}
+
+/** Resize the gutter pane to track doc content height. Runs from the
+ *  ResizeObserver on .cm-content. Skips imperceptible changes so a
+ *  doc that fluctuates by sub-pixel amounts under CM virtualization
+ *  doesn't churn the canvas backing. */
+function applyGutterHeight(pane) {
+  const scroller = getScroller();
+  if (!scroller) return;
+  const height = Math.max(120, scroller.scrollHeight);
+  if (Math.abs(pane.height - height) < 1) return;
+  pane.height = height;
+  pane.el.style.height = height + "px";
+}
+
+function applyGutterFrame(pane) {
+  applyGutterHeight(pane);
+  applyGutterY(pane);
 }
 
 function startGutterSync(pane) {
@@ -111,9 +138,9 @@ function startGutterSync(pane) {
   if (!scroller) return;
   pane._gutterScrollHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
-    applyGutterFrame(pane);
+    applyGutterY(pane);
   };
-  scroller.addEventListener("scroll", pane._gutterScrollHandler);
+  scroller.addEventListener("scroll", pane._gutterScrollHandler, { passive: true });
 
   // Doc content height changes — added paragraphs, image loads, etc. —
   // need to be reflected in the pane height so the gutter never trails
@@ -122,7 +149,7 @@ function startGutterSync(pane) {
   if (typeof ResizeObserver !== "undefined" && content) {
     pane._gutterResizeObs = new ResizeObserver(() => {
       if (!pane.gutter || !panes.has(pane.id)) return;
-      applyGutterFrame(pane);
+      applyGutterHeight(pane);
     });
     pane._gutterResizeObs.observe(content);
   }
