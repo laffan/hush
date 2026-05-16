@@ -341,14 +341,17 @@ export class FlowchartLayer<S extends FlowNode> {
     return { minX: baseX, minY: y };
   }
 
-  /** Closest cardinal side of `parent` that `child` currently sits on.
-   *  Mirrors geometryClosest's axis pick. Shared between tidy + tryConnect. */
+  /** Side of `parent` that `child` sits on — same gap-based axis pick
+   *  `geometryClosest` uses to route arrows, so Tidy can't flip a
+   *  child off the side its arrow already points to. */
   private _sideOfChild(parent: S, child: S): "right" | "left" | "up" | "down" {
     const pb = this.cfg.getBounds(parent), cb = this.cfg.getBounds(child);
-    const dx = (cb.minX + cb.maxX) / 2 - (pb.minX + pb.maxX) / 2;
-    const dy = (cb.minY + cb.maxY) / 2 - (pb.minY + pb.maxY) / 2;
-    if (Math.abs(dy) > Math.abs(dx)) return dy > 0 ? "down" : "up";
-    return dx >= 0 ? "right" : "left";
+    const ccx = (cb.minX + cb.maxX) / 2, ccy = (cb.minY + cb.maxY) / 2;
+    const pcx = (pb.minX + pb.maxX) / 2, pcy = (pb.minY + pb.maxY) / 2;
+    const horizGap = ccx >= pcx ? cb.minX - pb.maxX : pb.minX - cb.maxX;
+    const vertGap  = ccy >= pcy ? cb.minY - pb.maxY : pb.minY - cb.maxY;
+    if (horizGap >= vertGap) return ccx >= pcx ? "right" : "left";
+    return ccy >= pcy ? "down" : "up";
   }
 
   // --- Tidy ---
