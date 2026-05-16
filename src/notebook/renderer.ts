@@ -27,7 +27,7 @@ export interface RenderState {
   pocketProximity?: number;
   // True while the drag cursor sits inside the pocket drop zone.
   pocketInZone?: boolean;
-  leftInset: number; topInset?: number; viewportHeight?: number;
+  leftInset: number;
   /** Layer list, top-first. Used to iterate shapes in layer order
    *  and skip shapes on hidden layers. Optional: falls back to
    *  single-pass iteration when absent (tests, legacy callers). */
@@ -109,7 +109,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const effectiveShapes = state.pocketInZone && selectedIds.size > 0
     ? shapes.map((s) => selectedIds.has(s.id) ? { ...s, pocketed: true } : s)
     : shapes;
-  const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily, state.topInset || 0);
+  const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily);
   const pocketedIds = pocketLayout.pocketedIds;
 
   ctx.save();
@@ -296,7 +296,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const leftInset = state.leftInset || 0;
   const proximity = state.pocketProximity ?? (state.isDragging ? 1 : 0);
   if (hasPocketed || proximity > 0) {
-    drawPocketTray(ctx, w, state.viewportHeight || h, state.isDragging, hasPocketed, leftInset, proximity, state.topInset || 0);
+    drawPocketTray(ctx, w, h, state.isDragging, hasPocketed, leftInset, proximity);
   }
 
   // Draw pocketed shapes at fixed screen positions, offset by sidebar inset.
@@ -583,14 +583,14 @@ const POCKET_BLUE_HIGHLIGHT = "rgba(66, 153, 225, 0.30)";
 
 // Bounded tray, mirrored from the right-side shelf style.
 function drawPocketTray(
-  ctx: CanvasRenderingContext2D, _w: number, viewportH: number,
-  isDragging: boolean, _hasPocketed: boolean, leftInset = 0, proximity = 0, topInset = 0,
+  ctx: CanvasRenderingContext2D, _w: number, h: number,
+  isDragging: boolean, _hasPocketed: boolean, leftInset = 0, proximity = 0,
 ) {
   ctx.save();
   const cs = getComputedStyle(document.documentElement);
   const trayBg = (cs.getPropertyValue("--theme-bg") || cs.getPropertyValue("--bg") || "#f4f4f5").trim() || "#f4f4f5";
   const borderColor = (cs.getPropertyValue("--panel-border") || "rgba(128,128,128,0.3)").trim() || "rgba(128,128,128,0.3)";
-  const x = leftInset, y = topInset + 20, w = POCKET_TRAY_WIDTH, hh = Math.max(0, viewportH - 40), r = 12;
+  const x = leftInset, y = 20, w = POCKET_TRAY_WIDTH, hh = Math.max(0, h - 40), r = 12;
   ctx.globalAlpha = isDragging ? Math.min(1, 0.85 * proximity + 0.15) : 1;
   ctx.beginPath();
   ctx.moveTo(x, y); ctx.lineTo(x + w - r, y);

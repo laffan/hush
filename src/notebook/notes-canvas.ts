@@ -258,10 +258,10 @@ export class NotesCanvas {
         // formula already accounts for midpoint translation.
         if (touchPinching) return;
         // Gutter mode: vertical drag scrolls the host doc 1:1; horizontal
-        // still pans camera.x, camera.y/zoom stay locked.
+        // still pans camera.x. Camera.y tracks the live scrollTop.
         if (this.state.gutterScrollDOM) {
           this.state.gutterScrollDOM.scrollTop = touchGestureScrollTop - dy;
-          this.state.camera = { x: touchGestureCamStart.x + dx, y: 0, zoom: 1 };
+          this.state.camera = { x: touchGestureCamStart.x + dx, y: -this.state.gutterScrollDOM.scrollTop, zoom: 1 };
           this.state.notify("camera");
           return;
         }
@@ -285,12 +285,13 @@ export class NotesCanvas {
         if (!touchGestureCamStart || touchPinchStartDist <= 0) return;
         const cs = touchGestureCamStart;
         // Gutter mode: zoom is disabled. Pinch becomes pure pan —
-        // midpoint dy → doc scroll, dx → camera.x.
+        // midpoint dy → doc scroll, dx → camera.x. Camera.y tracks the
+        // live scrollTop.
         if (this.state.gutterScrollDOM) {
           const dx = mid.x - touchPinchStartMid.x;
           const dy = mid.y - touchPinchStartMid.y;
           this.state.gutterScrollDOM.scrollTop = touchGestureScrollTop - dy;
-          this.state.camera = { x: cs.x + dx, y: 0, zoom: 1 };
+          this.state.camera = { x: cs.x + dx, y: -this.state.gutterScrollDOM.scrollTop, zoom: 1 };
           this.state.notify("camera");
           return;
         }
@@ -629,8 +630,6 @@ export class NotesCanvas {
         pocketProximity: this.state.pocketProximity,
         pocketInZone: this.state.pocketInZone,
         leftInset: this.state.leftInset,
-        topInset: this.state.topInset,
-        viewportHeight: this.state.viewportHeight,
         // Inject DPR so renderer.ts stays free of `window` reads.
         dpr: window.devicePixelRatio || 1,
         flowchart: this.state.flowchart,

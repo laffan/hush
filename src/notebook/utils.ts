@@ -513,7 +513,7 @@ export interface PocketLayout {
  * Compute screen-space layout for pocketed shapes, stacked vertically on the left.
  * Groups shapes by groupId and includes children of pocketed drag areas.
  */
-export function computePocketLayout(allShapes: Shape[], _canvasWidth: number, fontFamily?: string, topInset = 0): PocketLayout {
+export function computePocketLayout(allShapes: Shape[], _canvasWidth: number, fontFamily?: string): PocketLayout {
   const pocketed = allShapes.filter((s) => s.pocketed);
   if (pocketed.length === 0) return { entries: [], pocketedIds: new Set() };
 
@@ -549,7 +549,7 @@ export function computePocketLayout(allShapes: Shape[], _canvasWidth: number, fo
   }
 
   const MARGIN_LEFT = 4;
-  const MARGIN_TOP = 60 + topInset;
+  const MARGIN_TOP = 60;
   const GAP = 16;
   const MAX_SIZE = 140;
   let y = MARGIN_TOP;

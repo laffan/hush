@@ -164,11 +164,13 @@ export function bindInputEvents(
       const dist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
       // Gutter mode: zoom is disabled; vertical midpoint delta scrolls
       // the host doc 1:1, horizontal delta still pans camera.x.
+      // Camera.y tracks the live scrollTop so the engine sees the
+      // correct world rect.
       if (state.gutterScrollDOM) {
         const dx = mid.x - twoFingerStartMid.x;
         const dy = mid.y - twoFingerStartMid.y;
         state.gutterScrollDOM.scrollTop = scrollTopAtTwoFingerStart - dy;
-        state.camera = { x: cameraAtTwoFingerStart.x + dx, y: 0, zoom: 1 };
+        state.camera = { x: cameraAtTwoFingerStart.x + dx, y: -state.gutterScrollDOM.scrollTop, zoom: 1 };
         state.notify("camera");
         return;
       }

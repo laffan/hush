@@ -166,19 +166,10 @@ export class DrawingState extends EventTarget {
   /** Pixel offset from the left edge for the sidebar/panel. The pocket
    *  tray and toolbar center themselves relative to this value. */
   leftInset = 0;
-  /** Pixel offset from the top of the canvas where the visible viewport
-   *  starts. The pocket tray and entries shift down by this amount so
-   *  they remain reachable in a gutter pane whose canvas is taller than
-   *  the window. 0 = canvas top is at viewport top (the usual case). */
-  topInset = 0;
-  /** Height of the visible viewport in screen pixels. Used to clamp the
-   *  pocket tray height in a gutter pane. 0 = unset; the renderer falls
-   *  back to the canvas's own clientHeight. */
-  viewportHeight = 0;
   /** When set, this canvas is acting as a doc gutter: vertical pan and
-   *  wheel input scroll the host doc instead of the camera, camera.y +
-   *  zoom are locked at 0 / 1, and focusShape resolves to a doc scroll.
-   *  Camera.x still pans freely. */
+   *  wheel input scroll the host doc instead of the camera, camera.y is
+   *  driven by the doc scrollTop, zoom is locked at 1, and focusShape
+   *  resolves to a doc scroll. Camera.x still pans freely. */
   gutterScrollDOM: HTMLElement | null = null;
 
   // Hooks driven by notes-canvas to route DrawShape drags through
@@ -1015,7 +1006,7 @@ export class DrawingState extends EventTarget {
 
       // Check pocketed shapes first (screen-space hit test, offset by sidebar inset)
       const pocketPt = { x: screenPt.x - this.leftInset, y: screenPt.y };
-      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily, this.topInset);
+      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily);
       if (pocketHit) {
         const next = e.shiftKey ? new Set(this.selectedIds) : new Set<string>();
         const allSel = e.shiftKey && pocketHit.every((id) => next.has(id));
@@ -1028,7 +1019,7 @@ export class DrawingState extends EventTarget {
         canvas.setPointerCapture(e.pointerId);
         return;
       }
-      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily, this.topInset);
+      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily);
       // Exclude pocketed shapes (rendered elsewhere) and shapes on
       // hidden layers (invisible → unclickable).
       const hiddenLayerIds = this._hiddenLayerIds();
@@ -1178,10 +1169,11 @@ export class DrawingState extends EventTarget {
       const dx = e.clientX - this._panStart.x;
       const dy = e.clientY - this._panStart.y;
       // Gutter mode: vertical drag scrolls the host doc 1:1; horizontal
-      // still pans camera.x. Camera.y / zoom stay locked.
+      // still pans camera.x. Camera.y tracks the live scrollTop so the
+      // engine's viewport math sees the correct world rect.
       if (this.gutterScrollDOM) {
         this.gutterScrollDOM.scrollTop = (this._panStartScrollTop || 0) - dy;
-        this.camera = { x: this._cameraStart.x + dx, y: 0, zoom: 1 };
+        this.camera = { x: this._cameraStart.x + dx, y: -this.gutterScrollDOM.scrollTop, zoom: 1 };
         this.notify("camera");
         return;
       }
@@ -1832,11 +1824,13 @@ export class DrawingState extends EventTarget {
     // pinch amount; we drop those so they don't yank the doc scroll.
     if (this.gutterScrollDOM) {
       if (e.ctrlKey) return;
+      let camX = this.camera.x;
       if (e.deltaY) this.gutterScrollDOM.scrollTop += e.deltaY;
-      if (e.deltaX) {
-        this.camera = { x: this.camera.x - e.deltaX, y: 0, zoom: 1 };
-        this.notify("camera");
-      }
+      if (e.deltaX) camX = this.camera.x - e.deltaX;
+      // Atomic update — read the live scrollTop after our write (it
+      // may have been clamped) so camera.y matches the visible slice.
+      this.camera = { x: camX, y: -this.gutterScrollDOM.scrollTop, zoom: 1 };
+      this.notify("camera");
       return;
     }
     const rect = this.canvasEl.getBoundingClientRect();
@@ -2761,21 +2755,22 @@ export class DrawingState extends EventTarget {
     }
 
     const zoom = this.camera.zoom;
-    // Gutter mode: shape vertical position lives in doc-scroll space.
-    // Scroll the doc so the shape lands at the viewport's vertical
-    // centre, and only adjust camera.x for horizontal centring (y / zoom
-    // stay locked at 0 / 1). The doc scroll handler will repaint the
-    // gutter at its new pane.y on the next tick.
+    // Gutter mode: world-y maps 1:1 onto doc-content-y. Scroll the
+    // host doc so the shape's centre lands at the viewport vertical
+    // centre and lock camera.y to the live scrollTop. Horizontal
+    // centring still adjusts camera.x. Instant scroll — `smooth` would
+    // fight any user gesture arriving before the animation completes.
     if (this.gutterScrollDOM) {
-      // Canvas-pixel-y == doc-content-y under the gutter lock, so the
-      // shape's world cy is also its doc-content-y. Aim for the
-      // viewport vertical centre and snap there in one step (smooth
-      // scroll fights any user interaction that happens mid-animation).
-      const scrollerRect = this.gutterScrollDOM.getBoundingClientRect();
+      const paneRect = this.canvasEl?.getBoundingClientRect();
+      const paneTop = paneRect ? paneRect.top : 0;
       const viewportH = window.innerHeight || h;
-      const target = Math.max(0, scrollerRect.top + cy - viewportH / 2);
+      const target = Math.max(0, cy - (viewportH / 2 - paneTop));
       this.gutterScrollDOM.scrollTop = target;
-      this.camera = { x: (left + w - right) / 2 - cx, y: 0, zoom: 1 };
+      this.camera = {
+        x: (left + w - right) / 2 - cx,
+        y: -this.gutterScrollDOM.scrollTop,
+        zoom: 1,
+      };
     } else {
       this.camera = {
         x: (left + w - right) / 2 - cx * zoom,
