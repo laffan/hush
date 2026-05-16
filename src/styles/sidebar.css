@@ -372,10 +372,13 @@ body.typing-fade .tree-create-btns {
 
 .sidebar-panel-resizer.hidden { display: none; }
 
-/* Inset mode: panel sits in the editor's left margin, no overlay */
+/* Inset mode: panel sits in the editor's left margin. A thin right
+   border matches the canvas dot/grid colour in notebook mode (see
+   below) and falls back to a low-opacity divider in doc mode so the
+   panel always reads as visually separate from the editor surface. */
 #panel-overlay.panel-inset {
   background: var(--theme-bg, var(--bg));
-  border-right: none;
+  border-right: 1px solid color-mix(in srgb, var(--fg, currentColor) 12%, transparent);
   z-index: 100;
 }
 
