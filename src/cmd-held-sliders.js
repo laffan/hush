@@ -26,7 +26,11 @@ export function initCmdHeldSliders(state) {
   const caret = document.createElement("div");
   caret.className = "cmd-held-sliders-caret";
   caret.setAttribute("aria-hidden", "true");
-  caret.textContent = "︿";
+  // Sharper-than-unicode chevron — apex angle ≈ 60° so it reads as the
+  // tip of an up-arrow rather than the flat `︿` glyph.
+  caret.innerHTML = `<svg viewBox="0 0 16 10" width="16" height="10" aria-hidden="true">
+    <path d="M2 9 L8 1.5 L14 9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  </svg>`;
   wrap.appendChild(caret);
 
   const pill = document.createElement("div");

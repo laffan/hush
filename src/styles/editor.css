@@ -209,14 +209,17 @@ body.zen-focus-active .cmd-held-sliders-wrap { display: flex; }
    user can dock the cursor there without precision. */
 .cmd-held-sliders-caret {
   pointer-events: auto;
-  padding: 6px 18px 8px 18px;
-  font: 600 18px/1 var(--font-family);
+  padding: 8px 22px 10px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--fg);
   opacity: 0;
   transition: opacity 0.18s ease;
   cursor: pointer;
   user-select: none;
 }
+.cmd-held-sliders-caret svg { display: block; }
 body.zen-focus-active.cmd-held .cmd-held-sliders-caret { opacity: 0.45; }
 body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-caret { opacity: 0.8; }
 

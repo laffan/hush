@@ -202,18 +202,21 @@ export function updateColumnResizers(state) {
     if (makeSpaceActive && showResizers) {
       moverLeft.style.display = "";
       moverRight.style.display = "";
-      // 14 px wide handle (rotated), centred vertically; sit 5 px out
-      // from the resizer rail. Each resizer's hit zone is 40 px wide
-      // (20 px padding either side of a 2 px stroke), with the stroke
-      // at `left + 19`. The handle anchors against that stroke.
+      // The column-resizer renders with `margin-left: -20px` (CSS), so
+      // an element whose `style.left = leftPad - 10` actually paints
+      // its box at `leftPad - 30`. The visible 3 px stripe lives on
+      // a `::after` at `left: 19px` inside that box, which means:
+      //   left rail visible at:  leftPad - 30 + 19 = leftPad - 11
+      //   right rail visible at: (w - rightPad - 10) + 19 = w - rightPad + 9
+      // with rail width 3 px. The movers sit 5 px outside those rails.
       const handleWidth = 14;
       const gap = 5;
+      const railThickness = 3;
       const HANDLE_HEIGHT = 40;
-      const leftRailX = leftPad - 10 + 19;
-      const rightRailX = (w - rightPad + 10) + 19;
-      // Outside the left resizer = further left; outside the right = further right.
-      moverLeft.style.left = (leftRailX - gap - handleWidth) + "px";
-      moverRight.style.left = (rightRailX + gap) + "px";
+      const leftRailLeft = leftPad - 11;
+      const rightRailRight = (w - rightPad) + 9 + railThickness;
+      moverLeft.style.left = (leftRailLeft - gap - handleWidth) + "px";
+      moverRight.style.left = (rightRailRight + gap) + "px";
       moverLeft.style.top = `calc(50% - ${HANDLE_HEIGHT / 2}px)`;
       moverRight.style.top = `calc(50% - ${HANDLE_HEIGHT / 2}px)`;
     } else {
