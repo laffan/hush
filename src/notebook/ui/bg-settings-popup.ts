@@ -170,7 +170,6 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
   function refreshTheme(): void {
     tab.style.background = "rgba(127,127,127,0.18)";
     tab.style.color = state.theme.foreground;
-    tab.style.opacity = popupOpen ? "1" : "0.6";
   }
 
   state.addEventListener("change", () => { refreshTheme(); if (popupOpen) render(); });

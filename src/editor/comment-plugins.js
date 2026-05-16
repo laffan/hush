@@ -36,8 +36,12 @@ export function createMultiLineCommentPlugin() {
           const openLine = view.state.doc.lineAt(open).number;
           const closeLine = view.state.doc.lineAt(close).number;
           if (openLine !== closeLine) {
+            // Multi-line comment body opacity rides the same
+            // --comment-opacity CSS var as the inline plugin so the
+            // user's slider covers both. Inline `style` lets the var
+            // resolve against the surrounding cascade.
             builder.add(open, open + 2, Decoration.mark({ attributes: { style: "opacity: 0.2" } }));
-            builder.add(open + 2, close, Decoration.mark({ attributes: { style: "opacity: 0.4" } }));
+            builder.add(open + 2, close, Decoration.mark({ attributes: { style: "opacity: var(--comment-opacity, 0.5)" } }));
             builder.add(close, close + 2, Decoration.mark({ attributes: { style: "opacity: 0.2" } }));
           }
         }

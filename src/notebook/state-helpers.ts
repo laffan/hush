@@ -26,6 +26,62 @@ export function findShapeAtPoint(pt: Point, shapes: Shape[], fontFamily?: string
   return null;
 }
 
+/** Hit-test a point against the markdown task checkbox glyphs inside a
+ *  text shape. Returns the source-line index of the task line that
+ *  was clicked, or null. Mirrors the renderer's per-line positioning
+ *  math (see renderer.ts) so the hit zone tracks what the user sees. */
+export function hitTestTaskCheckbox(
+  pt: Point,
+  shape: TextShape,
+  fontFamily?: string,
+): number | null {
+  const fs = shape.fontSize;
+  const ff = fontFamily || FONT_FAMILY;
+  const measure = (t: string, s: number) => {
+    const c = getMeasureCtx();
+    c.font = `${s}px ${ff}`;
+    return c.measureText(t).width;
+  };
+  const constraintWidth = shape.width && shape.width > 0 ? shape.width : undefined;
+  const CHECKBOX_SIZE = fs * 0.85;
+  const BLOCKQUOTE_GUTTER = fs * 0.9;
+  const rawLines = shape.text.split("\n");
+  let y = shape.position.y;
+  for (let srcIdx = 0; srcIdx < rawLines.length; srcIdx++) {
+    const srcParsed = parseLine(rawLines[srcIdx]);
+    // Per-source-line wrap so we can advance y by the full wrapped
+    // height while still mapping the click back to the source line.
+    const wrapped = parseText(rawLines[srcIdx], constraintWidth, fs, measure);
+    if (srcParsed.task) {
+      const lineFontSize = fs * srcParsed.sizeScale;
+      const cy = y + (lineFontSize - CHECKBOX_SIZE) / 2;
+      let cx = shape.position.x;
+      if (srcParsed.blockquote) cx += BLOCKQUOTE_GUTTER;
+      // Small tolerance so the hit zone is comfortable on touch.
+      const slack = 3;
+      if (pt.x >= cx - slack && pt.x <= cx + CHECKBOX_SIZE + slack &&
+          pt.y >= cy - slack && pt.y <= cy + CHECKBOX_SIZE + slack) {
+        return srcIdx;
+      }
+    }
+    for (const w of wrapped) y += fs * w.sizeScale * LINE_HEIGHT_RATIO;
+  }
+  return null;
+}
+
+/** Toggle the `[ ]` ↔ `[x]` state on a single source line. Returns the
+ *  rewritten full text, or null if the line wasn't a task. */
+export function toggleTaskLine(text: string, sourceLineIndex: number): string | null {
+  const lines = text.split("\n");
+  if (sourceLineIndex < 0 || sourceLineIndex >= lines.length) return null;
+  const line = lines[sourceLineIndex];
+  const m = line.match(/^(\s*[-*+]\s+)\[([ xX])\](\s+.*)$/);
+  if (!m) return null;
+  const next = m[2] === " " ? "x" : " ";
+  lines[sourceLineIndex] = `${m[1]}[${next}]${m[3]}`;
+  return lines.join("\n");
+}
+
 /** Hit-test a point against link runs in a text shape. Returns the URL or null. */
 export function hitTestLink(pt: Point, shape: TextShape): string | null {
   const fs = shape.fontSize;

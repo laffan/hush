@@ -143,6 +143,137 @@ body.cmd-held .column-resizer,
   transition: opacity 0s;
 }
 
+/* Column mover — vertical grip sitting just outside one of the column
+   resizers while "Make space for panes" is active. Drag horizontally
+   to slide the column left/right without changing its width. Reveal
+   matches the resizers: hidden by default, surfaced only when Cmd is
+   held AND the user is hovering either a resizer rail or a mover
+   handle itself. The pill is rotated 90° so its long axis runs
+   vertical and aligns with the resize bars.                          */
+.column-mover {
+  position: fixed;
+  /* Long axis = vertical. The two dimensions are swapped from a
+     horizontal grip: 14 px wide, 40 px tall. */
+  width: 14px;
+  height: 40px;
+  cursor: grab;
+  z-index: 50;
+  border-radius: 4px;
+  background: transparent;
+  transition: opacity 0.2s ease;
+  display: none;
+}
+body.cmd-held .column-mover.hover,
+body.cmd-held .column-mover:hover,
+.column-mover.dragging {
+  display: block;
+  opacity: 1;
+}
+.column-mover:hover { cursor: grab; }
+.column-mover.dragging { cursor: grabbing; }
+.column-mover::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--fg, currentColor);
+  opacity: 0.35;
+}
+.column-mover:hover::after { opacity: 0.6; }
+.column-mover.dragging::after { opacity: 0.7; }
+
+/* Zen-mode quick-controls — a caret pinned to the bottom-centre of the
+   viewport that fades in while Cmd is held; hovering it reveals a
+   horizontal pill carrying Dim + Font sliders. Zen mode owns both
+   affordances entirely: the wrap is `display: none` everywhere else
+   so the normal editor stays uncluttered. The Zen overlay's bottom
+   curtain fades the canvas down to --bg right here, so no border is
+   needed on the pill. */
+.cmd-held-sliders-wrap {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  /* Above --z-modal-top (zen overlay) so the controls reach the user. */
+  z-index: calc(var(--z-modal-top) + 1);
+  pointer-events: none;
+}
+body.zen-focus-active .cmd-held-sliders-wrap { display: flex; }
+
+/* Caret — small chevron that only paints when Cmd is held. Hover
+   target sits flush at the screen edge with generous padding so the
+   user can dock the cursor there without precision. */
+.cmd-held-sliders-caret {
+  pointer-events: auto;
+  padding: 8px 22px 10px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  cursor: pointer;
+  user-select: none;
+}
+.cmd-held-sliders-caret svg { display: block; }
+body.zen-focus-active.cmd-held .cmd-held-sliders-caret { opacity: 0.45; }
+body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-caret { opacity: 0.8; }
+
+/* Pill — hidden until the wrap is hovered (caret OR pill itself).
+   No border; Zen's bottom curtain already isolates it from content. */
+.cmd-held-sliders {
+  pointer-events: auto;
+  display: flex;
+  gap: 18px;
+  margin-bottom: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-bg, var(--bg)) 92%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font: 500 12px/1 var(--font-family);
+  color: var(--fg);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  /* Block pointer until the parent wrap is hovered so the pill isn't
+     a click target while it's still invisible. */
+  visibility: hidden;
+}
+body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.cmd-held-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cmd-held-slider-label {
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+  min-width: 30px;
+}
+.cmd-held-slider-group input[type="range"] {
+  width: 120px;
+  accent-color: var(--accent, currentColor);
+  cursor: pointer;
+}
+.cmd-held-slider-readout {
+  opacity: 0.55;
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Rendered markdown links (when cursor is outside) */
 .cm-link-rendered {
   text-decoration: underline;

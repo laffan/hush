@@ -9,10 +9,10 @@ export function createDefaultSettings() {
     appearance: "auto",
     touchMode: false,
     hideSystemChrome: true,
-    lightTheme: "ayuLight",
+    lightTheme: "smoothy",
     darkTheme: "dracula",
-    fontSize: 18,
-    lineHeight: 1.6,
+    fontSize: 16,
+    lineHeight: 1.5,
     fontFamily: "iA Writer Quattro",
     normalizeHeaders: false,
     normalizeHeaderColor: false,
@@ -22,15 +22,27 @@ export function createDefaultSettings() {
     defaultDarkColors: {},
     makeSpaceForPanes: true,
     makeSpaceDirection: "right",
+    // Horizontal offset applied while the "Make space" layout is engaged,
+    // driven by a draggable grip above the column. Persisted so the
+    // chosen column position survives restarts.
+    makeSpaceColumnOffset: 0,
     stickyHeaders: false,
     blockCursor: true,
     blockCursorColor: null,
     typewriterLineOpacity: 0.08,
+    // %% comment %% body opacity. Markers stay pinned at 0.2; this only
+    // governs the comment content so the user can dim or surface their
+    // editorial notes independently of the rest of the syntax.
+    commentOpacity: 0.5,
     padding: 50,
     syncFolders: [],
     dropboxToken: null,
     alwaysOnTop: false,
-    columnWidth: 600,
+    columnWidth: 800,
+    // Zen mode keeps its own column width so resizing inside the
+    // overlay doesn't reflow the everyday editor. Null = fall back to
+    // columnWidth on first use, then persist independently.
+    zenColumnWidth: null,
     sidebarPanelWidth: 300,
     notebookShelfWidth: 280,
     // App-wide saved text-style presets for notebook text shapes.
@@ -75,7 +87,7 @@ export function createDefaultSettings() {
     shortcutTypewriter: "Mod+Shift+T",
     shortcutNewFile: "Mod+N",
     shortcutToggleDry: "Mod+Shift+R",
-    shortcutToggleFocus: "Mod+Shift+Y",
+    shortcutToggleFocus: "Mod+S",
     shortcutToggleWordCount: "Mod+Shift+W",
     shortcutZenFocus: "Mod+Shift+S",
     zenFocusFontSize: 30,
@@ -106,7 +118,9 @@ export function createDefaultSettings() {
 
     // Shortcuts — Additional editing actions
     shortcutSelectParagraph: "Mod+Shift+L",
-    shortcutSave: "Mod+S",
+    // Save is autosave-driven; the explicit shortcut is intentionally
+    // unbound by default so it doesn't compete with Focus mode (Mod+S).
+    shortcutSave: "",
     shortcutFindNext: "Ctrl+R",
     shortcutFindPrev: "Ctrl+Shift+R",
     shortcutJoinLines: "Mod+J",
@@ -194,7 +208,7 @@ export function createDefaultSettings() {
     notebookThemeId: "default",
     notebookBackgroundPattern: "dot-grid",
     notebookGridSpacing: 25,
-    notebookGridOpacity: 0.40,
+    notebookGridOpacity: 0.20,
     notebookFontFamily: "Inter",
     notebookFontSize: 18,
     lastNotebookId: null,

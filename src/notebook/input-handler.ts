@@ -320,6 +320,11 @@ export function bindInputEvents(
   on(document as unknown as HTMLElement, "paste", (async (e: ClipboardEvent) => {
     if (!isClipboardOwner(state)) return;
     if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) return;
+    // Skip when focus is in any contenteditable surface — the main Doc
+    // editor (CodeMirror's `.cm-content`) lives outside `.floating-pane`
+    // so without this gate a paste fired into the Doc would also land
+    // on a Notebook-as-pane that happened to be the last-touched canvas.
+    if ((document.activeElement as HTMLElement | null)?.isContentEditable) return;
     // Skip if focus is inside a floating pane — let the pane handle its own paste
     if (document.activeElement?.closest(".floating-pane")) return;
     if (state.editingText) return;

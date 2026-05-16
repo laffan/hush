@@ -77,22 +77,22 @@ pub fn default_longview_current_position_color() -> String {
     "#ff0000".to_string()
 }
 pub fn default_visibility() -> String {
-    "menubar".to_string()
+    "both".to_string()
 }
 pub fn default_appearance() -> String {
-    "dark".to_string()
+    "auto".to_string()
 }
 pub fn default_light_theme() -> String {
-    "ayuLight".to_string()
+    "smoothy".to_string()
 }
 pub fn default_dark_theme() -> String {
     "dracula".to_string()
 }
 pub fn default_font_size() -> u32 {
-    20
+    16
 }
 pub fn default_line_height() -> f64 {
-    1.6
+    1.5
 }
 pub fn default_header_scale() -> f64 {
     1.0
@@ -104,7 +104,7 @@ pub fn default_padding() -> u32 {
     50
 }
 pub fn default_column_width() -> u32 {
-    600
+    800
 }
 pub fn default_sidebar_panel_width() -> u32 {
     300
@@ -134,7 +134,7 @@ pub fn default_shortcut_toggle_dry() -> String {
     "Mod+Shift+R".to_string()
 }
 pub fn default_shortcut_toggle_focus() -> String {
-    "Mod+Shift+Y".to_string()
+    "Mod+S".to_string()
 }
 pub fn default_shortcut_toggle_word_count() -> String {
     "Mod+Shift+W".to_string()
@@ -206,6 +206,9 @@ pub fn default_focus_mode_opacity() -> f64 {
 pub fn default_typewriter_line_opacity() -> f64 {
     0.08
 }
+pub fn default_comment_opacity() -> f64 {
+    0.5
+}
 pub fn default_shortcut_zotero() -> String {
     "Mod+Shift+I".to_string()
 }
@@ -225,7 +228,9 @@ pub fn default_shortcut_select_paragraph() -> String {
     "Mod+Shift+L".to_string()
 }
 pub fn default_shortcut_save() -> String {
-    "Mod+S".to_string()
+    // Unbound by default — autosave handles persistence and Focus mode
+    // now owns Mod+S. Users can rebind from Settings > Shortcuts.
+    "".to_string()
 }
 pub fn default_shortcut_find_next() -> String {
     // Ctrl+R / Ctrl+Shift+R on every platform (not Cmd) so they don't
@@ -278,7 +283,7 @@ pub fn default_notebook_shelf_width() -> u32 {
     280
 }
 pub fn default_notebook_grid_opacity() -> f64 {
-    0.40
+    0.20
 }
 pub fn default_notebook_font_family() -> String {
     "Inter".to_string()

@@ -67,7 +67,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutSelectPrevious) settings.shortcutSelectPrevious = "Mod+Shift+D";
   if (!settings.shortcutDeleteToSentenceEnd) settings.shortcutDeleteToSentenceEnd = "Alt+Shift+Backspace";
   if (!settings.shortcutToggleDry) settings.shortcutToggleDry = "Mod+Shift+R";
-  if (!settings.shortcutToggleFocus) settings.shortcutToggleFocus = "Mod+Shift+Y";
+  if (!settings.shortcutToggleFocus) settings.shortcutToggleFocus = "Mod+S";
   if (!settings.shortcutBold) settings.shortcutBold = "Mod+B";
   if (!settings.shortcutItalic) settings.shortcutItalic = "Mod+I";
   if (!settings.shortcutHighlight) settings.shortcutHighlight = "Mod+=";
@@ -76,7 +76,8 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
   if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Mod+Shift+L";
   if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";
-  if (!settings.shortcutSave) settings.shortcutSave = "Mod+S";
+  // shortcutSave intentionally not defaulted — autosave handles writes
+  // and Focus mode now owns Mod+S. Empty string keeps the binding unset.
   if (!settings.shortcutFindNext) settings.shortcutFindNext = "Ctrl+R";
   if (!settings.shortcutFindPrev) settings.shortcutFindPrev = "Ctrl+Shift+R";
   if (!settings.shortcutJoinLines) settings.shortcutJoinLines = "Mod+J";
@@ -209,6 +210,7 @@ function bindAll() {
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));
+  bindSlider("setting-comment-opacity", "commentOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-zen-focus-font-size", "zenFocusFontSize", "px");
   bindSlider("setting-notebook-text-max-width", "notebookTextMaxWidth", "px");
   bindSelect("setting-flow-connect-mode", "flowConnectMode");

@@ -56,6 +56,35 @@ export function createSidebar(container, state) {
   sidebarToggleBtn.addEventListener("click", () => {
     state.emit("toggle-left-panel");
   });
+
+  // Dropbox sync indicator — a 10px dot pinned directly beneath the
+  // sidebar toggle, shown only when Dropbox sync is active. Briefly
+  // pulses each time a sync pass succeeds.
+  const syncDot = document.createElement("div");
+  syncDot.className = "sidebar-sync-dot";
+  syncDot.setAttribute("aria-hidden", "true");
+  document.body.appendChild(syncDot);
+  function syncDotVisible() {
+    return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);
+  }
+  function refreshSyncDot() {
+    syncDot.classList.toggle("visible", syncDotVisible());
+    syncDot.classList.toggle("panel-open", !panelOverlay.classList.contains("hidden"));
+  }
+  let _syncPulseTimer = null;
+  function pulseSyncDot() {
+    if (!syncDotVisible()) return;
+    syncDot.classList.remove("pulse");
+    // Force a reflow so re-adding the class restarts the CSS animation.
+    void syncDot.offsetWidth;
+    syncDot.classList.add("pulse");
+    if (_syncPulseTimer) clearTimeout(_syncPulseTimer);
+    _syncPulseTimer = setTimeout(() => syncDot.classList.remove("pulse"), 900);
+  }
+  state.on("settings-changed", refreshSyncDot);
+  state.on("dropbox-sync-success", pulseSyncDot);
+  new MutationObserver(refreshSyncDot).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
+  refreshSyncDot();
   function syncSidebarToggleIcon() {
     const isOpen = !panelOverlay.classList.contains("hidden");
     sidebarToggleBtn.innerHTML = sidebarToggleSvg(isOpen ? "collapse" : "expand");

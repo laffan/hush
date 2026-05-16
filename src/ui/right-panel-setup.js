@@ -12,7 +12,7 @@ export function setupRightPanel(state) {
   // Right panel inset mode — mirror left panel logic
   function updateRightPanelMode() {
     const w = window.innerWidth;
-    const colW = state.settings.columnWidth || 600;
+    const colW = state.settings.columnWidth || 800;
     const rightPad = Math.max(50, Math.floor((w - colW) / 2));
     if (rightPad >= 200) {
       rightPanelOverlay.classList.add("panel-inset");

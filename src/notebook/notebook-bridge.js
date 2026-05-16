@@ -273,7 +273,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
     themeId: resolveNotebookTheme(overrideState),
     backgroundPattern: s.notebookBackgroundPattern || "dot-grid",
     gridSpacing: s.notebookGridSpacing || 25,
-    gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.40,
+    gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.20,
     fontFamily,
     fontSize: s.notebookFontSize || 18,
     canvasBackgroundOverride,

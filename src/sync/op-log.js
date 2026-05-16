@@ -156,6 +156,9 @@ async function drainOnce(state) {
       try {
         await executeOp(state, op);
         await tauriInvoke("pending_op_succeeded", { id: op.id });
+        // Surface a successful op to UI listeners (e.g. the sidebar's
+        // Dropbox-sync dot indicator pulses on each successful push).
+        try { state.emit("dropbox-sync-success", { direction: "up", kind: op.kind }); } catch (_) {}
       } catch (e) {
         const msg = e?.message || String(e);
         await tauriInvoke("pending_op_failed", { id: op.id, error: msg }).catch(() => {});

@@ -144,10 +144,31 @@ export function reduceSentenceSelection(view) {
   return true;
 }
 
-/** Move selection to the next sentence (without keeping current). */
+/** Extend the selection to the end of the current sentence, then on
+ *  subsequent presses jump-select the next sentence in full. The
+ *  intermediate "grow to sentence end first" step keeps Cmd+Shift+→
+ *  feeling like an extend-by-sentence motion when the cursor is
+ *  mid-sentence instead of skipping straight to the next one. */
 export function shiftSelectionToNextSentence(view) {
   const doc = view.state.doc;
   const sel = view.state.selection.main;
+
+  // Step 1: cursor is mid-sentence — extend the head to the end of
+  // the sentence and bail. Only fires when the selection is empty so
+  // a non-empty selection (the post-first-press state) goes straight
+  // to the original "advance to next sentence" branch.
+  if (sel.empty) {
+    const headPos = offsetToPos(doc, sel.head);
+    const sentEnd = findSentenceEnd(doc, headPos);
+    const sentEndOff = posToOffset(doc, sentEnd);
+    if (sentEndOff > sel.head) {
+      view.dispatch({
+        selection: EditorSelection.single(sel.anchor, sentEndOff),
+      });
+      return true;
+    }
+  }
+
   const { to } = selBounds(doc, sel);
   let sp = to;
 
@@ -171,10 +192,27 @@ export function shiftSelectionToNextSentence(view) {
   return true;
 }
 
-/** Move selection to the previous sentence. */
+/** Mirror of `shiftSelectionToNextSentence` — first extends the head
+ *  back to the start of the current sentence, then jumps to the
+ *  previous sentence on subsequent presses. */
 export function shiftSelectionToPreviousSentence(view) {
   const doc = view.state.doc;
   const sel = view.state.selection.main;
+
+  // Step 1: cursor mid-sentence — extend the head backward to the
+  // sentence start. Empty-selection-only, same rationale as above.
+  if (sel.empty) {
+    const headPos = offsetToPos(doc, sel.head);
+    const sentStart = findSentenceStart(doc, headPos);
+    const sentStartOff = posToOffset(doc, sentStart);
+    if (sentStartOff < sel.head) {
+      view.dispatch({
+        selection: EditorSelection.single(sel.anchor, sentStartOff),
+      });
+      return true;
+    }
+  }
+
   const { from } = selBounds(doc, sel);
   let sp = from;
 

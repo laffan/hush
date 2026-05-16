@@ -66,13 +66,15 @@ function parseCalloutLine(line) {
 export function parseFlags(text, baseOffset = 0) {
   const flags = [];
 
-  // ==FLAG: message==
-  const flagRegex = /==([A-Za-z][A-Za-z0-9_-]{0,24}):\s*([^=]+)==/g;
+  // ==FLAG==, ==FLAG:==, or ==FLAG: message== — colon + message are
+  // optional so a bare `==MISSING==` is still recognised (matches the
+  // editor's flag-highlight regex).
+  const flagRegex = /==([A-Za-z][A-Za-z0-9_-]{0,24})(?::\s*([^=]*))?==/g;
   let match;
   while ((match = flagRegex.exec(text)) !== null) {
     flags.push({
       type: match[1].toUpperCase(),
-      message: match[2].trim(),
+      message: (match[2] || "").trim(),
       startOffset: baseOffset + match.index,
     });
   }

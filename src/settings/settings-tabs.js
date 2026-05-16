@@ -120,6 +120,18 @@ export function renderEditorTab(settings) {
     </div>
 
     <div class="settings-section">
+      <h2>Comments</h2>
+      <div class="settings-slider-row">
+        <label>Comment opacity</label>
+        <div class="slider-group">
+          <input type="range" id="setting-comment-opacity" min="0.1" max="1" step="0.05" value="${s.commentOpacity ?? 0.5}" />
+          <span class="slider-value">${((s.commentOpacity ?? 0.5) * 100).toFixed(0)}%</span>
+        </div>
+      </div>
+      <p class="settings-help">Body opacity of <code>%%…%%</code> comments. Markers stay pinned at 20% — this only governs the comment content.</p>
+    </div>
+
+    <div class="settings-section">
       <h2>Zen Focus</h2>
       <div class="settings-slider-row">
         <label>Font size</label>
