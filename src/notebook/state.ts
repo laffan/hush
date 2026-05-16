@@ -175,6 +175,11 @@ export class DrawingState extends EventTarget {
    *  pocket tray height in a gutter pane. 0 = unset; the renderer falls
    *  back to the canvas's own clientHeight. */
   viewportHeight = 0;
+  /** When set, this canvas is acting as a doc gutter: vertical pan and
+   *  wheel input scroll the host doc instead of the camera, camera.y +
+   *  zoom are locked at 0 / 1, and focusShape resolves to a doc scroll.
+   *  Camera.x still pans freely. */
+  gutterScrollDOM: HTMLElement | null = null;
 
   // Hooks driven by notes-canvas to route DrawShape drags through
   // the drawing engine's preview pipeline. See drawing-layer.ts
@@ -464,6 +469,9 @@ export class DrawingState extends EventTarget {
   private _isPanningActive = false;
   private _panStart: Point = { x: 0, y: 0 };
   private _cameraStart: Camera = { x: 0, y: 0, zoom: 1 };
+  /** scrollTop on the host doc at the moment the pan started — gutter
+   *  mode reads this so the doc scroll tracks the drag 1:1. */
+  private _panStartScrollTop = 0;
   /** PointerId captured on the pointerdown that started the pan. Subsequent
    *  pointermoves are filtered against this id so a second contact (a palm
    *  contact, the user's other thumb, etc.) firing its own pointermove on
@@ -908,6 +916,7 @@ export class DrawingState extends EventTarget {
       this._isPanningActive = true;
       this._panStart = { x: e.clientX, y: e.clientY };
       this._cameraStart = { ...this.camera };
+      this._panStartScrollTop = this.gutterScrollDOM?.scrollTop || 0;
       this._panPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       return;
@@ -971,6 +980,7 @@ export class DrawingState extends EventTarget {
       this._isPanningActive = true;
       this._panStart = { x: e.clientX, y: e.clientY };
       this._cameraStart = { ...this.camera };
+      this._panStartScrollTop = this.gutterScrollDOM?.scrollTop || 0;
       this._panPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       return;
@@ -1167,6 +1177,14 @@ export class DrawingState extends EventTarget {
       if (this._panPointerId !== null && e.pointerId !== this._panPointerId) return;
       const dx = e.clientX - this._panStart.x;
       const dy = e.clientY - this._panStart.y;
+      // Gutter mode: vertical drag scrolls the host doc 1:1; horizontal
+      // still pans camera.x. Camera.y / zoom stay locked.
+      if (this.gutterScrollDOM) {
+        this.gutterScrollDOM.scrollTop = (this._panStartScrollTop || 0) - dy;
+        this.camera = { x: this._cameraStart.x + dx, y: 0, zoom: 1 };
+        this.notify("camera");
+        return;
+      }
       this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom };
       this.notify("camera");
       return;
@@ -1806,6 +1824,12 @@ export class DrawingState extends EventTarget {
   handleWheel(e: WheelEvent) {
     e.preventDefault();
     if (!this.canvasEl) return;
+    // Gutter mode: redirect the wheel into the host doc's scroller so
+    // the canvas + doc stay in lockstep. Zoom is disabled in gutter mode.
+    if (this.gutterScrollDOM) {
+      this.gutterScrollDOM.scrollBy({ top: e.deltaY, left: 0, behavior: "auto" });
+      return;
+    }
     const rect = this.canvasEl.getBoundingClientRect();
     const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const zoomFactor = e.ctrlKey ? 0.01 : 0.001;
@@ -2728,11 +2752,25 @@ export class DrawingState extends EventTarget {
     }
 
     const zoom = this.camera.zoom;
-    this.camera = {
-      x: (left + w - right) / 2 - cx * zoom,
-      y: h / 2 - cy * zoom,
-      zoom,
-    };
+    // Gutter mode: shape vertical position lives in doc-scroll space.
+    // Scroll the doc so the shape lands at the viewport's vertical
+    // centre, and only adjust camera.x for horizontal centring (y / zoom
+    // stay locked at 0 / 1). The doc scroll handler will repaint the
+    // gutter at its new pane.y on the next tick.
+    if (this.gutterScrollDOM) {
+      const canvasRect = this.canvasEl?.getBoundingClientRect();
+      const canvasTopViewport = canvasRect ? canvasRect.top : 0;
+      const viewportH = window.innerHeight || h;
+      const targetScrollTop = this.gutterScrollDOM.scrollTop + canvasTopViewport + cy - viewportH / 2;
+      this.gutterScrollDOM.scrollTo({ top: Math.max(0, targetScrollTop), behavior: "smooth" });
+      this.camera = { x: (left + w - right) / 2 - cx, y: 0, zoom: 1 };
+    } else {
+      this.camera = {
+        x: (left + w - right) / 2 - cx * zoom,
+        y: h / 2 - cy * zoom,
+        zoom,
+      };
+    }
     this.selectedIds = new Set([shapeId]);
     this.notify("camera");
     this.notify("selectedIds");

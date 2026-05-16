@@ -172,6 +172,7 @@ export function useActivePaneAsGutter() {
     height: pane.height,
     x: pane.x,
     y: pane.y,
+    camera: pane.notebook?.state ? { ...pane.notebook.state.camera } : null,
   };
 
   const side = detectGutterSide(pane);
@@ -182,6 +183,15 @@ export function useActivePaneAsGutter() {
   // Gutter panes always sit below free-floating panes — the doc chrome
   // shouldn't cover the user's reference panes.
   pane.el.style.zIndex = GUTTER_Z;
+
+  // Snap the notebook's camera so canvas-pixel-y == doc-content-y. The
+  // gutterScrollDOM flag also flips pan / wheel / focusShape handlers
+  // into doc-scroll mode — see state.ts.
+  if (pane.notebook && pane.notebook.state) {
+    pane.notebook.state.camera = { x: 0, y: 0, zoom: 1 };
+    pane.notebook.state.gutterScrollDOM = getScroller();
+    pane.notebook.state.notify("camera");
+  }
 
   applyGutterFrame(pane);
   startGutterSync(pane);
@@ -223,10 +233,14 @@ export function stopActivePaneAsGutter() {
   pane.el.style.top = y + "px";
   pane.el.style.removeProperty("--gutter-scroll");
   // Reset the canvas-side pocket insets so the tray returns to its
-  // canvas-anchored position.
+  // canvas-anchored position, drop the gutter scroll-redirect flag,
+  // and restore the camera the user had before they entered gutter
+  // mode (snapshotted in _gutterPrev.camera).
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.topInset = 0;
     pane.notebook.state.viewportHeight = 0;
+    pane.notebook.state.gutterScrollDOM = null;
+    if (prev.camera) pane.notebook.state.camera = { ...prev.camera };
     pane.notebook.state.notify("camera");
   }
   // Lift the pane back into the bumped z-band; gutter z is fixed low.
@@ -246,12 +260,24 @@ export function restoreGutterLayout(pane) {
   pane.gutterSide = side;
   pane.el.classList.add("gutter", "gutter-" + side);
   pane.el.style.zIndex = GUTTER_Z;
+  // The scroller behind the pane may have changed (different doc /
+  // restored from disk) — repoint the canvas at the live one.
+  if (pane.notebook && pane.notebook.state) {
+    pane.notebook.state.gutterScrollDOM = getScroller();
+    pane.notebook.state.camera = { x: 0, y: 0, zoom: 1 };
+    pane.notebook.state.notify("camera");
+  }
   applyGutterFrame(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
 }
 
 /** Tear down the scroll/resize listeners on the way out — called from
- *  closePane so a pane being destroyed mid-gutter doesn't leak. */
+ *  closePane and on context-switch so a hidden pane doesn't keep its
+ *  scroll-redirect flag pointing at the wrong doc scroller. */
 export function teardownGutterListeners(pane) {
-  if (pane && pane._gutterScrollHandler) stopGutterSync(pane);
+  if (!pane) return;
+  if (pane._gutterScrollHandler) stopGutterSync(pane);
+  if (pane.notebook && pane.notebook.state) {
+    pane.notebook.state.gutterScrollDOM = null;
+  }
 }
