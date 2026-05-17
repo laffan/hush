@@ -132,6 +132,24 @@
   color: #4a9eff;
 }
 
+/* Text-label button — used by the Gutter toggle. Sized so it sits in
+   the same 15 px row as the icon buttons but with enough horizontal
+   room for a short word. */
+.floating-pane-btn-text {
+  width: auto;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.floating-pane-btn.gutter-active {
+  opacity: 0.95;
+  color: #e44b3a;
+}
+
 /* When the pane is collapsed, flip the chevron so it points up — making
    it visually a "pull-down to expand" affordance. */
 .floating-pane.collapsed .fp-btn-collapse svg {
@@ -192,12 +210,12 @@
 
 .floating-pane.gutter.gutter-left {
   border-right-color: #e44b3a;
-  box-shadow: inset -1px 0 0 #e44b3a;
+  box-shadow: inset -2px 0 0 #e44b3a;
 }
 
 .floating-pane.gutter.gutter-right {
   border-left-color: #e44b3a;
-  box-shadow: inset 1px 0 0 #e44b3a;
+  box-shadow: inset 2px 0 0 #e44b3a;
 }
 
 /* Gutter geometry is driven by the doc: height tracks the doc text,

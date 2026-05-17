@@ -40,6 +40,18 @@ function makeBtn(name, svg, ariaLabel) {
   return btn;
 }
 
+/** Text-label variant for buttons that read as a word rather than an
+ *  icon (the Gutter toggle replaces the pin icon — text reads more
+ *  clearly for a feature the user opts into deliberately). */
+function makeTextBtn(name, text, ariaLabel) {
+  const btn = document.createElement("button");
+  btn.className = `floating-pane-btn floating-pane-btn-text fp-btn-${name}`;
+  btn.textContent = text;
+  applyTooltip(btn, ariaLabel);
+  btn.setAttribute("aria-label", ariaLabel);
+  return btn;
+}
+
 /**
  * Build the pane root element + title bar + content area + resize
  * handles. Wires every button to its handler.
@@ -95,9 +107,17 @@ export function buildPaneDOM(pane, deps) {
   attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
   buttons.appendChild(attachBtn);
 
-  const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
-  pinBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePinned(pane, deps.onContextChange); });
-  buttons.appendChild(pinBtn);
+  // Gutter toggle — only meaningful on a notebook pane (the canvas can
+  // be promoted into a doc-aligned gutter). Replaces the pin icon
+  // button; the pin feature lives on in the command palette.
+  if (pane.fileType === "notebook") {
+    const gutterBtn = makeTextBtn("gutter", "Gutter", "Use as gutter");
+    gutterBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleGutterFromButton(pane);
+    });
+    buttons.appendChild(gutterBtn);
+  }
 
   // Collapse button (iOS only — desktop's title-bar double-click is the
   // equivalent gesture).
@@ -218,6 +238,27 @@ async function toggleAttach(pane) {
     stopAttachSync(pane);
   }
   schedulePersist();
+}
+
+async function toggleGutterFromButton(pane) {
+  // The pane has to be focused for the gutter helpers to act on it —
+  // they read `activePaneId` to decide which pane to mutate. The
+  // button click already focuses via the pane's pointerdown handler,
+  // but a programmatic call wouldn't, so be explicit.
+  const { useActivePaneAsGutter, stopActivePaneAsGutter, isActivePaneAGutter } = await import("./pane-gutter.js");
+  if (isActivePaneAGutter()) stopActivePaneAsGutter();
+  else useActivePaneAsGutter();
+  syncGutterButton(pane);
+}
+
+/** Keep the Gutter button's active class in sync with pane.gutter.
+ *  Exposed so the gutter module can call back after enter/exit so the
+ *  button reflects state changes that originated from the command
+ *  palette. */
+export function syncGutterButton(pane) {
+  if (!pane || !pane.el) return;
+  const btn = pane.el.querySelector(".fp-btn-gutter");
+  if (btn) btn.classList.toggle("gutter-active", !!pane.gutter);
 }
 
 async function togglePinned(pane, onContextChange) {

@@ -328,6 +328,19 @@ export function getActivePaneId() { return activePaneId; }
 export function hasPanes() { return panes.size > 0; }
 export function isPaneActive() { return activePaneId !== null; }
 
+/** Toggle the active pane's pinned (cross-document) state. Used by
+ *  the command palette since the toolbar's pin button was retired in
+ *  favour of the Gutter toggle. */
+export function setActivePanePinned(value) {
+  const pane = panes.get(activePaneId);
+  if (!pane) return;
+  pane.pinned = !!value;
+  pane.el.classList.toggle("pinned", pane.pinned);
+  pane.el.style.zIndex = zForPane(pane);
+  if (!value) onContextChange();
+  schedulePersist();
+}
+
 /** Build the context id that a pane owned by the given file/project
  *  would use — mirrors `getCurrentContext`'s format. */
 export function contextIdForFile(fileId, fileType) {

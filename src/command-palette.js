@@ -19,8 +19,9 @@ import { deleteTreeNode } from "./state/state-tree.js";
 import {
   getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition,
   replacePaneContent, contextIdForFile, getPanesForContext, clearPanesForContext,
-  copyPanesBetweenContexts,
+  copyPanesBetweenContexts, setActivePanePinned,
 } from "./pane/pane-manager.js";
+import { panes } from "./pane/pane-state.js";
 import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
 import { arePanesHiddenForActive, setPanesHiddenForContext } from "./state/state-panes.js";
 import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
@@ -267,10 +268,10 @@ function buildCommands(state) {
         const id = getActivePaneId();
         if (id) replacePaneContent(id, f.fileId, f.name, f.type);
       }) },
-    { id: "pane-gutter-on", label: "Use Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane",
-      hiddenIf: () => !canUseActivePaneAsGutter(), action: () => useActivePaneAsGutter() },
-    { id: "pane-gutter-off", label: "Stop using Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane",
-      hiddenIf: () => !isActivePaneAGutter(), action: () => stopActivePaneAsGutter() },
+    { id: "pane-gutter-on", label: "Use Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !canUseActivePaneAsGutter(), action: () => useActivePaneAsGutter() },
+    { id: "pane-gutter-off", label: "Stop using Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !isActivePaneAGutter(), action: () => stopActivePaneAsGutter() },
+    { id: "pane-pin", label: "Pin pane across documents", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !!panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(true) },
+    { id: "pane-unpin", label: "Unpin pane", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(false) },
 
     // === PANE SET (current document's panes) ===
     { id: "panes-hide", label: "Hide panes", icon: icons.pane, shortcutKey: null, ctx: "shared",

@@ -299,6 +299,7 @@ export function useActivePaneAsGutter() {
   // Defer the first scan one frame so CodeMirror has measured line
   // positions. scheduleSync handles the rAF batching.
   scheduleSync(pane);
+  import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
   schedulePersist();
   return true;
@@ -341,6 +342,7 @@ export function stopActivePaneAsGutter() {
   pane._gutterHeaders = null;
   pane._shapeAnchors = null;
   pane.el.style.zIndex = zForPane(pane);
+  import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
   schedulePersist();
   return true;
@@ -359,6 +361,7 @@ export function restoreGutterLayout(pane) {
   syncCameraFromScroll(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
   scheduleSync(pane);
+  import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 }
 
 export function teardownGutterListeners(pane) {
