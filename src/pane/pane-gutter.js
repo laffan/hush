@@ -105,32 +105,73 @@ function publishShadowHeaders(pane, headers) {
   pane.notebook.state.notify("camera");
 }
 
-/** Re-align gutter shapes when the doc text changes the y position of
- *  one or more headings. For each shape, the section it sits in (the
- *  header at-or-above its world-y in the *previous* snapshot) defines
- *  the delta to apply. New headings (or removed ones) skip the shift
- *  pass — we just re-snapshot and let future edits track from there. */
-function reflowShapesForHeaderShift(pane, prev, next) {
+/** Re-align gutter shapes from their per-shape anchor: each shape
+ *  stores `{ idx, offset, lastY }` where `idx` is the header it sits
+ *  under, `offset` is its world-y relative to that header at anchor
+ *  time, and `lastY` is the world-y we last wrote. Anchors are
+ *  (re)derived lazily — a shape with no anchor, or whose y has been
+ *  changed by the user since lastY (a manual drag), gets re-anchored
+ *  to the header it currently sits under before we apply the next
+ *  header-driven shift. This avoids the "delta of stale measurements"
+ *  drift that a pure diff-based approach suffers when CodeMirror's
+ *  lineBlockAt(...).top values refine as the user scrolls. */
+function applyAnchors(pane) {
   if (!pane.notebook || !pane.notebook.state) return;
-  if (prev.length !== next.length) return;
-  if (prev.length === 0) return;
+  const headers = pane._gutterHeaders || [];
+  if (!headers.length) return;
+  let anchors = pane._shapeAnchors;
+  if (!anchors) anchors = pane._shapeAnchors = new Map();
   const shapes = pane.notebook.state.shapes;
   let mutated = false;
-  for (let i = 0; i < shapes.length; i++) {
-    const s = shapes[i];
-    // Find the index of the largest header at-or-above this shape's y
-    // in the *previous* snapshot — that's the section it belongs to.
-    let idx = -1;
-    for (let h = 0; h < prev.length; h++) {
-      if (prev[h].y <= s.position.y) idx = h; else break;
+  for (const s of shapes) {
+    let a = anchors.get(s.id);
+    // Re-anchor: no record, or the user moved this shape since our
+    // last write (current y != lastY).
+    if (!a || a.lastY !== s.position.y) {
+      let idx = -1;
+      for (let h = 0; h < headers.length; h++) {
+        if (headers[h].y <= s.position.y) idx = h; else break;
+      }
+      if (idx < 0) { anchors.delete(s.id); continue; }
+      a = { idx, offset: s.position.y - headers[idx].y, lastY: s.position.y };
+      anchors.set(s.id, a);
+      continue; // Already at the right y, no mutation
     }
-    if (idx < 0) continue;
-    const delta = next[idx].y - prev[idx].y;
-    if (delta === 0) continue;
-    s.position = { x: s.position.x, y: s.position.y + delta };
-    mutated = true;
+    if (a.idx >= headers.length) continue;
+    const newY = headers[a.idx].y + a.offset;
+    if (s.position.y !== newY) {
+      s.position = { x: s.position.x, y: newY };
+      a.lastY = newY;
+      mutated = true;
+    }
   }
   if (mutated) pane.notebook.state.notify("shapes");
+}
+
+/** Rescan headers, push them into the renderer, and reapply anchors so
+ *  shape positions track the current header positions. Header-count
+ *  change wipes the anchor map so shapes re-attach to whatever section
+ *  they're currently in. */
+function scanAndSync(pane) {
+  if (!pane.gutter || !panes.has(pane.id)) return;
+  const next = scanDocHeaders();
+  const prev = pane._gutterHeaders;
+  pane._gutterHeaders = next;
+  if (!prev || prev.length !== next.length) pane._shapeAnchors = null;
+  applyAnchors(pane);
+  publishShadowHeaders(pane, next);
+}
+
+/** rAF-debounced wrapper around scanAndSync so a scroll storm or a
+ *  burst of doc-content-changed events all coalesce to one scan per
+ *  frame. */
+function scheduleSync(pane) {
+  if (pane._gutterSyncPending) return;
+  pane._gutterSyncPending = true;
+  requestAnimationFrame(() => {
+    pane._gutterSyncPending = false;
+    scanAndSync(pane);
+  });
 }
 
 function detectGutterSide(pane) {
@@ -174,37 +215,26 @@ function syncCameraFromScroll(pane) {
 function startGutterSync(pane) {
   const scroller = getScroller();
   if (!scroller) return;
+  // Scroll → resync. CodeMirror lazily measures lines as they enter the
+  // viewport, so each scroll potentially refines header y values. Without
+  // a rescan-on-scroll the snapshot would go stale and shape anchors
+  // would compound the error on the next doc edit.
   pane._gutterScrollHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
     syncCameraFromScroll(pane);
+    scheduleSync(pane);
   };
   scroller.addEventListener("scroll", pane._gutterScrollHandler, { passive: true });
   pane._gutterWindowHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
     applyGutterGeometry(pane);
     syncCameraFromScroll(pane);
-    // Re-measure header positions too — line wrapping changes with width.
-    const next = scanDocHeaders();
-    reflowShapesForHeaderShift(pane, pane._gutterHeaders || [], next);
-    pane._gutterHeaders = next;
-    publishShadowHeaders(pane, next);
+    scheduleSync(pane);
   };
   window.addEventListener("resize", pane._gutterWindowHandler);
-
-  // Watch for doc edits so header shifts can propagate into shape
-  // positions and the shadow-header overlay stays in sync.
   pane._gutterDocChangeHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
-    // Defer one frame so CodeMirror has updated its line measurements
-    // before we read lineBlockAt(...).top — reading mid-update returns
-    // pre-edit positions and the delta comes out as zero.
-    requestAnimationFrame(() => {
-      if (!pane.gutter || !panes.has(pane.id)) return;
-      const next = scanDocHeaders();
-      reflowShapesForHeaderShift(pane, pane._gutterHeaders || [], next);
-      pane._gutterHeaders = next;
-      publishShadowHeaders(pane, next);
-    });
+    scheduleSync(pane);
   };
   appState.on("doc-content-changed", pane._gutterDocChangeHandler);
 }
@@ -266,14 +296,9 @@ export function useActivePaneAsGutter() {
   applyGutterGeometry(pane);
   syncCameraFromScroll(pane);
   startGutterSync(pane);
-  // Seed the header snapshot on the next frame so CodeMirror has
-  // measured line positions (lineBlockAt(...).top is otherwise zero
-  // for lines below the initially-visible region).
-  requestAnimationFrame(() => {
-    if (!pane.gutter || !panes.has(pane.id)) return;
-    pane._gutterHeaders = scanDocHeaders();
-    publishShadowHeaders(pane, pane._gutterHeaders);
-  });
+  // Defer the first scan one frame so CodeMirror has measured line
+  // positions. scheduleSync handles the rAF batching.
+  scheduleSync(pane);
 
   schedulePersist();
   return true;
@@ -314,6 +339,7 @@ export function stopActivePaneAsGutter() {
     pane.notebook.state.notify("camera");
   }
   pane._gutterHeaders = null;
+  pane._shapeAnchors = null;
   pane.el.style.zIndex = zForPane(pane);
 
   schedulePersist();
@@ -332,16 +358,14 @@ export function restoreGutterLayout(pane) {
   applyGutterGeometry(pane);
   syncCameraFromScroll(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
-  requestAnimationFrame(() => {
-    if (!pane.gutter || !panes.has(pane.id)) return;
-    pane._gutterHeaders = scanDocHeaders();
-    publishShadowHeaders(pane, pane._gutterHeaders);
-  });
+  scheduleSync(pane);
 }
 
 export function teardownGutterListeners(pane) {
   if (!pane) return;
   if (pane._gutterScrollHandler) stopGutterSync(pane);
+  pane._shapeAnchors = null;
+  pane._gutterHeaders = null;
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = null;
     pane.notebook.state.shadowHeaders = [];
