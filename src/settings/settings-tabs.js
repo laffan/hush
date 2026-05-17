@@ -143,10 +143,10 @@ export function renderEditorTab(settings) {
       <div class="settings-row">
         <label>Window</label>
         <select id="setting-zen-focus-window">
-          ${[1, 3, 5].map((n) => `<option value="${n}" ${(s.zenFocusWindow || 1) === n ? "selected" : ""}>${n} ${n === 1 ? "line" : "lines"}</option>`).join("")}
+          ${[1, 3, 5, 7].map((n) => `<option value="${n}" ${(s.zenFocusWindow || 1) === n ? "selected" : ""}>${n} ${n === 1 ? "line" : "lines"}</option>`).join("")}
         </select>
       </div>
-      <p class="settings-help">Font size while Zen is open. Focus mode auto-engages in Zen — surrounding-sentence dim is governed by the Focus mode opacity slider above. The Window setting controls how many lines the cursor can move before the document scrolls underneath it: 1 keeps the cursor pinned to the centre (pure typewriter), 3 and 5 widen the centred band so the cursor can drift a line or two before scrolling kicks in. Toggle Zen with the configured shortcut, default ⌘⇧S.</p>
+      <p class="settings-help">Font size while Zen is open. Focus mode auto-engages in Zen — surrounding-sentence dim is governed by the Focus mode opacity slider above. The Window setting controls how many lines the cursor can move before the document scrolls underneath it: 1 keeps the cursor pinned to the centre (pure typewriter), 3 / 5 / 7 widen the centred band so the cursor can drift one, two, or three lines either side before scrolling kicks in. Toggle Zen with the configured shortcut, default ⌘⇧S.</p>
     </div>
 
     <div class="settings-section">

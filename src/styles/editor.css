@@ -304,28 +304,6 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
   border-color: currentColor;
 }
 
-/* Debug visualization — two horizontal dashed rules at the top and
-   bottom of the typewriter band. Painted only while the user is
-   hovering the Window chips so the band's coverage is easy to eyeball
-   without leaving permanent chrome on the writing surface. The CSS
-   variables `--zen-window-band-top` / `--zen-window-band-bottom` are
-   set by zen-focus.js's measure helper in viewport pixels. */
-body.zen-window-preview .zen-window-band-top,
-body.zen-window-preview .zen-window-band-bottom {
-  position: fixed;
-  left: 0;
-  right: 0;
-  height: 0;
-  border-top: 1px dashed currentColor;
-  color: var(--accent, var(--fg));
-  opacity: 0.6;
-  pointer-events: none;
-  /* Sit above the Zen overlay but below the chrome (cmd-held pill) so
-     hover state on the pill itself isn't disturbed. */
-  z-index: calc(var(--z-modal-top) + 0);
-}
-body.zen-window-preview .zen-window-band-top { top: var(--zen-window-band-top, -1px); }
-body.zen-window-preview .zen-window-band-bottom { top: var(--zen-window-band-bottom, -1px); }
 
 /* Rendered markdown links (when cursor is outside) */
 .cm-link-rendered {

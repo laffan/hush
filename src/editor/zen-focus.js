@@ -38,9 +38,6 @@ export function initZenFocus(state) {
     if (!active || !active.overlay) return;
     const px = state.settings.zenFocusFontSize || 30;
     active.overlay.style.setProperty("--zen-font-size", `${px}px`);
-    // Font-size / window-size changes shift the band — refresh the
-    // indicator the next frame so it picks up the new line-height.
-    requestAnimationFrame(() => updateWindowBandIndicator(state));
   });
 }
 
@@ -136,13 +133,14 @@ function writeBack(source, content, anchor, head) {
 
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n | 0)); }
 
-/** Read the configured Zen Focus window (1, 3, or 5). Any other value
- *  is coerced to the nearest legal option so a stray setting can't break
- *  the scroll math. */
+/** Read the configured Zen Focus window (1, 3, 5, or 7). Any other
+ *  value is coerced to the nearest legal option so a stray setting
+ *  can't break the scroll math. */
 function getZenWindow(state) {
   const raw = state?.settings?.zenFocusWindow;
   if (raw === 3) return 3;
   if (raw === 5) return 5;
+  if (raw === 7) return 7;
   return 1;
 }
 
@@ -194,26 +192,6 @@ function maintainTypewriterWindow(view, state) {
   } catch (_) { /* view destroyed mid-update — ignore */ }
 }
 
-/** Paint the two horizontal dashed rules that visualize the cursor
- *  band's coverage. Called from the Zen overlay's mount + on every
- *  measurement change so the rules track the live viewport / font /
- *  window choice. Cleanup runs via the standard overlay teardown — the
- *  band elements are children of the overlay, not body. */
-function updateWindowBandIndicator(state) {
-  if (!active || !active.overlay) return;
-  const scroller = active.zenView?.scrollDOM;
-  if (!scroller) return;
-  const sRect = scroller.getBoundingClientRect();
-  const lineH = (typeof active.zenView.defaultLineHeight === "number" && active.zenView.defaultLineHeight > 0)
-    ? active.zenView.defaultLineHeight
-    : 22;
-  const winSize = getZenWindow(state);
-  const halfBand = ((winSize - 1) / 2) * lineH;
-  const centre = (sRect.top + sRect.bottom) / 2;
-  document.documentElement.style.setProperty("--zen-window-band-top", `${Math.round(centre - halfBand)}px`);
-  document.documentElement.style.setProperty("--zen-window-band-bottom", `${Math.round(centre + halfBand)}px`);
-}
-
 function centerCursor(view, pos) {
   const dispatchCenter = () => {
     try {
@@ -247,17 +225,6 @@ export function enterZenFocus(state) {
   hint.className = "zen-focus-hint";
   hint.textContent = formatShortcutForHint(state.settings.shortcutZenFocus || "Mod+Shift+S");
   overlay.appendChild(hint);
-
-  // Dashed band visualization — invisible until `body.zen-window-preview`
-  // is set (by the cmd-held Window chip group). The CSS variables
-  // updated by `updateWindowBandIndicator` place each rule at the band
-  // edge in viewport pixels.
-  const bandTop = document.createElement("div");
-  bandTop.className = "zen-window-band-top";
-  const bandBottom = document.createElement("div");
-  bandBottom.className = "zen-window-band-bottom";
-  overlay.appendChild(bandTop);
-  overlay.appendChild(bandBottom);
 
   // Auto-enable focus mode (only the active sentence is fully visible —
   // the rest dims to 50% via --focus-mode-opacity overridden in CSS).
@@ -351,11 +318,6 @@ export function enterZenFocus(state) {
 
   showHint(hint);
 
-  // Window-band indicator follows window resize so the dashed rules
-  // stay glued to the live viewport centre.
-  const onWindowResize = () => updateWindowBandIndicator(state);
-  window.addEventListener("resize", onWindowResize);
-
   active = {
     source,
     zenView,
@@ -364,17 +326,9 @@ export function enterZenFocus(state) {
     onKeydown,
     onMouseMove,
     onModeChanged,
-    onWindowResize,
     wasFocusMode,
     zenResizerCleanup,
   };
-
-  // First-paint band placement — runs after `active` is set so the
-  // helper can read `active.zenView`. rAF tail mirrors the
-  // initialScroll trampoline so the band lands after the overlay's
-  // first measure pass.
-  updateWindowBandIndicator(state);
-  requestAnimationFrame(() => updateWindowBandIndicator(state));
 }
 
 export function exitZenFocus(state) {
@@ -388,10 +342,8 @@ export function exitZenFocus(state) {
 
   document.removeEventListener("keydown", a.onKeydown, true);
   a.overlay.removeEventListener("mousemove", a.onMouseMove);
-  if (a.onWindowResize) window.removeEventListener("resize", a.onWindowResize);
   if (a.onModeChanged) state.off("mode-changed", a.onModeChanged);
   if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; }
-  document.body.classList.remove("zen-window-preview");
 
   if (a.zenResizerCleanup) { try { a.zenResizerCleanup(); } catch (_) {} }
   a.zenView.destroy();

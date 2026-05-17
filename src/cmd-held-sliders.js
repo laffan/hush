@@ -55,9 +55,6 @@ export function initCmdHeldSliders(state) {
   const windowGroup = makeWindowChipGroup({
     value: normalizeWindow(state.settings.zenFocusWindow),
     onChange: (v) => state.updateSettings({ zenFocusWindow: v }),
-    onHoverChange: (hovering) => {
-      document.body.classList.toggle("zen-window-preview", !!hovering);
-    },
   });
 
   pill.appendChild(dimGroup.el);
@@ -77,6 +74,7 @@ function normalizeWindow(raw) {
   const n = Number(raw);
   if (n === 3) return 3;
   if (n === 5) return 5;
+  if (n === 7) return 7;
   return 1;
 }
 
@@ -132,11 +130,9 @@ function makeSliderGroup({ label, min, max, step, value, format, onChange }) {
   };
 }
 
-/** Window chip group — three numeric chips (1 / 3 / 5) with a circle
- *  outline on the active pick. `onHoverChange(true|false)` fires while
- *  the pointer is hovering the group so the zen-focus overlay can paint
- *  a debug visualization of the band the chosen window covers. */
-function makeWindowChipGroup({ value, onChange, onHoverChange }) {
+/** Window chip group — four numeric chips (1 / 3 / 5 / 7) with a
+ *  circle outline on the active pick. */
+function makeWindowChipGroup({ value, onChange }) {
   const el = document.createElement("div");
   el.className = "cmd-held-slider-group cmd-held-window-group";
 
@@ -149,7 +145,7 @@ function makeWindowChipGroup({ value, onChange, onHoverChange }) {
   chips.className = "cmd-held-window-chips";
 
   const btns = [];
-  for (const n of [1, 3, 5]) {
+  for (const n of [1, 3, 5, 7]) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "cmd-held-window-chip";
@@ -167,8 +163,6 @@ function makeWindowChipGroup({ value, onChange, onHoverChange }) {
   el.appendChild(chips);
 
   el.addEventListener("pointerdown", (e) => e.stopPropagation());
-  el.addEventListener("mouseenter", () => onHoverChange?.(true));
-  el.addEventListener("mouseleave", () => onHoverChange?.(false));
 
   return {
     el,
