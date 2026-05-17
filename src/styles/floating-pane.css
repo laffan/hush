@@ -132,22 +132,18 @@
   color: #4a9eff;
 }
 
-/* Text-label button — used by the Gutter toggle. Sized so it sits in
-   the same 15 px row as the icon buttons but with enough horizontal
-   room for a short word. */
-.floating-pane-btn-text {
-  width: auto;
-  padding: 0 6px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 15px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
 .floating-pane-btn.gutter-active {
   opacity: 0.95;
   color: #e44b3a;
+}
+
+/* Disabled toolbar button — used when a button's action is currently
+   ineligible (e.g. pin while the pane is acting as a gutter). Stays
+   visible so the affordance remains discoverable, but reads as
+   inactive. */
+.floating-pane-btn.fp-btn-disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
 }
 
 /* When the pane is collapsed, flip the chevron so it points up — making

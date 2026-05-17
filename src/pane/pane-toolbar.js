@@ -30,6 +30,10 @@ const ICON_ATTACH = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><li
 const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
 const ICON_SIZE = `<svg viewBox="0 0 10 10"><polyline points="2,8 5,2 8,8"/><line x1="3.3" y1="6" x2="6.7" y2="6"/></svg>`;
 const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><polyline points="2.5,4 5,6.5 7.5,4"/></svg>`;
+// Header-bar glyph: a thick vertical bar (the gutter rule) next to three
+// horizontal lines (the content below it). Read this as "header label
+// territory" so the gutter affordance is recognisable at toolbar size.
+const ICON_GUTTER = `<svg viewBox="0 0 10 10"><rect x="1" y="1" width="1.5" height="8" fill="currentColor" stroke="none"/><line x1="4.5" y1="2.5" x2="9" y2="2.5"/><line x1="4.5" y1="5" x2="9" y2="5"/><line x1="4.5" y1="7.5" x2="9" y2="7.5"/></svg>`;
 
 function makeBtn(name, svg, ariaLabel) {
   const btn = document.createElement("button");
@@ -40,17 +44,6 @@ function makeBtn(name, svg, ariaLabel) {
   return btn;
 }
 
-/** Text-label variant for buttons that read as a word rather than an
- *  icon (the Gutter toggle replaces the pin icon — text reads more
- *  clearly for a feature the user opts into deliberately). */
-function makeTextBtn(name, text, ariaLabel) {
-  const btn = document.createElement("button");
-  btn.className = `floating-pane-btn floating-pane-btn-text fp-btn-${name}`;
-  btn.textContent = text;
-  applyTooltip(btn, ariaLabel);
-  btn.setAttribute("aria-label", ariaLabel);
-  return btn;
-}
 
 /**
  * Build the pane root element + title bar + content area + resize
@@ -107,17 +100,24 @@ export function buildPaneDOM(pane, deps) {
   attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
   buttons.appendChild(attachBtn);
 
-  // Gutter toggle — only meaningful on a notebook pane (the canvas can
-  // be promoted into a doc-aligned gutter). Replaces the pin icon
-  // button; the pin feature lives on in the command palette.
-  if (pane.fileType === "notebook") {
-    const gutterBtn = makeTextBtn("gutter", "Gutter", "Use as gutter");
-    gutterBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleGutterFromButton(pane);
-    });
-    buttons.appendChild(gutterBtn);
-  }
+  const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
+  pinBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pinBtn.classList.contains("fp-btn-disabled")) return;
+    togglePinned(pane, deps.onContextChange);
+  });
+  buttons.appendChild(pinBtn);
+
+  // Gutter toggle on every pane — the click decides whether the pane
+  // qualifies (notebook + doc context) and silently no-ops otherwise.
+  // Mutually exclusive with pin: pin is disabled while the pane is a
+  // gutter, see syncGutterButton.
+  const gutterBtn = makeBtn("gutter", ICON_GUTTER, "Use as gutter");
+  gutterBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleGutterFromButton(pane);
+  });
+  buttons.appendChild(gutterBtn);
 
   // Collapse button (iOS only — desktop's title-bar double-click is the
   // equivalent gesture).
@@ -251,14 +251,17 @@ async function toggleGutterFromButton(pane) {
   syncGutterButton(pane);
 }
 
-/** Keep the Gutter button's active class in sync with pane.gutter.
- *  Exposed so the gutter module can call back after enter/exit so the
- *  button reflects state changes that originated from the command
- *  palette. */
+/** Reflect pane.gutter on the toolbar: the Gutter button picks up the
+ *  active red tint, and the Pin button is disabled (gutter and pin are
+ *  mutually exclusive). Exposed so the gutter module can call back
+ *  after enter/exit/restore so command-palette / persistence-driven
+ *  toggles update the toolbar too. */
 export function syncGutterButton(pane) {
   if (!pane || !pane.el) return;
-  const btn = pane.el.querySelector(".fp-btn-gutter");
-  if (btn) btn.classList.toggle("gutter-active", !!pane.gutter);
+  const gBtn = pane.el.querySelector(".fp-btn-gutter");
+  if (gBtn) gBtn.classList.toggle("gutter-active", !!pane.gutter);
+  const pBtn = pane.el.querySelector(".fp-btn-pin");
+  if (pBtn) pBtn.classList.toggle("fp-btn-disabled", !!pane.gutter);
 }
 
 async function togglePinned(pane, onContextChange) {
