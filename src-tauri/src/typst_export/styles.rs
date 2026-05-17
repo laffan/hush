@@ -27,8 +27,7 @@ pub struct Style {
 /// the modal toggles. Keeping them here (rather than per-style)
 /// because they're orthogonal: any style can choose to show or hide
 /// page numbers, number its headings, and so on.
-pub struct WrapOptions<'a> {
-    pub title: Option<&'a str>,
+pub struct WrapOptions {
     pub with_bibliography: bool,
     pub number_headings: bool,
     pub page_numbers: bool,
@@ -43,8 +42,11 @@ pub fn list() -> &'static [Style] {
 }
 
 /// Compose the final Typst source: preamble → per-export overrides
-/// → optional title block → markdown body → optional bibliography
-/// directive.
+/// → markdown body → optional bibliography directive.
+///
+/// Doc title is intentionally not rendered — the source markdown owns
+/// its own front matter (a `#` heading if the author wants one), and
+/// the export filename carries the document name into the OS.
 pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
     let mut out = String::with_capacity(style.preamble.len() + body.len() + 256);
     out.push_str(style.preamble);
@@ -66,11 +68,7 @@ pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
         out.push_str("#set heading(numbering: \"1.1\")\n");
     }
 
-    if let Some(t) = opts.title {
-        let escaped = escape_title(t);
-        out.push_str(&format!("\n#align(center)[#text(size: 18pt, weight: \"bold\")[{}]]\n\n", escaped));
-    }
-
+    out.push('\n');
     out.push_str(body);
 
     if opts.with_bibliography {
@@ -86,20 +84,6 @@ pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
     out
 }
 
-fn escape_title(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        match ch {
-            '#' | '*' | '_' | '$' | '`' | '<' | '>' | '@' | '\\' | '[' | ']' => {
-                out.push('\\');
-                out.push(ch);
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,9 +92,8 @@ mod tests {
         lookup("formal").unwrap()
     }
 
-    fn base() -> WrapOptions<'static> {
+    fn base() -> WrapOptions {
         WrapOptions {
-            title: None,
             with_bibliography: false,
             number_headings: false,
             page_numbers: false,

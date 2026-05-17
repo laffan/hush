@@ -70,7 +70,6 @@ and some _emphasis_ for good measure.
         page_numbers: true,
         references: refs,
         images: vec![],
-        title: Some("Sample Document".into()),
     };
 
     let pdf = render_pdf(&req).expect("render failed");

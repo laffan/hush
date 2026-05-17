@@ -20,16 +20,24 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── index.js                       (themeList, getThemeById, getActiveTheme)
 │   ├── _create-theme.js               (EditorView.theme + HighlightStyle wrapper)
 │   └── <theme>.js × 16                (one file per built-in theme)
-├── tauri-bridge.js                    │   └── zotero.rs
-├── zotero.js                          │
-├── zotero-snapshot.js                 ├── settings.rs
-├── zotero-annotations.js              │   └── defaults.rs
-├── zotero/                            ├── files.rs
-│   └── highlight-pane.js              ├── images.rs
+├── tauri-bridge.js                    │   ├── zotero.rs
+├── zotero.js                          │   └── pdf_export.rs
+├── zotero-snapshot.js                 │
+├── zotero-annotations.js              ├── settings.rs
+├── zotero/                            │   └── defaults.rs
+│   └── highlight-pane.js              ├── files.rs
+│                                      ├── images.rs
 │                                      ├── snapshots.rs
 │                                      ├── sync.rs / sync_commands.rs
 │                                      ├── local_sync.rs
-│                                      └── zotero.rs
+│                                      ├── zotero.rs
+│                                      └── typst_export/         (PDF pipeline)
+│                                          ├── mod.rs            (entry + ExportRequest)
+│                                          ├── preprocess.rs     (strip comments + flags)
+│                                          ├── markdown.rs       (pulldown-cmark → Typst)
+│                                          ├── bibliography.rs   (Zotero → Hayagriva YAML)
+│                                          ├── styles.rs         (preamble + WrapOptions)
+│                                          └── world.rs          (in-memory typst::World)
 │
 ├── editor/
 │   ├── editor.js
@@ -112,7 +120,9 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │
 ├── sidebar/
 │   ├── sidebar.js
-│   ├── sidebar-export.js              (extracted from sidebar.js)
+│   ├── sidebar-export.js              (markdown export path; extracted from sidebar.js)
+│   ├── doc-export-modal.js            (format / style / layout / citation picker for docs + projects)
+│   ├── notebook-export-modal.js       (scope / format / scale picker for notebooks)
 │   ├── ratchet-dropdown.js            (extracted from sidebar.js)
 │   ├── panel-resizer.js               (extracted from sidebar.js)
 │   ├── files-panel.js
@@ -345,7 +355,7 @@ Panels render into `#panel-overlay`. Layout is responsive: when wide enough, pan
 
 **Resizable width:** The right edge of the panel overlay exposes a draggable handle that reuses the same invisible-until-approached resizer pattern as the editor column (`editor/modes.js::updateColumnResizers`). A 10px hit zone sits outside the panel edge; pointer-down begins a drag that updates a `--panel-width` CSS custom property and persists the value to `sidebarWidth` in `AppSettings`. The handle is transparent at rest and only paints a thin accent line while hovered/dragging. Minimum and maximum widths match the inset-vs-overlay thresholds used by the responsive layout so the panel never collapses below its content or exceeds the viewport. Implementation in `sidebar/panel-resizer.js`.
 
-Two more sidebar helpers live alongside the main file: **`sidebar-export.js`** (the Export button — handles markdown-only and folder-with-images flavours, picking dialog vs. download-blob based on Tauri vs. browser) and **`ratchet-dropdown.js`** (the centered duration grid surfaced by the command palette).
+Three more sidebar helpers live alongside the main file: **`sidebar-export.js`** (the markdown-only export path — handles bare `.md` and folder-with-images flavours, picking dialog vs. download-blob based on Tauri vs. browser; the doc-export modal calls into it when the user picks "Markdown"), **`doc-export-modal.js`** (the format/style/layout/citation picker for doc and project exports — defers to `sidebar-export.js` for Markdown and to the Rust `render_doc_pdf` command for PDF; see "Doc / Project PDF Export"), and **`ratchet-dropdown.js`** (the centered duration grid surfaced by the command palette).
 
 ### Files Panel (`sidebar/files-panel.js`, `files-panel-shared.js`, `files-panel-local-sync.js`)
 
@@ -624,6 +634,26 @@ The two providers feed the same `oauth-callback` event but reach it via differen
 
 **Export.** `collectImageRefs` walks the current document for local image refs; `export_with_images` (Rust) writes `text.md` + `images/<filename>` into a user-chosen folder, and `rewriteImageRefsForExport` rewrites each ref to the relative `images/` path (quoting URLs when they need it).
 
+### Doc / Project PDF Export (`sidebar/doc-export-modal.js` + `src-tauri/src/typst_export/`)
+
+PDF export for docs and projects runs through Typst, embedded as a Rust crate (`typst 0.14`) inside the Tauri backend. The same code path serves desktop and iOS — no `typst` CLI, no subprocess, no network access at render time. Everything the compiler needs (markdown body, bibliography YAML, image bytes) is fed in through an in-memory `World` implementation; no file actually lands on disk during compilation.
+
+**Frontend modal** (`sidebar/doc-export-modal.js`). The sidebar's Export button (and the `export-current-file` event) opens this modal whenever a doc or project is the active surface; notebooks still take the existing notebook-export modal. The modal carries a Format toggle (Markdown / PDF). Markdown defers to the established `exportCurrentFile` path. The PDF panel pulls its style list from the `list_doc_styles` Tauri command so adding a style is a Rust-only change. Four layout toggles (`Strip comments`, `Strip flags`, `Number headings`, `Page numbers`) ride a generic `data-choice` wiring so adding another toggle is HTML-only; the citation toggle only appears when Zotero is configured *and* the doc contains at least one `[@key]` reference (cheap regex sniff). Render hands the bytes to the platform-appropriate sink — `navigator.share` on iOS, `save` dialog + `write_binary_file` on desktop.
+
+**Rust pipeline** (`src-tauri/src/typst_export/`, command surface in `commands/pdf_export.rs`). Five small modules:
+
+- **`preprocess.rs`** — Pre-conversion hygiene passes on the raw markdown. `strip_comments` drops `%% inline %%`, multi-line `%% ... %%`, and `---%`-to-separator/EOF regions (mirrors the editor's `createMultiLineCommentPlugin` and `createCommentAfterPlugin` scopes; honours `%%%` as the same "not a comment" escape). `strip_flags` drops `==FLAG==`, `==FLAG: body==`, and bare `==highlight==` runs. Hand-written scanners, no regex crate.
+- **`markdown.rs`** — Walks the cleaned markdown with `pulldown-cmark` and emits Typst. The two Hush citation shapes (`[@key]` and `[@key](zotero://...)`) are folded into a single sentinel pre-pass so pulldown's split-text events don't lose the bracket framing; sentinel expansion at the end of the walk substitutes `#cite(<key>)` for known keys or a bold red `[@key]` marker for keys not in the bibliography (so a missing citekey doesn't sink the export). Emphasis, strong, and citations all use Typst's function form (`#emph[…]`, `#strong[…]`, `#cite(<…>)`) instead of the whitespace-sensitive markup form (`_…_`, `*…*`, `@key`) so intra-word patterns like `*shape*attention` and cites flush against text don't trigger Typst's "unclosed delimiter" rule.
+- **`bibliography.rs`** — Builds a Hayagriva YAML from the loaded Zotero references. The `type:` mapping is constrained to Hayagriva's closed vocabulary (anything Zotero-specific that doesn't have a slot collapses to `misc`), so the YAML always parses. The bibliography is registered in the World as `/refs.yml` and referenced from the wrapped doc via `#bibliography("/refs.yml", style: "chicago-author-date")`.
+- **`styles.rs`** — `Style` registry plus the `wrap()` composer. A style is a Typst preamble string plus an id and name; `wrap()` prepends the preamble, optionally appends `#set page(numbering: "1")` and `#set heading(numbering: "1.1")` based on the modal's layout toggles, then the converted body, then the bibliography directive when references are in play. Today's single style is *Formal* (Libertinus Serif, US-letter, 1.5 line spacing, white background); the registry table at the bottom of the file is the one place to add another.
+- **`world.rs`** — Minimal in-memory `typst::World`. Holds the main source (`/main.typ`), optionally `/refs.yml`, and one virtual file per supplied image. Fonts come from `typst-assets` (`fonts` feature enabled — Libertinus Serif, New Computer Modern, DejaVu Sans Mono) so the export doesn't depend on any host font being installed. No package resolution (`@preview/...`) — styles must stay self-contained because the iOS build can't reach the network.
+
+**Project handling.** Projects flow through the same code path. The sidebar replaces `\n---hush-separator---\n` with `\n\n` before handing the joined buffer to the modal, and the markdown converter has a belt-and-braces line filter that drops any separators that slip through. From the renderer's perspective a project is just one continuous markdown document.
+
+**Image handling.** The modal calls `collectImageRefs` (shared with the markdown export path) and passes the filenames to the `render_doc_pdf` command; the Rust side loads bytes through the existing `ImageManager` and stuffs each one into the World keyed at `/<filename>`. The markdown converter rewrites `![alt](images/foo.png)` to `#image("/foo.png", …)` — Typst reads via `World::file`, so nothing touches the actual filesystem during compilation. Missing image refs surface as a Typst diagnostic rather than a panic.
+
+**Error surfacing.** On compile or PDF-emit failure, `render_pdf` dumps the generated `.typ` source to a temp file and includes the path in the error message returned to JS. The dump survives container restarts long enough to grep, and the file:line:col span carried by each diagnostic lines up with that source.
+
 ### Floating Panes (`pane/`)
 
 Draggable reference windows that float above the editor or notebook canvas. Created by Cmd-dragging a file from the sidebar files panel past the panel boundary into the editing area. The subsystem is split across nine modules; **`pane-state.js`** is the shared state hub (the `panes` Map + accessors for the lazy notebook bridge, the active pane id, etc.) so siblings can read/mutate without circular imports against `pane-manager.js`.
@@ -876,6 +906,7 @@ Command handlers are grouped by domain. Each module exports `pub fn` items decor
 - **`commands/window.rs`** — `set_always_on_top` (desktop), `set_activation_policy`
 - **`commands/backup.rs`** — `backup_app_data(destination)` zips the contents of `{data_dir}` into a single archive at the user-chosen path (using the `zip` crate, `Deflated` compression). `snapshots.db`, `.tmp`, and `.bak` files are excluded so the backup is self-contained authored content + settings + Zotero / sync metadata, not version history. Per-file progress is reported to the JS frontend via `app.emit("backup-progress", { processed, total, currentFile })`
 - **`commands/grammar.rs`** — `check_grammar(text, disabled_rules)` is an `async` Tauri command that hops to the blocking thread pool via `tauri::async_runtime::spawn_blocking`, builds `LintGroup::new_curated(FstDictionary::curated(), Dialect::American)` over `Document::new_markdown_default_curated(&text)`, disables every rule named in `disabled_rules` via `LintGroup::config.set_rule_enabled(rule, false)`, and returns `Vec<GrammarIssue>` (`{ from, to, message, suggestions }`). The async + spawn_blocking shape keeps the JS UI thread free for the multi-second cold-start dictionary build — a sync command would freeze the WebView (beach ball cursor) and prevent the loading modal from painting. Spans are converted from harper's Unicode-scalar offsets to UTF-16 code-unit offsets so the JS frontend can apply them directly to CodeMirror positions without re-walking the buffer. `list_grammar_rules()` returns a curated rule list so the Proofread settings tab can render checkboxes without hard-coding rule names
+- **`commands/pdf_export.rs`** — `render_doc_pdf(args)` runs the Typst-backed PDF pipeline for docs and projects (markdown → cleanup passes → Typst source → in-memory `World` → `typst::compile` → `typst_pdf::pdf`). The companion `list_doc_styles()` returns `[{ id, name }]` so the frontend modal can populate its style dropdown without hard-coding the registry. Bytes come back as `Vec<u8>` which the JS side hands to `write_binary_file` (desktop) or `navigator.share` (iOS). All the heavy lifting lives in the `typst_export/` module — see "Doc / Project PDF Export" upstream.
 
 `sync_commands.rs` (Dropbox / external sync) lives at the crate root rather than under `commands/` because it owns enough internal helpers to merit its own module.
 
@@ -914,6 +945,10 @@ External folder synchronization. Uses SHA256 hashing for change detection, file 
 ### `zotero.rs`
 
 Persists Zotero reference data, downloaded PDF binaries, and per-attachment annotation snapshots locally. References live in `{data_dir}/zotero_references.json` (offline citation search). PDFs land in `{data_dir}/zotero_pdfs/{itemKey}.pdf` keyed on a sanitised attachment id (alphanumeric + `-_` only) and are written via `write_atomic` so a crashed download leaves the previous copy intact. Annotations land in `{data_dir}/zotero_annotations/{attKey}.json` under the same sanitisation rule and the same atomic write path; the highlight browser pane reads cache-first and only re-fetches on explicit refresh. All three directories are local-only — they aren't part of any sync folder.
+
+### `typst_export/`
+
+Five-file module that owns the Typst-backed PDF pipeline for docs and projects (`mod.rs`, `preprocess.rs`, `markdown.rs`, `bibliography.rs`, `styles.rs`, `world.rs`). The user-facing surface is the `render_doc_pdf` Tauri command in `commands/pdf_export.rs`; everything else is private to the module. Renders entirely in process — no `typst` CLI, no subprocess, no network — so the same code path serves desktop and iOS. The module's design choices (sentinel-based citation pre-pass, function-form emphasis/strong/cite emission to dodge Typst's whitespace-sensitive markup, red inline marker for unresolved citekeys, in-memory `World` carrying the main source / bibliography YAML / image bytes / `typst-assets` bundled fonts) are documented in "Doc / Project PDF Export" upstream. Tests live alongside each module — preprocessor stripping, markdown conversion regressions, Hayagriva type mapping, and two end-to-end renders (minimal doc + doc-with-bibliography) that compile real PDF bytes.
 
 ## Build
 

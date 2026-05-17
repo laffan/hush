@@ -193,7 +193,7 @@ export async function openDocExportModal(state) {
     confirmBtn.disabled = true;
 
     try {
-      const bytes = await renderPdfBytes(state, content, choices, name);
+      const bytes = await renderPdfBytes(state, content, choices);
       const fileName = `${name}.pdf`;
       await deliver(bytes, fileName);
       cleanup();
@@ -220,7 +220,7 @@ async function fetchStyles() {
   return [{ id: "formal", name: "Formal" }];
 }
 
-async function renderPdfBytes(state, content, choices, title) {
+async function renderPdfBytes(state, content, choices) {
   if (!IS_TAURI) {
     throw new Error("PDF export requires the desktop or iOS app");
   }
@@ -240,7 +240,6 @@ async function renderPdfBytes(state, content, choices, title) {
       pageNumbers: !!choices.pageNumbers,
       references,
       imageFilenames,
-      title,
     },
   });
   return new Uint8Array(bytes);

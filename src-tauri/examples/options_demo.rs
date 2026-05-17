@@ -16,7 +16,6 @@ fn main() {
         page_numbers: true,
         references: vec![],
         images: vec![],
-        title: Some("Options Demo".into()),
     };
     let pdf = render_pdf(&req).expect("render");
     let out = "/tmp/options-demo.pdf";

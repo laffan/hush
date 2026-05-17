@@ -17,7 +17,6 @@ fn main() {
     );
     let style = styles::lookup("formal").unwrap();
     let wrap_opts = styles::WrapOptions {
-        title: Some("Term Paper"),
         with_bibliography: false,
         number_headings: true,
         page_numbers: true,
@@ -48,7 +47,6 @@ fn main() {
             item_type: "book".into(),
         }],
         images: vec![],
-        title: Some("Term Paper".into()),
     };
     match hush_lib::typst_export::render_pdf(&req) {
         Ok(b) => {

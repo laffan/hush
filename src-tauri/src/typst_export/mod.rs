@@ -79,7 +79,6 @@ pub struct ExportRequest {
     pub references: Vec<ZoteroRef>,
     #[serde(default)]
     pub images: Vec<ImageInput>,
-    pub title: Option<String>,
 }
 
 fn true_default() -> bool { true }
@@ -115,7 +114,6 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     };
 
     let wrap_opts = styles::WrapOptions {
-        title: req.title.as_deref(),
         with_bibliography: bib_yaml.is_some(),
         number_headings: req.number_headings,
         page_numbers: req.page_numbers,
@@ -185,7 +183,6 @@ mod tests {
             page_numbers: true,
             references: vec![],
             images: vec![],
-            title: Some("Test Doc".into()),
         };
         let pdf = render_pdf(&req).expect("render");
         assert!(pdf.len() > 1000, "PDF unexpectedly small: {} bytes", pdf.len());
@@ -211,7 +208,6 @@ mod tests {
                 item_type: "book".into(),
             }],
             images: vec![],
-            title: None,
         };
         let pdf = render_pdf(&req).expect("render");
         assert!(pdf.len() > 1000);

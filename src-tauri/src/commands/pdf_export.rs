@@ -39,7 +39,6 @@ pub struct PdfExportArgs {
     /// through the IPC boundary.
     #[serde(default)]
     pub image_filenames: Vec<String>,
-    pub title: Option<String>,
 }
 
 fn true_default() -> bool { true }
@@ -58,7 +57,6 @@ pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result
         page_numbers: args.page_numbers,
         references: args.references,
         images,
-        title: args.title,
     };
 
     render_pdf(&req)
