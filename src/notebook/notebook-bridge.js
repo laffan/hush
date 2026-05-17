@@ -275,7 +275,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
     gridSpacing: s.notebookGridSpacing || 25,
     gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.20,
     fontFamily,
-    fontSize: s.notebookFontSize || 18,
+    fontSize: s.notebookFontSize || 16,
     canvasBackgroundOverride,
     maxTextWidth: s.notebookTextMaxWidth || 350,
     flowConnectMode: s.flowConnectMode === "horizontal" ? "horizontal" : "closest",

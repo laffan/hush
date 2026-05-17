@@ -98,7 +98,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │
 ├── pane/
 │   ├── pane-manager.js                (lifecycle, focus, theme/style sync)
-│   ├── pane-toolbar.js                (extracted: title-bar DOM + collapse/attach/pin)
+│   ├── pane-toolbar.js                (extracted: title-bar DOM + collapse/attach/pin/gutter)
 │   ├── pane-layout.js                 (extracted: getInitialPanePosition, fitActivePaneToGap, centerPaneInViewport)
 │   ├── pane-state.js                  (shared module state + accessors)
 │   ├── pane-editor.js
@@ -107,6 +107,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── pane-drag.js                   (titlebar drag + edge resize)
 │   ├── pane-size-popover.js           (per-pane font-size override)
 │   ├── pane-persistence.js            (persist + restore across restarts)
+│   ├── pane-gutter.js                 (Use as Gutter: doc-aligned notebook gutter pane)
 │   └── text-drag.js
 │
 ├── sidebar/
@@ -652,6 +653,20 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 **Input isolation:** The notebook's window `keydown` and document `paste` handlers skip processing when `document.activeElement` is inside a `.floating-pane`. Inactive pane content gets `pointer-events: none` via CSS, and the editor is set to non-editable. A window-level capture-phase `pointerdown` listener deactivates panes when clicking outside.
 
 **Z-index layering:** `#pane-container` is `z-index: var(--z-pane)` (90 — above editor content at 0–80, below sidebars). The notebook container has no z-index to avoid creating a stacking context, allowing the shelf panel (`var(--z-shelf)` — 150) to render above panes. The full scale is documented in `base.css`; see "CSS Structure" below.
+
+**Gutter pane (`pane-gutter.js`).** Promotes a notebook pane into a doc-aligned sidebar. The geometry is **viewport-sized and fixed**, not doc-tall: `applyGutterGeometry` pins the pane to `scrollerRect.top + paddingTop` of the cm-scroller so the pane sits flush against the visible doc text. The scroll alignment is carried by the notebook's camera instead — `syncCameraFromScroll` sets `state.camera = { x: previous.x, y: -scrollTop, zoom: 1 }` on every scroll tick. With `camera.y = -scrollTop` and `camera.zoom = 1`, world-y in the canvas equals doc-content-y; the stroke engine's coverage logic (`vpTop = -cam.y / cam.zoom`) sees the correct world rect, so re-anchor never drifts. Earlier attempts at a doc-tall pane DOM that moved with scroll re-triggered the engine's re-anchor on every scroll-induced canvas resize and accumulated floating-point drift over long sessions.
+
+Input redirect is gated by `state.gutterScrollDOM` (set to the live cm-scroller while gutter is active, nulled on exit / context-switch / teardown). `handleWheel`, the pointer-pan branch in `handlePointerMove`, the two-finger touchmove handler in `input-handler.ts`, and the drawing engine's `onTouchPanMove` / `onTouchPinchMove` callbacks in `notes-canvas.ts` all check the flag and: write `scrollDOM.scrollTop` for vertical movement (with the start-of-gesture scrollTop captured at pointerdown / touchstart), update `camera.x` for horizontal movement, and re-set `camera.y = -scrollDOM.scrollTop` atomically so there's no inconsistent frame between the scroll write and the scroll listener's camera update. Pinch is disabled — wheel events with `ctrlKey=true` (Mac trackpad pinch synthesis) are dropped. `focusShape` (shelf row click) computes `target = scrollerRect.top + cy - viewportH/2` and snaps `scrollTop` to it (instant, not smooth — `behavior: "smooth"` fights any user gesture that arrives mid-animation).
+
+**Shadow headers.** `scanDocHeaders()` walks `view.state.doc` line-by-line, regex-matches `^(#{1,6})\s+(\S.*)$`, and reads each line's y via `view.lineBlockAt(line.from).top`. The list is pushed onto `state.shadowHeaders` and rendered by `drawShadowHeaders` (in `renderer-selection.ts`) **outside** the camera transform — `drawShadowHeaders` takes `camera.y` as an argument and computes `canvasY = cameraY + h.y` so the text stays pinned to the pane's left edge while the y still scrolls with the doc. A 1 px horizontal rule sits 4 px above each header so the section break reads even when text is panned off-screen horizontally.
+
+**Anchor-based shape reflow.** Each shape stores `{ idx, offset, lastY }` against the header it sits under in `pane._shapeAnchors`. On every `scanAndSync` (the rAF-debounced wrapper), shape positions are derived as `currentHeaders[idx].y + offset` — anchors are *re-attached* on the fly when a shape has no record yet, when the shape's current y differs from `lastY` (a manual drag), or when the header count changes (the entire anchor map is dropped). Critically, shape positions are always computed from the **current** header y, not from accumulated deltas — that's what made the earlier delta-based approach drift as CodeMirror's `lineBlockAt(...).top` values refined under scrolling.
+
+**When to rescan.** `scheduleSync(pane)` is called on scroll, on `doc-content-changed`, on window resize, and on gutter-enter / restore. The rAF debounce coalesces scroll storms to one scan per frame. Rescanning on scroll (not just on doc edits) is what keeps the header positions accurate as CM measures previously-off-screen lines for the first time.
+
+**Toolbar integration.** The Gutter button is an icon (filled vertical bar + three horizontal rules) added to every pane via `pane-toolbar.js`. Click routes through `toggleGutterFromButton` which dynamically imports `pane-gutter.js` to call `useActivePaneAsGutter` / `stopActivePaneAsGutter`. After every enter / exit / restore, `syncGutterButton(pane)` flips two classes: `gutter-active` (red tint) on the gutter button and `fp-btn-disabled` on the pin button (pin and gutter are mutually exclusive). Command palette entries (`pane-gutter-on` / `pane-gutter-off`, plus `pane-pin` / `pane-unpin`) provide a keyboard path.
+
+**Z and stacking.** `zForPane(pane)` returns a fixed low `GUTTER_Z = 100` for gutter panes so they sit beneath every other floating pane regardless of focus order; free-floating panes still bump the global z counter (starts at 1000+). Persistence rides on `persistedPanes`: `gutter`, `gutterSide`, and `gutterPrev` (the snapshot used to restore the pane's pre-gutter geometry) are serialised alongside the existing fields. `restoreGutterLayout` re-points `gutterScrollDOM` at the live scroller after a context switch / restore so the redirect can't outlive its target.
 
 **Locked styles.** When the user runs the command-palette **Lock style to document** entry on a doc or notebook, its tree node stores a `lockedStyleId` (the active style at that moment, or `"__default__"` when no style was active). A pane whose `fileId` resolves to a file with a locked style applies that style scoped to the pane element (theme compartment reconfigure for the CodeMirror instance; theme resolve + `HUSH_TO_NOTEBOOK_THEME` lookup for notebook panes) rather than the session-active style. Pane creation and `file-opened` updates both consult the locked style; `style-changed` events only affect panes whose file is unlocked. The scoping lives on `.floating-pane[data-locked-style]` via CSS custom-property overrides so the main editor's style is untouched.
 

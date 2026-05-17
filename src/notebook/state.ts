@@ -70,7 +70,7 @@ export class DrawingState extends EventTarget {
   selectedIds: Set<string> = new Set();
   tool: Tool = "select";
   color = "#000000";
-  fontSize = 18;
+  fontSize = 16;
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;
@@ -166,6 +166,21 @@ export class DrawingState extends EventTarget {
   /** Pixel offset from the left edge for the sidebar/panel. The pocket
    *  tray and toolbar center themselves relative to this value. */
   leftInset = 0;
+  /** When set, this canvas is acting as a doc gutter: vertical pan and
+   *  wheel input scroll the host doc instead of the camera, camera.y is
+   *  driven by the doc scrollTop, zoom is locked at 1, and focusShape
+   *  resolves to a doc scroll. Camera.x still pans freely. */
+  gutterScrollDOM: HTMLElement | null = null;
+  /** Constant added to `-scrollTop` when writing `camera.y` while in
+   *  gutter mode — accounts for the fact that the pane no longer sits
+   *  flush against the doc content top, so world-y == doc-content-y
+   *  still holds. Owned by `pane-gutter.js#syncCameraFromScroll`. */
+  gutterCameraOffset = 0;
+  /** Faded doc headings rendered into the gutter canvas. World-y maps
+   *  1:1 to doc-content-y under the gutter geometry, so `y` here is
+   *  consumed directly by the renderer after the camera transform.
+   *  Owned by pane-gutter.js — overwritten on every doc-change. */
+  shadowHeaders: { y: number; level: number; text: string }[] = [];
 
   // Hooks driven by notes-canvas to route DrawShape drags through
   // the drawing engine's preview pipeline. See drawing-layer.ts
@@ -455,6 +470,9 @@ export class DrawingState extends EventTarget {
   private _isPanningActive = false;
   private _panStart: Point = { x: 0, y: 0 };
   private _cameraStart: Camera = { x: 0, y: 0, zoom: 1 };
+  /** scrollTop on the host doc at the moment the pan started — gutter
+   *  mode reads this so the doc scroll tracks the drag 1:1. */
+  private _panStartScrollTop = 0;
   /** PointerId captured on the pointerdown that started the pan. Subsequent
    *  pointermoves are filtered against this id so a second contact (a palm
    *  contact, the user's other thumb, etc.) firing its own pointermove on
@@ -899,6 +917,7 @@ export class DrawingState extends EventTarget {
       this._isPanningActive = true;
       this._panStart = { x: e.clientX, y: e.clientY };
       this._cameraStart = { ...this.camera };
+      this._panStartScrollTop = this.gutterScrollDOM?.scrollTop || 0;
       this._panPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       return;
@@ -962,6 +981,7 @@ export class DrawingState extends EventTarget {
       this._isPanningActive = true;
       this._panStart = { x: e.clientX, y: e.clientY };
       this._cameraStart = { ...this.camera };
+      this._panStartScrollTop = this.gutterScrollDOM?.scrollTop || 0;
       this._panPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       return;
@@ -1158,6 +1178,15 @@ export class DrawingState extends EventTarget {
       if (this._panPointerId !== null && e.pointerId !== this._panPointerId) return;
       const dx = e.clientX - this._panStart.x;
       const dy = e.clientY - this._panStart.y;
+      // Gutter mode: vertical drag scrolls the host doc 1:1; horizontal
+      // still pans camera.x. Camera.y tracks the live scrollTop so the
+      // engine's viewport math sees the correct world rect.
+      if (this.gutterScrollDOM) {
+        this.gutterScrollDOM.scrollTop = (this._panStartScrollTop || 0) - dy;
+        this.camera = { x: this._cameraStart.x + dx, y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop, zoom: 1 };
+        this.notify("camera");
+        return;
+      }
       this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom };
       this.notify("camera");
       return;
@@ -1797,6 +1826,23 @@ export class DrawingState extends EventTarget {
   handleWheel(e: WheelEvent) {
     e.preventDefault();
     if (!this.canvasEl) return;
+    // Gutter mode: redirect the wheel into the host doc's scroller so
+    // the canvas + doc stay in lockstep, and apply horizontal delta to
+    // camera.x so trackpad horizontal-swipes still pan the canvas
+    // sideways. Zoom is disabled — a Mac trackpad pinch fires wheel
+    // events with ctrlKey=true and a synthetic deltaY representing the
+    // pinch amount; we drop those so they don't yank the doc scroll.
+    if (this.gutterScrollDOM) {
+      if (e.ctrlKey) return;
+      let camX = this.camera.x;
+      if (e.deltaY) this.gutterScrollDOM.scrollTop += e.deltaY;
+      if (e.deltaX) camX = this.camera.x - e.deltaX;
+      // Atomic update — read the live scrollTop after our write (it
+      // may have been clamped) so camera.y matches the visible slice.
+      this.camera = { x: camX, y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop, zoom: 1 };
+      this.notify("camera");
+      return;
+    }
     const rect = this.canvasEl.getBoundingClientRect();
     const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const zoomFactor = e.ctrlKey ? 0.01 : 0.001;
@@ -2719,11 +2765,32 @@ export class DrawingState extends EventTarget {
     }
 
     const zoom = this.camera.zoom;
-    this.camera = {
-      x: (left + w - right) / 2 - cx * zoom,
-      y: h / 2 - cy * zoom,
-      zoom,
-    };
+    // Gutter mode: world-y maps 1:1 onto doc-content-y. Scroll the
+    // host doc so the shape's centre lands at the viewport vertical
+    // centre and lock camera.y to the live scrollTop. Horizontal
+    // centring still adjusts camera.x. Instant scroll — `smooth` would
+    // fight any user gesture arriving before the animation completes.
+    if (this.gutterScrollDOM) {
+      // World-y maps 1:1 onto doc-content-y under the gutter camera
+      // offset. Aim for the viewport vertical centre and snap there
+      // in one step (smooth scroll fights any user gesture arriving
+      // mid-animation).
+      const scrollerRect = this.gutterScrollDOM.getBoundingClientRect();
+      const viewportH = window.innerHeight || h;
+      const target = Math.max(0, scrollerRect.top + cy - viewportH / 2);
+      this.gutterScrollDOM.scrollTop = target;
+      this.camera = {
+        x: (left + w - right) / 2 - cx,
+        y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop,
+        zoom: 1,
+      };
+    } else {
+      this.camera = {
+        x: (left + w - right) / 2 - cx * zoom,
+        y: h / 2 - cy * zoom,
+        zoom,
+      };
+    }
     this.selectedIds = new Set([shapeId]);
     this.notify("camera");
     this.notify("selectedIds");

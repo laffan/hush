@@ -20,6 +20,10 @@ export function setupPaneDrag(pane, deps) {
 
   pane._titlebar.addEventListener("pointerdown", (e) => {
     if (e.target.closest(".floating-pane-btn, .fp-title-link")) return;
+    // Gutter geometry is doc-driven; the title-bar can't drag the pane
+    // out of its anchored position. Buttons and the title link still
+    // work because the early-return above lets them through.
+    if (pane.gutter) return;
     e.preventDefault();
     e.stopPropagation();
     startX = e.clientX;

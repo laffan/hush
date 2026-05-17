@@ -111,6 +111,9 @@ function onContextChange() {
     if (ctxHidden && participatesInCtx) {
       pane.el.style.display = "none";
       if (pane.attached) stopAttachSync(pane);
+      if (pane.gutter) {
+        import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+      }
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
         if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
@@ -129,9 +132,15 @@ function onContextChange() {
         if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
       }
+      if (pane.gutter) {
+        import("./pane-gutter.js").then(({ restoreGutterLayout }) => restoreGutterLayout(pane));
+      }
     } else {
       pane.el.style.display = "none";
       if (pane.attached) stopAttachSync(pane);
+      if (pane.gutter) {
+        import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+      }
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
         if (pane.editor) { pane.editor.blur(); pane.editor.setEditable(false); }
@@ -265,6 +274,9 @@ export function closePane(id) {
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
+  if (pane.gutter) {
+    import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+  }
   if (pane.editor) pane.editor.destroy();
   if (pane.notebook) pane.notebook.destroy();
   pane.el.remove();
@@ -315,6 +327,19 @@ export function deactivateAllPanes() {
 export function getActivePaneId() { return activePaneId; }
 export function hasPanes() { return panes.size > 0; }
 export function isPaneActive() { return activePaneId !== null; }
+
+/** Toggle the active pane's pinned (cross-document) state. Used by
+ *  the command palette since the toolbar's pin button was retired in
+ *  favour of the Gutter toggle. */
+export function setActivePanePinned(value) {
+  const pane = panes.get(activePaneId);
+  if (!pane) return;
+  pane.pinned = !!value;
+  pane.el.classList.toggle("pinned", pane.pinned);
+  pane.el.style.zIndex = zForPane(pane);
+  if (!value) onContextChange();
+  schedulePersist();
+}
 
 /** Build the context id that a pane owned by the given file/project
  *  would use — mirrors `getCurrentContext`'s format. */

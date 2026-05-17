@@ -103,6 +103,13 @@ export interface TextShape extends ShapeBase {
   width?: number; // constraint width for wrapping; undefined = auto-size
   manualWidth?: boolean; // true if user explicitly resized via handles
   backgroundColor?: string;
+  /** Marks this text shape as a persisted gutter header label. Renders
+   *  with the faded shadow-header style + horizontal rule above, is
+   *  immune to selection / drag / edit, and gets its y position synced
+   *  to the matching doc header on every gutter scan. */
+  headerLabel?: boolean;
+  headerText?: string;
+  headerLevel?: number;
 }
 
 export interface ImageCrop {

@@ -132,6 +132,20 @@
   color: #4a9eff;
 }
 
+.floating-pane-btn.gutter-active {
+  opacity: 0.95;
+  color: #e44b3a;
+}
+
+/* Disabled toolbar button — used when a button's action is currently
+   ineligible (e.g. pin while the pane is acting as a gutter). Stays
+   visible so the affordance remains discoverable, but reads as
+   inactive. */
+.floating-pane-btn.fp-btn-disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
 /* When the pane is collapsed, flip the chevron so it points up — making
    it visually a "pull-down to expand" affordance. */
 .floating-pane.collapsed .fp-btn-collapse svg {
@@ -184,6 +198,61 @@
   opacity: 0.75;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Gutter pane ──────────────────────────────────────────────────────
+   "Use Pane as Gutter" pins a notebook pane to the side of the doc text:
+   tall, full-height, with the edge facing the text painted red so the
+   pane reads as part of the writing surface rather than a free-floater. */
+
+.floating-pane.gutter.gutter-left {
+  border-right-color: #e44b3a;
+}
+
+.floating-pane.gutter.gutter-right {
+  border-left-color: #e44b3a;
+}
+
+/* iOS WKWebView clips inset box-shadows behind the notebook canvas so
+   the 2 px gutter line only shows at the rounded corners. Paint the
+   line as a dedicated overlay element instead — pseudo, fixed width,
+   high z-index, pointer-events disabled. */
+.floating-pane.gutter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #e44b3a;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.floating-pane.gutter.gutter-left::before { right: 0; }
+.floating-pane.gutter.gutter-right::before { left: 0; }
+
+/* Gutter geometry is driven by the doc: height tracks the doc text,
+   y tracks doc scroll. So lock height-affecting resize handles and the
+   title-bar drag cursor — but keep the e/w handles so the user can
+   still pick a width that suits the gutter. */
+.floating-pane.gutter .fp-resize-n,
+.floating-pane.gutter .fp-resize-s,
+.floating-pane.gutter .fp-resize-ne,
+.floating-pane.gutter .fp-resize-nw,
+.floating-pane.gutter .fp-resize-se,
+.floating-pane.gutter .fp-resize-sw,
+.floating-pane.gutter .fp-resize-touch {
+  display: none;
+}
+
+.floating-pane.gutter .floating-pane-titlebar,
+.floating-pane.gutter .floating-pane-titlebar:active {
+  cursor: default;
+}
+
+/* Pane is viewport-sized in gutter mode (camera.y tracks doc scroll),
+   so the toolbar / shelf / pocket all live in canvas-pixel coords that
+   already correspond to viewport coords — no scroll-driven CSS
+   translates needed. */
 
 /* ── Pinned pane (global / cross-document) — blue border ──────────── */
 /* Earlier styling tinted the titlebar blue; the user moved the

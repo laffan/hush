@@ -128,6 +128,7 @@ export function bindInputEvents(
   let twoFingerStartMid = { x: 0, y: 0 };
   let twoFingerStartDist = 0;
   let cameraAtTwoFingerStart = { x: 0, y: 0, zoom: 1 };
+  let scrollTopAtTwoFingerStart = 0;
 
   function pinchMid(t0: Touch, t1: Touch) {
     return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
@@ -152,6 +153,7 @@ export function bindInputEvents(
       twoFingerStartMid = pinchMid(e.targetTouches[0], e.targetTouches[1]);
       twoFingerStartDist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
       cameraAtTwoFingerStart = { ...state.camera };
+      scrollTopAtTwoFingerStart = state.gutterScrollDOM?.scrollTop || 0;
     }
   }, { passive: false });
 
@@ -160,6 +162,18 @@ export function bindInputEvents(
       e.preventDefault();
       const mid = pinchMid(e.targetTouches[0], e.targetTouches[1]);
       const dist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
+      // Gutter mode: zoom is disabled; vertical midpoint delta scrolls
+      // the host doc 1:1, horizontal delta still pans camera.x.
+      // Camera.y tracks the live scrollTop so the engine sees the
+      // correct world rect.
+      if (state.gutterScrollDOM) {
+        const dx = mid.x - twoFingerStartMid.x;
+        const dy = mid.y - twoFingerStartMid.y;
+        state.gutterScrollDOM.scrollTop = scrollTopAtTwoFingerStart - dy;
+        state.camera = { x: cameraAtTwoFingerStart.x + dx, y: state.gutterCameraOffset - state.gutterScrollDOM.scrollTop, zoom: 1 };
+        state.notify("camera");
+        return;
+      }
       // Need a non-zero start distance to compute a ratio. If two
       // fingers landed at the exact same point, fall back to pure pan
       // until they separate.
