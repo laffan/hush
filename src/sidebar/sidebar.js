@@ -5,7 +5,6 @@ import { isIOS, openSettingsWindow } from "../settings/settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
 import { renderStylesPanel, bindStylesPanel } from "./styles-panel.js";
 import { createVersionsPanel, cleanupVersionsPanel } from "./versions-panel.js";
-import { exportCurrentFile } from "./sidebar-export.js";
 import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
 import { createPanelResizer, applyPanelWidth, positionPanelResizer } from "./panel-resizer.js";
 import { mountDeskSwitcher } from "./desk-switcher.js";
@@ -290,7 +289,8 @@ export function createSidebar(container, state) {
       await openNotebookExportModal(state);
       return;
     }
-    await exportCurrentFile(state);
+    const { openDocExportModal } = await import("./doc-export-modal.js");
+    await openDocExportModal(state);
   });
 
   // Settings button (iOS only)
@@ -588,7 +588,8 @@ export function createSidebar(container, state) {
       await openNotebookExportModal(state);
       return;
     }
-    exportCurrentFile(state);
+    const { openDocExportModal } = await import("./doc-export-modal.js");
+    await openDocExportModal(state);
   });
 
   updateActiveStates();

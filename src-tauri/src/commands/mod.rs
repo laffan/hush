@@ -5,6 +5,7 @@ pub mod grammar;
 pub mod images;
 pub mod local_sync;
 pub mod multi_window;
+pub mod pdf_export;
 pub mod settings;
 pub mod snapshots;
 pub mod window;
