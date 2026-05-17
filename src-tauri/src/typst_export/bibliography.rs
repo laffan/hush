@@ -72,25 +72,40 @@ fn split_authors(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// Map Zotero item types → Hayagriva entry types. The Hayagriva
-/// vocabulary covers most academic forms; unknown types fall back to
-/// `misc` so the YAML stays valid.
+/// Map Zotero item types → Hayagriva entry types. Hayagriva's `type`
+/// field rejects anything outside its closed vocabulary, so we only
+/// emit values from that list and fall through to `misc` for anything
+/// we're not certain maps cleanly. The current list is taken from the
+/// Hayagriva 0.9 source — keep it in sync if we bump the dep.
 fn map_item_type(zotero: &str) -> &'static str {
     match zotero {
-        "journalArticle" | "magazineArticle" | "newspaperArticle" => "article",
-        "book" | "bookSection" => "book",
-        "chapter" => "chapter",
-        "conferencePaper" => "article",
+        // Periodicals / press
+        "journalArticle" | "magazineArticle" => "article",
+        "newspaperArticle" => "newspaper",
+        // Books and their parts
+        "book" => "book",
+        "bookSection" | "chapter" | "encyclopediaArticle" | "dictionaryEntry" => "chapter",
+        // Academic / professional
+        "conferencePaper" => "conference",
         "thesis" => "thesis",
         "report" => "report",
-        "webpage" | "blogPost" | "forumPost" => "web",
-        "letter" | "email" => "letter",
-        "interview" => "interview",
         "manuscript" => "manuscript",
-        "presentation" => "misc",
         "patent" => "patent",
-        "audioRecording" => "audio",
+        "case" => "case",
+        "statute" | "bill" | "hearing" => "legislation",
+        // Web / posts
+        "webpage" => "web",
+        "blogPost" => "blog",
+        "forumPost" | "instantMessage" => "post",
+        // Media
+        "audioRecording" | "podcast" | "radioBroadcast" => "audio",
         "videoRecording" | "film" | "tvBroadcast" => "video",
+        "artwork" => "artwork",
+        "performance" => "performance",
+        "exhibitionCatalog" | "exhibition" => "exhibition",
+        // Things Hayagriva has no first-class slot for
+        "letter" | "email" | "interview" | "presentation" | "computerProgram"
+        | "map" | "dataset" | "document" => "misc",
         _ => "misc",
     }
 }
@@ -138,6 +153,26 @@ mod tests {
         assert!(yaml.contains("halbwachs1992:"));
         assert!(yaml.contains("ricoeur2004:"));
         assert!(yaml.contains("Halbwachs"));
+    }
+
+    /// Regression: Hayagriva rejects any `type:` value outside its
+    /// closed vocabulary. Several real Zotero item types (interview,
+    /// letter, presentation, …) had no direct equivalent so they must
+    /// fall through to `misc` rather than appearing verbatim.
+    #[test]
+    fn unknown_zotero_types_become_misc() {
+        for kind in ["interview", "letter", "presentation", "computerProgram", "dataset"] {
+            let refs = vec![ZoteroRef {
+                key: "K".into(),
+                citekey: "k2020".into(),
+                title: "T".into(),
+                authors: String::new(),
+                year: "2020".into(),
+                item_type: kind.into(),
+            }];
+            let yaml = to_hayagriva_yaml(&refs);
+            assert!(yaml.contains("type: misc"), "{}: {}", kind, yaml);
+        }
     }
 
     #[test]
