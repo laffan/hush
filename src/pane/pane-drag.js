@@ -20,10 +20,6 @@ export function setupPaneDrag(pane, deps) {
 
   pane._titlebar.addEventListener("pointerdown", (e) => {
     if (e.target.closest(".floating-pane-btn, .fp-title-link")) return;
-    // Gutter geometry is doc-driven; the title-bar can't drag the pane
-    // out of its anchored position. Buttons and the title link still
-    // work because the early-return above lets them through.
-    if (pane.gutter) return;
     e.preventDefault();
     e.stopPropagation();
     startX = e.clientX;
@@ -49,6 +45,14 @@ export function setupPaneDrag(pane, deps) {
     const onMove = (me) => {
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
+      // Gutter geometry is doc-driven: height + y track the doc scroller,
+      // so vertical drag is ignored. Horizontal drag still moves the
+      // pane so the user can slide it left/right inside the gutter zone.
+      if (pane.gutter) {
+        pane.x = startLeft + dx;
+        pane.el.style.left = pane.x + "px";
+        return;
+      }
       if (pane.attached && appState.currentNotebookFileId) {
         // Convert screen delta to canvas delta (account for zoom)
         const canvas = notebookBridge?.getCanvasInstance();

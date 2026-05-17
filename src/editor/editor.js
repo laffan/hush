@@ -340,8 +340,23 @@ export function createEditor(container, state) {
 
   // Editor blur also rename-checks — catches "user clicked the sidebar /
   // command palette while cursor was still on line 1."
+  // Also collapse the DOM selection on blur so the next click into
+  // `cm-content` lands a fresh single-point cursor instead of extending
+  // the old browser-side range to the click position (Chrome/WebKit
+  // both treat the leftover selection as a live anchor for mousedown
+  // when the editor regains focus via click into the margin and back).
   const blurListener = EditorView.domEventHandlers({
-    blur: () => { queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); }); },
+    blur: (_, view) => {
+      queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); });
+      try {
+        const sel = window.getSelection?.();
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        if (view.contentDOM.contains(range.startContainer) || view.contentDOM.contains(range.endContainer)) {
+          sel.removeAllRanges();
+        }
+      } catch (_) { /* ignore — selection inspection can throw across shadow boundaries */ }
+    },
   });
 
   // Minimal theme

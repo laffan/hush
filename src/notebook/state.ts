@@ -70,6 +70,9 @@ export class DrawingState extends EventTarget {
   selectedIds: Set<string> = new Set();
   tool: Tool = "select";
   color = "#000000";
+  // Default text-shape size; overridden by `applySettings` from
+  // `notebookFontSize`. Matches the default in state-defaults.js so a
+  // notebook opened before settings load still uses 16 px text.
   fontSize = 16;
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   selectionBox: SelectionBox | null = null;
@@ -2723,7 +2726,7 @@ export class DrawingState extends EventTarget {
   }
 
   addTextShapeAtPosition(text: string, position: Point, opts?: { fontSize?: number }) {
-    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? 18, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
+    this.shapes = [...this.shapes, { id: generateId(), type: "text", position, text, fontSize: opts?.fontSize ?? this.fontSize, color: "#000000", width: this.maxTextWidth, layerId: this.activeLayerId } as TextShape];
     this.recordHistory();
     this.notify("shapes");
   }

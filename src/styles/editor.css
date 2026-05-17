@@ -274,6 +274,37 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
   font-variant-numeric: tabular-nums;
 }
 
+/* Window chip group — three numeric chips. Active wears a circle
+   outline; the rest are flat numbers. Replaces the slider+readout pair
+   so it slots into the pill alongside Dim and Font. */
+.cmd-held-window-group .cmd-held-window-chips {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.cmd-held-window-chip {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 50%;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.55;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.cmd-held-window-chip:hover { opacity: 0.9; }
+.cmd-held-window-chip.active {
+  opacity: 1;
+  border-color: currentColor;
+}
+
+
 /* Rendered markdown links (when cursor is outside) */
 .cm-link-rendered {
   text-decoration: underline;

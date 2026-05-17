@@ -584,44 +584,6 @@
   fill: none;
 }
 
-/* ===== Locked-style toast ===== */
-.style-locked-toast {
-  position: fixed;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: system-ui, sans-serif;
-  font-size: 12px;
-  color: var(--fg);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  padding: 6px 14px;
-  border-radius: 6px;
-  z-index: var(--z-modal-top);
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-}
-
-.style-locked-toast.visible {
-  opacity: 0.85;
-}
-
-/* ===== Style shortcut badge ===== */
-.style-shortcut-badge {
-  font-family: system-ui, sans-serif;
-  font-size: 10px;
-  opacity: 0.45;
-  margin-left: auto;
-  flex-shrink: 0;
-  transition: opacity 0.15s;
-}
-
-.style-sidebar-item:hover .style-shortcut-badge {
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* ===== Narrow-window modal layout =====
    Stacks preview (top, half-height by default) above settings (bottom,
    remaining height) with a draggable divider. `order` flips the DOM

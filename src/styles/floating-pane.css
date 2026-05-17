@@ -244,10 +244,10 @@
   display: none;
 }
 
-.floating-pane.gutter .floating-pane-titlebar,
-.floating-pane.gutter .floating-pane-titlebar:active {
-  cursor: default;
-}
+/* Gutter title-bar still drags — but only horizontally (vertical and size
+   are doc-driven). Keep the move cursor so the affordance is obvious. */
+.floating-pane.gutter .floating-pane-titlebar { cursor: ew-resize; }
+.floating-pane.gutter .floating-pane-titlebar:active { cursor: grabbing; }
 
 /* Pane is viewport-sized in gutter mode (camera.y tracks doc scroll),
    so the toolbar / shelf / pocket all live in canvas-pixel coords that
@@ -277,9 +277,12 @@
   pointer-events: none;
 }
 
-/* Hide notebook toolbar/UI chrome in inactive panes (keep only the canvas).
-   Scoped to containers that have a canvas child (notebook panes). */
-.floating-pane:not(.active) .floating-pane-content:has(canvas) > :not(canvas) {
+/* Hide notebook toolbar/UI chrome in inactive panes (keep the main canvas
+   and the freehand drawing layer's stacked canvases — strokes live inside
+   `.notebook-drawing-wrapper`, which is a div, so the `:not(canvas)` rule
+   used to wipe them when the pane lost focus). Scoped to containers that
+   have a canvas child (notebook panes). */
+.floating-pane:not(.active) .floating-pane-content:has(canvas) > :not(canvas):not(.notebook-drawing-wrapper) {
   visibility: hidden;
 }
 

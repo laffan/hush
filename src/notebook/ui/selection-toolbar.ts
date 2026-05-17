@@ -397,8 +397,9 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       onClick: () => {
         state.changeSelectedColor("black");
         state.changeSelectedBackground("reset");
-        // 18 px matches the default seeded by addTextShape* in state.ts.
-        state.changeSelectedFontSize(18);
+        // Default seeded by addTextShape* in state.ts: state.fontSize,
+        // which tracks the user's Settings > Editor > Notebook text size.
+        state.changeSelectedFontSize(state.fontSize);
       },
     });
     stylesRow.appendChild(clearBtn);
@@ -533,7 +534,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       const wrapper = h("div", { style: { position: "relative" } });
       wrapper.appendChild(makeIconBtn("text-size", "Text size", () => {
         const textShape = selected.find((s) => s.type === "text");
-        const currentSize = textShape && textShape.type === "text" ? textShape.fontSize : 18;
+        const currentSize = textShape && textShape.type === "text" ? textShape.fontSize : state.fontSize;
         togglePopup("size", wrapper, () => makeSizeStepper(currentSize, (size) => {
           state.changeSelectedFontSize(size);
         }));
@@ -541,7 +542,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       container.appendChild(wrapper);
       if (savedPopup === "size") {
         const textShape = selected.find((s) => s.type === "text");
-        const currentSize = textShape && textShape.type === "text" ? textShape.fontSize : 18;
+        const currentSize = textShape && textShape.type === "text" ? textShape.fontSize : state.fontSize;
         togglePopup("size", wrapper, () => makeSizeStepper(currentSize, (size) => {
           state.changeSelectedFontSize(size);
         }));

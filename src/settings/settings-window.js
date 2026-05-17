@@ -212,6 +212,16 @@ function bindAll() {
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-comment-opacity", "commentOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-zen-focus-font-size", "zenFocusFontSize", "px");
+  // Zen Focus window dropdown — odd values (1, 3, 5). Stored as a number
+  // so the in-editor chip control and this dropdown share one type.
+  const zenWindowEl = document.getElementById("setting-zen-focus-window");
+  if (zenWindowEl) {
+    zenWindowEl.addEventListener("change", () => {
+      const v = parseInt(zenWindowEl.value, 10);
+      if (Number.isFinite(v)) saveSetting("zenFocusWindow", v);
+    });
+  }
+  bindSlider("setting-notebook-font-size", "notebookFontSize", "px");
   bindSlider("setting-notebook-text-max-width", "notebookTextMaxWidth", "px");
   bindSelect("setting-flow-connect-mode", "flowConnectMode");
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");

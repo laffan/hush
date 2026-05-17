@@ -133,6 +133,65 @@ function writeBack(source, content, anchor, head) {
 
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n | 0)); }
 
+/** Read the configured Zen Focus window (1, 3, 5, or 7). Any other
+ *  value is coerced to the nearest legal option so a stray setting
+ *  can't break the scroll math. */
+function getZenWindow(state) {
+  const raw = state?.settings?.zenFocusWindow;
+  if (raw === 3) return 3;
+  if (raw === 5) return 5;
+  if (raw === 7) return 7;
+  return 1;
+}
+
+/** Keep the cursor within an N-line band centred on the viewport.
+ *  Window=1 collapses to typewriter (cursor pinned to centre line).
+ *  Window=3 / 5 leave the cursor untouched until it would land outside
+ *  the band, then scroll just enough to nudge it back to the edge of
+ *  the band. Math runs in viewport (screen) coordinates via
+ *  `view.coordsAtPos` — the previous implementation mixed CodeMirror's
+ *  content-relative `block.top` with the scroller's scrollTop and got
+ *  caught out by the 50vh top/bottom padding the Zen scroller wears
+ *  (that padding offsets every content-y by half a viewport, so the
+ *  cursor was being scrolled off-screen as soon as it left the centre
+ *  line). */
+function maintainTypewriterWindow(view, state) {
+  try {
+    const head = view.state.selection.main.head;
+    const winSize = getZenWindow(state);
+    if (winSize <= 1) {
+      // Pure typewriter — defer to CodeMirror's scrollIntoView so the
+      // measure timing matches the original behaviour exactly.
+      view.dispatch({ effects: EditorView.scrollIntoView(head, { y: "center" }) });
+      return;
+    }
+    const coords = view.coordsAtPos(head);
+    if (!coords) {
+      // Cursor not in the rendered viewport — CM hasn't measured the
+      // target line yet. Fall back to centring; the next update (after
+      // CM's measure pass) will land inside the windowed branch.
+      view.dispatch({ effects: EditorView.scrollIntoView(head, { y: "center" }) });
+      return;
+    }
+    const scroller = view.scrollDOM;
+    const sRect = scroller.getBoundingClientRect();
+    if (!sRect.height) return;
+    const lineH = (typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0)
+      ? view.defaultLineHeight
+      : Math.max(1, coords.bottom - coords.top);
+    const halfBand = ((winSize - 1) / 2) * lineH;
+    const cursorMid = (coords.top + coords.bottom) / 2;
+    const viewportCentre = (sRect.top + sRect.bottom) / 2;
+    const offset = cursorMid - viewportCentre;
+    if (Math.abs(offset) <= halfBand) return;
+    // Cursor outside the band — scroll just enough to put it on the
+    // matching band edge (top edge if it walked up, bottom edge if it
+    // walked down).
+    const delta = offset > 0 ? offset - halfBand : offset + halfBand;
+    scroller.scrollTop = scroller.scrollTop + delta;
+  } catch (_) { /* view destroyed mid-update — ignore */ }
+}
+
 function centerCursor(view, pos) {
   const dispatchCenter = () => {
     try {
@@ -184,13 +243,13 @@ export function enterZenFocus(state) {
   // Zen *does* want sentence-level dim, so we add focus mode here on
   // top of the base set.
   const { extensions } = createBaseExtensions(state, () => { /* no per-keystroke sync */ });
-  // Recentre on every selection / doc / viewport change. CodeMirror's
-  // own scrollIntoView effect handles measurement timing — far more
-  // reliable than computing scrollTop ourselves before CM has settled.
+  // Cursor follows a configurable typewriter window. Window=1 keeps
+  // the cursor pinned to the centre line (the existing behaviour);
+  // larger odd values (3, 5) let it drift `(window-1)/2` lines either
+  // side of centre before the document scrolls underneath it.
   const recentre = EditorView.updateListener.of((u) => {
     if (u.selectionSet || u.docChanged || u.viewportChanged) {
-      const head = u.state.selection.main.head;
-      u.view.dispatch({ effects: EditorView.scrollIntoView(head, { y: "center" }) });
+      maintainTypewriterWindow(u.view, state);
     }
   });
   const editorState = EditorState.create({
@@ -244,9 +303,9 @@ export function enterZenFocus(state) {
 
   zenView.focus();
 
-  // Initial scroll-to-cursor — CM dispatches the effect, which may
-  // settle on the next measure cycle. The rAF tail covers the case
-  // where the first dispatch happens before initial layout.
+  // Initial scroll-to-cursor — always centre on entry regardless of
+  // the configured window so the user lands at a predictable spot.
+  // Subsequent updates honour the window via maintainTypewriterWindow.
   const initialScroll = () => {
     if (!active) return;
     zenView.dispatch({

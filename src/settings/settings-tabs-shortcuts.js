@@ -53,16 +53,6 @@ export const shortcutCategories = [
     ],
   },
   {
-    name: "Styles",
-    shortcuts: [
-      { key: "shortcutStyleDefault", label: "Switch to Default style" },
-      { key: "shortcutStyle1", label: "Switch to style 1" },
-      { key: "shortcutStyle2", label: "Switch to style 2" },
-      { key: "shortcutStyle3", label: "Switch to style 3" },
-      { key: "shortcutStyle4", label: "Switch to style 4" },
-    ],
-  },
-  {
     name: "Formatting",
     shortcuts: [
       { key: "shortcutBold", label: "Bold" },

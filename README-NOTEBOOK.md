@@ -140,7 +140,7 @@ File drops have three independent targets:
 
 1. **Sidebar panel** — an "Import file" overlay appears inside `#panel-overlay` when it's open. Dropping creates a new document.
 2. **Editor area** (doc mode) — `dragover`/`drop` on `#editor-container` appends text.
-3. **Notebook canvas** — canvas-level `dragover`/`drop` in `input-handler.ts` handles images (→ image shapes) and text files (→ text shapes at drop position). Shelf drags also use canvas-level events. Cmd/Ctrl-dragging plain text wraps it in a markdown blockquote (`> …`) and creates the resulting TextShape at 14 px instead of the default 18 px — `addTextShapeAtPosition` accepts an `opts.fontSize` to support this.
+3. **Notebook canvas** — canvas-level `dragover`/`drop` in `input-handler.ts` handles images (→ image shapes) and text files (→ text shapes at drop position). Shelf drags also use canvas-level events. Cmd/Ctrl-dragging plain text wraps it in a markdown blockquote (`> …`) and creates the resulting TextShape at 14 px instead of the configured default (`state.fontSize`, driven by Settings > Editor > Notebook text > Default size, 16 px out of the box) — `addTextShapeAtPosition` accepts an `opts.fontSize` to support that override and falls back to `state.fontSize` for every other call site.
 4. **Floating panes** — Cmd-dragging a file from the sidebar past the panel edge creates a floating pane (see `pane/pane-manager.js`). Notebook panes can be attached to canvas coordinates. The notebook's `keydown` and `paste` handlers skip processing when `document.activeElement` is inside a `.floating-pane` to prevent input leaks.
 
 ### Touch handling

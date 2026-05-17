@@ -52,15 +52,30 @@ export function initCmdHeldSliders(state) {
     onChange: (v) => state.updateSettings({ zenFocusFontSize: Math.round(v) }),
   });
 
+  const windowGroup = makeWindowChipGroup({
+    value: normalizeWindow(state.settings.zenFocusWindow),
+    onChange: (v) => state.updateSettings({ zenFocusWindow: v }),
+  });
+
   pill.appendChild(dimGroup.el);
   pill.appendChild(fontGroup.el);
+  pill.appendChild(windowGroup.el);
   wrap.appendChild(pill);
   document.body.appendChild(wrap);
 
   state.on("settings-changed", () => {
     dimGroup.set(clamp01(state.settings.focusModeOpacity ?? 0.5));
     fontGroup.set(Number(state.settings.zenFocusFontSize) || 30);
+    windowGroup.set(normalizeWindow(state.settings.zenFocusWindow));
   });
+}
+
+function normalizeWindow(raw) {
+  const n = Number(raw);
+  if (n === 3) return 3;
+  if (n === 5) return 5;
+  if (n === 7) return 7;
+  return 1;
 }
 
 function clamp01(n) {
@@ -111,6 +126,48 @@ function makeSliderGroup({ label, min, max, step, value, format, onChange }) {
       if (document.activeElement === input) return;
       input.value = String(v);
       readout.textContent = format(v);
+    },
+  };
+}
+
+/** Window chip group — four numeric chips (1 / 3 / 5 / 7) with a
+ *  circle outline on the active pick. */
+function makeWindowChipGroup({ value, onChange }) {
+  const el = document.createElement("div");
+  el.className = "cmd-held-slider-group cmd-held-window-group";
+
+  const lbl = document.createElement("span");
+  lbl.className = "cmd-held-slider-label";
+  lbl.textContent = "Window";
+  el.appendChild(lbl);
+
+  const chips = document.createElement("div");
+  chips.className = "cmd-held-window-chips";
+
+  const btns = [];
+  for (const n of [1, 3, 5, 7]) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cmd-held-window-chip";
+    btn.dataset.value = String(n);
+    btn.textContent = String(n);
+    if (n === value) btn.classList.add("active");
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onChange(n);
+      for (const b of btns) b.classList.toggle("active", Number(b.dataset.value) === n);
+    });
+    btns.push(btn);
+    chips.appendChild(btn);
+  }
+  el.appendChild(chips);
+
+  el.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+  return {
+    el,
+    set(v) {
+      for (const b of btns) b.classList.toggle("active", Number(b.dataset.value) === v);
     },
   };
 }
