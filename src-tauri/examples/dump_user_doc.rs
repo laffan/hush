@@ -4,12 +4,17 @@
 
 use hush_lib::typst_export::{
     markdown::{to_typst, CitationMode},
-    styles, ExportRequest,
+    styles, ExportRequest, ZoteroRef,
 };
 
 fn main() {
     let md = std::fs::read_to_string("/tmp/userdoc.md").expect("read userdoc.md");
-    let body = to_typst(&md, CitationMode::Resolve);
+    let body = to_typst(
+        &md,
+        CitationMode::Resolve {
+            known_keys: ["halbwachs1992"].into_iter().map(String::from).collect(),
+        },
+    );
     let style = styles::lookup("formal").unwrap();
     let main = styles::wrap(style, &body, false, Some("Term Paper"));
 
@@ -17,12 +22,21 @@ fn main() {
     std::fs::write(out, &main).unwrap();
     println!("wrote {} bytes to {}", main.len(), out);
 
-    // Also try compiling so we see the same diagnostic the user saw.
+    // Stand in for a Zotero library that only knows about ONE of the
+    // citekeys the user references. Every other `[@key]` in the doc
+    // should now render as a red marker rather than fail the compile.
     let req = ExportRequest {
         markdown: md,
         style_id: "formal".into(),
-        include_citations: false,
-        references: vec![],
+        include_citations: true,
+        references: vec![ZoteroRef {
+            key: "K1".into(),
+            citekey: "halbwachs1992".into(),
+            title: "On Collective Memory".into(),
+            authors: "Halbwachs, M; Coser, L".into(),
+            year: "1992".into(),
+            item_type: "book".into(),
+        }],
         images: vec![],
         title: Some("Term Paper".into()),
     };

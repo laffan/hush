@@ -72,14 +72,25 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let style = styles::lookup(&req.style_id)
         .ok_or_else(|| format!("unknown style: {}", req.style_id))?;
 
-    let cite_mode = if req.include_citations && !req.references.is_empty() {
-        markdown::CitationMode::Resolve
+    let resolve = req.include_citations && !req.references.is_empty();
+    let cite_mode = if resolve {
+        // The bibliography emitter dedupes by citekey, so the set we
+        // hand the markdown converter mirrors what actually ends up in
+        // refs.yml. Anything not in this set renders as a red marker
+        // rather than a `#cite(...)` that would fail compilation.
+        let known: std::collections::HashSet<String> = req
+            .references
+            .iter()
+            .filter(|r| !r.citekey.is_empty())
+            .map(|r| r.citekey.clone())
+            .collect();
+        markdown::CitationMode::Resolve { known_keys: known }
     } else {
         markdown::CitationMode::Strip
     };
 
     let body = markdown::to_typst(&req.markdown, cite_mode);
-    let bib_yaml = if matches!(cite_mode, markdown::CitationMode::Resolve) {
+    let bib_yaml = if resolve {
         Some(bibliography::to_hayagriva_yaml(&req.references))
     } else {
         None

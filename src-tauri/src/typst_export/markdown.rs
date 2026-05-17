@@ -23,11 +23,15 @@ When in doubt: a slightly degraded rendering beats refusing to compile.
 */
 
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use std::collections::HashSet;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum CitationMode {
     /// Replace citation-shaped links with Typst `@citekey` references.
-    Resolve,
+    /// The supplied set lists the citekeys present in the bibliography
+    /// — anything else renders as a visible "missing reference" marker
+    /// so the export still succeeds.
+    Resolve { known_keys: HashSet<String> },
     /// Strip the brackets and the deep-link URL, leaving the bare key.
     Strip,
 }
@@ -62,7 +66,7 @@ pub fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
     for event in parser {
         emitter.handle(event, &mut out);
     }
-    let out = expand_cite_sentinels(&out, cite_mode);
+    let out = expand_cite_sentinels(&out, &cite_mode);
 
     if out.ends_with('\n') { out } else { out + "\n" }
 }
@@ -96,7 +100,7 @@ fn preprocess_cites(s: &str) -> String {
     out
 }
 
-fn expand_cite_sentinels(s: &str, mode: CitationMode) -> String {
+fn expand_cite_sentinels(s: &str, mode: &CitationMode) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
@@ -112,16 +116,35 @@ fn expand_cite_sentinels(s: &str, mode: CitationMode) -> String {
         match mode {
             // Function form sidesteps the whitespace-sensitive `@key`
             // markup rules, so cites that sit flush against adjacent
-            // text (`acts[@mandolessi2024]`) still resolve cleanly.
-            CitationMode::Resolve => {
-                out.push_str("#cite(<");
-                out.push_str(&key);
-                out.push_str(">)");
+            // text (`acts[@mandolessi2024]`) still resolve cleanly. If
+            // the key isn't in the supplied bibliography we render a
+            // visible "missing" marker instead of `#cite(...)` — the
+            // latter would fail compilation and sink the whole export.
+            CitationMode::Resolve { known_keys } => {
+                if known_keys.contains(&key) {
+                    out.push_str("#cite(<");
+                    out.push_str(&key);
+                    out.push_str(">)");
+                } else {
+                    out.push_str(&missing_cite_marker(&key));
+                }
             }
             CitationMode::Strip => out.push_str(&key),
         }
     }
     out
+}
+
+/// Inline marker for a citation key that's not in the bibliography.
+/// Bold red `[@key]` so the gap is obvious on the printed page. The
+/// `@` is escaped so Typst doesn't try to resolve it as a label, which
+/// would re-trigger the very compile failure this marker exists to
+/// prevent.
+fn missing_cite_marker(key: &str) -> String {
+    format!(
+        "#text(fill: rgb(\"#c0392b\"), weight: \"bold\")[\\[\\@{}\\]]",
+        key
+    )
 }
 
 struct Emitter {
@@ -441,9 +464,18 @@ fn image_path(dest_url: &str) -> String {
 mod tests {
     use super::*;
 
+    fn resolve_with(keys: &[&str]) -> CitationMode {
+        CitationMode::Resolve {
+            known_keys: keys.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
     #[test]
     fn citation_bracket_resolve() {
-        let out = to_typst("See [@halbwachs1992] for context.", CitationMode::Resolve);
+        let out = to_typst(
+            "See [@halbwachs1992] for context.",
+            resolve_with(&["halbwachs1992"]),
+        );
         assert!(out.contains("#cite(<halbwachs1992>)"), "got: {}", out);
     }
 
@@ -457,7 +489,7 @@ mod tests {
     #[test]
     fn citation_link_resolve() {
         let src = "See [@halbwachs1992](zotero://select/library/items/ABC123).";
-        let out = to_typst(src, CitationMode::Resolve);
+        let out = to_typst(src, resolve_with(&["halbwachs1992"]));
         assert!(out.contains("#cite(<halbwachs1992>)"), "got: {}", out);
         assert!(!out.contains("zotero://"), "got: {}", out);
     }
@@ -476,7 +508,10 @@ mod tests {
     /// `@`. Function form sidesteps that.
     #[test]
     fn cite_flush_against_text() {
-        let out = to_typst("collective acts[@mandolessi2024].", CitationMode::Resolve);
+        let out = to_typst(
+            "collective acts[@mandolessi2024].",
+            resolve_with(&["mandolessi2024"]),
+        );
         assert!(out.contains("acts#cite(<mandolessi2024>)."), "got: {}", out);
     }
 
@@ -485,12 +520,31 @@ mod tests {
     /// after, and `@` started a reference instead.
     #[test]
     fn emphasis_immediately_followed_by_cite() {
-        let out = to_typst("but *mimesis*[@mandolessi2024]. End.", CitationMode::Resolve);
+        let out = to_typst(
+            "but *mimesis*[@mandolessi2024]. End.",
+            resolve_with(&["mandolessi2024"]),
+        );
         assert!(
             out.contains("#emph[mimesis]#cite(<mandolessi2024>)"),
             "got: {}",
             out
         );
+    }
+
+    /// A citekey that isn't in the bibliography renders as a red
+    /// marker rather than failing the compile. The marker keeps the
+    /// bracket-form `[@key]` shape so the user can spot what's
+    /// missing on the page.
+    #[test]
+    fn missing_cite_renders_as_visible_marker() {
+        let out = to_typst(
+            "See [@notfound2099] and [@known2020] later.",
+            resolve_with(&["known2020"]),
+        );
+        assert!(out.contains("rgb(\"#c0392b\")"), "missing marker absent: {}", out);
+        assert!(out.contains("\\@notfound2099"), "key not surfaced: {}", out);
+        assert!(!out.contains("#cite(<notfound2099>)"), "missing cite emitted as live ref: {}", out);
+        assert!(out.contains("#cite(<known2020>)"), "known cite swapped: {}", out);
     }
 
     #[test]
@@ -508,7 +562,7 @@ mod tests {
 
     #[test]
     fn at_sign_in_body_escaped() {
-        let out = to_typst("Email user@example.com.", CitationMode::Resolve);
+        let out = to_typst("Email user@example.com.", resolve_with(&[]));
         assert!(out.contains("\\@example"), "got: {}", out);
     }
 }
