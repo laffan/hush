@@ -38,6 +38,9 @@ export function initZenFocus(state) {
     if (!active || !active.overlay) return;
     const px = state.settings.zenFocusFontSize || 30;
     active.overlay.style.setProperty("--zen-font-size", `${px}px`);
+    // Font-size / window-size changes shift the band — refresh the
+    // indicator the next frame so it picks up the new line-height.
+    requestAnimationFrame(() => updateWindowBandIndicator(state));
   });
 }
 
@@ -147,20 +150,16 @@ function getZenWindow(state) {
  *  Window=1 collapses to typewriter (cursor pinned to centre line).
  *  Window=3 / 5 leave the cursor untouched until it would land outside
  *  the band, then scroll just enough to nudge it back to the edge of
- *  the band. The scroll is applied via direct scrollTop write rather
- *  than CodeMirror's `scrollIntoView` because that effect always
- *  fully reveals the target rather than holding it at a band edge. */
+ *  the band. Math runs in viewport (screen) coordinates via
+ *  `view.coordsAtPos` — the previous implementation mixed CodeMirror's
+ *  content-relative `block.top` with the scroller's scrollTop and got
+ *  caught out by the 50vh top/bottom padding the Zen scroller wears
+ *  (that padding offsets every content-y by half a viewport, so the
+ *  cursor was being scrolled off-screen as soon as it left the centre
+ *  line). */
 function maintainTypewriterWindow(view, state) {
   try {
     const head = view.state.selection.main.head;
-    const block = view.lineBlockAt(head);
-    if (!block) return;
-    const scroller = view.scrollDOM;
-    const lineH = (typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0)
-      ? view.defaultLineHeight
-      : (block.bottom - block.top) || 22;
-    const viewportH = scroller.clientHeight;
-    if (!viewportH) return;
     const winSize = getZenWindow(state);
     if (winSize <= 1) {
       // Pure typewriter — defer to CodeMirror's scrollIntoView so the
@@ -168,10 +167,23 @@ function maintainTypewriterWindow(view, state) {
       view.dispatch({ effects: EditorView.scrollIntoView(head, { y: "center" }) });
       return;
     }
+    const coords = view.coordsAtPos(head);
+    if (!coords) {
+      // Cursor not in the rendered viewport — CM hasn't measured the
+      // target line yet. Fall back to centring; the next update (after
+      // CM's measure pass) will land inside the windowed branch.
+      view.dispatch({ effects: EditorView.scrollIntoView(head, { y: "center" }) });
+      return;
+    }
+    const scroller = view.scrollDOM;
+    const sRect = scroller.getBoundingClientRect();
+    if (!sRect.height) return;
+    const lineH = (typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0)
+      ? view.defaultLineHeight
+      : Math.max(1, coords.bottom - coords.top);
     const halfBand = ((winSize - 1) / 2) * lineH;
-    const cursorMid = (block.top + block.bottom) / 2;
-    // The "centre slot" of the viewport in document coords.
-    const viewportCentre = scroller.scrollTop + viewportH / 2;
+    const cursorMid = (coords.top + coords.bottom) / 2;
+    const viewportCentre = (sRect.top + sRect.bottom) / 2;
     const offset = cursorMid - viewportCentre;
     if (Math.abs(offset) <= halfBand) return;
     // Cursor outside the band — scroll just enough to put it on the
@@ -180,6 +192,26 @@ function maintainTypewriterWindow(view, state) {
     const delta = offset > 0 ? offset - halfBand : offset + halfBand;
     scroller.scrollTop = scroller.scrollTop + delta;
   } catch (_) { /* view destroyed mid-update — ignore */ }
+}
+
+/** Paint the two horizontal dashed rules that visualize the cursor
+ *  band's coverage. Called from the Zen overlay's mount + on every
+ *  measurement change so the rules track the live viewport / font /
+ *  window choice. Cleanup runs via the standard overlay teardown — the
+ *  band elements are children of the overlay, not body. */
+function updateWindowBandIndicator(state) {
+  if (!active || !active.overlay) return;
+  const scroller = active.zenView?.scrollDOM;
+  if (!scroller) return;
+  const sRect = scroller.getBoundingClientRect();
+  const lineH = (typeof active.zenView.defaultLineHeight === "number" && active.zenView.defaultLineHeight > 0)
+    ? active.zenView.defaultLineHeight
+    : 22;
+  const winSize = getZenWindow(state);
+  const halfBand = ((winSize - 1) / 2) * lineH;
+  const centre = (sRect.top + sRect.bottom) / 2;
+  document.documentElement.style.setProperty("--zen-window-band-top", `${Math.round(centre - halfBand)}px`);
+  document.documentElement.style.setProperty("--zen-window-band-bottom", `${Math.round(centre + halfBand)}px`);
 }
 
 function centerCursor(view, pos) {
@@ -215,6 +247,17 @@ export function enterZenFocus(state) {
   hint.className = "zen-focus-hint";
   hint.textContent = formatShortcutForHint(state.settings.shortcutZenFocus || "Mod+Shift+S");
   overlay.appendChild(hint);
+
+  // Dashed band visualization — invisible until `body.zen-window-preview`
+  // is set (by the cmd-held Window chip group). The CSS variables
+  // updated by `updateWindowBandIndicator` place each rule at the band
+  // edge in viewport pixels.
+  const bandTop = document.createElement("div");
+  bandTop.className = "zen-window-band-top";
+  const bandBottom = document.createElement("div");
+  bandBottom.className = "zen-window-band-bottom";
+  overlay.appendChild(bandTop);
+  overlay.appendChild(bandBottom);
 
   // Auto-enable focus mode (only the active sentence is fully visible —
   // the rest dims to 50% via --focus-mode-opacity overridden in CSS).
@@ -308,6 +351,11 @@ export function enterZenFocus(state) {
 
   showHint(hint);
 
+  // Window-band indicator follows window resize so the dashed rules
+  // stay glued to the live viewport centre.
+  const onWindowResize = () => updateWindowBandIndicator(state);
+  window.addEventListener("resize", onWindowResize);
+
   active = {
     source,
     zenView,
@@ -316,9 +364,17 @@ export function enterZenFocus(state) {
     onKeydown,
     onMouseMove,
     onModeChanged,
+    onWindowResize,
     wasFocusMode,
     zenResizerCleanup,
   };
+
+  // First-paint band placement — runs after `active` is set so the
+  // helper can read `active.zenView`. rAF tail mirrors the
+  // initialScroll trampoline so the band lands after the overlay's
+  // first measure pass.
+  updateWindowBandIndicator(state);
+  requestAnimationFrame(() => updateWindowBandIndicator(state));
 }
 
 export function exitZenFocus(state) {
@@ -332,8 +388,10 @@ export function exitZenFocus(state) {
 
   document.removeEventListener("keydown", a.onKeydown, true);
   a.overlay.removeEventListener("mousemove", a.onMouseMove);
+  if (a.onWindowResize) window.removeEventListener("resize", a.onWindowResize);
   if (a.onModeChanged) state.off("mode-changed", a.onModeChanged);
   if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; }
+  document.body.classList.remove("zen-window-preview");
 
   if (a.zenResizerCleanup) { try { a.zenResizerCleanup(); } catch (_) {} }
   a.zenView.destroy();

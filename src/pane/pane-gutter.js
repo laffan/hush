@@ -221,17 +221,21 @@ function applyGutterGeometry(pane) {
 }
 
 /** Recompute the cached alignment offset between the canvas's world-y
- *  origin and doc-content-y. Runs on enter/resize/geometry change only;
- *  per-scroll updates just read `pane._gutterOffset` so each scroll tick
- *  stays out of the layout-read path (getBoundingClientRect and
- *  getComputedStyle are forced reflows). */
+ *  origin and doc-content-y. Triggers a `getBoundingClientRect` read so
+ *  any pending CodeMirror measure pass flushes — `scanDocHeaders` (which
+ *  reads `view.lineBlockAt(...).top`) relies on the height-map being up
+ *  to date, and removing that read on every scroll let the shadow
+ *  headers go stale because CM hadn't yet measured the lines that
+ *  scrolled into view. `paddingTop` is cached on `pane._gutterPadTop`
+ *  so we pay just the cheap reflow read, not the expensive
+ *  `getComputedStyle` cascade walk. */
 function recomputeGutterOffset(pane) {
   if (!pane.notebook || !pane.notebook.state) return;
   const scroller = getScroller();
   if (!scroller) return;
   const scrollerRect = scroller.getBoundingClientRect();
-  const pad = getScrollerPadding();
-  const docContentTop = scrollerRect.top + pad.top;
+  if (pane._gutterPadTop == null) pane._gutterPadTop = getScrollerPadding().top;
+  const docContentTop = scrollerRect.top + pane._gutterPadTop;
   const canvasTop = pane.y + TITLEBAR_HEIGHT;
   pane._gutterOffset = docContentTop - canvasTop;
   pane.notebook.state.gutterCameraOffset = pane._gutterOffset;
@@ -239,18 +243,31 @@ function recomputeGutterOffset(pane) {
 
 /** Push the live scrollTop into the notebook's camera.y so the rendered
  *  canvas slice tracks the doc scroll. Camera.x is preserved for
- *  horizontal pan; camera.zoom is locked at 1. The expensive layout
- *  read lives in `recomputeGutterOffset` — the per-scroll path just
- *  does arithmetic. */
+ *  horizontal pan; camera.zoom is locked at 1. We re-read the scroller
+ *  rect every scroll (cheap, but flushes pending CM measures) and reuse
+ *  the cached `paddingTop` — the `getComputedStyle` call we used to do
+ *  per scroll was the slow part. */
 function syncCameraFromScroll(pane) {
   if (!pane.notebook || !pane.notebook.state) return;
   const scroller = getScroller();
   if (!scroller) return;
-  if (pane._gutterOffset == null) recomputeGutterOffset(pane);
+  const scrollerRect = scroller.getBoundingClientRect();
+  if (pane._gutterPadTop == null) pane._gutterPadTop = getScrollerPadding().top;
+  const docContentTop = scrollerRect.top + pane._gutterPadTop;
+  const canvasTop = pane.y + TITLEBAR_HEIGHT;
+  pane._gutterOffset = docContentTop - canvasTop;
   const st = pane.notebook.state;
+  st.gutterCameraOffset = pane._gutterOffset;
   const x = st.camera.x;
   st.camera = { x, y: pane._gutterOffset - scroller.scrollTop, zoom: 1 };
   st.notify("camera");
+}
+
+/** Drop the cached padding-top so the next sync re-reads it. Called on
+ *  resize and on geometry changes where the doc layout might have
+ *  shifted the cm-scroller's padding. */
+function invalidateGutterPadCache(pane) {
+  pane._gutterPadTop = null;
 }
 
 function startGutterSync(pane) {
@@ -269,6 +286,7 @@ function startGutterSync(pane) {
   pane._gutterWindowHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
     applyGutterGeometry(pane);
+    invalidateGutterPadCache(pane);
     recomputeGutterOffset(pane);
     syncCameraFromScroll(pane);
     scheduleSync(pane);
@@ -276,6 +294,10 @@ function startGutterSync(pane) {
   window.addEventListener("resize", pane._gutterWindowHandler);
   pane._gutterDocChangeHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
+    // Typewriter / sticky-header plugins can mutate the cm-scroller's
+    // padding on doc changes — drop the cached value so the next sync
+    // picks up the fresh padding.
+    invalidateGutterPadCache(pane);
     scheduleSync(pane);
   };
   appState.on("doc-content-changed", pane._gutterDocChangeHandler);
