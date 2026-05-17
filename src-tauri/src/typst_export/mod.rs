@@ -123,6 +123,10 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let world = world::ExportWorld::new(
         main_source.clone(),
         bib_yaml,
+        // Ship the per-style CSL alongside the bibliography YAML so
+        // Typst's `#bibliography(style: "/style.csl")` resolves.
+        // None falls back to the built-in chicago-author-date.
+        style.csl_bytes(),
         req.images
             .iter()
             .map(|i| (i.filename.clone(), i.bytes.clone()))

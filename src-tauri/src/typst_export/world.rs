@@ -39,6 +39,7 @@ impl ExportWorld {
     pub fn new(
         main_typst: String,
         bib_yaml: Option<String>,
+        csl: Option<&'static str>,
         images: Vec<(String, Vec<u8>)>,
     ) -> Self {
         let fonts = load_bundled_fonts();
@@ -53,6 +54,11 @@ impl ExportWorld {
         if let Some(yaml) = bib_yaml {
             let bib_id = FileId::new(None, VirtualPath::new("/refs.yml"));
             files.insert(bib_id, Bytes::new(yaml.into_bytes()));
+        }
+
+        if let Some(csl_xml) = csl {
+            let csl_id = FileId::new(None, VirtualPath::new("/style.csl"));
+            files.insert(csl_id, Bytes::new(csl_xml.as_bytes().to_vec()));
         }
 
         for (name, bytes) in images {
