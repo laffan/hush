@@ -16,7 +16,13 @@ fn main() {
         },
     );
     let style = styles::lookup("formal").unwrap();
-    let main = styles::wrap(style, &body, false, Some("Term Paper"));
+    let wrap_opts = styles::WrapOptions {
+        title: Some("Term Paper"),
+        with_bibliography: false,
+        number_headings: true,
+        page_numbers: true,
+    };
+    let main = styles::wrap(style, &body, &wrap_opts);
 
     let out = "/tmp/userdoc-converted.typ";
     std::fs::write(out, &main).unwrap();
@@ -29,6 +35,10 @@ fn main() {
         markdown: md,
         style_id: "formal".into(),
         include_citations: true,
+        strip_comments: true,
+        strip_flags: true,
+        number_headings: true,
+        page_numbers: true,
         references: vec![ZoteroRef {
             key: "K1".into(),
             citekey: "halbwachs1992".into(),

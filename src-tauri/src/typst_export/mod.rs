@@ -22,6 +22,7 @@ pipeline deterministic and avoids tempfile permissions issues on iOS.
 
 pub mod bibliography;
 pub mod markdown;
+pub mod preprocess;
 pub mod styles;
 pub mod world;
 
@@ -61,6 +62,19 @@ pub struct ExportRequest {
     /// When true and `references` is non-empty, inline `(Author, Year)`
     /// citations + a bibliography section get rendered.
     pub include_citations: bool,
+    /// Drop `%% comment %%` blocks and `---%`/separator regions before
+    /// rendering — defaults exposed by the modal default to true.
+    #[serde(default = "true_default")]
+    pub strip_comments: bool,
+    /// Drop `==FLAG==` / `==FLAG: body==` runs before rendering.
+    #[serde(default = "true_default")]
+    pub strip_flags: bool,
+    /// Apply `1`, `1.1`, `1.1.1` numbering to headings.
+    #[serde(default)]
+    pub number_headings: bool,
+    /// Footer page numbers.
+    #[serde(default = "true_default")]
+    pub page_numbers: bool,
     #[serde(default)]
     pub references: Vec<ZoteroRef>,
     #[serde(default)]
@@ -68,9 +82,13 @@ pub struct ExportRequest {
     pub title: Option<String>,
 }
 
+fn true_default() -> bool { true }
+
 pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let style = styles::lookup(&req.style_id)
         .ok_or_else(|| format!("unknown style: {}", req.style_id))?;
+
+    let cleaned_md = preprocess::run(&req.markdown, req.strip_comments, req.strip_flags);
 
     let resolve = req.include_citations && !req.references.is_empty();
     let cite_mode = if resolve {
@@ -89,14 +107,20 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         markdown::CitationMode::Strip
     };
 
-    let body = markdown::to_typst(&req.markdown, cite_mode);
+    let body = markdown::to_typst(&cleaned_md, cite_mode);
     let bib_yaml = if resolve {
         Some(bibliography::to_hayagriva_yaml(&req.references))
     } else {
         None
     };
 
-    let main_source = styles::wrap(style, &body, bib_yaml.is_some(), req.title.as_deref());
+    let wrap_opts = styles::WrapOptions {
+        title: req.title.as_deref(),
+        with_bibliography: bib_yaml.is_some(),
+        number_headings: req.number_headings,
+        page_numbers: req.page_numbers,
+    };
+    let main_source = styles::wrap(style, &body, &wrap_opts);
 
     let world = world::ExportWorld::new(
         main_source.clone(),
@@ -155,6 +179,10 @@ mod tests {
             markdown: "# Hello\n\nA paragraph with *bold* text.".into(),
             style_id: "formal".into(),
             include_citations: false,
+            strip_comments: true,
+            strip_flags: true,
+            number_headings: false,
+            page_numbers: true,
             references: vec![],
             images: vec![],
             title: Some("Test Doc".into()),
@@ -170,6 +198,10 @@ mod tests {
             markdown: "See [@halbwachs1992] on collective memory.".into(),
             style_id: "formal".into(),
             include_citations: true,
+            strip_comments: true,
+            strip_flags: true,
+            number_headings: false,
+            page_numbers: true,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
                 citekey: "halbwachs1992".into(),

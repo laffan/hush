@@ -59,6 +59,10 @@ export async function openDocExportModal(state) {
     format: "pdf",
     style: styles[0]?.id || "formal",
     includeCitations: hasZotero && hasCitations,
+    stripComments: true,
+    stripFlags: true,
+    numberHeadings: false,
+    pageNumbers: true,
   };
 
   modal.innerHTML = `
@@ -77,6 +81,26 @@ export async function openDocExportModal(state) {
       <select class="nxm-style-select">
         ${styles.map((s) => `<option value="${escAttr(s.id)}">${escHtml(s.name)}</option>`).join("")}
       </select>
+    </div>
+
+    <div class="nxm-section" data-visible-when="format=pdf">
+      <div class="nxm-label">Layout</div>
+      <label class="nxm-checkbox-label">
+        <input type="checkbox" data-choice="stripComments" checked />
+        Strip comments
+      </label>
+      <label class="nxm-checkbox-label">
+        <input type="checkbox" data-choice="stripFlags" checked />
+        Strip flags
+      </label>
+      <label class="nxm-checkbox-label">
+        <input type="checkbox" data-choice="numberHeadings" />
+        Number headings (1, 1.1, 1.1.1)
+      </label>
+      <label class="nxm-checkbox-label">
+        <input type="checkbox" data-choice="pageNumbers" checked />
+        Page numbers
+      </label>
     </div>
 
     <div class="nxm-section" data-visible-when="format=pdf" data-cite-row style="${hasZotero && hasCitations ? "" : "display:none"}">
@@ -127,6 +151,14 @@ export async function openDocExportModal(state) {
 
   const citeToggle = modal.querySelector(".nxm-cite-toggle");
   citeToggle.addEventListener("change", () => { choices.includeCitations = citeToggle.checked; });
+
+  // Generic checkbox wiring keyed by `data-choice`. Lets us add more
+  // layout toggles in HTML without touching the JS plumbing.
+  modal.querySelectorAll("input[data-choice]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      choices[cb.dataset.choice] = cb.checked;
+    });
+  });
 
   modal.querySelector(".nxm-cancel").addEventListener("click", cleanup);
   modal.querySelector(".nxm-confirm").addEventListener("click", () => { void runExport(); });
@@ -202,6 +234,10 @@ async function renderPdfBytes(state, content, choices, title) {
       markdown: content,
       styleId: choices.style,
       includeCitations: !!choices.includeCitations,
+      stripComments: !!choices.stripComments,
+      stripFlags: !!choices.stripFlags,
+      numberHeadings: !!choices.numberHeadings,
+      pageNumbers: !!choices.pageNumbers,
       references,
       imageFilenames,
       title,

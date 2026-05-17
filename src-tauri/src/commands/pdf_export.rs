@@ -24,6 +24,14 @@ pub struct PdfExportArgs {
     pub style_id: String,
     #[serde(default)]
     pub include_citations: bool,
+    #[serde(default = "true_default")]
+    pub strip_comments: bool,
+    #[serde(default = "true_default")]
+    pub strip_flags: bool,
+    #[serde(default)]
+    pub number_headings: bool,
+    #[serde(default = "true_default")]
+    pub page_numbers: bool,
     #[serde(default)]
     pub references: Vec<ZoteroRef>,
     /// Filenames of images referenced in the markdown. We load their
@@ -34,6 +42,8 @@ pub struct PdfExportArgs {
     pub title: Option<String>,
 }
 
+fn true_default() -> bool { true }
+
 #[tauri::command]
 pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result<Vec<u8>, String> {
     let images = collect_images(&state, &args.image_filenames);
@@ -42,6 +52,10 @@ pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result
         markdown: args.markdown,
         style_id: args.style_id,
         include_citations: args.include_citations,
+        strip_comments: args.strip_comments,
+        strip_flags: args.strip_flags,
+        number_headings: args.number_headings,
+        page_numbers: args.page_numbers,
         references: args.references,
         images,
         title: args.title,

@@ -405,11 +405,13 @@ fn escape_string(s: &str) -> String {
 }
 
 /// Escape arbitrary text so it renders verbatim inside Typst markup.
+/// `=` is in the list so a `==FLAG==` line that the user opted not to
+/// strip doesn't accidentally turn into a Typst heading.
 fn escape_typst_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {
-            '#' | '*' | '_' | '$' | '`' | '<' | '>' | '@' | '\\' | '[' | ']' => {
+            '#' | '*' | '_' | '$' | '`' | '<' | '>' | '@' | '\\' | '[' | ']' | '=' => {
                 out.push('\\');
                 out.push(ch);
             }

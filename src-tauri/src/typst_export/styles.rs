@@ -23,6 +23,17 @@ pub struct Style {
     preamble: &'static str,
 }
 
+/// Per-export knobs that aren't baked into a style — these come from
+/// the modal toggles. Keeping them here (rather than per-style)
+/// because they're orthogonal: any style can choose to show or hide
+/// page numbers, number its headings, and so on.
+pub struct WrapOptions<'a> {
+    pub title: Option<&'a str>,
+    pub with_bibliography: bool,
+    pub number_headings: bool,
+    pub page_numbers: bool,
+}
+
 pub fn lookup(id: &str) -> Option<&'static Style> {
     STYLES.iter().find(|s| s.id == id)
 }
@@ -31,21 +42,38 @@ pub fn list() -> &'static [Style] {
     STYLES
 }
 
-/// Compose the final Typst source: preamble → optional title block →
-/// markdown body → optional bibliography directive.
-pub fn wrap(style: &Style, body: &str, with_bibliography: bool, title: Option<&str>) -> String {
-    let mut out = String::with_capacity(style.preamble.len() + body.len() + 128);
+/// Compose the final Typst source: preamble → per-export overrides
+/// → optional title block → markdown body → optional bibliography
+/// directive.
+pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
+    let mut out = String::with_capacity(style.preamble.len() + body.len() + 256);
     out.push_str(style.preamble);
     out.push('\n');
 
-    if let Some(t) = title {
+    // Page numbering rides on top of whatever the style already
+    // configured for `#set page(...)`. Typst lets a later `#set` win
+    // over earlier ones in the same scope, so this is safe to append.
+    if opts.page_numbers {
+        // "1" centred in the footer is the conventional default for a
+        // formal doc. Styles can override later if they need totals
+        // ("1 / 1") or roman numerals.
+        out.push_str("#set page(numbering: \"1\")\n");
+    }
+
+    if opts.number_headings {
+        // `"1.1"` produces 1, 1.1, 1.1.1 (per the spec — h1 is just
+        // "1", h2 adds the second component, h3 the third).
+        out.push_str("#set heading(numbering: \"1.1\")\n");
+    }
+
+    if let Some(t) = opts.title {
         let escaped = escape_title(t);
         out.push_str(&format!("\n#align(center)[#text(size: 18pt, weight: \"bold\")[{}]]\n\n", escaped));
     }
 
     out.push_str(body);
 
-    if with_bibliography {
+    if opts.with_bibliography {
         // The bibliography file is registered at `/refs.yml` by the
         // World — Typst's `bibliography()` accepts a path and a style
         // name ("ieee", "apa", "chicago-author-date", etc.). We pick
@@ -70,6 +98,43 @@ fn escape_title(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn formal() -> &'static Style {
+        lookup("formal").unwrap()
+    }
+
+    fn base() -> WrapOptions<'static> {
+        WrapOptions {
+            title: None,
+            with_bibliography: false,
+            number_headings: false,
+            page_numbers: false,
+        }
+    }
+
+    #[test]
+    fn page_numbers_directive_emitted_when_on() {
+        let out = wrap(formal(), "body", &WrapOptions { page_numbers: true, ..base() });
+        assert!(out.contains("#set page(numbering: \"1\")"), "got: {}", out);
+    }
+
+    #[test]
+    fn heading_numbering_directive_emitted_when_on() {
+        let out = wrap(formal(), "body", &WrapOptions { number_headings: true, ..base() });
+        assert!(out.contains("#set heading(numbering: \"1.1\")"), "got: {}", out);
+    }
+
+    #[test]
+    fn neither_directive_when_off() {
+        let out = wrap(formal(), "body", &base());
+        assert!(!out.contains("#set heading(numbering"));
+        assert!(!out.contains("#set page(numbering"));
+    }
 }
 
 // ───────────────────── registered styles ─────────────────────
