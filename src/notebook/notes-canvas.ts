@@ -261,7 +261,7 @@ export class NotesCanvas {
         // still pans camera.x. Camera.y tracks the live scrollTop.
         if (this.state.gutterScrollDOM) {
           this.state.gutterScrollDOM.scrollTop = touchGestureScrollTop - dy;
-          this.state.camera = { x: touchGestureCamStart.x + dx, y: -this.state.gutterScrollDOM.scrollTop, zoom: 1 };
+          this.state.camera = { x: touchGestureCamStart.x + dx, y: this.state.gutterCameraOffset - this.state.gutterScrollDOM.scrollTop, zoom: 1 };
           this.state.notify("camera");
           return;
         }
@@ -291,7 +291,7 @@ export class NotesCanvas {
           const dx = mid.x - touchPinchStartMid.x;
           const dy = mid.y - touchPinchStartMid.y;
           this.state.gutterScrollDOM.scrollTop = touchGestureScrollTop - dy;
-          this.state.camera = { x: cs.x + dx, y: -this.state.gutterScrollDOM.scrollTop, zoom: 1 };
+          this.state.camera = { x: cs.x + dx, y: this.state.gutterCameraOffset - this.state.gutterScrollDOM.scrollTop, zoom: 1 };
           this.state.notify("camera");
           return;
         }

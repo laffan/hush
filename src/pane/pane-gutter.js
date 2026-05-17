@@ -18,11 +18,16 @@
  * notebook — the gutter is meant to host visual notes that ride
  * alongside long-form writing.
  */
-import { panes, activePaneId, appState, GUTTER_Z, zForPane } from "./pane-state.js";
+import { panes, activePaneId, appState, GUTTER_Z, TITLEBAR_HEIGHT, zForPane } from "./pane-state.js";
 import { stopAttachSync } from "./pane-attach-sync.js";
 import { schedulePersist } from "./pane-persistence.js";
 
 const VIEWPORT_TOP_MARGIN = 60;
+// Match `fitActivePaneToGap`'s vertical envelope so a gutter pane
+// claims the full doc-text height instead of being trimmed by the
+// scroller's CSS padding (which can run ~130 px on phone safe-areas).
+const GUTTER_TOP_MARGIN = 35;
+const GUTTER_BOTTOM_MARGIN = 12;
 const PANE_BOTTOM_INSET = 12;
 
 /** Read the cm-scroller's vertical padding so the gutter pane can sit
@@ -204,30 +209,45 @@ function detectGutterSide(pane) {
   return paneCenter < textCenter ? "left" : "right";
 }
 
-/** Pane geometry — pinned to the visible doc text area so world-y
- *  in the canvas maps 1:1 to doc-content-y. */
+/** Pane geometry — fixed in the viewport using the same vertical
+ *  envelope as fitActivePaneToGap so the gutter claims the full
+ *  doc-text-area height. World-y inside the canvas is brought back into
+ *  alignment with doc-content-y by `syncCameraFromScroll`. */
 function applyGutterGeometry(pane) {
-  const scroller = getScroller();
-  const rect = scroller ? scroller.getBoundingClientRect() : { top: 0, height: window.innerHeight };
-  const pad = getScrollerPadding();
-  const y = rect.top + pad.top;
-  const h = Math.max(120, rect.height - pad.top - pad.bottom - PANE_BOTTOM_INSET);
-  pane.y = y;
-  pane.height = h;
-  pane.el.style.top = y + "px";
-  pane.el.style.height = h + "px";
+  pane.y = GUTTER_TOP_MARGIN;
+  pane.height = Math.max(120, window.innerHeight - GUTTER_TOP_MARGIN - GUTTER_BOTTOM_MARGIN);
+  pane.el.style.top = pane.y + "px";
+  pane.el.style.height = pane.height + "px";
 }
 
 /** Push the live scrollTop into the notebook's camera.y so the
  *  rendered canvas slice tracks the doc scroll. Camera.x is preserved
- *  for horizontal pan; camera.zoom is locked at 1. */
+ *  for horizontal pan; camera.zoom is locked at 1.
+ *
+ *  Camera.y also carries a constant offset that re-aligns the canvas's
+ *  world-y with doc-content-y now that the pane no longer sits flush
+ *  against the visible doc text: the canvas top is at (pane.y +
+ *  TITLEBAR_HEIGHT) in viewport coords, the doc content top is at
+ *  (scrollerRect.top + paddingTop), and the difference between the two
+ *  rides on every camera.y write. */
 function syncCameraFromScroll(pane) {
   if (!pane.notebook || !pane.notebook.state) return;
   const scroller = getScroller();
-  const scrollTop = scroller ? scroller.scrollTop : 0;
+  if (!scroller) return;
+  const scrollerRect = scroller.getBoundingClientRect();
+  const pad = getScrollerPadding();
+  const docContentTop = scrollerRect.top + pad.top;
+  const canvasTop = pane.y + TITLEBAR_HEIGHT;
+  const offset = docContentTop - canvasTop;
   const st = pane.notebook.state;
+  // Stash the offset so the input handlers (state.ts pan / wheel,
+  // input-handler two-finger, notes-canvas drawing touch) compute
+  // camera.y with the same alignment formula instead of falling back
+  // to plain `-scrollTop`, which would briefly mis-align the canvas
+  // until the next scroll listener tick.
+  st.gutterCameraOffset = offset;
   const x = st.camera.x;
-  st.camera = { x, y: -scrollTop, zoom: 1 };
+  st.camera = { x, y: offset - scroller.scrollTop, zoom: 1 };
   st.notify("camera");
 }
 
@@ -360,6 +380,7 @@ export function stopActivePaneAsGutter() {
   pane.el.style.top = y + "px";
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = null;
+    pane.notebook.state.gutterCameraOffset = 0;
     pane.notebook.state.shadowHeaders = [];
     if (prev.camera) pane.notebook.state.camera = { ...prev.camera };
     pane.notebook.state.notify("camera");
@@ -396,6 +417,7 @@ export function teardownGutterListeners(pane) {
   pane._gutterHeaders = null;
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = null;
+    pane.notebook.state.gutterCameraOffset = 0;
     pane.notebook.state.shadowHeaders = [];
   }
 }

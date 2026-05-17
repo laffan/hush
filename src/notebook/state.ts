@@ -171,6 +171,11 @@ export class DrawingState extends EventTarget {
    *  driven by the doc scrollTop, zoom is locked at 1, and focusShape
    *  resolves to a doc scroll. Camera.x still pans freely. */
   gutterScrollDOM: HTMLElement | null = null;
+  /** Constant added to `-scrollTop` when writing `camera.y` while in
+   *  gutter mode — accounts for the fact that the pane no longer sits
+   *  flush against the doc content top, so world-y == doc-content-y
+   *  still holds. Owned by `pane-gutter.js#syncCameraFromScroll`. */
+  gutterCameraOffset = 0;
   /** Faded doc headings rendered into the gutter canvas. World-y maps
    *  1:1 to doc-content-y under the gutter geometry, so `y` here is
    *  consumed directly by the renderer after the camera transform.
@@ -1178,7 +1183,7 @@ export class DrawingState extends EventTarget {
       // engine's viewport math sees the correct world rect.
       if (this.gutterScrollDOM) {
         this.gutterScrollDOM.scrollTop = (this._panStartScrollTop || 0) - dy;
-        this.camera = { x: this._cameraStart.x + dx, y: -this.gutterScrollDOM.scrollTop, zoom: 1 };
+        this.camera = { x: this._cameraStart.x + dx, y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop, zoom: 1 };
         this.notify("camera");
         return;
       }
@@ -1834,7 +1839,7 @@ export class DrawingState extends EventTarget {
       if (e.deltaX) camX = this.camera.x - e.deltaX;
       // Atomic update — read the live scrollTop after our write (it
       // may have been clamped) so camera.y matches the visible slice.
-      this.camera = { x: camX, y: -this.gutterScrollDOM.scrollTop, zoom: 1 };
+      this.camera = { x: camX, y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop, zoom: 1 };
       this.notify("camera");
       return;
     }
@@ -2766,14 +2771,17 @@ export class DrawingState extends EventTarget {
     // centring still adjusts camera.x. Instant scroll — `smooth` would
     // fight any user gesture arriving before the animation completes.
     if (this.gutterScrollDOM) {
-      const paneRect = this.canvasEl?.getBoundingClientRect();
-      const paneTop = paneRect ? paneRect.top : 0;
+      // World-y maps 1:1 onto doc-content-y under the gutter camera
+      // offset. Aim for the viewport vertical centre and snap there
+      // in one step (smooth scroll fights any user gesture arriving
+      // mid-animation).
+      const scrollerRect = this.gutterScrollDOM.getBoundingClientRect();
       const viewportH = window.innerHeight || h;
-      const target = Math.max(0, cy - (viewportH / 2 - paneTop));
+      const target = Math.max(0, scrollerRect.top + cy - viewportH / 2);
       this.gutterScrollDOM.scrollTop = target;
       this.camera = {
         x: (left + w - right) / 2 - cx,
-        y: -this.gutterScrollDOM.scrollTop,
+        y: this.gutterCameraOffset - this.gutterScrollDOM.scrollTop,
         zoom: 1,
       };
     } else {
