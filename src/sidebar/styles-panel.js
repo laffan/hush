@@ -9,7 +9,6 @@
  * style can carry both palettes.
  */
 
-import { parseShortcut } from "../shortcuts.js";
 import {
   escHtml,
   migrateStyle,
@@ -28,19 +27,6 @@ const APPEARANCE_ICONS = {
   auto: appearanceAutoRaw,
 };
 const APPEARANCE_LABELS = { light: "Light", dark: "Dark", auto: "Automatic" };
-
-/** Format a shortcut string for inline display (e.g. "Mod+1" → "⌘1"). */
-function formatShortcutBadge(raw) {
-  const p = parseShortcut(raw);
-  if (!p) return "";
-  const isMac = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
-  const parts = [];
-  if (p.mod) parts.push(isMac ? "⌘" : "Ctrl+");
-  if (p.shift) parts.push(isMac ? "⇧" : "Shift+");
-  if (p.alt) parts.push(isMac ? "⌥" : "Alt+");
-  parts.push(p.key.length === 1 ? p.key.toUpperCase() : p.key);
-  return parts.join("");
-}
 
 /** Get the appearance-appropriate theme/colors from a style. */
 export function resolveStyleForAppearance(style, appearance) {
@@ -65,14 +51,9 @@ export function renderStylesPanel(state) {
   let html = `<div class="styles-panel-root">`;
   html += `<div class="style-list-sidebar">`;
 
-  // Shortcut setting keys for style slots (Default + first 4 styles)
-  const styleShortcutKeys = ["shortcutStyleDefault", "shortcutStyle1", "shortcutStyle2", "shortcutStyle3", "shortcutStyle4"];
-
   const isDefault = !activeId;
-  const defaultBadge = formatShortcutBadge(state.settings[styleShortcutKeys[0]]);
   html += `<div class="style-sidebar-item${isDefault ? ' active' : ''}" data-style-id="">
     <span class="style-sidebar-name" style="font-size:14px;">Default</span>
-    ${defaultBadge ? `<span class="style-shortcut-badge">${escHtml(defaultBadge)}</span>` : ""}
     <span class="style-sidebar-actions">
       <button data-action="edit" data-id="__default__" title="Edit">
         <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -93,11 +74,9 @@ export function renderStylesPanel(state) {
     const bg = colors.bg || themeBackgrounds[themeId] || (resolvedAppearance === "light" ? "#fafafa" : "#1a1a1a");
     const fg = colors.fg || themeForegrounds[themeId] || (resolvedAppearance === "light" ? "#1a1a1a" : "#e0e0e0");
     const fontSize = st.fontSize || state.settings.fontSize || 20;
-    const badge = i < 4 ? formatShortcutBadge(state.settings[styleShortcutKeys[i + 1]]) : "";
     html += `<div class="style-sidebar-item${isActive ? ' active' : ''}" data-style-id="${st.id}"
       style="background:${bg}; color:${fg}; font-size:${Math.min(fontSize, 16)}px;${st.fontFamily ? ` font-family:'${st.fontFamily}';` : ''}">
       <span class="style-sidebar-name">${escHtml(st.name)}</span>
-      ${badge ? `<span class="style-shortcut-badge">${escHtml(badge)}</span>` : ""}
       <span class="style-sidebar-actions">
         <button data-action="edit" data-id="${st.id}" title="Edit">
           <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>

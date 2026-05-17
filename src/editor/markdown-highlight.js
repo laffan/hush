@@ -57,7 +57,7 @@ export function getMarkdownHighlight(normalizeHeaders, headingColor, headerScale
     { tag: tags.strong, fontWeight: "bold" },
     { tag: tags.emphasis, fontStyle: "italic" },
     { tag: tags.quote, fontStyle: "italic", opacity: "0.8" },
-    { tag: tags.strikethrough, textDecoration: "line-through" },
+    { tag: tags.strikethrough, textDecoration: "line-through", opacity: "0.5" },
     { tag: tags.link, textDecoration: "underline" },
     { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "calc(var(--font-size) * 0.9)" },

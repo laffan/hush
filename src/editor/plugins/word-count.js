@@ -6,10 +6,6 @@
 
 let wordCountEl = null;
 let recomputeTimer = null;
-// True while the cursor is hovering the pill *and* the editor has a
-// non-empty selection. While true, recompute() prints the selection
-// count instead of the regular doc/project count.
-let showingSelection = false;
 
 export function countWords(text) {
   if (!text) return 0;
@@ -54,21 +50,9 @@ export function updateWordCountDisplay(state) {
     wordCountEl = document.createElement("div");
     wordCountEl.id = "word-count-display";
     wordCountEl.className = "word-count-display";
-    // Hover-to-show-selection: the pill itself stays click-through
-    // (pointer-events: none) so the cursor passes through to the
-    // editor; the `.has-selection` modifier flips that to `auto` only
-    // when a selection exists, so the hover is dormant the rest of
-    // the time.
-    wordCountEl.addEventListener("mouseenter", () => {
-      if (!hasNonEmptySelection(state)) return;
-      showingSelection = true;
-      recompute(state);
-    });
-    wordCountEl.addEventListener("mouseleave", () => {
-      if (!showingSelection) return;
-      showingSelection = false;
-      recompute(state);
-    });
+    // Pill stays click-through (`pointer-events: none`) at all times so
+    // editor drag-selects pass straight through. Selection counts are
+    // surfaced automatically — no hover required.
     document.body.appendChild(wordCountEl);
   }
   document.body.classList.add("word-count-active");
@@ -83,30 +67,20 @@ function recompute(state) {
   if (state.editor && state.editor.getContent) {
     text = state.editor.getContent();
   }
-  // Toggle the pointer-events shim so the pill is hoverable only when
-  // there's a selection to report. The rest of the time it stays
-  // click-through and doesn't intercept editor drags.
-  const selectionActive = hasNonEmptySelection(state);
-  wordCountEl.classList.toggle("has-selection", selectionActive);
-  // Selection has to be present *and* the user has to be hovering
-  // for the selection slot to show. Drop the hover flag the moment
-  // the selection disappears so a stale flag doesn't bleed into the
-  // next render.
-  if (showingSelection && !selectionActive) showingSelection = false;
-  const showSel = showingSelection && selectionActive;
+  const showSel = hasNonEmptySelection(state);
 
   const total = countWords(text);
   const inProject = !!state.currentProjectId && text.includes("---hush-separator---");
 
   // Project mode: show "<n> section / <n> total". Section = the slice
   // of the joined buffer between the separators surrounding the
-  // cursor. Hovering with a selection prepends a "<n> selected" slot.
+  // cursor. With a selection, "<n> selected" appends after total.
   if (inProject) {
     const cursor = getProjectCursorPos(state);
     if (cursor != null) {
       const section = countWords(sliceProjectSegmentAt(text, cursor));
       const parts = showSel
-        ? [[countWords(getSelectionText(state)), "selected"], [section, "section"], [total, "total"]]
+        ? [[section, "section"], [total, "total"], [countWords(getSelectionText(state)), "selected"]]
         : [[section, "section"], [total, "total"]];
       wordCountEl.textContent = formatCounts(parts);
       return;
@@ -114,10 +88,10 @@ function recompute(state) {
     // Cursor wasn't locatable — fall through to the non-project format.
   }
 
-  // Non-project: "<n> words" alone, or "<n> selected / <n> total"
-  // while hovered with text selected.
+  // Non-project: "<n> words" alone, or "<n> words / <n> selected"
+  // when a selection is active.
   const parts = showSel
-    ? [[countWords(getSelectionText(state)), "selected"], [total, "total"]]
+    ? [[total, total === 1 ? "word" : "words"], [countWords(getSelectionText(state)), "selected"]]
     : [[total, total === 1 ? "word" : "words"]];
   wordCountEl.textContent = formatCounts(parts);
 }

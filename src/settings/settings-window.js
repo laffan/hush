@@ -212,6 +212,20 @@ function bindAll() {
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-comment-opacity", "commentOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-zen-focus-font-size", "zenFocusFontSize", "px");
+  // Zen Focus window segmented control (odd values: 1, 3, 5).
+  document.querySelectorAll(".zen-window-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const v = parseInt(btn.dataset.zenWindow, 10);
+      if (!Number.isFinite(v)) return;
+      document.querySelectorAll(".zen-window-btn").forEach((b) => {
+        const on = parseInt(b.dataset.zenWindow, 10) === v;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-checked", on ? "true" : "false");
+      });
+      saveSetting("zenFocusWindow", v);
+    });
+  });
+  bindSlider("setting-notebook-font-size", "notebookFontSize", "px");
   bindSlider("setting-notebook-text-max-width", "notebookTextMaxWidth", "px");
   bindSelect("setting-flow-connect-mode", "flowConnectMode");
   bindSlider("setting-footnote-font-size", "footnoteFontSize", "%");

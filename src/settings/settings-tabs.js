@@ -140,11 +140,28 @@ export function renderEditorTab(settings) {
           <span class="slider-value">${s.zenFocusFontSize || 30}px</span>
         </div>
       </div>
-      <p class="settings-help">Font size while Zen is open. Focus mode auto-engages in Zen — surrounding-sentence dim is governed by the Focus mode opacity slider above. Toggle Zen with the configured shortcut, default ⌘⇧S.</p>
+      <div class="settings-row">
+        <label>Window</label>
+        <div class="zen-window-toggle" role="radiogroup" aria-label="Zen Focus cursor window">
+          ${[1, 3, 5].map((n) => {
+            const active = (s.zenFocusWindow || 1) === n;
+            return `<button type="button" class="zen-window-btn${active ? ' active' : ''}" data-zen-window="${n}" role="radio" aria-checked="${active}">${n}</button>`;
+          }).join("")}
+        </div>
+      </div>
+      <p class="settings-help">Font size while Zen is open. Focus mode auto-engages in Zen — surrounding-sentence dim is governed by the Focus mode opacity slider above. The Window setting controls how many lines the cursor can move before the document scrolls underneath it: 1 keeps the cursor pinned to the centre (pure typewriter), 3 and 5 widen the centred band so the cursor can drift a line or two before scrolling kicks in. Toggle Zen with the configured shortcut, default ⌘⇧S.</p>
     </div>
 
     <div class="settings-section">
       <h2>Notebook text</h2>
+      <div class="settings-slider-row">
+        <label>Default size</label>
+        <div class="slider-group">
+          <input type="range" id="setting-notebook-font-size" min="10" max="48" step="1" value="${s.notebookFontSize || 16}" />
+          <span class="slider-value">${s.notebookFontSize || 16}px</span>
+        </div>
+      </div>
+      <p class="settings-help">Font size used for newly-created text shapes on the notebook canvas. Existing shapes aren't affected.</p>
       <div class="settings-slider-row">
         <label>Max width</label>
         <div class="slider-group">

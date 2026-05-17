@@ -151,6 +151,32 @@ html, body {
 }
 .settings-row input[type="number"] { text-align: right; }
 
+/* Zen Focus window — three numeric chips. Active chip wears a circle
+   outline; the rest are flat numbers. */
+.zen-window-toggle { display: flex; gap: 12px; align-items: center; }
+.zen-window-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 50%;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.zen-window-btn:hover { opacity: 0.9; }
+.zen-window-btn.active {
+  opacity: 1;
+  border-color: var(--accent, var(--fg));
+}
+
 /* Stacked row — label on its own line above a full-width input. Used
  * for OAuth credential entry where the values are long. */
 .settings-row-stacked {

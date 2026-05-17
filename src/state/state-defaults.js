@@ -128,13 +128,6 @@ export function createDefaultSettings() {
     shortcutJumpPrevParagraph: "Mod+ArrowUp",
     shortcutZotero: "Mod+Shift+I",
 
-    // Shortcuts — Styles
-    shortcutStyleDefault: "Mod+1",
-    shortcutStyle1: "Mod+2",
-    shortcutStyle2: "Mod+3",
-    shortcutStyle3: "Mod+4",
-    shortcutStyle4: "Mod+5",
-
     // D.R.Y. highlighting
     dryRange: "paragraph",
     dryStopwords: [],
@@ -211,6 +204,12 @@ export function createDefaultSettings() {
     notebookGridOpacity: 0.20,
     notebookFontFamily: "Inter",
     notebookFontSize: 16,
+    // Zen Focus typewriter window — odd-only (1, 3, 5). 1 = pure
+    // typewriter (cursor pinned to centre line); 3/5 widen the band so
+    // the cursor can range one or two lines either side of centre before
+    // the document scrolls. Symmetric so the centre line stays the
+    // anchor.
+    zenFocusWindow: 1,
     lastNotebookId: null,
 
     // Notebook shortcuts

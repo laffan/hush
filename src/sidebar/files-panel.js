@@ -13,6 +13,7 @@ import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pan
 import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
+import { renderRowMenuButton, renderFlagOnlyMenuButton, openRowMenu } from "./files-panel-row-menu.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -66,62 +67,8 @@ function windowBadgesHtml(item, state) {
   return matches.map(w => `<span class="tree-window-badge">${w.number}</span>`).join("");
 }
 
-// Hover action buttons — no rename for untitled docs or special nodes, no flag in trash
-function actionButtons(nodeId, nodeType, inTrash, item, inProject) {
-  if (isTrashId(nodeId)) {
-    return `<span class="tree-actions" data-node-id="${nodeId}">
-      <button data-tree-action="empty-trash" class="tree-action-text" data-tooltip="Empty Trash">Empty</button>
-    </span>`;
-  }
-  // Legacy synced folder root
-  if (item?.syncFolderId && item.type === "folder") {
-    return "";
-  }
-  const isSpecial = isInboxId(nodeId) || isImagesId(nodeId);
-  const isDoc = nodeType === "document";
-  const isImage = nodeType === "image";
-  // Docs auto-derive their name from first line while still "Untitled".
-  // Once content has locked in a name, expose rename like notebooks do.
-  const docRenameable = isDoc && item?.name && item.name !== "Untitled";
-  const renameBtn = (isSpecial || (isDoc && !docRenameable)) ? "" : `<button data-tree-action="rename" data-tooltip="Rename">
-      <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-    </button>`;
-  const flagBtn = (isSpecial || inTrash || isImage) ? "" : `<button data-tree-action="flag" data-tooltip="Toggle flag">
-      <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-    </button>`;
-  const dupBtn = (isSpecial || isImage) ? "" : `<button data-tree-action="duplicate" data-tooltip="Duplicate">
-      <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-    </button>`;
-  const delBtn = isSpecial ? "" : `<button data-tree-action="delete" data-tooltip="Delete">
-      <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-    </button>`;
-  // Folder ↔ Project toggle. Only surfaced on real Folder/Project nodes
-  // (not Inbox/Trash/Images, not the legacy synced root, never on docs
-  // or images). The bi-directional arrow signals "swap container type"
-  // — going Project → Folder loses ordering + project preview, so the
-  // click handler shows a confirmation prompt for that direction only.
-  let convertBtn = "";
-  if (!isSpecial && (nodeType === "folder" || nodeType === "project") && !item?.syncFolderId) {
-    const target = nodeType === "folder" ? "project" : "folder";
-    convertBtn = `<button data-tree-action="convert-container" data-target-type="${target}" data-tooltip="Convert to ${target}">
-      <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-    </button>`;
-  }
-  // "Use as note" — paper icon, doc-in-project only.
-  const noteBtn = (isDoc && inProject && !inTrash) ? `<button class="tree-action-note${item?.useAsNote ? " active" : ""}" data-tree-action="use-as-note" data-tooltip="${item?.useAsNote ? "Stop using as note" : "Use as note"}"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></button>` : "";
-  return `<span class="tree-actions" data-node-id="${nodeId}">
-    ${flagBtn}${renameBtn}${noteBtn}${convertBtn}${dupBtn}${delBtn}
-  </span>`;
-}
-
-// Flag-only action button for the virtual Flagged folder items
-function flagOnlyButton(nodeId) {
-  return `<span class="tree-actions" data-node-id="${nodeId}">
-    <button data-tree-action="flag" data-tooltip="Unflag">
-      <svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-    </button>
-  </span>`;
-}
+const actionButtons = renderRowMenuButton;
+const flagOnlyButton = renderFlagOnlyMenuButton;
 
 export function createFilesPanel(container, state, hidePanel) {
   storedHidePanel = hidePanel;
@@ -305,22 +252,14 @@ export function createFilesPanel(container, state, hidePanel) {
   import("./send-to-desk-modal.js").then((m) => m.attachDeskShortcuts(listContainer, state));
 }
 
-function onActionClick(e) {
-  const actionBtn = e.target.closest("[data-tree-action]");
-  if (!actionBtn) return;
-  e.stopPropagation();
-
-  const action = actionBtn.dataset.treeAction;
-  const actionsEl = actionBtn.closest(".tree-actions");
-  const nodeId = actionsEl?.dataset.nodeId;
-  if (!nodeId || !storedState) return;
-
+function dispatchRowAction(action, nodeId, opts) {
+  if (!storedState) return;
   if (action === "rename") {
-    handleRename(nodeId, actionBtn, storedState);
+    handleRename(nodeId, opts?.anchor || null, storedState);
   } else if (action === "duplicate") {
     handleDuplicate(nodeId, storedState);
   } else if (action === "convert-container") {
-    handleConvertContainer(nodeId, actionBtn.dataset.targetType, storedState);
+    handleConvertContainer(nodeId, opts?.targetType, storedState);
   } else if (action === "delete") {
     handleDelete(nodeId, storedState);
   } else if (action === "flag") {
@@ -333,6 +272,25 @@ function onActionClick(e) {
     handleEmptyTrash(storedState);
   }
 }
+
+function onActionClick(e) {
+  const actionBtn = e.target.closest("[data-tree-action]");
+  if (!actionBtn) return;
+  e.stopPropagation();
+
+  const action = actionBtn.dataset.treeAction;
+  const actionsEl = actionBtn.closest(".tree-actions");
+  const nodeId = actionsEl?.dataset.nodeId;
+  if (!nodeId || !storedState) return;
+
+  if (action === "open-menu") {
+    const flagOnly = actionBtn.dataset.menuFlagOnly === "1";
+    openRowMenu(actionBtn, nodeId, storedState, flagOnly, dispatchRowAction);
+    return;
+  }
+  dispatchRowAction(action, nodeId, { anchor: actionBtn, targetType: actionBtn.dataset.targetType });
+}
+
 
 // ===== Virtual Flagged Folder =====
 
@@ -544,7 +502,13 @@ function refreshList(state) {
 function handleRename(nodeId, triggerEl, state) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
-  const li = triggerEl.closest(".sl-item");
+  // Prefer walking up from the trigger button; when the menu invoked
+  // this from outside the row, fall back to a data-id lookup.
+  let li = triggerEl?.closest(".sl-item") || null;
+  if (!li) {
+    const safe = (window.CSS && typeof window.CSS.escape === "function") ? window.CSS.escape(nodeId) : nodeId;
+    li = document.querySelector(`.sl-item[data-id="${safe}"]`);
+  }
   if (!li) return;
   const nameEl = li.querySelector(".tree-item-name");
   if (!nameEl) return;

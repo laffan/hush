@@ -220,17 +220,12 @@ function applyGutterGeometry(pane) {
   pane.el.style.height = pane.height + "px";
 }
 
-/** Push the live scrollTop into the notebook's camera.y so the
- *  rendered canvas slice tracks the doc scroll. Camera.x is preserved
- *  for horizontal pan; camera.zoom is locked at 1.
- *
- *  Camera.y also carries a constant offset that re-aligns the canvas's
- *  world-y with doc-content-y now that the pane no longer sits flush
- *  against the visible doc text: the canvas top is at (pane.y +
- *  TITLEBAR_HEIGHT) in viewport coords, the doc content top is at
- *  (scrollerRect.top + paddingTop), and the difference between the two
- *  rides on every camera.y write. */
-function syncCameraFromScroll(pane) {
+/** Recompute the cached alignment offset between the canvas's world-y
+ *  origin and doc-content-y. Runs on enter/resize/geometry change only;
+ *  per-scroll updates just read `pane._gutterOffset` so each scroll tick
+ *  stays out of the layout-read path (getBoundingClientRect and
+ *  getComputedStyle are forced reflows). */
+function recomputeGutterOffset(pane) {
   if (!pane.notebook || !pane.notebook.state) return;
   const scroller = getScroller();
   if (!scroller) return;
@@ -238,16 +233,23 @@ function syncCameraFromScroll(pane) {
   const pad = getScrollerPadding();
   const docContentTop = scrollerRect.top + pad.top;
   const canvasTop = pane.y + TITLEBAR_HEIGHT;
-  const offset = docContentTop - canvasTop;
+  pane._gutterOffset = docContentTop - canvasTop;
+  pane.notebook.state.gutterCameraOffset = pane._gutterOffset;
+}
+
+/** Push the live scrollTop into the notebook's camera.y so the rendered
+ *  canvas slice tracks the doc scroll. Camera.x is preserved for
+ *  horizontal pan; camera.zoom is locked at 1. The expensive layout
+ *  read lives in `recomputeGutterOffset` — the per-scroll path just
+ *  does arithmetic. */
+function syncCameraFromScroll(pane) {
+  if (!pane.notebook || !pane.notebook.state) return;
+  const scroller = getScroller();
+  if (!scroller) return;
+  if (pane._gutterOffset == null) recomputeGutterOffset(pane);
   const st = pane.notebook.state;
-  // Stash the offset so the input handlers (state.ts pan / wheel,
-  // input-handler two-finger, notes-canvas drawing touch) compute
-  // camera.y with the same alignment formula instead of falling back
-  // to plain `-scrollTop`, which would briefly mis-align the canvas
-  // until the next scroll listener tick.
-  st.gutterCameraOffset = offset;
   const x = st.camera.x;
-  st.camera = { x, y: offset - scroller.scrollTop, zoom: 1 };
+  st.camera = { x, y: pane._gutterOffset - scroller.scrollTop, zoom: 1 };
   st.notify("camera");
 }
 
@@ -267,6 +269,7 @@ function startGutterSync(pane) {
   pane._gutterWindowHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
     applyGutterGeometry(pane);
+    recomputeGutterOffset(pane);
     syncCameraFromScroll(pane);
     scheduleSync(pane);
   };
@@ -333,6 +336,7 @@ export function useActivePaneAsGutter() {
   }
 
   applyGutterGeometry(pane);
+  recomputeGutterOffset(pane);
   syncCameraFromScroll(pane);
   startGutterSync(pane);
   // Defer the first scan one frame so CodeMirror has measured line
@@ -404,6 +408,7 @@ export function restoreGutterLayout(pane) {
     pane.notebook.state.gutterScrollDOM = getScroller();
   }
   applyGutterGeometry(pane);
+  recomputeGutterOffset(pane);
   syncCameraFromScroll(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
   scheduleSync(pane);

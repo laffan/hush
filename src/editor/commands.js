@@ -20,7 +20,6 @@
 import { EditorSelection } from "@codemirror/state";
 import { openSettingsWindow } from "../settings/settings-ui.js";
 import { openFindReplace, openFindAll, findNext, findPrev } from "./find-replace.js";
-import { getLockedStyleId } from "../sidebar/styles-panel.js";
 import { toggleCommandPalette } from "../command-palette.js";
 import {
   selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence,
@@ -98,52 +97,6 @@ function selectPreviousInstance(view) {
 }
 
 /**
- * Switch to a style by index (0 = Default, 1–4 = first four user styles).
- * Shows a brief toast if the current document has a locked style.
- */
-function switchStyleByIndex(state, index) {
-  const lockedId = getLockedStyleId(state);
-  if (lockedId) {
-    showLockedStyleToast(state);
-    return true;
-  }
-  const styles = state.settings.styles || [];
-  const targetId = index === 0 ? null : (styles[index - 1]?.id ?? null);
-  // Index beyond available styles — ignore silently
-  if (index > 0 && !styles[index - 1]) return true;
-  if (state.settings.activeStyleId !== targetId) {
-    state.updateSettings({ activeStyleId: targetId });
-    state.setDeskGlobalStyleId(targetId);
-    state.emit("style-changed");
-  }
-  return true;
-}
-
-/** Show a brief auto-dismissing toast when a locked style blocks switching. */
-function showLockedStyleToast(state) {
-  // Remove any existing toast
-  document.querySelectorAll(".style-locked-toast").forEach(el => el.remove());
-  const toast = document.createElement("div");
-  toast.className = "style-locked-toast";
-  // Determine locked style name
-  const lockedId = getLockedStyleId(state);
-  let styleName = "Default";
-  if (lockedId && lockedId !== "__default__") {
-    const s = (state.settings.styles || []).find(st => st.id === lockedId);
-    if (s) styleName = s.name;
-  }
-  toast.textContent = `Style locked to "${styleName}" for this document`;
-  document.body.appendChild(toast);
-  // Force reflow then add visible class for transition
-  toast.offsetHeight; // eslint-disable-line no-unused-expressions
-  toast.classList.add("visible");
-  setTimeout(() => {
-    toast.classList.remove("visible");
-    setTimeout(() => toast.remove(), 300);
-  }, 2000);
-}
-
-/**
  * Returns the full commands map, ready to feed into
  * `buildCodeMirrorKeymap(state, commands)` or `dispatchDomShortcut(...)`.
  *
@@ -192,13 +145,6 @@ export function buildEditorCommands() {
       openZoteroModal(view || null, state);
       return true;
     },
-
-    // ===== Styles =====
-    shortcutStyleDefault: (state) => switchStyleByIndex(state, 0),
-    shortcutStyle1: (state) => switchStyleByIndex(state, 1),
-    shortcutStyle2: (state) => switchStyleByIndex(state, 2),
-    shortcutStyle3: (state) => switchStyleByIndex(state, 3),
-    shortcutStyle4: (state) => switchStyleByIndex(state, 4),
 
     // ===== Editing =====
     shortcutSelectSentence: (_state, view) => (view ? selectSentence(view) : false),
