@@ -88,7 +88,7 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let main_source = styles::wrap(style, &body, bib_yaml.is_some(), req.title.as_deref());
 
     let world = world::ExportWorld::new(
-        main_source,
+        main_source.clone(),
         bib_yaml,
         req.images
             .iter()
@@ -97,13 +97,41 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     );
 
     let warned = typst::compile::<typst::layout::PagedDocument>(&world);
-    let document = warned
-        .output
-        .map_err(|errs| format_diagnostics("compile", &errs, &world))?;
+    let document = warned.output.map_err(|errs| {
+        let dump = dump_failing_source(&main_source);
+        format!(
+            "{}{}",
+            format_diagnostics("compile", &errs, &world),
+            dump,
+        )
+    })?;
 
     let pdf_opts = typst_pdf::PdfOptions::default();
-    typst_pdf::pdf(&document, &pdf_opts)
-        .map_err(|errs| format_diagnostics("pdf", &errs, &world))
+    typst_pdf::pdf(&document, &pdf_opts).map_err(|errs| {
+        let dump = dump_failing_source(&main_source);
+        format!(
+            "{}{}",
+            format_diagnostics("pdf", &errs, &world),
+            dump,
+        )
+    })
+}
+
+/// On failure, write the generated `.typ` source to a temp file and
+/// return a `\n  source: <path>` suffix the error formatter appends to
+/// its message. Writing it once we know we're already on the error
+/// path keeps the happy path allocation-free.
+fn dump_failing_source(source: &str) -> String {
+    let mut path = std::env::temp_dir();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    path.push(format!("hush-typst-failed-{}.typ", stamp));
+    match std::fs::write(&path, source) {
+        Ok(()) => format!("\n  source: {}", path.display()),
+        Err(_) => String::new(),
+    }
 }
 
 #[cfg(test)]

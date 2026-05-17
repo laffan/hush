@@ -110,9 +110,13 @@ fn expand_cite_sentinels(s: &str, mode: CitationMode) -> String {
             key.push(k);
         }
         match mode {
+            // Function form sidesteps the whitespace-sensitive `@key`
+            // markup rules, so cites that sit flush against adjacent
+            // text (`acts[@mandolessi2024]`) still resolve cleanly.
             CitationMode::Resolve => {
-                out.push('@');
+                out.push_str("#cite(<");
                 out.push_str(&key);
+                out.push_str(">)");
             }
             CitationMode::Strip => out.push_str(&key),
         }
@@ -241,8 +245,12 @@ impl Emitter {
                     _ => out.push_str("- "),
                 }
             }
-            Tag::Emphasis => self.write("_", out),
-            Tag::Strong => self.write("*", out),
+            // Always use the function form so positions like
+            // `*shape*attention` (intra-word) and `a*rs foo*` (mid-word
+            // open) don't trip Typst's whitespace-sensitive emphasis
+            // markup. Renders identically to `_..._` / `*...*`.
+            Tag::Emphasis => self.write("#emph[", out),
+            Tag::Strong => self.write("#strong[", out),
             Tag::Strikethrough => self.write("#strike[", out),
             Tag::Link { dest_url, title, .. } => {
                 self.pending = Some(PendingLink {
@@ -305,8 +313,8 @@ impl Emitter {
                 }
             }
             TagEnd::Item => { /* spacing handled by next Item or List end */ }
-            TagEnd::Emphasis => self.write("_", out),
-            TagEnd::Strong => self.write("*", out),
+            TagEnd::Emphasis => self.write("]", out),
+            TagEnd::Strong => self.write("]", out),
             TagEnd::Strikethrough => self.write("]", out),
             TagEnd::Link => {
                 if let Some(p) = self.pending.take() {
@@ -436,23 +444,53 @@ mod tests {
     #[test]
     fn citation_bracket_resolve() {
         let out = to_typst("See [@halbwachs1992] for context.", CitationMode::Resolve);
-        assert!(out.contains("@halbwachs1992"), "got: {}", out);
-        assert!(!out.contains("["));
+        assert!(out.contains("#cite(<halbwachs1992>)"), "got: {}", out);
     }
 
     #[test]
     fn citation_bracket_strip() {
         let out = to_typst("See [@halbwachs1992] for context.", CitationMode::Strip);
         assert!(out.contains("halbwachs1992"), "got: {}", out);
-        assert!(!out.contains("@halbwachs1992"));
+        assert!(!out.contains("#cite"), "got: {}", out);
     }
 
     #[test]
     fn citation_link_resolve() {
         let src = "See [@halbwachs1992](zotero://select/library/items/ABC123).";
         let out = to_typst(src, CitationMode::Resolve);
-        assert!(out.contains("@halbwachs1992"), "got: {}", out);
+        assert!(out.contains("#cite(<halbwachs1992>)"), "got: {}", out);
         assert!(!out.contains("zotero://"), "got: {}", out);
+    }
+
+    /// Regression: `*shape*attention` (intra-word emphasis) used to
+    /// produce `_shape_attention`, which Typst rejected because the
+    /// closing `_` had no whitespace boundary. Function form fixes it.
+    #[test]
+    fn intra_word_emphasis_renders_through_function_form() {
+        let out = to_typst("Past experiences *shape*attention here.", CitationMode::Strip);
+        assert!(out.contains("#emph[shape]attention"), "got: {}", out);
+    }
+
+    /// Regression: `acts[@key]` used to expand to `acts@key`, but
+    /// Typst's `@`-reference markup requires whitespace before the
+    /// `@`. Function form sidesteps that.
+    #[test]
+    fn cite_flush_against_text() {
+        let out = to_typst("collective acts[@mandolessi2024].", CitationMode::Resolve);
+        assert!(out.contains("acts#cite(<mandolessi2024>)."), "got: {}", out);
+    }
+
+    /// Regression: `_mimesis_@key` previously left an unclosed `_`
+    /// because Typst's emphasis close needs whitespace/punctuation
+    /// after, and `@` started a reference instead.
+    #[test]
+    fn emphasis_immediately_followed_by_cite() {
+        let out = to_typst("but *mimesis*[@mandolessi2024]. End.", CitationMode::Resolve);
+        assert!(
+            out.contains("#emph[mimesis]#cite(<mandolessi2024>)"),
+            "got: {}",
+            out
+        );
     }
 
     #[test]
