@@ -206,13 +206,29 @@
 
 .floating-pane.gutter.gutter-left {
   border-right-color: #e44b3a;
-  box-shadow: inset -2px 0 0 #e44b3a;
 }
 
 .floating-pane.gutter.gutter-right {
   border-left-color: #e44b3a;
-  box-shadow: inset 2px 0 0 #e44b3a;
 }
+
+/* iOS WKWebView clips inset box-shadows behind the notebook canvas so
+   the 2 px gutter line only shows at the rounded corners. Paint the
+   line as a dedicated overlay element instead — pseudo, fixed width,
+   high z-index, pointer-events disabled. */
+.floating-pane.gutter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #e44b3a;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.floating-pane.gutter.gutter-left::before { right: 0; }
+.floating-pane.gutter.gutter-right::before { left: 0; }
 
 /* Gutter geometry is driven by the doc: height tracks the doc text,
    y tracks doc scroll. So lock height-affecting resize handles and the

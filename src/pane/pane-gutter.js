@@ -80,18 +80,37 @@ function getContentEl() {
 
 /** Walk the doc, return the y position + text + level of every ATX
  *  heading (`#`, `##`, …). y is doc-content-y, which under our gutter
- *  geometry equals world-y in the canvas. */
+ *  geometry equals world-y in the canvas. Falls back to a line-number
+ *  estimate when `lineBlockAt(...).top` returns 0 for non-first lines
+ *  — happens on iOS WKWebView when CodeMirror hasn't completed its
+ *  first measure pass by the time gutter-enter scans. */
 function scanDocHeaders() {
   const view = appState?.editor?.view;
   if (!view) return [];
   const headers = [];
   const doc = view.state.doc;
+  // defaultLineHeight is the CM-measured line height in CSS px when
+  // available; the empirical fallback covers iOS WKWebView paths where
+  // the property is missing. Used to estimate header y when the
+  // height-map reports 0 for a non-first line.
+  const lineH = (typeof view.defaultLineHeight === "number" && view.defaultLineHeight > 0)
+    ? view.defaultLineHeight
+    : 22;
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
     const m = line.text.match(/^(#{1,6})\s+(\S.*)$/);
     if (!m) continue;
-    const block = view.lineBlockAt(line.from);
-    headers.push({ y: block.top, level: m[1].length, text: m[2] });
+    let y = 0;
+    try {
+      const block = view.lineBlockAt(line.from);
+      if (block && typeof block.top === "number") y = block.top;
+    } catch (_) { /* fall through to estimate */ }
+    // CodeMirror's height-map can lag on iOS — a heading on line N>1
+    // reporting top=0 is the diagnostic signal. Estimate from line
+    // number so the shadow at least lands close; the next rescan
+    // (scroll, resize, or doc-change) replaces it with the real value.
+    if (y === 0 && i > 1) y = (i - 1) * lineH;
+    headers.push({ y, level: m[1].length, text: m[2] });
   }
   return headers;
 }
@@ -299,6 +318,12 @@ export function useActivePaneAsGutter() {
   // Defer the first scan one frame so CodeMirror has measured line
   // positions. scheduleSync handles the rAF batching.
   scheduleSync(pane);
+  // Two extra retries — on iOS WKWebView the editor's first measure
+  // pass can land well after the gutter-enter rAF, so the first scan
+  // sees zeros for off-screen headers. These backups land after the
+  // pane / canvas / WebView paint has settled.
+  setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 250);
+  setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 1000);
   import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
   schedulePersist();
