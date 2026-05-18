@@ -129,6 +129,30 @@ export async function linkCurrentDocument(state) {
   }
 }
 
+/** One-shot "Create Google Doc from current" — pushes the current
+ *  Hush doc's content into a brand-new Google Doc named after the
+ *  Hush file, then stores the link so the editor's link bar appears
+ *  on next render. Mirrors the "Create new" branch of
+ *  `linkCurrentDocument` without prompting through the picker. */
+export async function createGoogleDocFromCurrent(state) {
+  await requireConnection();
+  const fileId = currentDocFileId(state);
+  if (!fileId) {
+    throw new Error("Open a Hush document first to create a Google Doc from it.");
+  }
+  const existing = getLink(state, fileId);
+  if (existing) {
+    throw new Error(`This document is already linked to "${existing.title}". Unlink it first.`);
+  }
+  const hushTitle = currentDocName(state);
+  const md = state.editor?.view?.state?.doc?.toString() || "";
+  const html = markdownToHtmlForGDoc(md);
+  const created = await createDocumentFromHtml(hushTitle, html);
+  await setLink(state, fileId, { docId: created.id, title: created.name || hushTitle });
+  appendLog(state, `Created and linked new Google Doc "${created.name || hushTitle}"`);
+  return created;
+}
+
 export async function unlinkCurrentDocument(state) {
   const fileId = currentDocFileId(state);
   if (!fileId) return;

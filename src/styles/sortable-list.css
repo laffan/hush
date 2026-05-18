@@ -48,6 +48,16 @@
   padding-left: 12px;
 }
 
+/* Outline the folder/project row that's about to receive the drop so
+   the target container is visible at a glance. Inset by 1px so the
+   outline lands inside the row's existing 4px padding rather than
+   bumping siblings around. */
+.sl-item.sl-drop-target-item > .sl-item-content {
+  outline: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
 .sl-item-content {
   display: flex;
   align-items: center;

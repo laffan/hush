@@ -12,21 +12,23 @@ import {
   canUseAsNote,
   isDesktopTauri,
   formatShortcutKeys,
-  collectFileLeaves,
-  activeDeskSubtree,
 } from "./command-palette-helpers.js";
+import {
+  paneAnchorClickPoint, promptNewNotebookName,
+  docContextHasGutterAlready, openNotebookAsGutter,
+  enterNotebookGutterPicker, enterPaneCopyPicker,
+  enterSendSelectedPicker, enterFilePicker,
+} from "./command-palette-pickers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import {
-  getActivePaneId, fitActivePaneToGap, createPane, getInitialPanePosition,
-  replacePaneContent, contextIdForFile, getPanesForContext, clearPanesForContext,
-  copyPanesBetweenContexts, setActivePanePinned,
+  getActivePaneId, fitActivePaneToGap, createPane,
+  replacePaneContent, getPanesForContext, clearPanesForContext,
+  setActivePanePinned,
 } from "./pane/pane-manager.js";
 import { panes } from "./pane/pane-state.js";
 import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
-import { arePanesHiddenForActive, setPanesHiddenForContext } from "./state/state-panes.js";
-import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
-import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
-import { createNewFromSelected, sendSelectedToFile } from "./selection-extract.js";
+import { arePanesHiddenForActive } from "./state/state-panes.js";
+import { createNewFromSelected } from "./selection-extract.js";
 import { openInNewWindow } from "./multi-window.js";
 import { getLockedStyleId, setLockedStyleId } from "./sidebar/styles-panel.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
@@ -81,13 +83,6 @@ function svgInner(raw) {
   return raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
 }
 
-/** createPane centres on (x,y); pre-add half the default size so the
- *  pane's top-left lands at `getInitialPanePosition`'s point. */
-function paneAnchorClickPoint(state) {
-  const pos = getInitialPanePosition(state);
-  return { x: pos.x + PANE_DEFAULT_WIDTH / 2, y: pos.y + PANE_TITLEBAR_HEIGHT / 2 };
-}
-
 /** Lazy-import a Google Docs link-command and return an action fn that
  *  surfaces auth/API errors via window.alert (cheap, accessible). */
 function _gdocAction(method) {
@@ -125,7 +120,7 @@ function buildCommands(state) {
     { id: "new-doc", label: "New document", icon: icons.doc, shortcutKey: "shortcutNewFile", ctx: "shared",
       action: (s) => s.newFile() },
     { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: null, ctx: "shared",
-      action: (s) => s.createNotebook("New Notebook") },
+      action: (s) => promptNewNotebookName((name) => s.createNotebook(name)) },
     { id: "new-doc-pane", label: "New document as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const created = await s.newFile(null, { openImmediately: false });
@@ -135,13 +130,13 @@ function buildCommands(state) {
         }
       } },
     { id: "new-notebook-pane", label: "New notebook as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
-      action: async (s) => {
-        const created = await s.createNotebook("New Notebook", null, { openImmediately: false });
+      action: (s) => promptNewNotebookName(async (name) => {
+        const created = await s.createNotebook(name, null, { openImmediately: false });
         if (created) {
           const { x, y } = paneAnchorClickPoint(s);
           createPane(created.fileId, created.name, "notebook", x, y);
         }
-      } },
+      }) },
     { id: "open-file", label: "Open document, notebook, or project", icon: icons.files, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {
@@ -252,9 +247,21 @@ function buildCommands(state) {
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
     { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsHtml(s.editor.view)) },
+    { id: "add-notebook-as-gutter", label: "Add notebook as gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+      keepOpen: true,
+      hiddenIf: (s) => docContextHasGutterAlready(s),
+      action: (s, p) => enterNotebookGutterPicker(p, s) },
+    { id: "new-notebook-as-gutter", label: "New notebook as gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => docContextHasGutterAlready(s),
+      action: (s) => promptNewNotebookName(async (name) => {
+        const created = await s.createNotebook(name, null, { openImmediately: false });
+        if (created) await openNotebookAsGutter(s, created.fileId, created.name);
+      }) },
     { id: "google-import", label: "Import from Google Doc", icon: icons.export, shortcutKey: null, ctx: "shared", action: _gdocAction("importFromGoogleDoc") },
     { id: "google-link", label: "Link Document to Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("linkCurrentDocument") },
+    { id: "google-create-from-current", label: "Create Google Doc from current", icon: icons.export, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("createGoogleDocFromCurrent") },
     { id: "google-unlink", label: "Unlink Document from Google Doc", icon: icons.trash, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("unlinkCurrentDocument") },
 
@@ -342,74 +349,6 @@ function buildCommands(state) {
     if (cmd.ctx === "desktop") return desktop;
     return true;
   });
-}
-
-/** Copy or switch the current document's panes into another doc/notebook.
- *  `switchAfter` is true for *Switch panes to Document* — clears the
- *  source after copying and opens the target so the panes ride along. */
-function enterPaneCopyPicker(palette, state, switchAfter) {
-  const currentFileId = state.currentNotebookFileId || state.currentFileId;
-  const items = collectFileLeaves(activeDeskSubtree(state))
-    .filter((f) => (f.type === "document" || f.type === "notebook") && f.fileId !== currentFileId)
-    .map((f) => ({
-      id: "pane-copy-target-" + f.id,
-      label: f.name,
-      icon: f.type === "notebook" ? icons.notebook : icons.doc,
-      shortcutKey: null,
-      action: async () => {
-        const sourceCtx = activeContextId(state);
-        const targetCtx = contextIdForFile(f.fileId, f.type);
-        if (!sourceCtx || !targetCtx || sourceCtx === targetCtx) return;
-        if (switchAfter) await setPanesHiddenForContext(state, targetCtx, false);
-        await copyPanesBetweenContexts(sourceCtx, targetCtx);
-        if (switchAfter) {
-          clearPanesForContext(sourceCtx);
-          if (f.type === "notebook") state.openNotebook(f.fileId);
-          else state.openFile(f.fileId);
-        }
-      },
-    }));
-  palette.setItems(items, switchAfter ? "Switch panes to…" : "Copy panes to…");
-}
-
-/** Open a file picker filtered to documents (in doc mode) or notebooks
- *  (in notebook mode), excluding the currently-open file, and append the
- *  current selection to whichever the user picks. */
-function enterSendSelectedPicker(palette, state) {
-  const inNotebook = !!state.currentNotebookFileId;
-  const wantedType = inNotebook ? "notebook" : "document";
-  const currentId = inNotebook ? state.currentNotebookFileId : state.currentFileId;
-  const leaves = collectFileLeaves(activeDeskSubtree(state))
-    .filter((f) => f.type === wantedType && f.fileId !== currentId);
-  const items = leaves.map((f) => ({
-    id: "send-target-" + f.id,
-    label: f.name,
-    icon: f.type === "notebook" ? icons.notebook : icons.doc,
-    shortcutKey: null,
-    action: () => sendSelectedToFile(state, f),
-  }));
-  const placeholder = inNotebook ? "Send selection to notebook…" : "Send selection to document…";
-  palette.setItems(items, placeholder);
-}
-
-/** Replace the palette's command list with file rows that pipe back into
- *  `onPick(fileLeaf)` on selection. Used by both "Open…" commands.
- *  `includeProjects` is opt-in because the floating-pane path doesn't
- *  support project types — only the main editor can host the joined view. */
-function enterFilePicker(palette, state, placeholder, onPick, { includeProjects = false } = {}) {
-  let leaves = collectFileLeaves(activeDeskSubtree(state));
-  if (!includeProjects) leaves = leaves.filter((f) => f.type !== "project");
-  // Sort MRU-first; files not in the MRU keep their tree order behind it.
-  const recents = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
-  const rank = new Map(recents.map((id, i) => [id, i]));
-  leaves = leaves.slice().sort((a, b) => (rank.get(a.fileId) ?? Infinity) - (rank.get(b.fileId) ?? Infinity));
-  const items = leaves.map((f) => ({
-    id: "file-" + f.id, label: f.name, shortcutKey: null,
-    icon: f.type === "notebook" ? icons.notebook : f.type === "project" ? icons.project : icons.doc,
-    paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type === "notebook" ? "notebook" : "document" }, state),
-    action: () => onPick(f),
-  }));
-  palette.setItems(items, placeholder);
 }
 
 let overlay = null;
