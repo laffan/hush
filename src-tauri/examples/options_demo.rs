@@ -10,6 +10,7 @@ fn main() {
         markdown: md,
         style_id: "formal".into(),
         include_citations: false,
+        citation_style: "numbered".into(),
         strip_comments: true,
         strip_flags: true,
         number_headings: true,

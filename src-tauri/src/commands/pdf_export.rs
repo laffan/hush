@@ -14,7 +14,7 @@ binary-file writer that the notebook export uses.
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::typst_export::{render_pdf, styles, ExportRequest, ImageInput, ZoteroRef};
+use crate::typst_export::{csl, render_pdf, styles, ExportRequest, ImageInput, ZoteroRef};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -24,6 +24,8 @@ pub struct PdfExportArgs {
     pub style_id: String,
     #[serde(default)]
     pub include_citations: bool,
+    #[serde(default = "default_cite_style")]
+    pub citation_style: String,
     #[serde(default = "true_default")]
     pub strip_comments: bool,
     #[serde(default = "true_default")]
@@ -42,6 +44,7 @@ pub struct PdfExportArgs {
 }
 
 fn true_default() -> bool { true }
+fn default_cite_style() -> String { csl::default_id().to_string() }
 
 #[tauri::command]
 pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result<Vec<u8>, String> {
@@ -51,6 +54,7 @@ pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result
         markdown: args.markdown,
         style_id: args.style_id,
         include_citations: args.include_citations,
+        citation_style: args.citation_style,
         strip_comments: args.strip_comments,
         strip_flags: args.strip_flags,
         number_headings: args.number_headings,
@@ -73,6 +77,20 @@ pub fn list_doc_styles() -> Vec<DocStyleSummary> {
     styles::list()
         .iter()
         .map(|s| DocStyleSummary { id: s.id, name: s.name })
+        .collect()
+}
+
+#[derive(Serialize)]
+pub struct CitationStyleSummary {
+    pub id: &'static str,
+    pub name: &'static str,
+}
+
+#[tauri::command]
+pub fn list_citation_styles() -> Vec<CitationStyleSummary> {
+    csl::list()
+        .iter()
+        .map(|(id, name)| CitationStyleSummary { id, name })
         .collect()
 }
 

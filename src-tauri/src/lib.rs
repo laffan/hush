@@ -457,6 +457,7 @@ pub fn run() {
             commands::multi_window::broadcast_notebook_changed,
             commands::pdf_export::render_doc_pdf,
             commands::pdf_export::list_doc_styles,
+            commands::pdf_export::list_citation_styles,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hush");

@@ -21,28 +21,19 @@ pub struct Style {
     pub id: &'static str,
     pub name: &'static str,
     preamble: &'static str,
-    /// Optional CSL bytes for the bibliography. When set, the wrap
-    /// function points `#bibliography(...)` at `/style.csl` and the
-    /// world registers these bytes there. When None, falls back to
-    /// the built-in chicago-author-date style.
-    csl: Option<&'static str>,
-}
-
-impl Style {
-    /// CSL XML for this style's bibliography, if any. Lives on the
-    /// type so `mod.rs` can register it in the export World without
-    /// reaching into the styles module internals.
-    pub fn csl_bytes(&self) -> Option<&'static str> {
-        self.csl
-    }
 }
 
 /// Per-export knobs that aren't baked into a style — these come from
 /// the modal toggles. Keeping them here (rather than per-style)
 /// because they're orthogonal: any style can choose to show or hide
 /// page numbers, number its headings, and so on.
+///
+/// `bibliography` carries both "render a bibliography?" and "which
+/// citation grammar?" in one slot — `Some` means yes, with the chosen
+/// CSL; `None` means no bibliography (cites still resolve to a red
+/// missing-marker, per `markdown::missing_cite_marker`).
 pub struct WrapOptions {
-    pub with_bibliography: bool,
+    pub bibliography: Option<crate::typst_export::csl::CitationStyle>,
     pub number_headings: bool,
     pub page_numbers: bool,
 }
@@ -85,19 +76,16 @@ pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
     out.push('\n');
     out.push_str(body);
 
-    if opts.with_bibliography {
+    if let Some(cite_style) = &opts.bibliography {
         // The bibliography file is registered at `/refs.yml` by the
-        // World — Typst's `bibliography()` accepts a path and a style
-        // (built-in name OR a path to a CSL file). If this style ships
-        // its own CSL we point at `/style.csl` (registered alongside
-        // refs.yml in the export World); otherwise we fall back to
-        // built-in chicago-author-date so inline cites still read as
-        // (Author Year).
+        // World — Typst's `#bibliography()` accepts a path and a CSL
+        // style argument (either a built-in name like "apa" or a path
+        // to a CSL file registered alongside refs.yml).
+        // `CitationStyle::typst_style_arg()` hands us the right one.
         out.push_str("\n#pagebreak()\n");
-        let style_arg = if style.csl.is_some() { "\"/style.csl\"" } else { "\"chicago-author-date\"" };
         out.push_str(&format!(
-            "#bibliography(\"/refs.yml\", style: {})\n",
-            style_arg
+            "#bibliography(\"/refs.yml\", style: \"{}\")\n",
+            cite_style.typst_style_arg()
         ));
     }
 
@@ -114,7 +102,7 @@ mod tests {
 
     fn base() -> WrapOptions {
         WrapOptions {
-            with_bibliography: false,
+            bibliography: None,
             number_headings: false,
             page_numbers: false,
         }
@@ -147,7 +135,6 @@ static STYLES: &[Style] = &[
         id: "formal",
         name: "Formal",
         preamble: FORMAL_PREAMBLE,
-        csl: Some(FORMAL_CSL),
     },
 ];
 
@@ -189,95 +176,3 @@ const FORMAL_PREAMBLE: &str = r##"
 )
 "##;
 
-/// CSL style for the Formal preset. Two non-obvious choices baked in:
-///
-///   - `<citation>` keeps the chicago-author-date shape: `(Author
-///     Year)` inline, suppress the author when prose context already
-///     names them, et-al collapse for 3+ authors.
-///   - `<bibliography>` swaps the default by-author list for a
-///     numbered list with `second-field-align="margin"` — Hayagriva
-///     renders that as a two-column layout where the citation number
-///     sits in a narrow left gutter and the entry body hangs in the
-///     wider right column, matching the brief.
-///
-/// Entries are sorted by author then year so the visible numbering
-/// reflects bibliography order, not citation order. That's the
-/// chicago-author-date convention and avoids "[1]"-style surprise
-/// where a later cite picks up a lower number.
-const FORMAL_CSL: &str = r##"<?xml version="1.0" encoding="utf-8"?>
-<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" demote-non-dropping-particle="sort-only" default-locale="en-US">
-  <info>
-    <title>Hush Formal (Author-Date, Numbered Bibliography)</title>
-    <id>https://hush.app/styles/formal</id>
-    <link href="https://hush.app/styles/formal" rel="self"/>
-    <updated>2026-05-17T00:00:00+00:00</updated>
-    <category citation-format="author-date"/>
-    <summary>Chicago-style author-date inline citations with a numbered, gutter-aligned bibliography.</summary>
-  </info>
-  <macro name="author-short">
-    <names variable="author">
-      <name form="short" and="text" delimiter=", " initialize-with=". "/>
-      <substitute>
-        <names variable="editor"/>
-        <names variable="translator"/>
-        <text variable="title" font-style="italic"/>
-      </substitute>
-    </names>
-  </macro>
-  <macro name="author-long">
-    <names variable="author">
-      <name name-as-sort-order="first" and="text" delimiter=", " initialize-with=". "/>
-      <substitute>
-        <names variable="editor"/>
-        <names variable="translator"/>
-        <text variable="title" font-style="italic"/>
-      </substitute>
-    </names>
-  </macro>
-  <macro name="year">
-    <date variable="issued">
-      <date-part name="year"/>
-    </date>
-  </macro>
-  <macro name="title">
-    <choose>
-      <if type="book thesis report" match="any">
-        <text variable="title" font-style="italic"/>
-      </if>
-      <else>
-        <text variable="title" quotes="true"/>
-      </else>
-    </choose>
-  </macro>
-  <macro name="publisher">
-    <group delimiter=": ">
-      <text variable="publisher-place"/>
-      <text variable="publisher"/>
-    </group>
-  </macro>
-  <citation et-al-min="3" et-al-use-first="1" disambiguate-add-year-suffix="true">
-    <layout prefix="(" suffix=")" delimiter="; ">
-      <group delimiter=" ">
-        <text macro="author-short"/>
-        <text macro="year"/>
-      </group>
-    </layout>
-  </citation>
-  <bibliography hanging-indent="true" second-field-align="margin" entry-spacing="1">
-    <sort>
-      <key macro="author-long"/>
-      <key macro="year"/>
-    </sort>
-    <layout>
-      <text variable="citation-number" suffix="."/>
-      <group delimiter=". ">
-        <text macro="author-long"/>
-        <text macro="year"/>
-        <text macro="title"/>
-        <text macro="publisher"/>
-      </group>
-      <text value="."/>
-    </layout>
-  </bibliography>
-</style>
-"##;

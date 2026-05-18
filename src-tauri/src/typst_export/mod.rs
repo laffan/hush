@@ -21,6 +21,7 @@ pipeline deterministic and avoids tempfile permissions issues on iOS.
 */
 
 pub mod bibliography;
+pub mod csl;
 pub mod markdown;
 pub mod preprocess;
 pub mod styles;
@@ -28,7 +29,7 @@ pub mod world;
 
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ZoteroRef {
     // The Zotero item id. We don't use it on the Rust side but accept
@@ -62,6 +63,12 @@ pub struct ExportRequest {
     /// When true and `references` is non-empty, inline `(Author, Year)`
     /// citations + a bibliography section get rendered.
     pub include_citations: bool,
+    /// One of the ids from `csl::list()`. Falls back to the default
+    /// (`csl::default_id()`) if the value is missing or unrecognised
+    /// — keeps an old frontend usable against a new backend without
+    /// erroring on a stale value.
+    #[serde(default = "default_cite_style")]
+    pub citation_style: String,
     /// Drop `%% comment %%` blocks and `---%`/separator regions before
     /// rendering — defaults exposed by the modal default to true.
     #[serde(default = "true_default")]
@@ -82,6 +89,7 @@ pub struct ExportRequest {
 }
 
 fn true_default() -> bool { true }
+fn default_cite_style() -> String { csl::default_id().to_string() }
 
 pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let style = styles::lookup(&req.style_id)
@@ -113,8 +121,20 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         None
     };
 
+    // Resolve the citation style now — unknown ids fall back to the
+    // default so a stale frontend value doesn't kill the export.
+    let cite_style = if resolve {
+        Some(
+            csl::resolve(&req.citation_style)
+                .or_else(|| csl::resolve(csl::default_id()))
+                .expect("default citation style id must resolve"),
+        )
+    } else {
+        None
+    };
+
     let wrap_opts = styles::WrapOptions {
-        with_bibliography: bib_yaml.is_some(),
+        bibliography: cite_style,
         number_headings: req.number_headings,
         page_numbers: req.page_numbers,
     };
@@ -123,10 +143,11 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let world = world::ExportWorld::new(
         main_source.clone(),
         bib_yaml,
-        // Ship the per-style CSL alongside the bibliography YAML so
-        // Typst's `#bibliography(style: "/style.csl")` resolves.
-        // None falls back to the built-in chicago-author-date.
-        style.csl_bytes(),
+        // Custom CSL (when the chosen citation style is a `Custom`
+        // variant) gets registered at `/style.csl` so
+        // `#bibliography(style: "/style.csl")` resolves. Built-in
+        // names need no virtual file — Typst looks them up internally.
+        cite_style.and_then(|s| s.custom_bytes()),
         req.images
             .iter()
             .map(|i| (i.filename.clone(), i.bytes.clone()))
@@ -181,6 +202,7 @@ mod tests {
             markdown: "# Hello\n\nA paragraph with *bold* text.".into(),
             style_id: "formal".into(),
             include_citations: false,
+            citation_style: "numbered".into(),
             strip_comments: true,
             strip_flags: true,
             number_headings: false,
@@ -199,6 +221,7 @@ mod tests {
             markdown: "See [@halbwachs1992] on collective memory.".into(),
             style_id: "formal".into(),
             include_citations: true,
+            citation_style: "numbered".into(),
             strip_comments: true,
             strip_flags: true,
             number_headings: false,

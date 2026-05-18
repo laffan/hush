@@ -34,6 +34,7 @@ fn main() {
         markdown: md,
         style_id: "formal".into(),
         include_citations: true,
+        citation_style: "numbered".into(),
         strip_comments: true,
         strip_flags: true,
         number_headings: true,

@@ -43,6 +43,7 @@ export async function openDocExportModal(state) {
   const hasCitations = CITE_RE.test(content);
 
   const styles = await fetchStyles();
+  const citationStyles = await fetchCitationStyles();
 
   // Remove any stale modal first — keeps the export button idempotent
   // even if the user clicks twice.
@@ -59,6 +60,7 @@ export async function openDocExportModal(state) {
     format: "pdf",
     style: styles[0]?.id || "formal",
     includeCitations: hasZotero && hasCitations,
+    citationStyle: citationStyles[0]?.id || "numbered",
     stripComments: true,
     stripFlags: true,
     numberHeadings: false,
@@ -108,6 +110,13 @@ export async function openDocExportModal(state) {
         <input type="checkbox" class="nxm-cite-toggle" ${choices.includeCitations ? "checked" : ""} />
         Include citations &amp; bibliography
       </label>
+      <div class="nxm-cite-style-row" style="${choices.includeCitations ? "" : "display:none"}">
+        <label class="nxm-inline-label">Citation style
+          <select class="nxm-cite-style-select">
+            ${citationStyles.map((s) => `<option value="${escAttr(s.id)}">${escHtml(s.name)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
     </div>
 
     <div class="nxm-actions">
@@ -150,7 +159,13 @@ export async function openDocExportModal(state) {
   styleSelect.addEventListener("change", () => { choices.style = styleSelect.value; });
 
   const citeToggle = modal.querySelector(".nxm-cite-toggle");
-  citeToggle.addEventListener("change", () => { choices.includeCitations = citeToggle.checked; });
+  const citeStyleRow = modal.querySelector(".nxm-cite-style-row");
+  const citeStyleSelect = modal.querySelector(".nxm-cite-style-select");
+  citeToggle.addEventListener("change", () => {
+    choices.includeCitations = citeToggle.checked;
+    citeStyleRow.style.display = citeToggle.checked ? "" : "none";
+  });
+  citeStyleSelect.addEventListener("change", () => { choices.citationStyle = citeStyleSelect.value; });
 
   // Generic checkbox wiring keyed by `data-choice`. Lets us add more
   // layout toggles in HTML without touching the JS plumbing.
@@ -220,6 +235,25 @@ async function fetchStyles() {
   return [{ id: "formal", name: "Formal" }];
 }
 
+const CITATION_FALLBACK = [
+  { id: "numbered", name: "Numbered (gutter)" },
+  { id: "apa", name: "APA" },
+  { id: "mla", name: "MLA" },
+  { id: "chicago", name: "Chicago / Turabian" },
+  { id: "ieee", name: "IEEE" },
+  { id: "harvard", name: "Harvard" },
+];
+
+async function fetchCitationStyles() {
+  if (!IS_TAURI) return CITATION_FALLBACK;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const list = await invoke("list_citation_styles");
+    if (Array.isArray(list) && list.length > 0) return list;
+  } catch (_) { /* fall through */ }
+  return CITATION_FALLBACK;
+}
+
 async function renderPdfBytes(state, content, choices) {
   if (!IS_TAURI) {
     throw new Error("PDF export requires the desktop or iOS app");
@@ -234,6 +268,7 @@ async function renderPdfBytes(state, content, choices) {
       markdown: content,
       styleId: choices.style,
       includeCitations: !!choices.includeCitations,
+      citationStyle: choices.citationStyle,
       stripComments: !!choices.stripComments,
       stripFlags: !!choices.stripFlags,
       numberHeadings: !!choices.numberHeadings,

@@ -43,6 +43,7 @@ A `==FLAG==` inline that the strip pass should remove.
         markdown: cleaned,
         style_id: "formal".into(),
         include_citations: false,
+        citation_style: "numbered".into(),
         strip_comments: true,
         strip_flags: true,
         number_headings: true,

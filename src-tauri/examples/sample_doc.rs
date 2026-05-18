@@ -64,6 +64,7 @@ and some _emphasis_ for good measure.
         markdown: markdown.into(),
         style_id: "formal".into(),
         include_citations: true,
+        citation_style: "numbered".into(),
         strip_comments: true,
         strip_flags: true,
         number_headings: false,

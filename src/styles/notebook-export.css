@@ -117,6 +117,29 @@
   user-select: none;
 }
 
+.notebook-export-modal .nxm-cite-style-row {
+  margin-top: 6px;
+  margin-left: 22px;
+}
+
+.notebook-export-modal .nxm-inline-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.notebook-export-modal .nxm-cite-style-select,
+.notebook-export-modal .nxm-style-select {
+  padding: 4px 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+}
+
 .notebook-export-modal .nxm-actions {
   display: flex;
   justify-content: flex-end;
