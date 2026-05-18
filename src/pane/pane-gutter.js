@@ -273,14 +273,32 @@ function invalidateGutterPadCache(pane) {
 function startGutterSync(pane) {
   const scroller = getScroller();
   if (!scroller) return;
-  // Scroll → resync. CodeMirror lazily measures lines as they enter the
-  // viewport, so each scroll potentially refines header y values. Without
-  // a rescan-on-scroll the snapshot would go stale and shape anchors
-  // would compound the error on the next doc edit.
+  // Scroll → resync, rAF-throttled. Without throttling, every scroll
+  // event drives `syncCameraFromScroll` (rect read + camera notify +
+  // potential drawing-layer re-anchor / rebake). On a doc with many
+  // strokes, the re-anchor's `fullRebake()` is O(N strokes) and shows
+  // up as jank during fast scrolls. Coalescing to one sync per animation
+  // frame caps the work at 60 fps and lets the browser's scroll
+  // compositing carry the visual gap of the in-between frames — the
+  // user sees the canvas catch up on the next frame at worst. We also
+  // bail when scrollTop hasn't moved since the last sync, so the iOS
+  // rubber-band's tail-end of zero-delta scroll events doesn't redo
+  // the work for free.
+  let scrollSyncPending = false;
+  let lastSyncedScrollTop = -1;
   pane._gutterScrollHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
-    syncCameraFromScroll(pane);
-    scheduleSync(pane);
+    if (scrollSyncPending) return;
+    scrollSyncPending = true;
+    requestAnimationFrame(() => {
+      scrollSyncPending = false;
+      if (!pane.gutter || !panes.has(pane.id)) return;
+      const st = scroller.scrollTop;
+      if (st === lastSyncedScrollTop) return;
+      lastSyncedScrollTop = st;
+      syncCameraFromScroll(pane);
+      scheduleSync(pane);
+    });
   };
   scroller.addEventListener("scroll", pane._gutterScrollHandler, { passive: true });
   pane._gutterWindowHandler = () => {
