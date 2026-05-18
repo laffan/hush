@@ -22,6 +22,7 @@ mod snapshots;
 mod sync;
 mod sync_commands;
 mod sync_db;
+pub mod typst_export;
 mod zotero;
 
 use files::FileManager;
@@ -453,6 +454,9 @@ pub fn run() {
             commands::multi_window::broadcast_state_change,
             commands::multi_window::broadcast_doc_changed,
             commands::multi_window::broadcast_notebook_changed,
+            commands::pdf_export::render_doc_pdf,
+            commands::pdf_export::list_doc_styles,
+            commands::pdf_export::list_citation_styles,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Hush");

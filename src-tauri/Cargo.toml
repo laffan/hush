@@ -34,5 +34,16 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 harper-core = { version = "2", default-features = false }
 tauri-plugin-pencil = { path = "tauri-plugin-pencil" }
 
+# Typst-backed PDF export pipeline (docs + projects). The compiler runs
+# in-process so the same code path serves desktop builds and the iOS
+# bundle — neither shells out to a CLI nor reaches the network.
+typst = "0.14"
+typst-pdf = "0.14"
+typst-assets = { version = "0.14", features = ["fonts"] }
+pulldown-cmark = { version = "0.13", default-features = false }
+hayagriva = "0.9"
+comemo = "0.5"
+ecow = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
