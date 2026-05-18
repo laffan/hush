@@ -11,8 +11,9 @@
  */
 import {
   contextIdForFile, copyPanesBetweenContexts, getActivePaneId,
-  clearPanesForContext, createPane, getInitialPanePosition, getPanesForContext,
+  clearPanesForContext, createPane, getInitialPanePosition,
 } from "./pane/pane-manager.js";
+import { panes } from "./pane/pane-state.js";
 import { setPanesHiddenForContext } from "./state/state-panes.js";
 import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
@@ -56,13 +57,15 @@ export function promptNewNotebookName(onConfirm) {
 
 /** Does the active doc already host a notebook pane promoted to gutter?
  *  Mirrors `pane-gutter.js`'s `docHasGutter()` — a doc can carry at
- *  most one gutter at a time. */
+ *  most one gutter at a time. Walks the live `panes` Map directly
+ *  (rather than `getPanesForContext`, which returns shallow copies
+ *  without the `gutter` flag). */
 export function docContextHasGutterAlready(state) {
   if (state.currentNotebookFileId || state.currentProjectId) return true;
   if (!state.currentFileId) return true;
   const ctx = "doc:" + state.currentFileId;
-  for (const p of getPanesForContext(ctx)) {
-    if (p?.gutter) return true;
+  for (const [, p] of panes) {
+    if (p.gutter && p.ownerContext === ctx) return true;
   }
   return false;
 }

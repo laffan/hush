@@ -48,11 +48,11 @@
   padding-left: 12px;
 }
 
-/* Outline the folder/project row that's about to receive the drop so
-   the target container is visible at a glance. Inset by 1px so the
-   outline lands inside the row's existing 4px padding rather than
-   bumping siblings around. */
-.sl-item.sl-drop-target-item > .sl-item-content {
+/* Outline the folder/project that's about to receive the drop so the
+   target container is visible at a glance. The outline wraps the
+   entire `.sl-item` (row + nested children) so the user can see the
+   bounds of what they're dropping into, not just the row label. */
+.sl-item.sl-drop-target-item {
   outline: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
   outline-offset: -1px;
   border-radius: 4px;

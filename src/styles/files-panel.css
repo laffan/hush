@@ -254,7 +254,7 @@
   transition: opacity 0.15s;
   flex-shrink: 0;
   background: var(--theme-bg, var(--bg));
-  padding: 0 6px;
+  padding: 0;
   z-index: 1;
 }
 
