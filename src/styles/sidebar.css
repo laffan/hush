@@ -116,6 +116,13 @@ body.typing-fade .tree-create-btns {
   transition: width 0.2s;
 }
 
+/* Suppress the width transition while the user is actively dragging the
+   resize strip — interpolating every mousemove looks like 200 ms of lag
+   behind the cursor. */
+#panel-overlay.resizing {
+  transition: none;
+}
+
 /* Body-stack holds header / body / footer; collapses to width:0 when
    the panel is hidden, leaving just the grip visible on the right. */
 .panel-overlay-body-stack {
@@ -223,46 +230,71 @@ body.typing-fade .tree-create-btns {
 .sidebar-grip-toggle {
   flex: 1 1 auto;
   height: 100%;
-  background: none;
+  background: transparent;
   color: var(--fg);
   border: none;
-  border-left: 1px solid transparent;
   padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: border-color 0.2s ease;
+  transition: background-color 0.15s ease;
   font-family: -apple-system, system-ui, sans-serif;
 }
 
-.sidebar-grip-toggle:hover,
-.sidebar-grip-toggle:focus-visible {
-  border-left-color: color-mix(in srgb, var(--fg, currentColor) 22%, transparent);
+/* Open state — hovering the toggle paints a faint background tint
+   (no border). */
+#panel-overlay:not(.hidden) .sidebar-grip-toggle:hover,
+#panel-overlay:not(.hidden) .sidebar-grip-toggle:focus-visible {
+  background-color: color-mix(in srgb, var(--fg, currentColor) 8%, transparent);
 }
 
 .sidebar-grip-chevron {
   font-size: 12px;
   line-height: 1;
-  opacity: 0.6;
-  transition: opacity 0.15s;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.sidebar-grip-toggle:hover .sidebar-grip-chevron {
+/* Open state: chevron is always partially visible. */
+#panel-overlay:not(.hidden) .sidebar-grip-chevron {
+  opacity: 0.6;
+}
+
+#panel-overlay:not(.hidden) .sidebar-grip-toggle:hover .sidebar-grip-chevron {
   opacity: 1;
 }
 
-/* Narrow drag-to-resize strip on the outer edge. Visible-on-hover only;
-   hidden when the panel is collapsed (no body to resize). */
+/* Closed state: chevron only appears when the cursor approaches the
+   grip area (i.e., on hover). */
+#panel-overlay.hidden .sidebar-grip-toggle:hover .sidebar-grip-chevron,
+#panel-overlay.hidden .sidebar-grip-toggle:focus-visible .sidebar-grip-chevron {
+  opacity: 0.85;
+}
+
+/* Closed state: no right border on the sidebar — the surface should
+   read as empty until the cursor reveals the toggle arrow. */
+#panel-overlay.hidden {
+  border-right: 1px solid transparent;
+}
+
+/* Narrow drag-to-resize strip on the outer edge. Cursor: col-resize on
+   hover (the `#panel-overlay *` crosshair rule otherwise wins on
+   specificity, so this selector reasserts col-resize with an ID
+   prefix). Hidden when the panel is collapsed — no body width to drag. */
 .sidebar-grip-resize {
   flex: 0 0 6px;
   width: 6px;
   height: 100%;
-  cursor: col-resize;
   position: relative;
   background: transparent;
   transition: background 0.15s;
+}
+
+#panel-overlay .sidebar-grip-resize,
+#panel-overlay .sidebar-grip-resize * {
+  cursor: col-resize;
 }
 
 .sidebar-grip-resize::after {

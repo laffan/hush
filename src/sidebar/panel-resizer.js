@@ -28,15 +28,31 @@ export function attachGripResize(state, resizeEl, panelOverlay) {
     const startX = e.clientX;
     const startWidth = panelOverlay.getBoundingClientRect().width;
     resizeEl.classList.add("dragging");
+    // Suppress the `width` transition on #panel-overlay so the drag
+    // tracks the cursor instead of interpolating 200 ms behind every
+    // mousemove. Editor column recentring is also throttled to one
+    // frame per rAF; without this, applyColumnLayout fires on every
+    // pointermove and stacks up reflows.
+    panelOverlay.classList.add("resizing");
     try { resizeEl.setPointerCapture(e.pointerId); } catch (_) {}
 
-    const onMove = (me) => {
-      const next = startWidth + (me.clientX - startX);
+    let rafPending = false;
+    let latestX = startX;
+    const flush = () => {
+      rafPending = false;
+      const next = startWidth + (latestX - startX);
       applyPanelWidth(next);
       if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     };
+    const onMove = (me) => {
+      latestX = me.clientX;
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(flush);
+    };
     const onUp = () => {
       resizeEl.classList.remove("dragging");
+      panelOverlay.classList.remove("resizing");
       resizeEl.removeEventListener("pointermove", onMove);
       resizeEl.removeEventListener("pointerup", onUp);
       resizeEl.removeEventListener("pointercancel", onUp);
