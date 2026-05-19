@@ -109,6 +109,42 @@ const icons = {
   doc: typeIcons.document, notebook: typeIcons.notebook, project: typeIcons.project, trash: typeIcons.trash,
 };
 
+/** Build the per-style "Use Style: <name>" command rows. Mirrors the
+ *  click-a-row behaviour of the retired sidebar styles panel: if the
+ *  current doc carries a locked style, switching also updates the lock;
+ *  otherwise the choice flows through the per-desk style. */
+function buildUseStyleCommands(state) {
+  const styles = state.settings?.styles || [];
+  const activeId = state.settings?.activeStyleId;
+  const entries = [];
+  function makeEntry(id, name) {
+    const isActive = (id || null) === (activeId || null);
+    return {
+      id: id ? `use-style-${id}` : "use-style-default",
+      label: `Use Style: ${name}${isActive ? " ✓" : ""}`,
+      icon: icons.styles,
+      shortcutKey: null,
+      ctx: "shared",
+      action: async (s) => {
+        const { getLockedStyleId, setLockedStyleId } = await import("./sidebar/styles-panel.js");
+        const lockedId = getLockedStyleId(s);
+        s.updateSettings({ activeStyleId: id || null });
+        if (lockedId) {
+          await setLockedStyleId(s, id || null);
+        } else if (typeof s.setDeskGlobalStyleId === "function") {
+          await s.setDeskGlobalStyleId(id || null);
+        }
+        s.emit("style-changed");
+      },
+    };
+  }
+  entries.push(makeEntry(null, "Default"));
+  for (const st of styles) {
+    if (st && st.id) entries.push(makeEntry(st.id, st.name || "Untitled"));
+  }
+  return entries;
+}
+
 // Context: "shared" = always shown, "doc" = doc/project only, "notebook" = notebook only
 function buildCommands(state) {
   const inNotebook = !!state.currentNotebookFileId;
@@ -180,8 +216,15 @@ function buildCommands(state) {
       } },
     { id: "files", label: "Files", icon: icons.files, shortcutKey: "shortcutToggleSidebar", ctx: "shared",
       action: (s) => s.emit("toggle-left-panel") },
-    { id: "styles", label: "Styles", icon: icons.styles, shortcutKey: null, ctx: "shared",
-      action: (s) => s.emit("show-styles-panel") },
+    { id: "styles-edit", label: "Edit Styles", icon: icons.styles, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const { openStyleEditorModal } = await import("./sidebar/style-modal.js");
+        openStyleEditorModal(s);
+      } },
+    // One "Use Style: <name>" entry per style (plus Default). Selecting a
+    // row writes the active style — same routing as clicking a style row
+    // in the old sidebar list.
+    ...buildUseStyleCommands(state),
     { id: "style-lock", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),
       action: async (s) => { await setLockedStyleId(s, s.settings.activeStyleId || "__default__"); } },

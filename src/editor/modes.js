@@ -136,8 +136,7 @@ export function updateColumnResizers(state) {
     // Panel width is user-resizable; read it from the CSS var.
     let leftInsetOffset = 0;
     if (isInset && panelOpen) {
-      const panelW = getPanelWidthPx();
-      leftInsetOffset = 50 + panelW; // sidebar + panel
+      leftInsetOffset = getPanelWidthPx();
     }
     let rightInsetOffset = 0;
     if (rightInset && rightOpen) {

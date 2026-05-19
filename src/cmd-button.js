@@ -63,39 +63,23 @@ export function initCmdButton(state) {
 
 function applyButtonVisibility() {
   if (!_state) return;
-  // The setting flag stayed `showCmdButton` for one release before being
-  // renamed to `touchMode`; honour both so a previously-saved settings
-  // file doesn't silently lose the toggle on upgrade.
-  const enabled = !!(isIOSDevice()
-    && (_state.settings?.touchMode || _state.settings?.showCmdButton));
-  if (enabled && !_cmdBtn) mountButtons();
-  else if (!enabled && _cmdBtn) unmountButtons();
+  if (!isIOSDevice()) {
+    if (_paletteBtn) unmountButtons();
+    return;
+  }
+  // Palette pill is unconditional on iOS so users without a keyboard
+  // can always reach the command palette. Cmd / paste / undo still
+  // gate behind touchMode (legacy `showCmdButton` alias preserved).
+  const touchPills = !!(_state.settings?.touchMode || _state.settings?.showCmdButton);
+  if (!_paletteBtn) mountButtons(touchPills);
+  else syncTouchPills(touchPills);
 }
 
-function mountButtons() {
-  if (_paletteBtn) return;
+function mountButtons(touchPills) {
+  if (_paletteBtn) { syncTouchPills(touchPills); return; }
 
-  // On a phone the on-screen keyboard already shows a Cmd-on-tab gesture,
-  // and the realistic Cmd-modified flows (drag from sidebar, flowchart
-  // merges) all live in the panel-covered area. Same logic for Undo —
-  // it's a notebook-only convenience that's redundant on a phone where
-  // panes/drawing are de-emphasized anyway. Skip both pills entirely;
-  // CSS pushes the remaining palette + paste pair to the bottom-right.
-  const phone = document.documentElement.classList.contains("phone");
-
-  if (!phone) {
-    // ⌘ button — hold to engage Cmd
-    _cmdBtn = document.createElement("button");
-    _cmdBtn.className = "cmd-floating-button";
-    _cmdBtn.setAttribute("aria-label", "Hold to press Cmd");
-    _cmdBtn.setAttribute("aria-pressed", "false");
-    _cmdBtn.title = "Hold to press Cmd";
-    _cmdBtn.textContent = "⌘";
-    document.body.appendChild(_cmdBtn);
-    wireCmdHold(_cmdBtn);
-  }
-
-  // ☰ button — tap to open command palette
+  // ☰ button — always present on iOS so the command palette is reachable
+  // without a hardware keyboard.
   _paletteBtn = document.createElement("button");
   _paletteBtn.className = "cmd-floating-button cmd-palette-button";
   _paletteBtn.setAttribute("aria-label", "Open command palette");
@@ -106,45 +90,7 @@ function mountButtons() {
     import("./command-palette.js").then((m) => m.toggleCommandPalette?.(_state)).catch(() => {});
   });
 
-  // 📋 button — tap to paste the OS clipboard into the active surface.
-  // Sits above the palette button. iPadOS users without a hardware
-  // keyboard need this since synthetic Cmd+V from a virtual keyboard
-  // doesn't reach CodeMirror's paste path.
-  _pasteBtn = document.createElement("button");
-  _pasteBtn.className = "cmd-floating-button cmd-paste-button";
-  _pasteBtn.setAttribute("aria-label", "Paste from clipboard");
-  _pasteBtn.title = "Paste from clipboard";
-  _pasteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z" fill="currentColor" stroke="none"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="17" x2="13" y2="17"/></svg>`;
-  document.body.appendChild(_pasteBtn);
-  _pasteBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    import("./paste-helper.js").then((m) => m.pasteAtFocus?.()).catch(() => {});
-  });
-
-  if (!phone) {
-    // ↶ button — undo. Sits above the paste pill (fourth from the
-    // bottom). Notebook context calls state.undo() directly via the
-    // exported `notebookUndo`; doc context falls back to a synthetic
-    // Cmd+Z keydown on the focused element so CodeMirror's history
-    // keymap picks it up.
-    _undoBtn = document.createElement("button");
-    _undoBtn.className = "cmd-floating-button cmd-undo-button";
-    _undoBtn.setAttribute("aria-label", "Undo");
-    _undoBtn.title = "Undo";
-    _undoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9L9 4"/><path d="M4 9H14a6 6 0 0 1 0 12H10"/></svg>`;
-    document.body.appendChild(_undoBtn);
-    _undoBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      import("./notebook/notes-canvas").then((m) => {
-        if (m.notebookUndo?.()) return;
-        const target = document.activeElement || document.body;
-        target.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "z", code: "KeyZ", keyCode: 90, metaKey: true, ctrlKey: true,
-          bubbles: true, cancelable: true,
-        }));
-      }).catch(() => {});
-    });
-  }
+  syncTouchPills(touchPills);
 
   syncPanelOpen();
   const panel = document.getElementById("panel-overlay");
@@ -152,6 +98,61 @@ function mountButtons() {
     _panelObserver = new MutationObserver(syncPanelOpen);
     _panelObserver.observe(panel, { attributes: true, attributeFilter: ["class"] });
   }
+}
+
+/** Mount or unmount the touchMode-gated pills (⌘ hold, 📋 paste, ↶ undo).
+ *  Palette stays mounted regardless. Phone (`html.phone`) skips ⌘ and ↶
+ *  because Cmd-modified flows and notebook undo aren't useful there. */
+function syncTouchPills(enabled) {
+  const phone = document.documentElement.classList.contains("phone");
+  if (enabled) {
+    if (!_cmdBtn && !phone) {
+      _cmdBtn = document.createElement("button");
+      _cmdBtn.className = "cmd-floating-button";
+      _cmdBtn.setAttribute("aria-label", "Hold to press Cmd");
+      _cmdBtn.setAttribute("aria-pressed", "false");
+      _cmdBtn.title = "Hold to press Cmd";
+      _cmdBtn.textContent = "⌘";
+      document.body.appendChild(_cmdBtn);
+      wireCmdHold(_cmdBtn);
+    }
+    if (!_pasteBtn) {
+      _pasteBtn = document.createElement("button");
+      _pasteBtn.className = "cmd-floating-button cmd-paste-button";
+      _pasteBtn.setAttribute("aria-label", "Paste from clipboard");
+      _pasteBtn.title = "Paste from clipboard";
+      _pasteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z" fill="currentColor" stroke="none"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="17" x2="13" y2="17"/></svg>`;
+      document.body.appendChild(_pasteBtn);
+      _pasteBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        import("./paste-helper.js").then((m) => m.pasteAtFocus?.()).catch(() => {});
+      });
+    }
+    if (!_undoBtn && !phone) {
+      _undoBtn = document.createElement("button");
+      _undoBtn.className = "cmd-floating-button cmd-undo-button";
+      _undoBtn.setAttribute("aria-label", "Undo");
+      _undoBtn.title = "Undo";
+      _undoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9L9 4"/><path d="M4 9H14a6 6 0 0 1 0 12H10"/></svg>`;
+      document.body.appendChild(_undoBtn);
+      _undoBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        import("./notebook/notes-canvas").then((m) => {
+          if (m.notebookUndo?.()) return;
+          const target = document.activeElement || document.body;
+          target.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "z", code: "KeyZ", keyCode: 90, metaKey: true, ctrlKey: true,
+            bubbles: true, cancelable: true,
+          }));
+        }).catch(() => {});
+      });
+    }
+  } else {
+    if (_cmdBtn) { setHeld(false); _cmdBtn.remove(); _cmdBtn = null; }
+    if (_pasteBtn) { _pasteBtn.remove(); _pasteBtn = null; }
+    if (_undoBtn) { _undoBtn.remove(); _undoBtn = null; }
+  }
+  syncPanelOpen();
 }
 
 function wireCmdHold(btn) {

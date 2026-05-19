@@ -200,18 +200,13 @@ async function init() {
   const windowCommands = buildEditorCommands();
   installWindowShortcuts(state, windowCommands);
 
-  // Sidebar toggle (left panel)
+  // Sidebar toggle (left panel) — single Files panel now.
   state.on("toggle-left-panel", () => {
-    const sb = document.getElementById("sidebar");
     const po = document.getElementById("panel-overlay");
-    if (!sb || !po) return;
-    const isVisible = sb.classList.contains("pinned") ||
-                      sb.classList.contains("visible") ||
-                      !po.classList.contains("hidden");
-    if (isVisible) {
+    if (!po) return;
+    if (!po.classList.contains("hidden")) {
       state.emit("hide-panel");
     } else {
-      sb.classList.add("pinned");
       state.emit("show-files-panel");
     }
   });
@@ -236,8 +231,7 @@ async function init() {
   // Initial focus
   editor.focus();
 
-  const sidebar = document.getElementById("sidebar");
-  createSidebar(sidebar, state);
+  createSidebar(state);
   setupFileDrop(state);
   initZenFocus(state);
   // Listing view shown when 2+ docs are multi-selected in the sidebar.
@@ -292,17 +286,15 @@ async function init() {
     }
   }
 
-  // Sync notebook left inset when sidebar/panel visibility changes
+  // Sync notebook left inset when the sidebar opens / closes.
   function syncNotebookInset() {
     if (!state.currentNotebookFileId) return;
     const po = document.getElementById("panel-overlay");
     const panelOpen = po && !po.classList.contains("hidden");
-    const sbVisible = sidebar.classList.contains("pinned") || sidebar.classList.contains("visible");
     const panelW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
-    setNotebookLeftInset(panelOpen ? (50 + panelW) : sbVisible ? 50 : 0);
+    setNotebookLeftInset(panelOpen ? panelW : 0);
   }
   new MutationObserver(syncNotebookInset).observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
-  new MutationObserver(syncNotebookInset).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
 
   // Panel inset mode — the left sidebar only overlays the text on narrow
   // windows. Above 700px the panel insets alongside the editor (the column

@@ -103,11 +103,6 @@ export function updatePrivateBoxColor(state, overrideBg) {
       document.documentElement.style.backgroundColor = bg;
       document.body.style.backgroundColor = bg;
       const fg = isDark ? "#e0e0e0" : "#1a1a1a";
-      const sidebar = document.getElementById("sidebar");
-      if (sidebar) {
-        sidebar.style.backgroundColor = bg;
-        sidebar.style.color = fg;
-      }
       const panel = document.getElementById("panel-overlay");
       if (panel) {
         panel.style.backgroundColor = bg;
