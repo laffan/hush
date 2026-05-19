@@ -124,7 +124,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── doc-export-modal.js            (format / style / layout / citation picker for docs + projects)
 │   ├── notebook-export-modal.js       (scope / format / scale picker for notebooks)
 │   ├── ratchet-dropdown.js            (extracted from sidebar.js)
-│   ├── panel-resizer.js               (extracted from sidebar.js)
+│   ├── panel-resizer.js               (applyPanelWidth + attachGripResize)
+│   ├── add-popup.js                   (footer Add (+) popover — New Doc / Notebook / Folder / Project)
 │   ├── files-panel.js
 │   ├── files-panel-shared.js          (icons + escapers + hover handlers)
 │   ├── files-panel-local-sync.js      (Local Sync subtree rendering)
@@ -347,17 +348,29 @@ When toggle modes are active (ratchet, private, typewriter, D.R.Y., focus), "Tur
 
 ### Sidebar (`sidebar/sidebar.js`)
 
-The legacy 50 px icon column is gone — `#panel-overlay` is the sidebar itself, anchored at `left: 0`. It hosts a single Files panel, a header carrying the desk switcher, and a footer with the Settings button (the only fixed sidebar control left). Styles, Versions, and Export reach users through the command palette / modals instead. A circular floating toggle (`.sidebar-floating-toggle`) on the left edge opens / closes the panel; Cmd+\\ does the same. The panel is responsive: above 700 px viewport it sits in inset mode (pushing the editor column over); at 700 px or narrower it overlays as a modal.
+The legacy 50 px icon column is gone — `#panel-overlay` is the sidebar itself, anchored at `left: 0`. It hosts a single Files panel, a header carrying the desk switcher, and a footer with two icon-only buttons (Add and Settings). Styles, Versions, and Export reach users through the command palette / modals instead. A full-height **grip** on the panel's right edge owns open / close and resize; the floating circular toggle that earlier iterations carried is gone. Cmd+\\ toggles the panel too. The panel is responsive: above 700 px viewport it sits in inset mode (pushing the editor column over); at 700 px or narrower it overlays as a modal.
 
-**Floating toggle (`.sidebar-floating-toggle`).** Circular button fixed at `top: 50%; left: 20px`, `z-index: var(--z-modal)` so it clears every other piece of chrome. Click emits `toggle-left-panel`, which either shows the files panel or hides it. Icon is a single guillemet that flips between `›` (panel closed) and `‹` (panel open) by watching `#panel-overlay`'s `.hidden` class via `MutationObserver`. When the panel is open the button rides its right edge via `left: calc(var(--panel-width) + 20px)`. In doc mode, typing in an editable target adds a `.typing-fade` class that hides the toggle until any pointer activity brings it back; notebook mode keeps it permanently visible for Pencil-only users.
+**Grip (`.sidebar-grip`).** A 24 px (`--sidebar-grip-width`) full-height strip living *inside* `#panel-overlay` on its right edge. Two children with disjoint roles:
 
-**Footer (Settings).** A pinned `.panel-overlay-footer` carries a single Settings button that calls `openSettingsWindow(state)`. Settings is also reachable via the command palette; the footer gives users a one-click affordance without opening the palette first.
+- **`.sidebar-grip-toggle`** — the wide left portion. A real `<button>` that emits `toggle-left-panel` on click. The chevron glyph (`›` when closed, `‹` when open) sits at 0.6 opacity by default and bumps to 1.0 on hover; `body.typing-fade` fades it to 0 with a 1 s ramp while the user is typing in a doc, and cursor / pointer activity clears the class so the arrow rises back (same behaviour the legacy floating toggle had). Hover paints a faint background-tint pill via a `::before` pseudo-element capped at `height: 100px; border-radius: 5px` and vertically centred — the tint never fills the whole toggle height. The pill works in both open and closed states. No `title` / `aria-label` attributes — the chevron-on-hover affordance is the whole UI.
+- **`.sidebar-grip-resize`** — a narrow 6 px strip flush against the panel's outer edge. `cursor: col-resize`. Drag-to-resize is wired by `attachGripResize(state, resizeEl, panelOverlay)` in `sidebar/panel-resizer.js`. A 1 px `::after` rail at `right: 0` aligns flush with the panel's `border-right`, so hover deepens that existing hairline rather than painting a second one a few pixels inside. The strip is `display: none` when the panel is collapsed — there is no body width to drag.
 
-**Cursor.** The open panel uses `cursor: crosshair` so hovering anywhere in the sidebar surfaces a consistent navigation affordance distinct from the editor cursor. Inputs and textareas inside the panel revert to `cursor: text`.
+The pointer-driven cursor changes (`cursor: pointer` on the toggle, `cursor: col-resize` on the resize strip) use `#panel-overlay`-prefixed selectors so they win the cascade over the panel-wide `#panel-overlay * { cursor: crosshair }` rule.
 
-**Tooltips.** Pane header buttons, notebook UI buttons, and file-row affordances share a single tooltip gate in `src/tooltips.js`: `applyTooltip(el, label)` stashes the label on `data-tooltip` and only writes the live `title` attribute when `showTooltips` is enabled; `setTooltipsEnabled(enabled)` flips a body class and walks every `[data-tooltip]` to add / strip its title. Wired from `main.js` once at startup and on every `settings-changed`. The notebook `h()` helper in `ui/dom-helpers.ts` routes its `title:` option through `applyTooltip` automatically.
+**Closed state.** `#panel-overlay.hidden` collapses the width to `--sidebar-grip-width` and hides the body-stack via `display: none`. The hidden rule asserts `display: flex !important` to win against the global `utility.css` `.hidden { display: none !important; }`. Border-right is set to `none` when collapsed so the leftover surface reads as empty until the chevron rises.
 
-**Resizable width.** The right edge of the panel exposes a draggable handle that reuses the same invisible-until-approached pattern as the editor column (`editor/modes.js::updateColumnResizers`). A 10 px hit zone sits outside the panel edge; pointer-down begins a drag that updates the `--panel-width` CSS custom property and persists the value to `sidebarPanelWidth` in `AppSettings`. Implementation in `sidebar/panel-resizer.js`.
+**Footer (`.panel-overlay-footer`).** No top border. Two icon-only buttons:
+
+- **Add (+)** — opens a small popover (`sidebar/add-popup.js`) anchored above the button with the four create actions: New Doc, New Notebook, New Folder, New Project. Closes on click outside, Esc, or selection. The popover replaces the four-icon row that used to live at the top of the files panel.
+- **Settings** — calls `openSettingsWindow(state)`. Settings remains reachable from the command palette too.
+
+Both buttons hide their `.panel-footer-label` text by default (`max-width: 0; opacity: 0`) and reveal it on hover via a `max-width` transition.
+
+**Cursor.** The open panel body uses `cursor: crosshair` so hovering anywhere surfaces a consistent navigation affordance distinct from the editor cursor. Inputs / textareas inside the panel revert to `cursor: text`. The grip's two children opt out of crosshair (pointer on the toggle, col-resize on the resize strip).
+
+**Tooltips.** Pane header buttons, notebook UI buttons, and file-row affordances share a single tooltip gate in `src/tooltips.js`: `applyTooltip(el, label)` stashes the label on `data-tooltip` and only writes the live `title` attribute when `showTooltips` is enabled; `setTooltipsEnabled(enabled)` flips a body class and walks every `[data-tooltip]` to add / strip its title. Wired from `main.js` once at startup and on every `settings-changed`.
+
+**Resize drag.** `attachGripResize` captures the pointer on the resize strip, takes the panel's current width as the start, and updates `--panel-width` through `applyPanelWidth(px)`. Two anti-jank tricks: (1) on pointerdown the panel gets a `.resizing` class that zeroes its `transition: width 0.2s` (otherwise the panel interpolates 200 ms behind the cursor on every move); (2) `pointermove` is rAF-coalesced so `state.runtime.columnResizeHandler` fires at most once per frame instead of stacking up reflows. The persisted value (`sidebarPanelWidth`) is written once on pointerup. Width is clamped against `[220px, viewport-width / 2]` on every apply, including a re-clamp on window resize so the panel never overflows after a shrink.
 
 **Session-state persistence.** Two per-window settings — `sidebarOpenPanel` and `sidebarPinned` — ride through to the next session via `AppSettings`. Only the Files panel lives in the sidebar now, so `sidebarOpenPanel` is effectively `"files" | null`; legacy values (`"styles"`, `"versions"`) are coerced to `"files"` on replay since any truthy value reopens the panel. `createSidebar()` runs a replay block at the end of init — guarded by a `_suppressStatePersist` flag — that calls `openPanel()` when the saved value is truthy and re-applies the pin class on narrow viewports. Subsequent open / close / pin toggles route through a single `persistSidebarState()` helper.
 
@@ -367,7 +380,7 @@ The legacy 50 px icon column is gone — `#panel-overlay` is the sidebar itself,
 
 **Export → command palette.** The sidebar Export button is gone. `export-current-file` is still emitted (by the palette's Export entry); the sidebar listener routes it to either `doc-export-modal.js` or `notebook-export-modal.js` based on context.
 
-Three more sidebar helpers live alongside the main file: **`sidebar-export.js`** (markdown export path), **`doc-export-modal.js`** (format / style / layout / citation picker for doc and project exports), and **`ratchet-dropdown.js`** (centered duration grid surfaced by the command palette).
+Sibling helpers next to the main file: **`add-popup.js`** (footer Add button popover), **`sidebar-export.js`** (markdown export path), **`doc-export-modal.js`** (format / style / layout / citation picker for doc and project exports), **`ratchet-dropdown.js`** (centered duration grid surfaced by the command palette), and **`panel-resizer.js`** (exports `applyPanelWidth(px)` and `attachGripResize(state, resizeEl, panelOverlay)`).
 
 ### Files Panel (`sidebar/files-panel.js`, `files-panel-shared.js`, `files-panel-local-sync.js`, `files-panel-row-menu.js`, `files-panel-actions.js`, `files-panel-multi-select.js`)
 
@@ -378,7 +391,7 @@ Nested tree view with four node types:
 - **Folders** — Containers for organizing. Drag-and-drop reordering.
 - **Projects** — Ordered containers whose document children concatenate into one editor buffer with dashed separators between them. Notebook children are accepted too but render as a supplementary block in the sidebar — sorted below all docs and painted at 50 % opacity — and stay self-contained (clicked → opens the canvas) instead of feeding the joined buffer. `tree-helpers.js::normalizeProjectChildren` runs after every drag-drop and on initial render so the docs-first / notebooks-after order is canonical; it skips the pinned `__inbox__` node, which is typed `project` for legacy reasons but behaves like a folder. The per-row vertical-line connector and the notebook-fade are pure CSS hanging off `data-type` / `data-id` attributes set in `sortable-list/rendering.js`. Consecutive doc rows inside a real project carry a 1 px × 4 px vertical line over the gap between icons (`.sl-item[data-type="project"]:not([data-id="__inbox__"]) > .sl-list > .sl-item[data-type="document"] + .sl-item[data-type="document"]::before`); notebook rows inside that same scope drop their `tree-item-row` to `opacity: 0.5`.
 
-Four icon-only "New" buttons (Doc, Notebook, Folder, Project) at the top; the button type is surfaced via tooltip. Every row shares a single hamburger **Menu** button that opens a labelled dropdown (rename, duplicate, delete, …). Active item shown bold and underlined. Rendered via the `SortableList` component.
+The four "create" actions (New Doc / Notebook / Folder / Project) used to live in a top-of-panel row; they now live in the **Add (+)** popover surfaced by the footer's Add button — see `sidebar/add-popup.js`. The popover's button row is the only place that renders them in the sidebar. Every existing row shares a single hamburger **Menu** button that opens a labelled dropdown (rename, duplicate, delete, …). Active item shown bold and underlined. Rendered via the `SortableList` component.
 
 **Row interactions.** A click anywhere on a folder row — including its icon and label — toggles the folder open or closed. This applies uniformly to every container node: regular folders, Projects, **Inbox**, **Images**, and **Trash**. The explicit expand arrow (if present) remains as a visual cue but is no longer the sole hit target. A second click on the already-selected row still enters rename mode via the existing double-click/enter keymap; the toggle only fires on a single click that is not part of a pending rename gesture.
 
@@ -416,15 +429,15 @@ Drag-and-drop nested list engine (5 modules):
 - **`keyboard-nav.js`** — Arrow key selection, M to enter/confirm move, Q to cancel.
 - **`utils.js`** — Path parsing, comparison, ancestor checks, tree traversal.
 
-### Styles Panel (`sidebar/styles-panel.js`, `style-modal.js`, `styles-panel-shared.js`)
+### Styles (`sidebar/styles-panel.js`, `style-modal.js`, `style-editor-modal.js`, `styles-panel-shared.js`)
 
-Named presets combining theme, font, font size, line height, and color overrides (bg, fg, cursor, selection). Managed through the sidebar's Styles panel. The panel also pins a 3-button **Appearance** segmented control (Light / Dark / Auto) at its top — clicking a button writes `settings.appearance` and re-runs `applyAppearance()` so the active style and swatch list immediately repaint. The setting defaults to `"auto"` and rides whatever was previously surfaced in `Settings > General > Color scheme` (now retired).
+Named presets combining theme, font, font size, line height, and color overrides (bg, fg, cursor, selection). The sidebar Styles panel is retired — every style is reachable from the command palette as a `Use Style: <name>` row, plus a single `Edit Styles` entry that opens the three-column editor modal (`style-editor-modal.js`). The modal's left rail lists every style (Default + user styles) with hover-revealed duplicate / delete actions and a `+ New Style` button; the **Appearance** segmented control (Light / Dark / Auto) sits at the rail's footer — clicking a button writes `settings.appearance` and re-runs `applyAppearance()` so the active style and swatch list immediately repaint. The setting defaults to `"auto"`. `sidebar/styles-panel.js` is now a thin helpers-only file — `resolveStyleForAppearance(style, appearance)`, `getLockedStyleId(state)`, `setLockedStyleId(state, id)` — that other modules still import.
 
 Style data: `{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides: { bg, fg, cursor, selection } }`.
 
-Live preview on hover/edit via `style-preview` / `style-preview-end` events. Color overrides take precedence over theme colors, applied directly to CSS variables.
+Live preview on hover / edit via `style-preview` / `style-preview-end` events. Color overrides take precedence over theme colors, applied directly to CSS variables.
 
-The two-column edit modal (settings on the left, live preview on the right) lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save/Cancel buttons; closing the modal flushes the timer. Shared escaper helpers + theme color maps used by both the panel and the modal live in `styles-panel-shared.js`. The Post Processing block in the modal is split into `style-modal-shader.js` and the generic dropdown widget into `custom-dropdown.js` to keep `style-modal.js` under the line limit.
+The two-column settings + preview body of the edit modal lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save / Cancel buttons; closing the modal flushes the timer. The Edit Styles shell calls into it as `openStyleModal(state, target, onDone, { host })` so the body mounts inside the rail's pane instead of spawning its own backdrop; the `host` option suppresses the inner backdrop / close button and switches `.style-modal` to a fill-its-host layout (`width: 100%; height: 100%; border-radius: 0`). The Post Processing block lives in `style-modal-shader.js` and the generic dropdown widget in `custom-dropdown.js` to keep `style-modal.js` under the line limit.
 
 ### Post Processing / Shader Layer (`shader-layer/`)
 
@@ -461,9 +474,11 @@ Optional per-style overlay of decorative effects (scanlines, vignette, neon glow
 
 Right-side panel showing document structure. Parses headings and flagged items from the document. Features: heading hierarchy navigation, flag detection, callout tinting, paragraph preview tooltips, customizable display options via a dedicated settings tab (Flags).
 
-### Versions Panel (`sidebar/versions-panel.js`)
+### Versions (`sidebar/versions-modal.js`, `sidebar/versions-panel.js`)
 
 Snapshot history viewer for both docs and notebooks. Shows timestamped snapshots and a one-click restore. Backend storage via `snapshots.rs` — the `snapshots` table is keyed by `document_id` + free-form `content` text, so notebook JSON envelopes drop into the same store as doc markdown without a schema change.
+
+**Modal shell.** The sidebar Versions panel is retired — the `Versions` palette entry opens `sidebar/versions-modal.js`, a centered backdrop with the snapshot list on the left and a positioned preview host on the right. The modal calls `createVersionsPanel(host, state, close, { previewHost })`, reusing all of the snapshot-list logic in `sidebar/versions-panel.js`. The `previewHost` option scopes the `.version-preview-overlay` inside the modal — the overlay's CSS is now `position: absolute; inset: 0` so it fills the host pane instead of the viewport. The `.version-restore-bar` sits at `position: absolute; bottom: 0` of that same host.
 
 **Preview interaction.** Each list row has paired `mouseenter` / `mouseleave` listeners alongside the click handler. Hover renders the snapshot in the right pane with the **Restore current with…** bar suppressed (the preview container's `bottom: 50px` is overridden inline to `0` so the preview fills the full height). Click commits the selection — the active class flips on, the restore bar mounts, and `selectedSnapshotId` is set. Hovering a different row while a selection is committed swaps the preview in transiently; mouseleave reverts to the committed snapshot, or hides the preview when nothing is committed. Module-level `hoveredSnapshotId` and `selectedSnapshotId` track the two slots; arrow-key navigation still goes through the click path so it commits.
 
