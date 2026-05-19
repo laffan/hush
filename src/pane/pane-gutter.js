@@ -452,15 +452,25 @@ export function restoreGutterLayout(pane) {
   syncCameraFromScroll(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
   scheduleSync(pane);
-  // Mirror `useActivePaneAsGutter`'s late-scan retries. On restore the
-  // editor's height-map can still be measuring when the first rAF-fed
-  // scan runs, so `scanDocHeaders` reports zeros for every off-screen
-  // heading — and unlike the fresh-gutter path, no subsequent user
-  // gesture re-fires the scan. These backup scans land after the
-  // doc/editor paint settles and replace the empty/estimated headers
-  // with the real measurements.
-  setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 250);
-  setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 1000);
+  // On restore the editor's scrollDOM rect can still be settling when
+  // the synchronous setup above runs — `recomputeGutterOffset` then
+  // caches an offset against a half-laid-out scroller, and the camera
+  // gets seeded at the wrong y. By the next frame the rect is correct
+  // but nothing in the steady-state path re-derives the offset until
+  // the user scrolls. The retries re-run both halves (camera resync +
+  // header rescan) so layout settles into the right state without any
+  // user gesture. Three checkpoints catch the WKWebView measure pass
+  // landing late on iOS too.
+  const resync = () => {
+    if (!pane.gutter || !panes.has(pane.id)) return;
+    invalidateGutterPadCache(pane);
+    recomputeGutterOffset(pane);
+    syncCameraFromScroll(pane);
+    scanAndSync(pane);
+  };
+  setTimeout(resync, 100);
+  setTimeout(resync, 500);
+  setTimeout(resync, 1500);
   import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 }
 

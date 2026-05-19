@@ -290,6 +290,18 @@ export async function savePaneContent(pane) {
         content = pane.editor.getContent();
       } else if (pane.fileType === "notebook" && pane.notebook) {
         const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
+        // In gutter mode `state.camera.y` is driven by the host doc's
+        // scrollTop (see `pane-gutter.js#syncCameraFromScroll`) rather
+        // than tracking a meaningful canvas viewport. Persisting it
+        // would write a scroll-tied value into the file, and on the
+        // next mount the main-canvas restore path
+        // (`notebook-bridge.js`) would seed the canvas at that bogus
+        // position. `_gutterPrev.camera` snapshots the pane's camera
+        // at the moment the gutter mode was entered — that's the
+        // right value to round-trip.
+        const cameraToSave = pane.gutter
+          ? (pane._gutterPrev?.camera || null)
+          : pane.notebook.state.camera;
         content = encodeNotebookContent({
           shapes: pane.notebook.getShapes(),
           layers: pane.notebook.state.layers,
@@ -298,7 +310,7 @@ export async function savePaneContent(pane) {
           // user's saved viewports. Without these the pane path silently
           // loses every bookmark the moment it autosaves the file.
           bookmarks: pane.notebook.state.bookmarks,
-          camera: pane.notebook.state.camera,
+          camera: cameraToSave,
         });
       }
       if (pane.localSync) {
