@@ -114,6 +114,30 @@ body.multi-select-active #notebook-container {
   opacity: 0.8;
 }
 
+/* Row text: optional faded breadcrumb prefix + filename, ellipsised
+   together when the row doesn't have room. The flex parent gives them
+   the freedom to grow / shrink as a unit; the prefix can compress to
+   "…" first because it's the lower-information half of the row. */
+.ms-view-text {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ms-view-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sidebar-fg);
+  opacity: 0.7;
+  font-size: 12px;
+}
 .ms-view-name {
   flex: 1;
   min-width: 0;

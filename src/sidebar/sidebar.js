@@ -532,27 +532,19 @@ export function createSidebar(container, state) {
   });
 
   // Cmd+\ toggle support — force-show files (not toggle)
-  state.on("show-files-panel", () => {
-    if (activePanel === "versions") cleanupVersionsPanel();
-    activePanel = "files";
-    const body = getPanelBody();
-    body.innerHTML = "";
-    panelOverlay.classList.remove("hidden");
-    container.classList.add("visible");
-    createFilesPanel(body, state, hidePanel);
-    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
-  });
+  state.on("show-files-panel", () => { openFilesPanel(); });
 
   // Cmd+\ hide support — reset internal state
   state.on("hide-panel", () => {
-    if (activePanel === "versions") cleanupVersionsPanel();
-    activePanel = null;
+    // Reuse `hidePanel()` so the persistence write fires through the
+    // single path; the inline version that used to live here cleared
+    // class state but didn't call `persistSidebarState`, so closing
+    // via the keyboard shortcut left `sidebarOpenPanel` stuck at the
+    // previously-opened panel's name on disk.
     panelPinned = false;
     panelOverlay.classList.remove("panel-pinned");
     pinBtn.classList.remove("pin-active", "pin-visible");
-    panelOverlay.classList.add("hidden");
-    container.classList.remove("visible", "pinned");
-    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    hidePanel();
   });
 
   // Close panel on click outside — only when the panel is overlaying the

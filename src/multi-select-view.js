@@ -14,7 +14,7 @@
  * the single-click semantics elsewhere in the app).
  */
 import { typeIcons, escHtml, showDeleteConfirmModal } from "./sidebar/files-panel-shared.js";
-import { findNodeByFileId } from "./state/tree-helpers.js";
+import { findNodeByFileId, findAncestorIds } from "./state/tree-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 
 let _hostEl = null;
@@ -81,6 +81,43 @@ function refresh() {
   render(ids);
 }
 
+/** Walk the node's ancestor chain into a readable "Desk / Folder /
+ *  Project" breadcrumb. Skips the Inbox / Trash specials (they read as
+ *  noise alongside user-named containers), and starts from the active
+ *  desk's children rather than the bare desk-wrapper id so the path
+ *  matches what the sidebar actually shows. Returns "" when the file
+ *  lives at the desk root (no container ancestors). */
+function ancestorBreadcrumb(state, nodeId) {
+  const chain = findAncestorIds(state.fileTree, nodeId) || [];
+  // findAncestorIds returns the ancestors INCLUDING the node's own
+  // siblings' parent path; the final entry is the immediate parent.
+  // For our purposes we want all containers from the desk root down
+  // to the immediate parent, named in order.
+  const parts = [];
+  function findNodeAnywhere(nodes, id) {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      if (n.children?.length) {
+        const r = findNodeAnywhere(n.children, id);
+        if (r) return r;
+      }
+    }
+    return null;
+  }
+  for (const ancestorId of chain) {
+    const node = findNodeAnywhere(state.fileTree, ancestorId);
+    if (!node) continue;
+    // Skip the desk wrapper itself + the Inbox / Trash / Images specials;
+    // they don't add information for the user.
+    if (node.type === "desk") continue;
+    if (node.id === "__inbox__" || node.id?.startsWith("__inbox__:")) continue;
+    if (node.id === "__trash__" || node.id?.startsWith("__trash__:")) continue;
+    if (node.id === "__images__" || node.id?.startsWith("__images__:")) continue;
+    parts.push(node.name || "Untitled");
+  }
+  return parts.join(" / ");
+}
+
 function render(ids) {
   const rows = ids
     .map((fileId) => {
@@ -90,6 +127,7 @@ function render(ids) {
         fileId,
         nodeId: node.id,
         name: node.name || "Untitled",
+        path: ancestorBreadcrumb(_state, node.id),
         type: node.type,
         flagged: !!node.flagged,
       };
@@ -112,7 +150,9 @@ function render(ids) {
         ${rows.map((r) => `
           <li class="ms-view-row" data-file-id="${escHtml(r.fileId)}" data-type="${escHtml(r.type)}">
             <span class="ms-view-icon">${r.type === "notebook" ? typeIcons.notebook : typeIcons.document}</span>
-            <span class="ms-view-name">${escHtml(r.name)}</span>
+            <span class="ms-view-text">
+              ${r.path ? `<span class="ms-view-path">${escHtml(r.path)} / </span>` : ""}<span class="ms-view-name">${escHtml(r.name)}</span>
+            </span>
             ${r.flagged ? `<span class="ms-view-flag">flagged</span>` : ""}
           </li>`).join("")}
       </ul>
