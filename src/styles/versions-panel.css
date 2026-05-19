@@ -132,14 +132,17 @@
   margin-top: 1px;
 }
 
-/* ===== Version Preview (right side, in the content area) ===== */
+/* ===== Version Preview (right side, in the content area) =====
+   Versions now live inside a modal — the overlay sits inside the modal's
+   preview host (.versions-modal-preview-host with position: relative)
+   and stretches to fill it via absolute positioning. */
 .version-preview-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
-  left: 350px; /* 50px sidebar + 300px panel */
-  z-index: 90;
+  left: 0;
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -277,11 +280,11 @@
   font-family: system-ui, sans-serif;
 }
 
-/* ===== Restore Bar (fixed bottom) ===== */
+/* ===== Restore Bar (sits at bottom of the preview host) ===== */
 .version-restore-bar {
-  position: fixed;
+  position: absolute;
   bottom: 0;
-  left: 350px; /* 50px sidebar + 300px panel */
+  left: 0;
   right: 0;
   height: 50px;
   display: flex;
@@ -289,8 +292,103 @@
   justify-content: center;
   background: var(--theme-bg, var(--bg));
   border-top: 1px solid var(--panel-border);
-  z-index: 95;
+  z-index: 2;
   pointer-events: auto;
+}
+
+/* ===== Versions Modal ===== */
+.versions-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.versions-modal {
+  position: relative;
+  width: 92%;
+  max-width: 1100px;
+  height: 86%;
+  max-height: 720px;
+  background: var(--panel-bg, var(--bg));
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+.versions-modal-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: var(--z-modal-content);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 20px;
+  opacity: 0.5;
+  border-radius: 6px;
+}
+
+.versions-modal-close:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.versions-modal-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.versions-modal-list {
+  width: 320px;
+  min-width: 260px;
+  border-right: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 18px 18px;
+  overflow: hidden;
+}
+
+/* The versions panel renders a `.versions-panel` flex column inside this
+   wrapper; carry-through styles already cover the list / search. */
+.versions-modal-list .versions-list-container {
+  max-height: none;
+}
+
+.versions-modal-preview-host {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: var(--theme-bg, var(--bg));
+}
+
+@media (max-width: 700px) {
+  .versions-modal {
+    width: 96%;
+    height: 92%;
+  }
+  .versions-modal-body {
+    flex-direction: column;
+  }
+  .versions-modal-list {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+    flex: 0 0 45%;
+  }
 }
 
 .version-restore-btn {

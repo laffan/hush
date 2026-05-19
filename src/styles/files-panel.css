@@ -91,32 +91,9 @@
 }
 
 /* ===== Tree File Browser ===== */
-.tree-create-btns {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-
-.tree-create-btns button {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 4px;
-  border: none;
-  background: transparent;
-  color: var(--fg);
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 11px;
-  font-family: system-ui, sans-serif;
-  transition: background 0.15s;
-}
-
-.tree-create-btns button:hover {
-  background: rgba(128, 128, 128, 0.15);
-}
+/* (The legacy .tree-create-btns row was retired — the four "create"
+   actions live in the footer's Add (+) popup; see .panel-add-popup
+   in sidebar.css.) */
 
 .tree-type-icon {
   width: 12px;
@@ -197,8 +174,6 @@
   display: none;
 }
 
-.tree-create-btns,
-.tree-create-btns button,
 .flagged-section-root {
   user-select: none;
   -webkit-user-select: none;

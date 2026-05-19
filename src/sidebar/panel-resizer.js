@@ -8,65 +8,67 @@ export function applyPanelWidth(px) {
   document.documentElement.style.setProperty("--panel-width", clamped + "px");
 }
 
-export function positionPanelResizer(el, panelOverlay) {
-  const isOpen = !panelOverlay.classList.contains("hidden");
-  if (!isOpen) { el.classList.add("hidden"); return; }
-  el.classList.remove("hidden");
-  const rect = panelOverlay.getBoundingClientRect();
-  // Center the 40-px hit zone on the panel's right edge.
-  el.style.left = rect.right + "px";
-}
-
-export function createPanelResizer(state, panelOverlay) {
-  const el = document.createElement("div");
-  el.className = "sidebar-panel-resizer hidden";
-
-  let hideTimeout = null;
-  const show = () => { clearTimeout(hideTimeout); el.classList.add("hover"); };
-  const hide = () => {
-    hideTimeout = setTimeout(() => el.classList.remove("hover"), 200);
-  };
-  el.addEventListener("mouseenter", show);
-  el.addEventListener("mouseleave", hide);
-
-  el.addEventListener("mousedown", (e) => {
+/**
+ * Wire pointer-drag resize onto the grip's narrow right-edge strip. The
+ * strip lives inside the grip itself so the geometry stays correct as
+ * the panel opens / closes / the viewport resizes — no separate fixed
+ * element to keep in sync.
+ *
+ * @param state  AppState (for persisting sidebarPanelWidth)
+ * @param resizeEl  the `.sidebar-grip-resize` child element
+ * @param panelOverlay  `#panel-overlay`
+ */
+export function attachGripResize(state, resizeEl, panelOverlay) {
+  resizeEl.addEventListener("pointerdown", (e) => {
+    // Resize is only meaningful while the body is visible. If the panel
+    // is collapsed, ignore — the toggle button handles open/close.
+    if (panelOverlay.classList.contains("hidden")) return;
     e.preventDefault();
+    e.stopPropagation();
     const startX = e.clientX;
     const startWidth = panelOverlay.getBoundingClientRect().width;
-    el.classList.add("dragging");
-    show();
+    resizeEl.classList.add("dragging");
+    // Suppress the `width` transition on #panel-overlay so the drag
+    // tracks the cursor instead of interpolating 200 ms behind every
+    // mousemove. Editor column recentring is also throttled to one
+    // frame per rAF; without this, applyColumnLayout fires on every
+    // pointermove and stacks up reflows.
+    panelOverlay.classList.add("resizing");
+    try { resizeEl.setPointerCapture(e.pointerId); } catch (_) {}
 
-    const onMove = (me) => {
-      const next = startWidth + (me.clientX - startX);
+    let rafPending = false;
+    let latestX = startX;
+    const flush = () => {
+      rafPending = false;
+      const next = startWidth + (latestX - startX);
       applyPanelWidth(next);
-      positionPanelResizer(el, panelOverlay);
-      // Editor column layout re-centers when the panel is inset
       if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     };
+    const onMove = (me) => {
+      latestX = me.clientX;
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(flush);
+    };
     const onUp = () => {
-      el.classList.remove("dragging");
-      hide();
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      // Persist the final width (read back from the CSS var — clamped)
+      resizeEl.classList.remove("dragging");
+      panelOverlay.classList.remove("resizing");
+      resizeEl.removeEventListener("pointermove", onMove);
+      resizeEl.removeEventListener("pointerup", onUp);
+      resizeEl.removeEventListener("pointercancel", onUp);
       const computed = getComputedStyle(document.documentElement).getPropertyValue("--panel-width").trim();
       const n = parseInt(computed, 10);
       if (Number.isFinite(n) && n > 0) state.updateSettings({ sidebarPanelWidth: n });
     };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    resizeEl.addEventListener("pointermove", onMove);
+    resizeEl.addEventListener("pointerup", onUp);
+    resizeEl.addEventListener("pointercancel", onUp);
   });
 
-  // Keep the resizer glued to the panel's right edge when the panel opens,
-  // closes, or the viewport resizes.
-  const sync = () => positionPanelResizer(el, panelOverlay);
-  new MutationObserver(sync).observe(panelOverlay, { attributes: true, attributeFilter: ["class", "style"] });
+  // Re-clamp the persisted width against the new viewport on resize so
+  // the panel never overflows after the user shrinks the window.
   window.addEventListener("resize", () => {
-    // Re-clamp against new viewport width
     const current = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
     applyPanelWidth(current);
-    sync();
   });
-
-  return el;
 }

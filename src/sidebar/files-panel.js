@@ -80,16 +80,7 @@ export function createFilesPanel(container, state, hidePanel) {
   storedState = state;
   container.innerHTML = "";
 
-  // Create buttons row
-  const btnRow = document.createElement("div");
-  btnRow.className = "tree-create-btns";
-  btnRow.innerHTML = `
-    <button id="tree-new-doc" data-tooltip="New Document">${typeIcons.document}</button>
-    <button id="tree-new-notebook" data-tooltip="New Notebook">${typeIcons.notebook}</button>
-    <button id="tree-new-folder" data-tooltip="New Folder">${typeIcons.folder}</button>
-    <button id="tree-new-project" data-tooltip="New Project">${typeIcons.project}</button>
-  `;
-  container.appendChild(btnRow);
+  // (Create buttons moved to the footer's Add popup — see add-popup.js)
 
   // Local Sync section — rendered above the flagged/files trees. Each
   // entry is a top-level disclosure that expands to show its on-disk
@@ -276,29 +267,6 @@ export function createFilesPanel(container, state, hidePanel) {
 
   // Render the virtual Flagged folder
   renderFlaggedSection(state);
-
-  btnRow.querySelector("#tree-new-doc").addEventListener("click", () => state.newFile());
-  btnRow.querySelector("#tree-new-notebook").addEventListener("click", () => {
-    showPromptModal({
-      title: "New notebook",
-      label: "Name",
-      placeholder: "New Notebook",
-      initialValue: "New Notebook",
-      confirmLabel: "Create",
-      onConfirm: async (name) => {
-        await state.createNotebook(name);
-        refreshList(state);
-      },
-    });
-  });
-  btnRow.querySelector("#tree-new-folder").addEventListener("click", async () => {
-    await state.createFolder("New Folder");
-    refreshList(state);
-  });
-  btnRow.querySelector("#tree-new-project").addEventListener("click", async () => {
-    await state.createProject("New Project");
-    refreshList(state);
-  });
 
   // Delegated action handlers
   listContainer.addEventListener("click", onActionClick);

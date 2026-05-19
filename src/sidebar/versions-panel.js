@@ -16,6 +16,7 @@ let highlightChanges = false;
 let selectedSnapshotId = null;
 let hoveredSnapshotId = null;
 let previewOverlay = null;
+let previewHost = null;
 let panelContainer = null;
 let panelState = null;
 let keyHandler = null;
@@ -23,12 +24,15 @@ let keyHandler = null;
 /**
  * Creates the versions panel inside the given container.
  */
-export function createVersionsPanel(container, state, hidePanel) {
+export function createVersionsPanel(container, state, hidePanel, options = {}) {
   currentSnapshots = [];
   selectedSnapshotId = null;
   hoveredSnapshotId = null;
   panelContainer = container;
   panelState = state;
+  // Modal callers pass a positioned host element so the preview overlay
+  // scopes inside the modal instead of covering the viewport.
+  previewHost = options.previewHost || document.body;
 
   const fileName = getActiveFileName(state) || "Versions";
 
@@ -284,7 +288,7 @@ function showPreview(snap, state, committed) {
     previewContainer.style.bottom = "0";
   }
 
-  document.body.appendChild(previewOverlay);
+  (previewHost || document.body).appendChild(previewOverlay);
 }
 
 function renderNotebookPreview(container, snap, _state) {

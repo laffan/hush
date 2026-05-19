@@ -111,7 +111,9 @@ export function setupFileDrop(state) {
     }
   }
   function filesPanelMounted() {
-    return !!panelOverlay.querySelector(".tree-create-btns");
+    // Files panel mounts a SortableList root into the body — use its
+    // presence as the "panel is open" signal.
+    return !!panelOverlay.querySelector(".tree-list-root");
   }
   // Images is reserved for image attachments and Trash is reserved for
   // deletion — neither should accept imported docs / notebooks. Match

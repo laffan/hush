@@ -1,10 +1,7 @@
 /**
- * Two-column style editor modal — settings on the left, live preview on
- * the right. Edits autosave with a short debounce; close = flush.
- *
- * Pulled out of styles-panel.js to keep that file focused on the sidebar
- * list. Helpers shared with the list (escAttr/escHtml/migrateStyle/theme
- * color maps) live in styles-panel-shared.js.
+ * Two-column style editor modal — settings left, live preview right.
+ * Edits autosave on a short debounce; close = flush. Embeddable inside
+ * a host element via `options.host` (used by the Edit Styles modal).
  */
 import { themeList, getThemeById } from "../themes/index.js";
 import {
@@ -128,9 +125,12 @@ function seedColorsFromTheme(draft, colorTab, themeId) {
   else draft.darkColors = filled;
 }
 
-export function openStyleModal(state, existingStyle, onDone) {
+export function openStyleModal(state, existingStyle, onDone, options = {}) {
   // existingStyle === null → create a new user style
   // existingStyle === "__default__" → edit the Default (global settings)
+  // options.host (optional) → render into this element instead of a fresh
+  //   .style-modal-backdrop. The caller owns the close button and the
+  //   surrounding chrome. Used by the three-column Edit Styles modal.
   const isDefault = existingStyle === "__default__";
   const isNew = !existingStyle;
   const draft = isDefault
@@ -162,9 +162,16 @@ export function openStyleModal(state, existingStyle, onDone) {
   let previewFontFamily = null; // "" = the "Default" entry; null = no hover
 
   // ── build the backdrop ───────────────────────────────────────────────────
-  const backdrop = document.createElement("div");
-  backdrop.className = "style-modal-backdrop";
-  document.body.appendChild(backdrop);
+  // Host mode lets a parent modal (the three-column Edit Styles shell)
+  // render the editor body into its own pane instead of spawning a fresh
+  // fullscreen backdrop. `ownsBackdrop` controls whether close() tears
+  // the whole element down or just clears the contents.
+  const ownsBackdrop = !options.host;
+  const backdrop = options.host || document.createElement("div");
+  if (ownsBackdrop) {
+    backdrop.className = "style-modal-backdrop";
+    document.body.appendChild(backdrop);
+  }
 
   // ── autosave ────────────────────────────────────────────────────────────
   // Edits flush to settings on a short debounce — there are no Save /
@@ -252,13 +259,18 @@ export function openStyleModal(state, existingStyle, onDone) {
 
   function close() {
     flushSave();
-    backdrop.remove();
+    if (ownsBackdrop) backdrop.remove();
+    else backdrop.innerHTML = "";
     // Drop any modal-driven shader preview, then re-apply the active
     // style so its shader (if any) takes the screen back.
     endShaderPreview(applyActiveStyle, state);
   }
 
-  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+  // Backdrop-click closes only when this function owns the backdrop —
+  // a host-mode mount lives inside a parent modal that owns dismissal.
+  if (ownsBackdrop) {
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+  }
 
   function render() {
     previewThemeId = null;
@@ -288,8 +300,8 @@ export function openStyleModal(state, existingStyle, onDone) {
       </div>`;
 
     backdrop.innerHTML = `
-      <div class="style-modal">
-        <button class="style-modal-close">&times;</button>
+      <div class="style-modal${ownsBackdrop ? "" : " in-host"}">
+        ${ownsBackdrop ? '<button class="style-modal-close">&times;</button>' : ""}
         <div class="style-modal-body">
 
           <!-- LEFT: settings column -->
@@ -505,7 +517,8 @@ export function openStyleModal(state, existingStyle, onDone) {
 
   // ── event bindings ───────────────────────────────────────────────────────
   function bind() {
-    backdrop.querySelector(".style-modal-close").addEventListener("click", close);
+    const closeBtn = backdrop.querySelector(".style-modal-close");
+    if (closeBtn) closeBtn.addEventListener("click", close);
 
     const divider = backdrop.querySelector(".style-modal-divider");
     const previewPane = backdrop.querySelector(".style-modal-preview");
@@ -652,7 +665,16 @@ export function openStyleModal(state, existingStyle, onDone) {
   }
 
   render();
+
+  // Host-mode callers (the Edit Styles shell) need to flush in-flight
+  // edits before swapping the editor target, so return a small handle.
+  return { close, flush: flushSave };
 }
+
+// The three-column Edit Styles entry point lives in `style-editor-modal.js`
+// so this file stays under the 700-line repo cap. Re-exported here for
+// callers that import from the historical location.
+export { openStyleEditorModal } from "./style-editor-modal.js";
 
 // ── simple markdown→HTML for the preview pane ──────────────────────────────────
 function formatPreviewHtml(md) {

@@ -1,28 +1,4 @@
-/* ===== Sidebar (LEFT side) ===== */
-#sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 50px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: center;
-  padding: 50px 0 20px;
-  background: var(--theme-bg, var(--bg));
-  color: var(--sidebar-icon-color, var(--fg));
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: var(--z-sidebar);
-  pointer-events: none;
-  cursor: crosshair;
-}
-
-#sidebar * {
-  cursor: inherit;
-}
-
+/* ===== Sidebar Cursor ===== */
 #panel-overlay, #panel-overlay * {
   cursor: crosshair;
 }
@@ -33,169 +9,29 @@
   cursor: text;
 }
 
-/* Sidebar + panel are a single unit now, opened only by the floating
-   toggle (or Cmd+\). Hover-to-show was removed because iPad taps were
-   leaving the column stuck on after the panel closed — two competing
-   open/close mechanisms fighting over the same classes. */
-#sidebar.visible, #sidebar.pinned {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* Pin button is obsolete: there is no longer a "pin" distinction — the
-   toggle simply opens and closes. Hidden everywhere until we reuse the
-   class for something else. */
+/* Pin button is obsolete: the grip toggle owns open/close. */
 .panel-pin-btn {
   display: none !important;
 }
 
-.sidebar-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 17px;
+/* iOS Cmd-mode floating pills — anchored to the bottom-left of the
+   viewport, past the always-present sidebar grip strip. */
+:root {
+  --sidebar-grip-width: 24px;
 }
 
-.sidebar-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--sidebar-icon-color, var(--fg));
-  opacity: 1;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: color 0.15s;
-  padding: 0;
-}
-
-.sidebar-btn:hover {
-  color: var(--sidebar-icon-hover, var(--fg));
-}
-
-.sidebar-btn.active {
-  color: var(--sidebar-icon-hover, var(--fg));
-}
-
-.sidebar-btn svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* Floating circular sidebar toggle — fixed in the upper-left corner,
-   above every other piece of chrome. Provides a pointer-only path to
-   opening the files panel for users without a keyboard. Style picks up
-   the toolbar's "soft pill" look: theme background + subtle shadow +
-   backdrop blur for mild glassiness over colored canvases. */
-.sidebar-floating-toggle {
-  position: fixed;
-  /* Anchored to the vertical centre of the viewport — the 20-px
-     horizontal gap is reused by the open-state calc below. */
-  top: 50%;
-  left: 20px;
-  transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Opaque border + chevron so the toggle reads clearly against busy
-     canvases (notebook backgrounds, post-processing shader layers).
-     Border uses --fg directly rather than the alpha-blended variant
-     so it draws a solid edge in every theme. */
-  border: 1px solid var(--fg, #888);
-  border-radius: 50%;
-  background: var(--theme-bg, var(--bg));
-  color: var(--fg);
-  opacity: 1;
-  cursor: pointer;
-  padding: 0;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  /* Sits above the sidebar (--z-sidebar), panel-overlay (100), toolbars
-     (100), pane-container (--z-pane), and the Tauri drag region (80). */
-  z-index: var(--z-modal);
-  /* Tauri drag region sits at top: 0 with webkit-app-region: drag —
-     opt this button out so clicks don't get consumed as window drags. */
-  -webkit-app-region: no-drag;
-  /* No `left` transition — the sidebar/panel itself doesn't animate
-     its open/close, so the toggle would look out-of-sync sliding over
-     on its own. Opacity/color are still smoothed for the typing-fade
-     and hover states. */
-  transition: opacity 0.15s, color 0.15s;
-}
-
-/* When the panel is open, the button rides the panel's right edge,
-   keeping the same 20-px gap it had from the window edge when closed.
-   50px = the sidebar icon column width; the panel starts there and
-   extends by --panel-width; final 20px = the gap. */
-.sidebar-floating-toggle.panel-open {
-  left: calc(50px + var(--panel-width, 300px) + 20px);
-}
-
-/* Dropbox sync indicator — 10 px dot pinned directly under the sidebar
-   floating toggle. Shares the toggle's horizontal anchor (centred on
-   the same column) so it slides with the toggle as the panel opens /
-   closes / resizes. Hidden by default; shown when sync is connected.
-   Pulses on every successful sync pass. */
-.sidebar-sync-dot {
-  position: fixed;
-  /* Toggle is centred at top: 50% via translateY(-50%) and is 36 px
-     tall. Park the dot 14 px below the toggle's bottom edge (= 50%
-     + 18 px toggle half + 14 px gap). */
-  top: calc(50% + 32px);
-  left: calc(20px + 18px);
-  transform: translateX(-50%);
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--fg, #888);
-  opacity: 0;
-  pointer-events: none;
-  z-index: var(--z-modal);
-  transition: opacity 0.2s ease, left 0s;
-  -webkit-app-region: no-drag;
-}
-.sidebar-sync-dot.visible { opacity: 0.45; }
-.sidebar-sync-dot.panel-open {
-  left: calc(50px + var(--panel-width, 300px) + 20px + 18px);
-}
-.sidebar-sync-dot.pulse { animation: hush-sync-dot-pulse 0.8s ease-out; }
-@keyframes hush-sync-dot-pulse {
-  0%   { transform: translateX(-50%) scale(1);   opacity: 0.45; }
-  35%  { transform: translateX(-50%) scale(1.6); opacity: 1; }
-  100% { transform: translateX(-50%) scale(1);   opacity: 0.45; }
-}
-body.typing-fade .sidebar-sync-dot.visible { opacity: 0; }
-
-/* iOS Cmd button — same pill geometry as the sidebar floating toggle
-   but anchored to the bottom-left of the viewport. Mirrors the toggle's
-   offset rules so the two buttons share a column when both are visible
-   (and the Cmd button still rides the panel edge as it opens). Visible
-   only when `Show Cmd Button` is enabled in Settings > General on iOS;
-   `cmd-button.js` mounts/unmounts the element. */
 .cmd-floating-button {
   position: fixed;
-  left: 20px;
-  /* The Cmd ⌘ button sits on the bottom row; the palette ☰ button
-     above stacks 12 px higher (52 = 36 button + ~16 gap). */
+  /* Sit just past the always-present grip strip when the panel is
+     closed; the .panel-open rule below moves the buttons to the right
+     edge of the open panel. */
+  left: calc(var(--sidebar-grip-width) + 12px);
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   width: 36px;
   height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Same fg-tinted border as .sidebar-floating-toggle — keeps the two
-     pill families visually consistent across light, dark, and sepia
-     themes. */
   border: 1px solid color-mix(in srgb, var(--fg, #888) 25%, transparent);
   border-radius: 50%;
   background: var(--theme-bg, var(--bg));
@@ -219,22 +55,19 @@ body.typing-fade .sidebar-sync-dot.visible { opacity: 0; }
 }
 
 .cmd-floating-button.cmd-palette-button {
-  /* Stack above the Cmd button with a 12 px gap. */
   bottom: calc(20px + 36px + 12px + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.cmd-paste-button {
-  /* Stack above the palette button (third pill from the bottom). */
   bottom: calc(20px + (36px + 12px) * 2 + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.cmd-undo-button {
-  /* Stack above the paste button (fourth pill from the bottom). */
   bottom: calc(20px + (36px + 12px) * 3 + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.panel-open {
-  left: calc(50px + var(--panel-width, 300px) + 20px);
+  left: calc(var(--panel-width, 300px) + 20px);
 }
 
 .cmd-floating-button:hover {
@@ -247,88 +80,65 @@ body.typing-fade .sidebar-sync-dot.visible { opacity: 0; }
   opacity: 1;
 }
 
-/* While the Cmd button is held, paint a 30 px / 30 % opacity halo
-   around it so the user can still see it under their thumb. The
-   palette button is a single-tap action and doesn't need it. */
 .cmd-floating-button:not(.cmd-palette-button).active {
   box-shadow: 0 0 0 30px rgba(90, 138, 216, 0.3);
 }
 
-.sidebar-floating-toggle:hover {
-  opacity: 1;
-}
-
-/* Typing-fade: slowly hide while the user is actively writing in a doc.
-   Pointer activity (mousemove / tap) removes the class immediately.
-   Kept out of notebook mode so the buttons stay reachable for
-   Pencil-only users. Driven by `body.typing-fade` so the floating
-   toggle, the sidebar's pane icons, and the files panel's "new item"
-   row all fade together.
-   The whole new-item row is faded as a unit (.tree-create-btns rather
-   than .tree-create-btns button) so a single declaration covers all
-   four buttons — targeting the buttons directly leaves room for
-   per-button cascade quirks where some children weren't picking up
-   the fade. */
-.sidebar-floating-toggle,
-#sidebar .sidebar-btn,
+/* Typing-fade — slow opacity ramp on writing surfaces. The grip stays
+   visible so the user can still reach the toggle while typing. */
 .tree-create-btns {
-  /* Slow 1s opacity transition for the typing-fade affordance. Listed
-     alongside color / background-color (each at 0.15s) so the hover
-     transitions on these elements still feel snappy — bundling them
-     into one declaration here prevents any earlier per-element
-     `transition` shorthand from being only-partially overridden. */
   transition-property: opacity, color, background-color;
   transition-duration: 1s, 0.15s, 0.15s;
   transition-timing-function: ease;
-  /* Hint to the compositor so iOS WebKit reliably interpolates the
-     opacity in both directions instead of snapping the fade-out. */
   will-change: opacity;
 }
 
-body.typing-fade .sidebar-floating-toggle,
-body.typing-fade #sidebar .sidebar-btn,
 body.typing-fade .tree-create-btns {
   opacity: 0;
   pointer-events: none;
 }
 
-.sidebar-floating-toggle {
-  /* Match the notebook shelf grip: small system-font guillemet,
-     centred via the parent's flexbox.  `line-height: 1` keeps the
-     glyph's box flush to its em-square so flex centring lands it on
-     the pill's geometric centre. */
-  font-size: 12px;
-  font-family: -apple-system, system-ui, sans-serif;
-  line-height: 1;
-}
-
-/* ===== Panels (LEFT side, next to sidebar) ===== */
+/* ===== Panel (LEFT side) — now the sidebar itself ===== */
 #panel-overlay {
   position: fixed;
   top: 0;
-  left: 50px;
+  left: 0;
   width: var(--panel-width, 300px);
   height: 100%;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
-  border-right: 1px solid var(--panel-border);
+  border-right: 1px solid color-mix(in srgb, var(--fg, currentColor) 8%, transparent);
   z-index: 100;
   padding: 0;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
-  transition: transform 0.2s, opacity 0.2s;
+  flex-direction: row;
+  transition: width 0.2s;
 }
 
-/* Stable header that persists across panel switches — owns the global
-   desk switcher so it stays visible whether the user is in Files,
-   Styles, or Versions. */
+/* Suppress the width transition while the user is actively dragging the
+   resize strip — interpolating every mousemove looks like 200 ms of lag
+   behind the cursor. */
+#panel-overlay.resizing {
+  transition: none;
+}
+
+/* Body-stack holds header / body / footer; collapses to width:0 when
+   the panel is hidden, leaving just the grip visible on the right. */
+.panel-overlay-body-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Stable header that persists across renders — owns the desk switcher. */
 .panel-overlay-header {
   flex: 0 0 auto;
   padding: 20px 20px 0;
 }
 
-/* Body holds the active panel's content and owns the scroll container. */
 .panel-overlay-body {
   flex: 1;
   min-height: 0;
@@ -336,111 +146,253 @@ body.typing-fade .tree-create-btns {
   padding: 0 20px 20px;
 }
 
-/* Sidebar-panel resizer — mirrors the column-resizer invisible-to-visible
-   feel. The element itself is 40px wide with a 3px visible rail. Sits on
-   the panel's right edge. */
-.sidebar-panel-resizer {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  padding: 0 20px;
-  margin-left: -20px;
-  cursor: col-resize;
-  background-clip: content-box;
-  z-index: 110;
+/* Footer — pinned at the bottom of the body-stack. No top border;
+   icon-only buttons that reveal their label on hover. */
+.panel-overlay-footer {
+  flex: 0 0 auto;
+  padding: 8px 16px 14px;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+}
+
+.panel-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.panel-footer-btn:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.panel-footer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.panel-footer-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Label is hidden until the button is hovered. Width collapses too so
+   the un-hovered buttons sit tight against their icons. */
+.panel-footer-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 0.18s ease, opacity 0.15s ease;
+}
+
+.panel-footer-btn:hover .panel-footer-label,
+.panel-footer-btn:focus-visible .panel-footer-label {
+  max-width: 140px;
+  opacity: 1;
+}
+
+/* ===== Sidebar grip (always-visible toggle on the right edge) =====
+   The grip is two pieces: a wide click-to-toggle button on the left
+   and a narrow drag-to-resize strip flush against the panel's outer
+   edge. Both stay visible whether the panel body is collapsed or open. */
+.sidebar-grip {
+  flex: 0 0 var(--sidebar-grip-width);
+  width: var(--sidebar-grip-width);
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  background: var(--theme-bg, var(--bg));
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-grip-toggle {
+  flex: 1 1 auto;
+  height: 100%;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+/* The toggle is a real button — pointer cursor wins over the
+   panel-wide crosshair via the ID-prefixed selector. The descendant
+   rule covers the chevron span too, otherwise the `#panel-overlay *`
+   crosshair leaks back in over the arrow glyph. */
+#panel-overlay .sidebar-grip-toggle,
+#panel-overlay .sidebar-grip-toggle * {
+  cursor: pointer;
+}
+
+/* Tint pill — limited to a 100 px vertical strip centred on the
+   toggle, with 5 px corner radius. Lives on a pseudo-element so the
+   button's own background can stay clear. */
+.sidebar-grip-toggle::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 100px;
+  border-radius: 5px;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+  pointer-events: none;
+}
+
+/* Tint pill paints on hover in either state (open and closed). */
+.sidebar-grip-toggle:hover::before,
+.sidebar-grip-toggle:focus-visible::before {
+  background-color: color-mix(in srgb, var(--fg, currentColor) 8%, transparent);
+}
+
+.sidebar-grip-chevron {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  line-height: 1;
+  /* Default visible — `body.typing-fade` fades it out, and any
+     pointer / key activity clears that class (see sidebar.js's
+     endTypingFade), so the chevron tracks cursor movement the same
+     way the legacy circular toggle did. */
+  opacity: 0.6;
+  transition: opacity 1s ease;
+  will-change: opacity;
+}
+
+#panel-overlay:not(.hidden) .sidebar-grip-toggle:hover .sidebar-grip-chevron {
+  opacity: 1;
+}
+
+/* Typing-fade hides the chevron the same way it used to hide the
+   circular floating toggle. The 1 s opacity ramp on the base rule
+   keeps the fade gentle; cursor movement clears `typing-fade` and
+   the chevron rises back. */
+body.typing-fade .sidebar-grip-chevron {
+  opacity: 0;
+}
+
+/* Closed state — no right border on the sidebar; the chevron tracks
+   cursor activity via the typing-fade hook above. */
+#panel-overlay.hidden {
+  border-right: none;
+}
+
+/* Narrow drag-to-resize strip on the outer edge. Cursor: col-resize on
+   hover (the `#panel-overlay *` crosshair rule otherwise wins on
+   specificity, so this selector reasserts col-resize with an ID
+   prefix). Hidden when the panel is collapsed — no body width to drag. */
+.sidebar-grip-resize {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 100%;
+  position: relative;
   background: transparent;
   transition: background 0.15s;
 }
 
-.sidebar-panel-resizer::after {
+#panel-overlay .sidebar-grip-resize,
+#panel-overlay .sidebar-grip-resize * {
+  cursor: col-resize;
+}
+
+/* The drag rail sits flush against the panel's right border — same
+   position, same width — so hover just deepens the colour rather than
+   painting a second hairline a few pixels inside. */
+.sidebar-grip-resize::after {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 19px;
-  width: 3px;
-  border-radius: 1.5px;
+  right: 0;
+  width: 1px;
   background: var(--fg, currentColor);
   opacity: 0;
-  transition: opacity 0.5s ease-in;
+  transition: opacity 0.2s ease;
 }
 
-.sidebar-panel-resizer.hover::after { opacity: 0.15; transition: opacity 0.5s ease-in; }
-.sidebar-panel-resizer.dragging::after { opacity: 0.35; transition: opacity 0s; }
-.sidebar-panel-resizer:not(.hover):not(.dragging)::after { transition: opacity 0s; }
+.sidebar-grip-resize:hover::after,
+.sidebar-grip-resize.dragging::after {
+  opacity: 0.25;
+}
 
-.sidebar-panel-resizer.hidden { display: none; }
+#panel-overlay.hidden .sidebar-grip-resize {
+  display: none;
+}
 
-/* Inset mode: panel sits in the editor's left margin. A thin right
-   border matches the canvas dot/grid colour in notebook mode (see
-   below) and falls back to a low-opacity divider in doc mode so the
-   panel always reads as visually separate from the editor surface. */
+/* Dropbox sync indicator — small dot inside the toggle, near the bottom. */
+.sidebar-sync-dot {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg, #888);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.sidebar-sync-dot.visible { opacity: 0.45; }
+.sidebar-sync-dot.pulse { animation: hush-sync-dot-pulse 0.8s ease-out; }
+@keyframes hush-sync-dot-pulse {
+  0%   { transform: translateX(-50%) scale(1);   opacity: 0.45; }
+  35%  { transform: translateX(-50%) scale(1.6); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1);   opacity: 0.45; }
+}
+
+/* Inset mode: panel sits in the editor's left margin. */
 #panel-overlay.panel-inset {
   background: var(--theme-bg, var(--bg));
-  border-right: 1px solid color-mix(in srgb, var(--fg, currentColor) 12%, transparent);
   z-index: 100;
 }
 
-/* In notebook mode the sidebar panel gets a 1px right border that exactly
-   matches the canvas dot/grid colour + opacity. The JS sets
-   --notebook-pattern-color to the computed rgba (or transparent when the
-   background is blank / grid opacity is 0). */
 body.notebook-mode #panel-overlay,
 body.notebook-mode #panel-overlay.panel-inset {
-  border-right: 1px solid var(--notebook-pattern-color, transparent);
+  /* In notebook mode the canvas owns the visual divider — keep the
+     panel border out of the way. */
 }
 
+/* Hidden = body-stack collapsed; the grip stays visible on the right.
+   `!important` is required because `utility.css` carries a global
+   `.hidden { display: none !important; }` rule. */
 #panel-overlay.hidden {
-  transform: translateX(-20px);
-  opacity: 0;
-  pointer-events: none;
+  width: var(--sidebar-grip-width);
+  display: flex !important;
+}
+#panel-overlay.hidden .panel-overlay-body-stack {
+  display: none;
 }
 
-/* Pin button — fixed at bottom-right of panel zone. Horizontal offset
-   tracks --panel-width so it stays glued to the panel's right edge when
-   the panel is resized. */
-.panel-pin-btn {
-  position: fixed;
-  bottom: 12px;
-  left: calc(50px + var(--panel-width, 300px) - 28px);
-  width: 15px;
-  height: 15px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--sidebar-fg);
-  opacity: 0;
-  pointer-events: none;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  z-index: 101;
-}
-.panel-pin-btn svg circle {
-  transition: fill 0.15s;
-}
-
-.panel-pin-btn.pin-visible {
-  opacity: 0.4;
-  pointer-events: auto;
-}
-.panel-pin-btn.pin-visible:hover {
-  opacity: 0.8;
-}
-.panel-pin-btn.pin-visible:hover svg circle {
-  fill: currentColor;
-}
-
-/* When pinned, always show filled (in inset mode) */
-.panel-pin-btn.pin-active {
-  opacity: 0.8;
-  pointer-events: auto;
-}
-.panel-pin-btn.pin-active svg circle {
-  fill: currentColor;
-}
-
-/* ===== Sidebar Tooltips ===== */
+/* ===== Sidebar Tooltips (used by the files panel rows) ===== */
 .sidebar-tooltip {
   position: fixed;
   z-index: var(--z-overlay);
@@ -500,44 +452,62 @@ body.notebook-mode #panel-overlay.panel-inset {
   font-family: system-ui, sans-serif;
 }
 
-/* ===== Phone — fill-width sidebar, toggle on the right border ===== */
-/* Filenames were being cut off because --panel-width defaulted to 300 px.
-   On phones the panel grows to whatever's left after the 50-px icon
-   column and the 36-px floating toggle. The toggle anchors to the
-   panel's right edge so it visually "rests on" the border. */
-html.phone {
-  --panel-width: calc(100vw - 50px - 36px) !important;
+/* ===== Add popup — surfaces the four create actions in a floating
+   list above the footer Add button. Closed on click outside / Esc. */
+.panel-add-popup {
+  position: fixed;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 180px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  font-family: system-ui, sans-serif;
 }
 
-/* Push the icon column and the panel header below the iPhone's
-   dynamic island / notch — the desk dropdown was previously catching
-   the island and sitting un-tappable. `env(safe-area-inset-top)`
-   resolves to 0 on platforms without an inset so we can stack it
-   onto the existing top padding unconditionally. */
-html.phone #sidebar {
-  padding-top: calc(50px + env(safe-area-inset-top, 0px));
+.panel-add-popup button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.panel-add-popup button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.panel-add-popup svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+/* ===== Phone — fill-width sidebar (minus grip strip) ===== */
+html.phone {
+  --panel-width: calc(100vw - var(--sidebar-grip-width)) !important;
 }
 
 html.phone .panel-overlay-header {
   padding-top: calc(20px + env(safe-area-inset-top, 0px));
 }
 
-html.phone .sidebar-floating-toggle.panel-open {
-  left: calc(100vw - 36px);
-}
-
-/* No drag-resize on phone — the panel auto-fills, the resizer would
-   only confuse touch interaction. */
 html.phone .sidebar-panel-resizer {
   display: none;
 }
 
-/* Touch-mode pills along the bottom edge of the viewport. Only the
-   palette + paste pair render on phone (cmd-button.js skips the ⌘
-   and ↶ pills); both are repositioned from the bottom-left stack to
-   a horizontal pair centered horizontally. Pair width = 36 + 12 + 36
-   = 84 px → each pill's left edge sits 42 px / 6 px from the centre.
-   Hidden while the panel is open since the panel fills the screen. */
 html.phone .cmd-floating-button.cmd-palette-button {
   right: auto;
   left: calc(50% + 6px);
