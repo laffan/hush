@@ -185,7 +185,12 @@
  * padding so the chip and buttons line up with the text column. */
 .gdoc-link-bar {
   position: fixed;
-  top: 0;
+  /* `viewport-fit=cover` (see index.html) lets the viewport extend under
+     the iOS status bar / dynamic island, which would otherwise capture
+     taps aimed at the buttons sitting in that strip. Anchoring with
+     env(safe-area-inset-top) pushes the bar below the system overlay on
+     iOS and resolves to 0 on desktop, leaving that path unchanged. */
+  top: env(safe-area-inset-top, 0px);
   z-index: 90; /* above #drag-region (80), below shelf/sidebar (150/200) */
   display: flex; align-items: center; gap: 12px;
   padding-top: 8px;
@@ -196,6 +201,7 @@
   background: var(--theme-bg, var(--bg));
   user-select: none;
   -webkit-app-region: no-drag;
+  -webkit-tap-highlight-color: transparent;
 }
 .gdoc-link-bar.gdoc-link-bar-busy { opacity: 0.55; }
 
@@ -253,6 +259,11 @@
   color: inherit;
   opacity: 0.65;
   cursor: pointer;
+  /* iOS WKWebView ignores click events on very thin buttons that overlap
+     the system status bar — `touch-action: manipulation` skips the 300 ms
+     double-tap delay path so the first tap routes straight through. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .gdoc-link-bar-btn:hover:not(:disabled) {
   opacity: 1;

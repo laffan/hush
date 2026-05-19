@@ -48,11 +48,23 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   const isSpecial = isInboxId(nodeId) || isImagesId(nodeId);
   const isDoc = nodeType === "document";
   const isImage = nodeType === "image";
+  const isContainer = nodeType === "folder" || nodeType === "project";
   // Docs auto-derive their name from first line while still "Untitled".
   // Once content has locked in a name, expose rename like notebooks do.
   const docRenameable = isDoc && item?.name && item.name !== "Untitled";
 
   const entries = [];
+  // Containers carry the "New Doc / New Notebook" entries at the top so
+  // the most common action on a folder/project is the first thing in
+  // the menu. Inbox is internally typed as a project so it lands here
+  // too — natural since it's where new files live by default. Images
+  // is also typed as project but the new-here actions don't make sense
+  // there (it only holds image refs), so it's explicitly skipped.
+  if (isContainer && !inTrash && !isImagesId(nodeId)) {
+    entries.push({ action: "new-doc-here", label: "New Doc" });
+    entries.push({ action: "new-notebook-here", label: "New Notebook" });
+  }
+
   if (!isSpecial && !inTrash && !isImage) {
     entries.push({ action: "flag", label: item?.flagged ? "Unflag" : "Flag" });
   }
@@ -62,7 +74,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   if (isDoc && inProject && !inTrash) {
     entries.push({ action: "use-as-note", label: item?.useAsNote ? "Stop using as note" : "Use as note" });
   }
-  if (!isSpecial && (nodeType === "folder" || nodeType === "project") && !item?.syncFolderId) {
+  if (!isSpecial && isContainer && !item?.syncFolderId) {
     const target = nodeType === "folder" ? "project" : "folder";
     entries.push({ action: "convert-container", label: `Convert to ${target}`, targetType: target });
   }

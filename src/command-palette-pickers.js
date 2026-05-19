@@ -1,0 +1,168 @@
+/**
+ * Picker-mode helpers for the command palette. Each one swaps the
+ * palette's command list with a different set (files, notebooks, …) so
+ * the palette can act as a fuzzy file picker for follow-up flows
+ * without spawning a separate modal.
+ *
+ * Extracted from `command-palette.js` so that file stays under the
+ * 700-line cap. The pickers are pure: every call takes the palette
+ * handle (`{ setItems(items, placeholder) }`) plus the app state, and
+ * does not touch any module-local state of `command-palette.js`.
+ */
+import {
+  contextIdForFile, copyPanesBetweenContexts, getActivePaneId,
+  clearPanesForContext, createPane, getInitialPanePosition,
+} from "./pane/pane-manager.js";
+import { panes } from "./pane/pane-state.js";
+import { setPanesHiddenForContext } from "./state/state-panes.js";
+import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
+import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
+import { sendSelectedToFile } from "./selection-extract.js";
+import { useActivePaneAsGutter } from "./pane/pane-gutter.js";
+import { typeIcons } from "./sidebar/files-panel-shared.js";
+import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
+
+/** Pane lands centred on its (x,y) anchor — pre-shift by half the
+ *  default pane size so the click-point coordinate (returned by
+ *  `getInitialPanePosition`) lines up with the pane's top-left. */
+export function paneAnchorClickPoint(state) {
+  const pos = getInitialPanePosition(state);
+  return { x: pos.x + PANE_DEFAULT_WIDTH / 2, y: pos.y + PANE_TITLEBAR_HEIGHT / 2 };
+}
+
+/** Mirror of pane-manager's getCurrentContext — used by the pane-copy
+ *  picker. Returns "" when nothing is open. */
+function activeContextIdFor(s) {
+  if (s.currentNotebookFileId) return "nb:" + s.currentNotebookFileId;
+  if (s.currentProjectId) return "pj:" + s.currentProjectId;
+  if (s.currentFileId) return "doc:" + s.currentFileId;
+  return "";
+}
+
+/** Ask the user for a name before spawning a notebook. Shared between
+ *  every "new notebook" entry point. Lazy-imports the modal helper so
+ *  the bundle splits cleanly. */
+export function promptNewNotebookName(onConfirm) {
+  import("./sidebar/files-panel-shared.js").then(({ showPromptModal }) => {
+    showPromptModal({
+      title: "New notebook",
+      label: "Name",
+      placeholder: "New Notebook",
+      initialValue: "New Notebook",
+      confirmLabel: "Create",
+      onConfirm,
+    });
+  });
+}
+
+/** Does the active doc already host a notebook pane promoted to gutter?
+ *  Mirrors `pane-gutter.js`'s `docHasGutter()` — a doc can carry at
+ *  most one gutter at a time. Walks the live `panes` Map directly
+ *  (rather than `getPanesForContext`, which returns shallow copies
+ *  without the `gutter` flag). */
+export function docContextHasGutterAlready(state) {
+  if (state.currentNotebookFileId || state.currentProjectId) return true;
+  if (!state.currentFileId) return true;
+  const ctx = "doc:" + state.currentFileId;
+  for (const [, p] of panes) {
+    if (p.gutter && p.ownerContext === ctx) return true;
+  }
+  return false;
+}
+
+/** Spawn a notebook pane in the active doc and immediately promote it
+ *  to a gutter. `useActivePaneAsGutter` keys off the module-local
+ *  `activePaneId`, which `createPane`'s focusPane() call sets — a
+ *  microtask wait lets focus's downstream effects settle before we
+ *  kick the gutter promotion. */
+export async function openNotebookAsGutter(state, fileId, name) {
+  const { x, y } = paneAnchorClickPoint(state);
+  await createPane(fileId, name, "notebook", x, y);
+  await Promise.resolve();
+  useActivePaneAsGutter();
+}
+
+export function enterNotebookGutterPicker(palette, state) {
+  const leaves = collectFileLeaves(activeDeskSubtree(state))
+    .filter((f) => f.type === "notebook");
+  const items = leaves.map((f) => ({
+    id: "gutter-notebook-" + f.id,
+    label: f.name,
+    icon: typeIcons.notebook,
+    shortcutKey: null,
+    action: () => openNotebookAsGutter(state, f.fileId, f.name),
+  }));
+  palette.setItems(items, "Add notebook as gutter…");
+}
+
+/** Copy or switch the current document's panes into another doc/notebook.
+ *  `switchAfter` is true for *Switch panes to Document* — clears the
+ *  source after copying and opens the target so the panes ride along. */
+export function enterPaneCopyPicker(palette, state, switchAfter) {
+  const currentFileId = state.currentNotebookFileId || state.currentFileId;
+  const items = collectFileLeaves(activeDeskSubtree(state))
+    .filter((f) => (f.type === "document" || f.type === "notebook") && f.fileId !== currentFileId)
+    .map((f) => ({
+      id: "pane-copy-target-" + f.id,
+      label: f.name,
+      icon: f.type === "notebook" ? typeIcons.notebook : typeIcons.document,
+      shortcutKey: null,
+      action: async () => {
+        const sourceCtx = activeContextIdFor(state);
+        const targetCtx = contextIdForFile(f.fileId, f.type);
+        if (!sourceCtx || !targetCtx || sourceCtx === targetCtx) return;
+        if (switchAfter) await setPanesHiddenForContext(state, targetCtx, false);
+        await copyPanesBetweenContexts(sourceCtx, targetCtx);
+        if (switchAfter) {
+          clearPanesForContext(sourceCtx);
+          if (f.type === "notebook") state.openNotebook(f.fileId);
+          else state.openFile(f.fileId);
+        }
+      },
+    }));
+  palette.setItems(items, switchAfter ? "Switch panes to…" : "Copy panes to…");
+}
+
+/** Open a file picker filtered to documents (in doc mode) or notebooks
+ *  (in notebook mode), excluding the currently-open file, and append the
+ *  current selection to whichever the user picks. */
+export function enterSendSelectedPicker(palette, state) {
+  const inNotebook = !!state.currentNotebookFileId;
+  const wantedType = inNotebook ? "notebook" : "document";
+  const currentId = inNotebook ? state.currentNotebookFileId : state.currentFileId;
+  const leaves = collectFileLeaves(activeDeskSubtree(state))
+    .filter((f) => f.type === wantedType && f.fileId !== currentId);
+  const items = leaves.map((f) => ({
+    id: "send-target-" + f.id,
+    label: f.name,
+    icon: f.type === "notebook" ? typeIcons.notebook : typeIcons.document,
+    shortcutKey: null,
+    action: () => sendSelectedToFile(state, f),
+  }));
+  const placeholder = inNotebook ? "Send selection to notebook…" : "Send selection to document…";
+  palette.setItems(items, placeholder);
+}
+
+/** Replace the palette's command list with file rows that pipe back into
+ *  `onPick(fileLeaf)` on selection. Used by both "Open…" commands.
+ *  `includeProjects` is opt-in because the floating-pane path doesn't
+ *  support project types — only the main editor can host the joined view. */
+export function enterFilePicker(palette, state, placeholder, onPick, { includeProjects = false } = {}) {
+  let leaves = collectFileLeaves(activeDeskSubtree(state));
+  if (!includeProjects) leaves = leaves.filter((f) => f.type !== "project");
+  // Sort MRU-first; files not in the MRU keep their tree order behind it.
+  const recents = Array.isArray(state.settings?.recentFileIds) ? state.settings.recentFileIds : [];
+  const rank = new Map(recents.map((id, i) => [id, i]));
+  leaves = leaves.slice().sort((a, b) => (rank.get(a.fileId) ?? Infinity) - (rank.get(b.fileId) ?? Infinity));
+  const items = leaves.map((f) => ({
+    id: "file-" + f.id, label: f.name, shortcutKey: null,
+    icon: f.type === "notebook" ? typeIcons.notebook : f.type === "project" ? typeIcons.project : typeIcons.document,
+    paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type === "notebook" ? "notebook" : "document" }, state),
+    action: () => onPick(f),
+  }));
+  palette.setItems(items, placeholder);
+}
+
+/** Re-export so command-palette.js can keep using a single import path
+ *  for the active-pane helper alongside the pickers it drives. */
+export { getActivePaneId };

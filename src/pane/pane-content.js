@@ -208,8 +208,17 @@ async function loadNotebookPane(pane) {
   // with the default camera). Without this the pane shows the canvas
   // origin in its top-left corner. Deferred to the next frame so
   // pane._content has its final layout size.
+  //
+  // Skip when the pane is acting as a gutter — gutter mode owns
+  // `state.camera` (it tracks the host doc's scrollTop), and centering
+  // overwrites that with a fixed value, sending the shadow headers
+  // off-screen via the per-header `y < -40 || y > canvasH + 4` cull.
+  // The gutter flag is set synchronously by `useActivePaneAsGutter` /
+  // hydrated by `restorePanes` before this rAF fires, so the check sees
+  // the final value in both the fresh and restore paths.
   requestAnimationFrame(() => {
     if (!canvas.state || !pane._content) return;
+    if (pane.gutter) return;
     const mainC = document.getElementById("notebook-container");
     const mainW = (mainC && mainC.clientWidth) || window.innerWidth;
     const mainH = (mainC && mainC.clientHeight) || window.innerHeight;
@@ -281,6 +290,18 @@ export async function savePaneContent(pane) {
         content = pane.editor.getContent();
       } else if (pane.fileType === "notebook" && pane.notebook) {
         const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
+        // In gutter mode `state.camera.y` is driven by the host doc's
+        // scrollTop (see `pane-gutter.js#syncCameraFromScroll`) rather
+        // than tracking a meaningful canvas viewport. Persisting it
+        // would write a scroll-tied value into the file, and on the
+        // next mount the main-canvas restore path
+        // (`notebook-bridge.js`) would seed the canvas at that bogus
+        // position. `_gutterPrev.camera` snapshots the pane's camera
+        // at the moment the gutter mode was entered — that's the
+        // right value to round-trip.
+        const cameraToSave = pane.gutter
+          ? (pane._gutterPrev?.camera || null)
+          : pane.notebook.state.camera;
         content = encodeNotebookContent({
           shapes: pane.notebook.getShapes(),
           layers: pane.notebook.state.layers,
@@ -289,7 +310,7 @@ export async function savePaneContent(pane) {
           // user's saved viewports. Without these the pane path silently
           // loses every bookmark the moment it autosaves the file.
           bookmarks: pane.notebook.state.bookmarks,
-          camera: pane.notebook.state.camera,
+          camera: cameraToSave,
         });
       }
       if (pane.localSync) {

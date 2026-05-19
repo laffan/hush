@@ -10,7 +10,7 @@ import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildre
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal, showPromptModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton, openRowMenu } from "./files-panel-row-menu.js";
@@ -232,9 +232,18 @@ export function createFilesPanel(container, state, hidePanel) {
   renderFlaggedSection(state);
 
   btnRow.querySelector("#tree-new-doc").addEventListener("click", () => state.newFile());
-  btnRow.querySelector("#tree-new-notebook").addEventListener("click", async () => {
-    await state.createNotebook("New Notebook");
-    refreshList(state);
+  btnRow.querySelector("#tree-new-notebook").addEventListener("click", () => {
+    showPromptModal({
+      title: "New notebook",
+      label: "Name",
+      placeholder: "New Notebook",
+      initialValue: "New Notebook",
+      confirmLabel: "Create",
+      onConfirm: async (name) => {
+        await state.createNotebook(name);
+        refreshList(state);
+      },
+    });
   });
   btnRow.querySelector("#tree-new-folder").addEventListener("click", async () => {
     await state.createFolder("New Folder");
@@ -271,6 +280,20 @@ function dispatchRowAction(action, nodeId, opts) {
     handleRevealInFinder(nodeId, storedState);
   } else if (action === "empty-trash") {
     handleEmptyTrash(storedState);
+  } else if (action === "new-doc-here") {
+    storedState.newFile(nodeId).then(() => refreshList(storedState));
+  } else if (action === "new-notebook-here") {
+    showPromptModal({
+      title: "New notebook",
+      label: "Name",
+      placeholder: "New Notebook",
+      initialValue: "New Notebook",
+      confirmLabel: "Create",
+      onConfirm: async (name) => {
+        await storedState.createNotebook(name, nodeId);
+        refreshList(storedState);
+      },
+    });
   }
 }
 

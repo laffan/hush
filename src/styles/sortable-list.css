@@ -43,9 +43,23 @@
   color: #ff6600;
 }
 
-.sl-list.sl-drop-target-list {
-  border-left: 2px solid var(--fg);
-  padding-left: 12px;
+/* The child list's drop-target highlight previously bumped its
+   border-left from 1 px to 2 px and its padding-left from 2 px to
+   12 px, which shifted every existing child several pixels to the
+   right while a drag hovered. The `.sl-drop-target-item` outline
+   below now frames the whole container, so we keep the class as a
+   layout-neutral marker here and let the outer outline carry the
+   visual cue. */
+.sl-list.sl-drop-target-list { /* layout neutral; see comment above */ }
+
+/* Outline the folder/project that's about to receive the drop so the
+   target container is visible at a glance. The outline wraps the
+   entire `.sl-item` (row + nested children) so the user can see the
+   bounds of what they're dropping into, not just the row label. */
+.sl-item.sl-drop-target-item {
+  outline: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
+  outline-offset: -1px;
+  border-radius: 4px;
 }
 
 .sl-item-content {

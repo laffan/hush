@@ -86,6 +86,60 @@ export function showDeleteConfirmModal(title, message, onConfirm) {
   showConfirmModal({ title, message, confirmLabel: "Delete", onConfirm });
 }
 
+/** Single-input prompt modal — used by flows that need a name from the
+ *  user before they create a file. Calls `onConfirm(trimmedValue)` with
+ *  the input value (never empty — the confirm button stays disabled
+ *  while the field is blank). Submits on Enter, cancels on Escape or
+ *  backdrop click. */
+export function showPromptModal({ title, label = "", placeholder = "", initialValue = "", confirmLabel = "Create", onConfirm, onCancel }) {
+  document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
+  const backdrop = document.createElement("div");
+  backdrop.className = "tree-delete-modal-backdrop";
+  const modal = document.createElement("div");
+  modal.className = "tree-delete-modal";
+  modal.innerHTML = `
+    <div class="tree-delete-modal-title">${escHtml(title)}</div>
+    ${label ? `<label class="tree-prompt-modal-label" for="tree-prompt-modal-input">${escHtml(label)}</label>` : ""}
+    <input id="tree-prompt-modal-input" class="tree-prompt-modal-input" type="text" autocomplete="off" spellcheck="false" />
+    <div class="tree-delete-modal-btns">
+      <button class="tree-delete-cancel">Cancel</button>
+      <button class="tree-delete-confirm tree-prompt-modal-confirm">${escHtml(confirmLabel)}</button>
+    </div>`;
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+  const input = modal.querySelector("input");
+  const confirmBtn = modal.querySelector(".tree-prompt-modal-confirm");
+  input.value = initialValue;
+  if (placeholder) input.placeholder = placeholder;
+  const sync = () => { confirmBtn.disabled = input.value.trim().length === 0; };
+  sync();
+  // The prompt-modal confirm sits in the same DOM slot as the
+  // delete-confirm button — strip its red tint so a routine "Create"
+  // doesn't masquerade as a destructive action.
+  confirmBtn.classList.add("tree-prompt-modal-confirm");
+  const cleanup = () => backdrop.remove();
+  const submit = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    cleanup();
+    onConfirm(value);
+  };
+  const cancel = () => { cleanup(); onCancel?.(); };
+  modal.querySelector(".tree-delete-cancel").addEventListener("click", cancel);
+  confirmBtn.addEventListener("click", submit);
+  input.addEventListener("input", sync);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); submit(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  });
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) cancel(); });
+  // Focus + select-all so the user can immediately overwrite the default.
+  // Done synchronously inside the click that opened the modal so iOS
+  // honours the user-gesture and surfaces the on-screen keyboard.
+  input.focus();
+  input.select();
+}
+
 export function attachLeafHoverHandlers(li) {
   li.addEventListener("mouseenter", () => {
     let ancestor = li.parentElement?.closest(".sl-item");

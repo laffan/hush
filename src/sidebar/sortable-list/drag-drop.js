@@ -81,8 +81,13 @@ function startDrag(target, event, options = {}) {
   const originParentPath = originPath.slice(0, -1);
   const originIndex = originPath[originPath.length - 1] ?? 0;
   const rect = target.getBoundingClientRect();
-  const offsetX = options.offsetX ?? event.clientX - rect.left;
-  const offsetY = options.offsetY ?? event.clientY - rect.top;
+  // Anchor the ghost to the cursor's upper-left so the user can see
+  // where the drop will land — the ghost trails down-right from the
+  // pointer instead of obscuring it. Ignore the click-point offsets
+  // that the caller computed for the cursor-relative anchor.
+  void options;
+  const offsetX = 0;
+  const offsetY = 0;
 
   const ghost = document.createElement("div");
   ghost.className = "sl-drag-ghost";
@@ -253,6 +258,10 @@ function clearDropTarget() {
     this.dragSession.highlightedParent.classList.remove("sl-drop-target-list");
     this.dragSession.highlightedParent = null;
   }
+  if (this.dragSession.highlightedParentItem) {
+    this.dragSession.highlightedParentItem.classList.remove("sl-drop-target-item");
+    this.dragSession.highlightedParentItem = null;
+  }
   const container = this.dropIndicator.parentElement;
   this.dragSession.dropTarget = null;
   this.dropIndicator.classList.remove("active");
@@ -295,6 +304,10 @@ function updateParentHighlight(parentPath) {
     this.dragSession.highlightedParent.classList.remove("sl-drop-target-list");
     this.dragSession.highlightedParent = null;
   }
+  if (this.dragSession.highlightedParentItem) {
+    this.dragSession.highlightedParentItem.classList.remove("sl-drop-target-item");
+    this.dragSession.highlightedParentItem = null;
+  }
   if (parentPath.length > 0) {
     const parentEl = this.container.querySelector(`[data-path="${parentPath.join("/")}"]`);
     if (parentEl) {
@@ -303,6 +316,8 @@ function updateParentHighlight(parentPath) {
         childList.classList.add("sl-drop-target-list");
         this.dragSession.highlightedParent = childList;
       }
+      parentEl.classList.add("sl-drop-target-item");
+      this.dragSession.highlightedParentItem = parentEl;
     }
   }
 }
@@ -325,7 +340,7 @@ function finishDrag(pointerEvent) {
   if (!this.dragSession) return;
   window.removeEventListener("pointermove", this._onPointerMove);
 
-  const { originElement, ghost, dropTarget, originPath, originParentPath, originIndex, autoExpandedIds, highlightedParent, draggedItem } = this.dragSession;
+  const { originElement, ghost, dropTarget, originPath, originParentPath, originIndex, autoExpandedIds, highlightedParent, highlightedParentItem, draggedItem } = this.dragSession;
 
   // Check if the item was dragged outside the sidebar/panel. Cmd/Ctrl
   // elevates any item into a drag-out (used for floating panes), and
@@ -341,6 +356,7 @@ function finishDrag(pointerEvent) {
     if (rect && pointerEvent.clientX > rect.right) {
       clearDropTarget.call(this);
       if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
+      if (highlightedParentItem) highlightedParentItem.classList.remove("sl-drop-target-item");
       ghost.remove();
       originElement.classList.remove("dragging");
       document.body.classList.remove("sl-dragging");
@@ -355,6 +371,7 @@ function finishDrag(pointerEvent) {
 
   clearDropTarget.call(this);
   if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
+  if (highlightedParentItem) highlightedParentItem.classList.remove("sl-drop-target-item");
   ghost.remove();
   originElement.classList.remove("dragging");
   document.body.classList.remove("sl-dragging");

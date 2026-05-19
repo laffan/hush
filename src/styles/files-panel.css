@@ -254,7 +254,7 @@
   transition: opacity 0.15s;
   flex-shrink: 0;
   background: var(--theme-bg, var(--bg));
-  padding-left: 6px;
+  padding: 0;
   z-index: 1;
 }
 
@@ -558,6 +558,44 @@
 
 .tree-delete-confirm:hover {
   background: rgba(220, 50, 50, 0.25) !important;
+}
+
+/* Prompt-modal confirm shares the layout slot with the delete-confirm
+   button but is non-destructive — strip the red tint. */
+.tree-delete-modal-btns .tree-prompt-modal-confirm {
+  background: transparent !important;
+  border-color: var(--panel-border) !important;
+  color: var(--fg) !important;
+}
+.tree-delete-modal-btns .tree-prompt-modal-confirm:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.15) !important;
+}
+.tree-delete-modal-btns .tree-prompt-modal-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tree-prompt-modal-label {
+  display: block;
+  font-size: 12px;
+  color: var(--sidebar-fg);
+  margin-bottom: 6px;
+}
+.tree-prompt-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  color: var(--fg);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  margin-bottom: 16px;
+  outline: none;
+}
+.tree-prompt-modal-input:focus {
+  border-color: color-mix(in srgb, var(--fg) 60%, transparent);
 }
 
 /* ===== Backup App Data modal ===== */
