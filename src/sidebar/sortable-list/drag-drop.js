@@ -48,7 +48,12 @@ function onPointerDown(event) {
       const isInteractive = event.target.closest("button:not(.sl-fold-arrow)") || event.target.closest("input") || event.target.closest("a");
       if (!isInteractive) {
         const item = this._getItemAtPath(targetPath);
-        if (item) this.config.onClick(item);
+        // Forward modifier-key state from the up-event so callers can
+        // do shift / cmd-aware selection without a separate listener.
+        // Falls back to the down-event when (rarely) the up-event has
+        // stale modifier state — e.g. user released the modifier key
+        // mid-click.
+        if (item) this.config.onClick(item, upEvent || event);
       }
     }
     this.pendingDrag = null;

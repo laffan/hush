@@ -6,14 +6,19 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { findNode, collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
+import { collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers, showConfirmModal, showDeleteConfirmModal, showPromptModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton, openRowMenu } from "./files-panel-row-menu.js";
+import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./files-panel-multi-select.js";
+import {
+  handleRename, handleRevealInFinder, handleConvertContainer,
+  handleDuplicate, handleDelete, handleEmptyTrash,
+} from "./files-panel-actions.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -150,6 +155,20 @@ export function createFilesPanel(container, state, hidePanel) {
       const inTrash = state.isInTrash(item.id);
       const _p = item.type === "document" ? findParentOfNode(state.fileTree, item.id) : null;
       const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
+      const isMultiSelected = (item.type === "document" || item.type === "notebook") && item.fileId
+        && Array.isArray(state.selectedDocIds) && state.selectedDocIds.includes(item.fileId);
+      // The `.multi-selected` class lives on the outer `.sl-item`, not
+      // the inner row, so SortableList's renderer can find it and
+      // re-apply on each render() without us having to coordinate. We
+      // also stamp `data-file-id` on the row so the multi-select event
+      // listener can toggle the highlight in place without rebuilding
+      // the whole panel (a rebuild during an active drag-select would
+      // strand the cached row refs in `session.rows` on detached
+      // elements and freeze the capture mid-gesture).
+      if (context?.li) {
+        context.li.classList.toggle("multi-selected", !!isMultiSelected);
+        if (item.fileId) context.li.dataset.fileId = item.fileId;
+      }
       const row = document.createElement("span");
       row.className = "tree-item-row" + (isActive ? " active" : "");
       row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
@@ -162,7 +181,35 @@ export function createFilesPanel(container, state, hidePanel) {
       return wrap;
     },
 
-    onClick: (item) => {
+    onClick: (item, event) => {
+      // Docs AND notebooks participate in the shift / cmd-click
+      // multi-select — the listing view branches on type to call the
+      // right open method. Anything else (folder, project, image, …)
+      // falls through to its normal click handler and clears any
+      // active selection on the way.
+      const isMultiSelectable = (item.type === "document" || item.type === "notebook") && item.fileId;
+      if (isMultiSelectable) {
+        if (event && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+          const visible = collectVisibleDocs(
+            state, visibleTopLevel, sortFlaggedItems,
+            sortableInstance?.state?.collapsedIds,
+          );
+          handleDocMultiClick(item, event, state, visible);
+          refreshList(state);
+          return;
+        }
+        // Plain click — drop any active multi-select and open via the
+        // type-appropriate path.
+        if (state.selectedDocIds.length) state.clearSelectedDocs();
+        if (item.type === "notebook") state.openNotebook(item.fileId);
+        else state.openFile(item.fileId);
+        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+        return;
+      }
+      // Non-doc / non-notebook click — clear any active selection so
+      // the user isn't left in a "selection exists but I can't see
+      // it" state when they navigate to a folder / project / etc.
+      if (state.selectedDocIds.length) state.clearSelectedDocs();
       // Clicking anywhere on a folder-like row toggles its collapsed state.
       // This applies to Inbox, Images, Trash, and any user-created folder.
       // User projects still open into project view.
@@ -171,10 +218,9 @@ export function createFilesPanel(container, state, hidePanel) {
         if (sortableInstance) sortableInstance.toggle(item.id);
         return;
       }
-      if (item.type === "document" && item.fileId) {
-        state.openFile(item.fileId);
-        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
-      } else if (item.type === "notebook" && item.fileId) {
+      // Doc rows are handled above; the remaining types each have their
+      // own open / preview path.
+      if (item.type === "notebook" && item.fileId) {
         state.openNotebook(item.fileId);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
       } else if (item.type === "project") {
@@ -260,28 +306,34 @@ export function createFilesPanel(container, state, hidePanel) {
   attachPaneIndicatorTooltip(listContainer);
   // Option-click on a row opens the Send-to-desk modal (when desks on).
   import("./send-to-desk-modal.js").then((m) => m.attachDeskShortcuts(listContainer, state));
+  // Drag-select gutter on the panel's left edge — pointerdown inside
+  // the 16 px strip arms a bounding-box selection over doc rows. Any
+  // pointerdown elsewhere in the panel keeps routing through the
+  // existing SortableList click / drag pipeline.
+  installDragSelect(container, state);
 }
 
 function dispatchRowAction(action, nodeId, opts) {
   if (!storedState) return;
+  const refresh = () => refreshList(storedState);
   if (action === "rename") {
-    handleRename(nodeId, opts?.anchor || null, storedState);
+    handleRename(nodeId, opts?.anchor || null, storedState, refresh);
   } else if (action === "duplicate") {
-    handleDuplicate(nodeId, storedState);
+    handleDuplicate(nodeId, storedState, refresh);
   } else if (action === "convert-container") {
-    handleConvertContainer(nodeId, opts?.targetType, storedState);
+    handleConvertContainer(nodeId, opts?.targetType, storedState, refresh);
   } else if (action === "delete") {
-    handleDelete(nodeId, storedState);
+    handleDelete(nodeId, storedState, refresh);
   } else if (action === "flag") {
-    storedState.toggleFlagged(nodeId).then(() => refreshList(storedState));
+    storedState.toggleFlagged(nodeId).then(refresh);
   } else if (action === "use-as-note") {
-    storedState.toggleUseAsNote(nodeId).then(() => refreshList(storedState));
+    storedState.toggleUseAsNote(nodeId).then(refresh);
   } else if (action === "reveal-in-finder") {
     handleRevealInFinder(nodeId, storedState);
   } else if (action === "empty-trash") {
-    handleEmptyTrash(storedState);
+    handleEmptyTrash(storedState, refresh);
   } else if (action === "new-doc-here") {
-    storedState.newFile(nodeId).then(() => refreshList(storedState));
+    storedState.newFile(nodeId).then(refresh);
   } else if (action === "new-notebook-here") {
     showPromptModal({
       title: "New notebook",
@@ -291,7 +343,7 @@ function dispatchRowAction(action, nodeId, opts) {
       confirmLabel: "Create",
       onConfirm: async (name) => {
         await storedState.createNotebook(name, nodeId);
-        refreshList(storedState);
+        refresh();
       },
     });
   }
@@ -521,146 +573,6 @@ function refreshList(state) {
   // walk only runs on settings change, so re-apply here so freshly added
   // hover-action buttons pick up the user's Show Tooltips setting.
   refreshTooltips();
-}
-
-function handleRename(nodeId, triggerEl, state) {
-  const node = findNode(state.fileTree, nodeId);
-  if (!node) return;
-  // Prefer walking up from the trigger button; when the menu invoked
-  // this from outside the row, fall back to a data-id lookup.
-  let li = triggerEl?.closest(".sl-item") || null;
-  if (!li) {
-    const safe = (window.CSS && typeof window.CSS.escape === "function") ? window.CSS.escape(nodeId) : nodeId;
-    li = document.querySelector(`.sl-item[data-id="${safe}"]`);
-  }
-  if (!li) return;
-  const nameEl = li.querySelector(".tree-item-name");
-  if (!nameEl) return;
-  const rowEl = li.querySelector(".tree-item-row");
-  if (rowEl) rowEl.classList.add("renaming");
-
-  const currentName = nameEl.textContent;
-  nameEl.innerHTML = `<input class="tree-rename-input" type="text" value="${escAttrValue(currentName)}" />`;
-  const input = nameEl.querySelector("input");
-  input.focus();
-  input.select();
-
-  function finishRename() {
-    if (rowEl) rowEl.classList.remove("renaming");
-    const newName = input.value.trim();
-    if (newName && newName !== currentName) {
-      state.renameTreeNode(nodeId, newName).then(() => refreshList(state));
-    } else {
-      nameEl.textContent = currentName;
-    }
-  }
-
-  input.addEventListener("blur", finishRename, { once: true });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-    if (e.key === "Escape") { input.value = currentName; input.blur(); }
-  });
-}
-
-function escAttrValue(str) {
-  return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
-async function handleRevealInFinder(nodeId, state) {
-  const node = findNode(state.fileTree, nodeId);
-  if (!node?.syncFolderId) return;
-  const folder = (state.settings.syncFolders || []).find(f => f.id === node.syncFolderId);
-  if (!folder?.path) return;
-  try {
-    const opener = await import("@tauri-apps/plugin-opener");
-    await opener.revealItemInDir(folder.path);
-  } catch (e) {
-    console.error("Failed to reveal in Finder:", e);
-  }
-}
-
-function handleConvertContainer(nodeId, targetType, state) {
-  const node = findNode(state.fileTree, nodeId);
-  if (!node) return;
-  if (targetType !== "folder" && targetType !== "project") return;
-  if (node.type === targetType) return;
-
-  const doConvert = () => {
-    state.convertContainerType(nodeId, targetType).then(() => refreshList(state));
-  };
-
-  if (node.type === "project" && targetType === "folder") {
-    showConfirmModal({
-      title: `Convert "${node.name}" to a folder?`,
-      message: "Switching from a project to a folder loses the project's ordering and the joined preview view. Files will be preserved.",
-      confirmLabel: "Convert",
-      onConfirm: doConvert,
-    });
-  } else {
-    doConvert();
-  }
-}
-
-function handleDuplicate(nodeId, state) {
-  const node = findNode(state.fileTree, nodeId);
-  if (!node) return;
-  const typeName = node.type === "notebook" ? "notebook" : "document";
-  showConfirmModal({
-    title: `Duplicate ${typeName} "${node.name}"?`,
-    message: `A copy named "${node.name}-Copy" will be created next to the original.`,
-    confirmLabel: "Duplicate",
-    onConfirm: () => {
-      state.duplicateTreeNode(nodeId).then(() => refreshList(state));
-    },
-  });
-}
-
-function handleDelete(nodeId, state) {
-  const node = findNode(state.fileTree, nodeId);
-  if (!node) return;
-  const inTrash = state.isInTrash(nodeId);
-
-  if (node.type === "folder" || node.type === "project" || inTrash) {
-    const items = collectAllNames(node.children || []);
-    const itemList = items.length > 0
-      ? items.map((n) => `  \u2022 ${n}`).join("\n")
-      : "  (empty)";
-    const typeName = node.type === "folder" ? "folder" : node.type === "project" ? "project" : node.type === "notebook" ? "notebook" : "document";
-
-    const title = inTrash
-      ? `Permanently delete "${node.name}"?`
-      : `Delete ${typeName} "${node.name}"?`;
-    const message = inTrash
-      ? `This will permanently delete this item and cannot be undone.${items.length > 0 ? `\n\nContents:\n${itemList}` : ""}`
-      : `This will move the ${typeName} to Trash.\n\nContents:\n${itemList}`;
-
-    showDeleteConfirmModal(title, message, () => {
-      state.deleteTreeNode(nodeId).then(() => refreshList(state));
-    });
-  } else {
-    state.deleteTreeNode(nodeId).then(() => refreshList(state));
-  }
-}
-
-function handleEmptyTrash(state) {
-  const trash = findNode(state.fileTree, state.getTrashId());
-  if (!trash?.children?.length) return;
-  const items = collectAllNames(trash.children);
-  const itemList = items.map(n => `  \u2022 ${n}`).join("\n");
-  showDeleteConfirmModal(
-    "Empty Trash?",
-    `This will permanently delete all items and cannot be undone.\n\nContents:\n${itemList}`,
-    () => { state.emptyTrash().then(() => refreshList(state)); },
-  );
-}
-
-function collectAllNames(nodes) {
-  const names = [];
-  for (const n of nodes) {
-    names.push(n.name);
-    if (n.children) names.push(...collectAllNames(n.children));
-  }
-  return names;
 }
 
 export function refreshFilesPanel(state) {

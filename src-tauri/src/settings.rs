@@ -126,6 +126,15 @@ pub struct AppSettings {
     pub zen_column_width: Option<u32>,
     #[serde(default = "default_sidebar_panel_width")]
     pub sidebar_panel_width: u32,
+    // Sidebar session state — which panel was open ("files" / "styles"
+    // / "versions") and whether it was pinned when the app last quit.
+    // Per-window in the JS sense, but the Tauri side stores them
+    // alongside the rest of the settings JSON; the multi-window code
+    // already overlays per-window keys back from disk on shared writes.
+    #[serde(default)]
+    pub sidebar_open_panel: Option<String>,
+    #[serde(default)]
+    pub sidebar_pinned: bool,
 
     // Shortcuts — General
     #[serde(default = "default_shortcut_open")]
@@ -522,6 +531,8 @@ impl Default for AppSettings {
             column_width: default_column_width(),
             zen_column_width: None,
             sidebar_panel_width: default_sidebar_panel_width(),
+            sidebar_open_panel: None,
+            sidebar_pinned: false,
             shortcut_open_editor: default_shortcut_open(),
             shortcut_open_fullscreen: default_shortcut_fullscreen(),
             shortcut_toggle_private: default_shortcut_private(),

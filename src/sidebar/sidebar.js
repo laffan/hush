@@ -42,6 +42,20 @@ export function createSidebar(container, state) {
   let activePanel = null;
   let panelPinned = false;
 
+  // Suspend state-persistence writes while we replay the saved session
+  // state below — otherwise the act of opening the persisted panel
+  // would itself trigger a redundant save on every startup.
+  let _suppressStatePersist = true;
+  function persistSidebarState() {
+    if (_suppressStatePersist) return;
+    // Per-window setting; fire-and-forget so opening/closing the panel
+    // doesn't pause for disk I/O.
+    state.updateSettings({
+      sidebarOpenPanel: activePanel,
+      sidebarPinned: panelPinned,
+    }).catch((e) => console.warn("Save sidebar state failed:", e));
+  }
+
   // Floating circular sidebar-toggle button. Lives above every other
   // chrome element so keyboard-free users (iPad, Pencil) have a
   // persistent way to open the left panel — desktop users reach the
@@ -203,6 +217,7 @@ export function createSidebar(container, state) {
     panelOverlay.classList.toggle("panel-pinned", panelPinned);
     pinBtn.title = panelPinned ? "Unpin panel" : "Pin panel open";
     updatePinBtnVisibility();
+    persistSidebarState();
   });
 
   /** Build (once) and return the body container that every panel renders
@@ -235,6 +250,7 @@ export function createSidebar(container, state) {
     container.classList.add("visible");
     // Recalculate column centering for inset mode
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    persistSidebarState();
   }
 
   function hidePanel() {
@@ -244,14 +260,11 @@ export function createSidebar(container, state) {
     container.classList.remove("visible", "pinned");
     // Recalculate column centering for inset mode
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    persistSidebarState();
   }
 
   // Button click handlers
-  container.querySelector('[data-action="files"]').addEventListener("click", () => {
-    if (activePanel === "files") {
-      hidePanel();
-      return;
-    }
+  function openFilesPanel() {
     if (activePanel === "versions") cleanupVersionsPanel();
     activePanel = "files";
     const body = getPanelBody();
@@ -260,6 +273,14 @@ export function createSidebar(container, state) {
     container.classList.add("visible");
     createFilesPanel(body, state, hidePanel);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    persistSidebarState();
+  }
+  container.querySelector('[data-action="files"]').addEventListener("click", () => {
+    if (activePanel === "files") {
+      hidePanel();
+      return;
+    }
+    openFilesPanel();
   });
 
   container.querySelector('[data-action="styles"]').addEventListener("click", () => {
@@ -267,12 +288,7 @@ export function createSidebar(container, state) {
     bindStylesPanel(state, panelOverlay.querySelector(".panel-overlay-body"));
   });
 
-  container.querySelector('[data-action="versions"]').addEventListener("click", () => {
-    if (activePanel === "versions") {
-      cleanupVersionsPanel();
-      hidePanel();
-      return;
-    }
+  function openVersionsPanel() {
     activePanel = "versions";
     const body = getPanelBody();
     body.innerHTML = "";
@@ -280,6 +296,15 @@ export function createSidebar(container, state) {
     container.classList.add("visible");
     createVersionsPanel(body, state, hidePanel);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    persistSidebarState();
+  }
+  container.querySelector('[data-action="versions"]').addEventListener("click", () => {
+    if (activePanel === "versions") {
+      cleanupVersionsPanel();
+      hidePanel();
+      return;
+    }
+    openVersionsPanel();
   });
 
   container.querySelector('[data-action="export"]').addEventListener("click", async () => {
@@ -429,6 +454,19 @@ export function createSidebar(container, state) {
       refreshFilesPanel(state);
     }
   });
+  // Multi-select adds / clears the `.multi-selected` highlight on every
+  // affected row. We toggle the class directly on the existing rows
+  // (matched via `data-file-id`) instead of rebuilding the panel — a
+  // rebuild during an active drag-select would replace every `.sl-item`
+  // element and strand the drag's cached row references on detached
+  // DOM, freezing the capture mid-gesture.
+  state.on("multi-select-changed", () => {
+    if (activePanel !== "files") return;
+    const selected = new Set(state.selectedDocIds || []);
+    panelOverlay.querySelectorAll(".sl-item[data-file-id]").forEach((li) => {
+      li.classList.toggle("multi-selected", selected.has(li.dataset.fileId));
+    });
+  });
   // Switching desks re-roots the visible top level on the active desk,
   // and adding/removing/renaming a desk affects the popover header.
   state.on("active-desk-changed", () => {
@@ -501,27 +539,19 @@ export function createSidebar(container, state) {
   });
 
   // Cmd+\ toggle support — force-show files (not toggle)
-  state.on("show-files-panel", () => {
-    if (activePanel === "versions") cleanupVersionsPanel();
-    activePanel = "files";
-    const body = getPanelBody();
-    body.innerHTML = "";
-    panelOverlay.classList.remove("hidden");
-    container.classList.add("visible");
-    createFilesPanel(body, state, hidePanel);
-    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
-  });
+  state.on("show-files-panel", () => { openFilesPanel(); });
 
   // Cmd+\ hide support — reset internal state
   state.on("hide-panel", () => {
-    if (activePanel === "versions") cleanupVersionsPanel();
-    activePanel = null;
+    // Reuse `hidePanel()` so the persistence write fires through the
+    // single path; the inline version that used to live here cleared
+    // class state but didn't call `persistSidebarState`, so closing
+    // via the keyboard shortcut left `sidebarOpenPanel` stuck at the
+    // previously-opened panel's name on disk.
     panelPinned = false;
     panelOverlay.classList.remove("panel-pinned");
     pinBtn.classList.remove("pin-active", "pin-visible");
-    panelOverlay.classList.add("hidden");
-    container.classList.remove("visible", "pinned");
-    if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    hidePanel();
   });
 
   // Close panel on click outside — only when the panel is overlaying the
@@ -593,6 +623,26 @@ export function createSidebar(container, state) {
   });
 
   updateActiveStates();
+
+  // Replay the persisted sidebar state from the last session — open the
+  // panel that was open then (if any), with the same pin state. Wide
+  // viewports always treat the panel as "open" via CSS, so the persist
+  // is only meaningful for narrow / overlay layouts but we still honour
+  // it on wide so the user's preferred starting panel is the active one.
+  const savedPanel = state.settings?.sidebarOpenPanel;
+  if (savedPanel === "files") openFilesPanel();
+  else if (savedPanel === "styles") {
+    showPanel("styles", renderStylesPanel(state));
+    bindStylesPanel(state, panelOverlay.querySelector(".panel-overlay-body"));
+  } else if (savedPanel === "versions") openVersionsPanel();
+  if (state.settings?.sidebarPinned && !isWideViewport()) {
+    panelPinned = true;
+    panelOverlay.classList.add("panel-pinned");
+    updatePinBtnVisibility();
+  }
+  // Re-arm persistence now that the replay is complete. Subsequent
+  // user-driven opens/closes/pin-toggles save normally.
+  _suppressStatePersist = false;
 }
 
 function btn(action, title, svgContent) {

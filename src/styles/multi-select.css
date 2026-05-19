@@ -1,0 +1,176 @@
+/* ===== Multi-select view (editor-area listing for selected docs) =====
+   Mounts inside #app and sits over the editor / notebook columns when
+   `body.multi-select-active` is on. The editor and notebook keep their
+   layout below so a quick selection-clear restores everything in one
+   class flip. */
+
+.multi-select-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow-y: auto;
+  font-family: var(--font-family);
+  padding-top: 30px; /* clear the drag region on macOS */
+}
+
+.multi-select-view.hidden {
+  display: none;
+}
+
+/* Hide the editor + notebook chrome while the listing is up. The
+   underlying elements stay in place so clearing the selection just
+   flips classes; no remount cost. */
+body.multi-select-active #editor-container,
+body.multi-select-active #notebook-container {
+  visibility: hidden;
+}
+
+.ms-view-inner {
+  width: 100%;
+  max-width: 720px;
+  padding: 32px 32px 64px;
+  box-sizing: border-box;
+}
+
+.ms-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ms-view-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  opacity: 0.85;
+}
+
+.ms-view-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ms-view-btn {
+  background: transparent;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  color: var(--fg);
+  border-radius: 5px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ms-view-btn:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+.ms-view-btn.ms-view-btn-danger {
+  color: #dc3232;
+  border-color: rgba(220, 50, 50, 0.35);
+}
+.ms-view-btn.ms-view-btn-danger:hover {
+  background: rgba(220, 50, 50, 0.12);
+}
+
+.ms-view-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--panel-border, rgba(128, 128, 128, 0.15));
+}
+
+.ms-view-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--panel-border, rgba(128, 128, 128, 0.15));
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--fg);
+}
+.ms-view-row:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.ms-view-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+}
+
+/* Row text: optional faded breadcrumb prefix + filename, ellipsised
+   together when the row doesn't have room. The flex parent gives them
+   the freedom to grow / shrink as a unit; the prefix can compress to
+   "…" first because it's the lower-information half of the row. */
+.ms-view-text {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ms-view-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sidebar-fg);
+  opacity: 0.7;
+  font-size: 12px;
+}
+.ms-view-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-view-flag {
+  font-size: 10px;
+  opacity: 0.55;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ===== Sidebar selection chrome ===== */
+/* Each row that's part of the multi-select gets a faint background +
+   left rail so the user sees the whole batch at a glance, even with
+   the editor area replaced by the listing view. */
+.sl-item.multi-selected > .sl-item-content {
+  background: rgba(70, 130, 220, 0.14);
+  border-radius: 4px;
+}
+[data-theme="light"] .sl-item.multi-selected > .sl-item-content {
+  background: rgba(70, 130, 220, 0.18);
+}
+
+/* ===== Drag-select rectangle ===== */
+.sl-drag-select-rect {
+  position: fixed;
+  z-index: 200;
+  border: 1px solid color-mix(in srgb, var(--fg) 55%, transparent);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  pointer-events: none;
+  border-radius: 2px;
+}

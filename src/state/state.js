@@ -37,6 +37,11 @@ const _PER_WINDOW_SETTINGS_KEYS = new Set([
   "scrollPosition",
   "typewriterMode",
   "dryMode",
+  // Sidebar panel state — which panel was open and whether it was pinned
+  // when the session ended. Per-window so each window remembers its own
+  // chrome layout.
+  "sidebarOpenPanel",
+  "sidebarPinned",
 ]);
 function _allKeysPerWindow(partial) {
   if (!partial) return false;
@@ -56,6 +61,12 @@ export class AppState {
     this.files = [];
     this.fileTree = []; // Tree of TreeNode objects
     this.editor = null;
+    // Files-panel multi-select: when populated, the editor area swaps
+    // to a "selected docs" listing view instead of an open doc. Driven
+    // by shift/cmd-click and drag-select in the sidebar. Cleared by
+    // opening any single doc / notebook / project, by Esc, or by an
+    // empty-area click in the sidebar.
+    this.selectedDocIds = [];
 
     // Multi-window — populated by main.js after registering with the
     // Rust-side WindowRegistry. `windowList` is the full list of open
@@ -426,6 +437,25 @@ export class AppState {
    */
   newFile(parentId = null, opts = {}) { return _files.newFile(this, parentId, opts); }
   openFile(id) { return _files.openFile(this, id); }
+
+  // ===== Multi-select =====
+  /** Replace the current selection with the given list of doc fileIds.
+   *  Dedupes and ignores non-strings; emits `multi-select-changed` so
+   *  the sidebar + editor area can repaint. */
+  setSelectedDocs(ids) {
+    const next = Array.from(new Set((ids || []).filter((x) => typeof x === "string")));
+    const prev = this.selectedDocIds;
+    if (prev.length === next.length && prev.every((id, i) => id === next[i])) return;
+    this.selectedDocIds = next;
+    this.emit("multi-select-changed");
+  }
+  /** Clear the multi-select. No-op when already empty. */
+  clearSelectedDocs() {
+    if (!this.selectedDocIds.length) return;
+    this.selectedDocIds = [];
+    this.emit("multi-select-changed");
+  }
+
   deleteFile(id) { return _files.deleteFile(this, id); }
   renameFile(id, newName) { return _files.renameFile(this, id, newName); }
   duplicateFile(id) { return _files.duplicateFile(this, id); }
