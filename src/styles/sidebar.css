@@ -242,8 +242,11 @@ body.typing-fade .tree-create-btns {
 }
 
 /* The toggle is a real button — pointer cursor wins over the
-   panel-wide crosshair via the ID-prefixed selector. */
-#panel-overlay .sidebar-grip-toggle {
+   panel-wide crosshair via the ID-prefixed selector. The descendant
+   rule covers the chevron span too, otherwise the `#panel-overlay *`
+   crosshair leaks back in over the arrow glyph. */
+#panel-overlay .sidebar-grip-toggle,
+#panel-overlay .sidebar-grip-toggle * {
   cursor: pointer;
 }
 
@@ -264,8 +267,9 @@ body.typing-fade .tree-create-btns {
   pointer-events: none;
 }
 
-#panel-overlay:not(.hidden) .sidebar-grip-toggle:hover::before,
-#panel-overlay:not(.hidden) .sidebar-grip-toggle:focus-visible::before {
+/* Tint pill paints on hover in either state (open and closed). */
+.sidebar-grip-toggle:hover::before,
+.sidebar-grip-toggle:focus-visible::before {
   background-color: color-mix(in srgb, var(--fg, currentColor) 8%, transparent);
 }
 
@@ -319,13 +323,16 @@ body.typing-fade .sidebar-grip-chevron {
   cursor: col-resize;
 }
 
+/* The drag rail sits flush against the panel's right border — same
+   position, same width — so hover just deepens the colour rather than
+   painting a second hairline a few pixels inside. */
 .sidebar-grip-resize::after {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 2px;
-  width: 2px;
+  right: 0;
+  width: 1px;
   background: var(--fg, currentColor);
   opacity: 0;
   transition: opacity 0.2s ease;

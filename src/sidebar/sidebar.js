@@ -87,8 +87,6 @@ export function createSidebar(state) {
   const gripToggle = document.createElement("button");
   gripToggle.className = "sidebar-grip-toggle";
   gripToggle.type = "button";
-  gripToggle.setAttribute("aria-label", "Toggle files panel");
-  gripToggle.title = "Toggle files panel";
   gripToggle.innerHTML = `<span class="sidebar-grip-chevron">›</span>`;
   gripToggle.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -97,10 +95,6 @@ export function createSidebar(state) {
 
   const gripResize = document.createElement("div");
   gripResize.className = "sidebar-grip-resize";
-  gripResize.setAttribute("role", "separator");
-  gripResize.setAttribute("aria-orientation", "vertical");
-  gripResize.setAttribute("aria-label", "Resize sidebar");
-  gripResize.title = "Drag to resize";
 
   grip.appendChild(gripToggle);
   grip.appendChild(gripResize);
@@ -113,7 +107,6 @@ export function createSidebar(state) {
   function syncGripGlyph() {
     const isOpen = !panelOverlay.classList.contains("hidden");
     gripToggle.querySelector(".sidebar-grip-chevron").textContent = isOpen ? "‹" : "›";
-    gripToggle.title = isOpen ? "Close panel" : "Open files panel";
   }
   new MutationObserver(syncGripGlyph).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
   syncGripGlyph();
