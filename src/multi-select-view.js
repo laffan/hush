@@ -1,0 +1,165 @@
+/**
+ * Multi-select view — overlays the editor area with a list of the
+ * currently-selected doc filenames, plus batch actions (Delete, Flag).
+ * Mounts a single `#multi-select-view` container into the app root and
+ * toggles it via the `multi-select-active` body class so the editor /
+ * notebook stay laid out underneath without flicker.
+ *
+ * Lifecycle: appears whenever `state.selectedDocIds` has at least two
+ * entries; hides otherwise. Single-doc selections fall through to the
+ * normal open path (`onClick` in the files panel opens that doc and
+ * leaves the editor as-is) so there's no in-between state to manage.
+ *
+ * Click on a row → opens that doc and clears the selection (matches
+ * the single-click semantics elsewhere in the app).
+ */
+import { typeIcons, escHtml, showDeleteConfirmModal } from "./sidebar/files-panel-shared.js";
+import { findNodeByFileId } from "./state/tree-helpers.js";
+import { deleteTreeNode } from "./state/state-tree.js";
+
+let _hostEl = null;
+let _state = null;
+
+export function initMultiSelectView(state) {
+  _state = state;
+  _hostEl = document.createElement("div");
+  _hostEl.id = "multi-select-view";
+  _hostEl.className = "multi-select-view hidden";
+  // Sits inside #app so the existing layout (sidebar / panel-overlay /
+  // editor-container) flows around it via CSS rather than this module
+  // having to compute offsets.
+  const app = document.getElementById("app");
+  if (app) app.appendChild(_hostEl);
+
+  state.on("multi-select-changed", refresh);
+  // Any single-doc open path implicitly exits multi-select mode. We
+  // listen to the same events the sidebar does so the view doesn't
+  // linger after the user opens a doc from the command palette, file
+  // picker, etc.
+  state.on("file-opened", () => state.clearSelectedDocs());
+  state.on("notebook-open", () => state.clearSelectedDocs());
+  // Tree changes (delete, rename, move) can invalidate fileIds in the
+  // selection — drop any that no longer resolve to a doc node, then
+  // repaint. Comparing against `state.files` rather than walking the
+  // tree avoids missing freshly-trashed entries (trashed docs stay in
+  // `files` but lose their node).
+  state.on("files-changed", () => {
+    if (state.selectedDocIds.length === 0) return;
+    const valid = state.selectedDocIds.filter((id) =>
+      !!findNodeByFileId(state.fileTree, id),
+    );
+    if (valid.length !== state.selectedDocIds.length) {
+      state.setSelectedDocs(valid);
+      return; // setSelectedDocs emits multi-select-changed → refresh()
+    }
+    refresh();
+  });
+
+  // Esc clears the selection. Capture-phase so it beats CodeMirror's
+  // own keymap (which wouldn't see Esc anyway since the editor is
+  // hidden, but the keydown still reaches it).
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (state.selectedDocIds.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    state.clearSelectedDocs();
+  }, true);
+
+  refresh();
+}
+
+function refresh() {
+  if (!_hostEl || !_state) return;
+  const ids = _state.selectedDocIds || [];
+  // Single-selection sticks with the normal open path — only show the
+  // listing view when there's actually a multi-doc batch in play.
+  const active = ids.length >= 2;
+  document.body.classList.toggle("multi-select-active", active);
+  _hostEl.classList.toggle("hidden", !active);
+  if (!active) { _hostEl.innerHTML = ""; return; }
+  render(ids);
+}
+
+function render(ids) {
+  const rows = ids
+    .map((fileId) => {
+      const node = findNodeByFileId(_state.fileTree, fileId);
+      if (!node) return null;
+      return { fileId, nodeId: node.id, name: node.name || "Untitled", flagged: !!node.flagged };
+    })
+    .filter(Boolean);
+
+  const docIcon = typeIcons.document;
+  const flagBtnLabel = rows.every((r) => r.flagged) ? "Unflag" : "Flag";
+
+  _hostEl.innerHTML = `
+    <div class="ms-view-inner">
+      <header class="ms-view-header">
+        <div class="ms-view-title">${rows.length} document${rows.length === 1 ? "" : "s"} selected</div>
+        <div class="ms-view-actions">
+          <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
+          <button type="button" class="ms-view-btn ms-view-btn-danger" data-ms-action="delete">Delete</button>
+          <button type="button" class="ms-view-btn" data-ms-action="clear">Clear</button>
+        </div>
+      </header>
+      <ul class="ms-view-list">
+        ${rows.map((r) => `
+          <li class="ms-view-row" data-file-id="${escHtml(r.fileId)}">
+            <span class="ms-view-icon">${docIcon}</span>
+            <span class="ms-view-name">${escHtml(r.name)}</span>
+            ${r.flagged ? `<span class="ms-view-flag">flagged</span>` : ""}
+          </li>`).join("")}
+      </ul>
+    </div>
+  `;
+
+  // Row click → open that doc. `openFile` emits `file-opened` which
+  // routes through our listener above and clears the selection — no
+  // need to clear here, doing so would race against openFile's emit.
+  _hostEl.querySelectorAll(".ms-view-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const fileId = row.dataset.fileId;
+      if (fileId) _state.openFile(fileId);
+    });
+  });
+
+  // Batch-action buttons.
+  _hostEl.querySelectorAll("[data-ms-action]").forEach((btn) => {
+    btn.addEventListener("click", () => runBatchAction(btn.dataset.msAction, rows));
+  });
+}
+
+async function runBatchAction(action, rows) {
+  if (action === "clear") {
+    _state.clearSelectedDocs();
+    return;
+  }
+  if (action === "flag") {
+    // If every selected doc is already flagged, the action becomes
+    // "unflag all"; otherwise "flag all". Mirrors what the button
+    // label said when the user clicked it.
+    const target = !rows.every((r) => r.flagged);
+    for (const r of rows) {
+      if (!!r.flagged === target) continue;
+      try { await _state.toggleFlagged(r.nodeId); } catch (e) { console.warn("flag toggle failed", e); }
+    }
+    return;
+  }
+  if (action === "delete") {
+    const list = rows.map((r) => `  • ${r.name}`).join("\n");
+    showDeleteConfirmModal(
+      `Delete ${rows.length} document${rows.length === 1 ? "" : "s"}?`,
+      `The following will be moved to Trash:\n\n${list}`,
+      async () => {
+        // Delete in sequence so the tree mutation stays consistent —
+        // each call awaits the previous so we don't fire concurrent
+        // saveFileTree() races.
+        for (const r of rows) {
+          try { await deleteTreeNode(_state, r.nodeId); } catch (e) { console.warn("delete failed", e); }
+        }
+        _state.clearSelectedDocs();
+      },
+    );
+  }
+}

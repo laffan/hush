@@ -240,7 +240,8 @@ async function init() {
   createSidebar(sidebar, state);
   setupFileDrop(state);
   initZenFocus(state);
-
+  // Listing view shown when 2+ docs are multi-selected in the sidebar.
+  import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
 

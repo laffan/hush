@@ -55,7 +55,9 @@ export function renderList(items, container, path, ctx) {
     }
     contentWrapper.appendChild(foldArrow);
 
-    // Render item content via callback
+    // Render item content via callback. `li` is exposed so callers
+    // can attach state-driven classes to the outer row element
+    // (e.g. multi-select highlight) without a follow-up query pass.
     const content = config.renderItem(item, {
       depth: path.length,
       isSelected: state.selectedPath && pathsEqual(itemPath, state.selectedPath),
@@ -63,6 +65,7 @@ export function renderList(items, container, path, ctx) {
       isDragging: false,
       isCollapsed,
       hasChildren,
+      li,
     });
 
     const labelContainer = document.createElement("span");
