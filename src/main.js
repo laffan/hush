@@ -286,13 +286,16 @@ async function init() {
     }
   }
 
-  // Sync notebook left inset when the sidebar opens / closes.
+  // Sync notebook left inset when the sidebar opens / closes. The grip
+  // strip stays visible even when the panel body is collapsed, so the
+  // canvas reserves at least the grip width on the left edge.
   function syncNotebookInset() {
     if (!state.currentNotebookFileId) return;
     const po = document.getElementById("panel-overlay");
     const panelOpen = po && !po.classList.contains("hidden");
     const panelW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
-    setNotebookLeftInset(panelOpen ? panelW : 0);
+    const gripW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-grip-width"), 10) || 24;
+    setNotebookLeftInset(panelOpen ? panelW : gripW);
   }
   new MutationObserver(syncNotebookInset).observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
 
@@ -326,11 +329,9 @@ async function init() {
   setTooltipsEnabled(!!state.settings.showTooltips);
   state.on("settings-changed", () => setTooltipsEnabled(!!state.settings.showTooltips));
 
-  // The old left-edge hover trigger that used to pop the sidebar in is
-  // gone — the floating .sidebar-floating-toggle button is now the sole
-  // open/close affordance. Removing the hover behaviour also cleans up
-  // accidental sidebar peeks while the user reaches near the column
-  // resizer or for selection on long lines.
+  // The full-height .sidebar-grip on the panel's right edge is the sole
+  // open/close affordance now — the left-edge hover trigger and the
+  // floating circular toggle are both gone.
   import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
 
   // Save scroll position periodically (debounced on scroll)

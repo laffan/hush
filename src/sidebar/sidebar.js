@@ -3,9 +3,9 @@
  *
  * The legacy icon column (#sidebar) is gone. #panel-overlay is the sidebar
  * itself, anchored at left:0. Styles, Versions, and Export are reachable
- * exclusively through the command palette; Settings is a fixed footer
- * button at the bottom of the panel. A circular floating toggle on the
- * left edge opens/closes the panel (also bound to Cmd+\).
+ * exclusively through the command palette; the footer holds Settings and
+ * an Add (+) button (popup over Doc / Notebook / Folder / Project). A
+ * full-height grip on the right edge toggles the panel open/closed.
  */
 import { openSettingsWindow } from "../settings/settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
@@ -13,6 +13,7 @@ import { cleanupVersionsPanel } from "./versions-panel.js";
 import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
 import { createPanelResizer, applyPanelWidth, positionPanelResizer } from "./panel-resizer.js";
 import { mountDeskSwitcher } from "./desk-switcher.js";
+import { mountAddPopup } from "./add-popup.js";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -28,36 +29,91 @@ export function createSidebar(state) {
   function persistSidebarState() {
     if (_suppressStatePersist) return;
     state.updateSettings({
-      // Only one panel reaches the sidebar now, so the value is just a
-      // boolean disguised as the legacy string for back-compat.
       sidebarOpenPanel: panelOpen ? "files" : null,
       sidebarPinned: panelPinned,
     }).catch((e) => console.warn("Save sidebar state failed:", e));
   }
 
-  // Floating circular toggle — pinned to the left edge, rides the panel's
-  // right edge when open. Click emits `toggle-left-panel`.
-  const sidebarToggleBtn = document.createElement("button");
-  sidebarToggleBtn.className = "sidebar-floating-toggle";
-  sidebarToggleBtn.title = "Toggle files panel";
-  sidebarToggleBtn.innerHTML = sidebarToggleSvg("expand");
-  document.body.appendChild(sidebarToggleBtn);
-  sidebarToggleBtn.addEventListener("click", () => {
+  // Build the panel skeleton: a flex row of body-stack + grip. The grip
+  // sits flush against the right edge so it stays visible even when the
+  // body-stack collapses to width:0. Header / body / footer all live
+  // inside the body-stack so a single class flip can hide them as a unit.
+  panelOverlay.innerHTML = "";
+  const bodyStack = document.createElement("div");
+  bodyStack.className = "panel-overlay-body-stack";
+
+  const header = document.createElement("div");
+  header.className = "panel-overlay-header";
+
+  const body = document.createElement("div");
+  body.className = "panel-overlay-body";
+
+  const footer = document.createElement("div");
+  footer.className = "panel-overlay-footer";
+
+  const addBtn = document.createElement("button");
+  addBtn.className = "panel-footer-btn panel-footer-add";
+  addBtn.type = "button";
+  addBtn.title = "Add";
+  addBtn.setAttribute("aria-label", "Add");
+  addBtn.innerHTML = `<span class="panel-footer-icon" aria-hidden="true">+</span><span class="panel-footer-label">Add</span>`;
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    mountAddPopup(state, addBtn);
+  });
+
+  const settingsBtn = document.createElement("button");
+  settingsBtn.className = "panel-footer-btn panel-footer-settings";
+  settingsBtn.type = "button";
+  settingsBtn.title = "Settings";
+  settingsBtn.setAttribute("aria-label", "Settings");
+  settingsBtn.innerHTML = `<span class="panel-footer-icon"><svg viewBox="0 0 24 24">${svgInner(settingsRaw)}</svg></span><span class="panel-footer-label">Settings</span>`;
+  settingsBtn.addEventListener("click", () => openSettingsWindow(state));
+
+  footer.appendChild(addBtn);
+  footer.appendChild(settingsBtn);
+
+  bodyStack.appendChild(header);
+  bodyStack.appendChild(body);
+  bodyStack.appendChild(footer);
+
+  // Full-height grip on the right edge — flips the panel open / closed.
+  // Border fades in only on hover (CSS handles the transition).
+  const grip = document.createElement("button");
+  grip.className = "sidebar-grip";
+  grip.type = "button";
+  grip.setAttribute("aria-label", "Toggle files panel");
+  grip.title = "Toggle files panel";
+  grip.innerHTML = `<span class="sidebar-grip-chevron">›</span>`;
+  grip.addEventListener("click", (e) => {
+    e.stopPropagation();
     state.emit("toggle-left-panel");
   });
 
-  // Dropbox sync indicator — 10px dot under the toggle, shown only when
-  // sync is active; briefly pulses on every successful sync pass.
+  panelOverlay.appendChild(bodyStack);
+  panelOverlay.appendChild(grip);
+  mountDeskSwitcher(header, state);
+
+  // Sync the chevron direction with the panel's hidden / open state.
+  function syncGripGlyph() {
+    const isOpen = !panelOverlay.classList.contains("hidden");
+    grip.querySelector(".sidebar-grip-chevron").textContent = isOpen ? "‹" : "›";
+    grip.title = isOpen ? "Close panel" : "Open files panel";
+  }
+  new MutationObserver(syncGripGlyph).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
+  syncGripGlyph();
+
+  // Dropbox sync indicator — small dot inside the grip, pulses on each
+  // successful sync. Hidden unless sync is configured.
   const syncDot = document.createElement("div");
   syncDot.className = "sidebar-sync-dot";
   syncDot.setAttribute("aria-hidden", "true");
-  document.body.appendChild(syncDot);
+  grip.appendChild(syncDot);
   function syncDotVisible() {
     return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);
   }
   function refreshSyncDot() {
     syncDot.classList.toggle("visible", syncDotVisible());
-    syncDot.classList.toggle("panel-open", !panelOverlay.classList.contains("hidden"));
   }
   let _syncPulseTimer = null;
   function pulseSyncDot() {
@@ -70,24 +126,13 @@ export function createSidebar(state) {
   }
   state.on("settings-changed", refreshSyncDot);
   state.on("dropbox-sync-success", pulseSyncDot);
-  new MutationObserver(refreshSyncDot).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
   refreshSyncDot();
 
-  function syncSidebarToggleIcon() {
-    const isOpen = !panelOverlay.classList.contains("hidden");
-    sidebarToggleBtn.innerHTML = sidebarToggleSvg(isOpen ? "collapse" : "expand");
-    sidebarToggleBtn.title = isOpen ? "Close panel" : "Open files panel";
-    sidebarToggleBtn.classList.toggle("panel-open", isOpen);
-  }
-  new MutationObserver(syncSidebarToggleIcon).observe(panelOverlay, {
-    attributes: true, attributeFilter: ["class"],
-  });
-  syncSidebarToggleIcon();
-
-  // Typing-fade — hide the floating toggle and the panel's new-item
-  // buttons while the user is actively typing in the doc editor. Any
-  // pointer activity (mousemove / tap) brings them back. Notebook mode
-  // is exempt so Pencil-only users still have the controls reachable.
+  // Typing-fade — hide the create / add affordances while the user is
+  // actively typing in the doc editor. Pointer activity (mousemove /
+  // tap) brings them back. Notebook mode is exempt so Pencil-only users
+  // still have the controls reachable. The grip stays visible — it's
+  // the only affordance for opening / closing the panel.
   function endTypingFade() {
     if (document.body.classList.contains("typing-fade")) {
       document.body.classList.remove("typing-fade");
@@ -122,58 +167,22 @@ export function createSidebar(state) {
     return window.innerWidth > 700;
   }
 
-  /** Build the panel skeleton once. The header owns the desk switcher,
-   *  the body hosts the Files panel, and the footer holds the Settings
-   *  button (anchored to the bottom). */
-  function buildPanelChrome() {
-    panelOverlay.innerHTML = "";
-    const header = document.createElement("div");
-    header.className = "panel-overlay-header";
-
-    const body = document.createElement("div");
-    body.className = "panel-overlay-body";
-
-    const footer = document.createElement("div");
-    footer.className = "panel-overlay-footer";
-    const settingsBtn = document.createElement("button");
-    settingsBtn.className = "panel-footer-btn panel-footer-settings";
-    settingsBtn.type = "button";
-    settingsBtn.title = "Settings";
-    settingsBtn.setAttribute("aria-label", "Settings");
-    settingsBtn.innerHTML = `<span class="panel-footer-icon"><svg viewBox="0 0 24 24">${svgInner(settingsRaw)}</svg></span><span class="panel-footer-label">Settings</span>`;
-    settingsBtn.addEventListener("click", () => openSettingsWindow(state));
-    footer.appendChild(settingsBtn);
-
-    panelOverlay.appendChild(header);
-    panelOverlay.appendChild(body);
-    panelOverlay.appendChild(footer);
-    mountDeskSwitcher(header, state);
-    return body;
-  }
-
-  const panelBody = buildPanelChrome();
-
   function openPanel() {
     if (panelOpen) return;
     panelOpen = true;
-    panelBody.innerHTML = "";
+    body.innerHTML = "";
     panelOverlay.classList.remove("hidden");
-    createFilesPanel(panelBody, state, hidePanel);
+    createFilesPanel(body, state, hidePanel);
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     persistSidebarState();
   }
 
   function hidePanel() {
     if (!panelOpen) {
-      // Make sure the overlay element is hidden even if our internal
-      // flag was already false (defensive — the toggle click path can
-      // call hide while the panel was never marked open).
       panelOverlay.classList.add("hidden");
       return;
     }
     panelOpen = false;
-    // Versions used to live in the sidebar; now in a modal. Still call
-    // cleanup defensively in case a snapshot preview overlay is up.
     cleanupVersionsPanel();
     panelOverlay.classList.add("hidden");
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
@@ -188,7 +197,6 @@ export function createSidebar(state) {
     if (
       panelOpen &&
       !panelOverlay.contains(e.target) &&
-      !sidebarToggleBtn.contains(e.target) &&
       !panelResizer.contains(e.target) &&
       !(versionOverlay && versionOverlay.contains(e.target))
     ) {
@@ -204,9 +212,6 @@ export function createSidebar(state) {
     hidePanel();
   });
   state.on("show-styles-panel", async () => {
-    // Legacy event — styles live in the command palette now. Open the
-    // style editor modal directly so any caller still emitting this
-    // event lands somewhere sensible.
     const { openStyleEditorModal } = await import("./style-modal.js");
     openStyleEditorModal(state);
   });
@@ -271,9 +276,4 @@ export function createSidebar(state) {
     panelOverlay.classList.add("panel-pinned");
   }
   _suppressStatePersist = false;
-}
-
-/** SVG for the floating sidebar toggle — guillemet that rotates with state. */
-function sidebarToggleSvg(variant) {
-  return variant === "collapse" ? "‹" : "›";
 }

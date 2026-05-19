@@ -20,10 +20,10 @@
  *     keydown listeners that key off `e.metaKey` alone also pick up
  *     the modifier.
  *
- * Both buttons mirror the sidebar-floating-toggle's geometry: 20 px
- * from the window's bottom-left when the panel is closed, and 20 px
- * from the panel's right edge when it's open. They stack vertically
- * (Cmd button on the bottom, palette button above).
+ * Buttons stack vertically in the bottom-left of the editor (Cmd on
+ * the bottom, palette above, paste above that, undo at the top). When
+ * the sidebar is open they ride the panel's right edge instead of the
+ * viewport edge so they stay reachable.
  */
 
 /** Detect iOS / iPadOS — iPad reports as MacIntel since iPadOS 13, so

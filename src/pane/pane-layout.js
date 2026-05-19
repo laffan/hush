@@ -12,20 +12,22 @@ import {
 } from "./pane-state.js";
 import { schedulePersist } from "./pane-persistence.js";
 
-/** Width occupied by the sidebar — just the files panel when it sits in
- *  the layout (pinned or inset modes). Pure hover overlays don't count
- *  because they retract on mouse-out. Free-floating pane code uses this
- *  when picking initial coordinates so a fresh pane lands past the
- *  sidebar instead of underneath it. */
+/** Width occupied by the sidebar — the grip strip is always there, and
+ *  the files panel adds the rest in inset / pinned modes. Pure hover
+ *  overlays don't count because they retract on mouse-out. Free-floating
+ *  pane code uses this when picking initial coordinates so a fresh pane
+ *  lands past the sidebar instead of underneath it. */
 function getSidebarInset() {
   const panelEl = document.getElementById("panel-overlay");
   const panelOpen = panelEl && !panelEl.classList.contains("hidden");
   const panelLayout = panelEl
     && (panelEl.classList.contains("panel-inset")
       || panelEl.classList.contains("panel-pinned"));
-  return panelOpen && panelLayout
-    ? parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300
-    : 0;
+  const gripW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-grip-width"), 10) || 24;
+  if (panelOpen && panelLayout) {
+    return parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
+  }
+  return gripW;
 }
 
 /** "Make space for panes" pushes the editor column to one side and

@@ -134,9 +134,13 @@ export function updateColumnResizers(state) {
 
     // When panels are inset and visible, center within remaining space.
     // Panel width is user-resizable; read it from the CSS var.
+    // The grip strip stays visible even when the panel body is hidden,
+    // so always carve out at least its width on inset layouts.
     let leftInsetOffset = 0;
-    if (isInset && panelOpen) {
-      leftInsetOffset = getPanelWidthPx();
+    if (isInset) {
+      const gripRaw = getComputedStyle(document.documentElement).getPropertyValue("--sidebar-grip-width").trim();
+      const gripW = parseInt(gripRaw, 10) || 24;
+      leftInsetOffset = panelOpen ? getPanelWidthPx() : gripW;
     }
     let rightInsetOffset = 0;
     if (rightInset && rightOpen) {

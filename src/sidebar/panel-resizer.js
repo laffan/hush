@@ -13,8 +13,12 @@ export function positionPanelResizer(el, panelOverlay) {
   if (!isOpen) { el.classList.add("hidden"); return; }
   el.classList.remove("hidden");
   const rect = panelOverlay.getBoundingClientRect();
-  // Center the 40-px hit zone on the panel's right edge.
-  el.style.left = rect.right + "px";
+  // Sit the resizer's hit zone on the body-stack's right edge — i.e.,
+  // panel.right minus the grip strip — so grip clicks aren't swallowed
+  // by the resizer's pointer capture.
+  const gripRaw = getComputedStyle(document.documentElement).getPropertyValue("--sidebar-grip-width").trim();
+  const gripW = parseInt(gripRaw, 10) || 24;
+  el.style.left = (rect.right - gripW) + "px";
 }
 
 export function createPanelResizer(state, panelOverlay) {

@@ -9,81 +9,23 @@
   cursor: text;
 }
 
-/* Pin button is obsolete: the toggle simply opens and closes the panel. */
+/* Pin button is obsolete: the grip toggle owns open/close. */
 .panel-pin-btn {
   display: none !important;
 }
 
-/* Floating circular sidebar toggle — pinned to the left edge, rides the
-   panel's right edge when open. Provides a pointer-only path to opening
-   the files panel for users without a keyboard; desktop users reach the
-   same action via Cmd+\. */
-.sidebar-floating-toggle {
-  position: fixed;
-  top: 50%;
-  left: 20px;
-  transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--fg, #888);
-  border-radius: 50%;
-  background: var(--theme-bg, var(--bg));
-  color: var(--fg);
-  opacity: 1;
-  cursor: pointer;
-  padding: 0;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: var(--z-modal);
-  -webkit-app-region: no-drag;
-  transition: opacity 0.15s, color 0.15s;
+/* iOS Cmd-mode floating pills — anchored to the bottom-left of the
+   viewport, past the always-present sidebar grip strip. */
+:root {
+  --sidebar-grip-width: 24px;
 }
 
-/* When the panel is open, the button rides the panel's right edge with
-   the same 20-px gap it had from the window edge when closed. */
-.sidebar-floating-toggle.panel-open {
-  left: calc(var(--panel-width, 300px) + 20px);
-}
-
-/* Dropbox sync indicator — 10 px dot pinned directly under the sidebar
-   floating toggle. Slides with the toggle as the panel opens/closes. */
-.sidebar-sync-dot {
-  position: fixed;
-  top: calc(50% + 32px);
-  left: calc(20px + 18px);
-  transform: translateX(-50%);
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--fg, #888);
-  opacity: 0;
-  pointer-events: none;
-  z-index: var(--z-modal);
-  transition: opacity 0.2s ease, left 0s;
-  -webkit-app-region: no-drag;
-}
-.sidebar-sync-dot.visible { opacity: 0.45; }
-.sidebar-sync-dot.panel-open {
-  left: calc(var(--panel-width, 300px) + 20px + 18px);
-}
-.sidebar-sync-dot.pulse { animation: hush-sync-dot-pulse 0.8s ease-out; }
-@keyframes hush-sync-dot-pulse {
-  0%   { transform: translateX(-50%) scale(1);   opacity: 0.45; }
-  35%  { transform: translateX(-50%) scale(1.6); opacity: 1; }
-  100% { transform: translateX(-50%) scale(1);   opacity: 0.45; }
-}
-body.typing-fade .sidebar-sync-dot.visible { opacity: 0; }
-
-/* iOS Cmd button — same pill geometry as the sidebar floating toggle
-   but anchored to the bottom-left of the viewport. Visible only when
-   `Show Cmd Button` is enabled in Settings > General on iOS (the
-   palette pill is always visible on iOS regardless). */
 .cmd-floating-button {
   position: fixed;
-  left: 20px;
+  /* Sit just past the always-present grip strip when the panel is
+     closed; the .panel-open rule below moves the buttons to the right
+     edge of the open panel. */
+  left: calc(var(--sidebar-grip-width) + 12px);
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   width: 36px;
   height: 36px;
@@ -142,12 +84,8 @@ body.typing-fade .sidebar-sync-dot.visible { opacity: 0; }
   box-shadow: 0 0 0 30px rgba(90, 138, 216, 0.3);
 }
 
-.sidebar-floating-toggle:hover {
-  opacity: 1;
-}
-
-/* Typing-fade — slowly hide while the user is writing in a doc. */
-.sidebar-floating-toggle,
+/* Typing-fade — slow opacity ramp on writing surfaces. The grip stays
+   visible so the user can still reach the toggle while typing. */
 .tree-create-btns {
   transition-property: opacity, color, background-color;
   transition-duration: 1s, 0.15s, 0.15s;
@@ -155,16 +93,9 @@ body.typing-fade .sidebar-sync-dot.visible { opacity: 0; }
   will-change: opacity;
 }
 
-body.typing-fade .sidebar-floating-toggle,
 body.typing-fade .tree-create-btns {
   opacity: 0;
   pointer-events: none;
-}
-
-.sidebar-floating-toggle {
-  font-size: 12px;
-  font-family: -apple-system, system-ui, sans-serif;
-  line-height: 1;
 }
 
 /* ===== Panel (LEFT side) — now the sidebar itself ===== */
@@ -176,13 +107,23 @@ body.typing-fade .tree-create-btns {
   height: 100%;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
-  border-right: 1px solid var(--panel-border);
+  border-right: 1px solid color-mix(in srgb, var(--fg, currentColor) 8%, transparent);
   z-index: 100;
   padding: 0;
   overflow: hidden;
   display: flex;
+  flex-direction: row;
+  transition: width 0.2s;
+}
+
+/* Body-stack holds header / body / footer; collapses to width:0 when
+   the panel is hidden, leaving just the grip visible on the right. */
+.panel-overlay-body-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
-  transition: transform 0.2s, opacity 0.2s;
+  overflow: hidden;
 }
 
 /* Stable header that persists across renders — owns the desk switcher. */
@@ -191,7 +132,6 @@ body.typing-fade .tree-create-btns {
   padding: 20px 20px 0;
 }
 
-/* Body holds the active panel's content and owns the scroll container. */
 .panel-overlay-body {
   flex: 1;
   min-height: 0;
@@ -199,27 +139,30 @@ body.typing-fade .tree-create-btns {
   padding: 0 20px 20px;
 }
 
-/* Settings footer pinned to the bottom of the panel. */
+/* Footer — pinned at the bottom of the body-stack. No top border;
+   icon-only buttons that reveal their label on hover. */
 .panel-overlay-footer {
   flex: 0 0 auto;
-  padding: 10px 20px 16px;
-  border-top: 1px solid color-mix(in srgb, var(--fg, currentColor) 10%, transparent);
+  padding: 8px 16px 14px;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
 }
 
 .panel-footer-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
+  gap: 8px;
   background: none;
   border: none;
   color: var(--fg);
   font-family: system-ui, sans-serif;
   font-size: 13px;
-  padding: 8px 6px;
+  padding: 6px 8px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .panel-footer-btn:hover {
@@ -232,6 +175,9 @@ body.typing-fade .tree-create-btns {
   justify-content: center;
   width: 18px;
   height: 18px;
+  flex: 0 0 18px;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .panel-footer-icon svg {
@@ -244,9 +190,78 @@ body.typing-fade .tree-create-btns {
   stroke-linejoin: round;
 }
 
+/* Label is hidden until the button is hovered. Width collapses too so
+   the un-hovered buttons sit tight against their icons. */
 .panel-footer-label {
-  flex: 1;
-  text-align: left;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 0.18s ease, opacity 0.15s ease;
+}
+
+.panel-footer-btn:hover .panel-footer-label,
+.panel-footer-btn:focus-visible .panel-footer-label {
+  max-width: 140px;
+  opacity: 1;
+}
+
+/* ===== Sidebar grip (always-visible toggle on the right edge) ===== */
+.sidebar-grip {
+  flex: 0 0 var(--sidebar-grip-width);
+  width: var(--sidebar-grip-width);
+  height: 100%;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-left: 1px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.2s ease;
+  font-family: -apple-system, system-ui, sans-serif;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-grip:hover,
+.sidebar-grip:focus-visible {
+  border-left-color: color-mix(in srgb, var(--fg, currentColor) 22%, transparent);
+}
+
+.sidebar-grip-chevron {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.sidebar-grip:hover .sidebar-grip-chevron {
+  opacity: 1;
+}
+
+/* Dropbox sync indicator — small dot inside the grip, near the bottom. */
+.sidebar-sync-dot {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg, #888);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.sidebar-sync-dot.visible { opacity: 0.45; }
+.sidebar-sync-dot.pulse { animation: hush-sync-dot-pulse 0.8s ease-out; }
+@keyframes hush-sync-dot-pulse {
+  0%   { transform: translateX(-50%) scale(1);   opacity: 0.45; }
+  35%  { transform: translateX(-50%) scale(1.6); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1);   opacity: 0.45; }
 }
 
 /* Sidebar-panel resizer — invisible until approached. */
@@ -286,23 +301,24 @@ body.typing-fade .tree-create-btns {
 /* Inset mode: panel sits in the editor's left margin. */
 #panel-overlay.panel-inset {
   background: var(--theme-bg, var(--bg));
-  border-right: 1px solid color-mix(in srgb, var(--fg, currentColor) 12%, transparent);
   z-index: 100;
 }
 
-/* In notebook mode the right border matches the canvas dot/grid color. */
 body.notebook-mode #panel-overlay,
 body.notebook-mode #panel-overlay.panel-inset {
-  border-right: 1px solid var(--notebook-pattern-color, transparent);
+  /* In notebook mode the canvas owns the visual divider — keep the
+     panel border out of the way. */
 }
 
+/* Hidden = body-stack collapsed; the grip stays visible on the right. */
 #panel-overlay.hidden {
-  transform: translateX(-20px);
-  opacity: 0;
-  pointer-events: none;
+  width: var(--sidebar-grip-width);
+}
+#panel-overlay.hidden .panel-overlay-body-stack {
+  display: none;
 }
 
-/* ===== Sidebar Tooltips (still used by the files panel) ===== */
+/* ===== Sidebar Tooltips (used by the files panel rows) ===== */
 .sidebar-tooltip {
   position: fixed;
   z-index: var(--z-overlay);
@@ -362,25 +378,62 @@ body.notebook-mode #panel-overlay.panel-inset {
   font-family: system-ui, sans-serif;
 }
 
-/* ===== Phone — fill-width sidebar, toggle on the right border ===== */
+/* ===== Add popup — surfaces the four create actions in a floating
+   list above the footer Add button. Closed on click outside / Esc. */
+.panel-add-popup {
+  position: fixed;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg, var(--bg));
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 180px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  font-family: system-ui, sans-serif;
+}
+
+.panel-add-popup button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.panel-add-popup button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.panel-add-popup svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+/* ===== Phone — fill-width sidebar (minus grip strip) ===== */
 html.phone {
-  --panel-width: calc(100vw - 36px) !important;
+  --panel-width: calc(100vw - var(--sidebar-grip-width)) !important;
 }
 
 html.phone .panel-overlay-header {
   padding-top: calc(20px + env(safe-area-inset-top, 0px));
 }
 
-html.phone .sidebar-floating-toggle.panel-open {
-  left: calc(100vw - 36px);
-}
-
-/* No drag-resize on phone — the panel auto-fills. */
 html.phone .sidebar-panel-resizer {
   display: none;
 }
 
-/* Touch-mode pills along the bottom edge on phone. */
 html.phone .cmd-floating-button.cmd-palette-button {
   right: auto;
   left: calc(50% + 6px);
