@@ -455,10 +455,17 @@ export function createSidebar(container, state) {
     }
   });
   // Multi-select adds / clears the `.multi-selected` highlight on every
-  // affected row; repaint the panel so the visual stays in sync with
-  // `state.selectedDocIds`.
+  // affected row. We toggle the class directly on the existing rows
+  // (matched via `data-file-id`) instead of rebuilding the panel — a
+  // rebuild during an active drag-select would replace every `.sl-item`
+  // element and strand the drag's cached row references on detached
+  // DOM, freezing the capture mid-gesture.
   state.on("multi-select-changed", () => {
-    if (activePanel === "files") refreshFilesPanel(state);
+    if (activePanel !== "files") return;
+    const selected = new Set(state.selectedDocIds || []);
+    panelOverlay.querySelectorAll(".sl-item[data-file-id]").forEach((li) => {
+      li.classList.toggle("multi-selected", selected.has(li.dataset.fileId));
+    });
   });
   // Switching desks re-roots the visible top level on the active desk,
   // and adding/removing/renaming a desk affects the popover header.

@@ -159,8 +159,16 @@ export function createFilesPanel(container, state, hidePanel) {
         && Array.isArray(state.selectedDocIds) && state.selectedDocIds.includes(item.fileId);
       // The `.multi-selected` class lives on the outer `.sl-item`, not
       // the inner row, so SortableList's renderer can find it and
-      // re-apply on each render() without us having to coordinate.
-      if (context?.li) context.li.classList.toggle("multi-selected", !!isMultiSelected);
+      // re-apply on each render() without us having to coordinate. We
+      // also stamp `data-file-id` on the row so the multi-select event
+      // listener can toggle the highlight in place without rebuilding
+      // the whole panel (a rebuild during an active drag-select would
+      // strand the cached row refs in `session.rows` on detached
+      // elements and freeze the capture mid-gesture).
+      if (context?.li) {
+        context.li.classList.toggle("multi-selected", !!isMultiSelected);
+        if (item.fileId) context.li.dataset.fileId = item.fileId;
+      }
       const row = document.createElement("span");
       row.className = "tree-item-row" + (isActive ? " active" : "");
       row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
