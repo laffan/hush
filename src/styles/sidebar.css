@@ -206,28 +206,39 @@ body.typing-fade .tree-create-btns {
   opacity: 1;
 }
 
-/* ===== Sidebar grip (always-visible toggle on the right edge) ===== */
+/* ===== Sidebar grip (always-visible toggle on the right edge) =====
+   The grip is two pieces: a wide click-to-toggle button on the left
+   and a narrow drag-to-resize strip flush against the panel's outer
+   edge. Both stay visible whether the panel body is collapsed or open. */
 .sidebar-grip {
   flex: 0 0 var(--sidebar-grip-width);
   width: var(--sidebar-grip-width);
   height: 100%;
-  background: var(--theme-bg, var(--bg));
-  color: var(--fg);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: row;
+  background: var(--theme-bg, var(--bg));
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-grip-toggle {
+  flex: 1 1 auto;
+  height: 100%;
+  background: none;
+  color: var(--fg);
   border: none;
   border-left: 1px solid transparent;
   padding: 0;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
   transition: border-color 0.2s ease;
   font-family: -apple-system, system-ui, sans-serif;
-  -webkit-app-region: no-drag;
 }
 
-.sidebar-grip:hover,
-.sidebar-grip:focus-visible {
+.sidebar-grip-toggle:hover,
+.sidebar-grip-toggle:focus-visible {
   border-left-color: color-mix(in srgb, var(--fg, currentColor) 22%, transparent);
 }
 
@@ -238,11 +249,44 @@ body.typing-fade .tree-create-btns {
   transition: opacity 0.15s;
 }
 
-.sidebar-grip:hover .sidebar-grip-chevron {
+.sidebar-grip-toggle:hover .sidebar-grip-chevron {
   opacity: 1;
 }
 
-/* Dropbox sync indicator — small dot inside the grip, near the bottom. */
+/* Narrow drag-to-resize strip on the outer edge. Visible-on-hover only;
+   hidden when the panel is collapsed (no body to resize). */
+.sidebar-grip-resize {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  position: relative;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.sidebar-grip-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: var(--fg, currentColor);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar-grip-resize:hover::after,
+.sidebar-grip-resize.dragging::after {
+  opacity: 0.25;
+}
+
+#panel-overlay.hidden .sidebar-grip-resize {
+  display: none;
+}
+
+/* Dropbox sync indicator — small dot inside the toggle, near the bottom. */
 .sidebar-sync-dot {
   position: absolute;
   bottom: 16px;
@@ -264,40 +308,6 @@ body.typing-fade .tree-create-btns {
   100% { transform: translateX(-50%) scale(1);   opacity: 0.45; }
 }
 
-/* Sidebar-panel resizer — invisible until approached. */
-.sidebar-panel-resizer {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  padding: 0 20px;
-  margin-left: -20px;
-  cursor: col-resize;
-  background-clip: content-box;
-  z-index: 110;
-  background: transparent;
-  transition: background 0.15s;
-}
-
-.sidebar-panel-resizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 19px;
-  width: 3px;
-  border-radius: 1.5px;
-  background: var(--fg, currentColor);
-  opacity: 0;
-  transition: opacity 0.5s ease-in;
-}
-
-.sidebar-panel-resizer.hover::after { opacity: 0.15; transition: opacity 0.5s ease-in; }
-.sidebar-panel-resizer.dragging::after { opacity: 0.35; transition: opacity 0s; }
-.sidebar-panel-resizer:not(.hover):not(.dragging)::after { transition: opacity 0s; }
-
-.sidebar-panel-resizer.hidden { display: none; }
-
 /* Inset mode: panel sits in the editor's left margin. */
 #panel-overlay.panel-inset {
   background: var(--theme-bg, var(--bg));
@@ -310,9 +320,12 @@ body.notebook-mode #panel-overlay.panel-inset {
      panel border out of the way. */
 }
 
-/* Hidden = body-stack collapsed; the grip stays visible on the right. */
+/* Hidden = body-stack collapsed; the grip stays visible on the right.
+   `!important` is required because `utility.css` carries a global
+   `.hidden { display: none !important; }` rule. */
 #panel-overlay.hidden {
   width: var(--sidebar-grip-width);
+  display: flex !important;
 }
 #panel-overlay.hidden .panel-overlay-body-stack {
   display: none;

@@ -11,7 +11,7 @@ import { openSettingsWindow } from "../settings/settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
 import { cleanupVersionsPanel } from "./versions-panel.js";
 import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
-import { createPanelResizer, applyPanelWidth, positionPanelResizer } from "./panel-resizer.js";
+import { attachGripResize, applyPanelWidth } from "./panel-resizer.js";
 import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
@@ -77,18 +77,33 @@ export function createSidebar(state) {
   bodyStack.appendChild(body);
   bodyStack.appendChild(footer);
 
-  // Full-height grip on the right edge — flips the panel open / closed.
-  // Border fades in only on hover (CSS handles the transition).
-  const grip = document.createElement("button");
+  // Full-height grip on the right edge. The grip carries two children:
+  // a wide click-to-toggle button on the left, and a narrow drag-to-
+  // resize strip flush against the panel's outer edge. Border on the
+  // toggle's inner edge fades in only on hover.
+  const grip = document.createElement("div");
   grip.className = "sidebar-grip";
-  grip.type = "button";
-  grip.setAttribute("aria-label", "Toggle files panel");
-  grip.title = "Toggle files panel";
-  grip.innerHTML = `<span class="sidebar-grip-chevron">›</span>`;
-  grip.addEventListener("click", (e) => {
+
+  const gripToggle = document.createElement("button");
+  gripToggle.className = "sidebar-grip-toggle";
+  gripToggle.type = "button";
+  gripToggle.setAttribute("aria-label", "Toggle files panel");
+  gripToggle.title = "Toggle files panel";
+  gripToggle.innerHTML = `<span class="sidebar-grip-chevron">›</span>`;
+  gripToggle.addEventListener("click", (e) => {
     e.stopPropagation();
     state.emit("toggle-left-panel");
   });
+
+  const gripResize = document.createElement("div");
+  gripResize.className = "sidebar-grip-resize";
+  gripResize.setAttribute("role", "separator");
+  gripResize.setAttribute("aria-orientation", "vertical");
+  gripResize.setAttribute("aria-label", "Resize sidebar");
+  gripResize.title = "Drag to resize";
+
+  grip.appendChild(gripToggle);
+  grip.appendChild(gripResize);
 
   panelOverlay.appendChild(bodyStack);
   panelOverlay.appendChild(grip);
@@ -97,8 +112,8 @@ export function createSidebar(state) {
   // Sync the chevron direction with the panel's hidden / open state.
   function syncGripGlyph() {
     const isOpen = !panelOverlay.classList.contains("hidden");
-    grip.querySelector(".sidebar-grip-chevron").textContent = isOpen ? "‹" : "›";
-    grip.title = isOpen ? "Close panel" : "Open files panel";
+    gripToggle.querySelector(".sidebar-grip-chevron").textContent = isOpen ? "‹" : "›";
+    gripToggle.title = isOpen ? "Close panel" : "Open files panel";
   }
   new MutationObserver(syncGripGlyph).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
   syncGripGlyph();
@@ -108,7 +123,7 @@ export function createSidebar(state) {
   const syncDot = document.createElement("div");
   syncDot.className = "sidebar-sync-dot";
   syncDot.setAttribute("aria-hidden", "true");
-  grip.appendChild(syncDot);
+  gripToggle.appendChild(syncDot);
   function syncDotVisible() {
     return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);
   }
@@ -156,12 +171,10 @@ export function createSidebar(state) {
     if (!panelOverlay.classList.contains("hidden")) endTypingFade();
   }).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
 
-  // Set up panel-width CSS var from persisted setting, then install the
-  // invisible-until-hover right-edge resizer.
+  // Set up panel-width CSS var from persisted setting, then wire the
+  // grip's narrow right-edge strip up as the drag-to-resize handle.
   applyPanelWidth(state.settings.sidebarPanelWidth || 300);
-  const panelResizer = createPanelResizer(state, panelOverlay);
-  document.body.appendChild(panelResizer);
-  positionPanelResizer(panelResizer, panelOverlay);
+  attachGripResize(state, gripResize, panelOverlay);
 
   function isWideViewport() {
     return window.innerWidth > 700;
@@ -197,7 +210,6 @@ export function createSidebar(state) {
     if (
       panelOpen &&
       !panelOverlay.contains(e.target) &&
-      !panelResizer.contains(e.target) &&
       !(versionOverlay && versionOverlay.contains(e.target))
     ) {
       hidePanel();
