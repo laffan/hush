@@ -148,6 +148,13 @@ function applyAnchors(pane) {
   const shapes = pane.notebook.state.shapes;
   let mutated = false;
   for (const s of shapes) {
+    // DrawShapes (strokes) carry their geometry in `points[]` rather
+    // than a single `position`. Skipping them here is correct AND
+    // important — without the guard, the first stroke in the array
+    // throws on `s.position.y` and aborts the loop before
+    // `publishShadowHeaders` runs, so the gutter sits with empty
+    // `shadowHeaders` after every restore that brings strokes back.
+    if (!s.position) continue;
     let a = anchors.get(s.id);
     // Re-anchor: no record, or the user moved this shape since our
     // last write (current y != lastY).
