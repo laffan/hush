@@ -126,26 +126,13 @@ export function installDragSelect(panelContainer, state) {
   }
 
   function onPointerDown(e) {
-    if (e.button !== 0) {
-      if (typeof window !== "undefined" && window.__hushDragSelectDebug) console.log("[drag-select] skip: button", e.button);
-      return;
-    }
+    if (e.button !== 0) return;
     // Cmd/Ctrl-drag is reserved for the system's text-selection /
     // drag-export gesture; we don't steal it.
-    if (e.metaKey || e.ctrlKey) {
-      if (typeof window !== "undefined" && window.__hushDragSelectDebug) console.log("[drag-select] skip: modifier", { meta: e.metaKey, ctrl: e.ctrlKey });
-      return;
-    }
-    if (isInteractiveTarget(e.target)) {
-      if (typeof window !== "undefined" && window.__hushDragSelectDebug) console.log("[drag-select] skip: interactive target", e.target);
-      return;
-    }
+    if (e.metaKey || e.ctrlKey) return;
+    if (isInteractiveTarget(e.target)) return;
     // Only arm when the pointer actually starts inside the panel area.
-    if (!panelContainer.contains(e.target)) {
-      if (typeof window !== "undefined" && window.__hushDragSelectDebug) console.log("[drag-select] skip: outside panel", e.target);
-      return;
-    }
-    if (typeof window !== "undefined" && window.__hushDragSelectDebug) console.log("[drag-select] arm at", e.clientX, e.clientY, "target", e.target);
+    if (!panelContainer.contains(e.target)) return;
     e.preventDefault();
     session = {
       pointerId: e.pointerId,
