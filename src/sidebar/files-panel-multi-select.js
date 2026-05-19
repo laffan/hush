@@ -14,11 +14,11 @@
 import { normalizeProjectChildren } from "../state/tree-helpers.js";
 
 /** Walk the currently-visible top-level tree (active desk subtree)
- *  and collect every doc leaf in render order. Respects collapsed
- *  containers — items inside a collapsed folder are skipped because
- *  the user can't see them anyway, and a shift-range that silently
- *  pulled in invisible rows would feel like a bug. The result is the
- *  reference order for shift-range expansion. */
+ *  and collect every doc / notebook leaf in render order. Respects
+ *  collapsed containers — items inside a collapsed folder are skipped
+ *  because the user can't see them anyway, and a shift-range that
+ *  silently pulled in invisible rows would feel like a bug. The
+ *  result is the reference order for shift-range expansion. */
 export function collectVisibleDocs(state, visibleTopLevel, sortFlaggedItems, collapsedIds) {
   const out = [];
   const tree = sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)));
@@ -26,7 +26,7 @@ export function collectVisibleDocs(state, visibleTopLevel, sortFlaggedItems, col
   function walk(nodes) {
     for (const n of nodes) {
       if (state.isInTrash(n.id)) continue;
-      if (n.type === "document" && n.fileId) out.push(n);
+      if ((n.type === "document" || n.type === "notebook") && n.fileId) out.push(n);
       if (n.children?.length && !collapsed.has(n.id)) walk(n.children);
     }
   }
@@ -69,35 +69,29 @@ export function handleDocMultiClick(item, event, state, visibleDocs) {
   state.setSelectedDocs(current);
 }
 
-const GUTTER_PX = 16;
-
-/** Install the drag-select gutter inside the files panel container.
- *  Returns a cleanup function. The gutter is a 16 px-wide invisible
- *  strip on the panel's left edge — pointerdown there starts the
- *  drag-select rectangle, leaving every other click + drag in the panel
- *  routing through SortableList as before. */
-export function installDragSelectGutter(panelContainer, state) {
-  // Ensure the panel container can host an absolute-positioned overlay.
-  if (getComputedStyle(panelContainer).position === "static") {
-    panelContainer.style.position = "relative";
-  }
-  const gutter = document.createElement("div");
-  gutter.className = "files-drag-select-gutter";
-  panelContainer.appendChild(gutter);
-
+/** Install drag-select on the files-panel container. Pointerdown on
+ *  any empty area of the panel (not on an `.sl-item` or an interactive
+ *  control) starts a bounding-box selection over doc + notebook rows.
+ *  Pointerdown that lands on an existing row keeps routing through
+ *  SortableList's normal click + drag pipeline, so the existing file
+ *  drag behaviour is untouched.
+ *
+ *  Returns a cleanup function that removes the listener and any
+ *  in-flight selection rectangle. */
+export function installDragSelect(panelContainer, state) {
   let session = null;
   let rectEl = null;
 
-  function findDocRowsInPanel() {
-    // Every doc-backed row in the visible panel — walk `.sl-item` and
-    // pick out the ones whose data-id maps to a tree-node typed
-    // `document`. Cheaper than re-walking the file tree per pointermove.
+  function findSelectableRows() {
+    // Every doc / notebook-backed row in the visible panel. Cheaper to
+    // walk the existing DOM than to re-traverse the file tree per
+    // pointermove, since the panel already painted these rows.
     const rows = [];
     panelContainer.querySelectorAll(".sl-item").forEach((li) => {
       const id = li.dataset.id;
       if (!id) return;
       const node = findNodeByIdInPanel(state, id);
-      if (node && node.type === "document" && node.fileId) {
+      if (node && (node.type === "document" || node.type === "notebook") && node.fileId) {
         rows.push({ el: li, fileId: node.fileId });
       }
     });
@@ -105,11 +99,12 @@ export function installDragSelectGutter(panelContainer, state) {
   }
 
   function rectFromPoints(a, b) {
-    const left = Math.min(a.x, b.x);
-    const top = Math.min(a.y, b.y);
-    const right = Math.max(a.x, b.x);
-    const bottom = Math.max(a.y, b.y);
-    return { left, top, right, bottom };
+    return {
+      left: Math.min(a.x, b.x),
+      top: Math.min(a.y, b.y),
+      right: Math.max(a.x, b.x),
+      bottom: Math.max(a.y, b.y),
+    };
   }
 
   function intersects(rect, el) {
@@ -117,23 +112,36 @@ export function installDragSelectGutter(panelContainer, state) {
     return !(r.right < rect.left || r.left > rect.right || r.bottom < rect.top || r.top > rect.bottom);
   }
 
+  function isInteractiveTarget(target) {
+    if (!(target instanceof Element)) return false;
+    // Sortable rows + their fold arrows + any actual `<button>` /
+    // `<input>` / `<a>` etc. The body itself, the lists' empty space,
+    // and the panel's padding-strip all fall through (false) so
+    // drag-select arms there.
+    if (target.closest(".sl-item")) return true;
+    if (target.closest(".sl-fold-arrow")) return true;
+    if (target.closest("button, input, textarea, select, a")) return true;
+    if (target.closest(".tree-rename-input")) return true;
+    return false;
+  }
+
   function onPointerDown(e) {
     if (e.button !== 0) return;
-    // Allow the system to keep handling text-selection / drag-export
-    // when the user is holding Cmd — we shouldn't steal that gesture.
+    // Cmd/Ctrl-drag is reserved for the system's text-selection /
+    // drag-export gesture; we don't steal it.
     if (e.metaKey || e.ctrlKey) return;
+    if (isInteractiveTarget(e.target)) return;
+    // Only arm when the pointer actually starts inside the panel area.
+    if (!panelContainer.contains(e.target)) return;
     e.preventDefault();
-    gutter.setPointerCapture(e.pointerId);
     session = {
       pointerId: e.pointerId,
       start: { x: e.clientX, y: e.clientY },
       additive: !!e.shiftKey,
       baseSelection: e.shiftKey ? state.selectedDocIds.slice() : [],
-      rows: findDocRowsInPanel(),
+      rows: findSelectableRows(),
+      moved: false,
     };
-    rectEl = document.createElement("div");
-    rectEl.className = "sl-drag-select-rect";
-    document.body.appendChild(rectEl);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp, { once: true });
     window.addEventListener("pointercancel", onPointerCancel, { once: true });
@@ -141,6 +149,18 @@ export function installDragSelectGutter(panelContainer, state) {
 
   function onPointerMove(e) {
     if (!session || e.pointerId !== session.pointerId) return;
+    const dx = e.clientX - session.start.x;
+    const dy = e.clientY - session.start.y;
+    // 4-px slop so a click in empty space doesn't immediately become a
+    // (zero-area) drag-select. Once the user crosses the threshold the
+    // rectangle materialises and the live selection starts streaming.
+    if (!session.moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+    if (!session.moved) {
+      session.moved = true;
+      rectEl = document.createElement("div");
+      rectEl.className = "sl-drag-select-rect";
+      document.body.appendChild(rectEl);
+    }
     const rect = rectFromPoints(session.start, { x: e.clientX, y: e.clientY });
     if (rectEl) {
       rectEl.style.left = rect.left + "px";
@@ -152,8 +172,6 @@ export function installDragSelectGutter(panelContainer, state) {
     for (const r of session.rows) {
       if (intersects(rect, r.el)) hit.add(r.fileId);
     }
-    // Stream the live selection through so the sidebar repaints in
-    // real time while the user is dragging the rectangle.
     state.setSelectedDocs(Array.from(hit));
   }
 
@@ -165,25 +183,24 @@ export function installDragSelectGutter(panelContainer, state) {
 
   function onPointerUp(e) {
     if (!session || e.pointerId !== session.pointerId) return;
-    // Empty / single-doc drag is treated as "user clicked the gutter
-    // by mistake" — clear any leftover selection so the click feels
-    // like a no-op. (Shift-drag preserves the existing batch.)
-    if (!session.additive) {
-      const movedFar = Math.abs(e.clientX - session.start.x) > 4 || Math.abs(e.clientY - session.start.y) > 4;
-      if (!movedFar) state.clearSelectedDocs();
-      else if ((state.selectedDocIds || []).length < 2) state.clearSelectedDocs();
+    // Click-in-empty-space (no drag) clears any active selection so
+    // the user gets the natural "click empty area to deselect"
+    // behaviour. A drag that landed nothing inside the rect also
+    // clears, mirroring Finder.
+    if (!session.additive && !session.moved) state.clearSelectedDocs();
+    else if (!session.additive && session.moved && (state.selectedDocIds || []).length < 2) {
+      state.clearSelectedDocs();
     }
     teardown();
   }
 
   function onPointerCancel() { teardown(); }
 
-  gutter.addEventListener("pointerdown", onPointerDown);
+  panelContainer.addEventListener("pointerdown", onPointerDown);
 
   return () => {
-    gutter.removeEventListener("pointerdown", onPointerDown);
+    panelContainer.removeEventListener("pointerdown", onPointerDown);
     teardown();
-    gutter.remove();
   };
 }
 

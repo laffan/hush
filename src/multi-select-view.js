@@ -86,17 +86,22 @@ function render(ids) {
     .map((fileId) => {
       const node = findNodeByFileId(_state.fileTree, fileId);
       if (!node) return null;
-      return { fileId, nodeId: node.id, name: node.name || "Untitled", flagged: !!node.flagged };
+      return {
+        fileId,
+        nodeId: node.id,
+        name: node.name || "Untitled",
+        type: node.type,
+        flagged: !!node.flagged,
+      };
     })
-    .filter(Boolean);
+    .filter((r) => r && (r.type === "document" || r.type === "notebook"));
 
-  const docIcon = typeIcons.document;
   const flagBtnLabel = rows.every((r) => r.flagged) ? "Unflag" : "Flag";
 
   _hostEl.innerHTML = `
     <div class="ms-view-inner">
       <header class="ms-view-header">
-        <div class="ms-view-title">${rows.length} document${rows.length === 1 ? "" : "s"} selected</div>
+        <div class="ms-view-title">${rows.length} file${rows.length === 1 ? "" : "s"} selected</div>
         <div class="ms-view-actions">
           <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
           <button type="button" class="ms-view-btn ms-view-btn-danger" data-ms-action="delete">Delete</button>
@@ -105,8 +110,8 @@ function render(ids) {
       </header>
       <ul class="ms-view-list">
         ${rows.map((r) => `
-          <li class="ms-view-row" data-file-id="${escHtml(r.fileId)}">
-            <span class="ms-view-icon">${docIcon}</span>
+          <li class="ms-view-row" data-file-id="${escHtml(r.fileId)}" data-type="${escHtml(r.type)}">
+            <span class="ms-view-icon">${r.type === "notebook" ? typeIcons.notebook : typeIcons.document}</span>
             <span class="ms-view-name">${escHtml(r.name)}</span>
             ${r.flagged ? `<span class="ms-view-flag">flagged</span>` : ""}
           </li>`).join("")}
@@ -114,13 +119,16 @@ function render(ids) {
     </div>
   `;
 
-  // Row click → open that doc. `openFile` emits `file-opened` which
-  // routes through our listener above and clears the selection — no
-  // need to clear here, doing so would race against openFile's emit.
+  // Row click → open that file via the type-appropriate path. The open
+  // call emits `file-opened` (or `notebook-open`), our listener clears
+  // the selection, refresh() hides the view. No explicit clear here so
+  // the visual transition is single-shot.
   _hostEl.querySelectorAll(".ms-view-row").forEach((row) => {
     row.addEventListener("click", () => {
       const fileId = row.dataset.fileId;
-      if (fileId) _state.openFile(fileId);
+      if (!fileId) return;
+      if (row.dataset.type === "notebook") _state.openNotebook(fileId);
+      else _state.openFile(fileId);
     });
   });
 

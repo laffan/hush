@@ -150,16 +150,3 @@ body.multi-select-active #notebook-container {
   pointer-events: none;
   border-radius: 2px;
 }
-
-/* Leftmost gutter inside the files panel — pointerdown here arms
-   drag-select. Visually invisible so the panel reads the same as
-   before; only the hit area changes. */
-.files-drag-select-gutter {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 16px;
-  bottom: 0;
-  z-index: 2;
-  cursor: crosshair;
-}

@@ -14,7 +14,7 @@ import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLin
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton, openRowMenu } from "./files-panel-row-menu.js";
-import { collectVisibleDocs, handleDocMultiClick, installDragSelectGutter } from "./files-panel-multi-select.js";
+import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./files-panel-multi-select.js";
 import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash,
@@ -155,7 +155,7 @@ export function createFilesPanel(container, state, hidePanel) {
       const inTrash = state.isInTrash(item.id);
       const _p = item.type === "document" ? findParentOfNode(state.fileTree, item.id) : null;
       const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
-      const isMultiSelected = item.type === "document" && item.fileId
+      const isMultiSelected = (item.type === "document" || item.type === "notebook") && item.fileId
         && Array.isArray(state.selectedDocIds) && state.selectedDocIds.includes(item.fileId);
       // The `.multi-selected` class lives on the outer `.sl-item`, not
       // the inner row, so SortableList's renderer can find it and
@@ -174,10 +174,13 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item, event) => {
-      // Doc rows participate in the shift / cmd-click multi-select.
-      // Anything else (folder, project, image, …) falls through to its
-      // normal click handler and clears any active selection on the way.
-      if (item.type === "document" && item.fileId) {
+      // Docs AND notebooks participate in the shift / cmd-click
+      // multi-select — the listing view branches on type to call the
+      // right open method. Anything else (folder, project, image, …)
+      // falls through to its normal click handler and clears any
+      // active selection on the way.
+      const isMultiSelectable = (item.type === "document" || item.type === "notebook") && item.fileId;
+      if (isMultiSelectable) {
         if (event && (event.shiftKey || event.metaKey || event.ctrlKey)) {
           const visible = collectVisibleDocs(
             state, visibleTopLevel, sortFlaggedItems,
@@ -187,15 +190,17 @@ export function createFilesPanel(container, state, hidePanel) {
           refreshList(state);
           return;
         }
-        // Plain click on a doc — drop any active multi-select and open.
+        // Plain click — drop any active multi-select and open via the
+        // type-appropriate path.
         if (state.selectedDocIds.length) state.clearSelectedDocs();
-        state.openFile(item.fileId);
+        if (item.type === "notebook") state.openNotebook(item.fileId);
+        else state.openFile(item.fileId);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         return;
       }
-      // Non-doc click — clear any active selection so the user isn't
-      // left in a "selection exists but I can't see it" state when they
-      // navigate to a folder / project / etc.
+      // Non-doc / non-notebook click — clear any active selection so
+      // the user isn't left in a "selection exists but I can't see
+      // it" state when they navigate to a folder / project / etc.
       if (state.selectedDocIds.length) state.clearSelectedDocs();
       // Clicking anywhere on a folder-like row toggles its collapsed state.
       // This applies to Inbox, Images, Trash, and any user-created folder.
@@ -296,7 +301,7 @@ export function createFilesPanel(container, state, hidePanel) {
   // the 16 px strip arms a bounding-box selection over doc rows. Any
   // pointerdown elsewhere in the panel keeps routing through the
   // existing SortableList click / drag pipeline.
-  installDragSelectGutter(container, state);
+  installDragSelect(container, state);
 }
 
 function dispatchRowAction(action, nodeId, opts) {
