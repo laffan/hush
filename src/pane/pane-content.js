@@ -208,8 +208,17 @@ async function loadNotebookPane(pane) {
   // with the default camera). Without this the pane shows the canvas
   // origin in its top-left corner. Deferred to the next frame so
   // pane._content has its final layout size.
+  //
+  // Skip when the pane is acting as a gutter — gutter mode owns
+  // `state.camera` (it tracks the host doc's scrollTop), and centering
+  // overwrites that with a fixed value, sending the shadow headers
+  // off-screen via the per-header `y < -40 || y > canvasH + 4` cull.
+  // The gutter flag is set synchronously by `useActivePaneAsGutter` /
+  // hydrated by `restorePanes` before this rAF fires, so the check sees
+  // the final value in both the fresh and restore paths.
   requestAnimationFrame(() => {
     if (!canvas.state || !pane._content) return;
+    if (pane.gutter) return;
     const mainC = document.getElementById("notebook-container");
     const mainW = (mainC && mainC.clientWidth) || window.innerWidth;
     const mainH = (mainC && mainC.clientHeight) || window.innerHeight;

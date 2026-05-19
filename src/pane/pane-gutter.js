@@ -452,6 +452,15 @@ export function restoreGutterLayout(pane) {
   syncCameraFromScroll(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);
   scheduleSync(pane);
+  // Mirror `useActivePaneAsGutter`'s late-scan retries. On restore the
+  // editor's height-map can still be measuring when the first rAF-fed
+  // scan runs, so `scanDocHeaders` reports zeros for every off-screen
+  // heading — and unlike the fresh-gutter path, no subsequent user
+  // gesture re-fires the scan. These backup scans land after the
+  // doc/editor paint settles and replace the empty/estimated headers
+  // with the real measurements.
+  setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 250);
+  setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 1000);
   import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 }
 
