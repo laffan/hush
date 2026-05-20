@@ -490,9 +490,9 @@ body.notebook-mode #panel-overlay.panel-inset {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
-  fill: currentColor;
+  fill: none;
   stroke: currentColor;
-  stroke-width: 1;
+  stroke-width: 1.5;
 }
 
 /* ===== Phone — fill-width sidebar (minus grip strip) ===== */
