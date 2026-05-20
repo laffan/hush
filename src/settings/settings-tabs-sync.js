@@ -1,8 +1,10 @@
 /**
- * Sync settings tab — split into three sub-tabs (Dropbox / Google /
- * Local). The outer `renderSyncTab` paints the sub-nav at the top and
- * delegates the body to the active sub-tab's renderer; bindings live in
- * `settings-sync-tab.js` (Dropbox + Local) and `settings-sync-tab.js`'s
+ * Sync settings tab — split into two sub-tabs (Dropbox / Google). Local
+ * Sync used to live here as a third sub-tab; it now mounts directly from
+ * the sidebar's Add (+) menu (entry: "Local Folder"), so this file no
+ * longer renders it. The outer `renderSyncTab` paints the sub-nav at
+ * the top and delegates the body to the active sub-tab's renderer;
+ * bindings live in `settings-sync-tab.js` (Dropbox) and the same file's
  * `bindGoogleSubTab` (Google).
  *
  * Active sub-tab is module-local — the binding side calls
@@ -11,11 +13,11 @@
 
 import { escHtml, escAttr } from "./settings-tabs.js";
 
-let _activeSubTab = "dropbox"; // "dropbox" | "google" | "local"
+let _activeSubTab = "dropbox"; // "dropbox" | "google"
 
 export function getSyncSubTab() { return _activeSubTab; }
 export function setSyncSubTab(id) {
-  if (id === "dropbox" || id === "google" || id === "local") _activeSubTab = id;
+  if (id === "dropbox" || id === "google") _activeSubTab = id;
 }
 
 function subTabNav() {
@@ -23,15 +25,13 @@ function subTabNav() {
   return `<div class="sync-subtab-nav">
     ${tab("dropbox", "Dropbox Sync")}
     ${tab("google", "Google Sync")}
-    ${tab("local", "Local Sync")}
   </div>`;
 }
 
 export function renderSyncTab(settings) {
   let body = "";
   if (_activeSubTab === "dropbox") body = renderDropboxSubTab(settings);
-  else if (_activeSubTab === "google") body = renderGoogleSubTab(settings);
-  else body = renderLocalSyncSubTab(settings);
+  else body = renderGoogleSubTab(settings);
   return subTabNav() + `<div class="sync-subtab-body">${body}</div>`;
 }
 
@@ -304,42 +304,3 @@ function maskedClientId(id) {
   return id.slice(0, 12) + "…" + id.slice(-12);
 }
 
-// ===== Local =====
-
-function renderDeskDropdown(settings, mount) {
-  const desks = settings.desks || [];
-  if (desks.length < 2) return "";
-  const current = mount.deskId || settings.activeDeskId || desks[0]?.id || "";
-  const opts = desks.map(d => `<option value="${escAttr(d.id)}" ${d.id === current ? "selected" : ""}>${escHtml(d.name || "Untitled desk")}</option>`).join("");
-  return `<select class="local-sync-desk-select" data-id="${escAttr(mount.id)}">${opts}</select>`;
-}
-
-function renderLocalSyncSubTab(settings) {
-  const localSyncFolders = settings.localSyncFolders || [];
-  return `
-    <div class="settings-section local-sync-section">
-      <h2>Local Sync</h2>
-      <p class="settings-help">
-        Mount a folder on this machine directly in Hush. Local Sync folders
-        are outside the version control system — edits write straight to
-        disk and external changes appear immediately. Unsyncing a folder
-        only removes it from Hush; nothing on disk is changed.
-      </p>
-      <div class="local-sync-list" id="local-sync-list">
-        ${localSyncFolders.length === 0
-          ? `<div class="local-sync-empty">No folders yet.</div>`
-          : localSyncFolders.map(f => `
-              <div class="local-sync-item" data-id="${escAttr(f.id)}">
-                <div class="local-sync-item-info">
-                  <div class="local-sync-item-name">${escHtml(f.name)}</div>
-                  <div class="local-sync-item-path">${escHtml(f.path)}</div>
-                </div>
-                ${renderDeskDropdown(settings, f)}
-                <button class="local-sync-remove-btn" data-id="${escAttr(f.id)}">Remove</button>
-              </div>
-            `).join("")}
-      </div>
-      <button id="local-sync-add" class="sync-action-btn">Add folder</button>
-    </div>
-  `;
-}

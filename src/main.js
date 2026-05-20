@@ -256,10 +256,10 @@ async function init() {
   // changed.
   if (IS_TAURI) {
     const { startLocalSyncWatcher } = await import("./sync/local-sync.js");
-    startLocalSyncWatcher(state, () => {
-      import("./sidebar/files-panel.js")
-        .then(m => m.refreshFilesPanel(state))
-        .catch((e) => console.warn("Failed to refresh files panel after local-sync change:", e));
+    startLocalSyncWatcher(state, async () => {
+      try { (await import("./sidebar/files-panel-local-sync.js")).invalidateLocalSyncCache(); } catch (_) {}
+      try { (await import("./sidebar/files-panel.js")).refreshFilesPanel(state); }
+      catch (e) { console.warn("Failed to refresh files panel after local-sync change:", e); }
     }).catch((e) => console.warn("Failed to start local-sync watcher:", e));
 
     // Settings window fires this after add/remove. We update
@@ -378,8 +378,8 @@ async function init() {
   });
 
   await setupTauriIntegration(state);
-  // Multi-window: register with the Rust registry, mirror current file
-  // back, listen for sibling-window mutations. See `multi-window.js`.
+  import("./traffic-lights.js").then(m => m.setupTrafficLightsHoverReveal()).catch(() => {});
+  // Multi-window: register with the Rust registry + listen for sibling mutations.
   await setupMultiWindow(state);
 
   // Apply initial always-on-top setting

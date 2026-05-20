@@ -447,6 +447,7 @@ pub fn run() {
             #[cfg(desktop)]
             commands::window::set_always_on_top,
             commands::window::set_activation_policy,
+            commands::window::set_traffic_lights_visible,
             commands::multi_window::list_windows,
             commands::multi_window::register_window,
             commands::multi_window::set_window_file,

@@ -8,14 +8,119 @@
  */
 import { typeIcons, escHtml, escAttrValue, attachLeafHoverHandlers } from "./files-panel-shared.js";
 
+const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
+let openLocalSyncMenu = null;
+
+function closeLocalSyncMenu() {
+  if (!openLocalSyncMenu) return;
+  document.removeEventListener("mousedown", openLocalSyncMenu.onMouseDown, true);
+  document.removeEventListener("keydown", openLocalSyncMenu.onKey, true);
+  window.removeEventListener("blur", closeLocalSyncMenu);
+  openLocalSyncMenu.el.remove();
+  openLocalSyncMenu = null;
+}
+
+function openLocalSyncFolderMenu(anchorBtn, folder, state, refreshFilesPanel) {
+  closeLocalSyncMenu();
+  const menu = document.createElement("div");
+  menu.className = "tree-row-menu";
+  const unlink = document.createElement("button");
+  unlink.type = "button";
+  unlink.className = "tree-row-menu-item";
+  unlink.textContent = "Unlink Folder";
+  unlink.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    closeLocalSyncMenu();
+    const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
+    // Rust persists settings.json inside local_sync_remove — mirror the
+    // removal into the in-memory cache and refresh the panel. Skipping
+    // the JS-side updateSettings here avoids round-tripping the full
+    // settings object back through save_settings, which can clobber
+    // unrelated fields Rust touched in the meantime.
+    await removeLocalSyncFolder(folder.id);
+    state.settings.localSyncFolders = (state.settings.localSyncFolders || []).filter(f => f.id !== folder.id);
+    invalidateLocalSyncCache();
+    if (refreshFilesPanel) refreshFilesPanel(state);
+  });
+  menu.appendChild(unlink);
+
+  document.body.appendChild(menu);
+  const rect = anchorBtn.getBoundingClientRect();
+  const menuW = menu.offsetWidth;
+  const menuH = menu.offsetHeight;
+  let top = rect.bottom + 4;
+  if (top + menuH > window.innerHeight - 6) top = Math.max(6, rect.top - menuH - 4);
+  let left = rect.right - menuW;
+  if (left < 6) left = 6;
+  if (left + menuW > window.innerWidth - 6) left = window.innerWidth - menuW - 6;
+  menu.style.top = top + "px";
+  menu.style.left = left + "px";
+
+  const onMouseDown = (e) => { if (!menu.contains(e.target)) closeLocalSyncMenu(); };
+  const onKey = (e) => { if (e.key === "Escape") closeLocalSyncMenu(); };
+  openLocalSyncMenu = { el: menu, onMouseDown, onKey };
+  requestAnimationFrame(() => {
+    document.addEventListener("mousedown", onMouseDown, true);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("blur", closeLocalSyncMenu);
+  });
+}
+
 let storedLocalSyncContainer = null;
 let storedState = null;
 let storedHidePanel = null;
 const localSyncExpanded = new Set(); // folderId:relPath strings
 
-// Track which folder ids we've already set an initial expansion state for
-// so re-renders don't keep "resetting" a folder the user chose to collapse.
-const localSyncExpandedInitialized = new Set();
+// Render token — bumped on every renderLocalSyncSection call. A stale
+// render (one whose async folder list resolves after a newer call has
+// started) bails before swapping content so concurrent refreshes can't
+// double-append the same folder.
+let renderToken = 0;
+
+// Fingerprint of the most recently painted structure (folder list +
+// expanded set). refreshFilesPanel fires on every file-opened event,
+// which would otherwise rebuild the whole local-sync subtree (including
+// async directory reads of every expanded mount) just to re-stamp the
+// `.active` class on one row. When the fingerprint matches we skip the
+// rebuild and only update active classes. `invalidateLocalSyncCache()`
+// is the escape hatch for genuine on-disk changes pushed by the
+// watcher.
+let lastStructureFingerprint = null;
+
+function computeStructureFingerprint(folders, activeDeskId) {
+  const list = (folders || []).map(f => `${f.id}|${f.name || ""}|${f.path || ""}|${f.deskId || ""}`);
+  const expanded = [...localSyncExpanded].sort();
+  return JSON.stringify({ list, expanded, activeDeskId: activeDeskId || "" });
+}
+
+/** Folders attached to the currently active desk. Legacy mounts with no
+ *  deskId stay visible across every desk so existing users don't lose
+ *  access to a folder they mounted before the desk attachment landed. */
+function filterFoldersForDesk(folders, activeDeskId) {
+  if (!folders || folders.length === 0) return [];
+  if (!activeDeskId) return folders;
+  return folders.filter(f => !f.deskId || f.deskId === activeDeskId);
+}
+
+function updateActiveRows(container, state) {
+  const activeKey = state.currentLocalSync
+    ? `${state.currentLocalSync.folderId}:${state.currentLocalSync.relPath}`
+    : null;
+  container.querySelectorAll(".local-sync-file").forEach((li) => {
+    const isActive = activeKey === li.dataset.id;
+    li.classList.toggle("active", isActive);
+    const row = li.querySelector(".tree-item-row");
+    if (row) row.classList.toggle("active", isActive);
+  });
+}
+
+/** Clear the cached structure fingerprint so the next render performs
+ *  a full rebuild. Call this when on-disk content changes (e.g. from
+ *  the local-sync watcher) since the folder/expanded set alone can't
+ *  capture file-level mutations. */
+export function invalidateLocalSyncCache() {
+  lastStructureFingerprint = null;
+}
 
 /** Returns the stored container reference for refresh callers. */
 export function getLocalSyncContainer() {
@@ -26,7 +131,8 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   storedLocalSyncContainer = container;
   storedState = state;
   storedHidePanel = hidePanel;
-  container.innerHTML = "";
+  const myToken = ++renderToken;
+
   let folders = [];
   try {
     const { listLocalSyncFolders } = await import("../sync/local-sync.js");
@@ -34,30 +140,38 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   } catch (e) {
     console.error("Local Sync: failed to load folders", e);
   }
-  // If the container was replaced (panel re-opened) while the async load
-  // was running, bail out — the newer render will paint the new container.
+  // Bail if another render has started while we were awaiting, or if
+  // the container was replaced (panel re-opened).
+  if (myToken !== renderToken) return;
   if (storedLocalSyncContainer !== container) return;
-  if (!folders || folders.length === 0) return;
 
-  // Seed the root-level expanded state so a freshly-added folder opens
-  // by default (better default than requiring the user to click to see
-  // there's nothing inside yet). Subsequent user toggles override this.
-  for (const folder of folders) {
-    const key = `${folder.id}:`;
-    if (!localSyncExpandedInitialized.has(folder.id)) {
-      localSyncExpanded.add(key);
-      localSyncExpandedInitialized.add(folder.id);
-    }
+  const activeDeskId = state.settings?.activeDeskId || null;
+  const visibleFolders = filterFoldersForDesk(folders, activeDeskId);
+
+  // Fast path: the structure (folder list + expanded set + desk) is
+  // unchanged since the last paint, so the user-visible delta can only
+  // be the active row. Update classes in place and bail before paying
+  // for an async directory rebuild.
+  const fingerprint = computeStructureFingerprint(visibleFolders, activeDeskId);
+  if (fingerprint === lastStructureFingerprint && container.firstChild) {
+    updateActiveRows(container, state);
+    return;
   }
 
-  for (const folder of folders) {
+  // Build the new subtree on a detached fragment so the live container
+  // is never visibly empty during the rebuild.
+  const fragment = document.createDocumentFragment();
+  for (const folder of visibleFolders) {
     try {
       const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel, refreshFilesPanel);
-      container.appendChild(rootLi);
+      fragment.appendChild(rootLi);
     } catch (e) {
       console.error("Local Sync: failed to render folder", folder, e);
     }
   }
+  // Atomic swap — old content stays put until this line runs.
+  container.replaceChildren(fragment);
+  lastStructureFingerprint = fingerprint;
 }
 
 function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePanel, refreshFilesPanel) {
@@ -92,12 +206,12 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   const row = document.createElement("span");
   row.className = "tree-item-row";
   const removeBtn = isRoot
-    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button data-local-sync-action="remove" data-tooltip="Remove from Local Sync">&times;</button></span>`
+    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button class="tree-action-menu" data-local-sync-action="menu" data-tooltip="Menu" aria-label="Menu">${HAMBURGER_SVG}</button></span>`
     : "";
-  // The Local Sync icon marks only the mount root; nested folders use
-  // the regular folder icon so the tree reads as a normal filesystem
-  // view inside the mount.
-  const icon = isRoot ? typeIcons.localSync : typeIcons.folder;
+  // The Local Sync icon marks only the mount root; nested folders read
+  // fine without a leading glyph — the disclosure arrow alone signals
+  // containerhood (matching how plain folders render in the main tree).
+  const icon = isRoot ? typeIcons.localSync : "";
   row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(displayName)}</span>${removeBtn}`;
   main.appendChild(row);
   label.appendChild(main);
@@ -115,15 +229,14 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
 
   li.appendChild(contentWrapper);
 
-  // Delegated remove-button handler
+  // Delegated menu-button handler — opens a small dropdown with the
+  // unlink action (replaces the previous inline × button).
   if (isRoot) {
-    const btn = contentWrapper.querySelector('[data-local-sync-action="remove"]');
+    const btn = contentWrapper.querySelector('[data-local-sync-action="menu"]');
     if (btn) {
-      btn.addEventListener("click", async (e) => {
+      btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
-        await removeLocalSyncFolder(folder.id);
-        if (refreshFilesPanel) refreshFilesPanel(state);
+        openLocalSyncFolderMenu(btn, folder, state, refreshFilesPanel);
       });
     }
   }
