@@ -12,6 +12,7 @@ import {
   canUseAsNote,
   isDesktopTauri,
   formatShortcutKeys,
+  buildAppearanceCommands,
 } from "./command-palette-helpers.js";
 import {
   paneAnchorClickPoint, promptNewNotebookName,
@@ -225,6 +226,7 @@ function buildCommands(state) {
     // row writes the active style — same routing as clicking a style row
     // in the old sidebar list.
     ...buildUseStyleCommands(state),
+    ...buildAppearanceCommands(state),
     { id: "style-lock", label: "Lock style to document", icon: icons.styles, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.currentFileId || !!getLockedStyleId(s),
       action: async (s) => { await setLockedStyleId(s, s.settings.activeStyleId || "__default__"); } },

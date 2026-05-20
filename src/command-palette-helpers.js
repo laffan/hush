@@ -3,6 +3,38 @@
  * command-palette.js so that file stays under the 700-line cap.
  */
 import { findNodeByFileId, findParentOfNode } from "./state/tree-helpers.js";
+import { applyAppearance } from "./settings/settings-ui.js";
+import appearanceDarkRaw from "./sidebar/sidebar_icons/appearance-dark.svg?raw";
+import appearanceLightRaw from "./sidebar/sidebar_icons/appearance-light.svg?raw";
+import appearanceAutoRaw from "./sidebar/sidebar_icons/appearance-auto.svg?raw";
+
+const _appearanceInner = (raw) => raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>[\s\S]*$/, "").trim();
+const _appearanceIcons = {
+  dark: `<svg viewBox="0 0 24 24">${_appearanceInner(appearanceDarkRaw)}</svg>`,
+  light: `<svg viewBox="0 0 24 24">${_appearanceInner(appearanceLightRaw)}</svg>`,
+  auto: `<svg viewBox="0 0 24 24">${_appearanceInner(appearanceAutoRaw)}</svg>`,
+};
+
+/** Appearance switcher rows — mirrors the toggle on Edit Styles. */
+export function buildAppearanceCommands(state) {
+  const current = state.settings?.appearance || "auto";
+  const modes = [
+    ["dark", "Dark appearance"],
+    ["light", "Light Appearance"],
+    ["auto", "System Appearance"],
+  ];
+  return modes.map(([id, label]) => ({
+    id: `appearance-${id}`, label: `${label}${current === id ? " ✓" : ""}`,
+    icon: _appearanceIcons[id], shortcutKey: null, ctx: "shared",
+    action: (s) => {
+      if ((s.settings?.appearance || "auto") === id) return;
+      s.updateSettings({ appearance: id });
+      applyAppearance(id);
+      s.emit("style-changed");
+      s.emit("theme-changed");
+    },
+  }));
+}
 
 /** Walk the file tree and return real document/notebook leaves plus
  *  user-created project nodes, skipping the Images, Trash, and Inbox
