@@ -14,8 +14,8 @@
  *      cursor outside the open bracket pair also closes the popup.
  */
 
-import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { ViewPlugin, Decoration, WidgetType, EditorView, keymap } from "@codemirror/view";
+import { RangeSetBuilder, Prec } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
 import { resolveWikilink, openWikilink, getLinkableNotes, getActiveNoteNodeId } from "../../links/wikilink-index.js";
 import { openWikilinkPopup } from "../../links/wikilink-popup.js";
@@ -239,20 +239,8 @@ function createSearchController(view, appState) {
   return {
     sync,
     close,
-    handleKey(e) {
-      if (!popup) return false;
-      if (e.key === "Escape") { close(); return true; }
-      if (e.key === "ArrowDown") { popup.moveSelection(1); e.preventDefault(); return true; }
-      if (e.key === "ArrowUp") { popup.moveSelection(-1); e.preventDefault(); return true; }
-      if (e.key === "Enter" || e.key === "Tab") {
-        // Tab also commits — feels closer to fuzzy-search expectations
-        // and matches the behaviour of the command palette.
-        popup.commit();
-        e.preventDefault();
-        return true;
-      }
-      return false;
-    },
+    moveSelection(delta) { popup?.moveSelection(delta); },
+    commit() { popup?.commit(); },
     isOpen() { return !!popup; },
   };
 }
@@ -294,14 +282,17 @@ export function createWikilinkPlugin(appState) {
     { decorations: (v) => v.decorations },
   );
 
-  // Keymap handler — needs to run before CodeMirror's default keymap so
-  // Arrow / Enter route to the popup while it's visible.
-  const keyHandler = EditorView.domEventHandlers({
-    keydown(e) {
-      if (!controller) return false;
-      return controller.handleKey(e);
-    },
-  });
+  // Keymap — Prec.highest so Arrow / Enter / Tab / Esc reach the popup
+  // before CodeMirror's default cursor-movement bindings consume them
+  // (which would move the caret out of the `[[…` context and close the
+  // popup via the selectionSet branch in update()).
+  const wikilinkKeymap = Prec.highest(keymap.of([
+    { key: "ArrowDown", run: () => controller?.isOpen() ? (controller.moveSelection(1), true) : false },
+    { key: "ArrowUp",   run: () => controller?.isOpen() ? (controller.moveSelection(-1), true) : false },
+    { key: "Enter",     run: () => controller?.isOpen() ? (controller.commit(), true) : false },
+    { key: "Tab",       run: () => controller?.isOpen() ? (controller.commit(), true) : false },
+    { key: "Escape",    run: () => controller?.isOpen() ? (controller.close(), true) : false },
+  ]));
 
-  return [renderPlugin, keyHandler, createClickHandler(appState)];
+  return [renderPlugin, wikilinkKeymap, createClickHandler(appState)];
 }
