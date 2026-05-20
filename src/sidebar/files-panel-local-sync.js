@@ -8,6 +8,64 @@
  */
 import { typeIcons, escHtml, escAttrValue, attachLeafHoverHandlers } from "./files-panel-shared.js";
 
+const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
+let openLocalSyncMenu = null;
+
+function closeLocalSyncMenu() {
+  if (!openLocalSyncMenu) return;
+  document.removeEventListener("mousedown", openLocalSyncMenu.onMouseDown, true);
+  document.removeEventListener("keydown", openLocalSyncMenu.onKey, true);
+  window.removeEventListener("blur", closeLocalSyncMenu);
+  openLocalSyncMenu.el.remove();
+  openLocalSyncMenu = null;
+}
+
+function openLocalSyncFolderMenu(anchorBtn, folder, state, refreshFilesPanel) {
+  closeLocalSyncMenu();
+  const menu = document.createElement("div");
+  menu.className = "tree-row-menu";
+  const unlink = document.createElement("button");
+  unlink.type = "button";
+  unlink.className = "tree-row-menu-item";
+  unlink.textContent = "Unlink Folder";
+  unlink.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    closeLocalSyncMenu();
+    const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
+    await removeLocalSyncFolder(folder.id);
+    state.settings.localSyncFolders = (state.settings.localSyncFolders || []).filter(f => f.id !== folder.id);
+    try { await state.updateSettings({ localSyncFolders: state.settings.localSyncFolders }); }
+    catch (err) { console.error("Failed to persist localSyncFolders:", err); }
+    try {
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit("local-sync-folders-updated", { folders: state.settings.localSyncFolders });
+    } catch (_) { /* non-Tauri */ }
+    if (refreshFilesPanel) refreshFilesPanel(state);
+  });
+  menu.appendChild(unlink);
+
+  document.body.appendChild(menu);
+  const rect = anchorBtn.getBoundingClientRect();
+  const menuW = menu.offsetWidth;
+  const menuH = menu.offsetHeight;
+  let top = rect.bottom + 4;
+  if (top + menuH > window.innerHeight - 6) top = Math.max(6, rect.top - menuH - 4);
+  let left = rect.right - menuW;
+  if (left < 6) left = 6;
+  if (left + menuW > window.innerWidth - 6) left = window.innerWidth - menuW - 6;
+  menu.style.top = top + "px";
+  menu.style.left = left + "px";
+
+  const onMouseDown = (e) => { if (!menu.contains(e.target)) closeLocalSyncMenu(); };
+  const onKey = (e) => { if (e.key === "Escape") closeLocalSyncMenu(); };
+  openLocalSyncMenu = { el: menu, onMouseDown, onKey };
+  requestAnimationFrame(() => {
+    document.addEventListener("mousedown", onMouseDown, true);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("blur", closeLocalSyncMenu);
+  });
+}
+
 let storedLocalSyncContainer = null;
 let storedState = null;
 let storedHidePanel = null;
@@ -92,7 +150,7 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   const row = document.createElement("span");
   row.className = "tree-item-row";
   const removeBtn = isRoot
-    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button data-local-sync-action="remove" data-tooltip="Remove from Local Sync">&times;</button></span>`
+    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button class="tree-action-menu" data-local-sync-action="menu" data-tooltip="Menu" aria-label="Menu">${HAMBURGER_SVG}</button></span>`
     : "";
   // The Local Sync icon marks only the mount root; nested folders use
   // the regular folder icon so the tree reads as a normal filesystem
@@ -115,15 +173,14 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
 
   li.appendChild(contentWrapper);
 
-  // Delegated remove-button handler
+  // Delegated menu-button handler — opens a small dropdown with the
+  // unlink action (replaces the previous inline × button).
   if (isRoot) {
-    const btn = contentWrapper.querySelector('[data-local-sync-action="remove"]');
+    const btn = contentWrapper.querySelector('[data-local-sync-action="menu"]');
     if (btn) {
-      btn.addEventListener("click", async (e) => {
+      btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
-        await removeLocalSyncFolder(folder.id);
-        if (refreshFilesPanel) refreshFilesPanel(state);
+        openLocalSyncFolderMenu(btn, folder, state, refreshFilesPanel);
       });
     }
   }
