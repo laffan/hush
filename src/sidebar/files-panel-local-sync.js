@@ -208,10 +208,10 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   const removeBtn = isRoot
     ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button class="tree-action-menu" data-local-sync-action="menu" data-tooltip="Menu" aria-label="Menu">${HAMBURGER_SVG}</button></span>`
     : "";
-  // The Local Sync icon marks only the mount root; nested folders use
-  // the regular folder icon so the tree reads as a normal filesystem
-  // view inside the mount.
-  const icon = isRoot ? typeIcons.localSync : typeIcons.folder;
+  // The Local Sync icon marks only the mount root; nested folders read
+  // fine without a leading glyph — the disclosure arrow alone signals
+  // containerhood (matching how plain folders render in the main tree).
+  const icon = isRoot ? typeIcons.localSync : "";
   row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(displayName)}</span>${removeBtn}`;
   main.appendChild(row);
   label.appendChild(main);
