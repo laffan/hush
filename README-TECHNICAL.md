@@ -75,6 +75,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │       ├── footnotes-ui.js
 │       ├── image-decorator.js
 │       ├── link-decorator.js
+│       ├── wikilink-decorator.js     (Obsidian-style `[[Note Title]]` — see "Wikilinks")
 │       ├── private-mode.js
 │       ├── project-view.js
 │       ├── sticky-headers.js
@@ -147,6 +148,11 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │       ├── drag-drop.js
 │       ├── keyboard-nav.js
 │       └── utils.js
+│
+├── links/                              (Obsidian-style `[[Note]]` wikilink resolver + popup)
+│   ├── wikilink-index.js               (tree walk + resolver + open dispatcher)
+│   ├── wikilink-popup.js               (floating search widget shared by docs + notebooks)
+│   └── wikilink-rename.js              (rewrite every `[[OldName]]` → `[[NewName]]` on rename)
 │
 ├── longview/
 │   ├── longview.js
@@ -536,6 +542,16 @@ Markdown toggle commands using a generic `toggleWrap(view, marker)`: `toggleBold
 ### Link Decorator (`editor/plugins/link-decorator.js`)
 
 Makes URLs in the editor clickable. Decorates detected links with click handlers.
+
+### Wikilinks (`editor/plugins/wikilink-decorator.js` + `src/links/`)
+
+Obsidian-style `[[Note Title]]` inter-note links. The doc plugin and the notebook text-editor share the same resolver and popup widget under `src/links/`:
+
+- **`links/wikilink-index.js`** — `getLinkableNotes(state)` walks the file tree once and returns every doc + notebook (skipping Trash / Images), each tagged with its containing crumb so the popup can disambiguate same-name notes in different folders. `resolveWikilink(state, title)` performs the case-insensitive name lookup; `openWikilink(state, title)` routes to `state.openFile` / `state.openNotebook`.
+- **`links/wikilink-popup.js`** — floating search widget. Anchors below a caller-supplied caret rect (flipping above when it would clip the viewport bottom), filters via `filterNotes` (substring match with a prefix-match boost), and commits via the caller's `onPick`.
+- **`editor/plugins/wikilink-decorator.js`** — CodeMirror plugin. Builds replace decorations for `[[Title]]` spans when the cursor isn't inside them (broken links carry a `.broken` class so the resolver gap is visible), opens the popup when an unclosed `[[…` context exists at the caret, and handles Cmd+click → `openWikilink`. Rebuilds decorations on `files-changed` so a rename or new-note re-resolves immediately. Popup navigation (Arrow / Enter / Tab / Esc) is registered as a `Prec.highest` CodeMirror keymap so it intercepts before the default cursor bindings — DOM-level handlers run *after* CM's keymap, which would let ArrowUp / ArrowDown move the caret out of the `[[…` context (firing `selectionSet`) and close the popup before the handler saw the event. The two layout-touching branches (`view.coordsAtPos` for the anchor; `view.dispatch({})` to repaint after a rename) ride a `queueMicrotask` because CodeMirror forbids layout reads + new dispatches from inside a `ViewPlugin.update()` tick; a re-entry guard coalesces back-to-back schedules.
+- **`links/wikilink-rename.js`** — called from `state-tree.js::renameTreeNode`. Walks `state.files`, rewrites `[[OldName]]` → `[[NewName]]` in doc bodies and notebook text-shape bodies (via JSON decode → mutate → re-encode), writes each touched file back through `save_file`, and live-refreshes the open editor / canvas if either happens to be a touched file. Folder / project / desk renames short-circuit the helper (those aren't link targets).
+- **Notebook integration** — `notebook/markdown.ts` parses `[[Title]]` into a `wikilink`-tagged `TextRun`; the renderer paints the run in the theme accent with a dashed underline; `state-helpers.ts::hitTestLinkRun` distinguishes URL hits from wikilink hits; `state.ts` Cmd+click dispatches wikilinks through `window.__hushOpenWikilink` (registered once from `main.js` so the lazy-loaded notebook bundle doesn't have to import AppState). The text-editor overlay (`notebook/ui/text-editor.ts`) opens the same popup on `[[`, with the same Arrow / Enter / Esc semantics.
 
 ### Encourage Typing (`editor/plugins/encourage-typing.js`)
 

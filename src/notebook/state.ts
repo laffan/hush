@@ -23,7 +23,7 @@ import type { AppearanceMode, CanvasTheme } from "./themes";
 import { THEMES, getEffectiveVariant } from "./themes";
 import {
   autoFitWidth, findShapeAtPoint, findPocketedShapeAtScreen,
-  hitTestLink, hitTestTaskCheckbox, toggleTaskLine,
+  hitTestLink, hitTestLinkRun, hitTestTaskCheckbox, toggleTaskLine,
   normalizeBox, moveShape,
   applyResize, applyCropResize, openExternalUrl,
 } from "./state-helpers";
@@ -1042,11 +1042,20 @@ export class DrawingState extends EventTarget {
         this.fontFamily,
       );
 
-      // Cmd+click on a link: open in browser/app
+      // Cmd+click on a link: open in browser/app. Wikilinks (`[[Title]]`)
+      // hand off to the Hush bridge so the referenced note opens inside
+      // the app instead of via the system URL handler.
       const cmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
       if (hitShape && hitShape.type === "text" && cmdHeld) {
-        const link = hitTestLink(canvasPt, hitShape);
-        if (link) { openExternalUrl(link); return; }
+        const linkRun = hitTestLinkRun(canvasPt, hitShape);
+        if (linkRun) {
+          if (linkRun.kind === "url") { openExternalUrl(linkRun.target); return; }
+          if (linkRun.kind === "wikilink") {
+            const handler = (window as unknown as { __hushOpenWikilink?: (t: string) => void }).__hushOpenWikilink;
+            if (typeof handler === "function") handler(linkRun.target);
+            return;
+          }
+        }
       }
 
       // Markdown checkbox toggle — a plain click directly on the

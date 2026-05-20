@@ -215,6 +215,16 @@ export async function renameTreeNode(state, nodeId, newName) {
     }
   }
   await state.saveFileTree();
+  // Rewrite every `[[oldName]]` reference across the user's docs and
+  // notebooks so existing wikilinks keep resolving after the rename.
+  // Folders / projects / desks aren't link targets so the helper exits
+  // early on those types.
+  try {
+    const { propagateWikilinkRename } = await import("../links/wikilink-rename.js");
+    await propagateWikilinkRename(state, oldName, finalName, node.type);
+  } catch (e) {
+    console.error("wikilink rename propagation failed:", e);
+  }
   state.syncRenameNode(nodeId, oldName, node.type);
 }
 

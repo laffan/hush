@@ -14,6 +14,7 @@ import { createProjectViewField, createSeparatorFilter, bypassSeparatorFilter } 
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
+import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
@@ -234,6 +235,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
     createLinkDecoratorPlugin(state),
+    createWikilinkPlugin(state),
     createCheckboxListPlugin(),
     createImageDecoratorPlugin(state, getImageContext),
     createImagePasteExtension(state, { getImageContext }),
@@ -444,6 +446,7 @@ export function createEditor(container, state) {
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin(state);
+  const wikilinkPlugin = createWikilinkPlugin(state);
   const checkboxListPlugin = createCheckboxListPlugin();
   const imageDecoratorPlugin = createImageDecoratorPlugin(state, () => defaultLocalSyncContext(state));
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
@@ -492,6 +495,7 @@ export function createEditor(container, state) {
       footnotePlugin,
       flagHighlightPlugin,
       linkDecoratorPlugin,
+      wikilinkPlugin,
       checkboxListPlugin,
       imageDecoratorPlugin,
       createGoogleDocsPasteExtension(),
