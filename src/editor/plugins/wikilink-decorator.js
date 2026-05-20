@@ -172,6 +172,7 @@ function createClickHandler(appState) {
 function createSearchController(view, appState) {
   let popup = null;
   let activeRange = null; // { from, to } of the inner query span
+  let scheduled = false;
 
   function close() {
     if (popup) {
@@ -200,7 +201,7 @@ function createSearchController(view, appState) {
     close();
   }
 
-  function sync() {
+  function runSync() {
     const ctx = findActiveWikilinkContext(view.state);
     if (!ctx) { close(); return; }
     activeRange = { from: ctx.from, to: ctx.to };
@@ -221,6 +222,18 @@ function createSearchController(view, appState) {
       const anchor = anchorAt(ctx.from);
       if (anchor) popup.setAnchor(anchor);
     }
+  }
+
+  // `sync()` reads layout via `view.coordsAtPos`, which CodeMirror
+  // forbids during a ViewPlugin.update() pass — defer to a microtask
+  // so the update completes before we measure.
+  function sync() {
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      runSync();
+    });
   }
 
   return {
@@ -255,10 +268,13 @@ export function createWikilinkPlugin(appState) {
         // Re-render decorations when the file tree changes — links to a
         // renamed or newly-created note should resolve immediately.
         this._onFilesChanged = () => {
-          this.decorations = buildDecorations(view, appState);
-          // Force a transaction so the view picks up the new
-          // decorations. An empty effect dispatch is the cheapest way.
-          view.dispatch({});
+          // Defer — the rename event can fire while a transaction is
+          // already in flight (the rename caller dispatches via the
+          // sync layer, which can sit inside an update tick).
+          queueMicrotask(() => {
+            this.decorations = buildDecorations(view, appState);
+            view.dispatch({});
+          });
         };
         appState?.on?.("files-changed", this._onFilesChanged);
       }
