@@ -52,6 +52,11 @@ function getIcon(item) {
     if (!isDropboxConnected()) return typeIcons.syncedFolderBroken;
     return typeIcons.syncedFolder;
   }
+  // Plain folders read fine in the tree without a leading glyph; the
+  // disclosure arrow alone signals containerhood. The Add (+) popup
+  // still uses typeIcons.folder so the create-action chip stays
+  // identifiable.
+  if (item.type === "folder") return "";
   if (item.flagged) {
     return typeIcons[item.type + "Flagged"] || typeIcons[item.type] || typeIcons.document;
   }
@@ -82,14 +87,6 @@ export function createFilesPanel(container, state, hidePanel) {
 
   // (Create buttons moved to the footer's Add popup — see add-popup.js)
 
-  // Local Sync section — rendered above the flagged/files trees. Each
-  // entry is a top-level disclosure that expands to show its on-disk
-  // contents. Populated asynchronously after the main tree renders.
-  const localSyncContainer = document.createElement("ul");
-  localSyncContainer.className = "tree-list-root local-sync-root";
-  container.appendChild(localSyncContainer);
-  renderLocalSyncSection(localSyncContainer, state, hidePanel, refreshFilesPanel);
-
   // Flagged section — its own container, separate from SortableList
   flaggedContainerEl = document.createElement("ul");
   flaggedContainerEl.className = "tree-list-root flagged-section-root";
@@ -99,6 +96,15 @@ export function createFilesPanel(container, state, hidePanel) {
   const listContainer = document.createElement("ul");
   listContainer.className = "tree-list-root";
   container.appendChild(listContainer);
+
+  // Local Sync section — rendered below the flagged + files trees so the
+  // mount roots sit beneath the active desk's normal tree. Each entry
+  // is a top-level disclosure that expands to its on-disk contents,
+  // populated asynchronously.
+  const localSyncContainer = document.createElement("ul");
+  localSyncContainer.className = "tree-list-root local-sync-root";
+  container.appendChild(localSyncContainer);
+  renderLocalSyncSection(localSyncContainer, state, hidePanel, refreshFilesPanel);
 
   // Destroy previous instance
   if (sortableInstance) {

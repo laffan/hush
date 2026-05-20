@@ -24,9 +24,10 @@ export const typeIcons = {
   images: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="3" width="10" height="10" rx="1.5" /><line x1="4.5" y1="11.5" x2="11.5" y2="4.5" /></svg>`,
   trash: `<svg viewBox="0 0 16 16" class="tree-type-icon"><polyline points="2 4 4 4 14 4" /><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" /><path d="M12 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4" /></svg>`,
   flaggedFolder: `<svg viewBox="0 0 16 16" class="tree-type-icon"><path d="M3 10s1-1 3-1 4 2 6 2 3-1 3-1V2s-1 1-3 1-4-2-6-2-3 1-3 1z" /><line x1="3" y1="14" x2="3" y2="10" /></svg>`,
-  // Local Sync folder icon: square with a horizontal line through the
-  // middle — visually distinct from the plain folder (circle).
-  localSync: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="2" y="2" width="12" height="12" /><line x1="2" y1="8" x2="14" y2="8" /></svg>`,
+  // Local Sync folder icon: a plain outline square — distinct from the
+  // plain folder (circle in the Add menu) and stripped of the line that
+  // used to bisect it.
+  localSync: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="2" y="2" width="12" height="12" /></svg>`,
 };
 
 export function escHtml(str) {

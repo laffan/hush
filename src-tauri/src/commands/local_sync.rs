@@ -23,6 +23,7 @@ pub fn local_sync_add(
     state: State<AppState>,
     path: String,
     name: Option<String>,
+    desk_id: Option<String>,
 ) -> Result<LocalSyncFolder, String> {
     let path_buf = PathBuf::from(&path);
     if !path_buf.is_dir() {
@@ -42,7 +43,7 @@ pub fn local_sync_add(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0),
-        desk_id: None,
+        desk_id,
     };
     {
         let mut settings = state.settings.lock().unwrap();

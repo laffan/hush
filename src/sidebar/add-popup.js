@@ -59,15 +59,15 @@ export function mountAddPopup(state, anchorEl) {
       await state.createProject("New Project");
     } else if (action === "new-local-folder") {
       const { addLocalSyncFolder } = await import("../sync/local-sync.js");
-      const folder = await addLocalSyncFolder();
+      // Stamp the new mount with the currently active desk. Rust
+      // persists settings.json inside local_sync_add, so we mirror the
+      // returned folder into the in-memory cache without calling
+      // updateSettings — sending the full JS state.settings back through
+      // save_settings can clobber unrelated fields that Rust has updated
+      // since startup (e.g. sync log entries).
+      const folder = await addLocalSyncFolder(state.settings?.activeDeskId || null);
       if (!folder) return;
       state.settings.localSyncFolders = (state.settings.localSyncFolders || []).concat(folder);
-      try { await state.updateSettings({ localSyncFolders: state.settings.localSyncFolders }); }
-      catch (e) { console.error("Failed to persist localSyncFolders:", e); }
-      try {
-        const { emit } = await import("@tauri-apps/api/event");
-        await emit("local-sync-folders-updated", { folders: state.settings.localSyncFolders });
-      } catch (e) { /* non-Tauri or emit unavailable — sidebar will pick up via settings-changed */ }
       state.emit("local-sync-changed");
     }
   });

@@ -24,13 +24,13 @@ export async function listLocalSyncFolders() {
   catch (e) { console.error("local_sync_list failed:", e); return []; }
 }
 
-export async function addLocalSyncFolder() {
+export async function addLocalSyncFolder(deskId = null) {
   if (!IS_TAURI) return null;
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const picked = await open({ directory: true, multiple: false });
     if (!picked) return null;
-    return await invoke("local_sync_add", { path: picked });
+    return await invoke("local_sync_add", { path: picked, deskId });
   } catch (e) {
     console.error("local_sync_add failed:", e);
     return null;

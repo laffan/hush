@@ -32,14 +32,14 @@ function openLocalSyncFolderMenu(anchorBtn, folder, state, refreshFilesPanel) {
     e.stopPropagation();
     closeLocalSyncMenu();
     const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
+    // Rust persists settings.json inside local_sync_remove — mirror the
+    // removal into the in-memory cache and refresh the panel. Skipping
+    // the JS-side updateSettings here avoids round-tripping the full
+    // settings object back through save_settings, which can clobber
+    // unrelated fields Rust touched in the meantime.
     await removeLocalSyncFolder(folder.id);
     state.settings.localSyncFolders = (state.settings.localSyncFolders || []).filter(f => f.id !== folder.id);
-    try { await state.updateSettings({ localSyncFolders: state.settings.localSyncFolders }); }
-    catch (err) { console.error("Failed to persist localSyncFolders:", err); }
-    try {
-      const { emit } = await import("@tauri-apps/api/event");
-      await emit("local-sync-folders-updated", { folders: state.settings.localSyncFolders });
-    } catch (_) { /* non-Tauri */ }
+    invalidateLocalSyncCache();
     if (refreshFilesPanel) refreshFilesPanel(state);
   });
   menu.appendChild(unlink);
@@ -87,10 +87,19 @@ let renderToken = 0;
 // watcher.
 let lastStructureFingerprint = null;
 
-function computeStructureFingerprint(folders) {
-  const list = (folders || []).map(f => `${f.id}|${f.name || ""}|${f.path || ""}`);
+function computeStructureFingerprint(folders, activeDeskId) {
+  const list = (folders || []).map(f => `${f.id}|${f.name || ""}|${f.path || ""}|${f.deskId || ""}`);
   const expanded = [...localSyncExpanded].sort();
-  return JSON.stringify({ list, expanded });
+  return JSON.stringify({ list, expanded, activeDeskId: activeDeskId || "" });
+}
+
+/** Folders attached to the currently active desk. Legacy mounts with no
+ *  deskId stay visible across every desk so existing users don't lose
+ *  access to a folder they mounted before the desk attachment landed. */
+function filterFoldersForDesk(folders, activeDeskId) {
+  if (!folders || folders.length === 0) return [];
+  if (!activeDeskId) return folders;
+  return folders.filter(f => !f.deskId || f.deskId === activeDeskId);
 }
 
 function updateActiveRows(container, state) {
@@ -136,11 +145,14 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   if (myToken !== renderToken) return;
   if (storedLocalSyncContainer !== container) return;
 
-  // Fast path: the structure (folder list + expanded set) is unchanged
-  // since the last paint, so the user-visible delta can only be the
-  // active row. Update classes in place and bail before paying for an
-  // async directory rebuild.
-  const fingerprint = computeStructureFingerprint(folders);
+  const activeDeskId = state.settings?.activeDeskId || null;
+  const visibleFolders = filterFoldersForDesk(folders, activeDeskId);
+
+  // Fast path: the structure (folder list + expanded set + desk) is
+  // unchanged since the last paint, so the user-visible delta can only
+  // be the active row. Update classes in place and bail before paying
+  // for an async directory rebuild.
+  const fingerprint = computeStructureFingerprint(visibleFolders, activeDeskId);
   if (fingerprint === lastStructureFingerprint && container.firstChild) {
     updateActiveRows(container, state);
     return;
@@ -149,14 +161,12 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   // Build the new subtree on a detached fragment so the live container
   // is never visibly empty during the rebuild.
   const fragment = document.createDocumentFragment();
-  if (folders && folders.length > 0) {
-    for (const folder of folders) {
-      try {
-        const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel, refreshFilesPanel);
-        fragment.appendChild(rootLi);
-      } catch (e) {
-        console.error("Local Sync: failed to render folder", folder, e);
-      }
+  for (const folder of visibleFolders) {
+    try {
+      const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel, refreshFilesPanel);
+      fragment.appendChild(rootLi);
+    } catch (e) {
+      console.error("Local Sync: failed to render folder", folder, e);
     }
   }
   // Atomic swap — old content stays put until this line runs.
