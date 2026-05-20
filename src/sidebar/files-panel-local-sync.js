@@ -71,9 +71,47 @@ let storedState = null;
 let storedHidePanel = null;
 const localSyncExpanded = new Set(); // folderId:relPath strings
 
-// Track which folder ids we've already set an initial expansion state for
-// so re-renders don't keep "resetting" a folder the user chose to collapse.
-const localSyncExpandedInitialized = new Set();
+// Render token — bumped on every renderLocalSyncSection call. A stale
+// render (one whose async folder list resolves after a newer call has
+// started) bails before swapping content so concurrent refreshes can't
+// double-append the same folder.
+let renderToken = 0;
+
+// Fingerprint of the most recently painted structure (folder list +
+// expanded set). refreshFilesPanel fires on every file-opened event,
+// which would otherwise rebuild the whole local-sync subtree (including
+// async directory reads of every expanded mount) just to re-stamp the
+// `.active` class on one row. When the fingerprint matches we skip the
+// rebuild and only update active classes. `invalidateLocalSyncCache()`
+// is the escape hatch for genuine on-disk changes pushed by the
+// watcher.
+let lastStructureFingerprint = null;
+
+function computeStructureFingerprint(folders) {
+  const list = (folders || []).map(f => `${f.id}|${f.name || ""}|${f.path || ""}`);
+  const expanded = [...localSyncExpanded].sort();
+  return JSON.stringify({ list, expanded });
+}
+
+function updateActiveRows(container, state) {
+  const activeKey = state.currentLocalSync
+    ? `${state.currentLocalSync.folderId}:${state.currentLocalSync.relPath}`
+    : null;
+  container.querySelectorAll(".local-sync-file").forEach((li) => {
+    const isActive = activeKey === li.dataset.id;
+    li.classList.toggle("active", isActive);
+    const row = li.querySelector(".tree-item-row");
+    if (row) row.classList.toggle("active", isActive);
+  });
+}
+
+/** Clear the cached structure fingerprint so the next render performs
+ *  a full rebuild. Call this when on-disk content changes (e.g. from
+ *  the local-sync watcher) since the folder/expanded set alone can't
+ *  capture file-level mutations. */
+export function invalidateLocalSyncCache() {
+  lastStructureFingerprint = null;
+}
 
 /** Returns the stored container reference for refresh callers. */
 export function getLocalSyncContainer() {
@@ -84,7 +122,8 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   storedLocalSyncContainer = container;
   storedState = state;
   storedHidePanel = hidePanel;
-  container.innerHTML = "";
+  const myToken = ++renderToken;
+
   let folders = [];
   try {
     const { listLocalSyncFolders } = await import("../sync/local-sync.js");
@@ -92,30 +131,37 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   } catch (e) {
     console.error("Local Sync: failed to load folders", e);
   }
-  // If the container was replaced (panel re-opened) while the async load
-  // was running, bail out — the newer render will paint the new container.
+  // Bail if another render has started while we were awaiting, or if
+  // the container was replaced (panel re-opened).
+  if (myToken !== renderToken) return;
   if (storedLocalSyncContainer !== container) return;
-  if (!folders || folders.length === 0) return;
 
-  // Seed the root-level expanded state so a freshly-added folder opens
-  // by default (better default than requiring the user to click to see
-  // there's nothing inside yet). Subsequent user toggles override this.
-  for (const folder of folders) {
-    const key = `${folder.id}:`;
-    if (!localSyncExpandedInitialized.has(folder.id)) {
-      localSyncExpanded.add(key);
-      localSyncExpandedInitialized.add(folder.id);
-    }
+  // Fast path: the structure (folder list + expanded set) is unchanged
+  // since the last paint, so the user-visible delta can only be the
+  // active row. Update classes in place and bail before paying for an
+  // async directory rebuild.
+  const fingerprint = computeStructureFingerprint(folders);
+  if (fingerprint === lastStructureFingerprint && container.firstChild) {
+    updateActiveRows(container, state);
+    return;
   }
 
-  for (const folder of folders) {
-    try {
-      const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel, refreshFilesPanel);
-      container.appendChild(rootLi);
-    } catch (e) {
-      console.error("Local Sync: failed to render folder", folder, e);
+  // Build the new subtree on a detached fragment so the live container
+  // is never visibly empty during the rebuild.
+  const fragment = document.createDocumentFragment();
+  if (folders && folders.length > 0) {
+    for (const folder of folders) {
+      try {
+        const rootLi = buildLocalSyncNode(folder, "", folder.name || folder.path, true, state, hidePanel, refreshFilesPanel);
+        fragment.appendChild(rootLi);
+      } catch (e) {
+        console.error("Local Sync: failed to render folder", folder, e);
+      }
     }
   }
+  // Atomic swap — old content stays put until this line runs.
+  container.replaceChildren(fragment);
+  lastStructureFingerprint = fingerprint;
 }
 
 function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePanel, refreshFilesPanel) {
