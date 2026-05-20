@@ -84,6 +84,18 @@ export function toggleTaskLine(text: string, sourceLineIndex: number): string | 
 
 /** Hit-test a point against link runs in a text shape. Returns the URL or null. */
 export function hitTestLink(pt: Point, shape: TextShape): string | null {
+  const hit = hitTestLinkRun(pt, shape);
+  return hit && hit.kind === "url" ? hit.target : null;
+}
+
+/** Hit-test a point against link runs in a text shape, distinguishing
+ *  between regular markdown links (`[text](url)` → `kind: "url"`) and
+ *  Obsidian-style wikilinks (`[[Title]]` → `kind: "wikilink"`). Callers
+ *  that only care about external URLs can use {@link hitTestLink}. */
+export function hitTestLinkRun(
+  pt: Point,
+  shape: TextShape,
+): { kind: "url" | "wikilink"; target: string } | null {
   const fs = shape.fontSize;
   const measure = (t: string, s: number) => {
     const c = document.createElement("canvas").getContext("2d")!;
@@ -98,7 +110,10 @@ export function hitTestLink(pt: Point, shape: TextShape): string | null {
     let x = shape.position.x;
     for (const run of line.runs) {
       const w = measure(run.text, lfs);
-      if (run.link && pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + lh) return run.link;
+      if (pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + lh) {
+        if (run.wikilink) return { kind: "wikilink", target: run.wikilink };
+        if (run.link) return { kind: "url", target: run.link };
+      }
       x += w;
     }
     y += lh;

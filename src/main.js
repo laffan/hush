@@ -46,6 +46,13 @@ async function init() {
   // doc image path) can reach the live AppState without a hard import cycle.
   if (typeof window !== "undefined") window.__hushState__ = state;
 
+  // Wikilink open hook — the lazy-loaded notebook canvas reaches it via
+  // window so it doesn't have to import AppState directly.
+  if (typeof window !== "undefined") {
+    const { openWikilink } = await import("./links/wikilink-index.js");
+    window.__hushOpenWikilink = (title) => { void openWikilink(state, title); };
+  }
+
   // On iOS, set html background to prevent black bars behind the webview
   if (isIOS()) document.documentElement.classList.add("ios");
   if (isPhone()) document.documentElement.classList.add("phone");

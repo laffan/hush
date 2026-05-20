@@ -511,8 +511,6 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
       x += LIST_MARKER_GUTTER;
     }
 
-    ctx.fillStyle = isHeading ? headingColor : textColor;
-
     for (const run of line.runs) {
       const weight = run.bold ? "bold" : "normal";
       const style = run.italic ? "italic" : "normal";
@@ -524,18 +522,20 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
         ctx.fillRect(x, y, ctx.measureText(run.text).width, fontSize + 2);
         ctx.restore();
       }
-      if (run.link) ctx.fillStyle = theme.accent;
-      else ctx.fillStyle = isHeading ? headingColor : textColor;
+      const isLinkish = !!(run.link || run.wikilink);
+      ctx.fillStyle = isLinkish ? theme.accent : (isHeading ? headingColor : textColor);
       // PDF export overlays vector text on top, so it asks us to skip the rasterized glyphs.
       if (!omitGlyphs) ctx.fillText(run.text, x, y);
       const runW = ctx.measureText(run.text).width;
-      if (run.link) {
+      if (isLinkish) {
         ctx.beginPath();
         ctx.strokeStyle = theme.accent;
         ctx.lineWidth = 1;
+        if (run.wikilink) ctx.setLineDash([3, 2]); // dashed to distinguish from `[…](url)`
         ctx.moveTo(x, y + fontSize + 1);
         ctx.lineTo(x + runW, y + fontSize + 1);
         ctx.stroke();
+        if (run.wikilink) ctx.setLineDash([]);
       }
       x += runW;
     }

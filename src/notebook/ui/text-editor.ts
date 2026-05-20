@@ -59,13 +59,95 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   // `commitSuspended = true` and restore it when done.
   let commitSuspended = false;
 
+  // Obsidian-style wikilink autocomplete state. `wikilinkOpenIdx` is the
+  // textarea offset just past the `[[` opener; the popup tracks the
+  // typed query between that point and the caret.
+  let wikilinkPopup: { update: (q: string) => void; moveSelection: (d: number) => void; commit: () => void; destroy: () => void; isEmpty?: () => boolean } | null = null;
+  let wikilinkOpenIdx = -1;
+
+  function closeWikilinkPopup() {
+    if (wikilinkPopup) {
+      wikilinkPopup.destroy();
+      wikilinkPopup = null;
+    }
+    wikilinkOpenIdx = -1;
+  }
+
+  function commitWikilink(picked: { name: string } | null) {
+    if (wikilinkOpenIdx < 0) return;
+    const caret = textarea.selectionStart ?? textarea.value.length;
+    if (!picked) { closeWikilinkPopup(); return; }
+    const before = textarea.value.slice(0, wikilinkOpenIdx);
+    const after = textarea.value.slice(caret);
+    const insert = picked.name + "]]";
+    const next = before + insert + after;
+    textarea.value = next;
+    const newCaret = wikilinkOpenIdx + insert.length;
+    textarea.setSelectionRange(newCaret, newCaret);
+    state.updateEditingText(next);
+    closeWikilinkPopup();
+  }
+
+  async function maybeOpenWikilinkPopup() {
+    const value = textarea.value;
+    const caret = textarea.selectionStart ?? value.length;
+    if (caret < 2) return;
+    if (value.charAt(caret - 1) !== "[" || value.charAt(caret - 2) !== "[") return;
+    // Skip `[[[` — three brackets in a row mean the user is escaping or
+    // just typing extra punctuation, not opening a wikilink.
+    if (caret >= 3 && value.charAt(caret - 3) === "[") return;
+    const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
+    if (!appState) return;
+    const [indexMod, popupMod]: [any, any] = await Promise.all([
+      // @ts-ignore — wikilink modules are plain JS without .d.ts
+      import("../../links/wikilink-index.js"),
+      // @ts-ignore
+      import("../../links/wikilink-popup.js"),
+    ]);
+    const notes = indexMod.getLinkableNotes(appState);
+    const excludeId = indexMod.getActiveNoteNodeId(appState);
+    wikilinkOpenIdx = caret;
+    const rect = textarea.getBoundingClientRect();
+    wikilinkPopup = popupMod.openWikilinkPopup({
+      notes,
+      excludeId: excludeId || undefined,
+      anchor: { left: rect.left, top: rect.top, bottom: rect.bottom },
+      initialQuery: "",
+      onPick: (n: { name: string } | null) => commitWikilink(n),
+    });
+  }
+
+  function syncWikilinkQuery() {
+    if (!wikilinkPopup || wikilinkOpenIdx < 0) return;
+    const value = textarea.value;
+    const caret = textarea.selectionStart ?? value.length;
+    if (caret < wikilinkOpenIdx) { closeWikilinkPopup(); return; }
+    const segment = value.slice(wikilinkOpenIdx, caret);
+    if (segment.includes("\n") || segment.includes("]]")) { closeWikilinkPopup(); return; }
+    wikilinkPopup.update(segment);
+  }
+
   textarea.addEventListener("input", () => {
     if (!state.editingText) return;
     state.updateEditingText(textarea.value);
+    // Trigger / refresh the wikilink popup. Order matters: open first
+    // if `[[` was just typed, then sync the query so the new popup
+    // picks up any character that arrived in the same input event.
+    if (!wikilinkPopup) void maybeOpenWikilinkPopup();
+    else syncWikilinkQuery();
   });
 
   // In brainstorm mode, Enter commits text (Shift+Enter for newline)
   textarea.addEventListener("keydown", (e) => {
+    // Wikilink popup steals navigation + commit keys while open. Sits
+    // ahead of every other branch (brainstorm Enter, ⌘-arrow flowchart
+    // shortcuts, formatting hotkeys) so the popup feels modal.
+    if (wikilinkPopup) {
+      if (e.key === "Escape") { e.preventDefault(); closeWikilinkPopup(); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); wikilinkPopup.moveSelection(1); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); wikilinkPopup.moveSelection(-1); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); wikilinkPopup.commit(); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey && state.brainstormMode && state.editingText) {
       e.preventDefault();
       state.endEditingText();
@@ -114,6 +196,13 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   });
 
   textarea.addEventListener("blur", () => {
+    // Defer for the same 150 ms the commit timer uses; popup row clicks
+    // also fire mousedown-preventDefault, but the blur still races.
+    setTimeout(() => {
+      if (!wikilinkPopup) return; // popup commit cleaned itself up
+      if (document.activeElement === textarea) return;
+      closeWikilinkPopup();
+    }, 0);
     setTimeout(() => {
       if (!state.editingText) return;
       if (commitSuspended) return;
@@ -152,6 +241,10 @@ export function createTextEditor(state: DrawingState): HTMLElement {
       textarea.style.display = "none";
       if (_activeNotebookTextEditor === handle) setActiveHandle(null);
       commitSuspended = false;
+      // Tear down the wikilink popup alongside the editor — leaving it
+      // floating after the textarea unmounts would orphan the DOM and
+      // keep listening to clicks on a stale anchor.
+      closeWikilinkPopup();
       return;
     }
     // Register this editor as the globally-active notebook text editor so

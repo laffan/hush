@@ -10,6 +10,11 @@ export interface TextRun {
   sizeScale: number;
   /** If set, this run is a link */
   link?: string;
+  /** If set, this run is a `[[Title]]` wikilink and `wikilink` carries
+   *  the target note title. The renderer paints it in the link colour
+   *  and the canvas click hit-tester opens the referenced note via
+   *  the notebook bridge. */
+  wikilink?: string;
   /** If true, render with highlight background (==text==) */
   highlight?: boolean;
   /** Uppercased flag name when this highlight is a recognised flag —
@@ -117,7 +122,11 @@ const FLAG_INNER_RE = /^([A-Za-z][A-Za-z0-9_-]{0,24})(?::([\s\S]*))?$/;
  */
 function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
   const runs: TextRun[] = [];
-  const pattern = /(\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)]+)\)|==(.+?)==)/g;
+  // Wikilinks `[[Note Title]]` come before the regular link pattern so
+  // they aren't swallowed by `\[…\](…)`. Group 8 captures the inner
+  // title (no leading `!` exclusion needed — `[[` can't follow `!]` in
+  // markdown image syntax).
+  const pattern = /(\[\[([^\[\]\n]+?)\]\]|\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)]+)\)|==(.+?)==)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -127,15 +136,20 @@ function parseInlineFormatting(text: string, sizeScale: number): TextRun[] {
     }
 
     if (match[2] !== undefined) {
-      runs.push({ text: match[2], bold: true, italic: false, sizeScale });
+      // Wikilink — `[[Title]]`. The visible run paints the trimmed
+      // title; click handling resolves the title against the file tree.
+      const title = match[2].trim();
+      runs.push({ text: title, bold: false, italic: false, sizeScale, wikilink: title });
     } else if (match[3] !== undefined) {
-      runs.push({ text: match[3], bold: false, italic: true, sizeScale });
+      runs.push({ text: match[3], bold: true, italic: false, sizeScale });
     } else if (match[4] !== undefined) {
       runs.push({ text: match[4], bold: false, italic: true, sizeScale });
     } else if (match[5] !== undefined) {
-      runs.push({ text: match[5], bold: false, italic: false, sizeScale, link: match[6] });
-    } else if (match[7] !== undefined) {
-      const inner = match[7];
+      runs.push({ text: match[5], bold: false, italic: true, sizeScale });
+    } else if (match[6] !== undefined) {
+      runs.push({ text: match[6], bold: false, italic: false, sizeScale, link: match[7] });
+    } else if (match[8] !== undefined) {
+      const inner = match[8];
       // Detect flag (`==NAME==` / `==NAME: body==`) before parsing
       // nested formatting — once recognised the flag tag rides every
       // emitted run so the renderer / shelf can colour them uniformly.
@@ -290,10 +304,10 @@ function tokensToRuns(tokens: { word: string; run: TextRun; trailingSpace: boole
     const t = tokens[i];
     const text = (i > 0 ? " " : "") + t.word;
     const last = result[result.length - 1];
-    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.highlight === t.run.highlight && last.highlightFlag === t.run.highlightFlag) {
+    if (last && last.bold === t.run.bold && last.italic === t.run.italic && last.link === t.run.link && last.wikilink === t.run.wikilink && last.highlight === t.run.highlight && last.highlightFlag === t.run.highlightFlag) {
       last.text += text;
     } else {
-      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, highlight: t.run.highlight, highlightFlag: t.run.highlightFlag });
+      result.push({ text, bold: t.run.bold, italic: t.run.italic, sizeScale: t.run.sizeScale, link: t.run.link, wikilink: t.run.wikilink, highlight: t.run.highlight, highlightFlag: t.run.highlightFlag });
     }
   }
   return result;
