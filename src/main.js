@@ -378,8 +378,8 @@ async function init() {
   });
 
   await setupTauriIntegration(state);
-  // Multi-window: register with the Rust registry, mirror current file
-  // back, listen for sibling-window mutations. See `multi-window.js`.
+  import("./traffic-lights.js").then(m => m.setupTrafficLightsHoverReveal()).catch(() => {});
+  // Multi-window: register with the Rust registry + listen for sibling mutations.
   await setupMultiWindow(state);
 
   // Apply initial always-on-top setting
