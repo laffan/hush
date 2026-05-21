@@ -33,9 +33,9 @@ import { hasTokensAsync } from "./auth.js";
 import { openGoogleDocPicker } from "./picker.js";
 import { openSourceOfTruthModal } from "./source-of-truth-modal.js";
 import { setLink, clearLink, appendLog, getLink } from "./link-store.js";
-import { markdownToHtml } from "../editor/google-docs/markdown-to-html.js";
 import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
+import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
 
 // "drive.file" reference: listDocuments suppressed unused import warning.
 void listDocuments;
@@ -102,12 +102,14 @@ export async function linkCurrentDocument(state) {
 
   // Branch A: user chose "Create new". Push current Hush content to a
   // fresh GDoc — there's no source-of-truth question because the GDoc
-  // doesn't exist yet.
+  // doesn't exist yet. Create the doc empty, then run the tab-aware
+  // push so any `---Tab name---` markers in the markdown land as real
+  // Google Doc tabs from the start.
   if (picked.create) {
     const md = state.editor?.view?.state?.doc?.toString() || "";
-    const html = markdownToHtmlForGDoc(md);
-    const created = await createDocumentFromHtml(picked.title || hushTitle, html);
+    const created = await createDocumentFromHtml(picked.title || hushTitle, "");
     await setLink(state, fileId, { docId: created.id, title: created.name || picked.title });
+    await pushMarkdownWithTabs(created.id, md);
     appendLog(state, `Created and linked new Google Doc "${created.name}"`);
     return;
   }
@@ -146,9 +148,11 @@ export async function createGoogleDocFromCurrent(state) {
   }
   const hushTitle = currentDocName(state);
   const md = state.editor?.view?.state?.doc?.toString() || "";
-  const html = markdownToHtmlForGDoc(md);
-  const created = await createDocumentFromHtml(hushTitle, html);
+  const created = await createDocumentFromHtml(hushTitle, "");
   await setLink(state, fileId, { docId: created.id, title: created.name || hushTitle });
+  // Run the tab-aware push so `---Tab name---` markers in the markdown
+  // land as real Google Doc tabs from the start.
+  await pushMarkdownWithTabs(created.id, md);
   appendLog(state, `Created and linked new Google Doc "${created.name || hushTitle}"`);
   return created;
 }
@@ -166,16 +170,21 @@ export async function pushToGoogleDoc(state, link) {
   await requireConnection();
   if (!link?.docId) throw new Error("No Google Doc linked to this document.");
   const md = state.editor?.view?.state?.doc?.toString() || "";
-  const html = markdownToHtmlForGDoc(md);
-  const result = await replaceDocumentContent(link.docId, html);
-  // If the GDoc title changed remotely, keep our cached title in sync.
-  if (result?.name && result.name !== link.title) {
+  // Tab-aware push: parses `---Tab name---` markers, mirrors them to
+  // real Google Doc tabs, and pushes the root section's HTML via Drive
+  // media upload (Drive's upload only touches the root tab on tabbed
+  // docs, so other tabs survive and are reconciled via the Docs API).
+  await pushMarkdownWithTabs(link.docId, md);
+  // Read the post-push title for the link cache so a stale title from
+  // the link object doesn't shadow what Drive currently shows.
+  const meta = await getDocumentMeta(link.docId).catch(() => null);
+  if (meta?.name && meta.name !== link.title) {
     await setLink(state, currentDocFileId(state), {
       docId: link.docId,
-      title: result.name,
+      title: meta.name,
     });
   }
-  appendLog(state, `Pushed Hush content to "${result?.name || link.title}"`);
+  appendLog(state, `Pushed Hush content to "${meta?.name || link.title}"`);
 }
 
 export async function pullFromGoogleDoc(state, link) {
@@ -187,8 +196,10 @@ export async function pullFromGoogleDoc(state, link) {
   if (meta?.trashed) {
     throw new Error("The linked Google Doc is in Trash. Restore it or unlink.");
   }
-  const html = await exportAsHtml(link.docId);
-  const md = htmlToMarkdownSafe(html);
+  // Tab-aware pull: walks every top-level tab, exports each in
+  // isolation, converts each to markdown, and rejoins them with
+  // `---Tab name---` separators.
+  const md = await pullMarkdownWithTabs(link.docId, htmlToMarkdownSafe);
   // Replace the editor buffer; existing autosave + snapshot pipeline
   // captures this transition for free, so the user can recover via
   // Versions if the pull was a mistake.
@@ -274,14 +285,6 @@ function inlineGoogleExportStyles(html) {
     }
   }
   return doc.documentElement.outerHTML;
-}
-
-// Wrap Phase 1's `markdownToHtml` output in a minimal HTML envelope.
-// Drive's media-upload converter happily accepts a `<body>`-less
-// fragment, but we add the wrapper to be safe.
-function markdownToHtmlForGDoc(md) {
-  const body = markdownToHtml(md || "");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${body}</body></html>`;
 }
 
 // Suppress unused-warning for IS_TAURI in environments that import this

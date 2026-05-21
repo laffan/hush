@@ -20,13 +20,24 @@ const HR_RE = /^\s*(?:---|\*\*\*|___)\s*$/;
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const QUOTE_RE = /^\s*>\s?(.*)$/;
 const FENCE_RE = /^\s*```(\w*)\s*$/;
+// Tab marker — same shape as `editor/tabs.js#TAB_MARKER_RE` but local
+// so this converter has no cross-module dependency on the editor tree.
+const TAB_MARKER_RE = /^---([^\n]+?)---\s*$/;
 
 export function markdownToHtml(md) {
   if (typeof md !== "string" || !md) return "";
   const stripped = md.replace(/%%[\s\S]*?%%/g, "");
   const lines = stripped.split(/\r?\n/);
   const blocks = parseBlocks(lines);
-  return blocks.map(renderBlock).join("\n");
+  return blocks.map(renderBlock).join("");
+}
+
+function parseTabMarker(line) {
+  const m = TAB_MARKER_RE.exec(line);
+  if (!m) return null;
+  const name = m[1].trim();
+  if (!name || /^-+$/.test(name)) return null;
+  return name;
 }
 
 function parseBlocks(lines) {
@@ -35,6 +46,12 @@ function parseBlocks(lines) {
   while (i < lines.length) {
     const line = lines[i];
     if (line.trim() === "") { i++; continue; }
+    const tabName = parseTabMarker(line);
+    if (tabName) {
+      blocks.push({ type: "tab", name: tabName });
+      i++;
+      continue;
+    }
     if (HR_RE.test(line)) { blocks.push({ type: "hr" }); i++; continue; }
     const fence = FENCE_RE.exec(line);
     if (fence) {
@@ -128,15 +145,29 @@ function renderBlock(block) {
   switch (block.type) {
     case "hr": return "<hr>";
     case "heading":
-      return `<h${block.level}>${renderInline(block.text)}</h${block.level}>`;
+      // `margin:0` on the heading itself — Drive's HTML importer keeps
+      // CSS margins, so the default user-agent <h*> top/bottom margin
+      // would land on top of the paragraph-spacing fix below.
+      return `<h${block.level} style="margin:0">${renderInline(block.text)}</h${block.level}>`;
     case "paragraph":
-      return `<p>${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p>`;
+      // `margin:0` collapses the blank line Google Docs would otherwise
+      // insert between paragraphs on import. Without it every paragraph
+      // gains a visible extra-line gap on push.
+      return `<p style="margin:0">${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p>`;
     case "blockquote":
-      return `<blockquote><p>${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p></blockquote>`;
+      return `<blockquote style="margin:0"><p style="margin:0">${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p></blockquote>`;
     case "code":
-      return `<pre><code>${escapeHtml(block.text)}</code></pre>`;
+      return `<pre style="margin:0"><code>${escapeHtml(block.text)}</code></pre>`;
     case "list":
       return renderList(block.list);
+    case "tab":
+      // The Google-Docs push pipeline handles real tab splitting via the
+      // Docs API. The HTML body Drive uploads goes into the root tab, so
+      // any leftover marker we render here is just a fallback marker for
+      // copies that bypass the tab pipeline (e.g. "Copy as Google Doc").
+      // Render as a clearly-labelled paragraph so the user can spot and
+      // delete it manually if needed.
+      return `<p style="margin:0" data-hush-tab-marker="${escapeAttr(block.name)}"><strong>—— ${escapeHtml(block.name)} ——</strong></p>`;
   }
   return "";
 }

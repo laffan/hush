@@ -427,3 +427,49 @@
 }
 
 /* Flag colors are applied dynamically from settings via inline styles */
+
+/* ===== Tab sections =====
+ * `---Tab name---` markers in the source render as foldable containers
+ * at the outline root. The header chip mirrors the editor pill so the
+ * two surfaces read as the same affordance. Click the header to fold
+ * the section; double-click jumps the editor to the marker line. */
+.longview-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+.longview-tab-header {
+  font-size: var(--lv-heading-font, 12px);
+  color: var(--fg);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
+  align-self: flex-start;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 22px;
+}
+.longview-tab-header::after {
+  content: "▾";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.65em;
+  opacity: 0.5;
+  transition: transform 0.15s ease;
+}
+.longview-tab.collapsed .longview-tab-header::after {
+  transform: translateY(-50%) rotate(-90deg);
+}
+.longview-tab.collapsed .longview-tab-body {
+  display: none;
+}
+.longview-tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

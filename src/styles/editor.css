@@ -363,3 +363,36 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
 .cm-task-line .cm-task-marker {
   display: none;
 }
+
+/* Tab marker (`---Tab name---`): a compact rounded pill that round-trips
+   to a real Google Doc tab on push/pull. Replaces the line contents
+   while the cursor is on a different line; the raw text re-appears as
+   soon as the user moves into the marker line to edit it. */
+.cm-tab-marker-line {
+  text-align: center;
+  margin: 0.6em 0;
+}
+.cm-tab-marker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.15em 0.75em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--style-fg, var(--fg)) 12%, transparent);
+  color: color-mix(in srgb, var(--style-fg, var(--fg)) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--style-fg, var(--fg)) 30%, transparent);
+  font-size: 0.85em;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+.cm-tab-marker-pill::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--style-fg, var(--fg)) 55%, transparent);
+}
+.cm-tab-marker-label {
+  white-space: nowrap;
+}

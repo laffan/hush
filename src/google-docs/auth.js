@@ -32,6 +32,11 @@ const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 const SCOPES = [
   "https://www.googleapis.com/auth/drive",
+  // Docs API — required for the tab-aware push/pull path that mirrors
+  // `---Tab name---` markdown markers to / from real Google Doc tabs.
+  // Users connected before the tabs feature shipped will need to
+  // disconnect + reconnect once so the new scope is granted.
+  "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/userinfo.email",
 ].join(" ");
 

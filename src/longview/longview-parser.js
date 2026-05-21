@@ -2,11 +2,13 @@
  * Outline View document parser — extracts headings, flags, and callouts from markdown text.
  * Ported from obsidian-long-view/src/utils/documentParser.ts
  */
+import { parseTabMarkerLine } from "../editor/tabs.js";
 
 /**
  * @typedef {{ level: number, text: string, startOffset: number, callout?: { type: string, title: string, color: string } }} DocumentHeading
  * @typedef {{ type: string, message: string, startOffset: number }} DocumentFlag
  * @typedef {{ type: string, title: string, startOffset: number, endOffset: number }} DocumentCallout
+ * @typedef {{ title: string, startOffset: number, endOffset: number }} DocumentTab
  */
 
 /**
@@ -131,18 +133,59 @@ export function parseCallouts(text, baseOffset = 0) {
 }
 
 /**
+ * Parse `---Tab name---` markers as a list of tab sections with explicit
+ * start/end offsets so the outline can render each one as a foldable
+ * top-level container. The first entry's `startOffset` is 0 even when
+ * no marker is present — that mirrors the round-trip representation in
+ * `editor/tabs.js#parseTabs` where the body before any marker is the
+ * "root" tab.
+ * @param {string} text
+ * @param {number} baseOffset
+ * @returns {DocumentTab[]}
+ */
+export function parseTabSections(text, baseOffset = 0) {
+  const lines = text.split("\n");
+  const out = [];
+  let cursor = { title: null, startOffset: baseOffset, headerEnd: baseOffset };
+  let offset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const name = parseTabMarkerLine(line);
+    if (name != null) {
+      cursor.endOffset = baseOffset + offset;
+      out.push(cursor);
+      const markerStart = baseOffset + offset;
+      const markerEnd = markerStart + line.length;
+      cursor = {
+        title: name,
+        startOffset: markerStart,
+        headerEnd: markerEnd,
+      };
+    }
+    offset += line.length + 1;
+  }
+  cursor.endOffset = baseOffset + text.length;
+  out.push(cursor);
+  // Hide the implicit root entry when it's empty and there's at least
+  // one real marker — the outline already prepends a synthetic "Main"
+  // shell, so we don't want a duplicate empty container here.
+  return out;
+}
+
+/**
  * Build minimap data from document text.
  * @param {string} text
- * @returns {{ headings: DocumentHeading[], flags: DocumentFlag[], callouts: DocumentCallout[] }}
+ * @returns {{ headings: DocumentHeading[], flags: DocumentFlag[], callouts: DocumentCallout[], tabs: DocumentTab[] }}
  */
 export function parseDocument(text) {
   if (!text || text.trim().length === 0) {
-    return { headings: [], flags: [], callouts: [] };
+    return { headings: [], flags: [], callouts: [], tabs: [] };
   }
   return {
     headings: parseHeadings(text, 0),
     flags: parseFlags(text, 0),
     callouts: parseCallouts(text, 0),
+    tabs: parseTabSections(text, 0),
   };
 }
 

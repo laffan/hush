@@ -13,6 +13,8 @@ import {
 } from "./longview-parser.js";
 import { CALLOUT_COLORS, getCalloutColor } from "../editor/plugins/callouts.js";
 import { getActiveTheme } from "../themes/index.js";
+import { parseTabMarkerLine } from "../editor/tabs.js";
+import { buildTabContainers } from "./longview-tabs.js";
 
 /** Default flag colors */
 const DEFAULT_FLAG_COLORS = {
@@ -127,7 +129,7 @@ export function createLongView(container, state) {
   /** Build (or rebuild) just the outline content area */
   function buildContent(s) {
     const text = state.editor ? state.editor.getContent() : "";
-    const { headings, flags } = parseDocument(text);
+    const { headings, flags, tabs } = parseDocument(text);
     const sectionColors = { ...CALLOUT_COLORS, ...(s.flagColors || {}), ...(s.longviewSectionColors || {}) };
     const calloutStacks = computeHeadingCalloutStacks(headings, sectionColors);
 
@@ -144,6 +146,16 @@ export function createLongView(container, state) {
       content.style.setProperty("--lv-heading-color", activeTheme.headingColor);
     }
 
+    // Tabs: every marker in the source becomes a foldable container at
+    // the outline root. The root (pre-marker) section gets a wrapper
+    // too but no header so single-tab docs look identical to the
+    // pre-tabs outline.
+    const { hasMarkers, routeFor: containerForOffset } = buildTabContainers(
+      content,
+      tabs,
+      (offset) => scrollToOffset(state, offset),
+    );
+
     headingEntries = [];
     paragraphEntries = [];
     let currentLevel = 0;
@@ -151,12 +163,26 @@ export function createLongView(container, state) {
     const fragments = tokenizeContent(text, headings, flags);
     let openCalloutWrappers = [];
     let activeCalloutStack = [];
+    let currentContainer = hasMarkers ? containerForOffset(0) : content;
 
     for (const frag of fragments) {
+      const fragOffset = frag.type === "heading"
+        ? frag.heading.startOffset
+        : frag.type === "flag"
+          ? frag.flag.startOffset
+          : (frag.startOffset || 0);
+      const targetContainer = containerForOffset(fragOffset);
+      if (targetContainer !== currentContainer) {
+        currentContainer = targetContainer;
+        openCalloutWrappers = [];
+        activeCalloutStack = [];
+        currentLevel = 0;
+        flowEl = null;
+      }
       if (frag.type === "heading") {
         const h = frag.heading;
         const stack = calloutStacks.get(h.startOffset) || [];
-        const result = updateCalloutWrappers(content, openCalloutWrappers, activeCalloutStack, stack, sectionColors);
+        const result = updateCalloutWrappers(currentContainer, openCalloutWrappers, activeCalloutStack, stack, sectionColors);
         openCalloutWrappers = result.wrappers;
         activeCalloutStack = result.stack;
         currentLevel = h.level;
@@ -190,7 +216,7 @@ export function createLongView(container, state) {
         }
       } else if (frag.type === "text") {
         if (!flowEl) {
-          const result = updateCalloutWrappers(content, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
+          const result = updateCalloutWrappers(currentContainer, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
           openCalloutWrappers = result.wrappers;
           flowEl = createSectionStructure(result.container, currentLevel);
         }
@@ -215,7 +241,7 @@ export function createLongView(container, state) {
         if (!s.longviewShowFlags) continue;
         if (!s.longviewShowComments && frag.flag.type === "COMMENT") continue;
         if (!flowEl) {
-          const result = updateCalloutWrappers(content, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
+          const result = updateCalloutWrappers(currentContainer, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
           openCalloutWrappers = result.wrappers;
           flowEl = createSectionStructure(result.container, currentLevel);
         }
@@ -535,7 +561,7 @@ function tokenizeLinesWithOffsets(text, baseOffset) {
   let cursor = 0;
   for (const raw of lines) {
     const trimmed = raw.trim();
-    if (trimmed.length > 0 && !trimmed.startsWith("#")) {
+    if (trimmed.length > 0 && !trimmed.startsWith("#") && parseTabMarkerLine(trimmed) == null) {
       const clean = sanitizeLine(trimmed);
       if (clean.length > 0) out.push({ line: clean, offset: baseOffset + cursor });
     }
