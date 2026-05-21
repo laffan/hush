@@ -19,6 +19,10 @@ import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash,
 } from "./files-panel-actions.js";
+import {
+  isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree,
+  renderTabMarkerRow, openDocAtTab,
+} from "./files-panel-tabs.js";
 
 let sortableInstance = null;
 let flaggedContainerEl = null;
@@ -83,6 +87,7 @@ const flagOnlyButton = renderFlagOnlyMenuButton;
 export function createFilesPanel(container, state, hidePanel) {
   storedHidePanel = hidePanel;
   storedState = state;
+  initFilesPanelTabSync(state);
   container.innerHTML = "";
 
   // (Create buttons moved to the footer's Add popup — see add-popup.js)
@@ -112,7 +117,7 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance = null;
   }
 
-  const sortedTree = sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)));
+  const sortedTree = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
 
   sortableInstance = new SortableList(listContainer, {
     data: sortedTree,
@@ -121,6 +126,9 @@ export function createFilesPanel(container, state, hidePanel) {
     setChildren: (item, children) => { item.children = children; },
     canNest: (item) => (item.type === "folder" || item.type === "project" || item.type === "desk") && !isImagesId(item.id),
     canDrop: (draggedItem, targetItem) => {
+      // Tab markers are synthetic — they can never be a drop target
+      // and the dragged item can never be one (canDrag blocks them).
+      if (isTabMarkerItem(targetItem)) return false;
       // Images must stay inside the Images folder — root-level drops
       // (targetItem === null) are rejected for them too.
       if (draggedItem.type === "image") {
@@ -141,12 +149,16 @@ export function createFilesPanel(container, state, hidePanel) {
     },
     canDrag: (item) => {
       // Special nodes and desk containers themselves can't be dragged.
+      if (isTabMarkerItem(item)) return false;
       return !isAnySpecialId(item.id) && item.type !== "desk";
     },
     enableKeyboard: false,
     dragStartDelay: 180,
 
     renderItem: (item, context) => {
+      if (isTabMarkerItem(item)) {
+        return renderTabMarkerRow(item);
+      }
       const icon = getIcon(item);
       const isActive = isItemActive(item, state);
       const inTrash = state.isInTrash(item.id);
@@ -179,6 +191,14 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item, event) => {
+      // Tab marker — open the parent doc and scroll to the marker
+      // offset. Multi-select / pane drag don't apply.
+      if (isTabMarkerItem(item)) {
+        if (state.selectedDocIds.length) state.clearSelectedDocs();
+        void openDocAtTab(state, item.fileId, item.tabOffset);
+        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+        return;
+      }
       // Docs AND notebooks participate in the shift / cmd-click
       // multi-select — the listing view branches on type to call the
       // right open method. Anything else (folder, project, image, …)
@@ -245,11 +265,15 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onChange: (newData) => {
-      enforceSpecialPositions(newData);
-      normalizeProjectChildren(newData);
+      // Tab markers are synthetic — strip them before any tree write
+      // so the persisted file tree never inherits one. The augmenter
+      // re-adds them on the next render.
+      const cleaned = stripTabMarkersFromTree(newData);
+      enforceSpecialPositions(cleaned);
+      normalizeProjectChildren(cleaned);
       const active = state.fileTree.find(n => n.type === "desk" && n.id === state.settings?.activeDeskId)
         || state.fileTree.find(n => n.type === "desk");
-      if (active) active.children = newData; else state.fileTree = newData;
+      if (active) active.children = cleaned; else state.fileTree = cleaned;
       state.saveFileTree();
       state.reconcileSync();
       if (state.currentProjectId) state.openProject(state.currentProjectId);
@@ -535,7 +559,7 @@ function isItemActive(item, state) {
 
 function refreshList(state) {
   if (sortableInstance) {
-    const sorted = sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state)));
+    const sorted = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
     sortableInstance.setData(sorted);
   }
   renderFlaggedSection(state);
@@ -546,6 +570,20 @@ function refreshList(state) {
   // walk only runs on settings change, so re-apply here so freshly added
   // hover-action buttons pick up the user's Show Tooltips setting.
   refreshTooltips();
+}
+
+/** Debounced refresh triggered by `doc-content-changed`. Editing a doc
+ *  shouldn't repaint the panel on every keystroke, but tab markers
+ *  added or renamed mid-session should land in the sidebar without
+ *  forcing the user to switch files. 600 ms keeps the cadence calm
+ *  while still feeling live. */
+let _tabRefreshTimer = null;
+function scheduleTabRefresh(state) {
+  if (_tabRefreshTimer) clearTimeout(_tabRefreshTimer);
+  _tabRefreshTimer = setTimeout(() => {
+    _tabRefreshTimer = null;
+    refreshList(state);
+  }, 600);
 }
 
 export function refreshFilesPanel(state) {
@@ -560,6 +598,16 @@ export function refreshFilesPanel(state) {
   if (root && storedState && storedHidePanel) {
     renderLocalSyncSection(root, storedState, storedHidePanel, refreshFilesPanel);
   }
+}
+
+/** Wire one-shot state listeners that keep the synthetic tab-marker
+ *  rows in sync with the active editor. Idempotent — calling more
+ *  than once is a no-op so the boot path can call it safely. */
+let _tabSyncWired = false;
+export function initFilesPanelTabSync(state) {
+  if (_tabSyncWired) return;
+  _tabSyncWired = true;
+  state.on("doc-content-changed", () => scheduleTabRefresh(state));
 }
 
 async function openImagePreview(filename, name) {

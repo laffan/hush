@@ -880,3 +880,38 @@ button.desk-switcher-row.desk-switcher-add {
 
 .send-to-desk-cancel:hover { background: rgba(128, 128, 128, 0.1); }
 
+
+/* ===== Tab marker rows ===== */
+/* Synthetic children injected under documents that carry
+ * `---Tab name---` markers. Smaller text, slight indent, no icon —
+ * read as nested navigation entries that mirror the outline view's
+ * foldable tab sections. Click to open the parent doc and jump to
+ * the marker offset (files-panel-tabs.js#openDocAtTab). */
+.sl-item[data-type="tab-marker"] {
+  margin-left: 4px;
+}
+.sl-item[data-type="tab-marker"] > .sl-item-content .sl-fold-arrow {
+  visibility: hidden;
+  width: 6px;
+}
+.tree-tab-marker-row {
+  padding: 1px 0;
+  cursor: pointer;
+}
+.tree-tab-marker-name {
+  font-size: 0.85em;
+  color: color-mix(in srgb, var(--fg) 65%, transparent);
+  font-style: normal;
+  letter-spacing: 0.01em;
+}
+.sl-item[data-type="tab-marker"]:hover .tree-tab-marker-name {
+  color: var(--fg);
+}
+.sl-item[data-type="tab-marker"] > .sl-item-content::before {
+  /* Subtle leading dot so the rows read as a nested list rather
+     than another doc-level affordance. */
+  content: "·";
+  margin-right: 4px;
+  opacity: 0.45;
+  font-size: 0.9em;
+}
