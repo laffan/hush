@@ -24,9 +24,7 @@
  */
 import {
   listDocuments,
-  exportAsHtml,
   createDocumentFromHtml,
-  replaceDocumentContent,
   getDocumentMeta,
 } from "./api.js";
 import { hasTokensAsync } from "./auth.js";
@@ -70,14 +68,26 @@ export async function importFromGoogleDoc(state) {
   await requireConnection();
   const picked = await openGoogleDocPicker({ allowCreate: false });
   if (!picked) return;
-  const html = await exportAsHtml(picked.id);
-  const md = htmlToMarkdownSafe(html);
+  // Tab-aware pull so the imported doc keeps `---Tab name---` markers
+  // for every Google Doc tab; falls back to a flat single-tab export
+  // when the doc has no tabs.
+  const md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
   const created = await state.newFile(null, {
     initialContent: md,
     initialName: picked.name || "Untitled",
     openImmediately: true,
   });
-  appendLog(state, `Imported "${picked.name}" as new Hush document`);
+  // Link the new Hush doc to the source GDoc so push / pull are
+  // available immediately. The user picked this doc intending to work
+  // with it — leaving it unlinked turned a useful round-trip into a
+  // one-shot copy.
+  if (created?.fileId) {
+    await setLink(state, created.fileId, {
+      docId: picked.id,
+      title: picked.name || "Untitled",
+    });
+  }
+  appendLog(state, `Imported and linked "${picked.name}"`);
   return created;
 }
 
