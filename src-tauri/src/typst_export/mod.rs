@@ -82,6 +82,14 @@ pub struct ExportRequest {
     /// Footer page numbers.
     #[serde(default = "true_default")]
     pub page_numbers: bool,
+    /// Render `---Tab---` markers as a centred pill block in the PDF.
+    /// When false, marker lines are dropped entirely.
+    #[serde(default = "true_default")]
+    pub include_tabs: bool,
+    /// Line-spacing multiplier (1.0 / 1.5 / 2.0). Mapped to a concrete
+    /// Typst `leading` value inside `styles::wrap`.
+    #[serde(default = "default_line_spacing")]
+    pub line_spacing: f32,
     #[serde(default)]
     pub references: Vec<ZoteroRef>,
     #[serde(default)]
@@ -90,12 +98,18 @@ pub struct ExportRequest {
 
 fn true_default() -> bool { true }
 fn default_cite_style() -> String { csl::default_id().to_string() }
+fn default_line_spacing() -> f32 { 1.5 }
 
 pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let style = styles::lookup(&req.style_id)
         .ok_or_else(|| format!("unknown style: {}", req.style_id))?;
 
-    let cleaned_md = preprocess::run(&req.markdown, req.strip_comments, req.strip_flags);
+    let cleaned_md = preprocess::run(
+        &req.markdown,
+        req.strip_comments,
+        req.strip_flags,
+        req.include_tabs,
+    );
 
     let resolve = req.include_citations && !req.references.is_empty();
     let cite_mode = if resolve {
@@ -137,6 +151,7 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         bibliography: cite_style,
         number_headings: req.number_headings,
         page_numbers: req.page_numbers,
+        line_spacing: req.line_spacing,
     };
     let main_source = styles::wrap(style, &body, &wrap_opts);
 
@@ -207,6 +222,8 @@ mod tests {
             strip_flags: true,
             number_headings: false,
             page_numbers: true,
+            include_tabs: true,
+            line_spacing: 1.5,
             references: vec![],
             images: vec![],
         };
@@ -226,6 +243,8 @@ mod tests {
             strip_flags: true,
             number_headings: false,
             page_numbers: true,
+            include_tabs: true,
+            line_spacing: 1.5,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
                 citekey: "halbwachs1992".into(),
@@ -234,6 +253,29 @@ mod tests {
                 year: "1992".into(),
                 item_type: "book".into(),
             }],
+            images: vec![],
+        };
+        let pdf = render_pdf(&req).expect("render");
+        assert!(pdf.len() > 1000);
+        assert_eq!(&pdf[..4], b"%PDF");
+    }
+
+    #[test]
+    fn renders_doc_with_tab_markers() {
+        // Tab markers must compile when `include_tabs` is on.
+        let req = ExportRequest {
+            markdown: "Intro paragraph.\n\n---Section A---\n\nBody of A.\n\n---Section B---/---Subsection---\n\nMore."
+                .into(),
+            style_id: "formal".into(),
+            include_citations: false,
+            citation_style: "numbered".into(),
+            strip_comments: true,
+            strip_flags: true,
+            number_headings: false,
+            page_numbers: true,
+            include_tabs: true,
+            line_spacing: 1.5,
+            references: vec![],
             images: vec![],
         };
         let pdf = render_pdf(&req).expect("render");

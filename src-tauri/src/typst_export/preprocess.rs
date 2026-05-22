@@ -18,6 +18,12 @@ What we recognise:
     a Typst-style empty pair. These are author flags (TODO, MISSING,
     REWRITE, …) and we drop them entirely so the printed page doesn't
     surface the editorial scaffolding.
+  - `---Tab name---` / `---Parent---/---Child---` — Hush's Google Docs
+    tab marker syntax. With `include_tabs` true, the line is wrapped in
+    a sentinel that survives pulldown + the Typst escape pass; the
+    markdown converter expands it into a centred pill block. With
+    `include_tabs` false, the line is dropped entirely (no marker, no
+    label).
 
 Implementation note: hand-written scanners rather than regex so the
 crate's dependency list stays small — these patterns are simple
@@ -27,7 +33,13 @@ enough that a regex engine would be overkill.
 const COMMENT_AFTER_LINE: &str = "---%";
 const SEPARATOR_LINE: &str = "---hush-separator---";
 
-pub fn run(src: &str, strip_comments: bool, strip_flags: bool) -> String {
+/// Sentinel chars that bracket a tab marker's path label through
+/// pulldown and the markup-escape pass in `markdown.rs`. Picked from the
+/// ASCII control range so the escape table leaves them alone.
+pub const TAB_MARKER_OPEN: char = '\x1D';
+pub const TAB_MARKER_CLOSE: char = '\x1C';
+
+pub fn run(src: &str, strip_comments: bool, strip_flags: bool, include_tabs: bool) -> String {
     let mut out = src.to_string();
     if strip_comments {
         out = strip_comment_after(&out);
@@ -36,7 +48,74 @@ pub fn run(src: &str, strip_comments: bool, strip_flags: bool) -> String {
     if strip_flags {
         out = strip_double_equals(&out);
     }
+    out = process_tabs(&out, include_tabs);
     out
+}
+
+/// Walk the source line by line, transforming each tab marker line
+/// either into a sentinel-wrapped label (when `include` is true) or
+/// dropping it entirely (when false). Non-marker lines pass through.
+fn process_tabs(s: &str, include: bool) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for line in s.split('\n') {
+        if let Some(path) = parse_tab_marker_path(line) {
+            if include {
+                out.push(format!(
+                    "{}{}{}",
+                    TAB_MARKER_OPEN,
+                    path.join(" / "),
+                    TAB_MARKER_CLOSE
+                ));
+            }
+            // else: drop the line so it doesn't appear in the PDF.
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    out.join("\n")
+}
+
+/// Detect a tab marker line. Mirrors `parseTabMarkerPath` in
+/// `src/editor/tabs.js` — each `/`-separated segment must match
+/// `---name---` with a non-empty, non-all-dash inner name.
+///
+/// `---hush-separator---` is reserved for project-doc joins and is
+/// stripped further down the pipeline by `markdown::to_typst`; we
+/// refuse to recognise it as a tab marker so a project export's
+/// separator lines don't disappear (or render as pills) when tab
+/// processing is enabled.
+fn parse_tab_marker_path(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed == SEPARATOR_LINE {
+        return None;
+    }
+    let segments: Vec<&str> = trimmed.split('/').collect();
+    if segments.is_empty() {
+        return None;
+    }
+    let mut path = Vec::new();
+    for seg in segments {
+        let seg = seg.trim();
+        if !seg.starts_with("---") || !seg.ends_with("---") || seg.len() < 7 {
+            return None;
+        }
+        let inner = seg[3..seg.len() - 3].trim();
+        if inner.is_empty() {
+            return None;
+        }
+        if inner.chars().all(|c| c == '-') {
+            return None;
+        }
+        path.push(inner.to_string());
+    }
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 /// Remove every `%% ... %%` pair, single- or multi-line. Non-greedy
@@ -169,13 +248,13 @@ mod tests {
 
     #[test]
     fn strips_inline_comment() {
-        let out = run("before %% note %% after", true, false);
+        let out = run("before %% note %% after", true, false, false);
         assert_eq!(out, "before  after");
     }
 
     #[test]
     fn strips_multiline_comment() {
-        let out = run("alpha\n%% spans\nseveral lines %%\nbeta", true, false);
+        let out = run("alpha\n%% spans\nseveral lines %%\nbeta", true, false, false);
         assert!(!out.contains("spans"));
         assert!(out.contains("alpha"));
         assert!(out.contains("beta"));
@@ -184,7 +263,7 @@ mod tests {
     #[test]
     fn strips_to_end_of_section() {
         let src = "keep\n---% drafty\nthis goes\nso does this\n---hush-separator---\nkeep too";
-        let out = run(src, true, false);
+        let out = run(src, true, false, false);
         assert!(out.contains("keep"));
         assert!(out.contains("keep too"));
         assert!(!out.contains("drafty"));
@@ -195,13 +274,13 @@ mod tests {
 
     #[test]
     fn strips_named_flag() {
-        let out = run("text ==MISSING: a thing== more", false, true);
+        let out = run("text ==MISSING: a thing== more", false, true, false);
         assert_eq!(out, "text more");
     }
 
     #[test]
     fn strips_bare_highlight() {
-        let out = run("text ==important== more", false, true);
+        let out = run("text ==important== more", false, true, false);
         assert_eq!(out, "text more");
     }
 
@@ -209,21 +288,68 @@ mod tests {
     fn flags_with_trailing_space_inside_braces() {
         // The user's term paper had `==MISSING: foo ==` with the space
         // before the closing `==`. Make sure that shape also goes.
-        let out = run("a ==MISSING: foo == b", false, true);
+        let out = run("a ==MISSING: foo == b", false, true, false);
         assert!(!out.contains("MISSING"), "got: {}", out);
     }
 
     #[test]
     fn off_passes_through() {
         let src = "x %% y %% z ==Q==";
-        let out = run(src, false, false);
+        let out = run(src, false, false, true);
         assert_eq!(out, src);
     }
 
     #[test]
     fn triple_percent_is_not_a_comment() {
-        let out = run("a %%% literal", true, false);
+        let out = run("a %%% literal", true, false, false);
         assert!(out.contains("%"), "got: {}", out);
         assert!(out.contains("literal"));
+    }
+
+    #[test]
+    fn tab_markers_dropped_when_off() {
+        let src = "before\n---Intro---\nbody\n---Parent---/---Child---\nmore";
+        let out = run(src, false, false, false);
+        assert!(!out.contains("Intro"), "got: {}", out);
+        assert!(!out.contains("Parent"), "got: {}", out);
+        assert!(!out.contains("Child"), "got: {}", out);
+        assert!(out.contains("before"));
+        assert!(out.contains("body"));
+        assert!(out.contains("more"));
+    }
+
+    #[test]
+    fn tab_markers_wrapped_when_on() {
+        let src = "---Intro---\nbody";
+        let out = run(src, false, false, true);
+        let expected = format!("{}Intro{}", TAB_MARKER_OPEN, TAB_MARKER_CLOSE);
+        assert!(out.contains(&expected), "got: {:?}", out);
+        assert!(out.contains("body"));
+    }
+
+    #[test]
+    fn nested_tab_marker_path_joined() {
+        let src = "---Parent---/---Child---\nbody";
+        let out = run(src, false, false, true);
+        let expected = format!("{}Parent / Child{}", TAB_MARKER_OPEN, TAB_MARKER_CLOSE);
+        assert!(out.contains(&expected), "got: {:?}", out);
+    }
+
+    #[test]
+    fn plain_hr_not_a_tab_marker() {
+        // `---` alone is a thematic break and must pass through unchanged.
+        let out = run("para\n\n---\n\npara2", false, false, false);
+        assert!(out.contains("---"), "got: {}", out);
+    }
+
+    #[test]
+    fn comment_after_marker_still_recognised_with_tabs_on() {
+        // `---%` looks tab-marker-shaped but must keep its end-of-doc
+        // meaning even when tab processing is enabled.
+        let src = "keep\n---% drafty\ngone\n---hush-separator---\nkeep too";
+        let out = run(src, true, false, true);
+        assert!(out.contains("keep"));
+        assert!(out.contains("keep too"));
+        assert!(!out.contains("drafty"));
     }
 }

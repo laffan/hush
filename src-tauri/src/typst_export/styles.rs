@@ -36,6 +36,9 @@ pub struct WrapOptions {
     pub bibliography: Option<crate::typst_export::csl::CitationStyle>,
     pub number_headings: bool,
     pub page_numbers: bool,
+    /// Multiplier exposed in the modal — 1.0, 1.5, or 2.0. Mapped to a
+    /// concrete Typst `leading` value inside `wrap`.
+    pub line_spacing: f32,
 }
 
 pub fn lookup(id: &str) -> Option<&'static Style> {
@@ -44,6 +47,19 @@ pub fn lookup(id: &str) -> Option<&'static Style> {
 
 pub fn list() -> &'static [Style] {
     STYLES
+}
+
+/// Map a user-facing line-spacing multiplier to a Typst `leading`
+/// value. Typst's default leading is ~0.65em; the formal preamble used
+/// 0.85em for "1.5 line spacing" before this was made a knob.
+fn leading_for(mult: f32) -> f32 {
+    if mult >= 1.75 {
+        1.5
+    } else if mult <= 1.1 {
+        0.45
+    } else {
+        0.85
+    }
 }
 
 /// Compose the final Typst source: preamble → per-export overrides
@@ -72,6 +88,12 @@ pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
         // "1", h2 adds the second component, h3 the third).
         out.push_str("#set heading(numbering: \"1.1\")\n");
     }
+
+    // Override the preamble's default leading with whatever the modal
+    // dropdown selected. Mapped to concrete em values that match the
+    // visual feel of "single / 1.5 / double" spaced text at 11pt.
+    let leading_em = leading_for(opts.line_spacing);
+    out.push_str(&format!("#set par(leading: {}em)\n", leading_em));
 
     out.push('\n');
     out.push_str(body);
@@ -105,6 +127,7 @@ mod tests {
             bibliography: None,
             number_headings: false,
             page_numbers: false,
+            line_spacing: 1.5,
         }
     }
 
@@ -125,6 +148,16 @@ mod tests {
         let out = wrap(formal(), "body", &base());
         assert!(!out.contains("#set heading(numbering"));
         assert!(!out.contains("#set page(numbering"));
+    }
+
+    #[test]
+    fn line_spacing_emitted_in_wrap() {
+        let single = wrap(formal(), "body", &WrapOptions { line_spacing: 1.0, ..base() });
+        assert!(single.contains("#set par(leading: 0.45em)"), "got: {}", single);
+        let one_half = wrap(formal(), "body", &WrapOptions { line_spacing: 1.5, ..base() });
+        assert!(one_half.contains("#set par(leading: 0.85em)"), "got: {}", one_half);
+        let double = wrap(formal(), "body", &WrapOptions { line_spacing: 2.0, ..base() });
+        assert!(double.contains("#set par(leading: 1.5em)"), "got: {}", double);
     }
 }
 
@@ -155,12 +188,13 @@ const FORMAL_PREAMBLE: &str = r##"
 #set par(
   justify: true,
   leading: 0.85em,
-  first-line-indent: 0pt,
+  first-line-indent: (amount: 1.5em, all: false),
   spacing: 1.2em,
 )
 #show heading: set text(weight: "semibold")
-#show heading.where(level: 1): it => block(below: 1em)[#text(size: 1.4em)[#it]]
-#show heading.where(level: 2): it => block(above: 1.4em, below: 0.6em)[#text(size: 1.2em)[#it]]
+#show heading.where(level: 1): it => block(below: 1.8em)[#text(size: 1.4em)[#it]]
+#show heading.where(level: 2): it => block(above: 1.4em, below: 1.4em)[#text(size: 1.2em)[#it]]
+#show heading.where(level: 3): it => block(above: 1.1em, below: 1.1em)[#text(size: 1.05em)[#it]]
 #show link: set text(fill: rgb("#1a4b8c"))
 #show raw.where(block: true): block.with(
   fill: luma(245),

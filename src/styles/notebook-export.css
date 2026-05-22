@@ -130,7 +130,8 @@
 }
 
 .notebook-export-modal .nxm-cite-style-select,
-.notebook-export-modal .nxm-style-select {
+.notebook-export-modal .nxm-style-select,
+.notebook-export-modal .nxm-spacing-select {
   padding: 4px 6px;
   border: 1px solid var(--panel-border);
   border-radius: 4px;
@@ -138,6 +139,18 @@
   color: var(--fg);
   font-family: inherit;
   font-size: 12px;
+}
+
+.notebook-export-modal .nxm-filename-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
 }
 
 .notebook-export-modal .nxm-actions {
