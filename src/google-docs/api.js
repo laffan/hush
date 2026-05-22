@@ -178,12 +178,17 @@ export function viewUrl(docId) {
 
 /** Fetch the tab list for a document. Returns `[{ id, title, index }]`
  *  for each top-level tab in document order. Child tabs are flattened
- *  alongside their parents in the order Drive returns them. */
+ *  alongside their parents in the order Drive returns them.
+ *
+ *  `includeTabsContent=true` is required for the `tabs[]` array to
+ *  appear in the response; without it the API returns just the
+ *  legacy first-tab fields. The request is unfiltered (no field
+ *  mask) because Google's mask parser flags some sub-fields as
+ *  comment-related and rejects the call with a 400 unless
+ *  `includeComments=true` is also set — simpler to pull everything
+ *  and pick what we need on the client. */
 export async function listTabs(docId) {
-  const params = new URLSearchParams({
-    includeTabsContent: "false",
-    fields: "tabs(tabProperties(tabId,title,index,nestingLevel),childTabs)",
-  });
+  const params = new URLSearchParams({ includeTabsContent: "true" });
   const resp = await gFetch(
     `${DOCS_BASE}/documents/${encodeURIComponent(docId)}?${params}`
   );
@@ -244,13 +249,11 @@ export async function deleteTab(docId, tabId) {
 /** Replace a non-root tab's content with plain text. Walks the tab to
  *  find its current content range, deletes that range, then inserts the
  *  new text at the start. Formatting is not preserved — that's a
- *  tradeoff documented at the top of this section. */
+ *  tradeoff documented at the top of this section.
+ *
+ *  No field mask on the GET — see `listTabs` for the same reason. */
 export async function replaceTabPlainText(docId, tabId, text) {
-  // Fetch the tab's structural content so we can compute the end index.
-  const params = new URLSearchParams({
-    includeTabsContent: "true",
-    fields: "tabs(tabProperties(tabId),documentTab(body(content(endIndex))),childTabs)",
-  });
+  const params = new URLSearchParams({ includeTabsContent: "true" });
   const resp = await gFetch(
     `${DOCS_BASE}/documents/${encodeURIComponent(docId)}?${params}`
   );
