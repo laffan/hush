@@ -430,14 +430,21 @@
 
 /* ===== Tab sections =====
  * `---Tab name---` markers in the source render as foldable containers
- * at the outline root. The header chip mirrors the editor pill so the
- * two surfaces read as the same affordance. Click the header to fold
- * the section; double-click jumps the editor to the marker line. */
+ * at the outline root. Nested `---Parent---/---Child---` markers
+ * indent inside their parent's body (`.longview-tab-nested` adds the
+ * left-rail rule so the hierarchy reads at a glance). Click the
+ * header to jump the editor to the marker; the chevron folds /
+ * unfolds the body. */
 .longview-tab {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin: 6px 0;
+}
+.longview-tab-body > .longview-tab.longview-tab-nested {
+  margin-left: 10px;
+  padding-left: 6px;
+  border-left: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
 }
 .longview-tab-header {
   font-size: var(--lv-heading-font, 12px);

@@ -36,26 +36,32 @@ function readDocContent(state, fileId) {
   return file?.content || "";
 }
 
-/** Return `[{ title, offset }, …]` for a document's `---Tab name---`
- *  markers, in source order. The root section (no marker) is dropped
- *  — only actual markers surface in the sidebar. */
+/** Return `[{ title, path, offset, depth }, …]` for a document's
+ *  `---Tab name---` markers, in source order. The root section (no
+ *  marker) is dropped — only actual markers surface in the sidebar. */
 export function getTabsForDoc(state, fileId) {
   const text = readDocContent(state, fileId);
   if (!text) return [];
   const sections = parseTabSections(text, 0);
   const out = [];
   for (const s of sections) {
-    if (!s?.title) continue;
-    out.push({ title: s.title, offset: s.startOffset });
+    if (!s?.path?.length) continue;
+    out.push({
+      title: s.title || s.path[s.path.length - 1],
+      path: s.path,
+      depth: s.depth,
+      offset: s.startOffset,
+    });
   }
   return out;
 }
 
 /** Walk the tree and append synthetic tab-marker children under every
- *  `type: "document"` node that carries markers. Pure — never mutates
- *  the input. Used by the files panel before handing data to
- *  SortableList; the inverse `stripTabMarkersFromTree` runs in
- *  `onChange` so saved trees never carry the synthetic nodes. */
+ *  `type: "document"` node that carries markers. Nested markers
+ *  produce nested tab-marker children — `---Parent---/---Child---`
+ *  becomes a Child tab-marker node inside its Parent tab-marker
+ *  node's `children`, which SortableList renders with the existing
+ *  indent + left-border tree styling. Pure — never mutates the input. */
 export function augmentTreeWithTabs(state, tree) {
   if (!Array.isArray(tree)) return tree;
   return tree.map((node) => augmentNode(state, node));
@@ -70,23 +76,42 @@ function augmentNode(state, node) {
   if (node.type === "document" && node.fileId) {
     const tabs = getTabsForDoc(state, node.fileId);
     if (tabs.length) {
-      // Marker ids include the parent tree node id so two tree nodes
-      // pointing to the same fileId (rare but legal — e.g. a doc
-      // alias) still get unique synthetic children for SortableList.
-      const tabNodes = tabs.map((t) => ({
-        id: `tab:${node.id}:${t.offset}`,
-        type: "tab-marker",
-        name: t.title,
-        fileId: node.fileId,
-        tabOffset: t.offset,
-        children: [],
-      }));
+      const tabTree = buildTabSubtree(node.id, node.fileId, tabs);
       const baseChildren = Array.isArray(nextChildren) ? nextChildren : [];
-      return { ...node, children: [...baseChildren, ...tabNodes] };
+      return { ...node, children: [...baseChildren, ...tabTree] };
     }
   }
   if (nextChildren !== node.children) return { ...node, children: nextChildren };
   return node;
+}
+
+/** Walk tabs in source order, threading each one into the right slot
+ *  of the parent chain. A tab at depth D nests inside whatever was
+ *  pushed at depth D-1; same-depth or shallower entries pop the stack
+ *  first so siblings share their parent. Marker ids include the parent
+ *  tree-node id + the source offset so they stay unique across the
+ *  whole augmented tree. */
+function buildTabSubtree(parentNodeId, fileId, tabs) {
+  const roots = [];
+  const stack = [{ depth: -1, children: roots }];
+  for (const t of tabs) {
+    while (stack.length > 1 && stack[stack.length - 1].depth >= t.depth) {
+      stack.pop();
+    }
+    const marker = {
+      id: `tab:${parentNodeId}:${t.offset}`,
+      type: "tab-marker",
+      name: t.title,
+      fileId,
+      tabOffset: t.offset,
+      tabPath: t.path,
+      tabDepth: t.depth,
+      children: [],
+    };
+    stack[stack.length - 1].children.push(marker);
+    stack.push({ depth: t.depth, children: marker.children });
+  }
+  return roots;
 }
 
 /** Inverse of `augmentTreeWithTabs` — drops every synthetic node so

@@ -2,13 +2,13 @@
  * Outline View document parser — extracts headings, flags, and callouts from markdown text.
  * Ported from obsidian-long-view/src/utils/documentParser.ts
  */
-import { parseTabMarkerLine } from "../editor/tabs.js";
+import { parseTabMarkerPath, pathToLabel } from "../editor/tabs.js";
 
 /**
  * @typedef {{ level: number, text: string, startOffset: number, callout?: { type: string, title: string, color: string } }} DocumentHeading
  * @typedef {{ type: string, message: string, startOffset: number }} DocumentFlag
  * @typedef {{ type: string, title: string, startOffset: number, endOffset: number }} DocumentCallout
- * @typedef {{ title: string, startOffset: number, endOffset: number }} DocumentTab
+ * @typedef {{ title: string, path: string[], depth: number, startOffset: number, endOffset: number }} DocumentTab
  */
 
 /**
@@ -133,12 +133,14 @@ export function parseCallouts(text, baseOffset = 0) {
 }
 
 /**
- * Parse `---Tab name---` markers as a list of tab sections with explicit
- * start/end offsets so the outline can render each one as a foldable
- * top-level container. The first entry's `startOffset` is 0 even when
- * no marker is present — that mirrors the round-trip representation in
- * `editor/tabs.js#parseTabs` where the body before any marker is the
- * "root" tab.
+ * Parse `---Tab name---` (and nested `---Parent---/---Child---`) markers
+ * into ordered tab sections with explicit start/end offsets so the
+ * outline + files sidebar can render foldable, hierarchically-nested
+ * containers. The first entry's `path` is empty when no marker is
+ * present before the first real content — that mirrors the round-trip
+ * representation in `editor/tabs.js#parseTabs`. Top-level tabs have
+ * `depth: 0`; child tabs `depth: 1`; grandchildren `depth: 2`; etc.
+ * `title` is the leaf segment for convenience.
  * @param {string} text
  * @param {number} baseOffset
  * @returns {DocumentTab[]}
@@ -146,18 +148,28 @@ export function parseCallouts(text, baseOffset = 0) {
 export function parseTabSections(text, baseOffset = 0) {
   const lines = text.split("\n");
   const out = [];
-  let cursor = { title: null, startOffset: baseOffset, headerEnd: baseOffset };
+  let cursor = {
+    title: null,
+    path: [],
+    depth: 0,
+    label: "",
+    startOffset: baseOffset,
+    headerEnd: baseOffset,
+  };
   let offset = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const name = parseTabMarkerLine(line);
-    if (name != null) {
+    const path = parseTabMarkerPath(line);
+    if (path != null) {
       cursor.endOffset = baseOffset + offset;
       out.push(cursor);
       const markerStart = baseOffset + offset;
       const markerEnd = markerStart + line.length;
       cursor = {
-        title: name,
+        title: path[path.length - 1],
+        path,
+        depth: path.length - 1,
+        label: pathToLabel(path),
         startOffset: markerStart,
         headerEnd: markerEnd,
       };
@@ -166,9 +178,6 @@ export function parseTabSections(text, baseOffset = 0) {
   }
   cursor.endOffset = baseOffset + text.length;
   out.push(cursor);
-  // Hide the implicit root entry when it's empty and there's at least
-  // one real marker — the outline already prepends a synthetic "Main"
-  // shell, so we don't want a duplicate empty container here.
   return out;
 }
 

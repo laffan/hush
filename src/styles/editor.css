@@ -364,10 +364,14 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
   display: none;
 }
 
-/* Tab marker (`---Tab name---`): a compact rounded pill that round-trips
-   to a real Google Doc tab on push/pull. Replaces the line contents
-   while the cursor is on a different line; the raw text re-appears as
-   soon as the user moves into the marker line to edit it. */
+/* Tab marker (`---Tab name---`, plus nested `---A---/---B---`): a
+   compact rounded pill that round-trips to a real Google Doc tab on
+   push/pull. Replaces the line contents while the cursor is on a
+   different line; the raw text re-appears as soon as the user moves
+   into the marker line to edit it. The leading glyph is an SVG icon
+   sourced from `editor/plugins/tab-marker.js` (replace the placeholder
+   inline SVG with the Google Docs asset). Nested markers get a
+   slightly deeper outline so the parent-chain reads at a glance. */
 .cm-tab-marker-line {
   text-align: center;
   margin: 0.6em 0;
@@ -375,7 +379,7 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
 .cm-tab-marker-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35em;
+  gap: 0.4em;
   padding: 0.15em 0.75em;
   border-radius: 999px;
   background: color-mix(in srgb, var(--style-fg, var(--fg)) 12%, transparent);
@@ -385,13 +389,16 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
   letter-spacing: 0.01em;
   user-select: none;
 }
-.cm-tab-marker-pill::before {
-  content: "";
-  display: inline-block;
-  width: 0.6em;
-  height: 0.6em;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--style-fg, var(--fg)) 55%, transparent);
+.cm-tab-marker-pill.cm-tab-marker-nested {
+  border-color: color-mix(in srgb, var(--style-fg, var(--fg)) 45%, transparent);
+}
+.cm-tab-marker-icon {
+  display: inline-flex;
+  align-items: center;
+  color: color-mix(in srgb, var(--style-fg, var(--fg)) 70%, transparent);
+}
+.cm-tab-marker-icon svg {
+  display: block;
 }
 .cm-tab-marker-label {
   white-space: nowrap;

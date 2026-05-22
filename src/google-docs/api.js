@@ -230,17 +230,17 @@ export async function renameTab(docId, tabId, title) {
   ]);
 }
 
-/** Create a new top-level tab at the given index with the given title.
- *  Returns the new tab's id from the batchUpdate response. The Docs
- *  API request type is `addDocumentTab`; both the title and the
- *  desired position live inside `tabProperties`. */
-export async function createTab(docId, index, title) {
+/** Create a new tab at the given index with the given title. Returns
+ *  the new tab's id from the batchUpdate response. The Docs API
+ *  request type is `addDocumentTab`; the title, desired position, and
+ *  optional `parentTabId` (for nested tabs) all live inside
+ *  `tabProperties`. Pass `parentTabId: null` (or omit) for top-level
+ *  tabs; pass a parent's tabId to nest. */
+export async function createTab(docId, index, title, parentTabId = null) {
+  const tabProperties = { title, index };
+  if (parentTabId) tabProperties.parentTabId = parentTabId;
   const result = await batchUpdate(docId, [
-    {
-      addDocumentTab: {
-        tabProperties: { title, index },
-      },
-    },
+    { addDocumentTab: { tabProperties } },
   ]);
   // The reply key matches the request key: `addDocumentTab` ->
   // `{ tabProperties: { tabId } }`. Older code called this

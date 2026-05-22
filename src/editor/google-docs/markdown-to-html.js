@@ -20,9 +20,11 @@ const HR_RE = /^\s*(?:---|\*\*\*|___)\s*$/;
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const QUOTE_RE = /^\s*>\s?(.*)$/;
 const FENCE_RE = /^\s*```(\w*)\s*$/;
-// Tab marker — same shape as `editor/tabs.js#TAB_MARKER_RE` but local
-// so this converter has no cross-module dependency on the editor tree.
-const TAB_MARKER_RE = /^---([^\n]+?)---\s*$/;
+// Tab marker — single `---name---` or nested `---a---/---b---` form.
+// Local copy of the parser so this converter has no cross-module
+// dependency on the editor tree (the converter is reused by the
+// clipboard copy commands, which intentionally avoid editor imports).
+const TAB_SEGMENT_RE = /^---([^\n]+?)---$/;
 
 export function markdownToHtml(md) {
   if (typeof md !== "string" || !md) return "";
@@ -33,11 +35,22 @@ export function markdownToHtml(md) {
 }
 
 function parseTabMarker(line) {
-  const m = TAB_MARKER_RE.exec(line);
-  if (!m) return null;
-  const name = m[1].trim();
-  if (!name || /^-+$/.test(name)) return null;
-  return name;
+  if (typeof line !== "string") return null;
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const segments = trimmed.split(/\s*\/\s*/);
+  const names = [];
+  for (const seg of segments) {
+    const m = TAB_SEGMENT_RE.exec(seg);
+    if (!m) return null;
+    const name = m[1].trim();
+    if (!name || /^-+$/.test(name)) return null;
+    names.push(name);
+  }
+  // Display label for the fallback "Copy as Google Doc" rendering —
+  // structured push goes through the Docs API in tabs-sync.js, this
+  // is only for the clipboard / one-shot HTML path.
+  return names.join(" / ");
 }
 
 function parseBlocks(lines) {

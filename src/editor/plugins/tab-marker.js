@@ -1,31 +1,45 @@
 /**
- * Renders `---Tab name---` lines as a compact pill in the editor and
- * adds the matching `.cm-tab-marker-line` class to the line itself so
- * styles in `editor.css` can adjust margins, font weight, etc.
+ * Renders `---Tab name---` (and nested `---Parent---/---Child---`)
+ * lines as a compact pill in the editor and adds the matching
+ * `.cm-tab-marker-line` class to the line itself so styles in
+ * `editor.css` can adjust margins, font weight, etc.
  *
  * The pill replaces the entire line's contents while the cursor is on
- * a different line; when the cursor enters the marker line, the raw
- * text re-appears so the user can edit the name or remove the marker.
+ * a different line; when the caret enters the marker line, the raw
+ * text re-appears so the user can edit the name(s) or remove the
+ * marker. A caret strictly past `line.from` is required for the
+ * reveal so a fresh file open (caret at offset 0) keeps the pill
+ * rendered on a line-1 marker.
  *
- * Mirrors the on/off behaviour the heading-indent plugin uses for `#`
- * markers — markers should be visible exactly when the user needs them.
+ * Nested markers display as `Parent / Child / …` in the pill label.
  */
 import { ViewPlugin, Decoration, WidgetType } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
-import { parseTabMarkerLine } from "../tabs.js";
+import { parseTabMarkerPath, pathToLabel } from "../tabs.js";
+
+// Placeholder Google Docs glyph — replace with the asset at
+// `temp/temp-icons/google-docs.svg` once it's checked in. Kept inline
+// so the editor pill has no async dependency on file loads.
+const GOOGLE_DOCS_ICON = `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 1.75A.75.75 0 0 1 3.75 1H10l3 3v9.25a.75.75 0 0 1-.75.75h-8.5A.75.75 0 0 1 3 13.25z"/><path d="M10 1v3h3"/><path d="M5.5 7h5M5.5 9.25h5M5.5 11.5h3"/></svg>`;
 
 class TabPillWidget extends WidgetType {
-  constructor(name) {
+  constructor(path) {
     super();
-    this.name = name;
+    this.path = path;
+    this.label = pathToLabel(path);
   }
-  eq(other) { return other instanceof TabPillWidget && this.name === other.name; }
+  eq(other) { return other instanceof TabPillWidget && other.label === this.label; }
   toDOM() {
     const span = document.createElement("span");
     span.className = "cm-tab-marker-pill";
+    if (this.path.length > 1) span.classList.add("cm-tab-marker-nested");
+    const icon = document.createElement("span");
+    icon.className = "cm-tab-marker-icon";
+    icon.innerHTML = GOOGLE_DOCS_ICON;
+    span.appendChild(icon);
     const label = document.createElement("span");
     label.className = "cm-tab-marker-label";
-    label.textContent = this.name;
+    label.textContent = this.label;
     span.appendChild(label);
     return span;
   }
@@ -53,21 +67,13 @@ export function createTabMarkerPlugin() {
         }));
         for (let i = 1; i <= doc.lines; i++) {
           const line = doc.line(i);
-          const name = parseTabMarkerLine(line.text);
-          if (name == null) continue;
+          const path = parseTabMarkerPath(line.text);
+          if (path == null) continue;
           builder.add(
             line.from,
             line.from,
             Decoration.line({ class: "cm-tab-marker-line" }),
           );
-          // Only reveal the raw `---Name---` text when the cursor is
-          // *inside* the line (strictly past its start). A caret sitting
-          // at line.from — which happens automatically when a file
-          // first opens with a marker on line 1, or when the user
-          // navigates with the arrow keys — would otherwise un-pill
-          // the marker on every fresh open. Non-empty selections that
-          // overlap the line always reveal, since the user is clearly
-          // intending to edit the range.
           const cursorInside = ranges.some((c) => {
             if (!c.empty) return c.from <= line.to && c.to >= line.from;
             return c.from > line.from && c.from <= line.to;
@@ -76,7 +82,7 @@ export function createTabMarkerPlugin() {
           builder.add(
             line.from,
             line.to,
-            Decoration.replace({ widget: new TabPillWidget(name) }),
+            Decoration.replace({ widget: new TabPillWidget(path) }),
           );
         }
         return builder.finish();
