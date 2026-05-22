@@ -116,30 +116,27 @@ export function renderTabMarkerRow(item) {
   return row;
 }
 
-/** Open the parent doc and scroll the editor so `offset` lands roughly
- *  a third down the viewport (matches the outline's jump behaviour).
- *  Awaits the file-open path when the doc isn't already the active one
- *  so the editor buffer is loaded before we measure. */
+/** Open the parent doc and scroll the editor so `offset` lands in view.
+ *  Uses CodeMirror's transactional `scrollIntoView: true` because
+ *  `coordsAtPos` returns null for positions outside the current
+ *  viewport, which made the manual-scroll path quietly no-op for any
+ *  marker far below the top of the doc. */
 export async function openDocAtTab(state, fileId, offset) {
   if (state.ratchetMode) return; // openFile refuses while ratchet is on
   if (state.currentFileId !== fileId) {
     await state.openFile(fileId);
   }
-  // Defer the scroll one frame so the editor's reflow after setContent
-  // settles before we measure — `coordsAtPos` returns stale rects
-  // otherwise on the file-open path.
-  requestAnimationFrame(() => {
-    const view = state.editor?.view;
-    if (!view) return;
-    const safeOffset = Math.max(0, Math.min(offset, view.state.doc.length));
-    view.dispatch({ selection: { anchor: safeOffset } });
-    const coords = view.coordsAtPos(safeOffset);
-    if (coords) {
-      const scrollDOM = view.scrollDOM;
-      const viewportH = scrollDOM.clientHeight;
-      const targetY = coords.top - scrollDOM.getBoundingClientRect().top + scrollDOM.scrollTop;
-      scrollDOM.scrollTop = targetY - viewportH / 3;
-    }
-    view.focus();
+  // Two rAFs so CodeMirror's reflow after openFile/setContent settles
+  // — the first frame applies decorations and the second paints, after
+  // which a `scrollIntoView: true` transaction lands cleanly.
+  await new Promise((r) => requestAnimationFrame(r));
+  await new Promise((r) => requestAnimationFrame(r));
+  const view = state.editor?.view;
+  if (!view) return;
+  const safeOffset = Math.max(0, Math.min(offset, view.state.doc.length));
+  view.dispatch({
+    selection: { anchor: safeOffset },
+    scrollIntoView: true,
   });
+  view.focus();
 }

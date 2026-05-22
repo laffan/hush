@@ -84,32 +84,26 @@ function finalize(section) {
 }
 
 /** Inverse of `parseTabs`: rebuild a single markdown string from a list
- *  of `{ title, content }` sections. The first entry's `title` is
- *  ignored (it's the root tab); every subsequent section is preceded
- *  by `---{title}---` on its own line, surrounded by blank lines so
- *  the marker reads as a block-level element. */
+ *  of `{ title, content }` sections. Any section with a non-empty
+ *  `title` is preceded by a `---{title}---` marker on its own line —
+ *  including the first section. Untitled sections (root content
+ *  before any marker) emit only the content. Blank lines separate
+ *  marker blocks so the markers read as block-level elements. */
 export function joinTabs(sections) {
   if (!Array.isArray(sections) || sections.length === 0) return "";
   const out = [];
-  for (let i = 0; i < sections.length; i++) {
-    const s = sections[i];
-    const content = (s?.content || "").replace(/\s+$/, "");
-    if (i === 0) {
-      if (content) out.push(content);
-      continue;
-    }
+  for (const s of sections) {
     const title = (s?.title || "").trim();
-    if (!title) {
-      // Defensive — a non-root section with no title is unrecoverable.
-      // Emit a placeholder marker so the caller can spot the corruption.
-      if (out.length) out.push("");
-      out.push("---Untitled---");
-    } else {
+    const content = (s?.content || "").replace(/\s+$/, "");
+    if (title) {
       if (out.length) out.push("");
       out.push(`---${title}---`);
-    }
-    if (content) {
-      out.push("");
+      if (content) {
+        out.push("");
+        out.push(content);
+      }
+    } else if (content) {
+      if (out.length) out.push("");
       out.push(content);
     }
   }

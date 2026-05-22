@@ -72,21 +72,21 @@ export async function importFromGoogleDoc(state) {
   // for every Google Doc tab; falls back to a flat single-tab export
   // when the doc has no tabs.
   const md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
+  // Create the file but don't open it yet — we need the link stored
+  // before the editor switches so the link bar paints in one pass on
+  // `file-opened`, instead of waiting for a follow-up settings-changed
+  // pulse the user can briefly see as "no link" first.
   const created = await state.newFile(null, {
     initialContent: md,
     initialName: picked.name || "Untitled",
-    openImmediately: true,
+    openImmediately: false,
   });
-  // Link the new Hush doc to the source GDoc so push / pull are
-  // available immediately. The user picked this doc intending to work
-  // with it — leaving it unlinked turned a useful round-trip into a
-  // one-shot copy.
-  if (created?.fileId) {
-    await setLink(state, created.fileId, {
-      docId: picked.id,
-      title: picked.name || "Untitled",
-    });
-  }
+  if (!created?.fileId) return created;
+  await setLink(state, created.fileId, {
+    docId: picked.id,
+    title: picked.name || "Untitled",
+  });
+  await state.openFile(created.fileId);
   appendLog(state, `Imported and linked "${picked.name}"`);
   return created;
 }
