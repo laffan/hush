@@ -19,6 +19,7 @@
  * change while the user is editing a sibling.
  */
 import { parseTabSections } from "../longview/longview-parser.js";
+import { EditorView } from "@codemirror/view";
 
 /** True for the synthetic rows this module injects. */
 export function isTabMarkerItem(item) {
@@ -117,26 +118,26 @@ export function renderTabMarkerRow(item) {
 }
 
 /** Open the parent doc and scroll the editor so `offset` lands in view.
- *  Uses CodeMirror's transactional `scrollIntoView: true` because
- *  `coordsAtPos` returns null for positions outside the current
- *  viewport, which made the manual-scroll path quietly no-op for any
- *  marker far below the top of the doc. */
+ *  Uses `EditorView.scrollIntoView` as a state effect because
+ *  `coordsAtPos` returns null for offsets outside the current
+ *  viewport, which made the simpler `scrollIntoView: true` path
+ *  quietly no-op for markers far below the top of the doc on a
+ *  freshly-opened file. */
 export async function openDocAtTab(state, fileId, offset) {
   if (state.ratchetMode) return; // openFile refuses while ratchet is on
   if (state.currentFileId !== fileId) {
     await state.openFile(fileId);
+    // Two rAFs so CodeMirror's reflow after openFile/setContent
+    // settles before we dispatch the scroll effect.
+    await new Promise((r) => requestAnimationFrame(r));
+    await new Promise((r) => requestAnimationFrame(r));
   }
-  // Two rAFs so CodeMirror's reflow after openFile/setContent settles
-  // — the first frame applies decorations and the second paints, after
-  // which a `scrollIntoView: true` transaction lands cleanly.
-  await new Promise((r) => requestAnimationFrame(r));
-  await new Promise((r) => requestAnimationFrame(r));
   const view = state.editor?.view;
   if (!view) return;
   const safeOffset = Math.max(0, Math.min(offset, view.state.doc.length));
   view.dispatch({
     selection: { anchor: safeOffset },
-    scrollIntoView: true,
+    effects: EditorView.scrollIntoView(safeOffset, { y: "start", yMargin: 80 }),
   });
   view.focus();
 }

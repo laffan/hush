@@ -31,14 +31,27 @@ export function buildTabContainers(content, tabs, onJumpTo) {
       const header = document.createElement("div");
       header.className = "longview-tab-header";
       header.dataset.offset = String(t.startOffset);
-      header.textContent = t.title;
-      header.addEventListener("click", (e) => {
+      // Chevron — folds the body. Lives inside the header so the
+      // single-click-to-jump rule below can ignore clicks that
+      // originate from this element.
+      const chev = document.createElement("span");
+      chev.className = "longview-tab-chevron";
+      chev.textContent = "▾"; // ▾
+      chev.setAttribute("aria-label", "Toggle section");
+      chev.addEventListener("click", (e) => {
         e.stopPropagation();
-        const ek = e.target.closest(".longview-tab");
-        if (!ek) return;
-        ek.classList.toggle("collapsed");
+        wrapper.classList.toggle("collapsed");
       });
-      header.addEventListener("dblclick", (e) => {
+      header.appendChild(chev);
+      const label = document.createElement("span");
+      label.className = "longview-tab-label";
+      label.textContent = t.title;
+      header.appendChild(label);
+      // Single-click anywhere else on the header jumps the editor to
+      // the marker. The chevron's stopPropagation keeps folding from
+      // also scrolling.
+      header.addEventListener("click", (e) => {
+        if (e.target.closest(".longview-tab-chevron")) return;
         e.stopPropagation();
         onJumpTo(t.startOffset);
       });

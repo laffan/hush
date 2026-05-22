@@ -46,9 +46,10 @@ export function createTabMarkerPlugin() {
       build(view) {
         const builder = new RangeSetBuilder();
         const doc = view.state.doc;
-        const cursors = view.state.selection.ranges.map((r) => ({
+        const ranges = view.state.selection.ranges.map((r) => ({
           from: Math.min(r.from, r.to),
           to: Math.max(r.from, r.to),
+          empty: r.empty,
         }));
         for (let i = 1; i <= doc.lines; i++) {
           const line = doc.line(i);
@@ -59,9 +60,18 @@ export function createTabMarkerPlugin() {
             line.from,
             Decoration.line({ class: "cm-tab-marker-line" }),
           );
-          const cursorInside = cursors.some(
-            (c) => c.from <= line.to && c.to >= line.from,
-          );
+          // Only reveal the raw `---Name---` text when the cursor is
+          // *inside* the line (strictly past its start). A caret sitting
+          // at line.from — which happens automatically when a file
+          // first opens with a marker on line 1, or when the user
+          // navigates with the arrow keys — would otherwise un-pill
+          // the marker on every fresh open. Non-empty selections that
+          // overlap the line always reveal, since the user is clearly
+          // intending to edit the range.
+          const cursorInside = ranges.some((c) => {
+            if (!c.empty) return c.from <= line.to && c.to >= line.from;
+            return c.from > line.from && c.from <= line.to;
+          });
           if (cursorInside) continue;
           builder.add(
             line.from,

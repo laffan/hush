@@ -449,24 +449,26 @@
   align-self: flex-start;
   cursor: pointer;
   user-select: none;
-  position: relative;
-  padding-right: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
-.longview-tab-header::after {
-  content: "▾";
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+.longview-tab-chevron {
   font-size: 0.65em;
   opacity: 0.5;
+  cursor: pointer;
   transition: transform 0.15s ease;
+  display: inline-block;
 }
-.longview-tab.collapsed .longview-tab-header::after {
-  transform: translateY(-50%) rotate(-90deg);
+.longview-tab-chevron:hover { opacity: 0.85; }
+.longview-tab.collapsed .longview-tab-chevron {
+  transform: rotate(-90deg);
 }
 .longview-tab.collapsed .longview-tab-body {
   display: none;
+}
+.longview-tab-label {
+  white-space: nowrap;
 }
 .longview-tab-body {
   display: flex;
