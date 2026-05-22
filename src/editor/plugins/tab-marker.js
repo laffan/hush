@@ -17,10 +17,11 @@ import { ViewPlugin, Decoration, WidgetType } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 import { parseTabMarkerPath, pathToLabel } from "../tabs.js";
 
-// Placeholder Google Docs glyph — replace with the asset at
-// `temp/temp-icons/google-docs.svg` once it's checked in. Kept inline
-// so the editor pill has no async dependency on file loads.
-const GOOGLE_DOCS_ICON = `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 1.75A.75.75 0 0 1 3.75 1H10l3 3v9.25a.75.75 0 0 1-.75.75h-8.5A.75.75 0 0 1 3 13.25z"/><path d="M10 1v3h3"/><path d="M5.5 7h5M5.5 9.25h5M5.5 11.5h3"/></svg>`;
+// Google Docs glyph (sourced from `temp/temp-icons/google-docs.svg`).
+// Inlined so the editor pill has no async dependency on file loads;
+// strokes are remapped to `currentColor` so the theme drives the
+// chrome alongside the rest of the pill.
+const GOOGLE_DOCS_ICON = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 3L5 3C3.89543 3 3 3.89543 3 5L3 19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z"/><path d="M7 7L17 7"/><path d="M7 12L17 12"/><path d="M7 17L13 17"/></svg>`;
 
 class TabPillWidget extends WidgetType {
   constructor(path) {
