@@ -16,12 +16,7 @@
 import { ViewPlugin, Decoration, WidgetType } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 import { parseTabMarkerPath, pathToLabel } from "../tabs.js";
-
-// Google Docs glyph (sourced from `temp/temp-icons/google-docs.svg`).
-// Inlined so the editor pill has no async dependency on file loads;
-// strokes are remapped to `currentColor` so the theme drives the
-// chrome alongside the rest of the pill.
-const GOOGLE_DOCS_ICON = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 3L5 3C3.89543 3 3 3.89543 3 5L3 19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z"/><path d="M7 7L17 7"/><path d="M7 12L17 12"/><path d="M7 17L13 17"/></svg>`;
+import { GOOGLE_DOCS_ICON_SVG } from "../../google-docs/icon.js";
 
 class TabPillWidget extends WidgetType {
   constructor(path) {
@@ -36,7 +31,7 @@ class TabPillWidget extends WidgetType {
     if (this.path.length > 1) span.classList.add("cm-tab-marker-nested");
     const icon = document.createElement("span");
     icon.className = "cm-tab-marker-icon";
-    icon.innerHTML = GOOGLE_DOCS_ICON;
+    icon.innerHTML = GOOGLE_DOCS_ICON_SVG;
     span.appendChild(icon);
     const label = document.createElement("span");
     label.className = "cm-tab-marker-label";

@@ -20,6 +20,7 @@
  */
 import { parseTabSections } from "../longview/longview-parser.js";
 import { EditorView } from "@codemirror/view";
+import { GOOGLE_DOCS_ICON_SVG } from "../google-docs/icon.js";
 
 /** True for the synthetic rows this module injects. */
 export function isTabMarkerItem(item) {
@@ -141,6 +142,10 @@ export function stripTabMarkersFromTree(tree) {
 export function renderTabMarkerRow(item, onJump) {
   const row = document.createElement("span");
   row.className = "tree-item-row tree-tab-marker-row";
+  const icon = document.createElement("span");
+  icon.className = "tree-tab-marker-icon";
+  icon.innerHTML = GOOGLE_DOCS_ICON_SVG;
+  row.appendChild(icon);
   const nameEl = document.createElement("span");
   nameEl.className = "tree-item-name tree-tab-marker-name";
   nameEl.textContent = item.name || "";

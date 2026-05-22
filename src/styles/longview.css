@@ -429,53 +429,46 @@
 /* Flag colors are applied dynamically from settings via inline styles */
 
 /* ===== Tab sections =====
- * `---Tab name---` markers in the source render as foldable containers
- * at the outline root. Nested `---Parent---/---Child---` markers
- * indent inside their parent's body (`.longview-tab-nested` adds the
- * left-rail rule so the hierarchy reads at a glance). Click the
- * header to jump the editor to the marker; the chevron folds /
- * unfolds the body. */
+ * Every tab marker (top-level or nested) renders as a flat container
+ * at the outline root in source order. The header carries the Google
+ * Docs glyph + the full path label (`Parent / Child`) over a dashed
+ * top rule that separates each tab from what came before. No fold
+ * chrome, no pill, no indent — the hierarchy lives in the label. */
 .longview-tab {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 6px 0;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
 }
-.longview-tab-body > .longview-tab.longview-tab-nested {
-  margin-left: 10px;
-  padding-left: 6px;
-  border-left: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
-}
+.longview-tab + .longview-tab { margin-top: 8px; }
 .longview-tab-header {
-  font-size: var(--lv-heading-font, 12px);
-  color: var(--fg);
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent);
-  align-self: flex-start;
-  cursor: pointer;
-  user-select: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
-}
-.longview-tab-chevron {
-  font-size: 0.65em;
-  opacity: 0.5;
+  font-size: var(--lv-heading-font, 12px);
+  color: var(--fg);
   cursor: pointer;
-  transition: transform 0.15s ease;
-  display: inline-block;
+  user-select: none;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
 }
-.longview-tab-chevron:hover { opacity: 0.85; }
-.longview-tab.collapsed .longview-tab-chevron {
-  transform: rotate(-90deg);
+.longview-tab-header:hover {
+  color: var(--lv-position-color, var(--fg));
 }
-.longview-tab.collapsed .longview-tab-body {
-  display: none;
+.longview-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: color-mix(in srgb, var(--fg) 65%, transparent);
 }
+.longview-tab-icon svg { display: block; }
 .longview-tab-label {
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 .longview-tab-body {
   display: flex;
