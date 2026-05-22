@@ -192,6 +192,65 @@ Post-audit: `files-panel.js#onChange` calls
 every drag-reorder, which always re-serialises and pushes the full
 projects registry through the op-log.
 
+### l. Desk-registry orphans no longer accumulate
+
+Pre-audit: when `applyDeskFile` reassigned a local desk by name match
+(e.g. iPad's `.hushdesk` arrives with id X but Laptop's same-named
+desk has id Y), the tree node's id was rewritten to X, but
+`settings.desks` was only updated **additively** — entry Y stayed in
+the registry as an orphan. The desk dropdown reads `settings.desks`
+directly, so it ended up showing two rows for the same desk name.
+A race during initial sync (iPad's queued `.hushdesk` upload not
+draining before iPad's own cursor seed observed Laptop's pre-existing
+`.hushdesk`) compounded this by triggering multiple reassignments.
+
+Post-audit: `applyDeskFile` records the `replacedOldId` whenever it
+reassigns by name. After the standard additive update, it explicitly
+drops `replacedOldId` from `settings.desks`, migrates `desksMeta[oldId]`
+to the new id, and finally prunes any entry whose id no longer
+appears in the tree (race-recovery for prior orphans).
+`migrateLegacyTreeIfNeeded` runs the same prune on every boot via
+`pruneDesksRegistry` so installs that accumulated orphans before this
+fix landed self-heal on next launch.
+
+### m. Google Doc links survive cross-device sync
+
+Pre-audit: `settings.googleDocLinks` was a per-device map keyed by
+local `fileId`. When a linked doc synced to another device, that
+device created a new local fileId and had no record of the link —
+the link bar didn't render, and the auto-rename gate (which checks
+`googleDocLinks[fileId]`) didn't apply, so the doc's filename drifted
+to whatever `deriveName` picked from the body.
+
+Post-audit: `.hush/gdocs.json` carries the link map across devices,
+translating to Dropbox `remote_id` (stable cross-device identity) and
+back. Schema:
+
+```json
+{
+  "format": "hush-gdocs",
+  "version": 1,
+  "links": [
+    { "remoteId": "id:abc…", "docId": "google-doc-id", "title": "…" }
+  ]
+}
+```
+
+- Push: `setLink` / `clearLink` in `link-store.js` call
+  `pushGoogleLinksToDropbox` after the local mutation. The initial-
+  sync flow pushes the current link map after upload + fetches any
+  remote `gdocs.json` so the device picks up links other devices
+  published before it arrived.
+- Apply: `applyGoogleLinks` resolves each `remoteId` to a local
+  `internalId` via the sync map; skips entries whose file hasn't
+  synced yet. Calls `set_google_doc_link` for any that differ; emits
+  `settings-changed` so the link bar refreshes.
+- Recovery: a doc that lands AFTER `gdocs.json` arrived re-runs
+  `applyGoogleLinks` via the same post-create reapply path that
+  catches late `projects.json` matches. The reseed flow also wipes
+  `settings.googleDocLinks` so stale per-device fileId keys don't
+  outlive the wipe.
+
 ### k. Late-arriving folders pick up their project status
 
 Pre-audit: `applyProjectsFile` looks up each entry's folder by

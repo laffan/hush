@@ -207,6 +207,20 @@ export async function performInitialSync(state, dropboxPath) {
     await finalizeDesks(state);
   } catch (e) { console.warn("initial sync: finalizeDesks failed:", e); }
 
+  // Push the local Google Doc link map (if any) AND fetch the remote
+  // one. The local push translates local fileId → remoteId so other
+  // devices can resolve back to their own ids; the remote fetch
+  // applies any links other devices already published for files that
+  // just landed here.
+  try {
+    const gdocs = await import("./gdocs-sync.js");
+    await gdocs.pushGoogleLinksToDropbox(state);
+    try {
+      const remoteGdocs = await dbx.downloadFile(`${basePath}/.hush/gdocs.json`);
+      if (remoteGdocs) await gdocs.applyGoogleLinks(state, remoteGdocs);
+    } catch (_) { /* not present yet */ }
+  } catch (e) { console.warn("initial sync: gdocs sync failed:", e); }
+
   await state.saveFileTree();
   state.files = await tauriInvoke("list_files");
   state.emit("desks-changed");

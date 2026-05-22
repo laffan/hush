@@ -461,16 +461,13 @@ async function syncDropboxCursor(state) {
       showSyncIndicator("pulled", parts.join(" / "));
       try { state.emit("dropbox-sync-success", { direction: "down" }); } catch (_) {}
     }
-    // If the cycle imported any new docs/folders, re-apply
-    // `.hush/projects.json` against the now-complete tree. Without
-    // this, a folder that arrives AFTER its projects.json entry
-    // (common when one device promotes a folder while the other is
-    // offline) stays a plain folder forever — the cursor only
-    // re-fires meta when projects.json itself changes again.
-    if (summary.created.length) {
-      await reapplyProjectsAfterCreates(state, dbx).catch((e) =>
-        console.warn("cursor: post-create projects reapply failed:", e));
-    }
+    // If the cycle imported any new docs/folders, re-apply the meta
+    // files that reference content by id (projects.json by deskId +
+    // innerPath, gdocs.json by remoteId). Without this, a folder /
+    // doc that arrives AFTER its meta entry stays unwired — the
+    // cursor only re-fires meta when the meta file itself changes
+    // again.
+    if (summary.created.length) await reapplyMetaAfterCreates(state, dbx);
     updateDropboxStatus(state, true);
   } catch (e) {
     console.error("Dropbox cursor sync failed:", e);
@@ -482,18 +479,23 @@ async function syncDropboxCursor(state) {
  *  tree. Used when a cursor pull imported new folders that may match
  *  pending entries in the projects registry. Idempotent — entries
  *  that already match a project-typed node are no-ops. */
-async function reapplyProjectsAfterCreates(state, dbx) {
+const _POST_CREATE_REAPPLY = [
+  ["projects.json", "./project-sync.js", "applyProjectsFile"],
+  ["gdocs.json",    "./gdocs-sync.js",   "applyGoogleLinks"],
+];
+
+async function reapplyMetaAfterCreates(state, dbx) {
   if (!state?.settings?.dropboxEnabled || !state?.settings?.dropboxSyncPath) return;
   const base = (state.settings.dropboxSyncPath || "").replace(/\/+$/, "");
   const root = base === "/" ? "" : base;
-  const path = `${root}/.hush/projects.json`;
-  let payload;
-  try { payload = await dbx.downloadFile(path); } catch { return; }
-  if (!payload) return;
-  try {
-    const { applyProjectsFile } = await import("./project-sync.js");
-    await applyProjectsFile(state, payload);
-  } catch (_) { /* best-effort */ }
+  for (const [filename, modPath, fnName] of _POST_CREATE_REAPPLY) {
+    try {
+      const payload = await dbx.downloadFile(`${root}/.hush/${filename}`);
+      if (!payload) continue;
+      const fn = (await import(/* @vite-ignore */ modPath))[fnName];
+      if (typeof fn === "function") await fn(state, payload);
+    } catch (e) { console.warn(`cursor: post-create reapply ${filename} failed:`, e); }
+  }
 }
 
 async function applyCreated(state, ev, dbx, invoke, downloadImage) {
@@ -658,6 +660,8 @@ async function getMetaDispatcher(filename) {
       return (await import("./project-sync.js")).applyProjectsFile;
     case "styles.json":
       return (await import("./style-sync.js")).applyStylesFile;
+    case "gdocs.json":
+      return (await import("./gdocs-sync.js")).applyGoogleLinks;
     case "desks.json":
       // Legacy: the new schema stores desk identity in per-folder
       // .hushdesk files. The reconcile pass runs migrateFromDesksJson

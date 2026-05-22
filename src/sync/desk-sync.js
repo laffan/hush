@@ -140,6 +140,11 @@ export async function applyDeskFile(state, payload, relativePath) {
   // will resolve straight to their canonical node.
   let desk = tree.find((n) => n.type === "desk" && n.id === incomingId);
 
+  // Tracks the local id that just got replaced (if any). settings.desks
+  // and desksMeta entries keyed on this id need to be pruned at the
+  // bottom so the desk switcher doesn't end up with duplicate rows.
+  let replacedOldId = null;
+
   // No id match: try name match. Local tree may have a same-name desk
   // with a different (temp / older) id; reassign in place so per-desk
   // specials keep pointing at the right desk.
@@ -147,6 +152,7 @@ export async function applyDeskFile(state, payload, relativePath) {
     const byName = tree.find((n) => n.type === "desk" && n.name === incomingName);
     if (byName) {
       const oldId = byName.id;
+      replacedOldId = oldId;
       byName.id = incomingId;
       for (const c of (byName.children || [])) {
         const parsedId = _desks.parseSpecialNodeId?.(c?.id);
@@ -199,12 +205,30 @@ export async function applyDeskFile(state, payload, relativePath) {
     } catch (_) { /* leave existing */ }
   }
   meta[incomingId] = merged;
+  // Carry the old desk's per-desk meta over to the new id, then drop
+  // the old key. Without this, replacedOldId keeps living in
+  // desksMeta as an orphan even after the matching settings.desks
+  // entry is pruned.
+  if (replacedOldId && replacedOldId !== incomingId && meta[replacedOldId]) {
+    meta[incomingId] = { ...meta[replacedOldId], ...meta[incomingId] };
+    delete meta[replacedOldId];
+  }
 
-  // Update the settings.desks list (additive, by id).
-  const desksList = (state.settings?.desks || []).slice();
+  // Update settings.desks. Insert / update the incomingId entry. When
+  // a name-match reassignment just happened, ALSO drop the now-orphan
+  // oldId entry so the desk switcher stops showing duplicate rows for
+  // the same desk name. Finally, prune any entry that no longer has a
+  // corresponding tree node (race-recovery — earlier code paths could
+  // leak orphans across long sequences of reassignments).
+  let desksList = (state.settings?.desks || []).slice();
   const i = desksList.findIndex((d) => d.id === incomingId);
   if (i < 0) desksList.push({ id: incomingId, name: incomingName, createdAt: desk.createdAt });
   else desksList[i] = { ...desksList[i], name: incomingName, createdAt: desk.createdAt };
+  if (replacedOldId && replacedOldId !== incomingId) {
+    desksList = desksList.filter((d) => d.id !== replacedOldId);
+  }
+  const treeDeskIds = new Set(tree.filter((n) => n?.type === "desk").map((n) => n.id));
+  desksList = desksList.filter((d) => treeDeskIds.has(d.id));
 
   await state.updateSettings({ desks: desksList, desksMeta: meta }, { fromSync: true });
   await state.saveFileTree();

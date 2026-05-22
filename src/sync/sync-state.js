@@ -529,6 +529,11 @@ export async function clearLocalAndReseed(state) {
     await state.updateSettings({
       desks: [], activeDeskId: null, desksMeta: {},
       lastFileId: null, lastProjectId: null, lastNotebookId: null,
+      // Wipe the Google Docs link map so stale per-device fileId keys
+      // don't outlive the reseed. `.hush/gdocs.json` re-applies during
+      // `reapplyHushMetaFiles` below and re-keys the surviving links
+      // against the freshly-minted local ids.
+      googleDocLinks: {},
     });
 
     if (!remoteHasDesks) {
@@ -639,6 +644,9 @@ const META_REAPPLY_ORDER = [
   ["projects.json",  "./project-sync.js",  "applyProjectsFile"],
   ["panes.json",     "./pane-sync.js",     "applyPanesFile"],
   ["styles.json",    "./style-sync.js",    "applyStylesFile"],
+  // gdocs.json after files have landed so each link's remoteId can
+  // resolve to a local fileId via the sync map.
+  ["gdocs.json",     "./gdocs-sync.js",    "applyGoogleLinks"],
 ];
 
 /** Count Dropbox listing entries that the cursor consumer would

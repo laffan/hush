@@ -434,6 +434,22 @@ export function absorbMatchingFolder(state, desk) {
   return true;
 }
 
+/** Drop any `settings.desks` / `settings.desksMeta` entries whose id
+ *  doesn't match a real desk in the tree. Idempotent — a clean install
+ *  is a no-op. Used at boot to recover from leaked orphans (the apply
+ *  path used to push new ids additively without removing the old). */
+export async function pruneDesksRegistry(state) {
+  const tree = state.fileTree || [];
+  const treeIds = new Set(tree.filter((n) => n?.type === "desk").map((n) => n.id));
+  const list = state.settings?.desks || [];
+  const pruned = list.filter((d) => treeIds.has(d.id));
+  if (pruned.length === list.length) return false;
+  const meta = { ...(state.settings?.desksMeta || {}) };
+  for (const key of Object.keys(meta)) if (!treeIds.has(key)) delete meta[key];
+  await state.updateSettings({ desks: pruned, desksMeta: meta }, { fromSync: true });
+  return true;
+}
+
 /** Walk every desk in the tree and absorb any same-named folder
  *  skeleton sitting beside or inside another desk. Used both at boot
  *  (to recover trees that were broken before this fix landed) and
@@ -567,6 +583,11 @@ export async function migrateLegacyTreeIfNeeded(state) {
     if (reconcileDesksWithStrayFolders(state) > 0) {
       try { await state.saveFileTree(); } catch (_) {}
     }
+    // Prune stale settings.desks entries that no longer point at any
+    // tree desk. The Dropbox apply-desk path used to leak these on every
+    // id-reassignment; this is the boot-time recovery for existing
+    // installs that accumulated orphans before the fix landed.
+    try { await pruneDesksRegistry(state); } catch (_) {}
     return false;
   }
 
