@@ -77,21 +77,17 @@ export async function getDocumentMeta(docId) {
 }
 
 /**
- * Export a Google Doc as HTML. Returns the HTML string; the caller runs
- * it through `htmlToMarkdown` (extending if needed for export-format
- * quirks like CSS classes in `<style>` blocks).
+ * Export a Google Doc as HTML. Returns the HTML string; the caller
+ * runs it through `htmlToMarkdown` (extending if needed for export-
+ * format quirks like CSS classes in `<style>` blocks).
  *
- * Optional `tabId` restricts the export to a single tab — required for
- * the tab-aware pull path so each tab's HTML can be converted in
- * isolation. Without `tabId`, Drive returns just the root tab's
- * content. `includeTabsContent=true` is implied when `tabId` is set.
+ * Drive's `files.export` doesn't actually support per-tab filtering
+ * (the `tabIds` parameter is documented for `files.get` only) — for
+ * multi-tab pulls go through the Docs API path in `tabs-sync.js`
+ * instead, which walks each tab's `documentTab` via `docs-walker.js`.
  */
-export async function exportAsHtml(docId, { tabId } = {}) {
+export async function exportAsHtml(docId) {
   const params = new URLSearchParams({ mimeType: "text/html" });
-  if (tabId) {
-    params.set("tabIds", tabId);
-    params.set("includeTabsContent", "true");
-  }
   const resp = await gFetch(
     `${DRIVE_BASE}/files/${encodeURIComponent(docId)}/export?${params}`
   );
