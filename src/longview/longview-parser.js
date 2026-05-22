@@ -2,11 +2,13 @@
  * Outline View document parser — extracts headings, flags, and callouts from markdown text.
  * Ported from obsidian-long-view/src/utils/documentParser.ts
  */
+import { parseTabMarkerPath, pathToLabel } from "../editor/tabs.js";
 
 /**
  * @typedef {{ level: number, text: string, startOffset: number, callout?: { type: string, title: string, color: string } }} DocumentHeading
  * @typedef {{ type: string, message: string, startOffset: number }} DocumentFlag
  * @typedef {{ type: string, title: string, startOffset: number, endOffset: number }} DocumentCallout
+ * @typedef {{ title: string, path: string[], depth: number, startOffset: number, endOffset: number }} DocumentTab
  */
 
 /**
@@ -131,18 +133,68 @@ export function parseCallouts(text, baseOffset = 0) {
 }
 
 /**
+ * Parse `---Tab name---` (and nested `---Parent---/---Child---`) markers
+ * into ordered tab sections with explicit start/end offsets so the
+ * outline + files sidebar can render foldable, hierarchically-nested
+ * containers. The first entry's `path` is empty when no marker is
+ * present before the first real content — that mirrors the round-trip
+ * representation in `editor/tabs.js#parseTabs`. Top-level tabs have
+ * `depth: 0`; child tabs `depth: 1`; grandchildren `depth: 2`; etc.
+ * `title` is the leaf segment for convenience.
+ * @param {string} text
+ * @param {number} baseOffset
+ * @returns {DocumentTab[]}
+ */
+export function parseTabSections(text, baseOffset = 0) {
+  const lines = text.split("\n");
+  const out = [];
+  let cursor = {
+    title: null,
+    path: [],
+    depth: 0,
+    label: "",
+    startOffset: baseOffset,
+    headerEnd: baseOffset,
+  };
+  let offset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const path = parseTabMarkerPath(line);
+    if (path != null) {
+      cursor.endOffset = baseOffset + offset;
+      out.push(cursor);
+      const markerStart = baseOffset + offset;
+      const markerEnd = markerStart + line.length;
+      cursor = {
+        title: path[path.length - 1],
+        path,
+        depth: path.length - 1,
+        label: pathToLabel(path),
+        startOffset: markerStart,
+        headerEnd: markerEnd,
+      };
+    }
+    offset += line.length + 1;
+  }
+  cursor.endOffset = baseOffset + text.length;
+  out.push(cursor);
+  return out;
+}
+
+/**
  * Build minimap data from document text.
  * @param {string} text
- * @returns {{ headings: DocumentHeading[], flags: DocumentFlag[], callouts: DocumentCallout[] }}
+ * @returns {{ headings: DocumentHeading[], flags: DocumentFlag[], callouts: DocumentCallout[], tabs: DocumentTab[] }}
  */
 export function parseDocument(text) {
   if (!text || text.trim().length === 0) {
-    return { headings: [], flags: [], callouts: [] };
+    return { headings: [], flags: [], callouts: [], tabs: [] };
   }
   return {
     headings: parseHeadings(text, 0),
     flags: parseFlags(text, 0),
     callouts: parseCallouts(text, 0),
+    tabs: parseTabSections(text, 0),
   };
 }
 

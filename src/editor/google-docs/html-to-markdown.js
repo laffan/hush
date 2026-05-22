@@ -96,9 +96,19 @@ function blockHeader(node, level, ctx) {
 }
 
 function blockPara(node, ctx) {
-  const inner = renderChildren(node, ctx).trim();
-  if (!inner) return "\n";
-  return "\n\n" + inner + "\n\n";
+  // Fallback tab marker emitted by `markdownToHtml` when the caller
+  // bypasses the Docs API tab split (e.g. "Copy as Google Doc"). The
+  // round-trip restores the canonical `---Name---` form.
+  const tabName = node.getAttribute?.("data-hush-tab-marker");
+  if (tabName) return `\n\n---${tabName}---\n\n`;
+  const inner = renderChildren(node, ctx);
+  // Drive's HTML export carries cosmetic empty paragraphs between blocks
+  // — `<p></p>`, `<p>&nbsp;</p>`, `<p><span></span></p>`. Treat anything
+  // that boils down to whitespace (including non-breaking spaces) as a
+  // no-op so the pulled markdown doesn't accumulate blank lines.
+  const collapsed = inner.replace(/[\s ]+/g, "");
+  if (!collapsed) return "";
+  return "\n\n" + inner.trim() + "\n\n";
 }
 
 // Block-level entry point for a <ul>/<ol>. Coalesces consecutive sibling

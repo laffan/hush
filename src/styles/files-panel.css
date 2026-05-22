@@ -880,3 +880,50 @@ button.desk-switcher-row.desk-switcher-add {
 
 .send-to-desk-cancel:hover { background: rgba(128, 128, 128, 0.1); }
 
+
+/* ===== Tab marker rows ===== */
+/* Synthetic children injected under documents that carry
+ * `---Tab name---` markers (including nested `---a---/---b---`
+ * children, which inherit the standard SortableList nesting visuals).
+ * Each row carries a 50%-opacity Google Docs glyph followed by the
+ * leaf name; click opens the parent doc and jumps to the marker
+ * offset (files-panel-tabs.js#openDocAtTab). */
+.sl-item[data-type="tab-marker"] {
+  margin-left: 4px;
+}
+.sl-item[data-type="tab-marker"] > .sl-item-content .sl-fold-arrow {
+  visibility: hidden;
+  width: 6px;
+}
+.tree-tab-marker-row {
+  padding: 1px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.tree-tab-marker-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  opacity: 0.5;
+  color: var(--fg);
+}
+.tree-tab-marker-icon svg { display: block; }
+.tree-tab-marker-name {
+  font-size: 0.85em;
+  color: color-mix(in srgb, var(--fg) 65%, transparent);
+  font-style: normal;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.sl-item[data-type="tab-marker"]:hover .tree-tab-marker-name {
+  color: var(--fg);
+}
+.sl-item[data-type="tab-marker"]:hover .tree-tab-marker-icon {
+  opacity: 0.85;
+}

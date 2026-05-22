@@ -427,3 +427,51 @@
 }
 
 /* Flag colors are applied dynamically from settings via inline styles */
+
+/* ===== Tab sections =====
+ * Every tab marker (top-level or nested) renders as a flat container
+ * at the outline root in source order. The header carries the Google
+ * Docs glyph + the full path label (`Parent / Child`) over a dashed
+ * top rule that separates each tab from what came before. No fold
+ * chrome, no pill, no indent — the hierarchy lives in the label. */
+.longview-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
+}
+.longview-tab + .longview-tab { margin-top: 8px; }
+.longview-tab-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--lv-heading-font, 12px);
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+.longview-tab-header:hover {
+  color: var(--lv-position-color, var(--fg));
+}
+.longview-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: color-mix(in srgb, var(--fg) 65%, transparent);
+}
+.longview-tab-icon svg { display: block; }
+.longview-tab-label {
+  white-space: normal;
+  word-break: break-word;
+}
+.longview-tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

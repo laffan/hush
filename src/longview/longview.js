@@ -13,6 +13,9 @@ import {
 } from "./longview-parser.js";
 import { CALLOUT_COLORS, getCalloutColor } from "../editor/plugins/callouts.js";
 import { getActiveTheme } from "../themes/index.js";
+import { parseTabMarkerLine } from "../editor/tabs.js";
+import { buildTabContainers } from "./longview-tabs.js";
+import { EditorView } from "@codemirror/view";
 
 /** Default flag colors */
 const DEFAULT_FLAG_COLORS = {
@@ -127,7 +130,7 @@ export function createLongView(container, state) {
   /** Build (or rebuild) just the outline content area */
   function buildContent(s) {
     const text = state.editor ? state.editor.getContent() : "";
-    const { headings, flags } = parseDocument(text);
+    const { headings, flags, tabs } = parseDocument(text);
     const sectionColors = { ...CALLOUT_COLORS, ...(s.flagColors || {}), ...(s.longviewSectionColors || {}) };
     const calloutStacks = computeHeadingCalloutStacks(headings, sectionColors);
 
@@ -144,6 +147,16 @@ export function createLongView(container, state) {
       content.style.setProperty("--lv-heading-color", activeTheme.headingColor);
     }
 
+    // Tabs: every marker in the source becomes a foldable container at
+    // the outline root. The root (pre-marker) section gets a wrapper
+    // too but no header so single-tab docs look identical to the
+    // pre-tabs outline.
+    const { hasMarkers, routeFor: containerForOffset } = buildTabContainers(
+      content,
+      tabs,
+      (offset) => scrollToOffset(state, offset),
+    );
+
     headingEntries = [];
     paragraphEntries = [];
     let currentLevel = 0;
@@ -151,12 +164,26 @@ export function createLongView(container, state) {
     const fragments = tokenizeContent(text, headings, flags);
     let openCalloutWrappers = [];
     let activeCalloutStack = [];
+    let currentContainer = hasMarkers ? containerForOffset(0) : content;
 
     for (const frag of fragments) {
+      const fragOffset = frag.type === "heading"
+        ? frag.heading.startOffset
+        : frag.type === "flag"
+          ? frag.flag.startOffset
+          : (frag.startOffset || 0);
+      const targetContainer = containerForOffset(fragOffset);
+      if (targetContainer !== currentContainer) {
+        currentContainer = targetContainer;
+        openCalloutWrappers = [];
+        activeCalloutStack = [];
+        currentLevel = 0;
+        flowEl = null;
+      }
       if (frag.type === "heading") {
         const h = frag.heading;
         const stack = calloutStacks.get(h.startOffset) || [];
-        const result = updateCalloutWrappers(content, openCalloutWrappers, activeCalloutStack, stack, sectionColors);
+        const result = updateCalloutWrappers(currentContainer, openCalloutWrappers, activeCalloutStack, stack, sectionColors);
         openCalloutWrappers = result.wrappers;
         activeCalloutStack = result.stack;
         currentLevel = h.level;
@@ -189,13 +216,25 @@ export function createLongView(container, state) {
           if (calloutTitle.textContent) flowEl.appendChild(calloutTitle);
         }
       } else if (frag.type === "text") {
-        if (!flowEl) {
-          const result = updateCalloutWrappers(content, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
-          openCalloutWrappers = result.wrappers;
-          flowEl = createSectionStructure(result.container, currentLevel);
-        }
         if (s.longviewShowParagraphs) {
           for (const entry of tokenizeLinesWithOffsets(frag.text, frag.startOffset || 0)) {
+            // Each paragraph routes by its own offset — a text fragment
+            // between a heading and a flag can straddle a tab marker,
+            // and the routing decision at the fragment level would put
+            // the trailing lines under the wrong tab.
+            const lineContainer = containerForOffset(entry.offset);
+            if (lineContainer !== currentContainer) {
+              currentContainer = lineContainer;
+              openCalloutWrappers = [];
+              activeCalloutStack = [];
+              currentLevel = 0;
+              flowEl = null;
+            }
+            if (!flowEl) {
+              const result = updateCalloutWrappers(currentContainer, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
+              openCalloutWrappers = result.wrappers;
+              flowEl = createSectionStructure(result.container, currentLevel);
+            }
             const p = document.createElement("p");
             p.className = "longview-line";
             p.dataset.offset = String(entry.offset);
@@ -215,7 +254,7 @@ export function createLongView(container, state) {
         if (!s.longviewShowFlags) continue;
         if (!s.longviewShowComments && frag.flag.type === "COMMENT") continue;
         if (!flowEl) {
-          const result = updateCalloutWrappers(content, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
+          const result = updateCalloutWrappers(currentContainer, openCalloutWrappers, activeCalloutStack, activeCalloutStack, sectionColors);
           openCalloutWrappers = result.wrappers;
           flowEl = createSectionStructure(result.container, currentLevel);
         }
@@ -306,24 +345,6 @@ export function createLongView(container, state) {
       applyLiveStyles();
     });
     row.appendChild(slider);
-    return row;
-  }
-
-  function makeColorRow(label, value, key) {
-    const row = document.createElement("div");
-    row.className = "longview-option-row";
-    const lbl = document.createElement("label");
-    lbl.textContent = label;
-    const input = document.createElement("input");
-    input.type = "color";
-    input.value = value || "#ff0000";
-    input.addEventListener("input", () => {
-      state.settings[key] = input.value;
-      state.updateSettings({ [key]: input.value });
-      applyLiveStyles();
-    });
-    row.appendChild(lbl);
-    row.appendChild(input);
     return row;
   }
 
@@ -470,15 +491,16 @@ export function createLongView(container, state) {
 function scrollToOffset(state, offset) {
   if (!state.editor) return;
   const view = state.editor.view;
-  view.dispatch({ selection: { anchor: offset } });
-  // Scroll so the target lands 1/3 down the viewport
-  const coords = view.coordsAtPos(offset);
-  if (coords) {
-    const scrollDOM = view.scrollDOM;
-    const viewportH = scrollDOM.clientHeight;
-    const targetY = coords.top - scrollDOM.getBoundingClientRect().top + scrollDOM.scrollTop;
-    scrollDOM.scrollTop = targetY - viewportH / 3;
-  }
+  // `EditorView.scrollIntoView` is the only path that works for an
+  // offset below the currently-rendered viewport — `coordsAtPos`
+  // returns null for unrendered positions, so the previous manual
+  // scrollTop calculation silently no-op'd whenever the target sat
+  // beyond CodeMirror's measure window.
+  const safe = Math.max(0, Math.min(offset, view.state.doc.length));
+  view.dispatch({
+    selection: { anchor: safe },
+    effects: EditorView.scrollIntoView(safe, { y: "start", yMargin: 80 }),
+  });
   view.focus();
 }
 
@@ -535,7 +557,7 @@ function tokenizeLinesWithOffsets(text, baseOffset) {
   let cursor = 0;
   for (const raw of lines) {
     const trimmed = raw.trim();
-    if (trimmed.length > 0 && !trimmed.startsWith("#")) {
+    if (trimmed.length > 0 && !trimmed.startsWith("#") && parseTabMarkerLine(trimmed) == null) {
       const clean = sanitizeLine(trimmed);
       if (clean.length > 0) out.push({ line: clean, offset: baseOffset + cursor });
     }

@@ -19,6 +19,7 @@ import { gFetch } from "./auth.js";
 
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_BASE = "https://www.googleapis.com/upload/drive/v3";
+const DOCS_BASE = "https://docs.googleapis.com/v1";
 
 function err(prefix, resp, body) {
   const detail = body?.error?.message || body?.error || `HTTP ${resp.status}`;
@@ -76,9 +77,14 @@ export async function getDocumentMeta(docId) {
 }
 
 /**
- * Export a Google Doc as HTML. Returns the HTML string; the caller runs
- * it through `htmlToMarkdown` (extending if needed for export-format
- * quirks like CSS classes in `<style>` blocks).
+ * Export a Google Doc as HTML. Returns the HTML string; the caller
+ * runs it through `htmlToMarkdown` (extending if needed for export-
+ * format quirks like CSS classes in `<style>` blocks).
+ *
+ * Drive's `files.export` doesn't actually support per-tab filtering
+ * (the `tabIds` parameter is documented for `files.get` only) — for
+ * multi-tab pulls go through the Docs API path in `tabs-sync.js`
+ * instead, which walks each tab's `documentTab` via `docs-walker.js`.
  */
 export async function exportAsHtml(docId) {
   const params = new URLSearchParams({ mimeType: "text/html" });
@@ -148,4 +154,167 @@ export async function replaceDocumentContent(docId, html) {
 /** Build a `https://docs.google.com/document/d/{id}/edit` URL for the link bar's title chip. */
 export function viewUrl(docId) {
   return `https://docs.google.com/document/d/${encodeURIComponent(docId)}/edit`;
+}
+
+/* ===== Docs API (tabs) =====
+ *
+ * The Docs API exposes the tab structure that the Drive HTML export
+ * flattens. We use it for two jobs:
+ *   1. Pull: enumerate every tab (id + title), then call Drive's
+ *      `export` with `tabIds=<id>` so each tab's HTML can be converted
+ *      independently and re-joined with `---Tab name---` markers.
+ *   2. Push: rebuild the tab list to match the markdown's section
+ *      structure — delete tabs that no longer exist, create new ones,
+ *      rename mismatched titles. Content for the root tab is pushed
+ *      via Drive's media upload (preserves HTML formatting); content
+ *      for non-root tabs is pushed via batchUpdate insertText (plain
+ *      text only — formatting in non-root tabs would require building
+ *      out the full structured-insertion pipeline).
+ */
+
+/** Fetch the full document with all tab content via the Docs API.
+ *  The pull path uses this to extract per-tab content directly —
+ *  Drive's `files.export` doesn't filter by tab (`tabIds` is a
+ *  `files.get` parameter, not an export one), so a multi-tab pull
+ *  has to walk the Docs API's structured response instead. */
+export async function getDocumentWithTabs(docId) {
+  const params = new URLSearchParams({ includeTabsContent: "true" });
+  const resp = await gFetch(
+    `${DOCS_BASE}/documents/${encodeURIComponent(docId)}?${params}`
+  );
+  return asJson(resp);
+}
+
+/** Fetch the tab list for a document. Returns `[{ id, title, index }]`
+ *  for each top-level tab in document order. Child tabs are flattened
+ *  alongside their parents in the order Drive returns them. Thin
+ *  wrapper over `getDocumentWithTabs` for the push path, which only
+ *  needs the metadata, not each tab's body. */
+export async function listTabs(docId) {
+  const data = await getDocumentWithTabs(docId);
+  const out = [];
+  function walk(tabs) {
+    if (!Array.isArray(tabs)) return;
+    for (const t of tabs) {
+      const p = t.tabProperties || {};
+      out.push({
+        id: p.tabId,
+        title: p.title || "",
+        index: typeof p.index === "number" ? p.index : out.length,
+        nestingLevel: p.nestingLevel || 0,
+      });
+      if (Array.isArray(t.childTabs)) walk(t.childTabs);
+    }
+  }
+  walk(data.tabs || []);
+  return out;
+}
+
+/** Rename a tab. Used by the push pipeline when the markdown's tab
+ *  title differs from the Doc's current tab title for the same slot.
+ *  The Docs API request type is `updateDocumentTabProperties`; the
+ *  target tab is specified by setting `tabId` inside `tabProperties`
+ *  alongside the new field values. */
+export async function renameTab(docId, tabId, title) {
+  return batchUpdate(docId, [
+    {
+      updateDocumentTabProperties: {
+        tabProperties: { tabId, title },
+        fields: "title",
+      },
+    },
+  ]);
+}
+
+/** Create a new tab at the given index with the given title. Returns
+ *  the new tab's id from the batchUpdate response. The Docs API
+ *  request type is `addDocumentTab`; the title, desired position, and
+ *  optional `parentTabId` (for nested tabs) all live inside
+ *  `tabProperties`. Pass `parentTabId: null` (or omit) for top-level
+ *  tabs; pass a parent's tabId to nest. */
+export async function createTab(docId, index, title, parentTabId = null) {
+  const tabProperties = { title, index };
+  if (parentTabId) tabProperties.parentTabId = parentTabId;
+  const result = await batchUpdate(docId, [
+    { addDocumentTab: { tabProperties } },
+  ]);
+  // The reply key matches the request key: `addDocumentTab` ->
+  // `{ tabProperties: { tabId } }`. Older code called this
+  // `createTab` so the JS wrapper keeps that name; only the wire
+  // request and response are renamed.
+  const reply = result.replies?.[0]?.addDocumentTab;
+  return reply?.tabProperties?.tabId || null;
+}
+
+/** Delete the given tab. */
+export async function deleteTab(docId, tabId) {
+  return batchUpdate(docId, [{ deleteTab: { tabId } }]);
+}
+
+/** Replace a non-root tab's content with plain text. Walks the tab to
+ *  find its current content range, deletes that range, then inserts the
+ *  new text at the start. Formatting is not preserved — that's a
+ *  tradeoff documented at the top of this section.
+ *
+ *  No field mask on the GET — see `listTabs` for the same reason. */
+export async function replaceTabPlainText(docId, tabId, text) {
+  const params = new URLSearchParams({ includeTabsContent: "true" });
+  const resp = await gFetch(
+    `${DOCS_BASE}/documents/${encodeURIComponent(docId)}?${params}`
+  );
+  const data = await asJson(resp);
+  const tab = findTabById(data.tabs || [], tabId);
+  const body = tab?.documentTab?.body;
+  // The body always carries at least a sectionBreak at index 0, so the
+  // safe content range starts at 1. End is the last child's endIndex
+  // minus one (Docs requires the trailing newline to remain).
+  let end = 1;
+  if (body?.content?.length) {
+    const last = body.content[body.content.length - 1];
+    if (typeof last.endIndex === "number") end = last.endIndex - 1;
+  }
+  const requests = [];
+  if (end > 1) {
+    requests.push({
+      deleteContentRange: {
+        range: { tabId, startIndex: 1, endIndex: end },
+      },
+    });
+  }
+  const trimmed = (text || "").replace(/ /g, "");
+  if (trimmed) {
+    requests.push({
+      insertText: {
+        location: { tabId, index: 1 },
+        text: trimmed,
+      },
+    });
+  }
+  if (!requests.length) return null;
+  return batchUpdate(docId, requests);
+}
+
+function findTabById(tabs, tabId) {
+  for (const t of tabs) {
+    if (t.tabProperties?.tabId === tabId) return t;
+    if (Array.isArray(t.childTabs)) {
+      const found = findTabById(t.childTabs, tabId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** Generic Docs API batchUpdate caller — used by all the tab management
+ *  helpers above. Throws on non-2xx with a readable message. */
+export async function batchUpdate(docId, requests) {
+  const resp = await gFetch(
+    `${DOCS_BASE}/documents/${encodeURIComponent(docId)}:batchUpdate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requests }),
+    }
+  );
+  return asJson(resp);
 }

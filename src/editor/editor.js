@@ -15,6 +15,7 @@ import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
+import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
@@ -236,6 +237,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createFlagHighlightPlugin(state),
     createLinkDecoratorPlugin(state),
     createWikilinkPlugin(state),
+    createTabMarkerPlugin(),
     createCheckboxListPlugin(),
     createImageDecoratorPlugin(state, getImageContext),
     createImagePasteExtension(state, { getImageContext }),
@@ -447,6 +449,7 @@ export function createEditor(container, state) {
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin(state);
   const wikilinkPlugin = createWikilinkPlugin(state);
+  const tabMarkerPlugin = createTabMarkerPlugin();
   const checkboxListPlugin = createCheckboxListPlugin();
   const imageDecoratorPlugin = createImageDecoratorPlugin(state, () => defaultLocalSyncContext(state));
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
@@ -496,6 +499,7 @@ export function createEditor(container, state) {
       flagHighlightPlugin,
       linkDecoratorPlugin,
       wikilinkPlugin,
+      tabMarkerPlugin,
       checkboxListPlugin,
       imageDecoratorPlugin,
       createGoogleDocsPasteExtension(),
