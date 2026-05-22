@@ -176,23 +176,26 @@ export function viewUrl(docId) {
  *      out the full structured-insertion pipeline).
  */
 
-/** Fetch the tab list for a document. Returns `[{ id, title, index }]`
- *  for each top-level tab in document order. Child tabs are flattened
- *  alongside their parents in the order Drive returns them.
- *
- *  `includeTabsContent=true` is required for the `tabs[]` array to
- *  appear in the response; without it the API returns just the
- *  legacy first-tab fields. The request is unfiltered (no field
- *  mask) because Google's mask parser flags some sub-fields as
- *  comment-related and rejects the call with a 400 unless
- *  `includeComments=true` is also set — simpler to pull everything
- *  and pick what we need on the client. */
-export async function listTabs(docId) {
+/** Fetch the full document with all tab content via the Docs API.
+ *  The pull path uses this to extract per-tab content directly —
+ *  Drive's `files.export` doesn't filter by tab (`tabIds` is a
+ *  `files.get` parameter, not an export one), so a multi-tab pull
+ *  has to walk the Docs API's structured response instead. */
+export async function getDocumentWithTabs(docId) {
   const params = new URLSearchParams({ includeTabsContent: "true" });
   const resp = await gFetch(
     `${DOCS_BASE}/documents/${encodeURIComponent(docId)}?${params}`
   );
-  const data = await asJson(resp);
+  return asJson(resp);
+}
+
+/** Fetch the tab list for a document. Returns `[{ id, title, index }]`
+ *  for each top-level tab in document order. Child tabs are flattened
+ *  alongside their parents in the order Drive returns them. Thin
+ *  wrapper over `getDocumentWithTabs` for the push path, which only
+ *  needs the metadata, not each tab's body. */
+export async function listTabs(docId) {
+  const data = await getDocumentWithTabs(docId);
   const out = [];
   function walk(tabs) {
     if (!Array.isArray(tabs)) return;

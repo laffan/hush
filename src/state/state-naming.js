@@ -60,6 +60,11 @@ export function updateTreeNodeNameByFileId(state, fileId) {
 export async function maybeRenameFromFirstLine(state) {
   if (state.currentProjectId || state.currentNotebookFileId || state.currentLocalSync) return;
   if (!state.currentFileId || !state.editor) return;
+  // Docs linked to a Google Doc track the GDoc's title — the user
+  // already chose that filename when they imported / linked, and the
+  // first-line auto-rename would silently overwrite it with the doc
+  // body's first content line (or a tab marker).
+  if (state.settings?.googleDocLinks?.[state.currentFileId]) return;
   const content = state.editor.getContent();
   const derived = deriveName(content);
   if (!derived || derived === "Untitled") return;
@@ -78,6 +83,8 @@ export async function maybeRenameFromFirstLine(state) {
  *  created in the main editor. */
 export async function maybeRenameFileFromContent(state, fileId, content) {
   if (!fileId) return;
+  // Match the gating above — linked docs keep their GDoc title.
+  if (state.settings?.googleDocLinks?.[fileId]) return;
   const derived = deriveName(content);
   if (!derived || derived === "Untitled") return;
   const node = findNodeByFileId(state.fileTree, fileId);

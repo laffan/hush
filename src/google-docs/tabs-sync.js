@@ -27,10 +27,12 @@ import {
   renameTab,
   deleteTab,
   replaceTabPlainText,
+  getDocumentWithTabs,
 } from "./api.js";
 import { parseTabs, joinTabs } from "../editor/tabs.js";
 import { markdownToHtml } from "../editor/google-docs/markdown-to-html.js";
 import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
+import { documentTabToMarkdown } from "./docs-walker.js";
 
 // ===== Push =====
 
@@ -118,32 +120,39 @@ export async function pushMarkdownWithTabs(docId, md) {
  * @returns {Promise<string>}
  */
 export async function pullMarkdownWithTabs(docId, convertHtml) {
-  const tabs = await listTabs(docId);
-  if (!tabs.length) {
-    // No tabs structure — fall back to a single Drive export.
+  // One Docs API fetch with `includeTabsContent=true` gives us both
+  // the tab structure and each tab's body, so the per-tab walker can
+  // run client-side. Drive's HTML export doesn't filter by tab —
+  // `tabIds` is documented for `files.get` but not for `files.export`
+  // — so anything beyond "all tabs concatenated" requires the Docs
+  // API path.
+  const doc = await getDocumentWithTabs(docId);
+  const topLevel = (doc.tabs || [])
+    .filter((t) => (t.tabProperties?.nestingLevel ?? 0) === 0)
+    .sort((a, b) => (a.tabProperties?.index ?? 0) - (b.tabProperties?.index ?? 0));
+
+  if (topLevel.length === 0) {
+    // No tabs structure — pre-tabs doc, Drive HTML export is the right path.
     const html = await exportAsHtml(docId);
     return (convertHtml(html) || "").trim();
   }
-  const topLevel = tabs.filter((t) => t.nestingLevel === 0).sort((a, b) => a.index - b.index);
   if (topLevel.length === 1) {
-    // Single-tab docs don't need a marker — emitting `---Tab 1---`
-    // for a regular doc would just be noise the user has to delete.
-    const html = await exportAsHtml(docId, { tabId: topLevel[0].id });
+    // Single tab — Drive HTML export keeps the most formatting fidelity
+    // (the Docs API walker is intentionally narrow). A single tab also
+    // doesn't need a marker — emitting `---Tab 1---` for a regular doc
+    // would be noise the user has to delete.
+    const html = await exportAsHtml(docId);
     return (convertHtml(html) || "").trim();
   }
-  // Multi-tab — emit a marker for every tab, including the first, so
-  // the outline + files-sidebar list every tab by name. `joinTabs`
-  // skips the marker when `title` is falsy, so the per-tab fallback
-  // name keeps the first tab from disappearing on degenerate input.
+  // Multi-tab — extract each tab's body via the docs-walker. Emits a
+  // marker for every tab (including the first) so the outline and
+  // files sidebar list every tab by name.
   const sections = [];
   for (let i = 0; i < topLevel.length; i++) {
     const tab = topLevel[i];
-    const html = await exportAsHtml(docId, { tabId: tab.id });
-    const content = (convertHtml(html) || "").trim();
-    sections.push({
-      title: (tab.title || "").trim() || `Tab ${i + 1}`,
-      content,
-    });
+    const title = (tab.tabProperties?.title || "").trim() || `Tab ${i + 1}`;
+    const content = documentTabToMarkdown(tab.documentTab);
+    sections.push({ title, content });
   }
   return joinTabs(sections);
 }

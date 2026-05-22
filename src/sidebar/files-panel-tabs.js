@@ -106,14 +106,26 @@ export function stripTabMarkersFromTree(tree) {
 }
 
 /** Inline DOM for a tab-marker row. Smaller text + indentation are
- *  driven by `.tree-tab-marker-row` styles in `files-panel.css`. */
-export function renderTabMarkerRow(item) {
+ *  driven by `.tree-tab-marker-row` styles in `files-panel.css`.
+ *
+ *  The click handler is attached here rather than through
+ *  SortableList's onClick because SortableList's pointer flow bails
+ *  on items where `canDrag` returns false — no `pendingDrag` is set,
+ *  so no synthetic click event fires. A direct listener on the row
+ *  element bypasses that path entirely. */
+export function renderTabMarkerRow(item, onJump) {
   const row = document.createElement("span");
   row.className = "tree-item-row tree-tab-marker-row";
   const nameEl = document.createElement("span");
   nameEl.className = "tree-item-name tree-tab-marker-name";
   nameEl.textContent = item.name || "";
   row.appendChild(nameEl);
+  if (typeof onJump === "function") {
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onJump(item);
+    });
+  }
   return row;
 }
 

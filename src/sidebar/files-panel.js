@@ -157,7 +157,11 @@ export function createFilesPanel(container, state, hidePanel) {
 
     renderItem: (item, context) => {
       if (isTabMarkerItem(item)) {
-        return renderTabMarkerRow(item);
+        return renderTabMarkerRow(item, (entry) => {
+          if (state.selectedDocIds.length) state.clearSelectedDocs();
+          void openDocAtTab(state, entry.fileId, entry.tabOffset);
+          if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
+        });
       }
       const icon = getIcon(item);
       const isActive = isItemActive(item, state);
@@ -191,14 +195,9 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item, event) => {
-      // Tab marker — open the parent doc and scroll to the marker
-      // offset. Multi-select / pane drag don't apply.
-      if (isTabMarkerItem(item)) {
-        if (state.selectedDocIds.length) state.clearSelectedDocs();
-        void openDocAtTab(state, item.fileId, item.tabOffset);
-        if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
-        return;
-      }
+      // Tab markers attach their own click handler inside
+      // `renderTabMarkerRow` — SortableList's pointer flow bails on
+      // non-draggable items, so onClick never fires for them.
       // Docs AND notebooks participate in the shift / cmd-click
       // multi-select — the listing view branches on type to call the
       // right open method. Anything else (folder, project, image, …)
