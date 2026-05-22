@@ -215,12 +215,14 @@ export async function listTabs(docId) {
 }
 
 /** Rename a tab. Used by the push pipeline when the markdown's tab
- *  title differs from the Doc's current tab title for the same slot. */
+ *  title differs from the Doc's current tab title for the same slot.
+ *  The Docs API request type is `updateDocumentTabProperties`; the
+ *  target tab is specified by setting `tabId` inside `tabProperties`
+ *  alongside the new field values. */
 export async function renameTab(docId, tabId, title) {
   return batchUpdate(docId, [
     {
-      updateTabProperties: {
-        tabId,
+      updateDocumentTabProperties: {
         tabProperties: { tabId, title },
         fields: "title",
       },
@@ -229,19 +231,23 @@ export async function renameTab(docId, tabId, title) {
 }
 
 /** Create a new top-level tab at the given index with the given title.
- *  Returns the new tab's id from the batchUpdate response. */
+ *  Returns the new tab's id from the batchUpdate response. The Docs
+ *  API request type is `addDocumentTab`; both the title and the
+ *  desired position live inside `tabProperties`. */
 export async function createTab(docId, index, title) {
   const result = await batchUpdate(docId, [
     {
-      createTab: {
+      addDocumentTab: {
         tabProperties: { title, index },
       },
     },
   ]);
-  // batchUpdate returns the operation replies in the same order as the
-  // requests — the createTab reply carries the new tabId.
-  const reply = result.replies?.[0]?.createTab;
-  return reply?.tabId || null;
+  // The reply key matches the request key: `addDocumentTab` ->
+  // `{ tabProperties: { tabId } }`. Older code called this
+  // `createTab` so the JS wrapper keeps that name; only the wire
+  // request and response are renamed.
+  const reply = result.replies?.[0]?.addDocumentTab;
+  return reply?.tabProperties?.tabId || null;
 }
 
 /** Delete the given tab. */
