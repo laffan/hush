@@ -42,20 +42,20 @@ function ensureHost() {
   return el;
 }
 
-// Position the bar over the editor column: outer left/right match the
-// scroller's viewport edges, padding-left/right match the scroller's
-// internal padding so the chip + buttons land flush with the first /
-// last columns of text.
+// Position the pill over the text column: outer left/right match the
+// inner edges of the editor's text column (scroller viewport + the
+// scroller's own padding), so the pill background sits exactly above
+// the text and never spreads under a Gutter pane on either side.
 function syncLayout() {
   const el = document.getElementById(HOST_ID);
   if (!el || el.style.display === "none") return;
   const scroller = document.querySelector("#editor-container .cm-scroller");
   if (!scroller) return;
   const rect = scroller.getBoundingClientRect();
-  el.style.left = `${Math.max(0, rect.left)}px`;
-  el.style.right = `${Math.max(0, window.innerWidth - rect.right)}px`;
-  el.style.paddingLeft = scroller.style.paddingLeft || "";
-  el.style.paddingRight = scroller.style.paddingRight || "";
+  const padL = parseFloat(scroller.style.paddingLeft) || 0;
+  const padR = parseFloat(scroller.style.paddingRight) || 0;
+  el.style.left = `${Math.max(0, rect.left + padL)}px`;
+  el.style.right = `${Math.max(0, window.innerWidth - rect.right + padR)}px`;
 }
 
 function refresh() {

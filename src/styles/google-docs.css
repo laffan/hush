@@ -172,17 +172,25 @@
   /* `viewport-fit=cover` (see index.html) lets the viewport extend under
      the iOS status bar / dynamic island, which would otherwise capture
      taps aimed at the buttons sitting in that strip. Anchoring with
-     env(safe-area-inset-top) pushes the bar below the system overlay on
-     iOS and resolves to 0 on desktop, leaving that path unchanged. */
-  top: env(safe-area-inset-top, 0px);
+     env(safe-area-inset-top) + 6px lifts the pill clear of the system
+     overlay and leaves a small visual gap so it reads as a deliberate
+     pill rather than a header floating in space. Resolves to 6px on
+     desktop, which is also where we want it. */
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
   z-index: 90; /* above #drag-region (80), below shelf/sidebar (150/200) */
+  /* Pill: outer edges line up with the text column (left/right are set
+     by syncLayout), with a rounded, opaque background and interior
+     padding so the chip + actions read as one piece. Width is scoped
+     to the text column so a Gutter pane on either side stays visible. */
   display: flex; align-items: center; gap: 12px;
-  padding-top: 8px;
-  padding-bottom: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
   font-family: var(--font-family);
   font-size: 11px;
   color: var(--sidebar-fg);
   background: var(--theme-bg, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 18%, transparent);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
   user-select: none;
   -webkit-app-region: no-drag;
   -webkit-tap-highlight-color: transparent;

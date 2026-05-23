@@ -27,6 +27,7 @@ import { buildCodeMirrorKeymap } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 import { headingIndentPlugin } from "./heading-indent.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
+import { arrowUpFix } from "./arrow-up-fix.js";
 import { createImagePasteExtension } from "./image-paste.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
@@ -246,6 +247,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
     createCommentAfterPlugin(),
+    arrowUpFix,
     keymap.of([...defaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),
     placeholder("Start writing..."),
@@ -512,6 +514,7 @@ export function createEditor(container, state) {
       encouragePlugin,
       projectViewField,
       separatorFilter,
+      arrowUpFix,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
