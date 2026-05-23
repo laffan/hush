@@ -1,49 +1,67 @@
 /**
- * One-block-up ArrowUp.
+ * Explicit one-visual-line-up ArrowUp.
  *
- * CodeMirror 6's default `cursorLineUp` uses visual-y math to decide
- * where the previous line is, which works when every line in the
- * viewport is the same height. The moment lines have wildly different
- * heights (a tall heading next to body text, a bold line on its own,
- * a tab-marker pill, a project-view separator widget) the heuristic
- * overshoots and the cursor jumps OVER the adjacent line, landing two
- * blocks up.
+ * CodeMirror 6's default `cursorLineUp` uses visual-y math sized to
+ * the *current* line's height to find the previous line. When the
+ * adjacent block has a wildly different height (a tall heading next
+ * to body text, a tab-marker pill, a project-view separator widget)
+ * the heuristic overshoots and the cursor jumps OVER one or more
+ * blocks. Plain paragraph navigation is reserved for `Mod+ArrowUp`
+ * (the `jumpPrevParagraph` shortcut), so plain ArrowUp must step
+ * exactly one visual line at a time.
  *
- * This keymap pre-empts ArrowUp and, when the cursor sits on the
- * first visual line of its block, navigates explicitly to the previous
- * block — preserving the column via `goalColumn`. When the cursor sits
- * on a wrapped continuation line inside the same block, we yield to
- * CodeMirror's default so within-block visual navigation still works.
+ * Strategy:
+ *   - Inside a wrapped block, move to the previous visual line using
+ *     `coordsAtPos(head).top - small` so we stay within the block's
+ *     own uniform line heights.
+ *   - When the target y crosses the block's top edge, jump explicitly
+ *     to the *last* visual line of the previous block. The previous
+ *     block is found via `lineBlockAt(block.from - 1)`, which doesn't
+ *     depend on any height math.
+ *   - Goal column rides through both branches so successive ArrowUps
+ *     land in the same visual column even when intermediate lines are
+ *     shorter.
  */
-import { Prec } from "@codemirror/state";
-import { EditorSelection } from "@codemirror/state";
+import { Prec, EditorSelection } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 
-function arrowUpOneBlock(view) {
+function arrowUpOneLine(view) {
   const sel = view.state.selection.main;
-  if (!sel.empty) return false;
+  if (!sel.empty) return false; // selection extension uses default path
   const head = sel.head;
   const coords = view.coordsAtPos(head);
   if (!coords) return false;
   const block = view.lineBlockAt(head);
-  // Only override when the cursor is on the first visual line of the
-  // current block — otherwise let CodeMirror handle in-block wrap.
-  if (coords.top - block.top > 4) return false;
-  if (block.from === 0) return false;
-
-  const prevBlock = view.lineBlockAt(block.from - 1);
-  // CM6's SelectionRange uses -1 as the "no goal" sentinel rather than
-  // undefined, so an `?? coords.left` fallback wouldn't catch it.
+  // CM6's SelectionRange uses -1 as the "no goal" sentinel (not undefined),
+  // so an `?? coords.left` fallback wouldn't catch it.
   const goalX = (typeof sel.goalColumn === "number" && sel.goalColumn >= 0)
     ? sel.goalColumn
     : coords.left;
-  // Land in the LAST visual line of the previous block (one pixel
-  // inside its bottom edge), preserving the cursor's x.
-  const targetY = prevBlock.bottom - 1;
+
+  // Try one visual line up *inside the current block* first — keeps
+  // wrapped-paragraph navigation working without any height heuristics.
+  const targetYIn = coords.top - 2;
+  if (targetYIn >= block.top) {
+    const pos = view.posAtCoords({ x: goalX, y: targetYIn });
+    if (pos != null && pos >= block.from && pos <= block.to && pos !== head) {
+      view.dispatch({
+        selection: EditorSelection.cursor(pos, undefined, undefined, goalX),
+        scrollIntoView: true,
+        userEvent: "select",
+      });
+      return true;
+    }
+  }
+
+  // Out of the block — step to the *last* visual line of the previous
+  // block. If we're already at the very top, consume the key so we
+  // don't fall back into CM's heuristic.
+  if (block.from === 0) return true;
+  const prevBlock = view.lineBlockAt(block.from - 1);
+  const targetY = prevBlock.bottom - 2;
   let pos = view.posAtCoords({ x: goalX, y: targetY });
   if (pos == null) pos = prevBlock.to;
   pos = Math.max(prevBlock.from, Math.min(prevBlock.to, pos));
-
   view.dispatch({
     selection: EditorSelection.cursor(pos, undefined, undefined, goalX),
     scrollIntoView: true,
@@ -53,5 +71,5 @@ function arrowUpOneBlock(view) {
 }
 
 export const arrowUpFix = Prec.high(
-  keymap.of([{ key: "ArrowUp", run: arrowUpOneBlock }])
+  keymap.of([{ key: "ArrowUp", run: arrowUpOneLine }])
 );
