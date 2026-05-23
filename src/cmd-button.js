@@ -20,10 +20,11 @@
  *     keydown listeners that key off `e.metaKey` alone also pick up
  *     the modifier.
  *
- * Buttons stack vertically in the bottom-left of the editor (Cmd on
- * the bottom, palette above, paste above that, undo at the top). When
- * the sidebar is open they ride the panel's right edge instead of the
- * viewport edge so they stay reachable.
+ * Buttons stack vertically in the bottom-left of the editor (palette
+ * anchors the column at the very bottom; Cmd above it, paste above
+ * that, undo at the top). When the sidebar is open they ride the
+ * panel's right edge instead of the viewport edge so they stay
+ * reachable.
  */
 
 /** Detect iOS / iPadOS — iPad reports as MacIntel since iPadOS 13, so

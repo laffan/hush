@@ -374,7 +374,12 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
    slightly deeper outline so the parent-chain reads at a glance. */
 .cm-tab-marker-line {
   text-align: center;
-  margin: 0.6em 0;
+  /* Use padding (measured inside the line's box) rather than margin —
+     CodeMirror's height map doesn't include margin in the line's
+     getBoundingClientRect, which makes posAtCoords walk into a
+     "space" pseudo-block above the line and skip the entire line
+     when navigating ArrowUp across it. */
+  padding: 0.6em 0;
 }
 .cm-tab-marker-pill {
   display: inline-flex;

@@ -24,9 +24,9 @@
   position: fixed;
   /* Sit just past the always-present grip strip when the panel is
      closed; the .panel-open rule below moves the buttons to the right
-     edge of the open panel. */
+     edge of the open panel. Per-button `bottom` is set in the stack
+     rules below. */
   left: calc(var(--sidebar-grip-width) + 12px);
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   width: 36px;
   height: 36px;
   display: flex;
@@ -54,8 +54,16 @@
   transition: opacity 0.15s, color 0.15s, background 0.15s, box-shadow 0.12s;
 }
 
+/* Stack (bottom → top): palette anchors the column at the lower-left
+   corner; Touch-mode pills (Cmd, paste, undo) stack on top of it. The
+   base `.cmd-floating-button` rule is the Cmd-pill slot (slot index 1)
+   so it applies even though that pill carries no second class. */
 .cmd-floating-button.cmd-palette-button {
-  bottom: calc(20px + 36px + 12px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+.cmd-floating-button {
+  bottom: calc(20px + (36px + 12px) + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.cmd-paste-button {
