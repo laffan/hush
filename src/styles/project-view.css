@@ -1,11 +1,25 @@
 /* ===== Project View Separator ===== */
+/* The gap above and below the dashed line is rendered as the box's
+   own height — *not* margin. CodeMirror's height map measures each
+   block from getBoundingClientRect, which excludes margin, so any
+   margin on a CM block (or a block widget) creates a "space"
+   pseudo-block in the height map that ArrowUp's posAtCoords walks
+   past, jumping over the adjacent line. Keeping the geometry inside
+   the box (height + a centred ::before for the dashed rule) keeps
+   measurement and paint in sync. */
 .project-separator {
   display: block;
+  position: relative;
   width: 100%;
-  height: 1px;
-  margin: 24px 0;
-  border: none;
-  border-top: 2px dashed rgba(128, 128, 128, 0.3);
+  height: 50px;
   pointer-events: none;
   user-select: none;
+}
+.project-separator::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed rgba(128, 128, 128, 0.3);
 }
