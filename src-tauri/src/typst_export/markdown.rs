@@ -25,6 +25,8 @@ When in doubt: a slightly degraded rendering beats refusing to compile.
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use std::collections::HashSet;
 
+use super::preprocess::{TAB_MARKER_CLOSE, TAB_MARKER_OPEN};
+
 #[derive(Clone, Debug)]
 pub enum CitationMode {
     /// Replace citation-shaped links with Typst `@citekey` references.
@@ -67,8 +69,47 @@ pub fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
         emitter.handle(event, &mut out);
     }
     let out = expand_cite_sentinels(&out, &cite_mode);
+    let out = expand_tab_sentinels(&out);
 
     if out.ends_with('\n') { out } else { out + "\n" }
+}
+
+// ───────────────────── tab marker sentinels ─────────────────────
+
+/// Replace each `\x1D…\x1C` run (planted by `preprocess::process_tabs`)
+/// with a centred rounded pill carrying the tab's path label. The pill
+/// visual mirrors the editor's `.cm-tab-marker-pill` so the printed
+/// page reads the same way the editor surface does.
+fn expand_tab_sentinels(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != TAB_MARKER_OPEN {
+            out.push(c);
+            continue;
+        }
+        let mut label = String::new();
+        for k in chars.by_ref() {
+            if k == TAB_MARKER_CLOSE {
+                break;
+            }
+            label.push(k);
+        }
+        // The label arrived through `escape_typst_text` already (text
+        // events run through the escape pass), so we feed it into the
+        // box body verbatim — re-escaping would double-backslash any
+        // glyphs the user put in the tab name.
+        out.push_str(
+            "\n#align(center)[#box(\
+stroke: 0.5pt + luma(160), \
+radius: 999pt, \
+fill: luma(245), \
+inset: (x: 0.9em, y: 0.3em))[#text(size: 0.85em, fill: luma(80))[",
+        );
+        out.push_str(&label);
+        out.push_str("]]]\n\n");
+    }
+    out
 }
 
 // ───────────────────── citation sentinels ─────────────────────

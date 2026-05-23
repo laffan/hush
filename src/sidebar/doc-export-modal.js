@@ -45,6 +45,11 @@ export async function openDocExportModal(state) {
   const styles = await fetchStyles();
   const citationStyles = await fetchCitationStyles();
 
+  // Desktop save dialogs surface a filename field already, so the
+  // modal-level input only mounts on iOS — where the system share
+  // sheet has nowhere for the user to override the export name.
+  const showFilenameField = isIOS();
+
   // Remove any stale modal first — keeps the export button idempotent
   // even if the user clicks twice.
   document.querySelectorAll(".notebook-export-modal").forEach((el) => el.remove());
@@ -57,18 +62,28 @@ export async function openDocExportModal(state) {
   modal.className = "notebook-export-modal";
 
   const choices = {
+    filename: name,
     format: "pdf",
     style: styles[0]?.id || "formal",
+    lineSpacing: 1.5,
     includeCitations: hasZotero && hasCitations,
     citationStyle: citationStyles[0]?.id || "numbered",
     stripComments: true,
     stripFlags: true,
+    includeTabs: true,
     numberHeadings: false,
     pageNumbers: true,
   };
 
   modal.innerHTML = `
     <div class="nxm-title">Export document</div>
+
+    ${showFilenameField ? `
+    <div class="nxm-section">
+      <div class="nxm-label">Filename</div>
+      <input type="text" class="nxm-filename-input" value="${escAttr(name)}" />
+    </div>
+    ` : ""}
 
     <div class="nxm-section">
       <div class="nxm-label">Format</div>
@@ -86,6 +101,15 @@ export async function openDocExportModal(state) {
     </div>
 
     <div class="nxm-section" data-visible-when="format=pdf">
+      <div class="nxm-label">Line spacing</div>
+      <select class="nxm-spacing-select">
+        <option value="1">1</option>
+        <option value="1.5" selected>1.5</option>
+        <option value="2">2</option>
+      </select>
+    </div>
+
+    <div class="nxm-section" data-visible-when="format=pdf">
       <div class="nxm-label">Layout</div>
       <label class="nxm-checkbox-label">
         <input type="checkbox" data-choice="stripComments" checked />
@@ -94,6 +118,10 @@ export async function openDocExportModal(state) {
       <label class="nxm-checkbox-label">
         <input type="checkbox" data-choice="stripFlags" checked />
         Strip flags
+      </label>
+      <label class="nxm-checkbox-label">
+        <input type="checkbox" data-choice="includeTabs" checked />
+        Include tabs
       </label>
       <label class="nxm-checkbox-label">
         <input type="checkbox" data-choice="numberHeadings" />
@@ -155,8 +183,19 @@ export async function openDocExportModal(state) {
     });
   });
 
+  const filenameInput = modal.querySelector(".nxm-filename-input");
+  if (filenameInput) {
+    filenameInput.addEventListener("input", () => { choices.filename = filenameInput.value; });
+  }
+
   const styleSelect = modal.querySelector(".nxm-style-select");
   styleSelect.addEventListener("change", () => { choices.style = styleSelect.value; });
+
+  const spacingSelect = modal.querySelector(".nxm-spacing-select");
+  spacingSelect.addEventListener("change", () => {
+    const v = parseFloat(spacingSelect.value);
+    choices.lineSpacing = Number.isFinite(v) ? v : 1.5;
+  });
 
   const citeToggle = modal.querySelector(".nxm-cite-toggle");
   const citeStyleRow = modal.querySelector(".nxm-cite-style-row");
@@ -209,7 +248,8 @@ export async function openDocExportModal(state) {
 
     try {
       const bytes = await renderPdfBytes(state, content, choices);
-      const fileName = `${name}.pdf`;
+      const baseName = sanitize(choices.filename) || name;
+      const fileName = `${baseName.replace(/\.pdf$/i, "")}.pdf`;
       await deliver(bytes, fileName);
       cleanup();
     } catch (err) {
@@ -271,8 +311,10 @@ async function renderPdfBytes(state, content, choices) {
       citationStyle: choices.citationStyle,
       stripComments: !!choices.stripComments,
       stripFlags: !!choices.stripFlags,
+      includeTabs: !!choices.includeTabs,
       numberHeadings: !!choices.numberHeadings,
       pageNumbers: !!choices.pageNumbers,
+      lineSpacing: Number.isFinite(choices.lineSpacing) ? choices.lineSpacing : 1.5,
       references,
       imageFilenames,
     },
