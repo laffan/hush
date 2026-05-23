@@ -45,6 +45,11 @@ export async function openDocExportModal(state) {
   const styles = await fetchStyles();
   const citationStyles = await fetchCitationStyles();
 
+  // Desktop save dialogs surface a filename field already, so the
+  // modal-level input only mounts on iOS — where the system share
+  // sheet has nowhere for the user to override the export name.
+  const showFilenameField = isIOS();
+
   // Remove any stale modal first — keeps the export button idempotent
   // even if the user clicks twice.
   document.querySelectorAll(".notebook-export-modal").forEach((el) => el.remove());
@@ -73,10 +78,12 @@ export async function openDocExportModal(state) {
   modal.innerHTML = `
     <div class="nxm-title">Export document</div>
 
+    ${showFilenameField ? `
     <div class="nxm-section">
       <div class="nxm-label">Filename</div>
       <input type="text" class="nxm-filename-input" value="${escAttr(name)}" />
     </div>
+    ` : ""}
 
     <div class="nxm-section">
       <div class="nxm-label">Format</div>
@@ -177,7 +184,9 @@ export async function openDocExportModal(state) {
   });
 
   const filenameInput = modal.querySelector(".nxm-filename-input");
-  filenameInput.addEventListener("input", () => { choices.filename = filenameInput.value; });
+  if (filenameInput) {
+    filenameInput.addEventListener("input", () => { choices.filename = filenameInput.value; });
+  }
 
   const styleSelect = modal.querySelector(".nxm-style-select");
   styleSelect.addEventListener("change", () => { choices.style = styleSelect.value; });
