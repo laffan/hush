@@ -273,7 +273,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     // Fixed-width labels keep the swatch rows aligned so the colour
     // circles line up across "Text" and "Bg".
     const labelStyle: Partial<CSSStyleDeclaration> = {
-      fontSize: "11px", color: muted, width: "32px", flexShrink: "0",
+      fontSize: "11px", color: muted, width: "42px", flexShrink: "0",
       textTransform: "uppercase", letterSpacing: "0.5px",
     };
 
@@ -297,8 +297,6 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       panel.appendChild(makeRow("Bg", makeSwatchRow(BACKGROUND_COLORS, (c) => {
         state.changeSelectedBackground(c);
       })));
-      // Small gap before border row
-      panel.appendChild(h("div", { style: { height: "2px" } }));
       panel.appendChild(makeRow("Border", makeSwatchRow(BACKGROUND_COLORS, (c) => {
         state.changeSelectedBorder(c);
       })));
@@ -329,11 +327,14 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       const wrap = h("div", { style: { position: "relative", display: "inline-flex" } });
       const fg = s.color || theme.foreground;
       const bg = resolveBackground(s.backgroundColor) || "transparent";
+      const borderStyle = s.borderColor
+        ? `${s.borderWidth || 2}px solid ${COLOR_PALETTE[s.borderColor] || s.borderColor}`
+        : bg === "transparent" ? "1px dashed rgba(0,0,0,0.15)" : "1px solid rgba(0,0,0,0.06)";
       const chip = h("button", {
         title: `Apply (${s.fontSize}px)`,
         style: {
           padding: "3px 10px",
-          border: bg === "transparent" ? "1px dashed rgba(0,0,0,0.15)" : "1px solid rgba(0,0,0,0.06)",
+          border: borderStyle,
           borderRadius: "10px",
           background: bg,
           color: fg,

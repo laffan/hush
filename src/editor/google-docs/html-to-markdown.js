@@ -108,7 +108,7 @@ function blockPara(node, ctx) {
   // no-op so the pulled markdown doesn't accumulate blank lines.
   const collapsed = inner.replace(/[\s ]+/g, "");
   if (!collapsed) return "";
-  return "\n" + inner.trim();
+  return "\n\n" + inner.trim() + "\n\n";
 }
 
 // Block-level entry point for a <ul>/<ol>. Coalesces consecutive sibling

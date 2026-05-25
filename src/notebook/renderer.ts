@@ -411,26 +411,25 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
   const textColor = isAutoColor ? theme.foreground : isHeadingColor ? theme.headingColor : shape.color;
   const headingColor = isAutoColor ? theme.headingColor : isHeadingColor ? theme.headingColor : shape.color;
 
-  // Draw background and/or border
+  // Draw background and/or border (10px pad + 5px radius when bordered)
   if (shape.backgroundColor || shape.borderColor) {
     const bounds = getShapeBounds(shape, fontFamily);
-    const pad = 4;
+    const pad = shape.borderColor ? 10 : 4, r = shape.borderColor ? 5 : 0;
     const bx = bounds.minX - pad, by = bounds.minY - pad;
     const bw = bounds.maxX - bounds.minX + pad * 2, bh = bounds.maxY - bounds.minY + pad * 2;
+    ctx.save();
     if (shape.backgroundColor) {
-      ctx.save();
       ctx.fillStyle = resolveThemeColor(COLOR_PALETTE[shape.backgroundColor] || shape.backgroundColor, theme);
       ctx.globalAlpha = 0.9;
-      ctx.fillRect(bx, by, bw, bh);
-      ctx.restore();
+      ctx.beginPath(); (ctx as any).roundRect(bx, by, bw, bh, r); ctx.fill();
+      ctx.globalAlpha = 1;
     }
     if (shape.borderColor) {
-      ctx.save();
       ctx.strokeStyle = resolveThemeColor(COLOR_PALETTE[shape.borderColor] || shape.borderColor, theme);
-      ctx.lineWidth = shape.borderWidth || 1;
-      ctx.strokeRect(bx, by, bw, bh);
-      ctx.restore();
+      ctx.lineWidth = shape.borderWidth || 2;
+      ctx.beginPath(); (ctx as any).roundRect(bx, by, bw, bh, r); ctx.stroke();
     }
+    ctx.restore();
   }
 
   ctx.save();
