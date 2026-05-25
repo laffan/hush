@@ -14,6 +14,8 @@ import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
 import { attachGripResize, applyPanelWidth } from "./panel-resizer.js";
 import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
+import { mountProgressCenter } from "./sidebar-progress.js";
+import refreshCircleRaw from "../temp/temp-icons/refresh-circle.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -116,6 +118,7 @@ export function createSidebar(state) {
   const syncDot = document.createElement("div");
   syncDot.className = "sidebar-sync-dot";
   syncDot.setAttribute("aria-hidden", "true");
+  syncDot.innerHTML = refreshCircleRaw;
   gripToggle.appendChild(syncDot);
   function syncDotVisible() {
     return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);
@@ -135,6 +138,7 @@ export function createSidebar(state) {
   state.on("settings-changed", refreshSyncDot);
   state.on("dropbox-sync-success", pulseSyncDot);
   refreshSyncDot();
+  mountProgressCenter(gripToggle, state);
 
   // Typing-fade — hide the create / add affordances while the user is
   // actively typing in the doc editor. Pointer activity (mousemove /

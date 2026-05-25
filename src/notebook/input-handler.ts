@@ -56,6 +56,7 @@ export interface NotebookShortcuts {
   shortcutNbRedo: string;
   shortcutNbGroup: string;
   shortcutNbUngroup: string;
+  shortcutNbResetZoom: string;
 }
 
 const DEFAULTS: NotebookShortcuts = {
@@ -68,6 +69,7 @@ const DEFAULTS: NotebookShortcuts = {
   shortcutNbRedo: "Mod+Shift+Z",
   shortcutNbGroup: "Mod+G",
   shortcutNbUngroup: "Mod+Shift+G",
+  shortcutNbResetZoom: "Mod+0",
 };
 
 /**
@@ -267,6 +269,12 @@ export function bindInputEvents(
     if (matchesKey(e, sc.shortcutNbGroup)) { e.preventDefault(); state.groupSelected(); return; }
     if (matchesKey(e, sc.shortcutNbRedo)) { e.preventDefault(); state.redo(); return; }
     if (matchesKey(e, sc.shortcutNbUndo)) { e.preventDefault(); state.undo(); return; }
+    if (matchesKey(e, sc.shortcutNbResetZoom)) {
+      e.preventDefault();
+      state.camera = { ...state.camera, zoom: 1 };
+      state.notify("camera");
+      return;
+    }
 
     // Copy / Cut — write the current selection out as a `canvas-clipboard@1`
     // envelope so the shapes can be pasted back into Hush, into another Hush

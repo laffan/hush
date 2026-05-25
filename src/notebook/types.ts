@@ -103,6 +103,8 @@ export interface TextShape extends ShapeBase {
   width?: number; // constraint width for wrapping; undefined = auto-size
   manualWidth?: boolean; // true if user explicitly resized via handles
   backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
   /** Marks this text shape as a persisted gutter header label. Renders
    *  with the faded shadow-header style + horizontal rule above, is
    *  immune to selection / drag / edit, and gets its y position synced
@@ -135,6 +137,8 @@ export interface DragAreaShape extends ShapeBase {
   strokeColor: string;
   backgroundColor: string;
   borderRadius: number;
+  borderColor?: string;
+  borderWidth?: number;
 }
 
 export type Shape = DrawShape | TextShape | ImageShape | DragAreaShape;
@@ -159,10 +163,11 @@ export const COLOR_PALETTE: Record<string, string> = {
   "light-green": "#90ee90",
   "light-blue": "#87ceeb",
   "light-violet": "#dda0dd",
+  white: "#ffffff",
 };
 
-export const BACKGROUND_COLORS = ["reset", "gray", "light-blue", "light-green", "orange", "red", "violet"] as const;
-export const TEXT_COLORS = ["reset", "gray", "light-blue", "light-green", "orange", "red", "violet"] as const;
+export const BACKGROUND_COLORS = ["reset", "auto", "heading", "black", "white", "red", "light-blue", "green"] as const;
+export const TEXT_COLORS = ["reset", "auto", "heading", "black", "white", "red", "light-blue", "green"] as const;
 
 // === Shelf ===
 export interface ShelfNode {

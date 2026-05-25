@@ -43,6 +43,7 @@ export function parseTabMarkerPath(line) {
     const name = m[1].trim();
     if (!name) return null;
     if (/^-+$/.test(name)) return null;
+    if (name === "hush-separator") return null;
     path.push(name);
   }
   return path;

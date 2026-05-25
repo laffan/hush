@@ -129,25 +129,20 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     if (bucket) bucket.push(s);
   }
 
-  // Two-pass layered paint: drag-areas across all layers (bottom-first),
-  // then flowchart arrows, then text/image shapes across all layers.
-  // Splitting the passes lets connecting arrows sit between containers
-  // and their contents regardless of which layer either lives on. Drawings
-  // are handled by the drawing-layer canvas and intentionally skipped here.
+  // Two-pass layered paint: drag-areas (bottom-first), flowchart arrows,
+  // then text/image shapes. Drawings handled by the drawing-layer canvas.
   for (const layer of layerOrder) {
     if (layer.hidden) continue;
     const layerShapes = shapesByLayer.get(layer.id);
     if (!layerShapes || !layerShapes.length) continue;
     for (const shape of layerShapes) {
       if (shape.type === "drag-area" && !pocketedIds.has(shape.id)) {
-        drawDragArea(ctx, shape, state.reorderDragAreaId === shape.id, theme.accent);
+        drawDragArea(ctx, shape, state.reorderDragAreaId === shape.id, theme.accent, theme);
       }
     }
   }
 
-  // Flowchart arrows render under text shapes so the connectors visually
-  // emerge from behind the boxes. Skip pocketed shapes — their world
-  // representation is the pocket card, not the canvas.
+  // Flowchart arrows render under text shapes; skip pocketed shapes.
   if (state.flowchart) {
     state.flowchart.setArrowColor(theme.foreground);
     state.flowchart.draw(ctx, shapes.filter((s) => !pocketedIds.has(s.id)));
@@ -208,13 +203,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   }
 
   if (selectedIds.size > 0) {
-    // While the drawing engine is mid-transform (move / resize /
-    // rotate from its own bbox grab), suppress the gray group
-    // highlight — the engine's bbox + handles are tracking the
-    // gesture and a second outline lagging at the pre-drag
-    // position would compete with them. Reappears on release.
+    // Suppress group highlight while drawing engine is mid-transform.
     const skipGroupHighlight = !!state.strokeEngineDragging;
-    // Draw group bounding boxes first (behind individual highlights)
+    // Group bounding boxes first (behind individual highlights)
     const groupBounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
     if (!skipGroupHighlight) {
       for (const shape of shapes) {
@@ -235,13 +226,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       }
     }
 
-    // Stroke selections are drawn by the drawing engine's SVG overlay
-    // (see selection.js + drawing-layer.ts bridge) so the user gets
-    // resize + rotation handles regardless of which select tool they
-    // used to make the selection. The canvas-side stroke highlight is
-    // intentionally omitted to avoid two bboxes painting the same
-    // selection.
-
+    // Stroke selections drawn by the engine's SVG overlay; omitted here.
     for (const shape of shapes) {
       if (!selectedIds.has(shape.id) || pocketedIds.has(shape.id)) continue;
       if (shape.type === "draw") continue; // handled above (group or loose-stroke bbox)
@@ -252,8 +237,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
       }
     }
 
-    // Reorder-mode ghost preview — translucent shape clones at the swap
-    // destinations, framed by dashed accent boundary rects.
+    // Reorder-mode ghost preview at swap destinations.
     if (state.reorderPreview) {
       const prev = ctx.globalAlpha;
       ctx.globalAlpha = prev * 0.55;
@@ -323,19 +307,13 @@ function drawGhostShape(ctx: CanvasRenderingContext2D, s: Shape, state: RenderSt
 // === Draw helpers (pure Canvas 2D — no framework dependencies) ===
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
 }
 
-export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape, reorderActive = false, reorderAccent?: string) {
+export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape, reorderActive = false, reorderAccent?: string, theme?: CanvasTheme) {
   const { position, width, height, strokeColor, backgroundColor, borderRadius } = shape;
   ctx.save();
   ctx.strokeStyle = reorderActive ? (reorderAccent || strokeColor) : strokeColor;
@@ -344,10 +322,16 @@ export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape
   ctx.fillStyle = backgroundColor;
   ctx.beginPath();
   roundRect(ctx, position.x, position.y, width, height, borderRadius);
-  ctx.fill();
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
+  ctx.fill(); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+  if (shape.borderColor) {
+    const borderHex = COLOR_PALETTE[shape.borderColor] || shape.borderColor;
+    ctx.save();
+    ctx.strokeStyle = theme ? resolveThemeColor(borderHex, theme) : borderHex;
+    ctx.lineWidth = shape.borderWidth || 1;
+    ctx.beginPath();
+    roundRect(ctx, position.x, position.y, width, height, borderRadius);
+    ctx.stroke(); ctx.restore();
+  }
 }
 
 export function drawStroke(ctx: CanvasRenderingContext2D, points: Point[], color: string, width: number) {
@@ -372,6 +356,12 @@ export function drawStroke(ctx: CanvasRenderingContext2D, points: Point[], color
   const last = points[points.length - 1];
   ctx.lineTo(last.x, last.y);
   ctx.stroke();
+}
+
+/** Resolve sentinel color values ("auto" / "heading") through the
+ *  active theme. Regular hex/palette values pass through unchanged. */
+function resolveThemeColor(raw: string, theme: CanvasTheme): string {
+  return raw === "auto" ? theme.foreground : raw === "heading" ? theme.headingColor : raw;
 }
 
 /** Default highlight tint matches the markdown editor's `==…==`
@@ -415,22 +405,32 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
     measure,
   );
 
-  // Resolve text color: use theme foreground if shape uses default black
-  const isDefaultColor = shape.color === "#000000";
-  const textColor = isDefaultColor ? theme.foreground : shape.color;
-  const headingColor = isDefaultColor ? theme.headingColor : shape.color;
+  // Resolve text color: use theme foreground if shape uses default black or "auto"
+  const isAutoColor = shape.color === "#000000" || shape.color === "auto";
+  const isHeadingColor = shape.color === "heading";
+  const textColor = isAutoColor ? theme.foreground : isHeadingColor ? theme.headingColor : shape.color;
+  const headingColor = isAutoColor ? theme.headingColor : isHeadingColor ? theme.headingColor : shape.color;
 
-  // Draw background if set
-  if (shape.backgroundColor) {
-    const hex = COLOR_PALETTE[shape.backgroundColor] || shape.backgroundColor;
+  // Draw background and/or border
+  if (shape.backgroundColor || shape.borderColor) {
     const bounds = getShapeBounds(shape, fontFamily);
     const pad = 4;
-    ctx.save();
-    ctx.fillStyle = hex;
-    ctx.globalAlpha = 0.9;
-    ctx.fillRect(bounds.minX - pad, bounds.minY - pad, bounds.maxX - bounds.minX + pad * 2, bounds.maxY - bounds.minY + pad * 2);
-    ctx.globalAlpha = 1;
-    ctx.restore();
+    const bx = bounds.minX - pad, by = bounds.minY - pad;
+    const bw = bounds.maxX - bounds.minX + pad * 2, bh = bounds.maxY - bounds.minY + pad * 2;
+    if (shape.backgroundColor) {
+      ctx.save();
+      ctx.fillStyle = resolveThemeColor(COLOR_PALETTE[shape.backgroundColor] || shape.backgroundColor, theme);
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.restore();
+    }
+    if (shape.borderColor) {
+      ctx.save();
+      ctx.strokeStyle = resolveThemeColor(COLOR_PALETTE[shape.borderColor] || shape.borderColor, theme);
+      ctx.lineWidth = shape.borderWidth || 1;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.restore();
+    }
   }
 
   ctx.save();

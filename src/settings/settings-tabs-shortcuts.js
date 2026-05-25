@@ -75,6 +75,7 @@ export const shortcutCategories = [
       { key: "shortcutNbRedo", label: "Redo" },
       { key: "shortcutNbGroup", label: "Group shapes" },
       { key: "shortcutNbUngroup", label: "Ungroup shapes" },
+      { key: "shortcutNbResetZoom", label: "Reset zoom to 100%" },
     ],
   },
 ];

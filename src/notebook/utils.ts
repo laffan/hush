@@ -266,65 +266,70 @@ export function alignShapes(
   direction: "left" | "center" | "right" | "top" | "middle" | "bottom"
 ): Shape[] {
   if (shapes.length < 2) return shapes;
-  const allBounds = shapes.map((s) => getShapeBounds(s));
+
+  // Bucket shapes into units: each ungrouped shape is its own unit,
+  // grouped shapes share a unit by groupId.
+  const units: { shapes: Shape[]; bounds: Bounds }[] = [];
+  const groupMap = new Map<string, Shape[]>();
+
+  for (const s of shapes) {
+    if (s.groupId) {
+      let arr = groupMap.get(s.groupId);
+      if (!arr) { arr = []; groupMap.set(s.groupId, arr); }
+      arr.push(s);
+    } else {
+      units.push({ shapes: [s], bounds: getShapeBounds(s) });
+    }
+  }
+  for (const members of groupMap.values()) {
+    const allB = members.map((s) => getShapeBounds(s));
+    const union: Bounds = {
+      minX: Math.min(...allB.map((b) => b.minX)),
+      minY: Math.min(...allB.map((b) => b.minY)),
+      maxX: Math.max(...allB.map((b) => b.maxX)),
+      maxY: Math.max(...allB.map((b) => b.maxY)),
+    };
+    units.push({ shapes: members, bounds: union });
+  }
+
+  if (units.length < 2) return shapes;
 
   let target: number;
   switch (direction) {
-    case "left":
-      target = Math.min(...allBounds.map((b) => b.minX));
-      break;
-    case "right":
-      target = Math.max(...allBounds.map((b) => b.maxX));
-      break;
-    case "top":
-      target = Math.min(...allBounds.map((b) => b.minY));
-      break;
-    case "bottom":
-      target = Math.max(...allBounds.map((b) => b.maxY));
-      break;
+    case "left":   target = Math.min(...units.map((u) => u.bounds.minX)); break;
+    case "right":  target = Math.max(...units.map((u) => u.bounds.maxX)); break;
+    case "top":    target = Math.min(...units.map((u) => u.bounds.minY)); break;
+    case "bottom": target = Math.max(...units.map((u) => u.bounds.maxY)); break;
     case "center":
-      target =
-        (Math.min(...allBounds.map((b) => b.minX)) +
-          Math.max(...allBounds.map((b) => b.maxX))) /
-        2;
+      target = (Math.min(...units.map((u) => u.bounds.minX)) + Math.max(...units.map((u) => u.bounds.maxX))) / 2;
       break;
     case "middle":
-      target =
-        (Math.min(...allBounds.map((b) => b.minY)) +
-          Math.max(...allBounds.map((b) => b.maxY))) /
-        2;
+      target = (Math.min(...units.map((u) => u.bounds.minY)) + Math.max(...units.map((u) => u.bounds.maxY))) / 2;
       break;
   }
 
-  return shapes.map((s, i) => {
-    const b = allBounds[i];
-    const clone = { ...s };
+  // Build a map of shape id → delta
+  const deltaMap = new Map<string, { dx: number; dy: number }>();
+  for (const unit of units) {
+    const b = unit.bounds;
+    let dx = 0, dy = 0;
     switch (direction) {
-      case "left": {
-        const dx = target - b.minX;
-        return shiftShape(clone, dx, 0);
-      }
-      case "right": {
-        const dx = target - b.maxX;
-        return shiftShape(clone, dx, 0);
-      }
-      case "center": {
-        const cx = (b.minX + b.maxX) / 2;
-        return shiftShape(clone, target - cx, 0);
-      }
-      case "top": {
-        const dy = target - b.minY;
-        return shiftShape(clone, 0, dy);
-      }
-      case "bottom": {
-        const dy = target - b.maxY;
-        return shiftShape(clone, 0, dy);
-      }
-      case "middle": {
-        const cy = (b.minY + b.maxY) / 2;
-        return shiftShape(clone, 0, target - cy);
-      }
+      case "left":   dx = target - b.minX; break;
+      case "right":  dx = target - b.maxX; break;
+      case "center": dx = target - (b.minX + b.maxX) / 2; break;
+      case "top":    dy = target - b.minY; break;
+      case "bottom": dy = target - b.maxY; break;
+      case "middle": dy = target - (b.minY + b.maxY) / 2; break;
     }
+    for (const s of unit.shapes) {
+      deltaMap.set(s.id, { dx, dy });
+    }
+  }
+
+  return shapes.map((s) => {
+    const d = deltaMap.get(s.id);
+    if (!d || (d.dx === 0 && d.dy === 0)) return s;
+    return shiftShape({ ...s }, d.dx, d.dy);
   });
 }
 
@@ -333,32 +338,69 @@ export function distributeShapes(
   axis: "horizontal" | "vertical",
 ): Shape[] {
   if (shapes.length < 3) return shapes;
-  const allBounds = shapes.map((s, i) => ({ i, b: getShapeBounds(s) }));
-  if (axis === "horizontal") {
-    allBounds.sort((a, b) => a.b.minX - b.b.minX);
-    const totalSpan = allBounds[allBounds.length - 1].b.maxX - allBounds[0].b.minX;
-    const totalWidths = allBounds.reduce((sum, a) => sum + (a.b.maxX - a.b.minX), 0);
-    const gap = (totalSpan - totalWidths) / (allBounds.length - 1);
-    let x = allBounds[0].b.minX;
-    const deltas = new Map<number, number>();
-    for (const item of allBounds) {
-      deltas.set(item.i, x - item.b.minX);
-      x += (item.b.maxX - item.b.minX) + gap;
+
+  // Bucket shapes into units (same logic as alignShapes).
+  const units: { shapes: Shape[]; bounds: Bounds }[] = [];
+  const groupMap = new Map<string, Shape[]>();
+
+  for (const s of shapes) {
+    if (s.groupId) {
+      let arr = groupMap.get(s.groupId);
+      if (!arr) { arr = []; groupMap.set(s.groupId, arr); }
+      arr.push(s);
+    } else {
+      units.push({ shapes: [s], bounds: getShapeBounds(s) });
     }
-    return shapes.map((s, i) => shiftShape(s, deltas.get(i) || 0, 0));
-  } else {
-    allBounds.sort((a, b) => a.b.minY - b.b.minY);
-    const totalSpan = allBounds[allBounds.length - 1].b.maxY - allBounds[0].b.minY;
-    const totalHeights = allBounds.reduce((sum, a) => sum + (a.b.maxY - a.b.minY), 0);
-    const gap = (totalSpan - totalHeights) / (allBounds.length - 1);
-    let y = allBounds[0].b.minY;
-    const deltas = new Map<number, number>();
-    for (const item of allBounds) {
-      deltas.set(item.i, y - item.b.minY);
-      y += (item.b.maxY - item.b.minY) + gap;
-    }
-    return shapes.map((s, i) => shiftShape(s, 0, deltas.get(i) || 0));
   }
+  for (const members of groupMap.values()) {
+    const allB = members.map((s) => getShapeBounds(s));
+    const union: Bounds = {
+      minX: Math.min(...allB.map((b) => b.minX)),
+      minY: Math.min(...allB.map((b) => b.minY)),
+      maxX: Math.max(...allB.map((b) => b.maxX)),
+      maxY: Math.max(...allB.map((b) => b.maxY)),
+    };
+    units.push({ shapes: members, bounds: union });
+  }
+
+  if (units.length < 3) return shapes;
+
+  // Build a map of shape id → delta
+  const deltaMap = new Map<string, { dx: number; dy: number }>();
+
+  if (axis === "horizontal") {
+    units.sort((a, b) => a.bounds.minX - b.bounds.minX);
+    const totalSpan = units[units.length - 1].bounds.maxX - units[0].bounds.minX;
+    const totalWidths = units.reduce((sum, u) => sum + (u.bounds.maxX - u.bounds.minX), 0);
+    const gap = (totalSpan - totalWidths) / (units.length - 1);
+    let x = units[0].bounds.minX;
+    for (const unit of units) {
+      const dx = x - unit.bounds.minX;
+      for (const s of unit.shapes) {
+        deltaMap.set(s.id, { dx, dy: 0 });
+      }
+      x += (unit.bounds.maxX - unit.bounds.minX) + gap;
+    }
+  } else {
+    units.sort((a, b) => a.bounds.minY - b.bounds.minY);
+    const totalSpan = units[units.length - 1].bounds.maxY - units[0].bounds.minY;
+    const totalHeights = units.reduce((sum, u) => sum + (u.bounds.maxY - u.bounds.minY), 0);
+    const gap = (totalSpan - totalHeights) / (units.length - 1);
+    let y = units[0].bounds.minY;
+    for (const unit of units) {
+      const dy = y - unit.bounds.minY;
+      for (const s of unit.shapes) {
+        deltaMap.set(s.id, { dx: 0, dy });
+      }
+      y += (unit.bounds.maxY - unit.bounds.minY) + gap;
+    }
+  }
+
+  return shapes.map((s) => {
+    const d = deltaMap.get(s.id);
+    if (!d || (d.dx === 0 && d.dy === 0)) return s;
+    return shiftShape({ ...s }, d.dx, d.dy);
+  });
 }
 
 /** Lay the supplied shapes out in an evenly-spaced grid centred on

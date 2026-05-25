@@ -108,7 +108,7 @@ function blockPara(node, ctx) {
   // no-op so the pulled markdown doesn't accumulate blank lines.
   const collapsed = inner.replace(/[\s ]+/g, "");
   if (!collapsed) return "";
-  return "\n\n" + inner.trim() + "\n\n";
+  return "\n" + inner.trim() + "\n";
 }
 
 // Block-level entry point for a <ul>/<ol>. Coalesces consecutive sibling
@@ -203,7 +203,7 @@ function renderInline(node, ctx) {
   if (tag === "A" && node.hasAttribute("href")) {
     const href = collapseGdocsRedirect(node.getAttribute("href") || "");
     const text = renderChildren(node, ctx).replace(/\s*\n\s*/g, " ").trim();
-    if (!text) return "";
+    if (!text) return href ? `[${href}](${href})` : "";
     if (!href || href === text) return text;
     return `[${text}](${href})`;
   }

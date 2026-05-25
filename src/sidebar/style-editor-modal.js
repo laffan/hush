@@ -144,6 +144,10 @@ export function openStyleEditorModal(state) {
     const id = row.dataset.id;
     if (id === selectedId) return;
     selectedId = id;
+    const activeId = id === "__default__" ? null : id;
+    state.setDeskGlobalStyleId(activeId);
+    state.updateSettings({ activeStyleId: activeId });
+    state.emit("style-changed");
     renderRail();
     mountEditor();
   });

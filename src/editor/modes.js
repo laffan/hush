@@ -180,13 +180,14 @@ export function updateColumnResizers(state) {
     if (scroller) {
       scroller.style.paddingLeft = leftPad + "px";
       scroller.style.paddingRight = rightPad + "px";
-      // 100 px bottom pad for plain docs so the last line doesn't sit
-      // flush against the editor floor when the user has scrolled to
-      // the end. Skip in projects (extra space between concatenated
-      // docs would read as a gap) and in notebook mode (no scroller
-      // there anyway).
+      // 50vh bottom pad for plain docs so the last line can scroll to
+      // approximately the vertical centre of the screen. Skip in
+      // projects (extra space between concatenated docs would read as
+      // a gap) and in notebook mode (no scroller there anyway).
+      // When typewriter mode is active its own paddingBottom
+      // calculation overrides this value.
       const isPlainDoc = !state.currentNotebookFileId && !state.currentProjectId;
-      scroller.style.paddingBottom = isPlainDoc ? "100px" : "";
+      scroller.style.paddingBottom = isPlainDoc ? "50vh" : "";
     }
     if (state.editor && state.editor.view) {
       // requestMeasure alone is not always enough after padding changes

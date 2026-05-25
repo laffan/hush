@@ -18,6 +18,11 @@ interface ShelfNode {
   /** First line is a markdown blockquote (`> …`). The `>` is stripped
    *  from `label` and the row paints a left rule + soft background. */
   blockquote?: boolean;
+  /** Pre-computed flag hex colour for this node. For text nodes it comes
+   *  from the node's own label; for drag-area nodes it bubbles up from
+   *  the first flagged text child. Used by `makeNodeRow` to paint the
+   *  leading dot. */
+  flagHex?: string;
 }
 
 /** Build a shelf-row label from a text shape's contents. Only the first
@@ -218,7 +223,18 @@ export function createShelfPanel(
         const sorted = [...textChildren].sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
         if (sorted[0].type === "text") name = buildLabel(sorted[0].text, 40).label;
       }
-      result.push({ id: da.id, type: "drag-area", label: name, excerpt: "", color: da.type === "drag-area" ? da.strokeColor : null, shapeId: da.id, parentId: undefined, depth: 0, pocketed: !!da.pocketed });
+      // Bubble up: surface the first flag colour found among text children
+      // so the drag-area row shows a flag dot even when its own label has
+      // no flag marker.
+      const _flagColors = getHushFlagColors();
+      let daFlagHex: string | undefined;
+      for (const child of textChildren) {
+        if (child.type === "text") {
+          const hex = firstFlagHex(buildLabel(child.text, 50).label, _flagColors);
+          if (hex) { daFlagHex = hex; break; }
+        }
+      }
+      result.push({ id: da.id, type: "drag-area", label: name, excerpt: "", color: da.type === "drag-area" ? da.strokeColor : null, shapeId: da.id, parentId: undefined, depth: 0, pocketed: !!da.pocketed, flagHex: daFlagHex });
       if (!collapsed.has(da.id)) {
         const sortedChildren = [...children].sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
         const scope = new Set(children.map((c) => c.id));
@@ -441,7 +457,7 @@ export function createShelfPanel(
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
     const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
     const flagColors = getHushFlagColors();
-    const flagDotHex = firstFlagHex(node.label, flagColors);
+    const flagDotHex = firstFlagHex(node.label, flagColors) ?? node.flagHex;
     const isSelected = state.selectedIds.has(node.shapeId);
     // Sky-blue tinted background + accent left rail for the row whose
     // shape is currently selected on the canvas.

@@ -64,7 +64,7 @@ export function getMarkdownHighlight(normalizeHeaders, headingColor, headerScale
     // Custom syntax: %% comments %% — content dimmed; markers nearly invisible.
     // Body opacity drives off --comment-opacity (user-controlled slider).
     { tag: commentTag, opacity: "var(--comment-opacity, 0.5)" },
-    { tag: commentMarkTag, opacity: "0.2" },
+    { tag: commentMarkTag, opacity: "var(--comment-mark-opacity, 0.33)" },
     // Custom syntax: == highlight == — highlighted background (flag-typed highlights get per-flag color from plugin)
     { tag: highlightTag, borderRadius: "2px" },
     { tag: highlightMarkTag, opacity: "0.2" },

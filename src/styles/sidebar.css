@@ -355,27 +355,71 @@ body.typing-fade .sidebar-grip-chevron {
   display: none;
 }
 
-/* Dropbox sync indicator — small dot inside the toggle, near the bottom. */
+/* Sync indicator — refresh circle icon inside the toggle, near the bottom. */
 .sidebar-sync-dot {
   position: absolute;
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--fg, #888);
+  width: 16px;
+  height: 16px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
+  color: var(--fg, #888);
+}
+.sidebar-sync-dot svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 .sidebar-sync-dot.visible { opacity: 0.45; }
 .sidebar-sync-dot.pulse { animation: hush-sync-dot-pulse 0.8s ease-out; }
-@keyframes hush-sync-dot-pulse {
-  0%   { transform: translateX(-50%) scale(1);   opacity: 0.45; }
-  35%  { transform: translateX(-50%) scale(1.6); opacity: 1; }
-  100% { transform: translateX(-50%) scale(1);   opacity: 0.45; }
+.sidebar-sync-dot.pulse svg {
+  animation: hush-sync-rotate 0.8s ease-out;
 }
+@keyframes hush-sync-dot-pulse {
+  0%   { opacity: 0.45; }
+  35%  { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+@keyframes hush-sync-rotate {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Progress center — ring + label to the left of the sync dot. */
+.sidebar-progress-dot {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--fg, #888);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  background: conic-gradient(var(--fg, #888) var(--progress, 0%), transparent var(--progress, 0%));
+  -webkit-mask: radial-gradient(circle, transparent 5px, black 5.5px);
+  mask: radial-gradient(circle, transparent 5px, black 5.5px);
+}
+.sidebar-progress-dot.active { opacity: 0.6; }
+
+.sidebar-progress-label {
+  position: absolute;
+  bottom: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  color: var(--fg, #888);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 0.2s ease;
+}
+.sidebar-progress-label.active { opacity: 0.4; }
 
 /* Inset mode: panel sits in the editor's left margin. */
 #panel-overlay.panel-inset {

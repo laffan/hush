@@ -74,7 +74,11 @@ function isOrderedList(lists, listId, nesting) {
 
 function renderTextRun(textRun) {
   let text = textRun.content || "";
-  if (!text) return "";
+  if (!text) {
+    const s = textRun.textStyle || {};
+    if (s.link?.url) return `[${s.link.url}](${s.link.url})`;
+    return "";
+  }
   // Trailing newlines belong to paragraph structure, not the run.
   const trailingNewlines = /\n+$/.test(text);
   text = text.replace(/\n+$/, "");

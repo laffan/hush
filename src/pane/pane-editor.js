@@ -12,6 +12,7 @@ import { getActiveTheme } from "../themes/index.js";
 import {
   createBaseExtensions, getMarkdownHighlight, buildShortcutExtension,
 } from "../editor/editor.js";
+import { createDryHighlightPlugin } from "../editor/plugins/dry-highlight.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 import { themeBackgrounds } from "../theme-colors.js";
 import { hasAcceptableDragPayload, readDragText } from "../editor/file-drop.js";
@@ -29,8 +30,38 @@ export function createPaneEditor(container, appState, onChange, opts) {
   const { extensions, themeComp, highlightComp, shortcutComp, editableComp } =
     createBaseExtensions(appState, onChange ? () => onChange() : null, { getImageContext });
 
-  const startState = EditorState.create({ doc: "", extensions });
+  // D.R.Y. mode — the plugin reads appState.dryMode reactively so
+  // adding it to the extension set is all that's needed.
+  const dryPlugin = createDryHighlightPlugin(appState);
+
+  // Typewriter mode — scroll the cursor to a fixed vertical position
+  // inside the pane on every selection / doc change.
+  const typewriterUpdateListener = EditorView.updateListener.of((update) => {
+    if (appState.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
+      requestAnimationFrame(() => scrollPaneCursorToTypewriter(update.view, appState, container));
+    }
+  });
+
+  const startState = EditorState.create({
+    doc: "",
+    extensions: [...extensions, dryPlugin, typewriterUpdateListener],
+  });
   const view = new EditorView({ state: startState, parent: container });
+
+  // If typewriter mode is already active when the pane is created,
+  // apply padding + boundary line immediately.
+  if (appState.typewriterMode) {
+    applyPaneTypewriter(view, appState, container);
+  }
+
+  // React to mode toggles so panes track typewriter on/off.
+  const onModeChanged = () => {
+    applyPaneTypewriter(view, appState, container);
+    // Nudge the DRY plugin by issuing a no-op dispatch so it
+    // re-checks appState.dryMode on the next update cycle.
+    try { view.dispatch({ effects: [] }); } catch (_) {}
+  };
+  appState.on("mode-changed", onModeChanged);
 
   return {
     view,
@@ -68,7 +99,12 @@ export function createPaneEditor(container, appState, onChange, opts) {
       sd.addEventListener("scroll", handler, { passive: true });
       return () => sd.removeEventListener("scroll", handler);
     },
-    destroy: () => view.destroy(),
+    destroy: () => {
+      appState.off("mode-changed", onModeChanged);
+      // Clean up typewriter padding / boundary line before tearing down.
+      removePaneTypewriter(view, container);
+      view.destroy();
+    },
     /** Reconfigure theme from the given settings. When `lockedStyleId` is
      *  provided, the pane uses that style instead of the session's active
      *  style — this is how panes showing a document with a locked style
@@ -141,6 +177,65 @@ export function attachPaneTextDrop(pane) {
     });
     view.focus();
   }, true);
+}
+
+// ── Pane-local typewriter helpers ─────────────────────────────────────
+
+/** Apply (or remove) typewriter padding and boundary line for a pane. */
+function applyPaneTypewriter(view, state, container) {
+  if (!state.typewriterMode) {
+    removePaneTypewriter(view, container);
+    return;
+  }
+  const position = state.typewriterPosition || 0.5;
+  const h = container.clientHeight || 300;
+  const targetY = h * position;
+  view.scrollDOM.style.paddingTop = targetY + "px";
+  view.scrollDOM.style.paddingBottom = (h - targetY) + "px";
+
+  // Add / reposition boundary line.
+  let line = container.querySelector(".pane-typewriter-line");
+  if (!line) {
+    line = document.createElement("div");
+    line.className = "pane-typewriter-line";
+    line.style.cssText =
+      "position:absolute;left:0;right:0;height:1px;" +
+      "background:var(--fg,#888);pointer-events:none;z-index:5;";
+    container.style.position = "relative";
+    container.appendChild(line);
+  }
+  line.style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
+  line.style.top = targetY + "px";
+
+  // Scroll the cursor into view at the boundary line.
+  requestAnimationFrame(() => scrollPaneCursorToTypewriter(view, state, container));
+}
+
+/** Remove typewriter padding and boundary line from a pane. */
+function removePaneTypewriter(view, container) {
+  if (view && view.scrollDOM) {
+    view.scrollDOM.style.paddingTop = "";
+    view.scrollDOM.style.paddingBottom = "";
+  }
+  const line = container.querySelector(".pane-typewriter-line");
+  if (line) line.remove();
+}
+
+/** Scroll the pane's editor so the cursor sits at the typewriter line. */
+function scrollPaneCursorToTypewriter(view, state, container) {
+  if (!state.typewriterMode) return;
+  const position = state.typewriterPosition || 0.5;
+  const h = container.clientHeight || 300;
+  const targetY = h * position;
+  try {
+    const cursor = view.state.selection.main.head;
+    const coords = view.coordsAtPos(cursor);
+    if (!coords) return;
+    const offset = coords.bottom - (container.getBoundingClientRect().top + targetY);
+    if (Math.abs(offset) > 1) {
+      view.scrollDOM.scrollTop += offset;
+    }
+  } catch (_) { /* view may be destroyed or doc empty */ }
 }
 
 /** Apply the active style's color overrides (bg / fg / cursor /

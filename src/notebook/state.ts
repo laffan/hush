@@ -2454,6 +2454,19 @@ export class DrawingState extends EventTarget {
     this.notify("shapes");
   }
 
+  changeSelectedBorder(color: string) {
+    const ids = this.selectedIds;
+    if (ids.size === 0) return;
+    this.shapes = this.shapes.map((s) => {
+      if (!ids.has(s.id)) return s;
+      if (s.type !== "text" && s.type !== "drag-area") return s;
+      if (color === "reset") return { ...s, borderColor: undefined, borderWidth: undefined };
+      return { ...s, borderColor: color, borderWidth: (s as { borderWidth?: number }).borderWidth || 1 };
+    });
+    this.recordHistory();
+    this.notify("shapes");
+  }
+
   changeSelectedBackground(colorName: string) {
     this.shapes = this.shapes.map((s) => {
       if (!this.selectedIds.has(s.id)) return s;

@@ -251,6 +251,12 @@ function buildCommands(state) {
         const { openZoteroHighlightPane } = await import("./zotero/highlight-pane.js");
         openZoteroHighlightPane(s);
       } },
+    { id: "zotero-update", label: "Update Zotero References", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.settings.zoteroUserId || !s.settings.zoteroApiKey,
+      action: async (s) => {
+        const { startZoteroUpdate } = await import("./sidebar/sidebar-progress.js");
+        startZoteroUpdate(s);
+      } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",

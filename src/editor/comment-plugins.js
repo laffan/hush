@@ -40,9 +40,9 @@ export function createMultiLineCommentPlugin() {
             // --comment-opacity CSS var as the inline plugin so the
             // user's slider covers both. Inline `style` lets the var
             // resolve against the surrounding cascade.
-            builder.add(open, open + 2, Decoration.mark({ attributes: { style: "opacity: 0.2" } }));
+            builder.add(open, open + 2, Decoration.mark({ attributes: { style: "opacity: var(--comment-mark-opacity, 0.33)" } }));
             builder.add(open + 2, close, Decoration.mark({ attributes: { style: "opacity: var(--comment-opacity, 0.5)" } }));
-            builder.add(close, close + 2, Decoration.mark({ attributes: { style: "opacity: 0.2" } }));
+            builder.add(close, close + 2, Decoration.mark({ attributes: { style: "opacity: var(--comment-mark-opacity, 0.33)" } }));
           }
         }
         return builder.finish();

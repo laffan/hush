@@ -47,6 +47,7 @@ export function applyFocusModeOpacity(state) {
   const cv = state.settings.commentOpacity;
   const co = (typeof cv === "number" && cv >= 0 && cv <= 1) ? cv : 0.5;
   document.documentElement.style.setProperty("--comment-opacity", String(co));
+  document.documentElement.style.setProperty("--comment-mark-opacity", String(co * 2 / 3));
 }
 
 /** Pull the active desk's saved global style id and pin it as the

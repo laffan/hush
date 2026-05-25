@@ -79,6 +79,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
   }
 
   function makeSwatchRow(colors: readonly string[], onSelect: (c: string) => void): HTMLElement {
+    const theme = state.theme;
     return h("div", {
       style: { display: "flex", gap: "4px", alignItems: "center" },
       children: colors.map((c) => {
@@ -90,6 +91,24 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
           });
           const slash = h("span", { style: { position: "absolute", top: "50%", left: "-1px", width: "14px", height: "1px", background: "red", transform: "rotate(45deg)", transformOrigin: "center" } });
           btn.appendChild(slash);
+          return btn;
+        }
+        if (c === "auto") {
+          const btn = h("button", {
+            title: "Auto (theme foreground)",
+            style: { width: "14px", height: "14px", borderRadius: "50%", border: "1px solid #ccc", background: theme.foreground, cursor: "pointer", padding: "0", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" },
+            onClick: () => onSelect(c),
+          });
+          btn.appendChild(h("span", { text: "A", style: { fontSize: "8px", fontWeight: "bold", color: theme.variant === "dark" ? "#000" : "#fff", lineHeight: "1", pointerEvents: "none" } }));
+          return btn;
+        }
+        if (c === "heading") {
+          const btn = h("button", {
+            title: "Heading (theme heading color)",
+            style: { width: "14px", height: "14px", borderRadius: "50%", border: "1px solid #ccc", background: theme.headingColor, cursor: "pointer", padding: "0", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" },
+            onClick: () => onSelect(c),
+          });
+          btn.appendChild(h("span", { text: "H", style: { fontSize: "8px", fontWeight: "bold", color: theme.variant === "dark" ? "#000" : "#fff", lineHeight: "1", pointerEvents: "none" } }));
           return btn;
         }
         return h("button", {
@@ -283,6 +302,9 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     if (opts.hasBgable) {
       panel.appendChild(makeRow("Bg", makeSwatchRow(BACKGROUND_COLORS, (c) => {
         state.changeSelectedBackground(c);
+      })));
+      panel.appendChild(makeRow("Border", makeSwatchRow(BACKGROUND_COLORS, (c) => {
+        state.changeSelectedBorder(c);
       })));
     }
 
