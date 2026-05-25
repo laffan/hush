@@ -30,9 +30,8 @@ export function createDefaultSettings() {
     blockCursor: true,
     blockCursorColor: null,
     typewriterLineOpacity: 0.08,
-    // %% comment %% body opacity. Markers stay pinned at 0.2; this only
-    // governs the comment content so the user can dim or surface their
-    // editorial notes independently of the rest of the syntax.
+    // %% comment %% opacity. Markers dim to 2/3 of this value so the
+    // delimiters fade further than the body content.
     commentOpacity: 0.5,
     padding: 50,
     syncFolders: [],

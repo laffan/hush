@@ -128,7 +128,7 @@ export function renderEditorTab(settings) {
           <span class="slider-value">${((s.commentOpacity ?? 0.5) * 100).toFixed(0)}%</span>
         </div>
       </div>
-      <p class="settings-help">Body opacity of <code>%%…%%</code> comments. Markers stay pinned at 20% — this only governs the comment content.</p>
+      <p class="settings-help">Opacity of <code>%%…%%</code> comments. Markers dim to ⅔ of this value.</p>
     </div>
 
     <div class="settings-section">
