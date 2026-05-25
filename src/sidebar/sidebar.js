@@ -15,7 +15,7 @@ import { attachGripResize, applyPanelWidth } from "./panel-resizer.js";
 import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
-import refreshCircleRaw from "../temp/temp-icons/refresh-circle.svg?raw";
+import refreshCircleRaw from "../../temp/temp-icons/refresh-circle.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
