@@ -2461,7 +2461,7 @@ export class DrawingState extends EventTarget {
       if (!ids.has(s.id)) return s;
       if (s.type !== "text" && s.type !== "drag-area") return s;
       if (color === "reset") return { ...s, borderColor: undefined, borderWidth: undefined };
-      return { ...s, borderColor: color, borderWidth: (s as { borderWidth?: number }).borderWidth || 1 };
+      return { ...s, borderColor: color, borderWidth: (s as { borderWidth?: number }).borderWidth || 2 };
     });
     this.recordHistory();
     this.notify("shapes");
@@ -2514,13 +2514,13 @@ export class DrawingState extends EventTarget {
   }
 
   /**
-   * Apply a saved text-style preset (color + backgroundColor + fontSize) to
-   * every selected text shape in one shot. `color` is a hex string (the
-   * preset captures the resolved hex, bypassing the named-palette lookup);
-   * `backgroundColor` is either a palette key, a CSS string, or undefined
-   * to clear the background.
+   * Apply a saved text-style preset (color + backgroundColor + fontSize +
+   * borderColor + borderWidth) to every selected text shape in one shot.
+   * `color` is a hex string (the preset captures the resolved hex, bypassing
+   * the named-palette lookup); `backgroundColor` is either a palette key, a
+   * CSS string, or undefined to clear the background.
    */
-  applyTextStyle(opts: { color: string; backgroundColor: string | undefined; fontSize: number }) {
+  applyTextStyle(opts: { color: string; backgroundColor: string | undefined; fontSize: number; borderColor?: string; borderWidth?: number }) {
     this.shapes = this.shapes.map((s) => {
       if (!this.selectedIds.has(s.id)) return s;
       if (s.type !== "text") return s;
@@ -2529,6 +2529,8 @@ export class DrawingState extends EventTarget {
         color: opts.color,
         backgroundColor: opts.backgroundColor,
         fontSize: opts.fontSize,
+        borderColor: opts.borderColor,
+        borderWidth: opts.borderWidth,
       };
     });
     this.recordHistory();

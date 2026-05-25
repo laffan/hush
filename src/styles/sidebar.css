@@ -355,22 +355,26 @@ body.typing-fade .sidebar-grip-chevron {
   display: none;
 }
 
-/* Sync indicator — refresh circle icon inside the toggle, near the bottom. */
+/* Sync group — horizontal row in the footer, right-aligned */
+.sidebar-sync-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Sync indicator — refresh circle icon in the footer sync group. */
 .sidebar-sync-dot {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
   color: var(--fg, #888);
 }
 .sidebar-sync-dot svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   display: block;
 }
 .sidebar-sync-dot.visible { opacity: 0.45; }
@@ -388,38 +392,27 @@ body.typing-fade .sidebar-grip-chevron {
   100% { transform: rotate(360deg); }
 }
 
-/* Progress center — ring + label to the left of the sync dot. */
+/* Progress center — ring + label in the footer sync group. */
 .sidebar-progress-dot {
-  position: absolute;
-  bottom: 36px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  border: 1.5px solid var(--fg, #888);
+  background: conic-gradient(var(--fg, #888) var(--progress, 0%), rgba(128,128,128,0.2) var(--progress, 0%));
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
-  background: conic-gradient(var(--fg, #888) var(--progress, 0%), transparent var(--progress, 0%));
-  -webkit-mask: radial-gradient(circle, transparent 5px, black 5.5px);
-  mask: radial-gradient(circle, transparent 5px, black 5.5px);
 }
-.sidebar-progress-dot.active { opacity: 0.6; }
+.sidebar-progress-dot.active { opacity: 0.7; }
 
 .sidebar-progress-label {
-  position: absolute;
-  bottom: 54px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 8px;
+  font-size: 9px;
   color: var(--fg, #888);
   opacity: 0;
   pointer-events: none;
   white-space: nowrap;
   transition: opacity 0.2s ease;
 }
-.sidebar-progress-label.active { opacity: 0.4; }
+.sidebar-progress-label.active { opacity: 0.5; }
 
 /* Inset mode: panel sits in the editor's left margin. */
 #panel-overlay.panel-inset {

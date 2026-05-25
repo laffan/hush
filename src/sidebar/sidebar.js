@@ -75,6 +75,11 @@ export function createSidebar(state) {
   footer.appendChild(addBtn);
   footer.appendChild(settingsBtn);
 
+  // Right-aligned sync/progress group
+  const syncGroup = document.createElement("div");
+  syncGroup.className = "sidebar-sync-group";
+  footer.appendChild(syncGroup);
+
   bodyStack.appendChild(header);
   bodyStack.appendChild(body);
   bodyStack.appendChild(footer);
@@ -113,13 +118,13 @@ export function createSidebar(state) {
   new MutationObserver(syncGripGlyph).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
   syncGripGlyph();
 
-  // Dropbox sync indicator — small dot inside the grip, pulses on each
-  // successful sync. Hidden unless sync is configured.
+  // Dropbox sync indicator — in the footer sync group, alongside
+  // progress indicators. Hidden unless sync is configured.
   const syncDot = document.createElement("div");
   syncDot.className = "sidebar-sync-dot";
   syncDot.setAttribute("aria-hidden", "true");
   syncDot.innerHTML = refreshCircleRaw;
-  gripToggle.appendChild(syncDot);
+  syncGroup.appendChild(syncDot);
   function syncDotVisible() {
     return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);
   }
@@ -138,7 +143,7 @@ export function createSidebar(state) {
   state.on("settings-changed", refreshSyncDot);
   state.on("dropbox-sync-success", pulseSyncDot);
   refreshSyncDot();
-  mountProgressCenter(gripToggle, state);
+  mountProgressCenter(syncGroup, state);
 
   // Typing-fade — hide the create / add affordances while the user is
   // actively typing in the doc editor. Pointer activity (mousemove /

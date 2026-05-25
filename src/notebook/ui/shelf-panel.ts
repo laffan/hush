@@ -463,7 +463,8 @@ export function createShelfPanel(
     // shape is currently selected on the canvas.
     const selectedBg = theme.variant === "dark" ? "rgba(120, 180, 255, 0.14)" : "rgba(66, 133, 244, 0.12)";
     let leftBorder = node.color ? `3px solid ${node.color}` : "3px solid transparent";
-    if (isSelected && !node.color) leftBorder = `3px solid ${theme.accent}`;
+    if (flagDotHex && !node.color) leftBorder = `3px solid ${flagDotHex}`;
+    if (isSelected && !node.color && !flagDotHex) leftBorder = `3px solid ${theme.accent}`;
     const rowBg = isSelected ? selectedBg : "transparent";
     const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", borderLeft: leftBorder, color: fg, background: rowBg } });
     if (node.type === "drag-area") {
@@ -489,21 +490,6 @@ export function createShelfPanel(
         style: { flexShrink: "0", color: muted, fontSize: "11px", marginRight: "2px", lineHeight: "1" },
       });
       row.appendChild(arrow);
-    }
-    if (flagDotHex) {
-      const dot = h("span", {
-        style: {
-          flexShrink: "0",
-          width: "8px",
-          height: "8px",
-          borderRadius: "50%",
-          background: flagDotHex,
-          marginRight: "4px",
-          display: "inline-block",
-        },
-        attrs: { title: "Contains a flag" },
-      });
-      row.appendChild(dot);
     }
     row.setAttribute("data-shelf-row", "1");
     row.setAttribute("data-shape-id", node.shapeId);

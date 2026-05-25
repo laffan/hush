@@ -10,20 +10,20 @@ let progressDot = null;
 let progressLabel = null;
 let activeTask = null;
 
-/** Mount the progress-dot element inside the grip toggle, to the left
- *  of the sync dot. Called once from sidebar.js during init. */
-export function mountProgressCenter(gripToggle, state) {
+/** Mount the progress-dot element inside the footer sync group,
+ *  alongside the sync dot. Called once from sidebar.js during init. */
+export function mountProgressCenter(container, state) {
+  // Small text label beside the progress dot.
+  progressLabel = document.createElement("div");
+  progressLabel.className = "sidebar-progress-label";
+  progressLabel.setAttribute("aria-hidden", "true");
+  container.appendChild(progressLabel);
+
   // Progress ring — a small circle that fills as tasks run.
   progressDot = document.createElement("div");
   progressDot.className = "sidebar-progress-dot";
   progressDot.setAttribute("aria-hidden", "true");
-  gripToggle.appendChild(progressDot);
-
-  // Small text label to the left of the progress dot.
-  progressLabel = document.createElement("div");
-  progressLabel.className = "sidebar-progress-label";
-  progressLabel.setAttribute("aria-hidden", "true");
-  gripToggle.appendChild(progressLabel);
+  container.appendChild(progressDot);
 
   // Listen for task updates.
   state.on("background-task-progress", updateProgress);

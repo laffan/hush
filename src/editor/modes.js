@@ -186,8 +186,8 @@ export function updateColumnResizers(state) {
       // a gap) and in notebook mode (no scroller there anyway).
       // When typewriter mode is active its own paddingBottom
       // calculation overrides this value.
-      const isPlainDoc = !state.currentNotebookFileId && !state.currentProjectId;
-      scroller.style.paddingBottom = isPlainDoc ? "50vh" : "";
+      const hasScroller = !state.currentNotebookFileId;
+      scroller.style.paddingBottom = hasScroller ? "50vh" : "";
     }
     if (state.editor && state.editor.view) {
       // requestMeasure alone is not always enough after padding changes

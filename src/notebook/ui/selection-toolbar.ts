@@ -9,6 +9,8 @@ interface SavedTextStyle {
   color: string;
   backgroundColor?: string;
   fontSize: number;
+  borderColor?: string;
+  borderWidth?: number;
 }
 
 interface AppStateBridge {
@@ -61,13 +63,11 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
   // the as-square-as-possible default. Cleared lazily — entries for
   // deleted drag-areas just stay until the toolbar is rebuilt.
   const lastGridCols = new Map<string, number>();
-
   function closePopup() {
     if (popupEl) { popupEl.remove(); popupEl = null; }
     activePopup = null;
     popupWrapper = null;
   }
-
   function makeIconBtn(iconName: string, title: string, onClick: () => void): HTMLButtonElement {
     const theme = state.theme;
     return h("button", {
@@ -113,17 +113,14 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
         }
         return h("button", {
           title: c,
-          style: { width: "14px", height: "14px", borderRadius: "50%", border: "none", background: COLOR_PALETTE[c] || "#ccc", cursor: "pointer", padding: "0" },
+          style: { width: "14px", height: "14px", borderRadius: "50%", border: c === "white" ? "1px solid #ccc" : "none", background: COLOR_PALETTE[c] || "#ccc", cursor: "pointer", padding: "0" },
           onClick: () => onSelect(c),
         });
       }),
     });
   }
 
-  /** Count the grid units inside a drag-area — one per ungrouped child,
-   *  one per `groupId`. Matches the bucketing in `arrangeShapesAsGrid`
-   *  so the flyout's max-columns clamp lines up with the actual cell
-   *  count that gets laid out. */
+  /** Count grid units inside a drag-area (one per ungrouped child + one per groupId). */
   function countDragAreaUnits(dragAreaId: string): number {
     const groupIds = new Set<string>();
     let ungrouped = 0;
@@ -253,10 +250,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     return panel;
   }
 
-  /** Combined Colors menu — text color row, background color row, and the
-   *  saved-style chips list (with a "+ Style" capture and "Clear" reset
-   *  button). Rows that don't apply to the current selection are hidden,
-   *  so a drag-area-only selection just sees the background row. */
+  /** Combined Colors menu — text/bg/border rows + saved-style chips. */
   function makeColorsMenu(
     state: DrawingState,
     rerender: () => void,
@@ -303,6 +297,8 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       panel.appendChild(makeRow("Bg", makeSwatchRow(BACKGROUND_COLORS, (c) => {
         state.changeSelectedBackground(c);
       })));
+      // Small gap before border row
+      panel.appendChild(h("div", { style: { height: "2px" } }));
       panel.appendChild(makeRow("Border", makeSwatchRow(BACKGROUND_COLORS, (c) => {
         state.changeSelectedBorder(c);
       })));
@@ -353,6 +349,8 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
             color: s.color,
             backgroundColor: s.backgroundColor,
             fontSize: s.fontSize,
+            borderColor: s.borderColor,
+            borderWidth: s.borderWidth,
           });
         },
       });
@@ -405,6 +403,8 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
           color: firstText.color || "#000000",
           backgroundColor: firstText.backgroundColor,
           fontSize: firstText.fontSize,
+          borderColor: (firstText as unknown as { borderColor?: string }).borderColor,
+          borderWidth: (firstText as unknown as { borderWidth?: number }).borderWidth,
         };
         setSavedTextStyles([...getSavedTextStyles(), entry]);
         rerender();

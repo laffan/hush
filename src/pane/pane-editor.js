@@ -202,6 +202,7 @@ function applyPaneTypewriter(view, state, container) {
       "position:absolute;left:0;right:0;height:1px;" +
       "background:var(--fg,#888);pointer-events:none;z-index:5;";
     container.style.position = "relative";
+    container.style.overflow = "hidden";
     container.appendChild(line);
   }
   line.style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
@@ -231,7 +232,7 @@ function scrollPaneCursorToTypewriter(view, state, container) {
     const cursor = view.state.selection.main.head;
     const coords = view.coordsAtPos(cursor);
     if (!coords) return;
-    const offset = coords.bottom - (container.getBoundingClientRect().top + targetY);
+    const offset = coords.top - (container.getBoundingClientRect().top + targetY);
     if (Math.abs(offset) > 1) {
       view.scrollDOM.scrollTop += offset;
     }

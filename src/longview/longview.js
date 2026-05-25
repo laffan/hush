@@ -542,7 +542,7 @@ function tokenizeLines(text) {
     .replace(/\r\n/g, "\n")
     .split(/\n+/)
     .map(l => l.trim())
-    .filter(l => l.length > 0 && !l.startsWith("#"))
+    .filter(l => l.length > 0 && !l.startsWith("#") && l !== "---hush-separator---")
     .map(l => sanitizeLine(l))
     .filter(l => l.length > 0);
 }
@@ -557,7 +557,7 @@ function tokenizeLinesWithOffsets(text, baseOffset) {
   let cursor = 0;
   for (const raw of lines) {
     const trimmed = raw.trim();
-    if (trimmed.length > 0 && !trimmed.startsWith("#") && parseTabMarkerLine(trimmed) == null) {
+    if (trimmed.length > 0 && !trimmed.startsWith("#") && parseTabMarkerLine(trimmed) == null && trimmed !== "---hush-separator---") {
       const clean = sanitizeLine(trimmed);
       if (clean.length > 0) out.push({ line: clean, offset: baseOffset + cursor });
     }
