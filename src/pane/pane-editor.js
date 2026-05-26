@@ -191,11 +191,13 @@ function applyPaneTypewriter(view, state, container) {
     return;
   }
   const scroller = view.scrollDOM;
-  const position = state.typewriterPosition || 0.5;
   const scrollerH = scroller.clientHeight || container.clientHeight || 300;
-  const targetY = scrollerH * position;
+  // Use a fixed 50% of the pane height as the typewriter target —
+  // the main editor's typewriterPosition is window-relative and
+  // doesn't translate meaningfully to a small pane.
+  const targetY = Math.round(scrollerH * 0.5);
   scroller.style.paddingTop = targetY + "px";
-  scroller.style.paddingBottom = (scrollerH - targetY) + "px";
+  scroller.style.paddingBottom = targetY + "px";
 
   let line = scroller.querySelector(".pane-tw-line");
   if (!line) {
@@ -232,16 +234,15 @@ function removePaneTypewriter(view, container) {
 function scrollPaneCursorToTypewriter(view, state, container) {
   if (!state.typewriterMode) return;
   const scroller = view.scrollDOM;
-  const position = state.typewriterPosition || 0.5;
   const scrollerH = scroller.clientHeight || container.clientHeight || 300;
-  const targetY = scrollerH * position;
+  const targetY = Math.round(scrollerH * 0.5);
   try {
     const cursor = view.state.selection.main.head;
     const coords = view.coordsAtPos(cursor);
     if (!coords) return;
     const scrollerRect = scroller.getBoundingClientRect();
-    const cursorMid = (coords.top + coords.bottom) / 2;
-    const offset = cursorMid - (scrollerRect.top + targetY);
+    // Align cursor bottom to the line (matches main editor behavior)
+    const offset = coords.bottom - (scrollerRect.top + targetY);
     if (Math.abs(offset) > 1) {
       scroller.scrollTop += offset;
     }

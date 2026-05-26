@@ -11,6 +11,13 @@
   z-index: var(--z-shelf);
 }
 
+/* Hide the global boundary when a pane is focused — the pane renders
+   its own scoped line inside .cm-scroller. */
+body:has(.floating-pane.active) .typewriter-boundary {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
 @media (hover: hover) {
   .typewriter-boundary:hover {
     opacity: 0.5 !important;
