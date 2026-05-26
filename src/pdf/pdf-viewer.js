@@ -608,6 +608,87 @@ export function createPdfViewer(container, opts = {}) {
     return pos;
   }
 
+  // ── Suspend / Resume (lightweight snapshot for inactive panes) ────
+  let suspended = false;
+  let suspendImg = null;
+  let cachedPdfData = null;
+
+  function suspend() {
+    if (suspended || destroyed || !pdfDoc) return;
+    suspended = true;
+    window.removeEventListener("keydown", onKeydown);
+    if (resizeObserver) resizeObserver.disconnect();
+    if (observer) { observer.disconnect(); observer = null; }
+
+    const savedScroll = scrollArea.scrollTop;
+    const savedScrollLeft = scrollArea.scrollLeft;
+
+    try {
+      const snapshot = document.createElement("canvas");
+      const w = scrollArea.clientWidth;
+      const h = scrollArea.clientHeight;
+      if (w > 0 && h > 0) {
+        snapshot.width = w;
+        snapshot.height = h;
+        const ctx = snapshot.getContext("2d");
+        ctx.fillStyle = "#f5f5f5";
+        ctx.fillRect(0, 0, w, h);
+        for (const p of pages) {
+          if (!p.rendered || !p.canvas) continue;
+          const rect = p.wrapper.getBoundingClientRect();
+          const areaRect = scrollArea.getBoundingClientRect();
+          const dx = rect.left - areaRect.left;
+          const dy = rect.top - areaRect.top;
+          if (dy + rect.height < 0 || dy > h) continue;
+          ctx.drawImage(p.canvas, dx, dy, rect.width, rect.height);
+        }
+        suspendImg = document.createElement("img");
+        suspendImg.className = "pdf-suspend-snapshot";
+        suspendImg.src = snapshot.toDataURL("image/jpeg", 0.85);
+        suspendImg.style.width = w + "px";
+        suspendImg.style.height = h + "px";
+      }
+    } catch (_) {}
+
+    for (let i = 0; i < pages.length; i++) clearPage(i);
+    if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) {} pdfDoc = null; }
+    pages = [];
+    scrollArea.innerHTML = "";
+
+    if (suspendImg) {
+      scrollArea.appendChild(suspendImg);
+      scrollArea.classList.add("pdf-suspended");
+    }
+
+    scrollArea.scrollTop = savedScroll;
+    scrollArea.scrollLeft = savedScrollLeft;
+  }
+
+  async function resume() {
+    if (!suspended || destroyed) return;
+    suspended = false;
+    scrollArea.classList.remove("pdf-suspended");
+    if (suspendImg) { suspendImg.remove(); suspendImg = null; }
+
+    window.addEventListener("keydown", onKeydown);
+    if (resizeObserver) {
+      try { resizeObserver.observe(scrollArea); } catch (_) {}
+    }
+
+    if (cachedPdfData) {
+      await loadPdf(cachedPdfData);
+    }
+  }
+
+  // Wrap loadPdf to cache the raw data for resume
+  const _origLoadPdf = loadPdf;
+  async function loadPdfAndCache(data) {
+    if (data instanceof Uint8Array) cachedPdfData = new Uint8Array(data);
+    else if (Array.isArray(data)) cachedPdfData = new Uint8Array(data);
+    else cachedPdfData = data;
+    await _origLoadPdf(data);
+  }
+
   // ── Cleanup ──────────────────────────────────────────────────────
   async function destroy() {
     destroyed = true;
@@ -628,11 +709,14 @@ export function createPdfViewer(container, opts = {}) {
   } catch (_) {}
 
   return {
-    loadPdf,
+    loadPdf: loadPdfAndCache,
     destroy: async () => {
       if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
       await destroy();
     },
+    suspend,
+    resume,
+    get suspended() { return suspended; },
     setZoom,
     getZoom,
     goToPage,

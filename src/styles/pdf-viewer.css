@@ -282,6 +282,19 @@
   padding: 0 1px;
 }
 
+/* ===== Suspended state (snapshot for inactive panes) ===== */
+.pdf-scroll-area.pdf-suspended {
+  overflow: hidden;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 0;
+}
+.pdf-suspend-snapshot {
+  display: block;
+  pointer-events: none;
+  object-fit: cover;
+}
+
 /* ===== Error state ===== */
 .pdf-error {
   display: flex;

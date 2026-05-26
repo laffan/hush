@@ -113,6 +113,7 @@ function onContextChange() {
     const participatesInCtx = pane.pinned || pane.ownerContext === ctx;
     if (ctxHidden && participatesInCtx) {
       pane.el.style.display = "none";
+      if (pane.pdfViewer && !pane.pdfViewer.suspended) pane.pdfViewer.suspend();
       if (pane.attached) stopAttachSync(pane);
       if (pane.gutter) {
         import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
@@ -125,12 +126,13 @@ function onContextChange() {
       continue;
     }
     if (pane.pinned) {
-      // Pinned panes stay visible in every context
       pane.el.style.display = "";
+      if (pane.pdfViewer?.suspended) pane.pdfViewer.resume();
       continue;
     }
     if (pane.ownerContext === ctx) {
       pane.el.style.display = "";
+      if (pane.pdfViewer?.suspended) pane.pdfViewer.resume();
       if (pane.attached && !pane._syncFrame && !pane._scrollHandler) {
         if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
@@ -140,6 +142,7 @@ function onContextChange() {
       }
     } else {
       pane.el.style.display = "none";
+      if (pane.pdfViewer && !pane.pdfViewer.suspended) pane.pdfViewer.suspend();
       if (pane.attached) stopAttachSync(pane);
       if (pane.gutter) {
         import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
@@ -250,6 +253,7 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
   if (pane.attached) stopAttachSync(pane);
   if (pane.editor) { try { pane.editor.destroy(); } catch (_) {} pane.editor = null; }
   if (pane.notebook) { try { pane.notebook.destroy(); } catch (_) {} pane.notebook = null; }
+  if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
   // Reset content area so the new editor/notebook mounts into a clean DOM.
   if (pane._content) pane._content.replaceChildren();
 
@@ -282,6 +286,7 @@ export function closePane(id) {
   }
   if (pane.editor) pane.editor.destroy();
   if (pane.notebook) pane.notebook.destroy();
+  if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);
