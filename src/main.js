@@ -138,6 +138,12 @@ async function init() {
     await mountPdf(pdfContainer, fileId, state);
     showPdf();
   });
+  state.on("pdf-toggle-shelf", () => {
+    import("./pdf/pdf-bridge.js").then(({ getPdfInstance }) => {
+      const v = getPdfInstance();
+      if (v) v.toggleShelf();
+    });
+  });
   state.on("pdf-unmount", async () => {
     const { unmountPdf } = await import("./pdf/pdf-bridge.js");
     await unmountPdf();
@@ -250,8 +256,13 @@ async function init() {
 
   state.on("toggle-outline-panel", () => {
     // In notebook mode the right sidebar is the Shelf, not the outline.
-    // Share the keyboard shortcut between the two so it just means
+    // In PDF mode it's the annotation shelf.
+    // Share the keyboard shortcut between them so it just means
     // "toggle the right panel" regardless of which mode is active.
+    if (state.currentPdfFileId) {
+      state.emit("pdf-toggle-shelf");
+      return;
+    }
     if (state.currentNotebookFileId) {
       state.emit("notebook-toggle-shelf");
       return;

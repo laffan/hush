@@ -114,12 +114,14 @@ export function createPdfViewer(container, opts = {}) {
   let shelfOpen = false;
   let shelfFilter = "";
 
-  shelfGrip.addEventListener("click", () => {
+  function toggleShelf() {
     shelfOpen = !shelfOpen;
     shelf.classList.toggle("open", shelfOpen);
     shelfGrip.textContent = shelfOpen ? "›" : "‹";
     if (shelfOpen) rebuildShelfList();
-  });
+  }
+
+  shelfGrip.addEventListener("click", toggleShelf);
   shelfSearch.addEventListener("input", () => {
     shelfFilter = shelfSearch.value.toLowerCase();
     rebuildShelfList();
@@ -534,7 +536,7 @@ export function createPdfViewer(container, opts = {}) {
       if (!pos) continue;
 
       if (annot.type === "ink" && pos.paths?.length) {
-        paintInkAnnotation(layer, annot, pos, scale, p.viewport.height);
+        paintInkAnnotation(layer, annot, pos, scale, p.viewport);
       } else if (pos.rects?.length) {
         for (const rect of pos.rects) {
           const [x1, y1, x2, y2] = rect;
@@ -553,24 +555,21 @@ export function createPdfViewer(container, opts = {}) {
     if (layer.children.length) p.wrapper.appendChild(layer);
   }
 
-  function paintInkAnnotation(layer, annot, pos, scale, pageHeight) {
+  function paintInkAnnotation(layer, annot, pos, scale, viewport) {
+    const w = Math.round(viewport.width * scale);
+    const h = Math.round(viewport.height * scale);
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.classList.add("pdf-annot-ink");
-    svg.style.position = "absolute";
-    svg.style.top = "0";
-    svg.style.left = "0";
-    svg.style.width = "100%";
-    svg.style.height = "100%";
-    svg.style.pointerEvents = "none";
-    svg.setAttribute("viewBox", `0 0 ${Math.round(pageHeight * scale * 10)} ${Math.round(pageHeight * scale * 10)}`);
-    svg.style.overflow = "visible";
+    svg.setAttribute("width", String(w));
+    svg.setAttribute("height", String(h));
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
 
     for (const pathPoints of pos.paths) {
       if (!pathPoints || pathPoints.length < 2) continue;
       let d = "";
       for (let i = 0; i < pathPoints.length; i += 2) {
         const x = pathPoints[i] * scale;
-        const y = (pageHeight - pathPoints[i + 1]) * scale;
+        const y = (viewport.height - pathPoints[i + 1]) * scale;
         d += (i === 0 ? "M" : "L") + `${x},${y} `;
       }
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -632,6 +631,7 @@ export function createPdfViewer(container, opts = {}) {
     setAnnotations,
     refreshAnnotations,
     setZoteroAttKey,
+    toggleShelf,
     get element() { return root; },
   };
 }

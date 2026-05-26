@@ -152,10 +152,8 @@
   opacity: 0.3;
   mix-blend-mode: multiply;
   border-radius: 1px;
-  pointer-events: auto;
-  cursor: default;
+  pointer-events: none;
 }
-.pdf-annot-highlight:hover { opacity: 0.5; }
 .pdf-annot-ink {
   position: absolute;
   top: 0; left: 0;
