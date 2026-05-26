@@ -47,11 +47,15 @@ export function unmountItemContent(contentEl, item, liveColumns) {
   contentEl.innerHTML = "";
 }
 
-export function snapshotItemContent(contentEl, item) {
-  // For docs: capture scroll position
+export function snapshotItemContent(contentEl, item, liveColumns) {
   const scroller = contentEl.querySelector(".stack-doc-scroller");
   if (scroller) {
     item.scrollY = scroller.scrollTop;
+  }
+  // For notebooks: capture camera state from the live canvas
+  const liveData = liveColumns?.get(item.id);
+  if (liveData?.canvas?.state?.camera) {
+    item.cameraState = { ...liveData.canvas.state.camera };
   }
 }
 
@@ -104,7 +108,7 @@ async function mountDocContent(contentEl, item, state, liveData) {
   }
 }
 
-// --- Notebook mounting ---
+// --- Notebook mounting (live canvas, same as pane-content.js) ---
 
 async function mountNotebookContent(contentEl, item, state, liveData) {
   const wrapper = document.createElement("div");
@@ -112,49 +116,88 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
   contentEl.appendChild(wrapper);
 
   try {
-    const { mountNotebook, unmountNotebook } = await import("../notebook/notebook-bridge.js");
-    // We need a scoped notebook mount — create a mini canvas container
-    const canvasHost = document.createElement("div");
-    canvasHost.className = "stack-notebook-canvas";
-    canvasHost.style.width = "100%";
-    canvasHost.style.height = "100%";
-    wrapper.appendChild(canvasHost);
+    const { NotesCanvas } = await import("../notebook/notes-canvas.ts");
+    const { computeNotebookSettings } = await import("../notebook/notebook-bridge.js");
+    const { decodeNotebookContent } = await import("../notebook/notebook-content.ts");
+    const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
 
-    // Load notebook content
-    let content = null;
+    const s = state.settings;
+    const shortcuts = {
+      shortcutNbSelect: s.shortcutNbSelect,
+      shortcutNbText: s.shortcutNbText,
+      shortcutNbDragArea: s.shortcutNbDragArea,
+      shortcutNbBrainstorm: s.shortcutNbBrainstorm,
+      shortcutNbDelete: s.shortcutNbDelete,
+      shortcutNbUndo: s.shortcutNbUndo,
+      shortcutNbRedo: s.shortcutNbRedo,
+      shortcutNbGroup: s.shortcutNbGroup,
+      shortcutNbUngroup: s.shortcutNbUngroup,
+    };
+
+    const canvas = new NotesCanvas(wrapper, shortcuts);
+    canvas.applySettings(computeNotebookSettings(state, null));
+
+    let fileContent = null;
     if (IS_TAURI) {
       try {
         const file = await tauriInvoke("load_file", { id: item.fileId });
-        content = file.content;
-      } catch (e) {
-        console.error("Failed to load notebook for stack:", e);
+        fileContent = file.content;
+      } catch (e) { console.error("Failed to load notebook for stack:", e); }
+    }
+
+    const snapshot = fileContent ? decodeNotebookContent(fileContent) : null;
+    if (snapshot) {
+      canvas.loadShapes(snapshot.shapes, snapshot.layers);
+      canvas.state.flowchart.deserialize(snapshot.flowEdges);
+      if (Array.isArray(snapshot.bookmarks)) {
+        canvas.state.bookmarks = snapshot.bookmarks;
+        canvas.state.notify("bookmarks");
       }
     }
 
-    if (content) {
-      const { decodeNotebookContent } = await import("../notebook/notebook-content.ts");
-      const decoded = decodeNotebookContent(content);
+    // Restore camera or center on content
+    requestAnimationFrame(() => {
+      if (!canvas.state) return;
+      if (item.cameraState) {
+        canvas.state.camera = { ...item.cameraState };
+      } else {
+        const w = wrapper.clientWidth || 500;
+        const h = wrapper.clientHeight || 400;
+        canvas.state.camera = { x: -w / 4, y: -h / 4, zoom: 0.75 };
+      }
+      canvas.state.notify("camera");
+    });
 
-      // Render a static preview of the notebook
-      const previewCanvas = document.createElement("canvas");
-      previewCanvas.className = "stack-notebook-preview";
-      previewCanvas.width = wrapper.clientWidth * (window.devicePixelRatio || 1);
-      previewCanvas.height = wrapper.clientHeight * (window.devicePixelRatio || 1);
-      previewCanvas.style.width = "100%";
-      previewCanvas.style.height = "100%";
-      wrapper.innerHTML = "";
-      wrapper.appendChild(previewCanvas);
+    // Autosave on changes
+    let dirty = false;
+    wrapper.addEventListener("notebook-change", () => { dirty = true; });
 
-      liveData.cleanup = () => {};
-      liveData.getScrollState = () => ({
-        scrollY: 0,
-        cameraState: item.cameraState,
+    const saveInterval = setInterval(async () => {
+      if (!dirty) return;
+      dirty = false;
+      const content = encodeNotebookContent({
+        shapes: canvas.getShapes(),
+        layers: canvas.state.layers,
+        flowEdges: canvas.state.flowchart.serialize(),
+        bookmarks: canvas.state.bookmarks,
+        camera: canvas.state.camera,
       });
-    } else {
-      wrapper.innerHTML = `<div class="stack-placeholder">Empty notebook</div>`;
-      liveData.cleanup = () => {};
-      liveData.getScrollState = () => ({ scrollY: 0, cameraState: null });
-    }
+      if (IS_TAURI) {
+        try { await tauriInvoke("save_file", { id: item.fileId, content }); }
+        catch (e) { console.error("Stack notebook save failed:", e); }
+      }
+      state.syncFileToExternal?.(item.fileId, content);
+    }, 2000);
+
+    liveData.canvas = canvas;
+    liveData.cleanup = () => {
+      clearInterval(saveInterval);
+      canvas.destroy();
+    };
+    liveData.getScrollState = () => ({
+      scrollY: 0,
+      cameraState: canvas.state?.camera ? { ...canvas.state.camera } : null,
+    });
   } catch (e) {
     console.error("Failed to mount notebook in stack:", e);
     wrapper.innerHTML = `<div class="stack-placeholder">Notebook</div>`;

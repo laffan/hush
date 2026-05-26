@@ -66,7 +66,18 @@ export class StackComponent {
       const col = this._createColumn(item);
       this._columnsEl.appendChild(col);
     }
+    this._updateEmptyState();
     this._updateVisibility();
+  }
+
+  _updateEmptyState() {
+    if (this._emptyEl) { this._emptyEl.remove(); this._emptyEl = null; }
+    if (this._items.length === 0) {
+      this._emptyEl = document.createElement("div");
+      this._emptyEl.className = "stack-empty-state";
+      this._emptyEl.innerHTML = `<div class="stack-empty-icon"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="6" x2="12" y2="42"/><line x1="24" y1="6" x2="24" y2="42"/><line x1="36" y1="6" x2="36" y2="42"/></svg></div><div class="stack-empty-label">Empty stack</div><div class="stack-empty-hint">Drag files here or click + to add</div>`;
+      this._scrollArea.appendChild(this._emptyEl);
+    }
   }
 
   _createColumn(item) {
@@ -117,7 +128,7 @@ export class StackComponent {
     } else {
       // Snapshot before closing
       if (this._liveColumns.has(itemId)) {
-        snapshotItemContent(col.querySelector(".stack-column-content"), item);
+        snapshotItemContent(col.querySelector(".stack-column-content"), item, this._liveColumns);
         unmountItemContent(col.querySelector(".stack-column-content"), item, this._liveColumns);
         this._liveColumns.delete(itemId);
       }
@@ -262,7 +273,7 @@ export class StackComponent {
       if (isVisible && !this._liveColumns.has(item.id)) {
         mountItemContent(contentEl, item, this._state, this._liveColumns);
       } else if (!isVisible && this._liveColumns.has(item.id)) {
-        snapshotItemContent(contentEl, item);
+        snapshotItemContent(contentEl, item, this._liveColumns);
         unmountItemContent(contentEl, item, this._liveColumns);
       }
     }
@@ -283,6 +294,7 @@ export class StackComponent {
       spineColor: null,
     };
     this._items.push(item);
+    this._updateEmptyState();
     const col = this._createColumn(item);
     this._columnsEl.appendChild(col);
     this._updateVisibility();
@@ -307,6 +319,7 @@ export class StackComponent {
     this._items.splice(idx, 1);
     const col = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
     if (col) col.remove();
+    this._updateEmptyState();
   }
 
   serialize() {

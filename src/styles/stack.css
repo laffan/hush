@@ -6,8 +6,12 @@
 
 #stack-container {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   overflow: hidden;
+  background: var(--theme-bg, #fff);
 }
 
 #stack-container.hidden {
@@ -18,6 +22,7 @@
   width: 100%;
   height: 100%;
   position: relative;
+  background: var(--theme-bg, #fff);
 }
 
 .stack-scroll-area {
@@ -236,6 +241,33 @@
   font-size: 13px;
 }
 
+/* --- Empty state --- */
+
+.stack-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--fg, #666);
+  opacity: 0.35;
+}
+
+.stack-empty-icon svg {
+  stroke: currentColor;
+}
+
+.stack-empty-label {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.stack-empty-hint {
+  font-size: 12px;
+}
+
 /* --- Floating add button --- */
 
 .stack-add-btn {
@@ -392,12 +424,12 @@
 
 /* --- Stack mode on body/app --- */
 
-body.stack-mode #editor-container,
-body.stack-mode #notebook-container,
-body.stack-mode #pdf-container {
+/* Hide editor chrome when stack is active */
+.stack-mode #editor-container,
+.stack-mode #drag-region,
+.stack-mode #right-panel-overlay,
+.stack-mode .sidebar-trigger,
+.stack-mode .right-panel-trigger {
   display: none !important;
 }
-
-#app.stack-mode #drag-region {
-  display: none !important;
-}
+body.stack-mode .column-resizer { display: none !important; }
