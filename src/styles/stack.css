@@ -326,12 +326,18 @@ body.stack-resizing .stack-column,
   font-size: 12px;
 }
 
-/* --- Floating add button --- */
+/* --- Floating button group (list + add) --- */
 
-.stack-add-btn {
+.stack-btn-group {
   position: absolute;
   bottom: 24px;
   right: 24px;
+  display: flex;
+  gap: 8px;
+  z-index: 20;
+}
+
+.stack-floating-btn {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -342,14 +348,117 @@ body.stack-resizing .stack-column,
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 20;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: transform 0.15s, box-shadow 0.15s;
 }
 
-.stack-add-btn:hover {
+.stack-floating-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* --- Stack list view --- */
+
+.stack-list-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stack-list-panel {
+  width: 400px;
+  max-width: 90vw;
+  max-height: 70vh;
+  background: var(--theme-bg, #fff);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.stack-list-header {
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg, #333);
+  border-bottom: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+}
+
+.stack-list-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.stack-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--fg, #333);
+}
+.stack-list-row-closed { opacity: 0.4; }
+.stack-list-row-dragging { opacity: 0.4; background: rgba(128,128,128,0.05); }
+
+.stack-list-drag {
+  cursor: grab;
+  opacity: 0.3;
+  flex-shrink: 0;
+  display: flex;
+  padding: 2px;
+}
+.stack-list-drag:active { cursor: grabbing; }
+
+.stack-list-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+.stack-list-icon svg, .stack-list-icon .tree-type-icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.stack-list-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-list-status {
+  font-size: 10px;
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.stack-list-close {
+  border: none;
+  background: transparent;
+  color: var(--fg, #999);
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.3;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.stack-list-close:hover { opacity: 0.8; color: #ef4444; }
+
+.stack-list-drop {
+  height: 2px;
+  background: var(--accent, #3b82f6);
+  border-radius: 1px;
+  margin: 0 12px;
 }
 
 /* --- Color picker --- */

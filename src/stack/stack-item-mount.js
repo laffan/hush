@@ -47,16 +47,14 @@ export function unmountItemContent(contentEl, item, liveColumns) {
   contentEl.innerHTML = "";
 }
 
+/** Capture all view state from a live column back onto the item. */
 export function snapshotItemContent(contentEl, item, liveColumns) {
-  const scroller = contentEl.querySelector(".stack-doc-scroller");
-  if (scroller) {
-    item.scrollY = scroller.scrollTop;
-  }
-  // For notebooks: capture camera state from the live canvas
   const liveData = liveColumns?.get(item.id);
-  if (liveData?.canvas?.state?.camera) {
-    item.cameraState = { ...liveData.canvas.state.camera };
-  }
+  if (!liveData?.getScrollState) return;
+  const s = liveData.getScrollState();
+  if (s.scrollY != null) item.scrollY = s.scrollY;
+  if (s.cameraState != null) item.cameraState = s.cameraState;
+  if (s.pdfZoom != null) item.pdfZoom = s.pdfZoom;
 }
 
 // --- Document mounting (full pane editor, same as pane-content.js) ---
@@ -236,11 +234,13 @@ async function mountPdfContent(contentEl, item, state, liveData) {
       await viewer.loadPdf(data);
     }
 
-    if (typeof item.scrollY === "number" && item.scrollY > 0) {
-      requestAnimationFrame(() => {
-        try { viewer.setScrollTop(item.scrollY); } catch (_) {}
-      });
-    }
+    // Restore zoom and scroll position
+    requestAnimationFrame(() => {
+      try {
+        if (item.pdfZoom != null && viewer.setZoom) viewer.setZoom(item.pdfZoom);
+        if (typeof item.scrollY === "number" && item.scrollY > 0) viewer.setScrollTop(item.scrollY);
+      } catch (_) {}
+    });
 
     if (zoteroAttKey) {
       const userId = state.settings?.zoteroUserId;
@@ -259,6 +259,7 @@ async function mountPdfContent(contentEl, item, state, liveData) {
     liveData.getScrollState = () => ({
       scrollY: viewer.getScrollTop?.() ?? 0,
       cameraState: null,
+      pdfZoom: viewer.getZoom?.() ?? null,
     });
   } catch (e) {
     console.error("Failed to mount PDF in stack:", e);

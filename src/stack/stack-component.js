@@ -48,11 +48,29 @@ export class StackComponent {
     this._columnsEl.className = "stack-columns";
     this._scrollArea.appendChild(this._columnsEl);
 
+    // Bottom-right button group: list view + add
+    const btnGroup = document.createElement("div");
+    btnGroup.className = "stack-btn-group";
+
+    this._listBtn = document.createElement("button");
+    this._listBtn.className = "stack-floating-btn stack-list-btn";
+    this._listBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`;
+    this._listBtn.addEventListener("click", async () => {
+      if (!this._listView) {
+        const { createStackListView } = await import("./stack-list-view.js");
+        this._listView = createStackListView(this, this._state);
+      }
+      this._listView.toggle();
+    });
+    btnGroup.appendChild(this._listBtn);
+
     this._addBtn = document.createElement("button");
-    this._addBtn.className = "stack-add-btn";
+    this._addBtn.className = "stack-floating-btn stack-add-btn";
     this._addBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
     this._addBtn.addEventListener("click", () => this._openAddPicker());
-    this._el.appendChild(this._addBtn);
+    btnGroup.appendChild(this._addBtn);
+
+    this._el.appendChild(btnGroup);
 
     // Trailing resize zone for the last item
     this._trailResize = document.createElement("div");
@@ -416,7 +434,7 @@ export class StackComponent {
     const item = {
       id: crypto.randomUUID(), fileId, fileType, name,
       width: DEFAULT_COLUMN_WIDTH, open: true,
-      scrollY: 0, cameraState: null, spineColor: null,
+      scrollY: 0, cameraState: null, pdfZoom: null, spineColor: null,
     };
     this._items.push(item);
     this._updateEmptyState();
@@ -446,8 +464,9 @@ export class StackComponent {
       const item = this._items.find((i) => i.id === itemId);
       if (item && liveData.getScrollState) {
         const s = liveData.getScrollState();
-        item.scrollY = s.scrollY ?? item.scrollY;
-        item.cameraState = s.cameraState ?? item.cameraState;
+        if (s.scrollY != null) item.scrollY = s.scrollY;
+        if (s.cameraState != null) item.cameraState = s.cameraState;
+        if (s.pdfZoom != null) item.pdfZoom = s.pdfZoom;
       }
     }
     return { items: this._items, scrollX: this._scrollX };
