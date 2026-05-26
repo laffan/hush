@@ -88,6 +88,10 @@ export function buildPaneDOM(pane, deps) {
 
   const buttons = document.createElement("span");
   buttons.className = "floating-pane-buttons";
+  buttons.addEventListener("click", (e) => {
+    const btn = e.target.closest(".floating-pane-btn");
+    console.log("[PIN] toolbar button clicked:", btn?.className, "pane:", pane.id);
+  }, true);
 
   // Font-size button (doc panes only — notebooks have no text size,
   // zotero-highlights pane is fileless).
@@ -105,6 +109,7 @@ export function buildPaneDOM(pane, deps) {
   const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
   pinBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    console.log("[PIN] pin button clicked", { disabled: pinBtn.classList.contains("fp-btn-disabled"), paneId: pane.id, pinned: pane.pinned });
     if (pinBtn.classList.contains("fp-btn-disabled")) return;
     togglePinned(pane, deps.onContextChange);
   });
