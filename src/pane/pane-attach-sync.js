@@ -128,17 +128,12 @@ export function anchorPaneToPdf(pane) {
 
 export function startStackPinSync(pane) {
   const scrollArea = document.querySelector("#stack-container .stack-scroll-area");
-  if (!scrollArea) { console.log("[PIN] startStackPinSync: no scrollArea found"); return; }
-  console.log("[PIN] startStackPinSync started for pane", pane.id, "→ itemId:", pane._stackPin?.itemId);
+  if (!scrollArea) return;
 
-  let logCount = 0;
   function tick() {
     if (!pane._stackPin || !panes.has(pane.id)) return;
     const col = document.querySelector(`.stack-column[data-item-id="${pane._stackPin.itemId}"]`);
     if (!col || col.classList.contains("stack-column-closed")) {
-      if (logCount < 5 || pane.el.style.display !== "none") {
-        console.log("[PIN] tick: column closed/missing, hiding pane", { itemId: pane._stackPin.itemId, colFound: !!col });
-      }
       pane.el.style.display = "none";
     } else {
       pane.el.style.display = "";
@@ -148,16 +143,7 @@ export function startStackPinSync(pane) {
       pane.y = colRect.top + pane._stackPin.yOffset;
       pane.el.style.left = pane.x + "px";
       pane.el.style.top = pane.y + "px";
-      if (logCount < 3) {
-        console.log("[PIN] tick: positioned pane", {
-          colRect: { left: colRect.left, top: colRect.top, width: colRect.width },
-          containerRect: { left: containerRect.left },
-          offset: { x: pane._stackPin.xOffset, y: pane._stackPin.yOffset },
-          result: { x: pane.x, y: pane.y },
-        });
-      }
     }
-    logCount++;
     pane._stackSyncFrame = requestAnimationFrame(tick);
   }
   tick();
@@ -165,26 +151,23 @@ export function startStackPinSync(pane) {
 
 export function anchorPaneToStackItem(pane) {
   const stackContainer = document.getElementById("stack-container");
-  if (!stackContainer) { console.log("[PIN] anchorPaneToStackItem: no #stack-container"); return; }
+  if (!stackContainer) return;
   const cols = stackContainer.querySelectorAll(".stack-column");
-  console.log("[PIN] anchorPaneToStackItem: found", cols.length, "columns, pane at", { x: pane.x, y: pane.y });
   const px = pane.x, py = pane.y;
   let bestCol = null, bestDist = Infinity;
   for (const col of cols) {
     const r = col.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const d = Math.abs(px - cx) + Math.abs(py - cy);
-    console.log("[PIN]   col", col.dataset.itemId, "center:", { cx: Math.round(cx), cy: Math.round(cy) }, "dist:", Math.round(d));
     if (d < bestDist) { bestDist = d; bestCol = col; }
   }
-  if (!bestCol) { console.log("[PIN] anchorPaneToStackItem: no best column found"); return; }
+  if (!bestCol) return;
   const colRect = bestCol.getBoundingClientRect();
   pane._stackPin = {
     itemId: bestCol.dataset.itemId,
     xOffset: px - colRect.left,
     yOffset: py - colRect.top,
   };
-  console.log("[PIN] anchored to column", bestCol.dataset.itemId, "offset:", pane._stackPin);
 }
 
 export function stopStackPinSync(pane) {
