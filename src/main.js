@@ -91,10 +91,7 @@ async function init() {
     state.emit("doc-content-changed");
   };
 
-  // === Notebook / Editor mode switching ===
-  // #app.notebook-mode hides all editor chrome (resizers, right panel, drag
-  // region) via CSS so the notebook canvas occupies the full space.
-
+  // === Mode switching (notebook / PDF / stack) ===
   const appEl = document.getElementById("app");
   const pdfContainer = document.getElementById("pdf-container");
   const stackContainer = document.getElementById("stack-container");
@@ -348,7 +345,15 @@ async function init() {
     const gripW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-grip-width"), 10) || 24;
     setNotebookLeftInset(panelOpen ? panelW : gripW);
   }
-  new MutationObserver(syncNotebookInset).observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
+  function syncStackInset() {
+    if (!state.currentStackFileId) return;
+    const po = document.getElementById("panel-overlay");
+    const open = po && !po.classList.contains("hidden") && po.classList.contains("panel-inset");
+    stackContainer.style.left = open ? (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300) + "px" : "0";
+  }
+  const panelObs = new MutationObserver(() => { syncNotebookInset(); syncStackInset(); });
+  panelObs.observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
+  state.on("stack-open", syncStackInset);
 
   // Panel inset mode — the left sidebar only overlays the text on narrow
   // windows. Above 700px the panel insets alongside the editor (the column

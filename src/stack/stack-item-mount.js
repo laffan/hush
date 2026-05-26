@@ -28,7 +28,7 @@ export async function mountItemContent(contentEl, item, state, liveColumns) {
   } else if (type === "notebook") {
     await mountNotebookContent(contentEl, item, state, liveData);
   } else if (type === "pdf") {
-    mountPdfPlaceholder(contentEl, item, state, liveData);
+    await mountPdfContent(contentEl, item, state, liveData);
   } else if (type === "stack") {
     await mountNestedStack(contentEl, item, state, liveData);
   } else {
@@ -59,20 +59,11 @@ export function snapshotItemContent(contentEl, item, liveColumns) {
   }
 }
 
-// --- Document mounting ---
+// --- Document mounting (full pane editor, same as pane-content.js) ---
 
 async function mountDocContent(contentEl, item, state, liveData) {
   const wrapper = document.createElement("div");
   wrapper.className = "stack-doc-wrapper";
-
-  const scroller = document.createElement("div");
-  scroller.className = "stack-doc-scroller";
-  wrapper.appendChild(scroller);
-
-  const editorHost = document.createElement("div");
-  editorHost.className = "stack-doc-editor";
-  scroller.appendChild(editorHost);
-
   contentEl.appendChild(wrapper);
 
   let content = "";
@@ -80,31 +71,44 @@ async function mountDocContent(contentEl, item, state, liveData) {
     try {
       const file = await tauriInvoke("load_file", { id: item.fileId });
       content = file.content || "";
-    } catch (e) {
-      console.error("Failed to load doc for stack:", e);
-    }
+    } catch (e) { console.error("Failed to load doc for stack:", e); }
   }
 
-  // Create a lightweight CodeMirror instance
   try {
-    const { createStackEditor } = await import("./stack-editor.js");
-    const editor = createStackEditor(editorHost, content, state, item.fileId);
+    const { createPaneEditor } = await import("../pane/pane-editor.js");
+    let dirty = false;
+    const editor = createPaneEditor(wrapper, state, () => { dirty = true; });
+    editor.setContent(content);
+
+    const saveInterval = setInterval(async () => {
+      if (!dirty) return;
+      dirty = false;
+      const text = editor.getContent();
+      if (IS_TAURI) {
+        try { await tauriInvoke("save_file", { id: item.fileId, content: text }); }
+        catch (e) { console.error("Stack doc save failed:", e); }
+      }
+      state.syncFileToExternal?.(item.fileId, text);
+    }, 2000);
+
     liveData.editor = editor;
     liveData.cleanup = () => {
-      if (editor.view) editor.view.destroy();
+      clearInterval(saveInterval);
+      editor.destroy();
     };
     liveData.getScrollState = () => ({
-      scrollY: scroller.scrollTop,
+      scrollY: editor.view?.scrollDOM?.scrollTop ?? 0,
       cameraState: null,
     });
 
-    // Restore scroll position
     if (item.scrollY) {
-      requestAnimationFrame(() => { scroller.scrollTop = item.scrollY; });
+      requestAnimationFrame(() => {
+        try { editor.view?.scrollDOM?.scrollTo(0, item.scrollY); } catch (_) {}
+      });
     }
   } catch (e) {
     console.error("Failed to create stack editor:", e);
-    editorHost.textContent = content.slice(0, 500) + "...";
+    wrapper.textContent = content.slice(0, 500) + "...";
   }
 }
 
@@ -206,43 +210,62 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
   }
 }
 
-// --- PDF placeholder (snapshot + activate) ---
+// --- PDF mounting (immediate, same as pane-content.js) ---
 
-function mountPdfPlaceholder(contentEl, item, state, liveData) {
+async function mountPdfContent(contentEl, item, state, liveData) {
   const wrapper = document.createElement("div");
   wrapper.className = "stack-pdf-wrapper";
-  wrapper.innerHTML = `
-    <div class="stack-pdf-placeholder">
-      <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="8" y="4" width="32" height="40" rx="2"/>
-        <line x1="14" y1="16" x2="34" y2="16"/>
-        <line x1="14" y1="22" x2="34" y2="22"/>
-        <line x1="14" y1="28" x2="28" y2="28"/>
-      </svg>
-      <span>Click to open PDF</span>
-    </div>
-  `;
   contentEl.appendChild(wrapper);
 
-  let activated = false;
-  wrapper.addEventListener("click", async () => {
-    if (activated) return;
-    activated = true;
-    wrapper.innerHTML = `<div class="stack-placeholder">Loading PDF...</div>`;
-    try {
-      const { PdfViewer } = await import("../pdf/pdf-viewer.js");
-      wrapper.innerHTML = "";
-      const viewer = new PdfViewer(wrapper, item.fileId, state);
-      liveData.pdfViewer = viewer;
-      liveData.cleanup = () => { if (viewer.destroy) viewer.destroy(); };
-    } catch (e) {
-      console.error("Failed to mount PDF in stack:", e);
-      wrapper.innerHTML = `<div class="stack-placeholder">Failed to load PDF</div>`;
-    }
-  });
+  try {
+    const { createPdfViewer } = await import("../pdf/pdf-viewer.js");
+    const { findNodeByFileId } = await import("../state/tree-helpers.js");
+    const node = findNodeByFileId(state.fileTree, item.fileId);
+    const zoteroAttKey = node?.zoteroAttKey || null;
 
-  liveData.cleanup = () => {};
-  liveData.getScrollState = () => ({ scrollY: item.scrollY ?? 0, cameraState: null });
+    const viewer = createPdfViewer(wrapper, { mode: "pane", zoteroAttKey });
+
+    let bytes;
+    if (IS_TAURI) {
+      try { bytes = await tauriInvoke("load_pdf", { fileId: item.fileId }); }
+      catch (e) { console.error("Failed to load PDF for stack:", e); }
+    }
+
+    if (bytes) {
+      const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      await viewer.loadPdf(data);
+    }
+
+    if (typeof item.scrollY === "number" && item.scrollY > 0) {
+      requestAnimationFrame(() => {
+        try { viewer.setScrollTop(item.scrollY); } catch (_) {}
+      });
+    }
+
+    if (zoteroAttKey) {
+      const userId = state.settings?.zoteroUserId;
+      const apiKey = state.settings?.zoteroApiKey;
+      if (userId && apiKey) {
+        try {
+          const { getAnnotations } = await import("../zotero-annotations.js");
+          const { annotations } = await getAnnotations(zoteroAttKey, userId, apiKey);
+          viewer.setAnnotations(annotations);
+        } catch (_) {}
+      }
+    }
+
+    liveData.pdfViewer = viewer;
+    liveData.cleanup = () => { if (viewer.destroy) viewer.destroy(); };
+    liveData.getScrollState = () => ({
+      scrollY: viewer.getScrollTop?.() ?? 0,
+      cameraState: null,
+    });
+  } catch (e) {
+    console.error("Failed to mount PDF in stack:", e);
+    wrapper.innerHTML = `<div class="stack-placeholder">Failed to load PDF</div>`;
+    liveData.cleanup = () => {};
+    liveData.getScrollState = () => ({ scrollY: 0, cameraState: null });
+  }
 }
 
 // --- Nested stack ---

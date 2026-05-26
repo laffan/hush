@@ -220,7 +220,9 @@ export class StackComponent {
         const [moved] = this._items.splice(idx, 1);
         const targetIdx = insertIdx > idx ? insertIdx - 1 : insertIdx;
         this._items.splice(targetIdx, 0, moved);
-        this._render();
+        // Move DOM node instead of re-rendering (preserves live editors/canvases)
+        const refNode = this._columnsEl.children[targetIdx] || null;
+        this._columnsEl.insertBefore(col, refNode);
       }
     };
 
