@@ -282,6 +282,7 @@ async function togglePinned(pane, onContextChange) {
 
 function setPinned(pane, value, onContextChange) {
   pane.pinned = value;
+  console.log("[PIN] setPinned called:", { value, paneId: pane.id, hasOnContextChange: typeof onContextChange === "function" });
   const btn = pane.el.querySelector(".fp-btn-pin");
   if (btn) btn.classList.toggle("pin-active", pane.pinned);
   pane.el.classList.toggle("pinned", pane.pinned);
