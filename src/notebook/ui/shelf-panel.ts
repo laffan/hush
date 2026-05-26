@@ -230,7 +230,7 @@ export function createShelfPanel(
       const _seen = new Set<string>();
       for (const child of textChildren) {
         if (child.type === "text") {
-          for (const hex of allFlagHexes(buildLabel(child.text, 50).label, _flagColors)) {
+          for (const hex of allFlagHexes(child.text, _flagColors)) {
             if (!_seen.has(hex)) { _seen.add(hex); daFlagHexes.push(hex); }
           }
         }
@@ -458,7 +458,7 @@ export function createShelfPanel(
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
     const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
     const flagColors = getHushFlagColors();
-    const flagHexes = allFlagHexes(node.label, flagColors);
+    const flagHexes = allFlagHexes(node.excerpt || node.label, flagColors);
     if (!flagHexes.length && node.flagHexes) flagHexes.push(...node.flagHexes);
     const isSelected = state.selectedIds.has(node.shapeId);
     const selectedBg = theme.variant === "dark" ? "rgba(120, 180, 255, 0.14)" : "rgba(66, 133, 244, 0.12)";

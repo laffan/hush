@@ -400,6 +400,25 @@ function bindAll() {
     });
   }
 
+  // Reflect background Zotero updates (triggered from the command palette)
+  // into the settings panel's progress bar so the user sees progress here too.
+  window.addEventListener("hush-zotero-progress", (e) => {
+    const { msg, progress } = e.detail || {};
+    const progressEl = document.getElementById("zotero-progress");
+    const fillEl = document.getElementById("zotero-progress-fill");
+    const textEl = document.getElementById("zotero-progress-text");
+    if (progressEl) progressEl.style.display = "";
+    if (fillEl) fillEl.style.width = Math.round((progress || 0) * 100) + "%";
+    if (textEl) textEl.textContent = msg || "";
+    if (zoteroDownloadBtn) zoteroDownloadBtn.disabled = true;
+  });
+  window.addEventListener("hush-zotero-done", () => {
+    const progressEl = document.getElementById("zotero-progress");
+    if (progressEl) progressEl.style.display = "none";
+    if (zoteroDownloadBtn) zoteroDownloadBtn.disabled = false;
+    render();
+  });
+
   // Shortcuts tab — click on shortcut-keys to record
   document.querySelectorAll(".shortcut-display .shortcut-keys").forEach(el => {
     el.addEventListener("click", () => {

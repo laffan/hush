@@ -60,6 +60,7 @@ export async function startZoteroUpdate(state) {
   try {
     const refs = await downloadZoteroReferences(userId, apiKey, (msg, progress) => {
       state.emit("background-task-progress", { label: "Zotero", progress });
+      window.dispatchEvent(new CustomEvent("hush-zotero-progress", { detail: { msg, progress } }));
     });
     // Persist
     if (IS_TAURI) {
@@ -77,6 +78,7 @@ export async function startZoteroUpdate(state) {
     }
     clearZoteroCache();
     state.emit("background-task-done");
+    window.dispatchEvent(new CustomEvent("hush-zotero-done"));
   } catch (err) {
     console.error("Zotero update failed:", err);
     state.emit("background-task-done");
