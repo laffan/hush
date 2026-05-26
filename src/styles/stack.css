@@ -69,7 +69,8 @@
   justify-content: space-between;
   align-items: center;
   background: var(--spine-bg, rgba(128, 128, 128, 0.06));
-  border-right: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+  border-left: 1px solid rgba(128, 128, 128, 0.25);
+  border-right: 1px solid rgba(128, 128, 128, 0.08);
   user-select: none;
   overflow: hidden;
   cursor: default;
@@ -103,9 +104,8 @@
 }
 
 .stack-spine-label {
-  writing-mode: vertical-rl;
+  writing-mode: vertical-lr;
   text-orientation: mixed;
-  transform: rotate(180deg);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -234,8 +234,14 @@ body.stack-resizing .stack-column { transition: none; }
 
 .stack-doc-wrapper .cm-scroller {
   overflow: auto;
+}
+
+.stack-doc-wrapper .cm-content {
+  max-width: var(--column-width, 800px);
+  margin: 0 auto;
   padding-left: 50px;
   padding-right: 50px;
+  box-sizing: content-box;
 }
 
 /* --- Notebook content --- */
@@ -459,7 +465,6 @@ body.stack-resizing .stack-column { transition: none; }
 /* Hide editor chrome when stack is active */
 .stack-mode #editor-container,
 .stack-mode #drag-region,
-.stack-mode #right-panel-overlay,
 .stack-mode .sidebar-trigger,
 .stack-mode .right-panel-trigger {
   display: none !important;

@@ -116,18 +116,28 @@ export class StackComponent {
     content.style.display = item.open ? "block" : "none";
     col.appendChild(content);
 
-    // Auto-widen when internal panels open
-    const ro = new ResizeObserver(() => {
+    // Auto-widen when internal shelf/sidebar panels open.
+    // Shelf panels are absolutely positioned children; we track their
+    // presence and width via a MutationObserver + ResizeObserver combo.
+    let shelfWidth = 0;
+    const baseWidth = () => item.width || DEFAULT_COLUMN_WIDTH;
+    function syncShelfWidth() {
       if (!item.open) return;
-      const sw = content.scrollWidth;
-      const cw = content.clientWidth;
-      if (sw > cw + 4) {
-        item.width = (item.width || DEFAULT_COLUMN_WIDTH) + (sw - cw);
+      const panels = content.querySelectorAll(".notebook-shelf, .pdf-annotation-shelf, .longview-panel");
+      let total = 0;
+      for (const p of panels) {
+        if (p.offsetWidth > 0) total += p.offsetWidth;
+      }
+      if (total !== shelfWidth) {
+        const delta = total - shelfWidth;
+        shelfWidth = total;
+        item.width = baseWidth() + delta;
         col.style.width = (SPINE_WIDTH + item.width) + "px";
       }
-    });
-    ro.observe(content);
-    col._resizeObs = ro;
+    }
+    const mo = new MutationObserver(syncShelfWidth);
+    mo.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+    col._shelfObs = mo;
 
     return col;
   }
@@ -251,11 +261,12 @@ export class StackComponent {
       ghost.style.left = (ev.clientX - SPINE_WIDTH / 2) + "px";
       ghost.style.top = this._scrollArea.getBoundingClientRect().top + "px";
 
-      // Determine insertion index from cursor position among collapsed spines
-      const activeCols = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
-      let newIdx = activeCols.length;
-      for (let i = 0; i < activeCols.length; i++) {
-        const rect = activeCols[i].getBoundingClientRect();
+      // Determine insertion index, excluding the dragged column
+      const allCols = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
+      const otherCols = allCols.filter((c) => c !== dragCol);
+      let newIdx = otherCols.length;
+      for (let i = 0; i < otherCols.length; i++) {
+        const rect = otherCols[i].getBoundingClientRect();
         if (ev.clientX < rect.left + rect.width / 2) {
           newIdx = i;
           break;
@@ -263,11 +274,10 @@ export class StackComponent {
       }
       if (newIdx !== insertIdx) {
         insertIdx = newIdx;
-        // Move drop indicator
         this._columnsEl.querySelectorAll(".stack-drop-indicator").forEach((el) => el.remove());
         const indicator = document.createElement("div");
         indicator.className = "stack-drop-indicator";
-        const refCol = activeCols[insertIdx] || null;
+        const refCol = otherCols[insertIdx] || this._trailResize;
         this._columnsEl.insertBefore(indicator, refCol);
       }
     };
@@ -279,15 +289,15 @@ export class StackComponent {
       this._columnsEl.querySelectorAll(".stack-drop-indicator").forEach((el) => el.remove());
       if (dragCol) dragCol.classList.remove("stack-column-reorder-source");
 
-      // Perform the reorder
+      // Perform the reorder: insertIdx is relative to items EXCLUDING
+      // the dragged one, so we can splice-remove then splice-insert directly.
       const currentIdx = this._items.findIndex((i) => i.id === itemId);
-      if (insertIdx !== currentIdx) {
-        const [moved] = this._items.splice(currentIdx, 1);
-        const targetIdx = insertIdx > currentIdx ? insertIdx - 1 : insertIdx;
-        this._items.splice(targetIdx, 0, moved);
-        const refNode = this._columnsEl.querySelectorAll(".stack-column")[targetIdx] || this._trailResize;
-        this._columnsEl.insertBefore(dragCol, refNode);
-      }
+      this._items.splice(currentIdx, 1);
+      this._items.splice(insertIdx, 0, item);
+      // Sync DOM: find the node at the target position (excluding dragCol)
+      const otherCols = Array.from(this._columnsEl.querySelectorAll(".stack-column")).filter((c) => c !== dragCol);
+      const refNode = otherCols[insertIdx] || this._trailResize;
+      this._columnsEl.insertBefore(dragCol, refNode);
 
       // Restore open/closed states
       for (const saved of savedStates) {
