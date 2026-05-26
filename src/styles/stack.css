@@ -59,6 +59,15 @@
   border-left-color: var(--fg, #000);
 }
 
+/* Briefly highlight a newly added column */
+.stack-column-highlight .stack-spine {
+  animation: stack-spine-flash 1.2s ease-out;
+}
+@keyframes stack-spine-flash {
+  0% { background: rgba(59, 130, 246, 0.25); }
+  100% { background: var(--spine-bg, rgba(128, 128, 128, 0.06)); }
+}
+
 .stack-column-closed {
   transition: width 0.2s ease;
 }
@@ -184,8 +193,8 @@
 /* --- Trailing resize zone (after last column) --- */
 
 .stack-trail-resize {
-  width: 100px;
-  min-width: 100px;
+  width: 75vw;
+  min-width: 75vw;
   flex-shrink: 0;
   height: 100%;
   cursor: col-resize;

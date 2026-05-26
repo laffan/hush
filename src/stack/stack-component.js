@@ -32,7 +32,10 @@ export class StackComponent {
 
     this._buildDOM();
     this._render();
-    this._scrollArea.scrollLeft = this._scrollX;
+    // Defer scroll restoration so the browser has reflowed column widths
+    requestAnimationFrame(() => {
+      this._scrollArea.scrollLeft = this._scrollX;
+    });
     this._startVirtualization();
   }
 
@@ -125,6 +128,8 @@ export class StackComponent {
 
     const spine = createSpine(item, {
       onToggle: () => this._toggleItem(item.id),
+      onToggleAll: () => this._closeAll(),
+      onOpenAll: () => this._openAll(),
       onClose: () => this.removeItem(item.id),
       onColorChange: (color) => this._setSpineColor(item.id, color),
       onDragStart: (e) => this._startReorder(item.id, e),
@@ -195,6 +200,14 @@ export class StackComponent {
       if (contentEl) contentEl.style.display = "none";
     }
     this._updateVisibility();
+  }
+
+  _closeAll() {
+    for (const it of this._items) { if (it.open) this._toggleItem(it.id); }
+  }
+
+  _openAll() {
+    for (const it of this._items) { if (!it.open) this._toggleItem(it.id); }
   }
 
   _setSpineColor(itemId, color) {
@@ -479,7 +492,18 @@ export class StackComponent {
     });
   }
 
-  handleFileDrop(fileId, fileType, name) { this.addItem(fileId, fileType, name); }
+  handleFileDrop(fileId, fileType, name) {
+    const newItem = this.addItem(fileId, fileType, name);
+    // Scroll to the new item and briefly highlight its spine
+    requestAnimationFrame(() => {
+      this._scrollArea.scrollLeft = this._scrollArea.scrollWidth;
+      const col = this._columnsEl.querySelector(`[data-item-id="${newItem.id}"]`);
+      if (col) {
+        col.classList.add("stack-column-highlight");
+        setTimeout(() => col.classList.remove("stack-column-highlight"), 1200);
+      }
+    });
+  }
 
   destroy() {
     this._destroyed = true;

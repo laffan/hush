@@ -9,21 +9,31 @@
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
-export function createSpine(item, { onToggle, onClose, onColorChange, onDragStart, onResizeStart }) {
+export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";
   if (item.spineColor) spine.style.backgroundColor = item.spineColor;
 
-  // Left-edge resize zone
+  // Track whether a resize drag happened so we can suppress the click
+  let didResize = false;
+
+  // Left-edge resize zone (6px strip)
   spine.addEventListener("pointerdown", (e) => {
     if (e.offsetX > 6) return;
     e.stopPropagation();
+    e.preventDefault();
+    didResize = true;
     onResizeStart(e);
   });
 
   // Click the spine body to toggle open/close
   spine.addEventListener("click", (e) => {
+    if (didResize) { didResize = false; return; }
     if (e.target.closest(".stack-spine-btn")) return;
+    if (e.metaKey || e.ctrlKey) {
+      if (e.shiftKey) { onOpenAll(); } else { onToggleAll(); }
+      return;
+    }
     onToggle();
   });
   spine.style.cursor = "pointer";
