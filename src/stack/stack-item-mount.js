@@ -204,18 +204,32 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     // between stack columns (and from panes/main editor into this notebook)
     const nbCanvas = wrapper.querySelector("canvas");
     let unregDrop = null;
+    let unregTxtDrag = null;
+    let unregImgDrag = null;
     if (nbCanvas) {
-      import("../pane/text-drag.js").then(({ registerNotebookDropTarget, attachNotebookTextShapeDrag }) => {
+      import("../pane/text-drag.js").then(async ({ registerNotebookDropTarget, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag }) => {
+        const { findShapeAtPoint, hitTestLink } = await import("../notebook/state-helpers.ts");
         unregDrop = registerNotebookDropTarget(nbCanvas, canvas.state);
-        attachNotebookTextShapeDrag(nbCanvas, wrapper, canvas.state, {
-          findTextShapeAt: (shapes, pt) => shapes.find((s) =>
-            s.type === "text" && pt.x >= s.x && pt.x <= s.x + (s.width || 200) && pt.y >= s.y && pt.y <= s.y + (s.height || 50)),
-        });
+        unregTxtDrag = attachNotebookTextShapeDrag(nbCanvas, wrapper, canvas.state, {
+          findTextShapeAt: (shapes, pt) => {
+            const hit = findShapeAtPoint(pt, shapes, canvas.state.fontFamily);
+            return hit && hit.type === "text" ? hit : null;
+          },
+          hitTestLink,
+        }, () => { dirty = true; });
+        unregImgDrag = attachNotebookImageShapeDrag(nbCanvas, wrapper, canvas.state, {
+          findImageShapeAt: (shapes, pt) => {
+            const hit = findShapeAtPoint(pt, shapes, canvas.state.fontFamily);
+            return hit && hit.type === "image" ? hit : null;
+          },
+        }, () => { dirty = true; });
       });
     }
     liveData.cleanup = () => {
       clearInterval(saveInterval);
       if (unregDrop) unregDrop();
+      if (unregTxtDrag) unregTxtDrag();
+      if (unregImgDrag) unregImgDrag();
       canvas.destroy();
     };
     liveData.getScrollState = () => ({

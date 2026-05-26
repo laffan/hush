@@ -256,12 +256,15 @@ async function init() {
   state.on("toggle-outline-panel", async () => {
     // Stack mode: toggle the active item's sidebar
     if (state.currentStackFileId) {
-      import("./stack/stack-bridge.js").then(({ getStackInstance }) => {
-        const inst = getStackInstance(); const a = inst?.getActiveItem();
-        if (!a) return; const ld = inst._liveColumns.get(a.id);
+      import("./stack/stack-bridge.js").then(async ({ getStackInstance }) => {
+        const inst = getStackInstance(); const a = inst?.getActiveItem(); if (!a) return;
+        const ld = inst._liveColumns.get(a.id);
         if (a.fileType === "notebook" && ld?.canvas) { const g = ld.canvas.container?.querySelector(".notebook-shelf button"); if (g) g.click(); }
         else if (a.fileType === "pdf" && ld?.pdfViewer?.toggleShelf) ld.pdfViewer.toggleShelf();
-        else if (a.fileType === "document") { const rp = document.getElementById("right-panel-overlay"); if (rp) { rp.classList.contains("hidden") ? state.emit("show-outline") : state.emit("hide-outline"); } }
+        else if (a.fileType === "document" && ld?.editor?.view) {
+          const col = document.querySelector(`.stack-column[data-item-id="${a.id}"] .stack-column-content`);
+          if (col) { const { toggleStackDocOutline } = await import("./stack/stack-doc-outline.js"); toggleStackDocOutline(col, ld.editor.view); }
+        }
       });
       return;
     }

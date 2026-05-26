@@ -131,6 +131,13 @@ function onContextChange() {
     if (pane.pinned) {
       pane.el.style.display = "";
       if (pane.pdfViewer?.suspended) pane.pdfViewer.resume();
+      // Start stack scroll-following so pinned panes track their column
+      if (appState.currentStackFileId && !pane._stackSyncFrame) {
+        if (!pane._stackPin) anchorPaneToStackItem(pane);
+        if (pane._stackPin) startStackPinSync(pane);
+      } else if (!appState.currentStackFileId) {
+        stopStackPinSync(pane);
+      }
       continue;
     }
     if (pane.ownerContext === ctx) {
@@ -140,11 +147,6 @@ function onContextChange() {
         if (appState.currentPdfFileId) startPdfScrollSync(pane);
         else if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
-      }
-      // Stack pin: start scroll-following if pane is pinned in stack context
-      if (pane.pinned && appState.currentStackFileId && !pane._stackSyncFrame) {
-        if (!pane._stackPin) anchorPaneToStackItem(pane);
-        if (pane._stackPin) startStackPinSync(pane);
       }
       if (pane.gutter) {
         import("./pane-gutter.js").then(({ restoreGutterLayout }) => restoreGutterLayout(pane));

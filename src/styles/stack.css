@@ -34,6 +34,21 @@
   overflow-y: hidden;
 }
 
+/* Visible top-border line above the scrollbar — the pseudo-element on the
+   scrollbar track is unreliable in WebKit, so layer a pointer-transparent
+   stripe over the scrollbar zone instead. */
+.stack-root::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10px;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* Thin scrollbar with a top border line */
 .stack-scroll-area::-webkit-scrollbar {
   height: 10px;
@@ -613,6 +628,74 @@ body.stack-resizing .stack-column,
   color: var(--fg, #999);
   opacity: 0.5;
   font-size: 13px;
+}
+
+/* --- Stack doc outline (right sidebar within column) --- */
+
+.stack-doc-outline {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 200px;
+  height: 100%;
+  background: var(--theme-bg, #fff);
+  border-left: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  overflow: hidden;
+}
+
+.stack-doc-outline-header {
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg, #333);
+  opacity: 0.6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.stack-doc-outline-close {
+  border: none;
+  background: transparent;
+  color: var(--fg, #333);
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.4;
+  padding: 0 2px;
+  line-height: 1;
+}
+.stack-doc-outline-close:hover { opacity: 0.8; }
+
+.stack-doc-outline-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.stack-doc-outline-row {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--fg, #333);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s;
+}
+.stack-doc-outline-row:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.stack-doc-outline-empty {
+  padding: 16px;
+  font-size: 12px;
+  color: var(--fg, #999);
+  opacity: 0.5;
+  text-align: center;
 }
 
 /* --- Stack mode on body/app --- */
