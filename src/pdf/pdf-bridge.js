@@ -14,6 +14,7 @@ async function tauriInvoke(cmd, args) {
 
 let currentViewer = null;
 let currentFileId = null;
+let panelObserver = null;
 
 export async function mountPdf(container, fileId, state) {
   if (currentViewer) {
@@ -31,6 +32,9 @@ export async function mountPdf(container, fileId, state) {
   const viewer = createPdfViewer(container, { mode: "main", zoteroAttKey });
   currentViewer = viewer;
   currentFileId = fileId;
+
+  syncPdfInset(container);
+  startPanelObserver(container);
 
   let bytes;
   if (IS_TAURI) {
@@ -51,6 +55,7 @@ export async function mountPdf(container, fileId, state) {
 }
 
 export async function unmountPdf() {
+  stopPanelObserver();
   const fid = currentFileId;
   if (currentViewer) {
     await currentViewer.destroy();
@@ -85,4 +90,31 @@ async function loadAnnotationsIfZotero(viewer, fileId, state, forceRefresh = fal
   } catch (e) {
     console.error("Failed to load PDF annotations:", e);
   }
+}
+
+function syncPdfInset(container) {
+  const po = document.getElementById("panel-overlay");
+  if (!po) return;
+  const isInset = po.classList.contains("panel-inset");
+  if (!isInset) { container.style.left = "0"; return; }
+  const panelOpen = !po.classList.contains("hidden");
+  if (panelOpen) {
+    const panelW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300;
+    container.style.left = panelW + "px";
+  } else {
+    const gripW = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-grip-width"), 10) || 24;
+    container.style.left = gripW + "px";
+  }
+}
+
+function startPanelObserver(container) {
+  stopPanelObserver();
+  const po = document.getElementById("panel-overlay");
+  if (!po) return;
+  panelObserver = new MutationObserver(() => syncPdfInset(container));
+  panelObserver.observe(po, { attributes: true, attributeFilter: ["class"] });
+}
+
+function stopPanelObserver() {
+  if (panelObserver) { panelObserver.disconnect(); panelObserver = null; }
 }

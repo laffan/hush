@@ -6,10 +6,6 @@
  *   - fit-width (default): pages scale to fill available width, vertical scroll
  *   - fixed zoom (50%-200%): explicit scale; pages wrap when small enough
  *   - horizontal scroll: pages fit container height, horizontal scroll
- *
- * Pages are lazily rendered via IntersectionObserver: only visible pages
- * (plus a small buffer) are rendered to canvas; off-screen pages are
- * freed to keep memory usage bounded for large PDFs.
  */
 
 let pdfjsPromise = null;
@@ -28,7 +24,6 @@ async function getPdfjs() {
 const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const RENDER_BUFFER = 2;
 
-// Layout mode constants
 const MODE_FIT_WIDTH = "fit-width";
 const MODE_FIXED = "fixed";
 const MODE_HORIZONTAL = "horizontal";
@@ -36,8 +31,9 @@ const MODE_HORIZONTAL = "horizontal";
 /**
  * @param {HTMLElement} container
  * @param {object} opts
- * @param {string} [opts.mode]        "main" or "pane"
- * @param {string} [opts.zoteroAttKey] Zotero attachment key for "Open in Zotero" link
+ * @param {string}  [opts.mode]          "main" or "pane"
+ * @param {string}  [opts.zoteroAttKey]  Zotero attachment key
+ * @param {Array}   [opts.annotations]   Pre-loaded annotations
  */
 export function createPdfViewer(container, opts = {}) {
   let pdfDoc = null;
@@ -51,7 +47,12 @@ export function createPdfViewer(container, opts = {}) {
   const root = document.createElement("div");
   root.className = "pdf-viewer";
 
-  // ── Toolbar ──────────────────────────────────────────────────────
+  // ── Scroll area (comes first in DOM, flex-grows) ─────────────────
+  const scrollArea = document.createElement("div");
+  scrollArea.className = "pdf-scroll-area pdf-layout-fit";
+  root.appendChild(scrollArea);
+
+  // ── Toolbar (bottom bar) ─────────────────────────────────────────
   const toolbar = document.createElement("div");
   toolbar.className = "pdf-zoom-toolbar";
 
@@ -60,8 +61,7 @@ export function createPdfViewer(container, opts = {}) {
   zoomLabel.className = "pdf-zoom-label";
   zoomLabel.textContent = "Fit";
   const zoomInBtn = btn("pdf-zoom-btn", "+", "Zoom in");
-  const fitBtn = btn("pdf-zoom-btn pdf-mode-btn", "↔", "Fit to width");
-  fitBtn.classList.add("active");
+  const fitBtn = btn("pdf-zoom-btn pdf-mode-btn active", "↔", "Fit to width");
   const hScrollBtn = btn("pdf-zoom-btn pdf-mode-btn", "⇔", "Horizontal scroll");
   const pageIndicator = document.createElement("span");
   pageIndicator.className = "pdf-page-indicator";
@@ -74,10 +74,106 @@ export function createPdfViewer(container, opts = {}) {
   toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, hScrollBtn, pageIndicator, zoteroLink);
   root.appendChild(toolbar);
 
-  // ── Scroll area ──────────────────────────────────────────────────
-  const scrollArea = document.createElement("div");
-  scrollArea.className = "pdf-scroll-area";
-  root.appendChild(scrollArea);
+  // ── Annotation shelf (right panel) ───────────────────────────────
+  const shelf = document.createElement("div");
+  shelf.className = "pdf-annot-shelf";
+
+  const shelfGrip = document.createElement("button");
+  shelfGrip.className = "pdf-annot-shelf-grip";
+  shelfGrip.textContent = "‹";
+  shelfGrip.title = "Annotations";
+  shelf.appendChild(shelfGrip);
+
+  const shelfContent = document.createElement("div");
+  shelfContent.className = "pdf-annot-shelf-content";
+
+  const shelfHeader = document.createElement("div");
+  shelfHeader.className = "pdf-annot-shelf-header";
+  shelfHeader.textContent = "Annotations";
+  shelfContent.appendChild(shelfHeader);
+
+  const shelfSearch = document.createElement("input");
+  shelfSearch.type = "text";
+  shelfSearch.className = "pdf-annot-shelf-search";
+  shelfSearch.placeholder = "Filter...";
+  shelfContent.appendChild(shelfSearch);
+
+  const shelfBody = document.createElement("div");
+  shelfBody.className = "pdf-annot-shelf-body";
+  shelfContent.appendChild(shelfBody);
+
+  shelf.appendChild(shelfContent);
+  root.appendChild(shelf);
+
+  let shelfOpen = false;
+  let shelfFilter = "";
+
+  shelfGrip.addEventListener("click", () => {
+    shelfOpen = !shelfOpen;
+    shelf.classList.toggle("open", shelfOpen);
+    shelfGrip.textContent = shelfOpen ? "›" : "‹";
+    if (shelfOpen) rebuildShelfList();
+  });
+  shelfSearch.addEventListener("input", () => {
+    shelfFilter = shelfSearch.value.toLowerCase();
+    rebuildShelfList();
+  });
+
+  function rebuildShelfList() {
+    shelfBody.innerHTML = "";
+    if (!annotations.length) {
+      shelfBody.innerHTML = '<div class="pdf-annot-shelf-empty">No annotations</div>';
+      return;
+    }
+    const filtered = shelfFilter
+      ? annotations.filter(a => {
+          const text = (a.text || "").toLowerCase();
+          const comment = (a.comment || "").toLowerCase();
+          return text.includes(shelfFilter) || comment.includes(shelfFilter);
+        })
+      : annotations;
+
+    if (!filtered.length) {
+      shelfBody.innerHTML = '<div class="pdf-annot-shelf-empty">No matches</div>';
+      return;
+    }
+    for (const annot of filtered) {
+      if (!annot.text && !annot.comment) continue;
+      const row = document.createElement("div");
+      row.className = "pdf-annot-shelf-row";
+      row.style.borderLeftColor = annot.color || "#ffff00";
+
+      if (annot.text) {
+        const textEl = document.createElement("div");
+        textEl.className = "pdf-annot-shelf-text";
+        textEl.textContent = annot.text;
+        row.appendChild(textEl);
+      }
+      if (annot.comment) {
+        const commentEl = document.createElement("div");
+        commentEl.className = "pdf-annot-shelf-comment";
+        commentEl.textContent = annot.comment;
+        row.appendChild(commentEl);
+      }
+      const meta = document.createElement("div");
+      meta.className = "pdf-annot-shelf-meta";
+      if (annot.pageLabel) {
+        const pageLink = document.createElement("a");
+        pageLink.className = "pdf-annot-shelf-page";
+        pageLink.textContent = `p. ${annot.pageLabel}`;
+        pageLink.href = "#";
+        pageLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          const pageNum = parseInt(annot.pageLabel, 10);
+          if (!isNaN(pageNum)) goToPage(pageNum);
+        });
+        meta.appendChild(pageLink);
+      }
+      row.appendChild(meta);
+      shelfBody.appendChild(row);
+    }
+  }
+
   container.appendChild(root);
 
   // ── Zotero link setup ────────────────────────────────────────────
@@ -151,7 +247,6 @@ export function createPdfViewer(container, opts = {}) {
     if (layoutMode === MODE_FIT_WIDTH) zoomLabel.textContent = "Fit W";
     else if (layoutMode === MODE_HORIZONTAL) zoomLabel.textContent = "Fit H";
     else zoomLabel.textContent = `${Math.round(z * 100)}%`;
-
     fitBtn.classList.toggle("active", layoutMode === MODE_FIT_WIDTH);
     hScrollBtn.classList.toggle("active", layoutMode === MODE_HORIZONTAL);
   }
@@ -159,8 +254,7 @@ export function createPdfViewer(container, opts = {}) {
   function updatePageIndicator() {
     if (!pages.length) { pageIndicator.textContent = ""; return; }
     if (layoutMode === MODE_HORIZONTAL) {
-      const scrollLeft = scrollArea.scrollLeft;
-      const scrollMid = scrollLeft + scrollArea.clientWidth / 2;
+      const scrollMid = scrollArea.scrollLeft + scrollArea.clientWidth / 2;
       let cur = 1;
       for (let i = 0; i < pages.length; i++) {
         if (pages[i].wrapper && pages[i].wrapper.offsetLeft <= scrollMid) cur = i + 1;
@@ -233,7 +327,6 @@ export function createPdfViewer(container, opts = {}) {
       p.rendered = true;
       p.renderedZoom = scale;
       p.canvas = canvas;
-
       paintAnnotationsOnPage(idx);
     } catch (e) {
       console.error(`Failed to render page ${idx + 1}:`, e);
@@ -298,19 +391,15 @@ export function createPdfViewer(container, opts = {}) {
     for (let i = 0; i < pdfDoc.numPages; i++) {
       const page = await pdfDoc.getPage(i + 1);
       const viewport = page.getViewport({ scale: 1 });
-
       const wrapper = document.createElement("div");
       wrapper.className = "pdf-page-wrapper";
       wrapper.dataset.pageIndex = i;
-
       const scale = getEffectiveZoom();
       wrapper.style.width = `${Math.round(viewport.width * scale)}px`;
       wrapper.style.height = `${Math.round(viewport.height * scale)}px`;
-
       const placeholder = document.createElement("div");
       placeholder.className = "pdf-page-placeholder";
       wrapper.appendChild(placeholder);
-
       scrollArea.appendChild(wrapper);
       pages.push({ wrapper, viewport, rendered: false, rendering: false, canvas: null, renderedZoom: null });
     }
@@ -351,6 +440,12 @@ export function createPdfViewer(container, opts = {}) {
     for (let i = 0; i < pages.length; i++) {
       if (pages[i].rendered) paintAnnotationsOnPage(i);
     }
+    if (annotations.length) {
+      shelf.classList.add("has-annotations");
+    } else {
+      shelf.classList.remove("has-annotations");
+    }
+    if (shelfOpen) rebuildShelfList();
   }
 
   function refreshAnnotations() {
@@ -359,23 +454,21 @@ export function createPdfViewer(container, opts = {}) {
       if (layer) layer.remove();
       if (pages[i].rendered) paintAnnotationsOnPage(i);
     }
+    if (shelfOpen) rebuildShelfList();
   }
 
   function paintAnnotationsOnPage(pageIdx) {
     const p = pages[pageIdx];
     if (!p?.rendered || !p.canvas) return;
-
     let layer = p.wrapper.querySelector(".pdf-annot-layer");
     if (layer) layer.remove();
     layer = document.createElement("div");
     layer.className = "pdf-annot-layer";
-
     const pageAnnots = annotations.filter(a => {
       const pos = parseAnnotationPosition(a);
       return pos && pos.pageIndex === pageIdx;
     });
     if (!pageAnnots.length) return;
-
     const scale = getEffectiveZoom();
     for (const annot of pageAnnots) {
       const pos = parseAnnotationPosition(annot);
