@@ -281,8 +281,8 @@
    and the freehand drawing layer's stacked canvases — strokes live inside
    `.notebook-drawing-wrapper`, which is a div, so the `:not(canvas)` rule
    used to wipe them when the pane lost focus). Scoped to containers that
-   have a canvas child (notebook panes). */
-.floating-pane:not(.active) .floating-pane-content:has(canvas) > :not(canvas):not(.notebook-drawing-wrapper) {
+   have a canvas child (notebook panes) but not PDF viewers. */
+.floating-pane:not(.active) .floating-pane-content:has(canvas):not(:has(.pdf-viewer)) > :not(canvas):not(.notebook-drawing-wrapper) {
   visibility: hidden;
 }
 
