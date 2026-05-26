@@ -82,6 +82,8 @@ export function initPaneManager(state) {
   state.on("notebook-unmount", onContextChange);
   state.on("pdf-open", onContextChange);
   state.on("pdf-unmount", onContextChange);
+  state.on("stack-open", onContextChange);
+  state.on("stack-unmount", onContextChange);
 
   // Restore any panes that were open when the app last closed
   restorePanes().catch((e) => console.error("Pane restore failed:", e));
@@ -89,6 +91,7 @@ export function initPaneManager(state) {
 
 /** Returns an opaque string identifying the current doc/notebook/project/pdf. */
 function getCurrentContext() {
+  if (appState.currentStackFileId) return "st:" + appState.currentStackFileId;
   if (appState.currentPdfFileId) return "pdf:" + appState.currentPdfFileId;
   if (appState.currentNotebookFileId) return "nb:" + appState.currentNotebookFileId;
   if (appState.currentProjectId) return "pj:" + appState.currentProjectId;
@@ -354,6 +357,7 @@ export function setActivePanePinned(value) {
  *  would use — mirrors `getCurrentContext`'s format. */
 export function contextIdForFile(fileId, fileType) {
   if (!fileId) return "";
+  if (fileType === "stack") return "st:" + fileId;
   if (fileType === "pdf") return "pdf:" + fileId;
   if (fileType === "notebook") return "nb:" + fileId;
   if (fileType === "project") return "pj:" + fileId;

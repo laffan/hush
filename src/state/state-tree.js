@@ -67,7 +67,7 @@ export async function deleteTreeNode(state, nodeId) {
     if (trash) (trash.children || (trash.children = [])).push(removed);
   }
   await state.saveFileTree();
-  const { docFileIds, pdfFileIds } = collectTypedFileIds(node);
+  const { docFileIds, pdfFileIds, stackFileIds } = collectTypedFileIds(node);
   if (docFileIds.includes(state.currentNotebookFileId)) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
@@ -76,7 +76,11 @@ export async function deleteTreeNode(state, nodeId) {
     state.emit("pdf-unmount");
     state.currentPdfFileId = null;
   }
-  if (docFileIds.includes(state.currentFileId) || nodeId === state.currentProjectId || docFileIds.includes(state.currentNotebookFileId) || pdfFileIds.includes(state.currentPdfFileId)) {
+  if (stackFileIds.includes(state.currentStackFileId)) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
+  if (docFileIds.includes(state.currentFileId) || nodeId === state.currentProjectId || docFileIds.includes(state.currentNotebookFileId) || pdfFileIds.includes(state.currentPdfFileId) || stackFileIds.includes(state.currentStackFileId)) {
     state.currentProjectId = null; state.projectDocIds = [];
     if (state.files.length > 0) await state.openFile(state.files[0].id);
     else await state.newFile();
@@ -87,10 +91,11 @@ export async function deleteTreeNode(state, nodeId) {
 async function permanentDeleteNode(state, nodeId) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
-  const { docFileIds, imageFileIds, pdfFileIds } = collectTypedFileIds(node);
+  const { docFileIds, imageFileIds, pdfFileIds, stackFileIds } = collectTypedFileIds(node);
   await deleteDocFilesByIds(state, docFileIds);
   await deleteImageFilesByIds(state, imageFileIds);
   await deletePdfFilesByIds(state, pdfFileIds);
+  await deleteStackFilesByIds(state, stackFileIds);
   removeNode(state.fileTree, nodeId);
   await finalizeFileDeletion(state, docFileIds);
 }
@@ -107,15 +112,18 @@ export async function emptyTrash(state, deskId) {
   const docFileIds = [];
   const imageFileIds = [];
   const pdfFileIds = [];
+  const stackFileIds = [];
   for (const child of trash.children) {
     const typed = collectTypedFileIds(child);
     docFileIds.push(...typed.docFileIds);
     imageFileIds.push(...typed.imageFileIds);
     pdfFileIds.push(...typed.pdfFileIds);
+    stackFileIds.push(...typed.stackFileIds);
   }
   await deleteDocFilesByIds(state, docFileIds);
   await deleteImageFilesByIds(state, imageFileIds);
   await deletePdfFilesByIds(state, pdfFileIds);
+  await deleteStackFilesByIds(state, stackFileIds);
   trash.children = [];
   await finalizeFileDeletion(state, docFileIds);
 }
@@ -130,15 +138,17 @@ function collectTypedFileIds(node) {
   const docFileIds = [];
   const imageFileIds = [];
   const pdfFileIds = [];
+  const stackFileIds = [];
   function walk(n) {
     if (!n) return;
     if ((n.type === "document" || n.type === "notebook") && n.fileId) docFileIds.push(n.fileId);
     else if (n.type === "image" && n.fileId) imageFileIds.push(n.fileId);
     else if (n.type === "pdf" && n.fileId) pdfFileIds.push(n.fileId);
+    else if (n.type === "stack" && n.fileId) stackFileIds.push(n.fileId);
     if (n.children) n.children.forEach(walk);
   }
   walk(node);
-  return { docFileIds, imageFileIds, pdfFileIds };
+  return { docFileIds, imageFileIds, pdfFileIds, stackFileIds };
 }
 
 async function deleteDocFilesByIds(state, fileIds) {
@@ -175,6 +185,14 @@ async function deletePdfFilesByIds(state, fileIds) {
   for (const fid of fileIds) {
     if (IS_TAURI) {
       try { await tauriInvoke("delete_pdf", { fileId: fid }); } catch (e) { console.error("Delete PDF:", e); }
+    }
+  }
+}
+
+async function deleteStackFilesByIds(state, fileIds) {
+  for (const fid of fileIds) {
+    if (IS_TAURI) {
+      try { await tauriInvoke("delete_file", { id: fid }); } catch (e) { console.error("Delete stack:", e); }
     }
   }
 }

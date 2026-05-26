@@ -62,7 +62,7 @@ pub struct TreeNode {
     pub id: String,
     pub name: String,
     #[serde(rename = "type")]
-    pub node_type: String, // "document" | "folder" | "project" | "notebook" | "pdf"
+    pub node_type: String, // "document" | "folder" | "project" | "notebook" | "pdf" | "stack"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_id: Option<String>, // for documents and notebooks — points to files/{uuid}.json
     // Always serialized (even when empty) so the JS frontend always
@@ -373,6 +373,7 @@ pub fn run() {
             commands::files::create_folder,
             commands::files::create_project,
             commands::files::create_notebook,
+            commands::files::create_stack,
             commands::files::load_project_content,
             commands::images::save_image,
             commands::images::save_image_bytes,

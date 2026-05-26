@@ -30,6 +30,8 @@ export const typeIcons = {
   localSync: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="2" y="2" width="12" height="12" /></svg>`,
   pdf: `<svg viewBox="0 0 16 16" class="tree-type-icon"><rect x="3" y="1" width="10" height="14" rx="1" fill="none"/><line x1="5" y1="8" x2="11" y2="8" /></svg>`,
   pdfFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1" fill="none"/><line x1="5" y1="8" x2="11" y2="8" /></svg>`,
+  stack: `<svg viewBox="0 0 16 16" class="tree-type-icon"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></svg>`,
+  stackFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></svg>`,
 };
 
 export function escHtml(str) {

@@ -24,6 +24,7 @@ export function mountAddPopup(state, anchorEl) {
   popup.innerHTML = `
     <button type="button" data-action="new-doc">${typeIcons.document}<span>New Doc</span></button>
     <button type="button" data-action="new-notebook">${typeIcons.notebook}<span>New Notebook</span></button>
+    <button type="button" data-action="new-stack">${typeIcons.stack}<span>New Stack</span></button>
     <button type="button" data-action="new-folder">${typeIcons.folder}<span>New Folder</span></button>
     <button type="button" data-action="new-project">${typeIcons.project}<span>New Project</span></button>
     ${localFolderBtn}
@@ -52,6 +53,15 @@ export function mountAddPopup(state, anchorEl) {
         initialValue: "New Notebook",
         confirmLabel: "Create",
         onConfirm: async (name) => { await state.createNotebook(name); },
+      });
+    } else if (action === "new-stack") {
+      showPromptModal({
+        title: "New stack",
+        label: "Name",
+        placeholder: "New Stack",
+        initialValue: "New Stack",
+        confirmLabel: "Create",
+        onConfirm: async (name) => { await state.createStack(name); },
       });
     } else if (action === "new-folder") {
       await state.createFolder("New Folder");

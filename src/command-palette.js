@@ -15,7 +15,7 @@ import {
   buildAppearanceCommands,
 } from "./command-palette-helpers.js";
 import {
-  paneAnchorClickPoint, promptNewNotebookName,
+  paneAnchorClickPoint, promptNewNotebookName, promptNewStackName,
   docContextHasGutterAlready, openNotebookAsGutter,
   enterNotebookGutterPicker, enterPaneCopyPicker,
   enterSendSelectedPicker, enterFilePicker,
@@ -108,6 +108,7 @@ const icons = {
   // Stroke-only "Aa" with a shallow cross overlay; picks up `stroke: currentColor`.
   proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="2" y1="14" x2="22" y2="10"/><line x1="2" y1="10" x2="22" y2="14"/></svg>`,
   doc: typeIcons.document, notebook: typeIcons.notebook, project: typeIcons.project, trash: typeIcons.trash,
+  stack: typeIcons.stack,
 };
 
 /** Build the per-style "Use Style: <name>" command rows. Mirrors the
@@ -146,9 +147,10 @@ function buildUseStyleCommands(state) {
   return entries;
 }
 
-// Context: "shared" = always shown, "doc" = doc/project only, "notebook" = notebook only
+// Context: "shared" = always shown, "doc" = doc/project only, "notebook" = notebook only, "stack" = stack only
 function buildCommands(state) {
   const inNotebook = !!state.currentNotebookFileId;
+  const inStack = !!state.currentStackFileId;
   const hasActivePane = getActivePaneId() != null;
   const desktop = isDesktopTauri();
 
@@ -158,6 +160,7 @@ function buildCommands(state) {
       action: (s) => s.newFile() },
     { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: null, ctx: "shared",
       action: (s) => promptNewNotebookName((name) => s.createNotebook(name)) },
+    { id: "new-stack", label: "New stack", icon: icons.stack, shortcutKey: null, ctx: "shared", action: (s) => promptNewStackName((name) => s.createStack(name)) },
     { id: "new-doc-pane", label: "New document as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const created = await s.newFile(null, { openImmediately: false });
@@ -179,6 +182,7 @@ function buildCommands(state) {
       action: (s, p) => enterFilePicker(p, s, "Open file…", (f) => {
         if (f.type === "notebook") s.openNotebook(f.fileId);
         else if (f.type === "project") s.openProject(f.fileId);
+        else if (f.type === "stack") s.openStack(f.fileId);
         else s.openFile(f.fileId);
       }, { includeProjects: true }) },
     { id: "open-pane", label: "Open document or notebook as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
@@ -366,6 +370,9 @@ function buildCommands(state) {
       hiddenIf: (s) => !activeContextHasPanes(s),
       action: (s, p) => enterPaneCopyPicker(p, s, /*switchAfter=*/true) },
 
+    // === STACK ONLY ===
+    { id: "stack-add-file", label: "Stack: Add file", icon: icons.stack, shortcutKey: null, ctx: "stack",
+      action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst._openAddPicker(); } },
     // === NOTEBOOK ONLY ===
     { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-shelf") },
@@ -412,6 +419,7 @@ function buildCommands(state) {
     if (cmd.ctx === "shared") return true;
     if (cmd.ctx === "doc") return !inNotebook;
     if (cmd.ctx === "notebook") return inNotebook;
+    if (cmd.ctx === "stack") return inStack;
     if (cmd.ctx === "pane") return hasActivePane;
     if (cmd.ctx === "desktop") return desktop;
     return true;

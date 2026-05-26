@@ -131,6 +131,33 @@ impl FileManager {
         Ok((node, file))
     }
 
+    pub fn create_stack(
+        &self,
+        name: &str,
+        parent_id: Option<&str>,
+    ) -> Result<(TreeNode, FileEntry), Box<dyn std::error::Error>> {
+        let file = self.create_file()?;
+        let initial = r#"{"format":"hushstack","version":1,"items":[],"scrollX":0}"#;
+        self.save_file(&file.id, initial)?;
+
+        let node = TreeNode {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            node_type: "stack".to_string(),
+            file_id: Some(file.id.clone()),
+            children: Vec::new(),
+            flagged: false,
+            sync_folder_id: None,
+            locked_style_id: None,
+            use_as_note: false,
+            zotero_att_key: None,
+        };
+        let mut tree = self.get_file_tree()?;
+        insert_into_tree(&mut tree, parent_id, node.clone());
+        self.save_file_tree(&tree)?;
+        Ok((node, file))
+    }
+
     pub fn load_project_content(
         &self,
         project_id: &str,
@@ -343,6 +370,10 @@ fn looks_like_notebook_content(content: &str) -> bool {
     let trimmed = content.trim_start();
     // Current envelope form (encodeNotebookContent in notebook-content.ts).
     if trimmed.starts_with("{\"format\":\"hushnote\"") {
+        return true;
+    }
+    // Stack envelope — same principle: names derived from JSON are garbage.
+    if trimmed.starts_with("{\"format\":\"hushstack\"") {
         return true;
     }
     // Legacy bare Shape[] form: empty notebook is "[]"; a populated one

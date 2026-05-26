@@ -55,6 +55,19 @@ export function promptNewNotebookName(onConfirm) {
   });
 }
 
+export function promptNewStackName(onConfirm) {
+  import("./sidebar/files-panel-shared.js").then(({ showPromptModal }) => {
+    showPromptModal({
+      title: "New stack",
+      label: "Name",
+      placeholder: "New Stack",
+      initialValue: "New Stack",
+      confirmLabel: "Create",
+      onConfirm,
+    });
+  });
+}
+
 /** Does the active doc already host a notebook pane promoted to gutter?
  *  Mirrors `pane-gutter.js`'s `docHasGutter()` — a doc can carry at
  *  most one gutter at a time. Walks the live `panes` Map directly

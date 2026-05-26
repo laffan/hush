@@ -97,35 +97,23 @@ async function init() {
 
   const appEl = document.getElementById("app");
   const pdfContainer = document.getElementById("pdf-container");
+  const stackContainer = document.getElementById("stack-container");
+  const modeCls = ["notebook-mode", "pdf-mode", "stack-mode"];
+  const modeContainers = { "notebook-mode": notebookContainer, "pdf-mode": pdfContainer, "stack-mode": stackContainer };
 
-  function showEditor() {
-    appEl.classList.remove("notebook-mode");
-    appEl.classList.remove("pdf-mode");
-    document.body.classList.remove("notebook-mode");
-    document.body.classList.remove("pdf-mode");
-    notebookContainer.classList.add("hidden");
-    pdfContainer.classList.add("hidden");
+  function activateMode(mode) {
+    modeCls.forEach(c => { appEl.classList.remove(c); document.body.classList.remove(c); });
+    Object.values(modeContainers).forEach(el => el.classList.add("hidden"));
+    if (mode) {
+      appEl.classList.add(mode); document.body.classList.add(mode);
+      modeContainers[mode]?.classList.remove("hidden");
+      state.emit("hide-outline");
+    }
   }
-
-  function showNotebook() {
-    appEl.classList.add("notebook-mode");
-    appEl.classList.remove("pdf-mode");
-    document.body.classList.add("notebook-mode");
-    document.body.classList.remove("pdf-mode");
-    notebookContainer.classList.remove("hidden");
-    pdfContainer.classList.add("hidden");
-    state.emit("hide-outline");
-  }
-
-  function showPdf() {
-    appEl.classList.remove("notebook-mode");
-    appEl.classList.add("pdf-mode");
-    document.body.classList.remove("notebook-mode");
-    document.body.classList.add("pdf-mode");
-    notebookContainer.classList.add("hidden");
-    pdfContainer.classList.remove("hidden");
-    state.emit("hide-outline");
-  }
+  const showEditor = () => activateMode(null);
+  const showNotebook = () => activateMode("notebook-mode");
+  const showPdf = () => activateMode("pdf-mode");
+  const showStack = () => activateMode("stack-mode");
 
   state.on("notebook-open", async (fileId) => { await mountNotebook(notebookContainer, fileId, state); showNotebook(); });
   state.on("notebook-unmount", async () => {
@@ -149,6 +137,17 @@ async function init() {
     await unmountPdf();
     showEditor();
   });
+  state.on("stack-open", async (fileId) => {
+    const { mountStack } = await import("./stack/stack-bridge.js");
+    await mountStack(stackContainer, fileId, state);
+    showStack();
+  });
+  state.on("stack-unmount", async () => {
+    const { unmountStack } = await import("./stack/stack-bridge.js");
+    const result = await unmountStack();
+    if (result) state.syncFileToExternal(result.fileId, result.content);
+    showEditor();
+  });
   // Notebook minimap + desks toggle bridge — both wire themselves to AppState.
   import("./notebook/minimap.js").then(m => m.wireMinimap(state));
   import("./state/state-desks.js").then(m => m.wireDesksTauri(state));
@@ -168,7 +167,7 @@ async function init() {
   state.on("notebook-sync-reload", (content) => {
     reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));
   });
-  state.on("file-opened", () => { if (!state.currentNotebookFileId && !state.currentPdfFileId) showEditor(); });
+  state.on("file-opened", () => { if (!state.currentNotebookFileId && !state.currentPdfFileId && !state.currentStackFileId) showEditor(); });
 
   // Notebook commands from the command palette
   state.on("notebook-toggle-shelf", () => {
@@ -205,6 +204,10 @@ async function init() {
     const { mountPdf } = await import("./pdf/pdf-bridge.js");
     await mountPdf(pdfContainer, state.currentPdfFileId, state);
     showPdf();
+  } else if (state.currentStackFileId) {
+    const { mountStack } = await import("./stack/stack-bridge.js");
+    await mountStack(stackContainer, state.currentStackFileId, state);
+    showStack();
   } else if (state.currentProjectId) {
     await state.openProject(state.currentProjectId);
   } else if (state.currentFileId) {

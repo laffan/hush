@@ -231,6 +231,7 @@ export function createDefaultSettings() {
     // Session state
     lastFileId: null,
     lastProjectId: null,
+    lastStackId: null,
     // MRU of recently-opened doc/notebook fileIds, most-recent first.
     // Used to order the Cmd+O picker so the file you were just in
     // tops the list. Capped at 50; per-device, not synced.

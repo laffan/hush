@@ -1,0 +1,403 @@
+/* ================================================================
+   Stack — side-scrolling column layout
+   ================================================================ */
+
+/* --- Container --- */
+
+#stack-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+#stack-container.hidden {
+  display: none;
+}
+
+.stack-root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.stack-scroll-area {
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+}
+
+.stack-columns {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-width: 100%;
+}
+
+/* --- Column --- */
+
+.stack-column {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  flex-shrink: 0;
+  border-right: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+  transition: width 0.2s ease;
+}
+
+.stack-column-dragging {
+  opacity: 0.7;
+  transition: none;
+}
+
+.stack-column-closed {
+  transition: width 0.2s ease;
+}
+
+/* --- Spine --- */
+
+.stack-spine {
+  width: 50px;
+  min-width: 50px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--spine-bg, rgba(128, 128, 128, 0.06));
+  border-right: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+  user-select: none;
+  overflow: hidden;
+  cursor: default;
+}
+
+.stack-spine-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  padding: 12px 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--fg, #333);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-height: 0;
+}
+
+.stack-spine-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.stack-spine-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg, #333);
+  opacity: 0.4;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.stack-spine-btn:hover {
+  opacity: 0.8;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.stack-spine-drag-btn {
+  cursor: grab;
+}
+
+.stack-spine-drag-btn:active {
+  cursor: grabbing;
+}
+
+/* --- Column content --- */
+
+.stack-column-content {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* --- Column resizer --- */
+
+.stack-column-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.stack-column-resizer:hover {
+  background: var(--accent, rgba(59, 130, 246, 0.3));
+}
+
+/* --- Doc content --- */
+
+.stack-doc-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.stack-doc-scroller {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.stack-doc-editor {
+  min-height: 100%;
+}
+
+.stack-doc-editor .cm-editor {
+  height: 100%;
+}
+
+.stack-doc-editor .cm-scroller {
+  overflow: auto;
+}
+
+/* --- Notebook content --- */
+
+.stack-notebook-wrapper {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.stack-notebook-preview {
+  display: block;
+}
+
+/* --- PDF content --- */
+
+.stack-pdf-wrapper {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stack-pdf-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg, #666);
+  opacity: 0.4;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.stack-pdf-placeholder:hover {
+  opacity: 0.7;
+}
+
+.stack-pdf-placeholder span {
+  font-size: 12px;
+}
+
+/* --- Placeholder (generic) --- */
+
+.stack-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--fg, #666);
+  opacity: 0.4;
+  font-size: 13px;
+}
+
+/* --- Floating add button --- */
+
+.stack-add-btn {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--ui-border, rgba(128, 128, 128, 0.3));
+  background: var(--theme-bg, #fff);
+  color: var(--fg, #333);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.stack-add-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* --- Color picker --- */
+
+.stack-color-picker {
+  position: fixed;
+  z-index: 9999;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 8px;
+  background: var(--theme-bg, #fff);
+  border: 1px solid var(--ui-border, rgba(128, 128, 128, 0.2));
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.stack-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s;
+}
+
+.stack-color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.stack-color-swatch-active {
+  border-color: var(--fg, #333);
+}
+
+.stack-color-swatch-none {
+  background: transparent;
+  border: 2px dashed rgba(128, 128, 128, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--fg, #999);
+}
+
+/* --- File picker --- */
+
+.stack-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.stack-picker-modal {
+  width: 480px;
+  max-width: 90vw;
+  max-height: 60vh;
+  background: var(--theme-bg, #fff);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.stack-picker-input {
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+  background: transparent;
+  color: var(--fg, #333);
+  font-size: 14px;
+  outline: none;
+}
+
+.stack-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.stack-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg, #333);
+}
+
+.stack-picker-row.active {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.stack-picker-row .tree-type-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.stack-picker-crumb {
+  opacity: 0.5;
+  font-size: 12px;
+}
+
+.stack-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-picker-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--fg, #999);
+  opacity: 0.5;
+  font-size: 13px;
+}
+
+/* --- Stack mode on body/app --- */
+
+body.stack-mode #editor-container,
+body.stack-mode #notebook-container,
+body.stack-mode #pdf-container {
+  display: none !important;
+}
+
+#app.stack-mode #drag-region {
+  display: none !important;
+}

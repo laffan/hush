@@ -141,8 +141,8 @@ export function createFilesPanel(container, state, hidePanel) {
       if (targetItem === null) return false;
       if (isImagesId(targetItem.id)) return draggedItem.type === "image";
       if (targetItem.type === "folder") return true;
-      if (targetItem.type === "desk") return ["document", "notebook", "pdf", "folder", "project"].includes(draggedItem.type);
-      if (targetItem.type === "project") return ["document", "notebook", "pdf", "project"].includes(draggedItem.type);
+      if (targetItem.type === "desk") return ["document", "notebook", "pdf", "stack", "folder", "project"].includes(draggedItem.type);
+      if (targetItem.type === "project") return ["document", "notebook", "pdf", "stack", "project"].includes(draggedItem.type);
       return false;
     },
     canDrag: (item) => {
@@ -201,7 +201,7 @@ export function createFilesPanel(container, state, hidePanel) {
       // right open method. Anything else (folder, project, image, …)
       // falls through to its normal click handler and clears any
       // active selection on the way.
-      const isMultiSelectable = (item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId;
+      const isMultiSelectable = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId;
       if (isMultiSelectable) {
         if (event && (event.shiftKey || event.metaKey || event.ctrlKey)) {
           const visible = collectVisibleDocs(
@@ -217,6 +217,7 @@ export function createFilesPanel(container, state, hidePanel) {
         if (state.selectedDocIds.length) state.clearSelectedDocs();
         if (item.type === "notebook") state.openNotebook(item.fileId);
         else if (item.type === "pdf") state.openPdf(item.fileId);
+        else if (item.type === "stack") state.openStack(item.fileId);
         else state.openFile(item.fileId);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         return;
@@ -257,7 +258,21 @@ export function createFilesPanel(container, state, hidePanel) {
         });
         return;
       }
-      if ((item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId) {
+      // Drop onto an open stack adds the file as a stack item
+      if (state.currentStackFileId && (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId) {
+        const stackEl = document.getElementById("stack-container");
+        if (stackEl && !stackEl.classList.contains("hidden")) {
+          const rect = stackEl.getBoundingClientRect();
+          if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+            import("../stack/stack-bridge.js").then(({ getStackInstance }) => {
+              const inst = getStackInstance();
+              if (inst) inst.handleFileDrop(item.fileId, item.type, item.name);
+            });
+            return;
+          }
+        }
+      }
+      if ((item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId) {
         createPane(item.fileId, item.name, item.type, clientX, clientY);
       }
     },

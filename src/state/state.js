@@ -34,6 +34,7 @@ const _PER_WINDOW_SETTINGS_KEYS = new Set([
   "lastFileId",
   "lastNotebookId",
   "lastProjectId",
+  "lastStackId",
   "scrollPosition",
   "typewriterMode",
   "dryMode",
@@ -58,6 +59,7 @@ export class AppState {
     this.currentProjectId = null; // When viewing a project
     this.currentNotebookFileId = null; // When viewing a notebook
     this.currentPdfFileId = null; // When viewing a PDF
+    this.currentStackFileId = null; // When viewing a stack
     this.currentLocalSync = null; // When viewing a Local Sync file
     this.files = [];
     this.fileTree = []; // Tree of TreeNode objects
@@ -209,7 +211,10 @@ export class AppState {
           const lastFileId = this.settings.lastFileId;
           const lastNotebookId = this.settings.lastNotebookId;
           const lastPdfId = this.settings.lastPdfId;
-          if (lastPdfId && findNodeByFileId(this.fileTree, lastPdfId)) {
+          const lastStackId = this.settings.lastStackId;
+          if (lastStackId && findNodeByFileId(this.fileTree, lastStackId)) {
+            this.currentStackFileId = lastStackId;
+          } else if (lastPdfId && findNodeByFileId(this.fileTree, lastPdfId)) {
             this.currentPdfFileId = lastPdfId;
           } else if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
             this.currentNotebookFileId = lastNotebookId;
@@ -442,6 +447,8 @@ export class AppState {
   openFile(id) { return _files.openFile(this, id); }
   openPdf(fileId) { return _files.openPdf(this, fileId); }
   importPdf(name, bytes, parentId, opts = {}) { return _files.importPdf(this, name, bytes, parentId, opts); }
+  createStack(name, parentId = null, opts = {}) { return _files.createStack(this, name, parentId, opts); }
+  openStack(fileId) { return _files.openStack(this, fileId); }
 
   // ===== Multi-select =====
   /** Replace the current selection with the given list of doc fileIds.

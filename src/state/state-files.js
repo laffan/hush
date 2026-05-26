@@ -80,10 +80,14 @@ export async function saveCurrentFile(state) {
 export async function newFile(state, parentId = null, opts = {}) {
   const openImmediately = opts.openImmediately !== false;
   if (openImmediately && state.dirty) await state.saveCurrentFile();
-  // Unmount any active notebook (only when actually switching to the new file)
+  // Unmount any active notebook/stack (only when actually switching to the new file)
   if (openImmediately && state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
+  }
+  if (openImmediately && state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
   }
   if (openImmediately) state.currentLocalSync = null;
   // Default new files go into the Inbox (active desk's Inbox when desks on)
@@ -143,6 +147,10 @@ export async function openFile(state, id) {
     state.emit("pdf-unmount");
     state.currentPdfFileId = null;
   }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
   state.currentProjectId = null;
   state.projectDocIds = [];
   state.currentLocalSync = null;
@@ -158,7 +166,7 @@ export async function openFile(state, id) {
   // branch on next launch picks the doc, not whichever notebook the
   // user happened to have open before they switched away. (init reads
   // lastNotebookId first; without this clear, a stale id wins.)
-  state.updateSettings({ lastFileId: state.currentFileId, lastProjectId: null, lastNotebookId: null, lastPdfId: null });
+  state.updateSettings({ lastFileId: state.currentFileId, lastProjectId: null, lastNotebookId: null, lastPdfId: null, lastStackId: null });
   // Per-desk last-file: switching back to this desk later should land
   // here, not on the desk's first inbox item. Synced via desks.json.
   state.recordActiveDeskLastFile(state.currentFileId, "document");
@@ -281,16 +289,21 @@ export async function openPdf(state, fileId) {
   if (state.currentPdfFileId) {
     state.emit("pdf-unmount");
   }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
 
   state.currentFileId = null;
   state.currentProjectId = null;
   state.projectDocIds = [];
   state.currentNotebookFileId = null;
   state.currentPdfFileId = fileId;
+  state.currentStackFileId = null;
   state.currentLocalSync = null;
 
   state.emit("pdf-open", fileId);
-  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: null, lastPdfId: fileId });
+  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: null, lastPdfId: fileId, lastStackId: null });
   state.recordActiveDeskLastFile(fileId, "pdf");
 }
 
@@ -330,6 +343,10 @@ export async function openNotebook(state, fileId) {
     state.emit("pdf-unmount");
     state.currentPdfFileId = null;
   }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
 
   state.currentFileId = null;
   state.currentProjectId = null;
@@ -338,6 +355,59 @@ export async function openNotebook(state, fileId) {
   state.currentLocalSync = null;
 
   state.emit("notebook-open", fileId);
-  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId, lastPdfId: null });
+  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId, lastPdfId: null, lastStackId: null });
   state.recordActiveDeskLastFile(fileId, "notebook");
+}
+
+export async function openStack(state, fileId) {
+  if (state.ratchetMode) return;
+  if (state.dirty) await state.saveCurrentFile();
+  if (state.currentNotebookFileId) {
+    state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
+  if (state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
+  }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+  }
+
+  state.currentFileId = null;
+  state.currentProjectId = null;
+  state.projectDocIds = [];
+  state.currentNotebookFileId = null;
+  state.currentPdfFileId = null;
+  state.currentStackFileId = fileId;
+  state.currentLocalSync = null;
+
+  state.emit("stack-open", fileId);
+  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: null, lastPdfId: null, lastStackId: fileId });
+  state.recordActiveDeskLastFile(fileId, "stack");
+}
+
+export async function createStack(state, name, parentId = null, opts = {}) {
+  const openImmediately = opts.openImmediately !== false;
+  if (openImmediately && state.dirty) await state.saveCurrentFile();
+  const targetParent = parentId || state.getInboxId();
+  const finalName = uniqueChildName(findNode(state.fileTree, targetParent), name, "stack");
+  if (IS_TAURI) {
+    try {
+      const result = await tauriInvoke("create_stack", { name: finalName, parentId: targetParent });
+      let initialContent = result.file.content;
+      if (typeof opts.initialContent === "string" && opts.initialContent.length > 0) {
+        initialContent = opts.initialContent;
+        try { await tauriInvoke("save_file", { id: result.file.id, content: initialContent }); }
+        catch (e) { console.error("Save imported stack content failed:", e); }
+      }
+      state.files = await tauriInvoke("list_files");
+      state.fileTree = await tauriInvoke("get_file_tree");
+      state.emit("files-changed");
+      const stNode = findNodeByFileId(state.fileTree, result.file.id);
+      if (stNode) state.syncCreateFile(stNode.id, result.file.id, initialContent);
+      if (openImmediately) await openStack(state, result.file.id);
+      return { fileId: result.file.id, name: result.node?.name || finalName };
+    } catch (e) { console.error("Create stack failed:", e); }
+  }
 }

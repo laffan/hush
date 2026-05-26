@@ -70,6 +70,21 @@ pub fn create_notebook(state: State<AppState>, name: String, parent_id: Option<S
     Ok(NotebookCreated { node, file })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StackCreated {
+    node: TreeNode,
+    file: FileEntry,
+}
+
+#[tauri::command]
+pub fn create_stack(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<StackCreated, String> {
+    let (node, file) = state.file_manager.lock().unwrap()
+        .create_stack(&name, parent_id.as_deref())
+        .map_err(|e| e.to_string())?;
+    Ok(StackCreated { node, file })
+}
+
 #[tauri::command]
 pub fn load_project_content(state: State<AppState>, project_id: String) -> Result<Vec<FileEntry>, String> {
     state.file_manager.lock().unwrap().load_project_content(&project_id).map_err(|e| e.to_string())
