@@ -12,7 +12,15 @@ export function createSpine(item, { onToggle, onColorChange, onDragStart, onResi
   spine.className = "stack-spine";
   if (item.spineColor) spine.style.backgroundColor = item.spineColor;
 
-  // Top section: type icon + vertical filename
+  // Left-edge resize zone (the CSS ::before pseudo-element provides the
+  // visual hover state; this handler captures the pointerdown)
+  spine.addEventListener("pointerdown", (e) => {
+    if (e.offsetX > 6) return; // only the left 6px strip
+    e.stopPropagation();
+    onResizeStart(e);
+  });
+
+  // Center section: type icon + vertical filename
   const header = document.createElement("div");
   header.className = "stack-spine-header";
 
@@ -44,12 +52,6 @@ export function createSpine(item, { onToggle, onColorChange, onDragStart, onResi
     });
   });
   buttons.appendChild(colorBtn);
-
-  // Resize handle (resizes item to the LEFT of this spine)
-  const resizeBtn = makeBtn("stack-spine-resize-btn",
-    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="8" x2="14" y2="8"/><polyline points="4,5.5 2,8 4,10.5"/><polyline points="12,5.5 14,8 12,10.5"/></svg>`);
-  resizeBtn.addEventListener("pointerdown", (e) => { e.stopPropagation(); onResizeStart(e); });
-  buttons.appendChild(resizeBtn);
 
   // Drag handle (reorder)
   const dragBtn = makeBtn("stack-spine-drag-btn",

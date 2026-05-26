@@ -116,22 +116,19 @@ export class StackComponent {
     content.style.display = item.open ? "block" : "none";
     col.appendChild(content);
 
-    // Auto-widen when internal shelf/sidebar panels open.
-    // Shelf panels are absolutely positioned children; we track their
-    // presence and width via a MutationObserver + ResizeObserver combo.
-    let shelfWidth = 0;
-    const baseWidth = () => item.width || DEFAULT_COLUMN_WIDTH;
+    // Auto-widen/narrow when internal shelf/sidebar panels open/close.
+    let trackedShelfWidth = 0;
+    const userBaseWidth = item.width || DEFAULT_COLUMN_WIDTH;
     function syncShelfWidth() {
       if (!item.open) return;
-      const panels = content.querySelectorAll(".notebook-shelf, .pdf-annotation-shelf, .longview-panel");
+      const sel = ".notebook-shelf, .pdf-annotation-shelf, .longview-panel, [class*='shelf']";
       let total = 0;
-      for (const p of panels) {
-        if (p.offsetWidth > 0) total += p.offsetWidth;
+      for (const p of content.querySelectorAll(sel)) {
+        if (p.offsetWidth > 0 && p.offsetHeight > 0) total += p.offsetWidth;
       }
-      if (total !== shelfWidth) {
-        const delta = total - shelfWidth;
-        shelfWidth = total;
-        item.width = baseWidth() + delta;
+      if (total !== trackedShelfWidth) {
+        trackedShelfWidth = total;
+        item.width = userBaseWidth + total;
         col.style.width = (SPINE_WIDTH + item.width) + "px";
       }
     }
@@ -221,9 +218,18 @@ export class StackComponent {
     const idx = this._items.findIndex((i) => i.id === itemId);
     if (idx < 0) return;
     const item = this._items[idx];
+    const dragCol = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
+    if (!dragCol) return;
 
-    // Save open/closed states and collapse all columns
+    // Save open/closed states
     const savedStates = this._items.map((it) => ({ id: it.id, open: it.open }));
+
+    // Compute scroll offset so collapsed spines center around the dragged one
+    const dragRect = dragCol.getBoundingClientRect();
+    const scrollRect = this._scrollArea.getBoundingClientRect();
+    const dragCenterInScroll = dragRect.left - scrollRect.left + this._scrollArea.scrollLeft + dragRect.width / 2;
+
+    // Collapse all columns and hide the dragged one
     for (const it of this._items) {
       const col = this._columnsEl.querySelector(`[data-item-id="${it.id}"]`);
       if (!col) continue;
@@ -232,45 +238,36 @@ export class StackComponent {
       const contentEl = col.querySelector(".stack-column-content");
       if (contentEl) contentEl.style.display = "none";
     }
+    dragCol.classList.add("stack-column-reorder-source");
+    dragCol.style.width = "0px";
+    dragCol.style.minWidth = "0";
+    dragCol.style.overflow = "hidden";
+
+    // Scroll so the collapsed spines cluster around where the dragged item was
+    const collapsedCenter = idx * SPINE_WIDTH + SPINE_WIDTH / 2;
+    this._scrollArea.scrollLeft = Math.max(0, collapsedCenter - (dragCenterInScroll - this._scrollArea.scrollLeft));
 
     // Create ghost spine
     const ghost = document.createElement("div");
     ghost.className = "stack-reorder-ghost";
-    const spine = this._columnsEl.querySelector(`[data-item-id="${itemId}"] .stack-spine`);
-    if (spine) ghost.innerHTML = spine.innerHTML;
+    const spineEl = dragCol.querySelector(".stack-spine");
+    if (spineEl) ghost.innerHTML = spineEl.innerHTML;
     ghost.style.height = this._scrollArea.clientHeight + "px";
     document.body.appendChild(ghost);
-
-    // Hide the dragged column's spine visually
-    const dragCol = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
-    if (dragCol) dragCol.classList.add("stack-column-reorder-source");
-
-    // Create drop zone indicators
-    const dropZones = [];
-    const cols = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
-    for (let i = 0; i <= cols.length; i++) {
-      const dz = document.createElement("div");
-      dz.className = "stack-drop-zone";
-      dropZones.push(dz);
-    }
+    ghost.style.left = (e.clientX - SPINE_WIDTH / 2) + "px";
+    ghost.style.top = scrollRect.top + "px";
 
     let insertIdx = idx;
-    const startX = e.clientX;
 
     const onMove = (ev) => {
       ghost.style.left = (ev.clientX - SPINE_WIDTH / 2) + "px";
-      ghost.style.top = this._scrollArea.getBoundingClientRect().top + "px";
 
-      // Determine insertion index, excluding the dragged column
       const allCols = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
       const otherCols = allCols.filter((c) => c !== dragCol);
       let newIdx = otherCols.length;
       for (let i = 0; i < otherCols.length; i++) {
         const rect = otherCols[i].getBoundingClientRect();
-        if (ev.clientX < rect.left + rect.width / 2) {
-          newIdx = i;
-          break;
-        }
+        if (ev.clientX < rect.left + rect.width / 2) { newIdx = i; break; }
       }
       if (newIdx !== insertIdx) {
         insertIdx = newIdx;
@@ -287,14 +284,16 @@ export class StackComponent {
       document.removeEventListener("pointerup", onUp);
       ghost.remove();
       this._columnsEl.querySelectorAll(".stack-drop-indicator").forEach((el) => el.remove());
-      if (dragCol) dragCol.classList.remove("stack-column-reorder-source");
 
-      // Perform the reorder: insertIdx is relative to items EXCLUDING
-      // the dragged one, so we can splice-remove then splice-insert directly.
+      // Reset drag column's collapsed overrides
+      dragCol.classList.remove("stack-column-reorder-source");
+      dragCol.style.overflow = "";
+      dragCol.style.minWidth = SPINE_WIDTH + "px";
+
+      // Reorder: insertIdx is relative to items EXCLUDING the dragged one
       const currentIdx = this._items.findIndex((i) => i.id === itemId);
       this._items.splice(currentIdx, 1);
       this._items.splice(insertIdx, 0, item);
-      // Sync DOM: find the node at the target position (excluding dragCol)
       const otherCols = Array.from(this._columnsEl.querySelectorAll(".stack-column")).filter((c) => c !== dragCol);
       const refNode = otherCols[insertIdx] || this._trailResize;
       this._columnsEl.insertBefore(dragCol, refNode);
@@ -318,9 +317,6 @@ export class StackComponent {
       }
       this._updateVisibility();
     };
-
-    // Position ghost initially
-    ghost.style.left = (e.clientX - SPINE_WIDTH / 2) + "px";
     ghost.style.top = this._scrollArea.getBoundingClientRect().top + "px";
 
     document.addEventListener("pointermove", onMove);

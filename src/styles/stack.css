@@ -66,24 +66,46 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   background: var(--spine-bg, rgba(128, 128, 128, 0.06));
-  border-left: 1px solid rgba(128, 128, 128, 0.25);
+  border-left: 2px solid rgba(128, 128, 128, 0.2);
   border-right: 1px solid rgba(128, 128, 128, 0.08);
   user-select: none;
   overflow: hidden;
   cursor: default;
+  position: relative;
+}
+
+/* Left-edge resize affordance (hover state replaces the spine resize button) */
+.stack-spine::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+  transition: background 0.15s;
+}
+.stack-spine:hover::before {
+  background: rgba(128, 128, 128, 0.25);
+}
+/* First column's spine has no left-neighbor to resize */
+.stack-column:first-child .stack-spine::before {
+  cursor: default;
+  display: none;
 }
 
 .stack-spine-header {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-top: 10px;
 }
 
 .stack-spine-icon {
@@ -104,8 +126,9 @@
 }
 
 .stack-spine-label {
-  writing-mode: vertical-lr;
+  writing-mode: vertical-rl;
   text-orientation: mixed;
+  transform: rotate(180deg);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -157,7 +180,6 @@
   position: relative;
 }
 
-.stack-spine-resize-btn { cursor: col-resize; }
 .stack-spine-drag-btn { cursor: grab; }
 .stack-spine-drag-btn:active { cursor: grabbing; }
 

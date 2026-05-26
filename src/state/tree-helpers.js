@@ -44,7 +44,7 @@ export function collectDocumentIds(nodes) {
 
 export function findNodeByFileId(nodes, fileId) {
   for (const n of nodes) {
-    if ((n.type === "document" || n.type === "notebook" || n.type === "pdf") && n.fileId === fileId) return n;
+    if ((n.type === "document" || n.type === "notebook" || n.type === "pdf" || n.type === "stack") && n.fileId === fileId) return n;
     if (n.children) {
       const found = findNodeByFileId(n.children, fileId);
       if (found) return found;

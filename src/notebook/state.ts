@@ -1836,6 +1836,9 @@ export class DrawingState extends EventTarget {
   }
 
   handleWheel(e: WheelEvent) {
+    // Let horizontal-dominant scrolls pass through to parent containers
+    // (e.g. the stack's horizontal scroll area).
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !this.gutterScrollDOM) return;
     e.preventDefault();
     if (!this.canvasEl) return;
     // Gutter mode: redirect the wheel into the host doc's scroller so
