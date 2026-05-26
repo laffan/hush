@@ -181,7 +181,10 @@ export function attachPaneTextDrop(pane) {
 
 // ── Pane-local typewriter helpers ─────────────────────────────────────
 
-/** Apply (or remove) typewriter padding and boundary line for a pane. */
+/** Apply (or remove) typewriter padding and boundary line for a pane.
+ *  The line is rendered as a ::before pseudo on .cm-scroller via a
+ *  CSS class + custom properties — this keeps it clipped inside the
+ *  scroller and avoids the absolutely-positioned-div overflow issue. */
 function applyPaneTypewriter(view, state, container) {
   if (!state.typewriterMode) {
     removePaneTypewriter(view, container);
@@ -193,20 +196,11 @@ function applyPaneTypewriter(view, state, container) {
   view.scrollDOM.style.paddingTop = targetY + "px";
   view.scrollDOM.style.paddingBottom = (h - targetY) + "px";
 
-  // Add / reposition boundary line.
-  let line = container.querySelector(".pane-typewriter-line");
-  if (!line) {
-    line = document.createElement("div");
-    line.className = "pane-typewriter-line";
-    line.style.cssText =
-      "position:absolute;left:0;right:0;height:1px;" +
-      "background:var(--fg,#888);pointer-events:none;z-index:5;";
-    container.appendChild(line);
-  }
-  line.style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
-  line.style.top = targetY + "px";
+  const scroller = view.scrollDOM;
+  scroller.classList.add("pane-typewriter-active");
+  scroller.style.setProperty("--tw-line-top", targetY + "px");
+  scroller.style.setProperty("--tw-line-opacity", String(state.settings.typewriterLineOpacity ?? 0.08));
 
-  // Scroll the cursor into view at the boundary line.
   requestAnimationFrame(() => scrollPaneCursorToTypewriter(view, state, container));
 }
 
@@ -215,9 +209,10 @@ function removePaneTypewriter(view, container) {
   if (view && view.scrollDOM) {
     view.scrollDOM.style.paddingTop = "";
     view.scrollDOM.style.paddingBottom = "";
+    view.scrollDOM.classList.remove("pane-typewriter-active");
+    view.scrollDOM.style.removeProperty("--tw-line-top");
+    view.scrollDOM.style.removeProperty("--tw-line-opacity");
   }
-  const line = container.querySelector(".pane-typewriter-line");
-  if (line) line.remove();
 }
 
 /** Scroll the pane's editor so the cursor sits at the typewriter line. */

@@ -50,6 +50,27 @@ function clearProgress() {
   activeTask = null;
 }
 
+/** Broadcast progress to both same-window listeners (iOS modal) and
+ *  cross-window listeners (desktop Tauri settings window). */
+async function broadcastProgress(msg, progress) {
+  window.dispatchEvent(new CustomEvent("hush-zotero-progress", { detail: { msg, progress } }));
+  if (IS_TAURI) {
+    try {
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit("hush-zotero-progress", { msg, progress });
+    } catch (_) {}
+  }
+}
+async function broadcastDone() {
+  window.dispatchEvent(new CustomEvent("hush-zotero-done"));
+  if (IS_TAURI) {
+    try {
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit("hush-zotero-done");
+    } catch (_) {}
+  }
+}
+
 /** Start a Zotero reference update in the background. */
 export async function startZoteroUpdate(state) {
   if (activeTask) return; // one task at a time
@@ -60,7 +81,7 @@ export async function startZoteroUpdate(state) {
   try {
     const refs = await downloadZoteroReferences(userId, apiKey, (msg, progress) => {
       state.emit("background-task-progress", { label: "Zotero", progress });
-      window.dispatchEvent(new CustomEvent("hush-zotero-progress", { detail: { msg, progress } }));
+      broadcastProgress(msg, progress);
     });
     // Persist
     if (IS_TAURI) {
@@ -78,7 +99,7 @@ export async function startZoteroUpdate(state) {
     }
     clearZoteroCache();
     state.emit("background-task-done");
-    window.dispatchEvent(new CustomEvent("hush-zotero-done"));
+    broadcastDone();
   } catch (err) {
     console.error("Zotero update failed:", err);
     state.emit("background-task-done");

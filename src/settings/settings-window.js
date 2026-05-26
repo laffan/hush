@@ -401,23 +401,34 @@ function bindAll() {
   }
 
   // Reflect background Zotero updates (triggered from the command palette)
-  // into the settings panel's progress bar so the user sees progress here too.
-  window.addEventListener("hush-zotero-progress", (e) => {
-    const { msg, progress } = e.detail || {};
-    const progressEl = document.getElementById("zotero-progress");
-    const fillEl = document.getElementById("zotero-progress-fill");
-    const textEl = document.getElementById("zotero-progress-text");
-    if (progressEl) progressEl.style.display = "";
-    if (fillEl) fillEl.style.width = Math.round((progress || 0) * 100) + "%";
-    if (textEl) textEl.textContent = msg || "";
-    if (zoteroDownloadBtn) zoteroDownloadBtn.disabled = true;
-  });
-  window.addEventListener("hush-zotero-done", () => {
-    const progressEl = document.getElementById("zotero-progress");
-    if (progressEl) progressEl.style.display = "none";
-    if (zoteroDownloadBtn) zoteroDownloadBtn.disabled = false;
+  // into the settings panel's progress bar. Listen on both window
+  // (same-window modal) and Tauri events (separate settings window).
+  function onZoteroProgress(data) {
+    const { msg, progress } = data || {};
+    const pEl = document.getElementById("zotero-progress");
+    const fEl = document.getElementById("zotero-progress-fill");
+    const tEl = document.getElementById("zotero-progress-text");
+    if (pEl) pEl.style.display = "";
+    if (fEl) fEl.style.width = Math.round((progress || 0) * 100) + "%";
+    if (tEl) tEl.textContent = msg || "";
+    const btn = document.getElementById("zotero-download-btn");
+    if (btn) btn.disabled = true;
+  }
+  function onZoteroDone() {
+    const pEl = document.getElementById("zotero-progress");
+    if (pEl) pEl.style.display = "none";
+    const btn = document.getElementById("zotero-download-btn");
+    if (btn) btn.disabled = false;
     render();
-  });
+  }
+  window.addEventListener("hush-zotero-progress", (e) => onZoteroProgress(e.detail));
+  window.addEventListener("hush-zotero-done", () => onZoteroDone());
+  if (IS_TAURI) {
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen("hush-zotero-progress", (e) => onZoteroProgress(e.payload));
+      listen("hush-zotero-done", () => onZoteroDone());
+    }).catch(() => {});
+  }
 
   // Shortcuts tab — click on shortcut-keys to record
   document.querySelectorAll(".shortcut-display .shortcut-keys").forEach(el => {
