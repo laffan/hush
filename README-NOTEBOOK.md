@@ -109,6 +109,7 @@ Notebook shortcuts are registered in the Hush shortcut system:
 | `shortcutNbRedo` | `Mod+Shift+Z` | Redo |
 | `shortcutNbGroup` | `Mod+G` | Group selected shapes |
 | `shortcutNbUngroup` | `Mod+Shift+G` | Ungroup selected shapes |
+| `shortcutNbResetZoom` | `Mod+0` | Reset zoom to 100% |
 
 Draw sub-tools (Lasso, Erase, Slice, brush slots) are reached through the right half of the unified toolbar (past the divider) — no keyboard shortcuts; the E/X hints in the button tooltips are placeholders. Hold space (or two-finger drag) to pan.
 
@@ -121,7 +122,7 @@ Global shortcuts (`Cmd+P` command palette, `Cmd+,` settings, `Cmd+Shift+F` fulls
 The command palette is context-sensitive. When a notebook is open:
 
 - **Shown**: New document, New notebook, Files, Styles, Versions, Export, Toggle fullscreen, Settings, **Open shelf**, **Start brainstorm**, **Insert Reference** (Zotero)
-- **Hidden**: Ratchet mode, Private mode, Typewriter mode, Show repeats, Highlight sentence, Outline view, Word count
+- **Hidden**: Ratchet mode, Private mode, Typewriter mode (palette entry is doc-only, but the keyboard shortcut still toggles the flag so doc panes within a notebook can use it — the main boundary line is hidden via `body.notebook-mode` CSS), Show repeats, Highlight sentence, Outline view, Word count
 
 ### Zotero references on the canvas
 
