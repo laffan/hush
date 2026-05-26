@@ -13,7 +13,7 @@
  * {
  *   id: string,
  *   fileId: string,
- *   fileType: "document" | "notebook" | "pdf" | "stack",
+ *   fileType: "document" | "notebook" | "pdf",
  *   width: number,
  *   open: boolean,
  *   scrollY: number,          // doc scroll or camera.y for notebooks
@@ -50,8 +50,9 @@ export function decodeStackContent(raw) {
   try {
     const data = JSON.parse(raw);
     if (data.format === "hushstack" && Array.isArray(data.items)) {
+      const safe = data.items.filter((item) => item.fileType !== "stack");
       return {
-        items: data.items.map((item) => ({
+        items: safe.map((item) => ({
           id: item.id || crypto.randomUUID(),
           fileId: item.fileId,
           fileType: item.fileType || "document",

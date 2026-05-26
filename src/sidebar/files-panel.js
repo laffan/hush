@@ -258,7 +258,7 @@ export function createFilesPanel(container, state, hidePanel) {
         });
         return;
       }
-      const eligible = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId;
+      const eligible = (item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId;
       if (!eligible) return;
       // Alt/Option-drag onto an open stack → add as stack item
       const altHeld = pointerEvent?.altKey;

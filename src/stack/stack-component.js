@@ -444,6 +444,7 @@ export class StackComponent {
   // --- Public API ---
 
   addItem(fileId, fileType, name) {
+    if (fileType === "stack") return null;
     const item = {
       id: crypto.randomUUID(), fileId, fileType, name,
       width: DEFAULT_COLUMN_WIDTH, open: true,
