@@ -114,6 +114,7 @@
   transition: background 0.15s;
 }
 .pdf-zoom-btn:hover { background: rgba(128, 128, 128, 0.18); }
+.pdf-zoom-btn svg { vertical-align: middle; display: inline-block; }
 .pdf-mode-btn.active {
   background: rgba(128, 128, 128, 0.22);
   border-color: rgba(128, 128, 128, 0.4);

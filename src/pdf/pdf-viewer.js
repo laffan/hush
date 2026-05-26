@@ -42,8 +42,6 @@ export function createPdfViewer(container, opts = {}) {
   let annotations = [];
   let scrollListeners = [];
   let destroyed = false;
-  let prevModeBeforeHScroll = MODE_FIT_WIDTH;
-
   const root = document.createElement("div");
   root.className = "pdf-viewer";
 
@@ -96,8 +94,10 @@ export function createPdfViewer(container, opts = {}) {
   zoomLabel.className = "pdf-zoom-label";
   zoomLabel.textContent = "Fit";
   const zoomInBtn = btn("pdf-zoom-btn", "+", "Zoom in");
-  const fitBtn = btn("pdf-zoom-btn pdf-mode-btn active", "↔", "Fit to width");
-  const hScrollBtn = btn("pdf-zoom-btn pdf-mode-btn", "⇔", "Horizontal scroll");
+
+  const fitBtn = svgBtn("pdf-zoom-btn pdf-mode-btn active", "Fit", FIT_ICON);
+  const scrollToggle = svgBtn("pdf-zoom-btn pdf-scroll-toggle", "Toggle scroll direction", VERTICAL_ICON);
+
   const pageIndicator = document.createElement("span");
   pageIndicator.className = "pdf-page-indicator";
 
@@ -106,7 +106,7 @@ export function createPdfViewer(container, opts = {}) {
   zoteroLink.textContent = "Open in Zotero ↗";
   zoteroLink.style.display = "none";
 
-  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, hScrollBtn, pageIndicator, zoteroLink);
+  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, scrollToggle, pageIndicator, zoteroLink);
   root.appendChild(toolbar);
 
   container.appendChild(root);
@@ -257,14 +257,12 @@ export function createPdfViewer(container, opts = {}) {
 
   zoomOutBtn.addEventListener("click", stepZoomOut);
   zoomInBtn.addEventListener("click", stepZoomIn);
-  fitBtn.addEventListener("click", () => switchMode(MODE_FIT_WIDTH));
-  hScrollBtn.addEventListener("click", () => {
-    if (layoutMode === MODE_HORIZONTAL) {
-      switchMode(prevModeBeforeHScroll);
-    } else {
-      prevModeBeforeHScroll = layoutMode;
-      switchMode(MODE_HORIZONTAL);
-    }
+  let scrollDirection = "vertical";
+  fitBtn.addEventListener("click", () => {
+    switchMode(scrollDirection === "horizontal" ? MODE_HORIZONTAL : MODE_FIT_WIDTH);
+  });
+  scrollToggle.addEventListener("click", () => {
+    switchMode(layoutMode === MODE_HORIZONTAL ? MODE_FIT_WIDTH : MODE_HORIZONTAL);
   });
 
   // ── Keyboard zoom (Cmd+/- while viewer is mounted) ──────────────
@@ -331,11 +329,10 @@ export function createPdfViewer(container, opts = {}) {
 
   function updateToolbarState() {
     const z = getEffectiveZoom();
-    if (layoutMode === MODE_FIT_WIDTH) zoomLabel.textContent = "Fit W";
-    else if (layoutMode === MODE_HORIZONTAL) zoomLabel.textContent = "Fit H";
-    else zoomLabel.textContent = `${Math.round(z * 100)}%`;
-    fitBtn.classList.toggle("active", layoutMode === MODE_FIT_WIDTH);
-    hScrollBtn.classList.toggle("active", layoutMode === MODE_HORIZONTAL);
+    const isFit = layoutMode === MODE_FIT_WIDTH || layoutMode === MODE_HORIZONTAL;
+    zoomLabel.textContent = isFit ? "Fit" : `${Math.round(z * 100)}%`;
+    fitBtn.classList.toggle("active", isFit);
+    scrollToggle.innerHTML = layoutMode === MODE_HORIZONTAL ? HORIZONTAL_ICON : VERTICAL_ICON;
   }
 
   function updatePageIndicator() {
@@ -366,6 +363,8 @@ export function createPdfViewer(container, opts = {}) {
   function switchMode(mode) {
     if (mode === layoutMode) return;
     layoutMode = mode;
+    if (mode === MODE_HORIZONTAL) scrollDirection = "horizontal";
+    else if (mode === MODE_FIT_WIDTH) scrollDirection = "vertical";
     applyLayoutClass();
     updateToolbarState();
     relayoutPages();
@@ -774,3 +773,20 @@ function btn(cls, text, title) {
   b.title = title;
   return b;
 }
+
+function svgBtn(cls, title, svgContent) {
+  const b = document.createElement("button");
+  b.className = cls;
+  b.title = title;
+  b.innerHTML = svgContent;
+  return b;
+}
+
+// Pages stacked vertically (vertical scroll — current mode indicator)
+const VERTICAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="1" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="9" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
+
+// Pages side by side (horizontal scroll — current mode indicator)
+const HORIZONTAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
+
+// Fit: outward-pointing arrows
+const FIT_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><polyline points="1,5 1,1 5,1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="11,1 15,1 15,5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="15,11 15,15 11,15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="5,15 1,15 1,11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
