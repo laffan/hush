@@ -1,29 +1,25 @@
 /**
  * Stack spine — the 50px-wide vertical sidebar on each stack column.
- * Shows the filename vertically, plus toggle, drag handle, and color
- * picker buttons at the bottom.
+ * Shows the filename vertically, plus toggle, drag handle, resize
+ * handle, and color picker buttons at the bottom.
  */
 
 import { findNodeByFileId } from "../state/tree-helpers.js";
 
-const SPINE_WIDTH = 50;
-
-export function createSpine(item, { onToggle, onColorChange, onDragStart }) {
+export function createSpine(item, { onToggle, onColorChange, onDragStart, onResizeStart }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";
   if (item.spineColor) spine.style.backgroundColor = item.spineColor;
 
-  // Vertical filename label at the top
   const label = document.createElement("div");
   label.className = "stack-spine-label";
   label.textContent = resolveItemName(item);
   spine.appendChild(label);
 
-  // Bottom button cluster
   const buttons = document.createElement("div");
   buttons.className = "stack-spine-buttons";
 
-  // Color picker button
+  // Color picker
   const colorBtn = document.createElement("button");
   colorBtn.className = "stack-spine-btn stack-spine-color-btn";
   colorBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5"/></svg>`;
@@ -31,14 +27,23 @@ export function createSpine(item, { onToggle, onColorChange, onDragStart }) {
     e.stopPropagation();
     openColorPicker(colorBtn, item.spineColor, (color) => {
       onColorChange(color);
-      // Update the circle fill to show the chosen color
       const circle = colorBtn.querySelector("circle");
       if (circle) circle.setAttribute("fill", color || "none");
     });
   });
   buttons.appendChild(colorBtn);
 
-  // Drag handle
+  // Resize handle (horizontal double-arrow)
+  const resizeBtn = document.createElement("button");
+  resizeBtn.className = "stack-spine-btn stack-spine-resize-btn";
+  resizeBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="8" x2="14" y2="8"/><polyline points="4,5.5 2,8 4,10.5"/><polyline points="12,5.5 14,8 12,10.5"/></svg>`;
+  resizeBtn.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    onResizeStart(e);
+  });
+  buttons.appendChild(resizeBtn);
+
+  // Drag handle (reorder)
   const dragBtn = document.createElement("button");
   dragBtn.className = "stack-spine-btn stack-spine-drag-btn";
   dragBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/><circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/><circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/></svg>`;
@@ -51,16 +56,11 @@ export function createSpine(item, { onToggle, onColorChange, onDragStart }) {
   // Toggle open/close
   const toggleBtn = document.createElement("button");
   toggleBtn.className = "stack-spine-btn stack-spine-toggle-btn";
-  toggleBtn.innerHTML = item.open
-    ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="10 3 5 8 10 13"/></svg>`
-    : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 3 11 8 6 13"/></svg>`;
+  updateToggleIcon(toggleBtn, item.open);
   toggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     onToggle();
-    // Flip the chevron
-    toggleBtn.innerHTML = item.open
-      ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 3 11 8 6 13"/></svg>`
-      : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="10 3 5 8 10 13"/></svg>`;
+    updateToggleIcon(toggleBtn, item.open);
   });
   buttons.appendChild(toggleBtn);
 
@@ -68,10 +68,14 @@ export function createSpine(item, { onToggle, onColorChange, onDragStart }) {
   return spine;
 }
 
+function updateToggleIcon(btn, open) {
+  btn.innerHTML = open
+    ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="10 3 5 8 10 13"/></svg>`
+    : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 3 11 8 6 13"/></svg>`;
+}
+
 function resolveItemName(item) {
-  // The name might be stored on the item or we need to look it up
   if (item.name) return item.name;
-  // Fallback: try window state
   const state = window.__hushState__;
   if (state) {
     const node = findNodeByFileId(state.fileTree, item.fileId);
@@ -83,16 +87,14 @@ function resolveItemName(item) {
 // --- Color picker popup ---
 
 const PRESET_COLORS = [
-  null, // "no color" / default
+  null,
   "#ef4444", "#f97316", "#eab308",
   "#22c55e", "#3b82f6", "#8b5cf6",
   "#ec4899", "#6b7280", "#1e293b",
 ];
 
 function openColorPicker(anchorEl, currentColor, onPick) {
-  // Remove any existing picker
   document.querySelectorAll(".stack-color-picker").forEach((el) => el.remove());
-
   const picker = document.createElement("div");
   picker.className = "stack-color-picker";
 
@@ -108,36 +110,17 @@ function openColorPicker(anchorEl, currentColor, onPick) {
     if (color === currentColor || (!color && !currentColor)) {
       swatch.classList.add("stack-color-swatch-active");
     }
-    swatch.addEventListener("click", () => {
-      onPick(color);
-      picker.remove();
-      cleanup();
-    });
+    swatch.addEventListener("click", () => { onPick(color); picker.remove(); cleanup(); });
     picker.appendChild(swatch);
   }
 
   document.body.appendChild(picker);
-
-  // Position above the anchor
   const rect = anchorEl.getBoundingClientRect();
   picker.style.left = (rect.right + 8) + "px";
   picker.style.top = (rect.top - picker.offsetHeight / 2 + rect.height / 2) + "px";
 
-  const cleanup = () => {
-    document.removeEventListener("pointerdown", onOutside);
-    document.removeEventListener("keydown", onEsc);
-  };
-  const onOutside = (e) => {
-    if (!picker.contains(e.target) && !anchorEl.contains(e.target)) {
-      picker.remove();
-      cleanup();
-    }
-  };
-  const onEsc = (e) => {
-    if (e.key === "Escape") { picker.remove(); cleanup(); }
-  };
-  setTimeout(() => {
-    document.addEventListener("pointerdown", onOutside);
-    document.addEventListener("keydown", onEsc);
-  }, 0);
+  const cleanup = () => { document.removeEventListener("pointerdown", onOutside); document.removeEventListener("keydown", onEsc); };
+  const onOutside = (e) => { if (!picker.contains(e.target) && !anchorEl.contains(e.target)) { picker.remove(); cleanup(); } };
+  const onEsc = (e) => { if (e.key === "Escape") { picker.remove(); cleanup(); } };
+  setTimeout(() => { document.addEventListener("pointerdown", onOutside); document.addEventListener("keydown", onEsc); }, 0);
 }

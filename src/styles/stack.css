@@ -143,20 +143,10 @@
   position: relative;
 }
 
-/* --- Column resizer --- */
+/* --- Spine resize button --- */
 
-.stack-column-resizer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 6px;
-  height: 100%;
+.stack-spine-resize-btn {
   cursor: col-resize;
-  z-index: 10;
-}
-
-.stack-column-resizer:hover {
-  background: var(--accent, rgba(59, 130, 246, 0.3));
 }
 
 /* --- Doc content (uses createPaneEditor — full-featured CodeMirror) --- */
@@ -173,6 +163,8 @@
 
 .stack-doc-wrapper .cm-scroller {
   overflow: auto;
+  padding-left: 50px;
+  padding-right: 50px;
 }
 
 /* --- Notebook content --- */

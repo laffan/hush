@@ -14,7 +14,7 @@ import { createSpine } from "./stack-spine.js";
 import { mountItemContent, unmountItemContent, snapshotItemContent } from "./stack-item-mount.js";
 
 const SPINE_WIDTH = 50;
-const DEFAULT_COLUMN_WIDTH = 500;
+const DEFAULT_COLUMN_WIDTH = 800;
 const BUFFER_COLUMNS = 1;
 const MIN_COLUMN_WIDTH = 200;
 
@@ -95,6 +95,7 @@ export class StackComponent {
       onToggle: () => this._toggleItem(item.id),
       onColorChange: (color) => this._setSpineColor(item.id, color),
       onDragStart: (e) => this._startReorder(item.id, e),
+      onResizeStart: (e) => this._startResize(item.id, e),
     });
     col.appendChild(spine);
 
@@ -103,11 +104,18 @@ export class StackComponent {
     content.style.display = item.open ? "block" : "none";
     col.appendChild(content);
 
-    // Resize handle on the right edge of each column
-    const resizer = document.createElement("div");
-    resizer.className = "stack-column-resizer";
-    resizer.addEventListener("pointerdown", (e) => this._startResize(item.id, e));
-    col.appendChild(resizer);
+    // Auto-widen column when internal panels (shelf, outline, annotations) open
+    const ro = new ResizeObserver(() => {
+      if (!item.open) return;
+      const sw = content.scrollWidth;
+      const cw = content.clientWidth;
+      if (sw > cw + 4) {
+        item.width = (item.width || DEFAULT_COLUMN_WIDTH) + (sw - cw);
+        col.style.width = (SPINE_WIDTH + item.width) + "px";
+      }
+    });
+    ro.observe(content);
+    col._resizeObs = ro;
 
     return col;
   }

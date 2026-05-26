@@ -251,30 +251,26 @@ export function createFilesPanel(container, state, hidePanel) {
     // lands in whatever editor/notebook is under the pointer.
     forceDragOutside: (item) => item && item.type === "image",
 
-    onDragOutside: (item, clientX, clientY) => {
+    onDragOutside: (item, clientX, clientY, pointerEvent) => {
       if (item.type === "image" && item.fileId) {
         import("../pane/text-drag.js").then(({ dropSidebarImageAt }) => {
           dropSidebarImageAt(item.fileId, clientX, clientY);
         });
         return;
       }
-      // Drop onto an open stack adds the file as a stack item
-      if (state.currentStackFileId && (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId) {
-        const stackEl = document.getElementById("stack-container");
-        if (stackEl && !stackEl.classList.contains("hidden")) {
-          const rect = stackEl.getBoundingClientRect();
-          if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
-            import("../stack/stack-bridge.js").then(({ getStackInstance }) => {
-              const inst = getStackInstance();
-              if (inst) inst.handleFileDrop(item.fileId, item.type, item.name);
-            });
-            return;
-          }
-        }
+      const eligible = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId;
+      if (!eligible) return;
+      // Alt/Option-drag onto an open stack → add as stack item
+      const altHeld = pointerEvent?.altKey;
+      if (altHeld && state.currentStackFileId) {
+        import("../stack/stack-bridge.js").then(({ getStackInstance }) => {
+          const inst = getStackInstance();
+          if (inst) inst.handleFileDrop(item.fileId, item.type, item.name);
+        });
+        return;
       }
-      if ((item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId) {
-        createPane(item.fileId, item.name, item.type, clientX, clientY);
-      }
+      // Cmd-drag (default) → create floating pane
+      createPane(item.fileId, item.name, item.type, clientX, clientY);
     },
 
     onChange: (newData) => {

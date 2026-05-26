@@ -354,8 +354,9 @@ function finishDrag(pointerEvent) {
   const forceAllowed = this.config.forceDragOutside?.(draggedItem) === true;
   const cmdHeld = pointerEvent && (pointerEvent.metaKey || pointerEvent.ctrlKey
     || !!(typeof window !== "undefined" && window.__hushCmdHeld));
+  const altHeld = pointerEvent && pointerEvent.altKey;
   if (pointerEvent && this.config.onDragOutside && draggedItem &&
-      (forceAllowed || cmdHeld)) {
+      (forceAllowed || cmdHeld || altHeld)) {
     const panelOverlay = this.container.closest("#panel-overlay");
     const rect = panelOverlay?.getBoundingClientRect();
     if (rect && pointerEvent.clientX > rect.right) {
@@ -368,7 +369,7 @@ function finishDrag(pointerEvent) {
       autoExpandedIds.forEach((id) => this.state.collapsedIds.add(id));
       this.dragSession = null;
       this.render();
-      this.config.onDragOutside(draggedItem, pointerEvent.clientX, pointerEvent.clientY);
+      this.config.onDragOutside(draggedItem, pointerEvent.clientX, pointerEvent.clientY, pointerEvent);
       this.config.onDragEnd(null, false);
       return;
     }
