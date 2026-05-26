@@ -259,12 +259,9 @@ async function init() {
       import("./stack/stack-bridge.js").then(({ getStackInstance }) => {
         const inst = getStackInstance(); const a = inst?.getActiveItem();
         if (!a) return; const ld = inst._liveColumns.get(a.id);
-        if (a.fileType === "notebook" && ld?.canvas) {
-          const grip = ld.canvas.container?.querySelector(".notebook-shelf button");
-          if (grip) grip.click();
-        } else if (a.fileType === "pdf" && ld?.pdfViewer?.toggleShelf) {
-          ld.pdfViewer.toggleShelf();
-        }
+        if (a.fileType === "notebook" && ld?.canvas) { const g = ld.canvas.container?.querySelector(".notebook-shelf button"); if (g) g.click(); }
+        else if (a.fileType === "pdf" && ld?.pdfViewer?.toggleShelf) ld.pdfViewer.toggleShelf();
+        else if (a.fileType === "document") { const rp = document.getElementById("right-panel-overlay"); if (rp) { rp.classList.contains("hidden") ? state.emit("show-outline") : state.emit("hide-outline"); } }
       });
       return;
     }

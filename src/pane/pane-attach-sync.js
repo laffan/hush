@@ -121,15 +121,68 @@ export function anchorPaneToPdf(pane) {
   };
 }
 
+// --- Stack horizontal scroll sync ---
+// Pinned panes in stack context anchor to a stack item's column and
+// follow its position as the user scrolls horizontally. They also
+// hide when the stack item is collapsed.
+
+export function startStackPinSync(pane) {
+  const scrollArea = document.querySelector("#stack-container .stack-scroll-area");
+  if (!scrollArea) return;
+
+  function tick() {
+    if (!pane._stackPin || !panes.has(pane.id)) return;
+    const col = document.querySelector(`.stack-column[data-item-id="${pane._stackPin.itemId}"]`);
+    if (!col || col.classList.contains("stack-column-closed")) {
+      pane.el.style.display = "none";
+    } else {
+      pane.el.style.display = "";
+      const colRect = col.getBoundingClientRect();
+      const containerRect = scrollArea.getBoundingClientRect();
+      pane.x = colRect.left - containerRect.left + pane._stackPin.xOffset + containerRect.left;
+      pane.y = colRect.top + pane._stackPin.yOffset;
+      pane.el.style.left = pane.x + "px";
+      pane.el.style.top = pane.y + "px";
+    }
+    pane._stackSyncFrame = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+export function anchorPaneToStackItem(pane) {
+  const stackContainer = document.getElementById("stack-container");
+  if (!stackContainer) return;
+  // Find which stack column the pane overlaps most
+  const cols = stackContainer.querySelectorAll(".stack-column");
+  const px = pane.x, py = pane.y;
+  let bestCol = null, bestDist = Infinity;
+  for (const col of cols) {
+    const r = col.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const d = Math.abs(px - cx) + Math.abs(py - cy);
+    if (d < bestDist) { bestDist = d; bestCol = col; }
+  }
+  if (!bestCol) return;
+  const colRect = bestCol.getBoundingClientRect();
+  pane._stackPin = {
+    itemId: bestCol.dataset.itemId,
+    xOffset: px - colRect.left,
+    yOffset: py - colRect.top,
+  };
+}
+
+export function stopStackPinSync(pane) {
+  if (pane._stackSyncFrame) {
+    cancelAnimationFrame(pane._stackSyncFrame);
+    pane._stackSyncFrame = null;
+  }
+  pane._stackPin = null;
+  if (pane.el) pane.el.style.display = "";
+}
+
 export function stopAttachSync(pane) {
-  if (pane._syncFrame) {
-    cancelAnimationFrame(pane._syncFrame);
-    pane._syncFrame = null;
-  }
-  if (pane.el) {
-    pane.el.style.transform = "";
-    pane.el.style.transformOrigin = "";
-  }
+  if (pane._syncFrame) { cancelAnimationFrame(pane._syncFrame); pane._syncFrame = null; }
+  if (pane.el) { pane.el.style.transform = ""; pane.el.style.transformOrigin = ""; }
   if (pane._scrollHandler) {
     const scrollDOM = appState.editor?.view.scrollDOM;
     if (scrollDOM) scrollDOM.removeEventListener("scroll", pane._scrollHandler);
@@ -139,7 +192,7 @@ export function stopAttachSync(pane) {
     const pdfContainer = document.getElementById("pdf-container");
     const scrollArea = pdfContainer?.querySelector(".pdf-scroll-area");
     if (scrollArea) scrollArea.removeEventListener("scroll", pane._pdfScrollHandler);
-    pane._pdfScrollHandler = null;
-    pane._pdfAnchor = null;
+    pane._pdfScrollHandler = null; pane._pdfAnchor = null;
   }
+  stopStackPinSync(pane);
 }

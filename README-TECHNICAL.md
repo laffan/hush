@@ -113,6 +113,15 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │       ├── layers-panel.ts
 │       └── engine/                    (engine/stroke.js — exception)
 │
+├── stack/
+│   ├── stack-bridge.js                (mount/unmount lifecycle, 2 s autosave)
+│   ├── stack-component.js             (StackComponent: columns, spines, reorder, resize, virtualization)
+│   ├── stack-content.js               (.hushstack JSON envelope encode/decode)
+│   ├── stack-item-mount.js            (per-type mount/unmount: doc, notebook, PDF, nested stack)
+│   ├── stack-spine.js                 (spine DOM: icon, label, buttons, left-edge resize)
+│   ├── stack-picker.js                (fuzzy file picker for adding items)
+│   └── stack-list-view.js             (modal list view with reorder + close)
+│
 ├── pane/
 │   ├── pane-manager.js                (lifecycle, focus, theme/style sync)
 │   ├── pane-toolbar.js                (extracted: title-bar DOM + collapse/attach/pin/gutter)

@@ -90,6 +90,14 @@ async function mountDocContent(contentEl, item, state, liveData) {
     }, 2000);
 
     liveData.editor = editor;
+
+    // Register Cmd+drag source so text can be dragged out of this column
+    if (editor.view) {
+      import("../pane/text-drag.js").then(({ attachEditorTextDrag }) => {
+        attachEditorTextDrag(editor.view, wrapper);
+      });
+    }
+
     liveData.cleanup = () => {
       clearInterval(saveInterval);
       editor.destroy();
@@ -192,8 +200,22 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     }, 2000);
 
     liveData.canvas = canvas;
+    // Register as a Cmd+drag drop target so text can be dragged
+    // between stack columns (and from panes/main editor into this notebook)
+    const nbCanvas = wrapper.querySelector("canvas");
+    let unregDrop = null;
+    if (nbCanvas) {
+      import("../pane/text-drag.js").then(({ registerNotebookDropTarget, attachNotebookTextShapeDrag }) => {
+        unregDrop = registerNotebookDropTarget(nbCanvas, canvas.state);
+        attachNotebookTextShapeDrag(nbCanvas, wrapper, canvas.state, {
+          findTextShapeAt: (shapes, pt) => shapes.find((s) =>
+            s.type === "text" && pt.x >= s.x && pt.x <= s.x + (s.width || 200) && pt.y >= s.y && pt.y <= s.y + (s.height || 50)),
+        });
+      });
+    }
     liveData.cleanup = () => {
       clearInterval(saveInterval);
+      if (unregDrop) unregDrop();
       canvas.destroy();
     };
     liveData.getScrollState = () => ({

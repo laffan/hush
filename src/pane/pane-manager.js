@@ -22,7 +22,7 @@ import {
   syncAllPaneWordCounts,
 } from "./pane-content.js";
 import { schedulePersist, restorePanes as _restorePanes } from "./pane-persistence.js";
-import { startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf } from "./pane-attach-sync.js";
+import { startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf, startStackPinSync, anchorPaneToStackItem, stopStackPinSync } from "./pane-attach-sync.js";
 import { buildPaneDOM as _buildPaneDOM } from "./pane-toolbar.js";
 import {
   getInitialPanePosition as _getInitialPanePosition,
@@ -140,6 +140,11 @@ function onContextChange() {
         if (appState.currentPdfFileId) startPdfScrollSync(pane);
         else if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
+      }
+      // Stack pin: start scroll-following if pane is pinned in stack context
+      if (pane.pinned && appState.currentStackFileId && !pane._stackSyncFrame) {
+        if (!pane._stackPin) anchorPaneToStackItem(pane);
+        if (pane._stackPin) startStackPinSync(pane);
       }
       if (pane.gutter) {
         import("./pane-gutter.js").then(({ restoreGutterLayout }) => restoreGutterLayout(pane));
