@@ -576,10 +576,9 @@ export function createPdfViewer(container, opts = {}) {
       path.setAttribute("d", d);
       path.setAttribute("fill", "none");
       path.setAttribute("stroke", annot.color || "#ff0000");
-      path.setAttribute("stroke-width", String(Math.max(1, 2 * scale)));
+      path.setAttribute("stroke-width", String(Math.max(0.5, scale)));
       path.setAttribute("stroke-linecap", "round");
       path.setAttribute("stroke-linejoin", "round");
-      path.setAttribute("opacity", "0.7");
       svg.appendChild(path);
     }
     layer.appendChild(svg);
