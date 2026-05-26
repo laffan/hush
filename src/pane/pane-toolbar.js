@@ -21,6 +21,7 @@ import { setupPaneDrag, setupPaneResize } from "./pane-drag.js";
 import { togglePaneSizePopover } from "./pane-size-popover.js";
 import {
   screenToCanvas, startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf,
+  anchorPaneToStackItem, startStackPinSync, stopStackPinSync,
 } from "./pane-attach-sync.js";
 import { schedulePersist } from "./pane-persistence.js";
 
@@ -88,10 +89,6 @@ export function buildPaneDOM(pane, deps) {
 
   const buttons = document.createElement("span");
   buttons.className = "floating-pane-buttons";
-  buttons.addEventListener("click", (e) => {
-    const btn = e.target.closest(".floating-pane-btn");
-    console.log("[PIN] toolbar button clicked:", btn?.className, "pane:", pane.id);
-  }, true);
 
   // Font-size button (doc panes only — notebooks have no text size,
   // zotero-highlights pane is fileless).
@@ -101,7 +98,7 @@ export function buildPaneDOM(pane, deps) {
     buttons.appendChild(sizeBtn);
   }
 
-  const attachLabel = appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
+  const attachLabel = appState.currentStackFileId ? "Attach to stack column" : appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
   const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
   attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
   buttons.appendChild(attachBtn);
@@ -109,7 +106,6 @@ export function buildPaneDOM(pane, deps) {
   const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
   pinBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    console.log("[PIN] pin button clicked", { disabled: pinBtn.classList.contains("fp-btn-disabled"), paneId: pane.id, pinned: pane.pinned });
     if (pinBtn.classList.contains("fp-btn-disabled")) return;
     togglePinned(pane, deps.onContextChange);
   });
@@ -208,7 +204,10 @@ async function toggleAttach(pane) {
   if (btn) btn.classList.toggle("attach-active", pane.attached);
 
   if (pane.attached) {
-    if (appState.currentPdfFileId) {
+    if (appState.currentStackFileId) {
+      anchorPaneToStackItem(pane);
+      if (pane._stackPin) startStackPinSync(pane);
+    } else if (appState.currentPdfFileId) {
       anchorPaneToPdf(pane);
       startPdfScrollSync(pane);
     } else if (appState.currentNotebookFileId) {
@@ -287,7 +286,6 @@ async function togglePinned(pane, onContextChange) {
 
 function setPinned(pane, value, onContextChange) {
   pane.pinned = value;
-  console.log("[PIN] setPinned called:", { value, paneId: pane.id, hasOnContextChange: typeof onContextChange === "function" });
   const btn = pane.el.querySelector(".fp-btn-pin");
   if (btn) btn.classList.toggle("pin-active", pane.pinned);
   pane.el.classList.toggle("pinned", pane.pinned);

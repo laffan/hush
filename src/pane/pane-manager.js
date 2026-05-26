@@ -131,19 +131,8 @@ function onContextChange() {
     if (pane.pinned) {
       pane.el.style.display = "";
       if (pane.pdfViewer?.suspended) pane.pdfViewer.resume();
-      // Start stack scroll-following so pinned panes track their column
-      console.log("[PIN] onContextChange pinned branch:", {
-        paneId: pane.id,
-        currentStackFileId: appState.currentStackFileId,
-        hasStackSyncFrame: !!pane._stackSyncFrame,
-        hasStackPin: !!pane._stackPin,
-      });
       if (appState.currentStackFileId && !pane._stackSyncFrame) {
         if (!pane._stackPin) anchorPaneToStackItem(pane);
-        console.log("[PIN] after anchorPaneToStackItem:", {
-          stackPin: pane._stackPin,
-          panePos: { x: pane.x, y: pane.y },
-        });
         if (pane._stackPin) startStackPinSync(pane);
       } else if (!appState.currentStackFileId) {
         stopStackPinSync(pane);
@@ -154,7 +143,10 @@ function onContextChange() {
       pane.el.style.display = "";
       if (pane.pdfViewer?.suspended) pane.pdfViewer.resume();
       if (pane.attached && !pane._syncFrame && !pane._scrollHandler && !pane._pdfScrollHandler) {
-        if (appState.currentPdfFileId) startPdfScrollSync(pane);
+        if (appState.currentStackFileId && !pane._stackSyncFrame) {
+          if (!pane._stackPin) anchorPaneToStackItem(pane);
+          if (pane._stackPin) startStackPinSync(pane);
+        } else if (appState.currentPdfFileId) startPdfScrollSync(pane);
         else if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
       }
