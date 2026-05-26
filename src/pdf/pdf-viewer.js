@@ -297,6 +297,20 @@ export function createPdfViewer(container, opts = {}) {
     for (const p of pages) {
       if (p.wrapper) observer.observe(p.wrapper);
     }
+    renderVisiblePages();
+  }
+
+  function renderVisiblePages() {
+    if (!pages.length || !scrollArea.clientHeight) return;
+    const areaRect = scrollArea.getBoundingClientRect();
+    if (areaRect.width === 0 && areaRect.height === 0) return;
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i];
+      if (p.rendered || !p.wrapper) continue;
+      const r = p.wrapper.getBoundingClientRect();
+      if (r.bottom < areaRect.top - 200 || r.top > areaRect.bottom + 200) continue;
+      renderPage(i);
+    }
   }
 
   // ── Zoom calculations ────────────────────────────────────────────
@@ -421,17 +435,33 @@ export function createPdfViewer(container, opts = {}) {
     p.renderedZoom = null;
   }
 
+  let relayoutGuard = false;
   function relayoutPages() {
-    if (!pdfDoc || !pages.length) return;
-    const scale = getEffectiveZoom();
-    for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      p.wrapper.style.width = `${Math.round(p.viewport.width * scale)}px`;
-      p.wrapper.style.height = `${Math.round(p.viewport.height * scale)}px`;
-      if (p.rendered) clearPage(i);
+    if (relayoutGuard || !pdfDoc || !pages.length || suspended) return;
+    relayoutGuard = true;
+    try {
+      const scale = getEffectiveZoom();
+      let zoomChanged = false;
+      for (let i = 0; i < pages.length; i++) {
+        const p = pages[i];
+        const w = Math.round(p.viewport.width * scale);
+        const h = Math.round(p.viewport.height * scale);
+        p.wrapper.style.width = `${w}px`;
+        p.wrapper.style.height = `${h}px`;
+        if (p.rendered && Math.abs(p.renderedZoom - scale) > 0.001) {
+          clearPage(i);
+          zoomChanged = true;
+        }
+      }
+      if (zoomChanged || !observer) {
+        if (observer) observer.disconnect();
+        setupObserver();
+      } else {
+        renderVisiblePages();
+      }
+    } finally {
+      relayoutGuard = false;
     }
-    if (observer) observer.disconnect();
-    setupObserver();
   }
 
   // ── Load ─────────────────────────────────────────────────────────
@@ -676,7 +706,9 @@ export function createPdfViewer(container, opts = {}) {
     }
 
     if (cachedPdfData) {
+      const savedAnnotations = annotations.slice();
       await loadPdf(cachedPdfData);
+      if (savedAnnotations.length) setAnnotations(savedAnnotations);
     }
   }
 
@@ -701,9 +733,12 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   let resizeObserver = null;
+  let resizeTimer = null;
   try {
     resizeObserver = new ResizeObserver(() => {
-      if (layoutMode !== MODE_FIXED && pages.length) relayoutPages();
+      if (layoutMode === MODE_FIXED || !pages.length || suspended) return;
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { resizeTimer = null; relayoutPages(); }, 80);
     });
     resizeObserver.observe(scrollArea);
   } catch (_) {}
