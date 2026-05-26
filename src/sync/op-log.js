@@ -304,11 +304,16 @@ async function executeDeleteDir(state, op, dbx) {
 async function executeUpload(state, op, dbx) {
   if (!op.internalId) throw new Error("upload op missing internalId");
 
-  // Re-read content fresh — the latest user edit always wins.
-  const file = await tauriInvoke("load_file", { id: op.internalId }).catch(() => null);
-  if (!file) {
-    // File deleted locally before upload drained. Drop the op silently.
-    return;
+  // PDFs are binary — load via the PDF manager, not the file store.
+  const isPdfOp = op.path?.endsWith(".pdf");
+  let file;
+  if (isPdfOp) {
+    const pdfBytes = await tauriInvoke("load_pdf", { fileId: op.internalId }).catch(() => null);
+    if (!pdfBytes) return;
+    file = { id: op.internalId, content: pdfBytes, name: "" };
+  } else {
+    file = await tauriInvoke("load_file", { id: op.internalId }).catch(() => null);
+    if (!file) return;
   }
 
   // Hash gate: if the disk content matches what we last synced, the op
@@ -317,7 +322,7 @@ async function executeUpload(state, op, dbx) {
   // successful so it drains out of the queue.
   const { sha256Hex, markOurFileRev } = await import("./meta-sync.js");
   const info = await tauriInvoke("get_sync_file_info", { internalId: op.internalId }).catch(() => null);
-  if (info && info.lastSyncedHash) {
+  if (!isPdfOp && info && info.lastSyncedHash) {
     const hash = await sha256Hex(file.content);
     if (hash && hash === info.lastSyncedHash) return;
   }
@@ -340,7 +345,7 @@ async function executeUpload(state, op, dbx) {
       const node = findNodeByFileId(state.fileTree, op.internalId);
       const ctx = node ? findSyncContext(state.fileTree, node.id) : null;
       if (ctx?.relativePath && node) {
-        const ext = node.type === "notebook" ? ".hushnote" : ".md";
+        const ext = node.type === "notebook" ? ".hushnote" : (node.type === "pdf" ? ".pdf" : ".md");
         path = `${ctx.relativePath}${ext}`;
       }
     } catch (e) { /* fall back to op.path */ }
@@ -353,7 +358,10 @@ async function executeUpload(state, op, dbx) {
   const updateRev = info?.lastKnownRev || "";
   let resp;
   try {
-    if (path.endsWith(".hushnote")) {
+    if (isPdfOp) {
+      const bytes = file.content instanceof Uint8Array ? file.content : new Uint8Array(file.content);
+      resp = await dbx.uploadBinary(fullPath, bytes, updateRev);
+    } else if (path.endsWith(".hushnote")) {
       const { packNotebook } = await import("./notebook-sync.js");
       const zipData = await packNotebook(file.content);
       resp = await dbx.uploadBinary(fullPath, zipData, updateRev);

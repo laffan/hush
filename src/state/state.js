@@ -2,7 +2,7 @@
  * Central application state management
  */
 
-import { findNode } from "./tree-helpers.js";
+import { findNode, findNodeByFileId } from "./tree-helpers.js";
 import { openProject as _openProject, saveProjectContent as _saveProjectContent } from "./state-project.js";
 import { createDefaultSettings } from "./state-defaults.js";
 import * as _modes from "./state-modes.js";
@@ -57,6 +57,7 @@ export class AppState {
     this.currentFileId = null;
     this.currentProjectId = null; // When viewing a project
     this.currentNotebookFileId = null; // When viewing a notebook
+    this.currentPdfFileId = null; // When viewing a PDF
     this.currentLocalSync = null; // When viewing a Local Sync file
     this.files = [];
     this.fileTree = []; // Tree of TreeNode objects
@@ -207,8 +208,10 @@ export class AppState {
           const lastProjectId = this.settings.lastProjectId;
           const lastFileId = this.settings.lastFileId;
           const lastNotebookId = this.settings.lastNotebookId;
-          if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
-            // Notebook restore is deferred to main.js via "notebook-open" event
+          const lastPdfId = this.settings.lastPdfId;
+          if (lastPdfId && findNodeByFileId(this.fileTree, lastPdfId)) {
+            this.currentPdfFileId = lastPdfId;
+          } else if (lastNotebookId && this.files.some(f => f.id === lastNotebookId)) {
             this.currentNotebookFileId = lastNotebookId;
           } else if (lastProjectId && findNode(this.fileTree, lastProjectId)) {
             await this.openProject(lastProjectId);
@@ -437,6 +440,8 @@ export class AppState {
    */
   newFile(parentId = null, opts = {}) { return _files.newFile(this, parentId, opts); }
   openFile(id) { return _files.openFile(this, id); }
+  openPdf(fileId) { return _files.openPdf(this, fileId); }
+  importPdf(name, bytes, parentId, opts = {}) { return _files.importPdf(this, name, bytes, parentId, opts); }
 
   // ===== Multi-select =====
   /** Replace the current selection with the given list of doc fileIds.

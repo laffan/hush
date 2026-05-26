@@ -133,14 +133,15 @@ export async function newFile(state, parentId = null, opts = {}) {
 }
 
 export async function openFile(state, id) {
-  // Ratchet mode pins the user to the active file — opening another
-  // would let them step around the forward-only lock.
   if (state.ratchetMode) return;
   if (state.dirty) await state.saveCurrentFile();
-  // Unmount any active notebook
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
+  }
+  if (state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
   }
   state.currentProjectId = null;
   state.projectDocIds = [];
@@ -270,13 +271,64 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
   }
 }
 
-export async function openNotebook(state, fileId) {
+export async function openPdf(state, fileId) {
   if (state.ratchetMode) return;
-  // Save current file/notebook before switching
   if (state.dirty) await state.saveCurrentFile();
   if (state.currentNotebookFileId) {
-    // Unmount the current notebook (save handled by notebook-bridge)
     state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
+  if (state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+  }
+
+  state.currentFileId = null;
+  state.currentProjectId = null;
+  state.projectDocIds = [];
+  state.currentNotebookFileId = null;
+  state.currentPdfFileId = fileId;
+  state.currentLocalSync = null;
+
+  state.emit("pdf-open", fileId);
+  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: null, lastPdfId: fileId });
+  state.recordActiveDeskLastFile(fileId, "pdf");
+}
+
+export async function importPdf(state, name, bytes, parentId = null, opts = {}) {
+  const openImmediately = opts.openImmediately !== false;
+  if (openImmediately && state.dirty) await state.saveCurrentFile();
+  const targetParent = parentId || state.getInboxId();
+  const finalName = uniqueChildName(findNode(state.fileTree, targetParent), name, "pdf");
+  const fileId = crypto.randomUUID();
+  if (IS_TAURI) {
+    try {
+      await tauriInvoke("save_pdf", { fileId, bytes: Array.from(bytes) });
+    } catch (e) { console.error("Save PDF failed:", e); return; }
+  }
+  const treeNode = {
+    id: crypto.randomUUID(), type: "pdf", name: finalName, fileId,
+    children: [], flagged: false,
+  };
+  if (opts.zoteroAttKey) treeNode.zoteroAttKey = opts.zoteroAttKey;
+  insertNode(state.fileTree, treeNode, targetParent, findNode);
+  await state.saveFileTree();
+  state.syncCreateFile(treeNode.id, fileId, null);
+  if (openImmediately) {
+    await openPdf(state, fileId);
+  }
+  state.emit("files-changed");
+  return { fileId, name: finalName };
+}
+
+export async function openNotebook(state, fileId) {
+  if (state.ratchetMode) return;
+  if (state.dirty) await state.saveCurrentFile();
+  if (state.currentNotebookFileId) {
+    state.emit("notebook-unmount");
+  }
+  if (state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
   }
 
   state.currentFileId = null;

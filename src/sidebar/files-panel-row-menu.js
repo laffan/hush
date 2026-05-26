@@ -78,7 +78,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     const target = nodeType === "folder" ? "project" : "folder";
     entries.push({ action: "convert-container", label: `Convert to ${target}`, targetType: target });
   }
-  if (!(isSpecial || isImage)) {
+  if (!(isSpecial || isImage || nodeType === "pdf")) {
     entries.push({ action: "duplicate", label: "Duplicate" });
   }
   if (!isSpecial) {

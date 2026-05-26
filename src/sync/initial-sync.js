@@ -29,8 +29,14 @@ async function tauriInvoke(cmd, args) {
 }
 
 function isNotebookPath(p) { return p.endsWith(".hushnote"); }
+function isPdfPath(p) { return p.endsWith(".pdf"); }
 
 async function uploadContent(dbx, fullPath, content, relativePath) {
+  if (isPdfPath(relativePath)) {
+    const bytes = typeof content === "string" ? null : content;
+    if (bytes) return dbx.uploadBinary(fullPath, bytes);
+    return;
+  }
   if (isNotebookPath(relativePath)) {
     const { packNotebook } = await import("./notebook-sync.js");
     const zipData = await packNotebook(content);
@@ -40,6 +46,9 @@ async function uploadContent(dbx, fullPath, content, relativePath) {
 }
 
 async function downloadContent(dbx, dropboxPath, relativePath) {
+  if (isPdfPath(relativePath)) {
+    return dbx.downloadBinary(dropboxPath);
+  }
   if (isNotebookPath(relativePath)) {
     const { unpackNotebook } = await import("./notebook-sync.js");
     const zipData = await dbx.downloadBinary(dropboxPath);

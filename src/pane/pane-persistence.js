@@ -120,13 +120,14 @@ export async function restorePanes(deps) {
       const folders = appState.settings?.localSyncFolders || [];
       const stillMounted = folders.some((f) => f.id === s.localSync.folderId);
       if (!stillMounted) continue;
+    } else if (s.fileType === "pdf") {
+      const { findNodeByFileId } = await import("../state/tree-helpers.js");
+      const node = findNodeByFileId(appState.fileTree, s.fileId);
+      if (!node) continue;
+      resolvedName = node.name || s.fileName || "PDF";
     } else {
-      // Resolve current file name (may have been renamed since persist).
-      // Tree node is canonical — the FileEntry.name on disk is an
-      // implementation detail that can drift (e.g. notebook FileEntries
-      // inherit "Untitled" since their on-disk name is never user-facing).
       const file = (appState.files || []).find((f) => f.id === s.fileId);
-      if (!file) continue; // File was deleted — drop pane
+      if (!file) continue;
       const { findNodeByFileId } = await import("../state/tree-helpers.js");
       const node = findNodeByFileId(appState.fileTree, s.fileId);
       resolvedName = node?.name || s.fileName || file.name || "Untitled";

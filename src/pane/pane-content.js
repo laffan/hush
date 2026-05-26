@@ -50,6 +50,8 @@ export async function loadPaneContent(pane) {
     await loadDocumentPane(pane);
   } else if (pane.fileType === "notebook") {
     await loadNotebookPane(pane);
+  } else if (pane.fileType === "pdf") {
+    await loadPdfPane(pane);
   } else if (pane.fileType === "zotero-highlights") {
     const { mountZoteroHighlightPane } = await import("../zotero/highlight-pane.js");
     await mountZoteroHighlightPane(pane, appState);
@@ -274,11 +276,65 @@ async function loadNotebookPane(pane) {
   }
 }
 
+async function loadPdfPane(pane) {
+  const { createPdfViewer } = await import("../pdf/pdf-viewer.js");
+  const viewer = createPdfViewer(pane._content, { mode: "pane" });
+  pane.pdfViewer = viewer;
+
+  let bytes;
+  try {
+    if (IS_TAURI) {
+      bytes = await tauriInvoke("load_pdf", { fileId: pane.fileId });
+    }
+  } catch (e) {
+    console.error("Failed to load PDF pane:", e);
+  }
+
+  if (bytes) {
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    await viewer.loadPdf(data);
+  }
+
+  if (typeof pane.editorScrollTop === "number" && pane.editorScrollTop > 0) {
+    requestAnimationFrame(() => {
+      try { viewer.setScrollTop(pane.editorScrollTop); } catch (_) {}
+    });
+  }
+
+  if (viewer.onScroll) {
+    let scrollTimer = null;
+    pane._scrollListenerCleanup = viewer.onScroll(() => {
+      const next = viewer.getScrollTop();
+      if (next === pane.editorScrollTop) return;
+      pane.editorScrollTop = next;
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null;
+        import("./pane-persistence.js").then((m) => m.schedulePersist?.()).catch(() => {});
+      }, 200);
+    });
+  }
+
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
+  const node = findNodeByFileId(appState.fileTree, pane.fileId);
+  if (node?.zoteroAttKey) {
+    const userId = appState.settings?.zoteroUserId;
+    const apiKey = appState.settings?.zoteroApiKey;
+    if (userId && apiKey) {
+      try {
+        const { getAnnotations } = await import("../zotero-annotations.js");
+        const { annotations } = await getAnnotations(node.zoteroAttKey, userId, apiKey);
+        viewer.setAnnotations(annotations);
+      } catch (e) {
+        console.error("Failed to load PDF pane annotations:", e);
+      }
+    }
+  }
+}
+
 // ── Saving ────────────────────────────────────────────────────────────
 export async function savePaneContent(pane) {
-  // Zotero highlight panes have no backing document; their state lives
-  // in the local annotation cache (written by the fetcher) and the pane
-  // payload persisted in settings.persistedPanes.
+  if (pane.fileType === "pdf") { pane.dirty = false; return; }
   if (pane.fileType === "zotero-highlights") { pane.dirty = false; return; }
   if (!pane.dirty) return;
   pane.dirty = false;

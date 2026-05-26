@@ -30,7 +30,9 @@ async function tauriInvoke(cmd, args) {
 }
 
 function extensionForType(nodeType) {
-  return nodeType === "notebook" ? ".hushnote" : ".md";
+  if (nodeType === "notebook") return ".hushnote";
+  if (nodeType === "pdf") return ".pdf";
+  return ".md";
 }
 
 function syncEnabled(state) {
@@ -48,7 +50,7 @@ export async function syncRenameNode(state, nodeId, oldName, nodeType) {
   const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
 
   try {
-    if (nodeType === "document" || nodeType === "notebook") {
+    if (nodeType === "document" || nodeType === "notebook" || nodeType === "pdf") {
       const node = findNode(state.fileTree, nodeId);
       if (!node?.fileId) return;
       const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
@@ -88,7 +90,7 @@ export async function syncDeleteNode(state, nodeId) {
   if (!node) return;
 
   try {
-    if ((node.type === "document" || node.type === "notebook") && node.fileId) {
+    if ((node.type === "document" || node.type === "notebook" || node.type === "pdf") && node.fileId) {
       const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
       if (!info) return;
       await enqueueDelete({ internalId: node.fileId, path: info.relativePath });

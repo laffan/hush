@@ -17,6 +17,7 @@ mod files;
 mod images;
 mod local_sync;
 mod multi_window;
+mod pdfs;
 mod settings;
 mod snapshots;
 mod sync;
@@ -29,6 +30,7 @@ use files::FileManager;
 use images::ImageManager;
 use local_sync::LocalSyncManager;
 use multi_window::WindowRegistry;
+use pdfs::PdfManager;
 use settings::AppSettings;
 use snapshots::SnapshotManager;
 use sync::SyncManager;
@@ -38,6 +40,7 @@ pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub file_manager: Mutex<FileManager>,
     pub image_manager: Mutex<ImageManager>,
+    pub pdf_manager: Mutex<PdfManager>,
     pub snapshot_manager: Mutex<SnapshotManager>,
     pub sync_manager: Mutex<SyncManager>,
     pub zotero_manager: Mutex<ZoteroManager>,
@@ -59,7 +62,7 @@ pub struct TreeNode {
     pub id: String,
     pub name: String,
     #[serde(rename = "type")]
-    pub node_type: String, // "document" | "folder" | "project" | "notebook"
+    pub node_type: String, // "document" | "folder" | "project" | "notebook" | "pdf"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_id: Option<String>, // for documents and notebooks — points to files/{uuid}.json
     // Always serialized (even when empty) so the JS frontend always
@@ -78,6 +81,10 @@ pub struct TreeNode {
     // joined buffer) instead of feeding the joined editor stream.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub use_as_note: bool,
+    // PDF-only — Zotero attachment key for PDFs imported from Zotero.
+    // Enables annotation fetch + overlay via the Zotero API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zotero_att_key: Option<String>,
 }
 
 pub fn get_data_dir() -> PathBuf {
@@ -181,6 +188,7 @@ pub fn run() {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
             image_manager: Mutex::new(image_manager),
+            pdf_manager: Mutex::new(PdfManager::new(&data_dir)),
             snapshot_manager: Mutex::new(snapshot_manager),
             sync_manager: Mutex::new(sync_manager),
             zotero_manager: Mutex::new(zotero_manager),
@@ -424,6 +432,12 @@ pub fn run() {
             sync_commands::backfill_remote_id,
             sync_commands::update_sync_state,
             sync_commands::register_synced_file_full,
+            commands::pdfs::save_pdf,
+            commands::pdfs::load_pdf,
+            commands::pdfs::delete_pdf,
+            commands::pdfs::pdf_exists,
+            commands::pdfs::save_pdf_meta,
+            commands::pdfs::load_pdf_meta,
             commands::zotero::save_zotero_references,
             commands::zotero::load_zotero_references,
             commands::zotero::save_zotero_pdf,

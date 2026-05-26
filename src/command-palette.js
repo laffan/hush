@@ -251,6 +251,22 @@ function buildCommands(state) {
         const { openZoteroHighlightPane } = await import("./zotero/highlight-pane.js");
         openZoteroHighlightPane(s);
       } },
+    { id: "zotero-save-pdf", label: "Zotero: Save PDF", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.settings.zoteroUserId || !s.settings.zoteroApiKey,
+      action: async (s) => {
+        const { openZoteroSavePdfModal } = await import("./pdf/zotero-save-pdf.js");
+        openZoteroSavePdfModal(s);
+      } },
+    { id: "pdf-update-annotations", label: "PDF: Update Annotations", icon: icons.zotero, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => {
+        if (!s.currentPdfFileId) return true;
+        const node = findNodeByFileId(s.fileTree, s.currentPdfFileId);
+        return !node?.zoteroAttKey;
+      },
+      action: async (s) => {
+        const { refreshPdfAnnotations } = await import("./pdf/pdf-bridge.js");
+        await refreshPdfAnnotations(s);
+      } },
     { id: "zotero-update", label: "Update Zotero References", icon: icons.zotero, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings.zoteroUserId || !s.settings.zoteroApiKey,
       action: async (s) => {

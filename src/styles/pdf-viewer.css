@@ -1,0 +1,155 @@
+/* ===== PDF Viewer ===== */
+.pdf-viewer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.pdf-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 0;
+  gap: 12px;
+  background: rgba(128, 128, 128, 0.06);
+}
+
+.pdf-page-wrapper {
+  position: relative;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.pdf-page-canvas {
+  display: block;
+}
+
+.pdf-page-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pdf-page-placeholder::after {
+  content: "";
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(128, 128, 128, 0.3);
+  border-top-color: rgba(128, 128, 128, 0.7);
+  border-radius: 50%;
+  animation: pdf-spin 0.8s linear infinite;
+}
+@keyframes pdf-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== Zoom toolbar ===== */
+.pdf-zoom-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel-bg, var(--bg));
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  color: var(--fg);
+  flex-shrink: 0;
+}
+
+.pdf-zoom-btn {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.06);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s;
+}
+.pdf-zoom-btn:hover {
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.pdf-zoom-label {
+  min-width: 36px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--sidebar-fg, var(--fg));
+}
+
+.pdf-page-indicator {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--sidebar-fg, var(--fg));
+  opacity: 0.8;
+}
+
+/* ===== Annotation overlays ===== */
+.pdf-annot-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pdf-annot-highlight {
+  position: absolute;
+  opacity: 0.3;
+  mix-blend-mode: multiply;
+  border-radius: 1px;
+  pointer-events: auto;
+  cursor: default;
+}
+.pdf-annot-highlight:hover {
+  opacity: 0.5;
+}
+
+/* ===== Error state ===== */
+.pdf-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--sidebar-fg, var(--fg));
+  opacity: 0.6;
+}
+
+/* ===== PDF container in main area ===== */
+#pdf-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+#pdf-container.hidden {
+  display: none;
+}
+
+/* Hide editor chrome when PDF is active (mirrors notebook-mode) */
+.pdf-mode #editor-container,
+.pdf-mode #drag-region,
+.pdf-mode #right-panel-overlay,
+.pdf-mode .sidebar-trigger,
+.pdf-mode .right-panel-trigger {
+  display: none !important;
+}
+body.pdf-mode .column-resizer {
+  display: none !important;
+}

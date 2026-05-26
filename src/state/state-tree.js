@@ -67,12 +67,16 @@ export async function deleteTreeNode(state, nodeId) {
     if (trash) (trash.children || (trash.children = [])).push(removed);
   }
   await state.saveFileTree();
-  const { docFileIds } = collectTypedFileIds(node);
+  const { docFileIds, pdfFileIds } = collectTypedFileIds(node);
   if (docFileIds.includes(state.currentNotebookFileId)) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
   }
-  if (docFileIds.includes(state.currentFileId) || nodeId === state.currentProjectId || docFileIds.includes(state.currentNotebookFileId)) {
+  if (pdfFileIds.includes(state.currentPdfFileId)) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
+  }
+  if (docFileIds.includes(state.currentFileId) || nodeId === state.currentProjectId || docFileIds.includes(state.currentNotebookFileId) || pdfFileIds.includes(state.currentPdfFileId)) {
     state.currentProjectId = null; state.projectDocIds = [];
     if (state.files.length > 0) await state.openFile(state.files[0].id);
     else await state.newFile();
@@ -83,9 +87,10 @@ export async function deleteTreeNode(state, nodeId) {
 async function permanentDeleteNode(state, nodeId) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
-  const { docFileIds, imageFileIds } = collectTypedFileIds(node);
+  const { docFileIds, imageFileIds, pdfFileIds } = collectTypedFileIds(node);
   await deleteDocFilesByIds(state, docFileIds);
   await deleteImageFilesByIds(state, imageFileIds);
+  await deletePdfFilesByIds(state, pdfFileIds);
   removeNode(state.fileTree, nodeId);
   await finalizeFileDeletion(state, docFileIds);
 }
@@ -101,13 +106,16 @@ export async function emptyTrash(state, deskId) {
   if (!trash?.children?.length) return;
   const docFileIds = [];
   const imageFileIds = [];
+  const pdfFileIds = [];
   for (const child of trash.children) {
     const typed = collectTypedFileIds(child);
     docFileIds.push(...typed.docFileIds);
     imageFileIds.push(...typed.imageFileIds);
+    pdfFileIds.push(...typed.pdfFileIds);
   }
   await deleteDocFilesByIds(state, docFileIds);
   await deleteImageFilesByIds(state, imageFileIds);
+  await deletePdfFilesByIds(state, pdfFileIds);
   trash.children = [];
   await finalizeFileDeletion(state, docFileIds);
 }
@@ -121,14 +129,16 @@ function clearFlaggedRecursive(node) {
 function collectTypedFileIds(node) {
   const docFileIds = [];
   const imageFileIds = [];
+  const pdfFileIds = [];
   function walk(n) {
     if (!n) return;
     if ((n.type === "document" || n.type === "notebook") && n.fileId) docFileIds.push(n.fileId);
     else if (n.type === "image" && n.fileId) imageFileIds.push(n.fileId);
+    else if (n.type === "pdf" && n.fileId) pdfFileIds.push(n.fileId);
     if (n.children) n.children.forEach(walk);
   }
   walk(node);
-  return { docFileIds, imageFileIds };
+  return { docFileIds, imageFileIds, pdfFileIds };
 }
 
 async function deleteDocFilesByIds(state, fileIds) {
@@ -161,6 +171,14 @@ async function deleteImageFilesByIds(state, fileIds) {
   }
 }
 
+async function deletePdfFilesByIds(state, fileIds) {
+  for (const fid of fileIds) {
+    if (IS_TAURI) {
+      try { await tauriInvoke("delete_pdf", { fileId: fid }); } catch (e) { console.error("Delete PDF:", e); }
+    }
+  }
+}
+
 async function finalizeFileDeletion(state, fileIds) {
   await state.saveFileTree();
   if (IS_TAURI) state.files = await tauriInvoke("list_files");
@@ -169,7 +187,11 @@ async function finalizeFileDeletion(state, fileIds) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
   }
-  if (fileIds.includes(state.currentFileId) || fileIds.includes(state.currentNotebookFileId)) {
+  if (fileIds.includes(state.currentPdfFileId)) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
+  }
+  if (fileIds.includes(state.currentFileId) || fileIds.includes(state.currentNotebookFileId) || fileIds.includes(state.currentPdfFileId)) {
     state.currentProjectId = null; state.projectDocIds = [];
     if (state.files.length > 0) await state.openFile(state.files[0].id);
     else await state.newFile();
@@ -204,7 +226,7 @@ export async function renameTreeNode(state, nodeId, newName) {
   const finalName = uniqueChildName(parent, newName, node.type, nodeId);
   if (finalName === oldName) return;
   node.name = finalName;
-  if ((node.type === "document" || node.type === "notebook") && node.fileId) {
+  if ((node.type === "document" || node.type === "notebook" || node.type === "pdf") && node.fileId) {
     if (IS_TAURI) {
       try { await tauriInvoke("rename_file", { id: node.fileId, name: finalName }); state.files = await tauriInvoke("list_files"); }
       catch (e) { console.error("Rename failed:", e); }

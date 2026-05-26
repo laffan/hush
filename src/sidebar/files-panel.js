@@ -64,6 +64,7 @@ function getIcon(item) {
   if (item.flagged) {
     return typeIcons[item.type + "Flagged"] || typeIcons[item.type] || typeIcons.document;
   }
+  if (item.type === "pdf") return item.flagged ? typeIcons.pdfFlagged : typeIcons.pdf;
   if (item.lockedStyleId && item.type === "document") return typeIcons.documentLocked;
   return typeIcons[item.type] || typeIcons.document;
 }
@@ -140,11 +141,8 @@ export function createFilesPanel(container, state, hidePanel) {
       if (targetItem === null) return false;
       if (isImagesId(targetItem.id)) return draggedItem.type === "image";
       if (targetItem.type === "folder") return true;
-      if (targetItem.type === "desk") return ["document", "notebook", "folder", "project"].includes(draggedItem.type);
-      // Projects accept docs (joined into the editor buffer), notebooks
-      // (the supplementary sidebar block under the dashed line), and
-      // nested projects.
-      if (targetItem.type === "project") return ["document", "notebook", "project"].includes(draggedItem.type);
+      if (targetItem.type === "desk") return ["document", "notebook", "pdf", "folder", "project"].includes(draggedItem.type);
+      if (targetItem.type === "project") return ["document", "notebook", "pdf", "project"].includes(draggedItem.type);
       return false;
     },
     canDrag: (item) => {
@@ -203,7 +201,7 @@ export function createFilesPanel(container, state, hidePanel) {
       // right open method. Anything else (folder, project, image, …)
       // falls through to its normal click handler and clears any
       // active selection on the way.
-      const isMultiSelectable = (item.type === "document" || item.type === "notebook") && item.fileId;
+      const isMultiSelectable = (item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId;
       if (isMultiSelectable) {
         if (event && (event.shiftKey || event.metaKey || event.ctrlKey)) {
           const visible = collectVisibleDocs(
@@ -218,6 +216,7 @@ export function createFilesPanel(container, state, hidePanel) {
         // type-appropriate path.
         if (state.selectedDocIds.length) state.clearSelectedDocs();
         if (item.type === "notebook") state.openNotebook(item.fileId);
+        else if (item.type === "pdf") state.openPdf(item.fileId);
         else state.openFile(item.fileId);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         return;
@@ -258,7 +257,7 @@ export function createFilesPanel(container, state, hidePanel) {
         });
         return;
       }
-      if ((item.type === "document" || item.type === "notebook") && item.fileId) {
+      if ((item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId) {
         createPane(item.fileId, item.name, item.type, clientX, clientY);
       }
     },
@@ -552,6 +551,9 @@ function isItemActive(item, state) {
   }
   if (item.type === "notebook" && item.fileId) {
     return item.fileId === state.currentNotebookFileId;
+  }
+  if (item.type === "pdf" && item.fileId) {
+    return item.fileId === state.currentPdfFileId;
   }
   if (item.type === "project") return item.id === state.currentProjectId;
   return false;

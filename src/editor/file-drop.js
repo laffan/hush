@@ -17,6 +17,7 @@
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic", ".heif", ".avif", ".tif", ".tiff"];
 const NOTEBOOK_EXTENSIONS = [".hushnote"];
+const PDF_EXTENSIONS = [".pdf"];
 
 function getExtension(name) {
   const i = name.lastIndexOf(".");
@@ -31,8 +32,12 @@ function isNotebookFile(file) {
   return NOTEBOOK_EXTENSIONS.includes(getExtension(file.name));
 }
 
+function isPdfFile(file) {
+  return PDF_EXTENSIONS.includes(getExtension(file.name)) || file.type === "application/pdf";
+}
+
 function isImportableFile(file) {
-  return isTextFile(file) || isNotebookFile(file);
+  return isTextFile(file) || isNotebookFile(file) || isPdfFile(file);
 }
 
 function isImageFile(file) {
@@ -275,6 +280,10 @@ export function setupFileDrop(state) {
  *  unpacked via the same sync helper Dropbox uses). */
 async function importFileIntoTree(state, file, parentId) {
   const baseName = file.name.replace(/\.[^.]+$/, "") || "Imported";
+  if (isPdfFile(file)) {
+    const buf = await file.arrayBuffer();
+    return state.importPdf(baseName, new Uint8Array(buf), parentId, { openImmediately: false });
+  }
   if (isNotebookFile(file)) {
     const buf = await file.arrayBuffer();
     const { unpackNotebook } = await import("../sync/notebook-sync.js");

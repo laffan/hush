@@ -96,17 +96,34 @@ async function init() {
   // region) via CSS so the notebook canvas occupies the full space.
 
   const appEl = document.getElementById("app");
+  const pdfContainer = document.getElementById("pdf-container");
 
   function showEditor() {
     appEl.classList.remove("notebook-mode");
+    appEl.classList.remove("pdf-mode");
     document.body.classList.remove("notebook-mode");
+    document.body.classList.remove("pdf-mode");
     notebookContainer.classList.add("hidden");
+    pdfContainer.classList.add("hidden");
   }
 
   function showNotebook() {
     appEl.classList.add("notebook-mode");
+    appEl.classList.remove("pdf-mode");
     document.body.classList.add("notebook-mode");
+    document.body.classList.remove("pdf-mode");
     notebookContainer.classList.remove("hidden");
+    pdfContainer.classList.add("hidden");
+    state.emit("hide-outline");
+  }
+
+  function showPdf() {
+    appEl.classList.remove("notebook-mode");
+    appEl.classList.add("pdf-mode");
+    document.body.classList.remove("notebook-mode");
+    document.body.classList.add("pdf-mode");
+    notebookContainer.classList.add("hidden");
+    pdfContainer.classList.remove("hidden");
     state.emit("hide-outline");
   }
 
@@ -114,6 +131,16 @@ async function init() {
   state.on("notebook-unmount", async () => {
     const result = await unmountNotebook();
     if (result) state.syncFileToExternal(result.fileId, result.content);
+    showEditor();
+  });
+  state.on("pdf-open", async (fileId) => {
+    const { mountPdf } = await import("./pdf/pdf-bridge.js");
+    await mountPdf(pdfContainer, fileId, state);
+    showPdf();
+  });
+  state.on("pdf-unmount", async () => {
+    const { unmountPdf } = await import("./pdf/pdf-bridge.js");
+    await unmountPdf();
     showEditor();
   });
   // Notebook minimap + desks toggle bridge — both wire themselves to AppState.
@@ -135,7 +162,7 @@ async function init() {
   state.on("notebook-sync-reload", (content) => {
     reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));
   });
-  state.on("file-opened", () => { if (!state.currentNotebookFileId) showEditor(); });
+  state.on("file-opened", () => { if (!state.currentNotebookFileId && !state.currentPdfFileId) showEditor(); });
 
   // Notebook commands from the command palette
   state.on("notebook-toggle-shelf", () => {
@@ -166,9 +193,12 @@ async function init() {
   // Load current file content into the newly created editor
   // (init() already opened the last file/project — re-open only if editor wasn't set yet)
   if (state.currentNotebookFileId) {
-    // Restore last opened notebook (minimap auto-mounts via wireMinimap)
     await mountNotebook(notebookContainer, state.currentNotebookFileId, state);
     showNotebook();
+  } else if (state.currentPdfFileId) {
+    const { mountPdf } = await import("./pdf/pdf-bridge.js");
+    await mountPdf(pdfContainer, state.currentPdfFileId, state);
+    showPdf();
   } else if (state.currentProjectId) {
     await state.openProject(state.currentProjectId);
   } else if (state.currentFileId) {
