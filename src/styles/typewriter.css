@@ -11,9 +11,11 @@
   z-index: var(--z-shelf);
 }
 
-/* Hide the global boundary when a pane is focused — the pane renders
-   its own scoped line inside .cm-scroller. */
-body:has(.floating-pane.active) .typewriter-boundary {
+/* Hide the global boundary when a pane is focused (the pane renders
+   its own scoped line) or when a notebook is the active editor
+   (notebooks don't support typewriter mode). */
+body:has(.floating-pane.active) .typewriter-boundary,
+body.notebook-mode .typewriter-boundary {
   opacity: 0 !important;
   pointer-events: none;
 }

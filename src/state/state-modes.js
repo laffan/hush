@@ -25,6 +25,7 @@ export function togglePrivate(state) {
 
 export function toggleTypewriter(state) {
   if (state.ratchetMode) return;
+  if (state.currentNotebookFileId) return;
   state.typewriterMode = !state.typewriterMode;
   state.emit("mode-changed");
   state.updateSettings({ typewriterMode: state.typewriterMode });
