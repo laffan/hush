@@ -399,8 +399,8 @@ body.typing-fade .sidebar-grip-chevron {
   height: 18px;
   border-radius: 50%;
   background: conic-gradient(var(--fg, #888) var(--progress, 0%), rgba(128,128,128,0.25) var(--progress, 0%));
-  -webkit-mask: radial-gradient(circle, transparent 5.5px, black 6px);
-  mask: radial-gradient(circle, transparent 5.5px, black 6px);
+  -webkit-mask: radial-gradient(circle, transparent 6.5px, black 7px);
+  mask: radial-gradient(circle, transparent 6.5px, black 7px);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;

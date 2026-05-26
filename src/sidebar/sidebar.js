@@ -118,8 +118,11 @@ export function createSidebar(state) {
   new MutationObserver(syncGripGlyph).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
   syncGripGlyph();
 
-  // Dropbox sync indicator — in the footer sync group, alongside
-  // progress indicators. Hidden unless sync is configured.
+  // Zotero progress center sits left of the Dropbox icon so Dropbox
+  // stays farthest right in the sync group.
+  mountProgressCenter(syncGroup, state);
+
+  // Dropbox sync indicator — refresh-circle icon that rotates on sync.
   const syncDot = document.createElement("div");
   syncDot.className = "sidebar-sync-dot";
   syncDot.setAttribute("aria-hidden", "true");
@@ -143,7 +146,6 @@ export function createSidebar(state) {
   state.on("settings-changed", refreshSyncDot);
   state.on("dropbox-sync-success", pulseSyncDot);
   refreshSyncDot();
-  mountProgressCenter(syncGroup, state);
 
   // Typing-fade — hide the create / add affordances while the user is
   // actively typing in the doc editor. Pointer activity (mousemove /

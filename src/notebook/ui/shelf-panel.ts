@@ -22,7 +22,7 @@ interface ShelfNode {
    *  from the node's own label; for drag-area nodes it bubbles up from
    *  the first flagged text child. Used by `makeNodeRow` to paint the
    *  leading dot. */
-  flagHex?: string;
+  flagHexes?: string[];
 }
 
 /** Build a shelf-row label from a text shape's contents. Only the first
@@ -65,20 +65,20 @@ function getHushFlagColors(): Record<string, string> {
   return appState?.settings?.flagColors || {};
 }
 
-/** Find the first flag in a label and return its hex colour from the
- *  user's settings (undefined if no flag or no colour configured). The
- *  shelf uses this to paint the leading dot. */
-function firstFlagHex(label: string, flagColors: Record<string, string>): string | undefined {
+/** Return every unique flag hex colour found in a label. */
+function allFlagHexes(label: string, flagColors: Record<string, string>): string[] {
   const re = /==([^=]+?)==/g;
+  const seen = new Set<string>();
+  const result: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(label)) !== null) {
     const flag = m[1].match(SHELF_FLAG_RE);
     if (flag) {
       const c = flagColors[flag[1].toUpperCase()];
-      if (c) return c;
+      if (c && !seen.has(c)) { seen.add(c); result.push(c); }
     }
   }
-  return undefined;
+  return result;
 }
 
 /** Render a shelf-row label, painting `==highlight==` runs with the
@@ -223,18 +223,19 @@ export function createShelfPanel(
         const sorted = [...textChildren].sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
         if (sorted[0].type === "text") name = buildLabel(sorted[0].text, 40).label;
       }
-      // Bubble up: surface the first flag colour found among text children
-      // so the drag-area row shows a flag dot even when its own label has
-      // no flag marker.
+      // Bubble up: collect all flag colours from text children so the
+      // drag-area row shows flag dots even when its own label has none.
       const _flagColors = getHushFlagColors();
-      let daFlagHex: string | undefined;
+      const daFlagHexes: string[] = [];
+      const _seen = new Set<string>();
       for (const child of textChildren) {
         if (child.type === "text") {
-          const hex = firstFlagHex(buildLabel(child.text, 50).label, _flagColors);
-          if (hex) { daFlagHex = hex; break; }
+          for (const hex of allFlagHexes(buildLabel(child.text, 50).label, _flagColors)) {
+            if (!_seen.has(hex)) { _seen.add(hex); daFlagHexes.push(hex); }
+          }
         }
       }
-      result.push({ id: da.id, type: "drag-area", label: name, excerpt: "", color: da.type === "drag-area" ? da.strokeColor : null, shapeId: da.id, parentId: undefined, depth: 0, pocketed: !!da.pocketed, flagHex: daFlagHex });
+      result.push({ id: da.id, type: "drag-area", label: name, excerpt: "", color: da.type === "drag-area" ? da.strokeColor : null, shapeId: da.id, parentId: undefined, depth: 0, pocketed: !!da.pocketed, flagHexes: daFlagHexes.length ? daFlagHexes : undefined });
       if (!collapsed.has(da.id)) {
         const sortedChildren = [...children].sort((a, b) => { const ab = getShapeBounds(a); const bb = getShapeBounds(b); return ab.minY - bb.minY || ab.minX - bb.minX; });
         const scope = new Set(children.map((c) => c.id));
@@ -457,16 +458,12 @@ export function createShelfPanel(
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.4)" : "#999";
     const subtleBorder = theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa";
     const flagColors = getHushFlagColors();
-    const flagDotHex = firstFlagHex(node.label, flagColors) ?? node.flagHex;
+    const flagHexes = allFlagHexes(node.label, flagColors);
+    if (!flagHexes.length && node.flagHexes) flagHexes.push(...node.flagHexes);
     const isSelected = state.selectedIds.has(node.shapeId);
-    // Sky-blue tinted background + accent left rail for the row whose
-    // shape is currently selected on the canvas.
     const selectedBg = theme.variant === "dark" ? "rgba(120, 180, 255, 0.14)" : "rgba(66, 133, 244, 0.12)";
-    let leftBorder = node.color ? `3px solid ${node.color}` : "3px solid transparent";
-    if (flagDotHex && !node.color) leftBorder = `3px solid ${flagDotHex}`;
-    if (isSelected && !node.color && !flagDotHex) leftBorder = `3px solid ${theme.accent}`;
     const rowBg = isSelected ? selectedBg : "transparent";
-    const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", borderLeft: leftBorder, color: fg, background: rowBg } });
+    const row = h("div", { style: { display: "flex", alignItems: "center", gap: "4px", padding: "4px 0", cursor: "pointer", fontSize: "13px", borderBottom: `1px solid ${subtleBorder}`, paddingLeft: (node.depth * 16) + "px", color: fg, background: rowBg } });
     if (node.type === "drag-area") {
       row.appendChild(h("button", { text: collapsed.has(node.id) ? "\u25b8" : "\u25be", style: { border: "none", background: "none", cursor: "pointer", fontSize: "10px", color: muted, padding: "0", width: "16px" }, onClick: () => { if (collapsed.has(node.id)) collapsed.delete(node.id); else collapsed.add(node.id); rebuildBody(); } }));
     }
@@ -490,6 +487,11 @@ export function createShelfPanel(
         style: { flexShrink: "0", color: muted, fontSize: "11px", marginRight: "2px", lineHeight: "1" },
       });
       row.appendChild(arrow);
+    }
+    for (const hex of flagHexes) {
+      row.appendChild(h("span", {
+        style: { flexShrink: "0", width: "10px", height: "10px", borderRadius: "50%", background: hex, display: "inline-block" },
+      }));
     }
     row.setAttribute("data-shelf-row", "1");
     row.setAttribute("data-shape-id", node.shapeId);

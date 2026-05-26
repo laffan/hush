@@ -63,8 +63,11 @@ export function getMarkdownHighlight(normalizeHeaders, headingColor, headerScale
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "calc(var(--font-size) * 0.9)" },
     // Custom syntax: %% comments %% — content dimmed; markers nearly invisible.
     // Body opacity drives off --comment-opacity (user-controlled slider).
-    { tag: commentTag, opacity: "var(--comment-opacity, 0.5)" },
-    { tag: commentMarkTag, opacity: "var(--comment-mark-opacity, 0.33)" },
+    // Comment opacity is handled by the ViewPlugin in comment-plugins.js
+    // via inline style attributes (guarantees the user's slider always
+    // takes effect regardless of theme specificity).
+    { tag: commentTag },
+    { tag: commentMarkTag },
     // Custom syntax: == highlight == — highlighted background (flag-typed highlights get per-flag color from plugin)
     { tag: highlightTag, borderRadius: "2px" },
     { tag: highlightMarkTag, opacity: "0.2" },
