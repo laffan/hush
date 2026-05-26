@@ -56,6 +56,7 @@ export function createPaneEditor(container, appState, onChange, opts) {
 
   // React to mode toggles so panes track typewriter on/off.
   const onModeChanged = () => {
+    console.log("[pane-tw] mode-changed fired, typewriterMode:", appState.typewriterMode);
     applyPaneTypewriter(view, appState, container);
     // Nudge the DRY plugin by issuing a no-op dispatch so it
     // re-checks appState.dryMode on the next update cycle.
@@ -200,6 +201,21 @@ function applyPaneTypewriter(view, state, container) {
   scroller.classList.add("pane-typewriter-active");
   scroller.style.setProperty("--tw-line-top", targetY + "px");
   scroller.style.setProperty("--tw-line-opacity", String(state.settings.typewriterLineOpacity ?? 0.08));
+
+  console.log("[pane-tw] applied:", {
+    scrollDOM_class: scroller.className,
+    containerClass: container.className,
+    parentClass: scroller.parentElement?.className,
+    containerH: h,
+    targetY,
+    twLineTop: scroller.style.getPropertyValue("--tw-line-top"),
+    twLineOpacity: scroller.style.getPropertyValue("--tw-line-opacity"),
+    hasBeforePseudo: getComputedStyle(scroller, "::before").content,
+    beforeHeight: getComputedStyle(scroller, "::before").height,
+    beforePosition: getComputedStyle(scroller, "::before").position,
+    beforeTop: getComputedStyle(scroller, "::before").top,
+    beforeOpacity: getComputedStyle(scroller, "::before").opacity,
+  });
 
   requestAnimationFrame(() => scrollPaneCursorToTypewriter(view, state, container));
 }
