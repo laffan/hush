@@ -285,10 +285,7 @@ function setPinned(pane, value, onContextChange) {
   const btn = pane.el.querySelector(".fp-btn-pin");
   if (btn) btn.classList.toggle("pin-active", pane.pinned);
   pane.el.classList.toggle("pinned", pane.pinned);
-  // Re-stamp z-index so the pane lifts into (or drops out of) the
-  // pinned z-band immediately on toggle.
   pane.el.style.zIndex = zForPane(pane);
-  // When unpinning, pane returns to its original context — hide if not current.
-  if (!value && typeof onContextChange === "function") onContextChange();
+  if (typeof onContextChange === "function") onContextChange();
   schedulePersist();
 }
