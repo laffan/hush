@@ -27,6 +27,7 @@ export class StackComponent {
     this._scrollX = data.scrollX || 0;
     this._liveColumns = new Map();
     this._destroyed = false;
+    this._activeItemId = null;
 
     this._buildDOM();
     this._render();
@@ -116,24 +117,35 @@ export class StackComponent {
     content.style.display = item.open ? "block" : "none";
     col.appendChild(content);
 
-    // Auto-widen/narrow when internal shelf/sidebar panels open/close.
-    let trackedShelfWidth = 0;
-    const userBaseWidth = item.width || DEFAULT_COLUMN_WIDTH;
+    // Click anywhere in the column to make it "active"
+    col.addEventListener("pointerdown", () => this._setActiveItem(item.id), true);
+
+    // Auto-widen/narrow when shelf/sidebar panels open/close.
+    // Only watch direct children of content (not deep subtree) to avoid
+    // infinite loops with PDF re-renders.
+    let trackedShelfW = 0;
+    let shelfDebounce = null;
+    const userBaseW = item.width || DEFAULT_COLUMN_WIDTH;
     function syncShelfWidth() {
       if (!item.open) return;
-      const sel = ".notebook-shelf, .pdf-annotation-shelf, .longview-panel, [class*='shelf']";
       let total = 0;
-      for (const p of content.querySelectorAll(sel)) {
-        if (p.offsetWidth > 0 && p.offsetHeight > 0) total += p.offsetWidth;
+      for (const p of content.children) {
+        const cl = p.className || "";
+        if (cl.includes("notebook-shelf") || cl.includes("pdf-annotation-shelf") || cl.includes("longview")) {
+          if (p.offsetWidth > 0) total += p.offsetWidth;
+        }
       }
-      if (total !== trackedShelfWidth) {
-        trackedShelfWidth = total;
-        item.width = userBaseWidth + total;
+      if (total !== trackedShelfW) {
+        trackedShelfW = total;
+        item.width = userBaseW + total;
         col.style.width = (SPINE_WIDTH + item.width) + "px";
       }
     }
-    const mo = new MutationObserver(syncShelfWidth);
-    mo.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+    const mo = new MutationObserver(() => {
+      clearTimeout(shelfDebounce);
+      shelfDebounce = setTimeout(syncShelfWidth, 100);
+    });
+    mo.observe(content, { childList: true });
     col._shelfObs = mo;
 
     return col;
@@ -229,23 +241,30 @@ export class StackComponent {
     const scrollRect = this._scrollArea.getBoundingClientRect();
     const dragCenterInScroll = dragRect.left - scrollRect.left + this._scrollArea.scrollLeft + dragRect.width / 2;
 
-    // Collapse all columns and hide the dragged one
+    // Suppress transitions during reorder so collapse is instant
+    this._columnsEl.classList.add("stack-reordering");
+
+    // Collapse all columns, completely hide the dragged one
     for (const it of this._items) {
       const col = this._columnsEl.querySelector(`[data-item-id="${it.id}"]`);
       if (!col) continue;
-      col.classList.add("stack-column-closed");
-      col.style.width = SPINE_WIDTH + "px";
-      const contentEl = col.querySelector(".stack-column-content");
-      if (contentEl) contentEl.style.display = "none";
+      if (it.id === itemId) {
+        col.style.display = "none";
+      } else {
+        col.classList.add("stack-column-closed");
+        col.style.width = SPINE_WIDTH + "px";
+        const contentEl = col.querySelector(".stack-column-content");
+        if (contentEl) contentEl.style.display = "none";
+      }
     }
-    dragCol.classList.add("stack-column-reorder-source");
-    dragCol.style.width = "0px";
-    dragCol.style.minWidth = "0";
-    dragCol.style.overflow = "hidden";
 
-    // Scroll so the collapsed spines cluster around where the dragged item was
-    const collapsedCenter = idx * SPINE_WIDTH + SPINE_WIDTH / 2;
-    this._scrollArea.scrollLeft = Math.max(0, collapsedCenter - (dragCenterInScroll - this._scrollArea.scrollLeft));
+    // Scroll so the visible spines cluster around where the dragged item was.
+    // There are (N-1) visible spines; the dragged item was at position idx.
+    const visibleCount = this._items.length - 1;
+    const totalCollapsedW = visibleCount * SPINE_WIDTH;
+    const targetCenter = dragCenterInScroll - this._scrollArea.scrollLeft;
+    const collapsedGroupLeft = targetCenter - (idx * SPINE_WIDTH) - SPINE_WIDTH / 2;
+    this._scrollArea.scrollLeft = Math.max(0, -collapsedGroupLeft);
 
     // Create ghost spine
     const ghost = document.createElement("div");
@@ -285,9 +304,8 @@ export class StackComponent {
       ghost.remove();
       this._columnsEl.querySelectorAll(".stack-drop-indicator").forEach((el) => el.remove());
 
-      // Reset drag column's collapsed overrides
-      dragCol.classList.remove("stack-column-reorder-source");
-      dragCol.style.overflow = "";
+      this._columnsEl.classList.remove("stack-reordering");
+      dragCol.style.display = "";
       dragCol.style.minWidth = SPINE_WIDTH + "px";
 
       // Reorder: insertIdx is relative to items EXCLUDING the dragged one
@@ -363,6 +381,25 @@ export class StackComponent {
         unmountItemContent(contentEl, item, this._liveColumns);
       }
     }
+  }
+
+  // --- Active item ---
+
+  _setActiveItem(id) {
+    if (this._activeItemId === id) return;
+    // Remove old active border
+    if (this._activeItemId) {
+      const old = this._columnsEl.querySelector(`[data-item-id="${this._activeItemId}"]`);
+      if (old) old.classList.remove("stack-column-active");
+    }
+    this._activeItemId = id;
+    const col = this._columnsEl.querySelector(`[data-item-id="${id}"]`);
+    if (col) col.classList.add("stack-column-active");
+  }
+
+  getActiveItem() {
+    if (!this._activeItemId) return null;
+    return this._items.find((i) => i.id === this._activeItemId) || null;
   }
 
   // --- Public API ---

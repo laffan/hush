@@ -54,6 +54,11 @@
   transition: width 0.2s ease;
 }
 
+/* Active column: black left border on the spine */
+.stack-column-active .stack-spine {
+  border-left-color: var(--fg, #000);
+}
+
 .stack-column-closed {
   transition: width 0.2s ease;
 }
@@ -66,7 +71,6 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
   background: var(--spine-bg, rgba(128, 128, 128, 0.06));
   border-left: 2px solid rgba(128, 128, 128, 0.2);
@@ -106,14 +110,17 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  padding: 10px 0;
 }
 
 .stack-spine-icon {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   opacity: 0.5;
+  padding: 0 8px;
+  box-sizing: content-box;
 }
 .stack-spine-icon svg,
 .stack-spine-icon .tree-type-icon {
@@ -137,8 +144,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
-  min-height: 0;
+  max-height: calc(100% - 36px);
 }
 
 .stack-spine-buttons {
@@ -209,8 +215,9 @@
   background: rgba(128, 128, 128, 0.35);
 }
 
-/* Suppress transitions during resize drag */
-body.stack-resizing .stack-column { transition: none; }
+/* Suppress transitions during resize drag and reorder */
+body.stack-resizing .stack-column,
+.stack-reordering .stack-column { transition: none !important; }
 
 /* --- Reorder: ghost spine + drop indicator --- */
 

@@ -254,26 +254,25 @@ async function init() {
     }
   });
 
-  state.on("toggle-outline-panel", () => {
-    // In notebook mode the right sidebar is the Shelf, not the outline.
-    // In PDF mode it's the annotation shelf.
-    // Share the keyboard shortcut between them so it just means
-    // "toggle the right panel" regardless of which mode is active.
-    if (state.currentPdfFileId) {
-      state.emit("pdf-toggle-shelf");
+  state.on("toggle-outline-panel", async () => {
+    // Stack mode: toggle the active item's sidebar
+    if (state.currentStackFileId) {
+      import("./stack/stack-bridge.js").then(({ getStackInstance }) => {
+        const inst = getStackInstance(); const a = inst?.getActiveItem();
+        if (!a) return;
+        const ld = inst._liveColumns.get(a.id);
+        if (a.fileType === "notebook" && ld?.canvas) {
+          const shelf = ld.canvas.container?.querySelector(".notebook-shelf"); if (shelf) shelf.click();
+        }
+      });
       return;
     }
-    if (state.currentNotebookFileId) {
-      state.emit("notebook-toggle-shelf");
-      return;
-    }
+    if (state.currentPdfFileId) { state.emit("pdf-toggle-shelf"); return; }
+    if (state.currentNotebookFileId) { state.emit("notebook-toggle-shelf"); return; }
     const rp = document.getElementById("right-panel-overlay");
     if (!rp) return;
-    if (rp.classList.contains("hidden")) {
-      state.emit("show-outline");
-    } else {
-      state.emit("hide-outline");
-    }
+    if (rp.classList.contains("hidden")) state.emit("show-outline");
+    else state.emit("hide-outline");
   });
 
   // Initial focus
