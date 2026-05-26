@@ -23,7 +23,12 @@ export async function mountPdf(container, fileId, state) {
   }
 
   container.innerHTML = "";
-  const viewer = createPdfViewer(container, { mode: "main" });
+
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
+  const node = findNodeByFileId(state.fileTree, fileId);
+  const zoteroAttKey = node?.zoteroAttKey || null;
+
+  const viewer = createPdfViewer(container, { mode: "main", zoteroAttKey });
   currentViewer = viewer;
   currentFileId = fileId;
 

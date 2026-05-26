@@ -278,7 +278,11 @@ async function loadNotebookPane(pane) {
 
 async function loadPdfPane(pane) {
   const { createPdfViewer } = await import("../pdf/pdf-viewer.js");
-  const viewer = createPdfViewer(pane._content, { mode: "pane" });
+  const { findNodeByFileId } = await import("../state/tree-helpers.js");
+  const node = findNodeByFileId(appState.fileTree, pane.fileId);
+  const zoteroAttKey = node?.zoteroAttKey || null;
+
+  const viewer = createPdfViewer(pane._content, { mode: "pane", zoteroAttKey });
   pane.pdfViewer = viewer;
 
   let bytes;
@@ -315,15 +319,13 @@ async function loadPdfPane(pane) {
     });
   }
 
-  const { findNodeByFileId } = await import("../state/tree-helpers.js");
-  const node = findNodeByFileId(appState.fileTree, pane.fileId);
-  if (node?.zoteroAttKey) {
+  if (zoteroAttKey) {
     const userId = appState.settings?.zoteroUserId;
     const apiKey = appState.settings?.zoteroApiKey;
     if (userId && apiKey) {
       try {
         const { getAnnotations } = await import("../zotero-annotations.js");
-        const { annotations } = await getAnnotations(node.zoteroAttKey, userId, apiKey);
+        const { annotations } = await getAnnotations(zoteroAttKey, userId, apiKey);
         viewer.setAnnotations(annotations);
       } catch (e) {
         console.error("Failed to load PDF pane annotations:", e);
