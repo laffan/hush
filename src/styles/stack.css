@@ -13,6 +13,7 @@
   overflow: hidden;
   background: var(--theme-bg, #fff);
   transition: left 0.2s;
+  z-index: 0;
 }
 
 #stack-container.hidden {
@@ -53,11 +54,6 @@
   transition: width 0.2s ease;
 }
 
-.stack-column-dragging {
-  opacity: 0.7;
-  transition: none;
-}
-
 .stack-column-closed {
   transition: width 0.2s ease;
 }
@@ -79,11 +75,37 @@
   cursor: default;
 }
 
+.stack-spine-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 10px;
+}
+
+.stack-spine-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+.stack-spine-icon svg,
+.stack-spine-icon .tree-type-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: var(--fg, currentColor);
+  fill: none;
+  stroke-width: 1.5;
+}
+
 .stack-spine-label {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transform: rotate(180deg);
-  padding: 12px 0;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -125,14 +147,6 @@
   background: rgba(128, 128, 128, 0.1);
 }
 
-.stack-spine-drag-btn {
-  cursor: grab;
-}
-
-.stack-spine-drag-btn:active {
-  cursor: grabbing;
-}
-
 /* --- Column content --- */
 
 .stack-column-content {
@@ -143,10 +157,67 @@
   position: relative;
 }
 
-/* --- Spine resize button --- */
+.stack-spine-resize-btn { cursor: col-resize; }
+.stack-spine-drag-btn { cursor: grab; }
+.stack-spine-drag-btn:active { cursor: grabbing; }
 
-.stack-spine-resize-btn {
+/* --- Trailing resize zone (after last column) --- */
+
+.stack-trail-resize {
+  width: 100px;
+  min-width: 100px;
+  flex-shrink: 0;
+  height: 100%;
   cursor: col-resize;
+  position: relative;
+}
+.stack-trail-resize::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 40px;
+  border-radius: 2px;
+  background: rgba(128, 128, 128, 0.15);
+  transition: background 0.15s;
+}
+.stack-trail-resize:hover::before {
+  background: rgba(128, 128, 128, 0.35);
+}
+
+/* Suppress transitions during resize drag */
+body.stack-resizing .stack-column { transition: none; }
+
+/* --- Reorder: ghost spine + drop indicator --- */
+
+.stack-reorder-ghost {
+  position: fixed;
+  width: 50px;
+  pointer-events: none;
+  z-index: 9000;
+  background: var(--spine-bg, rgba(128, 128, 128, 0.06));
+  border: 1px solid var(--ui-border, rgba(128, 128, 128, 0.3));
+  border-radius: 4px;
+  opacity: 0.75;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 10px;
+}
+
+.stack-column-reorder-source {
+  opacity: 0.25;
+}
+
+.stack-drop-indicator {
+  width: 3px;
+  flex-shrink: 0;
+  height: 100%;
+  background: var(--accent, #3b82f6);
+  border-radius: 2px;
 }
 
 /* --- Doc content (uses createPaneEditor — full-featured CodeMirror) --- */
