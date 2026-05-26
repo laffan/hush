@@ -182,27 +182,38 @@ export function attachPaneTextDrop(pane) {
 // ── Pane-local typewriter helpers ─────────────────────────────────────
 
 /** Apply (or remove) typewriter padding and boundary line for a pane.
- *  The line is rendered as a ::before pseudo on .cm-scroller via a
- *  CSS class + custom properties — this keeps it clipped inside the
- *  scroller and avoids the absolutely-positioned-div overflow issue. */
+ *  The line is a real DOM node inside .cm-scroller with position:sticky
+ *  so it stays pinned at the typewriter position and is clipped to the
+ *  scroller's own overflow boundary. */
 function applyPaneTypewriter(view, state, container) {
   if (!state.typewriterMode) {
     removePaneTypewriter(view, container);
     return;
   }
-  const position = state.typewriterPosition || 0.5;
-  const h = container.clientHeight || 300;
-  const targetY = h * position;
-  view.scrollDOM.style.paddingTop = targetY + "px";
-  view.scrollDOM.style.paddingBottom = (h - targetY) + "px";
-
   const scroller = view.scrollDOM;
-  scroller.classList.add("pane-typewriter-active");
-  scroller.style.setProperty("--tw-line-top", targetY + "px");
-  // Panes use a higher minimum opacity than the main editor — 0.08
-  // is near-invisible against the pane's smaller, often-tinted surface.
+  const position = state.typewriterPosition || 0.5;
+  const scrollerH = scroller.clientHeight || container.clientHeight || 300;
+  const targetY = scrollerH * position;
+  scroller.style.paddingTop = targetY + "px";
+  scroller.style.paddingBottom = (scrollerH - targetY) + "px";
+
+  let line = scroller.querySelector(".pane-tw-line");
+  if (!line) {
+    line = document.createElement("div");
+    line.className = "pane-tw-line";
+    scroller.insertBefore(line, scroller.firstChild);
+  }
   const rawOpacity = state.settings.typewriterLineOpacity ?? 0.08;
-  scroller.style.setProperty("--tw-line-opacity", String(Math.max(rawOpacity, 0.25)));
+  Object.assign(line.style, {
+    position: "sticky",
+    top: targetY + "px",
+    height: "1px",
+    background: "var(--fg, #888)",
+    opacity: String(Math.max(rawOpacity, 0.25)),
+    pointerEvents: "none",
+    zIndex: "5",
+    marginBottom: "-1px",
+  });
 
   requestAnimationFrame(() => scrollPaneCursorToTypewriter(view, state, container));
 }
@@ -212,26 +223,27 @@ function removePaneTypewriter(view, container) {
   if (view && view.scrollDOM) {
     view.scrollDOM.style.paddingTop = "";
     view.scrollDOM.style.paddingBottom = "";
-    view.scrollDOM.classList.remove("pane-typewriter-active");
-    view.scrollDOM.style.removeProperty("--tw-line-top");
-    view.scrollDOM.style.removeProperty("--tw-line-opacity");
+    const line = view.scrollDOM.querySelector(".pane-tw-line");
+    if (line) line.remove();
   }
 }
 
 /** Scroll the pane's editor so the cursor sits at the typewriter line. */
 function scrollPaneCursorToTypewriter(view, state, container) {
   if (!state.typewriterMode) return;
+  const scroller = view.scrollDOM;
   const position = state.typewriterPosition || 0.5;
-  const h = container.clientHeight || 300;
-  const targetY = h * position;
+  const scrollerH = scroller.clientHeight || container.clientHeight || 300;
+  const targetY = scrollerH * position;
   try {
     const cursor = view.state.selection.main.head;
     const coords = view.coordsAtPos(cursor);
     if (!coords) return;
+    const scrollerRect = scroller.getBoundingClientRect();
     const cursorMid = (coords.top + coords.bottom) / 2;
-    const offset = cursorMid - (container.getBoundingClientRect().top + targetY);
+    const offset = cursorMid - (scrollerRect.top + targetY);
     if (Math.abs(offset) > 1) {
-      view.scrollDOM.scrollTop += offset;
+      scroller.scrollTop += offset;
     }
   } catch (_) { /* view may be destroyed or doc empty */ }
 }

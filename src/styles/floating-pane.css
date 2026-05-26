@@ -295,25 +295,6 @@
   overflow: auto;
 }
 
-/* Pane-local typewriter boundary line. Rendered as a ::before on the
-   scroller so it is naturally clipped inside the pane and scrolls
-   with the content area. position:sticky keeps it pinned visually. */
-.floating-pane-content .cm-scroller.pane-typewriter-active {
-  position: relative;
-}
-.floating-pane-content .cm-scroller.pane-typewriter-active::before {
-  content: "";
-  position: sticky;
-  top: var(--tw-line-top, 50%);
-  display: block;
-  height: 1px;
-  background: var(--fg, #888);
-  opacity: var(--tw-line-opacity, 0.08);
-  pointer-events: none;
-  z-index: 5;
-  margin-bottom: -1px;
-}
-
 /* Notebook canvas in pane */
 .floating-pane-content canvas {
   width: 100% !important;
