@@ -32,7 +32,7 @@
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  scroll-behavior: smooth;
+  border-top: 1px solid rgba(128, 128, 128, 0.08);
 }
 
 .stack-columns {
@@ -77,7 +77,7 @@
   border-right: 1px solid rgba(128, 128, 128, 0.08);
   user-select: none;
   overflow: hidden;
-  cursor: default;
+  cursor: pointer;
   position: relative;
 }
 
@@ -102,24 +102,12 @@
   display: none;
 }
 
-.stack-spine-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  padding: 10px 0;
-}
-
 .stack-spine-icon {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  margin-bottom: 10px;
+  padding: 15px;
   opacity: 0.5;
-  padding: 0 8px;
   box-sizing: content-box;
 }
 .stack-spine-icon svg,
@@ -144,7 +132,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-height: calc(100% - 36px);
+  flex: 1;
+  display: flex;
+  align-items: center;
 }
 
 .stack-spine-buttons {
@@ -188,6 +178,8 @@
 
 .stack-spine-drag-btn { cursor: grab; }
 .stack-spine-drag-btn:active { cursor: grabbing; }
+.stack-spine-close-btn { opacity: 0.25; }
+.stack-spine-close-btn:hover { opacity: 0.7; color: #ef4444; }
 
 /* --- Trailing resize zone (after last column) --- */
 
@@ -268,8 +260,7 @@ body.stack-resizing .stack-column,
 .stack-doc-wrapper .cm-content {
   max-width: var(--column-width, 800px);
   margin: 0 auto;
-  padding-left: 50px;
-  padding-right: 50px;
+  padding: 50px 50px 50vh 50px;
   box-sizing: content-box;
 }
 

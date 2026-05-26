@@ -142,6 +142,32 @@ export function handleEmptyTrash(state, refreshAfter) {
   );
 }
 
+export async function handleOpenAsStack(nodeId, state, refreshAfter) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  const children = (node.children || []).filter((c) =>
+    (c.type === "document" || c.type === "notebook" || c.type === "pdf") && c.fileId);
+  const proceed = async () => {
+    const result = await state.createStack(node.name, null, { openImmediately: true });
+    if (!result) return;
+    const { getStackInstance } = await import("../stack/stack-bridge.js");
+    const inst = getStackInstance();
+    if (!inst) return;
+    for (const c of children) inst.addItem(c.fileId, c.type, c.name);
+    refreshAfter();
+  };
+  if (children.length > 15) {
+    showConfirmModal({
+      title: "Large container",
+      message: `This ${node.type} has ${children.length} items. Opening as a stack may be slow. Continue?`,
+      confirmLabel: "Open as Stack",
+      onConfirm: proceed,
+    });
+  } else {
+    await proceed();
+  }
+}
+
 function collectAllNames(nodes) {
   const names = [];
   for (const n of nodes) {

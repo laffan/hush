@@ -18,6 +18,7 @@ const SPINE_WIDTH = 50;
 const DEFAULT_COLUMN_WIDTH = 800;
 const BUFFER_COLUMNS = 1;
 const MIN_COLUMN_WIDTH = 200;
+const maxItemWidth = () => Math.max(MIN_COLUMN_WIDTH, window.innerWidth - 100);
 
 export class StackComponent {
   constructor(container, data, state) {
@@ -106,6 +107,7 @@ export class StackComponent {
 
     const spine = createSpine(item, {
       onToggle: () => this._toggleItem(item.id),
+      onClose: () => this.removeItem(item.id),
       onColorChange: (color) => this._setSpineColor(item.id, color),
       onDragStart: (e) => this._startReorder(item.id, e),
       onResizeStart: (e) => this._startResizeLeft(item.id, e),
@@ -209,7 +211,7 @@ export class StackComponent {
 
     const onMove = (ev) => {
       const dx = ev.clientX - startX;
-      const newWidth = Math.max(MIN_COLUMN_WIDTH, startWidth + dx);
+      const newWidth = Math.min(maxItemWidth(), Math.max(MIN_COLUMN_WIDTH, startWidth + dx));
       item.width = newWidth;
       col.style.width = (SPINE_WIDTH + newWidth) + "px";
     };
@@ -241,10 +243,9 @@ export class StackComponent {
     const scrollRect = this._scrollArea.getBoundingClientRect();
     const dragCenterInScroll = dragRect.left - scrollRect.left + this._scrollArea.scrollLeft + dragRect.width / 2;
 
-    // Suppress transitions during reorder so collapse is instant
     this._columnsEl.classList.add("stack-reordering");
 
-    // Collapse all columns, completely hide the dragged one
+    // Collapse all columns; hide the dragged one completely
     for (const it of this._items) {
       const col = this._columnsEl.querySelector(`[data-item-id="${it.id}"]`);
       if (!col) continue;
@@ -258,13 +259,19 @@ export class StackComponent {
       }
     }
 
-    // Scroll so the visible spines cluster around where the dragged item was.
-    // There are (N-1) visible spines; the dragged item was at position idx.
-    const visibleCount = this._items.length - 1;
-    const totalCollapsedW = visibleCount * SPINE_WIDTH;
-    const targetCenter = dragCenterInScroll - this._scrollArea.scrollLeft;
-    const collapsedGroupLeft = targetCenter - (idx * SPINE_WIDTH) - SPINE_WIDTH / 2;
-    this._scrollArea.scrollLeft = Math.max(0, -collapsedGroupLeft);
+    // Insert a spacer before the first column so the collapsed group
+    // centers around where the dragged spine was on screen.
+    const spacer = document.createElement("div");
+    spacer.className = "stack-reorder-spacer";
+    const viewportCenter = dragRect.left - scrollRect.left + dragRect.width / 2;
+    // The dragged item was at position `idx` among items (0-indexed).
+    // After removing it, the items to its left occupy idx positions.
+    const leftSpinesWidth = idx * SPINE_WIDTH;
+    const spacerWidth = Math.max(0, viewportCenter - leftSpinesWidth - SPINE_WIDTH / 2);
+    spacer.style.width = spacerWidth + "px";
+    spacer.style.flexShrink = "0";
+    this._columnsEl.insertBefore(spacer, this._columnsEl.firstChild);
+    this._scrollArea.scrollLeft = 0;
 
     // Create ghost spine
     const ghost = document.createElement("div");
@@ -302,6 +309,7 @@ export class StackComponent {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       ghost.remove();
+      spacer.remove();
       this._columnsEl.querySelectorAll(".stack-drop-indicator").forEach((el) => el.remove());
 
       this._columnsEl.classList.remove("stack-reordering");

@@ -7,7 +7,7 @@
 import { findNode } from "../state/tree-helpers.js";
 import { typeIcons, escHtml } from "../sidebar/files-panel-shared.js";
 
-const ELIGIBLE_TYPES = new Set(["document", "notebook", "pdf", "stack"]);
+const ELIGIBLE_TYPES = new Set(["document", "notebook", "pdf"]);
 
 export function openStackFilePicker(state, onPick) {
   // Collect eligible files from the active desk

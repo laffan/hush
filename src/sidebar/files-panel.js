@@ -17,7 +17,7 @@ import { renderRowMenuButton, renderFlagOnlyMenuButton, openRowMenu } from "./fi
 import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./files-panel-multi-select.js";
 import {
   handleRename, handleRevealInFinder, handleConvertContainer,
-  handleDuplicate, handleDelete, handleEmptyTrash,
+  handleDuplicate, handleDelete, handleEmptyTrash, handleOpenAsStack,
 } from "./files-panel-actions.js";
 import {
   isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree,
@@ -339,6 +339,8 @@ function dispatchRowAction(action, nodeId, opts) {
     handleRevealInFinder(nodeId, storedState);
   } else if (action === "empty-trash") {
     handleEmptyTrash(storedState, refresh);
+  } else if (action === "open-as-stack") {
+    handleOpenAsStack(nodeId, storedState, refresh);
   } else if (action === "new-doc-here") {
     storedState.newFile(nodeId).then(refresh);
   } else if (action === "new-notebook-here") {

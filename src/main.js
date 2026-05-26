@@ -90,7 +90,6 @@ async function init() {
     _origMarkDirty();
     state.emit("doc-content-changed");
   };
-
   // === Mode switching (notebook / PDF / stack) ===
   const appEl = document.getElementById("app");
   const pdfContainer = document.getElementById("pdf-container");
@@ -259,10 +258,12 @@ async function init() {
     if (state.currentStackFileId) {
       import("./stack/stack-bridge.js").then(({ getStackInstance }) => {
         const inst = getStackInstance(); const a = inst?.getActiveItem();
-        if (!a) return;
-        const ld = inst._liveColumns.get(a.id);
+        if (!a) return; const ld = inst._liveColumns.get(a.id);
         if (a.fileType === "notebook" && ld?.canvas) {
-          const shelf = ld.canvas.container?.querySelector(".notebook-shelf"); if (shelf) shelf.click();
+          const grip = ld.canvas.container?.querySelector(".notebook-shelf button");
+          if (grip) grip.click();
+        } else if (a.fileType === "pdf" && ld?.pdfViewer?.toggleShelf) {
+          ld.pdfViewer.toggleShelf();
         }
       });
       return;

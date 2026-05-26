@@ -1,46 +1,49 @@
 /**
  * Stack spine — the 50px-wide vertical sidebar on each stack column.
- * Top: type icon + filename (vertical). Bottom: buttons for color,
- * resize (resizes item to the LEFT), drag (reorder), toggle.
+ * Top: type icon, centered: filename (vertical). Bottom: color, drag
+ * (reorder), close (X). Clicking the spine body (outside buttons)
+ * toggles the column open/closed. Left edge is a resize affordance
+ * for the item to the left.
  */
 
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
-export function createSpine(item, { onToggle, onColorChange, onDragStart, onResizeStart }) {
+export function createSpine(item, { onToggle, onClose, onColorChange, onDragStart, onResizeStart }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";
   if (item.spineColor) spine.style.backgroundColor = item.spineColor;
 
-  // Left-edge resize zone (the CSS ::before pseudo-element provides the
-  // visual hover state; this handler captures the pointerdown)
+  // Left-edge resize zone
   spine.addEventListener("pointerdown", (e) => {
-    if (e.offsetX > 6) return; // only the left 6px strip
+    if (e.offsetX > 6) return;
     e.stopPropagation();
     onResizeStart(e);
   });
 
-  // Center section: type icon + vertical filename
-  const header = document.createElement("div");
-  header.className = "stack-spine-header";
+  // Click the spine body to toggle open/close
+  spine.addEventListener("click", (e) => {
+    if (e.target.closest(".stack-spine-btn")) return;
+    onToggle();
+  });
+  spine.style.cursor = "pointer";
 
+  // Icon at top
   const iconEl = document.createElement("div");
   iconEl.className = "stack-spine-icon";
   iconEl.innerHTML = typeIcons[item.fileType] || typeIcons.document;
-  header.appendChild(iconEl);
+  spine.appendChild(iconEl);
 
+  // Centered label
   const label = document.createElement("div");
   label.className = "stack-spine-label";
   label.textContent = resolveItemName(item);
-  header.appendChild(label);
-
-  spine.appendChild(header);
+  spine.appendChild(label);
 
   // Bottom button cluster
   const buttons = document.createElement("div");
   buttons.className = "stack-spine-buttons";
 
-  // Color picker
   const colorBtn = makeBtn("stack-spine-color-btn",
     `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5"/></svg>`);
   colorBtn.addEventListener("click", (e) => {
@@ -53,20 +56,15 @@ export function createSpine(item, { onToggle, onColorChange, onDragStart, onResi
   });
   buttons.appendChild(colorBtn);
 
-  // Drag handle (reorder)
   const dragBtn = makeBtn("stack-spine-drag-btn",
     `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/><circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/><circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/></svg>`);
   dragBtn.addEventListener("pointerdown", (e) => { e.stopPropagation(); onDragStart(e); });
   buttons.appendChild(dragBtn);
 
-  // Toggle open/close
-  const toggleBtn = makeBtn("stack-spine-toggle-btn", toggleSvg(item.open));
-  toggleBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    onToggle();
-    toggleBtn.innerHTML = toggleSvg(item.open);
-  });
-  buttons.appendChild(toggleBtn);
+  const closeBtn = makeBtn("stack-spine-close-btn",
+    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`);
+  closeBtn.addEventListener("click", (e) => { e.stopPropagation(); onClose(); });
+  buttons.appendChild(closeBtn);
 
   spine.appendChild(buttons);
   return spine;
@@ -79,12 +77,6 @@ function makeBtn(cls, html) {
   return b;
 }
 
-function toggleSvg(open) {
-  return open
-    ? `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="10 3 5 8 10 13"/></svg>`
-    : `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 3 11 8 6 13"/></svg>`;
-}
-
 function resolveItemName(item) {
   if (item.name) return item.name;
   const state = window.__hushState__;
@@ -94,8 +86,6 @@ function resolveItemName(item) {
   }
   return "Untitled";
 }
-
-// --- Color picker popup ---
 
 const PRESET_COLORS = [
   null, "#ef4444", "#f97316", "#eab308",
@@ -110,12 +100,8 @@ function openColorPicker(anchorEl, currentColor, onPick) {
   for (const color of PRESET_COLORS) {
     const swatch = document.createElement("button");
     swatch.className = "stack-color-swatch";
-    if (color) {
-      swatch.style.backgroundColor = color;
-    } else {
-      swatch.classList.add("stack-color-swatch-none");
-      swatch.innerHTML = "×";
-    }
+    if (color) swatch.style.backgroundColor = color;
+    else { swatch.classList.add("stack-color-swatch-none"); swatch.innerHTML = "×"; }
     if (color === currentColor || (!color && !currentColor)) swatch.classList.add("stack-color-swatch-active");
     swatch.addEventListener("click", () => { onPick(color); picker.remove(); cleanup(); });
     picker.appendChild(swatch);
