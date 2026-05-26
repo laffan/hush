@@ -22,13 +22,15 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── _create-theme.js               (EditorView.theme + HighlightStyle wrapper)
 │   └── <theme>.js × 16                (one file per built-in theme)
 ├── tauri-bridge.js                    │   ├── zotero.rs
-├── zotero.js                          │   └── pdf_export.rs
-├── zotero-snapshot.js                 │
-├── zotero-annotations.js              ├── settings.rs
-├── zotero/                            │   └── defaults.rs
-│   └── highlight-pane.js              ├── files.rs
-│                                      ├── images.rs
-│                                      ├── snapshots.rs
+├── zotero.js                          │   ├── pdfs.rs
+├── zotero-snapshot.js                 │   └── pdf_export.rs
+├── zotero-annotations.js              │
+├── zotero/                            ├── settings.rs
+│   └── highlight-pane.js              │   └── defaults.rs
+├── pdf/                               ├── files.rs
+│   ├── pdf-viewer.js                  ├── images.rs
+│   ├── pdf-bridge.js                  ├── pdfs.rs
+│   └── zotero-save-pdf.js            ├── snapshots.rs
 │                                      ├── sync.rs / sync_commands.rs
 │                                      ├── local_sync.rs
 │                                      ├── zotero.rs

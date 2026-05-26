@@ -9,6 +9,16 @@
   position: relative;
 }
 
+/* Body: scroll area + shelf side by side.
+   The shelf is in-flow so it constrains scroll area width. */
+.pdf-viewer-body {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* ===== Scroll area ===== */
 .pdf-scroll-area {
   flex: 1;
@@ -23,6 +33,7 @@
   gap: 12px;
   background: rgba(128, 128, 128, 0.06);
   min-height: 0;
+  min-width: 0;
 }
 
 /* Fit-width: single column, pages fill available width */
@@ -58,9 +69,7 @@
   background: #fff;
   flex-shrink: 0;
 }
-
 .pdf-page-canvas { display: block; }
-
 .pdf-page-placeholder {
   width: 100%;
   height: 100%;
@@ -92,9 +101,7 @@
   font-size: 12px;
   color: var(--fg);
   flex-shrink: 0;
-  order: 2;
 }
-
 .pdf-zoom-btn {
   padding: 2px 8px;
   border-radius: 4px;
@@ -107,26 +114,22 @@
   transition: background 0.15s;
 }
 .pdf-zoom-btn:hover { background: rgba(128, 128, 128, 0.18); }
-
 .pdf-mode-btn.active {
   background: rgba(128, 128, 128, 0.22);
   border-color: rgba(128, 128, 128, 0.4);
 }
-
 .pdf-zoom-label {
   min-width: 36px;
   text-align: center;
   font-size: 12px;
   color: var(--sidebar-fg, var(--fg));
 }
-
 .pdf-page-indicator {
   margin-left: auto;
   font-size: 11px;
   color: var(--sidebar-fg, var(--fg));
   opacity: 0.8;
 }
-
 .pdf-zotero-link {
   font-size: 11px;
   color: var(--sidebar-fg, var(--fg));
@@ -153,33 +156,28 @@
   cursor: default;
 }
 .pdf-annot-highlight:hover { opacity: 0.5; }
-
-/* ===== Annotation shelf (right panel, notebook-shelf style) ===== */
-.pdf-annot-shelf {
+.pdf-annot-ink {
   position: absolute;
-  top: 20px;
-  right: 0;
-  bottom: 50px; /* clear the bottom toolbar */
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+
+/* ===== Annotation shelf (in-flow right panel) ===== */
+.pdf-annot-shelf {
   width: 24px;
   min-width: 24px;
-  z-index: 10;
-  display: none; /* hidden until annotations arrive */
+  flex-shrink: 0;
+  display: none;
   flex-direction: column;
   overflow: hidden;
   transition: width 0.2s;
-  border-radius: 12px 0 0 12px;
   background: var(--panel-bg, var(--bg));
-  border: 1px solid var(--panel-border);
-  border-right: none;
+  border-left: 1px solid var(--panel-border);
+  position: relative;
 }
-
-.pdf-annot-shelf.has-annotations {
-  display: flex;
-}
-
-.pdf-annot-shelf.open {
-  width: 280px;
-}
+.pdf-annot-shelf.has-annotations { display: flex; }
+.pdf-annot-shelf.open { width: 280px; }
 
 .pdf-annot-shelf-grip {
   width: 24px;
@@ -195,7 +193,6 @@
   justify-content: center;
   z-index: 10;
   color: var(--fg);
-  border-radius: 12px 0 0 12px;
   opacity: 0.7;
 }
 .pdf-annot-shelf-grip:hover { opacity: 1; }
@@ -208,9 +205,7 @@
   overflow: hidden;
   padding: 16px 16px 16px 0;
 }
-.pdf-annot-shelf.open .pdf-annot-shelf-content {
-  display: flex;
-}
+.pdf-annot-shelf.open .pdf-annot-shelf-content { display: flex; }
 
 .pdf-annot-shelf-header {
   font-size: 13px;
@@ -219,7 +214,6 @@
   color: var(--fg);
   font-family: system-ui, -apple-system, sans-serif;
 }
-
 .pdf-annot-shelf-search {
   width: 100%;
   padding: 6px 8px;
@@ -233,16 +227,13 @@
   margin-bottom: 8px;
   box-sizing: border-box;
 }
-.pdf-annot-shelf-search:focus {
-  border-color: rgba(128, 128, 128, 0.4);
-}
+.pdf-annot-shelf-search:focus { border-color: rgba(128, 128, 128, 0.4); }
 
 .pdf-annot-shelf-body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
 }
-
 .pdf-annot-shelf-body::-webkit-scrollbar { width: 4px; }
 .pdf-annot-shelf-body::-webkit-scrollbar-track { background: transparent; }
 .pdf-annot-shelf-body::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
@@ -254,10 +245,9 @@
   border-radius: 0 6px 6px 0;
   background: rgba(128, 128, 128, 0.06);
   font-family: system-ui, -apple-system, sans-serif;
+  cursor: pointer;
 }
-.pdf-annot-shelf-row:hover {
-  background: rgba(128, 128, 128, 0.12);
-}
+.pdf-annot-shelf-row:hover { background: rgba(128, 128, 128, 0.12); }
 
 .pdf-annot-shelf-text {
   font-size: 13px;
@@ -265,7 +255,6 @@
   white-space: pre-wrap;
   color: var(--fg);
 }
-
 .pdf-annot-shelf-comment {
   margin-top: 4px;
   font-size: 12px;
@@ -273,19 +262,13 @@
   font-style: italic;
   white-space: pre-wrap;
 }
-
 .pdf-annot-shelf-meta {
   margin-top: 4px;
   font-size: 11px;
   color: var(--sidebar-fg, var(--fg));
   opacity: 0.8;
 }
-.pdf-annot-shelf-page {
-  color: inherit;
-  text-decoration: none;
-}
-.pdf-annot-shelf-page:hover { text-decoration: underline; }
-
+.pdf-annot-shelf-page { color: inherit; }
 .pdf-annot-shelf-empty {
   padding: 16px 0;
   text-align: center;
@@ -293,6 +276,12 @@
   font-size: 13px;
   font-family: system-ui, -apple-system, sans-serif;
   opacity: 0.6;
+}
+.pdf-annot-shelf-match {
+  background: rgba(255, 230, 0, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 /* ===== Error state ===== */
@@ -309,8 +298,6 @@
 }
 
 /* ===== PDF container — sidebar-aware positioning ===== */
-/* `left` is set dynamically by pdf-bridge.js to match the sidebar inset,
-   mirroring how the editor's column layout shrinks for the sidebar. */
 #pdf-container {
   position: absolute;
   top: 0;
@@ -321,7 +308,7 @@
 }
 #pdf-container.hidden { display: none; }
 
-/* Hide editor chrome when PDF is active (mirrors notebook-mode) */
+/* Hide editor chrome when PDF is active */
 .pdf-mode #editor-container,
 .pdf-mode #drag-region,
 .pdf-mode #right-panel-overlay,
@@ -329,6 +316,4 @@
 .pdf-mode .right-panel-trigger {
   display: none !important;
 }
-body.pdf-mode .column-resizer {
-  display: none !important;
-}
+body.pdf-mode .column-resizer { display: none !important; }
