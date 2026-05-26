@@ -1,5 +1,5 @@
 /**
- * Anchoring a floating pane to its host content. Two flavours:
+ * Anchoring a floating pane to its host content. Three flavours:
  *
  *   - Notebook canvas: convert screen ↔ canvas world coords through the
  *     active camera, then drive the pane's `transform: scale(zoom)` via
@@ -7,8 +7,11 @@
  *     with the surrounding shapes.
  *   - Document scroll: stash a scroll-relative Y offset, listen for
  *     scroll, reposition the pane on every event.
+ *   - PDF scroll: stash a page-relative position (page index + fraction
+ *     offsets), reposition on scroll/zoom by resolving back to the page
+ *     wrapper's screen position.
  *
- * `stopAttachSync` cleans up both flavours.
+ * `stopAttachSync` cleans up all flavours.
  */
 import { appState, notebookBridge, panes } from "./pane-state.js";
 
@@ -43,11 +46,6 @@ export function startCanvasSync(pane) {
       pane.y = pos.y;
       pane.el.style.left = pos.x + "px";
       pane.el.style.top = pos.y + "px";
-      // Pane is anchored to the canvas — scale it with the camera zoom
-      // so it shrinks/grows together with the surrounding shapes. The
-      // pane's own width/height are interpreted as "size at 1× zoom"
-      // and rendered through the transform; the resize handler
-      // compensates by dividing screen-px deltas by the same zoom.
       const canvas = notebookBridge ? notebookBridge.getCanvasInstance() : null;
       const zoom = canvas ? canvas.state.camera.zoom : 1;
       pane.el.style.transformOrigin = "top left";
@@ -68,26 +66,80 @@ export function startScrollSync(pane) {
     pane.el.style.top = pane.y + "px";
   };
   scrollDOM.addEventListener("scroll", pane._scrollHandler);
-  // Sync once immediately so restored attach positions don't wait for a scroll
   pane._scrollHandler();
 }
 
+export function startPdfScrollSync(pane) {
+  const pdfContainer = document.getElementById("pdf-container");
+  const scrollArea = pdfContainer?.querySelector(".pdf-scroll-area");
+  if (!scrollArea) return;
+
+  pane._pdfScrollHandler = () => {
+    if (!pane.attached || !panes.has(pane.id)) return;
+    const anchor = pane._pdfAnchor;
+    if (!anchor) return;
+    const pageWrapper = scrollArea.querySelector(`.pdf-page-wrapper[data-page-index="${anchor.pageIndex}"]`);
+    if (!pageWrapper) return;
+    const containerRect = pdfContainer.getBoundingClientRect();
+    const pageRect = pageWrapper.getBoundingClientRect();
+    pane.x = pageRect.left - containerRect.left + anchor.xFrac * pageRect.width;
+    pane.y = pageRect.top - containerRect.top + anchor.yFrac * pageRect.height;
+    pane.el.style.left = pane.x + "px";
+    pane.el.style.top = pane.y + "px";
+  };
+  scrollArea.addEventListener("scroll", pane._pdfScrollHandler);
+  pane._pdfScrollHandler();
+}
+
+export function anchorPaneToPdf(pane) {
+  const pdfContainer = document.getElementById("pdf-container");
+  const scrollArea = pdfContainer?.querySelector(".pdf-scroll-area");
+  if (!scrollArea) return;
+  const containerRect = pdfContainer.getBoundingClientRect();
+  const paneScreenX = pane.x;
+  const paneScreenY = pane.y;
+
+  const wrappers = scrollArea.querySelectorAll(".pdf-page-wrapper");
+  let best = null;
+  let bestDist = Infinity;
+  for (const w of wrappers) {
+    const r = w.getBoundingClientRect();
+    const relR = { left: r.left - containerRect.left, top: r.top - containerRect.top, width: r.width, height: r.height };
+    const cx = relR.left + relR.width / 2;
+    const cy = relR.top + relR.height / 2;
+    const dist = Math.abs(paneScreenX - cx) + Math.abs(paneScreenY - cy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { pageIndex: parseInt(w.dataset.pageIndex, 10), rect: relR };
+    }
+  }
+  if (!best) return;
+  pane._pdfAnchor = {
+    pageIndex: best.pageIndex,
+    xFrac: (paneScreenX - best.rect.left) / Math.max(1, best.rect.width),
+    yFrac: (paneScreenY - best.rect.top) / Math.max(1, best.rect.height),
+  };
+}
+
 export function stopAttachSync(pane) {
-  // Stop canvas sync (notebook)
   if (pane._syncFrame) {
     cancelAnimationFrame(pane._syncFrame);
     pane._syncFrame = null;
   }
-  // Drop the camera-zoom transform a canvas-attached pane was using —
-  // once detached, the pane lives at fixed screen size again.
   if (pane.el) {
     pane.el.style.transform = "";
     pane.el.style.transformOrigin = "";
   }
-  // Stop scroll sync (doc)
   if (pane._scrollHandler) {
     const scrollDOM = appState.editor?.view.scrollDOM;
     if (scrollDOM) scrollDOM.removeEventListener("scroll", pane._scrollHandler);
     pane._scrollHandler = null;
+  }
+  if (pane._pdfScrollHandler) {
+    const pdfContainer = document.getElementById("pdf-container");
+    const scrollArea = pdfContainer?.querySelector(".pdf-scroll-area");
+    if (scrollArea) scrollArea.removeEventListener("scroll", pane._pdfScrollHandler);
+    pane._pdfScrollHandler = null;
+    pane._pdfAnchor = null;
   }
 }

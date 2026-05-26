@@ -158,7 +158,7 @@ export async function openFile(state, id) {
   // branch on next launch picks the doc, not whichever notebook the
   // user happened to have open before they switched away. (init reads
   // lastNotebookId first; without this clear, a stale id wins.)
-  state.updateSettings({ lastFileId: state.currentFileId, lastProjectId: null, lastNotebookId: null });
+  state.updateSettings({ lastFileId: state.currentFileId, lastProjectId: null, lastNotebookId: null, lastPdfId: null });
   // Per-desk last-file: switching back to this desk later should land
   // here, not on the desk's first inbox item. Synced via desks.json.
   state.recordActiveDeskLastFile(state.currentFileId, "document");
@@ -338,6 +338,6 @@ export async function openNotebook(state, fileId) {
   state.currentLocalSync = null;
 
   state.emit("notebook-open", fileId);
-  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId });
+  state.updateSettings({ lastFileId: null, lastProjectId: null, lastNotebookId: fileId, lastPdfId: null });
   state.recordActiveDeskLastFile(fileId, "notebook");
 }

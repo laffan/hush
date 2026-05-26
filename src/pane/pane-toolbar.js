@@ -20,7 +20,7 @@ import {
 import { setupPaneDrag, setupPaneResize } from "./pane-drag.js";
 import { togglePaneSizePopover } from "./pane-size-popover.js";
 import {
-  screenToCanvas, startCanvasSync, startScrollSync, stopAttachSync,
+  screenToCanvas, startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf,
 } from "./pane-attach-sync.js";
 import { schedulePersist } from "./pane-persistence.js";
 
@@ -97,7 +97,7 @@ export function buildPaneDOM(pane, deps) {
     buttons.appendChild(sizeBtn);
   }
 
-  const attachLabel = appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
+  const attachLabel = appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
   const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
   attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
   buttons.appendChild(attachBtn);
@@ -203,12 +203,10 @@ async function toggleAttach(pane) {
   if (btn) btn.classList.toggle("attach-active", pane.attached);
 
   if (pane.attached) {
-    if (appState.currentNotebookFileId) {
-      // Notebook: attach to canvas coordinates. Detached panes store
-      // width/height in screen px; once attached, they're interpreted
-      // as layout px and rendered through `transform: scale(zoom)`, so
-      // we divide by the current zoom on attach to keep the visible
-      // size unchanged across the transition.
+    if (appState.currentPdfFileId) {
+      anchorPaneToPdf(pane);
+      startPdfScrollSync(pane);
+    } else if (appState.currentNotebookFileId) {
       await getNotebookBridge();
       const canvas = notebookBridge ? notebookBridge.getCanvasInstance() : null;
       const zoom = canvas ? (canvas.state.camera.zoom || 1) : 1;

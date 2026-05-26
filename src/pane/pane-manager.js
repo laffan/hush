@@ -22,7 +22,7 @@ import {
   syncAllPaneWordCounts,
 } from "./pane-content.js";
 import { schedulePersist, restorePanes as _restorePanes } from "./pane-persistence.js";
-import { startCanvasSync, startScrollSync, stopAttachSync } from "./pane-attach-sync.js";
+import { startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf } from "./pane-attach-sync.js";
 import { buildPaneDOM as _buildPaneDOM } from "./pane-toolbar.js";
 import {
   getInitialPanePosition as _getInitialPanePosition,
@@ -133,8 +133,9 @@ function onContextChange() {
     if (pane.ownerContext === ctx) {
       pane.el.style.display = "";
       if (pane.pdfViewer?.suspended) pane.pdfViewer.resume();
-      if (pane.attached && !pane._syncFrame && !pane._scrollHandler) {
-        if (appState.currentNotebookFileId) startCanvasSync(pane);
+      if (pane.attached && !pane._syncFrame && !pane._scrollHandler && !pane._pdfScrollHandler) {
+        if (appState.currentPdfFileId) startPdfScrollSync(pane);
+        else if (appState.currentNotebookFileId) startCanvasSync(pane);
         else startScrollSync(pane);
       }
       if (pane.gutter) {
