@@ -241,19 +241,22 @@ export function createPdfViewer(container, opts = {}) {
   }
   if (opts.zoteroAttKey) setZoteroAttKey(opts.zoteroAttKey);
 
-  // ── Button handlers ──────────────────────────────────────────────
-  zoomOutBtn.addEventListener("click", () => {
+  // ── Zoom actions ──────────────────────────────────────────────────
+  function stepZoomOut() {
     const cur = getEffectiveZoom();
     for (let i = ZOOM_LEVELS.length - 1; i >= 0; i--) {
       if (ZOOM_LEVELS[i] < cur - 0.01) { applyFixedZoom(ZOOM_LEVELS[i]); return; }
     }
-  });
-  zoomInBtn.addEventListener("click", () => {
+  }
+  function stepZoomIn() {
     const cur = getEffectiveZoom();
     for (let i = 0; i < ZOOM_LEVELS.length; i++) {
       if (ZOOM_LEVELS[i] > cur + 0.01) { applyFixedZoom(ZOOM_LEVELS[i]); return; }
     }
-  });
+  }
+
+  zoomOutBtn.addEventListener("click", stepZoomOut);
+  zoomInBtn.addEventListener("click", stepZoomIn);
   fitBtn.addEventListener("click", () => switchMode(MODE_FIT_WIDTH));
   hScrollBtn.addEventListener("click", () => {
     if (layoutMode === MODE_HORIZONTAL) {
@@ -263,6 +266,15 @@ export function createPdfViewer(container, opts = {}) {
       switchMode(MODE_HORIZONTAL);
     }
   });
+
+  // ── Keyboard zoom (Cmd+/- while viewer is mounted) ──────────────
+  function onKeydown(e) {
+    if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+    if (e.key === "=" || e.key === "+") { e.preventDefault(); stepZoomIn(); }
+    else if (e.key === "-") { e.preventDefault(); stepZoomOut(); }
+    else if (e.key === "0") { e.preventDefault(); switchMode(MODE_FIT_WIDTH); }
+  }
+  window.addEventListener("keydown", onKeydown);
 
   // ── Observer ─────────────────────────────────────────────────────
   let observer = null;
@@ -599,6 +611,7 @@ export function createPdfViewer(container, opts = {}) {
   // ── Cleanup ──────────────────────────────────────────────────────
   async function destroy() {
     destroyed = true;
+    window.removeEventListener("keydown", onKeydown);
     if (observer) { observer.disconnect(); observer = null; }
     scrollListeners = [];
     if (pdfDoc) { try { await pdfDoc.destroy(); } catch (_) {} pdfDoc = null; }
