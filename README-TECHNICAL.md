@@ -13,6 +13,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 ├── window-shortcuts.js                │   ├── files.rs
 ├── tooltips.js                        │   ├── images.rs
 ├── command-palette.js                 │   ├── settings.rs
+├── command-palette-commands.js        │       └── defaults.rs
 ├── cmd-button.js                      │   ├── snapshots.rs
 ├── backup.js                          │   ├── local_sync.rs
 ├── theme-colors.js                    │   ├── window.rs       (incl. set_traffic_lights_visible)
@@ -29,6 +30,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   └── highlight-pane.js              │   └── defaults.rs
 ├── pdf/                               ├── files.rs
 │   ├── pdf-viewer.js                  ├── images.rs
+│   ├── pdf-viewer-annotations.js      (annotation shelf + page overlay rendering)
 │   ├── pdf-bridge.js                  ├── pdfs.rs
 │   └── zotero-save-pdf.js            ├── snapshots.rs
 │                                      ├── sync.rs / sync_commands.rs
@@ -116,8 +118,9 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 ├── stack/
 │   ├── stack-bridge.js                (mount/unmount lifecycle, 2 s autosave)
 │   ├── stack-component.js             (StackComponent: columns, spines, reorder, resize, virtualization)
-│   ├── stack-content.js               (.hushstack JSON envelope encode/decode)
-│   ├── stack-item-mount.js            (per-type mount/unmount: doc, notebook, PDF, nested stack)
+│   ├── stack-content.js               (.hushstack JSON envelope encode/decode; strips nested stacks on load)
+│   ├── stack-doc-outline.js           (lightweight heading outline sidebar for doc columns)
+│   ├── stack-item-mount.js            (per-type mount/unmount: doc, notebook, PDF)
 │   ├── stack-spine.js                 (spine DOM: icon, label, buttons, left-edge resize)
 │   ├── stack-picker.js                (fuzzy file picker for adding items)
 │   └── stack-list-view.js             (modal list view with reorder + close)
@@ -348,7 +351,7 @@ Both are re-exported from `editor.js` so external imports keep working.
 
 Column width is managed by dynamically setting `paddingLeft`/`paddingRight` on `.cm-scroller`. Draggable resizer elements sit 10px outside the column edges. When the sidebar panel is open in inset mode, the column re-centers within remaining space.
 
-### Command Palette (`command-palette.js`, `command-palette-helpers.js`, `command-palette-pickers.js`)
+### Command Palette (`command-palette.js`, `command-palette-commands.js`, `command-palette-helpers.js`, `command-palette-pickers.js`)
 
 Centered overlay activated by `Cmd+P` (hardcoded in the fixed keymap). Lists all major commands with icons, labels, and keyboard shortcut keycaps. Supports arrow-key navigation, Enter to execute, Escape to dismiss, and text filtering.
 
@@ -358,7 +361,7 @@ The "as pane" variants call `state.newFile(null, { openImmediately: false })` / 
 
 **Gutter-as-one-shot commands.** `Add notebook as gutter` opens a fuzzy picker over notebooks in the active desk; `New notebook as gutter` prompts for a filename, creates the notebook, then in both cases `openNotebookAsGutter(state, fileId, name)` (in `command-palette-pickers.js`) calls `createPane(...)` → awaits a microtask so `focusPane()`'s effects settle → calls `useActivePaneAsGutter()`. Both entries hide via `docContextHasGutterAlready(state)` (walks the live `panes` Map for any pane with `gutter: true` matching `"doc:" + currentFileId`) so a doc can't carry two gutters.
 
-**Picker helpers extracted.** `command-palette-pickers.js` holds every `enter*Picker` plus the gutter / prompt helpers; `command-palette-helpers.js` keeps the pure utility functions (`collectFileLeaves`, `activeDeskSubtree`, `formatShortcutKeys`, `canUseAsNote`, `isDesktopTauri`). The split is purely to keep `command-palette.js` under the 700-line repo cap after adding the new entries.
+**Command definitions extracted.** `command-palette-commands.js` holds the icon imports, the `icons` object, `buildCommands(state)` (the full command definitions array), and the mode-turnoff builders (`buildActiveModeTurnoffs`, `docModeTurnoffs`). `command-palette-pickers.js` holds every `enter*Picker` plus the gutter / prompt helpers; `command-palette-helpers.js` keeps the pure utility functions (`collectFileLeaves`, `activeDeskSubtree`, `formatShortcutKeys`, `canUseAsNote`, `isDesktopTauri`). The main `command-palette.js` retains only the UI: overlay lifecycle, keyboard/mouse handling, and list rendering. The split keeps every file under the 700-line repo cap.
 
 Doc, notebook, project, and trash rows reuse the inline `typeIcons` glyphs exported from `sidebar/files-panel-shared.js` (filled rectangle, ruled rectangle, triangle, lid + bin) so the palette and the file tree show the exact same visual language. Mode-toggle and action rows still use the hand-drawn 24-unit SVGs from `src/sidebar/sidebar_icons/`. Each entry in the `icons` map is a fully-formed `<svg>…</svg>` string (24-unit for the sidebar imports, 16-unit for the `typeIcons` glyphs); `renderList` just drops it into the icon slot rather than re-wrapping with a per-row viewBox. All glyphs use `currentColor` for stroke/fill so they pick up the palette's `--fg`.
 
@@ -400,7 +403,7 @@ Both buttons hide their `.panel-footer-label` text by default (`max-width: 0; op
 
 **Session-state persistence.** Two per-window settings — `sidebarOpenPanel` and `sidebarPinned` — ride through to the next session via `AppSettings`. Only the Files panel lives in the sidebar now, so `sidebarOpenPanel` is effectively `"files" | null`; legacy values (`"styles"`, `"versions"`) are coerced to `"files"` on replay since any truthy value reopens the panel. `createSidebar()` runs a replay block at the end of init — guarded by a `_suppressStatePersist` flag — that calls `openPanel()` when the saved value is truthy and re-applies the pin class on narrow viewports. Subsequent open / close / pin toggles route through a single `persistSidebarState()` helper.
 
-**Styles → command palette.** The retired styles sidebar list now lives entirely in the command palette: one `Use Style: <name>` entry per saved style (plus `Use Style: Default`), generated dynamically by `buildUseStyleCommands(state)` in `command-palette.js`. A separate `Edit Styles` entry opens the three-column Edit Styles modal (`sidebar/style-editor-modal.js`) — left rail lists every style with hover-revealed duplicate / delete actions, middle column is the existing settings form rendered via `openStyleModal(state, target, onDone, { host })`, right column is the live preview. Selecting a row in the rail flushes any pending edit, then remounts the editor for the new target. The light / dark / auto appearance toggle moved into the rail's footer.
+**Styles → command palette.** The retired styles sidebar list now lives entirely in the command palette: one `Use Style: <name>` entry per saved style (plus `Use Style: Default`), generated dynamically by `buildUseStyleCommands(state)` in `command-palette-commands.js`. A separate `Edit Styles` entry opens the three-column Edit Styles modal (`sidebar/style-editor-modal.js`) — left rail lists every style with hover-revealed duplicate / delete actions, middle column is the existing settings form rendered via `openStyleModal(state, target, onDone, { host })`, right column is the live preview. Selecting a row in the rail flushes any pending edit, then remounts the editor for the new target. The light / dark / auto appearance toggle moved into the rail's footer.
 
 **Versions → modal.** The Versions panel is encapsulated by `sidebar/versions-modal.js`, which renders a centered backdrop with the snapshot list on the left and a positioned preview host on the right. `createVersionsPanel(host, state, close, { previewHost })` is reused from the original sidebar panel — the `previewHost` option scopes the `.version-preview-overlay` inside the modal (now `position: absolute; inset: 0`) rather than the viewport. The legacy `show-versions-panel` event still works; the sidebar listener dynamically imports `versions-modal.js` and opens it.
 
