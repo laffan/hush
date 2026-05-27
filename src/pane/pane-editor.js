@@ -12,6 +12,7 @@ import { getActiveTheme } from "../themes/index.js";
 import {
   createBaseExtensions, getMarkdownHighlight, buildShortcutExtension,
 } from "../editor/editor.js";
+import { bypassSeparatorFilter } from "../editor/plugins/project-view.js";
 import { createDryHighlightPlugin } from "../editor/plugins/dry-highlight.js";
 import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 import { themeBackgrounds } from "../theme-colors.js";
@@ -67,7 +68,10 @@ export function createPaneEditor(container, appState, onChange, opts) {
     view,
     getContent: () => view.state.doc.toString(),
     setContent: (text) => {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        annotations: bypassSeparatorFilter.of(true),
+      });
     },
     focus: () => view.focus(),
     blur: () => view.contentDOM.blur(),

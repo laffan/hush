@@ -1,15 +1,15 @@
 /**
  * Stack spine — the 50px-wide vertical sidebar on each stack column.
- * Top: type icon, centered: filename (vertical). Bottom: color, drag
- * (reorder), close (X). Clicking the spine body (outside buttons)
- * toggles the column open/closed. Left edge is a resize affordance
- * for the item to the left.
+ * Top: type icon (click for color picker), centered: filename (vertical).
+ * Bottom: drag (reorder), duplicate, pop-out (as pane), close (X).
+ * Clicking the spine body (outside buttons) toggles the column open/closed.
+ * Left edge is a resize affordance for the item to the left.
  */
 
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
-export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut }) {
+export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut, onDuplicate }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";
   if (item.spineColor) spine.style.backgroundColor = item.spineColor;
@@ -30,6 +30,7 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
   spine.addEventListener("click", (e) => {
     if (didResize) { didResize = false; return; }
     if (e.target.closest(".stack-spine-btn")) return;
+    if (e.target.closest(".stack-spine-icon")) return;
     if (e.metaKey || e.ctrlKey) {
       if (e.shiftKey) { onOpenAll(); } else { onToggleAll(); }
       return;
@@ -38,10 +39,17 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
   });
   spine.style.cursor = "pointer";
 
-  // Icon at top
+  // Icon at top — click opens color picker
   const iconEl = document.createElement("div");
   iconEl.className = "stack-spine-icon";
   iconEl.innerHTML = typeIcons[item.fileType] || typeIcons.document;
+  iconEl.style.cursor = "pointer";
+  iconEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openColorPicker(iconEl, item.spineColor, (color) => {
+      onColorChange(color);
+    });
+  });
   spine.appendChild(iconEl);
 
   // Centered label
@@ -54,29 +62,27 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
   const buttons = document.createElement("div");
   buttons.className = "stack-spine-buttons";
 
-  const colorBtn = makeBtn("stack-spine-color-btn",
-    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5"/></svg>`);
-  colorBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    openColorPicker(colorBtn, item.spineColor, (color) => {
-      onColorChange(color);
-      const c = colorBtn.querySelector("circle");
-      if (c) c.setAttribute("fill", color || "none");
-    });
-  });
-  buttons.appendChild(colorBtn);
-
+  // 1. Drag handle (reorder)
   const dragBtn = makeBtn("stack-spine-drag-btn",
     `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/><circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/><circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/></svg>`);
   dragBtn.addEventListener("pointerdown", (e) => { e.stopPropagation(); onDragStart(e); });
   buttons.appendChild(dragBtn);
 
+  // 2. Duplicate
+  const dupeBtn = makeBtn("stack-spine-dupe-btn",
+    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="8" height="8" rx="1"/><path d="M6 4V3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-1"/></svg>`);
+  dupeBtn.title = "Duplicate";
+  dupeBtn.addEventListener("click", (e) => { e.stopPropagation(); onDuplicate(item); });
+  buttons.appendChild(dupeBtn);
+
+  // 3. Pop out as pane
   const popOutBtn = makeBtn("stack-spine-popout-btn",
-    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="4" width="8" height="8" rx="1"/><polyline points="7,2 14,2 14,9"/><line x1="14" y1="2" x2="8" y2="8"/></svg>`);
+    `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 19V5C2 3.895 2.895 3 4 3H20C21.105 3 22 3.895 22 5V19C22 20.105 21.105 21 20 21H4C2.895 21 2 20.105 2 19Z"/><path d="M2 7L22 7" stroke-linecap="round"/><circle cx="5" cy="5" r=".6" fill="currentColor" stroke="none"/><circle cx="8" cy="5" r=".6" fill="currentColor" stroke="none"/><circle cx="11" cy="5" r=".6" fill="currentColor" stroke="none"/></svg>`);
   popOutBtn.title = "Open as pane";
   popOutBtn.addEventListener("click", (e) => { e.stopPropagation(); onPopOut(item); });
   buttons.appendChild(popOutBtn);
 
+  // 4. Close (remove from stack)
   const closeBtn = makeBtn("stack-spine-close-btn",
     `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`);
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); onClose(); });

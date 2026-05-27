@@ -135,6 +135,7 @@ export class StackComponent {
       onDragStart: (e) => this._startReorder(item.id, e),
       onResizeStart: (e) => this._startResizeLeft(item.id, e),
       onPopOut: (it) => this._popOutAsPane(it),
+      onDuplicate: (it) => this._duplicateItem(it),
     });
     col.appendChild(spine);
 
@@ -522,6 +523,36 @@ export class StackComponent {
     const x = window.innerWidth / 2;
     const y = window.innerHeight / 2;
     await createPane(item.fileId, item.name || "Untitled", item.fileType, x, y);
+    this.removeItem(item.id);
+  }
+
+  _duplicateItem(item) {
+    const idx = this._items.findIndex((i) => i.id === item.id);
+    if (idx < 0) return;
+    const newItem = {
+      id: crypto.randomUUID(),
+      fileId: item.fileId,
+      fileType: item.fileType,
+      name: item.name,
+      width: item.width || DEFAULT_COLUMN_WIDTH,
+      open: true,
+      scrollY: 0,
+      cameraState: null,
+      pdfZoom: null,
+      spineColor: item.spineColor,
+    };
+    this._items.splice(idx + 1, 0, newItem);
+    this._updateEmptyState();
+    const col = this._createColumn(newItem);
+    const existingCol = this._columnsEl.querySelector(`[data-item-id="${item.id}"]`);
+    const refNode = existingCol?.nextElementSibling || this._trailResize;
+    this._columnsEl.insertBefore(col, refNode);
+    this._updateVisibility();
+    requestAnimationFrame(() => {
+      col.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      col.classList.add("stack-column-highlight");
+      setTimeout(() => col.classList.remove("stack-column-highlight"), 1200);
+    });
   }
 
   async _openAddPicker() {
