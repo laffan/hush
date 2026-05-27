@@ -798,6 +798,8 @@ export class StackComponent {
     }
     this._pillContainer.style.display = "";
 
+    const CIRCLE = 30;
+    const entries = [];
     let acc = 0;
     for (const item of this._items) {
       const spineSize = isVert ? SPINE_HEIGHT : SPINE_WIDTH;
@@ -807,66 +809,72 @@ export class StackComponent {
       const colSize = spineSize + contentSize;
 
       if (item.spineColor) {
-        const pill = document.createElement("div");
-        pill.className = "stack-scrollbar-pill";
-        if (isVert) pill.classList.add("stack-scrollbar-pill-vertical");
-        pill.style.backgroundColor = item.spineColor;
-
         const pos = (acc / scrollSize) * viewSize;
-        const rawSize = Math.max(20, (colSize / scrollSize) * viewSize);
+        const rawSize = (colSize / scrollSize) * viewSize;
+        const isCircle = !item.open;
+        const pillSize = isCircle ? CIRCLE : Math.max(20, rawSize - PILL_GAP);
+        const idealStart = isCircle
+          ? pos + rawSize / 2 - CIRCLE / 2
+          : pos + PILL_GAP / 2;
+        entries.push({ item, pillSize, idealStart, isCircle, colCenter: acc + colSize / 2 });
+      }
+      acc += colSize;
+    }
 
-        if (!item.open) {
-          const circleSize = isVert
-            ? 30   // pill container is 40px wide, inset 5px each side = 30px
-            : 30;  // pill container is 40px tall, inset 5px each side = 30px
-          const center = pos + rawSize / 2;
-          if (isVert) {
-            pill.style.top = (center - circleSize / 2) + "px";
-            pill.style.height = circleSize + "px";
-            pill.style.left = "5px";
-            pill.style.right = "5px";
-          } else {
-            pill.style.left = (center - circleSize / 2) + "px";
-            pill.style.width = circleSize + "px";
-          }
-          pill.style.borderRadius = "50%";
-          pill.style.padding = "0";
+    let minNext = 0;
+    for (const e of entries) {
+      e.start = Math.max(e.idealStart, minNext);
+      minNext = e.start + e.pillSize + PILL_GAP;
+    }
 
-          const iconEl = document.createElement("span");
-          iconEl.className = "stack-scrollbar-pill-icon";
-          iconEl.innerHTML = typeIcons[item.fileType] || typeIcons.document;
-          pill.appendChild(iconEl);
+    for (const e of entries) {
+      const pill = document.createElement("div");
+      pill.className = "stack-scrollbar-pill";
+      if (isVert) pill.classList.add("stack-scrollbar-pill-vertical");
+      pill.style.backgroundColor = e.item.spineColor;
+
+      if (e.isCircle) {
+        if (isVert) {
+          pill.style.top = e.start + "px";
+          pill.style.height = e.pillSize + "px";
+          pill.style.left = "5px";
+          pill.style.right = "5px";
         } else {
-          const pillSize = Math.max(20, rawSize - PILL_GAP);
-          if (isVert) {
-            pill.style.top = (pos + PILL_GAP / 2) + "px";
-            pill.style.height = pillSize + "px";
-          } else {
-            pill.style.left = (pos + PILL_GAP / 2) + "px";
-            pill.style.width = pillSize + "px";
-          }
-
-          const textEl = document.createElement("span");
-          textEl.className = "stack-scrollbar-pill-text";
-          const title = resolveItemName(item);
-          const textPad = isVert ? 8 : 16;
-          textEl.textContent = _trimPillText(title, pillSize - textPad, isVert);
-          pill.appendChild(textEl);
+          pill.style.left = e.start + "px";
+          pill.style.width = e.pillSize + "px";
         }
-
-        const colCenter = acc + colSize / 2;
-        pill.addEventListener("click", () => {
-          if (isVert) {
-            this._scrollArea.scrollTo({ top: colCenter - viewSize / 2, behavior: "smooth" });
-          } else {
-            this._scrollArea.scrollTo({ left: colCenter - viewSize / 2, behavior: "smooth" });
-          }
-        });
-
-        this._pillContainer.appendChild(pill);
+        pill.style.borderRadius = "50%";
+        pill.style.padding = "0";
+        const iconEl = document.createElement("span");
+        iconEl.className = "stack-scrollbar-pill-icon";
+        iconEl.innerHTML = typeIcons[e.item.fileType] || typeIcons.document;
+        pill.appendChild(iconEl);
+      } else {
+        if (isVert) {
+          pill.style.top = e.start + "px";
+          pill.style.height = e.pillSize + "px";
+        } else {
+          pill.style.left = e.start + "px";
+          pill.style.width = e.pillSize + "px";
+        }
+        const textEl = document.createElement("span");
+        textEl.className = "stack-scrollbar-pill-text";
+        const title = resolveItemName(e.item);
+        const textPad = isVert ? 8 : 16;
+        textEl.textContent = _trimPillText(title, e.pillSize - textPad, isVert);
+        pill.appendChild(textEl);
       }
 
-      acc += colSize;
+      const colCenter = e.colCenter;
+      pill.addEventListener("click", () => {
+        if (isVert) {
+          this._scrollArea.scrollTo({ top: colCenter - viewSize / 2, behavior: "smooth" });
+        } else {
+          this._scrollArea.scrollTo({ left: colCenter - viewSize / 2, behavior: "smooth" });
+        }
+      });
+
+      this._pillContainer.appendChild(pill);
     }
   }
 
