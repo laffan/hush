@@ -37,12 +37,55 @@ export async function openZoteroSavePdfModal(state) {
     </div>
     <div class="zotero-results"></div>
     <div class="zotero-detail hidden"></div>
+    <div class="zotero-batch-bar hidden"></div>
   `;
   document.body.appendChild(modal);
 
   const input = modal.querySelector(".zotero-search-input");
   const resultsEl = modal.querySelector(".zotero-results");
   const detailEl = modal.querySelector(".zotero-detail");
+  const batchBar = modal.querySelector(".zotero-batch-bar");
+
+  const checked = new Map();
+
+  function updateBatchBar() {
+    if (checked.size === 0) {
+      batchBar.classList.add("hidden");
+      batchBar.innerHTML = "";
+      return;
+    }
+    batchBar.classList.remove("hidden");
+    batchBar.innerHTML = `
+      <div class="zotero-batch-list">
+        ${Array.from(checked.values()).map(r => `
+          <div class="zotero-batch-item" data-key="${escHtml(r.key)}">
+            <span class="zotero-batch-item-title">${escHtml(r.shortTitle || r.title)}</span>
+            <button class="zotero-batch-remove" title="Remove">×</button>
+          </div>
+        `).join("")}
+      </div>
+      <div class="zotero-batch-actions">
+        <button class="zotero-batch-add-btn">Add ${checked.size} PDF${checked.size > 1 ? "s" : ""}</button>
+      </div>
+      <div class="zotero-batch-status"></div>
+    `;
+    batchBar.querySelectorAll(".zotero-batch-remove").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const key = btn.closest(".zotero-batch-item").dataset.key;
+        checked.delete(key);
+        updateBatchBar();
+        updateCheckboxStates();
+      });
+    });
+    batchBar.querySelector(".zotero-batch-add-btn").addEventListener("click", () => saveBatch(state));
+  }
+
+  function updateCheckboxStates() {
+    resultsEl.querySelectorAll(".zotero-save-cb").forEach(cb => {
+      cb.checked = checked.has(cb.dataset.key);
+    });
+  }
 
   function renderResults(query) {
     const results = fuzzySearch(refs, query);
@@ -50,13 +93,77 @@ export async function openZoteroSavePdfModal(state) {
       const hasPdf = r.attachments?.some(a => a.isPdf);
       return `
         <div class="zotero-result${hasPdf ? "" : " no-pdf"}" data-key="${r.key}">
-          <span class="zotero-result-title">${escHtml(r.shortTitle || r.title)}</span>
-          <span class="zotero-result-meta">${escHtml(r.year)}${r.authors ? " — " + escHtml(r.authors) : ""}${hasPdf ? "" : " (no PDF)"}</span>
+          ${hasPdf ? `<input type="checkbox" class="zotero-save-cb" data-key="${r.key}" ${checked.has(r.key) ? "checked" : ""} />` : ""}
+          <div class="zotero-result-text">
+            <span class="zotero-result-title">${escHtml(r.shortTitle || r.title)}</span>
+            <span class="zotero-result-meta">${escHtml(r.year)}${r.authors ? " — " + escHtml(r.authors) : ""}${hasPdf ? "" : " (no PDF)"}</span>
+          </div>
         </div>
       `;
     }).join("") || '<div class="zotero-empty">No results found.</div>';
     resultsEl.classList.remove("hidden");
     detailEl.classList.add("hidden");
+
+    resultsEl.querySelectorAll(".zotero-save-cb").forEach(cb => {
+      cb.addEventListener("click", (e) => e.stopPropagation());
+      cb.addEventListener("change", () => {
+        const key = cb.dataset.key;
+        if (cb.checked) {
+          const ref = refs.find(r => r.key === key);
+          if (ref) checked.set(key, ref);
+        } else {
+          checked.delete(key);
+        }
+        updateBatchBar();
+      });
+    });
+  }
+
+  async function saveBatch(state) {
+    const items = Array.from(checked.values());
+    if (!items.length) return;
+    const userId = state.settings?.zoteroUserId;
+    const apiKey = state.settings?.zoteroApiKey;
+    if (!userId || !apiKey) return;
+
+    const statusEl = batchBar.querySelector(".zotero-batch-status");
+    const addBtn = batchBar.querySelector(".zotero-batch-add-btn");
+    addBtn.disabled = true;
+
+    for (let i = 0; i < items.length; i++) {
+      const ref = items[i];
+      const pdfAtt = (ref.attachments || []).find(a => a.isPdf);
+      if (!pdfAtt) continue;
+      if (statusEl) statusEl.textContent = `Downloading ${i + 1} of ${items.length}: ${ref.shortTitle || ref.title}...`;
+      try {
+        let bytes;
+        if (IS_TAURI) {
+          bytes = await tauriInvoke("download_zotero_pdf", { itemKey: pdfAtt.key, userId, apiKey });
+        } else {
+          const url = `https://api.zotero.org/users/${userId}/items/${pdfAtt.key}/file?key=${apiKey}`;
+          const resp = await fetch(url, { redirect: "follow" });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const ab = await resp.arrayBuffer();
+          bytes = new Uint8Array(ab);
+        }
+        const pdfBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
+        await state.importPdf(baseName, pdfBytes, null, {
+          openImmediately: i === items.length - 1,
+          zoteroAttKey: pdfAtt.key,
+          zoteroItemKey: ref.key,
+          zoteroTitle: ref.title || "Untitled",
+          zoteroAuthors: ref.authors || "",
+          zoteroFirstAuthor: ref.firstAuthor || "",
+          zoteroYear: ref.year || "",
+          zoteroCitekey: ref.citekey || "",
+        });
+      } catch (e) {
+        console.error("Batch save PDF failed for", ref.title, e);
+      }
+    }
+    if (statusEl) statusEl.textContent = `Saved ${items.length} PDF${items.length > 1 ? "s" : ""}!`;
+    setTimeout(() => closeModal(), 400);
   }
 
   function showDetail(ref) {
@@ -162,6 +269,7 @@ export async function openZoteroSavePdfModal(state) {
   });
 
   resultsEl.addEventListener("click", (e) => {
+    if (e.target.closest(".zotero-save-cb")) return;
     const row = e.target.closest(".zotero-result");
     if (!row || row.classList.contains("no-pdf")) return;
     const key = row.dataset.key;

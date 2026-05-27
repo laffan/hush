@@ -215,6 +215,88 @@
   font-weight: 500;
 }
 
+/* Result row with checkbox */
+.zotero-result .zotero-save-cb {
+  flex: 0 0 auto;
+  margin: 0;
+  cursor: pointer;
+}
+.zotero-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.zotero-result:has(.zotero-save-cb) {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Batch bar — checked-items list + Add button */
+.zotero-batch-bar {
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  padding: 10px 14px;
+}
+.zotero-batch-bar.hidden { display: none; }
+.zotero-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.zotero-batch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.08);
+  font-size: 12px;
+}
+.zotero-batch-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.zotero-batch-remove {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--fg);
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  line-height: 1;
+}
+.zotero-batch-remove:hover { opacity: 1; }
+.zotero-batch-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.zotero-batch-add-btn {
+  padding: 5px 14px;
+  border-radius: 5px;
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.zotero-batch-add-btn:hover { background: rgba(128, 128, 128, 0.25); }
+.zotero-batch-add-btn:disabled { opacity: 0.5; cursor: default; }
+.zotero-batch-status {
+  margin-top: 6px;
+  font-size: 12px;
+  min-height: 16px;
+}
+
 /* No refs message */
 .zotero-no-refs {
   padding: 24px;
