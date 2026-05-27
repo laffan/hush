@@ -28,23 +28,22 @@ export function createPaneEditor(container, appState, onChange, opts) {
   // right mounted folder even when the main editor is showing a
   // different doc. Falls back to no context (global Images store).
   const getImageContext = opts?.getLocalSyncContext || (() => null);
-  const skipTypewriter = opts?.skipTypewriter || false;
+
+  // When a modeContext proxy is supplied, plugins read per-editor mode
+  // flags (focusMode, typewriterMode, dryMode) from it instead of the
+  // global appState. Without one, behaviour is unchanged — everything
+  // reads the global flags.
+  const modeRef = opts?.modeContext || appState;
+  const hasModeCtx = !!opts?.modeContext;
+
   const { extensions, themeComp, highlightComp, shortcutComp, editableComp } =
-    createBaseExtensions(appState, onChange ? () => onChange() : null, { getImageContext });
+    createBaseExtensions(modeRef, onChange ? () => onChange() : null, { getImageContext });
 
-  // D.R.Y. mode — the plugin reads appState.dryMode reactively so
-  // adding it to the extension set is all that's needed.
-  const dryPlugin = createDryHighlightPlugin(appState);
+  const dryPlugin = createDryHighlightPlugin(modeRef);
 
-  // Typewriter mode — scroll the cursor to a fixed vertical position
-  // inside the pane on every selection / doc change.
-  // When skipTypewriter is set, the host manages typewriter directly
-  // via setTypewriterActive() and a local active flag.
-  let localTypewriterActive = false;
   const typewriterUpdateListener = EditorView.updateListener.of((update) => {
-    const active = skipTypewriter ? localTypewriterActive : appState.typewriterMode;
-    if (active && (update.docChanged || update.selectionSet || update.focusChanged)) {
-      requestAnimationFrame(() => scrollPaneCursorToTypewriter(update.view, appState, container));
+    if (modeRef.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
+      requestAnimationFrame(() => scrollPaneCursorToTypewriter(update.view, modeRef, container));
     }
   });
 
@@ -55,17 +54,16 @@ export function createPaneEditor(container, appState, onChange, opts) {
   });
   const view = new EditorView({ state: startState, parent: container });
 
-  // If typewriter mode is already active when the pane is created,
-  // apply padding + boundary line immediately.
-  if (!skipTypewriter && appState.typewriterMode) {
-    applyPaneTypewriter(view, appState, container);
+  if (modeRef.typewriterMode) {
+    _applyPaneTypewriter(view, modeRef, container);
   }
 
-  // React to mode toggles so panes track typewriter on/off.
+  // React to global mode toggles. When this editor has its own mode
+  // context the global event only needs to nudge CM (so theme / settings
+  // updates propagate); mode flags are managed by the context's toggle().
+  // Without a mode context, apply typewriter from the global flag.
   const onModeChanged = () => {
-    if (!skipTypewriter) applyPaneTypewriter(view, appState, container);
-    // Nudge the DRY plugin by issuing a no-op dispatch so it
-    // re-checks appState.dryMode on the next update cycle.
+    if (!hasModeCtx) _applyPaneTypewriter(view, modeRef, container);
     try { view.dispatch({ effects: [] }); } catch (_) {}
   };
   appState.on("mode-changed", onModeChanged);
@@ -109,14 +107,9 @@ export function createPaneEditor(container, appState, onChange, opts) {
       sd.addEventListener("scroll", handler, { passive: true });
       return () => sd.removeEventListener("scroll", handler);
     },
-    setTypewriterActive: (active) => {
-      localTypewriterActive = active;
-      if (active) applyPaneTypewriter(view, appState, container);
-      else removePaneTypewriter(view, container);
-    },
     destroy: () => {
       appState.off("mode-changed", onModeChanged);
-      removePaneTypewriter(view, container);
+      _removePaneTypewriter(view, container);
       view.destroy();
     },
     /** Reconfigure theme from the given settings. When `lockedStyleId` is
@@ -195,14 +188,16 @@ export function attachPaneTextDrop(pane) {
 
 // ── Pane-local typewriter helpers ─────────────────────────────────────
 
-/** Apply (or remove) typewriter padding and boundary line for a pane.
- *  The line is absolutely positioned inside .floating-pane-content
- *  (which has overflow:hidden + position:relative), so it's clipped
- *  to the pane boundary. The main editor's .typewriter-boundary is
- *  hidden via CSS when a pane is focused. */
-function applyPaneTypewriter(view, state, container) {
+/** Called by mode-context toggle() to apply/remove typewriter from a
+ *  per-editor mode proxy. Exported so the mode-context module can reach
+ *  it without a circular import on the full pane-editor factory. */
+export function applyPaneTypewriterFromContext(view, modeRef, container) {
+  _applyPaneTypewriter(view, modeRef, container);
+}
+
+function _applyPaneTypewriter(view, state, container) {
   if (!state.typewriterMode) {
-    removePaneTypewriter(view, container);
+    _removePaneTypewriter(view, container);
     return;
   }
   const scroller = view.scrollDOM;
@@ -234,7 +229,7 @@ function applyPaneTypewriter(view, state, container) {
 }
 
 /** Remove typewriter padding and boundary line from a pane. */
-function removePaneTypewriter(view, container) {
+function _removePaneTypewriter(view, container) {
   if (view && view.scrollDOM) {
     view.scrollDOM.style.paddingTop = "";
     view.scrollDOM.style.paddingBottom = "";

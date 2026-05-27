@@ -76,8 +76,10 @@ async function mountDocContent(contentEl, item, state, liveData) {
 
   try {
     const { createPaneEditor } = await import("../pane/pane-editor.js");
+    const { createModeContext } = await import("../state/mode-context.js");
+    const mc = createModeContext(state);
     let dirty = false;
-    const editor = createPaneEditor(wrapper, state, () => { dirty = true; }, { skipTypewriter: true });
+    const editor = createPaneEditor(wrapper, state, () => { dirty = true; }, { modeContext: mc.proxy });
     editor.setContent(content);
 
     const saveInterval = setInterval(async () => {
@@ -92,8 +94,9 @@ async function mountDocContent(contentEl, item, state, liveData) {
     }, 2000);
 
     liveData.editor = editor;
+    liveData.modeContext = mc;
+    liveData.container = wrapper;
 
-    // Register Cmd+drag source so text can be dragged out of this column
     if (editor.view) {
       import("../pane/text-drag.js").then(({ attachEditorTextDrag }) => {
         attachEditorTextDrag(editor.view, wrapper);
@@ -378,14 +381,16 @@ async function mountProjectContent(contentEl, item, state, liveData) {
 
   try {
     const { createPaneEditor } = await import("../pane/pane-editor.js");
+    const { createModeContext } = await import("../state/mode-context.js");
     const projectState = Object.create(state);
     projectState.currentProjectId = item.fileId;
+    const mc = createModeContext(projectState);
     let dirty = false;
     const editor = createPaneEditor(wrapper, projectState, () => { dirty = true; }, {
-      skipTypewriter: true,
+      modeContext: mc.proxy,
       extraExtensions: [
-        createProjectViewField(projectState),
-        createSeparatorFilter(projectState),
+        createProjectViewField(mc.proxy),
+        createSeparatorFilter(mc.proxy),
       ],
     });
     editor.setContent(joined);
@@ -413,6 +418,8 @@ async function mountProjectContent(contentEl, item, state, liveData) {
     }, 2000);
 
     liveData.editor = editor;
+    liveData.modeContext = mc;
+    liveData.container = wrapper;
     liveData.cleanup = () => {
       clearInterval(saveInterval);
       editor.destroy();

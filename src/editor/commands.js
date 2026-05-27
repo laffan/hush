@@ -33,6 +33,19 @@ import {
 import { insertFootnote } from "./plugins/footnotes.js";
 import { openZoteroModal } from "../zotero.js";
 import { toggleWordCount } from "./plugins/word-count.js";
+import { getActiveModeContext } from "../state/mode-context.js";
+
+function toggleModeOnContext(state, modeName) {
+  const ctx = getActiveModeContext(state);
+  if (ctx) {
+    ctx.mc.toggle(modeName, ctx.view, ctx.container);
+    return true;
+  }
+  if (modeName === "focusMode") state.toggleFocus();
+  else if (modeName === "typewriterMode") state.toggleTypewriter();
+  else if (modeName === "dryMode") state.toggleDry();
+  return true;
+}
 
 /** Multi-cursor "select next occurrence" — was inline in editor.js. */
 function selectNextInstance(view) {
@@ -125,19 +138,9 @@ export function buildEditorCommands() {
     shortcutTogglePrivate: (state) => { state.togglePrivate(); return true; },
     shortcutToggleSidebar: (state) => { state.emit("toggle-left-panel"); return true; },
     shortcutToggleOutline: (state) => { state.emit("toggle-outline-panel"); return true; },
-    shortcutTypewriter: (state) => {
-      if (state.currentStackFileId) {
-        import("../stack/stack-bridge.js").then(({ getStackInstance }) => {
-          const inst = getStackInstance();
-          if (inst) inst.toggleActiveTypewriter();
-        });
-        return true;
-      }
-      state.toggleTypewriter();
-      return true;
-    },
-    shortcutToggleDry: (state) => { state.toggleDry(); return true; },
-    shortcutToggleFocus: (state) => { state.toggleFocus(); return true; },
+    shortcutTypewriter: (state) => toggleModeOnContext(state, "typewriterMode"),
+    shortcutToggleDry: (state) => toggleModeOnContext(state, "dryMode"),
+    shortcutToggleFocus: (state) => toggleModeOnContext(state, "focusMode"),
     shortcutZenFocus: (state) => { state.toggleZenFocus(); return true; },
     shortcutToggleWordCount: (state) => toggleWordCount(state),
     shortcutNewFile: (state) => { state.newFile(); return true; },

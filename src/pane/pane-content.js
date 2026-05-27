@@ -18,6 +18,7 @@ import {
 import { createPaneEditor, attachPaneTextDrop } from "./pane-editor.js";
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 import { countWords } from "../editor/plugins/word-count.js";
+import { createModeContext } from "../state/mode-context.js";
 
 /** Update a pane's word-count chip from the current editor content.
  *  Notebook panes don't have a word count. The chip itself is created
@@ -62,14 +63,15 @@ export async function loadPaneContent(pane) {
 
 async function loadDocumentPane(pane) {
 
+  const mc = createModeContext(appState);
+  pane.modeContext = mc;
+
   const editor = createPaneEditor(pane._content, appState, () => {
     pane.dirty = true;
     syncDocFromPane(pane);
     updatePaneWordCount(pane);
   }, {
-    // Reads `pane.localSync` lazily so the resolver always sees the
-    // current value if the pane is later re-pointed at a different
-    // file. Image-decorator widgets re-evaluate context on each rebuild.
+    modeContext: mc.proxy,
     getLocalSyncContext: () => {
       const ls = pane.localSync;
       if (!ls || !ls.folderId || !ls.relPath) return null;
