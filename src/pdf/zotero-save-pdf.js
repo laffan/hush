@@ -122,48 +122,27 @@ export async function openZoteroSavePdfModal(state) {
   async function saveBatch(state) {
     const items = Array.from(checked.values());
     if (!items.length) return;
-    const userId = state.settings?.zoteroUserId;
-    const apiKey = state.settings?.zoteroApiKey;
-    if (!userId || !apiKey) return;
 
-    const statusEl = batchBar.querySelector(".zotero-batch-status");
-    const addBtn = batchBar.querySelector(".zotero-batch-add-btn");
-    addBtn.disabled = true;
-
-    for (let i = 0; i < items.length; i++) {
-      const ref = items[i];
+    const fileIds = [];
+    for (const ref of items) {
       const pdfAtt = (ref.attachments || []).find(a => a.isPdf);
       if (!pdfAtt) continue;
-      if (statusEl) statusEl.textContent = `Downloading ${i + 1} of ${items.length}: ${ref.shortTitle || ref.title}...`;
-      try {
-        let bytes;
-        if (IS_TAURI) {
-          bytes = await tauriInvoke("download_zotero_pdf", { itemKey: pdfAtt.key, userId, apiKey });
-        } else {
-          const url = `https://api.zotero.org/users/${userId}/items/${pdfAtt.key}/file?key=${apiKey}`;
-          const resp = await fetch(url, { redirect: "follow" });
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const ab = await resp.arrayBuffer();
-          bytes = new Uint8Array(ab);
-        }
-        const pdfBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-        const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
-        await state.importPdf(baseName, pdfBytes, null, {
-          openImmediately: i === items.length - 1,
-          zoteroAttKey: pdfAtt.key,
-          zoteroItemKey: ref.key,
-          zoteroTitle: ref.title || "Untitled",
-          zoteroAuthors: ref.authors || "",
-          zoteroFirstAuthor: ref.firstAuthor || "",
-          zoteroYear: ref.year || "",
-          zoteroCitekey: ref.citekey || "",
-        });
-      } catch (e) {
-        console.error("Batch save PDF failed for", ref.title, e);
-      }
+      const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
+      const result = await state.registerPdfPlaceholder(baseName, {
+        zoteroAttKey: pdfAtt.key,
+        zoteroItemKey: ref.key,
+        zoteroTitle: ref.title || "Untitled",
+        zoteroAuthors: ref.authors || "",
+        zoteroFirstAuthor: ref.firstAuthor || "",
+        zoteroYear: ref.year || "",
+        zoteroCitekey: ref.citekey || "",
+      });
+      if (result) fileIds.push(result.fileId);
     }
-    if (statusEl) statusEl.textContent = `Saved ${items.length} PDF${items.length > 1 ? "s" : ""}!`;
-    setTimeout(() => closeModal(), 400);
+    closeModal();
+
+    const { triggerBackgroundDownload } = await import("../sync/pdf-sync.js");
+    for (const fid of fileIds) triggerBackgroundDownload(fid, state);
   }
 
   function showDetail(ref) {

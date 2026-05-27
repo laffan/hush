@@ -220,7 +220,7 @@ async function removePdfTreeNode(state, fileId) {
   }
 }
 
-function triggerBackgroundDownload(fileId, state) {
+export function triggerBackgroundDownload(fileId, state) {
   const meta = _registry?.items?.[fileId];
   if (!meta?.zoteroAttKey) return;
   if (!IS_TAURI) return;
