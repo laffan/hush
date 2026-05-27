@@ -7,7 +7,7 @@
 import { findNode } from "../state/tree-helpers.js";
 import { typeIcons, escHtml } from "../sidebar/files-panel-shared.js";
 
-const ELIGIBLE_TYPES = new Set(["document", "notebook", "pdf"]);
+const ELIGIBLE_TYPES = new Set(["document", "notebook", "pdf", "project"]);
 
 export function openStackFilePicker(state, onPick) {
   // Collect eligible files from the active desk
@@ -19,9 +19,10 @@ export function openStackFilePicker(state, onPick) {
   function walk(nodes, breadcrumb) {
     for (const node of nodes) {
       if (node.id?.startsWith("__trash__") || node.id?.startsWith("__images__")) continue;
-      if (ELIGIBLE_TYPES.has(node.type) && node.fileId) {
+      const eligibleId = node.type === "project" ? node.id : node.fileId;
+      if (ELIGIBLE_TYPES.has(node.type) && eligibleId) {
         leaves.push({
-          fileId: node.fileId,
+          fileId: eligibleId,
           type: node.type,
           name: node.name,
           breadcrumb,

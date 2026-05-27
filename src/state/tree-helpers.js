@@ -206,16 +206,18 @@ export function normalizeProjectChildren(nodes) {
   for (const n of nodes) {
     if (!n || !Array.isArray(n.children)) continue;
     if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
-      const docs = [], notebooks = [], rest = [];
+      const docs = [], supplementary = [], rest = [];
       for (const c of n.children) {
         // Docs marked `useAsNote: true` sort with notebooks (under the
         // joined buffer at 50 % opacity) so a project can carry both
         // the doc's main flow and supplementary notes side by side.
+        // Stacks are also supplementary material — they sit below the
+        // docs alongside notebooks.
         if (c.type === "document" && !c.useAsNote) docs.push(c);
-        else if (c.type === "notebook" || (c.type === "document" && c.useAsNote)) notebooks.push(c);
+        else if (c.type === "notebook" || c.type === "stack" || (c.type === "document" && c.useAsNote)) supplementary.push(c);
         else rest.push(c);
       }
-      n.children = [...docs, ...notebooks, ...rest];
+      n.children = [...docs, ...supplementary, ...rest];
     }
     normalizeProjectChildren(n.children);
   }

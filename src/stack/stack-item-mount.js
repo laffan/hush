@@ -31,6 +31,8 @@ export async function mountItemContent(contentEl, item, state, liveColumns) {
     await mountPdfContent(contentEl, item, state, liveData);
   } else if (type === "stack") {
     await mountNestedStack(contentEl, item, state, liveData);
+  } else if (type === "project") {
+    await mountProjectContent(contentEl, item, state, liveData);
   } else {
     contentEl.innerHTML = `<div class="stack-placeholder">Unknown type: ${type}</div>`;
   }
@@ -330,4 +332,89 @@ async function mountNestedStack(contentEl, item, state, liveData) {
     scrollY: 0,
     cameraState: null,
   });
+}
+
+// --- Project mounting (joined doc buffer, same as state-project.js) ---
+
+async function mountProjectContent(contentEl, item, state, liveData) {
+  const { findNode, collectDocumentIds } = await import("../state/tree-helpers.js");
+  const { SEPARATOR } = await import("../editor/plugins/project-view.js");
+
+  const node = findNode(state.fileTree, item.fileId);
+  if (!node || node.type !== "project") {
+    contentEl.innerHTML = `<div class="stack-placeholder">Project not found</div>`;
+    liveData.cleanup = () => {};
+    liveData.getScrollState = () => ({ scrollY: 0, cameraState: null });
+    return;
+  }
+
+  const docIds = collectDocumentIds(node.children || []);
+  let joined = "";
+  if (IS_TAURI && docIds.length) {
+    const parts = [];
+    for (const fid of docIds) {
+      try {
+        const file = await tauriInvoke("load_file", { id: fid });
+        parts.push(file.content || "");
+      } catch (e) {
+        console.error("Failed to load project doc for stack:", e);
+        parts.push("");
+      }
+    }
+    joined = parts.join(SEPARATOR);
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "stack-doc-wrapper";
+  contentEl.appendChild(wrapper);
+
+  try {
+    const { createPaneEditor } = await import("../pane/pane-editor.js");
+    let dirty = false;
+    const editor = createPaneEditor(wrapper, state, () => { dirty = true; });
+    editor.setContent(joined);
+
+    const saveInterval = setInterval(async () => {
+      if (!dirty) return;
+      dirty = false;
+      const text = editor.getContent();
+      const { SEPARATOR: SEP } = await import("../editor/plugins/project-view.js");
+      const parts = [];
+      let pos = 0;
+      for (let i = 0; i < docIds.length - 1; i++) {
+        const idx = text.indexOf(SEP, pos);
+        if (idx === -1) break;
+        parts.push(text.slice(pos, idx));
+        pos = idx + SEP.length;
+      }
+      parts.push(text.slice(pos));
+      if (IS_TAURI) {
+        for (let i = 0; i < docIds.length && i < parts.length; i++) {
+          try { await tauriInvoke("save_file", { id: docIds[i], content: parts[i] || "" }); }
+          catch (e) { console.error("Stack project save failed:", e); }
+        }
+      }
+    }, 2000);
+
+    liveData.editor = editor;
+    liveData.cleanup = () => {
+      clearInterval(saveInterval);
+      editor.destroy();
+    };
+    liveData.getScrollState = () => ({
+      scrollY: editor.view?.scrollDOM?.scrollTop ?? 0,
+      cameraState: null,
+    });
+
+    if (item.scrollY) {
+      requestAnimationFrame(() => {
+        try { editor.view?.scrollDOM?.scrollTo(0, item.scrollY); } catch (_) {}
+      });
+    }
+  } catch (e) {
+    console.error("Failed to create stack project editor:", e);
+    wrapper.textContent = joined.slice(0, 500) + "...";
+    liveData.cleanup = () => {};
+    liveData.getScrollState = () => ({ scrollY: 0, cameraState: null });
+  }
 }

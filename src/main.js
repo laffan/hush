@@ -144,6 +144,13 @@ async function init() {
     if (result) state.syncFileToExternal(result.fileId, result.content);
     showEditor();
   });
+  state.on("project-demoted", async (projectId) => {
+    const { getStackInstance } = await import("./stack/stack-bridge.js");
+    const inst = getStackInstance();
+    if (!inst) return;
+    const victims = inst._items.filter(i => i.fileType === "project" && i.fileId === projectId);
+    for (const v of victims) inst.removeItem(v.id);
+  });
   // Notebook minimap + desks toggle bridge — both wire themselves to AppState.
   import("./notebook/minimap.js").then(m => m.wireMinimap(state));
   import("./state/state-desks.js").then(m => m.wireDesksTauri(state));

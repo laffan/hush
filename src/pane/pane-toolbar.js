@@ -31,6 +31,8 @@ const ICON_ATTACH = `<svg viewBox="0 0 10 10"><circle cx="5" cy="3.5" r="2"/><li
 const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><line x1="2.5" y1="4" x2="7.5" y2="4"/><line x1="5" y1="7" x2="5" y2="9.5"/></svg>`;
 const ICON_SIZE = `<svg viewBox="0 0 10 10"><polyline points="2,8 5,2 8,8"/><line x1="3.3" y1="6" x2="6.7" y2="6"/></svg>`;
 const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><polyline points="2.5,4 5,6.5 7.5,4"/></svg>`;
+// Pop-in: arrow pointing into a rectangle (reverse of pop-out)
+const ICON_POP_IN = `<svg viewBox="0 0 10 10"><rect x="1" y="3" width="5.5" height="5.5" rx="0.7" fill="none"/><polyline points="5.5,1 9,1 9,4.5"/><line x1="9" y1="1" x2="5" y2="5"/></svg>`;
 // Header-bar glyph: a thick vertical bar (the gutter rule) next to three
 // horizontal lines (the content below it). Read this as "header label
 // territory" so the gutter affordance is recognisable at toolbar size.
@@ -73,12 +75,13 @@ export function buildPaneDOM(pane, deps) {
     e.stopPropagation();
     if (pane.fileType === "notebook") appState.openNotebook(pane.fileId);
     else if (pane.fileType === "pdf") appState.openPdf(pane.fileId);
+    else if (pane.fileType === "stack") appState.openStack(pane.fileId);
     else appState.openFile(pane.fileId);
   });
   title.appendChild(titleLink);
   // Word-count chip (doc panes only) — populated by pane-content.js's
   // updatePaneWordCount on every doc change.
-  if (pane.fileType !== "notebook" && pane.fileType !== "pdf") {
+  if (pane.fileType !== "notebook" && pane.fileType !== "pdf" && pane.fileType !== "stack") {
     const wc = document.createElement("span");
     wc.className = "fp-wordcount";
     wc.style.display = "none";
@@ -92,7 +95,7 @@ export function buildPaneDOM(pane, deps) {
 
   // Font-size button (doc panes only — notebooks have no text size,
   // zotero-highlights pane is fileless).
-  if (pane.fileType !== "notebook" && pane.fileType !== "pdf" && pane.fileType !== "zotero-highlights") {
+  if (pane.fileType !== "notebook" && pane.fileType !== "pdf" && pane.fileType !== "stack" && pane.fileType !== "zotero-highlights") {
     const sizeBtn = makeBtn("size", ICON_SIZE, "Pane font size");
     sizeBtn.addEventListener("click", (e) => { e.stopPropagation(); togglePaneSizePopover(pane, sizeBtn, schedulePersist); });
     buttons.appendChild(sizeBtn);
@@ -111,16 +114,35 @@ export function buildPaneDOM(pane, deps) {
   });
   buttons.appendChild(pinBtn);
 
-  // Gutter toggle on every pane — the click decides whether the pane
-  // qualifies (notebook + doc context) and silently no-ops otherwise.
-  // Mutually exclusive with pin: pin is disabled while the pane is a
-  // gutter, see syncGutterButton.
-  const gutterBtn = makeBtn("gutter", ICON_GUTTER, "Use as gutter");
-  gutterBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleGutterFromButton(pane);
-  });
-  buttons.appendChild(gutterBtn);
+  // In a stack context, show "pop-in" button instead of gutter.
+  // Otherwise show the gutter toggle.
+  if (appState.currentStackFileId) {
+    const popInBtn = makeBtn("pop-in", ICON_POP_IN, "Add to stack");
+    popInBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const { getStackInstance } = await import("../stack/stack-bridge.js");
+      const inst = getStackInstance();
+      if (inst) {
+        inst.handleFileDrop(pane.fileId, pane.fileType, pane.fileName || "Untitled");
+        closePane(pane.id);
+      }
+    });
+    buttons.appendChild(popInBtn);
+  } else if (pane.fileType === "pdf") {
+    const shelfBtn = makeBtn("gutter", ICON_GUTTER, "Toggle annotations");
+    shelfBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (pane.pdfViewer?.toggleShelf) pane.pdfViewer.toggleShelf();
+    });
+    buttons.appendChild(shelfBtn);
+  } else {
+    const gutterBtn = makeBtn("gutter", ICON_GUTTER, "Use as gutter");
+    gutterBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleGutterFromButton(pane);
+    });
+    buttons.appendChild(gutterBtn);
+  }
 
   // Collapse button (iOS only — desktop's title-bar double-click is the
   // equivalent gesture).

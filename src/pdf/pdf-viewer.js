@@ -86,7 +86,9 @@ export function createPdfViewer(container, opts = {}) {
   zoteroLink.textContent = "Open in Zotero ↗";
   zoteroLink.style.display = "none";
 
-  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, scrollToggle, pageIndicator, zoteroLink);
+  const thumbnailBtn = svgBtn("pdf-zoom-btn pdf-thumbnail-btn", "Thumbnail view", THUMBNAIL_ICON);
+
+  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, scrollToggle, thumbnailBtn, pageIndicator, zoteroLink);
   root.appendChild(toolbar);
 
   container.appendChild(root);
@@ -101,6 +103,167 @@ export function createPdfViewer(container, opts = {}) {
     }
   }
   if (opts.zoteroAttKey) setZoteroAttKey(opts.zoteroAttKey);
+
+  // Tauri webviews swallow clicks on <a href> with custom schemes —
+  // hand the URL to the opener plugin instead.
+  zoteroLink.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const url = zoteroLink.href;
+    if (!url) return;
+    try {
+      const opener = await import("@tauri-apps/plugin-opener");
+      await opener.openUrl(url);
+    } catch {
+      window.open(url, "_blank");
+    }
+  });
+
+  // ── Thumbnail view ───────────────────────────────────────────────
+  const THUMB_WIDTH = 150;
+  const THUMB_GAP = 12;
+  const THUMB_PADDING = 16;
+  let thumbPanel = null;
+  let thumbVisible = false;
+  let thumbObserver = null;
+
+  function toggleThumbnails() {
+    thumbVisible = !thumbVisible;
+    thumbnailBtn.classList.toggle("active", thumbVisible);
+    if (thumbVisible) showThumbnails();
+    else hideThumbnails();
+  }
+
+  function showThumbnails() {
+    if (thumbPanel) { thumbPanel.style.display = ""; renderVisibleThumbs(); return; }
+    thumbPanel = document.createElement("div");
+    thumbPanel.className = "pdf-thumbnail-panel";
+
+    const thumbScroll = document.createElement("div");
+    thumbScroll.className = "pdf-thumbnail-scroll";
+    thumbPanel.appendChild(thumbScroll);
+
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i];
+      const vp = p.viewport;
+      const aspect = vp.height / vp.width;
+      const thumbH = Math.round(THUMB_WIDTH * aspect);
+
+      const cell = document.createElement("div");
+      cell.className = "pdf-thumb-cell";
+      cell.dataset.thumbIdx = i;
+      cell.style.width = THUMB_WIDTH + "px";
+      cell.style.height = thumbH + "px";
+
+      const placeholder = document.createElement("div");
+      placeholder.className = "pdf-thumb-placeholder";
+      cell.appendChild(placeholder);
+
+      const label = document.createElement("div");
+      label.className = "pdf-thumb-label";
+      label.textContent = i + 1;
+      cell.appendChild(label);
+
+      cell.addEventListener("click", () => {
+        goToPage(i + 1);
+        toggleThumbnails();
+      });
+
+      thumbScroll.appendChild(cell);
+    }
+
+    body.appendChild(thumbPanel);
+
+    thumbObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const idx = parseInt(entry.target.dataset.thumbIdx, 10);
+        if (!isNaN(idx)) renderThumb(idx);
+      }
+    }, { root: thumbScroll, rootMargin: "200px" });
+
+    for (const cell of thumbScroll.children) {
+      thumbObserver.observe(cell);
+    }
+
+    renderVisibleThumbs();
+  }
+
+  function hideThumbnails() {
+    if (!thumbPanel) return;
+    thumbPanel.style.display = "none";
+    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
+  }
+
+  function renderVisibleThumbs() {
+    if (!thumbPanel) return;
+    const thumbScroll = thumbPanel.querySelector(".pdf-thumbnail-scroll");
+    if (!thumbScroll) return;
+    const rect = thumbScroll.getBoundingClientRect();
+    for (const cell of thumbScroll.children) {
+      const cr = cell.getBoundingClientRect();
+      if (cr.bottom < rect.top - 200 || cr.top > rect.bottom + 200) continue;
+      const idx = parseInt(cell.dataset.thumbIdx, 10);
+      if (!isNaN(idx)) renderThumb(idx);
+    }
+  }
+
+  async function renderThumb(idx) {
+    if (!pdfDoc || destroyed || idx < 0 || idx >= pages.length) return;
+    const cell = thumbPanel?.querySelector(`[data-thumb-idx="${idx}"]`);
+    if (!cell || cell.dataset.thumbRendered) return;
+    cell.dataset.thumbRendered = "1";
+
+    try {
+      const page = await pdfDoc.getPage(idx + 1);
+      if (destroyed) return;
+      const vp = page.getViewport({ scale: 1 });
+      const scale = THUMB_WIDTH / vp.width;
+      const svp = page.getViewport({ scale });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(svp.width);
+      canvas.height = Math.round(svp.height);
+      canvas.className = "pdf-thumb-canvas";
+
+      await page.render({ canvas, viewport: svp, background: "#ffffff" }).promise;
+      if (destroyed) return;
+
+      // Paint annotation overlays onto the thumbnail
+      const annotations = annotLayer.getAnnotations();
+      if (annotations.length) {
+        const ctx = canvas.getContext("2d");
+        for (const ann of annotations) {
+          if ((ann.pageIndex ?? (ann.page - 1)) !== idx) continue;
+          if (!ann.rects) continue;
+          const color = ann.color || "#ffff00";
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.3;
+          for (const r of ann.rects) {
+            const x = r[0] * scale;
+            const y = r[1] * scale;
+            const w = (r[2] - r[0]) * scale;
+            const h = (r[3] - r[1]) * scale;
+            ctx.fillRect(x, y, w, h);
+          }
+          ctx.globalAlpha = 1.0;
+        }
+      }
+
+      const ph = cell.querySelector(".pdf-thumb-placeholder");
+      if (ph) ph.remove();
+      cell.insertBefore(canvas, cell.firstChild);
+    } catch (e) {
+      console.error(`Failed to render thumbnail ${idx + 1}:`, e);
+    }
+  }
+
+  function destroyThumbnails() {
+    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
+    if (thumbPanel) { thumbPanel.remove(); thumbPanel = null; }
+    thumbVisible = false;
+  }
+
+  thumbnailBtn.addEventListener("click", toggleThumbnails);
 
   // ── Zoom actions ──────────────────────────────────────────────────
   function stepZoomOut() {
@@ -409,6 +572,7 @@ export function createPdfViewer(container, opts = {}) {
   function suspend() {
     if (suspended || destroyed || !pdfDoc) return;
     suspended = true;
+    destroyThumbnails();
     window.removeEventListener("keydown", onKeydown);
     if (resizeObserver) resizeObserver.disconnect();
     if (observer) { observer.disconnect(); observer = null; }
@@ -487,6 +651,7 @@ export function createPdfViewer(container, opts = {}) {
   // ── Cleanup ──────────────────────────────────────────────────────
   async function destroy() {
     destroyed = true;
+    destroyThumbnails();
     window.removeEventListener("keydown", onKeydown);
     if (observer) { observer.disconnect(); observer = null; }
     scrollListeners = [];
@@ -551,6 +716,9 @@ const VERTICAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="
 
 // Pages side by side (horizontal scroll — current mode indicator)
 const HORIZONTAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
+
+// Thumbnail grid: small 2x2 rectangles
+const THUMBNAIL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
 // Fit: outward-pointing arrows
 const FIT_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><polyline points="1,5 1,1 5,1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="11,1 15,1 15,5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="15,11 15,15 11,15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="5,15 1,15 1,11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;

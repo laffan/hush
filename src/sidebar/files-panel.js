@@ -258,19 +258,20 @@ export function createFilesPanel(container, state, hidePanel) {
         });
         return;
       }
-      const eligible = (item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId;
+      const dragId = item.type === "project" ? item.id : item.fileId;
+      const eligible = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack" || item.type === "project") && dragId;
       if (!eligible) return;
       // Alt/Option-drag onto an open stack → add as stack item
       const altHeld = pointerEvent?.altKey;
       if (altHeld && state.currentStackFileId) {
         import("../stack/stack-bridge.js").then(({ getStackInstance }) => {
           const inst = getStackInstance();
-          if (inst) inst.handleFileDrop(item.fileId, item.type, item.name);
+          if (inst) inst.handleFileDrop(dragId, item.type, item.name);
         });
         return;
       }
       // Cmd-drag (default) → create floating pane
-      createPane(item.fileId, item.name, item.type, clientX, clientY);
+      createPane(dragId, item.name, item.type, clientX, clientY);
     },
 
     onChange: (newData) => {

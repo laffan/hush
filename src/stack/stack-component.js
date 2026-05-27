@@ -134,6 +134,7 @@ export class StackComponent {
       onColorChange: (color) => this._setSpineColor(item.id, color),
       onDragStart: (e) => this._startReorder(item.id, e),
       onResizeStart: (e) => this._startResizeLeft(item.id, e),
+      onPopOut: (it) => this._popOutAsPane(it),
     });
     col.appendChild(spine);
 
@@ -445,6 +446,7 @@ export class StackComponent {
 
   addItem(fileId, fileType, name) {
     if (fileType === "stack") return null;
+    if (fileType === "folder") return null;
     const item = {
       id: crypto.randomUUID(), fileId, fileType, name,
       width: DEFAULT_COLUMN_WIDTH, open: true,
@@ -484,6 +486,13 @@ export class StackComponent {
       }
     }
     return { items: this._items, scrollX: this._scrollX };
+  }
+
+  async _popOutAsPane(item) {
+    const { createPane } = await import("../pane/pane-manager.js");
+    const x = window.innerWidth / 2;
+    const y = window.innerHeight / 2;
+    await createPane(item.fileId, item.name || "Untitled", item.fileType, x, y);
   }
 
   async _openAddPicker() {

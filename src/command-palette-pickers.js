@@ -169,8 +169,8 @@ export function enterFilePicker(palette, state, placeholder, onPick, { includePr
   leaves = leaves.slice().sort((a, b) => (rank.get(a.fileId) ?? Infinity) - (rank.get(b.fileId) ?? Infinity));
   const items = leaves.map((f) => ({
     id: "file-" + f.id, label: f.name, shortcutKey: null,
-    icon: f.type === "notebook" ? typeIcons.notebook : f.type === "project" ? typeIcons.project : typeIcons.document,
-    paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type === "notebook" ? "notebook" : "document" }, state),
+    icon: typeIcons[f.type] || typeIcons.document,
+    paneIndicators: paneIndicatorsFor({ fileId: f.fileId, type: f.type }, state),
     action: () => onPick(f),
   }));
   palette.setItems(items, placeholder);

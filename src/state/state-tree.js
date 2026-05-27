@@ -310,6 +310,7 @@ export async function convertContainerType(state, nodeId, targetType) {
   if (!node) return;
   if (node.type === targetType) return;
   if (node.type !== "folder" && node.type !== "project") return;
+  const wasProject = node.type === "project";
   node.type = targetType;
   await state.saveFileTree();
   state.emit("files-changed");
@@ -318,6 +319,11 @@ export async function convertContainerType(state, nodeId, targetType) {
   // dropped from it. Receiving devices fold the list (`applyProjectsFile`
   // flips matching folders to projects on import).
   state.syncProjectOrdering(nodeId);
+  // When a project is demoted to a folder, remove it from any stacks
+  // that reference it — the project fileType is no longer valid.
+  if (wasProject && targetType === "folder") {
+    state.emit("project-demoted", nodeId);
+  }
 }
 
 export async function duplicateTreeNode(state, nodeId) {

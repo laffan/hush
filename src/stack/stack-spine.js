@@ -9,7 +9,7 @@
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
-export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart }) {
+export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";
   if (item.spineColor) spine.style.backgroundColor = item.spineColor;
@@ -70,6 +70,12 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
     `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/><circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/><circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/></svg>`);
   dragBtn.addEventListener("pointerdown", (e) => { e.stopPropagation(); onDragStart(e); });
   buttons.appendChild(dragBtn);
+
+  const popOutBtn = makeBtn("stack-spine-popout-btn",
+    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="4" width="8" height="8" rx="1"/><polyline points="7,2 14,2 14,9"/><line x1="14" y1="2" x2="8" y2="8"/></svg>`);
+  popOutBtn.title = "Open as pane";
+  popOutBtn.addEventListener("click", (e) => { e.stopPropagation(); onPopOut(item); });
+  buttons.appendChild(popOutBtn);
 
   const closeBtn = makeBtn("stack-spine-close-btn",
     `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`);

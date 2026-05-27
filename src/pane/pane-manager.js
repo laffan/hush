@@ -267,6 +267,8 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
   if (pane.editor) { try { pane.editor.destroy(); } catch (_) {} pane.editor = null; }
   if (pane.notebook) { try { pane.notebook.destroy(); } catch (_) {} pane.notebook = null; }
   if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
+  if (pane.stackInstance) { try { pane.stackInstance.destroy(); } catch (_) {} pane.stackInstance = null; }
+  if (pane._stackSaveInterval) { clearInterval(pane._stackSaveInterval); pane._stackSaveInterval = null; }
   // Reset content area so the new editor/notebook mounts into a clean DOM.
   if (pane._content) pane._content.replaceChildren();
 
@@ -300,6 +302,8 @@ export function closePane(id) {
   if (pane.editor) pane.editor.destroy();
   if (pane.notebook) pane.notebook.destroy();
   if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
+  if (pane.stackInstance) { try { pane.stackInstance.destroy(); } catch (_) {} pane.stackInstance = null; }
+  if (pane._stackSaveInterval) { clearInterval(pane._stackSaveInterval); pane._stackSaveInterval = null; }
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);
@@ -588,7 +592,7 @@ async function syncPaneThemes() {
     // Track tree-side renames in the pane title — covers both manual
     // sidebar renames and the auto-rename-from-first-line that fires for
     // freshly-created "Untitled" docs.
-    if (pane.fileType === "document" || pane.fileType === "notebook") {
+    if (pane.fileType === "document" || pane.fileType === "notebook" || pane.fileType === "stack") {
       const node = findNodeByFileId(appState.fileTree, pane.fileId);
       if (node && node.name && node.name !== pane.fileName) {
         pane.fileName = node.name;

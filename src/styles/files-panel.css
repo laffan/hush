@@ -381,6 +381,7 @@
 }
 
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row,
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="stack"] > .sl-item-content .tree-item-row,
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"][data-use-as-note="true"] > .sl-item-content .tree-item-row {
   opacity: 0.5;
 }

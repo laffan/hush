@@ -184,7 +184,7 @@ function buildCommands(state) {
         else if (f.type === "stack") s.openStack(f.fileId);
         else s.openFile(f.fileId);
       }, { includeProjects: true }) },
-    { id: "open-pane", label: "Open document or notebook as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
+    { id: "open-pane", label: "Open as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterFilePicker(p, s, "Open as pane…", (f) => {
         // Place the pane in the gap opposite the editor column shift —

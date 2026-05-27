@@ -125,6 +125,11 @@ export async function restorePanes(deps) {
       const node = findNodeByFileId(appState.fileTree, s.fileId);
       if (!node) continue;
       resolvedName = node.name || s.fileName || "PDF";
+    } else if (s.fileType === "stack") {
+      const { findNodeByFileId } = await import("../state/tree-helpers.js");
+      const node = findNodeByFileId(appState.fileTree, s.fileId);
+      if (!node) continue;
+      resolvedName = node.name || s.fileName || "Stack";
     } else {
       const file = (appState.files || []).find((f) => f.id === s.fileId);
       if (!file) continue;

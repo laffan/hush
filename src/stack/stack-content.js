@@ -13,7 +13,7 @@
  * {
  *   id: string,
  *   fileId: string,
- *   fileType: "document" | "notebook" | "pdf",
+ *   fileType: "document" | "notebook" | "pdf" | "project",
  *   width: number,
  *   open: boolean,
  *   scrollY: number,          // doc scroll or camera.y for notebooks

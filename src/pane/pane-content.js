@@ -52,6 +52,8 @@ export async function loadPaneContent(pane) {
     await loadNotebookPane(pane);
   } else if (pane.fileType === "pdf") {
     await loadPdfPane(pane);
+  } else if (pane.fileType === "stack") {
+    await loadStackPane(pane);
   } else if (pane.fileType === "zotero-highlights") {
     const { mountZoteroHighlightPane } = await import("../zotero/highlight-pane.js");
     await mountZoteroHighlightPane(pane, appState);
@@ -334,9 +336,42 @@ async function loadPdfPane(pane) {
   }
 }
 
+async function loadStackPane(pane) {
+  const { StackComponent } = await import("../stack/stack-component.js");
+  const { decodeStackContent, encodeStackContent } = await import("../stack/stack-content.js");
+
+  let content = null;
+  try {
+    if (IS_TAURI) {
+      const file = await tauriInvoke("load_file", { id: pane.fileId });
+      content = file.content;
+    }
+  } catch (e) {
+    console.error("Failed to load stack pane:", e);
+  }
+
+  const data = decodeStackContent(content);
+  const stack = new StackComponent(pane._content, data, appState);
+  pane.stackInstance = stack;
+
+  const saveInterval = setInterval(async () => {
+    if (!pane.stackInstance) return;
+    const snapshot = pane.stackInstance.serialize();
+    const encoded = encodeStackContent(snapshot.items, snapshot.scrollX);
+    if (IS_TAURI) {
+      try { await tauriInvoke("save_file", { id: pane.fileId, content: encoded }); }
+      catch (e) { console.error("Stack pane save failed:", e); }
+    }
+    appState.syncFileToExternal?.(pane.fileId, encoded);
+  }, 2000);
+
+  pane._stackSaveInterval = saveInterval;
+}
+
 // ── Saving ────────────────────────────────────────────────────────────
 export async function savePaneContent(pane) {
   if (pane.fileType === "pdf") { pane.dirty = false; return; }
+  if (pane.fileType === "stack") { pane.dirty = false; return; }
   if (pane.fileType === "zotero-highlights") { pane.dirty = false; return; }
   if (!pane.dirty) return;
   pane.dirty = false;
