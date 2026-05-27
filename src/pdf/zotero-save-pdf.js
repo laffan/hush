@@ -141,8 +141,8 @@ export async function openZoteroSavePdfModal(state) {
     }
     closeModal();
 
-    const { triggerBackgroundDownload } = await import("../sync/pdf-sync.js");
-    for (const fid of fileIds) triggerBackgroundDownload(fid, state);
+    const { startBatchDownload } = await import("../sync/pdf-sync.js");
+    startBatchDownload(fileIds, state);
   }
 
   function showDetail(ref) {

@@ -39,6 +39,9 @@ let _state = null;
 let _persistTimer = null;
 const _downloadProgress = new Map();
 
+let _batchTotal = 0;
+let _batchDone = 0;
+
 export function getPdfRegistry() {
   return _registry?.items || {};
 }
@@ -264,10 +267,35 @@ export function triggerBackgroundDownload(fileId, state) {
       _downloadedSet.add(fileId);
       _downloadProgress.delete(fileId);
       state.emit("files-changed");
+      _onBatchItemDone(state);
     } catch (e) {
       console.error(`Background PDF download failed for ${fileId}:`, e);
       _downloadProgress.delete(fileId);
       state.emit("files-changed");
+      _onBatchItemDone(state);
     }
   })();
+}
+
+function _onBatchItemDone(state) {
+  if (_batchTotal === 0) return;
+  _batchDone++;
+  if (_batchDone >= _batchTotal) {
+    state.emit("background-task-done");
+    _batchTotal = 0;
+    _batchDone = 0;
+  } else {
+    state.emit("background-task-progress", {
+      label: "PDFs",
+      progress: _batchDone / _batchTotal,
+    });
+  }
+}
+
+export function startBatchDownload(fileIds, state) {
+  if (!fileIds.length) return;
+  _batchTotal = fileIds.length;
+  _batchDone = 0;
+  state.emit("background-task-progress", { label: "PDFs", progress: 0 });
+  for (const fid of fileIds) triggerBackgroundDownload(fid, state);
 }
