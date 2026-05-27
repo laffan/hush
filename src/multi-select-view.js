@@ -132,7 +132,7 @@ function render(ids) {
         flagged: !!node.flagged,
       };
     })
-    .filter((r) => r && (r.type === "document" || r.type === "notebook"));
+    .filter((r) => r && (r.type === "document" || r.type === "notebook" || r.type === "pdf"));
 
   const flagBtnLabel = rows.every((r) => r.flagged) ? "Unflag" : "Flag";
 
@@ -148,7 +148,7 @@ function render(ids) {
       <ul class="ms-view-list">
         ${rows.map((r) => `
           <li class="ms-view-row" data-file-id="${escHtml(r.fileId)}" data-type="${escHtml(r.type)}">
-            <span class="ms-view-icon">${r.type === "notebook" ? typeIcons.notebook : typeIcons.document}</span>
+            <span class="ms-view-icon">${typeIcons[r.type] || typeIcons.document}</span>
             <span class="ms-view-text">
               ${r.path ? `<span class="ms-view-path">${escHtml(r.path)} / </span>` : ""}<span class="ms-view-name">${escHtml(r.name)}</span>
             </span>
@@ -171,6 +171,7 @@ function render(ids) {
       const fileId = row.dataset.fileId;
       if (!fileId) return;
       if (row.dataset.type === "notebook") _state.openNotebook(fileId);
+      else if (row.dataset.type === "pdf") _state.openPdf(fileId);
       else _state.openFile(fileId);
     });
   });
