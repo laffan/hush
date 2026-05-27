@@ -71,6 +71,36 @@
   flex-shrink: 0;
 }
 .pdf-page-canvas { display: block; }
+
+/* Open-in-Zotero button on page hover (bottom-right corner) */
+.pdf-page-zotero-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.pdf-page-zotero-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.pdf-page-zotero-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+.pdf-page-zotero-btn svg { flex-shrink: 0; }
 .pdf-page-placeholder {
   width: 100%;
   height: 100%;

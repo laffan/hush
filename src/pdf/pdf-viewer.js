@@ -49,6 +49,7 @@ export function createPdfViewer(container, opts = {}) {
   let fixedZoom = 1.0;
   let scrollListeners = [];
   let destroyed = false;
+  let _zoteroAttKey = opts.zoteroAttKey || null;
   const root = document.createElement("div");
   root.className = "pdf-viewer";
 
@@ -118,6 +119,7 @@ export function createPdfViewer(container, opts = {}) {
 
   // ── Zotero link setup ────────────────────────────────────────────
   function setZoteroAttKey(attKey) {
+    _zoteroAttKey = attKey || null;
     if (attKey) {
       zoteroLink.href = `zotero://open-pdf/library/items/${attKey}`;
       zoteroLink.style.display = "";
@@ -626,6 +628,28 @@ export function createPdfViewer(container, opts = {}) {
       const placeholder = document.createElement("div");
       placeholder.className = "pdf-page-placeholder";
       wrapper.appendChild(placeholder);
+
+      if (_zoteroAttKey) {
+        const pageNum = i + 1;
+        const zBtn = document.createElement("button");
+        zBtn.className = "pdf-page-zotero-btn";
+        zBtn.title = `Open page ${pageNum} in Zotero`;
+        zBtn.innerHTML = POPOUT_ICON;
+        zBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const url = `zotero://open-pdf/library/items/${_zoteroAttKey}?page=${pageNum}`;
+          import("@tauri-apps/plugin-opener").then(o => o.openUrl(url)).catch(() => window.open(url, "_blank"));
+        });
+        wrapper.appendChild(zBtn);
+
+        wrapper.addEventListener("mousemove", (e) => {
+          const r = wrapper.getBoundingClientRect();
+          const inZone = (r.right - e.clientX) < 100 && (r.bottom - e.clientY) < 100;
+          zBtn.classList.toggle("visible", inZone);
+        });
+        wrapper.addEventListener("mouseleave", () => zBtn.classList.remove("visible"));
+      }
+
       scrollArea.appendChild(wrapper);
       pages.push({ wrapper, viewport, rendered: false, rendering: false, canvas: null, renderedZoom: null });
     }
@@ -849,6 +873,9 @@ const FIT_ONE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3
 
 // Fit two: two pages side by side
 const FIT_TWO_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="9" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>`;
+
+// Pop-out arrow (open in Zotero)
+const POPOUT_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19L19 6M19 6V18.48M19 6H6.52"/></svg>`;
 
 // Fit three: three pages in a row
 const FIT_THREE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="0.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="6" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="11.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/></svg>`;
