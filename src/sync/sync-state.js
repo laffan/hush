@@ -83,6 +83,8 @@ export function buildSyncManifest(fileTree) {
         manifest.directories.push(dirPath);
         if (node.children) walk(node.children, dirPath);
       } else if (node.type === "folder") {
+        const isPdfs = node.id === "__pdfs__" || node.id?.startsWith("__pdfs__:");
+        if (isPdfs) continue;
         const dirPath = parentPath ? `${parentPath}/${name}` : name;
         manifest.directories.push(dirPath);
         if (node.children) walk(node.children, dirPath);

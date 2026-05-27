@@ -79,6 +79,20 @@ impl PdfManager {
         Ok(Some(serde_json::from_str(&json)?))
     }
 
+    pub fn save_registry(&self, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let path = self.pdfs_dir.join("_registry.json");
+        write_atomic_str(&path, content)?;
+        Ok(())
+    }
+
+    pub fn load_registry(&self) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let path = self.pdfs_dir.join("_registry.json");
+        if !path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(fs::read_to_string(path)?))
+    }
+
     pub fn clear_all(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(rd) = fs::read_dir(&self.pdfs_dir) {
             for entry in rd.flatten() {

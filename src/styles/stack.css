@@ -198,6 +198,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+}
+.stack-spine-label-author {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.6;
 }
 
 .stack-spine-buttons {

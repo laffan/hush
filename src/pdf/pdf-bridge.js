@@ -51,6 +51,14 @@ export async function mountPdf(container, fileId, state) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   await viewer.loadPdf(data);
 
+  try {
+    const { getPdfMeta } = await import("../sync/pdf-sync.js");
+    const meta = getPdfMeta(fileId);
+    if (meta) {
+      viewer.setToolbarInfo(meta.title, meta.firstAuthor);
+    }
+  } catch {}
+
   await loadAnnotationsIfZotero(viewer, fileId, state);
 }
 

@@ -50,7 +50,8 @@ export async function syncRenameNode(state, nodeId, oldName, nodeType) {
   const { findSyncContext, findNode } = await import("../state/tree-helpers.js");
 
   try {
-    if (nodeType === "document" || nodeType === "notebook" || nodeType === "pdf") {
+    if (nodeType === "pdf") return;
+    if (nodeType === "document" || nodeType === "notebook") {
       const node = findNode(state.fileTree, nodeId);
       if (!node?.fileId) return;
       const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
@@ -90,7 +91,8 @@ export async function syncDeleteNode(state, nodeId) {
   if (!node) return;
 
   try {
-    if ((node.type === "document" || node.type === "notebook" || node.type === "pdf") && node.fileId) {
+    if (node.type === "pdf") return;
+    if ((node.type === "document" || node.type === "notebook") && node.fileId) {
       const info = await tauriInvoke("get_sync_file_info", { internalId: node.fileId });
       if (!info) return;
       await enqueueDelete({ internalId: node.fileId, path: info.relativePath });

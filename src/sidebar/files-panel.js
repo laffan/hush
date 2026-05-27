@@ -33,20 +33,23 @@ let storedState = null;
 // one boot tick before `migrateLegacyTreeIfNeeded` runs.
 const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
+const isPdfsId = (id) => id === AppState.PDFS_ID || id?.startsWith(AppState.PDFS_ID + ":");
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
-const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isTrashId(id);
+const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isPdfsId(id) || isTrashId(id);
 const allSpecialIds = (s, k) => [k, ...(s.settings?.desks || []).map(d => `${k}:${d.id}`)];
 // Render the active desk's children only (the desk wrapper stays out
 // of the panel). Pre-migration boot tick falls back to the raw tree.
 const visibleTopLevel = (s) => {
   const desks = s.fileTree.filter(n => n.type === "desk");
   const active = desks.find(n => n.id === s.settings?.activeDeskId) || desks[0];
-  return active ? (active.children || []) : s.fileTree;
+  const children = active ? (active.children || []) : s.fileTree;
+  return children.filter(n => !isPdfsId(n.id) || (n.children && n.children.length > 0));
 };
 
 function getIcon(item) {
   if (isInboxId(item.id)) return typeIcons.inbox;
   if (isImagesId(item.id)) return typeIcons.images;
+  if (isPdfsId(item.id)) return typeIcons.pdf;
   if (isTrashId(item.id)) return typeIcons.trash;
   // Individual image nodes render without an icon so the sidebar stays
   // readable — hovering the row is the primary affordance anyway.
@@ -85,10 +88,47 @@ function windowBadgesHtml(item, state) {
 const actionButtons = renderRowMenuButton;
 const flagOnlyButton = renderFlagOnlyMenuButton;
 
+let _pdfSyncModule = null;
+async function getPdfSync() {
+  if (!_pdfSyncModule) _pdfSyncModule = await import("../sync/pdf-sync.js");
+  return _pdfSyncModule;
+}
+
+function buildPdfRowHtml(item, icon, state, inTrash, inProject) {
+  let title = item.name;
+  let subtitle = "";
+  let progressHtml = "";
+  let extraClass = "";
+  try {
+    const mod = _pdfSyncModule;
+    if (mod) {
+      const meta = mod.getPdfMeta(item.fileId);
+      if (meta) {
+        title = meta.title || item.name;
+        const parts = [];
+        if (meta.firstAuthor) parts.push(meta.firstAuthor);
+        if (meta.year) parts.push(meta.year);
+        subtitle = parts.join(", ");
+      }
+      const downloaded = mod.isPdfDownloaded(item.fileId);
+      if (!downloaded) {
+        extraClass = " pdf-pending";
+        const progress = mod.getPdfDownloadProgress(item.fileId);
+        if (progress != null) {
+          progressHtml = `<span class="pdf-dl-progress">${progress}%</span>`;
+        }
+      }
+    }
+  } catch {}
+  const buttons = actionButtons(item.id, item.type, inTrash, item, inProject);
+  return `${icon}<span class="tree-item-pdf${extraClass}"><span class="tree-item-pdf-title">${escHtml(title)}</span>${subtitle ? `<span class="tree-item-pdf-subtitle">${escHtml(subtitle)}</span>` : ""}${progressHtml}</span>${windowBadgesHtml(item, state)}${buttons}`;
+}
+
 export function createFilesPanel(container, state, hidePanel) {
   storedHidePanel = hidePanel;
   storedState = state;
   initFilesPanelTabSync(state);
+  getPdfSync();
   container.innerHTML = "";
 
   // (Create buttons moved to the footer's Add popup — see add-popup.js)
@@ -125,7 +165,7 @@ export function createFilesPanel(container, state, hidePanel) {
     getId: (item) => item.id,
     getChildren: (item) => item.children || [],
     setChildren: (item, children) => { item.children = children; },
-    canNest: (item) => (item.type === "folder" || item.type === "project" || item.type === "desk") && !isImagesId(item.id),
+    canNest: (item) => (item.type === "folder" || item.type === "project" || item.type === "desk") && !isImagesId(item.id) && !isPdfsId(item.id),
     canDrop: (draggedItem, targetItem) => {
       // Tab markers are synthetic — they can never be a drop target
       // and the dragged item can never be one (canDrag blocks them).
@@ -135,14 +175,17 @@ export function createFilesPanel(container, state, hidePanel) {
       if (draggedItem.type === "image") {
         return !!targetItem && isImagesId(targetItem.id);
       }
+      // PDFs live exclusively in the __pdfs__ folder — no reparenting.
+      if (draggedItem.type === "pdf") return false;
       // Desks can't be nested; root-level drops are rejected since
       // every node must live inside a desk.
       if (draggedItem.type === "desk") return targetItem === null;
       if (targetItem === null) return false;
       if (isImagesId(targetItem.id)) return draggedItem.type === "image";
+      if (isPdfsId(targetItem.id)) return false;
       if (targetItem.type === "folder") return true;
-      if (targetItem.type === "desk") return ["document", "notebook", "pdf", "stack", "folder", "project"].includes(draggedItem.type);
-      if (targetItem.type === "project") return ["document", "notebook", "pdf", "stack", "project"].includes(draggedItem.type);
+      if (targetItem.type === "desk") return ["document", "notebook", "stack", "folder", "project"].includes(draggedItem.type);
+      if (targetItem.type === "project") return ["document", "notebook", "stack", "project"].includes(draggedItem.type);
       return false;
     },
     canDrag: (item) => {
@@ -182,7 +225,13 @@ export function createFilesPanel(container, state, hidePanel) {
       }
       const row = document.createElement("span");
       row.className = "tree-item-row" + (isActive ? " active" : "");
-      row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+
+      if (item.type === "pdf" && item.fileId && !isPdfsId(item.id)) {
+        const pdfHtml = buildPdfRowHtml(item, icon, state, inTrash, inProject);
+        row.innerHTML = pdfHtml;
+      } else {
+        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+      }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);
       if (!indicators) return row;
@@ -229,7 +278,7 @@ export function createFilesPanel(container, state, hidePanel) {
       // Clicking anywhere on a folder-like row toggles its collapsed state.
       // This applies to Inbox, Images, Trash, and any user-created folder.
       // User projects still open into project view.
-      const isFolderLike = item.type === "folder" || isInboxId(item.id) || item.type === "desk";
+      const isFolderLike = item.type === "folder" || isInboxId(item.id) || isPdfsId(item.id) || item.type === "desk";
       if (isFolderLike) {
         if (sortableInstance) sortableInstance.toggle(item.id);
         return;
@@ -303,6 +352,7 @@ export function createFilesPanel(container, state, hidePanel) {
   // (mirroring each other — both are "drawer" special nodes at the tail).
   for (const id of allSpecialIds(state, AppState.TRASH_ID)) sortableInstance.state.collapsedIds.add(id);
   for (const id of allSpecialIds(state, AppState.IMAGES_ID)) sortableInstance.state.collapsedIds.add(id);
+  for (const id of allSpecialIds(state, AppState.PDFS_ID)) sortableInstance.state.collapsedIds.add(id);
   sortableInstance.render();
 
   // Render the virtual Flagged folder
@@ -538,6 +588,9 @@ function revealAndOpen(item, state) {
     if (!isInset && storedHidePanel) storedHidePanel();
   } else if (item.type === "notebook" && item.fileId) {
     state.openNotebook(item.fileId);
+    if (!isInset && storedHidePanel) storedHidePanel();
+  } else if (item.type === "pdf" && item.fileId) {
+    state.openPdf(item.fileId);
     if (!isInset && storedHidePanel) storedHidePanel();
   } else if (item.type === "project") {
     state.openProject(item.id);

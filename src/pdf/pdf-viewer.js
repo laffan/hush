@@ -88,7 +88,10 @@ export function createPdfViewer(container, opts = {}) {
 
   const thumbnailBtn = svgBtn("pdf-zoom-btn pdf-thumbnail-btn", "Thumbnail view", THUMBNAIL_ICON);
 
-  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, scrollToggle, thumbnailBtn, pageIndicator, zoteroLink);
+  const toolbarInfo = document.createElement("span");
+  toolbarInfo.className = "pdf-toolbar-info";
+
+  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, scrollToggle, thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink);
   root.appendChild(toolbar);
 
   container.appendChild(root);
@@ -709,6 +712,21 @@ export function createPdfViewer(container, opts = {}) {
     setAnnotations: annotLayer.setAnnotations,
     refreshAnnotations: annotLayer.refreshAnnotations,
     setZoteroAttKey,
+    setToolbarInfo: (title, author) => {
+      if (!title) { toolbarInfo.textContent = ""; toolbarInfo.style.display = "none"; return; }
+      toolbarInfo.style.display = "";
+      toolbarInfo.innerHTML = "";
+      const t = document.createElement("span");
+      t.className = "pdf-toolbar-info-title";
+      t.textContent = title;
+      toolbarInfo.appendChild(t);
+      if (author) {
+        const a = document.createElement("span");
+        a.className = "pdf-toolbar-info-author";
+        a.textContent = author;
+        toolbarInfo.appendChild(a);
+      }
+    },
     toggleShelf: annotLayer.toggleShelf,
     get element() { return root; },
   };

@@ -301,6 +301,14 @@ async function loadPdfPane(pane) {
     await viewer.loadPdf(data);
   }
 
+  try {
+    const { getPdfMeta } = await import("../sync/pdf-sync.js");
+    const meta = getPdfMeta(pane.fileId);
+    if (meta && viewer.setToolbarInfo) {
+      viewer.setToolbarInfo(meta.title, meta.firstAuthor);
+    }
+  } catch {}
+
   if (typeof pane.editorScrollTop === "number" && pane.editorScrollTop > 0) {
     requestAnimationFrame(() => {
       try { viewer.setScrollTop(pane.editorScrollTop); } catch (_) {}

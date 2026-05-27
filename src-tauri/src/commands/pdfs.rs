@@ -41,3 +41,17 @@ pub fn load_pdf_meta(state: State<AppState>, file_id: String) -> Result<Option<P
         .load_meta(&file_id)
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn save_pdf_registry(state: State<AppState>, content: String) -> Result<(), String> {
+    state.pdf_manager.lock().unwrap()
+        .save_registry(&content)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_pdf_registry(state: State<AppState>) -> Result<Option<String>, String> {
+    state.pdf_manager.lock().unwrap()
+        .load_registry()
+        .map_err(|e| e.to_string())
+}
