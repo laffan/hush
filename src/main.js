@@ -30,10 +30,6 @@ async function init() {
   const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
   const state = new AppState();
 
-  // Detect which Tauri window we're running inside and whether this is a
-  // secondary "Open in new window" surface. The main window always
-  // restores from `lastFileId`; secondary windows seed from a hash
-  // payload (`#file=...&type=...`) and skip per-window setting writes.
   if (IS_TAURI) {
     try {
       const label = await getCurrentWindowLabel();
@@ -42,12 +38,8 @@ async function init() {
   }
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
   await state.init({ initialFile });
-  // Expose on window so lazy helpers (e.g. pane/text-drag.js's notebook-to-
-  // doc image path) can reach the live AppState without a hard import cycle.
   if (typeof window !== "undefined") window.__hushState__ = state;
 
-  // Wikilink open hook — the lazy-loaded notebook canvas reaches it via
-  // window so it doesn't have to import AppState directly.
   if (typeof window !== "undefined") {
     const { openWikilink } = await import("./links/wikilink-index.js");
     window.__hushOpenWikilink = (title) => { void openWikilink(state, title); };

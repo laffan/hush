@@ -1,16 +1,9 @@
-/**
- * PDF.js interactive viewer — renders a scrollable, zoomable PDF inside
- * a container. Supports both the main editor area and floating panes.
- *
- * Layout modes:
- *   - horizontal fit (default): pages fit container height, horizontal scroll
- *   - vertical fit: single column, pages fill available width, vertical scroll
- *   - vertical fit-2: two columns of pages, vertical scroll
- *   - vertical fit-3: three columns of pages, vertical scroll
- *   - fixed zoom (50%-200%): explicit scale via +/- controls
- */
-
 import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
+import { createThumbnailManager } from "./pdf-viewer-thumbnails.js";
+import {
+  VERTICAL_ICON, HORIZONTAL_ICON, THUMBNAIL_ICON, POPOUT_ICON,
+  FIT_ONE_ICON, FIT_TWO_ICON, FIT_THREE_ICON,
+} from "./pdf-viewer-icons.js";
 
 let pdfjsPromise = null;
 
@@ -82,14 +75,12 @@ export function createPdfViewer(container, opts = {}) {
   zoomLabel.textContent = "Fit";
   const zoomInBtn = btn("pdf-zoom-btn", "+", "Zoom in");
 
-  // Scroll direction toggle: two icons side-by-side
   const scrollToggleWrap = document.createElement("span");
   scrollToggleWrap.className = "pdf-toggle-group";
   const scrollHBtn = svgBtn("pdf-toggle-option active", "Horizontal scroll", HORIZONTAL_ICON);
   const scrollVBtn = svgBtn("pdf-toggle-option", "Vertical scroll", VERTICAL_ICON);
   scrollToggleWrap.append(scrollHBtn, scrollVBtn);
 
-  // Fit mode toggle: Fit / Fit 2 / Fit 3 — only visible in vertical mode
   const fitToggleWrap = document.createElement("span");
   fitToggleWrap.className = "pdf-toggle-group";
   fitToggleWrap.style.display = "none";
@@ -129,8 +120,6 @@ export function createPdfViewer(container, opts = {}) {
   }
   if (opts.zoteroAttKey) setZoteroAttKey(opts.zoteroAttKey);
 
-  // Tauri webviews swallow clicks on <a href> with custom schemes —
-  // hand the URL to the opener plugin instead.
   zoteroLink.addEventListener("click", async (e) => {
     e.preventDefault();
     const url = zoteroLink.href;
@@ -143,168 +132,17 @@ export function createPdfViewer(container, opts = {}) {
     }
   });
 
-  // ── Thumbnail view (full-screen overlay with async rendering) ─────
-  const THUMB_WIDTH = 180;
-  let thumbPanel = null;
-  let thumbVisible = false;
-  let thumbObserver = null;
+  // ── Thumbnail manager ─────────────────────────────────────────────
+  const thumbs = createThumbnailManager(root, {
+    getPages: () => pages,
+    getPdfDoc: () => pdfDoc,
+    isDestroyed: () => destroyed,
+    getAnnotations: () => annotLayer.getAnnotations(),
+    goToPage: (n) => goToPage(n),
+  });
 
   function toggleThumbnails() {
-    thumbVisible = !thumbVisible;
-    thumbnailBtn.classList.toggle("active", thumbVisible);
-    if (thumbVisible) showThumbnails();
-    else hideThumbnails();
-  }
-
-  function showThumbnails() {
-    if (thumbPanel) { thumbPanel.style.display = ""; setupThumbObserver(); return; }
-    thumbPanel = document.createElement("div");
-    thumbPanel.className = "pdf-thumbnail-overlay";
-
-    const thumbScroll = document.createElement("div");
-    thumbScroll.className = "pdf-thumbnail-scroll";
-    thumbPanel.appendChild(thumbScroll);
-
-    for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      const vp = p.viewport;
-      const aspect = vp.height / vp.width;
-      const thumbH = Math.round(THUMB_WIDTH * aspect);
-
-      const cell = document.createElement("div");
-      cell.className = "pdf-thumb-cell";
-      cell.dataset.thumbIdx = i;
-      cell.style.width = THUMB_WIDTH + "px";
-      cell.style.height = thumbH + "px";
-
-      const placeholder = document.createElement("div");
-      placeholder.className = "pdf-thumb-placeholder";
-      cell.appendChild(placeholder);
-
-      const label = document.createElement("div");
-      label.className = "pdf-thumb-label";
-      label.textContent = i + 1;
-      cell.appendChild(label);
-
-      cell.addEventListener("click", () => {
-        goToPage(i + 1);
-        toggleThumbnails();
-      });
-
-      thumbScroll.appendChild(cell);
-    }
-
-    root.appendChild(thumbPanel);
-    setupThumbObserver();
-  }
-
-  function setupThumbObserver() {
-    if (thumbObserver) thumbObserver.disconnect();
-    const thumbScroll = thumbPanel?.querySelector(".pdf-thumbnail-scroll");
-    if (!thumbScroll) return;
-    thumbObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const idx = parseInt(entry.target.dataset.thumbIdx, 10);
-        if (!isNaN(idx)) renderThumb(idx);
-      }
-    }, { root: thumbScroll, rootMargin: "300px" });
-    for (const cell of thumbScroll.children) thumbObserver.observe(cell);
-  }
-
-  function hideThumbnails() {
-    if (!thumbPanel) return;
-    thumbPanel.style.display = "none";
-    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
-  }
-
-  function parseThumbAnnotPos(annot) {
-    try {
-      const raw = annot._raw?.data?.annotationPosition;
-      if (typeof raw === "string") return JSON.parse(raw);
-      if (raw && typeof raw === "object") return raw;
-    } catch (_) {}
-    return null;
-  }
-
-  async function renderThumb(idx) {
-    if (!pdfDoc || destroyed || idx < 0 || idx >= pages.length) return;
-    const cell = thumbPanel?.querySelector(`[data-thumb-idx="${idx}"]`);
-    if (!cell || cell.dataset.thumbRendered) return;
-    cell.dataset.thumbRendered = "1";
-
-    try {
-      const page = await pdfDoc.getPage(idx + 1);
-      if (destroyed) return;
-      const vp = page.getViewport({ scale: 1 });
-      const scale = THUMB_WIDTH / vp.width;
-      const svp = page.getViewport({ scale });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(svp.width);
-      canvas.height = Math.round(svp.height);
-      canvas.className = "pdf-thumb-canvas";
-
-      await page.render({ canvas, viewport: svp, background: "#ffffff" }).promise;
-      if (destroyed) return;
-
-      // Paint all annotation types onto the thumbnail
-      const allAnnots = annotLayer.getAnnotations();
-      if (allAnnots.length) {
-        const ctx = canvas.getContext("2d");
-        for (const ann of allAnnots) {
-          const pos = parseThumbAnnotPos(ann);
-          if (!pos || pos.pageIndex !== idx) continue;
-
-          // Highlight / underline rects
-          if (pos.rects?.length && ann.type !== "ink") {
-            const color = ann.color || "#ffff00";
-            ctx.fillStyle = color;
-            ctx.globalAlpha = 0.3;
-            for (const rect of pos.rects) {
-              const [x1, y1, x2, y2] = rect;
-              const rx = x1 * scale;
-              const ry = (vp.height - y2) * scale;
-              const rw = (x2 - x1) * scale;
-              const rh = (y2 - y1) * scale;
-              ctx.fillRect(rx, ry, rw, rh);
-            }
-            ctx.globalAlpha = 1.0;
-          }
-
-          // Ink / pen annotations
-          if (ann.type === "ink" && pos.paths?.length) {
-            ctx.strokeStyle = ann.color || "#ff0000";
-            ctx.lineWidth = Math.max(0.5, scale * 0.8);
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
-            for (const pathPoints of pos.paths) {
-              if (!pathPoints || pathPoints.length < 2) continue;
-              ctx.beginPath();
-              for (let pi = 0; pi < pathPoints.length; pi += 2) {
-                const px = pathPoints[pi] * scale;
-                const py = (vp.height - pathPoints[pi + 1]) * scale;
-                if (pi === 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-              }
-              ctx.stroke();
-            }
-          }
-        }
-      }
-
-      const ph = cell.querySelector(".pdf-thumb-placeholder");
-      if (ph) ph.remove();
-      cell.insertBefore(canvas, cell.firstChild);
-    } catch (e) {
-      console.error(`Failed to render thumbnail ${idx + 1}:`, e);
-    }
-  }
-
-  function destroyThumbnails() {
-    if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
-    if (thumbPanel) { thumbPanel.remove(); thumbPanel = null; }
-    thumbVisible = false;
+    thumbnailBtn.classList.toggle("active", thumbs.toggle());
   }
 
   thumbnailBtn.addEventListener("click", toggleThumbnails);
@@ -703,7 +541,7 @@ export function createPdfViewer(container, opts = {}) {
   function suspend() {
     if (suspended || destroyed || !pdfDoc) return;
     suspended = true;
-    destroyThumbnails();
+    thumbs.destroy();
     window.removeEventListener("keydown", onKeydown);
     if (resizeObserver) resizeObserver.disconnect();
     if (observer) { observer.disconnect(); observer = null; }
@@ -782,7 +620,7 @@ export function createPdfViewer(container, opts = {}) {
   // ── Cleanup ──────────────────────────────────────────────────────
   async function destroy() {
     destroyed = true;
-    destroyThumbnails();
+    thumbs.destroy();
     window.removeEventListener("keydown", onKeydown);
     if (observer) { observer.disconnect(); observer = null; }
     scrollListeners = [];
@@ -859,23 +697,3 @@ function svgBtn(cls, title, svgContent) {
   return b;
 }
 
-// Vertical scroll: pages stacked
-const VERTICAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="1" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="9" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
-
-// Horizontal scroll: pages side by side
-const HORIZONTAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
-
-// Thumbnail grid
-const THUMBNAIL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
-
-// Fit one: single page outline with corner arrows
-const FIT_ONE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="1" width="10" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
-
-// Fit two: two pages side by side
-const FIT_TWO_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="9" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>`;
-
-// Pop-out arrow (open in Zotero)
-const POPOUT_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19L19 6M19 6V18.48M19 6H6.52"/></svg>`;
-
-// Fit three: three pages in a row
-const FIT_THREE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="0.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="6" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="11.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/></svg>`;

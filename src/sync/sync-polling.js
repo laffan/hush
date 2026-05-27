@@ -1,18 +1,5 @@
-/**
- * Sync polling — drives Dropbox change detection via the cursor consumer
- * (`dropbox-cursor.js`) and applies events to local state.
- *
- * Replaces the older two-step poll (per-file `getMetadata` loop +
- * full-folder path-set diff). Now a single `pullDropboxCursor` call asks
- * Dropbox "what's changed since the last cursor?" and returns typed
- * events. Identity is tracked by Dropbox's per-file `id` and `rev`, so:
- *   * Renames are reported with the same id and a new path → we update
- *     the path in the sync map. No duplicate created.
- *   * Our own writes (we record `rev` after every upload) are skipped
- *     by rev match, so we never pull back content we just pushed.
- *   * The cursor returns *only* deltas, so polling is cheap regardless
- *     of folder size.
- */
+// Sync polling — drives Dropbox change detection via the cursor consumer
+// and applies delta events to local state.
 
 import { pullDropboxCursor } from "./dropbox-cursor.js";
 import {
