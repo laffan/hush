@@ -13,7 +13,7 @@
  * Click on a row → opens that doc and clears the selection (matches
  * the single-click semantics elsewhere in the app).
  */
-import { typeIcons, escHtml, showDeleteConfirmModal } from "./sidebar/files-panel-shared.js";
+import { typeIcons, escHtml, showDeleteConfirmModal, showPromptModal } from "./sidebar/files-panel-shared.js";
 import { findNodeByFileId, findAncestorIds } from "./state/tree-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 
@@ -143,7 +143,8 @@ function render(ids) {
         <div class="ms-view-actions">
           <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
           <button type="button" class="ms-view-btn ms-view-btn-danger" data-ms-action="delete">Delete</button>
-          <button type="button" class="ms-view-btn" data-ms-action="clear">Clear</button>
+          <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack from selected</button>
+          <button type="button" class="ms-view-btn" data-ms-action="clear">Clear selection</button>
         </div>
       </header>
       <ul class="ms-view-list">
@@ -181,6 +182,25 @@ function render(ids) {
 async function runBatchAction(action, rows) {
   if (action === "clear") {
     _state.clearSelectedDocs();
+    return;
+  }
+  if (action === "stack") {
+    showPromptModal({
+      title: "New stack",
+      label: "Name",
+      placeholder: "New Stack",
+      initialValue: "New Stack",
+      confirmLabel: "Create",
+      onConfirm: async (name) => {
+        const result = await _state.createStack(name, null, { openImmediately: true });
+        if (!result) return;
+        const { getStackInstance } = await import("./stack/stack-bridge.js");
+        const inst = getStackInstance();
+        if (!inst) return;
+        for (const r of rows) inst.addItem(r.fileId, r.type, r.name);
+        _state.clearSelectedDocs();
+      },
+    });
     return;
   }
   if (action === "flag") {
