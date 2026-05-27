@@ -186,6 +186,10 @@ async function deletePdfFilesByIds(state, fileIds) {
     if (IS_TAURI) {
       try { await tauriInvoke("delete_pdf", { fileId: fid }); } catch (e) { console.error("Delete PDF:", e); }
     }
+    try {
+      const { removePdfEntry } = await import("../sync/pdf-sync.js");
+      await removePdfEntry(fid);
+    } catch (e) { console.error("Remove PDF registry entry:", e); }
   }
 }
 

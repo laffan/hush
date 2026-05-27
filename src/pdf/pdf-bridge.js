@@ -16,8 +16,15 @@ let currentViewer = null;
 let currentFileId = null;
 let panelObserver = null;
 
+const _scrollState = new Map();
+
 export async function mountPdf(container, fileId, state) {
-  if (currentViewer) {
+  if (currentViewer && currentFileId) {
+    _scrollState.set(currentFileId, {
+      top: currentViewer.getScrollTop(),
+      left: currentViewer.getScrollLeft(),
+      zoom: currentViewer.getZoom(),
+    });
     await currentViewer.destroy();
     currentViewer = null;
     currentFileId = null;
@@ -51,13 +58,35 @@ export async function mountPdf(container, fileId, state) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   await viewer.loadPdf(data);
 
+  const saved = _scrollState.get(fileId);
+  if (saved) {
+    if (saved.zoom != null) viewer.setZoom(saved.zoom);
+    requestAnimationFrame(() => {
+      viewer.setScrollTop(saved.top || 0);
+      viewer.setScrollLeft(saved.left || 0);
+    });
+  }
+
+  try {
+    const { getPdfMeta } = await import("../sync/pdf-sync.js");
+    const meta = getPdfMeta(fileId);
+    if (meta) {
+      viewer.setToolbarInfo(meta.title, meta.firstAuthor);
+    }
+  } catch {}
+
   await loadAnnotationsIfZotero(viewer, fileId, state);
 }
 
 export async function unmountPdf() {
   stopPanelObserver();
   const fid = currentFileId;
-  if (currentViewer) {
+  if (currentViewer && fid) {
+    _scrollState.set(fid, {
+      top: currentViewer.getScrollTop(),
+      left: currentViewer.getScrollLeft(),
+      zoom: currentViewer.getZoom(),
+    });
     await currentViewer.destroy();
     currentViewer = null;
   }

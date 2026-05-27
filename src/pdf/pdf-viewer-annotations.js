@@ -202,22 +202,23 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
       return pos && pos.pageIndex === pageIdx;
     });
     if (!pageAnnots.length) return;
-    const scale = viewer.getEffectiveZoom();
+    const scaleX = p.wrapper.offsetWidth / p.viewport.width;
+    const scaleY = p.wrapper.offsetHeight / p.viewport.height;
     for (const annot of pageAnnots) {
       const pos = parseAnnotationPosition(annot);
       if (!pos) continue;
 
       if (annot.type === "ink" && pos.paths?.length) {
-        paintInkAnnotation(layer, annot, pos, scale, p.viewport);
+        paintInkAnnotation(layer, annot, pos, scaleX, scaleY, p.viewport);
       } else if (pos.rects?.length) {
         for (const rect of pos.rects) {
           const [x1, y1, x2, y2] = rect;
           const div = document.createElement("div");
           div.className = "pdf-annot-highlight";
-          div.style.left = `${x1 * scale}px`;
-          div.style.bottom = `${y1 * scale}px`;
-          div.style.width = `${(x2 - x1) * scale}px`;
-          div.style.height = `${(y2 - y1) * scale}px`;
+          div.style.left = `${x1 * scaleX}px`;
+          div.style.bottom = `${y1 * scaleY}px`;
+          div.style.width = `${(x2 - x1) * scaleX}px`;
+          div.style.height = `${(y2 - y1) * scaleY}px`;
           div.style.backgroundColor = annot.color || "#ffff00";
           if (annot.comment) div.title = annot.comment;
           layer.appendChild(div);
@@ -227,9 +228,9 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
     if (layer.children.length) p.wrapper.appendChild(layer);
   }
 
-  function paintInkAnnotation(layer, annot, pos, scale, viewport) {
-    const w = Math.round(viewport.width * scale);
-    const h = Math.round(viewport.height * scale);
+  function paintInkAnnotation(layer, annot, pos, scaleX, scaleY, viewport) {
+    const w = Math.round(viewport.width * scaleX);
+    const h = Math.round(viewport.height * scaleY);
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.classList.add("pdf-annot-ink");
     svg.setAttribute("width", String(w));
@@ -240,15 +241,15 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
       if (!pathPoints || pathPoints.length < 2) continue;
       let d = "";
       for (let i = 0; i < pathPoints.length; i += 2) {
-        const x = pathPoints[i] * scale;
-        const y = (viewport.height - pathPoints[i + 1]) * scale;
+        const x = pathPoints[i] * scaleX;
+        const y = (viewport.height - pathPoints[i + 1]) * scaleY;
         d += (i === 0 ? "M" : "L") + `${x},${y} `;
       }
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", d);
       path.setAttribute("fill", "none");
       path.setAttribute("stroke", annot.color || "#ff0000");
-      path.setAttribute("stroke-width", String(Math.max(0.5, scale)));
+      path.setAttribute("stroke-width", String(Math.max(0.5, scaleX)));
       path.setAttribute("stroke-linecap", "round");
       path.setAttribute("stroke-linejoin", "round");
       svg.appendChild(path);

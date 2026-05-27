@@ -319,22 +319,36 @@ export async function openPdf(state, fileId) {
 export async function importPdf(state, name, bytes, parentId = null, opts = {}) {
   const openImmediately = opts.openImmediately !== false;
   if (openImmediately && state.dirty) await state.saveCurrentFile();
-  const targetParent = parentId || state.getInboxId();
-  const finalName = uniqueChildName(findNode(state.fileTree, targetParent), name, "pdf");
+
   const fileId = crypto.randomUUID();
   if (IS_TAURI) {
     try {
       await tauriInvoke("save_pdf", { fileId, bytes: Array.from(bytes) });
     } catch (e) { console.error("Save PDF failed:", e); return; }
   }
+
+  const { addPdfEntry } = await import("../sync/pdf-sync.js");
+  await addPdfEntry(fileId, {
+    title: opts.zoteroTitle || name,
+    authors: opts.zoteroAuthors || "",
+    firstAuthor: opts.zoteroFirstAuthor || "",
+    year: opts.zoteroYear || "",
+    citekey: opts.zoteroCitekey || "",
+    zoteroItemKey: opts.zoteroItemKey || "",
+    zoteroAttKey: opts.zoteroAttKey || "",
+  });
+
+  await state.ensurePdfsFolder();
+  const pdfsId = state.getPdfsId();
+  const displayName = opts.zoteroTitle || name;
+  const finalName = uniqueChildName(findNode(state.fileTree, pdfsId), displayName, "pdf");
   const treeNode = {
     id: crypto.randomUUID(), type: "pdf", name: finalName, fileId,
     children: [], flagged: false,
   };
   if (opts.zoteroAttKey) treeNode.zoteroAttKey = opts.zoteroAttKey;
-  insertNode(state.fileTree, treeNode, targetParent, findNode);
+  insertNode(state.fileTree, treeNode, pdfsId, findNode);
   await state.saveFileTree();
-  state.syncCreateFile(treeNode.id, fileId, null);
   if (openImmediately) {
     await openPdf(state, fileId);
   }

@@ -439,6 +439,8 @@ pub fn run() {
             commands::pdfs::pdf_exists,
             commands::pdfs::save_pdf_meta,
             commands::pdfs::load_pdf_meta,
+            commands::pdfs::save_pdf_registry,
+            commands::pdfs::load_pdf_registry,
             commands::zotero::save_zotero_references,
             commands::zotero::load_zotero_references,
             commands::zotero::save_zotero_pdf,

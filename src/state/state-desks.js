@@ -22,7 +22,7 @@
  * persistence but isn't intended to round-trip via Dropbox sync.
  */
 
-const SPECIAL_KINDS = ["__inbox__", "__images__", "__trash__"];
+const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__trash__"];
 
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -361,7 +361,7 @@ export function ensureDesksTreeSpecials(state, tree) {
       if (!Array.isArray(target.children)) target.children = [];
       target.children.push(s);
     }
-    for (const id of ["__inbox__", "__images__", "__trash__"]) {
+    for (const id of ["__inbox__", "__images__", "__pdfs__", "__trash__"]) {
       const i = tree.findIndex((n) => n.id === id);
       if (i >= 0) tree.splice(i, 1);
     }

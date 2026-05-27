@@ -137,6 +137,12 @@ export async function openZoteroSavePdfModal(state) {
         const result = await state.importPdf(baseName, pdfBytes, null, {
           openImmediately: true,
           zoteroAttKey: attKey,
+          zoteroItemKey: ref.key,
+          zoteroTitle: ref.title || "Untitled",
+          zoteroAuthors: ref.authors || "",
+          zoteroFirstAuthor: ref.firstAuthor || "",
+          zoteroYear: ref.year || "",
+          zoteroCitekey: ref.citekey || "",
         });
 
         if (status) { status.textContent = "Saved!"; status.className = "zotero-status zotero-insert-status success"; }

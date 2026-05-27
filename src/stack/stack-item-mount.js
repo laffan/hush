@@ -272,6 +272,14 @@ async function mountPdfContent(contentEl, item, state, liveData) {
       await viewer.loadPdf(data);
     }
 
+    try {
+      const { getPdfMeta } = await import("../sync/pdf-sync.js");
+      const meta = getPdfMeta(item.fileId);
+      if (meta && viewer.setToolbarInfo) {
+        viewer.setToolbarInfo(meta.title, meta.firstAuthor);
+      }
+    } catch {}
+
     // Restore zoom and scroll position
     requestAnimationFrame(() => {
       try {
