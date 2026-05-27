@@ -32,7 +32,7 @@ const ICON_PIN = `<svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="7"/><l
 const ICON_SIZE = `<svg viewBox="0 0 10 10"><polyline points="2,8 5,2 8,8"/><line x1="3.3" y1="6" x2="6.7" y2="6"/></svg>`;
 const ICON_COLLAPSE = `<svg viewBox="0 0 10 10"><polyline points="2.5,4 5,6.5 7.5,4"/></svg>`;
 // Pop-in: diagonal arrow pointing down-left (into the stack)
-const ICON_POP_IN = `<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 6L6 19M6 19V6.52M6 19H18.48"/></svg>`;
+const ICON_POP_IN = `<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 6L6 19M6 19V6.52M6 19H18.48"/></svg>`;
 // Header-bar glyph: a thick vertical bar (the gutter rule) next to three
 // horizontal lines (the content below it). Read this as "header label
 // territory" so the gutter affordance is recognisable at toolbar size.
