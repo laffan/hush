@@ -268,7 +268,7 @@ async function init() {
         const ld = inst._liveColumns.get(a.id);
         if (a.fileType === "notebook" && ld?.canvas) { const g = ld.canvas.container?.querySelector(".notebook-shelf button"); if (g) g.click(); }
         else if (a.fileType === "pdf" && ld?.pdfViewer?.toggleShelf) ld.pdfViewer.toggleShelf();
-        else if (a.fileType === "document" && ld?.editor?.view) {
+        else if ((a.fileType === "document" || a.fileType === "project") && ld?.editor?.view) {
           const col = document.querySelector(`.stack-column[data-item-id="${a.id}"] .stack-column-content`);
           if (col) { const { toggleStackDocOutline } = await import("./stack/stack-doc-outline.js"); toggleStackDocOutline(col, ld.editor.view); }
         }

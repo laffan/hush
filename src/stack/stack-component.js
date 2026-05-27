@@ -444,6 +444,35 @@ export class StackComponent {
 
   // --- Public API ---
 
+  insertItemNear(fileId, fileType, name, screenX) {
+    if (fileType === "stack" || fileType === "folder") return null;
+    const item = {
+      id: crypto.randomUUID(), fileId, fileType, name,
+      width: DEFAULT_COLUMN_WIDTH, open: true,
+      scrollY: 0, cameraState: null, pdfZoom: null, spineColor: null,
+    };
+    // Find the column division closest to screenX
+    const colEls = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
+    let insertIdx = this._items.length;
+    for (let i = 0; i < colEls.length; i++) {
+      const rect = colEls[i].getBoundingClientRect();
+      const colCenter = rect.left + rect.width / 2;
+      if (screenX < colCenter) { insertIdx = i; break; }
+    }
+    this._items.splice(insertIdx, 0, item);
+    this._updateEmptyState();
+    const col = this._createColumn(item);
+    const refNode = colEls[insertIdx] || this._trailResize;
+    this._columnsEl.insertBefore(col, refNode);
+    this._updateVisibility();
+    requestAnimationFrame(() => {
+      col.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      col.classList.add("stack-column-highlight");
+      setTimeout(() => col.classList.remove("stack-column-highlight"), 1200);
+    });
+    return item;
+  }
+
   addItem(fileId, fileType, name) {
     if (fileType === "stack") return null;
     if (fileType === "folder") return null;

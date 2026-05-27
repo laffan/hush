@@ -123,7 +123,9 @@ export function buildPaneDOM(pane, deps) {
       const { getStackInstance } = await import("../stack/stack-bridge.js");
       const inst = getStackInstance();
       if (inst) {
-        inst.handleFileDrop(pane.fileId, pane.fileType, pane.fileName || "Untitled");
+        // Insert at the column division closest to the pane's position
+        const paneCenterX = pane.x + pane.width / 2;
+        inst.insertItemNear(pane.fileId, pane.fileType, pane.fileName || "Untitled", paneCenterX);
         closePane(pane.id);
       }
     });

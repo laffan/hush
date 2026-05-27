@@ -118,10 +118,8 @@ export function createPdfViewer(container, opts = {}) {
     }
   });
 
-  // ── Thumbnail view ───────────────────────────────────────────────
-  const THUMB_WIDTH = 150;
-  const THUMB_GAP = 12;
-  const THUMB_PADDING = 16;
+  // ── Thumbnail view (full-screen overlay with async rendering) ─────
+  const THUMB_WIDTH = 180;
   let thumbPanel = null;
   let thumbVisible = false;
   let thumbObserver = null;
@@ -134,9 +132,9 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function showThumbnails() {
-    if (thumbPanel) { thumbPanel.style.display = ""; renderVisibleThumbs(); return; }
+    if (thumbPanel) { thumbPanel.style.display = ""; setupThumbObserver(); return; }
     thumbPanel = document.createElement("div");
-    thumbPanel.className = "pdf-thumbnail-panel";
+    thumbPanel.className = "pdf-thumbnail-overlay";
 
     const thumbScroll = document.createElement("div");
     thumbScroll.className = "pdf-thumbnail-scroll";
@@ -171,21 +169,22 @@ export function createPdfViewer(container, opts = {}) {
       thumbScroll.appendChild(cell);
     }
 
-    body.appendChild(thumbPanel);
+    root.appendChild(thumbPanel);
+    setupThumbObserver();
+  }
 
+  function setupThumbObserver() {
+    if (thumbObserver) thumbObserver.disconnect();
+    const thumbScroll = thumbPanel?.querySelector(".pdf-thumbnail-scroll");
+    if (!thumbScroll) return;
     thumbObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
         const idx = parseInt(entry.target.dataset.thumbIdx, 10);
         if (!isNaN(idx)) renderThumb(idx);
       }
-    }, { root: thumbScroll, rootMargin: "200px" });
-
-    for (const cell of thumbScroll.children) {
-      thumbObserver.observe(cell);
-    }
-
-    renderVisibleThumbs();
+    }, { root: thumbScroll, rootMargin: "300px" });
+    for (const cell of thumbScroll.children) thumbObserver.observe(cell);
   }
 
   function hideThumbnails() {
@@ -194,17 +193,13 @@ export function createPdfViewer(container, opts = {}) {
     if (thumbObserver) { thumbObserver.disconnect(); thumbObserver = null; }
   }
 
-  function renderVisibleThumbs() {
-    if (!thumbPanel) return;
-    const thumbScroll = thumbPanel.querySelector(".pdf-thumbnail-scroll");
-    if (!thumbScroll) return;
-    const rect = thumbScroll.getBoundingClientRect();
-    for (const cell of thumbScroll.children) {
-      const cr = cell.getBoundingClientRect();
-      if (cr.bottom < rect.top - 200 || cr.top > rect.bottom + 200) continue;
-      const idx = parseInt(cell.dataset.thumbIdx, 10);
-      if (!isNaN(idx)) renderThumb(idx);
-    }
+  function parseThumbAnnotPos(annot) {
+    try {
+      const raw = annot._raw?.data?.annotationPosition;
+      if (typeof raw === "string") return JSON.parse(raw);
+      if (raw && typeof raw === "object") return raw;
+    } catch (_) {}
+    return null;
   }
 
   async function renderThumb(idx) {
@@ -228,24 +223,48 @@ export function createPdfViewer(container, opts = {}) {
       await page.render({ canvas, viewport: svp, background: "#ffffff" }).promise;
       if (destroyed) return;
 
-      // Paint annotation overlays onto the thumbnail
-      const annotations = annotLayer.getAnnotations();
-      if (annotations.length) {
+      // Paint all annotation types onto the thumbnail
+      const allAnnots = annotLayer.getAnnotations();
+      if (allAnnots.length) {
         const ctx = canvas.getContext("2d");
-        for (const ann of annotations) {
-          if ((ann.pageIndex ?? (ann.page - 1)) !== idx) continue;
-          if (!ann.rects) continue;
-          const color = ann.color || "#ffff00";
-          ctx.fillStyle = color;
-          ctx.globalAlpha = 0.3;
-          for (const r of ann.rects) {
-            const x = r[0] * scale;
-            const y = r[1] * scale;
-            const w = (r[2] - r[0]) * scale;
-            const h = (r[3] - r[1]) * scale;
-            ctx.fillRect(x, y, w, h);
+        for (const ann of allAnnots) {
+          const pos = parseThumbAnnotPos(ann);
+          if (!pos || pos.pageIndex !== idx) continue;
+
+          // Highlight / underline rects
+          if (pos.rects?.length && ann.type !== "ink") {
+            const color = ann.color || "#ffff00";
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.3;
+            for (const rect of pos.rects) {
+              const [x1, y1, x2, y2] = rect;
+              const rx = x1 * scale;
+              const ry = (vp.height - y2) * scale;
+              const rw = (x2 - x1) * scale;
+              const rh = (y2 - y1) * scale;
+              ctx.fillRect(rx, ry, rw, rh);
+            }
+            ctx.globalAlpha = 1.0;
           }
-          ctx.globalAlpha = 1.0;
+
+          // Ink / pen annotations
+          if (ann.type === "ink" && pos.paths?.length) {
+            ctx.strokeStyle = ann.color || "#ff0000";
+            ctx.lineWidth = Math.max(0.5, scale * 0.8);
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            for (const pathPoints of pos.paths) {
+              if (!pathPoints || pathPoints.length < 2) continue;
+              ctx.beginPath();
+              for (let pi = 0; pi < pathPoints.length; pi += 2) {
+                const px = pathPoints[pi] * scale;
+                const py = (vp.height - pathPoints[pi + 1]) * scale;
+                if (pi === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+              }
+              ctx.stroke();
+            }
+          }
         }
       }
 

@@ -370,8 +370,13 @@ async function mountProjectContent(contentEl, item, state, liveData) {
 
   try {
     const { createPaneEditor } = await import("../pane/pane-editor.js");
+    // Proxy state so the project view field sees this column as an
+    // active project (renders dashed separator widgets instead of raw
+    // ---hush-separator--- text).
+    const projectState = Object.create(state);
+    projectState.currentProjectId = item.fileId;
     let dirty = false;
-    const editor = createPaneEditor(wrapper, state, () => { dirty = true; });
+    const editor = createPaneEditor(wrapper, projectState, () => { dirty = true; });
     editor.setContent(joined);
 
     const saveInterval = setInterval(async () => {
