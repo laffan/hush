@@ -12,7 +12,6 @@ import { typeIcons } from "../sidebar/files-panel-shared.js";
 export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut, onDuplicate }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";
-  if (item.spineColor) spine.style.backgroundColor = item.spineColor;
 
   // Track whether a resize drag happened so we can suppress the click
   let didResize = false;
@@ -43,11 +42,13 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
   const iconEl = document.createElement("div");
   iconEl.className = "stack-spine-icon";
   iconEl.innerHTML = typeIcons[item.fileType] || typeIcons.document;
+  if (item.spineColor) applyIconColor(iconEl, item.spineColor);
   iconEl.style.cursor = "pointer";
   iconEl.addEventListener("click", (e) => {
     e.stopPropagation();
     openColorPicker(iconEl, item.spineColor, (color) => {
       onColorChange(color);
+      applyIconColor(iconEl, color);
     });
   });
   spine.appendChild(iconEl);
@@ -99,6 +100,11 @@ function makeBtn(cls, html) {
   return b;
 }
 
+function applyIconColor(iconEl, color) {
+  const svg = iconEl.querySelector("svg");
+  if (svg) svg.style.stroke = color || "";
+}
+
 function resolveItemName(item) {
   if (item.name) return item.name;
   const state = window.__hushState__;
@@ -130,8 +136,8 @@ function openColorPicker(anchorEl, currentColor, onPick) {
   }
   document.body.appendChild(picker);
   const rect = anchorEl.getBoundingClientRect();
-  picker.style.left = (rect.right + 8) + "px";
-  picker.style.top = (rect.top - picker.offsetHeight / 2 + rect.height / 2) + "px";
+  picker.style.left = (rect.left + rect.width / 2 - picker.offsetWidth / 2) + "px";
+  picker.style.top = (rect.bottom + 6) + "px";
   const cleanup = () => { document.removeEventListener("pointerdown", onOut); document.removeEventListener("keydown", onEsc); };
   const onOut = (e) => { if (!picker.contains(e.target) && !anchorEl.contains(e.target)) { picker.remove(); cleanup(); } };
   const onEsc = (e) => { if (e.key === "Escape") { picker.remove(); cleanup(); } };
