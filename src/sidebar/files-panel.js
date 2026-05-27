@@ -210,7 +210,7 @@ export function createFilesPanel(container, state, hidePanel) {
       const inTrash = state.isInTrash(item.id);
       const _p = item.type === "document" ? findParentOfNode(state.fileTree, item.id) : null;
       const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
-      const isMultiSelected = (item.type === "document" || item.type === "notebook") && item.fileId
+      const isMultiSelected = (item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId
         && Array.isArray(state.selectedDocIds) && state.selectedDocIds.includes(item.fileId);
       // The `.multi-selected` class lives on the outer `.sl-item`, not
       // the inner row, so SortableList's renderer can find it and

@@ -182,23 +182,13 @@ function render(ids) {
   });
 }
 
-async function _waitForStackInstance(timeout = 2000) {
-  const { getStackInstance } = await import("./stack/stack-bridge.js");
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    const inst = getStackInstance();
-    if (inst) return inst;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  return null;
-}
-
 async function runBatchAction(action, rows) {
   if (action === "clear") {
     _state.clearSelectedDocs();
     return;
   }
   if (action === "stack") {
+    const items = rows.map((r) => ({ fileId: r.fileId, type: r.type, name: r.name }));
     showPromptModal({
       title: "New stack",
       label: "Name",
@@ -206,12 +196,14 @@ async function runBatchAction(action, rows) {
       initialValue: "New Stack",
       confirmLabel: "Create",
       onConfirm: async (name) => {
+        _state.clearSelectedDocs();
         const result = await _state.createStack(name, null, { openImmediately: true });
         if (!result) return;
-        const inst = await _waitForStackInstance();
+        await new Promise((r) => setTimeout(r, 100));
+        const { getStackInstance } = await import("./stack/stack-bridge.js");
+        const inst = getStackInstance();
         if (!inst) return;
-        for (const r of rows) inst.addItem(r.fileId, r.type, r.name);
-        _state.clearSelectedDocs();
+        for (const it of items) inst.addItem(it.fileId, it.type, it.name);
       },
     });
     return;
