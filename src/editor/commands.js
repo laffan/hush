@@ -125,7 +125,17 @@ export function buildEditorCommands() {
     shortcutTogglePrivate: (state) => { state.togglePrivate(); return true; },
     shortcutToggleSidebar: (state) => { state.emit("toggle-left-panel"); return true; },
     shortcutToggleOutline: (state) => { state.emit("toggle-outline-panel"); return true; },
-    shortcutTypewriter: (state) => { state.toggleTypewriter(); return true; },
+    shortcutTypewriter: (state) => {
+      if (state.currentStackFileId) {
+        import("../stack/stack-bridge.js").then(({ getStackInstance }) => {
+          const inst = getStackInstance();
+          if (inst) inst.toggleActiveTypewriter();
+        });
+        return true;
+      }
+      state.toggleTypewriter();
+      return true;
+    },
     shortcutToggleDry: (state) => { state.toggleDry(); return true; },
     shortcutToggleFocus: (state) => { state.toggleFocus(); return true; },
     shortcutZenFocus: (state) => { state.toggleZenFocus(); return true; },

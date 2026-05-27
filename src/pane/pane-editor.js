@@ -28,6 +28,7 @@ export function createPaneEditor(container, appState, onChange, opts) {
   // right mounted folder even when the main editor is showing a
   // different doc. Falls back to no context (global Images store).
   const getImageContext = opts?.getLocalSyncContext || (() => null);
+  const skipTypewriter = opts?.skipTypewriter || false;
   const { extensions, themeComp, highlightComp, shortcutComp, editableComp } =
     createBaseExtensions(appState, onChange ? () => onChange() : null, { getImageContext });
 
@@ -37,27 +38,32 @@ export function createPaneEditor(container, appState, onChange, opts) {
 
   // Typewriter mode — scroll the cursor to a fixed vertical position
   // inside the pane on every selection / doc change.
+  // When skipTypewriter is set, the host manages typewriter directly
+  // via setTypewriterActive() and a local active flag.
+  let localTypewriterActive = false;
   const typewriterUpdateListener = EditorView.updateListener.of((update) => {
-    if (appState.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
+    const active = skipTypewriter ? localTypewriterActive : appState.typewriterMode;
+    if (active && (update.docChanged || update.selectionSet || update.focusChanged)) {
       requestAnimationFrame(() => scrollPaneCursorToTypewriter(update.view, appState, container));
     }
   });
 
+  const extraExts = opts?.extraExtensions || [];
   const startState = EditorState.create({
     doc: "",
-    extensions: [...extensions, dryPlugin, typewriterUpdateListener],
+    extensions: [...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
   });
   const view = new EditorView({ state: startState, parent: container });
 
   // If typewriter mode is already active when the pane is created,
   // apply padding + boundary line immediately.
-  if (appState.typewriterMode) {
+  if (!skipTypewriter && appState.typewriterMode) {
     applyPaneTypewriter(view, appState, container);
   }
 
   // React to mode toggles so panes track typewriter on/off.
   const onModeChanged = () => {
-    applyPaneTypewriter(view, appState, container);
+    if (!skipTypewriter) applyPaneTypewriter(view, appState, container);
     // Nudge the DRY plugin by issuing a no-op dispatch so it
     // re-checks appState.dryMode on the next update cycle.
     try { view.dispatch({ effects: [] }); } catch (_) {}
@@ -103,9 +109,13 @@ export function createPaneEditor(container, appState, onChange, opts) {
       sd.addEventListener("scroll", handler, { passive: true });
       return () => sd.removeEventListener("scroll", handler);
     },
+    setTypewriterActive: (active) => {
+      localTypewriterActive = active;
+      if (active) applyPaneTypewriter(view, appState, container);
+      else removePaneTypewriter(view, container);
+    },
     destroy: () => {
       appState.off("mode-changed", onModeChanged);
-      // Clean up typewriter padding / boundary line before tearing down.
       removePaneTypewriter(view, container);
       view.destroy();
     },

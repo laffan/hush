@@ -29,6 +29,7 @@ export class StackComponent {
     this._liveColumns = new Map();
     this._destroyed = false;
     this._activeItemId = null;
+    this._typewriterItemIds = new Set();
 
     this._buildDOM();
     this._render();
@@ -438,6 +439,22 @@ export class StackComponent {
   getActiveItem() {
     if (!this._activeItemId) return null;
     return this._items.find((i) => i.id === this._activeItemId) || null;
+  }
+
+  toggleActiveTypewriter() {
+    const item = this.getActiveItem();
+    if (!item) return;
+    if (item.fileType !== "document" && item.fileType !== "project") return;
+    const liveData = this._liveColumns.get(item.id);
+    if (!liveData?.editor) return;
+    const wasActive = this._typewriterItemIds.has(item.id);
+    if (wasActive) {
+      this._typewriterItemIds.delete(item.id);
+      liveData.editor.setTypewriterActive(false);
+    } else {
+      this._typewriterItemIds.add(item.id);
+      liveData.editor.setTypewriterActive(true);
+    }
   }
 
   // --- Public API ---

@@ -6,7 +6,7 @@
  * Left edge is a resize affordance for the item to the left.
  */
 
-import { findNodeByFileId } from "../state/tree-helpers.js";
+import { findNodeByFileId, findNode } from "../state/tree-helpers.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
 export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut, onDuplicate }) {
@@ -117,7 +117,8 @@ function resolveItemName(item) {
   if (item.name) return item.name;
   const state = window.__hushState__;
   if (state) {
-    const node = findNodeByFileId(state.fileTree, item.fileId);
+    const node = findNodeByFileId(state.fileTree, item.fileId)
+              || findNode(state.fileTree, item.fileId);
     if (node) return node.name;
   }
   return "Untitled";

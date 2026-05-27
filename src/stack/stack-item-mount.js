@@ -77,7 +77,7 @@ async function mountDocContent(contentEl, item, state, liveData) {
   try {
     const { createPaneEditor } = await import("../pane/pane-editor.js");
     let dirty = false;
-    const editor = createPaneEditor(wrapper, state, () => { dirty = true; });
+    const editor = createPaneEditor(wrapper, state, () => { dirty = true; }, { skipTypewriter: true });
     editor.setContent(content);
 
     const saveInterval = setInterval(async () => {
@@ -338,7 +338,7 @@ async function mountNestedStack(contentEl, item, state, liveData) {
 
 async function mountProjectContent(contentEl, item, state, liveData) {
   const { findNode, collectDocumentIds } = await import("../state/tree-helpers.js");
-  const { SEPARATOR } = await import("../editor/plugins/project-view.js");
+  const { SEPARATOR, createProjectViewField, createSeparatorFilter } = await import("../editor/plugins/project-view.js");
 
   const node = findNode(state.fileTree, item.fileId);
   if (!node || node.type !== "project") {
@@ -370,13 +370,16 @@ async function mountProjectContent(contentEl, item, state, liveData) {
 
   try {
     const { createPaneEditor } = await import("../pane/pane-editor.js");
-    // Proxy state so the project view field sees this column as an
-    // active project (renders dashed separator widgets instead of raw
-    // ---hush-separator--- text).
     const projectState = Object.create(state);
     projectState.currentProjectId = item.fileId;
     let dirty = false;
-    const editor = createPaneEditor(wrapper, projectState, () => { dirty = true; });
+    const editor = createPaneEditor(wrapper, projectState, () => { dirty = true; }, {
+      skipTypewriter: true,
+      extraExtensions: [
+        createProjectViewField(projectState),
+        createSeparatorFilter(projectState),
+      ],
+    });
     editor.setContent(joined);
 
     const saveInterval = setInterval(async () => {
