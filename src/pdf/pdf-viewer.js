@@ -404,8 +404,8 @@ export function createPdfViewer(container, opts = {}) {
     const gap = 12;
     if (layoutMode === MODE_VERTICAL) {
       const availW = scrollArea.clientWidth - pad;
-      if (fitMode === MODE_FIT_2) return (availW - gap) / (first.viewport.width * 2);
-      if (fitMode === MODE_FIT_3) return (availW - gap * 2) / (first.viewport.width * 3);
+      if (fitMode === MODE_FIT_2) return (availW - gap - 4) / (first.viewport.width * 2);
+      if (fitMode === MODE_FIT_3) return (availW - gap * 2 - 4) / (first.viewport.width * 3);
       return availW / first.viewport.width;
     }
     if (layoutMode === MODE_HORIZONTAL) {
@@ -664,6 +664,8 @@ export function createPdfViewer(container, opts = {}) {
   function getPageCount() { return pdfDoc ? pdfDoc.numPages : 0; }
   function getScrollTop() { return scrollArea.scrollTop; }
   function setScrollTop(v) { scrollArea.scrollTop = v; }
+  function getScrollLeft() { return scrollArea.scrollLeft; }
+  function setScrollLeft(v) { scrollArea.scrollLeft = v; }
   function onScroll(cb) {
     scrollListeners.push(cb);
     return () => { scrollListeners = scrollListeners.filter(c => c !== cb); };
@@ -791,6 +793,8 @@ export function createPdfViewer(container, opts = {}) {
     getPageCount,
     getScrollTop,
     setScrollTop,
+    getScrollLeft,
+    setScrollLeft,
     onScroll,
     setAnnotations: annotLayer.setAnnotations,
     refreshAnnotations: annotLayer.refreshAnnotations,
