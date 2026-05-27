@@ -9,6 +9,8 @@
 import { findNodeByFileId, findNode } from "../state/tree-helpers.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
+export { resolveItemName };
+
 export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut, onDuplicate }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";

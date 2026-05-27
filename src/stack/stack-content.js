@@ -33,6 +33,7 @@ export function encodeStackContent(items, scrollX, { scrollY = 0, scrollDirectio
       id: item.id,
       fileId: item.fileId,
       fileType: item.fileType,
+      name: item.name || null,
       width: item.width ?? 500,
       height: item.height ?? 600,
       open: item.open !== false,

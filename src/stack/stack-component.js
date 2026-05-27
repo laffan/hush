@@ -11,7 +11,7 @@
  * spines. On release, all items restore to their prior open/closed state.
  */
 
-import { createSpine } from "./stack-spine.js";
+import { createSpine, resolveItemName } from "./stack-spine.js";
 import { mountItemContent, unmountItemContent, snapshotItemContent } from "./stack-item-mount.js";
 
 const SPINE_WIDTH = 50;
@@ -680,7 +680,7 @@ export class StackComponent {
     const { createPane } = await import("../pane/pane-manager.js");
     const x = window.innerWidth / 2;
     const y = window.innerHeight / 2;
-    await createPane(item.fileId, item.name || "Untitled", item.fileType, x, y);
+    await createPane(item.fileId, resolveItemName(item), item.fileType, x, y);
     this.removeItem(item.id);
   }
 
