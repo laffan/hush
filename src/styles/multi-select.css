@@ -60,6 +60,9 @@ body.multi-select-active #notebook-container {
   display: flex;
   gap: 6px;
 }
+.ms-view-actions-bottom {
+  margin-top: 18px;
+}
 
 .ms-view-btn {
   background: transparent;

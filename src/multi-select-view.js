@@ -141,9 +141,7 @@ function render(ids) {
       <header class="ms-view-header">
         <div class="ms-view-title">${rows.length} file${rows.length === 1 ? "" : "s"} selected</div>
         <div class="ms-view-actions">
-          <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
           <button type="button" class="ms-view-btn ms-view-btn-danger" data-ms-action="delete">Delete</button>
-          <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack from selected</button>
           <button type="button" class="ms-view-btn" data-ms-action="clear">Clear selection</button>
         </div>
       </header>
@@ -157,6 +155,10 @@ function render(ids) {
             ${r.flagged ? `<span class="ms-view-flag">flagged</span>` : ""}
           </li>`).join("")}
       </ul>
+      <div class="ms-view-actions ms-view-actions-bottom">
+        <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
+        <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack from selected</button>
+      </div>
     </div>
   `;
 
@@ -179,6 +181,17 @@ function render(ids) {
   });
 }
 
+async function _waitForStackInstance(timeout = 2000) {
+  const { getStackInstance } = await import("./stack/stack-bridge.js");
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const inst = getStackInstance();
+    if (inst) return inst;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
+}
+
 async function runBatchAction(action, rows) {
   if (action === "clear") {
     _state.clearSelectedDocs();
@@ -194,8 +207,7 @@ async function runBatchAction(action, rows) {
       onConfirm: async (name) => {
         const result = await _state.createStack(name, null, { openImmediately: true });
         if (!result) return;
-        const { getStackInstance } = await import("./stack/stack-bridge.js");
-        const inst = getStackInstance();
+        const inst = await _waitForStackInstance();
         if (!inst) return;
         for (const r of rows) inst.addItem(r.fileId, r.type, r.name);
         _state.clearSelectedDocs();
