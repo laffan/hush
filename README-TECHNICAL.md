@@ -200,6 +200,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── state-tree.js
 │   ├── state-images.js
 │   ├── state-panes.js                 (per-context Hide/Show panes toggles)
+│   ├── mode-context.js                (per-editor mode proxy: focus / typewriter / DRY scoped per pane / stack column)
 │   └── tree-helpers.js
 │
 ├── sync/
@@ -268,7 +269,7 @@ Google Fonts are bundled locally via `@fontsource` npm packages. Loaded as a sid
 
 **Sibling state modules.** `state.js` stays a thin coordinator; the chunks of behaviour that don't need to live on `AppState` itself were lifted into siblings so the file stays under the line limit:
 
-- **`state-modes.js`** — every `toggle*` / `start|stopRatchet` mode flip. Each export takes `state` as the first arg; the matching `AppState.toggleX()` methods are one-line delegations so external callers (command palette, sidebar, editor commands) keep working unchanged.
+- **`state-modes.js`** — every `toggle*` / `start|stopRatchet` mode flip. Each export takes `state` as the first arg; the matching `AppState.toggleX()` methods are one-line delegations so external callers (command palette, sidebar, editor commands) keep working unchanged. These global toggles only reach the main editor — floating panes and stack columns have per-editor mode contexts (see `mode-context.js`) that the shortcut handlers in `commands.js` route to instead.
 - **`state-snapshots.js`** — `trackKeystroke(state)` (the every-30-keystrokes auto-snapshot) and `createManualSnapshot(state)`. Doc-only; notebook snapshots ride the autosave path in `notebook-bridge.js`.
 - **`state-naming.js`** — `deriveName`, `cursorOnFirstLine`, `updateTreeNodeNameByFileId`, `maybeRenameFromFirstLine`, `maybeRenameFileFromContent`. The "name follows first line" rule has four triggers in `editor.js` — cursor leaves line 1, editor blur, autosave when cursor isn't on line 1, and a 1.5 s-debounced timer fired from `docChanged` (so a user who titles a doc and never moves the cursor still sees the rename land). The pane-driven counterpart fires on `savePaneContent` so docs created via "New Document as Pane" get the same treatment. `renameTreeNode` in `state-tree.js` early-returns when the requested name resolves to the existing one (after `uniqueChildName` suffixing) so the debounced trigger doesn't churn.
 
@@ -520,15 +521,15 @@ Snapshot history viewer for both docs and notebooks. Shows timestamped snapshots
 
 ### Focus Mode (`editor/plugins/focus-mode.js`)
 
-CodeMirror ViewPlugin that dims all text except the current sentence to 50% opacity. Uses sentence-boundary detection from `sentence-navigator.js`. On empty lines, all text is dimmed.
+CodeMirror ViewPlugin that dims all text except the current sentence to 50% opacity. Uses sentence-boundary detection from `sentence-navigator.js`. On empty lines, all text is dimmed. The plugin is included in `createBaseExtensions()` so it's available in floating panes and stack columns, not just the main editor. Each pane and stack column has its own mode context (see below) so toggling focus mode affects only the active editor surface.
 
 ### Zen Focus (`editor/zen-focus.js`, `styles/zen-focus.css`)
 
-Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in three contexts: the main editor (doc mode), an active doc pane, or a notebook text-shape inline editor. The source surface picked at toggle time is the one whose handle matches first in that priority order.
+Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in four contexts: the main editor (doc mode), the active stack column, an active doc pane, or a notebook text-shape inline editor. The source surface picked at toggle time is the one whose handle matches first in that priority order.
 
 **Shadow editor model.** Rather than reparenting the source's DOM into the overlay, Zen builds a fresh `EditorView` inside the overlay and seeds it with the source's content + cursor offset. The source editor sits dormant for the duration of Zen. On exit the new content + selection are pushed back to the source via a single replacement transaction (CodeMirror sources) or a textarea value+input dispatch (notebook text shape — text-editor.ts's input handler then updates `state.editingText`). The shadow approach sidesteps every category of bug we hit with reparenting: stale CodeMirror geometry, fights with the pane click-outside-deactivate handler, textarea positional weirdness.
 
-**Focus mode lives here on purpose.** `createBaseExtensions()` deliberately omits `createFocusModePlugin` (panes don't want sentence-level dim inside them); the Zen module re-adds it to the shadow editor's extension list. Zen also auto-enables `state.focusMode` on entry and restores its prior value on exit, so surrounding-sentence dim works without a separate toggle. A `mode-changed` listener forwards a no-op dispatch to the zen view so toggling focus mode (`Cmd+Shift+Y`) from inside Zen wakes the shadow editor's focus-mode plugin.
+**Focus mode in the shadow editor.** `createBaseExtensions()` includes `createFocusModePlugin` so all editors (main, pane, stack) get sentence dimming. The Zen module re-adds it to the shadow editor's extension list. Zen also auto-enables `state.focusMode` on entry and restores its prior value on exit, so surrounding-sentence dim works without a separate toggle. A `mode-changed` listener forwards a no-op dispatch to the zen view so toggling focus mode (`Cmd+Shift+Y`) from inside Zen wakes the shadow editor's focus-mode plugin.
 
 **Centring + curtains.** A 50vh top/bottom padding on the shadow `.cm-scroller` lets every line — including the first and last — sit at the window's vertical centre. An `EditorView.updateListener` runs `maintainTypewriterWindow(view, state)` on every selection / doc / viewport change. With `zenFocusWindow === 1` (the default) it dispatches `EditorView.scrollIntoView(head, { y: "center" })` so the cursor's line tracks centre as the user types or arrows. With window > 1 it switches to a direct `scrollDOM.scrollTop` write: cursor's viewport y comes from `view.coordsAtPos(head)` and is compared against the scroller rect's viewport centre — if the cursor sits within `((winSize-1)/2) * defaultLineHeight` of centre, nothing happens; otherwise scrollTop nudges by exactly the overflow so the cursor lands on the matching band edge. `coordsAtPos` is critical here: the previous version used CodeMirror's content-relative `lineBlockAt(head).top` against `scroller.scrollTop`, but the 50vh scroller padding made that comparison off by half a viewport, so the cursor was getting scrolled fully off-screen as soon as it left the centre line. Two `::before` / `::after` gradient curtains fade the top and bottom thirds of the overlay back to `--bg`, so the user works in the centre band.
 
@@ -634,6 +635,16 @@ Earlier iterations had a separate `nspell` spellcheck plugin with bundled Hunspe
 ### Typewriter Mode (`editor/plugins/typewriter.js`)
 
 Locks cursor to a fixed screen position (default 60% from top). Draggable boundary line for repositioning. Extra padding so first/last lines can reach the boundary. Also handles ratchet scroll (pins last line to 50% center).
+
+### Per-Editor Mode Contexts (`state/mode-context.js`)
+
+Focus mode, typewriter mode, and D.R.Y. mode are scoped per editing surface rather than being global flags. Each floating pane and stack column creates its own **mode context** via `createModeContext(appState)` — a prototype-inherited proxy (`Object.create(appState)`) with own-property `focusMode`, `typewriterMode`, and `dryMode` booleans (all start `false`). The proxy is passed as `appState` to `createBaseExtensions` and `createDryHighlightPlugin`, so every plugin that reads `stateRef.focusMode` etc. reads the local value while settings, event emitter, and file tree all delegate through the prototype chain to the real AppState.
+
+**`toggle(modeName, view, container)`** flips the local flag, applies typewriter DOM side-effects (padding, boundary line) when the mode is `typewriterMode`, and nudges the CM view via `view.dispatch({ effects: [] })` so decoration-based plugins (focus mode, DRY) rebuild.
+
+**`getActiveModeContext(appState)`** resolves the active editing context: checks the active stack column first, then the active floating pane, returning `{ mc, view, container }` or `null` for the main editor. The keyboard shortcut handlers in `commands.js` route all three mode toggles through this function — when a context is found, `mc.toggle()` is called; otherwise the shortcut falls through to the global `state.toggleFocus()` / `state.toggleTypewriter()` / `state.toggleDry()` (main editor path, unchanged).
+
+The main editor does NOT use a mode context — it reads the global flags on `AppState` directly. This preserves backward compatibility and avoids changing the main editor's typewriter code path (which uses a body-level boundary line, not pane-local padding).
 
 ### Project View (`editor/plugins/project-view.js`)
 
@@ -754,7 +765,7 @@ Draggable reference windows that float above the editor or notebook canvas. Crea
 
 **`pane-manager.js`** — Lifecycle entry point: create, close, focus, theme/style sync, ratchet lock. Imports the worker modules below; owns the public API (`initPaneManager`, `createPane`, `closePane`, `focusPane`, etc.). The title-bar DOM (icons, buttons, collapse/attach/pin toggles) lives in **`pane-toolbar.js`**, and the positioning helpers (`getInitialPanePosition`, `fitActivePaneToGap`, `centerPaneInViewport`) live in **`pane-layout.js`** — both extracted to keep `pane-manager.js` under the line limit. `pane-toolbar.js` receives `{ closePane, focusPane, createPane, getCurrentContext, onContextChange }` from `pane-manager.js` at build time so it doesn't need a back-import.
 
-**`pane-editor.js`** — Factory that calls `createBaseExtensions()` from `editor/editor.js` so pane editors share the identical plugin, shortcut, and theme setup as the main editor. Exposes `setEditable(bool)` via an `EditorView.editable` compartment — inactive panes are locked non-editable to prevent input leaks.
+**`pane-editor.js`** — Factory that calls `createBaseExtensions()` from `editor/editor.js` so pane editors share the identical plugin, shortcut, and theme setup as the main editor. Accepts an optional `opts.modeContext` — a mode proxy from `createModeContext()` — which is passed to `createBaseExtensions` and `createDryHighlightPlugin` so all plugins read per-editor mode flags instead of the global AppState. When a mode context is present, the global `mode-changed` event only nudges the CM view (for theme/settings propagation); typewriter and mode flags are managed by the context's `toggle()`. Exposes `setEditable(bool)` via an `EditorView.editable` compartment — inactive panes are locked non-editable to prevent input leaks. Also exports `applyPaneTypewriterFromContext(view, modeRef, container)` for mode-context toggling of typewriter DOM side-effects.
 
 **`pane-content.js`** — Load + save + bidirectional sync with the main editor / notebook canvas. Includes `loadDocumentPane`, `loadNotebookPane`, `savePaneContent`, `autosaveAllPanes`, and the four `syncDoc*` / `syncNotebook*` functions. The sync flag is held in pane-state and protected by try/finally guards so a thrown handler can't permanently jam the channel.
 
