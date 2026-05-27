@@ -215,9 +215,6 @@ export class StackComponent {
   _setSpineColor(itemId, color) {
     const item = this._items.find((i) => i.id === itemId);
     if (item) item.spineColor = color;
-    const col = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
-    const svg = col?.querySelector(".stack-spine-icon svg");
-    if (svg) svg.style.stroke = color || "";
   }
 
   // --- Resize: handle resizes the item to its LEFT ---

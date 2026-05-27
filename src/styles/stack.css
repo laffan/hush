@@ -148,6 +148,10 @@
   padding: 15px;
   opacity: 0.5;
   box-sizing: content-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .stack-spine-icon svg,
 .stack-spine-icon .tree-type-icon {
@@ -157,6 +161,25 @@
   stroke: var(--fg, currentColor);
   fill: none;
   stroke-width: 1.5;
+  position: relative;
+  z-index: 1;
+}
+
+/* Colored dot behind the icon when user picks a spine color */
+.stack-spine-icon-colored {
+  opacity: 1;
+}
+.stack-spine-icon-colored::before {
+  content: "";
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--spine-icon-color);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
 }
 
 .stack-spine-label {

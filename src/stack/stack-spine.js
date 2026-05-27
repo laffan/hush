@@ -102,7 +102,15 @@ function makeBtn(cls, html) {
 
 function applyIconColor(iconEl, color) {
   const svg = iconEl.querySelector("svg");
-  if (svg) svg.style.stroke = color || "";
+  if (color) {
+    iconEl.classList.add("stack-spine-icon-colored");
+    iconEl.style.setProperty("--spine-icon-color", color);
+    if (svg) svg.style.stroke = "#fff";
+  } else {
+    iconEl.classList.remove("stack-spine-icon-colored");
+    iconEl.style.removeProperty("--spine-icon-color");
+    if (svg) svg.style.stroke = "";
+  }
 }
 
 function resolveItemName(item) {
