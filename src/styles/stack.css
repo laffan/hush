@@ -43,15 +43,14 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 10px;
+  height: 30px;
   border-top: 1px solid rgba(128, 128, 128, 0.25);
   pointer-events: none;
   z-index: 1;
 }
 
-/* Thin scrollbar with a top border line */
 .stack-scroll-area::-webkit-scrollbar {
-  height: 10px;
+  height: 30px;
 }
 .stack-scroll-area::-webkit-scrollbar-track {
   border-top: 1px solid rgba(128, 128, 128, 0.15);
@@ -799,7 +798,7 @@ body.stack-mode .column-resizer { display: none !important; }
 }
 
 .stack-vertical .stack-scroll-area::-webkit-scrollbar {
-  width: 10px;
+  width: 30px;
   height: auto;
 }
 .stack-vertical .stack-scroll-area::-webkit-scrollbar-track {
@@ -814,7 +813,7 @@ body.stack-mode .column-resizer { display: none !important; }
   bottom: 0;
   top: 0;
   right: 0;
-  width: 10px;
+  width: 30px;
   height: 100%;
   border-top: none;
   border-left: 1px solid rgba(128, 128, 128, 0.25);
