@@ -27,16 +27,29 @@ const maxItemHeight = () => Math.max(MIN_COLUMN_HEIGHT, window.innerHeight - 100
 
 let _measureCtx = null;
 const PILL_FONT = "600 11px system-ui, -apple-system, sans-serif";
+const PILL_FONT_SIZE = 11;
+const PILL_GAP = 10;
 
-function _trimPillText(text, maxWidth) {
-  if (maxWidth <= 0) return "";
+function _trimPillText(text, maxDim, vertical) {
+  if (maxDim <= 0) return "";
   if (!_measureCtx) {
     _measureCtx = document.createElement("canvas").getContext("2d");
   }
   _measureCtx.font = PILL_FONT;
-  if (_measureCtx.measureText(text).width <= maxWidth) return text;
+
+  if (vertical) {
+    const charH = PILL_FONT_SIZE * 1.25;
+    const fullH = text.length * charH;
+    if (fullH <= maxDim) return text;
+    const avail = maxDim - charH;
+    if (avail <= 0) return "…";
+    const maxChars = Math.floor(avail / charH);
+    return maxChars > 0 ? text.slice(0, maxChars) + "…" : "…";
+  }
+
+  if (_measureCtx.measureText(text).width <= maxDim) return text;
   const ellW = _measureCtx.measureText("…").width;
-  const avail = maxWidth - ellW;
+  const avail = maxDim - ellW;
   if (avail <= 0) return "…";
   let lo = 0, hi = text.length;
   while (lo < hi) {
@@ -800,14 +813,15 @@ export class StackComponent {
         pill.style.backgroundColor = item.spineColor;
 
         const pos = (acc / scrollSize) * viewSize;
-        const size = Math.max(20, (colSize / scrollSize) * viewSize);
+        const rawSize = Math.max(20, (colSize / scrollSize) * viewSize);
+        const pillSize = Math.max(20, rawSize - PILL_GAP);
 
         if (isVert) {
-          pill.style.top = pos + "px";
-          pill.style.height = size + "px";
+          pill.style.top = (pos + PILL_GAP / 2) + "px";
+          pill.style.height = pillSize + "px";
         } else {
-          pill.style.left = pos + "px";
-          pill.style.width = size + "px";
+          pill.style.left = (pos + PILL_GAP / 2) + "px";
+          pill.style.width = pillSize + "px";
         }
 
         if (item.open) {
@@ -815,7 +829,7 @@ export class StackComponent {
           textEl.className = "stack-scrollbar-pill-text";
           const title = resolveItemName(item);
           const textPad = isVert ? 8 : 16;
-          textEl.textContent = _trimPillText(title, size - textPad);
+          textEl.textContent = _trimPillText(title, pillSize - textPad, isVert);
           pill.appendChild(textEl);
         } else {
           const iconEl = document.createElement("span");
