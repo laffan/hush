@@ -800,6 +800,15 @@ export class StackComponent {
           pill.appendChild(iconEl);
         }
 
+        const colCenter = acc + colSize / 2;
+        pill.addEventListener("click", () => {
+          if (isVert) {
+            this._scrollArea.scrollTo({ top: colCenter - viewSize / 2, behavior: "smooth" });
+          } else {
+            this._scrollArea.scrollTo({ left: colCenter - viewSize / 2, behavior: "smooth" });
+          }
+        });
+
         this._pillContainer.appendChild(pill);
       }
 

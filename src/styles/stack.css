@@ -57,11 +57,11 @@
   background: transparent;
 }
 .stack-scroll-area::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.25);
+  background: rgba(128, 128, 128, 0.15);
   border-radius: 5px;
 }
 .stack-scroll-area::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.4);
+  background: rgba(128, 128, 128, 0.25);
 }
 
 .stack-columns {
@@ -306,6 +306,13 @@
   overflow: hidden;
   box-sizing: border-box;
   opacity: 0.75;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.stack-scrollbar-pill:hover {
+  opacity: 1;
 }
 
 .stack-scrollbar-pill-text {
