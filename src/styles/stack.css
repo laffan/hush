@@ -281,6 +281,57 @@
   background: rgba(128, 128, 128, 0.35);
 }
 
+/* --- Scrollbar pills (colored title indicators) --- */
+
+.stack-scrollbar-pills {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30px;
+  pointer-events: none;
+  z-index: 2;
+  overflow: hidden;
+}
+
+.stack-scrollbar-pill {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 10px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  opacity: 0.75;
+}
+
+.stack-scrollbar-pill-text {
+  font-size: 9px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
+}
+
+.stack-scrollbar-pill-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stack-scrollbar-pill-icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: #fff;
+  fill: none;
+  stroke-width: 1.5;
+}
+
 /* Suppress transitions during resize drag and reorder */
 body.stack-resizing .stack-column,
 .stack-reordering .stack-column { transition: none !important; }
@@ -947,4 +998,29 @@ body.stack-mode .column-resizer { display: none !important; }
 /* --- Highlight animation for vertical mode --- */
 .stack-vertical .stack-column-highlight .stack-spine {
   animation: stack-spine-flash 1.2s ease-out;
+}
+
+/* --- Scrollbar pills: vertical mode --- */
+
+.stack-vertical .stack-scrollbar-pills {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  height: auto;
+}
+
+.stack-scrollbar-pill-vertical {
+  top: auto;
+  bottom: auto;
+  left: 5px;
+  right: 5px;
+  padding: 4px 0;
+}
+
+.stack-scrollbar-pill-vertical .stack-scrollbar-pill-text {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
 }

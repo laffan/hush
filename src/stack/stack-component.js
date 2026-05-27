@@ -13,6 +13,7 @@
 
 import { createSpine, resolveItemName } from "./stack-spine.js";
 import { mountItemContent, unmountItemContent, snapshotItemContent } from "./stack-item-mount.js";
+import { typeIcons } from "../sidebar/files-panel-shared.js";
 
 const SPINE_WIDTH = 50;
 const SPINE_HEIGHT = 40;
@@ -106,6 +107,13 @@ export class StackComponent {
       }
       this._updateVisibility();
     });
+
+    this._pillContainer = document.createElement("div");
+    this._pillContainer.className = "stack-scrollbar-pills";
+    this._el.appendChild(this._pillContainer);
+
+    this._pillResizeObs = new ResizeObserver(() => this._updateScrollbarPills());
+    this._pillResizeObs.observe(this._scrollArea);
 
     this._container.appendChild(this._el);
   }
@@ -248,6 +256,7 @@ export class StackComponent {
   _setSpineColor(itemId, color) {
     const item = this._items.find((i) => i.id === itemId);
     if (item) item.spineColor = color;
+    this._updateScrollbarPills();
   }
 
   // --- Resize: handle resizes the item to its LEFT ---
@@ -278,6 +287,7 @@ export class StackComponent {
         const newHeight = Math.min(maxItemHeight(), Math.max(MIN_COLUMN_HEIGHT, startHeight + dy));
         item.height = newHeight;
         col.style.height = (SPINE_HEIGHT + newHeight) + "px";
+        this._updateScrollbarPills();
       };
       const onUp = () => {
         document.removeEventListener("pointermove", onMove);
@@ -295,6 +305,7 @@ export class StackComponent {
         const newWidth = Math.min(maxItemWidth(), Math.max(MIN_COLUMN_WIDTH, startWidth + dx));
         item.width = newWidth;
         col.style.width = (SPINE_WIDTH + newWidth) + "px";
+        this._updateScrollbarPills();
       };
       const onUp = () => {
         document.removeEventListener("pointermove", onMove);
@@ -526,6 +537,7 @@ export class StackComponent {
         }
       }
     }
+    this._updateScrollbarPills();
   }
 
   // --- Active item ---
@@ -737,9 +749,68 @@ export class StackComponent {
     });
   }
 
+  _updateScrollbarPills() {
+    if (this._destroyed) return;
+    this._pillContainer.innerHTML = "";
+
+    const isVert = this._isVertical;
+    const scrollSize = isVert ? this._scrollArea.scrollHeight : this._scrollArea.scrollWidth;
+    const viewSize = isVert ? this._scrollArea.clientHeight : this._scrollArea.clientWidth;
+
+    if (scrollSize <= viewSize || viewSize <= 0) {
+      this._pillContainer.style.display = "none";
+      return;
+    }
+    this._pillContainer.style.display = "";
+
+    let acc = 0;
+    for (const item of this._items) {
+      const spineSize = isVert ? SPINE_HEIGHT : SPINE_WIDTH;
+      const contentSize = item.open
+        ? (isVert ? (item.height || DEFAULT_COLUMN_HEIGHT) : (item.width || DEFAULT_COLUMN_WIDTH))
+        : 0;
+      const colSize = spineSize + contentSize;
+
+      if (item.spineColor) {
+        const pill = document.createElement("div");
+        pill.className = "stack-scrollbar-pill";
+        if (isVert) pill.classList.add("stack-scrollbar-pill-vertical");
+        pill.style.backgroundColor = item.spineColor;
+
+        const pos = (acc / scrollSize) * viewSize;
+        const size = Math.max(20, (colSize / scrollSize) * viewSize);
+
+        if (isVert) {
+          pill.style.top = pos + "px";
+          pill.style.height = size + "px";
+        } else {
+          pill.style.left = pos + "px";
+          pill.style.width = size + "px";
+        }
+
+        if (item.open) {
+          const textEl = document.createElement("span");
+          textEl.className = "stack-scrollbar-pill-text";
+          textEl.textContent = resolveItemName(item);
+          pill.appendChild(textEl);
+        } else {
+          const iconEl = document.createElement("span");
+          iconEl.className = "stack-scrollbar-pill-icon";
+          iconEl.innerHTML = typeIcons[item.fileType] || typeIcons.document;
+          pill.appendChild(iconEl);
+        }
+
+        this._pillContainer.appendChild(pill);
+      }
+
+      acc += colSize;
+    }
+  }
+
   destroy() {
     this._destroyed = true;
     if (this._visRaf) cancelAnimationFrame(this._visRaf);
+    if (this._pillResizeObs) this._pillResizeObs.disconnect();
     for (const [itemId] of this._liveColumns) {
       const item = this._items.find((i) => i.id === itemId);
       const col = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
