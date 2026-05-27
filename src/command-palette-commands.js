@@ -276,6 +276,21 @@ function buildCommands(state) {
         const { startZoteroUpdate } = await import("./sidebar/sidebar-progress.js");
         startZoteroUpdate(s);
       } },
+    { id: "convert-project-to-doc", label: "Convert this Project to Doc", icon: icons.doc, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !s.currentProjectId,
+      action: async (s) => {
+        const ok = window.confirm("Convert this project to a tabbed document? Each document in the project will become a tab.");
+        if (ok) await s.convertProjectToDoc(s.currentProjectId);
+      } },
+    { id: "convert-doc-to-project", label: "Convert this Doc to Project", icon: icons.project, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !s.currentFileId,
+      action: async (s) => {
+        const { findNodeByFileId } = await import("./state/tree-helpers.js");
+        const node = findNodeByFileId(s.fileTree, s.currentFileId);
+        if (!node) return;
+        const ok = window.confirm("Convert this document to a project? Each tab will become a separate document.");
+        if (ok) await s.convertDocToProject(node.id);
+      } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",

@@ -93,6 +93,28 @@ export function handleConvertContainer(nodeId, targetType, state, refreshAfter) 
   }
 }
 
+export function handleConvertProjectToDoc(nodeId, state, refreshAfter) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  showConfirmModal({
+    title: `Convert "${node.name}" to a document?`,
+    message: "Each document in the project will become a tab in the new document. Non-document files will be moved to a separate folder.",
+    confirmLabel: "Convert",
+    onConfirm: () => state.convertProjectToDoc(nodeId).then(() => refreshAfter()),
+  });
+}
+
+export function handleConvertDocToProject(nodeId, state, refreshAfter) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  showConfirmModal({
+    title: `Convert "${node.name}" to a project?`,
+    message: "Each tab in the document will become a separate document in the new project.",
+    confirmLabel: "Convert",
+    onConfirm: () => state.convertDocToProject(nodeId).then(() => refreshAfter()),
+  });
+}
+
 export function handleDuplicate(nodeId, state, refreshAfter) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;

@@ -18,6 +18,7 @@ import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./fi
 import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash, handleOpenAsStack,
+  handleConvertProjectToDoc, handleConvertDocToProject,
 } from "./files-panel-actions.js";
 import {
   isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree,
@@ -342,6 +343,10 @@ function dispatchRowAction(action, nodeId, opts) {
     handleEmptyTrash(storedState, refresh);
   } else if (action === "open-as-stack") {
     handleOpenAsStack(nodeId, storedState, refresh);
+  } else if (action === "convert-project-to-doc") {
+    handleConvertProjectToDoc(nodeId, storedState, refresh);
+  } else if (action === "convert-doc-to-project") {
+    handleConvertDocToProject(nodeId, storedState, refresh);
   } else if (action === "new-doc-here") {
     storedState.newFile(nodeId).then(refresh);
   } else if (action === "new-notebook-here") {

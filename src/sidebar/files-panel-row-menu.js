@@ -78,6 +78,12 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     const target = nodeType === "folder" ? "project" : "folder";
     entries.push({ action: "convert-container", label: `Convert to ${target}`, targetType: target });
   }
+  if (nodeType === "project" && !isSpecial && !inTrash) {
+    entries.push({ action: "convert-project-to-doc", label: "Convert to Doc" });
+  }
+  if (isDoc && !inTrash && !inProject) {
+    entries.push({ action: "convert-doc-to-project", label: "Convert to Project" });
+  }
   if (isContainer && !inTrash && !isImagesId(nodeId)) {
     entries.push({ action: "open-as-stack", label: "Open as Stack" });
   }

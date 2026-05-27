@@ -412,6 +412,8 @@ export class AppState {
   async toggleUseAsNote(nodeId) { const m = await import("./state-tree.js"); return m.toggleUseAsNote(this, nodeId); }
   async duplicateTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.duplicateTreeNode(this, nodeId); }
   async convertContainerType(nodeId, targetType) { const m = await import("./state-tree.js"); return m.convertContainerType(this, nodeId, targetType); }
+  async convertProjectToDoc(nodeId) { const m = await import("./state-convert.js"); return m.convertProjectToDoc(this, nodeId); }
+  async convertDocToProject(nodeId) { const m = await import("./state-convert.js"); return m.convertDocToProject(this, nodeId); }
 
   async createImageFromFile(file) { const m = await import("./state-images.js"); return m.createImageFromFile(this, file); }
   async createImageFromDataUrl(dataUrl, name) { const m = await import("./state-images.js"); return m.createImageFromDataUrl(this, dataUrl, name); }
