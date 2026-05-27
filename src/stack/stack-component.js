@@ -814,28 +814,44 @@ export class StackComponent {
 
         const pos = (acc / scrollSize) * viewSize;
         const rawSize = Math.max(20, (colSize / scrollSize) * viewSize);
-        const pillSize = Math.max(20, rawSize - PILL_GAP);
 
-        if (isVert) {
-          pill.style.top = (pos + PILL_GAP / 2) + "px";
-          pill.style.height = pillSize + "px";
+        if (!item.open) {
+          const circleSize = isVert
+            ? 30   // pill container is 40px wide, inset 5px each side = 30px
+            : 30;  // pill container is 40px tall, inset 5px each side = 30px
+          const center = pos + rawSize / 2;
+          if (isVert) {
+            pill.style.top = (center - circleSize / 2) + "px";
+            pill.style.height = circleSize + "px";
+            pill.style.left = "5px";
+            pill.style.right = "5px";
+          } else {
+            pill.style.left = (center - circleSize / 2) + "px";
+            pill.style.width = circleSize + "px";
+          }
+          pill.style.borderRadius = "50%";
+          pill.style.padding = "0";
+
+          const iconEl = document.createElement("span");
+          iconEl.className = "stack-scrollbar-pill-icon";
+          iconEl.innerHTML = typeIcons[item.fileType] || typeIcons.document;
+          pill.appendChild(iconEl);
         } else {
-          pill.style.left = (pos + PILL_GAP / 2) + "px";
-          pill.style.width = pillSize + "px";
-        }
+          const pillSize = Math.max(20, rawSize - PILL_GAP);
+          if (isVert) {
+            pill.style.top = (pos + PILL_GAP / 2) + "px";
+            pill.style.height = pillSize + "px";
+          } else {
+            pill.style.left = (pos + PILL_GAP / 2) + "px";
+            pill.style.width = pillSize + "px";
+          }
 
-        if (item.open) {
           const textEl = document.createElement("span");
           textEl.className = "stack-scrollbar-pill-text";
           const title = resolveItemName(item);
           const textPad = isVert ? 8 : 16;
           textEl.textContent = _trimPillText(title, pillSize - textPad, isVert);
           pill.appendChild(textEl);
-        } else {
-          const iconEl = document.createElement("span");
-          iconEl.className = "stack-scrollbar-pill-icon";
-          iconEl.innerHTML = typeIcons[item.fileType] || typeIcons.document;
-          pill.appendChild(iconEl);
         }
 
         const colCenter = acc + colSize / 2;
