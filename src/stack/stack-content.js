@@ -24,15 +24,17 @@
 
 const CURRENT_VERSION = 1;
 
-export function encodeStackContent(items, scrollX) {
+export function encodeStackContent(items, scrollX, { scrollY = 0, scrollDirection = "horizontal" } = {}) {
   return JSON.stringify({
     format: "hushstack",
     version: CURRENT_VERSION,
+    scrollDirection,
     items: items.map((item) => ({
       id: item.id,
       fileId: item.fileId,
       fileType: item.fileType,
       width: item.width ?? 500,
+      height: item.height ?? 600,
       open: item.open !== false,
       scrollY: item.scrollY ?? 0,
       cameraState: item.cameraState ?? null,
@@ -40,6 +42,7 @@ export function encodeStackContent(items, scrollX) {
       spineColor: item.spineColor ?? null,
     })),
     scrollX: scrollX ?? 0,
+    scrollY: scrollY ?? 0,
   });
 }
 
@@ -57,6 +60,7 @@ export function decodeStackContent(raw) {
           fileId: item.fileId,
           fileType: item.fileType || "document",
           width: item.width ?? 500,
+          height: item.height ?? 600,
           open: item.open !== false,
           scrollY: item.scrollY ?? 0,
           cameraState: item.cameraState ?? null,
@@ -64,6 +68,8 @@ export function decodeStackContent(raw) {
           spineColor: item.spineColor ?? null,
         })),
         scrollX: data.scrollX ?? 0,
+        scrollY: data.scrollY ?? 0,
+        scrollDirection: data.scrollDirection || "horizontal",
       };
     }
   } catch (_) {}

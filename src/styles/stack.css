@@ -786,3 +786,166 @@ body.stack-resizing .stack-column,
   display: none !important;
 }
 body.stack-mode .column-resizer { display: none !important; }
+
+/* ================================================================
+   Vertical scroll mode (.stack-vertical on .stack-root)
+   ================================================================ */
+
+/* --- Scroll area: vertical overflow --- */
+
+.stack-vertical .stack-scroll-area {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.stack-vertical .stack-scroll-area::-webkit-scrollbar {
+  width: 10px;
+  height: auto;
+}
+.stack-vertical .stack-scroll-area::-webkit-scrollbar-track {
+  border-top: none;
+  border-left: 1px solid rgba(128, 128, 128, 0.15);
+  background: transparent;
+}
+
+/* Top-border line → right-border line */
+.stack-root.stack-vertical::after {
+  left: auto;
+  bottom: 0;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  border-top: none;
+  border-left: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+/* --- Columns container: vertical flow --- */
+
+.stack-vertical .stack-columns {
+  flex-direction: column;
+  min-width: unset;
+  min-height: 100%;
+}
+
+/* --- Column: row layout (spine on top, content below) --- */
+
+.stack-vertical .stack-column {
+  flex-direction: column;
+  width: 100% !important;
+  min-width: unset !important;
+  border-right: none;
+  border-bottom: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+  transition: height 0.2s ease;
+}
+
+.stack-vertical .stack-column-closed {
+  transition: height 0.2s ease;
+}
+
+/* --- Spine: horizontal bar --- */
+
+.stack-vertical .stack-spine {
+  width: 100%;
+  min-width: unset;
+  height: 40px;
+  min-height: 40px;
+  flex-direction: row;
+  border-left: none;
+  border-right: none;
+  border-top: 2px solid rgba(128, 128, 128, 0.2);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+}
+
+/* Active column: top border highlight */
+.stack-vertical .stack-column-active .stack-spine {
+  border-left-color: transparent;
+  border-top-color: var(--fg, #000);
+}
+
+/* Resize affordance: top edge instead of left */
+.stack-vertical .stack-spine::before {
+  width: 100%;
+  height: 6px;
+  left: 0;
+  top: 0;
+  cursor: row-resize;
+}
+.stack-vertical .stack-column:first-child .stack-spine::before {
+  cursor: default;
+  display: none;
+}
+
+/* --- Spine icon: horizontal, left-aligned --- */
+
+.stack-vertical .stack-spine-icon {
+  padding: 8px 10px;
+}
+
+/* --- Spine label: horizontal text --- */
+
+.stack-vertical .stack-spine-label {
+  writing-mode: horizontal-tb;
+  text-orientation: initial;
+  transform: none;
+  font-size: 12px;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+/* --- Spine buttons: horizontal row --- */
+
+.stack-vertical .stack-spine-buttons {
+  flex-direction: row;
+  padding: 0 8px;
+  align-items: center;
+}
+
+/* --- Column content: fills remaining height --- */
+
+.stack-vertical .stack-column-content {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- Trailing resize zone: vertical --- */
+
+.stack-vertical .stack-trail-resize {
+  width: 100%;
+  min-width: unset;
+  height: 50vh;
+  min-height: 50vh;
+  cursor: row-resize;
+}
+.stack-vertical .stack-trail-resize::before {
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%) translateY(0);
+  width: 40px;
+  height: 4px;
+}
+
+/* --- Reorder: vertical ghost + horizontal drop indicator --- */
+
+.stack-reorder-ghost-vertical {
+  width: auto;
+  flex-direction: row;
+  padding-top: 0;
+  padding-left: 10px;
+}
+
+.stack-vertical .stack-drop-indicator {
+  width: 100%;
+  height: 3px;
+}
+
+/* --- Suppress transitions during resize in vertical mode --- */
+.stack-vertical.stack-reordering .stack-column { transition: none !important; }
+
+/* --- Highlight animation for vertical mode --- */
+.stack-vertical .stack-column-highlight .stack-spine {
+  animation: stack-spine-flash 1.2s ease-out;
+}

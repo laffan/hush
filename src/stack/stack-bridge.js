@@ -64,7 +64,10 @@ export function getStackFileId() {
 async function saveStack() {
   if (!currentInstance || !currentFileId) return null;
   const snapshot = currentInstance.serialize();
-  const content = encodeStackContent(snapshot.items, snapshot.scrollX);
+  const content = encodeStackContent(snapshot.items, snapshot.scrollX, {
+    scrollY: snapshot.scrollY,
+    scrollDirection: snapshot.scrollDirection,
+  });
   if (IS_TAURI) {
     try {
       await tauriInvoke("save_file", { id: currentFileId, content });

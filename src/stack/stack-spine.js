@@ -16,9 +16,10 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
   // Track whether a resize drag happened so we can suppress the click
   let didResize = false;
 
-  // Left-edge resize zone (6px strip)
+  // Resize zone: left 6px in horizontal mode, top 6px in vertical mode
   spine.addEventListener("pointerdown", (e) => {
-    if (e.offsetX > 6) return;
+    const isVert = spine.closest(".stack-vertical") != null;
+    if (isVert ? e.offsetY > 6 : e.offsetX > 6) return;
     e.stopPropagation();
     e.preventDefault();
     didResize = true;

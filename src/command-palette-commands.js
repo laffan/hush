@@ -387,6 +387,12 @@ function buildCommands(state) {
     // === STACK ONLY ===
     { id: "stack-add-file", label: "Stack: Add file", icon: icons.stack, shortcutKey: null, ctx: "stack",
       action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst._openAddPicker(); } },
+    { id: "stack-scroll-vertical", label: "Stack : Scroll vertically", icon: icons.stack, shortcutKey: null, ctx: "stack",
+      hiddenIf: (s) => s.stackScrollDirection === "vertical",
+      action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst.setScrollDirection("vertical"); } },
+    { id: "stack-scroll-horizontal", label: "Stack : Scroll horizontally", icon: icons.stack, shortcutKey: null, ctx: "stack",
+      hiddenIf: (s) => s.stackScrollDirection !== "vertical",
+      action: async (s) => { const { getStackInstance } = await import("./stack/stack-bridge.js"); const inst = getStackInstance(); if (inst) inst.setScrollDirection("horizontal"); } },
     // === NOTEBOOK ONLY ===
     { id: "nb-shelf", label: "Open shelf", icon: null, shortcutKey: null, ctx: "notebook",
       action: (s) => s.emit("notebook-toggle-shelf") },

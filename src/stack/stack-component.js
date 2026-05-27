@@ -15,10 +15,14 @@ import { createSpine } from "./stack-spine.js";
 import { mountItemContent, unmountItemContent, snapshotItemContent } from "./stack-item-mount.js";
 
 const SPINE_WIDTH = 50;
+const SPINE_HEIGHT = 40;
 const DEFAULT_COLUMN_WIDTH = 800;
+const DEFAULT_COLUMN_HEIGHT = 600;
 const BUFFER_COLUMNS = 1;
 const MIN_COLUMN_WIDTH = 200;
+const MIN_COLUMN_HEIGHT = 150;
 const maxItemWidth = () => Math.max(MIN_COLUMN_WIDTH, window.innerWidth - 100);
+const maxItemHeight = () => Math.max(MIN_COLUMN_HEIGHT, window.innerHeight - 100);
 
 export class StackComponent {
   constructor(container, data, state) {
@@ -26,22 +30,32 @@ export class StackComponent {
     this._state = state;
     this._items = data.items || [];
     this._scrollX = data.scrollX || 0;
+    this._scrollY = data.scrollY || 0;
+    this._scrollDirection = data.scrollDirection || "horizontal";
     this._liveColumns = new Map();
     this._destroyed = false;
     this._activeItemId = null;
 
+    this._state.stackScrollDirection = this._scrollDirection;
+
     this._buildDOM();
     this._render();
-    // Defer scroll restoration so the browser has reflowed column widths
     requestAnimationFrame(() => {
-      this._scrollArea.scrollLeft = this._scrollX;
+      if (this._isVertical) {
+        this._scrollArea.scrollTop = this._scrollY;
+      } else {
+        this._scrollArea.scrollLeft = this._scrollX;
+      }
     });
     this._startVirtualization();
   }
 
+  get _isVertical() { return this._scrollDirection === "vertical"; }
+
   _buildDOM() {
     this._el = document.createElement("div");
     this._el.className = "stack-root";
+    if (this._isVertical) this._el.classList.add("stack-vertical");
 
     this._scrollArea = document.createElement("div");
     this._scrollArea.className = "stack-scroll-area";
@@ -85,7 +99,11 @@ export class StackComponent {
     this._columnsEl.appendChild(this._trailResize);
 
     this._scrollArea.addEventListener("scroll", () => {
-      this._scrollX = this._scrollArea.scrollLeft;
+      if (this._isVertical) {
+        this._scrollY = this._scrollArea.scrollTop;
+      } else {
+        this._scrollX = this._scrollArea.scrollLeft;
+      }
       this._updateVisibility();
     });
 
@@ -121,9 +139,15 @@ export class StackComponent {
     col.dataset.itemId = item.id;
     if (!item.open) col.classList.add("stack-column-closed");
 
-    const width = item.open ? (item.width || DEFAULT_COLUMN_WIDTH) : 0;
-    col.style.width = (SPINE_WIDTH + width) + "px";
-    col.style.minWidth = SPINE_WIDTH + "px";
+    if (this._isVertical) {
+      const height = item.open ? (item.height || DEFAULT_COLUMN_HEIGHT) : 0;
+      col.style.height = (SPINE_HEIGHT + height) + "px";
+      col.style.minHeight = SPINE_HEIGHT + "px";
+    } else {
+      const width = item.open ? (item.width || DEFAULT_COLUMN_WIDTH) : 0;
+      col.style.width = (SPINE_WIDTH + width) + "px";
+      col.style.minWidth = SPINE_WIDTH + "px";
+    }
     col.style.flexShrink = "0";
 
     const spine = createSpine(item, {
@@ -153,8 +177,9 @@ export class StackComponent {
     let trackedShelfW = 0;
     let shelfDebounce = null;
     const userBaseW = item.width || DEFAULT_COLUMN_WIDTH;
+    const self = this;
     function syncShelfWidth() {
-      if (!item.open) return;
+      if (!item.open || self._isVertical) return;
       let total = 0;
       for (const p of content.children) {
         const cl = p.className || "";
@@ -187,7 +212,11 @@ export class StackComponent {
 
     if (item.open) {
       col.classList.remove("stack-column-closed");
-      col.style.width = (SPINE_WIDTH + (item.width || DEFAULT_COLUMN_WIDTH)) + "px";
+      if (this._isVertical) {
+        col.style.height = (SPINE_HEIGHT + (item.height || DEFAULT_COLUMN_HEIGHT)) + "px";
+      } else {
+        col.style.width = (SPINE_WIDTH + (item.width || DEFAULT_COLUMN_WIDTH)) + "px";
+      }
       const contentEl = col.querySelector(".stack-column-content");
       if (contentEl) contentEl.style.display = "block";
     } else {
@@ -197,7 +226,11 @@ export class StackComponent {
         this._liveColumns.delete(itemId);
       }
       col.classList.add("stack-column-closed");
-      col.style.width = SPINE_WIDTH + "px";
+      if (this._isVertical) {
+        col.style.height = SPINE_HEIGHT + "px";
+      } else {
+        col.style.width = SPINE_WIDTH + "px";
+      }
       const contentEl = col.querySelector(".stack-column-content");
       if (contentEl) contentEl.style.display = "none";
     }
@@ -235,24 +268,43 @@ export class StackComponent {
     const col = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
     if (!col) return;
 
-    const startX = e.clientX;
-    const startWidth = item.width || DEFAULT_COLUMN_WIDTH;
     document.body.classList.add("stack-resizing");
 
-    const onMove = (ev) => {
-      const dx = ev.clientX - startX;
-      const newWidth = Math.min(maxItemWidth(), Math.max(MIN_COLUMN_WIDTH, startWidth + dx));
-      item.width = newWidth;
-      col.style.width = (SPINE_WIDTH + newWidth) + "px";
-    };
-    const onUp = () => {
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      document.body.classList.remove("stack-resizing");
-      this._updateVisibility();
-    };
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
+    if (this._isVertical) {
+      const startY = e.clientY;
+      const startHeight = item.height || DEFAULT_COLUMN_HEIGHT;
+      const onMove = (ev) => {
+        const dy = ev.clientY - startY;
+        const newHeight = Math.min(maxItemHeight(), Math.max(MIN_COLUMN_HEIGHT, startHeight + dy));
+        item.height = newHeight;
+        col.style.height = (SPINE_HEIGHT + newHeight) + "px";
+      };
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.body.classList.remove("stack-resizing");
+        this._updateVisibility();
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    } else {
+      const startX = e.clientX;
+      const startWidth = item.width || DEFAULT_COLUMN_WIDTH;
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX;
+        const newWidth = Math.min(maxItemWidth(), Math.max(MIN_COLUMN_WIDTH, startWidth + dx));
+        item.width = newWidth;
+        col.style.width = (SPINE_WIDTH + newWidth) + "px";
+      };
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.body.classList.remove("stack-resizing");
+        this._updateVisibility();
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    }
   }
 
   // --- Reorder: collapse-all, ghost spine, drop-zone ---
@@ -265,17 +317,13 @@ export class StackComponent {
     const dragCol = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
     if (!dragCol) return;
 
-    // Save open/closed states
     const savedStates = this._items.map((it) => ({ id: it.id, open: it.open }));
-
-    // Compute scroll offset so collapsed spines center around the dragged one
     const dragRect = dragCol.getBoundingClientRect();
     const scrollRect = this._scrollArea.getBoundingClientRect();
-    const dragCenterInScroll = dragRect.left - scrollRect.left + this._scrollArea.scrollLeft + dragRect.width / 2;
+    const isVert = this._isVertical;
 
     this._columnsEl.classList.add("stack-reordering");
 
-    // Collapse all columns; hide the dragged one completely
     for (const it of this._items) {
       const col = this._columnsEl.querySelector(`[data-item-id="${it.id}"]`);
       if (!col) continue;
@@ -283,47 +331,69 @@ export class StackComponent {
         col.style.display = "none";
       } else {
         col.classList.add("stack-column-closed");
-        col.style.width = SPINE_WIDTH + "px";
+        if (isVert) {
+          col.style.height = SPINE_HEIGHT + "px";
+        } else {
+          col.style.width = SPINE_WIDTH + "px";
+        }
         const contentEl = col.querySelector(".stack-column-content");
         if (contentEl) contentEl.style.display = "none";
       }
     }
 
-    // Insert a spacer before the first column so the collapsed group
-    // centers around where the dragged spine was on screen.
     const spacer = document.createElement("div");
     spacer.className = "stack-reorder-spacer";
-    const viewportCenter = dragRect.left - scrollRect.left + dragRect.width / 2;
-    // The dragged item was at position `idx` among items (0-indexed).
-    // After removing it, the items to its left occupy idx positions.
-    const leftSpinesWidth = idx * SPINE_WIDTH;
-    const spacerWidth = Math.max(0, viewportCenter - leftSpinesWidth - SPINE_WIDTH / 2);
-    spacer.style.width = spacerWidth + "px";
+    if (isVert) {
+      const viewportCenter = dragRect.top - scrollRect.top + dragRect.height / 2;
+      const aboveSpinesHeight = idx * SPINE_HEIGHT;
+      const spacerHeight = Math.max(0, viewportCenter - aboveSpinesHeight - SPINE_HEIGHT / 2);
+      spacer.style.height = spacerHeight + "px";
+    } else {
+      const viewportCenter = dragRect.left - scrollRect.left + dragRect.width / 2;
+      const leftSpinesWidth = idx * SPINE_WIDTH;
+      const spacerWidth = Math.max(0, viewportCenter - leftSpinesWidth - SPINE_WIDTH / 2);
+      spacer.style.width = spacerWidth + "px";
+    }
     spacer.style.flexShrink = "0";
     this._columnsEl.insertBefore(spacer, this._columnsEl.firstChild);
-    this._scrollArea.scrollLeft = 0;
+    if (isVert) { this._scrollArea.scrollTop = 0; } else { this._scrollArea.scrollLeft = 0; }
 
-    // Create ghost spine
     const ghost = document.createElement("div");
     ghost.className = "stack-reorder-ghost";
+    if (isVert) ghost.classList.add("stack-reorder-ghost-vertical");
     const spineEl = dragCol.querySelector(".stack-spine");
     if (spineEl) ghost.innerHTML = spineEl.innerHTML;
-    ghost.style.height = this._scrollArea.clientHeight + "px";
+    if (isVert) {
+      ghost.style.width = this._scrollArea.clientWidth + "px";
+      ghost.style.height = SPINE_HEIGHT + "px";
+      ghost.style.left = scrollRect.left + "px";
+      ghost.style.top = (e.clientY - SPINE_HEIGHT / 2) + "px";
+    } else {
+      ghost.style.height = this._scrollArea.clientHeight + "px";
+      ghost.style.left = (e.clientX - SPINE_WIDTH / 2) + "px";
+      ghost.style.top = scrollRect.top + "px";
+    }
     document.body.appendChild(ghost);
-    ghost.style.left = (e.clientX - SPINE_WIDTH / 2) + "px";
-    ghost.style.top = scrollRect.top + "px";
 
     let insertIdx = idx;
 
     const onMove = (ev) => {
-      ghost.style.left = (ev.clientX - SPINE_WIDTH / 2) + "px";
+      if (isVert) {
+        ghost.style.top = (ev.clientY - SPINE_HEIGHT / 2) + "px";
+      } else {
+        ghost.style.left = (ev.clientX - SPINE_WIDTH / 2) + "px";
+      }
 
       const allCols = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
       const otherCols = allCols.filter((c) => c !== dragCol);
       let newIdx = otherCols.length;
       for (let i = 0; i < otherCols.length; i++) {
         const rect = otherCols[i].getBoundingClientRect();
-        if (ev.clientX < rect.left + rect.width / 2) { newIdx = i; break; }
+        if (isVert) {
+          if (ev.clientY < rect.top + rect.height / 2) { newIdx = i; break; }
+        } else {
+          if (ev.clientX < rect.left + rect.width / 2) { newIdx = i; break; }
+        }
       }
       if (newIdx !== insertIdx) {
         insertIdx = newIdx;
@@ -344,9 +414,12 @@ export class StackComponent {
 
       this._columnsEl.classList.remove("stack-reordering");
       dragCol.style.display = "";
-      dragCol.style.minWidth = SPINE_WIDTH + "px";
+      if (isVert) {
+        dragCol.style.minHeight = SPINE_HEIGHT + "px";
+      } else {
+        dragCol.style.minWidth = SPINE_WIDTH + "px";
+      }
 
-      // Reorder: insertIdx is relative to items EXCLUDING the dragged one
       const currentIdx = this._items.findIndex((i) => i.id === itemId);
       this._items.splice(currentIdx, 1);
       this._items.splice(insertIdx, 0, item);
@@ -354,7 +427,6 @@ export class StackComponent {
       const refNode = otherCols[insertIdx] || this._trailResize;
       this._columnsEl.insertBefore(dragCol, refNode);
 
-      // Restore open/closed states
       for (const saved of savedStates) {
         const it = this._items.find((i) => i.id === saved.id);
         if (!it) continue;
@@ -363,17 +435,25 @@ export class StackComponent {
         if (!col) continue;
         if (it.open) {
           col.classList.remove("stack-column-closed");
-          col.style.width = (SPINE_WIDTH + (it.width || DEFAULT_COLUMN_WIDTH)) + "px";
+          if (isVert) {
+            col.style.height = (SPINE_HEIGHT + (it.height || DEFAULT_COLUMN_HEIGHT)) + "px";
+          } else {
+            col.style.width = (SPINE_WIDTH + (it.width || DEFAULT_COLUMN_WIDTH)) + "px";
+          }
           const contentEl = col.querySelector(".stack-column-content");
           if (contentEl) contentEl.style.display = "block";
         } else {
           col.classList.add("stack-column-closed");
-          col.style.width = SPINE_WIDTH + "px";
+          if (isVert) {
+            col.style.height = SPINE_HEIGHT + "px";
+          } else {
+            col.style.width = SPINE_WIDTH + "px";
+          }
         }
       }
       this._updateVisibility();
     };
-    ghost.style.top = this._scrollArea.getBoundingClientRect().top + "px";
+    if (!isVert) ghost.style.top = this._scrollArea.getBoundingClientRect().top + "px";
 
     document.addEventListener("pointermove", onMove);
     document.addEventListener("pointerup", onUp);
@@ -396,27 +476,54 @@ export class StackComponent {
 
   _doUpdateVisibility() {
     if (this._destroyed) return;
-    const scrollLeft = this._scrollArea.scrollLeft;
-    const viewWidth = this._scrollArea.clientWidth;
-    const viewRight = scrollLeft + viewWidth;
-    let accX = 0;
-    for (const item of this._items) {
-      const colWidth = item.open ? SPINE_WIDTH + (item.width || DEFAULT_COLUMN_WIDTH) : SPINE_WIDTH;
-      const colLeft = accX;
-      const colRight = accX + colWidth;
-      accX = colRight;
-      if (!item.open) continue;
-      const col = this._columnsEl.querySelector(`[data-item-id="${item.id}"]`);
-      if (!col) continue;
-      const contentEl = col.querySelector(".stack-column-content");
-      if (!contentEl) continue;
-      const bufferPx = (DEFAULT_COLUMN_WIDTH + SPINE_WIDTH) * BUFFER_COLUMNS;
-      const isVisible = colRight >= (scrollLeft - bufferPx) && colLeft <= (viewRight + bufferPx);
-      if (isVisible && !this._liveColumns.has(item.id)) {
-        mountItemContent(contentEl, item, this._state, this._liveColumns);
-      } else if (!isVisible && this._liveColumns.has(item.id)) {
-        snapshotItemContent(contentEl, item, this._liveColumns);
-        unmountItemContent(contentEl, item, this._liveColumns);
+
+    if (this._isVertical) {
+      const scrollTop = this._scrollArea.scrollTop;
+      const viewHeight = this._scrollArea.clientHeight;
+      const viewBottom = scrollTop + viewHeight;
+      let accY = 0;
+      for (const item of this._items) {
+        const colHeight = item.open ? SPINE_HEIGHT + (item.height || DEFAULT_COLUMN_HEIGHT) : SPINE_HEIGHT;
+        const colTop = accY;
+        const colBottom = accY + colHeight;
+        accY = colBottom;
+        if (!item.open) continue;
+        const col = this._columnsEl.querySelector(`[data-item-id="${item.id}"]`);
+        if (!col) continue;
+        const contentEl = col.querySelector(".stack-column-content");
+        if (!contentEl) continue;
+        const bufferPx = (DEFAULT_COLUMN_HEIGHT + SPINE_HEIGHT) * BUFFER_COLUMNS;
+        const isVisible = colBottom >= (scrollTop - bufferPx) && colTop <= (viewBottom + bufferPx);
+        if (isVisible && !this._liveColumns.has(item.id)) {
+          mountItemContent(contentEl, item, this._state, this._liveColumns);
+        } else if (!isVisible && this._liveColumns.has(item.id)) {
+          snapshotItemContent(contentEl, item, this._liveColumns);
+          unmountItemContent(contentEl, item, this._liveColumns);
+        }
+      }
+    } else {
+      const scrollLeft = this._scrollArea.scrollLeft;
+      const viewWidth = this._scrollArea.clientWidth;
+      const viewRight = scrollLeft + viewWidth;
+      let accX = 0;
+      for (const item of this._items) {
+        const colWidth = item.open ? SPINE_WIDTH + (item.width || DEFAULT_COLUMN_WIDTH) : SPINE_WIDTH;
+        const colLeft = accX;
+        const colRight = accX + colWidth;
+        accX = colRight;
+        if (!item.open) continue;
+        const col = this._columnsEl.querySelector(`[data-item-id="${item.id}"]`);
+        if (!col) continue;
+        const contentEl = col.querySelector(".stack-column-content");
+        if (!contentEl) continue;
+        const bufferPx = (DEFAULT_COLUMN_WIDTH + SPINE_WIDTH) * BUFFER_COLUMNS;
+        const isVisible = colRight >= (scrollLeft - bufferPx) && colLeft <= (viewRight + bufferPx);
+        if (isVisible && !this._liveColumns.has(item.id)) {
+          mountItemContent(contentEl, item, this._state, this._liveColumns);
+        } else if (!isVisible && this._liveColumns.has(item.id)) {
+          snapshotItemContent(contentEl, item, this._liveColumns);
+          unmountItemContent(contentEl, item, this._liveColumns);
+        }
       }
     }
   }
@@ -446,16 +553,20 @@ export class StackComponent {
     if (fileType === "stack" || fileType === "folder") return null;
     const item = {
       id: crypto.randomUUID(), fileId, fileType, name,
-      width: DEFAULT_COLUMN_WIDTH, open: true,
+      width: DEFAULT_COLUMN_WIDTH, height: DEFAULT_COLUMN_HEIGHT, open: true,
       scrollY: 0, cameraState: null, pdfZoom: null, spineColor: null,
     };
-    // Find the column division closest to screenX
     const colEls = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
     let insertIdx = this._items.length;
     for (let i = 0; i < colEls.length; i++) {
       const rect = colEls[i].getBoundingClientRect();
-      const colCenter = rect.left + rect.width / 2;
-      if (screenX < colCenter) { insertIdx = i; break; }
+      if (this._isVertical) {
+        const colCenter = rect.top + rect.height / 2;
+        if (screenX < colCenter) { insertIdx = i; break; }
+      } else {
+        const colCenter = rect.left + rect.width / 2;
+        if (screenX < colCenter) { insertIdx = i; break; }
+      }
     }
     this._items.splice(insertIdx, 0, item);
     this._updateEmptyState();
@@ -476,7 +587,7 @@ export class StackComponent {
     if (fileType === "folder") return null;
     const item = {
       id: crypto.randomUUID(), fileId, fileType, name,
-      width: DEFAULT_COLUMN_WIDTH, open: true,
+      width: DEFAULT_COLUMN_WIDTH, height: DEFAULT_COLUMN_HEIGHT, open: true,
       scrollY: 0, cameraState: null, pdfZoom: null, spineColor: null,
     };
     this._items.push(item);
@@ -484,7 +595,13 @@ export class StackComponent {
     const col = this._createColumn(item);
     this._columnsEl.insertBefore(col, this._trailResize);
     this._updateVisibility();
-    requestAnimationFrame(() => { this._scrollArea.scrollLeft = this._scrollArea.scrollWidth; });
+    requestAnimationFrame(() => {
+      if (this._isVertical) {
+        this._scrollArea.scrollTop = this._scrollArea.scrollHeight;
+      } else {
+        this._scrollArea.scrollLeft = this._scrollArea.scrollWidth;
+      }
+    });
     return item;
   }
 
@@ -512,7 +629,51 @@ export class StackComponent {
         if (s.pdfZoom != null) item.pdfZoom = s.pdfZoom;
       }
     }
-    return { items: this._items, scrollX: this._scrollX };
+    return {
+      items: this._items,
+      scrollX: this._scrollX,
+      scrollY: this._scrollY,
+      scrollDirection: this._scrollDirection,
+    };
+  }
+
+  setScrollDirection(dir) {
+    if (dir === this._scrollDirection) return;
+    this._scrollDirection = dir;
+    this._state.stackScrollDirection = dir;
+    const isVertical = dir === "vertical";
+
+    this._el.classList.toggle("stack-vertical", isVertical);
+
+    for (const item of this._items) {
+      const col = this._columnsEl.querySelector(`[data-item-id="${item.id}"]`);
+      if (!col) continue;
+
+      col.style.width = "";
+      col.style.minWidth = "";
+      col.style.height = "";
+      col.style.minHeight = "";
+
+      if (isVertical) {
+        const h = item.open ? (item.height || DEFAULT_COLUMN_HEIGHT) : 0;
+        col.style.height = (SPINE_HEIGHT + h) + "px";
+        col.style.minHeight = SPINE_HEIGHT + "px";
+      } else {
+        const w = item.open ? (item.width || DEFAULT_COLUMN_WIDTH) : 0;
+        col.style.width = (SPINE_WIDTH + w) + "px";
+        col.style.minWidth = SPINE_WIDTH + "px";
+      }
+    }
+
+    if (isVertical) {
+      this._scrollArea.scrollLeft = 0;
+      this._scrollArea.scrollTop = this._scrollY || 0;
+    } else {
+      this._scrollArea.scrollTop = 0;
+      this._scrollArea.scrollLeft = this._scrollX || 0;
+    }
+
+    this._updateVisibility();
   }
 
   async _popOutAsPane(item) {
@@ -532,6 +693,7 @@ export class StackComponent {
       fileType: item.fileType,
       name: item.name,
       width: item.width || DEFAULT_COLUMN_WIDTH,
+      height: item.height || DEFAULT_COLUMN_HEIGHT,
       open: true,
       scrollY: 0,
       cameraState: null,
@@ -561,9 +723,12 @@ export class StackComponent {
 
   handleFileDrop(fileId, fileType, name) {
     const newItem = this.addItem(fileId, fileType, name);
-    // Scroll to the new item and briefly highlight its spine
     requestAnimationFrame(() => {
-      this._scrollArea.scrollLeft = this._scrollArea.scrollWidth;
+      if (this._isVertical) {
+        this._scrollArea.scrollTop = this._scrollArea.scrollHeight;
+      } else {
+        this._scrollArea.scrollLeft = this._scrollArea.scrollWidth;
+      }
       const col = this._columnsEl.querySelector(`[data-item-id="${newItem.id}"]`);
       if (col) {
         col.classList.add("stack-column-highlight");
