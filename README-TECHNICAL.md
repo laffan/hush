@@ -30,7 +30,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   └── highlight-pane.js              │   └── defaults.rs
 ├── pdf/                               ├── files.rs
 │   ├── pdf-viewer.js                  ├── images.rs
-│   ├── pdf-viewer-annotations.js      (annotation shelf + page overlay rendering)
+│   ├── pdf-viewer-annotations.js      (annotation shelf + page overlay rendering; scale derived from wrapper dims)
 │   ├── pdf-bridge.js                  ├── pdfs.rs
 │   └── zotero-save-pdf.js            ├── snapshots.rs
 │                                      ├── sync.rs / sync_commands.rs
