@@ -138,6 +138,15 @@ export async function newFile(state, parentId = null, opts = {}) {
 
 export async function openFile(state, id) {
   if (state.ratchetMode) return;
+  // Guard: if the fileId belongs to a non-document type, redirect to
+  // the correct opener so stack/notebook/PDF JSON never shows as text.
+  const { findNodeByFileId } = await import("./tree-helpers.js");
+  const node = findNodeByFileId(state.fileTree, id);
+  if (node) {
+    if (node.type === "stack") return openStack(state, id);
+    if (node.type === "notebook") return openNotebook(state, id);
+    if (node.type === "pdf") return openPdf(state, id);
+  }
   if (state.dirty) await state.saveCurrentFile();
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");

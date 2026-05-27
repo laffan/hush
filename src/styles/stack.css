@@ -172,8 +172,8 @@
 .stack-spine-icon-colored::before {
   content: "";
   position: absolute;
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--spine-icon-color);
   top: 50%;

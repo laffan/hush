@@ -223,7 +223,14 @@ export class AppState {
           } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
             await this.openFile(lastFileId);
           } else if (this.files.length > 0) {
-            await this.openFile(this.files[0].id);
+            // Find a plain document — don't open a stack/notebook/PDF
+            // file as a document (their JSON content would show as text).
+            const docFile = this.files.find(f => {
+              const node = findNodeByFileId(this.fileTree, f.id);
+              return !node || node.type === "document";
+            });
+            if (docFile) await this.openFile(docFile.id);
+            else await this.newFile();
           } else {
             await this.newFile();
           }
