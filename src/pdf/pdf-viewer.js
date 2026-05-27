@@ -4,8 +4,9 @@
  *
  * Layout modes:
  *   - horizontal fit (default): pages fit container height, horizontal scroll
- *   - horizontal fit-2: two pages visible side-by-side, horizontal scroll
- *   - vertical fit: pages scale to fill available width, vertical scroll
+ *   - vertical fit: single column, pages fill available width, vertical scroll
+ *   - vertical fit-2: two columns of pages, vertical scroll
+ *   - vertical fit-3: three columns of pages, vertical scroll
  *   - fixed zoom (50%-200%): explicit scale via +/- controls
  */
 
@@ -29,6 +30,7 @@ const RENDER_BUFFER = 2;
 
 const MODE_FIT = "fit";
 const MODE_FIT_2 = "fit-2";
+const MODE_FIT_3 = "fit-3";
 const MODE_FIXED = "fixed";
 const MODE_HORIZONTAL = "horizontal";
 const MODE_VERTICAL = "vertical";
@@ -86,13 +88,15 @@ export function createPdfViewer(container, opts = {}) {
   const scrollVBtn = svgBtn("pdf-toggle-option", "Vertical scroll", VERTICAL_ICON);
   scrollToggleWrap.append(scrollHBtn, scrollVBtn);
 
-  // Fit mode toggle: Fit / Fit 2 / Zoom
+  // Fit mode toggle: Fit / Fit 2 / Fit 3 — only visible in vertical mode
   const fitToggleWrap = document.createElement("span");
   fitToggleWrap.className = "pdf-toggle-group";
+  fitToggleWrap.style.display = "none";
   const fitOneBtn = svgBtn("pdf-toggle-option active", "Fit one page", FIT_ONE_ICON);
   const fitTwoBtn = svgBtn("pdf-toggle-option", "Fit two pages", FIT_TWO_ICON);
+  const fitThreeBtn = svgBtn("pdf-toggle-option", "Fit three pages", FIT_THREE_ICON);
 
-  fitToggleWrap.append(fitOneBtn, fitTwoBtn);
+  fitToggleWrap.append(fitOneBtn, fitTwoBtn, fitThreeBtn);
 
   const pageIndicator = document.createElement("span");
   pageIndicator.className = "pdf-page-indicator";
@@ -322,11 +326,11 @@ export function createPdfViewer(container, opts = {}) {
 
   scrollHBtn.addEventListener("click", () => {
     if (layoutMode === MODE_HORIZONTAL) return;
+    fitMode = MODE_FIT;
     switchToScrollDir("horizontal");
   });
   scrollVBtn.addEventListener("click", () => {
     if (layoutMode === MODE_VERTICAL) return;
-    fitMode = MODE_FIT;
     switchToScrollDir("vertical");
   });
   fitOneBtn.addEventListener("click", () => {
@@ -337,6 +341,11 @@ export function createPdfViewer(container, opts = {}) {
   fitTwoBtn.addEventListener("click", () => {
     if (fitMode === MODE_FIT_2 && layoutMode !== MODE_FIXED) return;
     fitMode = MODE_FIT_2;
+    switchToFitMode();
+  });
+  fitThreeBtn.addEventListener("click", () => {
+    if (fitMode === MODE_FIT_3 && layoutMode !== MODE_FIXED) return;
+    fitMode = MODE_FIT_3;
     switchToFitMode();
   });
 
@@ -392,18 +401,14 @@ export function createPdfViewer(container, opts = {}) {
     const first = pages[0];
     if (!first?.viewport) return 1;
     const pad = 40;
+    const gap = 12;
     if (layoutMode === MODE_VERTICAL) {
-      return (scrollArea.clientWidth - pad) / first.viewport.width;
+      const availW = scrollArea.clientWidth - pad;
+      if (fitMode === MODE_FIT_2) return (availW - gap) / (first.viewport.width * 2);
+      if (fitMode === MODE_FIT_3) return (availW - gap * 2) / (first.viewport.width * 3);
+      return availW / first.viewport.width;
     }
     if (layoutMode === MODE_HORIZONTAL) {
-      if (fitMode === MODE_FIT_2) {
-        const availW = scrollArea.clientWidth - pad;
-        const availH = scrollArea.clientHeight - pad;
-        const gap = 12;
-        const scaleW = (availW - gap) / (first.viewport.width * 2);
-        const scaleH = availH / first.viewport.height;
-        return Math.min(scaleW, scaleH);
-      }
       return (scrollArea.clientHeight - pad) / first.viewport.height;
     }
     return fixedZoom;
@@ -412,17 +417,20 @@ export function createPdfViewer(container, opts = {}) {
   function updateToolbarState() {
     const z = getEffectiveZoom();
     const isFit = layoutMode !== MODE_FIXED;
-    const isFit2 = fitMode === MODE_FIT_2;
+    const isVert = layoutMode === MODE_VERTICAL;
+    const isHoriz = layoutMode === MODE_HORIZONTAL;
     if (isFit) {
-      zoomLabel.textContent = isFit2 ? "Fit 2" : "Fit";
+      const labels = { [MODE_FIT]: "Fit", [MODE_FIT_2]: "Fit 2", [MODE_FIT_3]: "Fit 3" };
+      zoomLabel.textContent = (isVert ? labels[fitMode] : "Fit") || "Fit";
     } else {
       zoomLabel.textContent = `${Math.round(z * 100)}%`;
     }
-    const isHoriz = layoutMode === MODE_HORIZONTAL;
     scrollHBtn.classList.toggle("active", isHoriz);
-    scrollVBtn.classList.toggle("active", !isHoriz && layoutMode !== MODE_FIXED);
-    fitOneBtn.classList.toggle("active", isFit && fitMode === MODE_FIT);
-    fitTwoBtn.classList.toggle("active", isFit && fitMode === MODE_FIT_2);
+    scrollVBtn.classList.toggle("active", isVert);
+    fitToggleWrap.style.display = isVert ? "" : "none";
+    fitOneBtn.classList.toggle("active", fitMode === MODE_FIT);
+    fitTwoBtn.classList.toggle("active", fitMode === MODE_FIT_2);
+    fitThreeBtn.classList.toggle("active", fitMode === MODE_FIT_3);
   }
 
   function updatePageIndicator() {
@@ -463,7 +471,7 @@ export function createPdfViewer(container, opts = {}) {
 
   function switchToFitMode() {
     if (layoutMode === MODE_FIXED) {
-      layoutMode = MODE_HORIZONTAL;
+      layoutMode = MODE_VERTICAL;
     }
     applyLayoutClass();
     updateToolbarState();
@@ -480,9 +488,17 @@ export function createPdfViewer(container, opts = {}) {
 
   function applyLayoutClass() {
     scrollArea.classList.remove("pdf-layout-fit", "pdf-layout-fixed", "pdf-layout-horizontal");
-    if (layoutMode === MODE_VERTICAL) scrollArea.classList.add("pdf-layout-fit");
-    else if (layoutMode === MODE_HORIZONTAL) scrollArea.classList.add("pdf-layout-horizontal");
-    else scrollArea.classList.add("pdf-layout-fixed");
+    if (layoutMode === MODE_VERTICAL) {
+      if (fitMode === MODE_FIT_2 || fitMode === MODE_FIT_3) {
+        scrollArea.classList.add("pdf-layout-fixed");
+      } else {
+        scrollArea.classList.add("pdf-layout-fit");
+      }
+    } else if (layoutMode === MODE_HORIZONTAL) {
+      scrollArea.classList.add("pdf-layout-horizontal");
+    } else {
+      scrollArea.classList.add("pdf-layout-fixed");
+    }
   }
 
   // ── Page rendering ───────────────────────────────────────────────
@@ -620,15 +636,17 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function setZoom(level) {
-    if (level === -1) { layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
-    if (level === -2) { layoutMode = MODE_HORIZONTAL; fitMode = MODE_FIT; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
-    if (level === -3) { layoutMode = MODE_HORIZONTAL; fitMode = MODE_FIT_2; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -1) { fitMode = MODE_FIT; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -2) { fitMode = MODE_FIT; layoutMode = MODE_HORIZONTAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -3) { fitMode = MODE_FIT_2; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -4) { fitMode = MODE_FIT_3; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
     applyFixedZoom(level);
   }
   function getZoom() {
-    if (layoutMode === MODE_VERTICAL) return -1;
-    if (layoutMode === MODE_HORIZONTAL && fitMode === MODE_FIT) return -2;
-    if (layoutMode === MODE_HORIZONTAL && fitMode === MODE_FIT_2) return -3;
+    if (layoutMode === MODE_HORIZONTAL) return -2;
+    if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT) return -1;
+    if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT_2) return -3;
+    if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT_3) return -4;
     return fixedZoom;
   }
 
@@ -827,3 +845,6 @@ const FIT_ONE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3
 
 // Fit two: two pages side by side
 const FIT_TWO_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="9" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>`;
+
+// Fit three: three pages in a row
+const FIT_THREE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="0.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="6" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="11.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/></svg>`;
