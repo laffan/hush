@@ -120,14 +120,14 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── stack-component.js             (StackComponent: columns, spines, reorder, resize, virtualization)
 │   ├── stack-content.js               (.hushstack JSON envelope encode/decode; strips nested stacks on load)
 │   ├── stack-doc-outline.js           (lightweight heading outline sidebar for doc columns)
-│   ├── stack-item-mount.js            (per-type mount/unmount: doc, notebook, PDF)
-│   ├── stack-spine.js                 (spine DOM: icon, label, buttons, left-edge resize)
+│   ├── stack-item-mount.js            (per-type mount/unmount: doc, notebook, PDF, project)
+│   ├── stack-spine.js                 (spine DOM: icon with color dot, label, buttons, left-edge resize)
 │   ├── stack-picker.js                (fuzzy file picker for adding items)
 │   └── stack-list-view.js             (modal list view with reorder + close)
 │
 ├── pane/
 │   ├── pane-manager.js                (lifecycle, focus, theme/style sync)
-│   ├── pane-toolbar.js                (extracted: title-bar DOM + collapse/attach/pin/gutter)
+│   ├── pane-toolbar.js                (extracted: title-bar DOM + collapse/attach/pin/gutter/pop-in)
 │   ├── pane-layout.js                 (extracted: getInitialPanePosition, fitActivePaneToGap, centerPaneInViewport)
 │   ├── pane-state.js                  (shared module state + accessors)
 │   ├── pane-editor.js
@@ -313,7 +313,7 @@ On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invok
 
 **Desk switcher** (`sidebar/desk-switcher.js`) is a header rendered above the create-buttons row in the files panel. It auto-hides while there's only one desk so single-desk sessions don't carry the chrome. Clicking the header opens a popover with one row per desk (active marker, click to switch), inline rename, delete, and an "Add desk" entry that creates a new desk and switches to it. `render()` updates the header in place rather than rewriting `_container.innerHTML`, so a sync apply firing `desks-changed` while the user is mid-rename doesn't blow away the input; the popover body refresh is also gated on "no rename input present". The popover click handler short-circuits while a rename input is open — the input lives inside the row's `<button data-action="pick">` (it replaces the name span, which is a child of that button), and browsers synthesize a click on a `<button>` when Space is pressed on a child input; without the short-circuit that synthesized click bubbles up and gets routed to the "pick" branch, closing the popover mid-typing. The legacy `useDesks` boolean still ships in `state-defaults.js` and `AppSettings`, but only as a deprecated marker — the JS layer ignores its value and treats desks as structural; the field is retained so settings.json files written by older builds parse cleanly.
 
-**Project state:** When a project is selected (`currentProjectId`), the editor shows all child *documents* joined by separator markers. Notebook children of a project are intentionally excluded from the joined buffer — they ride along as supplementary material in the sidebar instead. `openProject()` loads and concatenates document content; `saveProjectContent()` splits on separators and saves each part back. `state.projectDocIds` only carries doc fileIds, so the split-and-save pipeline never sees a notebook envelope.
+**Project state:** When a project is selected (`currentProjectId`), the editor shows all child *documents* joined by separator markers. Notebook and stack children of a project are intentionally excluded from the joined buffer — they ride along as supplementary material in the sidebar instead (sorted below docs at 50 % opacity). `openProject()` loads and concatenates document content; `saveProjectContent()` splits on separators and saves each part back. `state.projectDocIds` only carries doc fileIds, so the split-and-save pipeline never sees a notebook or stack envelope. Projects can also be added to stacks as columns — they mount their joined buffer with separator widgets; converting a project back to a folder auto-removes it from any active stack.
 
 Tree traversal utilities live in `state/tree-helpers.js` (`findNode`, `findNodeByFileId`, `findParentOfNode`, `removeNode`, `collectDocumentIds`, `insertAfter`, etc.).
 
