@@ -662,6 +662,8 @@ async function getMetaDispatcher(filename) {
       return (await import("./style-sync.js")).applyStylesFile;
     case "gdocs.json":
       return (await import("./gdocs-sync.js")).applyGoogleLinks;
+    case "pdf.json":
+      return (await import("./pdf-sync.js")).applyPdfFile;
     case "desks.json":
       // Legacy: the new schema stores desk identity in per-folder
       // .hushdesk files. The reconcile pass runs migrateFromDesksJson

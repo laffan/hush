@@ -76,8 +76,10 @@ async function mountDocContent(contentEl, item, state, liveData) {
 
   try {
     const { createPaneEditor } = await import("../pane/pane-editor.js");
+    const { createModeContext } = await import("../state/mode-context.js");
+    const mc = createModeContext(state);
     let dirty = false;
-    const editor = createPaneEditor(wrapper, state, () => { dirty = true; });
+    const editor = createPaneEditor(wrapper, state, () => { dirty = true; }, { modeContext: mc.proxy });
     editor.setContent(content);
 
     const saveInterval = setInterval(async () => {
@@ -92,8 +94,9 @@ async function mountDocContent(contentEl, item, state, liveData) {
     }, 2000);
 
     liveData.editor = editor;
+    liveData.modeContext = mc;
+    liveData.container = wrapper;
 
-    // Register Cmd+drag source so text can be dragged out of this column
     if (editor.view) {
       import("../pane/text-drag.js").then(({ attachEditorTextDrag }) => {
         attachEditorTextDrag(editor.view, wrapper);
@@ -272,6 +275,14 @@ async function mountPdfContent(contentEl, item, state, liveData) {
       await viewer.loadPdf(data);
     }
 
+    try {
+      const { getPdfMeta } = await import("../sync/pdf-sync.js");
+      const meta = getPdfMeta(item.fileId);
+      if (meta && viewer.setToolbarInfo) {
+        viewer.setToolbarInfo(meta.title, meta.firstAuthor);
+      }
+    } catch {}
+
     // Restore zoom and scroll position
     requestAnimationFrame(() => {
       try {
@@ -338,7 +349,7 @@ async function mountNestedStack(contentEl, item, state, liveData) {
 
 async function mountProjectContent(contentEl, item, state, liveData) {
   const { findNode, collectDocumentIds } = await import("../state/tree-helpers.js");
-  const { SEPARATOR } = await import("../editor/plugins/project-view.js");
+  const { SEPARATOR, createProjectViewField, createSeparatorFilter } = await import("../editor/plugins/project-view.js");
 
   const node = findNode(state.fileTree, item.fileId);
   if (!node || node.type !== "project") {
@@ -370,13 +381,18 @@ async function mountProjectContent(contentEl, item, state, liveData) {
 
   try {
     const { createPaneEditor } = await import("../pane/pane-editor.js");
-    // Proxy state so the project view field sees this column as an
-    // active project (renders dashed separator widgets instead of raw
-    // ---hush-separator--- text).
+    const { createModeContext } = await import("../state/mode-context.js");
     const projectState = Object.create(state);
     projectState.currentProjectId = item.fileId;
+    const mc = createModeContext(projectState);
     let dirty = false;
-    const editor = createPaneEditor(wrapper, projectState, () => { dirty = true; });
+    const editor = createPaneEditor(wrapper, projectState, () => { dirty = true; }, {
+      modeContext: mc.proxy,
+      extraExtensions: [
+        createProjectViewField(mc.proxy),
+        createSeparatorFilter(mc.proxy),
+      ],
+    });
     editor.setContent(joined);
 
     const saveInterval = setInterval(async () => {
@@ -402,6 +418,8 @@ async function mountProjectContent(contentEl, item, state, liveData) {
     }, 2000);
 
     liveData.editor = editor;
+    liveData.modeContext = mc;
+    liveData.container = wrapper;
     liveData.cleanup = () => {
       clearInterval(saveInterval);
       editor.destroy();

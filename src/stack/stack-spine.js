@@ -6,7 +6,7 @@
  * Left edge is a resize affordance for the item to the left.
  */
 
-import { findNodeByFileId } from "../state/tree-helpers.js";
+import { findNodeByFileId, findNode } from "../state/tree-helpers.js";
 import { typeIcons } from "../sidebar/files-panel-shared.js";
 
 export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut, onDuplicate }) {
@@ -56,7 +56,16 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
   // Centered label
   const label = document.createElement("div");
   label.className = "stack-spine-label";
-  label.textContent = resolveItemName(item);
+  const labelTitle = document.createElement("span");
+  labelTitle.textContent = resolveItemName(item);
+  label.appendChild(labelTitle);
+  const author = resolveItemAuthor(item);
+  if (author) {
+    const labelAuthor = document.createElement("span");
+    labelAuthor.className = "stack-spine-label-author";
+    labelAuthor.textContent = author;
+    label.appendChild(labelAuthor);
+  }
   spine.appendChild(label);
 
   // Bottom button cluster
@@ -114,13 +123,41 @@ function applyIconColor(iconEl, color) {
 }
 
 function resolveItemName(item) {
+  if (item.fileType === "pdf") {
+    try {
+      const meta = _getPdfMeta(item.fileId);
+      if (meta) return meta.title || item.name || "Untitled";
+    } catch {}
+  }
   if (item.name) return item.name;
   const state = window.__hushState__;
   if (state) {
-    const node = findNodeByFileId(state.fileTree, item.fileId);
+    const node = findNodeByFileId(state.fileTree, item.fileId)
+              || findNode(state.fileTree, item.fileId);
     if (node) return node.name;
   }
   return "Untitled";
+}
+
+function resolveItemAuthor(item) {
+  if (item.fileType !== "pdf") return "";
+  try {
+    const meta = _getPdfMeta(item.fileId);
+    if (meta?.firstAuthor) return meta.firstAuthor;
+  } catch {}
+  return "";
+}
+
+let _pdfSyncMod = null;
+function _getPdfMeta(fileId) {
+  if (!_pdfSyncMod) {
+    try { _pdfSyncMod = import("../sync/pdf-sync.js"); } catch { return null; }
+  }
+  if (_pdfSyncMod?.then) {
+    _pdfSyncMod.then(m => { _pdfSyncMod = m; });
+    return null;
+  }
+  return _pdfSyncMod.getPdfMeta?.(fileId) || null;
 }
 
 const PRESET_COLORS = [

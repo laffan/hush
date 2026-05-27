@@ -2,6 +2,11 @@
  * Fuzzy file picker for adding items to a stack. Reuses the command
  * palette's file-collecting infrastructure but renders its own modal
  * scoped to docs, notebooks, PDFs, and stacks.
+ *
+ * Supports two interaction styles:
+ * - Click a row directly to add that single item (instant close).
+ * - Toggle checkboxes on multiple rows, then press the "Add (N)"
+ *   button (or Enter) to add them all at once.
  */
 
 import { findNode } from "../state/tree-helpers.js";
@@ -36,6 +41,8 @@ export function openStackFilePicker(state, onPick) {
   }
   walk(root, "");
 
+  const checked = new Set();
+
   // Build modal
   const backdrop = document.createElement("div");
   backdrop.className = "stack-picker-backdrop";
@@ -53,11 +60,30 @@ export function openStackFilePicker(state, onPick) {
   list.className = "stack-picker-list";
   modal.appendChild(list);
 
+  // Bottom bar — hidden until at least one checkbox is checked
+  const bottomBar = document.createElement("div");
+  bottomBar.className = "stack-picker-bottom";
+  const addBtn = document.createElement("button");
+  addBtn.className = "stack-picker-add-btn";
+  addBtn.addEventListener("click", () => addChecked());
+  bottomBar.appendChild(addBtn);
+  modal.appendChild(bottomBar);
+
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
   let activeIdx = 0;
   let filtered = leaves.slice();
+
+  function updateBottomBar() {
+    const n = checked.size;
+    if (n > 0) {
+      bottomBar.classList.add("visible");
+      addBtn.textContent = `Add ${n} item${n > 1 ? "s" : ""}`;
+    } else {
+      bottomBar.classList.remove("visible");
+    }
+  }
 
   function renderList() {
     const q = input.value.toLowerCase().trim();
@@ -76,10 +102,27 @@ export function openStackFilePicker(state, onPick) {
       const item = filtered[i];
       const row = document.createElement("div");
       row.className = "stack-picker-row" + (i === activeIdx ? " active" : "");
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "stack-picker-checkbox";
+      cb.checked = checked.has(item.fileId);
+      cb.addEventListener("click", (e) => e.stopPropagation());
+      cb.addEventListener("change", () => {
+        if (cb.checked) checked.add(item.fileId);
+        else checked.delete(item.fileId);
+        updateBottomBar();
+      });
+      row.appendChild(cb);
+
       const icon = typeIcons[item.type] || typeIcons.document;
       const crumb = item.breadcrumb ? `<span class="stack-picker-crumb">${escHtml(item.breadcrumb)} / </span>` : "";
-      row.innerHTML = `${icon}${crumb}<span class="stack-picker-name">${escHtml(item.name)}</span>`;
-      row.addEventListener("click", () => pick(item));
+      const textSpan = document.createElement("span");
+      textSpan.className = "stack-picker-row-text";
+      textSpan.innerHTML = `${icon}${crumb}<span class="stack-picker-name">${escHtml(item.name)}</span>`;
+      row.appendChild(textSpan);
+
+      textSpan.addEventListener("click", () => pick(item));
       row.addEventListener("pointerenter", () => {
         activeIdx = i;
         updateActive();
@@ -98,6 +141,13 @@ export function openStackFilePicker(state, onPick) {
     onPick(item.fileId, item.type, item.name);
   }
 
+  function addChecked() {
+    if (checked.size === 0) return;
+    const items = leaves.filter((l) => checked.has(l.fileId));
+    close();
+    for (const item of items) onPick(item.fileId, item.type, item.name);
+  }
+
   function close() {
     backdrop.remove();
     document.removeEventListener("keydown", onKey);
@@ -107,7 +157,11 @@ export function openStackFilePicker(state, onPick) {
     if (e.key === "Escape") { close(); e.stopPropagation(); }
     else if (e.key === "ArrowDown") { activeIdx = Math.min(activeIdx + 1, filtered.length - 1); updateActive(); e.preventDefault(); }
     else if (e.key === "ArrowUp") { activeIdx = Math.max(activeIdx - 1, 0); updateActive(); e.preventDefault(); }
-    else if (e.key === "Enter" && filtered.length > 0) { pick(filtered[activeIdx]); e.preventDefault(); }
+    else if (e.key === "Enter" && filtered.length > 0) {
+      e.preventDefault();
+      if (checked.size > 0) addChecked();
+      else pick(filtered[activeIdx]);
+    }
   }
 
   input.addEventListener("input", () => { activeIdx = 0; renderList(); });
@@ -115,5 +169,6 @@ export function openStackFilePicker(state, onPick) {
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
 
   renderList();
+  updateBottomBar();
   input.focus();
 }

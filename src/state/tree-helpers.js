@@ -115,11 +115,13 @@ function isImagesOrTrashId(id) {
 
 const _isInbox = (id) => id === "__inbox__" || id?.startsWith("__inbox__:");
 const _isImages = (id) => id === "__images__" || id?.startsWith("__images__:");
+const _isPdfs = (id) => id === "__pdfs__" || id?.startsWith("__pdfs__:");
 const _isTrash = (id) => id === "__trash__" || id?.startsWith("__trash__:");
 
-/** Pin Inbox to the head and Images / Trash to the tail of `arr`.
+/** Pin Inbox to the head and Images / PDFs / Trash to the tail of `arr`.
  *  Used by the SortableList onChange handler — the user can drag any
- *  node anywhere, and we re-establish the canonical layout afterwards. */
+ *  node anywhere, and we re-establish the canonical layout afterwards.
+ *  Order: ... | Images | PDFs | Trash */
 export function pinSpecialsInList(arr) {
   const inboxIdx = arr.findIndex((n) => _isInbox(n.id));
   if (inboxIdx > 0) { const [inbox] = arr.splice(inboxIdx, 1); arr.unshift(inbox); }
@@ -128,14 +130,23 @@ export function pinSpecialsInList(arr) {
     const [trash] = arr.splice(trashIdx, 1);
     arr.push(trash);
   }
+  const pdfsIdx = arr.findIndex((n) => _isPdfs(n.id));
+  if (pdfsIdx >= 0) {
+    const [pdfs] = arr.splice(pdfsIdx, 1);
+    const trashAt = arr.findIndex((n) => _isTrash(n.id));
+    arr.splice(trashAt >= 0 ? trashAt : arr.length, 0, pdfs);
+  }
   const imgIdx = arr.findIndex((n) => _isImages(n.id));
   if (imgIdx >= 0) {
     const trashAt = arr.findIndex((n) => _isTrash(n.id));
-    const target = trashAt >= 0 ? trashAt : arr.length;
-    if (imgIdx !== target - 1) {
+    const pdfsAt = arr.findIndex((n) => _isPdfs(n.id));
+    const target = pdfsAt >= 0 ? pdfsAt : (trashAt >= 0 ? trashAt : arr.length);
+    if (imgIdx !== target - 1 && imgIdx !== target) {
       const [img] = arr.splice(imgIdx, 1);
+      const newPdfsAt = arr.findIndex((n) => _isPdfs(n.id));
       const newTrashAt = arr.findIndex((n) => _isTrash(n.id));
-      arr.splice(newTrashAt >= 0 ? newTrashAt : arr.length, 0, img);
+      const insertAt = newPdfsAt >= 0 ? newPdfsAt : (newTrashAt >= 0 ? newTrashAt : arr.length);
+      arr.splice(insertAt, 0, img);
     }
   }
 }

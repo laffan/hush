@@ -198,6 +198,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+}
+.stack-spine-label-author {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.6;
 }
 
 .stack-spine-buttons {
@@ -630,6 +636,23 @@ body.stack-resizing .stack-column,
   background: rgba(59, 130, 246, 0.1);
 }
 
+.stack-picker-checkbox {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent, #3b82f6);
+}
+
+.stack-picker-row-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
 .stack-picker-row .tree-type-icon {
   width: 12px;
   height: 12px;
@@ -658,6 +681,31 @@ body.stack-resizing .stack-column,
   color: var(--fg, #999);
   opacity: 0.5;
   font-size: 13px;
+}
+
+.stack-picker-bottom {
+  display: none;
+  padding: 8px 16px;
+  border-top: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
+  text-align: right;
+}
+
+.stack-picker-bottom.visible {
+  display: block;
+}
+
+.stack-picker-add-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.stack-picker-add-btn:hover {
+  opacity: 0.9;
 }
 
 /* --- Stack doc outline (right sidebar within column) --- */

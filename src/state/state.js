@@ -176,6 +176,7 @@ export class AppState {
         this.fileTree = await tauriInvoke("get_file_tree");
         await _desks.migrateLegacyTreeIfNeeded(this);
         this.ensureSpecialNodes();
+        await this.initPdfRegistry();
         // Drop any empty Untitled docs that survived the last session
         // (created by `newFile` but never typed into). Runs before the
         // "restore last file" branch so we don't land on a ghost.
@@ -367,6 +368,7 @@ export class AppState {
   // produced by `state-desks.js#specialNodeId`.
   static INBOX_ID = "__inbox__";
   static IMAGES_ID = "__images__";
+  static PDFS_ID = "__pdfs__";
   static TRASH_ID = "__trash__";
 
   /** Resolve the special-node id for the active context. With desks
@@ -374,6 +376,7 @@ export class AppState {
    *  namespaced id. */
   getInboxId() { return _desks.activeSpecialId(this, AppState.INBOX_ID); }
   getImagesId() { return _desks.activeSpecialId(this, AppState.IMAGES_ID); }
+  getPdfsId() { return _desks.activeSpecialId(this, AppState.PDFS_ID); }
   getTrashId() { return _desks.activeSpecialId(this, AppState.TRASH_ID); }
   isSpecialNodeId(id) { return _desks.isSpecialNodeId(id); }
 
@@ -456,6 +459,24 @@ export class AppState {
   openFile(id) { return _files.openFile(this, id); }
   openPdf(fileId) { return _files.openPdf(this, fileId); }
   importPdf(name, bytes, parentId, opts = {}) { return _files.importPdf(this, name, bytes, parentId, opts); }
+
+  async ensurePdfsFolder() {
+    const pdfsId = this.getPdfsId();
+    if (findNode(this.fileTree, pdfsId)) return;
+    const deskId = this.settings?.activeDeskId;
+    const desk = this.fileTree.find(n => n.type === "desk" && n.id === deskId) || this.fileTree.find(n => n.type === "desk");
+    if (!desk) return;
+    const pdfsNode = { id: pdfsId, type: "folder", name: "PDFs", children: [], flagged: false };
+    desk.children.push(pdfsNode);
+    const { pinSpecialsInList } = await import("./tree-helpers.js");
+    pinSpecialsInList(desk.children);
+    await this.saveFileTree();
+  }
+
+  async initPdfRegistry() {
+    const { initPdfRegistry } = await import("../sync/pdf-sync.js");
+    await initPdfRegistry(this);
+  }
   createStack(name, parentId = null, opts = {}) { return _files.createStack(this, name, parentId, opts); }
   openStack(fileId) { return _files.openStack(this, fileId); }
 

@@ -3,9 +3,11 @@
  * a container. Supports both the main editor area and floating panes.
  *
  * Layout modes:
- *   - fit-width (default): pages scale to fill available width, vertical scroll
- *   - fixed zoom (50%-200%): explicit scale; pages wrap when small enough
- *   - horizontal scroll: pages fit container height, horizontal scroll
+ *   - horizontal fit (default): pages fit container height, horizontal scroll
+ *   - vertical fit: single column, pages fill available width, vertical scroll
+ *   - vertical fit-2: two columns of pages, vertical scroll
+ *   - vertical fit-3: three columns of pages, vertical scroll
+ *   - fixed zoom (50%-200%): explicit scale via +/- controls
  */
 
 import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
@@ -26,9 +28,12 @@ async function getPdfjs() {
 const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const RENDER_BUFFER = 2;
 
-const MODE_FIT_WIDTH = "fit-width";
+const MODE_FIT = "fit";
+const MODE_FIT_2 = "fit-2";
+const MODE_FIT_3 = "fit-3";
 const MODE_FIXED = "fixed";
 const MODE_HORIZONTAL = "horizontal";
+const MODE_VERTICAL = "vertical";
 
 /**
  * @param {HTMLElement} container
@@ -39,10 +44,12 @@ const MODE_HORIZONTAL = "horizontal";
 export function createPdfViewer(container, opts = {}) {
   let pdfDoc = null;
   let pages = [];
-  let layoutMode = MODE_FIT_WIDTH;
+  let layoutMode = MODE_HORIZONTAL;
+  let fitMode = MODE_FIT;
   let fixedZoom = 1.0;
   let scrollListeners = [];
   let destroyed = false;
+  let _zoteroAttKey = opts.zoteroAttKey || null;
   const root = document.createElement("div");
   root.className = "pdf-viewer";
 
@@ -51,7 +58,7 @@ export function createPdfViewer(container, opts = {}) {
   body.className = "pdf-viewer-body";
 
   const scrollArea = document.createElement("div");
-  scrollArea.className = "pdf-scroll-area pdf-layout-fit";
+  scrollArea.className = "pdf-scroll-area pdf-layout-horizontal";
   body.appendChild(scrollArea);
 
   // ── Annotation layer (shelf + overlay rendering) ─────────────────
@@ -75,8 +82,22 @@ export function createPdfViewer(container, opts = {}) {
   zoomLabel.textContent = "Fit";
   const zoomInBtn = btn("pdf-zoom-btn", "+", "Zoom in");
 
-  const fitBtn = svgBtn("pdf-zoom-btn pdf-mode-btn active", "Fit", FIT_ICON);
-  const scrollToggle = svgBtn("pdf-zoom-btn pdf-scroll-toggle", "Toggle scroll direction", VERTICAL_ICON);
+  // Scroll direction toggle: two icons side-by-side
+  const scrollToggleWrap = document.createElement("span");
+  scrollToggleWrap.className = "pdf-toggle-group";
+  const scrollHBtn = svgBtn("pdf-toggle-option active", "Horizontal scroll", HORIZONTAL_ICON);
+  const scrollVBtn = svgBtn("pdf-toggle-option", "Vertical scroll", VERTICAL_ICON);
+  scrollToggleWrap.append(scrollHBtn, scrollVBtn);
+
+  // Fit mode toggle: Fit / Fit 2 / Fit 3 — only visible in vertical mode
+  const fitToggleWrap = document.createElement("span");
+  fitToggleWrap.className = "pdf-toggle-group";
+  fitToggleWrap.style.display = "none";
+  const fitOneBtn = svgBtn("pdf-toggle-option active", "Fit one page", FIT_ONE_ICON);
+  const fitTwoBtn = svgBtn("pdf-toggle-option", "Fit two pages", FIT_TWO_ICON);
+  const fitThreeBtn = svgBtn("pdf-toggle-option", "Fit three pages", FIT_THREE_ICON);
+
+  fitToggleWrap.append(fitOneBtn, fitTwoBtn, fitThreeBtn);
 
   const pageIndicator = document.createElement("span");
   pageIndicator.className = "pdf-page-indicator";
@@ -88,13 +109,17 @@ export function createPdfViewer(container, opts = {}) {
 
   const thumbnailBtn = svgBtn("pdf-zoom-btn pdf-thumbnail-btn", "Thumbnail view", THUMBNAIL_ICON);
 
-  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, scrollToggle, thumbnailBtn, pageIndicator, zoteroLink);
+  const toolbarInfo = document.createElement("span");
+  toolbarInfo.className = "pdf-toolbar-info";
+
+  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, scrollToggleWrap, fitToggleWrap, thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink);
   root.appendChild(toolbar);
 
   container.appendChild(root);
 
   // ── Zotero link setup ────────────────────────────────────────────
   function setZoteroAttKey(attKey) {
+    _zoteroAttKey = attKey || null;
     if (attKey) {
       zoteroLink.href = `zotero://open-pdf/library/items/${attKey}`;
       zoteroLink.style.display = "";
@@ -300,12 +325,30 @@ export function createPdfViewer(container, opts = {}) {
 
   zoomOutBtn.addEventListener("click", stepZoomOut);
   zoomInBtn.addEventListener("click", stepZoomIn);
-  let scrollDirection = "vertical";
-  fitBtn.addEventListener("click", () => {
-    switchMode(scrollDirection === "horizontal" ? MODE_HORIZONTAL : MODE_FIT_WIDTH);
+
+  scrollHBtn.addEventListener("click", () => {
+    if (layoutMode === MODE_HORIZONTAL) return;
+    fitMode = MODE_FIT;
+    switchToScrollDir("horizontal");
   });
-  scrollToggle.addEventListener("click", () => {
-    switchMode(layoutMode === MODE_HORIZONTAL ? MODE_FIT_WIDTH : MODE_HORIZONTAL);
+  scrollVBtn.addEventListener("click", () => {
+    if (layoutMode === MODE_VERTICAL) return;
+    switchToScrollDir("vertical");
+  });
+  fitOneBtn.addEventListener("click", () => {
+    if (fitMode === MODE_FIT && layoutMode !== MODE_FIXED) return;
+    fitMode = MODE_FIT;
+    switchToFitMode();
+  });
+  fitTwoBtn.addEventListener("click", () => {
+    if (fitMode === MODE_FIT_2 && layoutMode !== MODE_FIXED) return;
+    fitMode = MODE_FIT_2;
+    switchToFitMode();
+  });
+  fitThreeBtn.addEventListener("click", () => {
+    if (fitMode === MODE_FIT_3 && layoutMode !== MODE_FIXED) return;
+    fitMode = MODE_FIT_3;
+    switchToFitMode();
   });
 
   // ── Keyboard zoom (Cmd+/- while viewer is mounted) ──────────────
@@ -313,7 +356,7 @@ export function createPdfViewer(container, opts = {}) {
     if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
     if (e.key === "=" || e.key === "+") { e.preventDefault(); stepZoomIn(); }
     else if (e.key === "-") { e.preventDefault(); stepZoomOut(); }
-    else if (e.key === "0") { e.preventDefault(); switchMode(MODE_FIT_WIDTH); }
+    else if (e.key === "0") { e.preventDefault(); fitMode = MODE_FIT; layoutMode = MODE_HORIZONTAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); }
   }
   window.addEventListener("keydown", onKeydown);
 
@@ -359,12 +402,15 @@ export function createPdfViewer(container, opts = {}) {
     if (!pages.length || !pdfDoc) return 1;
     const first = pages[0];
     if (!first?.viewport) return 1;
-    if (layoutMode === MODE_FIT_WIDTH) {
-      const pad = 40;
-      return (scrollArea.clientWidth - pad) / first.viewport.width;
+    const pad = 40;
+    const gap = 12;
+    if (layoutMode === MODE_VERTICAL) {
+      const availW = scrollArea.clientWidth - pad;
+      if (fitMode === MODE_FIT_2) return (availW - gap - 4) / (first.viewport.width * 2);
+      if (fitMode === MODE_FIT_3) return (availW - gap * 2 - 4) / (first.viewport.width * 3);
+      return availW / first.viewport.width;
     }
     if (layoutMode === MODE_HORIZONTAL) {
-      const pad = 40;
       return (scrollArea.clientHeight - pad) / first.viewport.height;
     }
     return fixedZoom;
@@ -372,10 +418,21 @@ export function createPdfViewer(container, opts = {}) {
 
   function updateToolbarState() {
     const z = getEffectiveZoom();
-    const isFit = layoutMode === MODE_FIT_WIDTH || layoutMode === MODE_HORIZONTAL;
-    zoomLabel.textContent = isFit ? "Fit" : `${Math.round(z * 100)}%`;
-    fitBtn.classList.toggle("active", isFit);
-    scrollToggle.innerHTML = layoutMode === MODE_HORIZONTAL ? HORIZONTAL_ICON : VERTICAL_ICON;
+    const isFit = layoutMode !== MODE_FIXED;
+    const isVert = layoutMode === MODE_VERTICAL;
+    const isHoriz = layoutMode === MODE_HORIZONTAL;
+    if (isFit) {
+      const labels = { [MODE_FIT]: "Fit", [MODE_FIT_2]: "Fit 2", [MODE_FIT_3]: "Fit 3" };
+      zoomLabel.textContent = (isVert ? labels[fitMode] : "Fit") || "Fit";
+    } else {
+      zoomLabel.textContent = `${Math.round(z * 100)}%`;
+    }
+    scrollHBtn.classList.toggle("active", isHoriz);
+    scrollVBtn.classList.toggle("active", isVert);
+    fitToggleWrap.style.display = isVert ? "" : "none";
+    fitOneBtn.classList.toggle("active", fitMode === MODE_FIT);
+    fitTwoBtn.classList.toggle("active", fitMode === MODE_FIT_2);
+    fitThreeBtn.classList.toggle("active", fitMode === MODE_FIT_3);
   }
 
   function updatePageIndicator() {
@@ -403,11 +460,21 @@ export function createPdfViewer(container, opts = {}) {
   });
 
   // ── Mode switching ───────────────────────────────────────────────
-  function switchMode(mode) {
-    if (mode === layoutMode) return;
-    layoutMode = mode;
-    if (mode === MODE_HORIZONTAL) scrollDirection = "horizontal";
-    else if (mode === MODE_FIT_WIDTH) scrollDirection = "vertical";
+  function switchToScrollDir(dir) {
+    if (dir === "horizontal") {
+      layoutMode = MODE_HORIZONTAL;
+    } else {
+      layoutMode = MODE_VERTICAL;
+    }
+    applyLayoutClass();
+    updateToolbarState();
+    relayoutPages();
+  }
+
+  function switchToFitMode() {
+    if (layoutMode === MODE_FIXED) {
+      layoutMode = MODE_VERTICAL;
+    }
     applyLayoutClass();
     updateToolbarState();
     relayoutPages();
@@ -423,9 +490,17 @@ export function createPdfViewer(container, opts = {}) {
 
   function applyLayoutClass() {
     scrollArea.classList.remove("pdf-layout-fit", "pdf-layout-fixed", "pdf-layout-horizontal");
-    if (layoutMode === MODE_FIT_WIDTH) scrollArea.classList.add("pdf-layout-fit");
-    else if (layoutMode === MODE_HORIZONTAL) scrollArea.classList.add("pdf-layout-horizontal");
-    else scrollArea.classList.add("pdf-layout-fixed");
+    if (layoutMode === MODE_VERTICAL) {
+      if (fitMode === MODE_FIT_2 || fitMode === MODE_FIT_3) {
+        scrollArea.classList.add("pdf-layout-fixed");
+      } else {
+        scrollArea.classList.add("pdf-layout-fit");
+      }
+    } else if (layoutMode === MODE_HORIZONTAL) {
+      scrollArea.classList.add("pdf-layout-horizontal");
+    } else {
+      scrollArea.classList.add("pdf-layout-fixed");
+    }
   }
 
   // ── Page rendering ───────────────────────────────────────────────
@@ -437,19 +512,25 @@ export function createPdfViewer(container, opts = {}) {
       const page = await pdfDoc.getPage(idx + 1);
       if (destroyed) return;
       const scale = getEffectiveZoom();
-      const viewport = page.getViewport({ scale });
+      const dpr = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: scale * dpr });
 
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
       canvas.className = "pdf-page-canvas";
 
+      const cssW = Math.round(viewport.width / dpr);
+      const cssH = Math.round(viewport.height / dpr);
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+
       const renderTask = page.render({ canvas, viewport, background: "#ffffff" });
       await renderTask.promise;
       if (destroyed) return;
 
-      p.wrapper.style.width = `${canvas.width}px`;
-      p.wrapper.style.height = `${canvas.height}px`;
+      p.wrapper.style.width = `${cssW}px`;
+      p.wrapper.style.height = `${cssH}px`;
       const placeholder = p.wrapper.querySelector(".pdf-page-placeholder");
       if (placeholder) placeholder.remove();
       p.wrapper.insertBefore(canvas, p.wrapper.firstChild);
@@ -486,10 +567,10 @@ export function createPdfViewer(container, opts = {}) {
       let zoomChanged = false;
       for (let i = 0; i < pages.length; i++) {
         const p = pages[i];
-        const w = Math.round(p.viewport.width * scale);
-        const h = Math.round(p.viewport.height * scale);
-        p.wrapper.style.width = `${w}px`;
-        p.wrapper.style.height = `${h}px`;
+        const cssW = Math.round(p.viewport.width * scale);
+        const cssH = Math.round(p.viewport.height * scale);
+        p.wrapper.style.width = `${cssW}px`;
+        p.wrapper.style.height = `${cssH}px`;
         if (p.rendered && Math.abs(p.renderedZoom - scale) > 0.001) {
           clearPage(i);
           zoomChanged = true;
@@ -540,11 +621,35 @@ export function createPdfViewer(container, opts = {}) {
       wrapper.className = "pdf-page-wrapper";
       wrapper.dataset.pageIndex = i;
       const scale = getEffectiveZoom();
-      wrapper.style.width = `${Math.round(viewport.width * scale)}px`;
-      wrapper.style.height = `${Math.round(viewport.height * scale)}px`;
+      const cssW = Math.round(viewport.width * scale);
+      const cssH = Math.round(viewport.height * scale);
+      wrapper.style.width = `${cssW}px`;
+      wrapper.style.height = `${cssH}px`;
       const placeholder = document.createElement("div");
       placeholder.className = "pdf-page-placeholder";
       wrapper.appendChild(placeholder);
+
+      if (_zoteroAttKey) {
+        const pageNum = i + 1;
+        const zBtn = document.createElement("button");
+        zBtn.className = "pdf-page-zotero-btn";
+        zBtn.title = `Open page ${pageNum} in Zotero`;
+        zBtn.innerHTML = POPOUT_ICON;
+        zBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const url = `zotero://open-pdf/library/items/${_zoteroAttKey}?page=${pageNum}`;
+          import("@tauri-apps/plugin-opener").then(o => o.openUrl(url)).catch(() => window.open(url, "_blank"));
+        });
+        wrapper.appendChild(zBtn);
+
+        wrapper.addEventListener("mousemove", (e) => {
+          const r = wrapper.getBoundingClientRect();
+          const inZone = (r.right - e.clientX) < 100 && (r.bottom - e.clientY) < 100;
+          zBtn.classList.toggle("visible", inZone);
+        });
+        wrapper.addEventListener("mouseleave", () => zBtn.classList.remove("visible"));
+      }
+
       scrollArea.appendChild(wrapper);
       pages.push({ wrapper, viewport, rendered: false, rendering: false, canvas: null, renderedZoom: null });
     }
@@ -555,12 +660,17 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function setZoom(level) {
-    if (level < 0) { switchMode(MODE_FIT_WIDTH); return; }
+    if (level === -1) { fitMode = MODE_FIT; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -2) { fitMode = MODE_FIT; layoutMode = MODE_HORIZONTAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -3) { fitMode = MODE_FIT_2; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -4) { fitMode = MODE_FIT_3; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
     applyFixedZoom(level);
   }
   function getZoom() {
-    if (layoutMode === MODE_FIT_WIDTH) return -1;
     if (layoutMode === MODE_HORIZONTAL) return -2;
+    if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT) return -1;
+    if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT_2) return -3;
+    if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT_3) return -4;
     return fixedZoom;
   }
 
@@ -578,6 +688,8 @@ export function createPdfViewer(container, opts = {}) {
   function getPageCount() { return pdfDoc ? pdfDoc.numPages : 0; }
   function getScrollTop() { return scrollArea.scrollTop; }
   function setScrollTop(v) { scrollArea.scrollTop = v; }
+  function getScrollLeft() { return scrollArea.scrollLeft; }
+  function setScrollLeft(v) { scrollArea.scrollLeft = v; }
   function onScroll(cb) {
     scrollListeners.push(cb);
     return () => { scrollListeners = scrollListeners.filter(c => c !== cb); };
@@ -705,10 +817,27 @@ export function createPdfViewer(container, opts = {}) {
     getPageCount,
     getScrollTop,
     setScrollTop,
+    getScrollLeft,
+    setScrollLeft,
     onScroll,
     setAnnotations: annotLayer.setAnnotations,
     refreshAnnotations: annotLayer.refreshAnnotations,
     setZoteroAttKey,
+    setToolbarInfo: (title, author) => {
+      if (!title) { toolbarInfo.textContent = ""; toolbarInfo.style.display = "none"; return; }
+      toolbarInfo.style.display = "";
+      toolbarInfo.innerHTML = "";
+      const t = document.createElement("span");
+      t.className = "pdf-toolbar-info-title";
+      t.textContent = title;
+      toolbarInfo.appendChild(t);
+      if (author) {
+        const a = document.createElement("span");
+        a.className = "pdf-toolbar-info-author";
+        a.textContent = author;
+        toolbarInfo.appendChild(a);
+      }
+    },
     toggleShelf: annotLayer.toggleShelf,
     get element() { return root; },
   };
@@ -730,14 +859,23 @@ function svgBtn(cls, title, svgContent) {
   return b;
 }
 
-// Pages stacked vertically (vertical scroll — current mode indicator)
+// Vertical scroll: pages stacked
 const VERTICAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="1" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="9" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
-// Pages side by side (horizontal scroll — current mode indicator)
+// Horizontal scroll: pages side by side
 const HORIZONTAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
-// Thumbnail grid: small 2x2 rectangles
+// Thumbnail grid
 const THUMBNAIL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
-// Fit: outward-pointing arrows
-const FIT_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><polyline points="1,5 1,1 5,1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="11,1 15,1 15,5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="15,11 15,15 11,15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="5,15 1,15 1,11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// Fit one: single page outline with corner arrows
+const FIT_ONE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="1" width="10" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
+
+// Fit two: two pages side by side
+const FIT_TWO_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="9" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>`;
+
+// Pop-out arrow (open in Zotero)
+const POPOUT_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19L19 6M19 6V18.48M19 6H6.52"/></svg>`;
+
+// Fit three: three pages in a row
+const FIT_THREE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="0.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="6" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/><rect x="11.5" y="2" width="4" height="12" rx="0.8" fill="none" stroke="currentColor" stroke-width="1"/></svg>`;

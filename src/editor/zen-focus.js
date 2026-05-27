@@ -23,6 +23,7 @@ import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { panes } from "../pane/pane-state.js";
 import { getActivePaneId } from "../pane/pane-manager.js";
+import { getStackInstance } from "../stack/stack-bridge.js";
 
 let active = null;
 let hintFadeTimer = null;
@@ -42,13 +43,18 @@ export function initZenFocus(state) {
 }
 
 /** Find the prose surface to seed the Zen editor from. Priority:
- *  notebook text-shape editor > active doc pane editor > main editor.
+ *  notebook text-shape editor > active stack column > active doc pane
+ *  editor > main editor.
  *  Returns null if there's nothing prose-shaped to focus on. */
 function pickZenSource(state) {
   const nbHandle = (typeof window !== "undefined")
     ? window.__activeNotebookTextEditor : null;
   if (nbHandle && nbHandle.textarea && document.contains(nbHandle.textarea)) {
     return { kind: "notebook-text", handle: nbHandle };
+  }
+  if (state.currentStackFileId) {
+    const stackView = getActiveStackEditorView(state);
+    if (stackView) return { kind: "stack", view: stackView };
   }
   const paneId = getActivePaneId();
   if (paneId) {
@@ -63,9 +69,21 @@ function pickZenSource(state) {
   return null;
 }
 
+function getActiveStackEditorView() {
+  try {
+    const inst = getStackInstance();
+    if (!inst) return null;
+    const item = inst.getActiveItem();
+    if (!item) return null;
+    if (item.fileType !== "document" && item.fileType !== "project") return null;
+    const liveData = inst._liveColumns.get(item.id);
+    return liveData?.editor?.view || null;
+  } catch (_) { return null; }
+}
+
 /** Snapshot the source's content + selection to seed the Zen editor. */
 function readSeed(source) {
-  if (source.kind === "main") {
+  if (source.kind === "main" || source.kind === "stack") {
     const v = source.view;
     const sel = v.state.selection.main;
     return { content: v.state.sliceDoc(), anchor: sel.anchor, head: sel.head };
@@ -89,7 +107,7 @@ function readSeed(source) {
  *  history stays sensible; for the textarea we set value, selection,
  *  and fire `input` so text-editor.ts's state-update path runs. */
 function writeBack(source, content, anchor, head) {
-  if (source.kind === "main") {
+  if (source.kind === "main" || source.kind === "stack") {
     const v = source.view;
     const len = v.state.doc.length;
     const a = clamp(anchor, 0, content.length);
@@ -98,11 +116,6 @@ function writeBack(source, content, anchor, head) {
       changes: { from: 0, to: len, insert: content },
       selection: { anchor: a, head: h },
     });
-    // Zen always centres the cursor; on exit, replacing the whole doc
-    // would otherwise leave the editor scrolled to the top. Recentre
-    // here (and again on the next two frames — CM settles its measure
-    // pass asynchronously) so the user returns to roughly where they
-    // were writing.
     centerCursor(v, h);
     v.focus();
     return;
