@@ -70,9 +70,23 @@ export async function maybeRenameFromFirstLine(state) {
   if (!derived || derived === "Untitled") return;
   const node = findNodeByFileId(state.fileTree, state.currentFileId);
   if (!node || node.name === derived) return;
+  // Tabbed docs that already carry an explicit name shouldn't auto-
+  // rename — the name was set intentionally (e.g. converted from a
+  // project). "Untitled" docs still auto-rename so freshly created
+  // tabbed docs pick up a name from the first content line.
+  if (node.name !== "Untitled" && _contentHasTabMarker(content)) return;
   const { renameTreeNode } = await import("./state-tree.js");
   await renameTreeNode(state, node.id, derived);
   state.emit("files-changed");
+}
+
+/** True when the content contains at least one `---Tab name---` marker. */
+function _contentHasTabMarker(content) {
+  if (typeof content !== "string") return false;
+  for (const line of content.split("\n")) {
+    if (parseTabMarkerLine(line.trim())) return true;
+  }
+  return false;
 }
 
 /** Pane-driven counterpart to {@link maybeRenameFromFirstLine}. Takes a
@@ -89,6 +103,7 @@ export async function maybeRenameFileFromContent(state, fileId, content) {
   if (!derived || derived === "Untitled") return;
   const node = findNodeByFileId(state.fileTree, fileId);
   if (!node || node.name === derived) return;
+  if (node.name !== "Untitled" && _contentHasTabMarker(content)) return;
   const { renameTreeNode } = await import("./state-tree.js");
   await renameTreeNode(state, node.id, derived);
   state.emit("files-changed");
