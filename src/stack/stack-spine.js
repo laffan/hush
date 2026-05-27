@@ -77,7 +77,7 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
 
   // 3. Pop out as pane
   const popOutBtn = makeBtn("stack-spine-popout-btn",
-    `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 19V5C2 3.895 2.895 3 4 3H20C21.105 3 22 3.895 22 5V19C22 20.105 21.105 21 20 21H4C2.895 21 2 20.105 2 19Z"/><path d="M2 7L22 7" stroke-linecap="round"/><circle cx="5" cy="5" r=".6" fill="currentColor" stroke="none"/><circle cx="8" cy="5" r=".6" fill="currentColor" stroke="none"/><circle cx="11" cy="5" r=".6" fill="currentColor" stroke="none"/></svg>`);
+    `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19L19 6M19 6V18.48M19 6H6.52"/></svg>`);
   popOutBtn.title = "Open as pane";
   popOutBtn.addEventListener("click", (e) => { e.stopPropagation(); onPopOut(item); });
   buttons.appendChild(popOutBtn);
