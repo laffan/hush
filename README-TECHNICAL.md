@@ -117,11 +117,11 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │
 ├── stack/
 │   ├── stack-bridge.js                (mount/unmount lifecycle, 2 s autosave)
-│   ├── stack-component.js             (StackComponent: columns, spines, reorder, resize, virtualization)
-│   ├── stack-content.js               (.hushstack JSON envelope encode/decode; strips nested stacks on load)
+│   ├── stack-component.js             (StackComponent: columns, spines, reorder, resize, virtualization, scroll direction, scrollbar pills)
+│   ├── stack-content.js               (.hushstack JSON envelope encode/decode; strips nested stacks on load; persists scrollDirection, scrollY, item height/name)
 │   ├── stack-doc-outline.js           (lightweight heading outline sidebar for doc columns)
 │   ├── stack-item-mount.js            (per-type mount/unmount: doc, notebook, PDF, project)
-│   ├── stack-spine.js                 (spine DOM: icon with color dot, label, buttons, left-edge resize)
+│   ├── stack-spine.js                 (spine DOM: icon with color dot, label, buttons, edge resize; horizontal bar in vertical mode)
 │   ├── stack-picker.js                (fuzzy file picker for adding items)
 │   └── stack-list-view.js             (modal list view with reorder + close)
 │
