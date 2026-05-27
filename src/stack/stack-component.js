@@ -13,7 +13,8 @@
 
 import { createSpine, resolveItemName } from "./stack-spine.js";
 import { mountItemContent, unmountItemContent, snapshotItemContent } from "./stack-item-mount.js";
-import { typeIcons } from "../sidebar/files-panel-shared.js";
+import { startReorder } from "./stack-reorder.js";
+import { updateScrollbarPills } from "./stack-scrollbar-pills.js";
 
 const SPINE_WIDTH = 50;
 const SPINE_HEIGHT = 40;
@@ -24,41 +25,6 @@ const MIN_COLUMN_WIDTH = 200;
 const MIN_COLUMN_HEIGHT = 150;
 const maxItemWidth = () => Math.max(MIN_COLUMN_WIDTH, window.innerWidth - 100);
 const maxItemHeight = () => Math.max(MIN_COLUMN_HEIGHT, window.innerHeight - 100);
-
-let _measureCtx = null;
-const PILL_FONT = "600 11px system-ui, -apple-system, sans-serif";
-const PILL_FONT_SIZE = 11;
-const PILL_GAP = 10;
-
-function _trimPillText(text, maxDim, vertical) {
-  if (maxDim <= 0) return "";
-  if (!_measureCtx) {
-    _measureCtx = document.createElement("canvas").getContext("2d");
-  }
-  _measureCtx.font = PILL_FONT;
-
-  if (vertical) {
-    const charH = PILL_FONT_SIZE * 1.25;
-    const fullH = text.length * charH;
-    if (fullH <= maxDim) return text;
-    const avail = maxDim - charH;
-    if (avail <= 0) return "…";
-    const maxChars = Math.floor(avail / charH);
-    return maxChars > 0 ? text.slice(0, maxChars) + "…" : "…";
-  }
-
-  if (_measureCtx.measureText(text).width <= maxDim) return text;
-  const ellW = _measureCtx.measureText("…").width;
-  const avail = maxDim - ellW;
-  if (avail <= 0) return "…";
-  let lo = 0, hi = text.length;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (_measureCtx.measureText(text.slice(0, mid)).width <= avail) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo > 0 ? text.slice(0, lo) + "…" : "…";
-}
 
 export class StackComponent {
   constructor(container, data, state) {
@@ -353,156 +319,8 @@ export class StackComponent {
     }
   }
 
-  // --- Reorder: collapse-all, ghost spine, drop-zone ---
-
   _startReorder(itemId, e) {
-    e.preventDefault();
-    const idx = this._items.findIndex((i) => i.id === itemId);
-    if (idx < 0) return;
-    const item = this._items[idx];
-    const dragCol = this._columnsEl.querySelector(`[data-item-id="${itemId}"]`);
-    if (!dragCol) return;
-
-    const savedStates = this._items.map((it) => ({ id: it.id, open: it.open }));
-    const dragRect = dragCol.getBoundingClientRect();
-    const scrollRect = this._scrollArea.getBoundingClientRect();
-    const isVert = this._isVertical;
-
-    this._columnsEl.classList.add("stack-reordering");
-
-    for (const it of this._items) {
-      const col = this._columnsEl.querySelector(`[data-item-id="${it.id}"]`);
-      if (!col) continue;
-      if (it.id === itemId) {
-        col.style.display = "none";
-      } else {
-        col.classList.add("stack-column-closed");
-        if (isVert) {
-          col.style.height = SPINE_HEIGHT + "px";
-        } else {
-          col.style.width = SPINE_WIDTH + "px";
-        }
-        const contentEl = col.querySelector(".stack-column-content");
-        if (contentEl) contentEl.style.display = "none";
-      }
-    }
-
-    const spacer = document.createElement("div");
-    spacer.className = "stack-reorder-spacer";
-    if (isVert) {
-      const viewportCenter = dragRect.top - scrollRect.top + dragRect.height / 2;
-      const aboveSpinesHeight = idx * SPINE_HEIGHT;
-      const spacerHeight = Math.max(0, viewportCenter - aboveSpinesHeight - SPINE_HEIGHT / 2);
-      spacer.style.height = spacerHeight + "px";
-    } else {
-      const viewportCenter = dragRect.left - scrollRect.left + dragRect.width / 2;
-      const leftSpinesWidth = idx * SPINE_WIDTH;
-      const spacerWidth = Math.max(0, viewportCenter - leftSpinesWidth - SPINE_WIDTH / 2);
-      spacer.style.width = spacerWidth + "px";
-    }
-    spacer.style.flexShrink = "0";
-    this._columnsEl.insertBefore(spacer, this._columnsEl.firstChild);
-    if (isVert) { this._scrollArea.scrollTop = 0; } else { this._scrollArea.scrollLeft = 0; }
-
-    const ghost = document.createElement("div");
-    ghost.className = "stack-reorder-ghost";
-    if (isVert) ghost.classList.add("stack-reorder-ghost-vertical");
-    const spineEl = dragCol.querySelector(".stack-spine");
-    if (spineEl) ghost.innerHTML = spineEl.innerHTML;
-    if (isVert) {
-      ghost.style.width = this._scrollArea.clientWidth + "px";
-      ghost.style.height = SPINE_HEIGHT + "px";
-      ghost.style.left = scrollRect.left + "px";
-      ghost.style.top = (e.clientY - SPINE_HEIGHT / 2) + "px";
-    } else {
-      ghost.style.height = this._scrollArea.clientHeight + "px";
-      ghost.style.left = (e.clientX - SPINE_WIDTH / 2) + "px";
-      ghost.style.top = scrollRect.top + "px";
-    }
-    document.body.appendChild(ghost);
-
-    let insertIdx = idx;
-
-    const onMove = (ev) => {
-      if (isVert) {
-        ghost.style.top = (ev.clientY - SPINE_HEIGHT / 2) + "px";
-      } else {
-        ghost.style.left = (ev.clientX - SPINE_WIDTH / 2) + "px";
-      }
-
-      const allCols = Array.from(this._columnsEl.querySelectorAll(".stack-column"));
-      const otherCols = allCols.filter((c) => c !== dragCol);
-      let newIdx = otherCols.length;
-      for (let i = 0; i < otherCols.length; i++) {
-        const rect = otherCols[i].getBoundingClientRect();
-        if (isVert) {
-          if (ev.clientY < rect.top + rect.height / 2) { newIdx = i; break; }
-        } else {
-          if (ev.clientX < rect.left + rect.width / 2) { newIdx = i; break; }
-        }
-      }
-      if (newIdx !== insertIdx) {
-        insertIdx = newIdx;
-        this._columnsEl.querySelectorAll(".stack-drop-indicator").forEach((el) => el.remove());
-        const indicator = document.createElement("div");
-        indicator.className = "stack-drop-indicator";
-        const refCol = otherCols[insertIdx] || this._trailResize;
-        this._columnsEl.insertBefore(indicator, refCol);
-      }
-    };
-
-    const onUp = () => {
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      ghost.remove();
-      spacer.remove();
-      this._columnsEl.querySelectorAll(".stack-drop-indicator").forEach((el) => el.remove());
-
-      this._columnsEl.classList.remove("stack-reordering");
-      dragCol.style.display = "";
-      if (isVert) {
-        dragCol.style.minHeight = SPINE_HEIGHT + "px";
-      } else {
-        dragCol.style.minWidth = SPINE_WIDTH + "px";
-      }
-
-      const currentIdx = this._items.findIndex((i) => i.id === itemId);
-      this._items.splice(currentIdx, 1);
-      this._items.splice(insertIdx, 0, item);
-      const otherCols = Array.from(this._columnsEl.querySelectorAll(".stack-column")).filter((c) => c !== dragCol);
-      const refNode = otherCols[insertIdx] || this._trailResize;
-      this._columnsEl.insertBefore(dragCol, refNode);
-
-      for (const saved of savedStates) {
-        const it = this._items.find((i) => i.id === saved.id);
-        if (!it) continue;
-        it.open = saved.open;
-        const col = this._columnsEl.querySelector(`[data-item-id="${saved.id}"]`);
-        if (!col) continue;
-        if (it.open) {
-          col.classList.remove("stack-column-closed");
-          if (isVert) {
-            col.style.height = (SPINE_HEIGHT + (it.height || DEFAULT_COLUMN_HEIGHT)) + "px";
-          } else {
-            col.style.width = (SPINE_WIDTH + (it.width || DEFAULT_COLUMN_WIDTH)) + "px";
-          }
-          const contentEl = col.querySelector(".stack-column-content");
-          if (contentEl) contentEl.style.display = "block";
-        } else {
-          col.classList.add("stack-column-closed");
-          if (isVert) {
-            col.style.height = SPINE_HEIGHT + "px";
-          } else {
-            col.style.width = SPINE_WIDTH + "px";
-          }
-        }
-      }
-      this._updateVisibility();
-    };
-    if (!isVert) ghost.style.top = this._scrollArea.getBoundingClientRect().top + "px";
-
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
+    startReorder(this, itemId, e);
   }
 
   // --- Virtualization ---
@@ -785,97 +603,7 @@ export class StackComponent {
   }
 
   _updateScrollbarPills() {
-    if (this._destroyed) return;
-    this._pillContainer.innerHTML = "";
-
-    const isVert = this._isVertical;
-    const scrollSize = isVert ? this._scrollArea.scrollHeight : this._scrollArea.scrollWidth;
-    const viewSize = isVert ? this._scrollArea.clientHeight : this._scrollArea.clientWidth;
-
-    if (scrollSize <= viewSize || viewSize <= 0) {
-      this._pillContainer.style.display = "none";
-      return;
-    }
-    this._pillContainer.style.display = "";
-
-    const CIRCLE = 30;
-    const entries = [];
-    let acc = 0;
-    for (const item of this._items) {
-      const spineSize = isVert ? SPINE_HEIGHT : SPINE_WIDTH;
-      const contentSize = item.open
-        ? (isVert ? (item.height || DEFAULT_COLUMN_HEIGHT) : (item.width || DEFAULT_COLUMN_WIDTH))
-        : 0;
-      const colSize = spineSize + contentSize;
-
-      if (item.spineColor) {
-        const pos = (acc / scrollSize) * viewSize;
-        const rawSize = (colSize / scrollSize) * viewSize;
-        const isCircle = !item.open;
-        const pillSize = isCircle ? CIRCLE : Math.max(20, rawSize - PILL_GAP);
-        const idealStart = isCircle
-          ? pos + rawSize / 2 - CIRCLE / 2
-          : pos + PILL_GAP / 2;
-        entries.push({ item, pillSize, idealStart, isCircle, colCenter: acc + colSize / 2 });
-      }
-      acc += colSize;
-    }
-
-    let minNext = 0;
-    for (const e of entries) {
-      e.start = Math.max(e.idealStart, minNext);
-      minNext = e.start + e.pillSize + PILL_GAP;
-    }
-
-    for (const e of entries) {
-      const pill = document.createElement("div");
-      pill.className = "stack-scrollbar-pill";
-      if (isVert) pill.classList.add("stack-scrollbar-pill-vertical");
-      pill.style.backgroundColor = e.item.spineColor;
-
-      if (e.isCircle) {
-        if (isVert) {
-          pill.style.top = e.start + "px";
-          pill.style.height = e.pillSize + "px";
-          pill.style.left = "5px";
-          pill.style.right = "5px";
-        } else {
-          pill.style.left = e.start + "px";
-          pill.style.width = e.pillSize + "px";
-        }
-        pill.style.borderRadius = "50%";
-        pill.style.padding = "0";
-        const iconEl = document.createElement("span");
-        iconEl.className = "stack-scrollbar-pill-icon";
-        iconEl.innerHTML = typeIcons[e.item.fileType] || typeIcons.document;
-        pill.appendChild(iconEl);
-      } else {
-        if (isVert) {
-          pill.style.top = e.start + "px";
-          pill.style.height = e.pillSize + "px";
-        } else {
-          pill.style.left = e.start + "px";
-          pill.style.width = e.pillSize + "px";
-        }
-        const textEl = document.createElement("span");
-        textEl.className = "stack-scrollbar-pill-text";
-        const title = resolveItemName(e.item);
-        const textPad = isVert ? 8 : 16;
-        textEl.textContent = _trimPillText(title, e.pillSize - textPad, isVert);
-        pill.appendChild(textEl);
-      }
-
-      const colCenter = e.colCenter;
-      pill.addEventListener("click", () => {
-        if (isVert) {
-          this._scrollArea.scrollTo({ top: colCenter - viewSize / 2, behavior: "smooth" });
-        } else {
-          this._scrollArea.scrollTo({ left: colCenter - viewSize / 2, behavior: "smooth" });
-        }
-      });
-
-      this._pillContainer.appendChild(pill);
-    }
+    updateScrollbarPills(this);
   }
 
   destroy() {
