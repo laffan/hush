@@ -25,6 +25,28 @@ const MIN_COLUMN_HEIGHT = 150;
 const maxItemWidth = () => Math.max(MIN_COLUMN_WIDTH, window.innerWidth - 100);
 const maxItemHeight = () => Math.max(MIN_COLUMN_HEIGHT, window.innerHeight - 100);
 
+let _measureCtx = null;
+const PILL_FONT = "600 11px system-ui, -apple-system, sans-serif";
+
+function _trimPillText(text, maxWidth) {
+  if (maxWidth <= 0) return "";
+  if (!_measureCtx) {
+    _measureCtx = document.createElement("canvas").getContext("2d");
+  }
+  _measureCtx.font = PILL_FONT;
+  if (_measureCtx.measureText(text).width <= maxWidth) return text;
+  const ellW = _measureCtx.measureText("…").width;
+  const avail = maxWidth - ellW;
+  if (avail <= 0) return "…";
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (_measureCtx.measureText(text.slice(0, mid)).width <= avail) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? text.slice(0, lo) + "…" : "…";
+}
+
 export class StackComponent {
   constructor(container, data, state) {
     this._container = container;
@@ -791,7 +813,9 @@ export class StackComponent {
         if (item.open) {
           const textEl = document.createElement("span");
           textEl.className = "stack-scrollbar-pill-text";
-          textEl.textContent = resolveItemName(item);
+          const title = resolveItemName(item);
+          const textPad = isVert ? 8 : 16;
+          textEl.textContent = _trimPillText(title, size - textPad);
           pill.appendChild(textEl);
         } else {
           const iconEl = document.createElement("span");
