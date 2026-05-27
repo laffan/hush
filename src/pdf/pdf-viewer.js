@@ -3,9 +3,10 @@
  * a container. Supports both the main editor area and floating panes.
  *
  * Layout modes:
- *   - fit-width (default): pages scale to fill available width, vertical scroll
- *   - fixed zoom (50%-200%): explicit scale; pages wrap when small enough
- *   - horizontal scroll: pages fit container height, horizontal scroll
+ *   - horizontal fit (default): pages fit container height, horizontal scroll
+ *   - horizontal fit-2: two pages visible side-by-side, horizontal scroll
+ *   - vertical fit: pages scale to fill available width, vertical scroll
+ *   - fixed zoom (50%-200%): explicit scale via +/- controls
  */
 
 import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
@@ -26,9 +27,11 @@ async function getPdfjs() {
 const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const RENDER_BUFFER = 2;
 
-const MODE_FIT_WIDTH = "fit-width";
+const MODE_FIT = "fit";
+const MODE_FIT_2 = "fit-2";
 const MODE_FIXED = "fixed";
 const MODE_HORIZONTAL = "horizontal";
+const MODE_VERTICAL = "vertical";
 
 /**
  * @param {HTMLElement} container
@@ -39,7 +42,8 @@ const MODE_HORIZONTAL = "horizontal";
 export function createPdfViewer(container, opts = {}) {
   let pdfDoc = null;
   let pages = [];
-  let layoutMode = MODE_FIT_WIDTH;
+  let layoutMode = MODE_HORIZONTAL;
+  let fitMode = MODE_FIT;
   let fixedZoom = 1.0;
   let scrollListeners = [];
   let destroyed = false;
@@ -51,7 +55,7 @@ export function createPdfViewer(container, opts = {}) {
   body.className = "pdf-viewer-body";
 
   const scrollArea = document.createElement("div");
-  scrollArea.className = "pdf-scroll-area pdf-layout-fit";
+  scrollArea.className = "pdf-scroll-area pdf-layout-horizontal";
   body.appendChild(scrollArea);
 
   // ── Annotation layer (shelf + overlay rendering) ─────────────────
@@ -75,8 +79,20 @@ export function createPdfViewer(container, opts = {}) {
   zoomLabel.textContent = "Fit";
   const zoomInBtn = btn("pdf-zoom-btn", "+", "Zoom in");
 
-  const fitBtn = svgBtn("pdf-zoom-btn pdf-mode-btn active", "Fit", FIT_ICON);
-  const scrollToggle = svgBtn("pdf-zoom-btn pdf-scroll-toggle", "Toggle scroll direction", VERTICAL_ICON);
+  // Scroll direction toggle: two icons side-by-side
+  const scrollToggleWrap = document.createElement("span");
+  scrollToggleWrap.className = "pdf-toggle-group";
+  const scrollHBtn = svgBtn("pdf-toggle-option active", "Horizontal scroll", HORIZONTAL_ICON);
+  const scrollVBtn = svgBtn("pdf-toggle-option", "Vertical scroll", VERTICAL_ICON);
+  scrollToggleWrap.append(scrollHBtn, scrollVBtn);
+
+  // Fit mode toggle: Fit / Fit 2 / Zoom
+  const fitToggleWrap = document.createElement("span");
+  fitToggleWrap.className = "pdf-toggle-group";
+  const fitOneBtn = svgBtn("pdf-toggle-option active", "Fit one page", FIT_ONE_ICON);
+  const fitTwoBtn = svgBtn("pdf-toggle-option", "Fit two pages", FIT_TWO_ICON);
+
+  fitToggleWrap.append(fitOneBtn, fitTwoBtn);
 
   const pageIndicator = document.createElement("span");
   pageIndicator.className = "pdf-page-indicator";
@@ -91,7 +107,7 @@ export function createPdfViewer(container, opts = {}) {
   const toolbarInfo = document.createElement("span");
   toolbarInfo.className = "pdf-toolbar-info";
 
-  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, fitBtn, scrollToggle, thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink);
+  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, scrollToggleWrap, fitToggleWrap, thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink);
   root.appendChild(toolbar);
 
   container.appendChild(root);
@@ -303,12 +319,25 @@ export function createPdfViewer(container, opts = {}) {
 
   zoomOutBtn.addEventListener("click", stepZoomOut);
   zoomInBtn.addEventListener("click", stepZoomIn);
-  let scrollDirection = "vertical";
-  fitBtn.addEventListener("click", () => {
-    switchMode(scrollDirection === "horizontal" ? MODE_HORIZONTAL : MODE_FIT_WIDTH);
+
+  scrollHBtn.addEventListener("click", () => {
+    if (layoutMode === MODE_HORIZONTAL) return;
+    switchToScrollDir("horizontal");
   });
-  scrollToggle.addEventListener("click", () => {
-    switchMode(layoutMode === MODE_HORIZONTAL ? MODE_FIT_WIDTH : MODE_HORIZONTAL);
+  scrollVBtn.addEventListener("click", () => {
+    if (layoutMode === MODE_VERTICAL) return;
+    fitMode = MODE_FIT;
+    switchToScrollDir("vertical");
+  });
+  fitOneBtn.addEventListener("click", () => {
+    if (fitMode === MODE_FIT && layoutMode !== MODE_FIXED) return;
+    fitMode = MODE_FIT;
+    switchToFitMode();
+  });
+  fitTwoBtn.addEventListener("click", () => {
+    if (fitMode === MODE_FIT_2 && layoutMode !== MODE_FIXED) return;
+    fitMode = MODE_FIT_2;
+    switchToFitMode();
   });
 
   // ── Keyboard zoom (Cmd+/- while viewer is mounted) ──────────────
@@ -316,7 +345,7 @@ export function createPdfViewer(container, opts = {}) {
     if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
     if (e.key === "=" || e.key === "+") { e.preventDefault(); stepZoomIn(); }
     else if (e.key === "-") { e.preventDefault(); stepZoomOut(); }
-    else if (e.key === "0") { e.preventDefault(); switchMode(MODE_FIT_WIDTH); }
+    else if (e.key === "0") { e.preventDefault(); fitMode = MODE_FIT; layoutMode = MODE_HORIZONTAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); }
   }
   window.addEventListener("keydown", onKeydown);
 
@@ -362,12 +391,19 @@ export function createPdfViewer(container, opts = {}) {
     if (!pages.length || !pdfDoc) return 1;
     const first = pages[0];
     if (!first?.viewport) return 1;
-    if (layoutMode === MODE_FIT_WIDTH) {
-      const pad = 40;
+    const pad = 40;
+    if (layoutMode === MODE_VERTICAL) {
       return (scrollArea.clientWidth - pad) / first.viewport.width;
     }
     if (layoutMode === MODE_HORIZONTAL) {
-      const pad = 40;
+      if (fitMode === MODE_FIT_2) {
+        const availW = scrollArea.clientWidth - pad;
+        const availH = scrollArea.clientHeight - pad;
+        const gap = 12;
+        const scaleW = (availW - gap) / (first.viewport.width * 2);
+        const scaleH = availH / first.viewport.height;
+        return Math.min(scaleW, scaleH);
+      }
       return (scrollArea.clientHeight - pad) / first.viewport.height;
     }
     return fixedZoom;
@@ -375,10 +411,18 @@ export function createPdfViewer(container, opts = {}) {
 
   function updateToolbarState() {
     const z = getEffectiveZoom();
-    const isFit = layoutMode === MODE_FIT_WIDTH || layoutMode === MODE_HORIZONTAL;
-    zoomLabel.textContent = isFit ? "Fit" : `${Math.round(z * 100)}%`;
-    fitBtn.classList.toggle("active", isFit);
-    scrollToggle.innerHTML = layoutMode === MODE_HORIZONTAL ? HORIZONTAL_ICON : VERTICAL_ICON;
+    const isFit = layoutMode !== MODE_FIXED;
+    const isFit2 = fitMode === MODE_FIT_2;
+    if (isFit) {
+      zoomLabel.textContent = isFit2 ? "Fit 2" : "Fit";
+    } else {
+      zoomLabel.textContent = `${Math.round(z * 100)}%`;
+    }
+    const isHoriz = layoutMode === MODE_HORIZONTAL;
+    scrollHBtn.classList.toggle("active", isHoriz);
+    scrollVBtn.classList.toggle("active", !isHoriz && layoutMode !== MODE_FIXED);
+    fitOneBtn.classList.toggle("active", isFit && fitMode === MODE_FIT);
+    fitTwoBtn.classList.toggle("active", isFit && fitMode === MODE_FIT_2);
   }
 
   function updatePageIndicator() {
@@ -406,11 +450,21 @@ export function createPdfViewer(container, opts = {}) {
   });
 
   // ── Mode switching ───────────────────────────────────────────────
-  function switchMode(mode) {
-    if (mode === layoutMode) return;
-    layoutMode = mode;
-    if (mode === MODE_HORIZONTAL) scrollDirection = "horizontal";
-    else if (mode === MODE_FIT_WIDTH) scrollDirection = "vertical";
+  function switchToScrollDir(dir) {
+    if (dir === "horizontal") {
+      layoutMode = MODE_HORIZONTAL;
+    } else {
+      layoutMode = MODE_VERTICAL;
+    }
+    applyLayoutClass();
+    updateToolbarState();
+    relayoutPages();
+  }
+
+  function switchToFitMode() {
+    if (layoutMode === MODE_FIXED) {
+      layoutMode = MODE_HORIZONTAL;
+    }
     applyLayoutClass();
     updateToolbarState();
     relayoutPages();
@@ -426,7 +480,7 @@ export function createPdfViewer(container, opts = {}) {
 
   function applyLayoutClass() {
     scrollArea.classList.remove("pdf-layout-fit", "pdf-layout-fixed", "pdf-layout-horizontal");
-    if (layoutMode === MODE_FIT_WIDTH) scrollArea.classList.add("pdf-layout-fit");
+    if (layoutMode === MODE_VERTICAL) scrollArea.classList.add("pdf-layout-fit");
     else if (layoutMode === MODE_HORIZONTAL) scrollArea.classList.add("pdf-layout-horizontal");
     else scrollArea.classList.add("pdf-layout-fixed");
   }
@@ -440,19 +494,25 @@ export function createPdfViewer(container, opts = {}) {
       const page = await pdfDoc.getPage(idx + 1);
       if (destroyed) return;
       const scale = getEffectiveZoom();
-      const viewport = page.getViewport({ scale });
+      const dpr = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: scale * dpr });
 
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
       canvas.className = "pdf-page-canvas";
 
+      const cssW = Math.round(viewport.width / dpr);
+      const cssH = Math.round(viewport.height / dpr);
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+
       const renderTask = page.render({ canvas, viewport, background: "#ffffff" });
       await renderTask.promise;
       if (destroyed) return;
 
-      p.wrapper.style.width = `${canvas.width}px`;
-      p.wrapper.style.height = `${canvas.height}px`;
+      p.wrapper.style.width = `${cssW}px`;
+      p.wrapper.style.height = `${cssH}px`;
       const placeholder = p.wrapper.querySelector(".pdf-page-placeholder");
       if (placeholder) placeholder.remove();
       p.wrapper.insertBefore(canvas, p.wrapper.firstChild);
@@ -489,10 +549,10 @@ export function createPdfViewer(container, opts = {}) {
       let zoomChanged = false;
       for (let i = 0; i < pages.length; i++) {
         const p = pages[i];
-        const w = Math.round(p.viewport.width * scale);
-        const h = Math.round(p.viewport.height * scale);
-        p.wrapper.style.width = `${w}px`;
-        p.wrapper.style.height = `${h}px`;
+        const cssW = Math.round(p.viewport.width * scale);
+        const cssH = Math.round(p.viewport.height * scale);
+        p.wrapper.style.width = `${cssW}px`;
+        p.wrapper.style.height = `${cssH}px`;
         if (p.rendered && Math.abs(p.renderedZoom - scale) > 0.001) {
           clearPage(i);
           zoomChanged = true;
@@ -543,8 +603,10 @@ export function createPdfViewer(container, opts = {}) {
       wrapper.className = "pdf-page-wrapper";
       wrapper.dataset.pageIndex = i;
       const scale = getEffectiveZoom();
-      wrapper.style.width = `${Math.round(viewport.width * scale)}px`;
-      wrapper.style.height = `${Math.round(viewport.height * scale)}px`;
+      const cssW = Math.round(viewport.width * scale);
+      const cssH = Math.round(viewport.height * scale);
+      wrapper.style.width = `${cssW}px`;
+      wrapper.style.height = `${cssH}px`;
       const placeholder = document.createElement("div");
       placeholder.className = "pdf-page-placeholder";
       wrapper.appendChild(placeholder);
@@ -558,12 +620,15 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function setZoom(level) {
-    if (level < 0) { switchMode(MODE_FIT_WIDTH); return; }
+    if (level === -1) { layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -2) { layoutMode = MODE_HORIZONTAL; fitMode = MODE_FIT; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
+    if (level === -3) { layoutMode = MODE_HORIZONTAL; fitMode = MODE_FIT_2; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
     applyFixedZoom(level);
   }
   function getZoom() {
-    if (layoutMode === MODE_FIT_WIDTH) return -1;
-    if (layoutMode === MODE_HORIZONTAL) return -2;
+    if (layoutMode === MODE_VERTICAL) return -1;
+    if (layoutMode === MODE_HORIZONTAL && fitMode === MODE_FIT) return -2;
+    if (layoutMode === MODE_HORIZONTAL && fitMode === MODE_FIT_2) return -3;
     return fixedZoom;
   }
 
@@ -748,14 +813,17 @@ function svgBtn(cls, title, svgContent) {
   return b;
 }
 
-// Pages stacked vertically (vertical scroll — current mode indicator)
+// Vertical scroll: pages stacked
 const VERTICAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="1" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="9" width="10" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
-// Pages side by side (horizontal scroll — current mode indicator)
+// Horizontal scroll: pages side by side
 const HORIZONTAL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="3" width="6" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
-// Thumbnail grid: small 2x2 rectangles
+// Thumbnail grid
 const THUMBNAIL_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
-// Fit: outward-pointing arrows
-const FIT_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><polyline points="1,5 1,1 5,1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="11,1 15,1 15,5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="15,11 15,15 11,15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="5,15 1,15 1,11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+// Fit one: single page outline with corner arrows
+const FIT_ONE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="1" width="10" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
+
+// Fit two: two pages side by side
+const FIT_TWO_ICON = `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="1" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="9" y="2" width="6" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>`;

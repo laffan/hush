@@ -115,10 +115,35 @@
 }
 .pdf-zoom-btn:hover { background: rgba(128, 128, 128, 0.18); }
 .pdf-zoom-btn svg { vertical-align: middle; display: inline-block; }
-.pdf-mode-btn.active {
-  background: rgba(128, 128, 128, 0.22);
-  border-color: rgba(128, 128, 128, 0.4);
+/* (toggle groups replaced the old single .pdf-mode-btn) */
+/* Toggle groups: paired buttons with shared border */
+.pdf-toggle-group {
+  display: inline-flex;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(128, 128, 128, 0.2);
 }
+.pdf-toggle-option {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 0;
+  background: rgba(128, 128, 128, 0.04);
+  color: var(--fg);
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s;
+  opacity: 0.45;
+}
+.pdf-toggle-option:not(:last-child) {
+  border-right: 1px solid rgba(128, 128, 128, 0.15);
+}
+.pdf-toggle-option:hover { background: rgba(128, 128, 128, 0.14); opacity: 0.7; }
+.pdf-toggle-option.active {
+  background: rgba(128, 128, 128, 0.22);
+  opacity: 1;
+}
+.pdf-toggle-option svg { vertical-align: middle; display: inline-block; }
+
 .pdf-zoom-label {
   min-width: 36px;
   text-align: center;
