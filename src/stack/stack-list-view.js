@@ -65,6 +65,10 @@ export function createStackListView(stackComponent, state) {
         <span class="stack-list-status">${item.open ? "" : "closed"}</span>
         <button class="stack-list-close" data-idx="${i}">×</button>
       `;
+      if (item.spineColor) {
+        const iconEl = row.querySelector(".stack-list-icon svg");
+        if (iconEl) { iconEl.style.stroke = item.spineColor; iconEl.style.opacity = "1"; }
+      }
       list.appendChild(row);
     }
 
