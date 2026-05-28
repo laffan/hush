@@ -1,45 +1,40 @@
 /* src/notebook/ui/bg-settings-fixed-button.ts
  *
- * Fixed Background Settings button — sits in the bottom-right corner of
- * the notebook container, just inboard of the shelf. Replaces the
- * previous end-cap on the bottom toolbar so the background controls
- * are always reachable regardless of where the user has dragged the
- * toolbar.
+ * Fixed Background Settings button — bottom-right corner of the
+ * notebook container, just inboard of the shelf. Replaces the bottom
+ * toolbar's end-cap so the bg controls are always reachable wherever
+ * the toolbar happens to be sitting.
  *
- * The actual popup is reused from `bg-settings-popup.ts` — this module
- * only owns the fixed button + container placement.
+ * The actual popup is reused from `bg-settings-popup.ts`; this module
+ * owns the visible button + sidebar/shelf inset tracking. The popup's
+ * internal tab is left detached — we call `bg.toggle()` directly and
+ * `bg.setAnchor(button)` so positioning lines up with the fixed
+ * button.
  */
 
 import type { DrawingState } from "../state";
 import { h } from "./dom-helpers";
 import { icon } from "./icons";
-import { createBgSettingsPopup, type BgSettingsHandle } from "./bg-settings-popup";
+import { createBgSettingsPopup } from "./bg-settings-popup";
 
 export interface BgSettingsFixedHandle {
-  /** Button element. Append to the notebook container. */
+  /** Visible button. Append to the notebook container. */
   button: HTMLElement;
-  /** Popup element. Append to the same parent so it can position
-   *  against the button. */
+  /** Popup element. Append to the same parent so it positions against
+   *  the button. */
   popup: HTMLElement;
   /** Reposition the popup against the button. */
   reposition(): void;
 }
 
 export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixedHandle {
-  // Underlying popup carries all the bg-pattern controls. We dispose of
-  // its built-in tab and wrap our own fixed button around the popup.
-  const bg: BgSettingsHandle = createBgSettingsPopup(state);
-
-  // The popup itself ignores `.tab` for positioning — the caller-supplied
-  // wrapper handles positioning. Hide the original tab; reuse the popup.
-  bg.tab.style.display = "none";
+  const bg = createBgSettingsPopup(state);
 
   const button = h("button", {
     title: "Background settings",
     style: {
       position: "absolute",
       bottom: "20px",
-      right: "calc(env(safe-area-inset-right) + 36px)",
       width: "40px",
       height: "40px",
       border: "none",
@@ -54,40 +49,36 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
       backdropFilter: "blur(6px)",
     },
     children: [icon("grid", 20)],
+    onClick: (e) => { e.stopPropagation(); bg.toggle(); },
   });
   button.classList.add("notebook-bg-settings-fixed-btn");
 
-  // Forward clicks into the popup tab so its toggle logic runs.
-  button.addEventListener("click", (e) => {
-    e.stopPropagation();
-    bg.tab.click();
-  });
+  // Anchor the popup against the visible button rather than the
+  // internal tab (which lives off-screen — we never append it).
+  bg.setAnchor(button);
 
-  // The popup positions against `bg.tab` by default. Move bg.tab into the
-  // button's box so the popup anchors at the button's location.
-  button.appendChild(bg.tab);
-
-  // Repaint button on theme change so its color tracks the canvas.
   function refresh() {
     button.style.color = state.theme.foreground;
   }
-  state.addEventListener("change", refresh);
-  refresh();
 
-  // Right-edge inset tracking: when the shelf opens / resizes, shift
-  // the button inboard so it stays clear.
   function applyRightInset() {
     const ri = state.rightInset || 0;
     button.style.right = `calc(env(safe-area-inset-right) + ${ri + 16}px)`;
     bg.reposition();
   }
+
+  // Single listener — handles both theme and inset updates.
   state.addEventListener("change", ((e: CustomEvent) => {
     const keys: string[] = (e.detail && e.detail.keys) || [];
-    if (keys.includes("theme") || keys.includes("camera")) applyRightInset();
+    if (keys.includes("theme")) {
+      refresh();
+      applyRightInset();
+    }
   }) as EventListener);
-  // Use a ResizeObserver-ish poll via the existing change pathway; also
-  // listen to window resize since shelf width sync rides on it.
+
   window.addEventListener("resize", applyRightInset);
+
+  refresh();
   applyRightInset();
 
   return { button, popup: bg.popup, reposition: bg.reposition };

@@ -555,6 +555,7 @@ export class NotesCanvas {
   /** Update the right inset (shelf width). The pocket tray now lives on
    *  the shelf's left edge, so this needs to track open/close + resize. */
   setRightInset(px: number) {
+    if (this.state.rightInset === px) return;
     this.state.rightInset = px;
     this.state.notify("theme");
   }

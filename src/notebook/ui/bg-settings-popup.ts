@@ -29,6 +29,14 @@ export interface BgSettingsHandle {
   reposition(): void;
   /** Refresh tab colors after a theme change. */
   refreshTheme(): void;
+  /** Toggle the popup open/closed without going through the tab. Used
+   *  by the fixed bottom-right button, which can't forward via
+   *  `tab.click()` without re-entering its own listener. */
+  toggle(): void;
+  /** Use an alternate anchor element for popup positioning. The fixed
+   *  bottom-right button calls this with itself so positioning lands
+   *  next to the visible button rather than the hidden internal tab. */
+  setAnchor(el: HTMLElement | null): void;
 }
 
 export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
@@ -86,12 +94,22 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
     render();
   });
 
+  let anchor: HTMLElement = tab;
+  function setAnchor(el: HTMLElement | null): void {
+    anchor = el || tab;
+    if (popupOpen) reposition();
+  }
+  function toggle(): void {
+    popupOpen = !popupOpen;
+    render();
+  }
+
   function reposition(): void {
     if (!popupOpen) return;
     const parent = popup.parentElement;
     if (!parent) return;
     const parentRect = parent.getBoundingClientRect();
-    const btnRect = tab.getBoundingClientRect();
+    const btnRect = anchor.getBoundingClientRect();
     if (btnRect.width === 0) return;
     popup.style.left = "auto";
     popup.style.right = "auto";
@@ -189,5 +207,5 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
   state.addEventListener("change", () => { refreshTheme(); if (popupOpen) render(); });
   refreshTheme();
 
-  return { tab, popup, reposition, refreshTheme };
+  return { tab, popup, reposition, refreshTheme, toggle, setAnchor };
 }
