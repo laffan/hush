@@ -46,6 +46,11 @@
   border-top: 1px solid var(--panel-border);
 }
 
+.cmb-file-row {
+  justify-content: flex-start;
+  cursor: default;
+}
+
 .sah-file-name,
 .cmb-file-name {
   overflow: hidden;
@@ -53,33 +58,29 @@
   white-space: nowrap;
 }
 
-.cmb-reorder {
-  display: flex;
-  gap: 2px;
-  flex: 0 0 auto;
-}
-
-.cmb-move {
-  width: 22px;
-  height: 22px;
+.cmb-drag {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  border-radius: 4px;
-  color: var(--fg);
-  font-size: 9px;
-  line-height: 1;
-  cursor: pointer;
-  font-family: inherit;
+  flex: 0 0 auto;
+  opacity: 0.5;
+  cursor: grab;
+  /* Keep touch drags from scrolling the list instead of reordering. */
+  touch-action: none;
 }
 
-.cmb-move:hover:not(:disabled) {
-  background: rgba(128, 128, 128, 0.15);
+.cmb-drag:hover {
+  opacity: 0.9;
 }
 
-.cmb-move:disabled {
-  opacity: 0.3;
-  cursor: default;
+.cmb-row-dragging {
+  opacity: 0.4;
+}
+
+/* Thin insertion marker shown between rows while dragging. */
+.cmb-drop {
+  list-style: none;
+  height: 0;
+  margin: -1px 0;
+  padding: 0;
+  border-top: 2px solid var(--accent, #4285f4);
 }

@@ -75,27 +75,66 @@ export function openCombineFilesModal(state, docs) {
   function renderList() {
     list.innerHTML = choices.order.map((d, i) => `
       <li class="cmb-file-row" data-idx="${i}">
-        <span class="cmb-file-name">${escHtml(d.name || "Untitled")}</span>
-        <span class="cmb-reorder">
-          <button type="button" class="cmb-move cmb-move-up" data-dir="-1" ${i === 0 ? "disabled" : ""} aria-label="Move up">▲</button>
-          <button type="button" class="cmb-move cmb-move-down" data-dir="1" ${i === choices.order.length - 1 ? "disabled" : ""} aria-label="Move down">▼</button>
+        <span class="cmb-drag" data-idx="${i}" aria-label="Drag to reorder">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/><circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/><circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/></svg>
         </span>
+        <span class="cmb-file-name">${escHtml(d.name || "Untitled")}</span>
       </li>
     `).join("");
+    wireReorder();
   }
 
-  list.addEventListener("click", (e) => {
-    const btn = e.target.closest(".cmb-move");
-    if (!btn) return;
-    const row = btn.closest(".cmb-file-row");
-    const idx = parseInt(row?.dataset.idx, 10);
-    const dir = parseInt(btn.dataset.dir, 10);
-    const next = idx + dir;
-    if (!Number.isInteger(idx) || next < 0 || next >= choices.order.length) return;
-    const arr = choices.order;
-    [arr[idx], arr[next]] = [arr[next], arr[idx]];
-    renderList();
-  });
+  // Pointer-based drag reorder (works on touch too) — mirrors the stack
+  // list view. A thin marker line shows the drop position; on release the
+  // dragged entry is spliced to the target slot and the list re-renders.
+  function wireReorder() {
+    list.querySelectorAll(".cmb-drag").forEach((handle) => {
+      handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        const dragIdx = parseInt(handle.dataset.idx, 10);
+        const rows = Array.from(list.querySelectorAll(".cmb-file-row"));
+        const dragRow = rows[dragIdx];
+        if (!dragRow) return;
+        dragRow.classList.add("cmb-row-dragging");
+
+        const computeTarget = (clientY) => {
+          for (let j = 0; j < rows.length; j++) {
+            const rect = rows[j].getBoundingClientRect();
+            if (clientY < rect.top + rect.height / 2) return j;
+          }
+          return rows.length;
+        };
+
+        const onMove = (ev) => {
+          const targetIdx = computeTarget(ev.clientY);
+          list.querySelectorAll(".cmb-drop").forEach((d) => d.remove());
+          if (targetIdx !== dragIdx && targetIdx !== dragIdx + 1) {
+            const marker = document.createElement("li");
+            marker.className = "cmb-drop";
+            list.insertBefore(marker, rows[targetIdx] || null);
+          }
+        };
+
+        const onUp = (ev) => {
+          document.removeEventListener("pointermove", onMove);
+          document.removeEventListener("pointerup", onUp);
+          dragRow.classList.remove("cmb-row-dragging");
+          list.querySelectorAll(".cmb-drop").forEach((d) => d.remove());
+          const targetIdx = computeTarget(ev.clientY);
+          if (targetIdx !== dragIdx && targetIdx !== dragIdx + 1) {
+            const arr = choices.order;
+            const [moved] = arr.splice(dragIdx, 1);
+            const insertAt = targetIdx > dragIdx ? targetIdx - 1 : targetIdx;
+            arr.splice(insertAt, 0, moved);
+            renderList();
+          }
+        };
+
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+      });
+    });
+  }
 
   nameInput.addEventListener("input", () => { choices.name = nameInput.value; });
   delToggle.addEventListener("change", () => { choices.deleteOriginals = delToggle.checked; });
