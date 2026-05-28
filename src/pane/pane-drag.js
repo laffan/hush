@@ -207,13 +207,16 @@ export function setupPaneResize(pane, deps) {
         if (dir.includes("n")) { h = Math.max(MIN_HEIGHT, startH - dy); ny = startTop + (startH - h) * zoomFactor; }
         pane.width = w; pane.height = h; pane.x = nx; pane.y = ny;
         if (isDocked(pane)) {
-          // Capture the new user dimension and re-flex.
           if (pane.dockEdge === "top" || pane.dockEdge === "bottom") pane.dockUserSize = h;
           else pane.dockUserSize = w;
           applyDockGeometry(pane);
+          deps.notifyPaneDragMove?.();
           return;
         }
         Object.assign(pane.el.style, { width: w + "px", height: h + "px", left: nx + "px", top: ny + "px" });
+        // Floating pane resize shifts the centroid — let the editor
+        // column re-balance live so make-space follows the change.
+        deps.notifyPaneDragMove?.();
       };
       const onUp = () => {
         handle.removeEventListener("pointermove", onMove);

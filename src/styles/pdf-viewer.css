@@ -457,8 +457,11 @@
 #pdf-container {
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  /* Match stack-container: narrow when docked panes are present so the
+     PDF viewer's chrome (zoom/page controls, scrollbars) stays inside
+     the visible area. */
+  left: var(--pane-dock-left-width, 0px);
+  right: var(--pane-dock-right-width, 0px);
   bottom: 0;
   transition: left 0.2s;
 }

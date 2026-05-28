@@ -86,6 +86,12 @@ export function createShelfResizer(
   const obs = new MutationObserver(syncRaf);
   obs.observe(panel, { attributes: true, attributeFilter: ["style", "class"] });
   window.addEventListener("resize", syncRaf);
+  // The dock module shifts the shelf via a CSS custom property — only
+  // the shelf's *computed* `right` changes; its inline style attribute
+  // doesn't, so MutationObserver doesn't fire. Listen explicitly for
+  // pane-dock-changed and resync on the next frame after layout has
+  // applied the new var value.
+  document.addEventListener("pane-dock-changed", syncRaf);
   // Initial position once the panel is in the DOM.
   queueMicrotask(sync);
 

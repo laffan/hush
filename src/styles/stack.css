@@ -7,8 +7,13 @@
 #stack-container {
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  /* Docked panes carve real estate out of the host editor — for stacks
+     that means narrowing the container itself so the horizontal
+     scrollbar stays inside the visible area rather than under a
+     right-docked pane. The dock module publishes the two vars on
+     documentElement; defaults of `0px` keep undocked layouts unchanged. */
+  left: var(--pane-dock-left-width, 0px);
+  right: var(--pane-dock-right-width, 0px);
   bottom: 0;
   overflow: hidden;
   background: var(--theme-bg, #fff);

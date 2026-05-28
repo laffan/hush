@@ -354,6 +354,11 @@ export function closePane(id) {
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);
   notifyLayoutChange();
+  // Make sure the dock CSS vars + chrome positions reset once the pane
+  // is gone — without this, a closed right-docked pane leaves
+  // --pane-dock-right-width pointing at its old width and the shelf
+  // stays shifted.
+  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
   schedulePersist();
 }
 

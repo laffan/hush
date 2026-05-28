@@ -186,8 +186,9 @@ function computeVisibleWidth() {
 
 /** Publish the docked footprints as CSS custom properties so chrome
  *  elements (shelf, outline, bg-button) can shift away from a dock
- *  via plain CSS. Called from applyDockGeometry + undockPane. */
-function publishDockCssVars() {
+ *  via plain CSS. Called from applyDockGeometry + undockPane +
+ *  closePane (so a closed dock pane fully clears the var). */
+export function publishDockCssVars() {
   let leftW = 0, rightW = 0;
   for (const [, p] of panes) {
     if (!p.docked) continue;
