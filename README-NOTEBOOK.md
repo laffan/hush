@@ -40,7 +40,8 @@ src/notebook/
     drawing-layer.ts       Engine-backed drawing layer + public API
     sync-shim.ts           state.shapes[] ↔ engine.strokes bridge
     brush-slots.ts         Toolbar slot row + brush-edit flyout
-    tool-panel.ts          Drawing-tools controller: appends the divider, brush slots, Slice, Erase, Lasso directly to the bottom toolbar so the assembly is one continuous bar, then mounts the four gray-pill end-caps (drag, rotate, bg-settings, collapse) and the lasso hold-time flyout
+    tool-panel.ts          Drawing-tools controller: appends the divider, brush slots, Slice, Erase, Lasso directly to the bottom toolbar so the assembly is one continuous bar, then mounts the single drag handle (a thin strip on the bar's canvas-facing edge), the three drag-to-snap drop zones (top / bottom / left), and the lasso hold-time flyout
+    bg-settings-fixed-button.ts  Fixed bottom-right Background settings button (pattern / spacing / opacity); wraps bg-settings-popup.ts and anchors its flyout above + right-aligned so it never clips the window edge
     pocket-blit.ts         Pocket / done-canvas blit helpers (4 functions) extracted from drawing-layer.ts
     selection-drag.ts      Hush↔engine select-drag controller — pause-shim, hide-chrome, commit-on-release ladder
     flyout-styles.ts       Injects the 15-px-thick squared-thumb stylesheet that brush + lasso flyout sliders share
@@ -84,11 +85,12 @@ Notebooks are stored as `files/{uuid}.json` in the app data directory. The `cont
   "layers":    [...],   // ordered, top-first
   "flowEdges": [...],   // flowchart edges between text shapes
   "bookmarks": [...],   // optional camera bookmarks; same shape as DrawingState
-  "camera":    {...}    // optional saved viewport — { x, y, zoom }
+  "camera":    {...},   // optional saved viewport — { x, y, zoom }
+  "background": {...}   // optional per-notebook bg — { pattern, spacing, opacity }
 }
 ```
 
-`decodeNotebookContent` parses this and also accepts the legacy bare `Shape[]` array form (older notebooks before the envelope migration) so existing files round-trip without rewriting on load. `bookmarks` was added later still and is treated as optional — older envelopes decode with `bookmarks = undefined` and the bridge skips the assignment. Every save / load / sync path goes through this pair (autosave in `notebook-bridge.js`, pane I/O in `pane/pane-content.js`, sync pull in `reloadNotebookShapes`, plus `.hushnote` export in `notebook-export.ts`) so the on-disk format stays consistent. Bookmark mutations call `state.notify("bookmarks")`, which `notes-canvas.ts` forwards as a `notebook-change` CustomEvent so the autosave pipeline picks it up alongside shape edits.
+`decodeNotebookContent` parses this and also accepts the legacy bare `Shape[]` array form (older notebooks before the envelope migration) so existing files round-trip without rewriting on load. `bookmarks` was added later still and is treated as optional — older envelopes decode with `bookmarks = undefined` and the bridge skips the assignment. `background` is likewise optional (any subset of `pattern` / `spacing` / `opacity`): on mount the bridge applies the global notebook-settings defaults first, then overlays the saved per-notebook values, so a notebook reopens with its own background and a theme / style switch no longer resets it. The bg-settings popup fires a `notebook-bg-changed` document event that the bridge and pane I/O cache and write back on the next autosave. Every save / load / sync path goes through this pair (autosave in `notebook-bridge.js`, pane I/O in `pane/pane-content.js`, sync pull in `reloadNotebookShapes`, plus `.hushnote` export in `notebook-export.ts`) so the on-disk format stays consistent. Bookmark mutations call `state.notify("bookmarks")`, which `notes-canvas.ts` forwards as a `notebook-change` CustomEvent so the autosave pipeline picks it up alongside shape edits.
 
 `camera` is the persisted pan + zoom; mounting a notebook restores it so the user lands where they left off. Pan / zoom changes ride a separate `notebook-camera-change` event into the bridge — autosave still writes the file (preserving the camera) but skips the version snapshot, since the viewport isn't content history. `reloadNotebookShapes` (the sync-pull entry point) deliberately ignores `snapshot.camera` so a remote device's view doesn't yank the local viewport around; per-device camera handling falls out naturally from there. Pane mounts also skip the saved camera and centre on the same world point the main canvas would, since pane viewports differ from the main canvas.
 
@@ -193,7 +195,7 @@ Layers are notebook-level and host every shape type, not just drawings. `state.l
 
 ### Pocket system
 
-A temporary stash on the left edge of the canvas. Users hold-drag a shape for 1 second toward the left edge to pocket it. Pocketed items are drawn at fixed screen positions (independent of camera), shown on light-blue cards. The pocket tray, drop zone, and entries all offset by `DrawingState.leftInset` to stay clear of the sidebar.
+A temporary stash on the **right edge** of the canvas, flush against the shape shelf. Users hold-drag a shape toward the right edge to pocket it. Pocketed items are drawn at fixed screen positions (independent of camera), shown on light-blue cards. The pocket tray, drop zone, and entries anchor against `DrawingState.pocketRightInset` — a getter that prefers a right-docked pane's inboard edge (`dockedRightWidth`) and otherwise falls back to the shelf footprint (`rightInset`), so the tray always sits just inboard of whatever right-side chrome is widest. (`computePocketLayout` / `findPocketedShapeAtScreen` take this inset as their last argument; the renderer's `drawPocketTray` mirrors its rounded corners to face the canvas interior.)
 
 ### Undo/redo
 
@@ -249,7 +251,9 @@ A single drag-area selection surfaces three container-scoped actions on the sele
 
 ### Drawing
 
-The drawing tools (three brush slots, Slice, Erase, Lasso) are appended directly onto the bottom toolbar past a 1-px divider so the assembly reads as one continuous bar. There is no "drawing mode" to enter — clicking any of those tools implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the drawing tools visually dim. Four gray end-cap tabs flank the bar — drag and rotate on the opening edge, bg-settings and collapse on the closing edge. Press-and-drag on the hamburger drag tab moves the entire assembly (bar + end-caps) together via `state.drawingToolbarOffset`; the rotate tab flips orientation between horizontal and vertical (`state.drawingToolbarVertical`); the collapse tab (two arrows pointing at each other) hides every bar child except the currently-active tool, plus the rotate and bg-settings tabs themselves, leaving a minimal `[drag][active tool][collapse]` trio (`state.drawingToolbarCollapsed`).
+The drawing tools (three brush slots, Slice, Erase, Lasso) are appended directly onto the bottom toolbar past a 1-px divider so the assembly reads as one continuous bar. There is no "drawing mode" to enter — clicking any of those tools implicitly routes pointer input to the stroke engine by flipping `state.tool = "pen"` with the matching sub-tool. Clicking a non-drawing tool (Select, Text, Drag Area, Brainstorm) flips `state.tool` back and the drawing tools visually dim.
+
+A single thin **drag handle** runs along the bar's canvas-facing edge (bottom edge when pinned top, top edge when pinned bottom, right edge when vertical). Press-and-drag on it repositions the whole bar; while dragging, three highlighted **snap zones** appear (centred on the top edge, the bottom edge, and the left edge) and releasing inside one sets `state.drawingToolbarPosition` to `"top"` / `"bottom"` / `"left"` (left implies vertical). A drop outside any zone leaves the bar at `"custom"` with a free `state.drawingToolbarOffset`. `state.drawingToolbarVertical` is a derived getter (`position === "left"`). When the window is too narrow to fit the bar at full size, `toolbar.ts` adds `.notebook-toolbar-compact` (¾-size icons, two-row `flex-wrap`). Background settings, orientation-rotate, and collapse are no longer end-caps: background lives in a fixed bottom-right button (`bg-settings-fixed-button.ts`), orientation is reached through the left snap zone, and the collapse affordance was removed in favour of the responsive two-row layout (`drawingToolbarCollapsed` survives only as a `false` compatibility getter).
 
 A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 500). Tapping the already-active Lasso button toggles the flyout open.
 
