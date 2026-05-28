@@ -100,6 +100,23 @@ async function permanentDeleteNode(state, nodeId) {
   await finalizeFileDeletion(state, docFileIds);
 }
 
+export async function restoreFromTrash(state, nodeId) {
+  if (!state.isInTrash(nodeId)) return;
+  const node = removeNode(state.fileTree, nodeId);
+  if (!node) return;
+  const inbox = findNode(state.fileTree, state.getInboxId());
+  if (inbox) (inbox.children || (inbox.children = [])).push(node);
+  await state.saveFileTree();
+  state.emit("files-changed");
+}
+
+export async function permanentDelete(state, nodeId) {
+  if (!state.isInTrash(nodeId)) return;
+  await permanentDeleteNode(state, nodeId);
+  await state.saveFileTree();
+  state.emit("files-changed");
+}
+
 export async function emptyTrash(state, deskId) {
   // With desks on, callers can pass a specific deskId to empty just
   // that desk's trash. Default empties the active desk's trash (or

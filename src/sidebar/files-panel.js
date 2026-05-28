@@ -19,6 +19,7 @@ import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash, handleOpenAsStack,
   handleConvertProjectToDoc, handleConvertDocToProject,
+  handleRestore, handlePermanentDelete,
 } from "./files-panel-actions.js";
 import {
   isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree,
@@ -411,6 +412,10 @@ function dispatchRowAction(action, nodeId, opts) {
         refresh();
       },
     });
+  } else if (action === "restore") {
+    handleRestore(nodeId, storedState, refresh);
+  } else if (action === "permanent-delete") {
+    handlePermanentDelete(nodeId, storedState, refresh);
   }
 }
 
