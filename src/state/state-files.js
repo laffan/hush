@@ -290,6 +290,12 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
 
 export async function openPdf(state, fileId) {
   if (state.ratchetMode) return;
+  try {
+    const mod = await import("../sync/pdf-sync.js");
+    const exists = await mod.checkPdfExists(fileId);
+    if (!exists) return;
+  } catch {}
+
   if (state.dirty) await state.saveCurrentFile();
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
@@ -352,6 +358,33 @@ export async function importPdf(state, name, bytes, parentId = null, opts = {}) 
   if (openImmediately) {
     await openPdf(state, fileId);
   }
+  state.emit("files-changed");
+  return { fileId, name: finalName };
+}
+
+export async function registerPdfPlaceholder(state, name, opts = {}) {
+  const fileId = crypto.randomUUID();
+  const { addPdfEntry } = await import("../sync/pdf-sync.js");
+  await addPdfEntry(fileId, {
+    title: opts.zoteroTitle || name,
+    authors: opts.zoteroAuthors || "",
+    firstAuthor: opts.zoteroFirstAuthor || "",
+    year: opts.zoteroYear || "",
+    citekey: opts.zoteroCitekey || "",
+    zoteroItemKey: opts.zoteroItemKey || "",
+    zoteroAttKey: opts.zoteroAttKey || "",
+  });
+  await state.ensurePdfsFolder();
+  const pdfsId = state.getPdfsId();
+  const displayName = opts.zoteroTitle || name;
+  const finalName = uniqueChildName(findNode(state.fileTree, pdfsId), displayName, "pdf");
+  const treeNode = {
+    id: crypto.randomUUID(), type: "pdf", name: finalName, fileId,
+    children: [], flagged: false,
+  };
+  if (opts.zoteroAttKey) treeNode.zoteroAttKey = opts.zoteroAttKey;
+  insertNode(state.fileTree, treeNode, pdfsId, findNode);
+  await state.saveFileTree();
   state.emit("files-changed");
   return { fileId, name: finalName };
 }

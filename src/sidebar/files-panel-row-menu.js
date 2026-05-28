@@ -63,9 +63,17 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   if (isTrashId(nodeId)) return [{ action: "empty-trash", label: "Empty Trash" }];
   if (item?.syncFolderId && item.type === "folder") return [];
 
+  if (inTrash) {
+    return [
+      { action: "restore", label: "Remove from trash" },
+      { action: "permanent-delete", label: "Permanently Delete" },
+    ];
+  }
+
   const isSpecial = isInboxId(nodeId) || isImagesId(nodeId);
   const isDoc = nodeType === "document";
   const isImage = nodeType === "image";
+  const isPdf = nodeType === "pdf";
   const isContainer = nodeType === "folder" || nodeType === "project";
   // Docs auto-derive their name from first line while still "Untitled".
   // Once content has locked in a name, expose rename like notebooks do.
@@ -78,34 +86,34 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   // too — natural since it's where new files live by default. Images
   // is also typed as project but the new-here actions don't make sense
   // there (it only holds image refs), so it's explicitly skipped.
-  if (isContainer && !inTrash && !isImagesId(nodeId)) {
+  if (isContainer && !isImagesId(nodeId)) {
     entries.push({ action: "new-doc-here", label: "New Doc" });
     entries.push({ action: "new-notebook-here", label: "New Notebook" });
   }
 
-  if (!isSpecial && !inTrash && !isImage) {
+  if (!isSpecial && !isImage) {
     entries.push({ action: "flag", label: item?.flagged ? "Unflag" : "Flag" });
   }
-  if (!(isSpecial || (isDoc && !docRenameable))) {
+  if (!(isSpecial || isPdf || (isDoc && !docRenameable))) {
     entries.push({ action: "rename", label: "Rename" });
   }
-  if (isDoc && inProject && !inTrash) {
+  if (isDoc && inProject) {
     entries.push({ action: "use-as-note", label: item?.useAsNote ? "Stop using as note" : "Use as note" });
   }
   if (!isSpecial && isContainer && !item?.syncFolderId) {
     const target = nodeType === "folder" ? "project" : "folder";
     entries.push({ action: "convert-container", label: `Convert to ${target}`, targetType: target });
   }
-  if (nodeType === "project" && !isSpecial && !inTrash) {
+  if (nodeType === "project" && !isSpecial) {
     entries.push({ action: "convert-project-to-doc", label: "Convert to Doc" });
   }
-  if (isDoc && !inTrash && !inProject) {
+  if (isDoc && !inProject) {
     entries.push({ action: "convert-doc-to-project", label: "Convert to Project" });
   }
-  if (isContainer && !inTrash && !isImagesId(nodeId)) {
+  if (isContainer && !isImagesId(nodeId)) {
     entries.push({ action: "open-as-stack", label: "Open as Stack" });
   }
-  if (!(isSpecial || isImage || nodeType === "pdf")) {
+  if (!(isSpecial || isImage || isPdf)) {
     entries.push({ action: "duplicate", label: "Duplicate" });
   }
   if (!isSpecial) {

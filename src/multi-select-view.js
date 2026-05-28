@@ -13,7 +13,7 @@
  * Click on a row → opens that doc and clears the selection (matches
  * the single-click semantics elsewhere in the app).
  */
-import { typeIcons, escHtml, showDeleteConfirmModal } from "./sidebar/files-panel-shared.js";
+import { typeIcons, escHtml, showDeleteConfirmModal, showPromptModal } from "./sidebar/files-panel-shared.js";
 import { findNodeByFileId, findAncestorIds } from "./state/tree-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 
@@ -132,7 +132,7 @@ function render(ids) {
         flagged: !!node.flagged,
       };
     })
-    .filter((r) => r && (r.type === "document" || r.type === "notebook"));
+    .filter((r) => r && (r.type === "document" || r.type === "notebook" || r.type === "pdf"));
 
   const flagBtnLabel = rows.every((r) => r.flagged) ? "Unflag" : "Flag";
 
@@ -141,21 +141,24 @@ function render(ids) {
       <header class="ms-view-header">
         <div class="ms-view-title">${rows.length} file${rows.length === 1 ? "" : "s"} selected</div>
         <div class="ms-view-actions">
-          <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
           <button type="button" class="ms-view-btn ms-view-btn-danger" data-ms-action="delete">Delete</button>
-          <button type="button" class="ms-view-btn" data-ms-action="clear">Clear</button>
+          <button type="button" class="ms-view-btn" data-ms-action="clear">Clear selection</button>
         </div>
       </header>
       <ul class="ms-view-list">
         ${rows.map((r) => `
           <li class="ms-view-row" data-file-id="${escHtml(r.fileId)}" data-type="${escHtml(r.type)}">
-            <span class="ms-view-icon">${r.type === "notebook" ? typeIcons.notebook : typeIcons.document}</span>
+            <span class="ms-view-icon">${typeIcons[r.type] || typeIcons.document}</span>
             <span class="ms-view-text">
               ${r.path ? `<span class="ms-view-path">${escHtml(r.path)} / </span>` : ""}<span class="ms-view-name">${escHtml(r.name)}</span>
             </span>
             ${r.flagged ? `<span class="ms-view-flag">flagged</span>` : ""}
           </li>`).join("")}
       </ul>
+      <div class="ms-view-actions ms-view-actions-bottom">
+        <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
+        <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack from selected</button>
+      </div>
     </div>
   `;
 
@@ -168,6 +171,7 @@ function render(ids) {
       const fileId = row.dataset.fileId;
       if (!fileId) return;
       if (row.dataset.type === "notebook") _state.openNotebook(fileId);
+      else if (row.dataset.type === "pdf") _state.openPdf(fileId);
       else _state.openFile(fileId);
     });
   });
@@ -181,6 +185,27 @@ function render(ids) {
 async function runBatchAction(action, rows) {
   if (action === "clear") {
     _state.clearSelectedDocs();
+    return;
+  }
+  if (action === "stack") {
+    const items = rows.map((r) => ({ fileId: r.fileId, type: r.type, name: r.name }));
+    showPromptModal({
+      title: "New stack",
+      label: "Name",
+      placeholder: "New Stack",
+      initialValue: "New Stack",
+      confirmLabel: "Create",
+      onConfirm: async (name) => {
+        _state.clearSelectedDocs();
+        const result = await _state.createStack(name, null, { openImmediately: true });
+        if (!result) return;
+        await new Promise((r) => setTimeout(r, 100));
+        const { getStackInstance } = await import("./stack/stack-bridge.js");
+        const inst = getStackInstance();
+        if (!inst) return;
+        for (const it of items) inst.addItem(it.fileId, it.type, it.name);
+      },
+    });
     return;
   }
   if (action === "flag") {

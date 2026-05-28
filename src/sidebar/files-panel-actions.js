@@ -198,3 +198,23 @@ function collectAllNames(nodes) {
   }
   return names;
 }
+
+export async function handleRestore(nodeId, state, refreshAfter) {
+  const { restoreFromTrash } = await import("../state/state-tree.js");
+  await restoreFromTrash(state, nodeId);
+  refreshAfter();
+}
+
+export async function handlePermanentDelete(nodeId, state, refreshAfter) {
+  const node = findNode(state.fileTree, nodeId);
+  if (!node) return;
+  showDeleteConfirmModal(
+    `Permanently delete "${node.name || "Untitled"}"?`,
+    "This cannot be undone.",
+    async () => {
+      const { permanentDelete } = await import("../state/state-tree.js");
+      await permanentDelete(state, nodeId);
+      refreshAfter();
+    },
+  );
+}

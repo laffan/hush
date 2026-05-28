@@ -39,6 +39,9 @@ let _state = null;
 let _persistTimer = null;
 const _downloadProgress = new Map();
 
+let _batchTotal = 0;
+let _batchDone = 0;
+
 export function getPdfRegistry() {
   return _registry?.items || {};
 }
@@ -84,6 +87,10 @@ export async function initPdfRegistry(state) {
   for (const fileId of Object.keys(_registry.items)) {
     await checkPdfExists(fileId);
   }
+  const pending = Object.keys(_registry.items).filter(
+    (fid) => !_downloadedSet.has(fid) && _registry.items[fid].zoteroAttKey,
+  );
+  if (pending.length) startBatchDownload(pending, state);
 }
 
 export async function addPdfEntry(fileId, meta) {
@@ -220,7 +227,7 @@ async function removePdfTreeNode(state, fileId) {
   }
 }
 
-function triggerBackgroundDownload(fileId, state) {
+export function triggerBackgroundDownload(fileId, state) {
   const meta = _registry?.items?.[fileId];
   if (!meta?.zoteroAttKey) return;
   if (!IS_TAURI) return;
@@ -234,40 +241,43 @@ function triggerBackgroundDownload(fileId, state) {
 
   (async () => {
     try {
-      const attKey = meta.zoteroAttKey;
-      const url = `https://api.zotero.org/users/${userId}/items/${attKey}/file?key=${apiKey}`;
-      const resp = await fetch(url, { redirect: "follow" });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-      const contentLength = parseInt(resp.headers.get("content-length") || "0", 10);
-      const reader = resp.body?.getReader();
-      if (!reader) throw new Error("No readable stream");
-
-      const chunks = [];
-      let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        if (contentLength > 0) {
-          _downloadProgress.set(fileId, Math.min(99, Math.round((received / contentLength) * 100)));
-          state.emit("files-changed");
-        }
-      }
-
-      const blob = new Blob(chunks);
-      const ab = await blob.arrayBuffer();
-      const bytes = new Uint8Array(ab);
-
-      await tauriInvoke("save_pdf", { fileId, bytes: Array.from(bytes) });
+      const bytes = await tauriInvoke("download_zotero_pdf", {
+        itemKey: meta.zoteroAttKey, userId, apiKey,
+      });
+      const pdfBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      await tauriInvoke("save_pdf", { fileId, bytes: Array.from(pdfBytes) });
       _downloadedSet.add(fileId);
       _downloadProgress.delete(fileId);
       state.emit("files-changed");
+      _onBatchItemDone(state);
     } catch (e) {
       console.error(`Background PDF download failed for ${fileId}:`, e);
       _downloadProgress.delete(fileId);
       state.emit("files-changed");
+      _onBatchItemDone(state);
     }
   })();
+}
+
+function _onBatchItemDone(state) {
+  if (_batchTotal === 0) return;
+  _batchDone++;
+  if (_batchDone >= _batchTotal) {
+    state.emit("background-task-done");
+    _batchTotal = 0;
+    _batchDone = 0;
+  } else {
+    state.emit("background-task-progress", {
+      label: "PDFs",
+      progress: _batchDone / _batchTotal,
+    });
+  }
+}
+
+export function startBatchDownload(fileIds, state) {
+  if (!fileIds.length) return;
+  _batchTotal = fileIds.length;
+  _batchDone = 0;
+  state.emit("background-task-progress", { label: "PDFs", progress: 0 });
+  for (const fid of fileIds) triggerBackgroundDownload(fid, state);
 }

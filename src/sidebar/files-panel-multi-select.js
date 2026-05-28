@@ -26,7 +26,7 @@ export function collectVisibleDocs(state, visibleTopLevel, sortFlaggedItems, col
   function walk(nodes) {
     for (const n of nodes) {
       if (state.isInTrash(n.id)) continue;
-      if ((n.type === "document" || n.type === "notebook") && n.fileId) out.push(n);
+      if ((n.type === "document" || n.type === "notebook" || n.type === "pdf") && n.fileId) out.push(n);
       if (n.children?.length && !collapsed.has(n.id)) walk(n.children);
     }
   }
@@ -91,7 +91,7 @@ export function installDragSelect(panelContainer, state) {
       const id = li.dataset.id;
       if (!id) return;
       const node = findNodeByIdInPanel(state, id);
-      if (node && (node.type === "document" || node.type === "notebook") && node.fileId) {
+      if (node && (node.type === "document" || node.type === "notebook" || node.type === "pdf") && node.fileId) {
         rows.push({ el: li, fileId: node.fileId });
       }
     });

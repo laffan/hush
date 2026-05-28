@@ -986,6 +986,12 @@ button.desk-switcher-row.desk-switcher-add {
 }
 
 /* ===== PDF two-line sidebar rows ===== */
+.tree-item-row:has(.tree-item-pdf) {
+  align-items: flex-start;
+}
+.tree-item-row:has(.tree-item-pdf) > .tree-type-icon {
+  margin-top: 2px;
+}
 .tree-item-pdf {
   display: flex;
   flex-direction: column;

@@ -459,6 +459,7 @@ export class AppState {
   openFile(id) { return _files.openFile(this, id); }
   openPdf(fileId) { return _files.openPdf(this, fileId); }
   importPdf(name, bytes, parentId, opts = {}) { return _files.importPdf(this, name, bytes, parentId, opts); }
+  registerPdfPlaceholder(name, opts = {}) { return _files.registerPdfPlaceholder(this, name, opts); }
 
   async ensurePdfsFolder() {
     const pdfsId = this.getPdfsId();
