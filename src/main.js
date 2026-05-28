@@ -590,8 +590,8 @@ async function init() {
       if (!overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.fg);
     }
     if (overrides.cursor) document.documentElement.style.setProperty("--cursor", overrides.cursor);
-    if (overrides.selection) document.documentElement.style.setProperty("--selection", overrides.selection);
-    else document.documentElement.style.removeProperty("--selection");
+    if (overrides.selection) document.documentElement.style.setProperty("--selection", overrides.selection); else document.documentElement.style.removeProperty("--selection");
+    if (overrides.links) document.documentElement.style.setProperty("--link", overrides.links); else document.documentElement.style.removeProperty("--link");
     // Notebook canvas derives its theme/font/bg from the active style.
     if (state.currentNotebookFileId) previewNotebookStyle(state, styleObj.id);
   });

@@ -24,7 +24,7 @@ Every writer begins with a blank page and a spark of intention. The words that f
 
 ### On Simplicity
 
-Good prose is like a window pane — clear, direct, and invisible. **Bold ideas** need not hide behind *ornate language*. Strip away the excess until only the essential remains.
+Good prose is like a [window pane](#) — clear, direct, and invisible. **Bold ideas** need not hide behind *ornate language*. Strip away the excess until only the essential remains.
 
 > "Write drunk, edit sober." — Ernest Hemingway
 
@@ -41,11 +41,9 @@ const systemFonts = [
   "Palatino", "SF Mono", "SF Pro", "Times New Roman", "Verdana",
 ];
 const colorKeys = [
-  { key: "bg", label: "Background" },
-  { key: "fg", label: "Text" },
-  { key: "header", label: "Header" },
-  { key: "cursor", label: "Cursor" },
-  { key: "selection", label: "Selection" },
+  { key: "bg", label: "Background" }, { key: "fg", label: "Text" },
+  { key: "header", label: "Header" }, { key: "links", label: "Links" },
+  { key: "cursor", label: "Cursor" }, { key: "selection", label: "Selection" },
 ];
 
 function fontFallback(family) {
@@ -496,6 +494,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     if (selEl) {
       selEl.style.background = selection;
     }
+    pane.querySelectorAll(".preview-link").forEach(el => { el.style.color = colors.links || fg; });
 
     const theme = getThemeById(themeId);
     const headingColor = draft.suppressHeaderColor
@@ -693,6 +692,7 @@ function formatPreviewHtml(md) {
 
 function fmtInline(text) {
   return escHtml(text)
+    .replace(/\[(.+?)\]\((.+?)\)/g, '<span class="preview-link" style="text-decoration:underline">$1</span>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/~~(.+?)~~/g, '<del>$1</del>');

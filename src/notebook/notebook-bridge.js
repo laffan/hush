@@ -296,6 +296,8 @@ export function computeNotebookSettings(state, lockedStyleId) {
   const foregroundOverride = bgColors?.fg || "";
   // Header override — markdown headings inside text shapes track it.
   const headingColorOverride = bgColors?.header || "";
+  // Link override — text-shape links track it; defaults to the text colour.
+  const linkColorOverride = bgColors?.links || "";
 
   return {
     appearanceMode: appearance,
@@ -308,6 +310,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
     canvasBackgroundOverride,
     foregroundOverride,
     headingColorOverride,
+    linkColorOverride,
     maxTextWidth: s.notebookTextMaxWidth || 350,
     flowConnectMode: s.flowConnectMode === "horizontal" ? "horizontal" : "closest",
   };

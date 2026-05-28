@@ -320,6 +320,8 @@ function applyStyleColorsToView(view, style, settings) {
   if (overrides.cursor) root.style.setProperty("--cursor", overrides.cursor);
   if (overrides.selection) root.style.setProperty("--selection", overrides.selection);
   else root.style.removeProperty("--selection");
+  if (overrides.links) root.style.setProperty("--link", overrides.links);
+  else root.style.removeProperty("--link");
 }
 
 /** Build a shallow copy of settings with its activeStyleId swapped for

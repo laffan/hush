@@ -239,6 +239,10 @@ export class DrawingState extends EventTarget {
    *  shapes track the style's header colour instead of the resolved
    *  theme's headingColor. Empty string = no override. */
   headingColorOverride = "";
+  /** When the active Hush style has a `links` colour override, this
+   *  carries that hex so text-shape links track it. Empty = no override
+   *  (the renderer falls back to the foreground / text colour). */
+  linkColorOverride = "";
   /** Wrap-width cap (px) for new text shapes and brainstorm cards. The
    *  user adjusts this from Settings > Editor; existing manually-sized
    *  shapes are unaffected. Falls back to 350 — the historical default
@@ -258,14 +262,16 @@ export class DrawingState extends EventTarget {
       // Fallback: pick first theme that matches the requested variant
       base = Object.values(THEMES).find((th) => th.variant === variant) || THEMES["default"];
     }
-    // Layer the active style's fg / header overrides on top so canvas
-    // text, headings, and toolbar icons match the editor. Only allocate a
-    // copy when an override is present (the getter runs every frame).
-    if (this.foregroundOverride || this.headingColorOverride) {
+    // Layer the active style's fg / header / link overrides on top so
+    // canvas text, headings, links, and toolbar icons match the editor.
+    // Only allocate a copy when an override is present (the getter runs
+    // every frame).
+    if (this.foregroundOverride || this.headingColorOverride || this.linkColorOverride) {
       return {
         ...base,
         foreground: this.foregroundOverride || base.foreground,
         headingColor: this.headingColorOverride || base.headingColor,
+        linkColor: this.linkColorOverride || base.linkColor,
       };
     }
     return base;

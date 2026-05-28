@@ -58,8 +58,8 @@ export function getMarkdownHighlight(normalizeHeaders, headingColor, headerScale
     { tag: tags.emphasis, fontStyle: "italic" },
     { tag: tags.quote, fontStyle: "italic", opacity: "0.8" },
     { tag: tags.strikethrough, textDecoration: "line-through", opacity: "0.3" },
-    { tag: tags.link, textDecoration: "underline" },
-    { tag: tags.url, textDecoration: "underline", opacity: "0.7" },
+    { tag: tags.link, textDecoration: "underline", color: "var(--link, currentColor)" },
+    { tag: tags.url, textDecoration: "underline", opacity: "0.7", color: "var(--link, currentColor)" },
     { tag: tags.monospace, fontFamily: "'Fira Code', 'Consolas', monospace", fontSize: "calc(var(--font-size) * 0.9)" },
     // Custom syntax: %% comments %% — content dimmed; markers nearly invisible.
     // Body opacity drives off --comment-opacity (user-controlled slider).

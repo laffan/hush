@@ -2,7 +2,7 @@
    search popup the user gets when typing `[[`. */
 
 .cm-wikilink-rendered {
-  color: var(--accent, color-mix(in srgb, var(--fg) 60%, transparent));
+  color: var(--link, currentColor);
   text-decoration: underline;
   text-decoration-style: dashed;
   text-decoration-color: color-mix(in srgb, currentColor 60%, transparent);

@@ -523,7 +523,7 @@ export class NotesCanvas {
     fontFamily?: string;
     fontSize?: number;
     canvasBackgroundOverride?: string;
-    foregroundOverride?: string; headingColorOverride?: string;
+    foregroundOverride?: string; headingColorOverride?: string; linkColorOverride?: string;
     maxTextWidth?: number;
     flowConnectMode?: "closest" | "horizontal";
   }) {
@@ -534,9 +534,9 @@ export class NotesCanvas {
     if (opts.gridOpacity !== undefined) { this.state.gridOpacity = opts.gridOpacity; this.state.notify("theme"); }
     if (opts.fontFamily !== undefined) { this.state.fontFamily = opts.fontFamily; this.state.notify("theme"); }
     if (opts.fontSize !== undefined) { this.state.fontSize = opts.fontSize; this.state.notify("fontSize"); }
-    if (opts.canvasBackgroundOverride !== undefined) { this.state.canvasBackgroundOverride = opts.canvasBackgroundOverride; this.state.notify("theme"); }
-    if (opts.foregroundOverride !== undefined) { this.state.foregroundOverride = opts.foregroundOverride; this.state.notify("theme"); }
-    if (opts.headingColorOverride !== undefined) { this.state.headingColorOverride = opts.headingColorOverride; this.state.notify("theme"); }
+    for (const k of ["canvasBackgroundOverride", "foregroundOverride", "headingColorOverride", "linkColorOverride"] as const) {
+      if (opts[k] !== undefined) { (this.state as any)[k] = opts[k]; this.state.notify("theme"); }
+    }
     if (opts.maxTextWidth !== undefined && opts.maxTextWidth > 0) {
       this.state.maxTextWidth = opts.maxTextWidth;
     }
