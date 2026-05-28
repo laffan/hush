@@ -544,12 +544,15 @@ Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in fou
 
 **Cmd-held quick controls (`cmd-held-sliders.js`).** A separate module mounts a caret + horizontal pill at the bottom-centre of the viewport that's gated to Zen (`body.zen-focus-active`) and revealed by `body.cmd-held`. The pill carries three groups — Dim opacity (writes `focusModeOpacity`), Font size (writes `zenFocusFontSize`), and Window (writes `zenFocusWindow`, rendered as 1 / 3 / 5 / 7 chips with an active-state circle outline). Every write goes through `state.updateSettings`, so the in-editor pill and the Settings window are reading and writing the same keys — no parallel state to keep in sync. The state's own `settings-changed` listener reflects external updates back into the pill so opening Settings during Zen and tweaking values there updates the pill in lockstep.
 
-### Find & Replace (`editor/find-replace.js`)
+### Find & Replace (`editor/find-replace.js`, `sidebar/find-panel.js`, `editor/find-decorations.js`)
 
-Two modes:
+`Cmd+F` mounts the **Find panel** into the left sidebar, replacing the file list. The panel starts with the current document — its matches list first (under a `Current document` header), followed by every other document in the active desk that has hits (each under its filename + count). Each result shows a one-line context snippet centred on the match with the hit `<mark>`-ed; clicking jumps the editor to that file/offset.
 
-- **`Cmd+F`** — Find/replace in current file. Floating bar with match count, prev/next, replace one/all. Pre-fills with selection.
-- **`Alt+Shift+F`** — Search across all files. Results grouped by file with line numbers, click to navigate. Debounced (200ms).
+Toolbar: close `×`, a twirl arrow that discloses the replace row, the search input, and toggles for **Match case** (`Aa`), **Whole word** (`Ww`), and **Regex** (`.*`). The replace row carries a replace input, a **Global** checkbox (replace across every matched file, not just the current doc), and `Replace` / `All` buttons. When replace is open and Global is off, results from other files dim to signal that replace will only touch the current document.
+
+Matches in the active editor render via a `StateField` + `StateEffect` pair (`editor/find-decorations.js`): `cm-find-match` paints every hit, `cm-find-match-current` lifts the active one. The Find panel pushes a fresh decoration set whenever the query, toggles, or current match change, and clears them on close.
+
+Selection seeding: if the editor (or the OS-level selection inside a notebook / stack) has a single-line selection when `Cmd+F` fires, it pre-populates the search input. `Enter` / `Shift+Enter` step through matches across all files; `Cmd+G` / `Cmd+Shift+G` do the same from anywhere.
 
 ### Sentence Navigator (`editor/sentence-navigator.js`)
 

@@ -9,6 +9,7 @@
  */
 import { openSettingsWindow } from "../settings/settings-ui.js";
 import { createFilesPanel, refreshFilesPanel } from "./files-panel.js";
+import { createFindPanel, closeFindPanel } from "./find-panel.js";
 import { cleanupVersionsPanel } from "./versions-panel.js";
 import { showRatchetDropdownCentered } from "./ratchet-dropdown.js";
 import { attachGripResize, applyPanelWidth } from "./panel-resizer.js";
@@ -26,6 +27,10 @@ export function createSidebar(state) {
   const panelOverlay = document.getElementById("panel-overlay");
   let panelOpen = false;
   let panelPinned = false;
+  // "files" (default) or "find" — the body content swaps wholesale when
+  // the Find panel takes over the sidebar.
+  let panelMode = "files";
+  let findPanelHandle = null;
 
   let _suppressStatePersist = true;
   function persistSidebarState() {
@@ -184,12 +189,30 @@ export function createSidebar(state) {
     return window.innerWidth > 700;
   }
 
+  function mountFilesBody() {
+    panelMode = "files";
+    panelOverlay.classList.remove("panel-find-mode");
+    if (findPanelHandle) findPanelHandle = null;
+    body.innerHTML = "";
+    createFilesPanel(body, state, hidePanel);
+  }
+
+  function mountFindBody(opts = {}) {
+    panelMode = "find";
+    panelOverlay.classList.add("panel-find-mode");
+    body.innerHTML = "";
+    findPanelHandle = createFindPanel(body, state, () => {
+      // Find panel closed — swap back to the files list. Sidebar stays open.
+      findPanelHandle = null;
+      mountFilesBody();
+    }, opts);
+  }
+
   function openPanel() {
     if (panelOpen) return;
     panelOpen = true;
-    body.innerHTML = "";
     panelOverlay.classList.remove("hidden");
-    createFilesPanel(body, state, hidePanel);
+    mountFilesBody();
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     persistSidebarState();
   }
@@ -201,6 +224,11 @@ export function createSidebar(state) {
     }
     panelOpen = false;
     cleanupVersionsPanel();
+    if (panelMode === "find") {
+      closeFindPanel();
+      panelMode = "files";
+      panelOverlay.classList.remove("panel-find-mode");
+    }
     panelOverlay.classList.add("hidden");
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
     persistSidebarState();
@@ -221,7 +249,24 @@ export function createSidebar(state) {
   });
 
   // --- Cross-module events ---
-  state.on("show-files-panel", () => { openPanel(); });
+  state.on("show-files-panel", () => {
+    if (!panelOpen) { openPanel(); return; }
+    if (panelMode === "find") {
+      closeFindPanel();
+      mountFilesBody();
+    }
+  });
+  state.on("show-find-panel", (opts) => {
+    // Sidebar opens (if not already) and switches to Find. The Files panel
+    // is restored when the find panel closes (either via × or Esc).
+    if (!panelOpen) {
+      panelOpen = true;
+      panelOverlay.classList.remove("hidden");
+      persistSidebarState();
+      if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    }
+    mountFindBody(opts || {});
+  });
   state.on("hide-panel", () => {
     panelPinned = false;
     panelOverlay.classList.remove("panel-pinned");
@@ -249,7 +294,7 @@ export function createSidebar(state) {
     await openDocExportModal(state);
   });
 
-  state.on("files-changed", () => { if (panelOpen) refreshFilesPanel(state); });
+  state.on("files-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("multi-select-changed", () => {
     if (!panelOpen) return;
     const selected = new Set(state.selectedDocIds || []);
@@ -257,8 +302,8 @@ export function createSidebar(state) {
       li.classList.toggle("multi-selected", selected.has(li.dataset.fileId));
     });
   });
-  state.on("active-desk-changed", () => { if (panelOpen) refreshFilesPanel(state); });
-  state.on("desks-changed", () => { if (panelOpen) refreshFilesPanel(state); });
+  state.on("active-desk-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("desks-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
 
   let _lastLocalSyncSerialised = JSON.stringify(state.settings.localSyncFolders || []);
   let _lastGoogleLinksSerialised = JSON.stringify(state.settings.googleDocLinks || {});
@@ -266,21 +311,21 @@ export function createSidebar(state) {
     const next = JSON.stringify(state.settings.localSyncFolders || []);
     if (next !== _lastLocalSyncSerialised) {
       _lastLocalSyncSerialised = next;
-      refreshFilesPanel(state);
+      if (panelMode === "files") refreshFilesPanel(state);
     }
     const nextGdoc = JSON.stringify(state.settings.googleDocLinks || {});
     if (nextGdoc !== _lastGoogleLinksSerialised) {
       _lastGoogleLinksSerialised = nextGdoc;
-      refreshFilesPanel(state);
+      if (panelMode === "files") refreshFilesPanel(state);
     }
   });
-  state.on("local-sync-changed", () => refreshFilesPanel(state));
-  state.on("file-opened", () => { if (panelOpen) refreshFilesPanel(state); });
-  state.on("notebook-open", () => { if (panelOpen) refreshFilesPanel(state); });
-  state.on("panes-changed", () => { if (panelOpen) refreshFilesPanel(state); });
-  state.on("panes-hidden-changed", () => { if (panelOpen) refreshFilesPanel(state); });
-  state.on("dropbox-status-changed", () => { if (panelOpen) refreshFilesPanel(state); });
-  state.on("windows-changed", () => { if (panelOpen) refreshFilesPanel(state); });
+  state.on("local-sync-changed", () => { if (panelMode === "files") refreshFilesPanel(state); });
+  state.on("file-opened", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("notebook-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("panes-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("panes-hidden-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("dropbox-status-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("windows-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
 
   // Replay persisted open state. Any truthy value reopens the Files
   // panel since that's the only panel that lives in the sidebar now.

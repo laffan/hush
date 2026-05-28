@@ -100,6 +100,13 @@ export function installWindowShortcuts(state, windowCommands) {
           const handler = windowCommands.shortcutZenFocus;
           if (handler) { e.preventDefault(); handler(state, null); return; }
         }
+        // Find — the panel reads `window.getSelection()` as a fallback
+        // so a textarea selection still seeds the search field.
+        const find = state.settings.shortcutFind;
+        if (find && matchesDomEvent(e, find)) {
+          const handler = windowCommands.shortcutFind;
+          if (handler) { e.preventDefault(); handler(state, null); return; }
+        }
       }
     }
     // Don't hijack keystrokes in text input fields.  In notebook mode the

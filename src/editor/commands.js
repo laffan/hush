@@ -125,13 +125,13 @@ export function buildEditorCommands() {
   return {
     // ===== General =====
     shortcutFind: (state, view) => {
-      if (!view) return false;
-      openFindReplace(view, state);
+      // The Find panel works without a CodeMirror view too — notebooks /
+      // stacks use the window selection fallback for query seeding.
+      openFindReplace(view || (state.editor ? state.editor.view : null), state);
       return true;
     },
     shortcutFindAll: (state, view) => {
-      if (!view) return false;
-      openFindAll(view, state);
+      openFindAll(view || (state.editor ? state.editor.view : null), state);
       return true;
     },
     shortcutOpenFullscreen: (state) => { state.toggleFullscreen(); return true; },

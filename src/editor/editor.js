@@ -26,6 +26,7 @@ import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky
 import { buildCodeMirrorKeymap } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 import { headingIndentPlugin } from "./heading-indent.js";
+import { findHighlightField } from "./find-decorations.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createImagePasteExtension } from "./image-paste.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
@@ -243,6 +244,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createImagePasteExtension(state, { getImageContext }),
     createGoogleDocsPasteExtension(),
     headingIndentPlugin,
+    findHighlightField,
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
     createCommentAfterPlugin(),
@@ -505,6 +507,7 @@ export function createEditor(container, state) {
       imageDecoratorPlugin,
       createGoogleDocsPasteExtension(),
       headingIndentPlugin,
+      findHighlightField,
       stickyHeadersPlugin,
       multiLineCommentPlugin,
       commentAfterPlugin,

@@ -1,209 +1,301 @@
-/* ===== Find / Replace Bar ===== */
-.find-bar {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  z-index: var(--z-overlay);
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 360px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.2);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+/* ===== Find Panel — sidebar-mounted find / replace ===== */
+
+/* When the sidebar is in find mode, drop the padding on the body so the
+   find toolbar can run flush to the edges, and hide the footer's add /
+   settings cluster — it would compete with the find affordances. */
+#panel-overlay.panel-find-mode .panel-overlay-body {
+  padding: 0;
 }
 
-.find-bar-row {
+#panel-overlay.panel-find-mode .panel-overlay-footer {
+  display: none;
+}
+
+.find-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.find-panel-toolbar {
   display: flex;
   align-items: center;
   gap: 4px;
+  padding: 6px 8px 6px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 6%, transparent);
+  flex-wrap: nowrap;
 }
 
-.find-bar .find-input,
-.find-bar .replace-input {
-  flex: 1;
-  background: rgba(128, 128, 128, 0.08);
-  border: 1px solid rgba(128, 128, 128, 0.15);
+.find-panel-close,
+.find-panel-twirl {
+  background: none;
+  border: none;
   color: var(--fg);
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: system-ui, -apple-system, sans-serif;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.find-bar .find-input:focus,
-.find-bar .replace-input:focus {
-  border-color: rgba(128, 128, 128, 0.4);
-}
-
-/* Toggle buttons for case-sensitive and regex */
-.find-toggle-group {
-  display: flex;
-  gap: 2px;
-}
-
-.find-toggle {
-  background: rgba(128, 128, 128, 0.06);
-  border: 1px solid rgba(128, 128, 128, 0.15);
-  color: var(--sidebar-fg);
-  padding: 4px 7px;
-  border-radius: 5px;
   cursor: pointer;
-  font-size: 11px;
-  font-family: system-ui, -apple-system, sans-serif;
-  font-weight: 600;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 14px;
   line-height: 1;
-  transition: all 0.15s;
-  opacity: 0.5;
-}
-
-.find-toggle:hover {
-  opacity: 0.8;
-  background: rgba(128, 128, 128, 0.15);
-}
-
-.find-toggle.active {
-  opacity: 1;
-  background: rgba(128, 128, 128, 0.2);
-  color: var(--fg);
-  border-color: rgba(128, 128, 128, 0.35);
-}
-
-.find-btn {
-  background: rgba(128, 128, 128, 0.06);
-  border: 1px solid rgba(128, 128, 128, 0.15);
-  color: var(--fg);
-  padding: 4px 8px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 12px;
-  font-family: system-ui, -apple-system, sans-serif;
-  white-space: nowrap;
-  transition: background 0.15s;
-  opacity: 0.7;
-}
-
-.find-btn:hover {
-  background: rgba(128, 128, 128, 0.2);
-  opacity: 1;
-}
-
-.find-count {
-  font-size: 11px;
-  color: var(--sidebar-fg);
-  min-width: 54px;
-  text-align: center;
-  opacity: 0.7;
-}
-
-/* ===== Find All Panel ===== */
-.find-all-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: 320px;
-  height: 100%;
-  background: var(--panel-bg);
-  border-left: 1px solid var(--panel-border);
-  z-index: var(--z-overlay);
-  display: flex;
-  flex-direction: column;
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 13px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.find-all-header {
-  display: flex;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 12px;
-  border-bottom: 1px solid var(--panel-border);
+  justify-content: center;
 }
 
-.find-all-header .find-all-input {
-  flex: 1;
-  background: rgba(128, 128, 128, 0.08);
-  border: 1px solid rgba(128, 128, 128, 0.15);
-  color: var(--fg);
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: system-ui, -apple-system, sans-serif;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.find-all-header .find-all-input:focus {
-  border-color: rgba(128, 128, 128, 0.4);
-}
-
-.find-all-results {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.find-all-file {
-  margin-bottom: 8px;
-}
-
-.find-all-filename {
-  padding: 6px 12px;
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--fg);
-  opacity: 0.8;
-}
-
-.find-all-match {
-  display: flex;
-  gap: 8px;
-  padding: 4px 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.find-all-match:hover {
+.find-panel-close:hover,
+.find-panel-twirl:hover {
+  opacity: 1;
   background: rgba(128, 128, 128, 0.12);
 }
 
-.find-all-line-num {
-  color: var(--sidebar-fg);
-  min-width: 28px;
-  text-align: right;
-  font-size: 11px;
-  opacity: 0.6;
+.find-panel-close {
+  font-size: 18px;
 }
 
-.find-all-line-text {
+.find-panel-twirl-arrow {
+  font-size: 10px;
+  display: inline-block;
+  transition: transform 0.12s;
+}
+
+.find-panel-input,
+.find-panel-replace-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.18);
   color: var(--fg);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.find-panel-input:focus,
+.find-panel-replace-input:focus {
+  border-color: rgba(128, 128, 128, 0.45);
+}
+
+.find-panel-toggles {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: 4px;
+}
+
+.find-panel-toggle {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--fg);
+  cursor: pointer;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.1;
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: all 0.12s;
+  min-width: 22px;
+}
+
+.find-panel-toggle:hover {
+  opacity: 0.85;
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.find-panel-toggle.active {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.2);
+  border-color: rgba(128, 128, 128, 0.3);
+}
+
+.find-panel-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 38px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.find-panel-global-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  opacity: 0.75;
+  cursor: pointer;
+  user-select: none;
   white-space: nowrap;
 }
 
-.find-all-more {
-  padding: 4px 12px;
-  color: var(--sidebar-fg);
-  font-size: 11px;
-  font-style: italic;
-  opacity: 0.6;
+.find-panel-global-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--fg);
 }
 
-.find-all-empty {
-  padding: 20px 12px;
-  color: var(--sidebar-fg);
-  text-align: center;
+.find-panel-replace-btn,
+.find-panel-replace-all-btn {
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--fg);
+  cursor: pointer;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0.8;
+  transition: all 0.12s;
+}
+
+.find-panel-replace-btn:hover,
+.find-panel-replace-all-btn:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.find-panel-status {
+  padding: 4px 12px;
+  font-size: 11px;
   opacity: 0.6;
+  min-height: 18px;
+}
+
+.find-panel-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 12px;
+}
+
+.find-section + .find-section {
+  margin-top: 6px;
+}
+
+.find-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px 4px;
+  position: sticky;
+  top: 0;
+  background: var(--theme-bg, var(--bg));
+  z-index: 1;
+}
+
+.find-section-name {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+
+.find-section-current .find-section-name {
+  opacity: 0.95;
+  color: var(--fg);
+}
+
+.find-section-filename {
+  font-size: 11px;
+  opacity: 0.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.find-section-count {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.55;
+  padding: 1px 5px;
+  background: rgba(128, 128, 128, 0.14);
+  border-radius: 8px;
+}
+
+.find-section-matches {
+  display: flex;
+  flex-direction: column;
+}
+
+.find-match {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 12px 3px 16px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.4;
+  transition: background 0.1s;
+}
+
+.find-match:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.find-match.active {
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.find-match-line {
+  flex: 0 0 auto;
+  font-size: 10px;
+  opacity: 0.4;
+  min-width: 22px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.find-match-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+  opacity: 0.85;
+}
+
+.find-match-text mark {
+  background: rgba(255, 215, 0, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Dimmed file sections when replace is open without "global" — visually
+   signals that replace will only touch the current document. */
+.find-section-dimmed .find-section-header,
+.find-section-dimmed .find-match {
+  opacity: 0.4;
+}
+
+.find-section-dimmed .find-match {
+  pointer-events: auto;
+}
+
+/* ===== Editor decorations driven by the Find panel ===== */
+
+.cm-find-match {
+  background: rgba(255, 215, 0, 0.25);
+  border-radius: 2px;
+}
+
+.cm-find-match-current {
+  background: rgba(255, 165, 0, 0.45);
+  outline: 1px solid rgba(255, 165, 0, 0.7);
+  outline-offset: 0;
 }
