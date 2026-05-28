@@ -148,6 +148,10 @@ export function setupPaneDrag(pane, deps) {
         pane.el.style.top = pane.y + "px";
       }
       highlightDockZone(dropZoneAt(me.clientX, me.clientY));
+      // Live-refresh the editor column so the auto make-space follows
+      // the pane as the user drags it. notifyPaneDragMove updates
+      // visiblePaneCentroid + triggers the column resize handler.
+      deps.notifyPaneDragMove?.();
     };
 
     const onUp = (ue) => {

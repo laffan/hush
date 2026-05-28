@@ -185,14 +185,27 @@ export function installDockReflowListeners() {
   const onResize = () => reflowAllDockedPanes();
   window.addEventListener("resize", onResize);
   const observers = [];
-  function watch(el) {
+  function watchAttrs(el) {
     if (!el) return;
     const mo = new MutationObserver(() => reflowAllDockedPanes());
     mo.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
     observers.push(mo);
   }
-  watch(document.getElementById("panel-overlay"));
-  watch(document.getElementById("right-panel-overlay"));
+  function watchSize(el) {
+    if (!el || typeof ResizeObserver === "undefined") return;
+    // Sidebar width rides a CSS custom property on documentElement, so
+    // the panel's inline `style` attribute never changes during a drag-
+    // resize. A ResizeObserver catches the actual layout-width change
+    // and fires on every frame the user keeps dragging.
+    const ro = new ResizeObserver(() => reflowAllDockedPanes());
+    ro.observe(el);
+    observers.push(ro);
+  }
+  const sidebar = document.getElementById("panel-overlay");
+  watchAttrs(sidebar);
+  watchSize(sidebar);
+  watchAttrs(document.getElementById("right-panel-overlay"));
+  watchSize(document.getElementById("right-panel-overlay"));
   // The shelf is mounted dynamically inside the notebook container.
   // A MutationObserver on the body catches its mount and we then
   // observe the shelf node directly so width changes flow through.
@@ -200,13 +213,15 @@ export function installDockReflowListeners() {
     const shelf = document.querySelector(".notebook-shelf");
     if (shelf && !shelf.__dockObserved) {
       shelf.__dockObserved = true;
-      watch(shelf);
+      watchAttrs(shelf);
+      watchSize(shelf);
       reflowAllDockedPanes();
     }
     const pdfShelf = document.querySelector(".pdf-annot-shelf");
     if (pdfShelf && !pdfShelf.__dockObserved) {
       pdfShelf.__dockObserved = true;
-      watch(pdfShelf);
+      watchAttrs(pdfShelf);
+      watchSize(pdfShelf);
       reflowAllDockedPanes();
     }
   });

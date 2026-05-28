@@ -37,6 +37,7 @@ const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
 function buildPaneDOM(pane) {
   return _buildPaneDOM(pane, {
     closePane, focusPane, createPane, getCurrentContext, onContextChange,
+    notifyPaneDragMove: refreshPaneLayoutMetrics,
   });
 }
 
@@ -171,6 +172,34 @@ function onContextChange() {
     }
   }
   notifyLayoutChange();
+}
+
+/** Lighter-weight refresh fired during a pane drag. Recomputes the
+ *  pane centroid + docked footprints and triggers the column resize
+ *  handler so the editor column shifts live with the moving pane —
+ *  without re-emitting `panes-changed` / `notebook-pane-changed`,
+ *  which would churn unrelated subscribers on every pointermove. */
+export function refreshPaneLayoutMetrics() {
+  let hasPane = false;
+  let visibleCount = 0;
+  let centroidSum = 0;
+  let dockedLeftWidth = 0;
+  let dockedRightWidth = 0;
+  for (const [, p] of panes) {
+    if (p.el?.style.display !== "none") {
+      hasPane = true;
+      visibleCount++;
+      centroidSum += (p.x || 0) + (p.width || 0) / 2;
+      if (p.docked && p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
+      if (p.docked && p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
+    }
+  }
+  appState.runtime.hasVisibleDocPane = hasPane;
+  appState.runtime.visiblePaneCount = visibleCount;
+  appState.runtime.visiblePaneCentroid = visibleCount > 0 ? centroidSum / visibleCount : null;
+  appState.runtime.dockedLeftWidth = dockedLeftWidth;
+  appState.runtime.dockedRightWidth = dockedRightWidth;
+  if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
 }
 
 function notifyLayoutChange() {

@@ -189,7 +189,10 @@ export function buildPaneDOM(pane, deps) {
   pane._content = content;
   pane._titlebar = titlebar;
 
-  setupPaneDrag(pane, { createPane, getCurrentContext, schedulePersist });
+  setupPaneDrag(pane, {
+    createPane, getCurrentContext, schedulePersist,
+    notifyPaneDragMove: deps.notifyPaneDragMove,
+  });
   setupPaneResize(pane, { schedulePersist });
   titlebar.addEventListener("dblclick", (e) => {
     if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane);
