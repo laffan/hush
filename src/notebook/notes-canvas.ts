@@ -427,19 +427,19 @@ export class NotesCanvas {
 
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);
-
     // Track shelf footprint so the pocket tray pins to its edge.
     const syncShelfRightInset = () => {
       const rect = this._shelfPanel?.getBoundingClientRect();
       const cr = container.getBoundingClientRect();
-      if (!rect || !cr.width) return;
-      this.setRightInset(Math.max(0, cr.right - rect.left));
+      if (rect && cr.width) this.setRightInset(Math.max(0, cr.right - rect.left));
     };
+    const onDockChanged = () => requestAnimationFrame(syncShelfRightInset);
     queueMicrotask(syncShelfRightInset);
     const shelfObs = new MutationObserver(syncShelfRightInset);
     shelfObs.observe(this._shelfPanel, { attributes: true, attributeFilter: ["style", "class"] });
     window.addEventListener("resize", syncShelfRightInset);
-    this._shelfRightInsetCleanup = () => { shelfObs.disconnect(); window.removeEventListener("resize", syncShelfRightInset); };
+    document.addEventListener("pane-dock-changed", onDockChanged);
+    this._shelfRightInsetCleanup = () => { shelfObs.disconnect(); window.removeEventListener("resize", syncShelfRightInset); document.removeEventListener("pane-dock-changed", onDockChanged); };
 
     // Shelf resize handle. Mounted to body so its fixed-position math is
     // independent of the canvas container's transform / scroll.

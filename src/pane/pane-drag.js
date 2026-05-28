@@ -64,7 +64,7 @@ function positionDockZones() {
     pointerEvents: "none",
     zIndex: "9999",
   });
-  const ZONE = 100;
+  const ZONE = 50;
   const leftInset = getLeftInset();
   const rightInset = getRightInset();
   const left = overlay.querySelector(".pane-dock-zone-left");

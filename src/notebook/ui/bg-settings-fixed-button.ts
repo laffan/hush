@@ -63,6 +63,10 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
   }
 
   function applyRightInset() {
+    // state.rightInset already measures the shelf's left edge against
+    // the container's right edge — so when a right-docked pane shifts
+    // the shelf left, this picks up the extended distance and the
+    // button stays just inboard of the shelf without double counting.
     const ri = state.rightInset || 0;
     button.style.right = `calc(env(safe-area-inset-right) + ${ri + 16}px)`;
     bg.reposition();

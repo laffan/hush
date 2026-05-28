@@ -90,6 +90,7 @@ export function undockPane(pane) {
       height: pane.height + "px",
     });
   }
+  publishDockCssVars();
 }
 
 /** Recompute and apply geometry for a docked pane. Call after a window
@@ -129,6 +130,7 @@ export function applyDockGeometry(pane) {
     width: pane.width + "px",
     height: pane.height + "px",
   });
+  publishDockCssVars();
 }
 
 /** Track the left sidebar (file panel) so docked panes start past it. */
@@ -142,17 +144,27 @@ export function getLeftInset() {
   return overlay.getBoundingClientRect().width;
 }
 
-/** Track the right-side chrome (shelf / outline / annotation panel) so
- *  docked panes don't end up underneath them. Walks every known
- *  right-edge element and takes the largest footprint — at most one is
- *  ever visible at a time today, so a max() is sufficient. */
+/** Right inset for dock POSITIONING — docked panes sit flush against
+ *  the absolute right edge of the container, with the editor's own
+ *  right-side chrome (shelf, outline, annotation shelf) sliding left
+ *  to stay associated with the editor. So this is always 0 (or just
+ *  the safe-area). Kept as a function rather than a constant so future
+ *  edges (notch / sidebar overlap) can opt in. */
 export function getRightInset() {
+  return 0;
+}
+
+/** Width of the editor's right-side chrome (notebook shelf, doc
+ *  outline, PDF annotation shelf). Used only for computing a sensible
+ *  default size when a pane is freshly docked — the dock itself
+ *  occupies space carved out of the editor, not the chrome. */
+function getEditorChromeRightWidth() {
   let inset = 0;
   const shelf = document.querySelector(".notebook-shelf");
   if (shelf) {
     const isOpen = shelf.__isShelfOpen ? shelf.__isShelfOpen() : false;
     if (isOpen && shelf.__getShelfWidth) inset = Math.max(inset, shelf.__getShelfWidth());
-    else inset = Math.max(inset, shelf.getBoundingClientRect().width); // closed grip strip
+    else inset = Math.max(inset, shelf.getBoundingClientRect().width);
   }
   const longview = document.getElementById("right-panel-overlay");
   if (longview && !longview.classList.contains("hidden")) {
@@ -166,7 +178,35 @@ export function getRightInset() {
 function computeVisibleWidth() {
   const cr = containerEl?.getBoundingClientRect();
   if (!cr) return 800;
-  return Math.max(200, cr.width - getLeftInset() - getRightInset());
+  // Default-size calculation: visible space the user sees BETWEEN
+  // sidebar + chrome (where the editor sits). Half of that becomes
+  // the dock's default width so the editor and dock split the space.
+  return Math.max(200, cr.width - getLeftInset() - getEditorChromeRightWidth());
+}
+
+/** Publish the docked footprints as CSS custom properties so chrome
+ *  elements (shelf, outline, bg-button) can shift away from a dock
+ *  via plain CSS. Called from applyDockGeometry + undockPane. */
+function publishDockCssVars() {
+  let leftW = 0, rightW = 0;
+  for (const [, p] of panes) {
+    if (!p.docked) continue;
+    if (p.dockEdge === "left") leftW = Math.max(leftW, p.width || 0);
+    if (p.dockEdge === "right") rightW = Math.max(rightW, p.width || 0);
+  }
+  const root = document.documentElement;
+  root.style.setProperty("--pane-dock-left-width", leftW + "px");
+  root.style.setProperty("--pane-dock-right-width", rightW + "px");
+  // Chrome elements (notebook shelf, doc outline) reposition via the
+  // CSS var above. Anyone tracking the shelf's measured footprint
+  // (e.g. notebook DrawingState.rightInset, used for pocket / bg
+  // button placement) needs a separate kick — CSS-var-driven moves
+  // don't change the shelf's size, so neither ResizeObserver nor
+  // MutationObserver fire. Dispatch a doc-level event so listeners
+  // can rerun their inset measurement after the next layout pass.
+  document.dispatchEvent(new CustomEvent("pane-dock-changed", {
+    detail: { leftWidth: leftW, rightWidth: rightW },
+  }));
 }
 
 /** Iterate every docked pane and re-apply geometry. Called from the
@@ -249,7 +289,7 @@ export function dropZoneAt(clientX, clientY) {
   const r = containerEl.getBoundingClientRect();
   const leftInset = getLeftInset();
   const rightInset = getRightInset();
-  const ZONE = 100;
+  const ZONE = 50;
   if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
   const dx = clientX - r.left;
   if (dx < leftInset + ZONE) return "left";

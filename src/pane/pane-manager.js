@@ -174,59 +174,52 @@ function onContextChange() {
   notifyLayoutChange();
 }
 
+/** Collect pane-layout signals into a single payload. Floating panes
+ *  drive make-space (centroid + count); docked panes feed dedicated
+ *  fields so the editor column can subtract their footprint without
+ *  treating them as something to push the column away from. */
+function _collectPaneMetrics() {
+  let hasFloatingPane = false;
+  let floatingCount = 0;
+  let centroidSum = 0;
+  let dockedLeftWidth = 0;
+  let dockedRightWidth = 0;
+  for (const [, p] of panes) {
+    if (p.el?.style.display === "none") continue;
+    if (p.docked) {
+      if (p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
+      if (p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
+      continue;
+    }
+    hasFloatingPane = true;
+    floatingCount++;
+    centroidSum += (p.x || 0) + (p.width || 0) / 2;
+  }
+  return { hasFloatingPane, floatingCount, centroidSum, dockedLeftWidth, dockedRightWidth };
+}
+
 /** Lighter-weight refresh fired during a pane drag. Recomputes the
  *  pane centroid + docked footprints and triggers the column resize
  *  handler so the editor column shifts live with the moving pane —
  *  without re-emitting `panes-changed` / `notebook-pane-changed`,
  *  which would churn unrelated subscribers on every pointermove. */
 export function refreshPaneLayoutMetrics() {
-  let hasPane = false;
-  let visibleCount = 0;
-  let centroidSum = 0;
-  let dockedLeftWidth = 0;
-  let dockedRightWidth = 0;
-  for (const [, p] of panes) {
-    if (p.el?.style.display !== "none") {
-      hasPane = true;
-      visibleCount++;
-      centroidSum += (p.x || 0) + (p.width || 0) / 2;
-      if (p.docked && p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
-      if (p.docked && p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
-    }
-  }
-  appState.runtime.hasVisibleDocPane = hasPane;
-  appState.runtime.visiblePaneCount = visibleCount;
-  appState.runtime.visiblePaneCentroid = visibleCount > 0 ? centroidSum / visibleCount : null;
-  appState.runtime.dockedLeftWidth = dockedLeftWidth;
-  appState.runtime.dockedRightWidth = dockedRightWidth;
+  const m = _collectPaneMetrics();
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.visiblePaneCount = m.floatingCount;
+  appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
+  appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
+  appState.runtime.dockedRightWidth = m.dockedRightWidth;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
 }
 
 function notifyLayoutChange() {
-  let hasPane = false;
-  let visibleCount = 0;
-  let centroidSum = 0;
-  let dockedLeftWidth = 0;
-  let dockedRightWidth = 0;
-  for (const [, p] of panes) {
-    if (p.el.style.display !== "none") {
-      hasPane = true;
-      visibleCount++;
-      centroidSum += (p.x || 0) + (p.width || 0) / 2;
-      if (p.docked && p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
-      if (p.docked && p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
-    }
-  }
-  appState.runtime.hasVisibleDocPane = hasPane;
-  appState.runtime.visiblePaneCount = visibleCount;
-  // Average centroid of every visible pane, in viewport px. Used by
-  // editor/modes.js to decide which side the editor column should shift
-  // toward (away from a single pane; centered when multi-pane).
-  appState.runtime.visiblePaneCentroid = visibleCount > 0 ? centroidSum / visibleCount : null;
-  // Docked-pane footprints — editor column padding needs to clear these
-  // so the edit area never slides under a left/right dock.
-  appState.runtime.dockedLeftWidth = dockedLeftWidth;
-  appState.runtime.dockedRightWidth = dockedRightWidth;
+  const m = _collectPaneMetrics();
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.visiblePaneCount = m.floatingCount;
+  appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
+  appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
+  appState.runtime.dockedRightWidth = m.dockedRightWidth;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
   // Surface pane-set changes to the notebook shelf (and any other
   // listener) so its pane rows can refresh on create/close/show/hide.

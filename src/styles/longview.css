@@ -2,7 +2,10 @@
 #right-panel-overlay {
   position: fixed;
   top: 0;
-  right: 0;
+  /* Shift left when a right-docked pane is present so the outline
+     stays associated with the editor rather than the pane. The dock
+     module writes `--pane-dock-right-width` on documentElement. */
+  right: var(--pane-dock-right-width, 0px);
   width: 200px;
   height: 100%;
   background: var(--theme-bg, var(--bg));
