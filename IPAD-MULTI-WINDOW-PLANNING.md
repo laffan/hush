@@ -8,38 +8,40 @@
 
 ## Implementation Status
 
-- **Stage 1 — on-device debugging in progress.** Confirmed on hardware:
-  the command opens a real second iPad scene, and the primary window is
-  unaffected by `UIApplicationSupportsMultipleScenes`. But the new window
-  rendered blank/black. Root cause: Tauri/wry builds the iOS app in Rust
+**Scope correction (important):** the second window must work for **all
+file types — doc, notebook, and stack** — not just docs. Notebooks (canvas)
+and stacks (multi-column, lazily-mounted editors/canvases/PDF viewers) are
+drawn by the Hush web app's own renderers and call `invoke()` constantly at
+runtime, so there is **no shortcut of passing serialized content** to the
+new window. The second window must run the real `dist` bundle with a
+working `invoke()` → the **satellite relay is mandatory**, not optional.
+
+- **Stage 1 — scene + seed path: working.** Confirmed on hardware via the
+  Web Inspector trace and a rendered window. wry builds the iOS app in Rust
   with the **legacy (non-scene) UIWindow lifecycle** (no Swift in
-  `gen/apple`, no Tauri scene manifest), so UIKit decides the lifecycle at
+  `gen/apple`, no Tauri scene manifest), so UIKit fixes the lifecycle at
   `UIApplicationMain` and never calls `configurationForConnecting` — the
-  config-router swizzle (which installs in the plugin's `load()`, after
-  launch) is never invoked, and adopting scenes via Info.plist would make
-  UIKit ignore wry's legacy primary window. **Current approach:** observe
-  `UIScene.willConnectNotification` on NotificationCenter and attach our
-  own `UIWindow` + content to the requested scene (gated by an
-  `expectingNewScene` flag so the primary is never touched). Native
-  diagnostics are mirrored to the main window's JS console via
-  `trigger("diag", …)` so they're readable in Safari Web Inspector
-  without a terminal (`tauri ios dev` is failing with code 70 on this
-  setup; `build:ios` works). Awaiting the next on-device result.
-- **(historical) Stage 1 — scaffolded, not yet verified on a device.** The full
-  `tauri-plugin-ipad-window` crate exists (Rust command + Swift bridge +
-  scene router + placeholder scene delegate), is registered in `lib.rs` /
-  `Cargo.toml` / `capabilities/default.json`, the scene manifest is added to
-  `src-tauri/Info.ios.plist`, and the JS command-palette entry **Open in
-  New Window** (iOS-gated, single doc / notebook only) calls
-  `openSingleFileWindow()` → `plugin:ipad-window|open_single_file_window`.
-  The frontend builds clean. The Rust/Swift halves could **not** be
-  compiled in the authoring environment (Linux, no GTK for the desktop
-  `tauri` build, no Xcode/iOS SDK), so Stage 1 still needs its on-device
-  smoke test: run on an iPad, fire the command, confirm a second window
-  opens showing the placeholder seeded with the file id/type — and, most
-  importantly, confirm Tauri's **primary** window is undisturbed by
-  `UIApplicationSupportsMultipleScenes` + the config-router swizzle.
-- **Stages 2–5** — not started.
+  original config-router swizzle could never fire. Final mechanism:
+  - `open_single_file_window` (carrying `fileId` / `fileType` / `title`)
+    fires `requestSceneSessionActivation`.
+  - A NotificationCenter observer on `UIScene.willConnectNotification`
+    catches the new scene and attaches our own `UIWindow` + content. The
+    legacy primary window is not a scene, so it never trips the observer.
+  - `expectingNewScene` gates ours vs. iOS-restored zombie sessions;
+    unrequested scenes are destroyed so activation can't reuse a stale one.
+  - Two bugs fixed along the way: the `EmptyResponse` deserialize (null →
+    `serde_json::Value`) that made the command report failure, and `diag()`
+    needing to dispatch `trigger()` to the main thread (so `openWindow`'s
+    breadcrumbs actually reach the JS console).
+  - Diagnostics mirror to the main window's JS console via
+    `trigger("diag", …)` → an `addPluginListener` in `multi-window.js`,
+    readable in Safari Web Inspector (`tauri ios dev` fails code 70 here;
+    `build:ios` works).
+  - The window currently shows an **all-type-safe placeholder** (title +
+    type + id). This is the platform we build the satellite on.
+- **Stage 2+ (satellite) — next.** Replace the placeholder with a WKWebView
+  that loads the real `dist` in single-file mode and proxies `invoke()`
+  through the primary window. See revised Staging below.
 
 ## Goal
 
@@ -235,23 +237,31 @@ When `satellite` is set, `main.js` boots a trimmed shell:
 
 ## Staging (each stage independently verifiable on-device)
 
-1. **Scene opens at all.** ✅ *Scaffolded* — plugin crate + scene-manifest
-   plist + a `HushFileSceneDelegate` that opens a second scene showing a
-   placeholder web page seeded with the file id/type, reached via the
-   iOS-gated command-palette entry. Proves multi-scene + the Swift bridge
-   half. *Highest-risk; needs the on-device smoke test described above
-   before Stages 2–5 are worth starting.*
-2. **Satellite loads the file read-only.** Seed via `NSUserActivity`, boot
-   single-file mode, prove the request relay can `load_file` through the
-   primary webview and render the doc.
-3. **Editing + autosave.** Wire saves back through the relay; confirm disk
-   writes and that the primary window sees the change.
-4. **Live two-way sync.** Hook the existing `cross-window-*` broadcast
-   receivers/senders to the relay so edits propagate both directions with
-   the pull-lock guard.
+1. **Scene + seed path.** ✅ *Working on-device.* Plugin crate, scene
+   manifest, the `willConnect` observer that attaches our `UIWindow` to a
+   requested scene, zombie-session cleanup, seed (`fileId`/`fileType`/
+   `title`) and the JS↔Swift diag channel. The window shows an all-type
+   placeholder. (Mechanism details in Implementation Status above.)
+2. **Satellite webview loads the real `dist`.** Replace the placeholder VC
+   with a WKWebView that loads the bundled `index.html` in single-file mode
+   (a `WKURLSchemeHandler` or `loadFileURL` pointed at the app bundle), and
+   stand up the **invoke relay**: the satellite's `invoke()` shim posts to a
+   Swift `WKScriptMessageHandler`, which `evaluateJavaScript`s a request
+   into the **primary** webview (`window.__hushSatelliteRequest`), which
+   runs the real Tauri `invoke` and posts the result back keyed by `reqId`.
+   This single relay covers **every** command, so all file types are served
+   by the same plumbing. Milestone: the seeded file (doc *or* notebook *or*
+   stack) loads and renders read-only.
+3. **Single-file boot mode.** The web app, when launched with the satellite
+   flag, mounts only the editor surface for the seeded file (doc editor /
+   notes canvas / stack), skipping sidebar, pane manager, desk switcher,
+   recent files; the command palette trims to file-local actions.
+4. **Editing + autosave + live two-way sync.** Wire saves back through the
+   relay; hook the existing `cross-window-*` broadcasts (relayed via the
+   primary) so edits propagate both directions under the pull-lock guard.
 5. **Lifecycle + polish.** Scene close → registry cleanup; primary-close
-   behaviour; notebooks (not just docs); theme/style fidelity; the
-   command-palette gating and the iPad-only entry.
+   behaviour; theme/style fidelity across all three file types; per-type
+   edge cases (stack column virtualization, notebook autosave envelopes).
 
 ## Known Risks & Open Questions
 
@@ -273,8 +283,11 @@ When `satellite` is set, `main.js` boots a trimmed shell:
 
 ## Out of Scope (v1)
 
-- Sidebar / panes / stacks / file management in the new window.
+- Sidebar / file management / opening *other* files from within the new
+  window (it's a single-file window — but that one file may be a doc,
+  notebook, **or stack**, each fully rendered).
 - Opening *projects* in a new window (joined-buffer view).
-- More than the primary + one satellite (the registry is built to grow, but
-  v1 targets the single "Open in New Window" case the user asked for).
-- Independent scene lifecycle (satellite surviving primary close).
+- More than the primary + one satellite at a time is not a goal, though the
+  relay/observer impose no hard cap.
+- Independent scene lifecycle (satellite surviving primary close) — the
+  relay routes through the primary, so the primary must stay open.

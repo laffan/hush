@@ -27,16 +27,18 @@ pub struct IpadWindow<R: Runtime>(Option<PluginHandle<R>>);
 struct OpenWindowArgs {
     file_id: String,
     file_type: String,
+    title: String,
 }
 
 /// Open `file_id` in a new iPad window (UIScene). `file_type` is
-/// `"document"` or `"notebook"` (projects are out of scope for v1).
-/// No-op off iOS.
+/// `"document"`, `"notebook"`, or `"stack"`; `title` seeds the window
+/// heading. No-op off iOS.
 #[tauri::command]
 async fn open_single_file_window<R: Runtime>(
     app: AppHandle<R>,
     file_id: String,
     file_type: String,
+    title: String,
 ) -> Result<(), String> {
     #[cfg(target_os = "ios")]
     {
@@ -50,7 +52,7 @@ async fn open_single_file_window<R: Runtime>(
             handle
                 .run_mobile_plugin::<serde_json::Value>(
                     "openWindow",
-                    OpenWindowArgs { file_id, file_type },
+                    OpenWindowArgs { file_id, file_type, title },
                 )
                 .map(|_| ())
                 .map_err(|e| e.to_string())?;

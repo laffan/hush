@@ -157,13 +157,15 @@ export async function openInNewWindow(fileId, fileType) {
  *  a placeholder confirming the bridge; the satellite single-file editor is
  *  wired in later stages. `fileType` is `"document"` or `"notebook"`
  *  (projects are out of scope for v1). No-op off Tauri / iOS. */
-export async function openSingleFileWindow(fileId, fileType) {
+export async function openSingleFileWindow(fileId, fileType, title) {
   if (!IS_TAURI) return;
   if (!fileId || !fileType) return;
   console.log("[IpadWindow] openSingleFileWindow invoking", fileId, fileType);
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("plugin:ipad-window|open_single_file_window", { fileId, fileType });
+    await invoke("plugin:ipad-window|open_single_file_window", {
+      fileId, fileType, title: title || "",
+    });
     console.log("[IpadWindow] openSingleFileWindow resolved");
   } catch (e) {
     console.warn("[IpadWindow] openSingleFileWindow failed:", e);

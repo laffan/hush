@@ -211,16 +211,19 @@ function buildCommands(state) {
         openInNewWindow(fileId, fileType);
       } },
     { id: "open-in-new-window-ipad", label: "Open in New Window", icon: icons.files, shortcutKey: null, ctx: "ipad",
-      // iPad single-file window — only a lone doc / notebook in v1 (no
-      // projects, which would need the joined-buffer view). Spawns a
-      // native UIScene via the tauri-plugin-ipad-window bridge.
-      hiddenIf: (s) => !!s.currentProjectId || (!s.currentNotebookFileId && !s.currentFileId),
+      // iPad single-file window for a lone doc / notebook / stack. Projects
+      // are excluded (they'd need the joined-buffer view). Spawns a native
+      // UIScene via the tauri-plugin-ipad-window bridge.
+      hiddenIf: (s) => !!s.currentProjectId
+        || (!s.currentNotebookFileId && !s.currentStackFileId && !s.currentFileId),
       action: (s) => {
-        const fileId = s.currentNotebookFileId || s.currentFileId;
-        const fileType = s.currentNotebookFileId ? "notebook"
-          : s.currentFileId ? "document" : null;
+        let fileId = null, fileType = null;
+        if (s.currentNotebookFileId) { fileId = s.currentNotebookFileId; fileType = "notebook"; }
+        else if (s.currentStackFileId) { fileId = s.currentStackFileId; fileType = "stack"; }
+        else if (s.currentFileId) { fileId = s.currentFileId; fileType = "document"; }
         if (!fileId || !fileType) return;
-        openSingleFileWindow(fileId, fileType);
+        const node = findNodeByFileId(s.fileTree, fileId);
+        openSingleFileWindow(fileId, fileType, (node && node.name) || "Untitled");
       } },
     { id: "delete-current", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
       action: async (s) => {
