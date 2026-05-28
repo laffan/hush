@@ -172,6 +172,10 @@ function onContextChange() {
     }
   }
   notifyLayoutChange();
+  // Context switches change which panes are visible — re-publish the
+  // dock CSS vars so chrome in the new context stops shifting for a
+  // pane that's docked but hidden (owner is a different doc).
+  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
 }
 
 /** Collect pane-layout signals into a single payload. Floating panes

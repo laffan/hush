@@ -192,19 +192,16 @@ export function publishDockCssVars() {
   let leftW = 0, rightW = 0;
   for (const [, p] of panes) {
     if (!p.docked) continue;
+    // Hidden panes (cross-context owner that isn't currently visible)
+    // shouldn't shift the chrome — without this filter a doc-owned
+    // dock leaks into notebook / stack views as a "phantom" pane.
+    if (p.el?.style.display === "none") continue;
     if (p.dockEdge === "left") leftW = Math.max(leftW, p.width || 0);
     if (p.dockEdge === "right") rightW = Math.max(rightW, p.width || 0);
   }
   const root = document.documentElement;
   root.style.setProperty("--pane-dock-left-width", leftW + "px");
   root.style.setProperty("--pane-dock-right-width", rightW + "px");
-  // Chrome elements (notebook shelf, doc outline) reposition via the
-  // CSS var above. Anyone tracking the shelf's measured footprint
-  // (e.g. notebook DrawingState.rightInset, used for pocket / bg
-  // button placement) needs a separate kick — CSS-var-driven moves
-  // don't change the shelf's size, so neither ResizeObserver nor
-  // MutationObserver fire. Dispatch a doc-level event so listeners
-  // can rerun their inset measurement after the next layout pass.
   document.dispatchEvent(new CustomEvent("pane-dock-changed", {
     detail: { leftWidth: leftW, rightWidth: rightW },
   }));
