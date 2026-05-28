@@ -93,7 +93,18 @@ class IpadWindowPlugin: Plugin {
         diag("willConnect role=\(scene.session.role.rawValue) expecting=\(HushWindowBridge.shared.expectingNewScene)")
         guard scene.session.role == .windowApplication else { return }
         guard HushWindowBridge.shared.expectingNewScene else {
-            diag("willConnect: not a scene we requested; ignoring")
+            // A scene we didn't request this run — almost always iOS
+            // restoring a leftover session from a previous launch (the
+            // old debugging windows). The primary window is a legacy
+            // UIWindow, not a scene, so it never reaches here; anything
+            // that does is a secondary we own and can safely discard so
+            // stale blank windows don't pile up.
+            diag("willConnect: unrequested scene; destroying stale session")
+            DispatchQueue.main.async {
+                UIApplication.shared.requestSceneSessionDestruction(
+                    scene.session, options: nil, errorHandler: nil
+                )
+            }
             return
         }
         HushWindowBridge.shared.expectingNewScene = false

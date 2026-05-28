@@ -29,9 +29,6 @@ struct OpenWindowArgs {
     file_type: String,
 }
 
-#[derive(Deserialize)]
-struct EmptyResponse {}
-
 /// Open `file_id` in a new iPad window (UIScene). `file_type` is
 /// `"document"` or `"notebook"` (projects are out of scope for v1).
 /// No-op off iOS.
@@ -45,8 +42,13 @@ async fn open_single_file_window<R: Runtime>(
     {
         let plugin = app.state::<IpadWindow<R>>();
         if let Some(handle) = plugin.0.as_ref() {
+            // Deserialize the Swift response into a permissive `Value`:
+            // the plugin resolves with no data (null), which can't be
+            // coerced into a struct (that's the "invalid type: null"
+            // error the pencil plugin hits), so a struct here would make
+            // this command report failure even when the window opened.
             handle
-                .run_mobile_plugin::<EmptyResponse>(
+                .run_mobile_plugin::<serde_json::Value>(
                     "openWindow",
                     OpenWindowArgs { file_id, file_type },
                 )
