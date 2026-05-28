@@ -213,14 +213,10 @@ export function createFilesPanel(container, state, hidePanel) {
       const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
       const isMultiSelected = (item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId
         && Array.isArray(state.selectedDocIds) && state.selectedDocIds.includes(item.fileId);
-      // The `.multi-selected` class lives on the outer `.sl-item`, not
-      // the inner row, so SortableList's renderer can find it and
-      // re-apply on each render() without us having to coordinate. We
-      // also stamp `data-file-id` on the row so the multi-select event
-      // listener can toggle the highlight in place without rebuilding
-      // the whole panel (a rebuild during an active drag-select would
-      // strand the cached row refs in `session.rows` on detached
-      // elements and freeze the capture mid-gesture).
+      // `.multi-selected` lives on the outer `.sl-item` so SortableList's
+      // renderer keeps it across re-renders; `data-file-id` lets the
+      // multi-select listener toggle the highlight without a full rebuild
+      // (a rebuild mid-drag-select would strand cached row refs).
       if (context?.li) {
         context.li.classList.toggle("multi-selected", !!isMultiSelected);
         if (item.fileId) context.li.dataset.fileId = item.fileId;
@@ -244,14 +240,9 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item, event) => {
-      // Tab markers attach their own click handler inside
-      // `renderTabMarkerRow` — SortableList's pointer flow bails on
-      // non-draggable items, so onClick never fires for them.
-      // Docs AND notebooks participate in the shift / cmd-click
-      // multi-select — the listing view branches on type to call the
-      // right open method. Anything else (folder, project, image, …)
-      // falls through to its normal click handler and clears any
-      // active selection on the way.
+      // Tab markers handle their own click inside `renderTabMarkerRow`;
+      // docs / notebooks / pdfs / stacks participate in multi-select,
+      // everything else falls through and clears any active selection.
       const isMultiSelectable = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId;
       if (isMultiSelectable) {
         if (event && (event.shiftKey || event.metaKey || event.ctrlKey)) {
@@ -263,8 +254,6 @@ export function createFilesPanel(container, state, hidePanel) {
           refreshList(state);
           return;
         }
-        // Plain click — drop any active multi-select and open via the
-        // type-appropriate path.
         if (state.selectedDocIds.length) state.clearSelectedDocs();
         if (item.type === "notebook") state.openNotebook(item.fileId);
         else if (item.type === "pdf") state.openPdf(item.fileId);
@@ -273,20 +262,14 @@ export function createFilesPanel(container, state, hidePanel) {
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();
         return;
       }
-      // Non-doc / non-notebook click — clear any active selection so
-      // the user isn't left in a "selection exists but I can't see
-      // it" state when they navigate to a folder / project / etc.
+      // Folder / project / image click: drop any selection, then route
+      // folder-likes to a collapse toggle and the rest to their opener.
       if (state.selectedDocIds.length) state.clearSelectedDocs();
-      // Clicking anywhere on a folder-like row toggles its collapsed state.
-      // This applies to Inbox, Images, Trash, and any user-created folder.
-      // User projects still open into project view.
       const isFolderLike = item.type === "folder" || isInboxId(item.id) || isPdfsId(item.id) || item.type === "desk";
       if (isFolderLike) {
         if (sortableInstance) sortableInstance.toggle(item.id);
         return;
       }
-      // Doc rows are handled above; the remaining types each have their
-      // own open / preview path.
       if (item.type === "notebook" && item.fileId) {
         state.openNotebook(item.fileId);
         if (!container.closest("#panel-overlay")?.classList.contains("panel-inset")) hidePanel();

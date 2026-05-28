@@ -152,6 +152,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── add-popup.js                   (footer Add (+) popover — New Doc / Notebook / Folder / Project)
 │   ├── files-panel.js
 │   ├── find-panel.js                  (sidebar Find panel — replaces files-panel body while open)
+│   ├── find-panel-search.js           (pure search + 3/8-word snippet helpers)
+│   ├── find-panel-sources.js          (tree walking + doc / notebook content loading + per-kind search adapters)
 │   ├── files-panel-shared.js          (icons + escapers + hover handlers)
 │   ├── files-panel-local-sync.js      (Local Sync subtree rendering)
 │   ├── files-panel-pane-indicators.js (per-row pane strip + cmd-hover tooltip)
@@ -546,7 +548,10 @@ Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in fou
 
 **Cmd-held quick controls (`cmd-held-sliders.js`).** A separate module mounts a caret + horizontal pill at the bottom-centre of the viewport that's gated to Zen (`body.zen-focus-active`) and revealed by `body.cmd-held`. The pill carries three groups — Dim opacity (writes `focusModeOpacity`), Font size (writes `zenFocusFontSize`), and Window (writes `zenFocusWindow`, rendered as 1 / 3 / 5 / 7 chips with an active-state circle outline). Every write goes through `state.updateSettings`, so the in-editor pill and the Settings window are reading and writing the same keys — no parallel state to keep in sync. The state's own `settings-changed` listener reflects external updates back into the pill so opening Settings during Zen and tweaking values there updates the pill in lockstep.
 
-### Find & Replace (`editor/find-replace.js`, `sidebar/find-panel.js`, `editor/find-decorations.js`)
+### Find & Replace (`editor/find-replace.js`, `sidebar/find-panel.js`, `sidebar/find-panel-search.js`, `sidebar/find-panel-sources.js`, `editor/find-decorations.js`)
+
+The panel is split into three files to stay under the 700-line cap: `find-panel.js` owns the DOM, event wiring, and replace dispatch; `find-panel-search.js` carries the pure regex / match / snippet helpers (the 3-words-before / 8-words-after windowing); `find-panel-sources.js` walks the active desk's tree, loads file content (live editor / canvas buffers in front of Tauri `load_file`), and adapts the search helpers to either a doc body or a notebook's text shapes.
+
 
 `Cmd+F` mounts the **Find panel** into the left sidebar, replacing the file list. The panel starts with the current document / notebook (rendered first, separated by a divider), followed by every other document and notebook in the active desk that has hits. Each file section is collapsible (fold arrow at the left of the header) and shows the filename above its tree path (`Folder › Project`, or the file kind for top-level entries). Each result row is a two-line contextual snippet trimmed to **3 words before** and **8 words after** the match (`takeLastWords` / `takeFirstWords` in `find-panel.js`, preserving the whitespace flush against the highlight); the hit is `<mark>`-ed and clicking jumps to the file and scrolls / pans to the match.
 

@@ -2,23 +2,23 @@
  * Find panel — occupies the left sidebar, replacing the file list.
  *
  * Cmd+F mounts this panel via `state.emit("show-find-panel", { initialQuery })`.
- * The current document's matches are listed first, followed by other docs
- * in the active desk (each with a header + count). Clicking a match opens
- * the file and scrolls to the hit. A twirl arrow reveals the replace input;
+ * Current doc's matches list first, then the rest of the active desk under
+ * filename + path headers. A twirl arrow reveals the replace input;
  * "global replace" toggles whether replacement applies beyond the current doc.
+ *
+ * Pure search / snippet logic lives in `find-panel-search.js`; tree
+ * walking, content loading, and per-kind search adapters live in
+ * `find-panel-sources.js`. This module owns the UI, event wiring, and
+ * the replace dispatch.
  */
 
 import { setFindHighlights, clearFindHighlights } from "../editor/find-decorations.js";
-import { findNodeByFileId } from "../state/tree-helpers.js";
-import { decodeNotebookContent } from "../notebook/notebook-content.ts";
 import { getCanvasInstance } from "../notebook/notebook-bridge.js";
-
-const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
-
-async function tauriInvoke(cmd, args) {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke(cmd, args);
-}
+import { escHtml } from "./find-panel-search.js";
+import {
+  collectSearchableFiles, loadContent, writeDocContent,
+  searchDocFile, searchNotebookFile,
+} from "./find-panel-sources.js";
 
 // Module-level handles so the Cmd+G / Cmd+Shift+G shortcuts can drive
 // the panel while it's open. Reset on close.
@@ -110,207 +110,8 @@ export function createFindPanel(container, state, onClose, opts = {}) {
   let currentFlat = -1;
   let searchToken = 0;
 
-  function activeFileId() {
-    return state.currentFileId || null;
-  }
-
-  function buildRegex(query) {
-    let flags = caseSensitive ? "g" : "gi";
-    let pattern;
-    if (useRegex) {
-      pattern = query;
-    } else {
-      pattern = escapeRegExp(query);
-      if (wholeWord) pattern = `\\b${pattern}\\b`;
-    }
-    return new RegExp(pattern, flags);
-  }
-
-  function findMatchesIn(content, query) {
-    const matches = [];
-    if (!content || !query) return matches;
-    let re;
-    try { re = buildRegex(query); } catch (_) { return matches; }
-    let m;
-    let guard = 0;
-    while ((m = re.exec(content)) !== null) {
-      if (m[0].length === 0) { re.lastIndex++; continue; }
-      matches.push({ from: m.index, to: m.index + m[0].length });
-      if (++guard > 50000) break;
-    }
-    return matches;
-  }
-
-  function lineAndSnippet(content, from, to) {
-    // Pull the surrounding line, then trim to ~3 words of leading
-    // context and ~8 words of trailing context. Word boundaries are
-    // whitespace runs — punctuation rides with the neighbouring word.
-    const lineStart = content.lastIndexOf("\n", from - 1) + 1;
-    const lineEnd = content.indexOf("\n", to);
-    const endIdx = lineEnd === -1 ? content.length : lineEnd;
-    const lineText = content.slice(lineStart, endIdx);
-    const matchStartInLine = from - lineStart;
-    const matchEndInLine = to - lineStart;
-
-    const beforeRaw = lineText.slice(0, matchStartInLine);
-    const matchText = lineText.slice(matchStartInLine, matchEndInLine);
-    const afterRaw = lineText.slice(matchEndInLine);
-
-    // Preserve whatever whitespace sits flush against the match so the
-    // prefix / suffix don't run into the highlighted text on render.
-    const trailingWsBefore = beforeRaw.match(/\s*$/)?.[0] ?? "";
-    const leadingWsAfter = afterRaw.match(/^\s*/)?.[0] ?? "";
-
-    const { trimmed: prefixBody, truncated: prefixTrimmed } = takeLastWords(beforeRaw.slice(0, beforeRaw.length - trailingWsBefore.length), 3);
-    const { trimmed: suffixBody, truncated: suffixTrimmed } = takeFirstWords(afterRaw.slice(leadingWsAfter.length), 8);
-    const prefix = prefixBody + trailingWsBefore;
-    const suffix = leadingWsAfter + suffixBody;
-
-    let line = 1;
-    for (let i = 0; i < lineStart; i++) if (content.charCodeAt(i) === 10) line++;
-    return {
-      line,
-      leading: prefixTrimmed ? "…" : "",
-      trailing: suffixTrimmed ? "…" : "",
-      prefix, matchText, suffix,
-    };
-  }
-
-  /** Keep the trailing `n` whitespace-separated tokens of `s`, preserving
-   *  the original whitespace that joins them. Returns `{ trimmed, truncated }`
-   *  where `truncated` is true if we dropped any leading text. */
-  function takeLastWords(s, n) {
-    if (!s) return { trimmed: "", truncated: false };
-    // Match: optional leading whitespace + one non-whitespace run.
-    const tokens = [];
-    const re = /\s*\S+/g;
-    let m;
-    while ((m = re.exec(s)) !== null) tokens.push(m[0]);
-    if (tokens.length <= n) return { trimmed: s, truncated: false };
-    const kept = tokens.slice(-n).join("").replace(/^\s+/, "");
-    return { trimmed: kept, truncated: true };
-  }
-
-  function takeFirstWords(s, n) {
-    if (!s) return { trimmed: "", truncated: false };
-    const tokens = [];
-    const re = /\S+\s*/g;
-    let m;
-    while ((m = re.exec(s)) !== null) tokens.push(m[0]);
-    if (tokens.length <= n) return { trimmed: s, truncated: false };
-    const kept = tokens.slice(0, n).join("").replace(/\s+$/, "");
-    return { trimmed: kept, truncated: true };
-  }
-
-  // Walk the active desk's tree and collect every searchable file along
-  // with the folder / project ancestors so each result row can show its
-  // location underneath the filename. Documents and notebooks are both
-  // searchable — notebooks are JSON-decoded so each text shape's body
-  // can be matched against the query.
-  function collectSearchableFiles() {
-    const desks = state.fileTree.filter(n => n.type === "desk");
-    const active = desks.find(n => n.id === state.settings?.activeDeskId) || desks[0];
-    const rootChildren = active ? (active.children || []) : state.fileTree;
-    const out = [];
-    function walk(nodes, ancestors) {
-      for (const n of nodes) {
-        if ((n.type === "document" || n.type === "notebook") && n.fileId && !n.useAsNote) {
-          out.push({
-            fileId: n.fileId,
-            name: n.name || "Untitled",
-            kind: n.type,
-            pathParts: ancestors.slice(),
-          });
-        }
-        if (n.children && (n.type === "folder" || n.type === "project")) {
-          walk(n.children, [...ancestors, n.name || (n.type === "project" ? "Project" : "Folder")]);
-        } else if (n.children) {
-          walk(n.children, ancestors);
-        }
-      }
-    }
-    walk(rootChildren, []);
-    return out;
-  }
-
-  async function loadContent(fileId) {
-    if (fileId === state.currentFileId && state.editor) {
-      return state.editor.getContent();
-    }
-    if (fileId === state.currentNotebookFileId) {
-      // Reach into the live canvas so unsaved shape edits show up in
-      // results immediately rather than waiting for the next autosave.
-      const ci = getCanvasInstance?.();
-      if (ci && typeof ci.getShapes === "function") {
-        try {
-          const shapes = ci.getShapes();
-          return JSON.stringify({ format: "hushnote", version: 1, shapes });
-        } catch (_) {}
-      }
-    }
-    if (IS_TAURI) {
-      try {
-        const file = await tauriInvoke("load_file", { id: fileId });
-        return file?.content || "";
-      } catch (_) { return ""; }
-    }
-    const f = state.files.find(x => x.id === fileId);
-    return f ? f.content : "";
-  }
-
-  function fileDisplayName(fileId) {
-    const node = findNodeByFileId(state.fileTree, fileId);
-    if (node?.name) return node.name;
-    const f = state.files.find(x => x.id === fileId);
-    return f?.name || "Untitled";
-  }
-
-  function searchDocFile(info, query, content, isCurrent) {
-    const matches = findMatchesIn(content, query).map(m => ({
-      ...m,
-      snippet: lineAndSnippet(content, m.from, m.to),
-    }));
-    if (matches.length === 0) return null;
-    return {
-      fileId: info.fileId,
-      name: info.name,
-      kind: "document",
-      pathParts: info.pathParts,
-      isCurrent,
-      content,
-      matches,
-    };
-  }
-
-  function searchNotebookFile(info, query, content, isCurrent) {
-    let parsed;
-    try { parsed = decodeNotebookContent(content); }
-    catch (_) { parsed = null; }
-    if (!parsed || !Array.isArray(parsed.shapes)) return null;
-    const matches = [];
-    for (const shape of parsed.shapes) {
-      if (!shape || shape.type !== "text" || typeof shape.text !== "string") continue;
-      if (shape.headerLabel) continue; // shadow header labels are computed, not user text
-      const hits = findMatchesIn(shape.text, query);
-      for (const h of hits) {
-        matches.push({
-          shapeId: shape.id,
-          from: h.from,
-          to: h.to,
-          snippet: lineAndSnippet(shape.text, h.from, h.to),
-        });
-      }
-    }
-    if (matches.length === 0) return null;
-    return {
-      fileId: info.fileId,
-      name: info.name,
-      kind: "notebook",
-      pathParts: info.pathParts,
-      isCurrent,
-      content,
-      matches,
-    };
+  function searchOpts() {
+    return { caseSensitive, wholeWord, useRegex };
   }
 
   async function runSearch() {
@@ -328,7 +129,8 @@ export function createFindPanel(container, state, onClose, opts = {}) {
       return;
     }
 
-    const allFiles = collectSearchableFiles();
+    const allFiles = collectSearchableFiles(state);
+    const opts = searchOpts();
     const curDocId = state.currentFileId || null;
     const curNotebookId = state.currentNotebookFileId || null;
     const curId = curDocId || curNotebookId;
@@ -336,11 +138,11 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     // 1) Current doc / notebook first.
     const currentInfo = allFiles.find(f => f.fileId === curId);
     if (currentInfo) {
-      const content = await loadContent(currentInfo.fileId);
+      const content = await loadContent(state, currentInfo.fileId);
       if (token !== searchToken) return;
       const fr = currentInfo.kind === "notebook"
-        ? searchNotebookFile(currentInfo, query, content, true)
-        : searchDocFile(currentInfo, query, content, true);
+        ? searchNotebookFile(currentInfo, query, content, true, opts)
+        : searchDocFile(currentInfo, query, content, true, opts);
       if (fr) fileResults.push(fr);
     }
 
@@ -348,11 +150,11 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     for (const info of allFiles) {
       if (info.fileId === curId) continue;
       if (token !== searchToken) return;
-      const content = await loadContent(info.fileId);
+      const content = await loadContent(state, info.fileId);
       if (token !== searchToken) return;
       const fr = info.kind === "notebook"
-        ? searchNotebookFile(info, query, content, false)
-        : searchDocFile(info, query, content, false);
+        ? searchNotebookFile(info, query, content, false, opts)
+        : searchDocFile(info, query, content, false, opts);
       if (fr) fileResults.push(fr);
     }
 
@@ -610,7 +412,7 @@ export function createFindPanel(container, state, onClose, opts = {}) {
       view.dispatch({ changes: { from: match.from, to: match.to, insert: replacement } });
     } else {
       const newContent = fr.content.slice(0, match.from) + replacement + fr.content.slice(match.to);
-      await writeDocContent(fr.fileId, newContent);
+      await writeDocContent(state, fr.fileId, newContent);
     }
     await runSearch();
   }
@@ -635,28 +437,10 @@ export function createFindPanel(container, state, onClose, opts = {}) {
         for (let i = sorted.length - 1; i >= 0; i--) {
           buf = buf.slice(0, sorted[i].from) + replacement + buf.slice(sorted[i].to);
         }
-        await writeDocContent(fr.fileId, buf);
+        await writeDocContent(state, fr.fileId, buf);
       }
     }
     await runSearch();
-  }
-
-  async function writeDocContent(fileId, content) {
-    if (IS_TAURI) {
-      try { await tauriInvoke("save_file", { id: fileId, content }); }
-      catch (e) { console.error("Find replace save failed:", e); return; }
-      try {
-        state.files = await tauriInvoke("list_files");
-        state.syncFileToExternal?.(fileId, content);
-      } catch (_) {}
-    } else {
-      const f = state.files.find(x => x.id === fileId);
-      if (f) {
-        f.content = content;
-        f.modified = Math.floor(Date.now() / 1000);
-        state._saveFilesLocal?.();
-      }
-    }
   }
 
   // --- Wiring --------------------------------------------------------
@@ -734,14 +518,4 @@ export function createFindPanel(container, state, onClose, opts = {}) {
   };
 
   return { destroy: doClose };
-}
-
-function escHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str == null ? "" : String(str);
-  return div.innerHTML;
-}
-
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
