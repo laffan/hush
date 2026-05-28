@@ -65,6 +65,9 @@ export function initPaneManager(state) {
   state.on("files-changed", syncPaneThemes);
   // Refresh pane word-count chips when the global toggle flips.
   state.on("settings-changed", syncAllPaneWordCounts);
+  // Re-flow docked panes when the window or sidebar resizes so they
+  // keep filling their edge.
+  import("./pane-dock.js").then((m) => m.installDockReflowListeners());
   getNotebookBridge().catch(() => {});
   // Deactivate panes when clicking anywhere outside a pane. Zen Focus
   // reparents the editor out of `.floating-pane` so we whitelist the

@@ -52,6 +52,10 @@ export function persistPanesNow() {
       gutter: !!p.gutter,
       gutterSide: p.gutterSide || null,
       gutterPrev: p._gutterPrev || null,
+      docked: !!p.docked,
+      dockEdge: p.dockEdge || null,
+      dockUserSize: typeof p.dockUserSize === "number" ? p.dockUserSize : null,
+      dockPrev: p._dockPrev || null,
       width: p.width,
       height: p.height,
       x: p.x,
@@ -162,8 +166,12 @@ export async function restorePanes(deps) {
       editorScrollTop: typeof s.editorScrollTop === "number" ? s.editorScrollTop : null,
       gutter: !!s.gutter,
       gutterSide: s.gutterSide || null,
+      docked: !!s.docked,
+      dockEdge: s.dockEdge || null,
+      dockUserSize: typeof s.dockUserSize === "number" ? s.dockUserSize : null,
     };
     if (s.gutterPrev) pane._gutterPrev = s.gutterPrev;
+    if (s.dockPrev) pane._dockPrev = s.dockPrev;
     if (s.canvasX != null) pane._canvasX = s.canvasX;
     if (s.canvasY != null) pane._canvasY = s.canvasY;
     if (s.scrollRelY != null) pane._scrollRelY = s.scrollRelY;
@@ -196,6 +204,11 @@ export async function restorePanes(deps) {
     if (pane.gutter) {
       const { restoreGutterLayout } = await import("./pane-gutter.js");
       restoreGutterLayout(pane);
+    }
+    // Re-apply docked layout (snap edge + user-controlled dimension).
+    if (pane.docked && pane.dockEdge) {
+      const { dockPane } = await import("./pane-dock.js");
+      dockPane(pane, pane.dockEdge);
     }
   }
 

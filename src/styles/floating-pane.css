@@ -471,3 +471,52 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
   border-color: var(--cursor, #ff6600);
   box-shadow: 0 0 0 1px var(--cursor, #ff6600);
 }
+
+/* === Pane Docking ============================================== */
+
+/* Overlay holding the four drop zones — only shown during a titlebar
+   drag. Pointer-events stay off so the dragging gesture can keep
+   reading move events on the title bar itself. */
+.pane-dock-overlay {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  z-index: 9999;
+}
+.pane-dock-overlay.visible {
+  opacity: 1;
+}
+.pane-dock-zone {
+  position: absolute;
+  background: rgba(66, 153, 225, 0.18);
+  border: 2px dashed rgba(66, 153, 225, 0.55);
+  border-radius: 10px;
+  transition: background 80ms ease, border-color 80ms ease;
+  box-sizing: border-box;
+}
+.pane-dock-zone.active {
+  background: rgba(66, 153, 225, 0.42);
+  border-color: rgba(66, 153, 225, 0.9);
+}
+
+/* Docked panes: pin to the named edge, remove the floating shadow so
+   the dock reads as part of the chrome rather than a floating widget,
+   hide every perpendicular resize handle. */
+.floating-pane.docked {
+  border-radius: 0;
+  box-shadow: none;
+  border-width: 0;
+  z-index: 50;
+}
+.floating-pane.docked.docked-top { border-bottom: 1px solid var(--panel-border, rgba(128,128,128,0.2)); }
+.floating-pane.docked.docked-bottom { border-top: 1px solid var(--panel-border, rgba(128,128,128,0.2)); }
+.floating-pane.docked.docked-left { border-right: 1px solid var(--panel-border, rgba(128,128,128,0.2)); }
+.floating-pane.docked.docked-right { border-left: 1px solid var(--panel-border, rgba(128,128,128,0.2)); }
+
+/* Hide every resize handle except the one on the edge opposite the dock. */
+.floating-pane.docked .fp-resize { display: none; }
+.floating-pane.docked.docked-top    .fp-resize.fp-resize-s { display: block; }
+.floating-pane.docked.docked-bottom .fp-resize.fp-resize-n { display: block; }
+.floating-pane.docked.docked-left   .fp-resize.fp-resize-e { display: block; }
+.floating-pane.docked.docked-right  .fp-resize.fp-resize-w { display: block; }
