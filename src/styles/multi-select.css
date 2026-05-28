@@ -156,6 +156,20 @@ body.multi-select-active #notebook-container {
   letter-spacing: 0.06em;
 }
 
+/* Color palette row — reuses the swatch styles from files-panel.css
+   but sits in its own block under the list, sized for the wider
+   multi-select layout (taller / fuller-width swatches). */
+.ms-view-colors-row {
+  margin-top: 14px;
+}
+.ms-view-colors-row .tree-row-menu-colors {
+  padding: 0;
+  max-width: 320px;
+}
+.ms-view-colors-row .tree-row-color-swatch {
+  height: 14px;
+}
+
 /* ===== Sidebar selection chrome ===== */
 /* Each row that's part of the multi-select gets a faint background +
    left rail so the user sees the whole batch at a glance, even with

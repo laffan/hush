@@ -14,8 +14,9 @@
  * the single-click semantics elsewhere in the app).
  */
 import { typeIcons, escHtml, showDeleteConfirmModal, showPromptModal } from "./sidebar/files-panel-shared.js";
-import { findNodeByFileId, findAncestorIds } from "./state/tree-helpers.js";
+import { findNodeByFileId, findAncestorIds, findNode } from "./state/tree-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
+import { createColorPalette } from "./sidebar/files-panel-row-menu.js";
 
 let _hostEl = null;
 let _state = null;
@@ -155,12 +156,29 @@ function render(ids) {
             ${r.flagged ? `<span class="ms-view-flag">flagged</span>` : ""}
           </li>`).join("")}
       </ul>
+      <div class="ms-view-colors-row"></div>
       <div class="ms-view-actions ms-view-actions-bottom">
         <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
         <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack from selected</button>
       </div>
     </div>
   `;
+
+  // Mount the color palette below the list. If every selected row has
+  // the same bgColor we highlight that swatch; mixed selections show no
+  // active swatch (clicking any swatch still applies it to all).
+  const colorsRow = _hostEl.querySelector(".ms-view-colors-row");
+  if (colorsRow) {
+    const keys = rows.map((r) => {
+      const n = findNode(_state.fileTree, r.nodeId);
+      return n?.bgColor || null;
+    });
+    const allSame = keys.every((k) => k === keys[0]);
+    const currentKey = allSame ? keys[0] : undefined;
+    colorsRow.appendChild(createColorPalette(currentKey, (colorKey) => {
+      applyColorToSelected(rows, colorKey);
+    }));
+  }
 
   // Row click → open that file via the type-appropriate path. The open
   // call emits `file-opened` (or `notebook-open`), our listener clears
@@ -180,6 +198,17 @@ function render(ids) {
   _hostEl.querySelectorAll("[data-ms-action]").forEach((btn) => {
     btn.addEventListener("click", () => runBatchAction(btn.dataset.msAction, rows));
   });
+}
+
+function applyColorToSelected(rows, colorKey) {
+  for (const r of rows) {
+    const node = findNode(_state.fileTree, r.nodeId);
+    if (!node) continue;
+    if (colorKey) node.bgColor = colorKey;
+    else delete node.bgColor;
+  }
+  _state.saveFileTree();
+  _state.emit("files-changed");
 }
 
 async function runBatchAction(action, rows) {

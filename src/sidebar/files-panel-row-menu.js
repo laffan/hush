@@ -31,6 +31,32 @@ export function rowColorRgba(key) {
   return entry ? entry.rgba : null;
 }
 
+/** Build the color-palette element used by both the row menu and the
+ *  multi-select view. `currentKey` highlights the active swatch (pass
+ *  `null` to highlight "clear", or `undefined` to highlight nothing —
+ *  used by the multi-select view when the selection has mixed colors).
+ *  `onPick(colorKey)` fires with the chosen key, or `null` for clear. */
+export function createColorPalette(currentKey, onPick) {
+  const palette = document.createElement("div");
+  palette.className = "tree-row-menu-colors";
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "tree-row-color-swatch tree-row-color-clear" + (currentKey === null ? " active" : "");
+  clear.title = "Clear color";
+  clear.addEventListener("click", (e) => { e.stopPropagation(); onPick(null); });
+  palette.appendChild(clear);
+  for (const c of ROW_COLORS) {
+    const sw = document.createElement("button");
+    sw.type = "button";
+    sw.className = "tree-row-color-swatch" + (currentKey === c.key ? " active" : "");
+    sw.style.setProperty("--swatch-color", c.swatch);
+    sw.title = c.key[0].toUpperCase() + c.key.slice(1);
+    sw.addEventListener("click", (e) => { e.stopPropagation(); onPick(c.key); });
+    palette.appendChild(sw);
+  }
+  return palette;
+}
+
 const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
@@ -182,34 +208,13 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
   }
 
   // Color palette — last row of the menu for all non-trash nodes
-  if (node && !isTrashId(nodeId) && !flagOnly) {
-    const palette = document.createElement("div");
-    palette.className = "tree-row-menu-colors";
-    // Clear swatch
-    const clear = document.createElement("button");
-    clear.type = "button";
-    clear.className = "tree-row-color-swatch tree-row-color-clear" + (!node?.bgColor ? " active" : "");
-    clear.title = "Clear color";
-    clear.addEventListener("click", (e) => {
-      e.stopPropagation();
+  // (skipped for trashed items too — their menu is just destructive
+  // actions, coloring them adds noise)
+  if (node && !isTrashId(nodeId) && !flagOnly && !state.isInTrash(nodeId)) {
+    menu.appendChild(createColorPalette(node.bgColor || null, (colorKey) => {
       closeRowMenu();
-      dispatchRowAction("set-color", nodeId, { colorKey: null });
-    });
-    palette.appendChild(clear);
-    for (const c of ROW_COLORS) {
-      const sw = document.createElement("button");
-      sw.type = "button";
-      sw.className = "tree-row-color-swatch" + (node?.bgColor === c.key ? " active" : "");
-      sw.style.setProperty("--swatch-color", c.swatch);
-      sw.title = c.key[0].toUpperCase() + c.key.slice(1);
-      sw.addEventListener("click", (e) => {
-        e.stopPropagation();
-        closeRowMenu();
-        dispatchRowAction("set-color", nodeId, { colorKey: c.key });
-      });
-      palette.appendChild(sw);
-    }
-    menu.appendChild(palette);
+      dispatchRowAction("set-color", nodeId, { colorKey });
+    }));
   }
 
   document.body.appendChild(menu);
