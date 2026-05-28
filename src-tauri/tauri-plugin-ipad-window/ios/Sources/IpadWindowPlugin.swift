@@ -2,86 +2,77 @@ import SwiftRs
 import Tauri
 import UIKit
 import WebKit
-import ObjectiveC.runtime
 
 // iPad single-file multi-window bridge — Swift side.
 //
-// Stage 1 goal (see IPAD-MULTI-WINDOW-PLANNING.md): prove that the JS
-// command "Open in New Window" can open a *second iPad window* (a real
-// UIWindowScene) seeded with the active file's id/type. The window
-// currently renders a placeholder WKWebView confirming the bridge and the
-// seed crossed over; the real single-file editor is wired in later stages.
+// Tauri/wry builds the iOS app delegate and the primary window in Rust
+// using the LEGACY (non-scene) UIWindow lifecycle — there is no Swift
+// app/scene delegate in the generated project, and the only scene manifest
+// in Info.plist is the one Hush adds (UIApplicationSupportsMultipleScenes).
 //
-// How a second scene gets created:
-//   1. JS  -> invoke("plugin:ipad-window|open_single_file_window", …)
-//   2. Rust -> run_mobile_plugin("openWindow", …)
-//   3. `openWindow` builds an NSUserActivity carrying {fileId, fileType}
-//      (the iPad analog of the macOS URL hash) and calls
-//      `requestSceneSessionActivation`.
-//   4. iOS asks the app delegate which scene configuration to use. We
-//      *swizzle* `application(_:configurationForConnecting:options:)` onto
-//      whatever class Tauri's generated app delegate is, and when the
-//      connecting scene carries our activity type we hand back a
-//      configuration whose delegate is `HushFileSceneDelegate`. Any other
-//      scene (i.e. Tauri's own primary window) is passed through to the
-//      original implementation untouched, so the main app is unaffected.
+// Because the app isn't scene-adopted at launch, UIKit decides the
+// lifecycle inside UIApplicationMain and never calls
+// application(_:configurationForConnecting:). An earlier attempt to swizzle
+// that method could not work: the swizzle runs in the plugin's load(),
+// which is well after launch, so the hook is never invoked. We also can't
+// adopt scenes via Info.plist without UIKit ignoring wry's legacy primary
+// window (which would break the main app).
 //
-// The swizzle approach mirrors the runtime swizzling the pencil plugin
-// already does for status-bar chrome, and keeps everything self-contained
-// in the plugin — we never edit Tauri's generated AppDelegate. Info.plist
-// still needs `UIApplicationSupportsMultipleScenes = true` (provided via
-// `src-tauri/Info.ios.plist`); the configuration itself is built in code
-// so no `UISceneConfigurations` array is required.
+// Instead we observe `UIScene.willConnectNotification` on NotificationCenter.
+// When `open_single_file_window` fires requestSceneSessionActivation, the
+// resulting scene connection lands in our observer and we attach a UIWindow
+// + content ourselves. The primary window is a legacy UIWindow (not a
+// scene) so it never trips the observer; we additionally gate on an
+// `expectingNewScene` flag set by the command, so we only ever claim a
+// scene we explicitly requested.
 //
-// ⚠️ Untested: this file has never been compiled or run on a device — it
-// was authored in a Linux container with no Xcode. The first on-device
-// check is whether enabling multiple scenes + the config-router swizzle
-// leaves Tauri's primary window intact and opens a second scene.
+// Stage 1 fills the new window with a placeholder (yellow background +
+// native label + a WKWebView) to confirm the bridge end to end. Diagnostic
+// breadcrumbs are emitted BOTH via NSLog and via `trigger("diag", …)`, so
+// they surface in the MAIN window's JS console (Safari Web Inspector) when
+// no terminal / Console.app feedback is available.
 
 let HUSH_FILE_ACTIVITY = "com.hushwriter.app.fileWindow"
-let HUSH_FILE_CONFIG = "Hush File Window"
 
-/// Process-wide shared state for the bridge. Holds a weak reference to the
-/// primary (Tauri-managed) webview so later stages can relay satellite
-/// requests through it, and stashes the original config-for-connecting IMP
-/// when the app delegate already implemented that method.
 final class HushWindowBridge {
     static let shared = HushWindowBridge()
     weak var primaryWebview: WKWebView?
-    /// Non-nil when the host app delegate already implemented
-    /// `configurationForConnecting` and we exchanged with it, so the
-    /// pass-through path can chain to the original behaviour.
-    var originalConfigIMP: IMP?
+    var pendingSeed: (fileId: String, fileType: String)?
+    var expectingNewScene = false
+    // Strong refs so the scene windows aren't deallocated — in this
+    // observer-based approach no scene delegate owns them.
+    var sceneWindows: [UIWindow] = []
 }
 
 class IpadWindowPlugin: Plugin {
     @objc public override func load(webview: WKWebView) {
         NSLog("[IpadWindow] load() called")
         HushWindowBridge.shared.primaryWebview = webview
-        SceneRouter.installSwizzle()
-        NSLog("[IpadWindow] scene router installed")
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sceneWillConnect(_:)),
+            name: UIScene.willConnectNotification,
+            object: nil
+        )
+        diag("observer installed for UIScene.willConnectNotification")
     }
 
     // Tauri command: invoke("plugin:ipad-window|open_single_file_window", …)
-    // maps (snake_case -> camelCase) to this method via run_mobile_plugin.
     @objc public func openWindow(_ invoke: Invoke) throws {
         struct Args: Decodable {
             let fileId: String
             let fileType: String
         }
         let args = try invoke.parseArgs(Args.self)
-        NSLog("[IpadWindow] openWindow file=\(args.fileId) type=\(args.fileType)")
+        diag("openWindow file=\(args.fileId) type=\(args.fileType)")
+
+        HushWindowBridge.shared.pendingSeed = (args.fileId, args.fileType)
+        HushWindowBridge.shared.expectingNewScene = true
 
         DispatchQueue.main.async {
             let activity = NSUserActivity(activityType: HUSH_FILE_ACTIVITY)
-            activity.userInfo = [
-                "fileId": args.fileId,
-                "fileType": args.fileType,
-            ]
+            activity.userInfo = ["fileId": args.fileId, "fileType": args.fileType]
             let options = UIScene.ActivationRequestOptions()
-            // No requesting scene — let iOS place the new window per the
-            // user's current multitasking layout (full screen / split /
-            // Stage Manager).
             UIApplication.shared.requestSceneSessionActivation(
                 nil,
                 userActivity: activity,
@@ -93,137 +84,43 @@ class IpadWindowPlugin: Plugin {
         }
         invoke.resolve()
     }
-}
 
-@_cdecl("init_plugin_ipad_window")
-func initPlugin() -> Plugin {
-    return IpadWindowPlugin()
-}
-
-// MARK: - Scene config routing via runtime swizzling
-
-private enum SceneRouter {
-    static var swizzled = false
-
-    /// Install our `application(_:configurationForConnecting:options:)`
-    /// onto the live app-delegate class. If the delegate already
-    /// implements it we stash the original IMP and chain to it for any
-    /// non-Hush scene; otherwise we simply add ours.
-    static func installSwizzle() {
-        guard !swizzled else { return }
-        guard let delegate = UIApplication.shared.delegate else {
-            NSLog("[IpadWindow] no app delegate yet; cannot install scene router")
+    @objc func sceneWillConnect(_ note: Notification) {
+        guard let scene = note.object as? UIWindowScene else {
+            diag("willConnect: not a UIWindowScene")
             return
         }
-        let cls: AnyClass = type(of: delegate)
-        let sel = #selector(UIApplicationDelegate.application(_:configurationForConnecting:options:))
-        NSLog("[IpadWindow] swizzling on app delegate class=\(NSStringFromClass(cls)) respondsAlready=\(delegate.responds(to: sel))")
-
-        // Our replacement IMP lives on the dedicated shim class below.
-        let replSel = #selector(HushSceneRouterShim._hush_application(_:configurationForConnecting:options:))
-        guard let replMethod = class_getInstanceMethod(HushSceneRouterShim.self, replSel) else {
-            NSLog("[IpadWindow] could not locate replacement method")
+        diag("willConnect role=\(scene.session.role.rawValue) expecting=\(HushWindowBridge.shared.expectingNewScene)")
+        guard scene.session.role == .windowApplication else { return }
+        guard HushWindowBridge.shared.expectingNewScene else {
+            diag("willConnect: not a scene we requested; ignoring")
             return
         }
-        let replIMP = method_getImplementation(replMethod)
-        let types = method_getTypeEncoding(replMethod)
+        HushWindowBridge.shared.expectingNewScene = false
 
-        if let original = class_getInstanceMethod(cls, sel) {
-            // Delegate implements it — keep the original around to chain.
-            HushWindowBridge.shared.originalConfigIMP = method_getImplementation(original)
-            method_setImplementation(original, replIMP)
-            NSLog("[IpadWindow] exchanged existing configurationForConnecting")
-        } else {
-            let added = class_addMethod(cls, sel, replIMP, types)
-            NSLog("[IpadWindow] added configurationForConnecting (added=\(added))")
-        }
-        swizzled = true
+        let seed = HushWindowBridge.shared.pendingSeed
+        let fileId = seed?.fileId ?? "(none)"
+        let fileType = seed?.fileType ?? "(none)"
+
+        let win = UIWindow(windowScene: scene)
+        win.rootViewController = Self.makeContentVC(fileId: fileId, fileType: fileType)
+        win.makeKeyAndVisible()
+        HushWindowBridge.shared.sceneWindows.append(win)
+        diag("scene window attached file=\(fileId) type=\(fileType)")
     }
-}
 
-/// Carrier for the replacement IMP. Declared on its own NSObject subclass
-/// so `class_getInstanceMethod` can fetch the implementation by selector;
-/// the IMP only ever touches process-global state, so it behaves
-/// correctly when invoked with the app delegate as `self`.
-private class HushSceneRouterShim: NSObject {
-    @objc func _hush_application(
-        _ application: UIApplication,
-        configurationForConnecting connectingSceneSession: UISceneSession,
-        options: UIScene.ConnectionOptions
-    ) -> UISceneConfiguration {
-        let acts = options.userActivities.map { $0.activityType }.joined(separator: ",")
-        NSLog("[IpadWindow] configurationForConnecting role=\(connectingSceneSession.role.rawValue) activities=[\(acts)]")
-
-        // wry creates the primary window through the legacy app-delegate
-        // `window` path, which never reaches configurationForConnecting.
-        // So any application-role scene that DOES reach here is one we
-        // created via requestSceneSessionActivation — claim it for our
-        // file-window delegate unconditionally. We intentionally do NOT
-        // gate on the userActivity: it isn't reliably present in these
-        // options (it IS in scene(willConnectTo:)'s connectionOptions,
-        // which is where the seed is actually read).
-        if connectingSceneSession.role == .windowApplication {
-            let config = UISceneConfiguration(
-                name: HUSH_FILE_CONFIG,
-                sessionRole: connectingSceneSession.role
-            )
-            config.delegateClass = HushFileSceneDelegate.self
-            NSLog("[IpadWindow] -> routing scene to HushFileSceneDelegate")
-            return config
-        }
-
-        // Non-application roles (e.g. external display): preserve the host
-        // app's behaviour. Chain to the original IMP when we exchanged with
-        // one; otherwise return the platform default configuration.
-        if let orig = HushWindowBridge.shared.originalConfigIMP {
-            typealias Fn = @convention(c) (
-                AnyObject, Selector, UIApplication, UISceneSession, UIScene.ConnectionOptions
-            ) -> Unmanaged<UISceneConfiguration>
-            let fn = unsafeBitCast(orig, to: Fn.self)
-            let sel = #selector(UIApplicationDelegate.application(_:configurationForConnecting:options:))
-            return fn(self, sel, application, connectingSceneSession, options).takeUnretainedValue()
-        }
-        return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+    private func diag(_ message: String) {
+        NSLog("[IpadWindow] \(message)")
+        self.trigger("diag", data: ["msg": message])
     }
-}
 
-// MARK: - Stage 1 placeholder scene
-
-/// The scene delegate for a Hush file window. Stage 1 renders a
-/// placeholder WKWebView confirming the bridge and the seeded file
-/// crossed over. Later stages replace the placeholder with the satellite
-/// editor (loads the bundled dist in single-file mode, proxies its IPC
-/// through the primary webview).
-///
-/// `@objc(HushFileSceneDelegate)` exposes a stable Objective-C runtime
-/// name so `config.delegateClass = HushFileSceneDelegate.self` resolves
-/// from the statically-linked plugin module without an app-module prefix.
-@objc(HushFileSceneDelegate)
-class HushFileSceneDelegate: UIResponder, UIWindowSceneDelegate {
-    var window: UIWindow?
-
-    func scene(
-        _ scene: UIScene,
-        willConnectTo session: UISceneSession,
-        options connectionOptions: UIScene.ConnectionOptions
-    ) {
-        guard let windowScene = scene as? UIWindowScene else { return }
-
-        let seed = connectionOptions.userActivities.first {
-            $0.activityType == HUSH_FILE_ACTIVITY
-        }?.userInfo
-        let fileId = (seed?["fileId"] as? String) ?? "(none)"
-        let fileType = (seed?["fileType"] as? String) ?? "(none)"
-        NSLog("[IpadWindow] scene connecting file=\(fileId) type=\(fileType)")
-
-        let win = UIWindow(windowScene: windowScene)
+    /// Stage 1 placeholder content. A native yellow background + label
+    /// (paint regardless of the webview) plus a constrained WKWebView, so
+    /// the result is unambiguous: a coloured window with the label means
+    /// the scene was claimed and content attached. Later stages replace
+    /// this with the satellite editor.
+    static func makeContentVC(fileId: String, fileType: String) -> UIViewController {
         let vc = UIViewController()
-
-        // Bright background + a *native* label so we can tell — without
-        // relying on the webview rendering — whether this delegate even
-        // ran. If the new window shows this colour/label, routing works
-        // and any blankness is a webview issue; if the window is still
-        // plain white, the scene was never routed to us (swizzle issue).
         vc.view.backgroundColor = .systemYellow
 
         let label = UILabel()
@@ -231,19 +128,17 @@ class HushFileSceneDelegate: UIResponder, UIWindowSceneDelegate {
         label.numberOfLines = 0
         label.textColor = .black
         label.font = .systemFont(ofSize: 18, weight: .semibold)
-        label.text = "Hush — second window\nStage 1 delegate ran ✓\nfileId: \(fileId)\ntype: \(fileType)"
+        label.text = "Hush — second window\nStage 1 scene attached ✓\nfileId: \(fileId)\ntype: \(fileType)"
         vc.view.addSubview(label)
 
         let webview = WKWebView(frame: .zero)
         webview.translatesAutoresizingMaskIntoConstraints = false
-        webview.isOpaque = false
         vc.view.addSubview(webview)
 
         NSLayoutConstraint.activate([
             label.topAnchor.constraint(equalTo: vc.view.safeAreaLayoutGuide.topAnchor, constant: 24),
             label.leadingAnchor.constraint(equalTo: vc.view.leadingAnchor, constant: 24),
             label.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor, constant: -24),
-
             webview.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 16),
             webview.leadingAnchor.constraint(equalTo: vc.view.leadingAnchor),
             webview.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor),
@@ -258,10 +153,11 @@ class HushFileSceneDelegate: UIResponder, UIWindowSceneDelegate {
         </body></html>
         """
         webview.loadHTMLString(html, baseURL: nil)
-        NSLog("[IpadWindow] scene content installed")
-
-        win.rootViewController = vc
-        self.window = win
-        win.makeKeyAndVisible()
+        return vc
     }
+}
+
+@_cdecl("init_plugin_ipad_window")
+func initPlugin() -> Plugin {
+    return IpadWindowPlugin()
 }

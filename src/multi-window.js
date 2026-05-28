@@ -168,6 +168,24 @@ export async function openSingleFileWindow(fileId, fileType) {
   }
 }
 
+/** Subscribe to the iPad-window bridge's `diag` events and mirror them to
+ *  the console. The native side (tauri-plugin-ipad-window) emits a
+ *  breadcrumb at each step of opening a second scene; with no terminal
+ *  available on-device, reading them here via Safari Web Inspector is the
+ *  feedback channel. Harmless on desktop (the plugin never triggers). */
+export async function subscribeIpadWindowDiag() {
+  if (!IS_TAURI) return;
+  try {
+    const { addPluginListener } = await import("@tauri-apps/api/core");
+    await addPluginListener("ipad-window", "diag", (payload) => {
+      const msg = (payload && payload.msg != null) ? payload.msg : payload;
+      console.log("[IpadWindow:diag]", msg);
+    });
+  } catch (e) {
+    console.warn("ipad-window diag listener failed:", e);
+  }
+}
+
 /** Notify other windows that a piece of cross-window state mutated.
  *  `kind` is `"settings"` or `"files"`. The originator label is embedded
  *  so each receiver can ignore its own echo. */
@@ -267,6 +285,10 @@ function currentFileFromState(state) {
  *  point under the project's 700-line cap. */
 export async function setupMultiWindow(state) {
   if (!IS_TAURI) return;
+
+  // Mirror the iPad-window bridge's native diagnostics into the console
+  // (read via Safari Web Inspector on-device). No-op off iOS.
+  subscribeIpadWindowDiag();
 
   // Subscribe BEFORE register/push so the broadcasts that those calls
   // emit are picked up as our own initial windowList population.

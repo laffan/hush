@@ -8,7 +8,24 @@
 
 ## Implementation Status
 
-- **Stage 1 — scaffolded, not yet verified on a device.** The full
+- **Stage 1 — on-device debugging in progress.** Confirmed on hardware:
+  the command opens a real second iPad scene, and the primary window is
+  unaffected by `UIApplicationSupportsMultipleScenes`. But the new window
+  rendered blank/black. Root cause: Tauri/wry builds the iOS app in Rust
+  with the **legacy (non-scene) UIWindow lifecycle** (no Swift in
+  `gen/apple`, no Tauri scene manifest), so UIKit decides the lifecycle at
+  `UIApplicationMain` and never calls `configurationForConnecting` — the
+  config-router swizzle (which installs in the plugin's `load()`, after
+  launch) is never invoked, and adopting scenes via Info.plist would make
+  UIKit ignore wry's legacy primary window. **Current approach:** observe
+  `UIScene.willConnectNotification` on NotificationCenter and attach our
+  own `UIWindow` + content to the requested scene (gated by an
+  `expectingNewScene` flag so the primary is never touched). Native
+  diagnostics are mirrored to the main window's JS console via
+  `trigger("diag", …)` so they're readable in Safari Web Inspector
+  without a terminal (`tauri ios dev` is failing with code 70 on this
+  setup; `build:ios` works). Awaiting the next on-device result.
+- **(historical) Stage 1 — scaffolded, not yet verified on a device.** The full
   `tauri-plugin-ipad-window` crate exists (Rust command + Swift bridge +
   scene router + placeholder scene delegate), is registered in `lib.rs` /
   `Cargo.toml` / `capabilities/default.json`, the scene manifest is added to
