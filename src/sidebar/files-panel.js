@@ -6,7 +6,7 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { collectFlaggedItems, findAncestorIds, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
+import { collectFlaggedItems, findAncestorIds, findNode, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
@@ -397,6 +397,15 @@ function dispatchRowAction(action, nodeId, opts) {
     handleConvertProjectToDoc(nodeId, storedState, refresh);
   } else if (action === "convert-doc-to-project") {
     handleConvertDocToProject(nodeId, storedState, refresh);
+  } else if (action === "set-color") {
+    const node = findNode(storedState.fileTree, nodeId);
+    if (node) {
+      if (opts?.colorKey) node.bgColor = opts.colorKey;
+      else delete node.bgColor;
+      storedState.saveFileTree();
+      refresh();
+    }
+    return;
   } else if (action === "new-doc-here") {
     storedState.newFile(nodeId).then(refresh);
   } else if (action === "new-notebook-here") {

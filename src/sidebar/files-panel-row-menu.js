@@ -13,6 +13,24 @@
 import { findNode, findParentOfNode } from "../state/tree-helpers.js";
 import { AppState } from "../state/state.js";
 
+export const ROW_COLORS = [
+  { key: "red",    rgba: "rgba(255, 82, 82, 0.13)",   swatch: "#ef5350" },
+  { key: "orange", rgba: "rgba(255, 152, 0, 0.13)",   swatch: "#ff9800" },
+  { key: "yellow", rgba: "rgba(255, 235, 59, 0.15)",  swatch: "#ffeb3b" },
+  { key: "green",  rgba: "rgba(76, 175, 80, 0.13)",   swatch: "#4caf50" },
+  { key: "teal",   rgba: "rgba(0, 188, 212, 0.13)",   swatch: "#00bcd4" },
+  { key: "blue",   rgba: "rgba(66, 165, 245, 0.13)",  swatch: "#42a5f5" },
+  { key: "indigo", rgba: "rgba(92, 107, 192, 0.15)",  swatch: "#5c6bc0" },
+  { key: "purple", rgba: "rgba(171, 71, 188, 0.13)",  swatch: "#ab47bc" },
+  { key: "pink",   rgba: "rgba(236, 64, 122, 0.13)",  swatch: "#ec407a" },
+];
+
+export function rowColorRgba(key) {
+  if (!key) return null;
+  const entry = ROW_COLORS.find(c => c.key === key);
+  return entry ? entry.rgba : null;
+}
+
 const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
@@ -121,12 +139,13 @@ function onDocKeydownCloseMenu(e) {
 export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowAction) {
   closeRowMenu();
   let entries;
+  let node = null;
   if (flagOnly) {
     entries = [{ action: "flag", label: "Unflag" }];
   } else if (isTrashId(nodeId)) {
     entries = [{ action: "empty-trash", label: "Empty Trash" }];
   } else {
-    const node = findNode(state.fileTree, nodeId);
+    node = findNode(state.fileTree, nodeId);
     if (!node) return;
     const inTrash = state.isInTrash(nodeId);
     const parent = node.type === "document" ? findParentOfNode(state.fileTree, nodeId) : null;
@@ -138,6 +157,38 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
 
   const menu = document.createElement("div");
   menu.className = "tree-row-menu";
+
+  // Color palette — first row of the menu for all non-trash nodes
+  if (node && !isTrashId(nodeId) && !flagOnly) {
+    const palette = document.createElement("div");
+    palette.className = "tree-row-menu-colors";
+    // Clear swatch
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "tree-row-color-swatch tree-row-color-clear" + (!node?.bgColor ? " active" : "");
+    clear.title = "Clear color";
+    clear.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeRowMenu();
+      dispatchRowAction("set-color", nodeId, { colorKey: null });
+    });
+    palette.appendChild(clear);
+    for (const c of ROW_COLORS) {
+      const sw = document.createElement("button");
+      sw.type = "button";
+      sw.className = "tree-row-color-swatch" + (node?.bgColor === c.key ? " active" : "");
+      sw.style.setProperty("--swatch-color", c.swatch);
+      sw.title = c.key[0].toUpperCase() + c.key.slice(1);
+      sw.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeRowMenu();
+        dispatchRowAction("set-color", nodeId, { colorKey: c.key });
+      });
+      palette.appendChild(sw);
+    }
+    menu.appendChild(palette);
+  }
+
   for (const ent of entries) {
     const item = document.createElement("button");
     item.type = "button";

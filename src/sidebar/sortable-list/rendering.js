@@ -3,6 +3,7 @@
  */
 
 import { pathsEqual } from "./utils.js";
+import { rowColorRgba } from "../files-panel-row-menu.js";
 
 export function renderList(items, container, path, ctx) {
   const { config, state, onFoldToggle, onItemMouseEnter, onItemMouseLeave } = ctx;
@@ -29,6 +30,9 @@ export function renderList(items, container, path, ctx) {
     // them at 50 % opacity alongside notebooks. Persisted on the tree
     // node and read straight off the rendered item.
     if (item && item.useAsNote) li.dataset.useAsNote = "true";
+
+    const bgRgba = rowColorRgba(item?.bgColor);
+    if (bgRgba) li.style.setProperty("--item-bg", bgRgba);
 
     if (state.selectedPath && pathsEqual(itemPath, state.selectedPath)) {
       li.classList.add("selected");
