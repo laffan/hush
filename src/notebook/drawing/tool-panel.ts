@@ -1,19 +1,26 @@
 /* src/notebook/drawing/tool-panel.ts
  *
- * Drawing-tools controller for the notebook bar. After the toolbar
- * merge there's no longer a separate "drawing pill" — the divider,
- * brush slots, slice / erase, and lasso buttons all get appended
- * directly to the bottom toolbar so the bar reads as one continuous
- * strip with no shadow seam.
+ * Drawing-tools controller for the notebook bar. Appends the divider,
+ * brush slots, slice / erase, and lasso buttons directly onto the
+ * bottom toolbar so the bar reads as one continuous strip.
  *
- * The three end-caps live as siblings of the bar inside the canvas
- * container:
- *   [drag][rotate]  — the bar itself  —  [bg-settings]
- * Drag and rotate hug the bar's opening edge (left in horizontal,
- * top in vertical); bg-settings hugs the closing edge.
+ * After the toolbar redesign the only end-cap that lives next to the
+ * bar is a drag handle. The orientation toggle, background-settings
+ * popup, and collapse tab were removed:
+ *   - Background settings now mount as a fixed bottom-right button
+ *     (see `src/notebook/ui/bg-settings-fixed-button.ts`).
+ *   - Orientation flips through drag-snap zones (top / bottom / left).
+ *   - Collapse is gone — the responsive 2-row layout handles narrow
+ *     viewports instead.
  *
- * The lasso button still owns its own flyout (click to activate,
- * click-again to toggle the hold-duration slider).
+ * Drag-snap: while the user drags the bar around, three highlighted
+ * drop zones appear pinned to the top edge, the bottom edge, and the
+ * left edge of the canvas. Dropping inside a zone snaps the toolbar to
+ * that position. Dropping outside leaves it at the dragged offset.
+ *
+ * Responsive: when the bar's natural width would overflow the visible
+ * canvas, every child icon shrinks to 75% and the bar wraps to two
+ * rows via `flex-wrap`.
  */
 
 import type { DrawingState } from "../state";
@@ -23,7 +30,6 @@ import { h } from "../ui/dom-helpers";
 import { icon } from "../ui/icons";
 import { createBrushSlots } from "./brush-slots";
 import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
-import { createBgSettingsPopup } from "../ui/bg-settings-popup";
 
 interface SubToolDef {
   id: DrawingSubTool;
@@ -38,32 +44,22 @@ const SUB_TOOLS: SubToolDef[] = [
 ];
 
 export interface DrawingToolPanelHandle {
-  /** Drag tab — left end-cap in horizontal mode, top in vertical. */
+  /** Drag tab — sits flush against the bar's opening edge. */
   dragTab: HTMLElement;
-  /** Orientation toggle tab — sits next to the drag tab on the
-   *  opening edge of the bar. */
-  toggleTab: HTMLElement;
-  /** Background-settings tab — right end-cap in horizontal mode,
-   *  bottom in vertical. */
-  bgSettingsTab: HTMLElement;
-  /** Collapse / expand tab — sits past bg-settings on the closing
-   *  edge. Toggles `drawingToolbarCollapsed`. */
-  collapseTab: HTMLElement;
-  /** Wrapper holding every drawing flyout (brush edit, mini-palette,
-   *  lasso settings, bg-settings popup). Append once to the canvas
-   *  container so each child can position absolutely against it. */
+  /** Wrapper holding the drawing flyouts (brush edit, mini-palette,
+   *  lasso settings). */
   flyout: HTMLElement;
-  /** Recompute end-cap positions after the bar resizes (theme switch,
-   *  layers panel content change, leftInset shift). */
+  /** Recompute layout after the bar resizes / snap position changes. */
   relayout(): void;
 }
 
-/** Width of an end-cap perpendicular to the bar's main axis. The
- *  long-axis dimension flips per orientation (38 in horizontal, 52
- *  in vertical) to match the bar's perpendicular thickness. */
 const END_CAP_DEPTH = 32;
 const BAR_HEIGHT_HORIZONTAL = 38;
 const BAR_WIDTH_VERTICAL = 52;
+/** Margin of the drop zone from the canvas edge it represents. */
+const SNAP_ZONE_MARGIN = 12;
+/** Thickness of each drop zone strip. */
+const SNAP_ZONE_THICKNESS = 80;
 
 export function createDrawingToolPanel(
   state: DrawingState,
@@ -72,10 +68,6 @@ export function createDrawingToolPanel(
 ): DrawingToolPanelHandle {
   ensureFlyoutSliderStyle();
 
-  /** Route a sub-tool activation through the drawing engine. Clicking
-   *  any drawing-engine tool (lasso / erase / slice / brush) flips
-   *  state.tool to "pen" if it wasn't already and clears any active
-   *  pan so the two modes don't layer. */
   function activateDrawingSubTool(sub: DrawingSubTool): void {
     if (state.isPanning) { state.isPanning = false; state.notify("isPanning"); }
     if (state.tool !== "pen") {
@@ -86,14 +78,6 @@ export function createDrawingToolPanel(
     state.setDrawingSubTool(sub);
   }
 
-  // ----- Divider + brush slots + slice/erase + lasso ----------------
-  // All appended directly to the bottom toolbar so the assembly is
-  // one continuous bar (no inter-pill shadow seam).
-
-  // Single divider in the combined bar — separates the main canvas
-  // tools (select / text / drag-area / brainstorm / layers /
-  // bookmarks) from the drawing tools (brushes / slice / erase /
-  // lasso). Bg-settings now lives as a right end-cap, not in the bar.
   const separator = h("div", {
     style: { width: "1px", height: "24px", background: "currentColor", opacity: "0.15", margin: "0 4px" },
   });
@@ -140,7 +124,7 @@ export function createDrawingToolPanel(
   });
   bottomToolbar.appendChild(lassoBtn);
 
-  // ----- End-cap tabs (drag, rotate, bg-settings) -------------------
+  // ----- Drag tab (single end-cap) ----------------------------------
 
   const tabBaseStyle = {
     position: "absolute" as const,
@@ -162,76 +146,83 @@ export function createDrawingToolPanel(
   }) as HTMLButtonElement;
   dragTab.classList.add("notebook-tool-panel-drag-tab");
 
-  const toggleTab = h("button", {
-    title: "Toggle orientation",
-    style: { ...tabBaseStyle, width: `${END_CAP_DEPTH}px`, height: `${BAR_HEIGHT_HORIZONTAL}px`, borderRadius: "0", cursor: "pointer" },
-    children: [icon("rotate", 18)],
-    onClick: () => {
-      // Capture the bar's pre-toggle screen center so we can preserve
-      // it on the next microtask — without this, flipping orientation
-      // snaps the toolbar all the way to the new natural anchor.
-      const parent = bottomToolbar.parentElement;
-      let savedCenter: { x: number; y: number } | null = null;
-      if (parent) {
-        const parentRect = parent.getBoundingClientRect();
-        const tbRect = bottomToolbar.getBoundingClientRect();
-        if (tbRect.width > 0) {
-          savedCenter = {
-            x: tbRect.left + tbRect.width / 2 - parentRect.left,
-            y: tbRect.top + tbRect.height / 2 - parentRect.top,
-          };
-        }
-      }
-      state.setDrawingToolbarVertical(!state.drawingToolbarVertical);
-      if (!savedCenter || !parent) return;
-      const sc = savedCenter;
-      queueMicrotask(() => {
-        const parentRect = parent.getBoundingClientRect();
-        const tbRect = bottomToolbar.getBoundingClientRect();
-        if (tbRect.width === 0) return;
-        const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
-        const natCx = (tbRect.left + tbRect.width / 2 - parentRect.left) - cur.x;
-        const natCy = (tbRect.top + tbRect.height / 2 - parentRect.top) - cur.y;
-        const desired = clampOffset(sc.x - natCx, sc.y - natCy);
-        state.setDrawingToolbarOffset(desired.x, desired.y);
-      });
-    },
-  }) as HTMLButtonElement;
-  toggleTab.classList.add("notebook-tool-panel-toggle-tab");
+  // ----- Snap-zone overlays -----------------------------------------
 
-  const bgSettings = createBgSettingsPopup(state);
-  const bgSettingsTab = bgSettings.tab;
+  function makeZone(): HTMLElement {
+    const z = document.createElement("div");
+    z.className = "notebook-toolbar-snap-zone";
+    Object.assign(z.style, {
+      position: "absolute",
+      display: "none",
+      borderRadius: "12px",
+      background: "rgba(66, 153, 225, 0.18)",
+      border: "2px dashed rgba(66, 153, 225, 0.65)",
+      pointerEvents: "none",
+      zIndex: "99",
+      transition: "background 80ms",
+    } as Partial<CSSStyleDeclaration>);
+    return z;
+  }
+  const zoneTop = makeZone();
+  const zoneBottom = makeZone();
+  const zoneLeft = makeZone();
 
-  // Collapse / expand tab — sits past bg-settings on the closing edge.
-  // Tapping it flips `drawingToolbarCollapsed`; the rest of the toolbar
-  // hides except the currently active tool button, leaving a minimal
-  // [drag][active tool][collapse] trio.
-  const collapseTab = h("button", {
-    title: "Collapse toolbar",
-    style: { ...tabBaseStyle, width: `${END_CAP_DEPTH}px`, height: `${BAR_HEIGHT_HORIZONTAL}px`, borderRadius: "0 12px 12px 0", cursor: "pointer" },
-    children: [icon("toolbar-collapse", 18)],
-    onClick: () => state.setDrawingToolbarCollapsed(!state.drawingToolbarCollapsed),
-  }) as HTMLButtonElement;
-  collapseTab.classList.add("notebook-tool-panel-collapse-tab");
+  function positionSnapZones(): void {
+    const parent = bottomToolbar.parentElement;
+    if (!parent) return;
+    const r = parent.getBoundingClientRect();
+    const leftInset = state.leftInset || 0;
+    const rightInset = state.rightInset || 0;
+    const innerW = r.width - leftInset - rightInset;
+    const innerX = leftInset;
+    const zoneW = Math.min(innerW * 0.7, 600);
+    const zoneX = innerX + (innerW - zoneW) / 2;
+    Object.assign(zoneTop.style, {
+      left: `${zoneX}px`, top: `${SNAP_ZONE_MARGIN}px`,
+      width: `${zoneW}px`, height: `${SNAP_ZONE_THICKNESS}px`,
+    });
+    Object.assign(zoneBottom.style, {
+      left: `${zoneX}px`, top: `${r.height - SNAP_ZONE_MARGIN - SNAP_ZONE_THICKNESS}px`,
+      width: `${zoneW}px`, height: `${SNAP_ZONE_THICKNESS}px`,
+    });
+    const zoneH = Math.min(r.height * 0.7, 600);
+    Object.assign(zoneLeft.style, {
+      left: `${leftInset + SNAP_ZONE_MARGIN}px`, top: `${(r.height - zoneH) / 2}px`,
+      width: `${SNAP_ZONE_THICKNESS}px`, height: `${zoneH}px`,
+    });
+  }
+  function showSnapZones(show: boolean): void {
+    for (const z of [zoneTop, zoneBottom, zoneLeft]) {
+      z.style.display = show ? "block" : "none";
+      z.style.background = "rgba(66, 153, 225, 0.18)";
+    }
+    if (show) positionSnapZones();
+  }
+  function highlightZone(zone: HTMLElement | null): void {
+    for (const z of [zoneTop, zoneBottom, zoneLeft]) {
+      z.style.background = z === zone ? "rgba(66, 153, 225, 0.40)" : "rgba(66, 153, 225, 0.18)";
+    }
+  }
+  function hitTestZone(clientX: number, clientY: number): "top" | "bottom" | "left" | null {
+    function inside(z: HTMLElement): boolean {
+      const r = z.getBoundingClientRect();
+      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    }
+    if (inside(zoneTop)) return "top";
+    if (inside(zoneBottom)) return "bottom";
+    if (inside(zoneLeft)) return "left";
+    return null;
+  }
 
   // ----- Drag-to-reposition wiring + clamp --------------------------
 
-  /** Clamp an offset so the assembly (bar + 3 end-caps) stays inside
-   *  its parent. */
   function clampOffset(desiredX: number, desiredY: number): { x: number; y: number } {
     const parent = bottomToolbar.parentElement;
     if (!parent) return { x: desiredX, y: desiredY };
     const parentRect = parent.getBoundingClientRect();
     const tbRect = bottomToolbar.getBoundingClientRect();
     if (tbRect.width === 0) return { x: desiredX, y: desiredY };
-    // Skip end-caps that are display:none — getBoundingClientRect
-    // returns (0,0,0,0) for them and would pin the clamp to the
-    // viewport's top-left corner, locking dragging to one direction
-    // while the toolbar is collapsed.
-    const rects = [tbRect, dragTab.getBoundingClientRect(), collapseTab.getBoundingClientRect()];
-    if (!state.drawingToolbarCollapsed) {
-      rects.push(toggleTab.getBoundingClientRect(), bgSettingsTab.getBoundingClientRect());
-    }
+    const rects = [tbRect, dragTab.getBoundingClientRect()];
     const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
     const left = Math.min(...rects.map((r) => r.left));
     const right = Math.max(...rects.map((r) => r.right));
@@ -261,9 +252,37 @@ export function createDrawingToolPanel(
     if (e.button !== undefined && e.button !== 0) return;
     dragPointerId = e.pointerId;
     dragStartClient = { x: e.clientX, y: e.clientY };
+    // Promote a snapped position to custom while dragging so the offset
+    // delta paints live. Capture the pre-drag screen center so the bar
+    // starts the drag exactly where it sat before.
+    const parent = bottomToolbar.parentElement;
+    if (parent && state.drawingToolbarPosition !== "custom") {
+      const parentRect = parent.getBoundingClientRect();
+      const tbRect = bottomToolbar.getBoundingClientRect();
+      const sc = {
+        x: tbRect.left + tbRect.width / 2 - parentRect.left,
+        y: tbRect.top + tbRect.height / 2 - parentRect.top,
+      };
+      state.drawingToolbarPosition = "custom";
+      state.notify("drawingToolbarPosition");
+      state.notify("drawingToolbarVertical");
+      // After the layout pass switches to custom (centered on parent),
+      // back-compute the offset that puts the bar back at its old centre.
+      queueMicrotask(() => {
+        const pr = parent.getBoundingClientRect();
+        const tr = bottomToolbar.getBoundingClientRect();
+        const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
+        const natCx = (tr.left + tr.width / 2 - pr.left) - cur.x;
+        const natCy = (tr.top + tr.height / 2 - pr.top) - cur.y;
+        const desired = clampOffset(sc.x - natCx, sc.y - natCy);
+        state.setDrawingToolbarOffset(desired.x, desired.y);
+        dragStartOffset = { ...state.drawingToolbarOffset };
+      });
+    }
     dragStartOffset = { ...state.drawingToolbarOffset };
     try { dragTab.setPointerCapture(e.pointerId); } catch { /* noop */ }
     dragTab.style.cursor = "grabbing";
+    showSnapZones(true);
     e.preventDefault();
   }
   function onDragPointerMove(e: PointerEvent) {
@@ -272,13 +291,18 @@ export function createDrawingToolPanel(
     const dy = e.clientY - dragStartClient.y;
     const clamped = clampOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
     state.setDrawingToolbarOffset(clamped.x, clamped.y);
+    const zone = hitTestZone(e.clientX, e.clientY);
+    highlightZone(zone === "top" ? zoneTop : zone === "bottom" ? zoneBottom : zone === "left" ? zoneLeft : null);
   }
   function onDragPointerUp(e: PointerEvent) {
     if (dragStartClient === null || e.pointerId !== dragPointerId) return;
     try { dragTab.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    const zone = hitTestZone(e.clientX, e.clientY);
+    if (zone) state.setDrawingToolbarPosition(zone);
     dragStartClient = null;
     dragPointerId = null;
     dragTab.style.cursor = "grab";
+    showSnapZones(false);
   }
   dragTab.addEventListener("pointerdown", onDragPointerDown);
   dragTab.addEventListener("pointermove", onDragPointerMove);
@@ -423,30 +447,13 @@ export function createDrawingToolPanel(
     if (slot) drawingLayer.applySlot(slot);
   }
 
-  function styleEndCaps(vertical: boolean): void {
+  function styleDragTab(vertical: boolean): void {
     const tabBg = "rgba(127,127,127,0.18)";
     const fg = state.theme.foreground;
-    const collapsed = state.drawingToolbarCollapsed;
-    // When collapsed, the closing-edge cap is the collapse tab itself
-    // (drag is the opening cap, rotate + bg-settings are hidden). When
-    // expanded, the closing cap is the collapse tab and bg-settings
-    // sits just before it without a rounded outer corner.
     if (vertical) {
-      // Drag (+ rotate when expanded) stack at the top; bg-settings +
-      // collapse stack at the bottom. Long axis = bar's perpendicular
-      // thickness (52).
       dragTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
       dragTab.style.height = `${END_CAP_DEPTH}px`;
-      dragTab.style.borderRadius = collapsed ? "12px 12px 0 0" : "12px 12px 0 0";
-      toggleTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
-      toggleTab.style.height = `${END_CAP_DEPTH}px`;
-      toggleTab.style.borderRadius = "0";
-      bgSettingsTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
-      bgSettingsTab.style.height = `${END_CAP_DEPTH}px`;
-      bgSettingsTab.style.borderRadius = "0";
-      collapseTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
-      collapseTab.style.height = `${END_CAP_DEPTH}px`;
-      collapseTab.style.borderRadius = "0 0 12px 12px";
+      dragTab.style.borderRadius = "12px 12px 0 0";
       separator.style.width = "24px";
       separator.style.height = "1px";
       separator.style.margin = "4px 0";
@@ -454,112 +461,41 @@ export function createDrawingToolPanel(
       dragTab.style.width = `${END_CAP_DEPTH}px`;
       dragTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
       dragTab.style.borderRadius = "12px 0 0 12px";
-      toggleTab.style.width = `${END_CAP_DEPTH}px`;
-      toggleTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
-      toggleTab.style.borderRadius = "0";
-      bgSettingsTab.style.width = `${END_CAP_DEPTH}px`;
-      bgSettingsTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
-      bgSettingsTab.style.borderRadius = "0";
-      collapseTab.style.width = `${END_CAP_DEPTH}px`;
-      collapseTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
-      collapseTab.style.borderRadius = "0 12px 12px 0";
       separator.style.width = "1px";
       separator.style.height = "24px";
       separator.style.margin = "0 4px";
     }
     dragTab.style.background = tabBg;
     dragTab.style.color = fg;
-    toggleTab.style.background = tabBg;
-    toggleTab.style.color = fg;
-    collapseTab.style.background = tabBg;
-    collapseTab.style.color = fg;
-    collapseTab.title = collapsed ? "Expand toolbar" : "Collapse toolbar";
-    collapseTab.replaceChildren(icon(collapsed ? "toolbar-expand" : "toolbar-collapse", 18));
-    bgSettings.refreshTheme();
   }
 
   function applyLayout(): void {
     const parent = bottomToolbar.parentElement;
     if (!parent) return;
-    const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
     const vertical = state.drawingToolbarVertical;
-    styleEndCaps(vertical);
-
-    const collapsed = state.drawingToolbarCollapsed;
-    // Rotate + bg-settings hide entirely while collapsed — only the
-    // drag handle, the active tool button (handled by the bar's own
-    // child-visibility logic), and the collapse tab stay visible.
-    // Class-based so the inline `display: flex` survives the toggle.
-    toggleTab.classList.toggle("notebook-toolbar-collapse-hidden", collapsed);
-    bgSettingsTab.classList.toggle("notebook-toolbar-collapse-hidden", collapsed);
+    styleDragTab(vertical);
 
     const place = () => {
       const parentRect = parent.getBoundingClientRect();
       const tbRect = bottomToolbar.getBoundingClientRect();
-      // Reset tab anchors each pass.
-      for (const tab of [dragTab, toggleTab, bgSettingsTab, collapseTab]) {
-        tab.style.left = "auto";
-        tab.style.right = "auto";
-        tab.style.top = "auto";
-        tab.style.bottom = "auto";
-        tab.style.transform = "none";
-      }
+      dragTab.style.left = "auto";
+      dragTab.style.right = "auto";
+      dragTab.style.top = "auto";
+      dragTab.style.bottom = "auto";
+      dragTab.style.transform = "none";
+      const tbLeft = tbRect.left - parentRect.left;
+      const tbTop = tbRect.top - parentRect.top;
       if (vertical) {
-        const tbLeft = tbRect.left - parentRect.left;
-        const tbTop = tbRect.top - parentRect.top;
-        // Drag is outermost above the bar; rotate stacks between drag
-        // and bar when expanded. Collapsed → drag sits directly above.
-        if (collapsed) {
-          dragTab.style.left = tbLeft + "px";
-          dragTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
-        } else {
-          dragTab.style.left = tbLeft + "px";
-          dragTab.style.top = (tbTop - END_CAP_DEPTH * 2) + "px";
-          toggleTab.style.left = tbLeft + "px";
-          toggleTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
-        }
-        // Bg-settings + collapse hang below the bar (collapse outermost).
-        if (!collapsed) {
-          bgSettingsTab.style.left = tbLeft + "px";
-          bgSettingsTab.style.top = (tbRect.bottom - parentRect.top) + "px";
-          collapseTab.style.left = tbLeft + "px";
-          collapseTab.style.top = (tbRect.bottom - parentRect.top + END_CAP_DEPTH) + "px";
-        } else {
-          collapseTab.style.left = tbLeft + "px";
-          collapseTab.style.top = (tbRect.bottom - parentRect.top) + "px";
-        }
+        dragTab.style.left = tbLeft + "px";
+        dragTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
       } else {
-        const offsetCalc = `calc(20px + ${offset.y}px)`;
-        const tbLeft = tbRect.left - parentRect.left;
-        if (collapsed) {
-          dragTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
-          dragTab.style.top = offsetCalc;
-        } else {
-          dragTab.style.left = (tbLeft - END_CAP_DEPTH * 2) + "px";
-          dragTab.style.top = offsetCalc;
-          toggleTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
-          toggleTab.style.top = offsetCalc;
-        }
-        // Bg-settings sits flush to the right of the bar, then collapse
-        // takes the outermost slot. Collapsed → collapse sits flush.
-        if (!collapsed) {
-          bgSettingsTab.style.left = (tbRect.right - parentRect.left) + "px";
-          bgSettingsTab.style.top = offsetCalc;
-          collapseTab.style.left = (tbRect.right - parentRect.left + END_CAP_DEPTH) + "px";
-          collapseTab.style.top = offsetCalc;
-        } else {
-          collapseTab.style.left = (tbRect.right - parentRect.left) + "px";
-          collapseTab.style.top = offsetCalc;
-        }
+        dragTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
+        dragTab.style.top = tbTop + "px";
       }
     };
     place();
     requestAnimationFrame(() => {
       place();
-      // Keep the offset inside the parent on layout changes (window
-      // resize, sidebar inset shift, orientation flip). The
-      // setDrawingToolbarOffset short-circuit prevents a notify loop
-      // when the offset is already in bounds.
       const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
       const c = clampOffset(cur.x, cur.y);
       if (c.x !== cur.x || c.y !== cur.y) {
@@ -567,7 +503,6 @@ export function createDrawingToolPanel(
       }
     });
     if (lassoFlyoutOpen) positionLassoFlyout();
-    bgSettings.reposition();
   }
 
   state.addEventListener("change", ((e: CustomEvent) => {
@@ -585,60 +520,10 @@ export function createDrawingToolPanel(
       if (!lassoLive) closeLassoFlyout();
     }
     updateActiveClasses();
-    if (keys.includes("drawingToolbarCollapsed")) applyCollapseVisibility();
     applyLayout();
   }) as EventListener);
 
-  // ----- Collapsed-mode bar children --------------------------------
-  // While collapsed, only the currently-active drawing tool button
-  // stays visible from the drawing-side of the bar; separator, brush
-  // slots row, and any inactive sub-tools hide. The main-side children
-  // (select / text / drag-area / brainstorm / layers / bookmarks) are
-  // owned by toolbar.ts which runs the same collapse-vs-active filter
-  // in its own `update()` pass.
-  // Visibility is toggled via a CSS class (`!important display:none`)
-  // rather than inline `style.display`, because every bar child was
-  // constructed with inline `display: flex` and clearing the inline
-  // style would lose that flex layout and stack children vertically.
-  const HIDE_CLASS = "notebook-toolbar-collapse-hidden";
-  function setHidden(el: HTMLElement, hidden: boolean): void {
-    el.classList.toggle(HIDE_CLASS, hidden);
-  }
-  function applyCollapseVisibility(): void {
-    const collapsed = state.drawingToolbarCollapsed;
-    const activeSub: string | null = state.tool === "pen" ? state.drawingSubTool : null;
-    const brushEl = (state.tool === "pen" && state.drawingSubTool === "draw")
-      ? (slots.root.children[state.activeBrushSlot] as HTMLElement | undefined) ?? null
-      : null;
-
-    if (!collapsed) {
-      setHidden(separator, false);
-      setHidden(slots.root, false);
-      for (const slotEl of Array.from(slots.root.children) as HTMLElement[]) setHidden(slotEl, false);
-      setHidden(lassoBtn, false);
-      for (const btn of subToolBtns.values()) setHidden(btn, false);
-      return;
-    }
-
-    setHidden(separator, true);
-    // Brush-slot row survives only when "draw" is active; within it,
-    // hide every non-active slot.
-    if (activeSub === "draw" && brushEl) {
-      setHidden(slots.root, false);
-      for (const slotEl of Array.from(slots.root.children) as HTMLElement[]) {
-        setHidden(slotEl, slotEl !== brushEl);
-      }
-    } else {
-      setHidden(slots.root, true);
-    }
-    setHidden(lassoBtn, activeSub !== "select");
-    for (const [id, btn] of subToolBtns) {
-      setHidden(btn, activeSub !== id);
-    }
-  }
-
   updateActiveClasses();
-  applyCollapseVisibility();
   applyLayout();
   applyActiveSlot();
   drawingLayer.setTool(state.drawingSubTool);
@@ -647,7 +532,9 @@ export function createDrawingToolPanel(
   flyoutGroup.appendChild(slots.flyout);
   flyoutGroup.appendChild(slots.miniPalette);
   flyoutGroup.appendChild(lassoFlyout);
-  flyoutGroup.appendChild(bgSettings.popup);
+  flyoutGroup.appendChild(zoneTop);
+  flyoutGroup.appendChild(zoneBottom);
+  flyoutGroup.appendChild(zoneLeft);
 
-  return { dragTab, toggleTab, bgSettingsTab, collapseTab, flyout: flyoutGroup, relayout: applyLayout };
+  return { dragTab, flyout: flyoutGroup, relayout: applyLayout };
 }

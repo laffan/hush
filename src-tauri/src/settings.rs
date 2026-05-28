@@ -235,6 +235,12 @@ pub struct AppSettings {
     pub show_tooltips: bool,
     #[serde(default)]
     pub sticky_headers: bool,
+    #[serde(default)]
+    pub show_recent_files: bool,
+    #[serde(default = "default_recent_files_panel_height")]
+    pub recent_files_panel_height: u32,
+    #[serde(default)]
+    pub recent_file_ids: Vec<String>,
 
     // Styles
     #[serde(default)]
@@ -577,6 +583,9 @@ impl Default for AppSettings {
             footnote_margin_side: default_footnote_margin_side(),
             show_tooltips: false,
             sticky_headers: false,
+            show_recent_files: false,
+            recent_files_panel_height: default_recent_files_panel_height(),
+            recent_file_ids: Vec::new(),
             styles: Vec::new(),
             active_style_id: None,
             global_style_id: None,

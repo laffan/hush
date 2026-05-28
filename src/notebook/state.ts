@@ -97,25 +97,26 @@ export class DrawingState extends EventTarget {
    *  with a hamburger drag-tab at the end). Always false. */
   drawingToolbarMinimized = false;
 
-  /** Offset (CSS px) from the top-center anchor for the drawing
-   *  toolbar. Set by the drag-handle in the meta-tools group; default
-   *  zero leaves the toolbar at its original top-center position.
-   *  Session-only state — resets when the notebook re-mounts. */
+  /** Toolbar snap position. One of three preset slots reached by drag-
+   *  drop into the matching highlighted zone, or "custom" when the user
+   *  drops outside a snap zone. The pane mounts persist this so the
+   *  toolbar lands in the same place next session. */
+  drawingToolbarPosition: "top" | "bottom" | "left" | "custom" = "top";
+
+  /** Offset (CSS px) for the custom-position drop. Ignored when
+   *  drawingToolbarPosition !== "custom". Session-only by default; the
+   *  bridge syncs it to AppSettings.notebookToolbarOffset for round-trip. */
   drawingToolbarOffset: { x: number; y: number } = { x: 0, y: 0 };
 
-  /** When true, the combined drawing toolbar lays out vertically and
-   *  pins to the left edge of the canvas instead of the bottom.
-   *  Toggled by the orientation tab attached to the far end of the
-   *  toolbar (mirrors the drag tab's gray pill style). Session-only
-   *  state — resets when the notebook re-mounts. */
-  drawingToolbarVertical = false;
+  /** Derived: true when position === "left". Kept as a separate getter
+   *  so existing callsites that read this flag (e.g. tool-panel layout
+   *  math, bg-popup placement) keep working without churn. */
+  get drawingToolbarVertical(): boolean { return this.drawingToolbarPosition === "left"; }
 
-  /** When true, the toolbar collapses down to just the drag handle,
-   *  the currently active tool button, and the collapse/expand tab
-   *  itself — every other tool button and end-cap is hidden. Toggled
-   *  by the collapse tab attached past the bg-settings end-cap.
-   *  Session-only state — resets when the notebook re-mounts. */
-  drawingToolbarCollapsed = false;
+  /** Legacy collapse flag — collapse UI was removed in the toolbar
+   *  redesign. Kept as a no-op getter so any leftover read returns
+   *  false; setter is gone. */
+  get drawingToolbarCollapsed(): boolean { return false; }
 
   /** True while the drawing engine is mid-transform (move / resize /
    *  rotate) on its own bbox. Hush's group highlight + selection
@@ -274,22 +275,18 @@ export class DrawingState extends EventTarget {
   }
 
   setDrawingToolbarVertical(b: boolean) {
-    if (this.drawingToolbarVertical === b) return;
-    this.drawingToolbarVertical = b;
-    // The natural anchor swaps (bottom-center ↔ left-center), so the
-    // dragged offset's interpretation changes too. Reset to zero —
-    // the toolbar's click handler in tool-panel.ts captures the bar's
-    // pre-toggle screen center and computes a fresh offset on the
-    // post-layout pass that puts the bar back near where it was.
-    this.drawingToolbarOffset = { x: 0, y: 0 };
-    this.notify("drawingToolbarVertical");
-    this.notify("drawingToolbarOffset");
+    // Legacy shim: phone mount path still calls this to force vertical.
+    // Route into the position state machine — "left" is the new vertical.
+    this.setDrawingToolbarPosition(b ? "left" : "top");
   }
 
-  setDrawingToolbarCollapsed(b: boolean) {
-    if (this.drawingToolbarCollapsed === b) return;
-    this.drawingToolbarCollapsed = b;
-    this.notify("drawingToolbarCollapsed");
+  setDrawingToolbarPosition(p: "top" | "bottom" | "left" | "custom") {
+    if (this.drawingToolbarPosition === p) return;
+    this.drawingToolbarPosition = p;
+    if (p !== "custom") this.drawingToolbarOffset = { x: 0, y: 0 };
+    this.notify("drawingToolbarPosition");
+    this.notify("drawingToolbarVertical");
+    this.notify("drawingToolbarOffset");
   }
 
   setDrawingToolbarMinimized(b: boolean) {

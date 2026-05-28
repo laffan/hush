@@ -571,3 +571,133 @@ html.phone .cmd-floating-button.cmd-paste-button {
 html.phone .cmd-floating-button.panel-open {
   display: none;
 }
+
+/* Recent Files panel — sits above the footer when enabled. The top
+   border is the resize handle (drag to grow). Filled by JS row builder
+   in src/sidebar/recent-files-panel.js. */
+.recent-files-panel {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 60px;
+  border-top: 1px solid var(--panel-border, rgba(128,128,128,0.18));
+  position: relative;
+  overflow: hidden;
+}
+
+.recent-files-resizer {
+  position: absolute;
+  top: -3px; left: 0; right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 2;
+}
+
+.recent-files-header {
+  flex: 0 0 auto;
+  padding: 8px 20px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.55;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.recent-files-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+
+.recent-files-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.recent-files-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  color: var(--fg);
+}
+
+.recent-files-row:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.recent-files-icon {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+
+.recent-files-icon svg.tree-type-icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.recent-files-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-files-row.flagged .recent-files-label {
+  color: var(--accent, #d97706);
+}
+
+.recent-files-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.recent-files-row:hover .recent-files-actions {
+  display: inline-flex;
+}
+
+.recent-files-action {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--fg);
+  opacity: 0.55;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recent-files-action:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.recent-files-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.recent-files-row.flagged .recent-files-flag {
+  opacity: 1;
+  color: var(--accent, #d97706);
+}

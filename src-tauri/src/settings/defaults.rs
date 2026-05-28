@@ -109,6 +109,9 @@ pub fn default_column_width() -> u32 {
 pub fn default_sidebar_panel_width() -> u32 {
     300
 }
+pub fn default_recent_files_panel_height() -> u32 {
+    150
+}
 pub fn default_shortcut_open() -> String {
     "CmdOrCtrl+Shift+H".to_string()
 }

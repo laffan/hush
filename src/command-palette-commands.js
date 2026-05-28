@@ -402,6 +402,12 @@ function buildCommands(state) {
     { id: "nb-minimap-hide", label: "Hide minimap", icon: null, shortcutKey: null, ctx: "notebook",
       hiddenIf: (s) => !s.settings?.minimapVisible,
       action: (s) => s.toggleMinimap() },
+    { id: "recent-files-show", label: "Show Recent Files", icon: null, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !!s.settings?.showRecentFiles,
+      action: (s) => s.updateSettings({ showRecentFiles: true }) },
+    { id: "recent-files-hide", label: "Hide Recent Files", icon: null, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !s.settings?.showRecentFiles,
+      action: (s) => s.updateSettings({ showRecentFiles: false }) },
     { id: "desk-new", label: "New desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const id = await s.createDesk("Untitled desk");

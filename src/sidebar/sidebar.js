@@ -16,6 +16,7 @@ import { attachGripResize, applyPanelWidth } from "./panel-resizer.js";
 import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
+import { createRecentFilesPanel } from "./recent-files-panel.js";
 import refreshCircleRaw from "../../temp/temp-icons/refresh-circle.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
@@ -88,6 +89,23 @@ export function createSidebar(state) {
   bodyStack.appendChild(header);
   bodyStack.appendChild(body);
   bodyStack.appendChild(footer);
+
+  // Recent Files panel sits between the body (file tree / find) and the
+  // footer (Add / Settings). Inserted lazily based on settings.
+  let recentPanel = null;
+  function syncRecentPanel() {
+    const want = !!state.settings.showRecentFiles;
+    if (want && !recentPanel) {
+      recentPanel = createRecentFilesPanel(state);
+      bodyStack.insertBefore(recentPanel, footer);
+    } else if (!want && recentPanel) {
+      if (recentPanel._destroy) recentPanel._destroy();
+      recentPanel.remove();
+      recentPanel = null;
+    }
+  }
+  syncRecentPanel();
+  state.on("settings-changed", syncRecentPanel);
 
   // Full-height grip on the right edge. The grip carries two children:
   // a wide click-to-toggle button on the left, and a narrow drag-to-

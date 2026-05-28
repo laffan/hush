@@ -18,6 +18,7 @@ import { getNotebookCanvasPanes, focusAndCenterPaneById, scrollPaneToMatch } fro
 import { createDrawingLayer } from "./drawing/drawing-layer";
 import type { DrawingLayer } from "./drawing/drawing-layer";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
+import { createBgSettingsFixedButton } from "./ui/bg-settings-fixed-button";
 
 /** Read the user's flag-colour map from Hush settings. Notebook text
  *  shapes mirror Docs by colouring `==FLAG==` highlights with the flag's
@@ -354,9 +355,9 @@ export class NotesCanvas {
     const drawingChrome = createDrawingToolPanel(this.state, this._drawingLayer, bottomToolbar);
     container.appendChild(drawingChrome.flyout);
     container.appendChild(drawingChrome.dragTab);
-    container.appendChild(drawingChrome.toggleTab);
-    container.appendChild(drawingChrome.bgSettingsTab);
-    container.appendChild(drawingChrome.collapseTab);
+    const bgFixed = createBgSettingsFixedButton(this.state);
+    container.appendChild(bgFixed.button);
+    container.appendChild(bgFixed.popup);
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(() => drawingChrome.relayout());
       ro.observe(bottomToolbar);

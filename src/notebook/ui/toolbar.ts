@@ -6,8 +6,15 @@
  * lasso) is appended to this same DOM element by createDrawingToolPanel,
  * so the bar reads as one continuous strip — no inter-pill seam.
  *
- * Background settings, drag, and rotate now live as separate end-cap
- * buttons created by tool-panel.ts.
+ * Snap positions: state.drawingToolbarPosition is one of
+ *   "top"    → pinned to top edge, centered horizontally (default)
+ *   "bottom" → pinned to bottom edge, centered horizontally
+ *   "left"   → pinned to left edge, centered vertically (vertical bar)
+ *   "custom" → free-positioned by drawingToolbarOffset
+ *
+ * Responsive: if the natural width of the horizontal bar would overflow
+ * the visible canvas (minus side insets), every child shrinks to 75%
+ * and the bar wraps to two rows via flex-wrap.
  */
 
 import type { DrawingState } from "../state";
@@ -26,6 +33,8 @@ const TOOLS: ToolDef[] = [
   { iconName: "brainstorm", label: "Brainstorm", tool: "brainstorm", shortcut: "B" },
 ];
 
+const EDGE_PAD = 20;
+
 export function createToolbar(state: DrawingState): HTMLElement {
   const buttons = new Map<string, HTMLButtonElement>();
 
@@ -35,8 +44,6 @@ export function createToolbar(state: DrawingState): HTMLElement {
       style: { width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: "8px", cursor: "pointer", background: "transparent", transition: "all 0.15s" },
       children: [icon(def.iconName, 20)],
       onClick: () => {
-        // Any tool press clears an active pan — a persistent grab and
-        // a functional tool shouldn't be layered.
         if (state.isPanning) { state.isPanning = false; state.notify("isPanning"); }
         if (def.tool === "brainstorm") {
           state.brainstormMode = !state.brainstormMode;
@@ -44,10 +51,6 @@ export function createToolbar(state: DrawingState): HTMLElement {
           state.notify("brainstormMode");
           return;
         }
-        // Drag Area shortcut: when 2+ shapes are already selected,
-        // pressing Drag Area wraps the selection in a new container
-        // instead of entering draw-an-area mode. Falls through to the
-        // normal tool switch when the wrap can't apply.
         if (def.tool === "drag-area" && state.wrapSelectionInDragArea()) {
           return;
         }
@@ -64,21 +67,14 @@ export function createToolbar(state: DrawingState): HTMLElement {
   const bookmarksEl = createBookmarksPanel(state);
   const layersEl = createLayersPanel(state);
 
-  // Pan: keyboard shortcut (space) and two-finger drag are the only
-  // entry points now — the dedicated grab button was removed when the
-  // bottom toolbar was attached to the drawing toolbar (the combined
-  // unit is too wide to keep a button that's already covered by other
-  // gestures).
-
   const container = h("div", {
     style: {
       position: "absolute", top: "20px",
       display: "flex", alignItems: "center", gap: "4px", padding: "1px 8px",
-      // Flush with the rotate tab on the left and the bg-settings
-      // tab on the right — they form one continuous bar.
       borderRadius: "0",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)", zIndex: "100", userSelect: "none",
       backdropFilter: "blur(8px)",
+      flexWrap: "nowrap",
     },
     children: [
       ...TOOLS.map(makeBtn),
@@ -88,44 +84,78 @@ export function createToolbar(state: DrawingState): HTMLElement {
   });
   container.classList.add("notebook-toolbar");
 
+  function applyCompactMode(compact: boolean) {
+    container.classList.toggle("notebook-toolbar-compact", compact);
+    container.style.flexWrap = compact ? "wrap" : "nowrap";
+    container.style.maxWidth = compact ? "calc(min(100%, 320px))" : "";
+  }
+
   function update() {
     const theme = state.theme;
     container.style.background = theme.uiBackground;
 
-    // Reset both axis anchors before re-applying — flipping
-    // orientation otherwise leaves a stale axis pinned.
     container.style.left = "auto";
     container.style.right = "auto";
     container.style.top = "auto";
     container.style.bottom = "auto";
     container.style.transform = "none";
 
-    const inset = state.leftInset || 0;
+    const leftInset = state.leftInset || 0;
+    const rightInset = state.rightInset || 0;
     const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
+    const parentEl = container.parentElement;
+    const parentW = parentEl?.clientWidth || window.innerWidth;
+    const parentH = parentEl?.clientHeight || window.innerHeight;
+    const usableW = Math.max(0, parentW - leftInset - rightInset);
 
-    if (state.drawingToolbarVertical) {
-      container.style.flexDirection = "column";
-      const parentEl = container.parentElement;
-      const parentH = parentEl?.clientHeight || window.innerHeight;
-      container.style.top = ((parentH / 2) + offset.y) + "px";
-      container.style.transform = "translateY(-50%)";
-      container.style.left = `calc(${inset}px + 16px + ${offset.x}px)`;
-    } else {
-      container.style.flexDirection = "row";
-      const parentW = container.parentElement?.clientWidth || window.innerWidth;
-      const center = inset + (parentW - inset) / 2;
-      container.style.left = (center + offset.x) + "px";
-      container.style.transform = "translateX(-50%)";
-      container.style.top = `calc(20px + ${offset.y}px)`;
+    // Responsive compaction: applies in any horizontal layout.
+    const vertical = state.drawingToolbarVertical;
+    let compact = false;
+    if (!vertical) {
+      // Quick natural-width estimate: ~44px per visible child (36px button + 4px gap + padding).
+      const childCount = Array.from(container.children).filter((c) => (c as HTMLElement).offsetParent !== null || true).length;
+      const estimate = childCount * 44 + 64; // 64 for drag tab + bar padding
+      compact = estimate > usableW - 80;
+    }
+    applyCompactMode(compact);
+
+    switch (state.drawingToolbarPosition) {
+      case "left": {
+        container.style.flexDirection = "column";
+        container.style.top = (parentH / 2) + "px";
+        container.style.transform = "translateY(-50%)";
+        container.style.left = `${leftInset + 16}px`;
+        break;
+      }
+      case "bottom": {
+        container.style.flexDirection = "row";
+        const center = leftInset + usableW / 2;
+        container.style.left = center + "px";
+        container.style.transform = "translateX(-50%)";
+        container.style.bottom = `${EDGE_PAD}px`;
+        break;
+      }
+      case "custom": {
+        container.style.flexDirection = "row";
+        const center = leftInset + usableW / 2;
+        container.style.left = (center + offset.x) + "px";
+        container.style.transform = "translateX(-50%)";
+        container.style.top = `${EDGE_PAD + offset.y}px`;
+        break;
+      }
+      case "top":
+      default: {
+        container.style.flexDirection = "row";
+        const center = leftInset + usableW / 2;
+        container.style.left = center + "px";
+        container.style.transform = "translateX(-50%)";
+        container.style.top = `${EDGE_PAD}px`;
+        break;
+      }
     }
 
     const fg = theme.foreground;
     const accent = theme.accent;
-    const collapsed = state.drawingToolbarCollapsed;
-    // Class-based hide (see notebook.css) so each button's inline
-    // `display: flex` survives — clearing the inline style would
-    // stack icons vertically instead of laying them out in a row.
-    const HIDE = "notebook-toolbar-collapse-hidden";
 
     for (const [key, btn] of buttons) {
       let active: boolean;
@@ -136,17 +166,11 @@ export function createToolbar(state: DrawingState): HTMLElement {
       }
       btn.style.color = active ? accent : fg;
       btn.style.opacity = active ? "1" : "0.6";
-      // Collapsed: only the active main tool stays in the bar — its
-      // sibling buttons and the Layers / Bookmarks panel triggers hide.
-      btn.classList.toggle(HIDE, collapsed && !active);
     }
-    // Layers + Bookmarks panel triggers are siblings of the tool
-    // buttons — neither is a "tool", so both hide while collapsed.
-    layersEl.root.classList.toggle(HIDE, collapsed);
-    bookmarksEl.classList.toggle(HIDE, collapsed);
   }
 
   state.addEventListener("change", update);
+  window.addEventListener("resize", update);
   update();
   return container;
 }

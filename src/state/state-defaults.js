@@ -235,6 +235,11 @@ export function createDefaultSettings() {
     // Used to order the Cmd+O picker so the file you were just in
     // tops the list. Capped at 50; per-device, not synced.
     recentFileIds: [],
+    // Sidebar Recent Files panel — when on, the panel mounts above the
+    // bottom footer and lists `recentFileIds`. Height is user-resizable
+    // via the panel's top border.
+    showRecentFiles: false,
+    recentFilesPanelHeight: 150,
     typewriterMode: false,
     dryMode: false,
     scrollPosition: null,

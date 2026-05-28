@@ -153,6 +153,25 @@ body.notebook-mode .column-resizer {
    time) that would otherwise beat a plain class rule. */
 .notebook-toolbar-collapse-hidden { display: none !important; }
 
+/* Responsive compaction — when the bar can't fit at full size in the
+   visible canvas, every interactive child shrinks to ~75% and the bar
+   wraps to two rows. Triggered by toolbar.ts (.notebook-toolbar-compact
+   class on the bar). */
+.notebook-toolbar.notebook-toolbar-compact button,
+.notebook-toolbar.notebook-toolbar-compact .layers-panel-trigger,
+.notebook-toolbar.notebook-toolbar-compact .bookmarks-panel-trigger {
+  width: 27px !important;
+  height: 27px !important;
+}
+.notebook-toolbar.notebook-toolbar-compact button svg {
+  width: 15px;
+  height: 15px;
+}
+.notebook-toolbar.notebook-toolbar-compact {
+  gap: 2px;
+  padding: 1px 4px;
+}
+
 /* Bookmark-jump confirmation toast — fades in/out on Option+1..5.
    Positioned at the top of the canvas so it doesn't fight the bottom
    pocket tray or the side shelves. */
