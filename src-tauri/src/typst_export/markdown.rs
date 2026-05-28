@@ -177,13 +177,20 @@ fn expand_cite_sentinels(s: &str, mode: &CitationMode) -> String {
                     out.push_str(&missing_cite_marker(&key));
                 }
             }
-            // Pre-formatted label (author-date etc.). The label is plain
-            // text we built ourselves, so run it through the markup-escape
-            // pass before emitting so a stray glyph in an author name
-            // can't turn into Typst markup. Unknown keys fall back to the
-            // visible missing marker, same as Resolve.
+            // Pre-formatted label (author-date etc.). Emit it as a
+            // `#text("…")` code expression rather than bare markup: a
+            // citation flush against a preceding code expression (e.g.
+            // `*word*[@key]` → `#emph[word]…`) would otherwise let Typst
+            // parse the label's `(…)` as a call on that expression and
+            // fail with "expected comma". The leading `#` starts a fresh
+            // expression, exactly like Resolve's `#cite(…)`. Unknown keys
+            // fall back to the visible missing marker.
             CitationMode::Inline { formatted } => match formatted.get(&key) {
-                Some(label) => out.push_str(&escape_typst_text(label)),
+                Some(label) => {
+                    out.push_str("#text(\"");
+                    out.push_str(&escape_string(label));
+                    out.push_str("\")");
+                }
                 None => out.push_str(&missing_cite_marker(&key)),
             },
             CitationMode::Strip => out.push_str(&key),

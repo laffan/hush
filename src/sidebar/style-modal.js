@@ -475,7 +475,10 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     const cursorEl = pane.querySelector(".preview-cursor");
     if (cursorEl) {
       const themeObj = getThemeById(themeId);
-      const blockColor = (themeObj && themeObj.headingColor) || cursor;
+      // An explicit cursor-colour override wins (matches applyBlockCursor
+      // in the editor); otherwise the block caret uses the theme heading
+      // colour, falling back to the resolved cursor colour.
+      const blockColor = colors.cursor || (themeObj && themeObj.headingColor) || cursor;
       if (isBlock) {
         cursorEl.style.borderLeft = "none";
         cursorEl.style.background = blockColor;

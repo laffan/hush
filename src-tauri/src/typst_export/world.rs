@@ -147,15 +147,15 @@ impl World for ExportWorld {
 /// Sans-serif faces bundled with Hush. `typst-assets` ships only serif
 /// (Libertinus / New Computer Modern) and monospace (DejaVu Sans Mono)
 /// families, so styles that want a proportional sans — e.g. "Article
-/// (2 Column)" — pull from these. Regular + Bold + Italic cover the
-/// common cases; Typst synthesises bold-italic from the others. The
-/// explicit `[&'static [u8]; 3]` return type coerces each fixed-size
-/// `include_bytes!` array into a slice (faces differ in length).
-fn extra_font_blobs() -> [&'static [u8]; 3] {
+/// (2 Column)" — pull from these. "Karla" is one of the sans options
+/// Hush already offers in the editor, kept here as compact variable
+/// fonts (upright + italic); Typst varies the weight axis for bold and
+/// the explicit `[&'static [u8]; 2]` return type coerces the fixed-size
+/// `include_bytes!` arrays into slices.
+fn extra_font_blobs() -> [&'static [u8]; 2] {
     [
-        include_bytes!("../../fonts/lato/Lato-Regular.ttf"),
-        include_bytes!("../../fonts/lato/Lato-Bold.ttf"),
-        include_bytes!("../../fonts/lato/Lato-Italic.ttf"),
+        include_bytes!("../../fonts/karla/Karla-Variable.ttf"),
+        include_bytes!("../../fonts/karla/Karla-Italic-Variable.ttf"),
     ]
 }
 

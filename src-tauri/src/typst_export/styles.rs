@@ -106,7 +106,14 @@ pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
         // style argument (either a built-in name like "apa" or a path
         // to a CSL file registered alongside refs.yml).
         // `CitationStyle::typst_style_arg()` hands us the right one.
+        //
+        // Force a single column for the bibliography. On a multi-column
+        // style (Article) the reference list reads better full-width;
+        // placing the `#set page(columns: 1)` right after the pagebreak
+        // applies it to the bibliography page. On single-column styles
+        // (Formal) it's a harmless no-op.
         out.push_str("\n#pagebreak()\n");
+        out.push_str("#set page(columns: 1)\n");
         out.push_str(&format!(
             "#bibliography(\"/refs.yml\", style: \"{}\")\n",
             cite_style.typst_style_arg()
@@ -218,9 +225,9 @@ const FORMAL_PREAMBLE: &str = r##"
 "##;
 
 /// Two-column, sans-serif magazine/journal layout. Uses the bundled
-/// "Lato" face (registered in `world::EXTRA_FONTS`) since `typst-assets`
-/// has no proportional sans of its own. Body text is a touch smaller
-/// than the Formal style because two columns are narrower.
+/// "Karla" face (registered in `world::extra_font_blobs`) since
+/// `typst-assets` has no proportional sans of its own. Body text is a
+/// touch smaller than the Formal style because two columns are narrower.
 const ARTICLE_TWO_COLUMN_PREAMBLE: &str = r##"
 #set page(
   paper: "us-letter",
@@ -229,7 +236,7 @@ const ARTICLE_TWO_COLUMN_PREAMBLE: &str = r##"
   columns: 2,
 )
 #set text(
-  font: "Lato",
+  font: "Karla",
   size: 9.5pt,
   lang: "en",
 )
@@ -240,9 +247,9 @@ const ARTICLE_TWO_COLUMN_PREAMBLE: &str = r##"
   spacing: 0.9em,
 )
 #show heading: set text(weight: "bold")
-#show heading.where(level: 1): it => block(above: 0.4em, below: 1.1em)[#text(size: 1.5em)[#it]]
-#show heading.where(level: 2): it => block(above: 1.1em, below: 0.7em)[#text(size: 1.2em)[#it]]
-#show heading.where(level: 3): it => block(above: 0.9em, below: 0.6em)[#text(size: 1.05em)[#it]]
+#show heading.where(level: 1): it => block(above: 1.4em, below: 1.1em)[#text(size: 1.5em)[#it]]
+#show heading.where(level: 2): it => block(above: 2em, below: 0.7em)[#text(size: 1.2em)[#it]]
+#show heading.where(level: 3): it => block(above: 1.5em, below: 0.6em)[#text(size: 1.05em)[#it]]
 #show link: set text(fill: rgb("#1a4b8c"))
 #show raw.where(block: true): block.with(
   fill: luma(245),
