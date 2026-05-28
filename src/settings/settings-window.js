@@ -205,8 +205,6 @@ function bindAll() {
 
   // Editor tab — font/theme/size/line-height live in the Styles sidebar now;
   // only sticky headers, panes, typewriter and footnotes remain here.
-  bindCheckbox("setting-make-space-for-panes", "makeSpaceForPanes");
-  bindSelect("setting-make-space-direction", "makeSpaceDirection");
   bindCheckbox("setting-sticky-headers", "stickyHeaders");
   bindSlider("setting-typewriter-line-opacity", "typewriterLineOpacity", "%", v => (v * 100).toFixed(0));
   bindSlider("setting-focus-mode-opacity", "focusModeOpacity", "%", v => (v * 100).toFixed(0));

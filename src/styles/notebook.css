@@ -153,6 +153,32 @@ body.notebook-mode .column-resizer {
    time) that would otherwise beat a plain class rule. */
 .notebook-toolbar-collapse-hidden { display: none !important; }
 
+/* Drag handle — thin strip flush against the bar's canvas-facing edge.
+   The visible grip is a short rounded bar centered inside the strip
+   (horizontal bar for horizontal toolbars, vertical bar for vertical). */
+.notebook-tool-panel-drag-tab {
+  background: transparent;
+  outline: none;
+}
+.notebook-tool-panel-drag-tab .notebook-tool-panel-drag-grip {
+  background: currentColor;
+  opacity: 0.3;
+  border-radius: 2px;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.notebook-tool-panel-drag-tab[data-vertical="0"] .notebook-tool-panel-drag-grip {
+  width: 36px;
+  height: 3px;
+}
+.notebook-tool-panel-drag-tab[data-vertical="1"] .notebook-tool-panel-drag-grip {
+  width: 3px;
+  height: 36px;
+}
+.notebook-tool-panel-drag-tab:hover .notebook-tool-panel-drag-grip {
+  opacity: 0.6;
+}
+
 /* Responsive compaction — when the bar can't fit at full size in the
    visible canvas, every interactive child shrinks to ~75% and the bar
    wraps to two rows. Triggered by toolbar.ts (.notebook-toolbar-compact

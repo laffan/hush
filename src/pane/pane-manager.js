@@ -175,10 +175,29 @@ function onContextChange() {
 
 function notifyLayoutChange() {
   let hasPane = false;
+  let visibleCount = 0;
+  let centroidSum = 0;
+  let dockedLeftWidth = 0;
+  let dockedRightWidth = 0;
   for (const [, p] of panes) {
-    if (p.el.style.display !== "none") { hasPane = true; break; }
+    if (p.el.style.display !== "none") {
+      hasPane = true;
+      visibleCount++;
+      centroidSum += (p.x || 0) + (p.width || 0) / 2;
+      if (p.docked && p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
+      if (p.docked && p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
+    }
   }
   appState.runtime.hasVisibleDocPane = hasPane;
+  appState.runtime.visiblePaneCount = visibleCount;
+  // Average centroid of every visible pane, in viewport px. Used by
+  // editor/modes.js to decide which side the editor column should shift
+  // toward (away from a single pane; centered when multi-pane).
+  appState.runtime.visiblePaneCentroid = visibleCount > 0 ? centroidSum / visibleCount : null;
+  // Docked-pane footprints — editor column padding needs to clear these
+  // so the edit area never slides under a left/right dock.
+  appState.runtime.dockedLeftWidth = dockedLeftWidth;
+  appState.runtime.dockedRightWidth = dockedRightWidth;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
   // Surface pane-set changes to the notebook shelf (and any other
   // listener) so its pane rows can refresh on create/close/show/hide.

@@ -26,6 +26,8 @@ import {
   dropZoneAt,
   isDocked,
   applyDockGeometry,
+  getLeftInset,
+  getRightInset,
 } from "./pane-dock.js";
 
 let _dockOverlay = null;
@@ -34,7 +36,7 @@ function ensureDockOverlay() {
   if (_dockOverlay) return _dockOverlay;
   const root = document.createElement("div");
   root.className = "pane-dock-overlay";
-  for (const edge of ["top", "bottom", "left", "right"]) {
+  for (const edge of ["left", "right"]) {
     const z = document.createElement("div");
     z.className = `pane-dock-zone pane-dock-zone-${edge}`;
     z.dataset.edge = edge;
@@ -62,20 +64,13 @@ function positionDockZones() {
     pointerEvents: "none",
     zIndex: "9999",
   });
-  const sidebar = document.getElementById("panel-overlay");
-  const sbW = sidebar && !sidebar.classList.contains("hidden")
-    ? sidebar.getBoundingClientRect().width
-    : (sidebar?.querySelector(".sidebar-grip")?.getBoundingClientRect().width || 0);
-  const inset = Math.max(0, sbW);
   const ZONE = 100;
-  const top = overlay.querySelector(".pane-dock-zone-top");
-  const bottom = overlay.querySelector(".pane-dock-zone-bottom");
+  const leftInset = getLeftInset();
+  const rightInset = getRightInset();
   const left = overlay.querySelector(".pane-dock-zone-left");
   const right = overlay.querySelector(".pane-dock-zone-right");
-  if (top) Object.assign(top.style, { left: inset + "px", top: "0px", width: (r.width - inset) + "px", height: (ZONE + TITLEBAR_HEIGHT) + "px" });
-  if (bottom) Object.assign(bottom.style, { left: inset + "px", top: (r.height - ZONE) + "px", width: (r.width - inset) + "px", height: ZONE + "px" });
-  if (left) Object.assign(left.style, { left: inset + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
-  if (right) Object.assign(right.style, { left: (r.width - ZONE) + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
+  if (left) Object.assign(left.style, { left: leftInset + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
+  if (right) Object.assign(right.style, { left: (r.width - rightInset - ZONE) + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
 }
 
 function highlightDockZone(edge) {

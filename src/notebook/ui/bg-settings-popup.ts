@@ -35,8 +35,11 @@ export interface BgSettingsHandle {
   toggle(): void;
   /** Use an alternate anchor element for popup positioning. The fixed
    *  bottom-right button calls this with itself so positioning lands
-   *  next to the visible button rather than the hidden internal tab. */
-  setAnchor(el: HTMLElement | null): void;
+   *  next to the visible button rather than the hidden internal tab.
+   *  `mode: "above-right"` aligns the popup's bottom to the anchor's
+   *  top edge and its right to the anchor's right — used by the
+   *  bottom-right fixed button so the flyout opens upward. */
+  setAnchor(el: HTMLElement | null, opts?: { mode?: "auto" | "above-right" }): void;
 }
 
 export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
@@ -95,8 +98,10 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
   });
 
   let anchor: HTMLElement = tab;
-  function setAnchor(el: HTMLElement | null): void {
+  let anchorMode: "auto" | "above-right" = "auto";
+  function setAnchor(el: HTMLElement | null, opts?: { mode?: "auto" | "above-right" }): void {
     anchor = el || tab;
+    anchorMode = opts?.mode || "auto";
     if (popupOpen) reposition();
   }
   function toggle(): void {
@@ -115,6 +120,16 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
     popup.style.right = "auto";
     popup.style.top = "auto";
     popup.style.bottom = "auto";
+    popup.style.transform = "none";
+    if (anchorMode === "above-right") {
+      // Pin the popup so its right edge aligns with the anchor's right
+      // edge and its bottom sits just above the anchor's top. Used by
+      // the bottom-right fixed bg-settings button so the flyout opens
+      // upward and stays inside the viewport.
+      popup.style.right = `${parentRect.right - btnRect.right}px`;
+      popup.style.bottom = `${parentRect.bottom - btnRect.top + 8}px`;
+      return;
+    }
     if (state.drawingToolbarVertical) {
       const centerY = btnRect.top + btnRect.height / 2 - parentRect.top;
       popup.style.top = `${centerY}px`;

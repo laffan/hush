@@ -85,22 +85,6 @@ export function renderEditorTab(settings) {
     </div>
 
     <div class="settings-section">
-      <h2>Panes</h2>
-      <div class="settings-row">
-        <label>Make space for panes</label>
-        <input type="checkbox" id="setting-make-space-for-panes" ${s.makeSpaceForPanes !== false ? "checked" : ""} />
-      </div>
-      <div class="settings-row">
-        <label>Shift column to</label>
-        <select id="setting-make-space-direction">
-          <option value="right" ${(s.makeSpaceDirection || "right") === "right" ? "selected" : ""}>Right</option>
-          <option value="left" ${s.makeSpaceDirection === "left" ? "selected" : ""}>Left</option>
-        </select>
-      </div>
-      <p class="settings-help">When a pane is open, shift the edit column away from the panes.</p>
-    </div>
-
-    <div class="settings-section">
       <h2>Typewriter</h2>
       <div class="settings-slider-row">
         <label>Line opacity</label>

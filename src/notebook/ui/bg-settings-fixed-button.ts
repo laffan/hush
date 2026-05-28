@@ -53,9 +53,10 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
   });
   button.classList.add("notebook-bg-settings-fixed-btn");
 
-  // Anchor the popup against the visible button rather than the
-  // internal tab (which lives off-screen — we never append it).
-  bg.setAnchor(button);
+  // Anchor the popup against the visible button — the fixed button
+  // sits in the bottom-right corner, so use the above-right mode so
+  // the flyout opens upward and aligns with the button's right edge.
+  bg.setAnchor(button, { mode: "above-right" });
 
   function refresh() {
     button.style.color = state.theme.foreground;

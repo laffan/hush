@@ -38,7 +38,7 @@ export function isDocked(pane) {
 
 export function dockPane(pane, edge) {
   if (!pane || !edge) return;
-  if (!["top", "bottom", "left", "right"].includes(edge)) return;
+  if (!["left", "right"].includes(edge)) return;
   // Detach from any anchored / gutter mode — docking owns geometry.
   if (pane.attached) {
     pane.attached = false;
@@ -56,12 +56,12 @@ export function dockPane(pane, edge) {
   }
   pane.docked = true;
   pane.dockEdge = edge;
-  // Pick a sensible initial user dimension if the user hasn't sized
-  // this docked instance yet.
-  if (edge === "top" || edge === "bottom") {
-    pane.dockUserSize = pane.dockUserSize || pane.height || DEFAULT_DOCK_HEIGHT;
-  } else {
-    pane.dockUserSize = pane.dockUserSize || pane.width || DEFAULT_DOCK_WIDTH;
+  // Default to half the visible canvas width if the user hasn't sized
+  // this dock yet — keeps the editor + a docked reference roughly
+  // balanced rather than the docked pane crowding everything out.
+  if (!pane.dockUserSize) {
+    const visW = computeVisibleWidth();
+    pane.dockUserSize = Math.max(MIN_WIDTH, Math.min(visW * 0.5, visW - DOCK_MIN_FREE));
   }
   pane.el?.classList.add("docked", `docked-${edge}`);
   applyDockGeometry(pane);
@@ -98,30 +98,14 @@ export function applyDockGeometry(pane) {
   if (!pane || !pane.docked || !pane.el || !containerEl) return;
   const cr = containerEl.getBoundingClientRect();
   const leftInset = getLeftInset();
+  const rightInset = getRightInset();
   const winW = cr.width;
   const winH = cr.height;
+  const visW = Math.max(0, winW - leftInset - rightInset);
 
   switch (pane.dockEdge) {
-    case "top": {
-      const h = Math.max(MIN_HEIGHT, Math.min(winH - DOCK_MIN_FREE, pane.dockUserSize || DEFAULT_DOCK_HEIGHT));
-      pane.dockUserSize = h;
-      pane.x = leftInset;
-      pane.y = 0;
-      pane.width = Math.max(MIN_WIDTH, winW - leftInset);
-      pane.height = h;
-      break;
-    }
-    case "bottom": {
-      const h = Math.max(MIN_HEIGHT, Math.min(winH - DOCK_MIN_FREE, pane.dockUserSize || DEFAULT_DOCK_HEIGHT));
-      pane.dockUserSize = h;
-      pane.x = leftInset;
-      pane.y = winH - h;
-      pane.width = Math.max(MIN_WIDTH, winW - leftInset);
-      pane.height = h;
-      break;
-    }
     case "left": {
-      const w = Math.max(MIN_WIDTH, Math.min(winW - DOCK_MIN_FREE, pane.dockUserSize || DEFAULT_DOCK_WIDTH));
+      const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE, pane.dockUserSize || (visW * 0.5)));
       pane.dockUserSize = w;
       pane.x = leftInset;
       pane.y = 0;
@@ -130,9 +114,9 @@ export function applyDockGeometry(pane) {
       break;
     }
     case "right": {
-      const w = Math.max(MIN_WIDTH, Math.min(winW - DOCK_MIN_FREE, pane.dockUserSize || DEFAULT_DOCK_WIDTH));
+      const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE, pane.dockUserSize || (visW * 0.5)));
       pane.dockUserSize = w;
-      pane.x = winW - w;
+      pane.x = winW - w - rightInset;
       pane.y = 0;
       pane.width = w;
       pane.height = winH;
@@ -147,8 +131,8 @@ export function applyDockGeometry(pane) {
   });
 }
 
-/** Track the sidebar / panel-overlay inset so docked panes start past it. */
-function getLeftInset() {
+/** Track the left sidebar (file panel) so docked panes start past it. */
+export function getLeftInset() {
   const overlay = document.getElementById("panel-overlay");
   if (!overlay) return 0;
   if (overlay.classList.contains("hidden")) {
@@ -156,6 +140,33 @@ function getLeftInset() {
     return grip ? grip.getBoundingClientRect().width : 0;
   }
   return overlay.getBoundingClientRect().width;
+}
+
+/** Track the right-side chrome (shelf / outline / annotation panel) so
+ *  docked panes don't end up underneath them. Walks every known
+ *  right-edge element and takes the largest footprint — at most one is
+ *  ever visible at a time today, so a max() is sufficient. */
+export function getRightInset() {
+  let inset = 0;
+  const shelf = document.querySelector(".notebook-shelf");
+  if (shelf) {
+    const isOpen = shelf.__isShelfOpen ? shelf.__isShelfOpen() : false;
+    if (isOpen && shelf.__getShelfWidth) inset = Math.max(inset, shelf.__getShelfWidth());
+    else inset = Math.max(inset, shelf.getBoundingClientRect().width); // closed grip strip
+  }
+  const longview = document.getElementById("right-panel-overlay");
+  if (longview && !longview.classList.contains("hidden")) {
+    inset = Math.max(inset, longview.getBoundingClientRect().width);
+  }
+  const pdfShelf = document.querySelector(".pdf-annot-shelf.open");
+  if (pdfShelf) inset = Math.max(inset, pdfShelf.getBoundingClientRect().width);
+  return inset;
+}
+
+function computeVisibleWidth() {
+  const cr = containerEl?.getBoundingClientRect();
+  if (!cr) return 800;
+  return Math.max(200, cr.width - getLeftInset() - getRightInset());
 }
 
 /** Iterate every docked pane and re-apply geometry. Called from the
@@ -166,49 +177,67 @@ export function reflowAllDockedPanes() {
   }
 }
 
-/** Install window resize + sidebar observers so docked panes re-flex
- *  automatically. Returns a cleanup function. */
+/** Install window resize + chrome observers so docked panes re-flex
+ *  automatically. Watches the left sidebar plus every known right-edge
+ *  panel; only the active context's chrome will actually be in the DOM
+ *  at any one moment. Returns a cleanup function. */
 export function installDockReflowListeners() {
   const onResize = () => reflowAllDockedPanes();
   window.addEventListener("resize", onResize);
-  let mo = null;
-  const overlay = document.getElementById("panel-overlay");
-  if (overlay) {
-    mo = new MutationObserver(() => reflowAllDockedPanes());
-    mo.observe(overlay, { attributes: true, attributeFilter: ["class", "style"] });
+  const observers = [];
+  function watch(el) {
+    if (!el) return;
+    const mo = new MutationObserver(() => reflowAllDockedPanes());
+    mo.observe(el, { attributes: true, attributeFilter: ["class", "style"] });
+    observers.push(mo);
   }
-  // Sidebar resize fires a custom event via the resizer module — observe
-  // appState for the synthesized "settings-changed" trigger.
-  let stop = null;
+  watch(document.getElementById("panel-overlay"));
+  watch(document.getElementById("right-panel-overlay"));
+  // The shelf is mounted dynamically inside the notebook container.
+  // A MutationObserver on the body catches its mount and we then
+  // observe the shelf node directly so width changes flow through.
+  const bodyObs = new MutationObserver(() => {
+    const shelf = document.querySelector(".notebook-shelf");
+    if (shelf && !shelf.__dockObserved) {
+      shelf.__dockObserved = true;
+      watch(shelf);
+      reflowAllDockedPanes();
+    }
+    const pdfShelf = document.querySelector(".pdf-annot-shelf");
+    if (pdfShelf && !pdfShelf.__dockObserved) {
+      pdfShelf.__dockObserved = true;
+      watch(pdfShelf);
+      reflowAllDockedPanes();
+    }
+  });
+  bodyObs.observe(document.body, { childList: true, subtree: true });
+  observers.push(bodyObs);
+
+  let stopAppSettings = null;
   if (appState && appState.on) {
     const handler = () => reflowAllDockedPanes();
     appState.on("settings-changed", handler);
-    stop = () => appState.off("settings-changed", handler);
+    stopAppSettings = () => appState.off("settings-changed", handler);
   }
   return () => {
     window.removeEventListener("resize", onResize);
-    if (mo) mo.disconnect();
-    if (stop) stop();
+    for (const m of observers) m.disconnect();
+    if (stopAppSettings) stopAppSettings();
   };
 }
 
 /** Hit-test client coords against a docked-zone overlay. Returns the
- *  edge name or null. Drop zone = anything within `100px` of the named
- *  edge. */
+ *  edge name or null. Only left/right docking is supported now —
+ *  top/bottom zones were dropped per design feedback. */
 export function dropZoneAt(clientX, clientY) {
   if (!containerEl) return null;
   const r = containerEl.getBoundingClientRect();
   const leftInset = getLeftInset();
+  const rightInset = getRightInset();
   const ZONE = 100;
-  // Only consider points inside the container's bounds.
   if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
   const dx = clientX - r.left;
-  const dy = clientY - r.top;
-  // Corner priority: prefer top/bottom over left/right when both apply
-  // (rare, but matters at the corners).
-  if (dy < ZONE + TITLEBAR_HEIGHT) return "top";
-  if (dy > r.height - ZONE) return "bottom";
   if (dx < leftInset + ZONE) return "left";
-  if (dx > r.width - ZONE) return "right";
+  if (dx > r.width - rightInset - ZONE) return "right";
   return null;
 }

@@ -147,28 +147,36 @@ export function updateColumnResizers(state) {
       rightInsetOffset = 200; // right panel (200)
     }
 
+    // Docked panes carve out additional space the editor column must
+    // not overlap. Stack with whatever chrome insets are already in
+    // play so a left-docked pane sitting beside an open sidebar still
+    // leaves the column properly contained.
+    leftInsetOffset += state.runtime.dockedLeftWidth || 0;
+    rightInsetOffset += state.runtime.dockedRightWidth || 0;
+
     const availableWidth = w - leftInsetOffset - rightInsetOffset;
     let leftPad, rightPad;
 
-    // "Make space for panes": when a doc pane is visible in this context,
-    // push the column away from the panes per the user's chosen direction.
-    const makeSpace = state.settings.makeSpaceForPanes !== false;
-    const direction = state.settings.makeSpaceDirection === "left" ? "left" : "right";
-    const hasDocPane = !!state.runtime.hasVisibleDocPane;
-    const makeSpaceActive = makeSpace && hasDocPane && !state.currentNotebookFileId && availableWidth > colW + minPad * 2;
+    // Make-space-for-panes is automatic: always on when a single pane
+    // is visible. With one pane, shift the column away from the side
+    // that pane sits on (compare centroid to viewport mid). With zero
+    // or 2+ panes, center the column — multi-pane layouts vary too
+    // much to auto-choose, so leave it neutral and let the user drag.
+    const visiblePaneCount = state.runtime.visiblePaneCount || 0;
+    const centroid = state.runtime.visiblePaneCentroid;
+    const makeSpaceActive = visiblePaneCount === 1 && !state.currentNotebookFileId && availableWidth > colW + minPad * 2;
     if (makeSpaceActive) {
-      // Allow the user to drag the column horizontally. The persisted
-      // offset is clamped against the remaining slack so the column
-      // can't slide off-screen or under the pane.
       const slack = availableWidth - colW - minPad * 2;
       const rawOff = Number(state.settings.makeSpaceColumnOffset || 0);
       const off = Math.max(0, Math.min(slack, rawOff));
-      if (direction === "left") {
-        leftPad = minPad + leftInsetOffset + off;
-        rightPad = w - colW - leftPad;
-      } else {
+      const viewportMid = leftInsetOffset + (w - leftInsetOffset - rightInsetOffset) / 2;
+      const paneOnLeft = centroid !== null && centroid < viewportMid;
+      if (paneOnLeft) {
         rightPad = minPad + rightInsetOffset + off;
         leftPad = w - colW - rightPad;
+      } else {
+        leftPad = minPad + leftInsetOffset + off;
+        rightPad = w - colW - leftPad;
       }
     } else {
       const basePad = Math.max(minPad, Math.floor((availableWidth - colW) / 2));

@@ -620,7 +620,10 @@ html.phone .cmd-floating-button.panel-open {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 6px 8px;
+  /* Reserve enough vertical room for the action icons so revealing them
+     on hover doesn't reflow the row taller and shove the next row down. */
+  min-height: 28px;
   border-radius: 4px;
   cursor: pointer;
   position: relative;
@@ -665,13 +668,17 @@ html.phone .cmd-floating-button.panel-open {
 }
 
 .recent-files-actions {
-  display: none;
+  /* Always laid out so revealing icons on hover doesn't reflow the
+     row taller. Visibility hides them without removing them from
+     flow. */
+  display: inline-flex;
   align-items: center;
   gap: 2px;
+  visibility: hidden;
 }
 
 .recent-files-row:hover .recent-files-actions {
-  display: inline-flex;
+  visibility: visible;
 }
 
 .recent-files-action {

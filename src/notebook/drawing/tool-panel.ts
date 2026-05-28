@@ -124,27 +124,33 @@ export function createDrawingToolPanel(
   });
   bottomToolbar.appendChild(lassoBtn);
 
-  // ----- Drag tab (single end-cap) ----------------------------------
+  // ----- Drag handle (thin strip on the canvas-facing edge) ----------
+  // Replaces the previous end-cap pill. The strip spans the bar's main
+  // axis and sits flush against the edge that faces the canvas — bottom
+  // edge for a top-pinned bar, top edge for a bottom-pinned bar, right
+  // edge for a left-pinned (vertical) bar. The visible grabber is a
+  // short rounded bar centered inside the strip.
 
-  const tabBaseStyle = {
-    position: "absolute" as const,
-    display: "flex" as const,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
+  const dragTab = document.createElement("button") as HTMLButtonElement;
+  dragTab.title = "Drag toolbar";
+  Object.assign(dragTab.style, {
+    position: "absolute",
     border: "none",
-    transition: "background 0.15s",
-    touchAction: "none" as const,
-    zIndex: "100",
+    background: "transparent",
+    cursor: "grab",
+    touchAction: "none",
+    zIndex: "101",
     padding: "0",
-    userSelect: "none" as const,
-  };
-
-  const dragTab = h("button", {
-    title: "Drag toolbar",
-    style: { ...tabBaseStyle, width: `${END_CAP_DEPTH}px`, height: `${BAR_HEIGHT_HORIZONTAL}px`, borderRadius: "12px 0 0 12px", cursor: "grab" },
-    children: [icon("menu", 18)],
-  }) as HTMLButtonElement;
+    margin: "0",
+    userSelect: "none",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  } as Partial<CSSStyleDeclaration>);
   dragTab.classList.add("notebook-tool-panel-drag-tab");
+  const dragGrip = document.createElement("span");
+  dragGrip.className = "notebook-tool-panel-drag-grip";
+  dragTab.appendChild(dragGrip);
 
   // ----- Snap-zone overlays -----------------------------------------
 
@@ -447,26 +453,23 @@ export function createDrawingToolPanel(
     if (slot) drawingLayer.applySlot(slot);
   }
 
+  const DRAG_STRIP_THICKNESS = 14;
+
   function styleDragTab(vertical: boolean): void {
-    const tabBg = "rgba(127,127,127,0.18)";
-    const fg = state.theme.foreground;
     if (vertical) {
-      dragTab.style.width = `${BAR_WIDTH_VERTICAL}px`;
-      dragTab.style.height = `${END_CAP_DEPTH}px`;
-      dragTab.style.borderRadius = "12px 12px 0 0";
+      dragTab.style.width = `${DRAG_STRIP_THICKNESS}px`;
+      dragTab.style.height = "100%";
       separator.style.width = "24px";
       separator.style.height = "1px";
       separator.style.margin = "4px 0";
     } else {
-      dragTab.style.width = `${END_CAP_DEPTH}px`;
-      dragTab.style.height = `${BAR_HEIGHT_HORIZONTAL}px`;
-      dragTab.style.borderRadius = "12px 0 0 12px";
+      dragTab.style.width = "100%";
+      dragTab.style.height = `${DRAG_STRIP_THICKNESS}px`;
       separator.style.width = "1px";
       separator.style.height = "24px";
       separator.style.margin = "0 4px";
     }
-    dragTab.style.background = tabBg;
-    dragTab.style.color = fg;
+    dragTab.dataset.vertical = vertical ? "1" : "0";
   }
 
   function applyLayout(): void {
@@ -485,12 +488,23 @@ export function createDrawingToolPanel(
       dragTab.style.transform = "none";
       const tbLeft = tbRect.left - parentRect.left;
       const tbTop = tbRect.top - parentRect.top;
+      const tbW = tbRect.width;
+      const tbH = tbRect.height;
+      const pos = state.drawingToolbarPosition;
       if (vertical) {
-        dragTab.style.left = tbLeft + "px";
-        dragTab.style.top = (tbTop - END_CAP_DEPTH) + "px";
-      } else {
-        dragTab.style.left = (tbLeft - END_CAP_DEPTH) + "px";
+        // Vertical bar pinned to the left edge → handle on right edge.
+        dragTab.style.left = (tbLeft + tbW) + "px";
         dragTab.style.top = tbTop + "px";
+        dragTab.style.width = `${DRAG_STRIP_THICKNESS}px`;
+        dragTab.style.height = `${tbH}px`;
+      } else {
+        // Horizontal bar — handle on the canvas-facing edge.
+        // `top` and `custom` face the canvas downward; `bottom` upward.
+        const onBottomEdge = pos !== "bottom";
+        dragTab.style.left = tbLeft + "px";
+        dragTab.style.width = `${tbW}px`;
+        dragTab.style.height = `${DRAG_STRIP_THICKNESS}px`;
+        dragTab.style.top = (onBottomEdge ? (tbTop + tbH) : (tbTop - DRAG_STRIP_THICKNESS)) + "px";
       }
     };
     place();

@@ -71,7 +71,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
     style: {
       position: "absolute", top: "20px",
       display: "flex", alignItems: "center", gap: "4px", padding: "1px 8px",
-      borderRadius: "0",
+      borderRadius: "12px",
       boxShadow: "0 2px 12px rgba(0,0,0,0.12)", zIndex: "100", userSelect: "none",
       backdropFilter: "blur(8px)",
       flexWrap: "nowrap",
