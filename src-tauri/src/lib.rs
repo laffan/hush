@@ -85,6 +85,11 @@ pub struct TreeNode {
     // Enables annotation fetch + overlay via the Zotero API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zotero_att_key: Option<String>,
+    // Sidebar background tint — one of the keys in ROW_COLORS
+    // (files-panel-row-menu.js). Children inherit visually via CSS
+    // cascade; absent on most nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg_color: Option<String>,
 }
 
 pub fn get_data_dir() -> PathBuf {

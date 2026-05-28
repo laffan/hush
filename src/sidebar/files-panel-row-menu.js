@@ -166,7 +166,22 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
   const menu = document.createElement("div");
   menu.className = "tree-row-menu";
 
-  // Color palette — first row of the menu for all non-trash nodes
+  for (const ent of entries) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "tree-row-menu-item";
+    item.dataset.treeAction = ent.action;
+    if (ent.targetType) item.dataset.targetType = ent.targetType;
+    item.textContent = ent.label;
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeRowMenu();
+      dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn, targetType: ent.targetType });
+    });
+    menu.appendChild(item);
+  }
+
+  // Color palette — last row of the menu for all non-trash nodes
   if (node && !isTrashId(nodeId) && !flagOnly) {
     const palette = document.createElement("div");
     palette.className = "tree-row-menu-colors";
@@ -195,21 +210,6 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       palette.appendChild(sw);
     }
     menu.appendChild(palette);
-  }
-
-  for (const ent of entries) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "tree-row-menu-item";
-    item.dataset.treeAction = ent.action;
-    if (ent.targetType) item.dataset.targetType = ent.targetType;
-    item.textContent = ent.label;
-    item.addEventListener("click", (e) => {
-      e.stopPropagation();
-      closeRowMenu();
-      dispatchRowAction(ent.action, nodeId, { anchor: anchorBtn, targetType: ent.targetType });
-    });
-    menu.appendChild(item);
   }
 
   document.body.appendChild(menu);

@@ -352,7 +352,7 @@ export async function duplicateTreeNode(state, nodeId) {
   if (!node || (node.type !== "document" && node.type !== "notebook") || !node.fileId) return;
   const newFileId = await state.duplicateFile(node.fileId);
   if (!newFileId) return;
-  const newNode = { id: crypto.randomUUID(), type: node.type, name: node.name + "-Copy", fileId: newFileId, children: [], flagged: false };
+  const newNode = { id: crypto.randomUUID(), type: node.type, name: node.name + "-Copy", fileId: newFileId, children: [], flagged: false, ...(node.bgColor ? { bgColor: node.bgColor } : {}) };
   insertAfter(state.fileTree, nodeId, newNode);
   await state.saveFileTree();
 }

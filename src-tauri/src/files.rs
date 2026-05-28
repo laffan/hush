@@ -43,6 +43,7 @@ impl FileManager {
                     locked_style_id: None,
                     use_as_note: false,
                     zotero_att_key: None,
+                    bg_color: None,
                 })
                 .collect();
             self.save_file_tree(&tree)?;
@@ -73,6 +74,7 @@ impl FileManager {
             locked_style_id: None,
             use_as_note: false,
             zotero_att_key: None,
+            bg_color: None,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());
@@ -96,6 +98,7 @@ impl FileManager {
             locked_style_id: None,
             use_as_note: false,
             zotero_att_key: None,
+            bg_color: None,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());
@@ -124,6 +127,7 @@ impl FileManager {
             locked_style_id: None,
             use_as_note: false,
             zotero_att_key: None,
+            bg_color: None,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());
@@ -151,6 +155,7 @@ impl FileManager {
             locked_style_id: None,
             use_as_note: false,
             zotero_att_key: None,
+            bg_color: None,
         };
         let mut tree = self.get_file_tree()?;
         insert_into_tree(&mut tree, parent_id, node.clone());

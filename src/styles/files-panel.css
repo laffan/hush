@@ -312,12 +312,12 @@
 .tree-row-menu-colors {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
-  padding: 6px 8px 2px;
+  padding: 4px 8px 6px;
 }
 
 .tree-row-color-swatch {
   width: 16px;
-  height: 16px;
+  height: 8px;
   border: none;
   padding: 0;
   cursor: pointer;

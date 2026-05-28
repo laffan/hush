@@ -83,6 +83,7 @@ export async function convertProjectToDoc(state, nodeId) {
     fileId,
     children: [],
     flagged: node.flagged,
+    ...(node.bgColor ? { bgColor: node.bgColor } : {}),
   };
 
   let filesFolder = null;
@@ -192,6 +193,7 @@ export async function convertDocToProject(state, nodeId) {
     name: node.name,
     children: childNodes,
     flagged: node.flagged,
+    ...(node.bgColor ? { bgColor: node.bgColor } : {}),
   };
 
   const parent = findParentOfNode(state.fileTree, nodeId);
