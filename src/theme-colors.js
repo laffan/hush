@@ -37,6 +37,23 @@ export const themeBackgrounds = {
   softContrast: "#f5f3ee", solsticeEstival: "#f0eee7",
 };
 
+// Known theme foreground (editor text) colors — must match each theme's
+// `settings.foreground` in src/themes/<theme>.js. Used so the app's UI
+// chrome (buttons, sidebar text, command palette) can track the active
+// style/theme's text colour instead of a generic luminance-derived grey.
+export const themeForegrounds = {
+  dracula: "#f8f8f2", ayuLight: "#5c6166", clouds: "#000000",
+  noctisLilac: "#0c006b", rosePineDawn: "#575279", solarizedLight: "#586E75",
+  smoothy: "#000000", amy: "#D0D0FF", barf: "#EEF2F7", bespin: "#BAAE9E",
+  birdsOfParadise: "#E6E1C4", boysAndGirls: "#FFFFFF", cobalt: "#FFFFFF",
+  coolGlow: "#E0E0E0", espresso: "#000000", tomorrow: "#4D4D4C",
+  akariNight: "#E6DED3", auroraBorealis: "#2e3440", aurumDusk: "#f2e8dc",
+  calmDark: "#e6e2d9", darkGreenJungle: "#d4d4d4", eyeComfortDarkPro: "#d4d4d4",
+  ghibliForestDark: "#E8DFD0", mapleLight: "#475569", midnightFrost: "#a7dbf7",
+  midnightGlow: "#fcf6ff", nuttyLight: "#2A1F16", pokemonColor: "#eeffff",
+  softContrast: "#2B2B2B", solsticeEstival: "#1B3C3C",
+};
+
 export function hexLuminance(hex) {
   hex = hex.replace("#", "");
   if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
@@ -46,25 +63,31 @@ export function hexLuminance(hex) {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 }
 
-export function updatePrivateBoxColor(state, overrideBg) {
+export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
   let bg = overrideBg || null;
+  // Resolve the active style/theme's foreground in parallel with the bg
+  // so the UI chrome can match the editor text colour. `overrideFg` lets
+  // a caller (e.g. a style hover-preview) force a specific value.
+  let fg = overrideFg || null;
 
-  if (!bg) {
+  if (!bg || !fg) {
     if (state.settings.activeStyleId && state.settings.styles) {
       const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
       if (style) {
         const { themeId, colors } = resolveStyleForAppearance(style, state.settings.appearance);
-        bg = (colors && colors.bg) || themeBackgrounds[themeId] || (style.colorOverrides && style.colorOverrides.bg) || themeBackgrounds[style.themeId];
+        if (!bg) bg = (colors && colors.bg) || themeBackgrounds[themeId] || (style.colorOverrides && style.colorOverrides.bg) || themeBackgrounds[style.themeId];
+        if (!fg) fg = (colors && colors.fg) || themeForegrounds[themeId] || (style.colorOverrides && style.colorOverrides.fg) || themeForegrounds[style.themeId];
       }
     }
 
-    if (!bg) {
+    if (!bg || !fg) {
       let appearance = state.settings.appearance || "dark";
       if (appearance === "auto") {
         appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
       }
       const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
-      bg = themeBackgrounds[themeId];
+      if (!bg) bg = themeBackgrounds[themeId];
+      if (!fg) fg = themeForegrounds[themeId];
     }
   }
 
@@ -77,9 +100,13 @@ export function updatePrivateBoxColor(state, overrideBg) {
     const isDark = luminance <= 0.5;
     const root = document.documentElement.style;
 
+    // The UI chrome foreground matches the resolved text colour when we
+    // have one; otherwise fall back to the legacy luminance-based grey.
+    const uiFg = (fg && fg.startsWith("#")) ? fg : (isDark ? "#e0e0e0" : "#1a1a1a");
+
     root.setProperty("--private-box", isDark ? "#ffffff" : "#000000");
     root.setProperty("--theme-bg", bg);
-    root.setProperty("--fg", isDark ? "#e0e0e0" : "#1a1a1a");
+    root.setProperty("--fg", uiFg);
     root.setProperty("--cursor", isDark ? "#e0e0e0" : "#1a1a1a");
     root.setProperty("--sidebar-icon-color", isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.45)");
     root.setProperty("--sidebar-icon-hover", isDark ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.85)");
@@ -102,11 +129,10 @@ export function updatePrivateBoxColor(state, overrideBg) {
     if (document.documentElement.classList.contains("ios")) {
       document.documentElement.style.backgroundColor = bg;
       document.body.style.backgroundColor = bg;
-      const fg = isDark ? "#e0e0e0" : "#1a1a1a";
       const panel = document.getElementById("panel-overlay");
       if (panel) {
         panel.style.backgroundColor = bg;
-        panel.style.color = fg;
+        panel.style.color = uiFg;
       }
     }
   }

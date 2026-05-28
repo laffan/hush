@@ -184,3 +184,96 @@
 .notebook-export-modal .nxm-confirm:hover {
   filter: brightness(1.05);
 }
+
+/* ===== Two-column doc export (controls + live preview) ===== */
+
+.notebook-export-modal.nxm-2col {
+  width: 800px;
+  max-width: 94vw;
+  max-height: 88vh;
+}
+
+.notebook-export-modal.nxm-2col .nxm-columns {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.notebook-export-modal.nxm-2col .nxm-left {
+  width: 300px;
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.notebook-export-modal.nxm-2col .nxm-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notebook-export-modal.nxm-2col .nxm-preview {
+  flex: 1;
+  min-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.08);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.notebook-export-modal.nxm-2col .nxm-preview.is-text {
+  align-items: stretch;
+}
+
+.notebook-export-modal.nxm-2col .nxm-preview-page {
+  display: block;
+  width: 100%;
+  height: auto;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.notebook-export-modal.nxm-2col .nxm-preview-note {
+  margin: auto;
+  font-size: 12px;
+  opacity: 0.6;
+  text-align: center;
+  padding: 8px;
+}
+
+.notebook-export-modal.nxm-2col .nxm-preview-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
+/* Narrow viewports (phones): stack controls above the preview. */
+@media (max-width: 640px) {
+  .notebook-export-modal.nxm-2col .nxm-columns {
+    flex-direction: column;
+  }
+  .notebook-export-modal.nxm-2col .nxm-left {
+    width: auto;
+    flex: 0 0 auto;
+    overflow-y: visible;
+  }
+  .notebook-export-modal.nxm-2col .nxm-preview {
+    min-height: 200px;
+  }
+}

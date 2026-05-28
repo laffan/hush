@@ -130,7 +130,7 @@ export function applyActiveStyle(state) {
     {
       const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
       const resolvedBg = defaultColors.bg || themeBackgrounds[themeId];
-      updatePrivateBoxColor(state, resolvedBg);
+      updatePrivateBoxColor(state, resolvedBg, defaultColors.fg || null);
     }
     // Default style's shader lives at the top level of AppSettings.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });

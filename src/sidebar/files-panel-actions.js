@@ -172,8 +172,21 @@ export async function handleOpenAsStack(nodeId, state, refreshAfter) {
   const proceed = async () => {
     const result = await state.createStack(node.name, null, { openImmediately: true });
     if (!result) return;
-    const { getStackInstance } = await import("../stack/stack-bridge.js");
-    const inst = getStackInstance();
+    // `createStack({ openImmediately: true })` returns once the file is
+    // created, but the stack mounts asynchronously through the
+    // "stack-open" event handler in main.js. Poll until the bridge
+    // reports the *new* stack as mounted (matching fileId so we never
+    // populate a stale instance left over from a previously-open stack)
+    // before adding the container's children as columns.
+    const { getStackInstance, getStackFileId } = await import("../stack/stack-bridge.js");
+    let inst = null;
+    for (let i = 0; i < 60; i++) {
+      if (getStackFileId() === result.fileId) {
+        inst = getStackInstance();
+        if (inst) break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
     if (!inst) return;
     for (const c of children) inst.addItem(c.fileId, c.type, c.name);
     refreshAfter();

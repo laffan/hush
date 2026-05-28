@@ -144,12 +144,27 @@ impl World for ExportWorld {
     }
 }
 
+/// Sans-serif faces bundled with Hush. `typst-assets` ships only serif
+/// (Libertinus / New Computer Modern) and monospace (DejaVu Sans Mono)
+/// families, so styles that want a proportional sans — e.g. "Article
+/// (2 Column)" — pull from these. Regular + Bold + Italic cover the
+/// common cases; Typst synthesises bold-italic from the others. The
+/// explicit `[&'static [u8]; 3]` return type coerces each fixed-size
+/// `include_bytes!` array into a slice (faces differ in length).
+fn extra_font_blobs() -> [&'static [u8]; 3] {
+    [
+        include_bytes!("../../fonts/lato/Lato-Regular.ttf"),
+        include_bytes!("../../fonts/lato/Lato-Bold.ttf"),
+        include_bytes!("../../fonts/lato/Lato-Italic.ttf"),
+    ]
+}
+
 fn load_bundled_fonts() -> Vec<Font> {
     static CACHE: OnceLock<Vec<Font>> = OnceLock::new();
     CACHE
         .get_or_init(|| {
             let mut out = Vec::new();
-            for data in typst_assets::fonts() {
+            for data in typst_assets::fonts().chain(extra_font_blobs()) {
                 let bytes = Bytes::new(data);
                 // A single asset blob can contain several faces (TTC).
                 // FontInfo::iter walks them, and Font::new picks one out

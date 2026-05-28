@@ -11,7 +11,7 @@ import { initZenFocus } from "./editor/zen-focus.js";
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
-import { fontFallbacks, themeBackgrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
+import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { mountNotebook, unmountNotebook, saveNotebook, applyNotebookSettings, previewNotebookStyle, getCanvasInstance, setNotebookLeftInset, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
@@ -575,7 +575,8 @@ async function init() {
     // Determine preview bg for private mode
     const overrides = styleObj.colorOverrides || {};
     const previewBg = overrides.bg || themeBackgrounds[styleObj.themeId] || null;
-    updatePrivateBoxColor(state, previewBg);
+    const previewFg = overrides.fg || themeForegrounds[styleObj.themeId] || null;
+    updatePrivateBoxColor(state, previewBg, previewFg);
     // Always update --bg to match the actual background (theme or override)
     if (previewBg) {
       document.documentElement.style.setProperty("--bg", previewBg);

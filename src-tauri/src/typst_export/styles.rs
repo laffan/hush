@@ -10,8 +10,10 @@ Constraints on a style preamble:
 
   - Must not depend on any `@preview/...` package — the World we ship
     has no package storage so those imports would fail at compile.
-  - Must reference at least one font we know `typst-assets` ships
-    (Libertinus Serif, New Computer Modern, DejaVu Sans Mono).
+  - Must reference at least one font we know is available — either a
+    `typst-assets` family (Libertinus Serif, New Computer Modern, DejaVu
+    Sans Mono) or one of the faces Hush bundles in `world::EXTRA_FONTS`
+    (the "Lato" sans-serif used by the Article style).
   - Should expose a `body` content slot via the conventional `#show`
     + `#set` pattern so the body emitted by the markdown converter
     drops in without further wrapping.
@@ -169,6 +171,11 @@ static STYLES: &[Style] = &[
         name: "Formal",
         preamble: FORMAL_PREAMBLE,
     },
+    Style {
+        id: "article-2col",
+        name: "Article (2 Column)",
+        preamble: ARTICLE_TWO_COLUMN_PREAMBLE,
+    },
 ];
 
 /// White page, serif body, generous line spacing — the brief from the
@@ -206,6 +213,47 @@ const FORMAL_PREAMBLE: &str = r##"
 #show quote.where(block: true): it => block(
   stroke: (left: 2pt + luma(180)),
   inset: (left: 1em, top: 0.4em, bottom: 0.4em),
+  it.body,
+)
+"##;
+
+/// Two-column, sans-serif magazine/journal layout. Uses the bundled
+/// "Lato" face (registered in `world::EXTRA_FONTS`) since `typst-assets`
+/// has no proportional sans of its own. Body text is a touch smaller
+/// than the Formal style because two columns are narrower.
+const ARTICLE_TWO_COLUMN_PREAMBLE: &str = r##"
+#set page(
+  paper: "us-letter",
+  margin: (x: 1in, y: 1in),
+  fill: white,
+  columns: 2,
+)
+#set text(
+  font: "Lato",
+  size: 9.5pt,
+  lang: "en",
+)
+#set par(
+  justify: true,
+  leading: 0.7em,
+  first-line-indent: (amount: 1.2em, all: false),
+  spacing: 0.9em,
+)
+#show heading: set text(weight: "bold")
+#show heading.where(level: 1): it => block(above: 0.4em, below: 1.1em)[#text(size: 1.5em)[#it]]
+#show heading.where(level: 2): it => block(above: 1.1em, below: 0.7em)[#text(size: 1.2em)[#it]]
+#show heading.where(level: 3): it => block(above: 0.9em, below: 0.6em)[#text(size: 1.05em)[#it]]
+#show link: set text(fill: rgb("#1a4b8c"))
+#show raw.where(block: true): block.with(
+  fill: luma(245),
+  inset: 6pt,
+  radius: 3pt,
+  width: 100%,
+)
+#show quote: set block(spacing: 1em)
+#show quote.where(block: true): it => block(
+  stroke: (left: 2pt + luma(180)),
+  inset: (left: 0.8em, top: 0.3em, bottom: 0.3em),
   it.body,
 )
 "##;

@@ -7,7 +7,7 @@ import {
 
 let pdfjsPromise = null;
 
-async function getPdfjs() {
+export async function getPdfjs() {
   if (pdfjsPromise) return pdfjsPromise;
   pdfjsPromise = (async () => {
     const pdfjs = await import("pdfjs-dist/build/pdf.mjs");

@@ -32,6 +32,7 @@ import { createImagePasteExtension } from "./image-paste.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
+import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
@@ -265,22 +266,45 @@ export function createBaseExtensions(state, onChange, opts) {
   };
 }
 
-/** Toggle block cursor class and set color to heading color. */
+/** Toggle block cursor class and pick its colour. A style's explicit
+ *  cursor-colour override wins (so the override keeps working in block
+ *  mode, matching the caret mode); otherwise the block cursor falls back
+ *  to the active theme's heading colour for visibility. */
 function applyBlockCursor(state) {
   const container = document.getElementById("editor-container");
   if (!container) return;
   let block = !!state.settings.blockCursor;
-  // Active style can override
+  // Resolve any explicit cursor-colour override from the active style
+  // (or, for the default style, the per-appearance default colours).
+  let cursorOverride = null;
   if (state.settings.activeStyleId && state.settings.styles) {
     const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
-    if (style && style.blockCursor != null) block = style.blockCursor;
+    if (style) {
+      if (style.blockCursor != null) block = style.blockCursor;
+      const { colors } = resolveStyleForAppearance(style, state.settings.appearance);
+      const overrides = colors || style.colorOverrides || {};
+      cursorOverride = overrides.cursor || null;
+    }
+  } else {
+    let appearance = state.settings.appearance || "dark";
+    if (appearance === "auto") {
+      appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    const def = appearance === "dark"
+      ? (state.settings.defaultDarkColors || {})
+      : (state.settings.defaultLightColors || {});
+    cursorOverride = def.cursor || null;
   }
   container.classList.toggle("block-cursor", block);
-  const theme = getActiveTheme(state.settings);
-  if (theme && theme.headingColor) {
-    container.style.setProperty("--block-cursor-color", theme.headingColor);
+  if (cursorOverride) {
+    container.style.setProperty("--block-cursor-color", cursorOverride);
   } else {
-    container.style.removeProperty("--block-cursor-color");
+    const theme = getActiveTheme(state.settings);
+    if (theme && theme.headingColor) {
+      container.style.setProperty("--block-cursor-color", theme.headingColor);
+    } else {
+      container.style.removeProperty("--block-cursor-color");
+    }
   }
 }
 
