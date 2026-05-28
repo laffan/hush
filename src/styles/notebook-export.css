@@ -190,7 +190,8 @@
 .notebook-export-modal.nxm-2col {
   width: 800px;
   max-width: 94vw;
-  max-height: 88vh;
+  height: 550px;
+  max-height: 92vh;
 }
 
 .notebook-export-modal.nxm-2col .nxm-columns {

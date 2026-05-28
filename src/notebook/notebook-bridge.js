@@ -294,6 +294,8 @@ export function computeNotebookSettings(state, lockedStyleId) {
   // auto-coloured text shapes and the toolbar icons follow the style's
   // text colour instead of the notebook theme's stock foreground.
   const foregroundOverride = bgColors?.fg || "";
+  // Header override — markdown headings inside text shapes track it.
+  const headingColorOverride = bgColors?.header || "";
 
   return {
     appearanceMode: appearance,
@@ -305,6 +307,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
     fontSize: s.notebookFontSize || 16,
     canvasBackgroundOverride,
     foregroundOverride,
+    headingColorOverride,
     maxTextWidth: s.notebookTextMaxWidth || 350,
     flowConnectMode: s.flowConnectMode === "horizontal" ? "horizontal" : "closest",
   };
