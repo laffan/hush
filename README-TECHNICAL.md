@@ -53,7 +53,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── modes.js
 │   ├── formatting.js
 │   ├── sentence-navigator.js
-│   ├── find-replace.js
+│   ├── find-replace.js                (thin entry point — emits `show-find-panel`)
+│   ├── find-decorations.js            (StateField + StateEffect for editor match highlights)
 │   ├── file-drop.js
 │   ├── image-preview.js
 │   ├── image-paste.js
@@ -150,6 +151,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── panel-resizer.js               (applyPanelWidth + attachGripResize)
 │   ├── add-popup.js                   (footer Add (+) popover — New Doc / Notebook / Folder / Project)
 │   ├── files-panel.js
+│   ├── find-panel.js                  (sidebar Find panel — replaces files-panel body while open)
 │   ├── files-panel-shared.js          (icons + escapers + hover handlers)
 │   ├── files-panel-local-sync.js      (Local Sync subtree rendering)
 │   ├── files-panel-pane-indicators.js (per-row pane strip + cmd-hover tooltip)
@@ -546,11 +548,11 @@ Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in fou
 
 ### Find & Replace (`editor/find-replace.js`, `sidebar/find-panel.js`, `editor/find-decorations.js`)
 
-`Cmd+F` mounts the **Find panel** into the left sidebar, replacing the file list. The panel starts with the current document / notebook (rendered first, separated by a divider), followed by every other document and notebook in the active desk that has hits. Each file section is collapsible (fold arrow at the left of the header) and shows the filename above its tree path (`Folder › Project`, or the file kind for top-level entries). Each result row is a two-line contextual snippet with the hit `<mark>`-ed; clicking jumps to the file and scrolls / pans to the match.
+`Cmd+F` mounts the **Find panel** into the left sidebar, replacing the file list. The panel starts with the current document / notebook (rendered first, separated by a divider), followed by every other document and notebook in the active desk that has hits. Each file section is collapsible (fold arrow at the left of the header) and shows the filename above its tree path (`Folder › Project`, or the file kind for top-level entries). Each result row is a two-line contextual snippet trimmed to **3 words before** and **8 words after** the match (`takeLastWords` / `takeFirstWords` in `find-panel.js`, preserving the whitespace flush against the highlight); the hit is `<mark>`-ed and clicking jumps to the file and scrolls / pans to the match.
 
-Notebook search is shape-scoped: `decodeNotebookContent` parses the on-disk JSON envelope, and each text-shape body is matched independently. Clicking a notebook result mounts the notebook (if it isn't already open) and calls `canvas.state.focusShape(shapeId)` once the canvas has hydrated. Doc replace flows through the editor / Tauri `save_file`; notebook replace is intentionally a no-op for v1 (shape-text + canvas re-serialise is left to a separate pass).
+Notebook search is shape-scoped: `decodeNotebookContent` parses the on-disk JSON envelope, and each text-shape body is matched independently. Clicking a notebook result mounts the notebook (if it isn't already open) and calls `canvas.state.focusShape(shapeId)` once the canvas has hydrated (`waitForTargetReady` polls). Live shapes are pulled from the canvas instance for the open notebook so unsaved edits show in results. Doc replace flows through the editor / Tauri `save_file`; notebook replace is intentionally a no-op for v1 (shape-text + canvas re-serialise is left to a separate pass).
 
-Toolbar: close `×`, a twirl arrow that discloses the replace row, the search input, and toggles for **Match case** (`Aa`), **Whole word** (`Ww`), and **Regex** (`.*`). The replace row (hidden until the twirl is opened) carries a replace input, a **Global** checkbox (replace across every matched doc, not just the current one), and `Replace` / `All` buttons. When replace is open and Global is off, results from other files dim to signal that replace will only touch the current document.
+Toolbar: close `×`, a twirl arrow (▶ / ▼) that discloses the replace section, the search input, and toggles for **Match case** (`Aa`), **Whole word** (`Ww`), and **Regex** (`.*`). The replace section (hidden until the twirl is opened) carries two stacked rows: a replace input + **Global** checkbox on the first, and **Replace in Document** / **Replace in All Documents** buttons on the second. Both rows indent past the close + twirl so the inputs and buttons line up vertically with the find input above. When replace is open and Global is off, results from other files dim to signal that replace will only touch the current document.
 
 Matches in the active editor render via a `StateField` + `StateEffect` pair (`editor/find-decorations.js`): `cm-find-match` paints every hit, `cm-find-match-current` lifts the active one. The Find panel pushes a fresh decoration set whenever the query, toggles, or current match change, and clears them on close.
 
@@ -1148,8 +1150,9 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Toggle Zen Focus | `Cmd+Shift+S` |
 | Toggle word count | `Cmd+Shift+W` |
 | New file | `Cmd+N` |
-| Find / replace | `Cmd+F` |
-| Find across files | `Alt+Shift+F` |
+| Find / replace (sidebar panel; current file first, then the rest of the desk) | `Cmd+F` |
+| Find panel (alias for Cmd+F — same panel) | `Alt+Shift+F` |
+| Next / previous match | `Cmd+G` / `Cmd+Shift+G` |
 | Zotero search | `Cmd+Shift+I` |
 | Open settings | `Cmd+,` (hardcoded) |
 
