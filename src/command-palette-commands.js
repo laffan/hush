@@ -11,6 +11,7 @@ import { findNodeByFileId } from "./state/tree-helpers.js";
 import {
   canUseAsNote,
   isDesktopTauri,
+  isIOSTauri,
   buildAppearanceCommands,
 } from "./command-palette-helpers.js";
 import {
@@ -29,7 +30,7 @@ import { panes } from "./pane/pane-state.js";
 import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
 import { arePanesHiddenForActive } from "./state/state-panes.js";
 import { createNewFromSelected } from "./selection-extract.js";
-import { openInNewWindow } from "./multi-window.js";
+import { openInNewWindow, openSingleFileWindow } from "./multi-window.js";
 import { getLockedStyleId, setLockedStyleId } from "./sidebar/styles-panel.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
@@ -152,6 +153,7 @@ function buildCommands(state) {
   const inStack = !!state.currentStackFileId;
   const hasActivePane = getActivePaneId() != null;
   const desktop = isDesktopTauri();
+  const ipad = isIOSTauri();
 
   const all = [
     // === SHARED ===
@@ -207,6 +209,18 @@ function buildCommands(state) {
           : s.currentFileId ? "document" : null;
         if (!fileId || !fileType) return;
         openInNewWindow(fileId, fileType);
+      } },
+    { id: "open-in-new-window-ipad", label: "Open in New Window", icon: icons.files, shortcutKey: null, ctx: "ipad",
+      // iPad single-file window — only a lone doc / notebook in v1 (no
+      // projects, which would need the joined-buffer view). Spawns a
+      // native UIScene via the tauri-plugin-ipad-window bridge.
+      hiddenIf: (s) => !!s.currentProjectId || (!s.currentNotebookFileId && !s.currentFileId),
+      action: (s) => {
+        const fileId = s.currentNotebookFileId || s.currentFileId;
+        const fileType = s.currentNotebookFileId ? "notebook"
+          : s.currentFileId ? "document" : null;
+        if (!fileId || !fileType) return;
+        openSingleFileWindow(fileId, fileType);
       } },
     { id: "delete-current", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
       action: async (s) => {
@@ -446,6 +460,7 @@ function buildCommands(state) {
     if (cmd.ctx === "stack") return inStack;
     if (cmd.ctx === "pane") return hasActivePane;
     if (cmd.ctx === "desktop") return desktop;
+    if (cmd.ctx === "ipad") return ipad;
     return true;
   });
 }

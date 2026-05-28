@@ -147,6 +147,27 @@ export async function openInNewWindow(fileId, fileType) {
   });
 }
 
+/** Open the given file in a new iPad window (a native UIScene) via the
+ *  `tauri-plugin-ipad-window` Swift bridge. This is the iPadOS counterpart
+ *  to `openInNewWindow` — iOS has no `WebviewWindow.new`, so the native
+ *  side activates a second scene seeded with the file via an
+ *  `NSUserActivity` (the analog of the desktop URL hash).
+ *
+ *  Stage 1 (see IPAD-MULTI-WINDOW-PLANNING.md): the scene currently renders
+ *  a placeholder confirming the bridge; the satellite single-file editor is
+ *  wired in later stages. `fileType` is `"document"` or `"notebook"`
+ *  (projects are out of scope for v1). No-op off Tauri / iOS. */
+export async function openSingleFileWindow(fileId, fileType) {
+  if (!IS_TAURI) return;
+  if (!fileId || !fileType) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("plugin:ipad-window|open_single_file_window", { fileId, fileType });
+  } catch (e) {
+    console.warn("openSingleFileWindow failed:", e);
+  }
+}
+
 /** Notify other windows that a piece of cross-window state mutated.
  *  `kind` is `"settings"` or `"files"`. The originator label is embedded
  *  so each receiver can ignore its own echo. */

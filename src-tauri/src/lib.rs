@@ -189,6 +189,11 @@ pub fn run() {
         // `cfg(target_os = "ios")` inside the crate, so registering it
         // unconditionally here is safe and keeps the macOS build clean.
         .plugin(tauri_plugin_pencil::init())
+        // iOS-only iPad single-file multi-window bridge. Like the pencil
+        // plugin, its iOS registration is gated behind `cfg(target_os =
+        // "ios")` inside the crate, so registering it unconditionally is
+        // safe and keeps the desktop build clean.
+        .plugin(tauri_plugin_ipad_window::init())
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),

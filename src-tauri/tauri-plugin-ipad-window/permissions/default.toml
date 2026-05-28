@@ -1,0 +1,20 @@
+"$schema" = "schemas/schema.json"
+
+[[permission]]
+identifier = "allow-register-listener"
+description = "Allow JS to register a listener for plugin events via addPluginListener()."
+commands.allow = ["registerListener"]
+
+[[permission]]
+identifier = "allow-remove-listener"
+description = "Allow JS to remove a previously registered plugin-event listener."
+commands.allow = ["removeListener"]
+
+[[permission]]
+identifier = "allow-open-single-file-window"
+description = "Allow JS to ask the iPad shell to open the active file in a new window (UIScene)."
+commands.allow = ["open_single_file_window"]
+
+[default]
+description = "Default permissions: allow JS to subscribe to / unsubscribe from this plugin's events and open a single-file iPad window."
+permissions = ["allow-register-listener", "allow-remove-listener", "allow-open-single-file-window"]

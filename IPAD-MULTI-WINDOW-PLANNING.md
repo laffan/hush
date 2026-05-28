@@ -1,10 +1,28 @@
 # Hush — iPad Multi-Window (single-file) Planning
 
-> **Status**: Design / exploration. No app code written yet. Targets a
+> **Status**: Stage 1 scaffolded (untested on-device). Targets a
 > *single-file* "Open in New Window" on iPadOS that mirrors the macOS
 > **Open in new window** command at the UX level, while staying within
 > what Tauri/wry actually supports on iOS.
 > **Last Updated**: 2026-05-28
+
+## Implementation Status
+
+- **Stage 1 — scaffolded, not yet verified on a device.** The full
+  `tauri-plugin-ipad-window` crate exists (Rust command + Swift bridge +
+  scene router + placeholder scene delegate), is registered in `lib.rs` /
+  `Cargo.toml` / `capabilities/default.json`, the scene manifest is added to
+  `src-tauri/Info.ios.plist`, and the JS command-palette entry **Open in
+  New Window** (iOS-gated, single doc / notebook only) calls
+  `openSingleFileWindow()` → `plugin:ipad-window|open_single_file_window`.
+  The frontend builds clean. The Rust/Swift halves could **not** be
+  compiled in the authoring environment (Linux, no GTK for the desktop
+  `tauri` build, no Xcode/iOS SDK), so Stage 1 still needs its on-device
+  smoke test: run on an iPad, fire the command, confirm a second window
+  opens showing the placeholder seeded with the file id/type — and, most
+  importantly, confirm Tauri's **primary** window is undisturbed by
+  `UIApplicationSupportsMultipleScenes` + the config-router swizzle.
+- **Stages 2–5** — not started.
 
 ## Goal
 
@@ -200,10 +218,12 @@ When `satellite` is set, `main.js` boots a trimmed shell:
 
 ## Staging (each stage independently verifiable on-device)
 
-1. **Scene opens at all.** Plugin scaffold + Info.plist + a `SceneDelegate`
-   that opens a second scene showing a hard-coded "hello" web page on the
-   command. Proves multi-scene + the Swift bridge half. *Highest-risk; do
-   first.*
+1. **Scene opens at all.** ✅ *Scaffolded* — plugin crate + scene-manifest
+   plist + a `HushFileSceneDelegate` that opens a second scene showing a
+   placeholder web page seeded with the file id/type, reached via the
+   iOS-gated command-palette entry. Proves multi-scene + the Swift bridge
+   half. *Highest-risk; needs the on-device smoke test described above
+   before Stages 2–5 are worth starting.*
 2. **Satellite loads the file read-only.** Seed via `NSUserActivity`, boot
    single-file mode, prove the request relay can `load_file` through the
    primary webview and render the doc.
