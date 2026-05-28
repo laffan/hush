@@ -117,6 +117,7 @@ private enum SceneRouter {
         }
         let cls: AnyClass = type(of: delegate)
         let sel = #selector(UIApplicationDelegate.application(_:configurationForConnecting:options:))
+        NSLog("[IpadWindow] swizzling on app delegate class=\(NSStringFromClass(cls)) respondsAlready=\(delegate.responds(to: sel))")
 
         // Our replacement IMP lives on the dedicated shim class below.
         let replSel = #selector(HushSceneRouterShim._hush_application(_:configurationForConnecting:options:))
@@ -150,21 +151,30 @@ private class HushSceneRouterShim: NSObject {
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        let isHushWindow = options.userActivities.contains {
-            $0.activityType == HUSH_FILE_ACTIVITY
-        }
-        if isHushWindow {
+        let acts = options.userActivities.map { $0.activityType }.joined(separator: ",")
+        NSLog("[IpadWindow] configurationForConnecting role=\(connectingSceneSession.role.rawValue) activities=[\(acts)]")
+
+        // wry creates the primary window through the legacy app-delegate
+        // `window` path, which never reaches configurationForConnecting.
+        // So any application-role scene that DOES reach here is one we
+        // created via requestSceneSessionActivation — claim it for our
+        // file-window delegate unconditionally. We intentionally do NOT
+        // gate on the userActivity: it isn't reliably present in these
+        // options (it IS in scene(willConnectTo:)'s connectionOptions,
+        // which is where the seed is actually read).
+        if connectingSceneSession.role == .windowApplication {
             let config = UISceneConfiguration(
                 name: HUSH_FILE_CONFIG,
                 sessionRole: connectingSceneSession.role
             )
             config.delegateClass = HushFileSceneDelegate.self
+            NSLog("[IpadWindow] -> routing scene to HushFileSceneDelegate")
             return config
         }
 
-        // Not ours — preserve the host app's behaviour. Chain to the
-        // original IMP when we exchanged with one; otherwise return the
-        // platform default configuration for this role.
+        // Non-application roles (e.g. external display): preserve the host
+        // app's behaviour. Chain to the original IMP when we exchanged with
+        // one; otherwise return the platform default configuration.
         if let orig = HushWindowBridge.shared.originalConfigIMP {
             typealias Fn = @convention(c) (
                 AnyObject, Selector, UIApplication, UISceneSession, UIScene.ConnectionOptions
