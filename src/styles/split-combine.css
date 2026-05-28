@@ -1,0 +1,85 @@
+/* ===== Split at Headings / Combine Files modals =====
+   These build on the notebook-export-modal (`nxm-*`) shell; the rules
+   below cover the file-preview list (split) and the reorderable list
+   (combine). */
+
+.sah-modal,
+.cmb-modal {
+  min-width: 360px;
+}
+
+.sah-empty {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.sah-count {
+  opacity: 0.55;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sah-file-list,
+.cmb-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+.sah-file-row,
+.cmb-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.sah-file-row + .sah-file-row,
+.cmb-file-row + .cmb-file-row {
+  border-top: 1px solid var(--panel-border);
+}
+
+.sah-file-name,
+.cmb-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmb-reorder {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.cmb-move {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cmb-move:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.cmb-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

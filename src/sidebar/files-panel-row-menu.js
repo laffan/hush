@@ -135,6 +135,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   }
   if (isDoc && !inProject) {
     entries.push({ action: "convert-doc-to-project", label: "Convert to Project" });
+    entries.push({ action: "split-at-headings", label: "Split at Headings" });
   }
   if (isContainer && !isImagesId(nodeId)) {
     entries.push({ action: "open-as-stack", label: "Open as Stack" });
