@@ -208,18 +208,47 @@ class HushFileSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         let win = UIWindow(windowScene: windowScene)
         let vc = UIViewController()
+
+        // Bright background + a *native* label so we can tell — without
+        // relying on the webview rendering — whether this delegate even
+        // ran. If the new window shows this colour/label, routing works
+        // and any blankness is a webview issue; if the window is still
+        // plain white, the scene was never routed to us (swizzle issue).
+        vc.view.backgroundColor = .systemYellow
+
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 0
+        label.textColor = .black
+        label.font = .systemFont(ofSize: 18, weight: .semibold)
+        label.text = "Hush — second window\nStage 1 delegate ran ✓\nfileId: \(fileId)\ntype: \(fileType)"
+        vc.view.addSubview(label)
+
         let webview = WKWebView(frame: .zero)
-        vc.view = webview
+        webview.translatesAutoresizingMaskIntoConstraints = false
+        webview.isOpaque = false
+        vc.view.addSubview(webview)
+
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: vc.view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            label.leadingAnchor.constraint(equalTo: vc.view.leadingAnchor, constant: 24),
+            label.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor, constant: -24),
+
+            webview.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 16),
+            webview.leadingAnchor.constraint(equalTo: vc.view.leadingAnchor),
+            webview.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor),
+            webview.bottomAnchor.constraint(equalTo: vc.view.bottomAnchor),
+        ])
 
         let html = """
         <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-        </head><body style="font-family:-apple-system;padding:2rem;color:#222">
-        <h1>Hush — second window</h1>
-        <p>Stage 1 bridge OK ✓</p>
+        </head><body style="font-family:-apple-system;padding:1.5rem;color:#222;background:#fff">
+        <h2>WKWebView rendered ✓</h2>
         <p>fileId: <code>\(fileId)</code><br>fileType: <code>\(fileType)</code></p>
         </body></html>
         """
         webview.loadHTMLString(html, baseURL: nil)
+        NSLog("[IpadWindow] scene content installed")
 
         win.rootViewController = vc
         self.window = win
