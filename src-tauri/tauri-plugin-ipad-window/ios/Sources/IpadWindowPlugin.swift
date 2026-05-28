@@ -90,34 +90,27 @@ class IpadWindowPlugin: Plugin {
             diag("willConnect: not a UIWindowScene")
             return
         }
-        diag("willConnect role=\(scene.session.role.rawValue) expecting=\(HushWindowBridge.shared.expectingNewScene)")
+        let expecting = HushWindowBridge.shared.expectingNewScene
+        diag("willConnect role=\(scene.session.role.rawValue) expecting=\(expecting)")
         guard scene.session.role == .windowApplication else { return }
-        guard HushWindowBridge.shared.expectingNewScene else {
-            // A scene we didn't request this run — almost always iOS
-            // restoring a leftover session from a previous launch (the
-            // old debugging windows). The primary window is a legacy
-            // UIWindow, not a scene, so it never reaches here; anything
-            // that does is a secondary we own and can safely discard so
-            // stale blank windows don't pile up.
-            diag("willConnect: unrequested scene; destroying stale session")
-            DispatchQueue.main.async {
-                UIApplication.shared.requestSceneSessionDestruction(
-                    scene.session, options: nil, errorHandler: nil
-                )
-            }
-            return
-        }
-        HushWindowBridge.shared.expectingNewScene = false
 
+        // Debugging stance: attach visible content to EVERY application-role
+        // scene (requested or restored) rather than destroying unrequested
+        // ones — so nothing silently closes and we can see what we get. The
+        // primary window is a legacy UIWindow, not a scene, so it never
+        // reaches here. (Zombie-session cleanup comes back once the happy
+        // path is confirmed.)
+        HushWindowBridge.shared.expectingNewScene = false
         let seed = HushWindowBridge.shared.pendingSeed
         let fileId = seed?.fileId ?? "(none)"
         let fileType = seed?.fileType ?? "(none)"
+        let origin = expecting ? "requested" : "restored/unrequested"
 
         let win = UIWindow(windowScene: scene)
-        win.rootViewController = Self.makeContentVC(fileId: fileId, fileType: fileType)
+        win.rootViewController = Self.makeContentVC(fileId: fileId, fileType: fileType, origin: origin)
         win.makeKeyAndVisible()
         HushWindowBridge.shared.sceneWindows.append(win)
-        diag("scene window attached file=\(fileId) type=\(fileType)")
+        diag("scene window attached (\(origin)) file=\(fileId) type=\(fileType)")
     }
 
     private func diag(_ message: String) {
@@ -130,7 +123,7 @@ class IpadWindowPlugin: Plugin {
     /// the result is unambiguous: a coloured window with the label means
     /// the scene was claimed and content attached. Later stages replace
     /// this with the satellite editor.
-    static func makeContentVC(fileId: String, fileType: String) -> UIViewController {
+    static func makeContentVC(fileId: String, fileType: String, origin: String) -> UIViewController {
         let vc = UIViewController()
         vc.view.backgroundColor = .systemYellow
 
@@ -139,7 +132,7 @@ class IpadWindowPlugin: Plugin {
         label.numberOfLines = 0
         label.textColor = .black
         label.font = .systemFont(ofSize: 18, weight: .semibold)
-        label.text = "Hush — second window\nStage 1 scene attached ✓\nfileId: \(fileId)\ntype: \(fileType)"
+        label.text = "Hush — second window\nStage 1 scene attached ✓\norigin: \(origin)\nfileId: \(fileId)\ntype: \(fileType)"
         vc.view.addSubview(label)
 
         let webview = WKWebView(frame: .zero)

@@ -160,11 +160,13 @@ export async function openInNewWindow(fileId, fileType) {
 export async function openSingleFileWindow(fileId, fileType) {
   if (!IS_TAURI) return;
   if (!fileId || !fileType) return;
+  console.log("[IpadWindow] openSingleFileWindow invoking", fileId, fileType);
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("plugin:ipad-window|open_single_file_window", { fileId, fileType });
+    console.log("[IpadWindow] openSingleFileWindow resolved");
   } catch (e) {
-    console.warn("openSingleFileWindow failed:", e);
+    console.warn("[IpadWindow] openSingleFileWindow failed:", e);
   }
 }
 
