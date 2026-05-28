@@ -87,6 +87,10 @@ export async function initPdfRegistry(state) {
   for (const fileId of Object.keys(_registry.items)) {
     await checkPdfExists(fileId);
   }
+  const pending = Object.keys(_registry.items).filter(
+    (fid) => !_downloadedSet.has(fid) && _registry.items[fid].zoteroAttKey,
+  );
+  if (pending.length) startBatchDownload(pending, state);
 }
 
 export async function addPdfEntry(fileId, meta) {
