@@ -262,6 +262,7 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
   // Detach listeners + the canvas/scroll attach loop. Rebuilt by loadPaneContent.
   if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
+  if (pane._bgChangeListener) { document.removeEventListener("notebook-bg-changed", pane._bgChangeListener); pane._bgChangeListener = null; }
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
   if (pane.editor) { try { pane.editor.destroy(); } catch (_) {} pane.editor = null; }
@@ -294,6 +295,7 @@ export function closePane(id) {
   savePaneContent(pane);
   if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
+  if (pane._bgChangeListener) { document.removeEventListener("notebook-bg-changed", pane._bgChangeListener); pane._bgChangeListener = null; }
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
   if (pane.gutter) {

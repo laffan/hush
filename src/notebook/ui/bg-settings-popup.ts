@@ -34,6 +34,20 @@ export interface BgSettingsHandle {
 export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
   let popupOpen = false;
 
+  // Notify the bridge so the per-notebook bg fields ride the next save.
+  // Event fires on document so the bridge can listen at one root regardless
+  // of which container the popup mounted into.
+  function emitBgChange(): void {
+    document.dispatchEvent(new CustomEvent("notebook-bg-changed", {
+      detail: {
+        state,
+        pattern: state.backgroundPattern,
+        spacing: state.gridSpacing,
+        opacity: state.gridOpacity,
+      },
+    }));
+  }
+
   const tab = h("button", {
     title: "Background settings",
     style: {
@@ -138,7 +152,7 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
           color: active ? "#fff" : theme.foreground, cursor: "pointer",
           fontSize: "11px", fontWeight: active ? "600" : "400",
         },
-        onClick: () => { state.backgroundPattern = pat.value; state.notify("theme"); render(); },
+        onClick: () => { state.backgroundPattern = pat.value; state.notify("theme"); emitBgChange(); render(); },
       }));
     }
     popup.appendChild(patternRow);
@@ -149,7 +163,7 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
       const spacingInput = h("input", { attrs: { type: "range", min: "10", max: "60", step: "5" }, style: { flex: "1", accentColor: theme.accent } }) as HTMLInputElement;
       spacingInput.value = String(state.gridSpacing);
       const spacingLabel = h("span", { text: `${state.gridSpacing}px`, style: { fontSize: "11px", color: theme.foreground, opacity: "0.6", minWidth: "30px", textAlign: "right" } });
-      spacingInput.addEventListener("input", () => { state.gridSpacing = parseInt(spacingInput.value, 10); spacingLabel.textContent = `${state.gridSpacing}px`; state.notify("theme"); });
+      spacingInput.addEventListener("input", () => { state.gridSpacing = parseInt(spacingInput.value, 10); spacingLabel.textContent = `${state.gridSpacing}px`; state.notify("theme"); emitBgChange(); });
       spacingRow.appendChild(spacingInput);
       spacingRow.appendChild(spacingLabel);
       popup.appendChild(spacingRow);
@@ -159,7 +173,7 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
       const opacityInput = h("input", { attrs: { type: "range", min: "0", max: "100", step: "5" }, style: { flex: "1", accentColor: theme.accent } }) as HTMLInputElement;
       opacityInput.value = String(Math.round(state.gridOpacity * 100));
       const opacityLabel = h("span", { text: `${Math.round(state.gridOpacity * 100)}%`, style: { fontSize: "11px", color: theme.foreground, opacity: "0.6", minWidth: "30px", textAlign: "right" } });
-      opacityInput.addEventListener("input", () => { state.gridOpacity = parseInt(opacityInput.value, 10) / 100; opacityLabel.textContent = `${opacityInput.value}%`; state.notify("theme"); });
+      opacityInput.addEventListener("input", () => { state.gridOpacity = parseInt(opacityInput.value, 10) / 100; opacityLabel.textContent = `${opacityInput.value}%`; state.notify("theme"); emitBgChange(); });
       opacityRow.appendChild(opacityInput);
       opacityRow.appendChild(opacityLabel);
       popup.appendChild(opacityRow);

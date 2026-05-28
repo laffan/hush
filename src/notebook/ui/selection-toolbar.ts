@@ -467,7 +467,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     const allPocketed = selected.every((s) => s.pocketed);
     if (allPocketed) { container.style.display = "none"; return; }
 
-    const pocketLayout = computePocketLayout(state.shapes, state.canvasWidth, state.fontFamily);
+    const pocketLayout = computePocketLayout(state.shapes, state.canvasWidth, state.fontFamily, state.rightInset);
     const pocketScreenMap = new Map<string, { minX: number; minY: number }>();
     for (const entry of pocketLayout.entries) {
       for (const s of entry.shapes) {

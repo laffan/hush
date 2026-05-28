@@ -5,7 +5,7 @@
  * Exports the `icons` object (shared with pickers / helpers), the
  * main `buildCommands(state)` factory, and `buildActiveModeTurnoffs`.
  */
-import { openFindReplace, openFindAll } from "./editor/find-replace.js";
+import { openFindReplace } from "./editor/find-replace.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
 import {
@@ -299,8 +299,6 @@ function buildCommands(state) {
       action: (s) => s.toggleFullscreen() },
     { id: "find", label: "Find & replace", icon: null, shortcutKey: "shortcutFind", ctx: "shared",
       action: (s) => { if (s.editor) openFindReplace(s.editor.view, s); } },
-    { id: "find-all", label: "Find across files", icon: null, shortcutKey: "shortcutFindAll", ctx: "shared",
-      action: (s) => { if (s.editor) openFindAll(s.editor.view, s); } },
     { id: "settings", label: "Settings", icon: null, shortcutKey: null, ctx: "shared",
       action: (s) => openSettingsWindow(s) },
     { id: "backup", label: "Backup App Data", icon: icons.export, shortcutKey: null, ctx: "shared",

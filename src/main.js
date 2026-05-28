@@ -36,14 +36,15 @@ async function init() {
       state.isSecondaryWindow = label !== "main";
     } catch (_) { /* fall back to main-window behaviour */ }
   }
-  const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
-  await state.init({ initialFile });
-  if (typeof window !== "undefined") window.__hushState__ = state;
-
+  // Register the wikilink open hook before state.init so cmd-clicks on
+  // an auto-opened notebook resolve immediately.
   if (typeof window !== "undefined") {
     const { openWikilink } = await import("./links/wikilink-index.js");
     window.__hushOpenWikilink = (title) => { void openWikilink(state, title); };
   }
+  const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
+  await state.init({ initialFile });
+  if (typeof window !== "undefined") window.__hushState__ = state;
 
   // On iOS, set html background to prevent black bars behind the webview
   if (isIOS()) document.documentElement.classList.add("ios");

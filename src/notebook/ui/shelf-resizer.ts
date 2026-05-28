@@ -9,7 +9,7 @@ const SHELF_WIDTH_MAX_FRAC = 0.6;
  *  shelf, dragging RIGHT shrinks it. */
 export function createShelfResizer(
   panel: ShelfPanelEl,
-  opts: { onCommit: (w: number) => void },
+  opts: { onCommit: (w: number) => void; onResize?: () => void },
 ): HTMLElement {
   const el = document.createElement("div");
   el.className = "notebook-shelf-resizer";
@@ -68,6 +68,7 @@ export function createShelfResizer(
       const next = clamp(startW - (me.clientX - startX));
       if (panel.__setShelfWidth) panel.__setShelfWidth(next);
       syncRaf();
+      opts.onResize?.();
     };
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);

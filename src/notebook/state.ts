@@ -169,6 +169,12 @@ export class DrawingState extends EventTarget {
   /** Pixel offset from the left edge for the sidebar/panel. The pocket
    *  tray and toolbar center themselves relative to this value. */
   leftInset = 0;
+  /** Pixel offset from the right edge for the notebook shelf. The pocket
+   *  tray now lives on the shelf's left edge rather than the sidebar
+   *  edge, so the renderer + drop hit-test offset by this value to keep
+   *  pocket interactions flush against the shelf. Updated whenever the
+   *  shelf is opened, closed, or resized. */
+  rightInset = 0;
   /** When set, this canvas is acting as a doc gutter: vertical pan and
    *  wheel input scroll the host doc instead of the camera, camera.y is
    *  driven by the doc scrollTop, zoom is locked at 1, and focusShape
@@ -1017,9 +1023,11 @@ export class DrawingState extends EventTarget {
         return;
       }
 
-      // Check pocketed shapes first (screen-space hit test, offset by sidebar inset)
-      const pocketPt = { x: screenPt.x - this.leftInset, y: screenPt.y };
-      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily);
+      // Check pocketed shapes first (screen-space hit test). Pocket layout
+      // anchors to the shelf edge (`rightInset`), so the entries' screen
+      // bounds are already in viewport coords — no further offset.
+      const pocketPt = { x: screenPt.x, y: screenPt.y };
+      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily, this.rightInset);
       if (pocketHit) {
         const next = e.shiftKey ? new Set(this.selectedIds) : new Set<string>();
         const allSel = e.shiftKey && pocketHit.every((id) => next.has(id));
@@ -1032,7 +1040,7 @@ export class DrawingState extends EventTarget {
         canvas.setPointerCapture(e.pointerId);
         return;
       }
-      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily);
+      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily, this.rightInset);
       // Exclude pocketed shapes (rendered elsewhere) and shapes on
       // hidden layers (invisible → unclickable).
       const hiddenLayerIds = this._hiddenLayerIds();
@@ -1049,10 +1057,24 @@ export class DrawingState extends EventTarget {
       if (hitShape && hitShape.type === "text" && cmdHeld) {
         const linkRun = hitTestLinkRun(canvasPt, hitShape);
         if (linkRun) {
+          // Prevent the click from falling through to select / drag once
+          // we've identified a link target — otherwise the shape selects
+          // alongside the open, which surfaces the selection toolbar over
+          // the just-opened note.
+          e.preventDefault();
           if (linkRun.kind === "url") { openExternalUrl(linkRun.target); return; }
           if (linkRun.kind === "wikilink") {
-            const handler = (window as unknown as { __hushOpenWikilink?: (t: string) => void }).__hushOpenWikilink;
-            if (typeof handler === "function") handler(linkRun.target);
+            const w = window as unknown as { __hushOpenWikilink?: (t: string) => void };
+            if (typeof w.__hushOpenWikilink === "function") {
+              w.__hushOpenWikilink(linkRun.target);
+            } else {
+              // Late fallback: handler not yet registered (init race).
+              // Dynamic import keeps this branch out of the cold path.
+              import("../links/wikilink-index.js").then((m) => {
+                const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
+                if (appState) void m.openWikilink(appState, linkRun.target);
+              }).catch(() => {});
+            }
             return;
           }
         }
@@ -1241,11 +1263,12 @@ export class DrawingState extends EventTarget {
     }
 
     // Pocket proximity: fade the tray in as the drag cursor approaches the
-    // left edge. Fully hidden at > 300px, fully visible once the cursor is
-    // over the pocket itself.
+    // shelf edge. Fully hidden at > 300px, fully visible once the cursor is
+    // inside the drop zone right of the shelf strip.
     if (this._isDragging && this.selectedIds.size > 0) {
       const POCKET_PROXIMITY_RANGE = 300;
-      const cursorFromPocket = screenPt.x - this.leftInset;
+      const shelfEdge = (this.canvasEl?.clientWidth || window.innerWidth) - this.rightInset;
+      const cursorFromPocket = shelfEdge - screenPt.x;
       const inZone = cursorFromPocket < POCKET_ZONE_WIDTH;
       let intensity = 0;
       if (inZone) {
@@ -2698,12 +2721,14 @@ export class DrawingState extends EventTarget {
    *  not the geometric centre of the canvas element. Falls back to
    *  window centre when the canvas isn't yet laid out (rect 0×0). */
   private _visibleScreenCenter(): Point {
-    const inset = this.leftInset || 0;
+    const leftInset = this.leftInset || 0;
+    const rightInset = this.rightInset || 0;
     if (this.canvasEl) {
       const r = this.canvasEl.getBoundingClientRect();
       if (r.width > 0 && r.height > 0) {
+        // Visible region = canvas rect minus sidebar (left) and shelf (right).
         return {
-          x: r.left + (inset + r.width) / 2,
+          x: r.left + leftInset + (r.width - leftInset - rightInset) / 2,
           y: r.top + r.height / 2,
         };
       }
@@ -2764,12 +2789,13 @@ export class DrawingState extends EventTarget {
    *  When the chrome would consume most of the canvas (a narrow pane
    *  with the shelf open), the offsets are dropped so the shape lands
    *  somewhere visible instead of being squeezed under the shelf. */
-  focusShape(shapeId: string, offsetLeft?: number, offsetRight = 0) {
+  focusShape(shapeId: string, offsetLeft?: number, offsetRight?: number) {
     const shape = this.shapes.find((s) => s.id === shapeId);
     if (!shape) return;
     const bounds = getShapeBounds(shape, this.fontFamily);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
     const requestedLeft = offsetLeft ?? this.leftInset;
+    const requestedRight = offsetRight ?? this.rightInset;
     // Prefer getBoundingClientRect — clientWidth misses sub-pixel layout
     // and stays at zero longer when the canvas is freshly mounted in a
     // pane that hasn't taken its first paint yet.
@@ -2788,7 +2814,7 @@ export class DrawingState extends EventTarget {
     // (the failure mode users hit when the shelf is open inside a
     // narrow notebook pane).
     let left = requestedLeft;
-    let right = offsetRight;
+    let right = requestedRight;
     if (left + right > w * 0.66) {
       left = 0;
       right = 0;

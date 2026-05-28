@@ -156,6 +156,7 @@ export class NotesCanvas {
   private _cleanupPaneListener: (() => void) | null = null;
   private _shelfPanel: HTMLElement | null = null;
   private _shelfResizer: HTMLElement | null = null;
+  private _shelfRightInsetCleanup: (() => void) | null = null;
   private _drawingLayer: DrawingLayer | null = null;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
@@ -426,6 +427,19 @@ export class NotesCanvas {
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);
 
+    // Track shelf footprint so the pocket tray pins to its edge.
+    const syncShelfRightInset = () => {
+      const rect = this._shelfPanel?.getBoundingClientRect();
+      const cr = container.getBoundingClientRect();
+      if (!rect || !cr.width) return;
+      this.setRightInset(Math.max(0, cr.right - rect.left));
+    };
+    queueMicrotask(syncShelfRightInset);
+    const shelfObs = new MutationObserver(syncShelfRightInset);
+    shelfObs.observe(this._shelfPanel, { attributes: true, attributeFilter: ["style", "class"] });
+    window.addEventListener("resize", syncShelfRightInset);
+    this._shelfRightInsetCleanup = () => { shelfObs.disconnect(); window.removeEventListener("resize", syncShelfRightInset); };
+
     // Shelf resize handle. Mounted to body so its fixed-position math is
     // independent of the canvas container's transform / scroll.
     const shelfResizer = createShelfResizer(this._shelfPanel as ShelfPanelEl, {
@@ -434,7 +448,9 @@ export class NotesCanvas {
         if (appState && typeof appState.updateSettings === "function") {
           appState.updateSettings({ notebookShelfWidth: w });
         }
+        syncShelfRightInset();
       },
+      onResize: syncShelfRightInset,
     });
     document.body.appendChild(shelfResizer);
     this._shelfResizer = shelfResizer;
@@ -535,6 +551,13 @@ export class NotesCanvas {
     this.state.notify("theme"); // triggers re-render
   }
 
+  /** Update the right inset (shelf width). The pocket tray now lives on
+   *  the shelf's left edge, so this needs to track open/close + resize. */
+  setRightInset(px: number) {
+    this.state.rightInset = px;
+    this.state.notify("theme");
+  }
+
   /** Expose the drawing-layer handle for the export path. Returns null
    *  when the layer is no longer mounted (post-destroy). */
   getDrawingLayer(): DrawingLayer | null {
@@ -556,6 +579,7 @@ export class NotesCanvas {
     if (this._cleanupInput) this._cleanupInput();
     if (this._cleanupDropTarget) this._cleanupDropTarget();
     if (this._cleanupPaneListener) { this._cleanupPaneListener(); this._cleanupPaneListener = null; }
+    if (this._shelfRightInsetCleanup) { this._shelfRightInsetCleanup(); this._shelfRightInsetCleanup = null; }
     if (this._drawingLayer) { this._drawingLayer.destroy(); this._drawingLayer = null; }
     if (this._shelfResizer) { this._shelfResizer.remove(); this._shelfResizer = null; }
     this.container.innerHTML = "";

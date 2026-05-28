@@ -19,15 +19,6 @@ export function openFindReplace(view, state) {
   state.emit("show-find-panel", { initialQuery });
 }
 
-/**
- * Cross-file find historically lived in a separate floating panel. With
- * the sidebar redesign there's just one panel that already covers the
- * whole desk, so this is a thin alias.
- */
-export function openFindAll(view, state) {
-  openFindReplace(view, state);
-}
-
 /** Cmd+G — advance to the next match within the find panel. Returns true
  *  only when the panel is open so the binding can fall through otherwise. */
 export function findNext() {

@@ -532,10 +532,10 @@ function shiftShape(shape: Shape, dx: number, dy: number): Shape {
 
 // === Pocket ===
 
-/** Width of the pocket drop zone on the left edge of the canvas. */
+/** Width of the pocket drop zone, measured inward from the shelf edge. */
 export const POCKET_ZONE_WIDTH = 80;
 
-/** Width of the visible pocket tray strip on the left edge. */
+/** Width of the visible pocket tray strip pinned to the shelf edge. */
 export const POCKET_TRAY_WIDTH = 20;
 
 export interface PocketEntry {
@@ -552,10 +552,15 @@ export interface PocketLayout {
 }
 
 /**
- * Compute screen-space layout for pocketed shapes, stacked vertically on the left.
- * Groups shapes by groupId and includes children of pocketed drag areas.
+ * Compute screen-space layout for pocketed shapes, stacked vertically on
+ * the right (just inboard of the shelf). Groups shapes by groupId and
+ * includes children of pocketed drag areas.
+ *
+ * `canvasWidth` is the visible canvas width and `rightInset` is the
+ * shelf's pixel footprint — the tray sits flush against `canvasWidth -
+ * rightInset`, so an open shelf nudges the cards inward to stay clear.
  */
-export function computePocketLayout(allShapes: Shape[], _canvasWidth: number, fontFamily?: string): PocketLayout {
+export function computePocketLayout(allShapes: Shape[], canvasWidth: number, fontFamily?: string, rightInset = 0): PocketLayout {
   const pocketed = allShapes.filter((s) => s.pocketed);
   if (pocketed.length === 0) return { entries: [], pocketedIds: new Set() };
 
@@ -590,11 +595,16 @@ export function computePocketLayout(allShapes: Shape[], _canvasWidth: number, fo
     groups.push(group);
   }
 
-  const MARGIN_LEFT = 4;
+  const MARGIN_RIGHT = 4;
   const MARGIN_TOP = 60;
   const GAP = 16;
   const MAX_SIZE = 140;
   let y = MARGIN_TOP;
+
+  // Tray sits flush against the shelf's left edge. Cards sit just to
+  // the left of the tray strip with a small breathing margin.
+  const shelfEdge = canvasWidth - rightInset;
+  const cardRightAnchor = shelfEdge - POCKET_TRAY_WIDTH - MARGIN_RIGHT;
 
   const entries: PocketEntry[] = [];
   const pocketedIds = new Set(seen);
@@ -616,7 +626,9 @@ export function computePocketLayout(allShapes: Shape[], _canvasWidth: number, fo
     const sw = width * scale;
     const sh = height * scale;
 
-    const x = MARGIN_LEFT;
+    // Anchor card's right edge against `cardRightAnchor` so the cluster
+    // hangs off the shelf side. Left edge is derived from the scaled width.
+    const x = cardRightAnchor - sw;
 
     entries.push({
       shapes: group,

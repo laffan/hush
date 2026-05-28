@@ -19,7 +19,7 @@
 
 import { EditorSelection } from "@codemirror/state";
 import { openSettingsWindow } from "../settings/settings-ui.js";
-import { openFindReplace, openFindAll, findNext, findPrev } from "./find-replace.js";
+import { openFindReplace, findNext, findPrev } from "./find-replace.js";
 import { toggleCommandPalette } from "../command-palette.js";
 import {
   selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence,
@@ -128,10 +128,6 @@ export function buildEditorCommands() {
       // The Find panel works without a CodeMirror view too — notebooks /
       // stacks use the window selection fallback for query seeding.
       openFindReplace(view || (state.editor ? state.editor.view : null), state);
-      return true;
-    },
-    shortcutFindAll: (state, view) => {
-      openFindAll(view || (state.editor ? state.editor.view : null), state);
       return true;
     },
     shortcutOpenFullscreen: (state) => { state.toggleFullscreen(); return true; },

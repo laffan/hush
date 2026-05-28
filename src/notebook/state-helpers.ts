@@ -241,8 +241,8 @@ export function autoFitWidth(text: string, fontSize: number, constraintWidth: nu
 }
 
 /** Hit-test screen point against pocketed shapes (rendered in screen space). Returns shape IDs if hit. */
-export function findPocketedShapeAtScreen(screenPt: Point, shapes: Shape[], canvasWidth: number, fontFamily?: string): string[] | null {
-  const layout = computePocketLayout(shapes, canvasWidth, fontFamily);
+export function findPocketedShapeAtScreen(screenPt: Point, shapes: Shape[], canvasWidth: number, fontFamily?: string, rightInset = 0): string[] | null {
+  const layout = computePocketLayout(shapes, canvasWidth, fontFamily, rightInset);
   for (const entry of layout.entries) {
     if (pointInBounds(screenPt, entry.screenBounds, 6)) {
       return entry.shapes.map((s) => s.id);

@@ -207,6 +207,17 @@ async function loadNotebookPane(pane) {
       canvas.state.bookmarks = snapshot.bookmarks;
       canvas.state.notify("bookmarks");
     }
+    // Per-notebook background ride-along (pattern / spacing / opacity).
+    // Pane and main canvas pull from the same file so a bg pick from
+    // either side sticks across reopens.
+    if (snapshot.background) {
+      const bg = snapshot.background;
+      if (bg.pattern) canvas.state.backgroundPattern = bg.pattern;
+      if (typeof bg.spacing === "number") canvas.state.gridSpacing = bg.spacing;
+      if (typeof bg.opacity === "number") canvas.state.gridOpacity = bg.opacity;
+      canvas.state.notify("theme");
+      pane._notebookBackground = { ...bg };
+    }
   }
 
   // Center the pane on the same canvas point the notebook would show
@@ -239,6 +250,16 @@ async function loadNotebookPane(pane) {
     pane.dirty = true;
     syncNotebookFromPane(pane);
   });
+
+  // Per-notebook background overrides — pane popup dispatches on document
+  // and tags its state ref so we can filter to this pane's canvas.
+  const onPaneBgChange = (e) => {
+    const d = e.detail || {};
+    if (d.state !== pane.notebook.state) return;
+    pane.dirty = true;
+  };
+  document.addEventListener("notebook-bg-changed", onPaneBgChange);
+  pane._bgChangeListener = onPaneBgChange;
 
   // Listen for main canvas changes to sync back into this pane
   pane._mainNbSyncHandler = () => syncNotebookToPane(pane);
@@ -414,6 +435,11 @@ export async function savePaneContent(pane) {
           // loses every bookmark the moment it autosaves the file.
           bookmarks: pane.notebook.state.bookmarks,
           camera: cameraToSave,
+          background: {
+            pattern: pane.notebook.state.backgroundPattern,
+            spacing: pane.notebook.state.gridSpacing,
+            opacity: pane.notebook.state.gridOpacity,
+          },
         });
       }
       if (pane.localSync) {

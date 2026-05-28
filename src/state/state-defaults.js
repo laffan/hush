@@ -92,7 +92,6 @@ export function createDefaultSettings() {
     zenFocusFontSize: 30,
     wordCountVisible: false,
     shortcutFind: "Mod+F",
-    shortcutFindAll: "Alt+Shift+F",
 
     // Shortcuts — Editing (sentence navigation)
     shortcutSelectSentence: "Mod+L",

@@ -19,8 +19,18 @@
  * don't branch on format. Encoding always emits the new envelope.
  */
 
-import type { Shape, Layer, CameraBookmark, Camera } from "./types";
+import type { Shape, Layer, CameraBookmark, Camera, BackgroundPattern } from "./types";
 import type { FlowEdge } from "./flowchart";
+
+/** Per-notebook background overrides. Saved alongside shapes so each
+ *  notebook remembers its own pattern / spacing / opacity instead of
+ *  inheriting whatever the global Hush settings happened to be at open
+ *  time. All fields optional; omitted fields fall back to global. */
+export interface NotebookBackground {
+  pattern?: BackgroundPattern;
+  spacing?: number;
+  opacity?: number;
+}
 
 export interface NotebookContent {
   shapes: Shape[];
@@ -28,6 +38,7 @@ export interface NotebookContent {
   flowEdges?: FlowEdge[];
   bookmarks?: CameraBookmark[];
   camera?: Camera;
+  background?: NotebookBackground;
 }
 
 export interface NotebookSnapshotInput {
@@ -36,6 +47,7 @@ export interface NotebookSnapshotInput {
   flowEdges?: FlowEdge[];
   bookmarks?: CameraBookmark[];
   camera?: Camera;
+  background?: NotebookBackground;
 }
 
 /** JSON-encode a notebook snapshot in the envelope format.
@@ -56,8 +68,19 @@ export function encodeNotebookContent(snapshot: NotebookSnapshotInput): string {
     flowEdges: snapshot.flowEdges,
     bookmarks: snapshot.bookmarks,
     camera: snapshot.camera,
+    background: snapshot.background,
   };
   return JSON.stringify(payload);
+}
+
+function parseBackground(v: unknown): NotebookBackground | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const b = v as Record<string, unknown>;
+  const out: NotebookBackground = {};
+  if (typeof b.pattern === "string") out.pattern = b.pattern as BackgroundPattern;
+  if (typeof b.spacing === "number") out.spacing = b.spacing;
+  if (typeof b.opacity === "number") out.opacity = b.opacity;
+  return Object.keys(out).length ? out : undefined;
 }
 
 function isCamera(v: unknown): boolean {
@@ -100,7 +123,8 @@ export function decodeNotebookContent(content: string | null | undefined): Noteb
     const flowEdges = Array.isArray(obj.flowEdges) ? (obj.flowEdges as FlowEdge[]) : undefined;
     const bookmarks = Array.isArray(obj.bookmarks) ? (obj.bookmarks as CameraBookmark[]) : undefined;
     const camera = isCamera(obj.camera) ? (obj.camera as Camera) : undefined;
-    return { shapes, layers, flowEdges, bookmarks, camera };
+    const background = parseBackground(obj.background);
+    return { shapes, layers, flowEdges, bookmarks, camera, background };
   }
   return null;
 }

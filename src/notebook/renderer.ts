@@ -109,7 +109,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const effectiveShapes = state.pocketInZone && selectedIds.size > 0
     ? shapes.map((s) => selectedIds.has(s.id) ? { ...s, pocketed: true } : s)
     : shapes;
-  const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily);
+  const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily, state.rightInset);
   const pocketedIds = pocketLayout.pocketedIds;
 
   ctx.save();
@@ -273,24 +273,16 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     }
   }
 
-  // Draw pocket tray on left edge, offset by sidebar inset.
-  // Proximity-based glow: tray fades in as the drag cursor approaches the
-  // pocket zone. Fully visible inside the zone.
+  // Pocket tray sits flush against the shelf. Proximity-driven glow.
   const hasPocketed = pocketLayout.entries.length > 0;
-  const leftInset = state.leftInset || 0;
+  const rightInset = state.rightInset || 0;
   const proximity = state.pocketProximity ?? (state.isDragging ? 1 : 0);
   if (hasPocketed || proximity > 0) {
-    drawPocketTray(ctx, w, h, state.isDragging, hasPocketed, leftInset, proximity);
+    drawPocketTray(ctx, w, h, state.isDragging, hasPocketed, rightInset, proximity);
   }
-
-  // Draw pocketed shapes at fixed screen positions, offset by sidebar inset.
-  // Also includes the in-flight selected shapes when the cursor is in the
-  // zone (via effectiveShapes above).
+  // Pocket entries are right-anchored already, no translation needed.
   if (pocketLayout.entries.length > 0) {
-    ctx.save();
-    ctx.translate(leftInset, 0);
     drawPocketEntries(ctx, pocketLayout.entries, selectedIds, theme, state.fontFamily, imageCache, state.drawingLayer, state.flagColors);
-    ctx.restore();
   }
 
   if (selectionBox) drawSelectionBox(ctx, selectionBox, camera);
@@ -580,28 +572,36 @@ export function drawImageShape(ctx: CanvasRenderingContext2D, shape: ImageShape,
 const POCKET_BLUE = "rgba(66, 153, 225, 0.18)";
 const POCKET_BLUE_HIGHLIGHT = "rgba(66, 153, 225, 0.30)";
 
-// Bounded tray, mirrored from the right-side shelf style.
+// Bounded tray flush against the shelf's left edge — corners face the
+// canvas interior, the active-drop highlight bar sits on the inward side.
 function drawPocketTray(
-  ctx: CanvasRenderingContext2D, _w: number, h: number,
-  isDragging: boolean, _hasPocketed: boolean, leftInset = 0, proximity = 0,
+  ctx: CanvasRenderingContext2D, canvasW: number, h: number,
+  isDragging: boolean, _hasPocketed: boolean, rightInset = 0, proximity = 0,
 ) {
   ctx.save();
   const cs = getComputedStyle(document.documentElement);
   const trayBg = (cs.getPropertyValue("--theme-bg") || cs.getPropertyValue("--bg") || "#f4f4f5").trim() || "#f4f4f5";
   const borderColor = (cs.getPropertyValue("--panel-border") || "rgba(128,128,128,0.3)").trim() || "rgba(128,128,128,0.3)";
-  const x = leftInset, y = 20, w = POCKET_TRAY_WIDTH, hh = Math.max(0, h - 40), r = 12;
+  const w = POCKET_TRAY_WIDTH;
+  const x = canvasW - rightInset - w;
+  const y = 20, hh = Math.max(0, h - 40), r = 12;
   ctx.globalAlpha = isDragging ? Math.min(1, 0.85 * proximity + 0.15) : 1;
+  // Rounded corners on the inward (left) side, square on the shelf side.
   ctx.beginPath();
-  ctx.moveTo(x, y); ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + hh - r); ctx.quadraticCurveTo(x + w, y + hh, x + w - r, y + hh);
-  ctx.lineTo(x, y + hh); ctx.closePath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, y + hh);
+  ctx.lineTo(x + r, y + hh);
+  ctx.quadraticCurveTo(x, y + hh, x, y + hh - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
   ctx.fillStyle = trayBg; ctx.fill();
   ctx.lineWidth = 1; ctx.strokeStyle = borderColor; ctx.stroke();
   if (isDragging) {
     ctx.globalAlpha = 0.5 * proximity;
     ctx.fillStyle = POCKET_BLUE_HIGHLIGHT;
-    ctx.fillRect(x + w - 4, y + 1, 4, hh - 2);
+    ctx.fillRect(x, y + 1, 4, hh - 2);
   }
   ctx.globalAlpha = 1;
   ctx.restore();

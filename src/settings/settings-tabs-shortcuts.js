@@ -26,7 +26,6 @@ export const shortcutCategories = [
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutSave", label: "Save file" },
       { key: "shortcutFind", label: "Find / replace" },
-      { key: "shortcutFindAll", label: "Find across files" },
       { key: "shortcutFindNext", label: "Find next match" },
       { key: "shortcutFindPrev", label: "Find previous match" },
       { key: "shortcutZotero", label: "Zotero search" },

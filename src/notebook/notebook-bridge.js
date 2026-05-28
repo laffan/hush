@@ -13,6 +13,10 @@ let notebookDirty = false;
 let cameraDirty = false;
 let _appState = null;
 let _mainDragCleanup = null;
+/** Cached per-notebook background overrides for the open notebook. Re-applied
+ *  after every `applyNotebookSettings` so a global settings refresh (theme
+ *  switch, style change) doesn't wipe the user's per-notebook bg choice. */
+let _notebookBackground = null;
 /** Last content we successfully wrote to disk for the open notebook.
  *  Compared byte-for-byte against incoming sync-reload payloads so an
  *  echoed pull (Dropbox cursor reporting our own write back to us) is
@@ -43,6 +47,7 @@ export async function mountNotebook(container, fileId, state) {
   notebookDirty = false;
   cameraDirty = false;
   _lastSavedContent = null;
+  _notebookBackground = null;
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
   const { NotesCanvas } = await import("./notes-canvas.ts");
@@ -100,7 +105,10 @@ export async function mountNotebook(container, fileId, state) {
     }
   }
 
-  // Apply notebook settings from Hush settings
+  // Apply notebook settings from Hush settings — globals first so a
+  // fresh notebook with no saved background picks up the user's default,
+  // then overlay any per-notebook background overrides on top.
+  if (snapshot?.background) _notebookBackground = { ...snapshot.background };
   applyNotebookSettings(state);
 
   _appState = state;
@@ -110,6 +118,21 @@ export async function mountNotebook(container, fileId, state) {
     notebookDirty = true;
     if (_appState) _appState.emit("notebook-shapes-changed");
   });
+
+  // Per-notebook background overrides — popup fires on document. Cache
+  // the latest values and mark dirty so the next autosave persists them.
+  const onBgChange = (e) => {
+    const d = e.detail || {};
+    // Only main-notebook popup events should snapshot here. Pane-owned
+    // popups dispatch the same event but carry their own state ref, so
+    // we filter to the main canvas instance.
+    if (d.state && d.state !== canvasInstance.state) return;
+    _notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity };
+    notebookDirty = true;
+  };
+  document.addEventListener("notebook-bg-changed", onBgChange);
+  // Stash on the instance so unmount can detach.
+  canvasInstance._bgChangeListener = onBgChange;
   // Camera (pan / zoom) changes go through a separate dirty flag so the
   // file is rewritten with the new viewport but no version snapshot
   // is created — pan / zoom isn't content history.
@@ -291,6 +314,9 @@ export function computeNotebookSettings(state, lockedStyleId) {
 export function applyNotebookSettings(state) {
   if (!canvasInstance) return;
   canvasInstance.applySettings(computeNotebookSettings(state));
+  // Per-notebook background overrides win over global defaults so a
+  // theme / style swap doesn't quietly reset the canvas pattern.
+  if (_notebookBackground) applyNotebookBackground(_notebookBackground);
 }
 
 /**
@@ -306,6 +332,18 @@ export function applyNotebookSettings(state) {
 export function previewNotebookStyle(state, styleId) {
   if (!canvasInstance) return;
   canvasInstance.applySettings(computeNotebookSettings(state, styleId || "__default__"));
+}
+
+/** Apply the per-notebook background override on top of the global settings.
+ *  Only the fields present in `bg` are written so a partial override still
+ *  inherits the rest from globals. */
+function applyNotebookBackground(bg) {
+  if (!canvasInstance || !bg) return;
+  const s = canvasInstance.state;
+  if (bg.pattern) s.backgroundPattern = bg.pattern;
+  if (typeof bg.spacing === "number") s.gridSpacing = bg.spacing;
+  if (typeof bg.opacity === "number") s.gridOpacity = bg.opacity;
+  s.notify("theme");
 }
 
 /**
@@ -326,6 +364,11 @@ export async function saveNotebook() {
     flowEdges: canvasInstance.state.flowchart.serialize(),
     bookmarks: canvasInstance.state.bookmarks,
     camera: canvasInstance.state.camera,
+    background: {
+      pattern: canvasInstance.state.backgroundPattern,
+      spacing: canvasInstance.state.gridSpacing,
+      opacity: canvasInstance.state.gridOpacity,
+    },
   });
   try {
     if (IS_TAURI) {
@@ -356,6 +399,9 @@ export async function unmountNotebook() {
     saveResult = await saveNotebook();
   }
   if (canvasInstance) {
+    if (canvasInstance._bgChangeListener) {
+      document.removeEventListener("notebook-bg-changed", canvasInstance._bgChangeListener);
+    }
     canvasInstance.destroy();
     canvasInstance = null;
   }
@@ -363,6 +409,7 @@ export async function unmountNotebook() {
   currentNotebookFileId = null;
   notebookDirty = false;
   cameraDirty = false;
+  _notebookBackground = null;
   return saveResult;
 }
 
@@ -418,6 +465,10 @@ export async function reloadNotebookShapes(jsonContent) {
       // Deliberately skip applying snapshot.camera here — viewports differ
       // across devices, and an incoming sync nudging the local pan / zoom
       // would feel like the canvas was being yanked around.
+      if (snapshot.background) {
+        _notebookBackground = { ...snapshot.background };
+        applyNotebookBackground(_notebookBackground);
+      }
       _lastSavedContent = jsonContent;
       notebookDirty = false;
       cameraDirty = false;
