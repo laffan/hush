@@ -100,7 +100,10 @@ export function createToolbar(state: DrawingState): HTMLElement {
     container.style.bottom = "auto";
     container.style.transform = "none";
 
-    const leftInset = state.leftInset || 0;
+    // leftInset = sidebar; rightInset = shelf (which already shifts with
+    // any right-dock via the CSS var). dockedLeftWidth is added so a
+    // left-dock pushes the toolbar inboard the same way the sidebar does.
+    const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
     const rightInset = state.rightInset || 0;
     const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
     const parentEl = container.parentElement;

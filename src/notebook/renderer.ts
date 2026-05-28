@@ -109,7 +109,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   const effectiveShapes = state.pocketInZone && selectedIds.size > 0
     ? shapes.map((s) => selectedIds.has(s.id) ? { ...s, pocketed: true } : s)
     : shapes;
-  const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily, state.rightInset);
+  const pocketLayout = computePocketLayout(effectiveShapes, w, state.fontFamily, state.pocketRightInset);
   const pocketedIds = pocketLayout.pocketedIds;
 
   ctx.save();
@@ -273,9 +273,10 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     }
   }
 
-  // Pocket tray sits flush against the shelf. Proximity-driven glow.
+  // Pocket tray sits flush against the right-most chrome — dock's
+  // inboard edge if present, otherwise the shelf.
   const hasPocketed = pocketLayout.entries.length > 0;
-  const rightInset = state.rightInset || 0;
+  const rightInset = state.pocketRightInset;
   const proximity = state.pocketProximity ?? (state.isDragging ? 1 : 0);
   if (hasPocketed || proximity > 0) {
     drawPocketTray(ctx, w, h, state.isDragging, hasPocketed, rightInset, proximity);

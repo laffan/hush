@@ -176,6 +176,21 @@ export class DrawingState extends EventTarget {
    *  pocket interactions flush against the shelf. Updated whenever the
    *  shelf is opened, closed, or resized. */
   rightInset = 0;
+  /** Width of any pane docked at the canvas's left edge. Used by the
+   *  toolbar layout to keep its horizontal centre inside the visible
+   *  editor area when a left-dock pushes the canvas inward. */
+  dockedLeftWidth = 0;
+  /** Width of any pane docked at the canvas's right edge. The pocket
+   *  tray anchors to the dock's inboard edge (the dock takes priority
+   *  over the shelf because it represents a harder visual boundary). */
+  dockedRightWidth = 0;
+
+  /** Right-edge inset that the pocket tray honours — prefers the dock
+   *  when present (so the tray jumps to the dock's left edge), falls
+   *  back to the shelf inset otherwise. */
+  get pocketRightInset(): number {
+    return this.dockedRightWidth > 0 ? this.dockedRightWidth : (this.rightInset || 0);
+  }
   /** When set, this canvas is acting as a doc gutter: vertical pan and
    *  wheel input scroll the host doc instead of the camera, camera.y is
    *  driven by the doc scrollTop, zoom is locked at 1, and focusShape
@@ -1024,7 +1039,7 @@ export class DrawingState extends EventTarget {
       // anchors to the shelf edge (`rightInset`), so the entries' screen
       // bounds are already in viewport coords — no further offset.
       const pocketPt = { x: screenPt.x, y: screenPt.y };
-      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily, this.rightInset);
+      const pocketHit = findPocketedShapeAtScreen(pocketPt, this.shapes, canvas.clientWidth, this.fontFamily, this.pocketRightInset);
       if (pocketHit) {
         const next = e.shiftKey ? new Set(this.selectedIds) : new Set<string>();
         const allSel = e.shiftKey && pocketHit.every((id) => next.has(id));
@@ -1037,7 +1052,7 @@ export class DrawingState extends EventTarget {
         canvas.setPointerCapture(e.pointerId);
         return;
       }
-      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily, this.rightInset);
+      const { pocketedIds } = computePocketLayout(this.shapes, canvas.clientWidth, this.fontFamily, this.pocketRightInset);
       // Exclude pocketed shapes (rendered elsewhere) and shapes on
       // hidden layers (invisible → unclickable).
       const hiddenLayerIds = this._hiddenLayerIds();
@@ -1264,7 +1279,7 @@ export class DrawingState extends EventTarget {
     // inside the drop zone right of the shelf strip.
     if (this._isDragging && this.selectedIds.size > 0) {
       const POCKET_PROXIMITY_RANGE = 300;
-      const shelfEdge = (this.canvasEl?.clientWidth || window.innerWidth) - this.rightInset;
+      const shelfEdge = (this.canvasEl?.clientWidth || window.innerWidth) - this.pocketRightInset;
       const cursorFromPocket = shelfEdge - screenPt.x;
       const inZone = cursorFromPocket < POCKET_ZONE_WIDTH;
       let intensity = 0;

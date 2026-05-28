@@ -190,20 +190,29 @@ function computeVisibleWidth() {
  *  closePane (so a closed dock pane fully clears the var). */
 export function publishDockCssVars() {
   let leftW = 0, rightW = 0;
+  let leftEdge = 0, rightEdge = 0;
   for (const [, p] of panes) {
     if (!p.docked) continue;
-    // Hidden panes (cross-context owner that isn't currently visible)
-    // shouldn't shift the chrome — without this filter a doc-owned
-    // dock leaks into notebook / stack views as a "phantom" pane.
     if (p.el?.style.display === "none") continue;
-    if (p.dockEdge === "left") leftW = Math.max(leftW, p.width || 0);
-    if (p.dockEdge === "right") rightW = Math.max(rightW, p.width || 0);
+    if (p.dockEdge === "left") {
+      leftW = Math.max(leftW, p.width || 0);
+      // Absolute viewport x where the left dock ends (pane.x already
+      // sits past the sidebar). Used by containers that need to clear
+      // sidebar+dock, e.g. #stack-container and #pdf-container.
+      leftEdge = Math.max(leftEdge, (p.x || 0) + (p.width || 0));
+    }
+    if (p.dockEdge === "right") {
+      rightW = Math.max(rightW, p.width || 0);
+      rightEdge = Math.max(rightEdge, p.width || 0);
+    }
   }
   const root = document.documentElement;
   root.style.setProperty("--pane-dock-left-width", leftW + "px");
   root.style.setProperty("--pane-dock-right-width", rightW + "px");
+  root.style.setProperty("--pane-dock-left-edge", leftEdge + "px");
+  root.style.setProperty("--pane-dock-right-edge", rightEdge + "px");
   document.dispatchEvent(new CustomEvent("pane-dock-changed", {
-    detail: { leftWidth: leftW, rightWidth: rightW },
+    detail: { leftWidth: leftW, rightWidth: rightW, leftEdge, rightEdge },
   }));
 }
 

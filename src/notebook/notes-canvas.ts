@@ -196,10 +196,8 @@ export class NotesCanvas {
       select: "default", text: "text", "drag-area": "crosshair", brainstorm: "text",
     };
     this.state.addEventListener("change", () => {
+      // Brainstorm mode behaves like select on the canvas — keep the default cursor instead of the text I-beam.
       if (this.state.isPanning) this._canvas.style.cursor = "grab";
-      // Brainstorm mode now behaves like select on the canvas (drag
-      // shapes, double-click to add text); the floating input has its
-      // own focus / cursor. Show the default arrow so this matches.
       else this._canvas.style.cursor = this.state.brainstormMode ? "default" : (cursorMap[this.state.tool] || "default");
     });
 
@@ -427,22 +425,24 @@ export class NotesCanvas {
 
     this._shelfPanel = createShelfPanel(this.state, shelfCallbacks);
     container.appendChild(this._shelfPanel);
-    // Track shelf footprint so the pocket tray pins to its edge.
     const syncShelfRightInset = () => {
       const rect = this._shelfPanel?.getBoundingClientRect();
       const cr = container.getBoundingClientRect();
       if (rect && cr.width) this.setRightInset(Math.max(0, cr.right - rect.left));
     };
-    const onDockChanged = () => requestAnimationFrame(syncShelfRightInset);
+    const onDockChanged = (e: Event) => {
+      requestAnimationFrame(syncShelfRightInset);
+      const d = (e as CustomEvent).detail || {}, l = +d.leftWidth || 0, r = +d.rightWidth || 0;
+      if (this.state.dockedLeftWidth === l && this.state.dockedRightWidth === r) return;
+      this.state.dockedLeftWidth = l; this.state.dockedRightWidth = r; this.state.notify("theme");
+    };
     queueMicrotask(syncShelfRightInset);
     const shelfObs = new MutationObserver(syncShelfRightInset);
     shelfObs.observe(this._shelfPanel, { attributes: true, attributeFilter: ["style", "class"] });
     window.addEventListener("resize", syncShelfRightInset);
     document.addEventListener("pane-dock-changed", onDockChanged);
     this._shelfRightInsetCleanup = () => { shelfObs.disconnect(); window.removeEventListener("resize", syncShelfRightInset); document.removeEventListener("pane-dock-changed", onDockChanged); };
-
-    // Shelf resize handle. Mounted to body so its fixed-position math is
-    // independent of the canvas container's transform / scroll.
+    // Shelf resize handle. Mounted to body so its fixed-position math is independent of the canvas container.
     const shelfResizer = createShelfResizer(this._shelfPanel as ShelfPanelEl, {
       onCommit: (w: number) => {
         const appState = (window as unknown as { __hushState__?: { updateSettings?: (p: Record<string, unknown>) => void } }).__hushState__;

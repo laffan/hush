@@ -334,9 +334,7 @@ async function init() {
     }
   }
 
-  // Sync notebook left inset when the sidebar opens / closes. The grip
-  // strip stays visible even when the panel body is collapsed, so the
-  // canvas reserves at least the grip width on the left edge.
+  // Sync notebook left inset when the sidebar opens / closes — grip strip stays visible even when the panel body is collapsed.
   function syncNotebookInset() {
     if (!state.currentNotebookFileId) return;
     const po = document.getElementById("panel-overlay");
@@ -349,16 +347,17 @@ async function init() {
     if (!state.currentStackFileId) return;
     const po = document.getElementById("panel-overlay");
     const open = po && !po.classList.contains("hidden") && po.classList.contains("panel-inset");
-    stackContainer.style.left = open ? (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--panel-width"), 10) || 300) + "px" : "0";
+    const cs = getComputedStyle(document.documentElement);
+    const sb = open ? (parseInt(cs.getPropertyValue("--panel-width"), 10) || 300) : 0;
+    const de = parseInt(cs.getPropertyValue("--pane-dock-left-edge"), 10) || 0;
+    stackContainer.style.left = Math.max(sb, de) + "px";
   }
   const panelObs = new MutationObserver(() => { syncNotebookInset(); syncStackInset(); });
   panelObs.observe(document.getElementById("panel-overlay"), { attributes: true, attributeFilter: ["class"] });
   state.on("stack-open", syncStackInset);
+  document.addEventListener("pane-dock-changed", syncStackInset);
 
-  // Panel inset mode — the left sidebar only overlays the text on narrow
-  // windows. Above 700px the panel insets alongside the editor (the column
-  // shrinks / shifts to make room) and Cmd+\ simply toggles it on/off;
-  // at 700px or narrower, it falls back to overlay with pin + click-outside.
+  // Panel inset mode — wide viewports inset the sidebar alongside the editor; narrow ones overlay with pin + click-outside.
   const panelOverlay = document.getElementById("panel-overlay");
   const OVERLAY_BREAKPOINT = 700;
   function updatePanelMode() {
