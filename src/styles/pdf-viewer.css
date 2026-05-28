@@ -251,7 +251,12 @@
   width: 24px;
   min-width: 24px;
   flex-shrink: 0;
-  display: none;
+  /* Always visible so the grip + Cmd+Shift+\ toggle are reachable
+     even before annotations have loaded — matches the notebook shelf
+     UX. `.has-annotations` is still set by setAnnotations so any
+     callers that depend on it (selection styling, dock observers)
+     keep working. */
+  display: flex;
   flex-direction: column;
   overflow: hidden;
   transition: width 0.2s;
@@ -259,7 +264,6 @@
   border-left: 1px solid var(--panel-border);
   position: relative;
 }
-.pdf-annot-shelf.has-annotations { display: flex; }
 .pdf-annot-shelf.open { width: 280px; }
 
 .pdf-annot-shelf-grip {
