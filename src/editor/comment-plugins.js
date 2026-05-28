@@ -31,11 +31,15 @@ export function createMultiLineCommentPlugin() {
         for (let i = 0; i + 1 < positions.length; i += 2) {
           const open = positions[i];
           const close = positions[i + 1];
-          builder.add(open, open + 2, Decoration.mark({ attributes: { style: "opacity: var(--comment-mark-opacity, 0.33)" } }));
+          // Pin the comment to the style's text override (set inline so it
+          // beats any highlight class). With no override --style-fg is unset
+          // and the `currentColor` fallback keeps the inherited editor
+          // foreground — so comments always track the text colour.
+          builder.add(open, open + 2, Decoration.mark({ attributes: { style: "opacity: var(--comment-mark-opacity, 0.33); color: var(--style-fg, currentColor)" } }));
           if (close > open + 2) {
-            builder.add(open + 2, close, Decoration.mark({ attributes: { style: "opacity: var(--comment-opacity, 0.5)" } }));
+            builder.add(open + 2, close, Decoration.mark({ attributes: { style: "opacity: var(--comment-opacity, 0.5); color: var(--style-fg, currentColor)" } }));
           }
-          builder.add(close, close + 2, Decoration.mark({ attributes: { style: "opacity: var(--comment-mark-opacity, 0.33)" } }));
+          builder.add(close, close + 2, Decoration.mark({ attributes: { style: "opacity: var(--comment-mark-opacity, 0.33); color: var(--style-fg, currentColor)" } }));
         }
         return builder.finish();
       }
