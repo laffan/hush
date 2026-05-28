@@ -64,14 +64,18 @@ export function createFindPanel(container, state, onClose, opts = {}) {
         <button class="find-panel-toggle" data-mode="regex" type="button" title="Regular Expression">.*</button>
       </div>
     </div>
-    <div class="find-panel-replace-row" hidden>
-      <input type="text" class="find-panel-replace-input" placeholder="Replace" spellcheck="false" />
-      <label class="find-panel-global-label" title="Apply replacements to every document with matches">
-        <input type="checkbox" class="find-panel-global" />
-        <span>Global</span>
-      </label>
-      <button class="find-panel-replace-btn" type="button" title="Replace current match">Replace</button>
-      <button class="find-panel-replace-all-btn" type="button" title="Replace all matches in scope">All</button>
+    <div class="find-panel-replace-wrap" hidden>
+      <div class="find-panel-replace-row">
+        <input type="text" class="find-panel-replace-input" placeholder="Replace" spellcheck="false" />
+        <label class="find-panel-global-label" title="Apply replacements to every document with matches">
+          <input type="checkbox" class="find-panel-global" />
+          <span>Global</span>
+        </label>
+      </div>
+      <div class="find-panel-replace-actions">
+        <button class="find-panel-replace-btn" type="button" title="Replace the current match in the current document">Replace in Document</button>
+        <button class="find-panel-replace-all-btn" type="button" title="Replace every match in every document in scope">Replace in All Documents</button>
+      </div>
     </div>
     <div class="find-panel-status"></div>
     <div class="find-panel-results"></div>
@@ -82,7 +86,7 @@ export function createFindPanel(container, state, onClose, opts = {}) {
   const twirlBtn = root.querySelector(".find-panel-twirl");
   const twirlArrow = root.querySelector(".find-panel-twirl-arrow");
   const findInput = root.querySelector(".find-panel-input");
-  const replaceRow = root.querySelector(".find-panel-replace-row");
+  const replaceRow = root.querySelector(".find-panel-replace-wrap");
   const replaceInput = root.querySelector(".find-panel-replace-input");
   const globalCheckbox = root.querySelector(".find-panel-global");
   const replaceBtn = root.querySelector(".find-panel-replace-btn");
@@ -138,36 +142,64 @@ export function createFindPanel(container, state, onClose, opts = {}) {
   }
 
   function lineAndSnippet(content, from, to) {
-    // Find the start of the line containing `from`.
+    // Pull the surrounding line, then trim to ~3 words of leading
+    // context and ~8 words of trailing context. Word boundaries are
+    // whitespace runs — punctuation rides with the neighbouring word.
     const lineStart = content.lastIndexOf("\n", from - 1) + 1;
     const lineEnd = content.indexOf("\n", to);
     const endIdx = lineEnd === -1 ? content.length : lineEnd;
     const lineText = content.slice(lineStart, endIdx);
     const matchStartInLine = from - lineStart;
     const matchEndInLine = to - lineStart;
-    // Trim wide lines to ~80 chars centered on the match, preserving the
-    // hit so we can render context before/after with the match emphasized.
-    const targetLen = 80;
-    let snipStart = 0;
-    let snipEnd = lineText.length;
-    if (lineText.length > targetLen) {
-      const half = Math.floor(targetLen / 2);
-      snipStart = Math.max(0, matchStartInLine - half);
-      snipEnd = Math.min(lineText.length, snipStart + targetLen);
-      snipStart = Math.max(0, snipEnd - targetLen);
-    }
-    const prefix = lineText.slice(snipStart, matchStartInLine);
+
+    const beforeRaw = lineText.slice(0, matchStartInLine);
     const matchText = lineText.slice(matchStartInLine, matchEndInLine);
-    const suffix = lineText.slice(matchEndInLine, snipEnd);
-    // Compute 1-based line number by counting newlines before lineStart.
+    const afterRaw = lineText.slice(matchEndInLine);
+
+    // Preserve whatever whitespace sits flush against the match so the
+    // prefix / suffix don't run into the highlighted text on render.
+    const trailingWsBefore = beforeRaw.match(/\s*$/)?.[0] ?? "";
+    const leadingWsAfter = afterRaw.match(/^\s*/)?.[0] ?? "";
+
+    const { trimmed: prefixBody, truncated: prefixTrimmed } = takeLastWords(beforeRaw.slice(0, beforeRaw.length - trailingWsBefore.length), 3);
+    const { trimmed: suffixBody, truncated: suffixTrimmed } = takeFirstWords(afterRaw.slice(leadingWsAfter.length), 8);
+    const prefix = prefixBody + trailingWsBefore;
+    const suffix = leadingWsAfter + suffixBody;
+
     let line = 1;
     for (let i = 0; i < lineStart; i++) if (content.charCodeAt(i) === 10) line++;
     return {
       line,
-      leading: snipStart > 0 ? "…" : "",
-      trailing: snipEnd < lineText.length ? "…" : "",
+      leading: prefixTrimmed ? "…" : "",
+      trailing: suffixTrimmed ? "…" : "",
       prefix, matchText, suffix,
     };
+  }
+
+  /** Keep the trailing `n` whitespace-separated tokens of `s`, preserving
+   *  the original whitespace that joins them. Returns `{ trimmed, truncated }`
+   *  where `truncated` is true if we dropped any leading text. */
+  function takeLastWords(s, n) {
+    if (!s) return { trimmed: "", truncated: false };
+    // Match: optional leading whitespace + one non-whitespace run.
+    const tokens = [];
+    const re = /\s*\S+/g;
+    let m;
+    while ((m = re.exec(s)) !== null) tokens.push(m[0]);
+    if (tokens.length <= n) return { trimmed: s, truncated: false };
+    const kept = tokens.slice(-n).join("").replace(/^\s+/, "");
+    return { trimmed: kept, truncated: true };
+  }
+
+  function takeFirstWords(s, n) {
+    if (!s) return { trimmed: "", truncated: false };
+    const tokens = [];
+    const re = /\S+\s*/g;
+    let m;
+    while ((m = re.exec(s)) !== null) tokens.push(m[0]);
+    if (tokens.length <= n) return { trimmed: s, truncated: false };
+    const kept = tokens.slice(0, n).join("").replace(/\s+$/, "");
+    return { trimmed: kept, truncated: true };
   }
 
   // Walk the active desk's tree and collect every searchable file along

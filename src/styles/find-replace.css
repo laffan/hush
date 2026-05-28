@@ -118,18 +118,32 @@
   border-color: rgba(128, 128, 128, 0.3);
 }
 
-.find-panel-replace-row {
+/* Replace section: input + checkbox on the first row, action buttons on
+   the second. The left padding pushes both rows past the close + twirl
+   so the inputs / buttons line up vertically with the find input above. */
+.find-panel-replace-wrap {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px 6px 38px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 8px 68px;
   border-bottom: 1px solid color-mix(in srgb, var(--fg) 6%, transparent);
 }
 
-/* `display: flex` above wins over the boolean `hidden` attribute — re-assert
-   `display: none` so the replace row stays hidden until the twirl opens it. */
-.find-panel-replace-row[hidden] {
+.find-panel-replace-wrap[hidden] {
   display: none;
+}
+
+.find-panel-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.find-panel-replace-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .find-panel-global-label {
@@ -155,12 +169,12 @@
   border: 1px solid rgba(128, 128, 128, 0.2);
   color: var(--fg);
   cursor: pointer;
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: 5px 10px;
+  font-size: 12px;
   font-family: inherit;
-  border-radius: 4px;
+  border-radius: 5px;
   white-space: nowrap;
-  opacity: 0.8;
+  opacity: 0.85;
   transition: all 0.12s;
 }
 
