@@ -9,7 +9,9 @@
  */
 
 import { setFindHighlights, clearFindHighlights } from "../editor/find-decorations.js";
-import { collectDocumentIds, findNodeByFileId } from "../state/tree-helpers.js";
+import { findNodeByFileId } from "../state/tree-helpers.js";
+import { decodeNotebookContent } from "../notebook/notebook-content.ts";
+import { getCanvasInstance } from "../notebook/notebook-bridge.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -53,7 +55,7 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     <div class="find-panel-toolbar">
       <button class="find-panel-close" type="button" title="Close (Esc)" aria-label="Close find">&times;</button>
       <button class="find-panel-twirl" type="button" title="Show replace" aria-expanded="false">
-        <span class="find-panel-twirl-arrow">▸</span>
+        <span class="find-panel-twirl-arrow">▶</span>
       </button>
       <input type="text" class="find-panel-input" placeholder="Find" spellcheck="false" />
       <div class="find-panel-toggles">
@@ -168,23 +170,51 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     };
   }
 
-  function isSearchableDocNode(node) {
-    if (!node) return false;
-    if (node.type !== "document") return false;
-    if (!node.fileId) return false;
-    return true;
-  }
-
-  function getActiveDeskDocFileIds() {
+  // Walk the active desk's tree and collect every searchable file along
+  // with the folder / project ancestors so each result row can show its
+  // location underneath the filename. Documents and notebooks are both
+  // searchable — notebooks are JSON-decoded so each text shape's body
+  // can be matched against the query.
+  function collectSearchableFiles() {
     const desks = state.fileTree.filter(n => n.type === "desk");
     const active = desks.find(n => n.id === state.settings?.activeDeskId) || desks[0];
-    const children = active ? (active.children || []) : state.fileTree;
-    return collectDocumentIds(children);
+    const rootChildren = active ? (active.children || []) : state.fileTree;
+    const out = [];
+    function walk(nodes, ancestors) {
+      for (const n of nodes) {
+        if ((n.type === "document" || n.type === "notebook") && n.fileId && !n.useAsNote) {
+          out.push({
+            fileId: n.fileId,
+            name: n.name || "Untitled",
+            kind: n.type,
+            pathParts: ancestors.slice(),
+          });
+        }
+        if (n.children && (n.type === "folder" || n.type === "project")) {
+          walk(n.children, [...ancestors, n.name || (n.type === "project" ? "Project" : "Folder")]);
+        } else if (n.children) {
+          walk(n.children, ancestors);
+        }
+      }
+    }
+    walk(rootChildren, []);
+    return out;
   }
 
   async function loadContent(fileId) {
     if (fileId === state.currentFileId && state.editor) {
       return state.editor.getContent();
+    }
+    if (fileId === state.currentNotebookFileId) {
+      // Reach into the live canvas so unsaved shape edits show up in
+      // results immediately rather than waiting for the next autosave.
+      const ci = getCanvasInstance?.();
+      if (ci && typeof ci.getShapes === "function") {
+        try {
+          const shapes = ci.getShapes();
+          return JSON.stringify({ format: "hushnote", version: 1, shapes });
+        } catch (_) {}
+      }
     }
     if (IS_TAURI) {
       try {
@@ -203,9 +233,58 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     return f?.name || "Untitled";
   }
 
+  function searchDocFile(info, query, content, isCurrent) {
+    const matches = findMatchesIn(content, query).map(m => ({
+      ...m,
+      snippet: lineAndSnippet(content, m.from, m.to),
+    }));
+    if (matches.length === 0) return null;
+    return {
+      fileId: info.fileId,
+      name: info.name,
+      kind: "document",
+      pathParts: info.pathParts,
+      isCurrent,
+      content,
+      matches,
+    };
+  }
+
+  function searchNotebookFile(info, query, content, isCurrent) {
+    let parsed;
+    try { parsed = decodeNotebookContent(content); }
+    catch (_) { parsed = null; }
+    if (!parsed || !Array.isArray(parsed.shapes)) return null;
+    const matches = [];
+    for (const shape of parsed.shapes) {
+      if (!shape || shape.type !== "text" || typeof shape.text !== "string") continue;
+      if (shape.headerLabel) continue; // shadow header labels are computed, not user text
+      const hits = findMatchesIn(shape.text, query);
+      for (const h of hits) {
+        matches.push({
+          shapeId: shape.id,
+          from: h.from,
+          to: h.to,
+          snippet: lineAndSnippet(shape.text, h.from, h.to),
+        });
+      }
+    }
+    if (matches.length === 0) return null;
+    return {
+      fileId: info.fileId,
+      name: info.name,
+      kind: "notebook",
+      pathParts: info.pathParts,
+      isCurrent,
+      content,
+      matches,
+    };
+  }
+
   async function runSearch() {
     const query = findInput.value;
     const token = ++searchToken;
+    const preservedFold = new Map(fileResults.map(f => [f.fileId, !!f.collapsed]));
     fileResults = [];
     flatMatches = [];
     currentFlat = -1;
@@ -217,49 +296,41 @@ export function createFindPanel(container, state, onClose, opts = {}) {
       return;
     }
 
-    // 1) Current document (if any) — always shown first.
-    const curId = activeFileId();
-    if (curId) {
-      const content = state.editor ? state.editor.getContent() : await loadContent(curId);
-      const matches = findMatchesIn(content, query).map(m => ({
-        ...m,
-        snippet: lineAndSnippet(content, m.from, m.to),
-      }));
-      if (matches.length > 0) {
-        fileResults.push({
-          fileId: curId,
-          name: fileDisplayName(curId),
-          isCurrent: true,
-          content,
-          matches,
-        });
-      }
+    const allFiles = collectSearchableFiles();
+    const curDocId = state.currentFileId || null;
+    const curNotebookId = state.currentNotebookFileId || null;
+    const curId = curDocId || curNotebookId;
+
+    // 1) Current doc / notebook first.
+    const currentInfo = allFiles.find(f => f.fileId === curId);
+    if (currentInfo) {
+      const content = await loadContent(currentInfo.fileId);
+      if (token !== searchToken) return;
+      const fr = currentInfo.kind === "notebook"
+        ? searchNotebookFile(currentInfo, query, content, true)
+        : searchDocFile(currentInfo, query, content, true);
+      if (fr) fileResults.push(fr);
     }
 
-    // 2) Other docs in the active desk. Loaded sequentially to keep
-    //    memory + Tauri load pressure modest; abort if a newer search
-    //    has superseded ours.
-    const docIds = getActiveDeskDocFileIds().filter(id => id !== curId);
-    for (const id of docIds) {
+    // 2) Every other file in the active desk, in tree order.
+    for (const info of allFiles) {
+      if (info.fileId === curId) continue;
       if (token !== searchToken) return;
-      const content = await loadContent(id);
+      const content = await loadContent(info.fileId);
       if (token !== searchToken) return;
-      const matches = findMatchesIn(content, query).map(m => ({
-        ...m,
-        snippet: lineAndSnippet(content, m.from, m.to),
-      }));
-      if (matches.length > 0) {
-        fileResults.push({
-          fileId: id,
-          name: fileDisplayName(id),
-          isCurrent: false,
-          content,
-          matches,
-        });
-      }
+      const fr = info.kind === "notebook"
+        ? searchNotebookFile(info, query, content, false)
+        : searchDocFile(info, query, content, false);
+      if (fr) fileResults.push(fr);
     }
 
-    // Build flat match index.
+    // Restore per-file collapsed state where applicable.
+    for (const fr of fileResults) {
+      if (preservedFold.has(fr.fileId)) fr.collapsed = preservedFold.get(fr.fileId);
+    }
+
+    // Build flat match index (skipping collapsed sections so nav follows
+    // what's visible).
     for (let i = 0; i < fileResults.length; i++) {
       const f = fileResults[i];
       for (let j = 0; j < f.matches.length; j++) {
@@ -291,22 +362,27 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     let html = "";
     for (let fi = 0; fi < fileResults.length; fi++) {
       const fr = fileResults[fi];
-      const headerLabel = fr.isCurrent ? "Current document" : escHtml(fr.name);
-      const sectionClass = fr.isCurrent ? "find-section find-section-current" : "find-section";
-      const dimmed = (replaceOpen && !globalCheckbox.checked && !fr.isCurrent) ? " find-section-dimmed" : "";
-      html += `<div class="${sectionClass}${dimmed}" data-file-idx="${fi}">`;
-      html += `<div class="find-section-header">`;
-      html += `<span class="find-section-name">${headerLabel}</span>`;
-      if (!fr.isCurrent) {
-        html += `<span class="find-section-filename">${escHtml(fr.name)}</span>`;
-      }
+      const sectionClasses = ["find-section"];
+      if (fr.isCurrent) sectionClasses.push("find-section-current");
+      if (fr.collapsed) sectionClasses.push("collapsed");
+      if (replaceOpen && !globalCheckbox.checked && !fr.isCurrent) sectionClasses.push("find-section-dimmed");
+      const pathStr = fr.pathParts && fr.pathParts.length
+        ? fr.pathParts.join(" › ")
+        : (fr.kind === "notebook" ? "Notebook" : "Document");
+      const foldArrow = fr.collapsed ? "▶" : "▼";
+      html += `<div class="${sectionClasses.join(" ")}" data-file-idx="${fi}">`;
+      html += `<div class="find-section-header" data-file-idx="${fi}">`;
+      html += `<button class="find-section-fold" type="button" aria-label="Toggle">${foldArrow}</button>`;
+      html += `<div class="find-section-meta">`;
+      html += `<span class="find-section-name">${escHtml(fr.name)}</span>`;
+      html += `<span class="find-section-path">${escHtml(pathStr)}</span>`;
+      html += `</div>`;
       html += `<span class="find-section-count">${fr.matches.length}</span>`;
       html += `</div>`;
       html += `<div class="find-section-matches">`;
       for (let mi = 0; mi < fr.matches.length; mi++) {
         const s = fr.matches[mi].snippet;
         html += `<div class="find-match" data-file-idx="${fi}" data-match-idx="${mi}">`;
-        html += `<span class="find-match-line">${s.line}</span>`;
         html += `<span class="find-match-text">`;
         html += `${escHtml(s.leading)}${escHtml(s.prefix)}<mark>${escHtml(s.matchText)}</mark>${escHtml(s.suffix)}${escHtml(s.trailing)}`;
         html += `</span></div>`;
@@ -315,8 +391,20 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     }
     resultsEl.innerHTML = html;
     highlightActiveResult();
+    resultsEl.querySelectorAll(".find-section-header").forEach(headerEl => {
+      headerEl.addEventListener("click", (e) => {
+        // Fold button (or any header click) toggles the section.
+        e.stopPropagation();
+        const fi = parseInt(headerEl.dataset.fileIdx, 10);
+        const fr = fileResults[fi];
+        if (!fr) return;
+        fr.collapsed = !fr.collapsed;
+        renderResults();
+      });
+    });
     resultsEl.querySelectorAll(".find-match").forEach(el => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
         const fi = parseInt(el.dataset.fileIdx, 10);
         const mi = parseInt(el.dataset.matchIdx, 10);
         const flat = flatMatches.findIndex(x => x.fileIdx === fi && x.matchIdx === mi);
@@ -336,34 +424,30 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     }
   }
 
-  /** Push highlights to the active editor for the currently-active doc. */
+  /** Push highlights to the active editor — only meaningful when a
+   *  document is open. Notebooks render via the canvas and don't use
+   *  the editor's decoration pipeline. */
   function pushHighlightsToEditor() {
     const view = state.editor?.view;
     if (!view) return;
-    const curId = activeFileId();
-    const fr = fileResults.find(f => f.fileId === curId);
+    const curId = state.currentFileId || null;
+    const fr = curId ? fileResults.find(f => f.fileId === curId && f.kind === "document") : null;
     if (!fr) { clearFindHighlights(view); return; }
-    // Compute which (if any) flat-match is the "current" within this file.
     let currentInFile = -1;
     if (currentFlat >= 0) {
       const cur = flatMatches[currentFlat];
-      const idx = fileResults.findIndex(f => f.fileId === curId);
+      const idx = fileResults.findIndex(f => f.fileId === curId && f.kind === "document");
       if (cur.fileIdx === idx) currentInFile = cur.matchIdx;
     }
     setFindHighlights(view, fr.matches.map(m => ({ from: m.from, to: m.to })), currentInFile);
   }
 
   function scrollCurrentMatchInEditor() {
-    const view = state.editor?.view;
-    if (!view || currentFlat < 0) return;
+    if (currentFlat < 0) return;
     const { fileIdx, matchIdx } = flatMatches[currentFlat];
     const fr = fileResults[fileIdx];
-    if (!fr || fr.fileId !== activeFileId()) return;
-    const m = fr.matches[matchIdx];
-    view.dispatch({
-      selection: { anchor: m.from, head: m.to },
-      scrollIntoView: true,
-    });
+    if (!fr || !currentTargetIsOpen(fr)) return;
+    focusMatchInTarget(fr, fr.matches[matchIdx]);
   }
 
   // Set true while we're driving `state.openFile` ourselves so the
@@ -371,25 +455,73 @@ export function createFindPanel(container, state, onClose, opts = {}) {
   // re-search (which would also reset `currentFlat` to 0).
   let suppressNextFileOpened = false;
 
+  function currentTargetIsOpen(target) {
+    if (target.kind === "notebook") return target.fileId === state.currentNotebookFileId;
+    return target.fileId === state.currentFileId;
+  }
+
+  async function openTarget(target) {
+    if (target.kind === "notebook") {
+      if (typeof state.openNotebook === "function") {
+        await state.openNotebook(target.fileId);
+      }
+    } else {
+      await state.openFile(target.fileId);
+    }
+  }
+
+  function focusMatchInTarget(target, match) {
+    if (target.kind === "notebook") {
+      const ci = getCanvasInstance?.();
+      if (ci && typeof ci.state?.focusShape === "function" && match.shapeId) {
+        try { ci.state.focusShape(match.shapeId); } catch (_) {}
+      }
+      return;
+    }
+    const view = state.editor?.view;
+    if (!view) return;
+    view.dispatch({
+      selection: { anchor: match.from, head: match.to },
+      scrollIntoView: true,
+    });
+  }
+
+  async function waitForTargetReady(target, timeoutMs = 600) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (target.kind === "notebook") {
+        const ci = getCanvasInstance?.();
+        if (ci && ci.state && Array.isArray(ci.getShapes?.()) &&
+            ci.getShapes().some(s => s.id === target.matches[0]?.shapeId)) {
+          return;
+        }
+      } else {
+        if (state.currentFileId === target.fileId && state.editor) return;
+      }
+      await new Promise(r => setTimeout(r, 30));
+    }
+  }
+
   async function jumpToFlat(flat, openIfNeeded) {
     if (flat < 0 || flat >= flatMatches.length) return;
     currentFlat = flat;
-    const { fileIdx } = flatMatches[flat];
+    const { fileIdx, matchIdx } = flatMatches[flat];
     const target = fileResults[fileIdx];
-    if (openIfNeeded && target.fileId !== activeFileId()) {
+    const match = target.matches[matchIdx];
+    if (openIfNeeded && !currentTargetIsOpen(target)) {
       suppressNextFileOpened = true;
-      await state.openFile(target.fileId);
-      // After the editor swaps, push highlights and scroll.
-      setTimeout(() => {
-        pushHighlightsToEditor();
-        scrollCurrentMatchInEditor();
-        updateStatus();
-        highlightActiveResult();
-        suppressNextFileOpened = false;
-      }, 50);
+      await openTarget(target);
+      // Notebook mount + canvas hydration race the click — poll until the
+      // target shape is reachable before trying to focus it.
+      await waitForTargetReady(target);
+      pushHighlightsToEditor();
+      focusMatchInTarget(target, match);
+      updateStatus();
+      highlightActiveResult();
+      suppressNextFileOpened = false;
     } else {
       pushHighlightsToEditor();
-      scrollCurrentMatchInEditor();
+      focusMatchInTarget(target, match);
       updateStatus();
       highlightActiveResult();
     }
@@ -417,7 +549,7 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     replaceOpen = true;
     replaceRow.hidden = false;
     twirlBtn.setAttribute("aria-expanded", "true");
-    twirlArrow.textContent = "▾";
+    twirlArrow.textContent = "▼";
     if (fileResults.length > 0) renderResults();
   }
 
@@ -425,7 +557,7 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     replaceOpen = false;
     replaceRow.hidden = true;
     twirlBtn.setAttribute("aria-expanded", "false");
-    twirlArrow.textContent = "▸";
+    twirlArrow.textContent = "▶";
     if (fileResults.length > 0) renderResults();
   }
 
@@ -435,16 +567,16 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     const fr = fileResults[fileIdx];
     if (!replaceOpen) return;
     if (!globalCheckbox.checked && !fr.isCurrent) return;
+    // Notebook replace would require editing shape text + re-serialising
+    // the canvas — left out of v1 to keep replace logic local to docs.
+    if (fr.kind === "notebook") return;
     const replacement = replaceInput.value;
     const match = fr.matches[matchIdx];
     if (fr.isCurrent) {
-      // Apply via editor so undo + dirty tracking flow normally.
       const view = state.editor?.view;
       if (!view) return;
       view.dispatch({ changes: { from: match.from, to: match.to, insert: replacement } });
     } else {
-      // Patch the saved doc content directly. Requires Tauri (web build
-      // shares the in-memory copy of every file).
       const newContent = fr.content.slice(0, match.from) + replacement + fr.content.slice(match.to);
       await writeDocContent(fr.fileId, newContent);
     }
@@ -455,9 +587,10 @@ export function createFindPanel(container, state, onClose, opts = {}) {
     if (fileResults.length === 0) return;
     if (!replaceOpen) return;
     const replacement = replaceInput.value;
-    const scope = globalCheckbox.checked
+    const scope = (globalCheckbox.checked
       ? fileResults
-      : fileResults.filter(f => f.isCurrent);
+      : fileResults.filter(f => f.isCurrent))
+      .filter(f => f.kind !== "notebook");
     for (const fr of scope) {
       const sorted = fr.matches.slice().sort((a, b) => a.from - b.from);
       if (fr.isCurrent) {
