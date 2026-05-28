@@ -290,6 +290,12 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
 
 export async function openPdf(state, fileId) {
   if (state.ratchetMode) return;
+  try {
+    const mod = await import("../sync/pdf-sync.js");
+    const exists = await mod.checkPdfExists(fileId);
+    if (!exists) return;
+  } catch {}
+
   if (state.dirty) await state.saveCurrentFile();
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
