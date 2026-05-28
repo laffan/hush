@@ -285,6 +285,15 @@ export function enterZenFocus(state) {
   });
   const zenView = new EditorView({ state: editorState, parent: stage });
 
+  // The freshly-built Zen editor includes the active theme, whose
+  // extension paints its own `.cm-editor` foreground. When the active
+  // style overrides the text colour, the main editor pins that override
+  // inline on its own `.cm-editor` (see applyActiveStyle); mirror it here
+  // so Zen text matches instead of falling back to the theme's stock fg.
+  const styleFg = getComputedStyle(document.documentElement)
+    .getPropertyValue("--style-fg").trim();
+  if (styleFg) zenView.dom.style.color = styleFg;
+
   // Column resizers — mirror the main editor's cmd-held grip handles
   // so the user can re-flow Zen's column width without leaving the
   // overlay. Writes through to `state.settings.columnWidth` so the

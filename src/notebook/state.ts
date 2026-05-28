@@ -228,6 +228,12 @@ export class DrawingState extends EventTarget {
    *  background instead of the resolved theme's stock canvasBackground.
    *  Empty string = no override (use the theme's own background). */
   canvasBackgroundOverride = "";
+  /** When the active Hush style has an `fg` override, this carries that
+   *  hex into the canvas so default/auto-coloured text shapes and the
+   *  toolbar icons track the style's text colour instead of the resolved
+   *  theme's stock foreground. Empty string = no override. Applied in the
+   *  `theme` getter so every consumer (renderer, toolbar) sees it. */
+  foregroundOverride = "";
   /** Wrap-width cap (px) for new text shapes and brainstorm cards. The
    *  user adjusts this from Settings > Editor; existing manually-sized
    *  shapes are unaffected. Falls back to 350 — the historical default
@@ -240,10 +246,20 @@ export class DrawingState extends EventTarget {
   get theme(): CanvasTheme {
     const variant = getEffectiveVariant(this.appearanceMode);
     const t = THEMES[this.themeId];
-    if (t && t.variant === variant) return t;
-    // Fallback: pick first theme that matches the requested variant
-    const fallback = Object.values(THEMES).find((th) => th.variant === variant);
-    return fallback || THEMES["default"];
+    let base: CanvasTheme;
+    if (t && t.variant === variant) {
+      base = t;
+    } else {
+      // Fallback: pick first theme that matches the requested variant
+      base = Object.values(THEMES).find((th) => th.variant === variant) || THEMES["default"];
+    }
+    // Layer the active style's fg override on top so canvas text + toolbar
+    // icons match the editor's text colour. Only allocate a copy when an
+    // override is actually present (the getter runs every render frame).
+    if (this.foregroundOverride) {
+      return { ...base, foreground: this.foregroundOverride };
+    }
+    return base;
   }
 
   setTheme(id: string) { this.themeId = id; this.notify("theme"); }
