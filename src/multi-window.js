@@ -14,6 +14,8 @@
  * during init and seeds that window's `currentFileId` from it.
  */
 
+import { isIOSTauri } from "./command-palette-helpers.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 let currentLabel = null;
@@ -128,24 +130,33 @@ export async function openInNewWindow(fileId, fileType) {
   const label = `window-${id}`;
   const url =
     `index.html#file=${encodeURIComponent(fileId)}&type=${encodeURIComponent(fileType)}`;
-  const win = new WebviewWindow(label, {
-    url,
-    title: "",
-    width: 720,
-    height: 720,
-    resizable: true,
-    decorations: true,
-    transparent: true,
-    titleBarStyle: "Overlay",
-    hiddenTitle: true,
-    dragDropEnabled: false,
-    center: true,
-  });
+  // iPad multi-window is native since Tauri 2.11: `new WebviewWindow` spawns
+  // a real UIScene with full IPC, seeded by the same URL hash the desktop
+  // path uses. iOS scenes are sized/decorated by the system, so the desktop
+  // chrome options (size, decorations, overlay title bar, transparency)
+  // don't apply there — pass only the URL.
+  const opts = isIOSTauri()
+    ? { url }
+    : {
+        url,
+        title: "",
+        width: 720,
+        height: 720,
+        resizable: true,
+        decorations: true,
+        transparent: true,
+        titleBarStyle: "Overlay",
+        hiddenTitle: true,
+        dragDropEnabled: false,
+        center: true,
+      };
+  const win = new WebviewWindow(label, opts);
   // Surface creation errors but don't throw — the palette already closed.
   win.once("tauri://error", (e) => {
     console.error("Failed to open new window:", e);
   });
 }
+
 
 /** Notify other windows that a piece of cross-window state mutated.
  *  `kind` is `"settings"` or `"files"`. The originator label is embedded

@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capabilities for Hush",
-  "windows": ["main", "settings", "window-*"],
+  "windows": ["main", "settings", "window-*", "window-scene-*"],
   "permissions": [
     "core:default",
     "core:window:default",

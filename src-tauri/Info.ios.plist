@@ -18,5 +18,16 @@
       <string>com.hushwriter.app</string>
     </dict>
   </array>
+  <!--
+    iPad multi-window via Tauri's native UIScene support (Tauri >= 2.11).
+    Tauri manages the scenes; we only opt in here. See MULTI-WINDOW-TAURI.md.
+  -->
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <true/>
+    <key>UISceneConfigurations</key>
+    <dict/>
+  </dict>
 </dict>
 </plist>

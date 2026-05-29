@@ -113,6 +113,19 @@ export function isDesktopTauri() {
   return true;
 }
 
+/** iOS / iPadOS Tauri detection — the inverse surface of
+ *  `isDesktopTauri()`. Gates the iPad single-file "Open in New Window"
+ *  command, which spawns a native UIScene rather than a WebviewWindow. */
+export function isIOSTauri() {
+  if (typeof window === "undefined") return false;
+  if (!window.__TAURI_INTERNALS__) return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  const platform = navigator.platform || "";
+  const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return /Mac/i.test(platform) && tp > 0;
+}
+
 /** Gate the "Use as note" / "Stop using as note" palette entries —
  *  `wantNote` true asks "is this doc already a note?", false asks "is
  *  it a regular doc inside a real project?". */

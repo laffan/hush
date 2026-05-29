@@ -11,6 +11,7 @@ import { findNodeByFileId } from "./state/tree-helpers.js";
 import {
   canUseAsNote,
   isDesktopTauri,
+  isIOSTauri,
   buildAppearanceCommands,
 } from "./command-palette-helpers.js";
 import {
@@ -152,6 +153,7 @@ function buildCommands(state) {
   const inStack = !!state.currentStackFileId;
   const hasActivePane = getActivePaneId() != null;
   const desktop = isDesktopTauri();
+  const ipad = isIOSTauri();
 
   const all = [
     // === SHARED ===
@@ -198,11 +200,15 @@ function buildCommands(state) {
     { id: "send-selected", label: "Send Selected", icon: icons.export, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterSendSelectedPicker(p, s) },
-    { id: "open-in-new-window", label: "Open in new window", icon: icons.files, shortcutKey: null, ctx: "desktop",
+    { id: "open-in-new-window", label: "Open in new window", icon: icons.files, shortcutKey: null, ctx: "multiwindow",
+      // Opens the active file/project in a real second window. Desktop and
+      // iPad share the same path now: a wry-managed WebviewWindow seeded
+      // via `index.html#file=…` (iPad multi-window is native since Tauri
+      // 2.11 — see MULTI-WINDOW-TAURI.md).
       action: (s) => {
-        const fileId = s.currentNotebookFileId || s.currentProjectId || s.currentFileId;
-        const fileType = s.currentNotebookFileId
-          ? "notebook"
+        const fileId = s.currentNotebookFileId || s.currentStackFileId || s.currentProjectId || s.currentFileId;
+        const fileType = s.currentNotebookFileId ? "notebook"
+          : s.currentStackFileId ? "stack"
           : s.currentProjectId ? "project"
           : s.currentFileId ? "document" : null;
         if (!fileId || !fileType) return;
@@ -452,6 +458,8 @@ function buildCommands(state) {
     if (cmd.ctx === "stack") return inStack;
     if (cmd.ctx === "pane") return hasActivePane;
     if (cmd.ctx === "desktop") return desktop;
+    if (cmd.ctx === "ipad") return ipad;
+    if (cmd.ctx === "multiwindow") return desktop || ipad; // native multi-window (desktop + iPad/Tauri 2.11)
     return true;
   });
 }
