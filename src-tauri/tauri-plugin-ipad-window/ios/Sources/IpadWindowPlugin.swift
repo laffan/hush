@@ -205,6 +205,10 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
             HushWindowBridge.shared.satelliteWebview?.evaluateJavaScript(
                 "window.__HUSH_RESOLVE_B64__(\"\(b64)\")", completionHandler: nil
             )
+        case "hushDiag":
+            // Satellite breadcrumbs/errors mirrored into the PRIMARY console,
+            // since the satellite dies before its own inspector can attach.
+            diag("satellite: \(message.body)")
         default:
             break
         }
@@ -238,8 +242,16 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
         // shim instead) while keeping the inherited asset plumbing.
         let cfg: WKWebViewConfiguration =
             (primary?.configuration.copy() as? WKWebViewConfiguration) ?? WKWebViewConfiguration()
+        // Isolate the web-content process: copy() inherits the primary's
+        // shared process pool, so a crash/teardown in the satellite would
+        // otherwise take the primary's webview down with it (the "primary
+        // freezes after closing the satellite" symptom). A fresh pool keeps
+        // them independent; the copied websiteDataStore still gives shared
+        // same-origin storage.
+        cfg.processPool = WKProcessPool()
         let ucc = WKUserContentController()
         ucc.add(self, name: "hushInvoke")
+        ucc.add(self, name: "hushDiag")
         ucc.addUserScript(WKUserScript(
             source: Self.satelliteShimJS,
             injectionTime: .atDocumentStart,
@@ -310,6 +322,16 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
       if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.__hushShim) return;
       var pending = Object.create(null), nextId = 1;
       window.__HUSH_SATELLITE__ = true;
+      function postDiag(s){ try { window.webkit.messageHandlers.hushDiag.postMessage(String(s)); } catch(_){} }
+      window.__hushDiag = postDiag;
+      postDiag("shim installed @ " + location.href);
+      window.addEventListener("error", function(e){
+        postDiag("error: " + (e.message || e) + " @ " + (e.filename || "?") + ":" + (e.lineno || 0));
+      });
+      window.addEventListener("unhandledrejection", function(e){
+        var r = e.reason; postDiag("reject: " + ((r && r.message) || r));
+      });
+      document.addEventListener("DOMContentLoaded", function(){ postDiag("DOMContentLoaded"); });
       function dec(b64){ return JSON.parse(decodeURIComponent(escape(atob(b64)))); }
       window.__HUSH_RESOLVE_B64__ = function(b64){
         var o; try { o = dec(b64); } catch(e){ return; }
