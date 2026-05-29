@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hush — a quiet place to write</title>
-  <meta name="description" content="Hush is a minimal, distraction-free writing app. Markdown, visual notebooks, and stacks in one calm workspace." />
+  <title>Hush — markdown, notebooks, and stacks</title>
+  <meta name="description" content="Hush is a desktop writing app for markdown documents, visual notebooks, and multi-column stacks." />
+  <link rel="icon" href="img/icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -13,7 +14,7 @@
 <body>
   <header class="site-header">
     <a class="brand" href="#top">
-      <span class="brand-mark" aria-hidden="true"></span>
+      <img class="brand-icon" src="img/icon.svg" alt="" width="28" height="28" />
       <span class="brand-name">Hush</span>
     </a>
     <nav class="site-nav">
@@ -26,16 +27,14 @@
   <main id="top">
     <!-- Hero -->
     <section class="hero">
-      <p class="eyebrow">A quiet place to write</p>
-      <h1>Write without the noise.</h1>
+      <h1>Markdown, notebooks, and stacks in one writing app.</h1>
       <p class="lede">
-        Hush is a minimal, distraction-free workspace for words, ideas, and
-        sketches — markdown documents, visual notebooks, and stacks, all in
-        one calm app.
+        Hush is a minimal desktop writing app for documents, visual notes,
+        and multi-column layouts.
       </p>
       <div class="hero-actions">
         <a href="#download" class="btn btn-primary">Download Hush</a>
-        <a href="#features" class="btn btn-ghost">See what it does</a>
+        <a href="#features" class="btn btn-ghost">See the features</a>
       </div>
 
       <!-- Image placeholder: hero screenshot -->
@@ -49,8 +48,7 @@
     <!-- Formats -->
     <section id="formats" class="section">
       <header class="section-head">
-        <p class="eyebrow">Three ways to think</p>
-        <h2>One app, every kind of note.</h2>
+        <h2>Formats</h2>
       </header>
 
       <div class="cards">
@@ -62,8 +60,8 @@
           </figure>
           <h3>Markdown</h3>
           <p>
-            Clean, keyboard-first writing with inline formatting that gets out
-            of your way. Just text, beautifully set.
+            Markdown documents with inline formatting and keyboard-first
+            editing.
           </p>
         </article>
 
@@ -75,8 +73,8 @@
           </figure>
           <h3>Notebooks</h3>
           <p>
-            An infinite canvas for text, images, and freehand drawing.
-            Arrange ideas spatially and connect the dots.
+            Notebooks are an infinite canvas for text, images, and freehand
+            drawing.
           </p>
         </article>
 
@@ -88,8 +86,8 @@
           </figure>
           <h3>Stacks</h3>
           <p>
-            Lay documents, notebooks, and PDFs side by side in scrolling
-            columns — your whole project, at a glance.
+            Stacks let you lay documents, notebooks, and PDFs side by side in
+            scrolling columns.
           </p>
         </article>
       </div>
@@ -98,17 +96,16 @@
     <!-- Features -->
     <section id="features" class="section section-alt">
       <header class="section-head">
-        <p class="eyebrow">Thoughtful details</p>
-        <h2>Built for focus.</h2>
+        <h2>Features</h2>
       </header>
 
       <div class="features">
         <div class="feature">
           <div class="feature-text">
-            <h3>Floating panes</h3>
+            <h3>Panes</h3>
             <p>
-              Pull any document into a floating reference pane. Keep your
-              outline, research, or a second draft in view while you write.
+              Panes are floating windows that keep one document in view while
+              you write in another.
             </p>
           </div>
           <figure class="shot">
@@ -122,8 +119,8 @@
           <div class="feature-text">
             <h3>Drawing</h3>
             <p>
-              A natural freehand engine with brushes, an eraser, and a lasso.
-              Every stroke is a real object you can move, group, and layer.
+              Draw freehand with brushes, an eraser, and a lasso. Each stroke
+              is an object you can move, group, and layer.
             </p>
           </div>
           <figure class="shot">
@@ -137,9 +134,8 @@
           <div class="feature-text">
             <h3>PDF export</h3>
             <p>
-              Turn any document into a polished PDF — typeset styles, line
-              spacing, page numbers, and bibliography support, with a live
-              preview.
+              Export documents to PDF with typeset styles, line spacing, page
+              numbers, and bibliography support.
             </p>
           </div>
           <figure class="shot">
@@ -153,16 +149,16 @@
 
     <!-- Download / CTA -->
     <section id="download" class="section cta">
-      <h2>Find some quiet.</h2>
-      <p class="lede">Download Hush and give your writing room to breathe.</p>
+      <h2>Download</h2>
+      <p class="lede">Hush is available for macOS.</p>
       <a href="#" class="btn btn-primary btn-lg">Download for macOS</a>
-      <p class="cta-note">Also coming to iPad, Windows, and Linux.</p>
+      <p class="cta-note">iPad, Windows, and Linux coming soon.</p>
     </section>
   </main>
 
   <footer class="site-footer">
-    <span class="brand-mark small" aria-hidden="true"></span>
-    <p>&copy; <span id="year"></span> Hush. A quiet place to write.</p>
+    <img class="brand-icon small" src="img/icon.svg" alt="" width="20" height="20" />
+    <p>&copy; <span id="year"></span> Hush</p>
   </footer>
 
   <script src="scripts.js"></script>

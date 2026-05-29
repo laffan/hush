@@ -14,3 +14,6 @@ Drop the landing-page screenshots here. The page references these filenames
 | `pdf-export.png`  | PDF export feature      | 760 × 480      |
 
 PNG or JPG both work. Keep them optimized for web (aim for < 400 KB each).
+
+`icon.svg` is the Hush app icon, used in the header and footer. It is already
+in place — no need to replace it.
