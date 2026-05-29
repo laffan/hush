@@ -15,10 +15,12 @@ import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { createStickyHeadersPlugin } from "./plugins/sticky-headers.js";
-import { buildCodeMirrorKeymap } from "../shortcuts.js";
+import { buildCodeMirrorKeymap, matchesDomEvent } from "../shortcuts.js";
 import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
+import { toggleStrikethrough } from "./formatting.js";
 import { headingIndentPlugin } from "./heading-indent.js";
 import { findHighlightField } from "./find-decorations.js";
+import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createImagePasteExtension } from "./image-paste.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
@@ -90,6 +92,25 @@ export function createBaseExtensions(state, onChange, opts) {
     if (update.docChanged && onChange) onChange(update);
   });
 
+  // Dead-key fallback for the strikethrough shortcut. On many layouts the
+  // grave/backtick key is a combining-accent dead key, so a Cmd+` keydown
+  // arrives with `event.key === "Dead"` and CodeMirror's keymap (which
+  // matches on `event.key`) never fires. Catch it by physical code here.
+  const deadKeyFallback = EditorView.domEventHandlers({
+    keydown(e, view) {
+      // Only the dead-key case: a Cmd/Ctrl chord on the physical grave key
+      // that didn't come through as a literal "`" (CM already handles that).
+      if (e.code !== "Backquote" || e.key === "`") return false;
+      if (!(e.metaKey || e.ctrlKey)) return false;
+      if (matchesDomEvent(e, state.settings.shortcutStrikethrough)) {
+        toggleStrikethrough(view);
+        e.preventDefault();
+        return true;
+      }
+      return false;
+    },
+  });
+
   const hushTheme = EditorView.theme({
     "&": { height: "100%" },
     ".cm-scroller": {
@@ -117,6 +138,7 @@ export function createBaseExtensions(state, onChange, opts) {
     drawSelection(),
     wrapOnSelection,
     updateListener,
+    deadKeyFallback,
     _shortcutComp.of(buildShortcutExtension(state)),
     createCalloutPlugin(),
     createFootnotePlugin(state),
@@ -130,6 +152,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createGoogleDocsPasteExtension(),
     headingIndentPlugin,
     findHighlightField,
+    instanceHighlightField,
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
     createCommentAfterPlugin(),

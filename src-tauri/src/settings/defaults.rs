@@ -116,7 +116,7 @@ pub fn default_shortcut_open() -> String {
     "CmdOrCtrl+Shift+H".to_string()
 }
 pub fn default_shortcut_fullscreen() -> String {
-    "CmdOrCtrl+Shift+F".to_string()
+    "CmdOrCtrl+Alt+F".to_string()
 }
 pub fn default_shortcut_private() -> String {
     "CmdOrCtrl+Shift+P".to_string()
@@ -149,6 +149,11 @@ pub fn default_zen_focus_font_size() -> u32 {
     30
 }
 pub fn default_shortcut_find() -> String {
+    // Cross-file Find panel moved to Cmd+Shift+F; Cmd+F now drives the
+    // minimal current-document quick find (default_shortcut_quick_find).
+    "Mod+Shift+F".to_string()
+}
+pub fn default_shortcut_quick_find() -> String {
     "Mod+F".to_string()
 }
 pub fn default_shortcut_find_all() -> String {
@@ -230,18 +235,26 @@ pub fn default_shortcut_strikethrough() -> String {
 pub fn default_shortcut_select_paragraph() -> String {
     "Mod+Shift+L".to_string()
 }
+pub fn default_shortcut_select_paragraph_up() -> String {
+    "Mod+Shift+ArrowUp".to_string()
+}
+pub fn default_shortcut_select_paragraph_down() -> String {
+    "Mod+Shift+ArrowDown".to_string()
+}
 pub fn default_shortcut_save() -> String {
     // Unbound by default — autosave handles persistence and Focus mode
     // now owns Mod+S. Users can rebind from Settings > Shortcuts.
     "".to_string()
 }
 pub fn default_shortcut_find_next() -> String {
-    // Ctrl+R / Ctrl+Shift+R on every platform (not Cmd) so they don't
-    // clash with the notebook's Group / Ungroup shortcuts (Cmd+G / Cmd+Shift+G).
-    "Ctrl+R".to_string()
+    // Cmd+G / Cmd+Shift+G step through quick-find matches in a document
+    // (and the Find panel when it's open). The notebook canvas keeps its
+    // own Group / Ungroup handlers — those contexts don't overlap with a
+    // focused text editor.
+    "Mod+G".to_string()
 }
 pub fn default_shortcut_find_prev() -> String {
-    "Ctrl+Shift+R".to_string()
+    "Mod+Shift+G".to_string()
 }
 pub fn default_shortcut_join_lines() -> String {
     "Mod+J".to_string()

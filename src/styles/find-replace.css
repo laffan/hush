@@ -353,3 +353,50 @@
   outline: 1px solid rgba(255, 165, 0, 0.7);
   outline-offset: 0;
 }
+
+/* Low-opacity highlight of every "select instance" (Cmd+D) occurrence. */
+.cm-instance-match {
+  background: rgba(255, 165, 0, 0.18);
+  border-radius: 2px;
+}
+
+/* ===== Quick find (Cmd+F) — minimal current-document search bar ===== */
+
+.quick-find-bar {
+  position: fixed;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 224px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-fg, #333);
+  border: 1px solid var(--theme-border, rgba(0, 0, 0, 0.15));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+
+.quick-find-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.quick-find-input::placeholder {
+  color: var(--theme-fg, #333);
+  opacity: 0.45;
+}
+
+.quick-find-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  opacity: 0.55;
+}

@@ -9,6 +9,7 @@
  */
 
 import { findPanelGoNext, findPanelGoPrev, closeFindPanel } from "../sidebar/find-panel.js";
+import { isQuickFindOpen, quickFindGoNext, quickFindGoPrev, openQuickFind } from "./quick-find.js";
 
 /**
  * Open the Find panel. If the editor has a non-empty selection, that text
@@ -19,14 +20,27 @@ export function openFindReplace(view, state) {
   state.emit("show-find-panel", { initialQuery });
 }
 
-/** Cmd+G — advance to the next match within the find panel. Returns true
- *  only when the panel is open so the binding can fall through otherwise. */
+/**
+ * Open the minimal current-document quick find (Cmd+F). Requires a live
+ * CodeMirror view — notebooks/stacks without a focused editor get nothing.
+ */
+export function openQuickFindBar(view, state) {
+  const v = view || (state && state.editor ? state.editor.view : null);
+  if (!v) return false;
+  return openQuickFind(v);
+}
+
+/** Cmd+G — advance to the next match. Prefers the quick-find bar when it's
+ *  open, otherwise drives the sidebar Find panel. Returns true only when
+ *  something handled it so the binding can fall through otherwise. */
 export function findNext() {
+  if (isQuickFindOpen()) return quickFindGoNext();
   return findPanelGoNext();
 }
 
 /** Cmd+Shift+G — previous match. */
 export function findPrev() {
+  if (isQuickFindOpen()) return quickFindGoPrev();
   return findPanelGoPrev();
 }
 

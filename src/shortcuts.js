@@ -55,6 +55,23 @@ export function toCodeMirrorKey(str) {
   return segs.join("-");
 }
 
+/** Physical-code → produced-character fallback for punctuation keys that
+ *  can register as dead keys (e.g. grave/backtick for combining accents),
+ *  where `event.key` comes through as `"Dead"` and never matches. */
+const CODE_TO_KEY = {
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+};
+
 /** Test whether a DOM KeyboardEvent matches a stored shortcut string. */
 export function matchesDomEvent(event, str) {
   const p = parseShortcut(str);
@@ -68,7 +85,11 @@ export function matchesDomEvent(event, str) {
   // already match our stored format (`"ArrowRight"`, `"Backspace"`, etc.).
   const evKey = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   const shKey = p.key.length === 1 ? p.key.toLowerCase() : p.key;
-  return evKey === shKey;
+  if (evKey === shKey) return true;
+  // Dead-key fallback: match the physical code (Cmd+` on layouts where the
+  // grave key produces a combining accent reports `event.key === "Dead"`).
+  const codeKey = CODE_TO_KEY[event.code];
+  return !!codeKey && codeKey === shKey;
 }
 
 /**
