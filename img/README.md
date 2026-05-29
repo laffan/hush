@@ -11,6 +11,7 @@ Drop the landing-page screenshots here. The page references these filenames
 | `stacks.png`      | Stacks format card      | 720 × 480      |
 | `panes.png`       | Floating panes feature  | 760 × 480      |
 | `drawing.png`     | Drawing feature         | 760 × 480      |
+| `zotero.png`      | Zotero feature          | 760 × 480      |
 | `pdf-export.png`  | PDF export feature      | 760 × 480      |
 
 PNG or JPG both work. Keep them optimized for web (aim for < 400 KB each).
