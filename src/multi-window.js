@@ -14,6 +14,8 @@
  * during init and seeds that window's `currentFileId` from it.
  */
 
+import { isIOSTauri } from "./command-palette-helpers.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 let currentLabel = null;
@@ -128,67 +130,33 @@ export async function openInNewWindow(fileId, fileType) {
   const label = `window-${id}`;
   const url =
     `index.html#file=${encodeURIComponent(fileId)}&type=${encodeURIComponent(fileType)}`;
-  const win = new WebviewWindow(label, {
-    url,
-    title: "",
-    width: 720,
-    height: 720,
-    resizable: true,
-    decorations: true,
-    transparent: true,
-    titleBarStyle: "Overlay",
-    hiddenTitle: true,
-    dragDropEnabled: false,
-    center: true,
-  });
+  // iPad multi-window is native since Tauri 2.11: `new WebviewWindow` spawns
+  // a real UIScene with full IPC, seeded by the same URL hash the desktop
+  // path uses. iOS scenes are sized/decorated by the system, so the desktop
+  // chrome options (size, decorations, overlay title bar, transparency)
+  // don't apply there — pass only the URL.
+  const opts = isIOSTauri()
+    ? { url }
+    : {
+        url,
+        title: "",
+        width: 720,
+        height: 720,
+        resizable: true,
+        decorations: true,
+        transparent: true,
+        titleBarStyle: "Overlay",
+        hiddenTitle: true,
+        dragDropEnabled: false,
+        center: true,
+      };
+  const win = new WebviewWindow(label, opts);
   // Surface creation errors but don't throw — the palette already closed.
   win.once("tauri://error", (e) => {
     console.error("Failed to open new window:", e);
   });
 }
 
-/** Open the given file in a new iPad window (a native UIScene) via the
- *  `tauri-plugin-ipad-window` Swift bridge. This is the iPadOS counterpart
- *  to `openInNewWindow` — iOS has no `WebviewWindow.new`, so the native
- *  side activates a second scene seeded with the file via an
- *  `NSUserActivity` (the analog of the desktop URL hash).
- *
- *  Stage 1 (see IPAD-MULTI-WINDOW-PLANNING.md): the scene currently renders
- *  a placeholder confirming the bridge; the satellite single-file editor is
- *  wired in later stages. `fileType` is `"document"` or `"notebook"`
- *  (projects are out of scope for v1). No-op off Tauri / iOS. */
-export async function openSingleFileWindow(fileId, fileType, title) {
-  if (!IS_TAURI) return;
-  if (!fileId || !fileType) return;
-  console.log("[IpadWindow] openSingleFileWindow invoking", fileId, fileType);
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("plugin:ipad-window|open_single_file_window", {
-      fileId, fileType, title: title || "",
-    });
-    console.log("[IpadWindow] openSingleFileWindow resolved");
-  } catch (e) {
-    console.warn("[IpadWindow] openSingleFileWindow failed:", e);
-  }
-}
-
-/** Subscribe to the iPad-window bridge's `diag` events and mirror them to
- *  the console. The native side (tauri-plugin-ipad-window) emits a
- *  breadcrumb at each step of opening a second scene; with no terminal
- *  available on-device, reading them here via Safari Web Inspector is the
- *  feedback channel. Harmless on desktop (the plugin never triggers). */
-export async function subscribeIpadWindowDiag() {
-  if (!IS_TAURI) return;
-  try {
-    const { addPluginListener } = await import("@tauri-apps/api/core");
-    await addPluginListener("ipad-window", "diag", (payload) => {
-      const msg = (payload && payload.msg != null) ? payload.msg : payload;
-      console.log("[IpadWindow:diag]", msg);
-    });
-  } catch (e) {
-    console.warn("ipad-window diag listener failed:", e);
-  }
-}
 
 /** Notify other windows that a piece of cross-window state mutated.
  *  `kind` is `"settings"` or `"files"`. The originator label is embedded
@@ -289,10 +257,6 @@ function currentFileFromState(state) {
  *  point under the project's 700-line cap. */
 export async function setupMultiWindow(state) {
   if (!IS_TAURI) return;
-
-  // Mirror the iPad-window bridge's native diagnostics into the console
-  // (read via Safari Web Inspector on-device). No-op off iOS.
-  subscribeIpadWindowDiag();
 
   // Subscribe BEFORE register/push so the broadcasts that those calls
   // emit are picked up as our own initial windowList population.

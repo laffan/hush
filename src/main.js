@@ -37,10 +37,6 @@ async function init() {
       state.isSecondaryWindow = label !== "main";
     } catch (_) { /* fall back to main-window behaviour */ }
   }
-  // iPad satellite (single-file) window — the shim sets __HUSH_SATELLITE__.
-  // Skip sidebar/panes/sync/registry chrome (Stage 3); see planning doc.
-  state.isSatellite = typeof window !== "undefined" && !!window.__HUSH_SATELLITE__;
-  if (state.isSatellite) document.documentElement.classList.add("satellite");
   // Register the wikilink open hook before state.init so cmd-clicks on
   // an auto-opened notebook resolve immediately.
   if (typeof window !== "undefined") {
@@ -160,23 +156,23 @@ async function init() {
   // Initial focus
   editor.focus();
 
-  if (!state.isSatellite) createSidebar(state);
+  createSidebar(state);
   setupFileDrop(state);
   initZenFocus(state);
   // Listing view shown when 2+ docs are multi-selected in the sidebar.
-  if (!state.isSatellite) import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
+  import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
-  if (!state.isSatellite) initPaneManager(state);
+  initPaneManager(state);
 
   // iOS-only on-screen Cmd button (gated by `showCmdButton` setting); plus pencil bridge on iOS Tauri.
-  if (!state.isSatellite) initCmdButton(state);
+  initCmdButton(state);
   initCmdHeldSliders(state);
-  if (IS_TAURI && !state.isSatellite) import("./notebook/pencil-bridge.js").then((m) => m.initPencilBridge?.(state)).catch(() => {});
+  if (IS_TAURI) import("./notebook/pencil-bridge.js").then((m) => m.initPencilBridge?.(state)).catch(() => {});
 
   // Local Sync watcher — refresh the files panel when mounted folders
   // change on disk, and reload the open file if it was the one that
   // changed.
-  if (IS_TAURI && !state.isSatellite) {
+  if (IS_TAURI) {
     const { startLocalSyncWatcher } = await import("./sync/local-sync.js");
     startLocalSyncWatcher(state, async () => {
       try { (await import("./sidebar/files-panel-local-sync.js")).invalidateLocalSyncCache(); } catch (_) {}
@@ -268,7 +264,7 @@ async function init() {
   // The full-height .sidebar-grip on the panel's right edge is the sole
   // open/close affordance now — the left-edge hover trigger and the
   // floating circular toggle are both gone.
-  if (!state.isSatellite) import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
+  import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
 
   // Save scroll position periodically (debounced on scroll)
   let scrollSaveTimer = null;
@@ -307,11 +303,10 @@ async function init() {
   });
 
   await setupTauriIntegration(state);
-  if (!state.isSatellite) import("./traffic-lights.js").then(m => m.setupTrafficLightsHoverReveal()).catch(() => {});
-  // Multi-window registry + sibling-mutation listeners. Skipped in the
-  // satellite (not a registry peer; its listen() callbacks can't be reached
-  // through the relay yet — Stage 4).
-  if (!state.isSatellite) await setupMultiWindow(state);
+  import("./traffic-lights.js").then(m => m.setupTrafficLightsHoverReveal()).catch(() => {});
+  // Multi-window registry + sibling-mutation listeners (desktop + native
+  // iPad multi-window). Cross-window live sync rides this.
+  await setupMultiWindow(state);
 
   // Apply initial always-on-top setting
   if (IS_TAURI) {

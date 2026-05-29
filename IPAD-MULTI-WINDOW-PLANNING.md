@@ -1,9 +1,15 @@
 # Hush — iPad Multi-Window (single-file) Planning
 
-> **Status**: Stages 1 & 2 working on-device — the satellite runs the real
-> `dist` and the invoke relay carries every command (the seeded file loads,
-> renders, and edits/saves). Next: Stage 3 (single-file boot mode) to stop
-> booting the full app, then Stage 4 (event routing for live sync).
+> **⚠️ SUPERSEDED — pivoted to native Tauri multi-window.** Tauri **2.11.0**
+> added official iOS/iPad multi-window ([PR #14484](https://github.com/tauri-apps/tauri/pull/14484)),
+> which didn't exist when this was written (we were on 2.10.3). A second
+> iPad window is now just a `WebviewWindow` with full IPC — so the entire
+> custom approach below (the `tauri-plugin-ipad-window` Swift bridge, the
+> `hushsat://` asset proxy, the invoke relay, the single-file "satellite"
+> boot mode) has been **removed**. The iPad path now shares the desktop
+> "Open in new window" code. See **MULTI-WINDOW-TAURI.md** for the current
+> (native) approach. The history below is kept as a record of how the
+> pre-2.11 custom bridge worked and why.
 > **Last Updated**: 2026-05-29
 
 ## Implementation Status

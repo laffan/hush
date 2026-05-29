@@ -36,16 +36,3 @@
 @import './wikilinks.css';
 @import './pdf-viewer.css';
 @import './stack.css';
-
-/* iPad satellite (single-file) window — a lone, chrome-free editor for one
-   file. main.js skips building the sidebar / panes / cmd button in this
-   mode; these rules belt-and-suspenders hide any remaining chrome and let
-   the editor fill the scene. See IPAD-MULTI-WINDOW-PLANNING.md (Stage 3). */
-html.satellite #drag-region,
-html.satellite #panel-overlay,
-html.satellite #right-panel-overlay,
-html.satellite #pane-container { display: none !important; }
-html.satellite #editor-container,
-html.satellite #notebook-container,
-html.satellite #pdf-container,
-html.satellite #stack-container { left: 0 !important; right: 0 !important; }

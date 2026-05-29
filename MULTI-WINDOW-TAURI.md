@@ -1,313 +1,192 @@
 # Multi-Window on iPad with Tauri (a field guide)
 
-How to open a **second native window** in a Tauri v2 app on iPadOS and run
-your real web app inside it — including a working `invoke()` — starting from
-a fresh project.
+How to open a **second native window** on iPadOS in a Tauri v2 app — a real
+window running your full app with a working `invoke()` — starting from a
+fresh project.
 
-This is written generically; where it helps, it points at the concrete
-implementation in this repo (`tauri-plugin-ipad-window`, `src/multi-window.js`,
-`src/main.js` / `src/main-modes.js`). The companion design doc with Hush-
-specific staging is `IPAD-MULTI-WINDOW-PLANNING.md`.
-
-> **TL;DR.** On iPad you cannot use `WebviewWindow` (desktop-only) and you
-> cannot adopt UIScene the normal way (Tauri builds the app on the legacy
-> UIWindow lifecycle). The recipe: a tiny Swift plugin that (1) requests a
-> second **UIScene** and attaches a hand-made `WKWebView`, (2) loads your
-> bundle over a **private URL scheme that proxies every asset through the
-> primary webview**, and (3) **relays `invoke()`** through the primary
-> webview, which is the only one with a real Tauri IPC bridge.
+> **Use Tauri ≥ 2.11.** iOS/iPad multi-window is built in (PR
+> [#14484](https://github.com/tauri-apps/tauri/pull/14484), shipped in
+> **2.11.0**). On 2.11+ a second iPad window is *just a `WebviewWindow`* —
+> the same API you already use on desktop. No custom Swift, no scene
+> delegate, no IPC relay. If you're on **≤ 2.10**, none of this exists and
+> you'd be forced into a painful custom plugin (see the appendix); the right
+> move is to upgrade.
 
 ---
 
-## 1. Why the easy paths don't work
+## TL;DR
 
-**`WebviewWindow.new()` is desktop-only.** On iOS/iPadOS, wry exposes a
-single webview surface; there is no multi-`WebviewWindow` support. Calling it
-no-ops or errors.
+1. **Upgrade** to Tauri ≥ 2.11 (Rust crates + `@tauri-apps/api` + `@tauri-apps/cli`).
+2. **`Info.ios.plist`**: opt into multiple scenes.
+3. **Capabilities**: allow `core:webview:allow-create-webview-window` and add a
+   wildcard to the `windows` list for your dynamic labels.
+4. **JS**: `new WebviewWindow(label, { url })` — works programmatically on iOS,
+   carrying your URL (e.g. `index.html#file=…`) for seeding.
+5. **Rust** (optional but recommended): handle `RunEvent::SceneRequested` so
+   the OS "New Window" gesture (long-press the app icon) opens a window too.
 
-**You can't just adopt UIScene.** A normal iPad multi-window app declares a
-`UISceneDelegate` and a scene manifest, and UIKit calls
-`application(_:configurationForConnecting:)`. But Tauri's generated iOS app
-(`gen/apple`) builds the app delegate and the primary window **in Rust on the
-legacy, non-scene `UIWindow` lifecycle**. There is no Swift app/scene
-delegate, and UIKit fixes the lifecycle inside `UIApplicationMain` before any
-plugin loads — so:
-
-- Swizzling `configurationForConnecting` from a plugin's `load()` runs too
-  late; the method is never called anyway.
-- Adding a full scene manifest to `Info.plist` makes UIKit ignore wry's
-  legacy primary window.
-
-**A second webview has no IPC.** Even once you get a second `WKWebView` on
-screen, wry only wires its Tauri IPC bridge into the webview *it* created.
-A hand-made webview has no `invoke()`. And your app — editors, canvases,
-file trees — calls `invoke()` constantly, so "just pass the serialized
-content over" is not viable for anything non-trivial. **You need a working
-`invoke()` in the second window**, which means a relay.
+That's it. The second window is a real wry-managed webview with full IPC, so
+your entire app — editors, file tree, every `invoke` — works unchanged.
 
 ---
 
-## 2. Architecture
+## 1. Upgrade
 
+```toml
+# src-tauri/Cargo.toml
+tauri = { version = "2.11", features = [...] }
+tauri-build = "2"
 ```
-┌─ Scene 1: PRIMARY (Tauri-managed) ──────┐      ┌─ Scene 2: SATELLITE ───────────┐
-│ wry WKWebView @ tauri://localhost       │      │ your WKWebView @ hushsat://…    │
-│  • real Tauri IPC (invoke works)        │      │  • fresh config, own process    │
-│  • can fetch() its own bundled assets   │      │  • __TAURI_INTERNALS__ = shim   │
-│  • __hushSatelliteRequest(reqJSON)      │◀────▶│  • invoke → postMessage to Swift│
-└─────────────────────────────────────────┘      └─────────────────────────────────┘
-                 ▲   relay (req/resp)  +  asset proxy (fetch bytes)   ▲
-                 └──────────────── Swift plugin owns both webviews ───┘
+```jsonc
+// package.json
+"@tauri-apps/api": "^2.11.0",
+"@tauri-apps/cli": "^2.11.0"
 ```
+Then `cargo update -p tauri --precise 2.11.x` and `npm install`. (The CLI
+version matters: it generates the iOS Xcode project with scene support.)
 
-Two channels, both routed through the Swift plugin:
+Requirements: **iOS 13+** (and Android 12L / API 32+ for Android activity
+embedding, if you target that too).
 
-1. **Asset proxy** — the satellite loads your SPA from a *private scheme*
-   (e.g. `hushsat://`). Its scheme handler asks the primary to `fetch()` the
-   same path from `tauri://localhost` and returns the bytes. This works no
-   matter where the bundle physically lives (loose files or compiled into the
-   binary) and **avoids wry's own asset handler, which is webview-specific
-   and crashes if used from a foreign webview**.
-2. **Invoke relay** — the satellite's `invoke()` is a shim that posts to the
-   plugin, which runs the command in the *primary* webview (real IPC) and
-   posts the result back. One relay covers every command and every file type.
-
-Tradeoff: the satellite routes everything through the primary, so **the
-primary must stay alive** for the satellite to function. Acceptable for a
-"secondary window of the same app" model.
-
----
-
-## 3. The scene + seed path (getting a second window at all)
-
-In `Info.plist`, opt into multiple scenes **without** declaring a scene
-delegate/manifest (so wry's legacy primary window is untouched):
+## 2. Enable scenes in `Info.ios.plist`
 
 ```xml
 <key>UIApplicationSceneManifest</key>
 <dict>
-  <key>UIApplicationSupportsMultipleScenes</key><true/>
+  <key>UIApplicationSupportsMultipleScenes</key>
+  <true/>
+  <key>UISceneConfigurations</key>
+  <dict/>
 </dict>
 ```
 
-In the plugin's `load(webview:)`, capture the primary webview and observe
-scene connections instead of swizzling:
+Leave `UISceneConfigurations` an empty dict — Tauri manages the scenes; you
+are only opting in.
 
-```swift
-HushWindowBridge.shared.primaryWebview = webview
-NotificationCenter.default.addObserver(
-  self, selector: #selector(sceneWillConnect(_:)),
-  name: UIScene.willConnectNotification, object: nil)
-```
+## 3. Capabilities
 
-A Tauri command requests a new scene, carrying a seed (which file to open):
+Windows created at runtime get dynamic labels, so the capability's `windows`
+list needs a wildcard that matches them, plus the create permission:
 
-```swift
-@objc public func openWindow(_ invoke: Invoke) throws {
-  // parse fileId/fileType/title from args …
-  bridge.pendingSeed = seed
-  bridge.expectingNewScene = true            // gate: only claim scenes WE asked for
-  DispatchQueue.main.async {
-    let activity = NSUserActivity(activityType: "com.you.app.fileWindow")
-    activity.userInfo = ["fileId": id, "fileType": type]
-    UIApplication.shared.requestSceneSessionActivation(nil, userActivity: activity,
-                                                        options: nil, errorHandler: nil)
-  }
-  invoke.resolve()
+```jsonc
+{
+  "windows": ["main", "window-*", "window-scene-*"],
+  "permissions": [
+    "core:webview:allow-create-webview-window",
+    // …your other permissions…
+  ]
 }
 ```
 
-In the observer, attach your own `UIWindow` + webview to the requested scene,
-and **destroy unrequested scenes** (iPadOS restores "zombie" sessions from
-prior runs; if you don't kill them they flash open/closed and can be reused
-in place of a fresh seeded scene):
+Match whatever label scheme you use (below): `window-*` for JS-created
+windows, `window-scene-*` for the ones the `SceneRequested` handler builds.
 
-```swift
-@objc func sceneWillConnect(_ note: Notification) {
-  guard let scene = note.object as? UIWindowScene,
-        scene.session.role == .windowApplication else { return }
-  guard bridge.expectingNewScene else {
-    // iOS-restored leftover — destroy so it can't be reused.
-    UIApplication.shared.requestSceneSessionDestruction(scene.session, options: nil, errorHandler: nil)
-    return
-  }
-  bridge.expectingNewScene = false
-  let win = UIWindow(windowScene: scene)
-  win.rootViewController = makeSatelliteVC(seed: bridge.pendingSeed)
-  win.makeKeyAndVisible()
-  bridge.sceneWindows.append(win)   // strong ref — no scene delegate owns it
-}
-```
+## 4. Open a window programmatically (JS)
 
-Also purge leftover secondary scenes ~2s after launch (everything except the
-primary and your own attached windows) so a backlog can't accumulate.
-
-> **Gotcha:** the primary window is a *legacy* `UIWindow`, not a scene, and it
-> connects before your observer is installed — so it never trips the observer.
-> That's what makes this safe.
-
----
-
-## 4. Loading your bundle in the satellite (the asset proxy)
-
-**Do NOT** reuse wry's configuration or its `tauri://` scheme handler.
-`WKWebViewConfiguration.copy()` *does* carry the handler, but wry's handler is
-**webview-specific**: invoked for a webview it doesn't own, it crashes the
-shared web-content process. (Symptom: blank window, then the whole app dies.)
-
-Instead, give the satellite a **fresh config + a private scheme + your own
-handler**, and proxy every request through the primary:
-
-```swift
-let cfg = WKWebViewConfiguration()
-cfg.processPool = WKProcessPool()                 // isolate: a satellite crash
-                                                   // must not kill the primary.
-                                                   // (Only safe on a FRESH config —
-                                                   //  swapping the pool on a copied
-                                                   //  config crashes WebKit.)
-cfg.setURLSchemeHandler(SatelliteSchemeHandler(), forURLScheme: "hushsat")
-
-let ucc = WKUserContentController()
-ucc.add(self, name: "hushInvoke")                  // satellite → native (invoke)
-ucc.addUserScript(WKUserScript(source: shimJS,     // defines __TAURI_INTERNALS__
-                  injectionTime: .atDocumentStart, forMainFrameOnly: true))
-cfg.userContentController = ucc
-
-let web = WKWebView(frame: .zero, configuration: cfg)
-web.load(URLRequest(url: URL(string: "hushsat://localhost/#file=\(id)&type=\(type)")!))
-```
-
-The scheme handler fetches each asset from the primary (same origin as the
-real bundle) and returns the bytes. Use `callAsyncJavaScript` (iOS 14+) so the
-`fetch().arrayBuffer()` promise is awaited:
-
-```swift
-func webView(_ wv: WKWebView, start task: WKURLSchemeTask) {
-  let path = task.request.url!.path.isEmpty ? "/" : task.request.url!.path
-  let body = """
-    const r = await fetch(u); const b = new Uint8Array(await r.arrayBuffer());
-    let s = ""; for (let i=0;i<b.length;i+=0x8000) s += String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
-    return { b64: btoa(s), type: r.headers.get('Content-Type')||'application/octet-stream', status: r.status };
-  """
-  primaryWebview.callAsyncJavaScript(body, arguments: ["u": "tauri://localhost\(path)"],
-                                     in: nil, in: .page) { result in
-    // decode b64 → Data, build HTTPURLResponse with Content-Type, then
-    // task.didReceive(response); task.didReceive(data); task.didFinish()
-  }
-}
-```
-
-Notes:
-- **Content-Type matters.** ES modules won't execute without a JS MIME type —
-  propagate the primary's response `Content-Type` header verbatim.
-- **Guard cancelled tasks.** Track tasks; if `stop` was called, drop the late
-  async delivery (messaging a stopped `WKURLSchemeTask` crashes).
-- **Root-relative URLs** (`/assets/x.js`) resolve against `hushsat://localhost`
-  and route back through your handler — so the whole bundle comes through.
-
----
-
-## 5. The invoke relay
-
-The shim (injected at document-start, before your bundle) replaces
-`window.__TAURI_INTERNALS__`. `@tauri-apps/api`'s `invoke` just calls
-`__TAURI_INTERNALS__.invoke(cmd, args, opts)`, so a faithful shim is enough:
+This is the same call as desktop — and it works on iOS 2.11+:
 
 ```js
-// SATELLITE shim
-window.__TAURI_INTERNALS__ = {
-  metadata: { currentWindow: { label: "satellite" },
-              currentWebview: { label: "satellite", windowLabel: "satellite" } },
-  invoke(cmd, args) {
-    return new Promise((resolve, reject) => {
-      const id = nextId++; pending[id] = { resolve, reject };
-      webkit.messageHandlers.hushInvoke.postMessage({ id, cmd, args: args || {} });
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+
+const label = `window-${crypto.randomUUID().slice(0, 12)}`;
+const url = `index.html#file=${encodeURIComponent(id)}&type=${encodeURIComponent(type)}`;
+
+// iOS scenes are sized & decorated by the system, so the desktop chrome
+// options (width/height, decorations, titleBarStyle, transparent, center)
+// don't apply there — pass only { url } on iOS.
+const opts = isIOS ? { url } : { url, width: 720, height: 720, decorations: true, /* … */ };
+new WebviewWindow(label, opts);
+```
+
+**Key fact (from the Tauri source):**
+
+> *"Scenes created by `Window::new` are not emitted with [`SceneRequested`].
+> It is also not emitted for the main scene."*
+
+So a programmatic `new WebviewWindow` creates the iOS scene **directly and
+keeps your URL** — your hash (`#file=…`) survives, which is how the new window
+knows what to open. (Read it on the other side with your existing
+"secondary window" boot path, e.g. parse `location.hash` during init.)
+
+## 5. Handle the OS "New Window" gesture (Rust)
+
+When the user long-presses the app icon and taps "New Window", iOS asks the
+app for a scene and Tauri emits `RunEvent::SceneRequested`. If you don't
+handle it, nothing opens. Build a default window in the run loop:
+
+```rust
+tauri::Builder::default()
+    .setup(|app| { /* build "main" */ Ok(()) })
+    // …plugins, .manage(), .invoke_handler()…
+    .build(tauri::generate_context!())
+    .expect("error while running app")
+    .run(move |_app, _event| {
+        #[cfg(target_os = "ios")]
+        {
+            // counter declared above the builder: `#[cfg(target_os = "ios")] let mut n = 0;`
+            if let tauri::RunEvent::SceneRequested { .. } = _event {
+                n += 1;
+                let _ = tauri::WebviewWindowBuilder::new(
+                    _app, format!("window-scene-{n}"), tauri::WebviewUrl::default()
+                ).build();
+            }
+        }
     });
-  },
-  transformCallback(cb) { /* store locally, return an id */ },
-  convertFileSrc(p) { return p; },
-};
-window.__HUSH_RESOLVE_B64__ = (b64) => { /* decode, resolve/reject pending[id] */ };
 ```
 
-```js
-// PRIMARY (injected once): run the real invoke, post the result back
-window.__hushSatelliteRequest = (b64) => {
-  const { id, cmd, args } = decode(b64);
-  Promise.resolve(window.__TAURI_INTERNALS__.invoke(cmd, args)).then(
-    res => webkit.messageHandlers.hushRelayResult.postMessage(encode({ id, ok: true,  payload: res })),
-    err => webkit.messageHandlers.hushRelayResult.postMessage(encode({ id, ok: false, payload: String(err) })));
-};
-```
+Note the shape change: switch from the one-shot `.run(generate_context!())`
+to `.build(generate_context!())?.run(|app, event| …)` so you get the event
+callback. `RunEvent::SceneRequested { scene, options }` is `#[cfg(ios)]`-only;
+keep the whole block behind `#[cfg(target_os = "ios")]` and underscore-prefix
+the closure params so desktop builds stay warning-free.
 
-The Swift plugin wires the two message handlers:
+`WebviewUrl::default()` opens your app's entry (it restores the last
+file/session like a fresh launch). The two paths compose cleanly:
 
-- `hushInvoke` (from satellite) → `primaryWebview.evaluateJavaScript("__hushSatelliteRequest('<b64>')")`
-- `hushRelayResult` (from primary) → `satelliteWebview.evaluateJavaScript("__HUSH_RESOLVE_B64__('<b64>')")`
+| Trigger | Mechanism | Result |
+|---|---|---|
+| Command / button in your UI | JS `new WebviewWindow(url)` | seeded window (your `#file=…`) |
+| Long-press app icon → New Window | Rust `SceneRequested` handler | default window (restores session) |
 
-> **Base64 everything across the JS↔Swift boundary.** Encode the JSON payload
-> as base64 in JS, pass it as a single string argument, decode in Swift (and
-> vice-versa). Base64 is `[A-Za-z0-9+/=]` only, so it embeds safely inside a
-> JS string literal with zero escaping — no quoting/newline/UTF-8 bugs. Use
-> `decodeURIComponent(escape(atob(b64)))` / `btoa(unescape(encodeURIComponent(s)))`
-> for correct UTF-8.
+## 6. Relating scenes (optional)
 
-Register the primary's relay function as a persistent `WKUserScript` on the
-primary's `userContentController` (so it survives reloads) **and**
-`evaluateJavaScript` it once for the already-loaded page.
+`WebviewWindow`/`WebviewWindowBuilder` accept iOS options for scene
+relationships: `requestedBySceneIdentifier` sets which `UIScene` requested the
+new one, and `sceneIdentifier()` reads a window's scene id to pass along. Use
+these only if you need explicit parent/child scene grouping.
 
 ---
 
-## 6. Single-file / trimmed boot mode (don't run two full apps)
+## Gotchas
 
-By default the satellite boots your **entire** SPA — sidebar, sync, registry,
-autosave — i.e. a second full instance racing the primary on the same backend
-state. Gate that. Have the shim set a flag (`window.__HUSH_SATELLITE__ = true`)
-and, in your app's bootstrap, skip everything that isn't the one surface you
-want:
-
-```js
-state.isSatellite = !!window.__HUSH_SATELLITE__;
-if (state.isSatellite) document.documentElement.classList.add("satellite");
-// …then guard: if (!state.isSatellite) setupSidebar()/sync()/registry()/…
-```
-
-Hide remaining chrome with a `html.satellite { … display:none }` stylesheet.
-See `src/main.js` (the `isSatellite` gates) and the `html.satellite` rules in
-`src/styles/main.css`.
+- **Don't pass desktop window options on iOS.** `decorations`, `titleBarStyle`,
+  `transparent`, `width/height`, `center` are desktop concepts; iOS scenes are
+  system-managed. Passing them can make `build()` fail — send `{ url }` only.
+- **Capabilities wildcard.** A new window whose label doesn't match any
+  `windows` entry gets no permissions and your `invoke`s silently fail. Cover
+  every label scheme you create.
+- **CLI version.** The iOS project (Info.plist merge, scene wiring) is produced
+  by `@tauri-apps/cli`; bump it alongside the Rust crate, not just `api`.
+- **Full app, full backend.** The second window is a real instance sharing the
+  same Rust backend, so any cross-window state (registries, file mutations,
+  sync) is now in play on iPad exactly as on desktop — reuse your desktop
+  multi-window machinery (window registry + broadcast/listen) rather than
+  inventing a mobile-specific one.
 
 ---
 
-## 7. Known limitations / gotchas
+## Appendix: the pre-2.11 custom approach (historical)
 
-- **Events don't reach the satellite (yet).** `listen()` registers a callback
-  via the relay, but the callback id lives in the *satellite* while the event
-  fires in the *primary* → `[TAURI] Couldn't find callback id N` spam in the
-  primary console, and the satellite never gets the event. Request-response
-  `invoke` is unaffected (load/save/etc. all work). Routing events back to the
-  satellite (match the callback id → `evaluateJavaScript` into the right
-  webview) is a separate piece of work.
-- **The satellite can't outlive the primary** — the relay routes through it.
-- **`requestSceneSessionActivation` is best-effort** — iPadOS can decline it
-  (unsupported multitasking state). Surface failures quietly.
-- **You can't build/test this in CI on Linux** — it needs a Mac + a device or
-  simulator. `tauri ios dev` may fail in some setups; `tauri ios build` +
-  Safari **Web Inspector** is a reliable loop.
+Before 2.11 there was **no** iOS multi-window in Tauri, and replicating it by
+hand was the only option. For the record, that required a custom Swift plugin
+that: observed `UIScene.willConnectNotification` (because Tauri builds the iOS
+app on the legacy `UIWindow` lifecycle and never calls the scene-config
+delegate), called `requestSceneSessionActivation` to spawn a scene, attached a
+hand-made `WKWebView`, **proxied every asset** through the primary webview over
+a private URL scheme (wry's own `tauri://` handler is webview-specific and
+crashes if used from a foreign webview), and **relayed `invoke()`** through the
+primary (the only webview with a real IPC bridge). It worked, but it was a lot
+of fragile native code with no event delivery to the second window.
 
----
-
-## 8. Debugging without a terminal
-
-On-device you have no stdout. Two tactics that paid off:
-
-1. **Mirror native breadcrumbs into the primary's JS console** via a plugin
-   event (`trigger("diag", …)` → an `addPluginListener` in JS), readable in
-   Safari Web Inspector. Dispatch `trigger()` on the main thread.
-2. **Mirror the satellite's console into the primary's** — add a `hushDiag`
-   message handler and, in the shim, post `window.onerror` /
-   `unhandledrejection` / a "shim installed @ <href>" breadcrumb to it. When
-   the satellite boots blank or dies before its own inspector can attach, this
-   is the only way to see *why* (did the page even load? what threw?).
-
-Make `web.isInspectable = true` (iOS 16.4+) on the satellite so it shows up as
-a second page in Safari's Develop menu when it survives long enough to attach.
+**All of that is obsolete on 2.11+.** If you find a project still doing it,
+delete the plugin and switch to the five steps above.

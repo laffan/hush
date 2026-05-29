@@ -170,6 +170,11 @@ pub fn run() {
         eprintln!("Snapshot cleanup error: {}", e);
     }
 
+    // Sequential labels for system-requested iPad scenes (long-press
+    // "New Window"). Captured by the run() closure below.
+    #[cfg(target_os = "ios")]
+    let mut _ios_scene_counter = 0u32;
+
     let builder = tauri::Builder::default();
 
     #[cfg(desktop)]
@@ -189,11 +194,6 @@ pub fn run() {
         // `cfg(target_os = "ios")` inside the crate, so registering it
         // unconditionally here is safe and keeps the macOS build clean.
         .plugin(tauri_plugin_pencil::init())
-        // iOS-only iPad single-file multi-window bridge. Like the pencil
-        // plugin, its iOS registration is gated behind `cfg(target_os =
-        // "ios")` inside the crate, so registering it unconditionally is
-        // safe and keeps the desktop build clean.
-        .plugin(tauri_plugin_ipad_window::init())
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
@@ -486,6 +486,28 @@ pub fn run() {
             commands::pdf_export::list_doc_styles,
             commands::pdf_export::list_citation_styles,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Hush");
+        .build(tauri::generate_context!())
+        .expect("error while running Hush")
+        .run(move |_app, _event| {
+            // iPad multi-window: the system requests a new scene when the
+            // user long-presses the app icon and picks "New Window". Build
+            // a full default window for it (it restores the last file like
+            // a fresh launch). Windows opened programmatically from JS via
+            // `new WebviewWindow(...)` — e.g. the "Open in new window"
+            // command, which seeds `#file=…` — do NOT emit this event and
+            // are created directly, so they're unaffected here.
+            #[cfg(target_os = "ios")]
+            {
+                if let tauri::RunEvent::SceneRequested { .. } = _event {
+                    _ios_scene_counter += 1;
+                    let label = format!("window-scene-{_ios_scene_counter}");
+                    let _ = tauri::WebviewWindowBuilder::new(
+                        _app,
+                        label,
+                        tauri::WebviewUrl::default(),
+                    )
+                    .build();
+                }
+            }
+        });
 }

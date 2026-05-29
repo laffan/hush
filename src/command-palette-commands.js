@@ -30,7 +30,7 @@ import { panes } from "./pane/pane-state.js";
 import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
 import { arePanesHiddenForActive } from "./state/state-panes.js";
 import { createNewFromSelected } from "./selection-extract.js";
-import { openInNewWindow, openSingleFileWindow } from "./multi-window.js";
+import { openInNewWindow } from "./multi-window.js";
 import { getLockedStyleId, setLockedStyleId } from "./sidebar/styles-panel.js";
 import newFileRaw from "./sidebar/sidebar_icons/newFile.svg?raw";
 import filesRaw from "./sidebar/sidebar_icons/files.svg?raw";
@@ -200,31 +200,19 @@ function buildCommands(state) {
     { id: "send-selected", label: "Send Selected", icon: icons.export, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: (s, p) => enterSendSelectedPicker(p, s) },
-    { id: "open-in-new-window", label: "Open in new window", icon: icons.files, shortcutKey: null, ctx: "desktop",
+    { id: "open-in-new-window", label: "Open in new window", icon: icons.files, shortcutKey: null, ctx: "multiwindow",
+      // Opens the active file/project in a real second window. Desktop and
+      // iPad share the same path now: a wry-managed WebviewWindow seeded
+      // via `index.html#file=…` (iPad multi-window is native since Tauri
+      // 2.11 — see MULTI-WINDOW-TAURI.md).
       action: (s) => {
-        const fileId = s.currentNotebookFileId || s.currentProjectId || s.currentFileId;
-        const fileType = s.currentNotebookFileId
-          ? "notebook"
+        const fileId = s.currentNotebookFileId || s.currentStackFileId || s.currentProjectId || s.currentFileId;
+        const fileType = s.currentNotebookFileId ? "notebook"
+          : s.currentStackFileId ? "stack"
           : s.currentProjectId ? "project"
           : s.currentFileId ? "document" : null;
         if (!fileId || !fileType) return;
         openInNewWindow(fileId, fileType);
-      } },
-    { id: "open-in-new-window-ipad", label: "Open in New Window", icon: icons.files, shortcutKey: null, ctx: "ipad",
-      // iPad single-file window for a lone doc / notebook / stack. Projects
-      // are excluded (they'd need the joined-buffer view). Spawns a native
-      // UIScene via the tauri-plugin-ipad-window bridge.
-      hiddenIf: (s) => !!s.currentProjectId
-        || (!s.currentNotebookFileId && !s.currentStackFileId && !s.currentFileId),
-      action: (s) => {
-        let fileId = null, fileType = null;
-        if (s.currentNotebookFileId) { fileId = s.currentNotebookFileId; fileType = "notebook"; }
-        else if (s.currentStackFileId) { fileId = s.currentStackFileId; fileType = "stack"; }
-        else if (s.currentFileId) { fileId = s.currentFileId; fileType = "document"; }
-        console.log("[IpadWindow] command action fired", { fileId, fileType });
-        if (!fileId || !fileType) return;
-        const node = findNodeByFileId(s.fileTree, fileId);
-        openSingleFileWindow(fileId, fileType, (node && node.name) || "Untitled");
       } },
     { id: "delete-current", label: "Delete current file", icon: icons.trash, shortcutKey: null, ctx: "shared",
       action: async (s) => {
@@ -471,6 +459,7 @@ function buildCommands(state) {
     if (cmd.ctx === "pane") return hasActivePane;
     if (cmd.ctx === "desktop") return desktop;
     if (cmd.ctx === "ipad") return ipad;
+    if (cmd.ctx === "multiwindow") return desktop || ipad; // native multi-window (desktop + iPad/Tauri 2.11)
     return true;
   });
 }

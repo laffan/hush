@@ -19,23 +19,15 @@
     </dict>
   </array>
   <!--
-    iPad multi-window (UIScene). Enables a second window opened by the
-    tauri-plugin-ipad-window bridge. We deliberately omit a
-    UISceneConfigurations array: the plugin builds the file-window scene
-    configuration in code (setting its delegateClass) from a swizzled
-    application(_:configurationForConnecting:), so Tauri's own primary
-    scene is left untouched and no Swift class needs naming here.
-    See IPAD-MULTI-WINDOW-PLANNING.md. ⚠️ Verify on-device that enabling
-    multiple scenes leaves Tauri's primary window intact.
+    iPad multi-window via Tauri's native UIScene support (Tauri >= 2.11).
+    Tauri manages the scenes; we only opt in here. See MULTI-WINDOW-TAURI.md.
   -->
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>
     <true/>
+    <key>UISceneConfigurations</key>
+    <dict/>
   </dict>
-  <key>NSUserActivityTypes</key>
-  <array>
-    <string>com.hushwriter.app.fileWindow</string>
-  </array>
 </dict>
 </plist>

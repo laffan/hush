@@ -33,7 +33,6 @@ base64 = "0.22"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 harper-core = { version = "2", default-features = false }
 tauri-plugin-pencil = { path = "tauri-plugin-pencil" }
-tauri-plugin-ipad-window = { path = "tauri-plugin-ipad-window" }
 
 # Typst-backed PDF export pipeline (docs + projects). The compiler runs
 # in-process so the same code path serves desktop builds and the iOS

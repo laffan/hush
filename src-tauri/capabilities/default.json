@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capabilities for Hush",
-  "windows": ["main", "settings", "window-*"],
+  "windows": ["main", "settings", "window-*", "window-scene-*"],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -63,7 +63,6 @@
     "clipboard-manager:default",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
-    "pencil:default",
-    "ipad-window:default"
+    "pencil:default"
   ]
 }
