@@ -194,6 +194,10 @@ pub fn run() {
         // `cfg(target_os = "ios")` inside the crate, so registering it
         // unconditionally here is safe and keeps the macOS build clean.
         .plugin(tauri_plugin_pencil::init())
+        // iOS-only folder-bookmark bridge (proof-of-concept for Local
+        // Folder on iOS). Same cfg-gating as pencil: a no-op shell on
+        // every non-iOS target, so registering it here is safe.
+        .plugin(tauri_plugin_icloud_folder::init())
         .manage(AppState {
             settings: Mutex::new(settings),
             file_manager: Mutex::new(file_manager),
