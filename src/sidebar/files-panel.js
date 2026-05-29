@@ -626,6 +626,9 @@ function isItemActive(item, state) {
   if (item.type === "pdf" && item.fileId) {
     return item.fileId === state.currentPdfFileId;
   }
+  if (item.type === "stack" && item.fileId) {
+    return item.fileId === state.currentStackFileId;
+  }
   if (item.type === "project") return item.id === state.currentProjectId;
   return false;
 }
