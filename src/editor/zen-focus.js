@@ -18,7 +18,7 @@
 
 import { EditorView } from "@codemirror/view";
 import { EditorState, EditorSelection } from "@codemirror/state";
-import { createBaseExtensions } from "./editor.js";
+import { createBaseExtensions } from "./base-extensions.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
 import { panes } from "../pane/pane-state.js";

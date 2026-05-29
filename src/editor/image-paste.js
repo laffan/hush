@@ -19,7 +19,7 @@
  *      from the paste gesture is alive.
  */
 import { EditorView } from "@codemirror/view";
-import { defaultLocalSyncContext } from "./editor.js";
+import { defaultLocalSyncContext } from "./base-extensions.js";
 
 function collectImageFilesFromEvent(event) {
   const cd = event.clipboardData;

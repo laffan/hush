@@ -1,8 +1,7 @@
-import { EditorView, keymap, drawSelection, placeholder, ViewPlugin, Decoration } from "@codemirror/view";
-import { EditorState, Prec, Compartment, Annotation, RangeSetBuilder } from "@codemirror/state";
+import { EditorView, keymap, drawSelection, placeholder, ViewPlugin } from "@codemirror/view";
+import { EditorState, Prec, Compartment, Annotation } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
-import { Tag } from "@lezer/highlight";
 import { Strikethrough } from "@lezer/markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { wrapOnSelection } from "./wrap-on-selection.js";
@@ -23,296 +22,34 @@ import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPaddi
 import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
 import { updateWordCountDisplay, scheduleWordCountRecompute } from "./plugins/word-count.js";
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
-import { buildCodeMirrorKeymap } from "../shortcuts.js";
-import { buildEditorCommands, buildFixedKeymap } from "./commands.js";
 import { headingIndentPlugin } from "./heading-indent.js";
 import { findHighlightField } from "./find-decorations.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
-import { createImagePasteExtension } from "./image-paste.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
-import { resolveStyleForAppearance } from "../sidebar/styles-panel.js";
+import {
+  commentTag, commentMarkTag, highlightTag, highlightMarkTag,
+  CommentExtension, HighlightExtension,
+} from "./markdown-extensions.js";
+import { createFlagHighlightPlugin, hexToRgba } from "./flag-highlight.js";
+import {
+  defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions,
+} from "./base-extensions.js";
+import { applyBlockCursor } from "./block-cursor.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
 export { getMarkdownHighlight, resolveHeaderColorOverride };
-
-// Custom tags for our extensions. Comment / Highlight content and their
-// `%%` / `==` delimiters get separate tags so the markers can render at
-// a much lower opacity than the wrapped content — otherwise the dense
-// punctuation reads louder than the prose it's annotating.
-export const commentTag = Tag.define();
-export const commentMarkTag = Tag.define();
-export const highlightTag = Tag.define();
-export const highlightMarkTag = Tag.define();
-
-// Custom inline parser for %% comments %%
-// NB: the node names are deliberately *not* "Comment"/"CommentBlock" —
-// @lezer/markdown ships a built-in styleTag mapping those names to
-// `tags.comment`, so a node named "Comment" would inherit the active
-// theme's code-comment colour (e.g. Smoothy's #CFCFCF) on top of our
-// own `commentTag`, fighting the style's text colour and surviving the
-// opacity dim. The "Hush" prefix keeps our comments on `commentTag` only.
-const CommentDelim = { resolve: "HushComment", mark: "HushCommentMark" };
-export const CommentExtension = {
-  defineNodes: [
-    { name: "HushComment", style: commentTag },
-    { name: "HushCommentMark", style: commentMarkTag },
-  ],
-  parseInline: [{
-    name: "HushComment",
-    parse(cx, next, pos) {
-      if (next !== 37 /* % */ || cx.char(pos + 1) !== 37) return -1;
-      // Don't match %%%
-      if (cx.char(pos + 2) === 37) return -1;
-      return cx.addDelimiter(CommentDelim, pos, pos + 2, true, true);
-    },
-    after: "Emphasis"
-  }]
-};
-
-// Custom inline parser for == highlight ==
-const HighlightDelim = { resolve: "Highlight", mark: "HighlightMark" };
-export const HighlightExtension = {
-  defineNodes: [
-    { name: "Highlight", style: highlightTag },
-    { name: "HighlightMark", style: highlightMarkTag },
-  ],
-  parseInline: [{
-    name: "Highlight",
-    parse(cx, next, pos) {
-      if (next !== 61 /* = */ || cx.char(pos + 1) !== 61) return -1;
-      // Don't match ===
-      if (cx.char(pos + 2) === 61) return -1;
-      return cx.addDelimiter(HighlightDelim, pos, pos + 2, true, true);
-    },
-    after: "Emphasis"
-  }]
-};
+export { commentTag, commentMarkTag, highlightTag, highlightMarkTag };
+export { CommentExtension, HighlightExtension };
+export { hexToRgba, createFlagHighlightPlugin };
+export { defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions };
 
 const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const shortcutCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
-
-/**
- * Build the shortcut extension for the current settings.  This is wrapped
- * in `Prec.highest` so it wins against CodeMirror's defaults and any
- * plugin keymaps.  Called on startup and again whenever settings change.
- */
-/**
- * Default image-context resolver used by the main editor: when the user
- * is editing a Local Sync `.md`, image refs resolve relative to the
- * file's parent directory inside the mounted folder. Pane editors pass
- * their own resolver so the same plugin can render two different
- * contexts simultaneously.
- */
-export function defaultLocalSyncContext(state) {
-  const cur = state.currentLocalSync;
-  if (!cur || !cur.folderId || !cur.relPath) return null;
-  const slash = cur.relPath.lastIndexOf("/");
-  const baseDir = slash >= 0 ? cur.relPath.slice(0, slash) : "";
-  return { kind: "localSync", folderId: cur.folderId, baseDir };
-}
-
-export function buildShortcutExtension(state) {
-  const commands = buildEditorCommands();
-  const userBindings = buildCodeMirrorKeymap(state, commands);
-  const fixed = buildFixedKeymap(state);
-  return Prec.highest(keymap.of([...userBindings, ...fixed]));
-}
-
-
-export function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-export function createFlagHighlightPlugin(stateRef) {
-  const highlightRegex = /==[^=]+==/g;
-  // Match `==NAME==`, `==NAME:==`, or `==NAME:content==`. The colon and
-  // any trailing content are optional so a bare flag (`==MISSING==`)
-  // still picks up its configured colour.
-  const flagRegex = /^==([A-Za-z][A-Za-z0-9_-]{0,24})(?::[^=]*)?==$/;
-  const defaultColor = "rgba(255, 208, 0, 0.3)";
-  return ViewPlugin.fromClass(
-    class {
-      constructor(view) {
-        this.decorations = this.buildDecorations(view);
-      }
-      update(update) {
-        if (update.docChanged || update.viewportChanged) {
-          this.decorations = this.buildDecorations(update.view);
-        }
-      }
-      buildDecorations(view) {
-        const builder = new RangeSetBuilder();
-        const doc = view.state.doc.toString();
-        const colors = stateRef.settings.flagColors || {};
-        let match;
-        highlightRegex.lastIndex = 0;
-        while ((match = highlightRegex.exec(doc)) !== null) {
-          const flagMatch = match[0].match(flagRegex);
-          let bg = defaultColor;
-          if (flagMatch) {
-            const color = colors[flagMatch[1].toUpperCase()];
-            if (color) bg = hexToRgba(color, 0.3);
-          }
-          builder.add(
-            match.index,
-            match.index + match[0].length,
-            Decoration.mark({ attributes: { style: `background-color: ${bg}; border-radius: 2px` } })
-          );
-        }
-        return builder.finish();
-      }
-    },
-    { decorations: (v) => v.decorations }
-  );
-}
-
-
-/**
- * Build the shared CodeMirror extension set used by both the main editor
- * and floating pane editors.  This is the single source of truth for the
- * Hush writing experience (theme, syntax, shortcuts, plugins).
- *
- * @param {object}   state     AppState
- * @param {function} [onChange] Optional callback fired on every docChanged
- * @param {object}   [opts]
- * @param {function} [opts.getImageContext] Optional resolver returning a
- *   `{ kind: "localSync", folderId, baseDir }` shape so the image
- *   decorator + preview can target sibling files in a Local Sync folder
- *   instead of the global Images store. Defaults to reading
- *   `state.currentLocalSync` (fits the main editor; pane editors pass
- *   their own resolver since they may render a different doc than the
- *   main view).
- * @returns {{ extensions: Extension[], themeComp, highlightComp, shortcutComp }}
- */
-export function createBaseExtensions(state, onChange, opts) {
-  const getImageContext = opts?.getImageContext || (() => defaultLocalSyncContext(state));
-  const _themeComp = new Compartment();
-  const _highlightComp = new Compartment();
-  const _shortcutComp = new Compartment();
-  const _editableComp = new Compartment();
-
-  const activeTheme = getActiveTheme(state.settings);
-  const _s = state.settings.activeStyleId
-    ? (state.settings.styles || []).find(s => s.id === state.settings.activeStyleId) : null;
-  const nh = _s?.suppressHeaderSize ?? state.settings.normalizeHeaders;
-  const nhc = _s?.suppressHeaderColor ?? state.settings.normalizeHeaderColor;
-  const hScale = _s?.headerScale ?? state.settings.headerScale ?? 1.0;
-  const headerOverride = resolveHeaderColorOverride(state, _s);
-  const underlineHeaders = _s?.underlineHeaders ?? state.settings.underlineHeaders ?? false;
-
-  const updateListener = EditorView.updateListener.of((update) => {
-    if (update.docChanged && onChange) onChange(update);
-  });
-
-  const hushTheme = EditorView.theme({
-    "&": { height: "100%" },
-    ".cm-scroller": {
-      fontFamily: "var(--font-family)",
-      fontSize: "var(--font-size)",
-      lineHeight: "var(--line-height)",
-    },
-    ".cm-content": {
-      caretColor: "var(--cursor)",
-      fontFamily: "var(--font-family)",
-      padding: "0",
-    },
-    ".cm-cursor": { borderLeftColor: "var(--cursor)", borderLeftWidth: "2px" },
-    ".cm-gutters": { display: "none" },
-  });
-
-  const extensions = [
-    hushTheme,
-    _themeComp.of(activeTheme ? activeTheme.extension : []),
-    _highlightComp.of(syntaxHighlighting(
-      getMarkdownHighlight(nh, nhc ? undefined : (headerOverride || activeTheme?.headingColor), hScale, { underline: underlineHeaders })
-    )),
-    markdown({ extensions: [Strikethrough, CommentExtension, HighlightExtension] }),
-    history(),
-    drawSelection(),
-    wrapOnSelection,
-    updateListener,
-    _shortcutComp.of(buildShortcutExtension(state)),
-    createCalloutPlugin(),
-    createFootnotePlugin(state),
-    createFlagHighlightPlugin(state),
-    createLinkDecoratorPlugin(state),
-    createWikilinkPlugin(state),
-    createTabMarkerPlugin(),
-    createCheckboxListPlugin(),
-    createImageDecoratorPlugin(state, getImageContext),
-    createImagePasteExtension(state, { getImageContext }),
-    createGoogleDocsPasteExtension(),
-    headingIndentPlugin,
-    findHighlightField,
-    createStickyHeadersPlugin(state),
-    createMultiLineCommentPlugin(),
-    createCommentAfterPlugin(),
-    createFocusModePlugin(state),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
-    Prec.highest(keymap.of(buildFixedKeymap(state))),
-    placeholder("Start writing..."),
-    EditorView.lineWrapping,
-    _editableComp.of(EditorView.editable.of(true)),
-  ];
-
-  return {
-    extensions,
-    themeComp: _themeComp,
-    highlightComp: _highlightComp,
-    editableComp: _editableComp,
-    shortcutComp: _shortcutComp,
-  };
-}
-
-/** Toggle block cursor class and pick its colour. A style's explicit
- *  cursor-colour override wins (so the override keeps working in block
- *  mode, matching the caret mode); otherwise the block cursor falls back
- *  to the active theme's heading colour for visibility. */
-function applyBlockCursor(state) {
-  const container = document.getElementById("editor-container");
-  if (!container) return;
-  let block = !!state.settings.blockCursor;
-  // Resolve any explicit cursor-colour override from the active style
-  // (or, for the default style, the per-appearance default colours).
-  let cursorOverride = null;
-  if (state.settings.activeStyleId && state.settings.styles) {
-    const style = state.settings.styles.find(s => s.id === state.settings.activeStyleId);
-    if (style) {
-      if (style.blockCursor != null) block = style.blockCursor;
-      const { colors } = resolveStyleForAppearance(style, state.settings.appearance);
-      const overrides = colors || style.colorOverrides || {};
-      cursorOverride = overrides.cursor || null;
-    }
-  } else {
-    let appearance = state.settings.appearance || "dark";
-    if (appearance === "auto") {
-      appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    }
-    const def = appearance === "dark"
-      ? (state.settings.defaultDarkColors || {})
-      : (state.settings.defaultLightColors || {});
-    cursorOverride = def.cursor || null;
-  }
-  container.classList.toggle("block-cursor", block);
-  if (cursorOverride) {
-    container.style.setProperty("--block-cursor-color", cursorOverride);
-  } else {
-    const theme = getActiveTheme(state.settings);
-    if (theme && theme.headingColor) {
-      container.style.setProperty("--block-cursor-color", theme.headingColor);
-    } else {
-      container.style.removeProperty("--block-cursor-color");
-    }
-  }
-}
 
 /**
  * Creates the CodeMirror 6 editor instance.
