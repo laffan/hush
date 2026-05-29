@@ -133,9 +133,7 @@ export function hexToRgba(hex, alpha) {
 
 export function createFlagHighlightPlugin(stateRef) {
   const highlightRegex = /==[^=]+==/g;
-  // Match `==NAME==`, `==NAME:==`, or `==NAME:content==`. The colon and
-  // any trailing content are optional so a bare flag (`==MISSING==`)
-  // still picks up its configured colour.
+  // Match `==NAME==`, `==NAME:==`, or `==NAME:content==`. The colon and  any trailing content are optional so a bare flag (`==MISSING==`) still picks up its configured colour.
   const flagRegex = /^==([A-Za-z][A-Za-z0-9_-]{0,24})(?::[^=]*)?==$/;
   const defaultColor = "rgba(255, 208, 0, 0.3)";
   return ViewPlugin.fromClass(
