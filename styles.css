@@ -103,42 +103,14 @@ a { color: inherit; text-decoration: none; }
   .hero-logo::before { animation: none; }
 }
 
-/* ---- Header ----------------------------------------------------- */
-.site-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem clamp(1.25rem, 5vw, 3rem);
-  background: rgba(7, 8, 13, 0.72);
-  backdrop-filter: blur(10px);
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.brand-name {
-  font-size: 1.3rem;
+/* ---- Hero title ------------------------------------------------- */
+.hero-title {
+  font-size: clamp(3rem, 8vw, 5rem);
   font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 0.3em;
 }
-.site-nav {
-  display: flex;
-  align-items: center;
-  gap: 1.6rem;
-  font-size: 0.95rem;
-}
-.site-nav a { color: var(--ink-soft); transition: color 0.18s ease; }
-.site-nav a:hover { color: var(--ink); }
-.nav-cta {
-  padding: 0.45rem 1rem;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper) !important;
-}
-.nav-cta:hover { opacity: 0.85; }
+.hero .lede { color: var(--ink); }
 
 /* ---- Buttons ---------------------------------------------------- */
 .btn {
