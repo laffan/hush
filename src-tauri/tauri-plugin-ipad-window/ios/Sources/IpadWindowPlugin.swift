@@ -242,13 +242,11 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
         // shim instead) while keeping the inherited asset plumbing.
         let cfg: WKWebViewConfiguration =
             (primary?.configuration.copy() as? WKWebViewConfiguration) ?? WKWebViewConfiguration()
-        // Isolate the web-content process: copy() inherits the primary's
-        // shared process pool, so a crash/teardown in the satellite would
-        // otherwise take the primary's webview down with it (the "primary
-        // freezes after closing the satellite" symptom). A fresh pool keeps
-        // them independent; the copied websiteDataStore still gives shared
-        // same-origin storage.
-        cfg.processPool = WKProcessPool()
+        // NOTE: do NOT swap cfg.processPool here — on a copied config that
+        // already carries an inherited websiteDataStore, reassigning the
+        // pool crashes WebKit during webview setup (observed on-device).
+        // Process isolation for the freeze-on-close needs a different
+        // approach (see below); revisit once the page actually loads.
         let ucc = WKUserContentController()
         ucc.add(self, name: "hushInvoke")
         ucc.add(self, name: "hushDiag")
