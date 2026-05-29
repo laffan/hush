@@ -515,7 +515,7 @@ export function drawTextShape(ctx: CanvasRenderingContext2D, shape: TextShape, t
         ctx.restore();
       }
       const isLinkish = !!(run.link || run.wikilink);
-      ctx.fillStyle = isLinkish ? theme.accent : (isHeading ? headingColor : textColor);
+      ctx.fillStyle = isLinkish ? (theme.linkColor || theme.foreground) : (isHeading ? headingColor : textColor);
       // PDF export overlays vector text on top, so it asks us to skip the rasterized glyphs.
       if (!omitGlyphs) ctx.fillText(run.text, x, y);
       const runW = ctx.measureText(run.text).width;

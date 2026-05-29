@@ -23,7 +23,7 @@ When in doubt: a slightly degraded rendering beats refusing to compile.
 */
 
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::preprocess::{TAB_MARKER_CLOSE, TAB_MARKER_OPEN};
 
@@ -34,6 +34,13 @@ pub enum CitationMode {
     /// — anything else renders as a visible "missing reference" marker
     /// so the export still succeeds.
     Resolve { known_keys: HashSet<String> },
+    /// Render each citation as a pre-formatted inline label (e.g. the
+    /// author-date `(Author Year)` built by `bibliography::inline_citation`)
+    /// instead of a Typst `#cite`. Used when the user wants citations
+    /// formatted in the prose but opted out of the bibliography section,
+    /// so there's no `#bibliography` for `#cite` to resolve against. Keys
+    /// missing from the map render as the same "missing reference" marker.
+    Inline { formatted: HashMap<String, String> },
     /// Strip the brackets and the deep-link URL, leaving the bare key.
     Strip,
 }
@@ -170,6 +177,22 @@ fn expand_cite_sentinels(s: &str, mode: &CitationMode) -> String {
                     out.push_str(&missing_cite_marker(&key));
                 }
             }
+            // Pre-formatted label (author-date etc.). Emit it as a
+            // `#text("…")` code expression rather than bare markup: a
+            // citation flush against a preceding code expression (e.g.
+            // `*word*[@key]` → `#emph[word]…`) would otherwise let Typst
+            // parse the label's `(…)` as a call on that expression and
+            // fail with "expected comma". The leading `#` starts a fresh
+            // expression, exactly like Resolve's `#cite(…)`. Unknown keys
+            // fall back to the visible missing marker.
+            CitationMode::Inline { formatted } => match formatted.get(&key) {
+                Some(label) => {
+                    out.push_str("#text(\"");
+                    out.push_str(&escape_string(label));
+                    out.push_str("\")");
+                }
+                None => out.push_str(&missing_cite_marker(&key)),
+            },
             CitationMode::Strip => out.push_str(&key),
         }
     }
@@ -588,6 +611,28 @@ mod tests {
         assert!(out.contains("\\@notfound2099"), "key not surfaced: {}", out);
         assert!(!out.contains("#cite(<notfound2099>)"), "missing cite emitted as live ref: {}", out);
         assert!(out.contains("#cite(<known2020>)"), "known cite swapped: {}", out);
+    }
+
+    #[test]
+    fn citation_inline_mode_formats_label() {
+        let mut formatted = std::collections::HashMap::new();
+        formatted.insert("halbwachs1992".to_string(), "(Halbwachs 1992)".to_string());
+        let out = to_typst(
+            "See [@halbwachs1992] for context.",
+            CitationMode::Inline { formatted },
+        );
+        assert!(out.contains("(Halbwachs 1992)"), "got: {}", out);
+        assert!(!out.contains("#cite"), "got: {}", out);
+        assert!(!out.contains("halbwachs1992"), "raw citekey leaked: {}", out);
+    }
+
+    #[test]
+    fn citation_inline_mode_missing_key_marks_red() {
+        let out = to_typst(
+            "See [@notfound2099] here.",
+            CitationMode::Inline { formatted: std::collections::HashMap::new() },
+        );
+        assert!(out.contains("rgb(\"#c0392b\")"), "missing marker absent: {}", out);
     }
 
     #[test]

@@ -1,0 +1,86 @@
+/* ===== Split at Headings / Combine Files modals =====
+   These build on the notebook-export-modal (`nxm-*`) shell; the rules
+   below cover the file-preview list (split) and the reorderable list
+   (combine). */
+
+.sah-modal,
+.cmb-modal {
+  min-width: 360px;
+}
+
+.sah-empty {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.sah-count {
+  opacity: 0.55;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sah-file-list,
+.cmb-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+.sah-file-row,
+.cmb-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.sah-file-row + .sah-file-row,
+.cmb-file-row + .cmb-file-row {
+  border-top: 1px solid var(--panel-border);
+}
+
+.cmb-file-row {
+  justify-content: flex-start;
+  cursor: default;
+}
+
+.sah-file-name,
+.cmb-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmb-drag {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  opacity: 0.5;
+  cursor: grab;
+  /* Keep touch drags from scrolling the list instead of reordering. */
+  touch-action: none;
+}
+
+.cmb-drag:hover {
+  opacity: 0.9;
+}
+
+.cmb-row-dragging {
+  opacity: 0.4;
+}
+
+/* Thin insertion marker shown between rows while dragging. */
+.cmb-drop {
+  list-style: none;
+  height: 0;
+  margin: -1px 0;
+  padding: 0;
+  border-top: 2px solid var(--accent, #4285f4);
+}

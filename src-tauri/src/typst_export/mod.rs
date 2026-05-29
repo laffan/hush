@@ -60,8 +60,13 @@ pub struct ImageInput {
 pub struct ExportRequest {
     pub markdown: String,
     pub style_id: String,
-    /// When true and `references` is non-empty, inline `(Author, Year)`
-    /// citations + a bibliography section get rendered.
+    /// When true and `references` is non-empty, a bibliography section is
+    /// rendered (and inline cites resolve through Typst's CSL machinery).
+    /// When false, inline citations are *still* formatted — as author-date
+    /// `(Author Year)` labels built directly from the reference metadata —
+    /// so the prose never shows bare citekeys; only the bibliography list
+    /// is omitted. Named `include_citations` for IPC back-compat; it now
+    /// gates the bibliography specifically.
     pub include_citations: bool,
     /// One of the ids from `csl::list()`. Falls back to the default
     /// (`csl::default_id()`) if the value is missing or unrecognised
@@ -111,8 +116,17 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         req.include_tabs,
     );
 
-    let resolve = req.include_citations && !req.references.is_empty();
-    let cite_mode = if resolve {
+    let have_refs = !req.references.is_empty();
+    // `include_citations` now means "render the bibliography section". The
+    // bibliography path needs references to exist; without them we can't
+    // render one regardless of the flag.
+    let render_bibliography = req.include_citations && have_refs;
+
+    let cite_mode = if !have_refs {
+        // No reference data at all — leave the bare key (nothing better
+        // to show).
+        markdown::CitationMode::Strip
+    } else if render_bibliography {
         // The bibliography emitter dedupes by citekey, so the set we
         // hand the markdown converter mirrors what actually ends up in
         // refs.yml. Anything not in this set renders as a red marker
@@ -125,11 +139,20 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
             .collect();
         markdown::CitationMode::Resolve { known_keys: known }
     } else {
-        markdown::CitationMode::Strip
+        // Bibliography off, but we have reference metadata — format each
+        // cite as an inline author-date label so the prose never shows a
+        // raw citekey.
+        let formatted: std::collections::HashMap<String, String> = req
+            .references
+            .iter()
+            .filter(|r| !r.citekey.is_empty())
+            .map(|r| (r.citekey.clone(), bibliography::inline_citation(r)))
+            .collect();
+        markdown::CitationMode::Inline { formatted }
     };
 
     let body = markdown::to_typst(&cleaned_md, cite_mode);
-    let bib_yaml = if resolve {
+    let bib_yaml = if render_bibliography {
         Some(bibliography::to_hayagriva_yaml(&req.references))
     } else {
         None
@@ -137,7 +160,7 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
 
     // Resolve the citation style now — unknown ids fall back to the
     // default so a stale frontend value doesn't kill the export.
-    let cite_style = if resolve {
+    let cite_style = if render_bibliography {
         Some(
             csl::resolve(&req.citation_style)
                 .or_else(|| csl::resolve(csl::default_id()))
@@ -238,6 +261,62 @@ mod tests {
             markdown: "See [@halbwachs1992] on collective memory.".into(),
             style_id: "formal".into(),
             include_citations: true,
+            citation_style: "numbered".into(),
+            strip_comments: true,
+            strip_flags: true,
+            number_headings: false,
+            page_numbers: true,
+            include_tabs: true,
+            line_spacing: 1.5,
+            references: vec![ZoteroRef {
+                key: "ABC".into(),
+                citekey: "halbwachs1992".into(),
+                title: "On Collective Memory".into(),
+                authors: "Halbwachs, M".into(),
+                year: "1992".into(),
+                item_type: "book".into(),
+            }],
+            images: vec![],
+        };
+        let pdf = render_pdf(&req).expect("render");
+        assert!(pdf.len() > 1000);
+        assert_eq!(&pdf[..4], b"%PDF");
+    }
+
+    #[test]
+    fn renders_article_two_column_style() {
+        // Exercises the bundled Lato sans face + the two-column preamble
+        // end to end — a compile failure here means the font didn't load
+        // or the preamble is malformed.
+        let req = ExportRequest {
+            markdown: "# Heading\n\nA paragraph of body text that should flow into columns. \
+                       Lorem ipsum dolor sit amet, consectetur adipiscing elit.".into(),
+            style_id: "article-2col".into(),
+            include_citations: false,
+            citation_style: "numbered".into(),
+            strip_comments: true,
+            strip_flags: true,
+            number_headings: false,
+            page_numbers: true,
+            include_tabs: true,
+            line_spacing: 1.5,
+            references: vec![],
+            images: vec![],
+        };
+        let pdf = render_pdf(&req).expect("render");
+        assert!(pdf.len() > 1000);
+        assert_eq!(&pdf[..4], b"%PDF");
+    }
+
+    #[test]
+    fn citations_formatted_without_bibliography() {
+        // include_citations=false but references are present: the cite
+        // must render as a formatted (Author Year) label, not a bare
+        // citekey, and no bibliography is appended.
+        let req = ExportRequest {
+            markdown: "As shown [@halbwachs1992], memory is social.".into(),
+            style_id: "formal".into(),
+            include_citations: false,
             citation_style: "numbered".into(),
             strip_comments: true,
             strip_flags: true,

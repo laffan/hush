@@ -381,6 +381,8 @@ function dispatchRowAction(action, nodeId, opts) {
     handleConvertProjectToDoc(nodeId, storedState, refresh);
   } else if (action === "convert-doc-to-project") {
     handleConvertDocToProject(nodeId, storedState, refresh);
+  } else if (action === "split-at-headings") {
+    import("./split-at-headings-modal.js").then((m) => m.openSplitAtHeadingsModal(storedState, nodeId));
   } else if (action === "set-color") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node) {

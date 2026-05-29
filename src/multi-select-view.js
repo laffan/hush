@@ -136,6 +136,9 @@ function render(ids) {
     .filter((r) => r && (r.type === "document" || r.type === "notebook" || r.type === "pdf"));
 
   const flagBtnLabel = rows.every((r) => r.flagged) ? "Unflag" : "Flag";
+  // "Combine Files" only makes sense when every selected item is a Doc —
+  // the result is a single document with one tab section per source.
+  const allDocs = rows.length >= 2 && rows.every((r) => r.type === "document");
 
   _hostEl.innerHTML = `
     <div class="ms-view-inner">
@@ -160,6 +163,7 @@ function render(ids) {
       <div class="ms-view-actions ms-view-actions-bottom">
         <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
         <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack from selected</button>
+        ${allDocs ? `<button type="button" class="ms-view-btn" data-ms-action="combine">Combine Files into Doc</button>` : ""}
       </div>
     </div>
   `;
@@ -235,6 +239,17 @@ async function runBatchAction(action, rows) {
         for (const it of items) inst.addItem(it.fileId, it.type, it.name);
       },
     });
+    return;
+  }
+  if (action === "combine") {
+    // Pass the selected docs in their current selection order so the
+    // modal can preview / re-order them before they become tab sections.
+    const docs = rows
+      .filter((r) => r.type === "document")
+      .map((r) => ({ fileId: r.fileId, name: r.name }));
+    if (docs.length < 2) return;
+    const { openCombineFilesModal } = await import("./sidebar/combine-files-modal.js");
+    openCombineFilesModal(_state, docs);
     return;
   }
   if (action === "flag") {

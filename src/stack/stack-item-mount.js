@@ -81,6 +81,11 @@ async function mountDocContent(contentEl, item, state, liveData) {
     let dirty = false;
     const editor = createPaneEditor(wrapper, state, () => { dirty = true; }, { modeContext: mc.proxy });
     editor.setContent(content);
+    // Apply the active style's theme + colour overrides to the column's
+    // editor. Unlike floating panes (handled by pane-content), stack
+    // columns have no other code path that calls this, so without it a
+    // style's fg/bg override never reaches stack doc text.
+    editor.reconfigureTheme?.(state.settings);
 
     const saveInterval = setInterval(async () => {
       if (!dirty) return;
@@ -394,6 +399,8 @@ async function mountProjectContent(contentEl, item, state, liveData) {
       ],
     });
     editor.setContent(joined);
+    // Match the active style's theme + colour overrides (see mountDocContent).
+    editor.reconfigureTheme?.(projectState.settings);
 
     const saveInterval = setInterval(async () => {
       if (!dirty) return;

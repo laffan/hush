@@ -121,6 +121,13 @@ export function applyActiveStyle(state) {
     } else {
       document.documentElement.style.removeProperty("--selection");
     }
+    // Link colour override — CSS falls back to currentColor (the text
+    // colour) when unset, so links default to the text colour.
+    if (defaultColors.links) {
+      document.documentElement.style.setProperty("--link", defaultColors.links);
+    } else {
+      document.documentElement.style.removeProperty("--link");
+    }
 
     // Pass the resolved bg (override or theme) through so the sidebar
     // and other --theme-bg consumers track the default style's bg
@@ -130,7 +137,7 @@ export function applyActiveStyle(state) {
     {
       const themeId = appearance === "dark" ? state.settings.darkTheme : state.settings.lightTheme;
       const resolvedBg = defaultColors.bg || themeBackgrounds[themeId];
-      updatePrivateBoxColor(state, resolvedBg);
+      updatePrivateBoxColor(state, resolvedBg, defaultColors.fg || null);
     }
     // Default style's shader lives at the top level of AppSettings.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
@@ -218,6 +225,13 @@ export function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--selection", overrides.selection);
   } else {
     document.documentElement.style.removeProperty("--selection");
+  }
+  // Link colour override — CSS falls back to currentColor (the text
+  // colour) when unset, so links default to the text colour.
+  if (overrides.links) {
+    document.documentElement.style.setProperty("--link", overrides.links);
+  } else {
+    document.documentElement.style.removeProperty("--link");
   }
 }
 

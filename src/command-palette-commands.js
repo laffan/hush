@@ -309,6 +309,12 @@ function buildCommands(state) {
         const ok = window.confirm("Convert this document to a project? Each tab will become a separate document.");
         if (ok) await s.convertDocToProject(node.id);
       } },
+    { id: "split-at-headings", label: "Split at Headings", icon: icons.doc, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !s.currentFileId,
+      action: async (s) => {
+        const { openSplitAtHeadingsModal } = await import("./sidebar/split-at-headings-modal.js");
+        await openSplitAtHeadingsModal(s);
+      } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",

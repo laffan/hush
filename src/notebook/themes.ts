@@ -12,6 +12,10 @@ export interface CanvasTheme {
   headingColor: string;
   selection: string;
   accent: string;
+  /** Link colour for text-shape links/wikilinks. Optional — when unset
+   *  the renderer falls back to `foreground` so links default to the
+   *  text colour. Populated from the active style's `links` override. */
+  linkColor?: string;
   gridColor: string;
   uiBackground: string;
   uiBorder: string;

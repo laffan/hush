@@ -307,8 +307,9 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
 
 /* Rendered markdown links (when cursor is outside) */
 .cm-link-rendered {
+  color: var(--link, currentColor);
   text-decoration: underline;
-  text-decoration-color: var(--accent, rgba(128, 128, 128, 0.4));
+  text-decoration-color: var(--link, currentColor);
   text-underline-offset: 2px;
   cursor: pointer;
   transition: text-decoration-color 0.15s;
