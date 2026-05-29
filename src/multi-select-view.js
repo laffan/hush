@@ -14,7 +14,7 @@
  * the single-click semantics elsewhere in the app).
  */
 import { typeIcons, escHtml, showDeleteConfirmModal, showPromptModal } from "./sidebar/files-panel-shared.js";
-import { findNodeByFileId, findAncestorIds, findNode } from "./state/tree-helpers.js";
+import { findNodeByFileId, findAncestorIds, findNode, removeNode, normalizeProjectChildren, enforceSpecialPositions } from "./state/tree-helpers.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import { createColorPalette } from "./sidebar/files-panel-row-menu.js";
 
@@ -145,6 +145,7 @@ function render(ids) {
       <header class="ms-view-header">
         <div class="ms-view-title">${rows.length} file${rows.length === 1 ? "" : "s"} selected</div>
         <div class="ms-view-actions">
+          <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
           <button type="button" class="ms-view-btn ms-view-btn-danger" data-ms-action="delete">Delete</button>
           <button type="button" class="ms-view-btn" data-ms-action="clear">Clear selection</button>
         </div>
@@ -161,9 +162,9 @@ function render(ids) {
       </ul>
       <div class="ms-view-colors-row"></div>
       <div class="ms-view-actions ms-view-actions-bottom">
-        <button type="button" class="ms-view-btn" data-ms-action="flag">${escHtml(flagBtnLabel)}</button>
-        <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack from selected</button>
-        ${allDocs ? `<button type="button" class="ms-view-btn" data-ms-action="combine">Combine Files into Doc</button>` : ""}
+        <button type="button" class="ms-view-btn" data-ms-action="stack">Create Stack</button>
+        <button type="button" class="ms-view-btn" data-ms-action="project">Create Project</button>
+        ${allDocs ? `<button type="button" class="ms-view-btn" data-ms-action="combine">Combine</button>` : ""}
       </div>
     </div>
   `;
@@ -237,6 +238,38 @@ async function runBatchAction(action, rows) {
         const inst = getStackInstance();
         if (!inst) return;
         for (const it of items) inst.addItem(it.fileId, it.type, it.name);
+      },
+    });
+    return;
+  }
+  if (action === "project") {
+    // Projects hold docs (joined buffer) plus supplementary notebooks;
+    // PDFs live exclusively in the desk's PDFs folder, so skip them.
+    const movable = rows.filter((r) => r.type === "document" || r.type === "notebook");
+    showPromptModal({
+      title: "New project",
+      label: "Name",
+      placeholder: "New Project",
+      initialValue: "New Project",
+      confirmLabel: "Create",
+      onConfirm: async (name) => {
+        _state.clearSelectedDocs();
+        const proj = await _state.createProject(name, null);
+        if (!proj) return;
+        const target = findNode(_state.fileTree, proj.id);
+        if (!target) return;
+        target.children = target.children || [];
+        for (const r of movable) {
+          const removed = removeNode(_state.fileTree, r.nodeId);
+          if (removed) target.children.push(removed);
+        }
+        enforceSpecialPositions(_state.fileTree);
+        normalizeProjectChildren(_state.fileTree);
+        await _state.saveFileTree();
+        if (typeof _state.reconcileSync === "function") _state.reconcileSync();
+        if (typeof _state.syncProjectOrdering === "function") _state.syncProjectOrdering(proj.id);
+        _state.emit("files-changed");
+        _state.openProject(proj.id);
       },
     });
     return;
