@@ -104,7 +104,10 @@ export function updatePrivateBoxColor(state, overrideBg, overrideFg) {
     // have one; otherwise fall back to the legacy luminance-based grey.
     const uiFg = (fg && fg.startsWith("#")) ? fg : (isDark ? "#e0e0e0" : "#1a1a1a");
 
-    root.setProperty("--private-box", isDark ? "#ffffff" : "#000000");
+    // Privacy-mode blocks track the resolved text colour (so a style's fg
+    // override paints the boxes too); fall back to the luminance-based
+    // black/white when no usable foreground is available.
+    root.setProperty("--private-box", (fg && fg.startsWith("#")) ? fg : (isDark ? "#ffffff" : "#000000"));
     root.setProperty("--theme-bg", bg);
     root.setProperty("--fg", uiFg);
     root.setProperty("--cursor", isDark ? "#e0e0e0" : "#1a1a1a");
