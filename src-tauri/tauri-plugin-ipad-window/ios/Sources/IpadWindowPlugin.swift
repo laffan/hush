@@ -54,6 +54,7 @@ final class HushWindowBridge {
     var pendingSeed: HushSeed?
     var expectingNewScene = false
     var relayInstalled = false
+    var satelliteSchemeHandler: SatelliteSchemeHandler?
     // Strong refs so the scene windows aren't deallocated — in this
     // observer-based approach no scene delegate owns them.
     var sceneWindows: [UIWindow] = []
@@ -231,37 +232,22 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
         let vc = UIViewController()
         vc.view.backgroundColor = .systemBackground
 
-        let primary = HushWindowBridge.shared.primaryWebview
+        // Do NOT reuse wry's configuration or its asset handler. wry's
+        // tauri:// handler is webview-specific: invoked for a webview it
+        // doesn't own it crashes the shared web-content process (confirmed
+        // on-device — even when copy() carries the handler). Instead the
+        // satellite gets a FRESH config with its OWN scheme ("hushsat") and
+        // its OWN handler that proxies each asset request through the
+        // primary (which fetches it same-origin and returns the bytes). A
+        // fresh config also lets us give the satellite an isolated process
+        // pool safely, so a satellite crash can't take the primary down.
+        let cfg = WKWebViewConfiguration()
+        cfg.processPool = WKProcessPool()
 
-        // Copy the primary's configuration so the satellite inherits wry's
-        // custom-scheme asset handler(s), process pool, and data store
-        // (same web origin) — copying is the supported way to share scheme
-        // handlers, vs. re-registering a handler instance on a fresh config
-        // (which can raise). We then swap in OUR userContentController,
-        // dropping wry's injected IPC scripts (the satellite uses the relay
-        // shim instead) while keeping the inherited asset plumbing.
-        let cfg: WKWebViewConfiguration =
-            (primary?.configuration.copy() as? WKWebViewConfiguration) ?? WKWebViewConfiguration()
-        // NOTE: do NOT swap cfg.processPool here — on a copied config that
-        // already carries an inherited websiteDataStore, reassigning the
-        // pool crashes WebKit during webview setup (observed on-device).
-
-        // WKWebViewConfiguration.copy() does NOT carry URL-scheme handlers
-        // (they're not part of its NSCopying), so the copied config can't
-        // resolve tauri://localhost and the satellite loads a blank page.
-        // Re-register wry's asset handler explicitly. Registering on the
-        // copy is the first registration on THIS config object, so there's
-        // no "handler already set" conflict. Diag reveals whether the copy
-        // carried it and whether wry exposes the handler at all.
-        if let scheme = primary?.url?.scheme {
-            let carried = cfg.urlSchemeHandler(forURLScheme: scheme) != nil
-            if !carried, let handler = primary?.configuration.urlSchemeHandler(forURLScheme: scheme) {
-                cfg.setURLSchemeHandler(handler, forURLScheme: scheme)
-                diag("re-registered scheme handler for \(scheme)://")
-            } else {
-                diag("scheme \(scheme):// — carriedByCopy=\(carried) wryHandlerExposed=\(primary?.configuration.urlSchemeHandler(forURLScheme: scheme) != nil)")
-            }
-        }
+        let schemeHandler = SatelliteSchemeHandler()
+        schemeHandler.plugin = self
+        HushWindowBridge.shared.satelliteSchemeHandler = schemeHandler
+        cfg.setURLSchemeHandler(schemeHandler, forURLScheme: Self.satelliteScheme)
 
         let ucc = WKUserContentController()
         ucc.add(self, name: "hushInvoke")
@@ -290,32 +276,29 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
             diag("satellite loading \(target.absoluteString)")
             web.load(URLRequest(url: target))
         } else {
-            diag("satellite URL build failed; primary.url=\(primary?.url?.absoluteString ?? "nil")")
-            web.loadHTMLString(
-                "<html><body style=\"font-family:-apple-system;padding:2rem\">"
-                + "<h2>Satellite could not resolve the app URL.</h2></body></html>",
-                baseURL: nil
-            )
+            diag("satellite URL build failed")
+            web.loadHTMLString("<html><body><h2>no seed</h2></body></html>", baseURL: nil)
         }
         return vc
     }
 
-    /// Same-origin app URL + single-file hash. Mirrors the desktop
-    /// `index.html#file=…&type=…` seed that `getInitialFileFromHash()` reads;
-    /// `satellite=1` flags single-file boot mode for a later stage.
+    /// The satellite's own asset origin. Root-relative refs in the bundled
+    /// index.html resolve against it and route to our proxy handler, which
+    /// fetches the real bytes from the primary's tauri:// origin.
+    static let satelliteScheme = "hushsat"
+
+    /// `hushsat://localhost/#satellite=1&file=…&type=…`. Path "/" maps to
+    /// the bundle index; the hash drives `getInitialFileFromHash()` and the
+    /// future single-file boot mode.
     private func satelliteURL(seed: HushSeed?) -> URL? {
-        guard let seed = seed,
-              let base = HushWindowBridge.shared.primaryWebview?.url else { return nil }
-        var s = base.absoluteString
-        if let hashIdx = s.firstIndex(of: "#") { s = String(s[..<hashIdx]) }
+        guard let seed = seed else { return nil }
         let qs = CharacterSet.urlQueryAllowed
         let f = seed.fileId.addingPercentEncoding(withAllowedCharacters: qs) ?? seed.fileId
         let t = seed.fileType.addingPercentEncoding(withAllowedCharacters: qs) ?? seed.fileType
-        s += "#satellite=1&file=\(f)&type=\(t)"
-        return URL(string: s)
+        return URL(string: "\(Self.satelliteScheme)://localhost/#satellite=1&file=\(f)&type=\(t)")
     }
 
-    private func diag(_ message: String) {
+    func diag(_ message: String) {
         NSLog("[IpadWindow] \(message)")
         // trigger() drives evaluateJavaScript, which must run on the main
         // thread. Command handlers (openWindow) run off-main, so dispatch
@@ -400,6 +383,79 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
       };
     })();
     """
+}
+
+/// Serves the satellite's `hushsat://` origin by proxying every request
+/// through the PRIMARY webview: the primary fetches the asset same-origin
+/// from its own `tauri://localhost` and returns base64 bytes + content
+/// type via `callAsyncJavaScript`, which we relay back as the scheme-task
+/// response. This sidesteps wry's webview-specific (crash-prone) handler
+/// entirely and works regardless of where the bundle physically lives
+/// (loose files or compiled into the binary).
+final class SatelliteSchemeHandler: NSObject, WKURLSchemeHandler {
+    weak var plugin: IpadWindowPlugin?
+    // Tasks WebKit has asked us to stop; messaging a stopped task crashes,
+    // so we drop late async deliveries for these.
+    private var stopped = Set<ObjectIdentifier>()
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        let key = ObjectIdentifier(task)
+        guard let url = task.request.url else {
+            task.didFailWithError(NSError(domain: "hush.satellite", code: 1)); return
+        }
+        let path = url.path.isEmpty ? "/" : url.path
+        // Root → the primary's index; everything else is a same-path asset.
+        let target = "tauri://localhost\(path)"
+
+        guard #available(iOS 14.0, *), let primary = HushWindowBridge.shared.primaryWebview else {
+            task.didFailWithError(NSError(domain: "hush.satellite", code: 2)); return
+        }
+
+        // Fetch in the primary's page world (same origin as the assets) and
+        // return the bytes base64-encoded with the response content type.
+        let body = """
+        const resp = await fetch(u);
+        const buf = await resp.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let bin = "";
+        const CH = 0x8000;
+        for (let i = 0; i < bytes.length; i += CH) {
+          bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+        }
+        return { b64: btoa(bin), type: resp.headers.get("Content-Type") || "application/octet-stream", status: resp.status };
+        """
+        primary.callAsyncJavaScript(body, arguments: ["u": target], in: nil, in: .page) { [weak self] result in
+            guard let self = self else { return }
+            if self.stopped.remove(key) != nil { return } // task was cancelled
+            switch result {
+            case .success(let value):
+                if let dict = value as? [String: Any],
+                   let b64 = dict["b64"] as? String,
+                   let data = Data(base64Encoded: b64) {
+                    let type = dict["type"] as? String ?? "application/octet-stream"
+                    let status = dict["status"] as? Int ?? 200
+                    let resp = HTTPURLResponse(
+                        url: url, statusCode: status, httpVersion: "HTTP/1.1",
+                        headerFields: ["Content-Type": type, "Access-Control-Allow-Origin": "*"]
+                    )!
+                    task.didReceive(resp)
+                    task.didReceive(data)
+                    task.didFinish()
+                    if status != 200 { self.plugin?.diag("asset \(path) → \(status)") }
+                } else {
+                    self.plugin?.diag("asset \(path) → decode failed")
+                    task.didFailWithError(NSError(domain: "hush.satellite", code: 3))
+                }
+            case .failure(let err):
+                self.plugin?.diag("asset \(path) → fetch error: \(err.localizedDescription)")
+                task.didFailWithError(err)
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        stopped.insert(ObjectIdentifier(task))
+    }
 }
 
 @_cdecl("init_plugin_ipad_window")
