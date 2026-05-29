@@ -46,7 +46,11 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │                                          └── world.rs          (in-memory typst::World)
 │
 ├── editor/
-│   ├── editor.js
+│   ├── editor.js                      (createEditor — main-window CodeMirror instance + state.on listeners)
+│   ├── base-extensions.js             (extracted from editor.js — createBaseExtensions, buildShortcutExtension, defaultLocalSyncContext; shared by main + pane + zen editors)
+│   ├── markdown-extensions.js         (extracted from editor.js — commentTag/highlightTag + CommentExtension/HighlightExtension)
+│   ├── flag-highlight.js              (extracted from editor.js — createFlagHighlightPlugin + hexToRgba)
+│   ├── block-cursor.js                (extracted from editor.js — applyBlockCursor)
 │   ├── heading-indent.js              (extracted from editor.js)
 │   ├── comment-plugins.js             (extracted from editor.js)
 │   ├── markdown-highlight.js          (extracted from editor.js — getMarkdownHighlight + resolveHeaderColorOverride)

@@ -9,7 +9,7 @@
  */
 import { HighlightStyle } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { commentTag, commentMarkTag, highlightTag, highlightMarkTag } from "./editor.js";
+import { commentTag, commentMarkTag, highlightTag, highlightMarkTag } from "./markdown-extensions.js";
 
 // Resolve the header color override for the active style (or the Default
 // style — its colors live on `defaultLightColors`/`defaultDarkColors`),
