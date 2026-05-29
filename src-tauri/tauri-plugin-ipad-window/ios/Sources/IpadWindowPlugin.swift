@@ -245,8 +245,24 @@ class IpadWindowPlugin: Plugin, WKScriptMessageHandler {
         // NOTE: do NOT swap cfg.processPool here — on a copied config that
         // already carries an inherited websiteDataStore, reassigning the
         // pool crashes WebKit during webview setup (observed on-device).
-        // Process isolation for the freeze-on-close needs a different
-        // approach (see below); revisit once the page actually loads.
+
+        // WKWebViewConfiguration.copy() does NOT carry URL-scheme handlers
+        // (they're not part of its NSCopying), so the copied config can't
+        // resolve tauri://localhost and the satellite loads a blank page.
+        // Re-register wry's asset handler explicitly. Registering on the
+        // copy is the first registration on THIS config object, so there's
+        // no "handler already set" conflict. Diag reveals whether the copy
+        // carried it and whether wry exposes the handler at all.
+        if let scheme = primary?.url?.scheme {
+            let carried = cfg.urlSchemeHandler(forURLScheme: scheme) != nil
+            if !carried, let handler = primary?.configuration.urlSchemeHandler(forURLScheme: scheme) {
+                cfg.setURLSchemeHandler(handler, forURLScheme: scheme)
+                diag("re-registered scheme handler for \(scheme)://")
+            } else {
+                diag("scheme \(scheme):// — carriedByCopy=\(carried) wryHandlerExposed=\(primary?.configuration.urlSchemeHandler(forURLScheme: scheme) != nil)")
+            }
+        }
+
         let ucc = WKUserContentController()
         ucc.add(self, name: "hushInvoke")
         ucc.add(self, name: "hushDiag")
