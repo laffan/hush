@@ -15,5 +15,5 @@ Drop the landing-page screenshots here. The page references these filenames
 
 PNG or JPG both work. Keep them optimized for web (aim for < 400 KB each).
 
-`icon.svg` is the Hush app icon, used in the header and footer. It is already
-in place — no need to replace it.
+`app-icon.png` is the Hush app icon (256×256), used in the header, hero, and
+footer. It is already in place — no need to replace it.
