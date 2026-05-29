@@ -1,0 +1,145 @@
+/**
+ * Mode switching + initial content mount, extracted from `main.js` to keep
+ * the entry point under the project's 700-line cap.
+ *
+ * Owns the notebook / PDF / stack "mode" machinery: the `activateMode`
+ * container toggling, the `show*` helpers, every `state.on(...)` handler
+ * that mounts/unmounts those surfaces, the notebook autosave + cross-window
+ * broadcast, and the one-time initial mount that opens whatever file/project
+ * the window booted with. `applyActiveStyle` runs here (between wiring and
+ * the initial mount) because the active style must be applied before the
+ * first surface mounts.
+ */
+
+import { mountNotebook, unmountNotebook, saveNotebook, getCanvasInstance, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
+import { applyActiveStyle } from "./style-application.js";
+
+export async function setupModeSwitching(state) {
+  // === Mode switching (notebook / PDF / stack) ===
+  const appEl = document.getElementById("app");
+  const notebookContainer = document.getElementById("notebook-container");
+  const pdfContainer = document.getElementById("pdf-container");
+  const stackContainer = document.getElementById("stack-container");
+  const modeCls = ["notebook-mode", "pdf-mode", "stack-mode"];
+  const modeContainers = { "notebook-mode": notebookContainer, "pdf-mode": pdfContainer, "stack-mode": stackContainer };
+
+  function activateMode(mode) {
+    modeCls.forEach(c => { appEl.classList.remove(c); document.body.classList.remove(c); });
+    Object.values(modeContainers).forEach(el => el.classList.add("hidden"));
+    if (mode) {
+      appEl.classList.add(mode); document.body.classList.add(mode);
+      modeContainers[mode]?.classList.remove("hidden");
+      state.emit("hide-outline");
+    }
+  }
+  const showEditor = () => activateMode(null);
+  const showNotebook = () => activateMode("notebook-mode");
+  const showPdf = () => activateMode("pdf-mode");
+  const showStack = () => activateMode("stack-mode");
+
+  state.on("notebook-open", async (fileId) => { await mountNotebook(notebookContainer, fileId, state); showNotebook(); });
+  state.on("notebook-unmount", async () => {
+    const result = await unmountNotebook();
+    if (result) state.syncFileToExternal(result.fileId, result.content);
+    showEditor();
+  });
+  state.on("pdf-open", async (fileId) => {
+    const { mountPdf } = await import("./pdf/pdf-bridge.js");
+    await mountPdf(pdfContainer, fileId, state);
+    showPdf();
+  });
+  state.on("pdf-toggle-shelf", () => {
+    import("./pdf/pdf-bridge.js").then(({ getPdfInstance }) => {
+      const v = getPdfInstance();
+      if (v) v.toggleShelf();
+    });
+  });
+  state.on("pdf-unmount", async () => {
+    const { unmountPdf } = await import("./pdf/pdf-bridge.js");
+    await unmountPdf();
+    showEditor();
+  });
+  state.on("stack-open", async (fileId) => {
+    const { mountStack } = await import("./stack/stack-bridge.js");
+    await mountStack(stackContainer, fileId, state);
+    showStack();
+  });
+  state.on("stack-unmount", async () => {
+    const { unmountStack } = await import("./stack/stack-bridge.js");
+    const result = await unmountStack();
+    if (result) state.syncFileToExternal(result.fileId, result.content);
+    showEditor();
+  });
+  state.on("project-demoted", async (projectId) => {
+    const { getStackInstance } = await import("./stack/stack-bridge.js");
+    const inst = getStackInstance();
+    if (!inst) return;
+    const victims = inst._items.filter(i => i.fileType === "project" && i.fileId === projectId);
+    for (const v of victims) inst.removeItem(v.id);
+  });
+  // Notebook minimap + desks toggle bridge — both wire themselves to AppState.
+  import("./notebook/minimap.js").then(m => m.wireMinimap(state));
+  import("./state/state-desks.js").then(m => m.wireDesksTauri(state));
+  state.on("notebook-autosave", async () => {
+    const result = await saveNotebook();
+    if (result) {
+      state.syncFileToExternal(result.fileId, result.content);
+      // Fan the fresh envelope out to sibling windows so any one of them
+      // currently displaying the same notebook can `reloadNotebookShapes`
+      // and pick up the new shape set without remounting.
+      state.emit("notebook-cross-window-broadcast", {
+        fileId: result.fileId,
+        content: result.content,
+      });
+    }
+  });
+  state.on("notebook-sync-reload", (content) => {
+    reloadNotebookShapes(content).catch((e) => console.warn("notebook-sync-reload failed:", e));
+  });
+  state.on("file-opened", () => { if (!state.currentNotebookFileId && !state.currentPdfFileId && !state.currentStackFileId) showEditor(); });
+
+  // Notebook commands from the command palette
+  state.on("notebook-toggle-shelf", () => {
+    for (const btn of notebookContainer.querySelectorAll("button")) {
+      if (btn.textContent === "‹" || btn.textContent === "›") { btn.click(); break; }
+    }
+  });
+  state.on("notebook-toggle-brainstorm", () => {
+    const c = getCanvasInstance();
+    if (!c) return;
+    c.state.brainstormMode = !c.state.brainstormMode;
+    if (c.state.brainstormMode) { c.state.tool = "text"; c.state.notify("tool"); }
+    c.state.notify("brainstormMode");
+  });
+
+  // Seed globalStyleId for existing users who have an activeStyleId but no globalStyleId yet
+  if (state.settings.activeStyleId && !state.settings.globalStyleId) {
+    state.settings.globalStyleId = state.settings.activeStyleId;
+  }
+
+  // Apply active style — runs even when activeStyleId is null so the
+  // Default style's post-processing layer (settings.shaderLayer) mounts
+  // on startup. The no-style branch of applyActiveStyle is a near-no-op
+  // for everything else (just re-asserts standard font/theme/color
+  // values that are already in place from earlier init steps).
+  applyActiveStyle(state);
+
+  // Load current file content into the newly created editor
+  // (init() already opened the last file/project — re-open only if editor wasn't set yet)
+  if (state.currentNotebookFileId) {
+    await mountNotebook(notebookContainer, state.currentNotebookFileId, state);
+    showNotebook();
+  } else if (state.currentPdfFileId) {
+    const { mountPdf } = await import("./pdf/pdf-bridge.js");
+    await mountPdf(pdfContainer, state.currentPdfFileId, state);
+    showPdf();
+  } else if (state.currentStackFileId) {
+    const { mountStack } = await import("./stack/stack-bridge.js");
+    await mountStack(stackContainer, state.currentStackFileId, state);
+    showStack();
+  } else if (state.currentProjectId) {
+    await state.openProject(state.currentProjectId);
+  } else if (state.currentFileId) {
+    await state.openFile(state.currentFileId);
+  }
+}
