@@ -1,10 +1,10 @@
 # Hush — iPad Multi-Window (single-file) Planning
 
-> **Status**: Stage 1 scaffolded (untested on-device). Targets a
-> *single-file* "Open in New Window" on iPadOS that mirrors the macOS
-> **Open in new window** command at the UX level, while staying within
-> what Tauri/wry actually supports on iOS.
-> **Last Updated**: 2026-05-28
+> **Status**: Stages 1 & 2 working on-device — the satellite runs the real
+> `dist` and the invoke relay carries every command (the seeded file loads,
+> renders, and edits/saves). Next: Stage 3 (single-file boot mode) to stop
+> booting the full app, then Stage 4 (event routing for live sync).
+> **Last Updated**: 2026-05-29
 
 ## Implementation Status
 
@@ -39,9 +39,37 @@ working `invoke()` → the **satellite relay is mandatory**, not optional.
     `build:ios` works).
   - The window currently shows an **all-type-safe placeholder** (title +
     type + id). This is the platform we build the satellite on.
-- **Stage 2+ (satellite) — next.** Replace the placeholder with a WKWebView
-  that loads the real `dist` in single-file mode and proxies `invoke()`
-  through the primary window. See revised Staging below.
+- **Stage 2 — satellite webview + invoke relay: working on-device.** The
+  scene now hosts a real WKWebView that boots the full `dist` and proxies
+  every `invoke` through the primary. Hard-won mechanics:
+  - **wry's `tauri://` asset handler is webview-specific and crash-prone.**
+    Reusing it for a second webview — whether via `WKWebViewConfiguration.copy()`
+    (which *does* carry the handler: `carriedByCopy=true`) or by
+    re-registering the instance on a fresh config — loads nothing and
+    crashes the shared web-content process. Do **not** touch it.
+  - **Assets are proxied, not shared.** The satellite gets a *fresh* config
+    with its own `hushsat://` scheme + a `SatelliteSchemeHandler`. For each
+    request it asks the **primary** to `fetch()` the same path from
+    `tauri://localhost` and return base64 bytes + content-type via
+    `callAsyncJavaScript`; we hand that back as the scheme-task response.
+    Works regardless of where the bundle physically lives.
+  - **Process isolation.** The fresh config takes its own `WKProcessPool`,
+    so a satellite crash/teardown no longer freezes or kills the primary.
+    (Swapping the pool on a *copied* config crashes WebKit — only safe on a
+    fresh one.)
+  - **Invoke relay.** Satellite `__TAURI_INTERNALS__.invoke` → native
+    `hushInvoke` handler → primary's `__hushSatelliteRequest` (real IPC) →
+    result back via `hushRelayResult` → satellite. JSON is base64-wrapped
+    across the JS↔Swift boundary. One relay covers all commands/file types.
+  - **Known gap (Stage 4):** `listen()` registers a callback that lives in
+    the satellite but fires in the primary, so events never arrive
+    (`Couldn't find callback id …` spam in the primary console). Request-
+    response `invoke` is unaffected, so load/edit/save all work.
+  - **Why Stage 3 is now urgent:** the satellite boots the *entire* app —
+    sidebar, sync (`enqueue_sync_op`/`local_sync_list`), Zotero PDF
+    downloads, stacks, `register_window`, autosave — i.e. a second full
+    instance racing the primary on the same files/sync/settings. Single-
+    file boot mode must trim this down.
 
 ## Goal
 
