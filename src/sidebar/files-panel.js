@@ -6,7 +6,7 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { collectFlaggedItems, findAncestorIds, findNode, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
+import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
@@ -172,15 +172,10 @@ export function createFilesPanel(container, state, hidePanel) {
       // Tab markers are synthetic — they can never be a drop target
       // and the dragged item can never be one (canDrag blocks them).
       if (isTabMarkerItem(targetItem)) return false;
-      // Images must stay inside the Images folder — root-level drops
-      // (targetItem === null) are rejected for them too.
-      if (draggedItem.type === "image") {
-        return !!targetItem && isImagesId(targetItem.id);
-      }
-      // PDFs live exclusively in the __pdfs__ folder — no reparenting.
+      // Images stay inside the Images folder; PDFs in __pdfs__ (no
+      // reparenting); desks can't nest (root-level drops only).
+      if (draggedItem.type === "image") return !!targetItem && isImagesId(targetItem.id);
       if (draggedItem.type === "pdf") return false;
-      // Desks can't be nested; root-level drops are rejected since
-      // every node must live inside a desk.
       if (draggedItem.type === "desk") return targetItem === null;
       if (targetItem === null) return false;
       if (isImagesId(targetItem.id)) return draggedItem.type === "image";
@@ -194,6 +189,14 @@ export function createFilesPanel(container, state, hidePanel) {
       // Special nodes and desk containers themselves can't be dragged.
       if (isTabMarkerItem(item)) return false;
       return !isAnySpecialId(item.id) && item.type !== "desk";
+    },
+    // Multi-drag: if the dragged row belongs to a multi-selection, return
+    // the node ids of the *other* selected files so they move together.
+    getDraggedSiblings: (moved) => {
+      const sel = state.selectedDocIds || [];
+      if (sel.length < 2 || !moved?.fileId || !sel.includes(moved.fileId)) return [];
+      return sel.filter((fid) => fid !== moved.fileId)
+        .map((fid) => findNodeByFileId(state.fileTree, fid)).filter(Boolean).map((n) => n.id);
     },
     enableKeyboard: false,
     dragStartDelay: 180,
