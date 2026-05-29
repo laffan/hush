@@ -63,6 +63,33 @@ class IpadWindowPlugin: Plugin {
             object: nil
         )
         diag("observer installed for UIScene.willConnectNotification")
+
+        // Purge the backlog of leftover secondary scenes that iOS persists
+        // and restores from previous runs. Without this they pile up,
+        // flash open/closed as we destroy them, and (worse) get *reused*
+        // by a later activation instead of a fresh seeded scene. Run after
+        // a short delay so the primary webview is attached to its scene and
+        // restorations have settled; never touch the primary or any window
+        // we've already attached ourselves.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.purgeLeftoverScenes()
+        }
+    }
+
+    private func purgeLeftoverScenes() {
+        guard let primary = HushWindowBridge.shared.primaryWebview?.window?.windowScene else {
+            diag("purge skipped: primary scene not yet identifiable")
+            return
+        }
+        for s in UIApplication.shared.connectedScenes {
+            guard let ws = s as? UIWindowScene,
+                  ws.session.role == .windowApplication,
+                  ws !== primary,
+                  !HushWindowBridge.shared.sceneWindows.contains(where: { $0.windowScene === ws })
+            else { continue }
+            diag("purging leftover scene session at launch")
+            UIApplication.shared.requestSceneSessionDestruction(ws.session, options: nil, errorHandler: nil)
+        }
     }
 
     // Tauri command: invoke("plugin:ipad-window|open_single_file_window", …)

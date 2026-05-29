@@ -221,6 +221,7 @@ function buildCommands(state) {
         if (s.currentNotebookFileId) { fileId = s.currentNotebookFileId; fileType = "notebook"; }
         else if (s.currentStackFileId) { fileId = s.currentStackFileId; fileType = "stack"; }
         else if (s.currentFileId) { fileId = s.currentFileId; fileType = "document"; }
+        console.log("[IpadWindow] command action fired", { fileId, fileType });
         if (!fileId || !fileType) return;
         const node = findNodeByFileId(s.fileTree, fileId);
         openSingleFileWindow(fileId, fileType, (node && node.name) || "Untitled");
