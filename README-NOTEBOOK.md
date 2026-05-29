@@ -176,7 +176,7 @@ Two sibling files keep `renderer.ts` under the line limit while preserving purit
 
 ### Canvas themes
 
-16 themes mirroring the Hush editor theme set (now self-contained under `src/themes/`), stored as flat objects with canvas-specific properties (`canvasBackground`, `foreground`, `headingColor`, `selection`, `accent`, `gridColor`, `uiBackground`, `uiBorder`). The active theme is resolved from the Hush editor style via `HUSH_TO_NOTEBOOK_THEME` in `notebook-bridge.js`.
+16 themes mirroring the Hush editor theme set (now self-contained under `src/themes/`), stored as flat objects with canvas-specific properties (`canvasBackground`, `foreground`, `headingColor`, `selection`, `accent`, `gridColor`, `uiBackground`, `uiBorder`, plus an optional `linkColor`). The active theme is resolved from the Hush editor style via `HUSH_TO_NOTEBOOK_THEME` in `notebook-bridge.js`. The active style's colour overrides are layered on top in the `DrawingState.theme` getter: `foregroundOverride` (canvas text + toolbar icons), `headingColorOverride` (markdown headings), and `linkColorOverride` (links/wikilinks, falling back to `foreground`) — all threaded through `computeNotebookSettings` → `applySettings`.
 
 ### Shape types
 
