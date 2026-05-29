@@ -1,14 +1,18 @@
 /* ------------------------------------------------------------------ *
    Hush — landing page
-   Minimal, calm, type-forward.
+   Dark, minimal, with a cyberpunk glow behind the hero.
  * ------------------------------------------------------------------ */
 
 :root {
-  --ink:        #1c1b19;
-  --ink-soft:   #56524c;
-  --ink-faint:  #8a857d;
-  --paper:      #ffffff;
-  --paper-alt:  #f4f4f5;
+  --ink:        #f4f5f8;   /* primary text (light on dark) */
+  --ink-soft:   #a8acba;
+  --ink-faint:  #6b6f7e;
+  --paper:      #07080d;   /* near-black background */
+  --paper-alt:  #11131c;   /* slightly raised surface */
+  --line:       #20232f;
+  --glow-a:     #ff2db8;   /* magenta */
+  --glow-b:     #7a2dff;   /* violet */
+  --glow-c:     #00e5ff;   /* cyan */
   --radius:     14px;
   --maxw:       1080px;
   --sans:       "Source Sans 3", system-ui, -apple-system, sans-serif;
@@ -56,13 +60,47 @@ a { color: inherit; text-decoration: none; }
 .brand-icon.small { width: 20px; height: 20px; }
 
 /* ---- Hero icon -------------------------------------------------- */
+.hero-logo {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+.hero-logo::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 560px;
+  height: 560px;
+  max-width: 120vw;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 32% 30%, var(--glow-a) 0%, transparent 55%),
+    radial-gradient(circle at 70% 35%, var(--glow-c) 0%, transparent 55%),
+    radial-gradient(circle at 50% 78%, var(--glow-b) 0%, transparent 60%);
+  filter: blur(70px);
+  opacity: 0.8;
+  z-index: 0;
+  pointer-events: none;
+  animation: glow-drift 12s ease-in-out infinite alternate;
+}
 .hero-icon {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 300px;
   max-width: 70vw;
   height: auto;
-  margin: 0 auto 2rem;
   border-radius: 22%;
+}
+
+@keyframes glow-drift {
+  0%   { transform: translate(-50%, -50%) scale(1)    rotate(0deg); }
+  100% { transform: translate(-50%, -50%) scale(1.12) rotate(8deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-logo::before { animation: none; }
 }
 
 /* ---- Header ----------------------------------------------------- */
@@ -74,7 +112,7 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   justify-content: space-between;
   padding: 1rem clamp(1.25rem, 5vw, 3rem);
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(7, 8, 13, 0.72);
   backdrop-filter: blur(10px);
 }
 .brand {
@@ -100,7 +138,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--ink);
   color: var(--paper) !important;
 }
-.nav-cta:hover { opacity: 0.88; }
+.nav-cta:hover { opacity: 0.85; }
 
 /* ---- Buttons ---------------------------------------------------- */
 .btn {
@@ -113,7 +151,7 @@ a { color: inherit; text-decoration: none; }
 }
 .btn:active { transform: translateY(1px); }
 .btn-primary { background: var(--ink); color: var(--paper); }
-.btn-primary:hover { opacity: 0.88; }
+.btn-primary:hover { opacity: 0.85; }
 .btn-ghost { color: var(--ink-soft); }
 .btn-ghost:hover { color: var(--ink); }
 .btn-lg { padding: 1rem 2.2rem; font-size: 1.05rem; }
@@ -157,9 +195,10 @@ a { color: inherit; text-decoration: none; }
       45deg,
       var(--paper-alt),
       var(--paper-alt) 12px,
-      #e7e7e9 12px,
-      #e7e7e9 24px
+      #171a25 12px,
+      #171a25 24px
     );
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   display: flex;
@@ -182,7 +221,7 @@ a { color: inherit; text-decoration: none; }
 }
 .shot-hero .img-placeholder {
   aspect-ratio: 16 / 10;
-  box-shadow: 0 30px 60px -30px rgba(28, 27, 25, 0.35);
+  box-shadow: 0 0 80px -20px rgba(122, 45, 255, 0.45);
 }
 
 /* ---- Cards (formats) -------------------------------------------- */
