@@ -400,3 +400,19 @@
   font-size: 11px;
   opacity: 0.55;
 }
+
+.quick-find-close {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.55;
+}
+
+.quick-find-close:hover {
+  opacity: 1;
+}

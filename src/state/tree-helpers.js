@@ -222,12 +222,16 @@ export function normalizeProjectChildren(nodes) {
       // docs, and nested projects / folders) stays in the user's custom
       // drag order below — nested projects must NOT be force-sorted to the
       // very bottom past the supplementary block.
-      const docs = [], below = [];
+      const top = [], below = [];
       for (const c of n.children) {
-        if (c.type === "document" && !c.useAsNote) docs.push(c);
-        else below.push(c);
+        // Only notebooks, stacks, and `useAsNote` docs drop to the
+        // supplementary block. Flow docs AND nested projects / folders
+        // keep their custom drag order at the top so a nested project
+        // stays wherever the user placed it.
+        if (c.type === "notebook" || c.type === "stack" || (c.type === "document" && c.useAsNote)) below.push(c);
+        else top.push(c);
       }
-      n.children = [...docs, ...below];
+      n.children = [...top, ...below];
     }
     normalizeProjectChildren(n.children);
   }

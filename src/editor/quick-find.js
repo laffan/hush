@@ -93,8 +93,15 @@ function buildBar() {
   inputEl.spellcheck = false;
   countEl = document.createElement("span");
   countEl.className = "quick-find-count";
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "quick-find-close";
+  closeBtn.setAttribute("aria-label", "Close find");
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", () => closeQuickFind());
   barEl.appendChild(inputEl);
   barEl.appendChild(countEl);
+  barEl.appendChild(closeBtn);
   document.body.appendChild(barEl);
 
   inputEl.addEventListener("input", () => {
