@@ -5,7 +5,8 @@ import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WID
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
 import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview, drawShadowHeaders } from "./renderer-selection";
-import { drawBackground } from "./renderer-background";
+import { drawBackground, drawBackgroundImage } from "./renderer-background";
+import type { BackgroundImageConfig } from "./renderer-background";
 import type { FlowchartLayer } from "./flowchart";
 
 export interface RenderState {
@@ -35,6 +36,12 @@ export interface RenderState {
   /** Style override for the canvas background. Empty / unset falls
    *  back to `theme.canvasBackground`. */
   canvasBackgroundOverride?: string;
+  /** Active Hush style's background-image config, or null. Drawn over the
+   *  solid fill and beneath the grid pattern. */
+  backgroundImage?: BackgroundImageConfig | null;
+  /** Called when a background image finishes loading so the caller can
+   *  request another frame (the first draw returns before decode). */
+  onBgImageLoad?: () => void;
   /** Optional drawing-layer handle. When present the pocket / shelf
    *  thumbnail paths blit grouped-drawing regions directly from the
    *  done canvas instead of re-stamping strokes per-frame. */
@@ -97,6 +104,9 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
 
   ctx.fillStyle = canvasBackgroundOverride || theme.canvasBackground;
   ctx.fillRect(0, 0, w, h);
+
+  // Style background image sits above the solid fill, beneath the grid.
+  drawBackgroundImage(ctx, state.backgroundImage, w, h, state.onBgImageLoad || (() => {}));
 
   if (backgroundPattern !== "blank" && gridOpacity > 0) {
     // Use foreground color at scaled opacity (100% slider = 80% alpha of foreground)

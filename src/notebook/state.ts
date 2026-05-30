@@ -228,6 +228,10 @@ export class DrawingState extends EventTarget {
    *  background instead of the resolved theme's stock canvasBackground.
    *  Empty string = no override (use the theme's own background). */
   canvasBackgroundOverride = "";
+  /** Active Hush style's background-image config ({ enabled, src, fit,
+   *  repeat, blend, opacity }) or null. Drawn beneath the dot/line grid
+   *  pattern on the canvas (see renderer.ts / renderer-background.ts). */
+  backgroundImage: any = null;
   /** When the active Hush style has an `fg` override, this carries that
    *  hex into the canvas so default/auto-coloured text shapes and the
    *  toolbar icons track the style's text colour instead of the resolved

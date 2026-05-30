@@ -1,5 +1,65 @@
 import type { Camera } from "./types";
 
+export interface BackgroundImageConfig {
+  enabled?: boolean;
+  src?: string;
+  fit?: string;     // "cover" | "contain" | "100% 100%" | "auto"
+  repeat?: string;  // "no-repeat" | "repeat" | "repeat-x" | "repeat-y"
+  blend?: string;   // CSS mix-blend-mode value
+  opacity?: number;
+}
+
+const bgImageCache = new Map<string, HTMLImageElement>();
+
+/** Loaded image for `src`, kicking off a load (and `onReady` redraw on
+ *  completion) the first time. Returns null until decoded. */
+function getBgImage(src: string, onReady: () => void): HTMLImageElement | null {
+  const cached = bgImageCache.get(src);
+  if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
+  const img = new Image();
+  img.onload = () => onReady();
+  img.src = src;
+  bgImageCache.set(src, img);
+  return null;
+}
+
+/** Draw a style's background image in screen space (fills the viewport),
+ *  composited over the solid canvas fill and beneath the grid pattern.
+ *  `w`/`h` are CSS pixels; the caller's transform is screen-space. */
+export function drawBackgroundImage(
+  ctx: CanvasRenderingContext2D,
+  bi: BackgroundImageConfig | null | undefined,
+  w: number, h: number,
+  onReady: () => void,
+) {
+  if (!bi || !bi.enabled || !bi.src) return;
+  const img = getBgImage(bi.src, onReady);
+  if (!img) return;
+  ctx.save();
+  ctx.globalAlpha = bi.opacity != null ? bi.opacity : 1;
+  if (bi.blend && bi.blend !== "normal") {
+    ctx.globalCompositeOperation = bi.blend as GlobalCompositeOperation;
+  }
+  const repeat = bi.repeat || "no-repeat";
+  if (repeat !== "no-repeat") {
+    const rep = repeat === "repeat-x" ? "repeat-x" : repeat === "repeat-y" ? "repeat-y" : "repeat";
+    const pat = ctx.createPattern(img, rep);
+    if (pat) { ctx.fillStyle = pat; ctx.fillRect(0, 0, w, h); }
+  } else {
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    const fit = bi.fit || "cover";
+    let dw = w, dh = h, dx = 0, dy = 0;
+    if (fit === "cover" || fit === "contain") {
+      const scale = fit === "contain" ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih);
+      dw = iw * scale; dh = ih * scale; dx = (w - dw) / 2; dy = (h - dh) / 2;
+    } else if (fit === "auto") {
+      dw = iw; dh = ih; dx = (w - dw) / 2; dy = (h - dh) / 2;
+    } // "100% 100%" (stretch) → fill the viewport
+    ctx.drawImage(img, dx, dy, dw, dh);
+  }
+  ctx.restore();
+}
+
 export type BackgroundPatternKind =
   | "grid"
   | "dot-grid"
