@@ -135,6 +135,10 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   }
   if (isDoc && !inProject) {
     entries.push({ action: "convert-doc-to-project", label: "Convert to Project" });
+  }
+  // Split at Headings works on any doc. Standalone docs become a new
+  // project; a doc already inside a project splits into sibling docs.
+  if (isDoc) {
     entries.push({ action: "split-at-headings", label: "Split at Headings" });
   }
   if (isContainer && !isImagesId(nodeId)) {
