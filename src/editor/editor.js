@@ -275,6 +275,7 @@ export function createEditor(container, state) {
       createGoogleDocsPasteExtension(),
       headingIndentPlugin,
       findHighlightField,
+      instanceHighlightField,
       stickyHeadersPlugin,
       multiLineCommentPlugin,
       commentAfterPlugin,
