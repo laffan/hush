@@ -8,3 +8,7 @@
 src/notebook/drawing/engine/stroke.js  # — Ported from upstream demo. Documented "deltas" track edits relative to upstream file boundaries; splitting would break the diff-check workflow described in README-DRAWING.md.
 
 src/notebook/state.ts  # — Pointer-interaction state machine (~lines 465–960) is tightly coupled to shapes/selectedIds/camera/undo. Extraction was evaluated and judged to add a conceptual seam without proportional gain. Revisit if the state machine grows further.
+
+src/notebook/renderer.ts  # — Single cohesive canvas draw pipeline (background → grid → shapes → selection chrome). Splitting would scatter z-order ordering across files for no real gain; sits beside state.ts which is excepted for the same reason.
+
+src/notebook/notes-canvas.ts  # — Canvas controller + render-state assembly + gesture wiring, tightly coupled to state.ts and renderer.ts. Extraction adds a seam without proportional gain; revisit if it grows materially.

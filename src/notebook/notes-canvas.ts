@@ -524,6 +524,7 @@ export class NotesCanvas {
     fontSize?: number;
     canvasBackgroundOverride?: string;
     foregroundOverride?: string; headingColorOverride?: string; linkColorOverride?: string;
+    backgroundImage?: any;
     maxTextWidth?: number;
     flowConnectMode?: "closest" | "horizontal";
   }) {
@@ -646,6 +647,8 @@ export class NotesCanvas {
         imageCache: this._imageCache,
         theme: this.state.theme,
         canvasBackgroundOverride: this.state.canvasBackgroundOverride,
+        backgroundImage: (this.state as any).backgroundImage,
+        onBgImageLoad: () => this.state.notify("theme"),
         croppingImageId: this.state.croppingImageId,
         fontFamily: this.state.fontFamily,
         backgroundPattern: this.state.backgroundPattern,
