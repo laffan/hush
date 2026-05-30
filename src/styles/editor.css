@@ -81,17 +81,17 @@
   width: 0.6em !important;
 }
 
-/* Underline cursor mode — block-width, but only a 3 px baseline strip.
-   We anchor the bar to the bottom of the inserted caret box via
-   translateY so it sits on the baseline rather than centring on the
-   character. */
+/* Underline cursor mode — a 3 px block-width strip pinned below the
+   text. We keep the cm-cursor's natural height (= line height) and
+   draw the strip as a border-bottom so it sits at the bottom edge of
+   the line box, well clear of the descenders rather than overlapping
+   the bottom of the glyphs. */
 #editor-container.underline-cursor .cm-cursor {
   border-left: none;
-  background: var(--block-cursor-color, var(--cursor));
+  border-bottom: 3px solid var(--block-cursor-color, var(--cursor));
+  background: transparent;
   opacity: 0.7;
   width: 0.6em !important;
-  height: 3px !important;
-  transform: translateY(calc(1em - 3px));
 }
 
 

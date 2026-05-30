@@ -24,6 +24,7 @@ let barEl = null;
 let inputEl = null;
 let countEl = null;
 let repositionHandler = null;
+let escHandler = null;
 
 export function isQuickFindOpen() {
   return !!barEl && !!activeView;
@@ -60,6 +61,10 @@ export function closeQuickFind() {
     window.removeEventListener("resize", repositionHandler, true);
     window.removeEventListener("scroll", repositionHandler, true);
     repositionHandler = null;
+  }
+  if (escHandler) {
+    document.removeEventListener("keydown", escHandler, true);
+    escHandler = null;
   }
   const v = activeView;
   activeView = null;
@@ -120,6 +125,17 @@ function buildBar() {
       e.preventDefault();
       if (e.shiftKey) { quickFindGoPrev(); return; }
       commitAndClose();
+    } else if (e.key === "ArrowRight" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Right arrow at the end of the input acts like a forward Enter:
+      // close the bar and drop the cursor at the current match. When
+      // the caret isn't at the end of the input we let the keystroke
+      // through so it still moves through the query text.
+      const caret = inputEl.selectionStart;
+      const len = inputEl.value.length;
+      if (caret === len && inputEl.selectionEnd === len) {
+        e.preventDefault();
+        commitAndClose();
+      }
     } else if ((e.metaKey || e.ctrlKey) && (e.key === "g" || e.key === "G")) {
       // Cmd+G fires while the input is focused — handle it here since the
       // editor keymap won't see the keystroke.
@@ -131,6 +147,19 @@ function buildBar() {
   repositionHandler = () => position();
   window.addEventListener("resize", repositionHandler, true);
   window.addEventListener("scroll", repositionHandler, true);
+
+  // Global Escape — even if focus has drifted to the editor (e.g. the
+  // user clicked into the doc to verify the match), Escape should still
+  // dismiss the bar. Captured at the document level so it wins before
+  // any editor extension swallows the key.
+  escHandler = (e) => {
+    if (e.key === "Escape" && barEl) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeQuickFind();
+    }
+  };
+  document.addEventListener("keydown", escHandler, true);
 }
 
 function position() {

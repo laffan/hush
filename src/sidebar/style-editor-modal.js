@@ -32,7 +32,6 @@ export function openStyleEditorModal(state) {
           <div class="style-editor-rail-title">Styles</div>
           <div class="style-editor-rail-list"></div>
           <button class="style-editor-rail-new" type="button">+ New Style</button>
-          <button class="style-editor-rail-presets" type="button">Presets…</button>
           <button class="style-editor-rail-import" type="button">Import styles…</button>
           <div class="style-editor-rail-appearance" role="group" aria-label="Appearance"></div>
         </div>
@@ -225,57 +224,6 @@ export function openStyleEditorModal(state) {
     reader.readAsText(file);
   });
   backdrop.querySelector(".style-editor-rail-import").addEventListener("click", () => importInput.click());
-
-  // === Bundled presets ===
-  // `import.meta.glob` resolves every JSON file in the presets folder
-  // at build time so the picker stays in sync with whatever's checked
-  // into `src/assets/style-presets/`. Adding a new file is a build-time
-  // change — no separate registry to keep up to date.
-  const presetModules = import.meta.glob("../assets/style-presets/*.json", { eager: true });
-  const presets = Object.entries(presetModules).map(([path, mod]) => {
-    const data = mod && mod.default ? mod.default : mod;
-    const fallback = (path.split("/").pop() || "").replace(/\.json$/i, "");
-    return { ...data, _filename: fallback };
-  });
-
-  function openPresetsPicker() {
-    const overlay = document.createElement("div");
-    overlay.className = "style-presets-overlay";
-    if (!presets.length) {
-      overlay.innerHTML = `<div class="style-presets-modal">
-        <div class="style-presets-title">No presets bundled yet</div>
-        <p class="style-presets-empty">Drop JSON files into <code>src/assets/style-presets/</code> to see them here.</p>
-        <div class="style-presets-actions"><button class="style-presets-cancel" type="button">Close</button></div>
-      </div>`;
-    } else {
-      const rows = presets.map((p, i) => `
-        <button class="style-presets-row" type="button" data-idx="${i}">
-          <span class="style-presets-row-name">${escHtml(p.name || p._filename)}</span>
-          ${p.fontFamily ? `<span class="style-presets-row-font">${escHtml(p.fontFamily)}</span>` : ""}
-        </button>`).join("");
-      overlay.innerHTML = `<div class="style-presets-modal">
-        <div class="style-presets-title">Preset styles</div>
-        <div class="style-presets-list">${rows}</div>
-        <div class="style-presets-actions"><button class="style-presets-cancel" type="button">Cancel</button></div>
-      </div>`;
-    }
-    backdrop.appendChild(overlay);
-    function dismiss() { overlay.remove(); }
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) dismiss(); });
-    overlay.querySelector(".style-presets-cancel").addEventListener("click", dismiss);
-    overlay.querySelectorAll(".style-presets-row").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const idx = parseInt(btn.dataset.idx, 10);
-        const preset = presets[idx];
-        if (preset) {
-          const { _filename, ...clean } = preset;
-          importStylesFromText(JSON.stringify(clean));
-        }
-        dismiss();
-      });
-    });
-  }
-  backdrop.querySelector(".style-editor-rail-presets").addEventListener("click", openPresetsPicker);
 
   renderRail();
   mountEditor();

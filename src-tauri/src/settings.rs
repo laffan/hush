@@ -237,12 +237,11 @@ pub struct AppSettings {
     pub recent_file_ids: Vec<String>,
 
     // Styles
-    #[serde(default)]
-    pub styles: Vec<Style>,
-    #[serde(default)]
-    pub active_style_id: Option<String>,
-    #[serde(default)]
-    pub global_style_id: Option<String>,
+    #[serde(default)] pub styles: Vec<Style>,
+    #[serde(default)] pub active_style_id: Option<String>,
+    #[serde(default)] pub global_style_id: Option<String>,
+    // Filenames of bundled style presets already seeded into `styles`.
+    #[serde(default)] pub seeded_preset_files: Vec<String>,
 
     // Shader layer attached to the Default style. User styles carry
     // their own shaderLayer field on the Style struct itself.
@@ -582,6 +581,7 @@ impl Default for AppSettings {
             styles: Vec::new(),
             active_style_id: None,
             global_style_id: None,
+            seeded_preset_files: Vec::new(),
             shader_layer: None,
             longview_show_paragraphs: true,
             longview_show_numbers: true,

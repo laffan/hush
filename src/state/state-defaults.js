@@ -154,6 +154,10 @@ export function createDefaultSettings() {
     styles: [],
     activeStyleId: null,
     globalStyleId: null,
+    // Filenames of bundled style presets that have already been seeded
+    // into `styles`. Lets new presets land on next launch without
+    // re-adding ones the user has already deleted.
+    seededPresetFiles: [],
     // Shader layer attached to the Default style. User styles carry
     // their own shaderLayer field on each Style object.
     shaderLayer: null,

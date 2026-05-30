@@ -265,9 +265,8 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Import + presets buttons — match the New Style button below the list. */
-.style-editor-rail-import,
-.style-editor-rail-presets {
+/* Import styles button — matches the New Style button below the list. */
+.style-editor-rail-import {
   margin-top: 6px;
   padding: 8px;
   border: 1px solid var(--panel-border);
@@ -278,69 +277,9 @@
   font-size: 13px;
   font-family: system-ui, sans-serif;
 }
-.style-editor-rail-import:hover,
-.style-editor-rail-presets:hover {
+.style-editor-rail-import:hover {
   background: rgba(128, 128, 128, 0.15);
 }
-
-/* Preset picker overlay opened from the Presets… button. Sits above
-   the Edit Styles modal as a small centred sheet. */
-.style-presets-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-}
-.style-presets-modal {
-  min-width: 300px;
-  max-width: 420px;
-  background: var(--theme-bg, var(--bg));
-  color: var(--fg);
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.4));
-  border-radius: 8px;
-  padding: 14px 14px 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
-  font-family: system-ui, sans-serif;
-}
-.style-presets-title { font-size: 13px; font-weight: 600; opacity: 0.8; margin-bottom: 10px; }
-.style-presets-empty { font-size: 12px; opacity: 0.7; margin: 0 0 10px; }
-.style-presets-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
-.style-presets-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 10px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--fg);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.style-presets-row:hover {
-  background: rgba(128, 128, 128, 0.12);
-  border-color: var(--panel-border, rgba(128, 128, 128, 0.3));
-}
-.style-presets-row-name { font-weight: 500; }
-.style-presets-row-font { opacity: 0.55; font-size: 11px; }
-.style-presets-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
-.style-presets-cancel {
-  background: none;
-  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.3));
-  border-radius: 4px;
-  padding: 4px 12px;
-  font-size: 12px;
-  font-family: inherit;
-  color: var(--fg);
-  cursor: pointer;
-}
-.style-presets-cancel:hover { background: rgba(128, 128, 128, 0.1); }
 
 /* Export-style button at the bottom of the settings column. */
 .style-modal-export {
