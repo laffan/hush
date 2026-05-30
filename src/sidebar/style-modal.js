@@ -12,6 +12,7 @@ import {
   themeForegrounds,
 } from "./styles-panel-shared.js";
 import { renderShaderSection, bindShaderSection, endShaderPreview } from "./style-modal-shader.js";
+import { renderStyleExtras, bindStyleExtras } from "./style-modal-background.js";
 import { applyActiveStyle } from "../style-application.js";
 import { bindCustomDropdown } from "./custom-dropdown.js";
 
@@ -211,12 +212,9 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         else state.settings.styles.push(draft);
       }
     }
-    // The active-style chain (`style-changed` → `applyActiveStyle` →
-    // `theme-changed`) is what repaints the editor surface. We also
-    // emit `settings-changed` so editor.js's settings-changed listener
-    // re-runs (font-size / line-height / highlight / block-cursor) —
-    // without this, edits to those knobs were not picked up live and
-    // only landed once the user re-selected the style from the sidebar.
+    // `style-changed` → applyActiveStyle repaints the editor; `settings-changed`
+    // re-runs editor.js's listener so font-size / line-height / block-cursor
+    // edits land live instead of only on re-selecting the style.
     state.emit("style-changed");
     state.emit("settings-changed");
   }
@@ -408,6 +406,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
             </div>
 
             ${renderShaderSection(draft)}
+            ${renderStyleExtras(draft)}
           </div>
 
           <!-- Draggable divider — only visible in narrow-window stack layout -->
@@ -645,6 +644,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     });
 
     bindShaderSection(backdrop, draft, scheduleSave);
+    bindStyleExtras(backdrop, draft, scheduleSave, render);
 
     backdrop.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
       input.addEventListener("input", () => {
