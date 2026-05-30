@@ -534,6 +534,7 @@ export class NotesCanvas {
     if (opts.gridOpacity !== undefined) { this.state.gridOpacity = opts.gridOpacity; this.state.notify("theme"); }
     if (opts.fontFamily !== undefined) { this.state.fontFamily = opts.fontFamily; this.state.notify("theme"); }
     if (opts.fontSize !== undefined) { this.state.fontSize = opts.fontSize; this.state.notify("fontSize"); }
+    if (opts.backgroundImage !== undefined) { this.state.backgroundImage = opts.backgroundImage; this.state.notify("theme"); }
     for (const k of ["canvasBackgroundOverride", "foregroundOverride", "headingColorOverride", "linkColorOverride"] as const) {
       if (opts[k] !== undefined) { (this.state as any)[k] = opts[k]; this.state.notify("theme"); }
     }
