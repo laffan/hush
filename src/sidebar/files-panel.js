@@ -10,7 +10,7 @@ import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, norma
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml } from "./files-panel-shared.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml, computeNumberLabels } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton, openRowMenu } from "./files-panel-row-menu.js";
@@ -48,6 +48,10 @@ const visibleTopLevel = (s) => {
   return children.filter(n => !isPdfsId(n.id) || (n.children && n.children.length > 0));
 };
 
+// Outline-number labels for rows inside a project with `showNumbers`.
+let numberLabels = new Map();
+const numberSkip = (n) => isAnySpecialId(n.id) || isTabMarkerItem(n);
+
 function getIcon(item) {
   if (isInboxId(item.id)) return typeIcons.inbox;
   if (isImagesId(item.id)) return typeIcons.images;
@@ -61,10 +65,8 @@ function getIcon(item) {
     if (!isDropboxConnected()) return typeIcons.syncedFolderBroken;
     return typeIcons.syncedFolder;
   }
-  // Plain folders read fine in the tree without a leading glyph; the
-  // disclosure arrow alone signals containerhood. The Add (+) popup
-  // still uses typeIcons.folder so the create-action chip stays
-  // identifiable.
+  // Plain folders read fine without a leading glyph — the disclosure
+  // arrow alone signals containerhood.
   if (item.type === "folder") return "";
   if (item.flagged) {
     return typeIcons[item.type + "Flagged"] || typeIcons[item.type] || typeIcons.document;
@@ -145,10 +147,8 @@ export function createFilesPanel(container, state, hidePanel) {
   listContainer.className = "tree-list-root";
   container.appendChild(listContainer);
 
-  // Local Sync section — rendered below the flagged + files trees so the
-  // mount roots sit beneath the active desk's normal tree. Each entry
-  // is a top-level disclosure that expands to its on-disk contents,
-  // populated asynchronously.
+  // Local Sync section — rendered below the normal tree; each entry is a
+  // top-level disclosure that expands to its on-disk contents async.
   const localSyncContainer = document.createElement("ul");
   localSyncContainer.className = "tree-list-root local-sync-root";
   container.appendChild(localSyncContainer);
@@ -161,6 +161,7 @@ export function createFilesPanel(container, state, hidePanel) {
   }
 
   const sortedTree = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
+  numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
   sortableInstance = new SortableList(listContainer, {
     data: sortedTree,
@@ -216,10 +217,9 @@ export function createFilesPanel(container, state, hidePanel) {
       const inProject = !!_p && _p.type === "project" && _p.id !== "__inbox__" && !_p.id?.startsWith("__inbox__:");
       const isMultiSelected = (item.type === "document" || item.type === "notebook" || item.type === "pdf") && item.fileId
         && Array.isArray(state.selectedDocIds) && state.selectedDocIds.includes(item.fileId);
-      // `.multi-selected` lives on the outer `.sl-item` so SortableList's
-      // renderer keeps it across re-renders; `data-file-id` lets the
-      // multi-select listener toggle the highlight without a full rebuild
-      // (a rebuild mid-drag-select would strand cached row refs).
+      // `.multi-selected` lives on the outer `.sl-item` so it survives
+      // re-renders; `data-file-id` lets the listener toggle it without a
+      // full rebuild (which would strand cached row refs mid-drag-select).
       if (context?.li) {
         context.li.classList.toggle("multi-selected", !!isMultiSelected);
         if (item.fileId) context.li.dataset.fileId = item.fileId;
@@ -231,7 +231,9 @@ export function createFilesPanel(container, state, hidePanel) {
         const pdfHtml = buildPdfRowHtml(item, icon, state, inTrash, inProject);
         row.innerHTML = pdfHtml;
       } else {
-        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+        const numLabel = numberLabels.get(item.id);
+        const numPrefix = numLabel ? `<span class="tree-item-number">${escHtml(numLabel)}</span> ` : "";
+        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);
@@ -243,16 +245,12 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onClick: (item, event) => {
-      // Tab markers handle their own click inside `renderTabMarkerRow`;
-      // docs / notebooks / pdfs / stacks participate in multi-select,
+      // Docs / notebooks / pdfs / stacks participate in multi-select;
       // everything else falls through and clears any active selection.
       const isMultiSelectable = (item.type === "document" || item.type === "notebook" || item.type === "pdf" || item.type === "stack") && item.fileId;
       if (isMultiSelectable) {
         if (event && (event.shiftKey || event.metaKey || event.ctrlKey)) {
-          const visible = collectVisibleDocs(
-            state, visibleTopLevel, sortFlaggedItems,
-            sortableInstance?.state?.collapsedIds,
-          );
+          const visible = collectVisibleDocs(state, visibleTopLevel, sortFlaggedItems, sortableInstance?.state?.collapsedIds);
           handleDocMultiClick(item, event, state, visible);
           refreshList(state);
           return;
@@ -312,9 +310,8 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onChange: (newData) => {
-      // Tab markers are synthetic — strip them before any tree write
-      // so the persisted file tree never inherits one. The augmenter
-      // re-adds them on the next render.
+      // Tab markers are synthetic — strip them before any tree write so
+      // the persisted tree never inherits one (re-added on next render).
       const cleaned = stripTabMarkersFromTree(newData);
       enforceSpecialPositions(cleaned);
       normalizeProjectChildren(cleaned);
@@ -352,10 +349,8 @@ export function createFilesPanel(container, state, hidePanel) {
   attachPaneIndicatorTooltip(listContainer);
   // Option-click on a row opens the Send-to-desk modal (when desks on).
   import("./send-to-desk-modal.js").then((m) => m.attachDeskShortcuts(listContainer, state));
-  // Drag-select gutter on the panel's left edge — pointerdown inside
-  // the 16 px strip arms a bounding-box selection over doc rows. Any
-  // pointerdown elsewhere in the panel keeps routing through the
-  // existing SortableList click / drag pipeline.
+  // Drag-select gutter on the panel's left edge — a pointerdown in the
+  // 16 px strip arms a bounding-box selection over doc rows.
   installDragSelect(container, state);
 }
 
@@ -386,6 +381,13 @@ function dispatchRowAction(action, nodeId, opts) {
     handleConvertDocToProject(nodeId, storedState, refresh);
   } else if (action === "split-at-headings") {
     import("./split-at-headings-modal.js").then((m) => m.openSplitAtHeadingsModal(storedState, nodeId));
+  } else if (action === "toggle-numbering") {
+    const node = findNode(storedState.fileTree, nodeId);
+    if (node) {
+      node.showNumbers = !node.showNumbers;
+      storedState.saveFileTree();
+      storedState.emit("files-changed");
+    }
   } else if (action === "set-color") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node) {
@@ -639,6 +641,7 @@ function isItemActive(item, state) {
 function refreshList(state) {
   if (sortableInstance) {
     const sorted = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
+    numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);
   }
   renderFlaggedSection(state);
@@ -667,11 +670,8 @@ function scheduleTabRefresh(state) {
 
 export function refreshFilesPanel(state) {
   refreshList(state);
-  // Re-render the local-sync section as well so newly added/removed
-  // folders or watcher-pushed changes land in the panel. Prefer the
-  // cached reference, but fall back to a live DOM query so the refresh
-  // still works if the cached container got out of sync (e.g. the panel
-  // was rebuilt from outside createFilesPanel).
+  // Re-render the local-sync section too. Prefer the cached reference,
+  // falling back to a live DOM query if it got out of sync.
   const cached = getLocalSyncContainer();
   const root = cached?.isConnected ? cached : document.querySelector(".local-sync-root");
   if (root && storedState && storedHidePanel) {

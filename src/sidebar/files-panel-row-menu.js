@@ -132,6 +132,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   }
   if (nodeType === "project" && !isSpecial) {
     entries.push({ action: "convert-project-to-doc", label: "Convert to Doc" });
+    entries.push({ action: "toggle-numbering", label: item?.showNumbers ? "Hide numbers" : "Show numbers" });
   }
   if (isDoc && !inProject) {
     entries.push({ action: "convert-doc-to-project", label: "Convert to Project" });
