@@ -114,35 +114,25 @@
   overflow: hidden;
 }
 
-.longview-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 8px 12px 4px;
-  flex-shrink: 0;
-}
-
-.longview-refresh-btn {
-  background: none;
-  border: none;
-  color: var(--sidebar-fg);
-  cursor: pointer;
-  font-size: 16px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  opacity: 0.6;
-  transition: opacity 0.15s;
-}
-.longview-refresh-btn:hover {
-  opacity: 1;
-}
+/* Top "Options ▾" button now sits flush at the top of the panel —
+   the old .longview-header / .longview-refresh-btn block is gone
+   since the outline auto-refreshes on every doc edit. */
 
 /* ===== Toggle Filters (grid inside options) ===== */
 .longview-filters {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3px;
-  margin-bottom: 8px;
+}
+
+/* Visual grouping inside the options panel — one of these wraps the
+   filter buttons, one wraps the checkboxes, one wraps the sliders.
+   The 10 px gap between groups is owned by `.longview-options-panel`
+   below. */
+.longview-options-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .longview-filter-btn {
@@ -167,24 +157,13 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
-/* Section label inside options */
-.longview-section-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--sidebar-fg);
-  opacity: 0.5;
-  margin-bottom: 4px;
-  font-family: system-ui, sans-serif;
-}
-
 /* ===== Inline Options Panel ===== */
 .longview-options-toggle {
   background: none;
   border: none;
   color: var(--sidebar-fg);
   font-size: 13px;
-  padding: 2px 12px 6px;
+  padding: 10px 12px 6px;
   cursor: pointer;
   opacity: 0.5;
   transition: opacity 0.15s;
@@ -199,10 +178,11 @@
 }
 
 .longview-options-panel {
-  padding: 20px 12px;
+  padding: 12px 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* 10 px between groups (filter buttons / checkboxes / sliders) per design. */
+  gap: 10px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--panel-border);
   margin-bottom: 4px;

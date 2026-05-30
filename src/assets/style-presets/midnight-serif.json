@@ -1,0 +1,20 @@
+{
+  "name": "Midnight Serif",
+  "fontFamily": "EB Garamond",
+  "fontSize": 20,
+  "lineHeight": 1.55,
+  "lightThemeId": "ayuLight",
+  "darkThemeId": "dracula",
+  "darkColors": {
+    "bg": "#11131a",
+    "fg": "#d6d2c4",
+    "header": "#f0c060",
+    "links": "#8ab4f8",
+    "selection": "rgba(240,192,96,0.18)"
+  },
+  "suppressHeaderColor": false,
+  "underlineHeaders": false,
+  "headerScale": 1.2,
+  "cursorMode": "block",
+  "blockCursor": true
+}

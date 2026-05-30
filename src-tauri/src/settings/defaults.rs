@@ -220,6 +220,10 @@ pub fn default_comment_opacity() -> f64 {
 pub fn default_shortcut_zotero() -> String {
     "Mod+Shift+I".to_string()
 }
+pub fn default_shortcut_switch_desks() -> String {
+    // Literal Ctrl so it doesn't clash with Mod+Shift+D on macOS.
+    "Ctrl+Shift+D".to_string()
+}
 pub fn default_zotero_snapshot_render_height() -> u32 {
     1500
 }

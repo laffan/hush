@@ -65,17 +65,6 @@ export function createLongView(container, state) {
     const wrapper = document.createElement("div");
     wrapper.className = "longview-container";
 
-    // Header with refresh button only (no title)
-    const header = document.createElement("div");
-    header.className = "longview-header";
-    const refreshBtn = document.createElement("button");
-    refreshBtn.className = "longview-refresh-btn";
-    refreshBtn.textContent = "↻";
-    refreshBtn.title = "Refresh outline";
-    refreshBtn.addEventListener("click", render);
-    header.appendChild(refreshBtn);
-    wrapper.appendChild(header);
-
     // Options toggle button (collapsible)
     const optionsToggle = document.createElement("button");
     optionsToggle.className = "longview-options-toggle";
@@ -94,32 +83,30 @@ export function createLongView(container, state) {
     // Prevent interactions inside options from closing the panel
     optionsPanel.addEventListener("mousedown", (e) => e.stopPropagation());
 
-    // Visibility section label
-    const visLabel = document.createElement("div");
-    visLabel.className = "longview-section-label";
-    visLabel.textContent = "Visibility";
-    optionsPanel.appendChild(visLabel);
-
-    // Toggle buttons grid (squared off)
+    // Toggle buttons grid (squared off) — the "buttons" section
     const filters = document.createElement("div");
-    filters.className = "longview-filters";
+    filters.className = "longview-filters longview-options-group";
     filters.appendChild(makeToggle("Text", s.longviewShowParagraphs, "longviewShowParagraphs"));
     filters.appendChild(makeToggle("Numbers", s.longviewShowNumbers, "longviewShowNumbers"));
     filters.appendChild(makeToggle("Comments", s.longviewShowComments, "longviewShowComments"));
     filters.appendChild(makeToggle("Flags", s.longviewShowFlags, "longviewShowFlags"));
     optionsPanel.appendChild(filters);
 
-    // Appearance section
-    const appearLabel = document.createElement("div");
-    appearLabel.className = "longview-section-label";
-    appearLabel.textContent = "Appearance";
-    optionsPanel.appendChild(appearLabel);
-    optionsPanel.appendChild(makeCheckboxRow("Show flag type labels", s.longviewShowFlagTypes, "longviewShowFlagTypes"));
-    optionsPanel.appendChild(makeCheckboxRow("Wrap flag text", s.longviewWrapFlagText, "longviewWrapFlagText"));
-    optionsPanel.appendChild(makeSliderRow("Paragraph size", s.longviewBodyFontSize, 1, 8, 0.5, "longviewBodyFontSize", "px"));
-    optionsPanel.appendChild(makeSliderRow("Heading size", s.longviewHeadingFontSize, 8, 20, 1, "longviewHeadingFontSize", "px"));
-    optionsPanel.appendChild(makeSliderRow("Flag size", s.longviewFlagFontSize, 8, 18, 1, "longviewFlagFontSize", "px"));
-    optionsPanel.appendChild(makeSliderRow("Line gap", s.longviewLineGap, 0, 8, 0.5, "longviewLineGap", "px"));
+    // Checkbox area — flag type label + wrap toggle
+    const checkboxes = document.createElement("div");
+    checkboxes.className = "longview-options-group";
+    checkboxes.appendChild(makeCheckboxRow("Show flag type labels", s.longviewShowFlagTypes, "longviewShowFlagTypes"));
+    checkboxes.appendChild(makeCheckboxRow("Wrap flag text", s.longviewWrapFlagText, "longviewWrapFlagText"));
+    optionsPanel.appendChild(checkboxes);
+
+    // Slider area — sizes + gap
+    const sliders = document.createElement("div");
+    sliders.className = "longview-options-group";
+    sliders.appendChild(makeSliderRow("Paragraph size", s.longviewBodyFontSize, 1, 8, 0.5, "longviewBodyFontSize", "px"));
+    sliders.appendChild(makeSliderRow("Heading size", s.longviewHeadingFontSize, 8, 20, 1, "longviewHeadingFontSize", "px"));
+    sliders.appendChild(makeSliderRow("Flag size", s.longviewFlagFontSize, 8, 18, 1, "longviewFlagFontSize", "px"));
+    sliders.appendChild(makeSliderRow("Line gap", s.longviewLineGap, 0, 8, 0.5, "longviewLineGap", "px"));
+    optionsPanel.appendChild(sliders);
     wrapper.appendChild(optionsPanel);
 
     wrapper.appendChild(buildContent(s));
@@ -482,6 +469,17 @@ export function createLongView(container, state) {
   // Listen for content changes to auto-refresh
   const onFileOpened = () => { if (!container.classList.contains("hidden")) render(); };
   state.on("file-opened", onFileOpened);
+
+  // Debounced live refresh as the user types — the editor fires this
+  // event on every keystroke via `state.markDirty`. Throttled so heavy
+  // typing doesn't churn the outline on every input.
+  let contentTimer = null;
+  const onContentChanged = () => {
+    if (container.classList.contains("hidden")) return;
+    clearTimeout(contentTimer);
+    contentTimer = setTimeout(() => { renderContent(); }, 250);
+  };
+  state.on("doc-content-changed", onContentChanged);
 
   return { render, destroy, onFileOpened };
 }

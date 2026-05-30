@@ -65,6 +65,14 @@ export function dockPane(pane, edge) {
   }
   pane.el?.classList.add("docked", `docked-${edge}`);
   applyDockGeometry(pane);
+  // Shift the editor column (doc text, notebook canvas, etc.) to make
+  // room for the freshly-docked pane right away — without this the
+  // host content stays put until the user resizes the pane, which is
+  // what trips `applyDockGeometry` for the second time. Lazy-loaded to
+  // dodge the pane-dock ↔ pane-manager circular import.
+  import("./pane-manager.js").then(({ refreshPaneLayoutMetrics }) => {
+    refreshPaneLayoutMetrics();
+  });
 }
 
 export function undockPane(pane) {
@@ -91,6 +99,11 @@ export function undockPane(pane) {
     });
   }
   publishDockCssVars();
+  // Undock also needs to flow the column back to where it was — same
+  // story as `dockPane`. Lazy-loaded for the same circular-import reason.
+  import("./pane-manager.js").then(({ refreshPaneLayoutMetrics }) => {
+    refreshPaneLayoutMetrics();
+  });
 }
 
 /** Recompute and apply geometry for a docked pane. Call after a window

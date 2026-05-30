@@ -63,7 +63,7 @@ export function installWindowShortcuts(state, windowCommands) {
     // the user is inside the editor, a notebook text shape, a pane, or the
     // body. Check these up front before the text-field guard so they
     // aren't swallowed by focus state.
-    const alwaysAllowedKeys = ["shortcutToggleSidebar", "shortcutToggleOutline", "shortcutOpenFullscreen"];
+    const alwaysAllowedKeys = ["shortcutToggleSidebar", "shortcutToggleOutline", "shortcutOpenFullscreen", "shortcutSwitchDesks"];
     for (const key of alwaysAllowedKeys) {
       const sc = state.settings[key];
       if (sc && matchesDomEvent(e, sc)) {

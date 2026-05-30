@@ -421,6 +421,12 @@ function buildCommands(state) {
     { id: "recent-files-hide", label: "Hide Recent Files", icon: null, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !s.settings?.showRecentFiles,
       action: (s) => s.updateSettings({ showRecentFiles: false }) },
+    { id: "desk-switch", label: "Switch Desks", icon: icons.desk, shortcutKey: "shortcutSwitchDesks", ctx: "shared",
+      hiddenIf: (s) => (s.settings?.desks || []).length < 2,
+      action: async (s) => {
+        const m = await import("./sidebar/switch-desk-modal.js");
+        m.openSwitchDeskModal(s);
+      } },
     { id: "desk-new", label: "New desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       action: async (s) => {
         const id = await s.createDesk("Untitled desk");

@@ -1,0 +1,23 @@
+{
+  "name": "Typewriter Paper",
+  "fontFamily": "iA Writer Mono",
+  "fontSize": 18,
+  "lineHeight": 1.7,
+  "lightThemeId": "smoothy",
+  "darkThemeId": "dracula",
+  "lightColors": {
+    "bg": "#f5efe1",
+    "fg": "#2b2620",
+    "header": "#3a2f24"
+  },
+  "darkColors": {
+    "bg": "#1d1a17",
+    "fg": "#e7dfd1",
+    "header": "#c0a982"
+  },
+  "suppressHeaderColor": false,
+  "underlineHeaders": false,
+  "headerScale": 1.1,
+  "cursorMode": "underline",
+  "blockCursor": false
+}

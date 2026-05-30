@@ -7,7 +7,7 @@ import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
 import { bindFlagsTab } from "../longview/longview-settings.js";
 import { testZoteroConnection, downloadZoteroReferences, clearCache as clearZoteroCache } from "../zotero.js";
 import {
-  shortcutDefs, normalizeShortcut, isIOSSettings,
+  isIOSSettings,
   renderGeneralTab, renderEditorTab, renderShortcutsTab,
   renderDryTab, renderFlagsSettingsTab, renderSyncTab, renderPrivacyTab, renderZoteroTab,
   renderProofreadTab, bindProofreadTab,
@@ -75,6 +75,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
   if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Mod+Shift+L";
   if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";
+  if (!settings.shortcutSwitchDesks) settings.shortcutSwitchDesks = "Ctrl+Shift+D";
   // shortcutSave intentionally not defaulted — autosave handles writes
   // and Focus mode now owns Mod+S. Empty string keeps the binding unset.
   if (!settings.shortcutFindNext) settings.shortcutFindNext = "Ctrl+R";
@@ -513,18 +514,11 @@ function startShortcutRecording(display, settingKey) {
 
     const shortcut = parts.join("+");
 
-    // Check for conflict
-    const normalized = normalizeShortcut(shortcut);
-    for (const def of shortcutDefs) {
-      if (def.key === settingKey) continue;
-      if (settings[def.key] && normalizeShortcut(settings[def.key]) === normalized) {
-        // Conflict: swap — clear the conflicting one
-        settings[def.key] = "";
-        saveSetting(def.key, "");
-        break;
-      }
-    }
-
+    // Save the new binding as-is. If it collides with another shortcut,
+    // both stay in place and the Conflicts section at the top of the
+    // tab surfaces the clash so the user can pick which one to rebind.
+    // (Earlier behaviour silently cleared the loser, which made conflicts
+    // look like a successful overwrite.)
     cleanup();
     saveSetting(settingKey, shortcut);
     render();
