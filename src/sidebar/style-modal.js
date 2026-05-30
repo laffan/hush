@@ -644,7 +644,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     });
 
     bindShaderSection(backdrop, draft, scheduleSave);
-    bindStyleExtras(backdrop, draft, scheduleSave, render);
+    bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave);
 
     backdrop.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
       input.addEventListener("input", () => {

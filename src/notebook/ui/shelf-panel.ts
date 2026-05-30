@@ -170,7 +170,12 @@ export function createShelfPanel(
   function applyTheme() {
     const theme = t();
     panel.style.background = theme.uiBackground;
-    panel.style.border = `1px solid ${theme.gridColor}`;
+    // Match the files sidebar's subtle panel border (--panel-border) rather
+    // than the fainter canvas grid colour so the two read consistently.
+    const panelBorder = getComputedStyle(document.documentElement)
+      .getPropertyValue("--panel-border").trim()
+      || (theme.variant === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)");
+    panel.style.border = `1px solid ${panelBorder}`;
     panel.style.borderRight = "none";
     grip.style.background = "transparent";
     grip.style.borderColor = "transparent";

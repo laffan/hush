@@ -75,8 +75,11 @@ export function renderStyleExtras(draft) {
     </div>`;
 }
 
-/** Wire the background-image controls + Export button. */
-export function bindStyleExtras(backdrop, draft, scheduleSave, render) {
+/** Wire the background-image controls + Export button. `flushSave`
+ *  (optional) commits any pending debounced edit before exporting so the
+ *  download captures the latest draft — including an image picked moments
+ *  earlier whose save timer hasn't fired yet. */
+export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave) {
   const ensure = () => (draft.backgroundImage || (draft.backgroundImage = {}));
 
   const enableEl = backdrop.querySelector("#style-bg-enable");
@@ -117,13 +120,19 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render) {
   });
 
   const exportBtn = backdrop.querySelector(".style-modal-export");
-  if (exportBtn) exportBtn.addEventListener("click", () => downloadStyleJson(draft));
+  if (exportBtn) exportBtn.addEventListener("click", () => {
+    // Commit any in-flight debounced edit first so the export reflects the
+    // current draft (e.g. an image chosen a moment ago).
+    if (typeof flushSave === "function") flushSave();
+    downloadStyleJson(draft);
+  });
 }
 
 /** Serialize a style draft to a JSON file download (drops the id so an
- *  import always lands as a fresh style). */
+ *  import always lands as a fresh style). Deep-cloned so the nested
+ *  `backgroundImage` (with its data-URL `src`) is captured by value. */
 export function downloadStyleJson(draft) {
-  const style = { ...draft };
+  const style = JSON.parse(JSON.stringify(draft));
   delete style.id;
   delete style._migrated;
   const payload = { format: "hush-style", version: 1, style };
