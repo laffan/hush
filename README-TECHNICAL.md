@@ -57,8 +57,10 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── modes.js
 │   ├── formatting.js
 │   ├── sentence-navigator.js
-│   ├── find-replace.js                (thin entry point — emits `show-find-panel`)
+│   ├── find-replace.js                (entry points — Cmd+F quick find + Cmd+Shift+F panel; routes find-next/prev)
 │   ├── find-decorations.js            (StateField + StateEffect for editor match highlights)
+│   ├── quick-find.js                  (Cmd+F minimal current-doc find bar — auto-selects first hit, Cmd+G steps)
+│   ├── select-instance-highlight.js   (StateField painting low-opacity highlights on every Cmd+D instance)
 │   ├── file-drop.js
 │   ├── image-preview.js
 │   ├── image-paste.js
@@ -169,8 +171,9 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── styles-panel.js                (helpers only — appearance resolution + lockedStyle accessors)
 │   ├── styles-panel-shared.js         (escapers + theme color maps)
 │   ├── style-modal.js                 (two-column edit modal; supports host mode)
-│   ├── style-editor-modal.js          (three-column Edit Styles shell — rail + middle + preview)
+│   ├── style-editor-modal.js          (three-column Edit Styles shell — rail + middle + preview; Import styles…)
 │   ├── style-modal-shader.js          (Post Processing block + per-layer knobs)
+│   ├── style-modal-background.js      (Background Image block + JSON export of the current style)
 │   ├── custom-dropdown.js             (extracted dropdown widget used by style-modal)
 │   ├── versions-panel.js              (snapshot list + preview logic, embeds inside …)
 │   ├── versions-modal.js              (… the Versions modal wrapper)
@@ -494,7 +497,11 @@ Style data: `{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrid
 
 Live preview on hover / edit via `style-preview` / `style-preview-end` events. Color overrides take precedence over theme colors, applied directly to CSS variables.
 
-The two-column settings + preview body of the edit modal lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save / Cancel buttons; closing the modal flushes the timer. The Edit Styles shell calls into it as `openStyleModal(state, target, onDone, { host })` so the body mounts inside the rail's pane instead of spawning its own backdrop; the `host` option suppresses the inner backdrop / close button and switches `.style-modal` to a fill-its-host layout (`width: 100%; height: 100%; border-radius: 0`). The Post Processing block lives in `style-modal-shader.js` and the generic dropdown widget in `custom-dropdown.js` to keep `style-modal.js` under the line limit.
+The two-column settings + preview body of the edit modal lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save / Cancel buttons; closing the modal flushes the timer. The Edit Styles shell calls into it as `openStyleModal(state, target, onDone, { host })` so the body mounts inside the rail's pane instead of spawning its own backdrop; the `host` option suppresses the inner backdrop / close button and switches `.style-modal` to a fill-its-host layout (`width: 100%; height: 100%; border-radius: 0`). The Post Processing block lives in `style-modal-shader.js`, the Background Image block + JSON export in `style-modal-background.js`, and the generic dropdown widget in `custom-dropdown.js`, all to keep `style-modal.js` under the line limit.
+
+**Background Image.** `Style.backgroundImage` is `{ enabled, src, fit, repeat, blend, opacity }` where `src` is a data-URL (so it rides Dropbox sync and JSON export without a separate asset). The Rust side stores it opaquely as `Style.background_image: Option<serde_json::Value>` — no typed sub-struct, so the shape can evolve without a schema change and serde never drops a field. `style-application.js::applyStyleBackgroundImage` publishes `--style-bg-image` / `--style-bg-size` / `--style-bg-repeat` / `--style-bg-blend` / `--style-bg-opacity`, which `.cm-editor::before` reads to paint the image behind the editor text (the scroller sits at `z-index: 1` above it). On the notebook canvas the same config rides `notebook-bridge` → `notes-canvas` RenderState → `renderer.ts`, where `drawBackgroundImage` (in `renderer-background.ts`, with a module-level image cache + redraw-on-load) draws it in screen space between the solid background fill and the dot/line grid.
+
+**JSON import / export.** `style-editor-modal.js` adds an **Import styles…** file picker under the rail that accepts a single style, a bare array, or a `{ styles: [] }` payload — each entry lands as a fresh style (new id, name auto-suffixed on collision). `style-modal-background.js::downloadStyleJson` exports the current style: it flushes the pending debounced save first (so an image picked moments earlier is committed), deep-clones the draft (capturing the nested `backgroundImage.src` by value), strips `id` / `_migrated`, and downloads a `{ format: "hush-style", version: 1, style }` blob.
 
 ### Post Processing / Shader Layer (`shader-layer/`)
 
@@ -565,12 +572,16 @@ Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in fou
 
 **Cmd-held quick controls (`cmd-held-sliders.js`).** A separate module mounts a caret + horizontal pill at the bottom-centre of the viewport that's gated to Zen (`body.zen-focus-active`) and revealed by `body.cmd-held`. The pill carries three groups — Dim opacity (writes `focusModeOpacity`), Font size (writes `zenFocusFontSize`), and Window (writes `zenFocusWindow`, rendered as 1 / 3 / 5 / 7 chips with an active-state circle outline). Every write goes through `state.updateSettings`, so the in-editor pill and the Settings window are reading and writing the same keys — no parallel state to keep in sync. The state's own `settings-changed` listener reflects external updates back into the pill so opening Settings during Zen and tweaking values there updates the pill in lockstep.
 
-### Find & Replace (`editor/find-replace.js`, `sidebar/find-panel.js`, `sidebar/find-panel-search.js`, `sidebar/find-panel-sources.js`, `editor/find-decorations.js`)
+### Find & Replace (`editor/find-replace.js`, `editor/quick-find.js`, `sidebar/find-panel.js`, `sidebar/find-panel-search.js`, `sidebar/find-panel-sources.js`, `editor/find-decorations.js`)
 
-The panel is split into three files to stay under the 700-line cap: `find-panel.js` owns the DOM, event wiring, and replace dispatch; `find-panel-search.js` carries the pure regex / match / snippet helpers (the 3-words-before / 8-words-after windowing); `find-panel-sources.js` walks the active desk's tree, loads file content (live editor / canvas buffers in front of Tauri `load_file`), and adapts the search helpers to either a doc body or a notebook's text shapes.
+Two surfaces share the decoration layer. `find-replace.js` is the dispatch hub: `openQuickFindBar` (Cmd+F) opens the minimal current-document bar, `openFindReplace` (Cmd+Shift+F) emits `show-find-panel`, and `findNext` / `findPrev` (Cmd+G / Cmd+Shift+G) prefer the quick-find bar when it's open and otherwise drive the sidebar panel.
+
+**Quick find** (`editor/quick-find.js`) is a tiny floating input anchored to the focused editor's top-right. It scans the current doc for the query, reuses the shared `findHighlightField` decorations (`cm-find-match` / `cm-find-match-current`) rather than a second StateField, and on each keystroke auto-selects the first match at or after the cursor. `Cmd+G` / `Cmd+Shift+G` (and `Enter` / `Shift+Enter`) step with wrap; the input's own keydown handler catches `Cmd+G` since the editor keymap won't see a keystroke aimed at the bar. A close `×` button or `Esc` tears it down and clears the highlights.
+
+The cross-file panel is split into three files to stay under the 700-line cap: `find-panel.js` owns the DOM, event wiring, and replace dispatch; `find-panel-search.js` carries the pure regex / match / snippet helpers (the 3-words-before / 8-words-after windowing); `find-panel-sources.js` walks the active desk's tree, loads file content (live editor / canvas buffers in front of Tauri `load_file`), and adapts the search helpers to either a doc body or a notebook's text shapes.
 
 
-`Cmd+F` mounts the **Find panel** into the left sidebar, replacing the file list. The panel starts with the current document / notebook (rendered first, separated by a divider), followed by every other document and notebook in the active desk that has hits. Each file section is collapsible (fold arrow at the left of the header) and shows the filename above its tree path (`Folder › Project`, or the file kind for top-level entries). Each result row is a two-line contextual snippet trimmed to **3 words before** and **8 words after** the match (`takeLastWords` / `takeFirstWords` in `find-panel.js`, preserving the whitespace flush against the highlight); the hit is `<mark>`-ed and clicking jumps to the file and scrolls / pans to the match.
+`Cmd+Shift+F` mounts the **Find panel** into the left sidebar, replacing the file list. The panel starts with the current document / notebook (rendered first, separated by a divider), followed by every other document and notebook in the active desk that has hits. Each file section is collapsible (fold arrow at the left of the header) and shows the filename above its tree path (`Folder › Project`, or the file kind for top-level entries). Each result row is a two-line contextual snippet trimmed to **3 words before** and **8 words after** the match (`takeLastWords` / `takeFirstWords` in `find-panel.js`, preserving the whitespace flush against the highlight); the hit is `<mark>`-ed and clicking jumps to the file and scrolls / pans to the match.
 
 Notebook search is shape-scoped: `decodeNotebookContent` parses the on-disk JSON envelope, and each text-shape body is matched independently. Clicking a notebook result mounts the notebook (if it isn't already open) and calls `canvas.state.focusShape(shapeId)` once the canvas has hydrated (`waitForTargetReady` polls). Live shapes are pulled from the canvas instance for the open notebook so unsaved edits show in results. Doc replace flows through the editor / Tauri `save_file`; notebook replace is intentionally a no-op for v1 (shape-text + canvas re-serialise is left to a separate pass).
 
@@ -578,7 +589,9 @@ Toolbar: close `×`, a twirl arrow (▶ / ▼) that discloses the replace sectio
 
 Matches in the active editor render via a `StateField` + `StateEffect` pair (`editor/find-decorations.js`): `cm-find-match` paints every hit, `cm-find-match-current` lifts the active one. The Find panel pushes a fresh decoration set whenever the query, toggles, or current match change, and clears them on close.
 
-Selection seeding: if the editor (or the OS-level selection inside a notebook / stack) has a single-line selection when `Cmd+F` fires, it pre-populates the search input. `Enter` / `Shift+Enter` step through matches across all files; `Cmd+G` / `Cmd+Shift+G` do the same from anywhere.
+Selection seeding: if the editor (or the OS-level selection inside a notebook / stack) has a single-line selection when either find shortcut fires, it pre-populates the search input. `Enter` / `Shift+Enter` step through matches across all files; `Cmd+G` / `Cmd+Shift+G` do the same from anywhere.
+
+**Select-instance highlighting** (`editor/select-instance-highlight.js`). `Cmd+D` / `Cmd+Shift+D` (`selectNextInstance` / `selectPreviousInstance` in `editor/commands.js`) add the next / previous occurrence of the current selection to a multi-cursor. The same dispatch fires a `setInstanceHighlightsEffect` carrying every occurrence (`findAllOccurrences`), which a dedicated `instanceHighlightField` paints with the low-opacity `cm-instance-match` class. The field drops its decorations on any selection change it didn't author, so the highlights clear the moment the user moves on. It's registered in both `createBaseExtensions()` (panes / stack columns) and the main `editor.js` extension array.
 
 ### Sentence Navigator (`editor/sentence-navigator.js`)
 
