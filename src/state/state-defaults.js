@@ -79,7 +79,7 @@ export function createDefaultSettings() {
     activeDeskId: null,
     // Shortcuts — General
     shortcutOpenEditor: "CmdOrCtrl+Shift+H",
-    shortcutOpenFullscreen: "CmdOrCtrl+Shift+F",
+    shortcutOpenFullscreen: "CmdOrCtrl+Alt+F",
     shortcutTogglePrivate: "CmdOrCtrl+Shift+P",
     shortcutToggleSidebar: "CmdOrCtrl+\\",
     shortcutToggleOutline: "CmdOrCtrl+Shift+\\",
@@ -91,7 +91,8 @@ export function createDefaultSettings() {
     shortcutZenFocus: "Mod+Shift+S",
     zenFocusFontSize: 30,
     wordCountVisible: false,
-    shortcutFind: "Mod+F",
+    shortcutFind: "Mod+Shift+F",
+    shortcutQuickFind: "Mod+F",
 
     // Shortcuts — Editing (sentence navigation)
     shortcutSelectSentence: "Mod+L",
@@ -116,11 +117,13 @@ export function createDefaultSettings() {
 
     // Shortcuts — Additional editing actions
     shortcutSelectParagraph: "Mod+Shift+L",
+    shortcutSelectParagraphUp: "Mod+Shift+ArrowUp",
+    shortcutSelectParagraphDown: "Mod+Shift+ArrowDown",
     // Save is autosave-driven; the explicit shortcut is intentionally
     // unbound by default so it doesn't compete with Focus mode (Mod+S).
     shortcutSave: "",
-    shortcutFindNext: "Ctrl+R",
-    shortcutFindPrev: "Ctrl+Shift+R",
+    shortcutFindNext: "Mod+G",
+    shortcutFindPrev: "Mod+Shift+G",
     shortcutJoinLines: "Mod+J",
     shortcutJumpNextParagraph: "Mod+ArrowDown",
     shortcutJumpPrevParagraph: "Mod+ArrowUp",

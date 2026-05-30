@@ -2,7 +2,7 @@
  * Sortable list drag & drop — pointer event handlers, ghost element, drop targets
  */
 
-import { parsePath, pathsEqual, isAncestorPath, getChildrenAtPath, getItemAtPath } from "./utils.js";
+import { parsePath, pathsEqual, isAncestorPath, getChildrenAtPath, getItemAtPath, removeItemById } from "./utils.js";
 
 export function initDragHandlers(instance) {
   instance._onPointerDown = onPointerDown.bind(instance);
@@ -420,6 +420,27 @@ function finishDrag(pointerEvent) {
   }
   const bounded = Math.max(0, Math.min(adjustedIndex, destination.length));
   destination.splice(bounded, 0, moved);
+
+  // Multi-drag: when the dragged row is part of a multi-selection, the
+  // config tells us the *other* selected ids. Pull each out of wherever it
+  // sits and drop it right after the primary item so the whole batch moves
+  // together (Finder-style) instead of one row at a time.
+  const extraIds = this.config.getDraggedSiblings
+    ? (this.config.getDraggedSiblings(moved) || [])
+    : [];
+  if (extraIds.length) {
+    const movedId = getId(moved);
+    const removedExtras = [];
+    for (const exId of extraIds) {
+      if (exId === movedId) continue;
+      const r = removeItemById(this.state.items, exId, getChildren, getId);
+      if (r) removedExtras.push(r);
+    }
+    if (removedExtras.length) {
+      const movedIdx = destination.indexOf(moved);
+      destination.splice(movedIdx + 1, 0, ...removedExtras);
+    }
+  }
 
   // Ensure the drop target container is expanded so the dropped item is visible
   if (destContainerId) {

@@ -217,18 +217,21 @@ export function normalizeProjectChildren(nodes) {
   for (const n of nodes) {
     if (!n || !Array.isArray(n.children)) continue;
     if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
-      const docs = [], supplementary = [], rest = [];
+      // Flow docs are hoisted to the top so the joined editor buffer reads
+      // contiguously. Everything else (notebooks, stacks, `useAsNote`
+      // docs, and nested projects / folders) stays in the user's custom
+      // drag order below — nested projects must NOT be force-sorted to the
+      // very bottom past the supplementary block.
+      const top = [], below = [];
       for (const c of n.children) {
-        // Docs marked `useAsNote: true` sort with notebooks (under the
-        // joined buffer at 50 % opacity) so a project can carry both
-        // the doc's main flow and supplementary notes side by side.
-        // Stacks are also supplementary material — they sit below the
-        // docs alongside notebooks.
-        if (c.type === "document" && !c.useAsNote) docs.push(c);
-        else if (c.type === "notebook" || c.type === "stack" || (c.type === "document" && c.useAsNote)) supplementary.push(c);
-        else rest.push(c);
+        // Only notebooks, stacks, and `useAsNote` docs drop to the
+        // supplementary block. Flow docs AND nested projects / folders
+        // keep their custom drag order at the top so a nested project
+        // stays wherever the user placed it.
+        if (c.type === "notebook" || c.type === "stack" || (c.type === "document" && c.useAsNote)) below.push(c);
+        else top.push(c);
       }
-      n.children = [...docs, ...supplementary, ...rest];
+      n.children = [...top, ...below];
     }
     normalizeProjectChildren(n.children);
   }

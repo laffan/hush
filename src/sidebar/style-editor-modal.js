@@ -32,6 +32,7 @@ export function openStyleEditorModal(state) {
           <div class="style-editor-rail-title">Styles</div>
           <div class="style-editor-rail-list"></div>
           <button class="style-editor-rail-new" type="button">+ New Style</button>
+          <button class="style-editor-rail-import" type="button">Import styles…</button>
           <div class="style-editor-rail-appearance" role="group" aria-label="Appearance"></div>
         </div>
         <div class="style-editor-pane"></div>
@@ -178,6 +179,51 @@ export function openStyleEditorModal(state) {
     renderRail();
     mountEditor();
   });
+
+  // === Import styles from JSON ===
+  const importInput = document.createElement("input");
+  importInput.type = "file";
+  importInput.accept = "application/json,.json";
+  importInput.style.display = "none";
+  backdrop.appendChild(importInput);
+
+  function importStylesFromText(text) {
+    let data;
+    try { data = JSON.parse(text); } catch { window.alert("Import failed: not valid JSON."); return; }
+    let incoming = [];
+    if (Array.isArray(data)) incoming = data;
+    else if (data && Array.isArray(data.styles)) incoming = data.styles;
+    else if (data && data.style && typeof data.style === "object") incoming = [data.style];
+    else if (data && typeof data === "object") incoming = [data];
+    incoming = incoming.filter((s) => s && typeof s === "object");
+    if (!incoming.length) { window.alert("Import failed: no styles found in file."); return; }
+
+    const existing = state.settings.styles || [];
+    const names = new Set(existing.map((s) => s.name));
+    const added = [];
+    for (const s of incoming) {
+      const copy = { ...s, id: "style_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7) };
+      let nm = copy.name || "Imported Style";
+      let i = 2;
+      while (names.has(nm)) nm = `${copy.name || "Imported Style"} (${i++})`;
+      copy.name = nm;
+      names.add(nm);
+      added.push(copy);
+    }
+    state.updateSettings({ styles: [...existing, ...added] });
+    selectedId = added[added.length - 1].id;
+    renderRail();
+    mountEditor();
+  }
+
+  importInput.addEventListener("change", () => {
+    const file = importInput.files && importInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { importStylesFromText(String(reader.result || "")); importInput.value = ""; };
+    reader.readAsText(file);
+  });
+  backdrop.querySelector(".style-editor-rail-import").addEventListener("click", () => importInput.click());
 
   renderRail();
   mountEditor();

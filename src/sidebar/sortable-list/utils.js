@@ -62,6 +62,21 @@ export function escapeForAttribute(value) {
   return String(value).replace(/(["'\\\[\].#:])/g, "\\$1");
 }
 
+/** Remove the first item whose id === `id` from anywhere in the nested
+ *  structure, returning the removed item (or null). Used by multi-drag to
+ *  gather the companion-selected items before re-inserting them. */
+export function removeItemById(items, id, getChildren, getId) {
+  for (let i = 0; i < items.length; i++) {
+    if (getId(items[i]) === id) return items.splice(i, 1)[0];
+    const children = getChildren(items[i]);
+    if (children && children.length) {
+      const removed = removeItemById(children, id, getChildren, getId);
+      if (removed) return removed;
+    }
+  }
+  return null;
+}
+
 export function getAllVisiblePaths(items, getChildren, getId, collapsedIds) {
   const paths = [];
   const collect = (list, path) => {

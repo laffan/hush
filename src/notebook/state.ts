@@ -228,6 +228,10 @@ export class DrawingState extends EventTarget {
    *  background instead of the resolved theme's stock canvasBackground.
    *  Empty string = no override (use the theme's own background). */
   canvasBackgroundOverride = "";
+  /** Active Hush style's background-image config ({ enabled, src, fit,
+   *  repeat, blend, opacity }) or null. Drawn beneath the dot/line grid
+   *  pattern on the canvas (see renderer.ts / renderer-background.ts). */
+  backgroundImage: any = null;
   /** When the active Hush style has an `fg` override, this carries that
    *  hex into the canvas so default/auto-coloured text shapes and the
    *  toolbar icons track the style's text colour instead of the resolved
@@ -266,12 +270,17 @@ export class DrawingState extends EventTarget {
     // canvas text, headings, links, and toolbar icons match the editor.
     // Only allocate a copy when an override is present (the getter runs
     // every frame).
-    if (this.foregroundOverride || this.headingColorOverride || this.linkColorOverride) {
+    if (this.foregroundOverride || this.headingColorOverride || this.linkColorOverride || this.canvasBackgroundOverride) {
+      const bg = this.canvasBackgroundOverride;
       return {
         ...base,
         foreground: this.foregroundOverride || base.foreground,
         headingColor: this.headingColorOverride || base.headingColor,
         linkColor: this.linkColorOverride || base.linkColor,
+        // The shelf, toolbar, and floating popups read `uiBackground`; let
+        // a style's background override paint them too (they otherwise
+        // stay stock white/dark over a recoloured canvas).
+        ...(bg ? { uiBackground: bg, background: bg, canvasBackground: bg } : {}),
       };
     }
     return base;

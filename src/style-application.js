@@ -61,6 +61,25 @@ export function applyDeskGlobalStyle(state) {
   state.emit("style-changed");
 }
 
+/** Publish (or clear) the decorative background-image CSS variables read
+ *  by the `.cm-editor::before` layer. `cfg` is a style's `backgroundImage`
+ *  object or null. */
+function applyStyleBackgroundImage(cfg) {
+  const root = document.documentElement.style;
+  if (cfg && cfg.enabled && cfg.src) {
+    root.setProperty("--style-bg-image", `url("${cfg.src}")`);
+    root.setProperty("--style-bg-size", cfg.fit || "cover");
+    root.setProperty("--style-bg-repeat", cfg.repeat || "no-repeat");
+    root.setProperty("--style-bg-blend", cfg.blend || "normal");
+    root.setProperty("--style-bg-opacity", String(cfg.opacity != null ? cfg.opacity : 1));
+    document.body.classList.add("style-bg-image-active");
+  } else {
+    root.removeProperty("--style-bg-image");
+    root.setProperty("--style-bg-opacity", "0");
+    document.body.classList.remove("style-bg-image-active");
+  }
+}
+
 export function applyActiveStyle(state) {
   const styleId = state.settings.activeStyleId;
   if (!styleId) {
@@ -141,12 +160,14 @@ export function applyActiveStyle(state) {
     }
     // Default style's shader lives at the top level of AppSettings.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
+    applyStyleBackgroundImage(null);
     return;
   }
 
   const style = (state.settings.styles || []).find(s => s.id === styleId);
   if (!style) return;
   syncShaderLayerForStyle(style);
+  applyStyleBackgroundImage(style.backgroundImage);
 
   // Apply style overrides
   document.body.classList.add("style-active");

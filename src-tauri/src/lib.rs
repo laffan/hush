@@ -90,6 +90,10 @@ pub struct TreeNode {
     // cascade; absent on most nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bg_color: Option<String>,
+    // Project-only — when true, the sidebar prefixes child rows with
+    // outline numbers (decimals for nested projects).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub show_numbers: bool,
 }
 
 pub fn get_data_dir() -> PathBuf {

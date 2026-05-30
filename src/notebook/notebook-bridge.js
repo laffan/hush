@@ -281,10 +281,12 @@ export function computeNotebookSettings(state, lockedStyleId) {
   // handle that branch explicitly.
   let canvasBackgroundOverride = "";
   let bgColors = null;
+  let styleBackgroundImage = null;
   if (s.activeStyleId && s.styles) {
     const style = s.styles.find((st) => st.id === s.activeStyleId);
     if (style) {
       bgColors = appearance === "dark" ? style.darkColors : style.lightColors;
+      styleBackgroundImage = style.backgroundImage || null;
     }
   } else {
     bgColors = appearance === "dark" ? s.defaultDarkColors : s.defaultLightColors;
@@ -308,6 +310,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
     fontFamily,
     fontSize: s.notebookFontSize || 16,
     canvasBackgroundOverride,
+    backgroundImage: styleBackgroundImage,
     foregroundOverride,
     headingColorOverride,
     linkColorOverride,

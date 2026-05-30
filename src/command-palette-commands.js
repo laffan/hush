@@ -24,7 +24,7 @@ import { deleteTreeNode } from "./state/state-tree.js";
 import {
   getActivePaneId, fitActivePaneToGap, createPane,
   replacePaneContent, getPanesForContext, clearPanesForContext,
-  setActivePanePinned,
+  setActivePanePinned, closePane,
 } from "./pane/pane-manager.js";
 import { panes } from "./pane/pane-state.js";
 import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
@@ -374,6 +374,7 @@ function buildCommands(state) {
     { id: "pane-gutter-off", label: "Stop using Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !isActivePaneAGutter(), action: () => stopActivePaneAsGutter() },
     { id: "pane-pin", label: "Pin pane across documents", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !!panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(true) },
     { id: "pane-unpin", label: "Unpin pane", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(false) },
+    { id: "pane-close-current", label: "Close current pane", icon: icons.trash, shortcutKey: null, ctx: "pane", action: () => { const id = getActivePaneId(); if (id) closePane(id); } },
 
     // === PANE SET (current document's panes) ===
     { id: "panes-hide", label: "Hide panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
@@ -382,7 +383,7 @@ function buildCommands(state) {
     { id: "panes-show", label: "Show panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !activeContextHasPanes(s) || !arePanesHiddenForActive(s),
       action: (s) => s.showPanesForActive() },
-    { id: "panes-clear", label: "Clear panes", icon: icons.trash, shortcutKey: null, ctx: "shared",
+    { id: "panes-clear", label: "Close all panes", icon: icons.trash, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !activeContextHasPanes(s),
       action: (s) => { const ctx = activeContextId(s); if (ctx) clearPanesForContext(ctx); } },
     { id: "panes-copy-to", label: "Copy panes to Document", icon: icons.pane, shortcutKey: null, ctx: "shared",

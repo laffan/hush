@@ -24,6 +24,7 @@ import { updateWordCountDisplay, scheduleWordCountRecompute } from "./plugins/wo
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
 import { headingIndentPlugin } from "./heading-indent.js";
 import { findHighlightField } from "./find-decorations.js";
+import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
@@ -275,6 +276,7 @@ export function createEditor(container, state) {
       createGoogleDocsPasteExtension(),
       headingIndentPlugin,
       findHighlightField,
+      instanceHighlightField,
       stickyHeadersPlugin,
       multiLineCommentPlugin,
       commentAfterPlugin,

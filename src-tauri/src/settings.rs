@@ -137,20 +137,13 @@ pub struct AppSettings {
     pub sidebar_pinned: bool,
 
     // Shortcuts — General
-    #[serde(default = "default_shortcut_open")]
-    pub shortcut_open_editor: String,
-    #[serde(default = "default_shortcut_fullscreen")]
-    pub shortcut_open_fullscreen: String,
-    #[serde(default = "default_shortcut_private")]
-    pub shortcut_toggle_private: String,
-    #[serde(default = "default_shortcut_toggle_sidebar")]
-    pub shortcut_toggle_sidebar: String,
-    #[serde(default = "default_shortcut_toggle_outline")]
-    pub shortcut_toggle_outline: String,
-    #[serde(default = "default_shortcut_typewriter")]
-    pub shortcut_typewriter: String,
-    #[serde(default = "default_shortcut_new_file")]
-    pub shortcut_new_file: String,
+    #[serde(default = "default_shortcut_open")] pub shortcut_open_editor: String,
+    #[serde(default = "default_shortcut_fullscreen")] pub shortcut_open_fullscreen: String,
+    #[serde(default = "default_shortcut_private")] pub shortcut_toggle_private: String,
+    #[serde(default = "default_shortcut_toggle_sidebar")] pub shortcut_toggle_sidebar: String,
+    #[serde(default = "default_shortcut_toggle_outline")] pub shortcut_toggle_outline: String,
+    #[serde(default = "default_shortcut_typewriter")] pub shortcut_typewriter: String,
+    #[serde(default = "default_shortcut_new_file")] pub shortcut_new_file: String,
     #[serde(default = "default_shortcut_toggle_dry")]
     pub shortcut_toggle_dry: String,
     #[serde(default = "default_shortcut_toggle_focus")]
@@ -165,6 +158,7 @@ pub struct AppSettings {
     pub word_count_visible: bool,
     #[serde(default = "default_shortcut_find")]
     pub shortcut_find: String,
+    #[serde(default = "default_shortcut_quick_find")] pub shortcut_quick_find: String,
     #[serde(default = "default_shortcut_find_all")]
     pub shortcut_find_all: String,
 
@@ -322,6 +316,8 @@ pub struct AppSettings {
     pub shortcut_strikethrough: String,
     #[serde(default = "default_shortcut_select_paragraph")]
     pub shortcut_select_paragraph: String,
+    #[serde(default = "default_shortcut_select_paragraph_up")] pub shortcut_select_paragraph_up: String,
+    #[serde(default = "default_shortcut_select_paragraph_down")] pub shortcut_select_paragraph_down: String,
     #[serde(default = "default_shortcut_save")]
     pub shortcut_save: String,
     #[serde(default = "default_shortcut_find_next")]
@@ -555,6 +551,7 @@ impl Default for AppSettings {
             zen_focus_font_size: default_zen_focus_font_size(),
             word_count_visible: false,
             shortcut_find: default_shortcut_find(),
+            shortcut_quick_find: default_shortcut_quick_find(),
             shortcut_find_all: default_shortcut_find_all(),
             shortcut_select_sentence: default_shortcut_select_sentence(),
             shortcut_reduce_sentence: default_shortcut_reduce_sentence(),
@@ -614,6 +611,8 @@ impl Default for AppSettings {
             zotero_snapshot_quality: default_zotero_snapshot_quality(),
             shortcut_strikethrough: default_shortcut_strikethrough(),
             shortcut_select_paragraph: default_shortcut_select_paragraph(),
+            shortcut_select_paragraph_up: default_shortcut_select_paragraph_up(),
+            shortcut_select_paragraph_down: default_shortcut_select_paragraph_down(),
             shortcut_save: default_shortcut_save(),
             shortcut_find_next: default_shortcut_find_next(),
             shortcut_find_prev: default_shortcut_find_prev(),

@@ -136,11 +136,12 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
   }
 
   function onUp(e) {
-    const deleteSource = shiftHeld || e.shiftKey;
+    // iPad has no Shift modifier → default a text drag to move, not copy.
+    const deleteSource = shiftHeld || e.shiftKey || document.documentElement.classList.contains("ios");
     // Resolve the drop target BEFORE cleanup, since cleanup removes the
     // body.text-drag-active class that re-enables pointer-events on
-    // inactive panes. Without this order elementFromPoint would return
-    // something behind the pane and the drop would silently no-op.
+    // inactive panes — otherwise elementFromPoint returns something behind
+    // the pane and the drop silently no-ops.
     const target = moved ? findDropTarget(e.clientX, e.clientY) : null;
     cleanup();
     if (!target) { if (onDrop) onDrop(false); return; }

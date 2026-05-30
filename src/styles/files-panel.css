@@ -192,6 +192,13 @@
   min-width: 0;
 }
 
+/* Outline number prefix on project child rows (Show numbers). */
+.tree-item-number {
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  margin-right: 1px;
+}
+
 /* Per-window numeral badge — surfaces only when more than one Hush
    window is open. Background = current style's text colour, text =
    theme background, so the chip inverts cleanly across every theme. */

@@ -19,13 +19,14 @@
 
 import { EditorSelection } from "@codemirror/state";
 import { openSettingsWindow } from "../settings/settings-ui.js";
-import { openFindReplace, findNext, findPrev } from "./find-replace.js";
+import { openFindReplace, openQuickFindBar, findNext, findPrev } from "./find-replace.js";
 import { toggleCommandPalette } from "../command-palette.js";
 import {
   selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence,
   shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack,
   deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence,
   jumpToPrevParagraph, jumpToNextParagraph, joinLines, selectParagraph,
+  selectToParagraphAbove, selectToParagraphBelow,
 } from "./sentence-navigator.js";
 import {
   toggleBold, toggleItalic, toggleHighlight, toggleComment, toggleStrikethrough,
@@ -34,6 +35,7 @@ import { insertFootnote } from "./plugins/footnotes.js";
 import { openZoteroModal } from "../zotero.js";
 import { toggleWordCount } from "./plugins/word-count.js";
 import { getActiveModeContext } from "../state/mode-context.js";
+import { setInstanceHighlightsEffect, findAllOccurrences } from "./select-instance-highlight.js";
 
 function toggleModeOnContext(state, modeName) {
   const ctx = getActiveModeContext(state);
@@ -59,7 +61,11 @@ function selectNextInstance(view) {
     while (start > 0 && /\w/.test(text[start - 1])) start--;
     while (end < text.length && /\w/.test(text[end])) end++;
     if (start !== end) {
-      view.dispatch({ selection: { anchor: line.from + start, head: line.from + end } });
+      const word = text.slice(start, end);
+      view.dispatch({
+        selection: { anchor: line.from + start, head: line.from + end },
+        effects: setInstanceHighlightsEffect.of(findAllOccurrences(view.state.doc.toString(), word)),
+      });
     }
     return true;
   }
@@ -79,6 +85,7 @@ function selectNextInstance(view) {
     ranges.push(EditorSelection.range(nextIdx, nextIdx + selected.length));
     view.dispatch({
       selection: EditorSelection.create(ranges, ranges.length - 1),
+      effects: setInstanceHighlightsEffect.of(findAllOccurrences(docText, selected)),
     });
   }
   return true;
@@ -104,6 +111,7 @@ function selectPreviousInstance(view) {
     ranges.unshift(EditorSelection.range(prevIdx, prevIdx + selected.length));
     view.dispatch({
       selection: EditorSelection.create(ranges, 0),
+      effects: setInstanceHighlightsEffect.of(findAllOccurrences(docText, selected)),
     });
   }
   return true;
@@ -130,6 +138,9 @@ export function buildEditorCommands() {
       openFindReplace(view || (state.editor ? state.editor.view : null), state);
       return true;
     },
+    // Minimal current-document quick find (Cmd+F). Needs a focused editor;
+    // without one, fall through so the keystroke isn't swallowed.
+    shortcutQuickFind: (state, view) => openQuickFindBar(view, state),
     shortcutOpenFullscreen: (state) => { state.toggleFullscreen(); return true; },
     shortcutTogglePrivate: (state) => { state.togglePrivate(); return true; },
     shortcutToggleSidebar: (state) => { state.emit("toggle-left-panel"); return true; },
@@ -158,6 +169,8 @@ export function buildEditorCommands() {
     // ===== Editing =====
     shortcutSelectSentence: (_state, view) => (view ? selectSentence(view) : false),
     shortcutSelectParagraph: (_state, view) => (view ? selectParagraph(view) : false),
+    shortcutSelectParagraphUp: (_state, view) => (view ? selectToParagraphAbove(view) : false),
+    shortcutSelectParagraphDown: (_state, view) => (view ? selectToParagraphBelow(view) : false),
     shortcutReduceSentence: (_state, view) => (view ? reduceSentenceSelection(view) : false),
     shortcutSelectNext: (_state, view) => (view ? selectNextInstance(view) : false),
     shortcutSelectPrevious: (_state, view) => (view ? selectPreviousInstance(view) : false),

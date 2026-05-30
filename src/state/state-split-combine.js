@@ -162,38 +162,60 @@ export async function splitDocAtHeadings(state, nodeId, opts = {}) {
   });
   if (sections.length === 0) return;
 
+  // If the source doc already lives inside a project, a split can't produce
+  // a nested project (projects don't nest) — instead the sections land as
+  // sibling docs in that same project, directly below the source (or in
+  // its place when "Delete original" is checked).
+  const parent = findParentOfNode(state.fileTree, nodeId);
+  const parentIsProject = !!parent && parent.type === "project"
+    && parent.id !== "__inbox__" && !parent.id?.startsWith("__inbox__:");
+
   // Build the child docs. `uniqueChildName` keeps sibling names distinct
-  // within the new project (two sections sharing a heading get (2), (3)).
-  const projectNode = {
-    id: crypto.randomUUID(),
-    type: "project",
-    name: node.name,
-    children: [],
-    flagged: node.flagged,
-    ...(node.bgColor ? { bgColor: node.bgColor } : {}),
-  };
+  // (two sections sharing a heading get (2), (3)) within whichever
+  // container they're about to join.
+  const nameScope = parentIsProject ? parent : { children: [] };
+  const childNodes = [];
   const childContents = [];
   for (const section of sections) {
-    const name = uniqueChildName(projectNode, section.name, "document");
+    const name = uniqueChildName(nameScope, section.name, "document");
     const childFileId = await createDocFile(state, name, section.content);
-    projectNode.children.push({
+    const childNode = {
       id: crypto.randomUUID(),
       type: "document",
       name,
       fileId: childFileId,
       children: [],
       flagged: false,
-    });
+    };
+    childNodes.push(childNode);
     childContents.push(section.content);
+    // Reserve the name within the scope so the next section doesn't reuse it.
+    if (parentIsProject) nameScope.children.push(childNode);
   }
 
-  // Drop the project into the same container as the original — right
-  // after it, so it reads as "here's what this doc became".
-  const parent = findParentOfNode(state.fileTree, nodeId);
-  const siblings = parent ? parent.children : state.fileTree;
-  const idx = siblings.findIndex((n) => n.id === nodeId);
-  if (idx >= 0) siblings.splice(idx + 1, 0, projectNode);
-  else siblings.push(projectNode);
+  let projectNode = null;
+  if (parentIsProject) {
+    // Splice the section docs into the project right after the source.
+    const siblings = parent.children;
+    const idx = siblings.findIndex((n) => n.id === nodeId);
+    const at = idx >= 0 ? idx + 1 : siblings.length;
+    siblings.splice(at, 0, ...childNodes);
+  } else {
+    // Standalone doc → wrap the sections in a brand-new project placed in
+    // the same container as the original, right after it.
+    projectNode = {
+      id: crypto.randomUUID(),
+      type: "project",
+      name: node.name,
+      children: childNodes,
+      flagged: node.flagged,
+      ...(node.bgColor ? { bgColor: node.bgColor } : {}),
+    };
+    const siblings = parent ? parent.children : state.fileTree;
+    const idx = siblings.findIndex((n) => n.id === nodeId);
+    if (idx >= 0) siblings.splice(idx + 1, 0, projectNode);
+    else siblings.push(projectNode);
+  }
 
   if (!IS_TAURI) state._saveFilesLocal();
   else state.files = await tauriInvoke("list_files");
@@ -209,11 +231,12 @@ export async function splitDocAtHeadings(state, nodeId, opts = {}) {
     try { await state.deleteTreeNode(nodeId); } catch (e) { console.warn("split: delete original failed", e); }
   }
 
-  await state.openProject(projectNode.id);
+  const openId = parentIsProject ? parent.id : projectNode.id;
+  await state.openProject(openId);
 
   state.emit("files-changed");
-  state.syncProjectOrdering(projectNode.id);
-  projectNode.children.forEach((child, i) => {
+  state.syncProjectOrdering(openId);
+  childNodes.forEach((child, i) => {
     state.syncCreateFile(child.id, child.fileId, childContents[i] || "");
   });
 }

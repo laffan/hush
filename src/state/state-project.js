@@ -33,14 +33,23 @@ async function tauriInvoke(cmd, args) {
 }
 
 export async function openProject(state, projectId) {
+  const node = findNode(state.fileTree, projectId);
+  if (!node || node.type !== "project") return;
   if (state.dirty) await state.saveCurrentFile();
-  // Unmount any active notebook
+  // Unmount any active notebook / PDF / stack so their views don't stay
+  // mounted over the project editor (e.g. opening a project from a stack).
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
   }
-  const node = findNode(state.fileTree, projectId);
-  if (!node || node.type !== "project") return;
+  if (state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
+  }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
   state.currentProjectId = projectId;
   state.currentFileId = null;
   state.projectDocIds = collectDocumentIds(node.children || []);

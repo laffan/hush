@@ -42,6 +42,11 @@ pub struct Style {
     pub header_scale: Option<f64>,
     #[serde(default)]
     pub shader_layer: Option<ShaderLayer>,
+    /// Optional decorative background image config (src data-URL, fit,
+    /// repeat, blend mode, opacity). Stored opaquely as JSON so the shape
+    /// can evolve without a Rust schema change.
+    #[serde(default)]
+    pub background_image: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

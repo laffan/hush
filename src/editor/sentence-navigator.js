@@ -524,6 +524,68 @@ export function selectParagraph(view) {
   return true;
 }
 
+/**
+ * Extend the selection upward to the start of the current paragraph
+ * (Cmd+Shift+Up). Overrides CodeMirror's default "select to document
+ * start". If the head is already at the paragraph start, hop to the start
+ * of the previous paragraph so repeated presses keep climbing.
+ */
+export function selectToParagraphAbove(view) {
+  const doc = view.state.doc;
+  const sel = view.state.selection.main;
+  const headLine = doc.lineAt(sel.head);
+  let target = headLine.from;
+  if (sel.head === target) {
+    // Already at a paragraph start — climb past blank lines into the
+    // previous paragraph and land on its first line start.
+    let ln = headLine.number;
+    while (ln > 1 && doc.line(ln - 1).text.trim().length === 0) ln--;
+    while (ln > 1 && doc.line(ln - 1).text.trim().length > 0) ln--;
+    target = doc.line(ln).from;
+  } else {
+    // Climb to the first line of the paragraph the head sits in.
+    let ln = headLine.number;
+    while (ln > 1 && doc.line(ln - 1).text.trim().length > 0) ln--;
+    target = doc.line(ln).from;
+    if (target === sel.head && ln > 1) {
+      while (ln > 1 && doc.line(ln - 1).text.trim().length === 0) ln--;
+      while (ln > 1 && doc.line(ln - 1).text.trim().length > 0) ln--;
+      target = doc.line(ln).from;
+    }
+  }
+  view.dispatch({ selection: EditorSelection.range(sel.anchor, target), scrollIntoView: true });
+  return true;
+}
+
+/**
+ * Extend the selection downward to the end of the current paragraph
+ * (Cmd+Shift+Down). Overrides CodeMirror's default "select to document
+ * end". Repeated presses descend through following paragraphs.
+ */
+export function selectToParagraphBelow(view) {
+  const doc = view.state.doc;
+  const sel = view.state.selection.main;
+  const headLine = doc.lineAt(sel.head);
+  let target = headLine.to;
+  if (sel.head === target) {
+    let ln = headLine.number;
+    while (ln < doc.lines && doc.line(ln + 1).text.trim().length === 0) ln++;
+    while (ln < doc.lines && doc.line(ln + 1).text.trim().length > 0) ln++;
+    target = doc.line(ln).to;
+  } else {
+    let ln = headLine.number;
+    while (ln < doc.lines && doc.line(ln + 1).text.trim().length > 0) ln++;
+    target = doc.line(ln).to;
+    if (target === sel.head && ln < doc.lines) {
+      while (ln < doc.lines && doc.line(ln + 1).text.trim().length === 0) ln++;
+      while (ln < doc.lines && doc.line(ln + 1).text.trim().length > 0) ln++;
+      target = doc.line(ln).to;
+    }
+  }
+  view.dispatch({ selection: EditorSelection.range(sel.anchor, target), scrollIntoView: true });
+  return true;
+}
+
 // ===== Join lines (pull up) =====
 
 /** Remove the next line break, joining the current line with the line below. */

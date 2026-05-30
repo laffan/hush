@@ -340,6 +340,8 @@ export function createSidebar(state) {
   state.on("local-sync-changed", () => { if (panelMode === "files") refreshFilesPanel(state); });
   state.on("file-opened", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("notebook-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("stack-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("pdf-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("panes-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("panes-hidden-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("dropbox-status-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });

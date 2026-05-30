@@ -5,6 +5,34 @@
  * render rows on its behalf.
  */
 
+/**
+ * Build outline-number labels (keyed by node id) for every row inside a
+ * project that has `showNumbers` enabled. Nested containers get dotted
+ * sub-numbers (1, 1.1, 1.2, 2, …). `isSkippable(node)` filters specials /
+ * tab markers; `isInbox(id)` excludes the Inbox pseudo-project.
+ */
+export function computeNumberLabels(tree, isSkippable, isInbox) {
+  const labels = new Map();
+  const numberChildren = (node, prefix) => {
+    let i = 0;
+    for (const c of node.children || []) {
+      if (isSkippable(c)) continue;
+      i += 1;
+      const label = prefix ? `${prefix}.${i}` : String(i);
+      labels.set(c.id, label);
+      if (c.children && c.children.length) numberChildren(c, label);
+    }
+  };
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      if (n.type === "project" && n.showNumbers && !isInbox(n.id)) numberChildren(n, "");
+      else if (n.children) walk(n.children);
+    }
+  };
+  walk(tree);
+  return labels;
+}
+
 // SVG icons for the tree-item types
 export const typeIcons = {
   document: `<svg viewBox="0 0 16 16" class="tree-type-icon"><line x1="4" y1="4" x2="12" y2="4" /><line x1="4" y1="8" x2="12" y2="8" /><line x1="4" y1="12" x2="9" y2="12" /></svg>`,

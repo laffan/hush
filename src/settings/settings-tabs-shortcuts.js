@@ -25,7 +25,8 @@ export const shortcutCategories = [
       { key: "shortcutToggleWordCount", label: "Toggle word count" },
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutSave", label: "Save file" },
-      { key: "shortcutFind", label: "Find / replace" },
+      { key: "shortcutQuickFind", label: "Quick find (current document)" },
+      { key: "shortcutFind", label: "Find / replace (all files)" },
       { key: "shortcutFindNext", label: "Find next match" },
       { key: "shortcutFindPrev", label: "Find previous match" },
       { key: "shortcutZotero", label: "Zotero search" },
@@ -36,6 +37,8 @@ export const shortcutCategories = [
     shortcuts: [
       { key: "shortcutSelectSentence", label: "Select sentence" },
       { key: "shortcutSelectParagraph", label: "Select paragraph" },
+      { key: "shortcutSelectParagraphUp", label: "Select to paragraph above" },
+      { key: "shortcutSelectParagraphDown", label: "Select to paragraph below" },
       { key: "shortcutReduceSentence", label: "Reduce sentence selection" },
       { key: "shortcutSelectNext", label: "Select next instance" },
       { key: "shortcutSelectPrevious", label: "Select previous instance" },

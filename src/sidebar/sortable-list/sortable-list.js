@@ -31,6 +31,7 @@ export class SortableList {
       onDragStart: options.onDragStart || (() => {}),
       onDragEnd: options.onDragEnd || (() => {}),
       onDragOutside: options.onDragOutside || null,
+      getDraggedSiblings: options.getDraggedSiblings || null,
       onClick: options.onClick || (() => {}),
     };
 
