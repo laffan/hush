@@ -101,10 +101,11 @@ html, body {
 /* Modals are app chrome, never editor surface — always paint them in
    the UI font (system-ui stack) so the active style's editor font
    doesn't bleed into Versions, Edit Styles, Export, Settings, etc.
-   Substring matches every existing modal root and its child elements;
-   `font-family` doesn't compound, so descendants picking up the rule
-   on top of an inherited value is a no-op. */
-[class*="modal"] {
+   Substring matches every existing modal root and its child elements.
+   The `body` prefix bumps specificity to (0,1,1) so per-modal
+   `.foo-modal { font-family: inherit }` rules in later-loading CSS
+   files no longer win on source-order alone. */
+body [class*="modal"] {
   font-family: var(--ui-font-family);
 }
 

@@ -266,6 +266,10 @@
   height: 100%;
   overflow: hidden;
   position: relative;
+  /* Flex-row so a doc outline mounted alongside the content wrapper
+     carves its own 200 px slot instead of floating over the editor. */
+  display: flex;
+  flex-direction: row;
 }
 
 .stack-spine-icon { cursor: pointer; transition: opacity 0.15s; }
@@ -403,6 +407,8 @@ body.stack-resizing .stack-column,
   width: 100%;
   height: 100%;
   position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .stack-doc-wrapper .cm-editor {
@@ -792,16 +798,15 @@ body.stack-resizing .stack-column,
 /* --- Stack doc outline (right sidebar within column) --- */
 
 .stack-doc-outline {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 200px;
+  /* Flex sibling of the doc wrapper inside .stack-column-content — sits
+     alongside the editor and carves out its own 200 px slot rather
+     than overlaying the text column. */
+  flex: 0 0 200px;
   height: 100%;
   background: var(--theme-bg, #fff);
   border-left: 1px solid var(--ui-border, rgba(128, 128, 128, 0.15));
   display: flex;
   flex-direction: column;
-  z-index: 5;
   overflow: hidden;
   /* Outline reads as chrome, not editor text — pin the app UI font so
      the active style's editor font doesn't bleed in via the column
