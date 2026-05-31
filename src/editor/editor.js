@@ -51,27 +51,7 @@ const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const shortcutCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
-const spellcheckCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
-
-/** Build the contentAttributes facet payload for the spellcheck mode.
- *  CodeMirror's base contentAttrs hardcode every text-intelligence
- *  switch to off: `spellcheck="false"`, `autocorrect="off"`,
- *  `autocapitalize="off"`, `writingsuggestions="false"`. The
- *  spellcheck attribute alone isn't enough on Safari / WKWebView —
- *  `writingsuggestions="false"` is an Apple-introduced master switch
- *  that suppresses the OS text engine including red squiggles, so we
- *  flip it on too. `translate="no"` we leave alone — that controls
- *  Google-Translate-style page translation, not spellcheck. */
-function spellcheckExtension(on) {
-  return EditorView.contentAttributes.of({
-    spellcheck: on ? "true" : "false",
-    autocorrect: on ? "on" : "off",
-    autocapitalize: on ? "sentences" : "off",
-    writingsuggestions: on ? "true" : "false",
-  });
-}
-export { spellcheckExtension, spellcheckCompartment };
 
 /**
  * Creates the CodeMirror 6 editor instance.
@@ -281,7 +261,6 @@ export function createEditor(container, state) {
       blurListener,
       shortcutCompartment.of(initialShortcuts),
       readOnlyCompartment.of([]),
-      spellcheckCompartment.of(spellcheckExtension(!!state.settings.systemSpellcheckEnabled)),
       ratchetKeymap,
       ratchetFilter,
       ratchetMouseFilter,
@@ -318,95 +297,6 @@ export function createEditor(container, state) {
     state: startState,
     parent: container,
   });
-
-  // System spellcheck — reconfigure the contentAttributes compartment so
-  // CodeMirror's view manages the attribute alongside its own. Setting
-  // the raw attribute on `view.contentDOM` directly gets clobbered by
-  // CodeMirror's next measure / update cycle (the `contentAttributes`
-  // facet is the source of truth), which is why the previous direct
-  // setAttribute call had no visible effect on hover.
-  function applySystemSpellcheck() {
-    const on = !!state.settings.systemSpellcheckEnabled;
-    view.dispatch({ effects: spellcheckCompartment.reconfigure(spellcheckExtension(on)) });
-    // eslint-disable-next-line no-console
-    console.log("[hush][spellcheck] system spellcheck:", on ? "ON" : "OFF",
-      "→ cm-content spellcheck=", view.contentDOM.getAttribute("spellcheck"),
-      "autocorrect=", view.contentDOM.getAttribute("autocorrect"),
-      "hasFocus=", document.activeElement === view.contentDOM);
-    if (!on) return;
-    // WKWebView (macOS / iPadOS) doesn't retroactively paint squiggles
-    // on text that existed before `spellcheck` was flipped on — the
-    // engine only checks freshly-edited spans. Two tricks to force a
-    // walk of the existing document:
-    //   1. Toggle contenteditable off → on so the element is
-    //      "re-attached" from the engine's POV.
-    //   2. Dispatch a no-op CodeMirror edit (insert+delete a single
-    //      space) so CM rebuilds the line DOM and the engine sees an
-    //      input event on the focused field.
-    // Delay the whole dance ~120 ms so the command palette has finished
-    // closing and focus has actually returned to the editor — the
-    // log above will read `hasFocus=false` because the palette is
-    // still the activeElement when the action runs.
-    setTimeout(() => {
-      const cd = view.contentDOM;
-      view.focus();
-      cd.setAttribute("contenteditable", "false");
-      requestAnimationFrame(() => {
-        cd.setAttribute("contenteditable", "true");
-        view.focus();
-        // eslint-disable-next-line no-console
-        console.log("[hush][spellcheck] post-refocus → hasFocus=",
-          document.activeElement === view.contentDOM,
-          "spellcheck=", view.contentDOM.getAttribute("spellcheck"));
-      });
-    }, 120);
-  }
-  applySystemSpellcheck();
-
-  // Dev-console helper — `__hushSpellcheckDebug()` inspects every
-  // attribute that influences OS-level spell checking, on both the
-  // contentDOM and a representative line span (in case a child
-  // element is overriding inheritance). Also dumps a parent ancestry
-  // walk so we can spot any contenteditable=false or spellcheck=false
-  // that might be suppressing the checker.
-  // @ts-ignore — debug-only window mount.
-  window.__hushSpellcheckDebug = () => {
-    const cd = view.contentDOM;
-    const firstLine = cd.querySelector(".cm-line");
-    const ancestors = [];
-    for (let n = cd; n && n !== document.documentElement; n = n.parentElement) {
-      ancestors.push({
-        tag: n.tagName,
-        cls: n.className || "",
-        spellcheck: n.getAttribute && n.getAttribute("spellcheck"),
-        contenteditable: n.getAttribute && n.getAttribute("contenteditable"),
-        lang: n.getAttribute && n.getAttribute("lang"),
-      });
-    }
-    const info = {
-      settingOn: !!state.settings.systemSpellcheckEnabled,
-      domSpellcheck: cd.getAttribute("spellcheck"),
-      domAutocorrect: cd.getAttribute("autocorrect"),
-      domAutocapitalize: cd.getAttribute("autocapitalize"),
-      domWritingsuggestions: cd.getAttribute("writingsuggestions"),
-      domTranslate: cd.getAttribute("translate"),
-      domContentEditable: cd.getAttribute("contenteditable"),
-      domLang: cd.getAttribute("lang"),
-      // IDL `spellcheck` reflects inherited resolution; if `cd.spellcheck`
-      // is false even when the attr is "true", an ancestor is overriding.
-      idlSpellcheck: cd.spellcheck,
-      idlContentEditable: cd.isContentEditable,
-      firstLineSpellcheck: firstLine ? firstLine.getAttribute("spellcheck") : "(no line)",
-      firstLineContentEditable: firstLine ? firstLine.getAttribute("contenteditable") : "(no line)",
-      firstLineIdlSpellcheck: firstLine ? firstLine.spellcheck : null,
-      hasFocus: document.activeElement === cd,
-      ancestors,
-      poke: () => applySystemSpellcheck(),
-    };
-    // eslint-disable-next-line no-console
-    console.log("[hush][spellcheck] debug dump:", info);
-    return info;
-  };
 
   state.on("mode-changed", () => {
     applyModes(state);
@@ -529,7 +419,6 @@ export function createEditor(container, state) {
     if (getTypewriterBoundary()) {
       getTypewriterBoundary().style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
     }
-    applySystemSpellcheck();
     // Toggle sticky headers
     updateStickyHeaders(view, state);
     // Toggle block cursor

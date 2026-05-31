@@ -85,14 +85,6 @@ export function renderEditorTab(settings) {
     </div>
 
     <div class="settings-section">
-      <h2>Spellcheck</h2>
-      <div class="settings-row">
-        <label>System spellcheck</label>
-        <input type="checkbox" id="setting-system-spellcheck" ${s.systemSpellcheckEnabled ? "checked" : ""} />
-      </div>
-    </div>
-
-    <div class="settings-section">
       <h2>Typewriter</h2>
       <div class="settings-slider-row">
         <label>Line opacity</label>

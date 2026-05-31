@@ -338,17 +338,6 @@ function buildCommands(state) {
       action: (s) => s.emit("toggle-outline-panel") },
     { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
-    { id: "system-spellcheck", label: "System spellcheck", icon: icons.proofread, shortcutKey: null, ctx: "doc",
-      // Cheap, instant fallback for harper-based Proofread mode — turns
-      // on the WebView's native spellchecker on the editor. Persisted in
-      // settings so the choice rides across restarts.
-      action: (s) => {
-        const next = !s.settings.systemSpellcheckEnabled;
-        // eslint-disable-next-line no-console
-        console.log("[hush][spellcheck] command-palette action fired. was=",
-          !!s.settings.systemSpellcheckEnabled, "→ now=", next);
-        s.updateSettings({ systemSpellcheckEnabled: next });
-      } },
     { id: "copy-as-google-doc", label: "Copy as Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
     { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",

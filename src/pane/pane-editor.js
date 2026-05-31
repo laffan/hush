@@ -6,8 +6,7 @@
  */
 
 import { EditorView } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
-import { spellcheckExtension } from "../editor/editor.js";
+import { EditorState } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
 import { getActiveTheme } from "../themes/index.js";
 import { createBaseExtensions, buildShortcutExtension } from "../editor/base-extensions.js";
@@ -47,26 +46,12 @@ export function createPaneEditor(container, appState, onChange, opts) {
     }
   });
 
-  // Mirror the main editor's system-spellcheck toggle via a compartment.
-  // Setting raw attributes on contentDOM gets clobbered by CodeMirror's
-  // next view update, so we route through the contentAttributes facet.
-  const spellcheckComp = new Compartment();
   const extraExts = opts?.extraExtensions || [];
   const startState = EditorState.create({
     doc: "",
-    extensions: [
-      ...extensions, dryPlugin, typewriterUpdateListener,
-      spellcheckComp.of(spellcheckExtension(!!appState.settings.systemSpellcheckEnabled)),
-      ...extraExts,
-    ],
+    extensions: [...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
   });
   const view = new EditorView({ state: startState, parent: container });
-
-  const applyPaneSpellcheck = () => {
-    const on = !!appState.settings.systemSpellcheckEnabled;
-    view.dispatch({ effects: spellcheckComp.reconfigure(spellcheckExtension(on)) });
-  };
-  appState.on("settings-changed", applyPaneSpellcheck);
 
   if (modeRef.typewriterMode) {
     _applyPaneTypewriter(view, modeRef, container);
