@@ -103,13 +103,18 @@ export function createToolbar(state: DrawingState): HTMLElement {
     // leftInset = sidebar; rightInset = shelf (which already shifts with
     // any right-dock via the CSS var). dockedLeftWidth is added so a
     // left-dock pushes the toolbar inboard the same way the sidebar does.
+    // The top/bottom dock heights similarly push the toolbar inboard
+    // when it's anchored to the top or bottom edge.
     const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
     const rightInset = state.rightInset || 0;
+    const topInset = state.dockedTopHeight || 0;
+    const bottomInset = state.dockedBottomHeight || 0;
     const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
     const parentEl = container.parentElement;
     const parentW = parentEl?.clientWidth || window.innerWidth;
     const parentH = parentEl?.clientHeight || window.innerHeight;
     const usableW = Math.max(0, parentW - leftInset - rightInset);
+    const usableH = Math.max(0, parentH - topInset - bottomInset);
 
     // Responsive compaction: applies in any horizontal layout. Triggered
     // when either the available width can't accommodate the natural bar
@@ -140,7 +145,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
     switch (state.drawingToolbarPosition) {
       case "left": {
         container.style.flexDirection = "column";
-        container.style.top = (parentH / 2) + "px";
+        container.style.top = (topInset + usableH / 2) + "px";
         container.style.transform = "translateY(-50%)";
         container.style.left = `${leftInset + 16}px`;
         break;
@@ -150,7 +155,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = center + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.bottom = `${EDGE_PAD}px`;
+        container.style.bottom = `${EDGE_PAD + bottomInset}px`;
         break;
       }
       case "custom": {
@@ -158,7 +163,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = (center + offset.x) + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.top = `${EDGE_PAD + offset.y}px`;
+        container.style.top = `${EDGE_PAD + topInset + offset.y}px`;
         break;
       }
       case "top":
@@ -167,7 +172,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = center + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.top = `${EDGE_PAD}px`;
+        container.style.top = `${EDGE_PAD + topInset}px`;
         break;
       }
     }

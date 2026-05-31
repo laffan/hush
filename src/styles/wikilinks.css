@@ -1,6 +1,13 @@
 /* Obsidian-style `[[Note Title]]` inter-note links and the floating
    search popup the user gets when typing `[[`. */
 
+.cm-wikilink-wrap {
+  /* Inline container so the rendered link + arrow stay glued together
+     when the line wraps mid-paragraph. */
+  display: inline;
+  white-space: nowrap;
+}
+
 .cm-wikilink-rendered {
   color: var(--link, currentColor);
   text-decoration: underline;
@@ -9,6 +16,57 @@
   text-underline-offset: 2px;
   cursor: pointer;
   transition: text-decoration-color 0.15s, color 0.15s;
+}
+
+/* Inline-pane affordance: small down-arrow button beside a resolved
+   wikilink. Click opens the target as a pane embedded under that line. */
+.cm-wikilink-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--link, currentColor);
+  opacity: 0.55;
+  cursor: pointer;
+  border-radius: 3px;
+  vertical-align: -1px;
+  transition: opacity 0.12s ease, background-color 0.12s ease;
+}
+.cm-wikilink-arrow:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--link, currentColor) 14%, transparent);
+}
+.cm-wikilink-arrow svg {
+  display: block;
+}
+
+/* CM block widget that hosts an inline pane. The host carves out the
+   vertical space CodeMirror reserves for the embedded pane (its height
+   tracks pane.height); the actual pane is absolutely positioned inside
+   so it can be wider than the text column without dragging the column
+   along for the ride. */
+.cm-inline-pane-host {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+  position: relative;
+  overflow: visible;
+  text-align: left;
+}
+
+/* Inline panes hide the attach / pin / gutter / pop-in toggles —
+   those actions all imply moving the pane out of the doc text. They
+   reveal again the moment the user drags the title bar to detach. */
+.floating-pane.inline-pane .fp-btn-attach,
+.floating-pane.inline-pane .fp-btn-pin,
+.floating-pane.inline-pane .fp-btn-gutter,
+.floating-pane.inline-pane .fp-btn-pop-in {
+  display: none;
 }
 .cm-wikilink-rendered:hover {
   text-decoration-color: currentColor;

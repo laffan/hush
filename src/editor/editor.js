@@ -14,6 +14,7 @@ import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
+import { createInlinePanePlugin, openInlinePaneForWikilink } from "../pane/pane-inline.js";
 import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
@@ -220,7 +221,11 @@ export function createEditor(container, state) {
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin(state);
-  const wikilinkPlugin = createWikilinkPlugin(state);
+  const wikilinkPlugin = createWikilinkPlugin(state, {
+    onInlinePaneRequest: (_view, { title, occurrence }) =>
+      openInlinePaneForWikilink(state, { title, occurrence }),
+  });
+  const inlinePanePlugin = createInlinePanePlugin(state);
   const tabMarkerPlugin = createTabMarkerPlugin();
   const checkboxListPlugin = createCheckboxListPlugin();
   const imageDecoratorPlugin = createImageDecoratorPlugin(state, () => defaultLocalSyncContext(state));
@@ -272,6 +277,7 @@ export function createEditor(container, state) {
       flagHighlightPlugin,
       linkDecoratorPlugin,
       wikilinkPlugin,
+      inlinePanePlugin,
       tabMarkerPlugin,
       checkboxListPlugin,
       imageDecoratorPlugin,

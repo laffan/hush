@@ -6,15 +6,16 @@
 
 #stack-container {
   position: absolute;
-  top: 0;
   /* Docked panes carve real estate out of the host editor — for stacks
      that means narrowing the container itself so the horizontal
      scrollbar stays inside the visible area rather than under a
-     right-docked pane. The dock module publishes the two vars on
-     documentElement; defaults of `0px` keep undocked layouts unchanged. */
+     right-docked pane. The dock module publishes width/height vars on
+     documentElement; defaults of `0px` keep undocked layouts unchanged.
+     Top/bottom equivalents shrink the column height the same way. */
+  top: var(--pane-dock-top-height, 0px);
   left: var(--pane-dock-left-width, 0px);
   right: var(--pane-dock-right-width, 0px);
-  bottom: 0;
+  bottom: var(--pane-dock-bottom-height, 0px);
   overflow: hidden;
   background: var(--theme-bg, #fff);
   transition: left 0.2s;

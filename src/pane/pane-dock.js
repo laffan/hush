@@ -38,7 +38,7 @@ export function isDocked(pane) {
 
 export function dockPane(pane, edge) {
   if (!pane || !edge) return;
-  if (!["left", "right"].includes(edge)) return;
+  if (!["left", "right", "top", "bottom"].includes(edge)) return;
   // Detach from any anchored / gutter mode — docking owns geometry.
   if (pane.attached) {
     pane.attached = false;
@@ -56,15 +56,27 @@ export function dockPane(pane, edge) {
   }
   pane.docked = true;
   pane.dockEdge = edge;
-  // Default to half the visible canvas width if the user hasn't sized
-  // this dock yet — keeps the editor + a docked reference roughly
-  // balanced rather than the docked pane crowding everything out.
+  // Default to half the visible canvas size on the docked axis if the
+  // user hasn't sized this dock yet — keeps the editor + a docked
+  // reference roughly balanced rather than the docked pane crowding
+  // everything out. Width-axis for left/right, height-axis for top/bottom.
   if (!pane.dockUserSize) {
-    const visW = computeVisibleWidth();
-    pane.dockUserSize = Math.max(MIN_WIDTH, Math.min(visW * 0.5, visW - DOCK_MIN_FREE));
+    if (edge === "left" || edge === "right") {
+      const visW = computeVisibleWidth();
+      pane.dockUserSize = Math.max(MIN_WIDTH, Math.min(visW * 0.5, visW - DOCK_MIN_FREE));
+    } else {
+      const visH = computeVisibleHeight();
+      pane.dockUserSize = Math.max(MIN_HEIGHT, Math.min(visH * 0.5, visH - DOCK_MIN_FREE));
+    }
   }
   pane.el?.classList.add("docked", `docked-${edge}`);
   applyDockGeometry(pane);
+  // Re-flex every existing dock so perpendicular siblings (e.g. a
+  // left-dock when this is a top-dock) shrink to make room for the
+  // new edge. applyDockGeometry above sized this pane against the
+  // siblings' current footprints; this pass sizes the siblings
+  // against the new pane's footprint.
+  reflowAllDockedPanes();
   // Shift the editor column (doc text, notebook canvas, etc.) to make
   // room for the freshly-docked pane right away — without this the
   // host content stays put until the user resizes the pane, which is
@@ -99,6 +111,10 @@ export function undockPane(pane) {
     });
   }
   publishDockCssVars();
+  // Remaining docked panes may have been shrunk on the cross axis to
+  // make room for this one — re-flex them all so they reclaim the
+  // freed space.
+  reflowAllDockedPanes();
   // Undock also needs to flow the column back to where it was — same
   // story as `dockPane`. Lazy-loaded for the same circular-import reason.
   import("./pane-manager.js").then(({ refreshPaneLayoutMetrics }) => {
@@ -113,27 +129,55 @@ export function applyDockGeometry(pane) {
   const cr = containerEl.getBoundingClientRect();
   const leftInset = getLeftInset();
   const rightInset = getRightInset();
+  const topInset = getTopInset();
+  const bottomInset = getBottomInset();
   const winW = cr.width;
   const winH = cr.height;
   const visW = Math.max(0, winW - leftInset - rightInset);
+  const visH = Math.max(0, winH - topInset - bottomInset);
+
+  // Top/bottom docks sit inboard of any left/right dock so the two
+  // axes carve mutually-exclusive territory and never overlap. Compute
+  // the cross-axis insets after collecting the perpendicular dock
+  // footprints so a top-dock spans only the editor width that's free.
+  const horizDock = collectDockFootprints(pane, "horizontal");
+  const vertDock = collectDockFootprints(pane, "vertical");
 
   switch (pane.dockEdge) {
     case "left": {
       const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE, pane.dockUserSize || (visW * 0.5)));
       pane.dockUserSize = w;
       pane.x = leftInset;
-      pane.y = 0;
+      pane.y = topInset + vertDock.top;
       pane.width = w;
-      pane.height = winH;
+      pane.height = Math.max(MIN_HEIGHT, winH - topInset - bottomInset - vertDock.top - vertDock.bottom);
       break;
     }
     case "right": {
       const w = Math.max(MIN_WIDTH, Math.min(visW - DOCK_MIN_FREE, pane.dockUserSize || (visW * 0.5)));
       pane.dockUserSize = w;
       pane.x = winW - w - rightInset;
-      pane.y = 0;
+      pane.y = topInset + vertDock.top;
       pane.width = w;
-      pane.height = winH;
+      pane.height = Math.max(MIN_HEIGHT, winH - topInset - bottomInset - vertDock.top - vertDock.bottom);
+      break;
+    }
+    case "top": {
+      const h = Math.max(MIN_HEIGHT, Math.min(visH - DOCK_MIN_FREE, pane.dockUserSize || (visH * 0.5)));
+      pane.dockUserSize = h;
+      pane.x = leftInset + horizDock.left;
+      pane.y = topInset;
+      pane.width = Math.max(MIN_WIDTH, winW - leftInset - rightInset - horizDock.left - horizDock.right);
+      pane.height = h;
+      break;
+    }
+    case "bottom": {
+      const h = Math.max(MIN_HEIGHT, Math.min(visH - DOCK_MIN_FREE, pane.dockUserSize || (visH * 0.5)));
+      pane.dockUserSize = h;
+      pane.x = leftInset + horizDock.left;
+      pane.y = winH - h - bottomInset;
+      pane.width = Math.max(MIN_WIDTH, winW - leftInset - rightInset - horizDock.left - horizDock.right);
+      pane.height = h;
       break;
     }
   }
@@ -167,6 +211,38 @@ export function getRightInset() {
   return 0;
 }
 
+/** Top/bottom positioning insets. Like getRightInset, return 0 today —
+ *  the host editor's vertical chrome (toolbar, traffic lights) doesn't
+ *  reserve absolute viewport space at the container level. Function
+ *  form so future safe-area / chrome-edge work can opt in. */
+export function getTopInset() {
+  return 0;
+}
+export function getBottomInset() {
+  return 0;
+}
+
+/** Sum the footprints of docked panes on the axis perpendicular to
+ *  `pane`. Used by `applyDockGeometry` so a top-dock spans only the
+ *  editor width that isn't already covered by a left- or right-dock
+ *  (and vice versa for left/right-docks against top/bottom). */
+function collectDockFootprints(pane, axis) {
+  let left = 0, right = 0, top = 0, bottom = 0;
+  for (const [, p] of panes) {
+    if (p === pane) continue;
+    if (!p.docked) continue;
+    if (p.el?.style.display === "none") continue;
+    if (axis === "horizontal") {
+      if (p.dockEdge === "left") left = Math.max(left, p.width || 0);
+      if (p.dockEdge === "right") right = Math.max(right, p.width || 0);
+    } else {
+      if (p.dockEdge === "top") top = Math.max(top, p.height || 0);
+      if (p.dockEdge === "bottom") bottom = Math.max(bottom, p.height || 0);
+    }
+  }
+  return { left, right, top, bottom };
+}
+
 /** Width of the editor's right-side chrome (notebook shelf, doc
  *  outline, PDF annotation shelf). Used only for computing a sensible
  *  default size when a pane is freshly docked — the dock itself
@@ -197,13 +273,22 @@ function computeVisibleWidth() {
   return Math.max(200, cr.width - getLeftInset() - getEditorChromeRightWidth());
 }
 
+function computeVisibleHeight() {
+  const cr = containerEl?.getBoundingClientRect();
+  if (!cr) return 600;
+  // Top/bottom docks haven't got any vertical chrome to dodge today;
+  // returning the raw container height keeps the default size symmetric
+  // with the horizontal axis (half-the-height becomes the initial size).
+  return Math.max(200, cr.height - getTopInset() - getBottomInset());
+}
+
 /** Publish the docked footprints as CSS custom properties so chrome
  *  elements (shelf, outline, bg-button) can shift away from a dock
  *  via plain CSS. Called from applyDockGeometry + undockPane +
  *  closePane (so a closed dock pane fully clears the var). */
 export function publishDockCssVars() {
-  let leftW = 0, rightW = 0;
-  let leftEdge = 0, rightEdge = 0;
+  let leftW = 0, rightW = 0, topH = 0, bottomH = 0;
+  let leftEdge = 0, rightEdge = 0, topEdge = 0, bottomEdge = 0;
   for (const [, p] of panes) {
     if (!p.docked) continue;
     if (p.el?.style.display === "none") continue;
@@ -218,14 +303,29 @@ export function publishDockCssVars() {
       rightW = Math.max(rightW, p.width || 0);
       rightEdge = Math.max(rightEdge, p.width || 0);
     }
+    if (p.dockEdge === "top") {
+      topH = Math.max(topH, p.height || 0);
+      topEdge = Math.max(topEdge, (p.y || 0) + (p.height || 0));
+    }
+    if (p.dockEdge === "bottom") {
+      bottomH = Math.max(bottomH, p.height || 0);
+      bottomEdge = Math.max(bottomEdge, p.height || 0);
+    }
   }
   const root = document.documentElement;
   root.style.setProperty("--pane-dock-left-width", leftW + "px");
   root.style.setProperty("--pane-dock-right-width", rightW + "px");
   root.style.setProperty("--pane-dock-left-edge", leftEdge + "px");
   root.style.setProperty("--pane-dock-right-edge", rightEdge + "px");
+  root.style.setProperty("--pane-dock-top-height", topH + "px");
+  root.style.setProperty("--pane-dock-bottom-height", bottomH + "px");
+  root.style.setProperty("--pane-dock-top-edge", topEdge + "px");
+  root.style.setProperty("--pane-dock-bottom-edge", bottomEdge + "px");
   document.dispatchEvent(new CustomEvent("pane-dock-changed", {
-    detail: { leftWidth: leftW, rightWidth: rightW, leftEdge, rightEdge },
+    detail: {
+      leftWidth: leftW, rightWidth: rightW, leftEdge, rightEdge,
+      topHeight: topH, bottomHeight: bottomH, topEdge, bottomEdge,
+    },
   }));
 }
 
@@ -302,17 +402,31 @@ export function installDockReflowListeners() {
 }
 
 /** Hit-test client coords against a docked-zone overlay. Returns the
- *  edge name or null. Only left/right docking is supported now —
- *  top/bottom zones were dropped per design feedback. */
+ *  edge name or null. Trapezoidal zones meet on a 45° diagonal at
+ *  each corner, so the rule is simply "which edge are you closest to,
+ *  and is that distance under ZONE?" — ties at the diagonal fall back
+ *  to insertion order (left / right / top / bottom). */
 export function dropZoneAt(clientX, clientY) {
   if (!containerEl) return null;
   const r = containerEl.getBoundingClientRect();
   const leftInset = getLeftInset();
   const rightInset = getRightInset();
+  const topInset = getTopInset();
+  const bottomInset = getBottomInset();
   const ZONE = 50;
   if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
   const dx = clientX - r.left;
-  if (dx < leftInset + ZONE) return "left";
-  if (dx > r.width - rightInset - ZONE) return "right";
+  const dy = clientY - r.top;
+  const fromLeft = dx - leftInset;
+  const fromRight = r.width - rightInset - dx;
+  const fromTop = dy - topInset;
+  const fromBottom = r.height - bottomInset - dy;
+  if (fromLeft < 0 || fromRight < 0 || fromTop < 0 || fromBottom < 0) return null;
+  const min = Math.min(fromLeft, fromRight, fromTop, fromBottom);
+  if (min >= ZONE) return null;
+  if (min === fromLeft) return "left";
+  if (min === fromRight) return "right";
+  if (min === fromTop) return "top";
+  if (min === fromBottom) return "bottom";
   return null;
 }

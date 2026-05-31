@@ -59,7 +59,7 @@ function makeBtn(name, svg, ariaLabel) {
 export function buildPaneDOM(pane, deps) {
   const { closePane, focusPane, createPane, getCurrentContext } = deps;
   const el = document.createElement("div");
-  el.className = "floating-pane";
+  el.className = "floating-pane" + (pane.inline ? " inline-pane" : "");
   Object.assign(el.style, { left: pane.x + "px", top: pane.y + "px", width: pane.width + "px", height: pane.height + "px" });
 
   // Title bar
@@ -101,6 +101,12 @@ export function buildPaneDOM(pane, deps) {
     buttons.appendChild(sizeBtn);
   }
 
+  // Attach / pin / gutter chrome is always created so a pane that
+  // starts inline picks up its normal title-bar after the user drags
+  // it out — the .inline-pane class on the pane root toggles
+  // visibility via CSS (see floating-pane.css). The manager excludes
+  // inline panes from make-space metrics so the controls being hidden
+  // while inline is purely cosmetic.
   const attachLabel = appState.currentStackFileId ? "Attach to stack column" : appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
   const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
   attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });

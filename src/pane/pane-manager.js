@@ -29,6 +29,7 @@ import {
   fitActivePaneToGap as _fitActivePaneToGap,
   centerPaneInViewport,
 } from "./pane-layout.js";
+import { measureEditorColumnWidth } from "./pane-inline.js";
 
 // Inject local DOM-builder + context handler (avoids pane-persistence → pane-manager cycle).
 const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
@@ -174,8 +175,10 @@ function onContextChange() {
   notifyLayoutChange();
   // Context switches change which panes are visible — re-publish the
   // dock CSS vars so chrome in the new context stops shifting for a
-  // pane that's docked but hidden (owner is a different doc).
-  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
+  // pane that's docked but hidden (owner is a different doc), and
+  // re-flex remaining docks so a visible cross-axis sibling reclaims
+  // the space the hidden ones had carved out.
+  import("./pane-dock.js").then((m) => { m.publishDockCssVars(); m.reflowAllDockedPanes(); }).catch(() => {});
 }
 
 /** Collect pane-layout signals into a single payload. Floating panes
@@ -188,18 +191,26 @@ function _collectPaneMetrics() {
   let centroidSum = 0;
   let dockedLeftWidth = 0;
   let dockedRightWidth = 0;
+  let dockedTopHeight = 0;
+  let dockedBottomHeight = 0;
   for (const [, p] of panes) {
     if (p.el?.style.display === "none") continue;
+    if (p.inline) continue; // inline panes have their own CM block widget
     if (p.docked) {
       if (p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
       if (p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
+      if (p.dockEdge === "top") dockedTopHeight = Math.max(dockedTopHeight, p.height || 0);
+      if (p.dockEdge === "bottom") dockedBottomHeight = Math.max(dockedBottomHeight, p.height || 0);
       continue;
     }
     hasFloatingPane = true;
     floatingCount++;
     centroidSum += (p.x || 0) + (p.width || 0) / 2;
   }
-  return { hasFloatingPane, floatingCount, centroidSum, dockedLeftWidth, dockedRightWidth };
+  return {
+    hasFloatingPane, floatingCount, centroidSum,
+    dockedLeftWidth, dockedRightWidth, dockedTopHeight, dockedBottomHeight,
+  };
 }
 
 /** Lighter-weight refresh fired during a pane drag. Recomputes the
@@ -209,21 +220,29 @@ function _collectPaneMetrics() {
  *  which would churn unrelated subscribers on every pointermove. */
 export function refreshPaneLayoutMetrics() {
   const m = _collectPaneMetrics();
-  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane
+    || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0
+    || m.dockedTopHeight > 0 || m.dockedBottomHeight > 0;
   appState.runtime.visiblePaneCount = m.floatingCount;
   appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
   appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
   appState.runtime.dockedRightWidth = m.dockedRightWidth;
+  appState.runtime.dockedTopHeight = m.dockedTopHeight;
+  appState.runtime.dockedBottomHeight = m.dockedBottomHeight;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
 }
 
 function notifyLayoutChange() {
   const m = _collectPaneMetrics();
-  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane
+    || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0
+    || m.dockedTopHeight > 0 || m.dockedBottomHeight > 0;
   appState.runtime.visiblePaneCount = m.floatingCount;
   appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
   appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
   appState.runtime.dockedRightWidth = m.dockedRightWidth;
+  appState.runtime.dockedTopHeight = m.dockedTopHeight;
+  appState.runtime.dockedBottomHeight = m.dockedBottomHeight;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
   // Surface pane-set changes to the notebook shelf (and any other
   // listener) so its pane rows can refresh on create/close/show/hide.
@@ -253,6 +272,12 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   }
 
   const id = crypto.randomUUID();
+  // Inline panes default to column width × 500 px (resizable once mounted).
+  const inline = opts.inline
+    ? { anchorTitle: opts.inline.anchorTitle, occurrence: opts.inline.occurrence | 0, height: opts.inline.height || 500 }
+    : null;
+  const initW = inline ? (measureEditorColumnWidth() || DEFAULT_WIDTH) : DEFAULT_WIDTH;
+  const initH = inline ? inline.height : DEFAULT_HEIGHT;
   const pane = {
     id,
     fileId,
@@ -261,12 +286,13 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     collapsed: false,
     attached: false,  // anchored to canvas (notebook) or scroll (doc)
     pinned: false,    // persists across document switches (blue header)
+    inline,
     dirty: false,
     editor: null,       // CodeMirror wrapper (docs)
     notebook: null,     // NotesCanvas instance (notebooks)
     el: null,           // root DOM element
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
+    width: initW,
+    height: initH,
     // Clamp to the viewport so callers that pass a hard-coded anchor
     // (the command palette's "Open as pane" uses `62, 60`) never land
     // a pane off-screen on narrow windows. The lower bound also keeps
@@ -285,6 +311,9 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   };
 
   buildPaneDOM(pane);
+  // Inline panes start parked off-screen so CodeMirror can measure during
+  // loadPaneContent; the inline plugin reparents into its widget host next.
+  if (pane.inline) Object.assign(pane.el.style, { position: "absolute", left: "-99999px", top: "0px", width: pane.width + "px", height: pane.height + "px" });
   containerEl.appendChild(pane.el);
   pane.el.style.zIndex = zForPane(pane);
   panes.set(id, pane);
@@ -354,6 +383,8 @@ export function closePane(id) {
   if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
   if (pane.stackInstance) { try { pane.stackInstance.destroy(); } catch (_) {} pane.stackInstance = null; }
   if (pane._stackSaveInterval) { clearInterval(pane._stackSaveInterval); pane._stackSaveInterval = null; }
+  // Inline-pane host gets dropped on the next `panes-changed` build.
+  if (pane._inlineHost) pane._inlineHost = null;
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);
@@ -361,8 +392,10 @@ export function closePane(id) {
   // Make sure the dock CSS vars + chrome positions reset once the pane
   // is gone — without this, a closed right-docked pane leaves
   // --pane-dock-right-width pointing at its old width and the shelf
-  // stays shifted.
-  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
+  // stays shifted. Re-flex remaining docks too so a sibling on the
+  // perpendicular axis reclaims the cross-axis space the closed pane
+  // had carved out.
+  import("./pane-dock.js").then((m) => { m.publishDockCssVars(); m.reflowAllDockedPanes(); }).catch(() => {});
   schedulePersist();
 }
 

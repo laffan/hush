@@ -432,9 +432,18 @@ export class NotesCanvas {
     };
     const onDockChanged = (e: Event) => {
       requestAnimationFrame(syncShelfRightInset);
-      const d = (e as CustomEvent).detail || {}, l = +d.leftWidth || 0, r = +d.rightWidth || 0;
-      if (this.state.dockedLeftWidth === l && this.state.dockedRightWidth === r) return;
-      this.state.dockedLeftWidth = l; this.state.dockedRightWidth = r; this.state.notify("theme");
+      const d = (e as CustomEvent).detail || {};
+      const l = +d.leftWidth || 0, r = +d.rightWidth || 0;
+      const t = +d.topHeight || 0, b = +d.bottomHeight || 0;
+      if (
+        this.state.dockedLeftWidth === l && this.state.dockedRightWidth === r
+        && this.state.dockedTopHeight === t && this.state.dockedBottomHeight === b
+      ) return;
+      this.state.dockedLeftWidth = l;
+      this.state.dockedRightWidth = r;
+      this.state.dockedTopHeight = t;
+      this.state.dockedBottomHeight = b;
+      this.state.notify("theme");
     };
     queueMicrotask(syncShelfRightInset);
     const shelfObs = new MutationObserver(syncShelfRightInset);

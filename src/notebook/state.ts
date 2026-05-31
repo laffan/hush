@@ -184,6 +184,12 @@ export class DrawingState extends EventTarget {
    *  tray anchors to the dock's inboard edge (the dock takes priority
    *  over the shelf because it represents a harder visual boundary). */
   dockedRightWidth = 0;
+  /** Height of any pane docked at the canvas's top edge. Toolbar
+   *  centring and visible-centre math subtract this so paste / picker
+   *  drops land in the visible viewport rather than under the dock. */
+  dockedTopHeight = 0;
+  /** Height of any pane docked at the canvas's bottom edge. */
+  dockedBottomHeight = 0;
 
   /** Right-edge inset that the pocket tray honours — prefers the dock
    *  when present (so the tray jumps to the dock's left edge), falls
@@ -2775,13 +2781,16 @@ export class DrawingState extends EventTarget {
   private _visibleScreenCenter(): Point {
     const leftInset = this.leftInset || 0;
     const rightInset = this.rightInset || 0;
+    const topInset = this.dockedTopHeight || 0;
+    const bottomInset = this.dockedBottomHeight || 0;
     if (this.canvasEl) {
       const r = this.canvasEl.getBoundingClientRect();
       if (r.width > 0 && r.height > 0) {
-        // Visible region = canvas rect minus sidebar (left) and shelf (right).
+        // Visible region = canvas rect minus sidebar/shelf horizontally
+        // and any top/bottom-docked panes vertically.
         return {
           x: r.left + leftInset + (r.width - leftInset - rightInset) / 2,
-          y: r.top + r.height / 2,
+          y: r.top + topInset + (r.height - topInset - bottomInset) / 2,
         };
       }
     }
@@ -2841,13 +2850,15 @@ export class DrawingState extends EventTarget {
    *  When the chrome would consume most of the canvas (a narrow pane
    *  with the shelf open), the offsets are dropped so the shape lands
    *  somewhere visible instead of being squeezed under the shelf. */
-  focusShape(shapeId: string, offsetLeft?: number, offsetRight?: number) {
+  focusShape(shapeId: string, offsetLeft?: number, offsetRight?: number, offsetTop?: number, offsetBottom?: number) {
     const shape = this.shapes.find((s) => s.id === shapeId);
     if (!shape) return;
     const bounds = getShapeBounds(shape, this.fontFamily);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
     const requestedLeft = offsetLeft ?? this.leftInset;
     const requestedRight = offsetRight ?? this.rightInset;
+    const requestedTop = offsetTop ?? this.dockedTopHeight;
+    const requestedBottom = offsetBottom ?? this.dockedBottomHeight;
     // Prefer getBoundingClientRect — clientWidth misses sub-pixel layout
     // and stays at zero longer when the canvas is freshly mounted in a
     // pane that hasn't taken its first paint yet.
@@ -2867,6 +2878,12 @@ export class DrawingState extends EventTarget {
     // narrow notebook pane).
     let left = requestedLeft;
     let right = requestedRight;
+    let top = requestedTop;
+    let bottom = requestedBottom;
+    if (top + bottom > h * 0.66) {
+      top = 0;
+      bottom = 0;
+    }
     if (left + right > w * 0.66) {
       left = 0;
       right = 0;
@@ -2895,7 +2912,7 @@ export class DrawingState extends EventTarget {
     } else {
       this.camera = {
         x: (left + w - right) / 2 - cx * zoom,
-        y: h / 2 - cy * zoom,
+        y: (top + h - bottom) / 2 - cy * zoom,
         zoom,
       };
     }

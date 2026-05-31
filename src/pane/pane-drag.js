@@ -5,10 +5,11 @@
  * screen deltas into world coords via the camera zoom.
  *
  * Drag also drives the dock workflow — while the user drags the title
- * bar, four highlighted drop zones paint inside the canvas. Releasing
- * inside a zone calls `dockPane(pane, edge)`; releasing outside leaves
- * the pane wherever the drag ended. Dragging the title of an already
- * docked pane undocks it first.
+ * bar, four highlighted drop zones (left / right / top / bottom) paint
+ * inside the canvas. Releasing inside a zone calls
+ * `dockPane(pane, edge)`; releasing outside leaves the pane wherever
+ * the drag ended. Dragging the title of an already docked pane
+ * undocks it first.
  */
 import {
   appState,
@@ -26,9 +27,13 @@ import {
   dropZoneAt,
   isDocked,
   applyDockGeometry,
+  reflowAllDockedPanes,
   getLeftInset,
   getRightInset,
+  getTopInset,
+  getBottomInset,
 } from "./pane-dock.js";
+import { detachInlinePane, syncInlinePaneSize } from "./pane-inline.js";
 
 let _dockOverlay = null;
 
@@ -36,7 +41,7 @@ function ensureDockOverlay() {
   if (_dockOverlay) return _dockOverlay;
   const root = document.createElement("div");
   root.className = "pane-dock-overlay";
-  for (const edge of ["left", "right"]) {
+  for (const edge of ["left", "right", "top", "bottom"]) {
     const z = document.createElement("div");
     z.className = `pane-dock-zone pane-dock-zone-${edge}`;
     z.dataset.edge = edge;
@@ -67,10 +72,39 @@ function positionDockZones() {
   const ZONE = 50;
   const leftInset = getLeftInset();
   const rightInset = getRightInset();
+  const topInset = getTopInset();
+  const bottomInset = getBottomInset();
   const left = overlay.querySelector(".pane-dock-zone-left");
   const right = overlay.querySelector(".pane-dock-zone-right");
-  if (left) Object.assign(left.style, { left: leftInset + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
-  if (right) Object.assign(right.style, { left: (r.width - rightInset - ZONE) + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
+  const top = overlay.querySelector(".pane-dock-zone-top");
+  const bottom = overlay.querySelector(".pane-dock-zone-bottom");
+  // Trapezoid layout: each zone's outer edge sits flush with the
+  // container edge and its inner edge is inset by ZONE on the docked
+  // axis. The cross-axis edges fan out diagonally at 45° from each
+  // corner so neighbouring trapezoids meet along a shared diagonal
+  // and tile the corners with no overlap or gap. Each zone div fills
+  // the whole overlay and uses clip-path to carve out its shape.
+  const oL = leftInset, oR = r.width - rightInset;
+  const oT = topInset, oB = r.height - bottomInset;
+  const iL = oL + ZONE, iR = oR - ZONE;
+  const iT = oT + ZONE, iB = oB - ZONE;
+  const fill = { left: "0px", top: "0px", width: r.width + "px", height: r.height + "px" };
+  if (left) {
+    Object.assign(left.style, fill);
+    left.style.clipPath = `polygon(${oL}px ${oT}px, ${iL}px ${iT}px, ${iL}px ${iB}px, ${oL}px ${oB}px)`;
+  }
+  if (right) {
+    Object.assign(right.style, fill);
+    right.style.clipPath = `polygon(${oR}px ${oT}px, ${oR}px ${oB}px, ${iR}px ${iB}px, ${iR}px ${iT}px)`;
+  }
+  if (top) {
+    Object.assign(top.style, fill);
+    top.style.clipPath = `polygon(${oL}px ${oT}px, ${oR}px ${oT}px, ${iR}px ${iT}px, ${iL}px ${iT}px)`;
+  }
+  if (bottom) {
+    Object.assign(bottom.style, fill);
+    bottom.style.clipPath = `polygon(${oL}px ${oB}px, ${iL}px ${iB}px, ${iR}px ${iB}px, ${oR}px ${oB}px)`;
+  }
 }
 
 function highlightDockZone(edge) {
@@ -125,6 +159,30 @@ export function setupPaneDrag(pane, deps) {
     const onMove = (me) => {
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
+      // Inline panes detach into normal floating panes as soon as the
+      // user drags the title bar past a small jitter threshold. After
+      // detach, the rest of the drag pipeline runs as if the pane had
+      // always been floating, so make-space (lateral column shift)
+      // kicks in automatically through deps.notifyPaneDragMove().
+      if (pane.inline && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        const rect = pane.el.getBoundingClientRect();
+        // Keep the title bar pinned under the cursor by preserving the
+        // pointer's offset relative to pane.el at drag start.
+        const newScreenX = me.clientX - (startX - rect.left);
+        const newScreenY = me.clientY - (startY - rect.top);
+        detachInlinePane(pane, containerEl, newScreenX, newScreenY);
+        if (appState && typeof appState.emit === "function") {
+          appState.emit("panes-changed");
+        }
+        // Re-baseline the drag against the new floating position so the
+        // remaining pointermove deltas track from where the pane sits now.
+        startX = me.clientX;
+        startY = me.clientY;
+        startLeft = pane.x;
+        startTop = pane.y;
+        deps.notifyPaneDragMove?.();
+        return;
+      }
       if (pane.gutter) {
         pane.x = startLeft + dx;
         pane.el.style.left = pane.x + "px";
@@ -157,8 +215,13 @@ export function setupPaneDrag(pane, deps) {
     const onUp = (ue) => {
       pane._titlebar.removeEventListener("pointermove", onMove);
       pane._titlebar.removeEventListener("pointerup", onUp);
-      const edge = dropZoneAt(ue.clientX, ue.clientY);
-      if (edge) dockPane(pane, edge);
+      // A still-inline pane on release means the pointer didn't travel
+      // far enough to detach — treat as a click on the title bar (no
+      // dock attempt, no persist hit).
+      if (!pane.inline) {
+        const edge = dropZoneAt(ue.clientX, ue.clientY);
+        if (edge) dockPane(pane, edge);
+      }
       showDockOverlay(false);
       highlightDockZone(null);
       schedulePersist();
@@ -210,6 +273,20 @@ export function setupPaneResize(pane, deps) {
           if (pane.dockEdge === "top" || pane.dockEdge === "bottom") pane.dockUserSize = h;
           else pane.dockUserSize = w;
           applyDockGeometry(pane);
+          // Perpendicular siblings need to re-flex when this dock's
+          // cross-axis footprint changes — a wider left-dock means a
+          // narrower top-dock width.
+          reflowAllDockedPanes();
+          deps.notifyPaneDragMove?.();
+          return;
+        }
+        // Inline panes are laid out in-flow inside a CM block widget —
+        // we update pane.el's size and ask the main editor to re-measure
+        // so the text below shifts in lockstep.
+        if (pane.inline) {
+          if (pane.inline) pane.inline.height = h;
+          const mainView = appState?.editor?.view;
+          syncInlinePaneSize(pane, mainView);
           deps.notifyPaneDragMove?.();
           return;
         }
