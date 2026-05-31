@@ -215,12 +215,10 @@
   font-family: var(--ui-font-family);
 }
 /* The title span carries the open-in-editor click — underline on
-   hover so the affordance is visible without making the whole spine
-   look interactive. (Parent label sets opacity:0.7, which becomes a
-   stacking context, so a child opacity override here would be a no-op.) */
+   hover so the affordance is visible, matching the floating-pane
+   header's `.fp-title-link:hover` rule. */
 .stack-spine-label-title:hover {
   text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .stack-spine-buttons {

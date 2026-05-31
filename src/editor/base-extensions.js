@@ -27,7 +27,7 @@ import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
 import { CommentExtension, HighlightExtension } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin } from "./flag-highlight.js";
-import { lineIndicatorBaseExtension } from "./line-indicator.js";
+import { createLineIndicatorPlugin } from "./line-indicator.js";
 
 /**
  * Default image-context resolver used by the main editor: when the user
@@ -144,7 +144,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createCalloutPlugin(),
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
-    lineIndicatorBaseExtension,
+    createLineIndicatorPlugin(state),
     createLinkDecoratorPlugin(state),
     createWikilinkPlugin(state),
     createTabMarkerPlugin(),
