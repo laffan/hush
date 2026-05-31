@@ -54,12 +54,21 @@ const readOnlyCompartment = new Compartment();
 const spellcheckCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
-/** Build the contentAttributes facet payload for the spellcheck mode. */
+/** Build the contentAttributes facet payload for the spellcheck mode.
+ *  CodeMirror's base contentAttrs hardcode every text-intelligence
+ *  switch to off: `spellcheck="false"`, `autocorrect="off"`,
+ *  `autocapitalize="off"`, `writingsuggestions="false"`. The
+ *  spellcheck attribute alone isn't enough on Safari / WKWebView —
+ *  `writingsuggestions="false"` is an Apple-introduced master switch
+ *  that suppresses the OS text engine including red squiggles, so we
+ *  flip it on too. `translate="no"` we leave alone — that controls
+ *  Google-Translate-style page translation, not spellcheck. */
 function spellcheckExtension(on) {
   return EditorView.contentAttributes.of({
     spellcheck: on ? "true" : "false",
     autocorrect: on ? "on" : "off",
     autocapitalize: on ? "sentences" : "off",
+    writingsuggestions: on ? "true" : "false",
   });
 }
 export { spellcheckExtension, spellcheckCompartment };
@@ -354,24 +363,48 @@ export function createEditor(container, state) {
   }
   applySystemSpellcheck();
 
-  // Dev-console helper — call `__hushSpellcheckDebug()` to inspect the
-  // current state from anywhere in the page. Returns the toggle, the
-  // attributes actually painted onto cm-content, and a one-shot "poke"
-  // that re-runs the reconfigure + blur/focus dance.
+  // Dev-console helper — `__hushSpellcheckDebug()` inspects every
+  // attribute that influences OS-level spell checking, on both the
+  // contentDOM and a representative line span (in case a child
+  // element is overriding inheritance). Also dumps a parent ancestry
+  // walk so we can spot any contenteditable=false or spellcheck=false
+  // that might be suppressing the checker.
   // @ts-ignore — debug-only window mount.
   window.__hushSpellcheckDebug = () => {
     const cd = view.contentDOM;
+    const firstLine = cd.querySelector(".cm-line");
+    const ancestors = [];
+    for (let n = cd; n && n !== document.documentElement; n = n.parentElement) {
+      ancestors.push({
+        tag: n.tagName,
+        cls: n.className || "",
+        spellcheck: n.getAttribute && n.getAttribute("spellcheck"),
+        contenteditable: n.getAttribute && n.getAttribute("contenteditable"),
+        lang: n.getAttribute && n.getAttribute("lang"),
+      });
+    }
     const info = {
       settingOn: !!state.settings.systemSpellcheckEnabled,
       domSpellcheck: cd.getAttribute("spellcheck"),
       domAutocorrect: cd.getAttribute("autocorrect"),
       domAutocapitalize: cd.getAttribute("autocapitalize"),
+      domWritingsuggestions: cd.getAttribute("writingsuggestions"),
+      domTranslate: cd.getAttribute("translate"),
       domContentEditable: cd.getAttribute("contenteditable"),
+      domLang: cd.getAttribute("lang"),
+      // IDL `spellcheck` reflects inherited resolution; if `cd.spellcheck`
+      // is false even when the attr is "true", an ancestor is overriding.
+      idlSpellcheck: cd.spellcheck,
+      idlContentEditable: cd.isContentEditable,
+      firstLineSpellcheck: firstLine ? firstLine.getAttribute("spellcheck") : "(no line)",
+      firstLineContentEditable: firstLine ? firstLine.getAttribute("contenteditable") : "(no line)",
+      firstLineIdlSpellcheck: firstLine ? firstLine.spellcheck : null,
       hasFocus: document.activeElement === cd,
+      ancestors,
       poke: () => applySystemSpellcheck(),
     };
     // eslint-disable-next-line no-console
-    console.table(info);
+    console.log("[hush][spellcheck] debug dump:", info);
     return info;
   };
 
