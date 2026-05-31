@@ -107,8 +107,14 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   border-left-width: 2px;
 }
 
-/* Block cursor mode */
-#editor-container.block-cursor .cm-cursor {
+/* Block cursor mode — also targets the Zen Focus overlay, which mounts
+   its own CodeMirror outside `#editor-container`. The cursor's `0.6em`
+   width is relative to the cursor element's computed font-size, which
+   inherits from `.cm-scroller` (the main editor uses --font-size; Zen
+   uses --zen-font-size), so the block scales with whichever surface
+   it's painted in. */
+#editor-container.block-cursor .cm-cursor,
+.zen-focus-overlay.block-cursor .cm-cursor {
   border-left: none;
   background: var(--block-cursor-color, var(--cursor));
   opacity: 0.55;
@@ -120,7 +126,8 @@ body.file-in-trash #notebook-container .notes-canvas + * {
    draw the strip as a border-bottom so it sits at the bottom edge of
    the line box, well clear of the descenders rather than overlapping
    the bottom of the glyphs. */
-#editor-container.underline-cursor .cm-cursor {
+#editor-container.underline-cursor .cm-cursor,
+.zen-focus-overlay.underline-cursor .cm-cursor {
   border-left: none;
   border-bottom: 3px solid var(--block-cursor-color, var(--cursor));
   background: transparent;
