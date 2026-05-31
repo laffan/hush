@@ -32,6 +32,11 @@ pub struct Style {
     pub block_cursor: Option<bool>,
     #[serde(default)]
     pub block_cursor_color: Option<String>,
+    /// Cursor mode override ("system" | "block" | "underline"). When
+    /// present this wins over `block_cursor`; the boolean is still
+    /// written in lockstep for older clients reading the same JSON.
+    #[serde(default)]
+    pub cursor_mode: Option<String>,
     #[serde(default)]
     pub suppress_header_size: Option<bool>,
     #[serde(default)]

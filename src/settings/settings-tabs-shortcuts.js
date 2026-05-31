@@ -30,6 +30,7 @@ export const shortcutCategories = [
       { key: "shortcutFindNext", label: "Find next match" },
       { key: "shortcutFindPrev", label: "Find previous match" },
       { key: "shortcutZotero", label: "Zotero search" },
+      { key: "shortcutSwitchDesks", label: "Switch desks" },
     ],
   },
   {

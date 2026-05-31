@@ -15,6 +15,31 @@ export function escHtml(str) {
   return div.innerHTML;
 }
 
+/** Cursor mode constants + resolver shared by the editor modal and the
+ *  preview pane. New `cursorMode` field wins; otherwise translate the
+ *  legacy `blockCursor` boolean. */
+export const CURSOR_MODES = ["system", "block", "underline"];
+export function resolveCursorMode(draft, settings) {
+  if (draft && draft.cursorMode) return draft.cursorMode;
+  if (draft && draft.blockCursor === true) return "block";
+  if (draft && draft.blockCursor === false) return "system";
+  if (settings && settings.cursorMode) return settings.cursorMode;
+  return settings && settings.blockCursor ? "block" : "system";
+}
+export function renderCursorOptions(active) {
+  return CURSOR_MODES.map(v => `<option value="${v}"${active === v ? ' selected' : ''}>${v[0].toUpperCase() + v.slice(1)}</option>`).join("");
+}
+/** Apply a cursor mode to the preview pane caret element. Mirrors the
+ *  editor's `.block-cursor` / `.underline-cursor` CSS — the underline
+ *  variant draws as a border-bottom on a full-height inline-block so
+ *  the strip sits below the descenders instead of overlapping them. */
+export function applyPreviewCursorMode(el, mode, accent, cursor) {
+  Object.assign(el.style, { borderLeft: "", borderBottom: "", background: "", opacity: "", width: "", height: "", verticalAlign: "" });
+  if (mode === "block") Object.assign(el.style, { background: accent, opacity: "0.55", width: "0.6em" });
+  else if (mode === "underline") Object.assign(el.style, { borderBottom: `3px solid ${accent}`, background: "transparent", opacity: "0.7", width: "0.6em" });
+  else Object.assign(el.style, { borderLeft: `2px solid ${cursor}`, width: "0" });
+}
+
 /** Migrate old single-mode styles to dual light/dark format. */
 export function migrateStyle(st) {
   if (!st._migrated && st.themeId && !st.lightThemeId && !st.darkThemeId) {

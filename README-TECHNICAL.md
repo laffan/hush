@@ -50,7 +50,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── base-extensions.js             (extracted from editor.js — createBaseExtensions, buildShortcutExtension, defaultLocalSyncContext; shared by main + pane + zen editors)
 │   ├── markdown-extensions.js         (extracted from editor.js — commentTag/highlightTag + CommentExtension/HighlightExtension)
 │   ├── flag-highlight.js              (extracted from editor.js — createFlagHighlightPlugin + hexToRgba)
-│   ├── block-cursor.js                (extracted from editor.js — applyBlockCursor)
+│   ├── block-cursor.js                (extracted from editor.js — applyBlockCursor; routes system/block/underline cursor modes via .block-cursor / .underline-cursor classes)
 │   ├── heading-indent.js              (extracted from editor.js)
 │   ├── comment-plugins.js             (extracted from editor.js)
 │   ├── markdown-highlight.js          (extracted from editor.js — getMarkdownHighlight + resolveHeaderColorOverride)
@@ -142,7 +142,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── pane-content.js                (load / save / sync I/O)
 │   ├── pane-attach-sync.js            (canvas + scroll attach loops)
 │   ├── pane-drag.js                   (titlebar drag + edge resize + dock drop-zone overlay)
-│   ├── pane-dock.js                   (edge docking: geometry, --pane-dock-* CSS vars, reflow listeners)
+│   ├── pane-dock.js                   (edge docking: geometry, --pane-dock-* CSS vars, reflow listeners; dock/undock kick refreshPaneLayoutMetrics so the editor column shifts immediately)
 │   ├── pane-size-popover.js           (per-pane font-size override)
 │   ├── pane-persistence.js            (persist + restore across restarts)
 │   ├── pane-gutter.js                 (Use as Gutter: doc-aligned notebook gutter pane)
@@ -172,8 +172,10 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── styles-panel-shared.js         (escapers + theme color maps)
 │   ├── style-modal.js                 (two-column edit modal; supports host mode)
 │   ├── style-editor-modal.js          (three-column Edit Styles shell — rail + middle + preview; Import styles…)
+│   ├── style-presets.js               (loads src/assets/style-presets/*.json via import.meta.glob; seeds them into settings.styles on first launch, tracked by filename in settings.seededPresetFiles)
 │   ├── style-modal-shader.js          (Post Processing block + per-layer knobs)
 │   ├── style-modal-background.js      (Background Image block + JSON export of the current style)
+│   ├── switch-desk-modal.js           (small picker over every desk in the library; hidden when only one desk exists)
 │   ├── custom-dropdown.js             (extracted dropdown widget used by style-modal)
 │   ├── versions-panel.js              (snapshot list + preview logic, embeds inside …)
 │   ├── versions-modal.js              (… the Versions modal wrapper)
@@ -192,7 +194,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   └── wikilink-rename.js              (rewrite every `[[OldName]]` → `[[NewName]]` on rename)
 │
 ├── longview/
-│   ├── longview.js
+│   ├── longview.js                    (renders the outline; auto-refreshes on `doc-content-changed` with a 250 ms debounce — no refresh button)
 │   ├── longview-parser.js
 │   ├── longview-tabs.js               (flat tab containers in the outline — Docs glyph + path label, dashed top border, click to jump)
 │   └── longview-settings.js
@@ -337,6 +339,8 @@ On Tauri, state loads from the Rust backend via `invoke("get_settings")`, `invok
 **Desk lifecycle** (`state/state-desks-ops.js`). The command palette exposes **New desk** (creates a fresh "Untitled desk" and switches to it), **Convert folder to desk** (promotes a folder/project that's a direct child of a desk into its own top-level desk; inner Inbox/Trash/Images subfolders matched by name become per-desk specials), and **Collapse desk into folder** (demotes a desk back to a regular folder placed inside another desk). The collapse path refuses while the source desk's Inbox or Trash carry any items — the operation drops those specials on the way through, so silently merging non-empty contents would be a data-loss surprise. The blocked path throws an error tagged `code: "desk-collapse-blocked"`; the picker surfaces the message via `window.alert` so the user knows what to clear before retrying. Images survive the collapse as a plain folder when non-empty so existing image refs still resolve. The same module also exports `openLastFileForDesk(state, deskId)` — `main.js` calls it on `active-desk-changed` so switching desks drives the editor to that desk's saved last-file (or its Inbox first-child / a fresh doc).
 
 **Desk switcher** (`sidebar/desk-switcher.js`) is a header rendered above the create-buttons row in the files panel. It auto-hides while there's only one desk so single-desk sessions don't carry the chrome. Clicking the header opens a popover with one row per desk (active marker, click to switch), inline rename, delete, and an "Add desk" entry that creates a new desk and switches to it. `render()` updates the header in place rather than rewriting `_container.innerHTML`, so a sync apply firing `desks-changed` while the user is mid-rename doesn't blow away the input; the popover body refresh is also gated on "no rename input present". The popover click handler short-circuits while a rename input is open — the input lives inside the row's `<button data-action="pick">` (it replaces the name span, which is a child of that button), and browsers synthesize a click on a `<button>` when Space is pressed on a child input; without the short-circuit that synthesized click bubbles up and gets routed to the "pick" branch, closing the popover mid-typing. The legacy `useDesks` boolean still ships in `state-defaults.js` and `AppSettings`, but only as a deprecated marker — the JS layer ignores its value and treats desks as structural; the field is retained so settings.json files written by older builds parse cleanly.
+
+**Switch Desks command** (`sidebar/switch-desk-modal.js`, command id `desk-switch`, shortcut `shortcutSwitchDesks` defaulting to `Ctrl+Shift+D`). A keyboard-first counterpart to the sidebar popover: opens a centred modal listing every desk with the current one flagged, switches via `state.setActiveDesk(id)` on pick. The command palette entry and the shortcut both hide / no-op when fewer than two desks exist. The shortcut sits in the `alwaysAllowedKeys` list in `window-shortcuts.js` so it fires regardless of focus (sidebar input, notebook canvas, etc.). The default chord uses literal `Ctrl` rather than `Mod` so it doesn't collide with `Mod+Shift+D` (Select previous instance) on macOS.
 
 **Project state:** When a project is selected (`currentProjectId`), the editor shows all child *documents* joined by separator markers. Notebook and stack children of a project are intentionally excluded from the joined buffer — they ride along as supplementary material in the sidebar instead (sorted below docs at 50 % opacity). `openProject()` loads and concatenates document content; `saveProjectContent()` splits on separators and saves each part back. `state.projectDocIds` only carries doc fileIds, so the split-and-save pipeline never sees a notebook or stack envelope. Projects can also be added to stacks as columns — they mount their joined buffer with separator widgets; converting a project back to a folder auto-removes it from any active stack.
 
@@ -493,9 +497,11 @@ Drag-and-drop nested list engine (5 modules):
 
 Named presets combining theme, font, font size, line height, and color overrides (bg, fg, cursor, selection). The sidebar Styles panel is retired — every style is reachable from the command palette as a `Use Style: <name>` row, plus a single `Edit Styles` entry that opens the three-column editor modal (`style-editor-modal.js`). The modal's left rail lists every style (Default + user styles) with hover-revealed duplicate / delete actions and a `+ New Style` button; the **Appearance** segmented control (Light / Dark / Auto) sits at the rail's footer — clicking a button writes `settings.appearance` and re-runs `applyAppearance()` so the active style and swatch list immediately repaint. The setting defaults to `"auto"`. `sidebar/styles-panel.js` is now a thin helpers-only file — `resolveStyleForAppearance(style, appearance)`, `getLockedStyleId(state)`, `setLockedStyleId(state, id)` — that other modules still import.
 
-Style data: `{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides: { bg, fg, cursor, selection } }`.
+Style data: `{ id, name, themeId, fontFamily, fontSize, lineHeight, colorOverrides: { bg, fg, cursor, selection }, cursorMode }`. `cursorMode` is `"system" | "block" | "underline"`; the legacy `blockCursor` boolean stays in lockstep on save for backwards-compat with older clients reading the same JSON. `editor/block-cursor.js#applyBlockCursor` reads `cursorMode` first, falling back to `blockCursor`, and toggles a `.block-cursor` or `.underline-cursor` class on `#editor-container`. The underline variant draws as a 3 px `border-bottom` on the full-height caret box so the strip sits at the bottom edge of the line — below the descenders, not overlapping them. The preview pane in the style edit modal mirrors the same rule via `applyPreviewCursorMode` in `styles-panel-shared.js`.
 
 Live preview on hover / edit via `style-preview` / `style-preview-end` events. Color overrides take precedence over theme colors, applied directly to CSS variables.
+
+**Bundled presets** (`sidebar/style-presets.js`). `import.meta.glob("../assets/style-presets/*.json", { eager: true })` resolves every JSON file in `src/assets/style-presets/` at build time. On app launch — right after `state.init` in `main.js` — `seedStylePresets(state)` walks the resolved presets and appends any whose filename isn't already in `settings.seededPresetFiles` to `settings.styles`, then records the filename so subsequent launches don't re-add it. After seeding, presets are indistinguishable from user styles: editable, duplicatable, deletable; deleting a seeded preset keeps it gone because its filename stays in the seeded list. Dropping a new JSON file into the folder makes it appear in every install on the next launch (even installs that have already been started) because seeding is keyed on filename, not a "first run" flag.
 
 The two-column settings + preview body of the edit modal lives in `style-modal.js`. It autosaves on a 200 ms debounce — there are no Save / Cancel buttons; closing the modal flushes the timer. The Edit Styles shell calls into it as `openStyleModal(state, target, onDone, { host })` so the body mounts inside the rail's pane instead of spawning its own backdrop; the `host` option suppresses the inner backdrop / close button and switches `.style-modal` to a fill-its-host layout (`width: 100%; height: 100%; border-radius: 0`). The Post Processing block lives in `style-modal-shader.js`, the Background Image block + JSON export in `style-modal-background.js`, and the generic dropdown widget in `custom-dropdown.js`, all to keep `style-modal.js` under the line limit.
 
@@ -538,6 +544,8 @@ Optional per-style overlay of decorative effects (scanlines, vignette, neon glow
 
 Right-side panel showing document structure. Parses headings and flagged items from the document. Features: heading hierarchy navigation, flag detection, callout tinting, paragraph preview tooltips, customizable display options via a dedicated settings tab (Flags).
 
+**Auto-refresh.** Inside the panel's `Options ▾` flyout, controls are grouped into three vertical stacks — toggle buttons (Text / Numbers / Comments / Flags), checkboxes (flag-type labels, wrap), then sliders — with 10 px of breathing room between groups. There are no `VISIBILITY` / `APPEARANCE` section labels and no explicit refresh button: the outline rebuilds itself on every `doc-content-changed` event (debounced 250 ms) and on `file-opened`, so new text, headings, and `==FLAG==` markers appear automatically as you type.
+
 ### Versions (`sidebar/versions-modal.js`, `sidebar/versions-panel.js`)
 
 Snapshot history viewer for both docs and notebooks. Shows timestamped snapshots and a one-click restore. Backend storage via `snapshots.rs` — the `snapshots` table is keyed by `document_id` + free-form `content` text, so notebook JSON envelopes drop into the same store as doc markdown without a schema change.
@@ -574,9 +582,9 @@ Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in fou
 
 ### Find & Replace (`editor/find-replace.js`, `editor/quick-find.js`, `sidebar/find-panel.js`, `sidebar/find-panel-search.js`, `sidebar/find-panel-sources.js`, `editor/find-decorations.js`)
 
-Two surfaces share the decoration layer. `find-replace.js` is the dispatch hub: `openQuickFindBar` (Cmd+F) opens the minimal current-document bar, `openFindReplace` (Cmd+Shift+F) emits `show-find-panel`, and `findNext` / `findPrev` (Cmd+G / Cmd+Shift+G) prefer the quick-find bar when it's open and otherwise drive the sidebar panel.
+Two surfaces share the decoration layer. `find-replace.js` is the dispatch hub: `openQuickFindBar` (Cmd+F) toggles the minimal current-document bar (second press closes it), `openFindReplace` (Cmd+Shift+F) emits `show-find-panel`, and `findNext` / `findPrev` (Cmd+G / Cmd+Shift+G) prefer the quick-find bar when it's open and otherwise drive the sidebar panel.
 
-**Quick find** (`editor/quick-find.js`) is a tiny floating input anchored to the focused editor's top-right. It scans the current doc for the query, reuses the shared `findHighlightField` decorations (`cm-find-match` / `cm-find-match-current`) rather than a second StateField, and on each keystroke auto-selects the first match at or after the cursor. `Cmd+G` / `Cmd+Shift+G` (and `Enter` / `Shift+Enter`) step with wrap; the input's own keydown handler catches `Cmd+G` since the editor keymap won't see a keystroke aimed at the bar. A close `×` button or `Esc` tears it down and clears the highlights.
+**Quick find** (`editor/quick-find.js`) is a tiny floating input centred over the focused editor at `top: calc(env(safe-area-inset-top, 0px) + 6px)` — the same vertical slot as the `.gdoc-link-bar` sync pill, so it clears the iOS status bar / Dynamic Island and the iPadOS Control Center pull-down area. It scans the current doc for the query, reuses the shared `findHighlightField` decorations (`cm-find-match` / `cm-find-match-current`) rather than a second StateField, and on each keystroke auto-selects the first match at or after the cursor. `Cmd+G` / `Cmd+Shift+G` step with wrap; the input's own keydown handler catches `Cmd+G` since the editor keymap won't see a keystroke aimed at the bar. The bar is built to disappear quickly: forward `Enter` (or `ArrowRight` when the caret is at the end of the input) calls `commitAndClose()` — closing the bar and leaving the cursor parked on the currently-selected match — while `Shift+Enter` still steps backwards through matches. A close `×` button, a second press of the Cmd+F shortcut, or `Esc` also dismisses; Escape is hooked at the `document` level (capture phase) so it fires even when focus has drifted into the editor.
 
 The cross-file panel is split into three files to stay under the 700-line cap: `find-panel.js` owns the DOM, event wiring, and replace dispatch; `find-panel-search.js` carries the pure regex / match / snippet helpers (the 3-words-before / 8-words-after windowing); `find-panel-sources.js` walks the active desk's tree, loads file content (live editor / canvas buffers in front of Tauri `load_file`), and adapts the search helpers to either a doc body or a notebook's text shapes.
 
@@ -1003,6 +1011,8 @@ Runs in a separate Tauri WebviewWindow (desktop) or modal overlay (iOS). Loads/s
 
 Tab rendering is split into `settings-tabs.js` to keep file sizes under 700 lines. The three largest tabs were lifted further into siblings — `settings-tabs-shortcuts.js` (categories, conflict detection, search-filtered render), `settings-tabs-sync.js` (Dropbox + Google sub-tabs; Local Sync lives in the sidebar Add menu, not here), and `settings-tabs-zotero.js` (credentials, references, PDF snapshot tuning). `settings-tabs.js` re-exports them so `settings-window.js` can keep its single barrel import.
 
+**Shortcut conflict handling.** `findConflict(settings, key)` runs on every render of the Shortcuts tab and surfaces clashes in a pinned **Conflicts** section at the top of the tab. Recording a new binding (in `startShortcutRecording` inside `settings-window.js`) saves the new value as-is — it does **not** silently clear whichever existing shortcut it collides with. Both stay in place and the Conflicts section makes the clash visible so the user picks which one to rebind, rather than the loser disappearing without warning.
+
 ### Themes (`themes/`)
 
 Each built-in theme lives in its own file under `src/themes/` (e.g. `dracula.js`, `ayu-light.js`). The data was lifted out of the `thememirror` npm package — the dependency is gone, and adding or tuning a theme is now a one-file edit. Each file calls a local `createTheme({ variant, settings, styles })` helper (`_create-theme.js`) that wraps `EditorView.theme()` + `HighlightStyle.define()` exactly as thememirror used to.
@@ -1078,9 +1088,9 @@ Command handlers are grouped by domain. Each module exports `pub fn` items decor
 
 **Important:** Every setting used by the JS frontend must have a corresponding field in `AppSettings`. Serde silently drops unknown fields during deserialization, so missing fields cause settings to be lost on save/load round-trips.
 
-Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy_text` (String), `block_cursor` (bool), `block_cursor_color` (Option), `sticky_headers` (bool), shortcut fields for all customizable bindings, notebook-specific fields (`notebook_background_pattern`, `notebook_grid_spacing`, `notebook_grid_opacity`, `notebook_font_size`, `shortcut_nb_*`).
+Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy_text` (String), `block_cursor` (bool), `block_cursor_color` (Option), `cursor_mode` (Option<String>; "system" / "block" / "underline" — the primary signal, with `block_cursor` kept in lockstep for back-compat), `sticky_headers` (bool), `seeded_preset_files` (Vec<String> — filenames of bundled style presets already merged into `styles`), shortcut fields for all customizable bindings including `shortcut_switch_desks`, notebook-specific fields (`notebook_background_pattern`, `notebook_grid_spacing`, `notebook_grid_opacity`, `notebook_font_size`, `shortcut_nb_*`).
 
-`Style` struct: `{ id, name, theme_id, font_family, font_size, line_height, color_overrides, light/dark variants, block_cursor overrides, header suppression flags }`.
+`Style` struct: `{ id, name, theme_id, font_family, font_size, line_height, color_overrides, light/dark variants, block_cursor overrides, cursor_mode, header suppression flags }`.
 
 ### `files.rs`
 

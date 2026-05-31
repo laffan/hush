@@ -29,6 +29,10 @@ export function createDefaultSettings() {
     stickyHeaders: false,
     blockCursor: true,
     blockCursorColor: null,
+    // Cursor mode picker (system / block / underline). Falls back to
+    // the legacy `blockCursor` boolean when null so existing installs
+    // keep their setting.
+    cursorMode: null,
     typewriterLineOpacity: 0.08,
     // %% comment %% opacity. Markers dim to 2/3 of this value so the
     // delimiters fade further than the body content.
@@ -89,6 +93,10 @@ export function createDefaultSettings() {
     shortcutToggleFocus: "Mod+S",
     shortcutToggleWordCount: "Mod+Shift+W",
     shortcutZenFocus: "Mod+Shift+S",
+    // Literal Ctrl on Mac (not Cmd) so it doesn't clash with Mod+Shift+D
+    // (Select previous instance). Translates to Ctrl+Shift+D on every
+    // platform.
+    shortcutSwitchDesks: "Ctrl+Shift+D",
     zenFocusFontSize: 30,
     wordCountVisible: false,
     shortcutFind: "Mod+Shift+F",
@@ -146,6 +154,10 @@ export function createDefaultSettings() {
     styles: [],
     activeStyleId: null,
     globalStyleId: null,
+    // Filenames of bundled style presets that have already been seeded
+    // into `styles`. Lets new presets land on next launch without
+    // re-adding ones the user has already deleted.
+    seededPresetFiles: [],
     // Shader layer attached to the Default style. User styles carry
     // their own shaderLayer field on each Style object.
     shaderLayer: null,

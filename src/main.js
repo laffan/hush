@@ -47,6 +47,14 @@ async function init() {
   await state.init({ initialFile });
   if (typeof window !== "undefined") window.__hushState__ = state;
 
+  // Drop any bundled style presets the user hasn't seen yet into the
+  // styles list so they show up as normal entries in the rail. Each
+  // preset is tracked by filename so deleting one keeps it gone.
+  try {
+    const { seedStylePresets } = await import("./sidebar/style-presets.js");
+    await seedStylePresets(state);
+  } catch (e) { console.warn("seedStylePresets failed:", e); }
+
   // On iOS, set html background to prevent black bars behind the webview
   if (isIOS()) document.documentElement.classList.add("ios");
   if (isPhone()) document.documentElement.classList.add("phone");

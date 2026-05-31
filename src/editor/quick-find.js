@@ -24,6 +24,7 @@ let barEl = null;
 let inputEl = null;
 let countEl = null;
 let repositionHandler = null;
+let escHandler = null;
 
 export function isQuickFindOpen() {
   return !!barEl && !!activeView;
@@ -60,6 +61,10 @@ export function closeQuickFind() {
     window.removeEventListener("resize", repositionHandler, true);
     window.removeEventListener("scroll", repositionHandler, true);
     repositionHandler = null;
+  }
+  if (escHandler) {
+    document.removeEventListener("keydown", escHandler, true);
+    escHandler = null;
   }
   const v = activeView;
   activeView = null;
@@ -113,8 +118,24 @@ function buildBar() {
       e.preventDefault();
       closeQuickFind();
     } else if (e.key === "Enter") {
+      // Forward Enter is the "I'm done, drop me at this match" exit —
+      // close the bar and leave the cursor parked on the currently
+      // selected hit. Shift+Enter keeps the historic step-backwards
+      // behaviour for users who want to walk back through matches.
       e.preventDefault();
-      if (e.shiftKey) quickFindGoPrev(); else quickFindGoNext();
+      if (e.shiftKey) { quickFindGoPrev(); return; }
+      commitAndClose();
+    } else if (e.key === "ArrowRight" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Right arrow at the end of the input acts like a forward Enter:
+      // close the bar and drop the cursor at the current match. When
+      // the caret isn't at the end of the input we let the keystroke
+      // through so it still moves through the query text.
+      const caret = inputEl.selectionStart;
+      const len = inputEl.value.length;
+      if (caret === len && inputEl.selectionEnd === len) {
+        e.preventDefault();
+        commitAndClose();
+      }
     } else if ((e.metaKey || e.ctrlKey) && (e.key === "g" || e.key === "G")) {
       // Cmd+G fires while the input is focused — handle it here since the
       // editor keymap won't see the keystroke.
@@ -126,14 +147,44 @@ function buildBar() {
   repositionHandler = () => position();
   window.addEventListener("resize", repositionHandler, true);
   window.addEventListener("scroll", repositionHandler, true);
+
+  // Global Escape — even if focus has drifted to the editor (e.g. the
+  // user clicked into the doc to verify the match), Escape should still
+  // dismiss the bar. Captured at the document level so it wins before
+  // any editor extension swallows the key.
+  escHandler = (e) => {
+    if (e.key === "Escape" && barEl) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeQuickFind();
+    }
+  };
+  document.addEventListener("keydown", escHandler, true);
 }
 
 function position() {
   if (!barEl || !activeView) return;
+  // Center horizontally over the editor and drop the bar to the same
+  // vertical slot as the Google Docs link pill (sync bar) — both clear
+  // the iOS status bar / Dynamic Island via env(safe-area-inset-top)
+  // and land just below it. The previous top-right anchor collided
+  // with the iPadOS Control Center pull-down area.
   const r = activeView.dom.getBoundingClientRect();
-  // Top-right corner of the editor, nudged in so it clears the scrollbar.
-  barEl.style.top = `${Math.max(8, r.top + 8)}px`;
-  barEl.style.left = `${Math.min(window.innerWidth - 240, r.right - 232)}px`;
+  const barW = barEl.getBoundingClientRect().width || 224;
+  const centerX = r.left + (r.width / 2) - (barW / 2);
+  barEl.style.left = `${Math.max(8, centerX)}px`;
+  // Clear `right` in case an old positioning attempt left it set.
+  barEl.style.right = "";
+  // Vertical slot mirrors `.gdoc-link-bar`: env(safe-area-inset-top) + 6 px.
+  barEl.style.top = `calc(env(safe-area-inset-top, 0px) + 6px)`;
+}
+
+/** Move the editor cursor to the currently-selected match (already
+ *  done by `applyCurrent()`), then dismiss the bar. */
+function commitAndClose() {
+  // applyCurrent() has already dispatched a selection at the active
+  // match, so closing leaves the cursor parked there.
+  closeQuickFind();
 }
 
 function recompute(selectAfterCursor) {

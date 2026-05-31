@@ -165,6 +165,12 @@ export function buildEditorCommands() {
       openZoteroModal(view || null, state);
       return true;
     },
+    shortcutSwitchDesks: (state) => {
+      const desks = state.settings?.desks || [];
+      if (desks.length < 2) return false;
+      import("../sidebar/switch-desk-modal.js").then((m) => m.openSwitchDeskModal(state));
+      return true;
+    },
 
     // ===== Editing =====
     shortcutSelectSentence: (_state, view) => (view ? selectSentence(view) : false),

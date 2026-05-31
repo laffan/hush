@@ -9,7 +9,7 @@
  */
 
 import { findPanelGoNext, findPanelGoPrev, closeFindPanel } from "../sidebar/find-panel.js";
-import { isQuickFindOpen, quickFindGoNext, quickFindGoPrev, openQuickFind } from "./quick-find.js";
+import { isQuickFindOpen, quickFindGoNext, quickFindGoPrev, openQuickFind, closeQuickFind } from "./quick-find.js";
 
 /**
  * Open the Find panel. If the editor has a non-empty selection, that text
@@ -25,6 +25,12 @@ export function openFindReplace(view, state) {
  * CodeMirror view — notebooks/stacks without a focused editor get nothing.
  */
 export function openQuickFindBar(view, state) {
+  // Second press of the bound shortcut closes the bar — keeps the
+  // find-and-go feel tight (open, jump, dismiss with the same key).
+  if (isQuickFindOpen()) {
+    closeQuickFind();
+    return true;
+  }
   const v = view || (state && state.editor ? state.editor.view : null);
   if (!v) return false;
   return openQuickFind(v);

@@ -237,12 +237,11 @@ pub struct AppSettings {
     pub recent_file_ids: Vec<String>,
 
     // Styles
-    #[serde(default)]
-    pub styles: Vec<Style>,
-    #[serde(default)]
-    pub active_style_id: Option<String>,
-    #[serde(default)]
-    pub global_style_id: Option<String>,
+    #[serde(default)] pub styles: Vec<Style>,
+    #[serde(default)] pub active_style_id: Option<String>,
+    #[serde(default)] pub global_style_id: Option<String>,
+    // Filenames of bundled style presets already seeded into `styles`.
+    #[serde(default)] pub seeded_preset_files: Vec<String>,
 
     // Shader layer attached to the Default style. User styles carry
     // their own shaderLayer field on the Style struct itself.
@@ -280,18 +279,13 @@ pub struct AppSettings {
     pub custom_flags: Vec<CustomFlag>,
 
     // Zotero integration
-    #[serde(default)]
-    pub zotero_api_key: Option<String>,
-    #[serde(default)]
-    pub zotero_user_id: Option<String>,
-    #[serde(default)]
-    pub zotero_last_update: Option<String>,
-    #[serde(default)]
-    pub zotero_reference_count: u32,
-    #[serde(default)]
-    pub zotero_file_size: Option<String>,
-    #[serde(default = "default_shortcut_zotero")]
-    pub shortcut_zotero: String,
+    #[serde(default)] pub zotero_api_key: Option<String>,
+    #[serde(default)] pub zotero_user_id: Option<String>,
+    #[serde(default)] pub zotero_last_update: Option<String>,
+    #[serde(default)] pub zotero_reference_count: u32,
+    #[serde(default)] pub zotero_file_size: Option<String>,
+    #[serde(default = "default_shortcut_zotero")] pub shortcut_zotero: String,
+    #[serde(default = "default_shortcut_switch_desks")] pub shortcut_switch_desks: String,
     #[serde(default = "default_zotero_snapshot_render_height")]
     pub zotero_snapshot_render_height: u32,
     #[serde(default = "default_zotero_snapshot_display_height")]
@@ -305,11 +299,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub dummy_text: String,
 
-    // Block cursor
-    #[serde(default)]
-    pub block_cursor: bool,
-    #[serde(default)]
-    pub block_cursor_color: Option<String>,
+    // Block cursor + cursor mode (system / block / underline).
+    // `cursor_mode` is the primary signal; `block_cursor` stays in
+    // lockstep for backwards-compat with older clients on the same JSON.
+    #[serde(default)] pub block_cursor: bool,
+    #[serde(default)] pub block_cursor_color: Option<String>,
+    #[serde(default)] pub cursor_mode: Option<String>,
 
     // Extra shortcuts
     #[serde(default = "default_shortcut_strikethrough")]
@@ -586,6 +581,7 @@ impl Default for AppSettings {
             styles: Vec::new(),
             active_style_id: None,
             global_style_id: None,
+            seeded_preset_files: Vec::new(),
             shader_layer: None,
             longview_show_paragraphs: true,
             longview_show_numbers: true,
@@ -606,6 +602,7 @@ impl Default for AppSettings {
             zotero_reference_count: 0,
             zotero_file_size: None,
             shortcut_zotero: default_shortcut_zotero(),
+            shortcut_switch_desks: default_shortcut_switch_desks(),
             zotero_snapshot_render_height: default_zotero_snapshot_render_height(),
             zotero_snapshot_display_height: default_zotero_snapshot_display_height(),
             zotero_snapshot_quality: default_zotero_snapshot_quality(),
@@ -628,6 +625,7 @@ impl Default for AppSettings {
             dummy_text: String::new(),
             block_cursor: false,
             block_cursor_color: None,
+            cursor_mode: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
             panes_hidden_by_context: serde_json::json!({}),

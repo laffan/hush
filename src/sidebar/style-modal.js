@@ -10,6 +10,9 @@ import {
   migrateStyle,
   themeBackgrounds,
   themeForegrounds,
+  resolveCursorMode,
+  renderCursorOptions,
+  applyPreviewCursorMode,
 } from "./styles-panel-shared.js";
 import { renderShaderSection, bindShaderSection, endShaderPreview } from "./style-modal-shader.js";
 import { renderStyleExtras, bindStyleExtras } from "./style-modal-background.js";
@@ -84,11 +87,13 @@ function buildDefaultDraftFromSettings(state) {
     underlineHeaders: !!s.underlineHeaders,
     headerScale: s.headerScale != null ? s.headerScale : 1.0,
     blockCursor: !!s.blockCursor,
+    cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
     // Default style's shader rides a top-level AppSettings field so
     // it persists alongside the other Default-only knobs.
     shaderLayer: s.shaderLayer ? { ...s.shaderLayer } : null,
   };
 }
+
 
 /** Resolve a specific color key against the given theme. Returns a hex
  * colour suitable for <input type="color"> — falls back to sensible
@@ -195,6 +200,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         underlineHeaders: !!draft.underlineHeaders,
         headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
         blockCursor: !!draft.blockCursor,
+        cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
         shaderLayer: draft.shaderLayer || null,
       });
     } else {
@@ -235,6 +241,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         underlineHeaders: state.settings.underlineHeaders,
         headerScale: state.settings.headerScale,
         blockCursor: state.settings.blockCursor,
+        cursorMode: state.settings.cursorMode,
         shaderLayer: state.settings.shaderLayer || null,
       });
     } else {
@@ -337,9 +344,10 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
               </div>
               <div class="style-editor-row">
                 <label>Cursor</label>
-                <div class="style-checkbox-group">
-                  <input type="checkbox" id="style-block-cursor" ${(draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor) ? 'checked' : ''} />
-                  <span class="style-checkbox-label">Block</span>
+                <div class="style-select-group">
+                  <select id="style-cursor-mode" class="style-native-select">
+                    ${renderCursorOptions(resolveCursorMode(draft, state.settings))}
+                  </select>
                 </div>
               </div>
             </div>
@@ -461,7 +469,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     const font = fontFallback(effectiveFont);
     const size = (draft.fontSize || state.settings.fontSize || 20) + "px";
     const lh = draft.lineHeight || state.settings.lineHeight || 1.6;
-    const isBlock = draft.blockCursor != null ? draft.blockCursor : !!state.settings.blockCursor;
+    const cursorMode = resolveCursorMode(draft, state.settings);
 
     pane.style.background = bg;
     pane.style.color = fg;
@@ -472,21 +480,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     const cursorEl = pane.querySelector(".preview-cursor");
     if (cursorEl) {
       const themeObj = getThemeById(themeId);
-      // An explicit cursor-colour override wins (matches applyBlockCursor
-      // in the editor); otherwise the block caret uses the theme heading
-      // colour, falling back to the resolved cursor colour.
-      const blockColor = colors.cursor || (themeObj && themeObj.headingColor) || cursor;
-      if (isBlock) {
-        cursorEl.style.borderLeft = "none";
-        cursorEl.style.background = blockColor;
-        cursorEl.style.opacity = "0.55";
-        cursorEl.style.width = "0.6em";
-      } else {
-        cursorEl.style.borderLeft = `2px solid ${cursor}`;
-        cursorEl.style.background = "none";
-        cursorEl.style.opacity = "1";
-        cursorEl.style.width = "0";
-      }
+      const accent = colors.cursor || (themeObj && themeObj.headingColor) || cursor;
+      applyPreviewCursorMode(cursorEl, cursorMode, accent, cursor);
     }
 
     const selEl = pane.querySelector(".preview-selected");
@@ -636,9 +631,13 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       scheduleSave();
     });
 
-    const bcEl = backdrop.querySelector("#style-block-cursor");
-    if (bcEl) bcEl.addEventListener("change", () => {
-      draft.blockCursor = bcEl.checked;
+    const cursorEl = backdrop.querySelector("#style-cursor-mode");
+    if (cursorEl) cursorEl.addEventListener("change", () => {
+      const mode = cursorEl.value || "system";
+      draft.cursorMode = mode;
+      // Keep `blockCursor` in lockstep for backwards-compat with
+      // existing consumers (settings serializer, exported styles, sync).
+      draft.blockCursor = mode === "block";
       updatePreview();
       scheduleSave();
     });
