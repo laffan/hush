@@ -46,6 +46,9 @@
   user-select: none;
   flex-shrink: 0;
   gap: 4px;
+  /* Title bar is navigation chrome, not editor content — use the
+     app's UI font instead of inheriting the active style's body font. */
+  font-family: var(--ui-font-family);
 }
 
 .floating-pane-titlebar:active {

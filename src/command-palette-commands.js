@@ -344,6 +344,9 @@ function buildCommands(state) {
       // settings so the choice rides across restarts.
       action: (s) => {
         const next = !s.settings.systemSpellcheckEnabled;
+        // eslint-disable-next-line no-console
+        console.log("[hush][spellcheck] command-palette action fired. was=",
+          !!s.settings.systemSpellcheckEnabled, "→ now=", next);
         s.updateSettings({ systemSpellcheckEnabled: next });
       } },
     { id: "copy-as-google-doc", label: "Copy as Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",

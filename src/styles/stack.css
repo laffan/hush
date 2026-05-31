@@ -203,11 +203,15 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+  /* Spine is navigation chrome — match the files sidebar / command
+     palette font rather than the active style's editor font. */
+  font-family: var(--ui-font-family);
 }
 .stack-spine-label-author {
   font-size: 10px;
   font-weight: 400;
   opacity: 0.6;
+  font-family: var(--ui-font-family);
 }
 
 .stack-spine-buttons {

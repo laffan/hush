@@ -17,6 +17,11 @@
   --accent: #666;
   --private-box: #e0e0e0;
   --font-family: 'Source Sans Pro', 'Helvetica Neue', 'Arial', sans-serif;
+  /* App-chrome font used by the files sidebar, command palette, outline
+     view, pane title bars, and stack spines. Deliberately separate from
+     --font-family so the active style's editor font doesn't bleed into
+     navigation chrome. */
+  --ui-font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-size: 16px;
   --line-height: 1.5;
   --padding: 50px;

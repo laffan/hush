@@ -241,7 +241,7 @@
 .longview-content .longview-callout-title,
 .longview-content .longview-tab-header,
 .longview-content .longview-tab-label {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--ui-font-family);
 }
 .longview-content {
   flex: 1;
