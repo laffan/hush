@@ -17,6 +17,7 @@
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic", ".heif", ".avif", ".tif", ".tiff"];
 const NOTEBOOK_EXTENSIONS = [".hushnote"];
+const STACK_EXTENSIONS = [".hushstack"];
 function getExtension(name) {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(i).toLowerCase() : "";
@@ -30,8 +31,12 @@ function isNotebookFile(file) {
   return NOTEBOOK_EXTENSIONS.includes(getExtension(file.name));
 }
 
+function isStackFile(file) {
+  return STACK_EXTENSIONS.includes(getExtension(file.name));
+}
+
 function isImportableFile(file) {
-  return isTextFile(file) || isNotebookFile(file);
+  return isTextFile(file) || isNotebookFile(file) || isStackFile(file);
 }
 
 function isImageFile(file) {
@@ -280,6 +285,12 @@ async function importFileIntoTree(state, file, parentId) {
     const { unpackNotebook } = await import("../sync/notebook-sync.js");
     const content = await unpackNotebook(new Uint8Array(buf));
     return state.createNotebook(baseName, parentId, { openImmediately: false, initialContent: content });
+  }
+  if (isStackFile(file)) {
+    // .hushstack is a plain JSON envelope — re-import it verbatim so the
+    // items, widths, and scroll state ride along with the copy.
+    const text = await file.text();
+    return state.createStack(baseName, parentId, { openImmediately: false, initialContent: text });
   }
   if (isTextFile(file)) {
     const text = await file.text();

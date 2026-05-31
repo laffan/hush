@@ -18,6 +18,109 @@
       <string>com.hushwriter.app</string>
     </dict>
   </array>
+
+  <!--
+    Exported UTIs for the Hush document types. Declaring these lets
+    iPadOS recognise .hushnote and .hushstack files system-wide so
+    they get an icon in Files.app, surface Hush in the Share Sheet,
+    and appear in "Open With" menus.
+  -->
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.hushwriter.app.hushnote</string>
+      <key>UTTypeDescription</key>
+      <string>Hush Notebook</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.content</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>hushnote</string>
+        </array>
+        <key>public.mime-type</key>
+        <array>
+          <string>application/x-hushnote</string>
+        </array>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.hushwriter.app.hushstack</string>
+      <key>UTTypeDescription</key>
+      <string>Hush Stack</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.content</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>hushstack</string>
+        </array>
+        <key>public.mime-type</key>
+        <array>
+          <string>application/x-hushstack</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
+
+  <!--
+    Document types Hush can open. CFBundleTypeRole=Editor + LSHandlerRank=Owner
+    so Hush is offered as the default opener for its own document types
+    (and surfaces under "Open in…" sheets across iPadOS). Plain Markdown
+    and text files are also accepted so the sidebar import + Files.app
+    "Open With" route can take them.
+  -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Hush Notebook</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.hushwriter.app.hushnote</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Hush Stack</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.hushwriter.app.hushstack</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Markdown</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>net.daringfireball.markdown</string>
+        <string>public.plain-text</string>
+      </array>
+    </dict>
+  </array>
+
   <!--
     iPad multi-window via Tauri's native UIScene support (Tauri >= 2.11).
     Tauri manages the scenes; we only opt in here. See MULTI-WINDOW-TAURI.md.
@@ -29,5 +132,12 @@
     <key>UISceneConfigurations</key>
     <dict/>
   </dict>
+
+  <!-- Surface the app in Files.app and let users browse Hush's
+       on-device documents through the Files sidebar. -->
+  <key>UISupportsDocumentBrowser</key>
+  <true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <true/>
 </dict>
 </plist>

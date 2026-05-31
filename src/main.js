@@ -424,10 +424,22 @@ async function init() {
       const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
       await onOpenUrl(async (urls) => {
         for (const url of urls) {
-          if (!url.startsWith("hushwriter://auth/callback")) continue;
-          const code = new URLSearchParams(url.split("?")[1] || "").get("code");
-          if (code) {
-            try { await handleOAuthCode(state, invoke, code, "dropbox"); } catch (e) { console.warn("OAuth deep-link completion failed:", e); }
+          if (url.startsWith("hushwriter://auth/callback")) {
+            const code = new URLSearchParams(url.split("?")[1] || "").get("code");
+            if (code) {
+              try { await handleOAuthCode(state, invoke, code, "dropbox"); } catch (e) { console.warn("OAuth deep-link completion failed:", e); }
+            }
+            continue;
+          }
+          // iPadOS hands externally-opened .hushnote / .hushstack / .md
+          // files to the app as file:// URLs through the same deep-link
+          // pipe. Route them through the sidebar import path so they
+          // land in the active desk's Inbox.
+          if (url.startsWith("file://") || url.startsWith("/")) {
+            try {
+              const { importExternalFile } = await import("./editor/external-open.js");
+              await importExternalFile(state, url);
+            } catch (e) { console.warn("External file open failed:", e); }
           }
         }
       });

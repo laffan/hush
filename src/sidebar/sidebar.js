@@ -303,6 +303,11 @@ export function createSidebar(state) {
     showRatchetDropdownCentered(state, () => {});
   });
   state.on("export-current-file", async () => {
+    if (state.currentStackFileId) {
+      const { exportCurrentStack } = await import("./stack-export.js");
+      await exportCurrentStack(state);
+      return;
+    }
     if (state.currentNotebookFileId) {
       const { openNotebookExportModal } = await import("./notebook-export-modal.js");
       await openNotebookExportModal(state);
