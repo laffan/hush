@@ -56,6 +56,15 @@ export function migrateStyle(st) {
   if (!st.darkThemeId) st.darkThemeId = "";
   if (!st.lightColors) st.lightColors = {};
   if (!st.darkColors) st.darkColors = {};
+  // Legacy single `lineIndicatorColor` is now stored per-appearance
+  // alongside the other colour overrides. Promote it into both halves
+  // so the existing pick lights up in either light or dark mode, then
+  // drop the orphan field so it doesn't keep resurfacing in exports.
+  if (st.lineIndicatorColor) {
+    if (!st.lightColors.lineIndicator) st.lightColors.lineIndicator = st.lineIndicatorColor;
+    if (!st.darkColors.lineIndicator) st.darkColors.lineIndicator = st.lineIndicatorColor;
+    delete st.lineIndicatorColor;
+  }
   return st;
 }
 

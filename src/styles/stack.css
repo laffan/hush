@@ -214,6 +214,20 @@
   opacity: 0.6;
   font-family: var(--ui-font-family);
 }
+/* The title span carries the open-in-editor click — underline on
+   hover so the affordance is visible, matching the floating-pane
+   header's `.fp-title-link:hover` rule. inline-block + an explicit
+   thickness + offset are needed because the parent's `writing-mode:
+   vertical-rl; transform: rotate(180deg)` would otherwise put the
+   underline on an axis that's easy to miss. */
+.stack-spine-label-title {
+  display: inline-block;
+}
+.stack-spine-label-title:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 
 .stack-spine-buttons {
   display: flex;
@@ -252,6 +266,12 @@
   height: 100%;
   overflow: hidden;
   position: relative;
+}
+/* When the doc outline mounts (absolutely positioned 200 px slot at
+   the right edge), shrink the content wrapper by the same amount so
+   the outline sits beside the editor rather than over it. */
+.stack-column-content:has(.stack-doc-outline) .stack-doc-wrapper {
+  width: calc(100% - 200px);
 }
 
 .stack-spine-icon { cursor: pointer; transition: opacity 0.15s; }
@@ -789,6 +809,10 @@ body.stack-resizing .stack-column,
   flex-direction: column;
   z-index: 5;
   overflow: hidden;
+  /* Outline reads as chrome, not editor text — pin the app UI font so
+     the active style's editor font doesn't bleed in via the column
+     wrapper. */
+  font-family: var(--ui-font-family);
 }
 
 .stack-doc-outline-header {

@@ -107,28 +107,113 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   border-left-width: 2px;
 }
 
-/* Block cursor mode */
-#editor-container.block-cursor .cm-cursor {
+/* Block cursor mode — also targets the Zen Focus overlay, which mounts
+   its own CodeMirror outside `#editor-container`. The cursor's `0.6em`
+   width is relative to the cursor element's computed font-size, which
+   inherits from `.cm-scroller` (the main editor uses --font-size; Zen
+   uses --zen-font-size), so the block scales with whichever surface
+   it's painted in. */
+#editor-container.block-cursor .cm-cursor,
+.zen-focus-overlay.block-cursor .cm-cursor {
   border-left: none;
   background: var(--block-cursor-color, var(--cursor));
   opacity: 0.55;
   width: 0.6em !important;
 }
 
-/* Underline cursor mode — a 3 px block-width strip pinned below the
+/* Underline cursor mode — a block-width strip pinned below the
    text. We keep the cm-cursor's natural height (= line height) and
    draw the strip as a border-bottom so it sits at the bottom edge of
    the line box, well clear of the descenders rather than overlapping
-   the bottom of the glyphs. */
-#editor-container.underline-cursor .cm-cursor {
+   the bottom of the glyphs. Strip thickness is em-relative so it
+   scales with the surface's font size (Zen's larger font no longer
+   leaves a hairline strip under chunky text). */
+#editor-container.underline-cursor .cm-cursor,
+.zen-focus-overlay.underline-cursor .cm-cursor {
   border-left: none;
-  border-bottom: 3px solid var(--block-cursor-color, var(--cursor));
+  border-bottom: 0.18em solid var(--block-cursor-color, var(--cursor));
   background: transparent;
   opacity: 0.7;
   width: 0.6em !important;
 }
 
 
+
+/* ===== Line Indicator (per-style "highlight current line" affordance) =====
+   The editor's createLineIndicatorPlugin appends a `.hush-line-ind`
+   overlay inside `view.scrollDOM`; its top + height track the cursor's
+   actual visual line (via `view.coordsAtPos`), so wrapped lines pick
+   the right band rather than centring inside a paragraph. The
+   container carries a `line-ind-<variant>` class — the rules below
+   skin the overlay accordingly. The preview pane uses the same
+   `.preview-active-line` shim it always had, since it only ever shows
+   one short line of demo text. */
+.line-ind-highlight .hush-line-ind,
+.line-ind-highlight .preview-active-line {
+  background-color: color-mix(in srgb, var(--line-indicator-color, var(--cursor)) 10%, transparent);
+}
+/* Borders sit 10 px outside the text column (matching the arrow gap)
+   rather than hugging the text edge, so the indicator reads as a
+   marker beside the line rather than a frame around it. ::before is
+   the left stripe; ::after (Border only) is the right stripe. */
+.line-ind-left-border .hush-line-ind::before,
+.line-ind-left-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::before,
+.line-ind-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::after,
+.line-ind-border .preview-active-line::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--line-indicator-color, var(--cursor));
+  pointer-events: none;
+}
+.line-ind-left-border .hush-line-ind::before,
+.line-ind-left-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::before,
+.line-ind-border .preview-active-line::before {
+  left: -13px;
+}
+.line-ind-border .hush-line-ind::after,
+.line-ind-border .preview-active-line::after {
+  right: -13px;
+}
+.line-ind-left-arrow .preview-active-line,
+.line-ind-double-arrow .preview-active-line,
+.line-ind-left-border .preview-active-line,
+.line-ind-border .preview-active-line {
+  position: relative;
+}
+.line-ind-left-arrow .hush-line-ind::before,
+.line-ind-left-arrow .preview-active-line::before,
+.line-ind-double-arrow .hush-line-ind::before,
+.line-ind-double-arrow .preview-active-line::before,
+.line-ind-double-arrow .hush-line-ind::after,
+.line-ind-double-arrow .preview-active-line::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.line-ind-left-arrow .hush-line-ind::before,
+.line-ind-left-arrow .preview-active-line::before,
+.line-ind-double-arrow .hush-line-ind::before,
+.line-ind-double-arrow .preview-active-line::before {
+  left: -18px;
+  border-left: 8px solid var(--line-indicator-color, var(--cursor));
+}
+.line-ind-double-arrow .hush-line-ind::after,
+.line-ind-double-arrow .preview-active-line::after {
+  right: -18px;
+  border-right: 8px solid var(--line-indicator-color, var(--cursor));
+}
 
 #editor-container .cm-selectionBackground {
   background: var(--selection, rgba(128, 128, 128, 0.3)) !important;

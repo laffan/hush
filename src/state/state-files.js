@@ -355,6 +355,23 @@ export async function importPdf(state, name, bytes, parentId = null, opts = {}) 
   if (opts.zoteroAttKey) treeNode.zoteroAttKey = opts.zoteroAttKey;
   insertNode(state.fileTree, treeNode, pdfsId, findNode);
   await state.saveFileTree();
+  // Pre-warm the Zotero annotation cache so annotations appear on the
+  // first viewer mount instead of requiring a manual "Update
+  // Annotations" pass. The fetch is awaited before openPdf so the
+  // viewer's own lazy lookup hits a populated cache; failures are
+  // swallowed so a flaky annotation call never blocks the save.
+  if (opts.zoteroAttKey) {
+    const userId = state.settings?.zoteroUserId;
+    const apiKey = state.settings?.zoteroApiKey;
+    if (userId && apiKey) {
+      try {
+        const { getAnnotations } = await import("../zotero-annotations.js");
+        await getAnnotations(opts.zoteroAttKey, userId, apiKey);
+      } catch (e) {
+        console.error("Annotation prefetch failed:", e);
+      }
+    }
+  }
   if (openImmediately) {
     await openPdf(state, fileId);
   }

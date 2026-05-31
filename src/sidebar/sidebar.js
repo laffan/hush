@@ -17,7 +17,7 @@ import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
 import { createRecentFilesPanel } from "./recent-files-panel.js";
-import refreshCircleRaw from "../../temp/temp-icons/refresh-circle.svg?raw";
+import refreshCircleRaw from "./sidebar_icons/refresh-circle.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {

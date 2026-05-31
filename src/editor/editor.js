@@ -39,6 +39,7 @@ import {
   defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions,
 } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
+import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
@@ -275,6 +276,7 @@ export function createEditor(container, state) {
       calloutPlugin,
       footnotePlugin,
       flagHighlightPlugin,
+      createLineIndicatorPlugin(state),
       linkDecoratorPlugin,
       wikilinkPlugin,
       inlinePanePlugin,
@@ -371,6 +373,7 @@ export function createEditor(container, state) {
 
   updateColumnResizers(state);
   applyBlockCursor(state);
+  bindLineIndicatorToContainer(document.getElementById("editor-container"), state);
   updateWordCountDisplay(state);
   state.on("file-opened", () => scheduleWordCountRecompute(state));
 

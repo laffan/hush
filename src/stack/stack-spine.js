@@ -11,7 +11,7 @@ import { typeIcons } from "../sidebar/files-panel-shared.js";
 
 export { resolveItemName };
 
-export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut, onDuplicate }) {
+export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, onColorChange, onDragStart, onResizeStart, onPopOut, onDuplicate, onOpenTitle }) {
   const spine = document.createElement("div");
   spine.className = "stack-spine";
 
@@ -28,11 +28,14 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
     onResizeStart(e);
   });
 
-  // Click the spine body to toggle open/close
+  // Click the spine body to toggle open/close — clicks on the title
+  // text bubble up here via the closest(".stack-spine-label-title")
+  // bail-out check so the title can route to onOpenTitle instead.
   spine.addEventListener("click", (e) => {
     if (didResize) { didResize = false; return; }
     if (e.target.closest(".stack-spine-btn")) return;
     if (e.target.closest(".stack-spine-icon")) return;
+    if (e.target.closest(".stack-spine-label-title")) return;
     if (e.metaKey || e.ctrlKey) {
       if (e.shiftKey) { onOpenAll(); } else { onToggleAll(); }
       return;
@@ -60,7 +63,16 @@ export function createSpine(item, { onToggle, onToggleAll, onOpenAll, onClose, o
   const label = document.createElement("div");
   label.className = "stack-spine-label";
   const labelTitle = document.createElement("span");
+  labelTitle.className = "stack-spine-label-title";
   labelTitle.textContent = resolveItemName(item);
+  if (onOpenTitle) {
+    labelTitle.title = "Open in editor";
+    labelTitle.style.cursor = "pointer";
+    labelTitle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onOpenTitle(item);
+    });
+  }
   label.appendChild(labelTitle);
   const author = resolveItemAuthor(item);
   if (author) {

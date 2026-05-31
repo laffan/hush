@@ -47,10 +47,16 @@ function resolveBackground(bg: string | undefined): string | undefined {
 
 export function createSelectionToolbar(state: DrawingState): HTMLElement {
   const container = h("div", {
-    // Sit just above canvas content but below the sidebar (z-index 200)
-    // so popping the files panel doesn't get masked by the selection
-    // chrome floating above a shape.
-    style: { position: "absolute", display: "none", gap: "2px", zIndex: "50", pointerEvents: "auto" },
+    // Sit above canvas content (shapes, strokes, drag-areas) so the
+    // selection chrome never reads as part of the artwork below it.
+    // Still below the files sidebar overlay so popping the sidebar
+    // doesn't get masked by the toolbar.
+    style: {
+      position: "absolute", display: "none", gap: "2px", zIndex: "200",
+      pointerEvents: "auto",
+      padding: "4px", borderRadius: "8px",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+    },
   });
 
   type PopupType = "colors" | "size" | "align" | "grid";
@@ -500,8 +506,12 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     }
 
     container.style.display = "flex";
+    // Paint the notebook's own background under the buttons so the
+    // toolbar reads as floating chrome rather than letting the shapes
+    // and grid bleed through between the icons.
+    container.style.background = state.theme.canvasBackground || state.theme.uiBackground;
     container.style.left = (screenMinX - 7) + "px";
-    container.style.top = (screenMinY - 34) + "px";
+    container.style.top = (screenMinY - 44) + "px";
 
     const hasText = selected.some((s) => s.type === "text");
     const hasImage = selected.some((s) => s.type === "image");

@@ -169,6 +169,7 @@ export class StackComponent {
       onResizeStart: (e) => this._startResizeLeft(item.id, e),
       onPopOut: (it) => this._popOutAsPane(it),
       onDuplicate: (it) => this._duplicateItem(it),
+      onOpenTitle: (it) => this._openInEditor(it),
     });
     col.appendChild(spine);
 
@@ -547,6 +548,15 @@ export class StackComponent {
     const y = window.innerHeight / 2;
     await createPane(item.fileId, resolveItemName(item), item.fileType, x, y);
     this.removeItem(item.id);
+  }
+
+  _openInEditor(item) {
+    const s = this._state;
+    if (!s || !item.fileId) return;
+    if (item.fileType === "notebook") s.openNotebook(item.fileId);
+    else if (item.fileType === "pdf") s.openPdf(item.fileId);
+    else if (item.fileType === "stack") s.openStack(item.fileId);
+    else s.openFile(item.fileId);
   }
 
   _duplicateItem(item) {
