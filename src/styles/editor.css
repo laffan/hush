@@ -143,18 +143,38 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 .line-ind-highlight .preview-active-line {
   background-color: color-mix(in srgb, var(--line-indicator-color, var(--cursor)) 10%, transparent);
 }
-.line-ind-left-border .hush-line-ind,
-.line-ind-left-border .preview-active-line {
-  box-shadow: inset 3px 0 0 0 var(--line-indicator-color, var(--cursor));
+/* Borders sit 10 px outside the text column (matching the arrow gap)
+   rather than hugging the text edge, so the indicator reads as a
+   marker beside the line rather than a frame around it. ::before is
+   the left stripe; ::after (Border only) is the right stripe. */
+.line-ind-left-border .hush-line-ind::before,
+.line-ind-left-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::before,
+.line-ind-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::after,
+.line-ind-border .preview-active-line::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--line-indicator-color, var(--cursor));
+  pointer-events: none;
 }
-.line-ind-border .hush-line-ind,
-.line-ind-border .preview-active-line {
-  box-shadow:
-    inset 3px 0 0 0 var(--line-indicator-color, var(--cursor)),
-    inset -3px 0 0 0 var(--line-indicator-color, var(--cursor));
+.line-ind-left-border .hush-line-ind::before,
+.line-ind-left-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::before,
+.line-ind-border .preview-active-line::before {
+  left: -13px;
+}
+.line-ind-border .hush-line-ind::after,
+.line-ind-border .preview-active-line::after {
+  right: -13px;
 }
 .line-ind-left-arrow .preview-active-line,
-.line-ind-double-arrow .preview-active-line {
+.line-ind-double-arrow .preview-active-line,
+.line-ind-left-border .preview-active-line,
+.line-ind-border .preview-active-line {
   position: relative;
 }
 .line-ind-left-arrow .hush-line-ind::before,
