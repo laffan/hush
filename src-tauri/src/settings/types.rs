@@ -45,6 +45,15 @@ pub struct Style {
     pub underline_headers: Option<bool>,
     #[serde(default)]
     pub header_scale: Option<f64>,
+    /// "Highlight current line" affordance — one of "none", "left-arrow",
+    /// "double-arrow", "left-border", "border", "highlight". Unset / "none"
+    /// disables the indicator.
+    #[serde(default)]
+    pub line_indicator: Option<String>,
+    /// Optional hex colour for the line indicator; falls back to the
+    /// style's cursor colour when unset.
+    #[serde(default)]
+    pub line_indicator_color: Option<String>,
     #[serde(default)]
     pub shader_layer: Option<ShaderLayer>,
     /// Optional decorative background image config (src data-URL, fit,

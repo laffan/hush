@@ -27,6 +27,7 @@ import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
 import { CommentExtension, HighlightExtension } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin } from "./flag-highlight.js";
+import { createLineIndicatorPlugin, lineIndicatorField } from "./line-indicator.js";
 
 /**
  * Default image-context resolver used by the main editor: when the user
@@ -92,15 +93,15 @@ export function createBaseExtensions(state, onChange, opts) {
     if (update.docChanged && onChange) onChange(update);
   });
 
-  // Dead-key fallback for the strikethrough shortcut. On many layouts the
-  // grave/backtick key is a combining-accent dead key, so a Cmd+` keydown
-  // arrives with `event.key === "Dead"` and CodeMirror's keymap (which
-  // matches on `event.key`) never fires. Catch it by physical code here.
-  const deadKeyFallback = EditorView.domEventHandlers({
+  // Catch Cmd+Backquote at the DOM-event layer so the strikethrough toggle
+  // fires reliably across keyboard layouts. The grave key registers as a
+  // combining-accent dead key on many layouts (event.key === "Dead"), and
+  // on some platforms / CodeMirror builds the literal "`" doesn't match
+  // the stored "Mod+`" binding either, so the user-customizable keymap
+  // entry alone isn't enough. Match the physical code instead.
+  const strikethroughFallback = EditorView.domEventHandlers({
     keydown(e, view) {
-      // Only the dead-key case: a Cmd/Ctrl chord on the physical grave key
-      // that didn't come through as a literal "`" (CM already handles that).
-      if (e.code !== "Backquote" || e.key === "`") return false;
+      if (e.code !== "Backquote") return false;
       if (!(e.metaKey || e.ctrlKey)) return false;
       if (matchesDomEvent(e, state.settings.shortcutStrikethrough)) {
         toggleStrikethrough(view);
@@ -138,11 +139,13 @@ export function createBaseExtensions(state, onChange, opts) {
     drawSelection(),
     wrapOnSelection,
     updateListener,
-    deadKeyFallback,
+    strikethroughFallback,
     _shortcutComp.of(buildShortcutExtension(state)),
     createCalloutPlugin(),
     createFootnotePlugin(state),
     createFlagHighlightPlugin(state),
+    lineIndicatorField,
+    createLineIndicatorPlugin(state),
     createLinkDecoratorPlugin(state),
     createWikilinkPlugin(state),
     createTabMarkerPlugin(),

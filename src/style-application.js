@@ -158,6 +158,10 @@ export function applyActiveStyle(state) {
       const resolvedBg = defaultColors.bg || themeBackgrounds[themeId];
       updatePrivateBoxColor(state, resolvedBg, defaultColors.fg || null);
     }
+    // Default style has no line-indicator colour override of its own —
+    // strip any leftover from a previously-active user style so the
+    // fallback (`var(--cursor)`) takes over.
+    document.documentElement.style.removeProperty("--line-indicator-color");
     // Default style's shader lives at the top level of AppSettings.
     syncShaderLayerForStyle({ shaderLayer: state.settings.shaderLayer });
     applyStyleBackgroundImage(null);
@@ -253,6 +257,13 @@ export function applyActiveStyle(state) {
     document.documentElement.style.setProperty("--link", overrides.links);
   } else {
     document.documentElement.style.removeProperty("--link");
+  }
+  // Line indicator colour override — CSS falls back to `--cursor` when
+  // unset, so the indicator defaults to the cursor colour.
+  if (style.lineIndicatorColor) {
+    document.documentElement.style.setProperty("--line-indicator-color", style.lineIndicatorColor);
+  } else {
+    document.documentElement.style.removeProperty("--line-indicator-color");
   }
 }
 

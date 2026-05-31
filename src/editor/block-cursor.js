@@ -16,18 +16,22 @@ function resolveCursorMode(state, style) {
 /** Apply the cursor mode (system / block / underline) and pick its colour.
  *  A style's explicit cursor-colour override wins (so the override keeps
  *  working in block / underline mode); otherwise the cursor falls back
- *  to the active theme's heading colour for visibility. */
+ *  to the active theme's heading colour for visibility. Also publishes
+ *  `--line-indicator-color` (style override → cursor colour fallback)
+ *  so the line-indicator plugin's CSS variants paint on-brand. */
 export function applyBlockCursor(state) {
   const container = document.getElementById("editor-container");
   if (!container) return;
   let style = null;
   let cursorOverride = null;
+  let lineIndicatorOverride = null;
   if (state.settings.activeStyleId && state.settings.styles) {
     style = state.settings.styles.find(s => s.id === state.settings.activeStyleId) || null;
     if (style) {
       const { colors } = resolveStyleForAppearance(style, state.settings.appearance);
       const overrides = colors || style.colorOverrides || {};
       cursorOverride = overrides.cursor || null;
+      lineIndicatorOverride = style.lineIndicatorColor || null;
     }
   } else {
     let appearance = state.settings.appearance || "dark";
@@ -42,14 +46,22 @@ export function applyBlockCursor(state) {
   const mode = resolveCursorMode(state, style);
   container.classList.toggle("block-cursor", mode === "block");
   container.classList.toggle("underline-cursor", mode === "underline");
+  const theme = getActiveTheme(state.settings);
+  const fallbackCursor = (theme && theme.headingColor) || null;
   if (cursorOverride) {
     container.style.setProperty("--block-cursor-color", cursorOverride);
+  } else if (fallbackCursor) {
+    container.style.setProperty("--block-cursor-color", fallbackCursor);
   } else {
-    const theme = getActiveTheme(state.settings);
-    if (theme && theme.headingColor) {
-      container.style.setProperty("--block-cursor-color", theme.headingColor);
-    } else {
-      container.style.removeProperty("--block-cursor-color");
-    }
+    container.style.removeProperty("--block-cursor-color");
+  }
+  // Line indicator colour: explicit override → cursor override → theme
+  // heading colour. Falls back to whatever `--cursor` resolves to at
+  // paint time when nothing is published.
+  const liColor = lineIndicatorOverride || cursorOverride || fallbackCursor;
+  if (liColor) {
+    container.style.setProperty("--line-indicator-color", liColor);
+  } else {
+    container.style.removeProperty("--line-indicator-color");
   }
 }

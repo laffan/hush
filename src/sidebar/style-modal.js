@@ -88,10 +88,28 @@ function buildDefaultDraftFromSettings(state) {
     headerScale: s.headerScale != null ? s.headerScale : 1.0,
     blockCursor: !!s.blockCursor,
     cursorMode: s.cursorMode || (s.blockCursor ? "block" : "system"),
+    lineIndicator: s.lineIndicator || "none",
+    lineIndicatorColor: s.lineIndicatorColor || null,
     // Default style's shader rides a top-level AppSettings field so
     // it persists alongside the other Default-only knobs.
     shaderLayer: s.shaderLayer ? { ...s.shaderLayer } : null,
   };
+}
+
+const LINE_INDICATOR_OPTIONS = [
+  { value: "none", label: "None" },
+  { value: "left-arrow", label: "Left Arrow" },
+  { value: "double-arrow", label: "Double Arrow" },
+  { value: "left-border", label: "Left Border" },
+  { value: "border", label: "Border" },
+  { value: "highlight", label: "Highlight" },
+];
+
+function resolveLineIndicatorColor(draft, colorTab) {
+  if (draft.lineIndicatorColor) return draft.lineIndicatorColor;
+  const colors = colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {});
+  if (colors.cursor) return colors.cursor;
+  return themeColorFor("cursor", colorTab === "light" ? draft.lightThemeId : draft.darkThemeId, colorTab);
 }
 
 
@@ -201,6 +219,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         headerScale: draft.headerScale != null ? draft.headerScale : 1.0,
         blockCursor: !!draft.blockCursor,
         cursorMode: draft.cursorMode || (draft.blockCursor ? "block" : "system"),
+        lineIndicator: draft.lineIndicator || "none",
+        lineIndicatorColor: draft.lineIndicatorColor || null,
         shaderLayer: draft.shaderLayer || null,
       });
     } else {
@@ -242,6 +262,8 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
         headerScale: state.settings.headerScale,
         blockCursor: state.settings.blockCursor,
         cursorMode: state.settings.cursorMode,
+        lineIndicator: state.settings.lineIndicator || "none",
+        lineIndicatorColor: state.settings.lineIndicatorColor || null,
         shaderLayer: state.settings.shaderLayer || null,
       });
     } else {
@@ -350,6 +372,21 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                   </select>
                 </div>
               </div>
+              <div class="style-editor-row">
+                <label>Line Indicator</label>
+                <div class="style-select-group">
+                  <select id="style-line-indicator" class="style-native-select">
+                    ${LINE_INDICATOR_OPTIONS.map(o => `<option value="${o.value}"${(draft.lineIndicator || "none") === o.value ? ' selected' : ''}>${o.label}</option>`).join("")}
+                  </select>
+                </div>
+              </div>
+              <div class="style-editor-row${(draft.lineIndicator || "none") === "none" ? ' style-row-hidden' : ''}" id="line-indicator-color-row">
+                <label>Indicator color</label>
+                <div class="style-color-group">
+                  <input type="color" id="style-line-indicator-color" value="${resolveLineIndicatorColor(draft, colorTab)}" />
+                  ${draft.lineIndicatorColor ? `<button class="style-reset-color" id="style-line-indicator-color-reset" title="Reset to cursor colour">&times;</button>` : ''}
+                </div>
+              </div>
             </div>
 
             <div class="style-modal-section">
@@ -423,7 +460,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
           <!-- RIGHT: preview pane (sits on top in narrow-window stack mode) -->
           <div class="style-modal-preview" id="style-preview-pane">
             <div class="style-preview-content">${formatPreviewHtml(PREVIEW_MD)}</div>
-            <div class="style-preview-cursor-demo">
+            <div class="style-preview-cursor-demo preview-active-line">
               <span class="preview-selected">clarity</span><span class="preview-cursor"></span> is.
             </div>
           </div>
@@ -476,6 +513,24 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     pane.style.fontFamily = font;
     pane.style.fontSize = size;
     pane.style.lineHeight = lh;
+
+    // Line indicator preview — paint the active-line row in the preview
+    // pane with the matching variant class and colour so users see the
+    // effect of the dropdown without leaving the modal.
+    const liColor = draft.lineIndicatorColor
+      || colors.cursor
+      || (getThemeById(themeId) && getThemeById(themeId).headingColor)
+      || cursor;
+    pane.style.setProperty("--line-indicator-color", liColor);
+    const liVariant = draft.lineIndicator && draft.lineIndicator !== "none" ? draft.lineIndicator : null;
+    const allVariants = ["left-arrow", "double-arrow", "left-border", "border", "highlight"];
+    pane.querySelectorAll(".preview-active-line").forEach(el => {
+      el.classList.remove("hush-active-line");
+      allVariants.forEach(v => el.classList.remove("hush-li-" + v));
+      if (liVariant) {
+        el.classList.add("hush-active-line", "hush-li-" + liVariant);
+      }
+    });
 
     const cursorEl = pane.querySelector(".preview-cursor");
     if (cursorEl) {
@@ -639,6 +694,27 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
       // existing consumers (settings serializer, exported styles, sync).
       draft.blockCursor = mode === "block";
       updatePreview();
+      scheduleSave();
+    });
+
+    const lineIndEl = backdrop.querySelector("#style-line-indicator");
+    if (lineIndEl) lineIndEl.addEventListener("change", () => {
+      draft.lineIndicator = lineIndEl.value || "none";
+      const colorRow = backdrop.querySelector("#line-indicator-color-row");
+      if (colorRow) colorRow.classList.toggle("style-row-hidden", draft.lineIndicator === "none");
+      updatePreview();
+      scheduleSave();
+    });
+    const lineIndColorEl = backdrop.querySelector("#style-line-indicator-color");
+    if (lineIndColorEl) lineIndColorEl.addEventListener("input", () => {
+      draft.lineIndicatorColor = lineIndColorEl.value;
+      render();
+      scheduleSave();
+    });
+    const lineIndColorReset = backdrop.querySelector("#style-line-indicator-color-reset");
+    if (lineIndColorReset) lineIndColorReset.addEventListener("click", () => {
+      draft.lineIndicatorColor = null;
+      render();
       scheduleSave();
     });
 

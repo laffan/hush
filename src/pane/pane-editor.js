@@ -10,6 +10,7 @@ import { EditorState } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
 import { getActiveTheme } from "../themes/index.js";
 import { createBaseExtensions, buildShortcutExtension } from "../editor/base-extensions.js";
+import { bindLineIndicatorToState } from "../editor/line-indicator.js";
 import { getMarkdownHighlight } from "../editor/markdown-highlight.js";
 import { bypassSeparatorFilter } from "../editor/plugins/project-view.js";
 import { createDryHighlightPlugin } from "../editor/plugins/dry-highlight.js";
@@ -52,6 +53,7 @@ export function createPaneEditor(container, appState, onChange, opts) {
     extensions: [...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
   });
   const view = new EditorView({ state: startState, parent: container });
+  bindLineIndicatorToState(view, appState);
 
   if (modeRef.typewriterMode) {
     _applyPaneTypewriter(view, modeRef, container);

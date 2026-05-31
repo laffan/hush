@@ -130,6 +130,50 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 
 
 
+/* ===== Line Indicator (per-style "highlight current line" affordance) =====
+   The plugin (src/editor/line-indicator.js) adds `hush-active-line` plus a
+   variant class to the active line via Decoration.line. CSS below paints
+   the variant — colour is driven by `--line-indicator-color`, which the
+   style application step seeds with the style's override or the cursor
+   colour as a fallback. The selectors are intentionally container-agnostic
+   so the same rules paint the style-modal preview pane. */
+.hush-active-line {
+  position: relative;
+}
+.hush-li-highlight {
+  background-color: color-mix(in srgb, var(--line-indicator-color, var(--cursor)) 10%, transparent);
+}
+.hush-li-left-border {
+  box-shadow: inset 3px 0 0 0 var(--line-indicator-color, var(--cursor));
+}
+.hush-li-border {
+  box-shadow:
+    inset 3px 0 0 0 var(--line-indicator-color, var(--cursor)),
+    inset -3px 0 0 0 var(--line-indicator-color, var(--cursor));
+}
+.hush-li-left-arrow::before,
+.hush-li-double-arrow::before,
+.hush-li-double-arrow::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.hush-li-left-arrow::before,
+.hush-li-double-arrow::before {
+  left: -18px;
+  border-left: 8px solid var(--line-indicator-color, var(--cursor));
+}
+.hush-li-double-arrow::after {
+  right: -18px;
+  border-right: 8px solid var(--line-indicator-color, var(--cursor));
+}
+
 #editor-container .cm-selectionBackground {
   background: var(--selection, rgba(128, 128, 128, 0.3)) !important;
 }
