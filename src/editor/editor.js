@@ -319,17 +319,40 @@ export function createEditor(container, state) {
   function applySystemSpellcheck() {
     const on = !!state.settings.systemSpellcheckEnabled;
     view.dispatch({ effects: spellcheckCompartment.reconfigure(spellcheckExtension(on)) });
-    // Belt-and-braces: nudge the WebView to re-run spellchecking against
-    // the existing content. Browsers only re-spellcheck on edit, so a
-    // user who flips the toggle on a 5-page doc would otherwise have to
-    // tap a key to see the first underlines. Blurring + refocusing the
-    // contentDOM is the cheapest trigger.
+    // The WebView only repaints squiggles on edits or focus events —
+    // blurring + refocusing forces a re-evaluation against existing text.
     if (on && document.activeElement === view.contentDOM) {
       view.contentDOM.blur();
       view.focus();
     }
+    // Debug breadcrumb so the toggle is visible without DevTools deep-dive.
+    // eslint-disable-next-line no-console
+    console.info("[hush][spellcheck] system spellcheck:", on ? "ON" : "OFF",
+      "→ cm-content spellcheck=", view.contentDOM.getAttribute("spellcheck"),
+      "autocorrect=", view.contentDOM.getAttribute("autocorrect"));
   }
   applySystemSpellcheck();
+
+  // Dev-console helper — call `__hushSpellcheckDebug()` to inspect the
+  // current state from anywhere in the page. Returns the toggle, the
+  // attributes actually painted onto cm-content, and a one-shot "poke"
+  // that re-runs the reconfigure + blur/focus dance.
+  // @ts-ignore — debug-only window mount.
+  window.__hushSpellcheckDebug = () => {
+    const cd = view.contentDOM;
+    const info = {
+      settingOn: !!state.settings.systemSpellcheckEnabled,
+      domSpellcheck: cd.getAttribute("spellcheck"),
+      domAutocorrect: cd.getAttribute("autocorrect"),
+      domAutocapitalize: cd.getAttribute("autocapitalize"),
+      domContentEditable: cd.getAttribute("contenteditable"),
+      hasFocus: document.activeElement === cd,
+      poke: () => applySystemSpellcheck(),
+    };
+    // eslint-disable-next-line no-console
+    console.table(info);
+    return info;
+  };
 
   state.on("mode-changed", () => {
     applyModes(state);
