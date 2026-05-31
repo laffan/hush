@@ -51,7 +51,18 @@ const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const shortcutCompartment = new Compartment();
 const readOnlyCompartment = new Compartment();
+const spellcheckCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
+
+/** Build the contentAttributes facet payload for the spellcheck mode. */
+function spellcheckExtension(on) {
+  return EditorView.contentAttributes.of({
+    spellcheck: on ? "true" : "false",
+    autocorrect: on ? "on" : "off",
+    autocapitalize: on ? "sentences" : "off",
+  });
+}
+export { spellcheckExtension, spellcheckCompartment };
 
 /**
  * Creates the CodeMirror 6 editor instance.
@@ -261,6 +272,7 @@ export function createEditor(container, state) {
       blurListener,
       shortcutCompartment.of(initialShortcuts),
       readOnlyCompartment.of([]),
+      spellcheckCompartment.of(spellcheckExtension(!!state.settings.systemSpellcheckEnabled)),
       ratchetKeymap,
       ratchetFilter,
       ratchetMouseFilter,
@@ -298,15 +310,24 @@ export function createEditor(container, state) {
     parent: container,
   });
 
-  // System spellcheck — toggle the WebView's native spellchecker on the
-  // contentDOM directly. CodeMirror sets `spellcheck="false"` by default
-  // to keep its own selection model in charge; we flip it back on when
-  // the user opts in via the command palette / settings.
+  // System spellcheck — reconfigure the contentAttributes compartment so
+  // CodeMirror's view manages the attribute alongside its own. Setting
+  // the raw attribute on `view.contentDOM` directly gets clobbered by
+  // CodeMirror's next measure / update cycle (the `contentAttributes`
+  // facet is the source of truth), which is why the previous direct
+  // setAttribute call had no visible effect on hover.
   function applySystemSpellcheck() {
     const on = !!state.settings.systemSpellcheckEnabled;
-    view.contentDOM.setAttribute("spellcheck", on ? "true" : "false");
-    view.contentDOM.setAttribute("autocorrect", on ? "on" : "off");
-    view.contentDOM.setAttribute("autocapitalize", on ? "sentences" : "off");
+    view.dispatch({ effects: spellcheckCompartment.reconfigure(spellcheckExtension(on)) });
+    // Belt-and-braces: nudge the WebView to re-run spellchecking against
+    // the existing content. Browsers only re-spellcheck on edit, so a
+    // user who flips the toggle on a 5-page doc would otherwise have to
+    // tap a key to see the first underlines. Blurring + refocusing the
+    // contentDOM is the cheapest trigger.
+    if (on && document.activeElement === view.contentDOM) {
+      view.contentDOM.blur();
+      view.focus();
+    }
   }
   applySystemSpellcheck();
 

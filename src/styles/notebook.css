@@ -177,19 +177,12 @@ body.notebook-mode .column-resizer {
 }
 
 /* Minimized toolbar — clicking the drag handle without dragging hides
-   every other child so only the handle remains. The handle is
-   positioned by JS relative to the bar's bbox, so we use
-   `visibility: hidden` (not display:none) on children to keep the bar's
-   layout footprint intact — that way the drag handle stays exactly
-   where the user clicked it. Clicking the handle again restores the
-   bar. */
-.notebook-toolbar.notebook-toolbar-minimized > * {
-  visibility: hidden;
-}
+   the whole bar and parks the handle 15 px in from the docked edge so
+   it stays visible without covering canvas content. Click the handle
+   again to restore. The handle's position is owned by JS in this state
+   so it doesn't drift when the bar's bbox would otherwise change. */
 .notebook-toolbar.notebook-toolbar-minimized {
-  background: transparent !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
+  display: none !important;
 }
 .notebook-tool-panel-drag-tab-minimized .notebook-tool-panel-drag-grip {
   opacity: 0.8;

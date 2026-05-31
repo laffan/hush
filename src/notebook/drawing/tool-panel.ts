@@ -510,13 +510,58 @@ export function createDrawingToolPanel(
     dragTab.dataset.vertical = vertical ? "1" : "0";
   }
 
+  /** When the bar is collapsed, the toolbar element is display:none and
+   *  the drag handle is the only thing on screen. We park it 15 px in
+   *  from whichever edge the bar is docked to so it stays out of the
+   *  canvas's way without dropping off the side. The strip is also
+   *  given a comfortable click width that no longer tracks the (now
+   *  invisible) bar's size. */
+  const MINIMIZED_EDGE_OFFSET = 15;
+  const MINIMIZED_HANDLE_LENGTH_HORIZONTAL = 220;
+  const MINIMIZED_HANDLE_LENGTH_VERTICAL = 220;
+
+  function placeMinimizedDragTab(parent: HTMLElement): void {
+    const parentRect = parent.getBoundingClientRect();
+    const vertical = state.drawingToolbarVertical;
+    const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
+    const rightInset = state.rightInset || 0;
+    const usableW = Math.max(0, parentRect.width - leftInset - rightInset);
+    dragTab.style.left = "auto";
+    dragTab.style.right = "auto";
+    dragTab.style.top = "auto";
+    dragTab.style.bottom = "auto";
+    dragTab.style.transform = "none";
+    if (vertical) {
+      // Vertical bar lives on the left edge.
+      dragTab.style.left = `${leftInset + MINIMIZED_EDGE_OFFSET}px`;
+      dragTab.style.top = `${parentRect.height / 2}px`;
+      dragTab.style.transform = "translateY(-50%)";
+      dragTab.style.width = `${DRAG_STRIP_THICKNESS}px`;
+      dragTab.style.height = `${MINIMIZED_HANDLE_LENGTH_VERTICAL}px`;
+    } else {
+      // Horizontal bar — centered along the canvas-area's main axis.
+      const centerX = leftInset + usableW / 2;
+      const handleW = Math.min(MINIMIZED_HANDLE_LENGTH_HORIZONTAL, usableW);
+      dragTab.style.left = `${centerX - handleW / 2}px`;
+      dragTab.style.width = `${handleW}px`;
+      dragTab.style.height = `${DRAG_STRIP_THICKNESS}px`;
+      if (state.drawingToolbarPosition === "bottom") {
+        dragTab.style.bottom = `${MINIMIZED_EDGE_OFFSET}px`;
+      } else {
+        dragTab.style.top = `${MINIMIZED_EDGE_OFFSET}px`;
+      }
+    }
+  }
+
   function applyLayout(): void {
     const parent = bottomToolbar.parentElement;
     if (!parent) return;
     const vertical = state.drawingToolbarVertical;
     styleDragTab(vertical);
+    const minimized = bottomToolbar.classList.contains("notebook-toolbar-minimized");
 
     const place = () => {
+      if (minimized) { placeMinimizedDragTab(parent); return; }
       const parentRect = parent.getBoundingClientRect();
       const tbRect = bottomToolbar.getBoundingClientRect();
       dragTab.style.left = "auto";

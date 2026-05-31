@@ -6,7 +6,8 @@
  */
 
 import { EditorView } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
+import { spellcheckExtension } from "../editor/editor.js";
 import { syntaxHighlighting } from "@codemirror/language";
 import { getActiveTheme } from "../themes/index.js";
 import { createBaseExtensions, buildShortcutExtension } from "../editor/base-extensions.js";
@@ -46,24 +47,25 @@ export function createPaneEditor(container, appState, onChange, opts) {
     }
   });
 
+  // Mirror the main editor's system-spellcheck toggle via a compartment.
+  // Setting raw attributes on contentDOM gets clobbered by CodeMirror's
+  // next view update, so we route through the contentAttributes facet.
+  const spellcheckComp = new Compartment();
   const extraExts = opts?.extraExtensions || [];
   const startState = EditorState.create({
     doc: "",
-    extensions: [...extensions, dryPlugin, typewriterUpdateListener, ...extraExts],
+    extensions: [
+      ...extensions, dryPlugin, typewriterUpdateListener,
+      spellcheckComp.of(spellcheckExtension(!!appState.settings.systemSpellcheckEnabled)),
+      ...extraExts,
+    ],
   });
   const view = new EditorView({ state: startState, parent: container });
 
-  // Mirror the main editor's system-spellcheck toggle. The setting is
-  // global so panes pick it up the same way; settings-changed is
-  // dispatched by the host editor's listener and we just push the
-  // attribute onto every pane's contentDOM here on creation.
   const applyPaneSpellcheck = () => {
     const on = !!appState.settings.systemSpellcheckEnabled;
-    view.contentDOM.setAttribute("spellcheck", on ? "true" : "false");
-    view.contentDOM.setAttribute("autocorrect", on ? "on" : "off");
-    view.contentDOM.setAttribute("autocapitalize", on ? "sentences" : "off");
+    view.dispatch({ effects: spellcheckComp.reconfigure(spellcheckExtension(on)) });
   };
-  applyPaneSpellcheck();
   appState.on("settings-changed", applyPaneSpellcheck);
 
   if (modeRef.typewriterMode) {
