@@ -319,17 +319,31 @@ export function createEditor(container, state) {
   function applySystemSpellcheck() {
     const on = !!state.settings.systemSpellcheckEnabled;
     view.dispatch({ effects: spellcheckCompartment.reconfigure(spellcheckExtension(on)) });
-    // The WebView only repaints squiggles on edits or focus events —
-    // blurring + refocusing forces a re-evaluation against existing text.
-    if (on && document.activeElement === view.contentDOM) {
-      view.contentDOM.blur();
-      view.focus();
+    // WKWebView (macOS / iPadOS) and most browsers only run the spell
+    // checker on freshly-edited text or on contenteditable elements that
+    // have just transitioned in/out of editability. Toggling
+    // `contenteditable` off then on inside a microtask forces the
+    // engine to walk the existing text — that's what makes
+    // already-typed misspellings actually get squiggles instead of just
+    // future input. Also re-focus so the WebView treats this as an
+    // active edit surface.
+    if (on) {
+      const cd = view.contentDOM;
+      cd.setAttribute("contenteditable", "false");
+      // Two rAFs so the off-state lands in a paint frame before we flip
+      // back; one rAF isn't always enough in WKWebView.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          cd.setAttribute("contenteditable", "true");
+          view.focus();
+        });
+      });
     }
-    // Debug breadcrumb so the toggle is visible without DevTools deep-dive.
     // eslint-disable-next-line no-console
-    console.info("[hush][spellcheck] system spellcheck:", on ? "ON" : "OFF",
+    console.log("[hush][spellcheck] system spellcheck:", on ? "ON" : "OFF",
       "→ cm-content spellcheck=", view.contentDOM.getAttribute("spellcheck"),
-      "autocorrect=", view.contentDOM.getAttribute("autocorrect"));
+      "autocorrect=", view.contentDOM.getAttribute("autocorrect"),
+      "hasFocus=", document.activeElement === view.contentDOM);
   }
   applySystemSpellcheck();
 

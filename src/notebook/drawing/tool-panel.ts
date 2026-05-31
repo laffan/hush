@@ -276,45 +276,44 @@ export function createDrawingToolPanel(
     dragTab.classList.toggle("notebook-tool-panel-drag-tab-minimized", !wasMinimized);
     applyLayout();
   }
+  /** Lazily promote a snapped position to "custom" only once a real
+   *  drag is underway. The previous implementation promoted on every
+   *  pointerdown, which silently flipped a left-docked bar to
+   *  custom-horizontal *before* the click handler could read it — so a
+   *  click-to-minimize on the left bar ended up using the wrong axis. */
+  function promoteToCustomForDrag() {
+    const parent = bottomToolbar.parentElement;
+    if (!parent || state.drawingToolbarPosition === "custom") return;
+    const parentRect = parent.getBoundingClientRect();
+    const tbRect = bottomToolbar.getBoundingClientRect();
+    const sc = {
+      x: tbRect.left + tbRect.width / 2 - parentRect.left,
+      y: tbRect.top + tbRect.height / 2 - parentRect.top,
+    };
+    state.drawingToolbarPosition = "custom";
+    state.notify("drawingToolbarPosition");
+    state.notify("drawingToolbarVertical");
+    queueMicrotask(() => {
+      const pr = parent.getBoundingClientRect();
+      const tr = bottomToolbar.getBoundingClientRect();
+      const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
+      const natCx = (tr.left + tr.width / 2 - pr.left) - cur.x;
+      const natCy = (tr.top + tr.height / 2 - pr.top) - cur.y;
+      const desired = clampOffset(sc.x - natCx, sc.y - natCy);
+      state.setDrawingToolbarOffset(desired.x, desired.y);
+      dragStartOffset = { ...state.drawingToolbarOffset };
+    });
+  }
+
   function onDragPointerDown(e: PointerEvent) {
     if (e.button !== undefined && e.button !== 0) return;
     dragPointerId = e.pointerId;
     dragStartClient = { x: e.clientX, y: e.clientY };
     pointerDownAt = performance.now();
     dragMovedPastClickThreshold = false;
-    // Promote a snapped position to custom while dragging so the offset
-    // delta paints live. Capture the pre-drag screen center so the bar
-    // starts the drag exactly where it sat before.
-    const parent = bottomToolbar.parentElement;
-    if (parent && state.drawingToolbarPosition !== "custom") {
-      const parentRect = parent.getBoundingClientRect();
-      const tbRect = bottomToolbar.getBoundingClientRect();
-      const sc = {
-        x: tbRect.left + tbRect.width / 2 - parentRect.left,
-        y: tbRect.top + tbRect.height / 2 - parentRect.top,
-      };
-      state.drawingToolbarPosition = "custom";
-      state.notify("drawingToolbarPosition");
-      state.notify("drawingToolbarVertical");
-      // After the layout pass switches to custom (centered on parent),
-      // back-compute the offset that puts the bar back at its old centre.
-      queueMicrotask(() => {
-        const pr = parent.getBoundingClientRect();
-        const tr = bottomToolbar.getBoundingClientRect();
-        const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
-        const natCx = (tr.left + tr.width / 2 - pr.left) - cur.x;
-        const natCy = (tr.top + tr.height / 2 - pr.top) - cur.y;
-        const desired = clampOffset(sc.x - natCx, sc.y - natCy);
-        state.setDrawingToolbarOffset(desired.x, desired.y);
-        dragStartOffset = { ...state.drawingToolbarOffset };
-      });
-    }
     dragStartOffset = { ...state.drawingToolbarOffset };
     try { dragTab.setPointerCapture(e.pointerId); } catch { /* noop */ }
     dragTab.style.cursor = "grabbing";
-    // Defer snap-zone display until the pointer crosses the click
-    // threshold — flashing the zones for ~250 ms on a click looks like
-    // a bug.
     e.preventDefault();
   }
   function onDragPointerMove(e: PointerEvent) {
@@ -325,6 +324,11 @@ export function createDrawingToolPanel(
         (Math.abs(dx) > CLICK_THRESHOLD_PX || Math.abs(dy) > CLICK_THRESHOLD_PX)) {
       dragMovedPastClickThreshold = true;
       if (!bottomToolbar.classList.contains("notebook-toolbar-minimized")) {
+        // Now that we know this is a drag (not a click), promote a
+        // snapped position to custom so the drag delta paints live.
+        // Re-read dragStartOffset since promote may schedule an update.
+        promoteToCustomForDrag();
+        dragStartOffset = { ...state.drawingToolbarOffset };
         showSnapZones(true);
       }
     }
