@@ -5,7 +5,7 @@
  * Exports the `icons` object (shared with pickers / helpers), the
  * main `buildCommands(state)` factory, and `buildActiveModeTurnoffs`.
  */
-import { openFindReplace } from "./editor/find-replace.js";
+import { openFindReplace, openQuickFindBar } from "./editor/find-replace.js";
 import { openSettingsWindow } from "./settings/settings-ui.js";
 import { findNodeByFileId } from "./state/tree-helpers.js";
 import {
@@ -45,6 +45,8 @@ import versionsRaw from "./sidebar/sidebar_icons/versions.svg?raw";
 import exportRaw from "./sidebar/sidebar_icons/export.svg?raw";
 import stylesRaw from "./sidebar/sidebar_icons/styles.svg?raw";
 import zoteroRaw from "./sidebar/sidebar_icons/zotero.svg?raw";
+import settingsRaw from "./sidebar/sidebar_icons/settings.svg?raw";
+import searchRaw from "../temp/temp-icons/search.svg?raw";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 
 /** Resolve the current "this file" tree-node id — the node behind
@@ -104,7 +106,7 @@ const icons = {
   pane: _wrapIcon(paneRaw), ratchet: _wrapIcon(ratchetRaw), private: _wrapIcon(privateRaw),
   typewriter: _wrapIcon(typewriterRaw), dry: _wrapIcon(dryRaw), focus: _wrapIcon(focusRaw),
   versions: _wrapIcon(versionsRaw), export: _wrapIcon(exportRaw), styles: _wrapIcon(stylesRaw),
-  zotero: _wrapIcon(zoteroRaw),
+  zotero: _wrapIcon(zoteroRaw), settings: _wrapIcon(settingsRaw), search: _wrapIcon(searchRaw),
   // Stroke-only "Aa" with a shallow cross overlay; picks up `stroke: currentColor`.
   proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="2" y1="14" x2="22" y2="10"/><line x1="2" y1="10" x2="22" y2="14"/></svg>`,
   doc: typeIcons.document, notebook: typeIcons.notebook, project: typeIcons.project, trash: typeIcons.trash,
@@ -311,7 +313,9 @@ function buildCommands(state) {
       action: (s) => s.toggleFullscreen() },
     { id: "find", label: "Find & replace", icon: null, shortcutKey: "shortcutFind", ctx: "shared",
       action: (s) => { if (s.editor) openFindReplace(s.editor.view, s); } },
-    { id: "settings", label: "Settings", icon: null, shortcutKey: null, ctx: "shared",
+    { id: "find-in-doc", label: "Find in document", icon: icons.search, shortcutKey: "shortcutQuickFind", ctx: "doc",
+      action: (s) => { if (s.editor) openQuickFindBar(s.editor.view, s); } },
+    { id: "settings", label: "Settings", icon: icons.settings, shortcutKey: null, ctx: "shared",
       action: (s) => openSettingsWindow(s) },
     { id: "backup", label: "Backup App Data", icon: icons.export, shortcutKey: null, ctx: "shared",
       action: async (s) => {

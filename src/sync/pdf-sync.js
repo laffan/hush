@@ -250,6 +250,15 @@ export function triggerBackgroundDownload(fileId, state) {
       _downloadProgress.delete(fileId);
       state.emit("files-changed");
       _onBatchItemDone(state);
+      // Pre-warm the annotation cache for this attachment so opening the
+      // PDF later (potentially on another device that just synced the
+      // entry) doesn't need a network round-trip to paint annotations.
+      try {
+        const { getAnnotations } = await import("../zotero-annotations.js");
+        await getAnnotations(meta.zoteroAttKey, userId, apiKey);
+      } catch (e) {
+        console.error(`Annotation prefetch failed for ${fileId}:`, e);
+      }
     } catch (e) {
       console.error(`Background PDF download failed for ${fileId}:`, e);
       _downloadProgress.delete(fileId);

@@ -170,6 +170,10 @@ export function createShelfPanel(
   function applyTheme() {
     const theme = t();
     panel.style.background = theme.uiBackground;
+    // Use the app's UI font (matches the file sidebar) rather than the
+    // active style's editor font, which would otherwise cascade in via
+    // the canvas's `--font-family`.
+    panel.style.fontFamily = "var(--ui-font-family)";
     // Match the files sidebar's subtle panel border (--panel-border) rather
     // than the fainter canvas grid colour so the two read consistently.
     const panelBorder = getComputedStyle(document.documentElement)
