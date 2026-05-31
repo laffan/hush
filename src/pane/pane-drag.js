@@ -5,10 +5,11 @@
  * screen deltas into world coords via the camera zoom.
  *
  * Drag also drives the dock workflow — while the user drags the title
- * bar, four highlighted drop zones paint inside the canvas. Releasing
- * inside a zone calls `dockPane(pane, edge)`; releasing outside leaves
- * the pane wherever the drag ended. Dragging the title of an already
- * docked pane undocks it first.
+ * bar, four highlighted drop zones (left / right / top / bottom) paint
+ * inside the canvas. Releasing inside a zone calls
+ * `dockPane(pane, edge)`; releasing outside leaves the pane wherever
+ * the drag ended. Dragging the title of an already docked pane
+ * undocks it first.
  */
 import {
   appState,
@@ -26,8 +27,11 @@ import {
   dropZoneAt,
   isDocked,
   applyDockGeometry,
+  reflowAllDockedPanes,
   getLeftInset,
   getRightInset,
+  getTopInset,
+  getBottomInset,
 } from "./pane-dock.js";
 
 let _dockOverlay = null;
@@ -36,7 +40,7 @@ function ensureDockOverlay() {
   if (_dockOverlay) return _dockOverlay;
   const root = document.createElement("div");
   root.className = "pane-dock-overlay";
-  for (const edge of ["left", "right"]) {
+  for (const edge of ["left", "right", "top", "bottom"]) {
     const z = document.createElement("div");
     z.className = `pane-dock-zone pane-dock-zone-${edge}`;
     z.dataset.edge = edge;
@@ -67,10 +71,20 @@ function positionDockZones() {
   const ZONE = 50;
   const leftInset = getLeftInset();
   const rightInset = getRightInset();
+  const topInset = getTopInset();
+  const bottomInset = getBottomInset();
   const left = overlay.querySelector(".pane-dock-zone-left");
   const right = overlay.querySelector(".pane-dock-zone-right");
+  const top = overlay.querySelector(".pane-dock-zone-top");
+  const bottom = overlay.querySelector(".pane-dock-zone-bottom");
+  // Side zones run full container height; top/bottom slot between them
+  // so the four highlights tile cleanly with no overlap at the corners.
   if (left) Object.assign(left.style, { left: leftInset + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
   if (right) Object.assign(right.style, { left: (r.width - rightInset - ZONE) + "px", top: "0px", width: ZONE + "px", height: r.height + "px" });
+  const innerLeft = leftInset + ZONE;
+  const innerWidth = Math.max(0, r.width - leftInset - rightInset - ZONE * 2);
+  if (top) Object.assign(top.style, { left: innerLeft + "px", top: topInset + "px", width: innerWidth + "px", height: ZONE + "px" });
+  if (bottom) Object.assign(bottom.style, { left: innerLeft + "px", top: (r.height - bottomInset - ZONE) + "px", width: innerWidth + "px", height: ZONE + "px" });
 }
 
 function highlightDockZone(edge) {
@@ -210,6 +224,10 @@ export function setupPaneResize(pane, deps) {
           if (pane.dockEdge === "top" || pane.dockEdge === "bottom") pane.dockUserSize = h;
           else pane.dockUserSize = w;
           applyDockGeometry(pane);
+          // Perpendicular siblings need to re-flex when this dock's
+          // cross-axis footprint changes — a wider left-dock means a
+          // narrower top-dock width.
+          reflowAllDockedPanes();
           deps.notifyPaneDragMove?.();
           return;
         }

@@ -460,14 +460,16 @@
 /* ===== PDF container — sidebar-aware positioning ===== */
 #pdf-container {
   position: absolute;
-  top: 0;
   /* Narrow when docked panes are present so the PDF viewer's chrome
      stays inside the visible area. `--pane-dock-left-edge` is the
      absolute viewport x of the left dock's right edge (already past
-     the sidebar) so the container clears sidebar + dock together. */
+     the sidebar) so the container clears sidebar + dock together.
+     Top/bottom edges shrink directly off the height vars since there's
+     no sidebar overlap to factor in on those axes. */
+  top: var(--pane-dock-top-height, 0px);
   left: var(--pane-dock-left-edge, 0px);
   right: var(--pane-dock-right-width, 0px);
-  bottom: 0;
+  bottom: var(--pane-dock-bottom-height, 0px);
   transition: left 0.2s;
 }
 #pdf-container.hidden { display: none; }

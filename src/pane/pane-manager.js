@@ -174,8 +174,10 @@ function onContextChange() {
   notifyLayoutChange();
   // Context switches change which panes are visible — re-publish the
   // dock CSS vars so chrome in the new context stops shifting for a
-  // pane that's docked but hidden (owner is a different doc).
-  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
+  // pane that's docked but hidden (owner is a different doc), and
+  // re-flex remaining docks so a visible cross-axis sibling reclaims
+  // the space the hidden ones had carved out.
+  import("./pane-dock.js").then((m) => { m.publishDockCssVars(); m.reflowAllDockedPanes(); }).catch(() => {});
 }
 
 /** Collect pane-layout signals into a single payload. Floating panes
@@ -188,18 +190,25 @@ function _collectPaneMetrics() {
   let centroidSum = 0;
   let dockedLeftWidth = 0;
   let dockedRightWidth = 0;
+  let dockedTopHeight = 0;
+  let dockedBottomHeight = 0;
   for (const [, p] of panes) {
     if (p.el?.style.display === "none") continue;
     if (p.docked) {
       if (p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
       if (p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
+      if (p.dockEdge === "top") dockedTopHeight = Math.max(dockedTopHeight, p.height || 0);
+      if (p.dockEdge === "bottom") dockedBottomHeight = Math.max(dockedBottomHeight, p.height || 0);
       continue;
     }
     hasFloatingPane = true;
     floatingCount++;
     centroidSum += (p.x || 0) + (p.width || 0) / 2;
   }
-  return { hasFloatingPane, floatingCount, centroidSum, dockedLeftWidth, dockedRightWidth };
+  return {
+    hasFloatingPane, floatingCount, centroidSum,
+    dockedLeftWidth, dockedRightWidth, dockedTopHeight, dockedBottomHeight,
+  };
 }
 
 /** Lighter-weight refresh fired during a pane drag. Recomputes the
@@ -209,21 +218,29 @@ function _collectPaneMetrics() {
  *  which would churn unrelated subscribers on every pointermove. */
 export function refreshPaneLayoutMetrics() {
   const m = _collectPaneMetrics();
-  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane
+    || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0
+    || m.dockedTopHeight > 0 || m.dockedBottomHeight > 0;
   appState.runtime.visiblePaneCount = m.floatingCount;
   appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
   appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
   appState.runtime.dockedRightWidth = m.dockedRightWidth;
+  appState.runtime.dockedTopHeight = m.dockedTopHeight;
+  appState.runtime.dockedBottomHeight = m.dockedBottomHeight;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
 }
 
 function notifyLayoutChange() {
   const m = _collectPaneMetrics();
-  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane
+    || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0
+    || m.dockedTopHeight > 0 || m.dockedBottomHeight > 0;
   appState.runtime.visiblePaneCount = m.floatingCount;
   appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
   appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
   appState.runtime.dockedRightWidth = m.dockedRightWidth;
+  appState.runtime.dockedTopHeight = m.dockedTopHeight;
+  appState.runtime.dockedBottomHeight = m.dockedBottomHeight;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
   // Surface pane-set changes to the notebook shelf (and any other
   // listener) so its pane rows can refresh on create/close/show/hide.
@@ -361,8 +378,10 @@ export function closePane(id) {
   // Make sure the dock CSS vars + chrome positions reset once the pane
   // is gone — without this, a closed right-docked pane leaves
   // --pane-dock-right-width pointing at its old width and the shelf
-  // stays shifted.
-  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
+  // stays shifted. Re-flex remaining docks too so a sibling on the
+  // perpendicular axis reclaims the cross-axis space the closed pane
+  // had carved out.
+  import("./pane-dock.js").then((m) => { m.publishDockCssVars(); m.reflowAllDockedPanes(); }).catch(() => {});
   schedulePersist();
 }
 

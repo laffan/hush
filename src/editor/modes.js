@@ -153,6 +153,13 @@ export function updateColumnResizers(state) {
     // leaves the column properly contained.
     leftInsetOffset += state.runtime.dockedLeftWidth || 0;
     rightInsetOffset += state.runtime.dockedRightWidth || 0;
+    // Top/bottom docks shrink the editor vertically the same way as if
+    // the window had shortened. The scroller is the only mounted CM
+    // surface that pads symmetrically, so we apply matching paddingTop
+    // / paddingBottom further down — and offset the column resizers'
+    // top / bottom rails too so they don't run behind the dock.
+    const topInsetOffset = state.runtime.dockedTopHeight || 0;
+    const bottomInsetOffset = state.runtime.dockedBottomHeight || 0;
 
     const availableWidth = w - leftInsetOffset - rightInsetOffset;
     let leftPad, rightPad;
@@ -194,8 +201,19 @@ export function updateColumnResizers(state) {
       // a gap) and in notebook mode (no scroller there anyway).
       // When typewriter mode is active its own paddingBottom
       // calculation overrides this value.
+      // Top-dock height becomes paddingTop so the doc's first line
+      // shows below the dock; bottom-dock height is added to the 50vh
+      // (or replaces empty pad in non-scroller layouts) so the
+      // last-line-to-centre behaviour clears the dock.
       const hasScroller = !state.currentNotebookFileId;
-      scroller.style.paddingBottom = hasScroller ? "50vh" : "";
+      scroller.style.paddingTop = topInsetOffset > 0 ? topInsetOffset + "px" : "";
+      if (hasScroller) {
+        scroller.style.paddingBottom = bottomInsetOffset > 0
+          ? `calc(50vh + ${bottomInsetOffset}px)`
+          : "50vh";
+      } else {
+        scroller.style.paddingBottom = bottomInsetOffset > 0 ? bottomInsetOffset + "px" : "";
+      }
     }
     if (state.editor && state.editor.view) {
       // requestMeasure alone is not always enough after padding changes
@@ -215,6 +233,13 @@ export function updateColumnResizers(state) {
       rightResizer.style.display = "";
       leftResizer.style.left = (leftPad - 10) + "px";
       rightResizer.style.left = (w - rightPad + 10) + "px";
+      // Clip the rails so they don't run behind top / bottom docks —
+      // the dock is opaque and the resizer's hover stripe would peek
+      // out otherwise.
+      leftResizer.style.top = topInsetOffset + "px";
+      leftResizer.style.bottom = bottomInsetOffset + "px";
+      rightResizer.style.top = topInsetOffset + "px";
+      rightResizer.style.bottom = bottomInsetOffset + "px";
     } else {
       leftResizer.style.display = "none";
       rightResizer.style.display = "none";
