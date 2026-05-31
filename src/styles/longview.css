@@ -1,13 +1,16 @@
 /* ===== Right Panel Overlay (mirrors left panel-overlay) ===== */
 #right-panel-overlay {
   position: fixed;
-  top: 0;
-  /* Shift left when a right-docked pane is present so the outline
-     stays associated with the editor rather than the pane. The dock
-     module writes `--pane-dock-right-width` on documentElement. */
+  /* Shift away from any docked panes so the outline stays associated
+     with the editor rather than the pane. The dock module writes the
+     width/height vars on documentElement; bottom/top vars shrink the
+     panel from the matching edge when a top/bottom-dock is present.
+     Height becomes auto so top + bottom can both clamp at once. */
+  top: var(--pane-dock-top-height, 0px);
   right: var(--pane-dock-right-width, 0px);
+  bottom: var(--pane-dock-bottom-height, 0px);
   width: 200px;
-  height: 100%;
+  height: auto;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
   border-left: 1px solid var(--panel-border);

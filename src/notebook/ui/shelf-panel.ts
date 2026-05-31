@@ -138,7 +138,7 @@ export function createShelfPanel(
   let openWidth = Math.max(200, opts.initialWidth ?? 280);
 
   const panel = h("div", {
-    style: { position: "absolute", top: "calc(env(safe-area-inset-top) + 20px)", right: "calc(env(safe-area-inset-right) + var(--pane-dock-right-width, 0px))", bottom: "calc(env(safe-area-inset-bottom) + 20px)", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
+    style: { position: "absolute", top: "calc(env(safe-area-inset-top) + 20px + var(--pane-dock-top-height, 0px))", right: "calc(env(safe-area-inset-right) + var(--pane-dock-right-width, 0px))", bottom: "calc(env(safe-area-inset-bottom) + 20px + var(--pane-dock-bottom-height, 0px))", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
   });
   panel.classList.add("notebook-shelf");
 
