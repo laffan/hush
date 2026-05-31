@@ -402,9 +402,10 @@ export function installDockReflowListeners() {
 }
 
 /** Hit-test client coords against a docked-zone overlay. Returns the
- *  edge name or null. Corner overlaps prefer the horizontal axis since
- *  side docks span full container height by default — closer to how
- *  a window resize would feel. */
+ *  edge name or null. Trapezoidal zones meet on a 45° diagonal at
+ *  each corner, so the rule is simply "which edge are you closest to,
+ *  and is that distance under ZONE?" — ties at the diagonal fall back
+ *  to insertion order (left / right / top / bottom). */
 export function dropZoneAt(clientX, clientY) {
   if (!containerEl) return null;
   const r = containerEl.getBoundingClientRect();
@@ -416,9 +417,16 @@ export function dropZoneAt(clientX, clientY) {
   if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
   const dx = clientX - r.left;
   const dy = clientY - r.top;
-  if (dx < leftInset + ZONE) return "left";
-  if (dx > r.width - rightInset - ZONE) return "right";
-  if (dy < topInset + ZONE) return "top";
-  if (dy > r.height - bottomInset - ZONE) return "bottom";
+  const fromLeft = dx - leftInset;
+  const fromRight = r.width - rightInset - dx;
+  const fromTop = dy - topInset;
+  const fromBottom = r.height - bottomInset - dy;
+  if (fromLeft < 0 || fromRight < 0 || fromTop < 0 || fromBottom < 0) return null;
+  const min = Math.min(fromLeft, fromRight, fromTop, fromBottom);
+  if (min >= ZONE) return null;
+  if (min === fromLeft) return "left";
+  if (min === fromRight) return "right";
+  if (min === fromTop) return "top";
+  if (min === fromBottom) return "bottom";
   return null;
 }
