@@ -9,15 +9,36 @@ import { findNodeByFileId } from "../state/tree-helpers.js";
 
 const SKIP_TYPES = new Set(["folder", "project", "desk", "image"]);
 
-/** Walk the file tree and collect every linkable note (docs + notebooks),
- *  skipping anything inside any desk's Trash. Returns:
+/** Resolve the active desk's tree node. Returns null when desks haven't
+ *  been initialised yet so callers can fall back to the whole tree. */
+function getActiveDeskNode(state) {
+  const tree = state.fileTree || [];
+  const id = state.settings?.activeDeskId;
+  if (id) {
+    const match = tree.find((n) => n && n.type === "desk" && n.id === id);
+    if (match) return match;
+  }
+  return tree.find((n) => n && n.type === "desk") || null;
+}
+
+/** Walk the file tree and collect every linkable note (docs + notebooks)
+ *  in the *active desk only*, skipping anything inside that desk's
+ *  Trash. A wikilink lives inside a document that belongs to a single
+ *  desk; resolving across desks would let a `[[Note]]` typed in Desk A
+ *  silently land on a same-named note in Desk B even though the two
+ *  desks are otherwise sealed from each other (sidebar, file picker,
+ *  Send Selected, sync). Returns:
  *    [{ nodeId, fileId, name, type, path }]
  *  where `path` is the breadcrumb of containing folders / projects, used
  *  in the search popup to disambiguate same-name notes living in
  *  different parents. */
 export function getLinkableNotes(state) {
   const out = [];
-  walk(state.fileTree || [], [], (node, crumb) => {
+  const desk = getActiveDeskNode(state);
+  // Pre-desk migrations have a flat tree with no desk node; fall back
+  // to walking everything so the popup still functions on first launch.
+  const roots = desk ? (desk.children || []) : (state.fileTree || []);
+  walk(roots, [], (node, crumb) => {
     if (!node) return;
     if (node.type === "document" || node.type === "notebook") {
       if (!node.fileId) return;

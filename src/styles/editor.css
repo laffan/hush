@@ -21,6 +21,40 @@
   z-index: 0; /* Creates stacking context so marginalia stays below sidebar/panels */
 }
 
+/* "In the trash" banner — fixed strip above the editor. Pairs with the
+   editor's read-only lock so trashed files stay viewable without the
+   autosave loop quietly writing into a file the user has thrown away. */
+.trash-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  padding: 6px 16px;
+  text-align: center;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: #c0392b;
+  pointer-events: none;
+}
+.trash-banner.hidden {
+  display: none;
+}
+
+/* When a trashed file is open, gate input on the notebook canvas the
+   same way the editor's CodeMirror read-only compartment gates the doc
+   surface. Pointer events on the canvas itself (and its overlays) are
+   blocked; the toolbar / shelf stay reachable so the user can still
+   navigate. */
+body.file-in-trash #notebook-container .notes-canvas,
+body.file-in-trash #notebook-container .notes-canvas + * {
+  pointer-events: none;
+}
+
 #editor-container .cm-editor {
   height: 100%;
   font-family: var(--font-family);

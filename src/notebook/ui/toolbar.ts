@@ -111,14 +111,29 @@ export function createToolbar(state: DrawingState): HTMLElement {
     const parentH = parentEl?.clientHeight || window.innerHeight;
     const usableW = Math.max(0, parentW - leftInset - rightInset);
 
-    // Responsive compaction: applies in any horizontal layout.
+    // Responsive compaction: applies in any horizontal layout. Triggered
+    // when either the available width can't accommodate the natural bar
+    // width OR the parent's height is too short to leave breathing room
+    // around the full-size bar (e.g. a notebook pane that's been shrunk
+    // vertically — the previous logic only watched width so the bar
+    // stayed at 36 px and crowded a short pane).
     const vertical = state.drawingToolbarVertical;
     let compact = false;
     if (!vertical) {
       // Quick natural-width estimate: ~44px per visible child (36px button + 4px gap + padding).
       const childCount = Array.from(container.children).filter((c) => (c as HTMLElement).offsetParent !== null || true).length;
       const estimate = childCount * 44 + 64; // 64 for drag tab + bar padding
-      compact = estimate > usableW - 80;
+      // Full-size bar is ~38 px tall; with EDGE_PAD top + bottom plus the
+      // drag-handle strip we need ~120 px of vertical room. Below that
+      // we force compaction so the smaller buttons leave room for the
+      // canvas underneath.
+      const HEIGHT_COMPACT_THRESHOLD = 180;
+      compact = estimate > usableW - 80 || parentH < HEIGHT_COMPACT_THRESHOLD;
+    } else {
+      // Vertical bar: tall enough naturally already, but if the parent
+      // is very narrow we still want smaller hit targets.
+      const VERTICAL_WIDTH_COMPACT_THRESHOLD = 120;
+      compact = parentW < VERTICAL_WIDTH_COMPACT_THRESHOLD;
     }
     applyCompactMode(compact);
 

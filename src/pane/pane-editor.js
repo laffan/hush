@@ -53,6 +53,19 @@ export function createPaneEditor(container, appState, onChange, opts) {
   });
   const view = new EditorView({ state: startState, parent: container });
 
+  // Mirror the main editor's system-spellcheck toggle. The setting is
+  // global so panes pick it up the same way; settings-changed is
+  // dispatched by the host editor's listener and we just push the
+  // attribute onto every pane's contentDOM here on creation.
+  const applyPaneSpellcheck = () => {
+    const on = !!appState.settings.systemSpellcheckEnabled;
+    view.contentDOM.setAttribute("spellcheck", on ? "true" : "false");
+    view.contentDOM.setAttribute("autocorrect", on ? "on" : "off");
+    view.contentDOM.setAttribute("autocapitalize", on ? "sentences" : "off");
+  };
+  applyPaneSpellcheck();
+  appState.on("settings-changed", applyPaneSpellcheck);
+
   if (modeRef.typewriterMode) {
     _applyPaneTypewriter(view, modeRef, container);
   }

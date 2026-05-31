@@ -37,15 +37,13 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
       bottom: "20px",
       width: "40px",
       height: "40px",
-      border: "none",
       borderRadius: "10px",
-      background: "rgba(127, 127, 127, 0.20)",
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       zIndex: "120",
-      transition: "background 0.15s",
+      transition: "background 0.15s, border-color 0.15s",
       backdropFilter: "blur(6px)",
     },
     children: [icon("grid", 20)],
@@ -59,7 +57,14 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
   bg.setAnchor(button, { mode: "above-right" });
 
   function refresh() {
-    button.style.color = state.theme.foreground;
+    const theme = state.theme;
+    button.style.color = theme.foreground;
+    // Track the notebook's actual background colour so the button reads
+    // as part of the canvas surface (matching what the user just set in
+    // bg settings), with a subtle outline mirroring the sidebar / shelf
+    // border so the button still distinguishes itself from blank canvas.
+    button.style.background = theme.background;
+    button.style.border = `1px solid ${theme.uiBorder}`;
   }
 
   function applyRightInset() {

@@ -50,6 +50,7 @@ export { defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions }
 const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const shortcutCompartment = new Compartment();
+const readOnlyCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
 /**
@@ -259,6 +260,7 @@ export function createEditor(container, state) {
       updateListener,
       blurListener,
       shortcutCompartment.of(initialShortcuts),
+      readOnlyCompartment.of([]),
       ratchetKeymap,
       ratchetFilter,
       ratchetMouseFilter,
@@ -295,6 +297,18 @@ export function createEditor(container, state) {
     state: startState,
     parent: container,
   });
+
+  // System spellcheck — toggle the WebView's native spellchecker on the
+  // contentDOM directly. CodeMirror sets `spellcheck="false"` by default
+  // to keep its own selection model in charge; we flip it back on when
+  // the user opts in via the command palette / settings.
+  function applySystemSpellcheck() {
+    const on = !!state.settings.systemSpellcheckEnabled;
+    view.contentDOM.setAttribute("spellcheck", on ? "true" : "false");
+    view.contentDOM.setAttribute("autocorrect", on ? "on" : "off");
+    view.contentDOM.setAttribute("autocapitalize", on ? "sentences" : "off");
+  }
+  applySystemSpellcheck();
 
   state.on("mode-changed", () => {
     applyModes(state);
@@ -417,6 +431,7 @@ export function createEditor(container, state) {
     if (getTypewriterBoundary()) {
       getTypewriterBoundary().style.opacity = state.settings.typewriterLineOpacity ?? 0.08;
     }
+    applySystemSpellcheck();
     // Toggle sticky headers
     updateStickyHeaders(view, state);
     // Toggle block cursor
@@ -435,6 +450,16 @@ export function createEditor(container, state) {
     focus: () => view.focus(),
     reconfigureTheme: (ext) => {
       view.dispatch({ effects: themeCompartment.reconfigure(ext || []) });
+    },
+    /** Toggle a hard read-only lock on the editor — used for trashed
+     *  files so the user can still read them without the risk of edits
+     *  being autosaved into a file they meant to delete. */
+    setReadOnly: (ro) => {
+      view.dispatch({
+        effects: readOnlyCompartment.reconfigure(
+          ro ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []
+        ),
+      });
     },
   };
 }

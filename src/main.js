@@ -73,6 +73,42 @@ async function init() {
   const editor = createEditor(editorContainer, state);
   state.setEditor(editor);
 
+  // "In the trash" banner — pinned above the editor whenever the active
+  // file is a doc that lives in a Trash folder. Pairs with the editor's
+  // setReadOnly() lock so trashed content can be read but not edited
+  // (autosave would otherwise quietly write changes into a file the
+  // user has already chosen to throw away). Restore (Remove from trash)
+  // or Permanently Delete actions live on the sidebar row's menu.
+  const trashBanner = document.createElement("div");
+  trashBanner.id = "trash-banner";
+  trashBanner.className = "trash-banner hidden";
+  trashBanner.textContent = "In the Trash — read only";
+  editorContainer.parentElement?.insertBefore(trashBanner, editorContainer);
+
+  async function syncTrashLock() {
+    if (!state.editor) return;
+    const fileId = state.currentNotebookFileId || state.currentFileId;
+    let inTrash = false;
+    if (fileId) {
+      const { findNodeByFileId } = await import("./state/tree-helpers.js");
+      const node = findNodeByFileId(state.fileTree, fileId);
+      if (node && state.isInTrash(node.id)) inTrash = true;
+    }
+    // Only the doc editor carries the readOnly compartment; the notebook
+    // canvas gates input via the body-level class instead.
+    state.editor.setReadOnly(inTrash && !state.currentNotebookFileId);
+    trashBanner.classList.toggle("hidden", !inTrash);
+    document.body.classList.toggle("file-in-trash", inTrash);
+  }
+  state.on("file-opened", syncTrashLock);
+  state.on("notebook-open", syncTrashLock);
+  state.on("notebook-unmount", syncTrashLock);
+  // Restore / Permanently Delete fire `files-changed` after the move —
+  // re-evaluate so a file restored back into the inbox loses the banner
+  // without needing to be re-opened.
+  state.on("files-changed", syncTrashLock);
+  syncTrashLock();
+
   import("./google-docs/link-bar.js").then((m) => m.initLinkBar(state)).catch((e) => console.warn("[google-docs] link-bar mount failed", e));
 
   // Cmd-drag a selection out of the main editor to drop into a pane or

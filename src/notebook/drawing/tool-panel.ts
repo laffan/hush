@@ -251,13 +251,33 @@ export function createDrawingToolPanel(
     };
   }
 
+  // Click vs drag detection: a pointerdown that releases within ~5 px and
+  // ~250 ms is a click (toggle minimized state); anything beyond either
+  // threshold is treated as a drag (existing behaviour). The minimized
+  // state hides every toolbar child except this handle so only the strip
+  // remains visible; clicking it again restores the bar.
+  const CLICK_THRESHOLD_PX = 5;
+  const CLICK_THRESHOLD_MS = 250;
   let dragStartClient: { x: number; y: number } | null = null;
   let dragStartOffset: { x: number; y: number } = { x: 0, y: 0 };
   let dragPointerId: number | null = null;
+  let pointerDownAt = 0;
+  let dragMovedPastClickThreshold = false;
+  function toggleMinimized() {
+    const wasMinimized = bottomToolbar.classList.contains("notebook-toolbar-minimized");
+    bottomToolbar.classList.toggle("notebook-toolbar-minimized", !wasMinimized);
+    // The drag tab is mounted at the canvas-container level (not as a
+    // child of the bar), so mirror the minimized state on the tab so
+    // CSS can style the grip when the bar is collapsed.
+    dragTab.classList.toggle("notebook-tool-panel-drag-tab-minimized", !wasMinimized);
+    applyLayout();
+  }
   function onDragPointerDown(e: PointerEvent) {
     if (e.button !== undefined && e.button !== 0) return;
     dragPointerId = e.pointerId;
     dragStartClient = { x: e.clientX, y: e.clientY };
+    pointerDownAt = performance.now();
+    dragMovedPastClickThreshold = false;
     // Promote a snapped position to custom while dragging so the offset
     // delta paints live. Capture the pre-drag screen center so the bar
     // starts the drag exactly where it sat before.
@@ -288,13 +308,25 @@ export function createDrawingToolPanel(
     dragStartOffset = { ...state.drawingToolbarOffset };
     try { dragTab.setPointerCapture(e.pointerId); } catch { /* noop */ }
     dragTab.style.cursor = "grabbing";
-    showSnapZones(true);
+    // Defer snap-zone display until the pointer crosses the click
+    // threshold — flashing the zones for ~250 ms on a click looks like
+    // a bug.
     e.preventDefault();
   }
   function onDragPointerMove(e: PointerEvent) {
     if (dragStartClient === null || e.pointerId !== dragPointerId) return;
     const dx = e.clientX - dragStartClient.x;
     const dy = e.clientY - dragStartClient.y;
+    if (!dragMovedPastClickThreshold &&
+        (Math.abs(dx) > CLICK_THRESHOLD_PX || Math.abs(dy) > CLICK_THRESHOLD_PX)) {
+      dragMovedPastClickThreshold = true;
+      if (!bottomToolbar.classList.contains("notebook-toolbar-minimized")) {
+        showSnapZones(true);
+      }
+    }
+    // While minimized, suppress drag-to-reposition — a small slip during
+    // a click shouldn't yank the bar into custom-positioned mode.
+    if (bottomToolbar.classList.contains("notebook-toolbar-minimized")) return;
     const clamped = clampOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
     state.setDrawingToolbarOffset(clamped.x, clamped.y);
     const zone = hitTestZone(e.clientX, e.clientY);
@@ -303,8 +335,14 @@ export function createDrawingToolPanel(
   function onDragPointerUp(e: PointerEvent) {
     if (dragStartClient === null || e.pointerId !== dragPointerId) return;
     try { dragTab.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    const zone = hitTestZone(e.clientX, e.clientY);
-    if (zone) state.setDrawingToolbarPosition(zone);
+    const elapsed = performance.now() - pointerDownAt;
+    const isClick = !dragMovedPastClickThreshold && elapsed < CLICK_THRESHOLD_MS;
+    if (isClick) {
+      toggleMinimized();
+    } else if (!bottomToolbar.classList.contains("notebook-toolbar-minimized")) {
+      const zone = hitTestZone(e.clientX, e.clientY);
+      if (zone) state.setDrawingToolbarPosition(zone);
+    }
     dragStartClient = null;
     dragPointerId = null;
     dragTab.style.cursor = "grab";

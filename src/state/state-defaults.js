@@ -242,6 +242,13 @@ export function createDefaultSettings() {
     // the per-rule disable list is.
     proofreadDisabledRules: ["LongSentences"],
 
+    // System spellcheck — toggles the WebView's native spellchecking on
+    // the editor's contentDOM. Cheap, instant feedback (red underlines
+    // come from the OS, not harper) — complements Proofread mode which
+    // is more accurate but slower to spin up. Persists across launches
+    // so users who always want spellcheck don't have to re-enable it.
+    systemSpellcheckEnabled: false,
+
     // Session state
     lastFileId: null,
     lastProjectId: null,

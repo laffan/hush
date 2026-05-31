@@ -29,45 +29,6 @@
   pointer-events: none;
 }
 
-/* Right panel pin button */
-.right-panel-pin-btn {
-  position: fixed;
-  bottom: 12px;
-  right: 172px; /* 200px panel - 15px btn - 13px margin */
-  width: 15px;
-  height: 15px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--sidebar-fg);
-  opacity: 0;
-  pointer-events: none;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  z-index: 101;
-}
-.right-panel-pin-btn svg circle {
-  transition: fill 0.15s;
-}
-
-.right-panel-pin-btn.pin-visible {
-  opacity: 0.4;
-  pointer-events: auto;
-}
-.right-panel-pin-btn.pin-visible:hover {
-  opacity: 0.8;
-}
-.right-panel-pin-btn.pin-visible:hover svg circle {
-  fill: currentColor;
-}
-.right-panel-pin-btn.pin-active {
-  opacity: 0.8;
-  pointer-events: auto;
-}
-.right-panel-pin-btn.pin-active svg circle {
-  fill: currentColor;
-}
-
 /* Right-edge hover trigger — shows a minimalist arrow so the user knows
    the outline panel exists. Opening the panel is via click or keyboard
    shortcut; hovering alone doesn't open it. Mirrors the notebook shelf
@@ -269,7 +230,19 @@
   opacity: 1;
 }
 
-/* ===== Outline Content ===== */
+/* ===== Outline Content =====
+   Outline uses the app's UI font (matching the files sidebar / command
+   palette) rather than the active style's editor font, so it reads as
+   navigation chrome rather than as a second editor surface. */
+.longview-content,
+.longview-content .longview-heading,
+.longview-content .longview-line,
+.longview-content .longview-flag,
+.longview-content .longview-callout-title,
+.longview-content .longview-tab-header,
+.longview-content .longview-tab-label {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
 .longview-content {
   flex: 1;
   overflow-y: auto;
