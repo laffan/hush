@@ -138,15 +138,23 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     return ungrouped + groupIds.size;
   }
 
-  function makeColsStepper(currentCols: number, maxCols: number, onChange: (cols: number) => void): HTMLElement {
+  function makeStepperPanel(opts: {
+    current: number;
+    min: number;
+    max: number;
+    step: number;
+    format: (n: number) => string;
+    labelMinWidth: string;
+    onChange: (value: number) => void;
+  }): HTMLElement {
+    const { min, max, step, format, labelMinWidth, onChange } = opts;
     const theme = state.theme;
     const panel = h("div", {
       style: { position: "absolute", top: "-44px", left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "4px", padding: "4px 6px", background: theme.uiBackground, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`, zIndex: "300", whiteSpace: "nowrap" },
     });
     const muted = theme.variant === "dark" ? "rgba(255,255,255,0.5)" : "#666";
-    const label = h("span", { text: `${currentCols} cols`, style: { fontSize: "11px", color: muted, minWidth: "44px", textAlign: "center" } });
-
-    let cols = currentCols;
+    const label = h("span", { text: format(opts.current), style: { fontSize: "11px", color: muted, minWidth: labelMinWidth, textAlign: "center" } });
+    let value = opts.current;
     function makeStep(symbol: string, delta: number): HTMLElement {
       const btn = h("button", {
         text: symbol,
@@ -158,59 +166,33 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
       });
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const next = Math.max(1, Math.min(maxCols, cols + delta));
-        if (next === cols) return;
-        cols = next;
-        label.textContent = `${cols} cols`;
-        onChange(cols);
+        const next = Math.max(min, Math.min(max, value + delta));
+        if (next === value) return;
+        value = next;
+        label.textContent = format(value);
+        onChange(value);
       });
       return btn;
     }
-
     panel.addEventListener("pointerdown", (e) => e.stopPropagation());
-    panel.appendChild(makeStep("−", -1));
-    panel.appendChild(label);
-    panel.appendChild(makeStep("+", 1));
-    return panel;
-  }
-
-  function makeSizeStepper(currentSize: number, onChange: (size: number) => void): HTMLElement {
-    const theme = state.theme;
-    const minSize = 6;
-    const maxSize = 30;
-    const step = 1;
-    const panel = h("div", {
-      style: { position: "absolute", top: "-44px", left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "4px", padding: "4px 6px", background: theme.uiBackground, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`, zIndex: "300", whiteSpace: "nowrap" },
-    });
-    const muted = theme.variant === "dark" ? "rgba(255,255,255,0.5)" : "#666";
-    const label = h("span", { text: `${currentSize}px`, style: { fontSize: "11px", color: muted, minWidth: "32px", textAlign: "center" } });
-
-    let size = currentSize;
-    function makeStep(symbol: string, delta: number): HTMLElement {
-      const btn = h("button", {
-        text: symbol,
-        style: {
-          width: "26px", height: "26px", display: "inline-flex", alignItems: "center", justifyContent: "center",
-          background: "transparent", color: theme.foreground, border: `1px solid ${theme.uiBorder}`,
-          borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "600", lineHeight: "1", padding: "0",
-        },
-      });
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const next = Math.max(minSize, Math.min(maxSize, size + delta));
-        if (next === size) return;
-        size = next;
-        label.textContent = `${size}px`;
-        onChange(size);
-      });
-      return btn;
-    }
-
-    panel.addEventListener("pointerdown", (e) => e.stopPropagation());
-    panel.appendChild(makeStep("−", -step)); // minus
+    panel.appendChild(makeStep("−", -step));
     panel.appendChild(label);
     panel.appendChild(makeStep("+", step));
     return panel;
+  }
+
+  function makeColsStepper(currentCols: number, maxCols: number, onChange: (cols: number) => void): HTMLElement {
+    return makeStepperPanel({
+      current: currentCols, min: 1, max: maxCols, step: 1,
+      format: (n) => `${n} cols`, labelMinWidth: "44px", onChange,
+    });
+  }
+
+  function makeSizeStepper(currentSize: number, onChange: (size: number) => void): HTMLElement {
+    return makeStepperPanel({
+      current: currentSize, min: 6, max: 30, step: 1,
+      format: (n) => `${n}px`, labelMinWidth: "32px", onChange,
+    });
   }
 
   // Close popup on click outside
