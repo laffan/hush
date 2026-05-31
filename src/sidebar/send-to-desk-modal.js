@@ -17,8 +17,9 @@
  * with an image node is a no-op.
  */
 
-import { escHtml } from "./files-panel-shared.js";
+import { escHtml, typeIcons } from "./files-panel-shared.js";
 import { findNode, removeNode } from "../state/tree-helpers.js";
+import deskRaw from "./sidebar_icons/desk.svg?raw";
 
 let _overlayEl = null;
 
@@ -55,13 +56,20 @@ export function openSendToDeskModal(state, nodeId, mode) {
   const overlay = document.createElement("div");
   overlay.className = "send-to-desk-overlay";
   const verb = mode === "copy" ? "Copy to" : "Send to";
+  const fileIcon = typeIcons[node.type] || typeIcons.document;
   const rows = targets.map((d) => `
-    <button class="send-to-desk-row" type="button" data-desk-id="${d.id}">${escHtml(d.name || "Untitled desk")}</button>
+    <button class="send-to-desk-row" type="button" data-desk-id="${d.id}">
+      <span class="send-to-desk-row-icon">${deskRaw}</span>
+      <span class="send-to-desk-row-label">${escHtml(d.name || "Untitled desk")}</span>
+    </button>
   `).join("");
   overlay.innerHTML = `
     <div class="send-to-desk-modal">
       <div class="send-to-desk-title">${verb} desk</div>
-      <div class="send-to-desk-name">${escHtml(node.name || "Untitled")}</div>
+      <div class="send-to-desk-name">
+        <span class="send-to-desk-name-icon">${fileIcon}</span>
+        <span class="send-to-desk-name-label">${escHtml(node.name || "Untitled")}</span>
+      </div>
       <div class="send-to-desk-list">${rows}</div>
       <div class="send-to-desk-actions">
         <button class="send-to-desk-cancel" type="button">Cancel</button>

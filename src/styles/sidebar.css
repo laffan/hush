@@ -122,6 +122,10 @@ body.typing-fade .tree-create-btns {
   display: flex;
   flex-direction: row;
   transition: width 0.2s;
+  /* Pin the UI font on the sidebar root so descendants using
+     `font-family: inherit` (desk switcher header / popover, recent
+     files, etc.) don't fall through to body's editor font. */
+  font-family: var(--ui-font-family);
 }
 
 /* Suppress the width transition while the user is actively dragging the
