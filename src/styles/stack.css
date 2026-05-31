@@ -216,9 +216,17 @@
 }
 /* The title span carries the open-in-editor click — underline on
    hover so the affordance is visible, matching the floating-pane
-   header's `.fp-title-link:hover` rule. */
+   header's `.fp-title-link:hover` rule. inline-block + an explicit
+   thickness + offset are needed because the parent's `writing-mode:
+   vertical-rl; transform: rotate(180deg)` would otherwise put the
+   underline on an axis that's easy to miss. */
+.stack-spine-label-title {
+  display: inline-block;
+}
 .stack-spine-label-title:hover {
   text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 .stack-spine-buttons {

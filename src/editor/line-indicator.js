@@ -40,8 +40,6 @@ export function createLineIndicatorPlugin(state) {
         this.overlay = document.createElement("div");
         this.overlay.className = "hush-line-ind";
         this.overlay.style.position = "absolute";
-        this.overlay.style.left = "0";
-        this.overlay.style.right = "0";
         this.overlay.style.pointerEvents = "none";
         this.overlay.style.display = "none";
         // Insert before cm-content so the highlight wash sits beneath
@@ -83,11 +81,21 @@ export function createLineIndicatorPlugin(state) {
             const head = this.view.state.selection.main.head;
             const coords = this.view.coordsAtPos(head);
             if (!coords) return null;
+            // Align the overlay's bounds with the cm-content text area
+            // rather than the cm-scroller padding box. Absolute children
+            // of scrollDOM otherwise position from the scroller's
+            // padding edge (border-inside), so a default left:0 lands
+            // at the editor's outer edge — leaving arrow ::before
+            // elements at negative left clipped by the scroller's
+            // overflow.
             const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+            const contentRect = this.view.contentDOM.getBoundingClientRect();
             return {
               indicator,
               top: coords.top - scrollerRect.top + this.view.scrollDOM.scrollTop,
               height: Math.max(1, coords.bottom - coords.top),
+              left: contentRect.left - scrollerRect.left + this.view.scrollDOM.scrollLeft,
+              width: contentRect.width,
             };
           },
           write: (data) => {
@@ -99,6 +107,8 @@ export function createLineIndicatorPlugin(state) {
             this.overlay.classList.add("hush-line-ind-" + data.indicator);
             this.overlay.style.display = "block";
             this.overlay.style.top = data.top + "px";
+            this.overlay.style.left = data.left + "px";
+            this.overlay.style.width = data.width + "px";
             this.overlay.style.height = data.height + "px";
           },
         });
