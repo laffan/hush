@@ -511,7 +511,7 @@ export function createSelectionToolbar(state: DrawingState): HTMLElement {
     // and grid bleed through between the icons.
     container.style.background = state.theme.canvasBackground || state.theme.uiBackground;
     container.style.left = (screenMinX - 7) + "px";
-    container.style.top = (screenMinY - 34) + "px";
+    container.style.top = (screenMinY - 44) + "px";
 
     const hasText = selected.some((s) => s.type === "text");
     const hasImage = selected.some((s) => s.type === "image");
