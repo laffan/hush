@@ -98,6 +98,16 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Modals are app chrome, never editor surface — always paint them in
+   the UI font (system-ui stack) so the active style's editor font
+   doesn't bleed into Versions, Edit Styles, Export, Settings, etc.
+   Substring matches every existing modal root and its child elements;
+   `font-family` doesn't compound, so descendants picking up the rule
+   on top of an inherited value is a no-op. */
+[class*="modal"] {
+  font-family: var(--ui-font-family);
+}
+
 /* iPad: a drag (incl. space+drag pan) on app chrome would otherwise begin
    a body-level text selection. Disable selection by default and re-enable
    it on the editor surfaces and form fields where it's actually wanted. */

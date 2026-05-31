@@ -81,21 +81,28 @@ export function createLineIndicatorPlugin(state) {
             const head = this.view.state.selection.main.head;
             const coords = this.view.coordsAtPos(head);
             if (!coords) return null;
-            // Align the overlay's bounds with the cm-content text area
-            // rather than the cm-scroller padding box. Absolute children
-            // of scrollDOM otherwise position from the scroller's
-            // padding edge (border-inside), so a default left:0 lands
-            // at the editor's outer edge — leaving arrow ::before
-            // elements at negative left clipped by the scroller's
-            // overflow.
+            // Align the overlay's bounds with the *text* area, not the
+            // cm-content's padding box. In the main editor, cm-scroller
+            // carries the gutter padding and cm-content is flush, so
+            // border/arrow ::before elements at negative left land in
+            // the scroller's padding gap. In stack columns (and any
+            // surface where cm-content owns its own inner padding) the
+            // scroller is flush to the column edge, so we have to shift
+            // the overlay inward by cm-content's padding to leave room
+            // for the -13/-18 offsets. Without this the indicators
+            // collide with the column edge and get clipped by the
+            // column wrapper's overflow:hidden.
             const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
             const contentRect = this.view.contentDOM.getBoundingClientRect();
+            const cs = getComputedStyle(this.view.contentDOM);
+            const padLeft = parseFloat(cs.paddingLeft) || 0;
+            const padRight = parseFloat(cs.paddingRight) || 0;
             return {
               indicator,
               top: coords.top - scrollerRect.top + this.view.scrollDOM.scrollTop,
               height: Math.max(1, coords.bottom - coords.top),
-              left: contentRect.left - scrollerRect.left + this.view.scrollDOM.scrollLeft,
-              width: contentRect.width,
+              left: contentRect.left - scrollerRect.left + padLeft + this.view.scrollDOM.scrollLeft,
+              width: Math.max(0, contentRect.width - padLeft - padRight),
             };
           },
           write: (data) => {

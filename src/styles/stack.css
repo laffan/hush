@@ -803,6 +803,10 @@ body.stack-resizing .stack-column,
   flex-direction: column;
   z-index: 5;
   overflow: hidden;
+  /* Outline reads as chrome, not editor text — pin the app UI font so
+     the active style's editor font doesn't bleed in via the column
+     wrapper. */
+  font-family: var(--ui-font-family);
 }
 
 .stack-doc-outline-header {
