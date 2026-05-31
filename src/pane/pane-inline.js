@@ -166,15 +166,23 @@ function buildInlineDecorations(doc, appState) {
       host.dataset.paneId = pane.id;
       pane._inlineHost = host;
     }
-    // If pane.el isn't already a child of the host, move it in and
-    // switch the pane to in-flow layout. Width/height still drive
-    // pane.el's inline styles — the host wraps tight around it.
+    // Host carves out the vertical space (its `height` style is what CM
+    // measures); pane.el is absolutely positioned inside so it can be
+    // wider than the host without dragging the editor's column width
+    // along for the ride. `overflow: visible` lets the pane bleed past
+    // the column edges when the user makes it wider than the text.
+    host.style.height = (pane.height || 500) + "px";
     if (pane.el && pane.el.parentNode !== host) {
       host.appendChild(pane.el);
-      pane.el.style.position = "relative";
-      pane.el.style.left = "";
-      pane.el.style.top = "";
-      pane.el.style.margin = "0 auto";
+    }
+    if (pane.el) {
+      pane.el.style.position = "absolute";
+      pane.el.style.top = "0";
+      pane.el.style.left = "50%";
+      pane.el.style.transform = "translateX(-50%)";
+      pane.el.style.margin = "";
+      pane.el.style.width = pane.width + "px";
+      pane.el.style.height = pane.height + "px";
     }
     builder.add(pos, pos, Decoration.widget({
       widget: new InlinePaneWidget(pane.id, host),
@@ -250,14 +258,19 @@ export function measureEditorColumnWidth() {
   return w > 100 ? Math.round(w) : null;
 }
 
-/** Apply a new height to an inline pane: updates pane.el style + asks CM
- *  to re-measure so doc text below shifts. Called from pane-drag's
- *  resize path. */
+/** Apply a new size to an inline pane. Width changes stay local to
+ *  pane.el (host width is locked to the editor column so the doc
+ *  column never reflows). Height changes propagate to the host so
+ *  CM's measure pass sees the new vertical footprint and shifts the
+ *  text below. Called from pane-drag's resize path. */
 export function syncInlinePaneSize(pane, view) {
   if (!pane || !pane.inline) return;
   if (pane.el) {
     pane.el.style.height = pane.height + "px";
     pane.el.style.width = pane.width + "px";
+  }
+  if (pane._inlineHost) {
+    pane._inlineHost.style.height = pane.height + "px";
   }
   try { view?.requestMeasure?.(); } catch {}
 }
@@ -273,6 +286,9 @@ export function detachInlinePane(pane, containerEl, screenX, screenY) {
   pane._inlineHost = null;
   if (pane.el) {
     pane.el.style.position = "absolute";
+    // Clear the centered-in-host transform — once we're a normal
+    // floating pane, x/y are the source of truth.
+    pane.el.style.transform = "";
     pane.el.style.margin = "";
     pane.x = Math.max(0, Math.round(screenX));
     pane.y = Math.max(0, Math.round(screenY));
@@ -280,6 +296,9 @@ export function detachInlinePane(pane, containerEl, screenX, screenY) {
     pane.el.style.top = pane.y + "px";
     pane.el.style.width = pane.width + "px";
     pane.el.style.height = pane.height + "px";
+    // Strip the inline-pane class so the toolbar's normal chrome
+    // (attach / pin / gutter) reveals through CSS.
+    pane.el.classList.remove("inline-pane");
     if (containerEl && pane.el.parentNode !== containerEl) {
       containerEl.appendChild(pane.el);
     }

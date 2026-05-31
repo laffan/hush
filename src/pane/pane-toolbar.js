@@ -59,7 +59,7 @@ function makeBtn(name, svg, ariaLabel) {
 export function buildPaneDOM(pane, deps) {
   const { closePane, focusPane, createPane, getCurrentContext } = deps;
   const el = document.createElement("div");
-  el.className = "floating-pane";
+  el.className = "floating-pane" + (pane.inline ? " inline-pane" : "");
   Object.assign(el.style, { left: pane.x + "px", top: pane.y + "px", width: pane.width + "px", height: pane.height + "px" });
 
   // Title bar
@@ -101,31 +101,28 @@ export function buildPaneDOM(pane, deps) {
     buttons.appendChild(sizeBtn);
   }
 
-  // Inline panes live inside the doc text — attach / pin / gutter / dock
-  // don't apply (and the manager already excludes them from make-space
-  // metrics). Drag the title bar to detach into a normal pane; the
-  // controls light up once that happens.
-  const isInline = !!pane.inline;
-  if (!isInline) {
-    const attachLabel = appState.currentStackFileId ? "Attach to stack column" : appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
-    const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
-    attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
-    buttons.appendChild(attachBtn);
+  // Attach / pin / gutter chrome is always created so a pane that
+  // starts inline picks up its normal title-bar after the user drags
+  // it out — the .inline-pane class on the pane root toggles
+  // visibility via CSS (see floating-pane.css). The manager excludes
+  // inline panes from make-space metrics so the controls being hidden
+  // while inline is purely cosmetic.
+  const attachLabel = appState.currentStackFileId ? "Attach to stack column" : appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
+  const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
+  attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
+  buttons.appendChild(attachBtn);
 
-    const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
-    pinBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (pinBtn.classList.contains("fp-btn-disabled")) return;
-      togglePinned(pane, deps.onContextChange);
-    });
-    buttons.appendChild(pinBtn);
-  }
+  const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
+  pinBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pinBtn.classList.contains("fp-btn-disabled")) return;
+    togglePinned(pane, deps.onContextChange);
+  });
+  buttons.appendChild(pinBtn);
 
   // In a stack context, show "pop-in" button instead of gutter.
   // Otherwise show the gutter toggle.
-  if (isInline) {
-    // No gutter / pop-in chrome for inline panes.
-  } else if (appState.currentStackFileId) {
+  if (appState.currentStackFileId) {
     const popInBtn = makeBtn("pop-in", ICON_POP_IN, "Add to stack");
     popInBtn.addEventListener("click", async (e) => {
       e.stopPropagation();

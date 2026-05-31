@@ -45,24 +45,28 @@
   display: block;
 }
 
-/* CM block widget that hosts an inline pane. The doc text below shifts
-   to make room for whatever the host's intrinsic height is — that
-   height comes from the .floating-pane child sized to pane.height. */
+/* CM block widget that hosts an inline pane. The host carves out the
+   vertical space CodeMirror reserves for the embedded pane (its height
+   tracks pane.height); the actual pane is absolutely positioned inside
+   so it can be wider than the text column without dragging the column
+   along for the ride. */
 .cm-inline-pane-host {
   display: block;
   width: 100%;
   margin: 6px 0;
-  /* No background / border — the .floating-pane inside paints its own
-     chrome. The host is purely a sizing wrapper for CodeMirror's
-     measure pass. */
+  position: relative;
+  overflow: visible;
   text-align: left;
 }
-.cm-inline-pane-host > .floating-pane {
-  /* Override the absolute positioning the floating-pane class normally
-     applies, since inline panes flow with the doc text instead. */
-  position: relative !important;
-  left: 0 !important;
-  top: 0 !important;
+
+/* Inline panes hide the attach / pin / gutter / pop-in toggles —
+   those actions all imply moving the pane out of the doc text. They
+   reveal again the moment the user drags the title bar to detach. */
+.floating-pane.inline-pane .fp-btn-attach,
+.floating-pane.inline-pane .fp-btn-pin,
+.floating-pane.inline-pane .fp-btn-gutter,
+.floating-pane.inline-pane .fp-btn-pop-in {
+  display: none;
 }
 .cm-wikilink-rendered:hover {
   text-decoration-color: currentColor;
