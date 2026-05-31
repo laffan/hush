@@ -28,8 +28,8 @@
  *     element back into `#pane-container`.
  */
 
-import { ViewPlugin, Decoration, WidgetType } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { ViewPlugin, Decoration, WidgetType, EditorView } from "@codemirror/view";
+import { RangeSetBuilder, StateField, StateEffect } from "@codemirror/state";
 import { resolveWikilink } from "../links/wikilink-index.js";
 import { panes } from "./pane-state.js";
 
@@ -130,34 +130,100 @@ class InlinePaneWidget extends WidgetType {
   updateDOM(_dom) { return true; }
 }
 
-/** CodeMirror plugin: for every inline pane whose `ownerContext` matches
- *  the active doc, place a block widget after the line containing its
- *  anchor wikilink. The widget hosts the pane's DOM element directly.
- *  Rebuilds on doc / files / panes / context changes. */
+/** Effect dispatched whenever an external event (panes-changed,
+ *  files-changed, file-opened) requires the inline-pane decoration set
+ *  to be rebuilt. CodeMirror block decorations can only be provided
+ *  through a StateField, so external rebuilds piggyback on a no-op
+ *  transaction carrying this effect. */
+const inlinePaneRebuildEffect = StateEffect.define();
+
+/** Build the block-widget decoration set for every inline pane whose
+ *  `ownerContext` matches the active doc. Each widget is anchored at the
+ *  end of the line containing the Nth `[[Title]]` match and hosts the
+ *  pane's DOM element directly. */
+function buildInlineDecorations(doc, appState) {
+  const ctx = getDocContext(appState);
+  if (!ctx) return Decoration.none;
+  // Sort by anchor pos so RangeSetBuilder gets ranges in order.
+  const entries = [];
+  for (const [, pane] of panes) {
+    if (!pane.inline) continue;
+    if (pane.ownerContext !== ctx) continue;
+    if (!pane.el) continue;
+    const pos = findAnchorPos(doc, pane.inline.anchorTitle, pane.inline.occurrence | 0);
+    if (pos == null) continue;
+    entries.push({ pos, pane });
+  }
+  entries.sort((a, b) => a.pos - b.pos);
+  const builder = new RangeSetBuilder();
+  for (const { pos, pane } of entries) {
+    // Ensure the host wrapper exists. The pane.el lives inside it so
+    // CM can reuse the same DOM node across rebuilds.
+    let host = pane._inlineHost;
+    if (!host) {
+      host = document.createElement("div");
+      host.className = "cm-inline-pane-host";
+      host.dataset.paneId = pane.id;
+      pane._inlineHost = host;
+    }
+    // If pane.el isn't already a child of the host, move it in and
+    // switch the pane to in-flow layout. Width/height still drive
+    // pane.el's inline styles — the host wraps tight around it.
+    if (pane.el && pane.el.parentNode !== host) {
+      host.appendChild(pane.el);
+      pane.el.style.position = "relative";
+      pane.el.style.left = "";
+      pane.el.style.top = "";
+      pane.el.style.margin = "0 auto";
+    }
+    builder.add(pos, pos, Decoration.widget({
+      widget: new InlinePaneWidget(pane.id, host),
+      block: true,
+      side: 1,
+    }));
+  }
+  return builder.finish();
+}
+
+/** Build the inline-pane extension set:
+ *    - a StateField that owns the block-widget decoration set (CM 6
+ *      forbids block decorations from ViewPlugins, so this is mandatory),
+ *    - a ViewPlugin that subscribes to AppState events and pokes the
+ *      field via `inlinePaneRebuildEffect` whenever an outside-the-doc
+ *      change (a pane created, a file renamed, the active doc switched)
+ *      could affect which inline panes belong on screen.
+ */
 export function createInlinePanePlugin(appState) {
-  return ViewPlugin.fromClass(class {
+  const field = StateField.define({
+    create(state) { return buildInlineDecorations(state.doc, appState); },
+    update(value, tr) {
+      const externalRebuild = tr.effects.some((e) => e.is(inlinePaneRebuildEffect));
+      if (tr.docChanged || externalRebuild) {
+        return buildInlineDecorations(tr.state.doc, appState);
+      }
+      return value;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+
+  const listener = ViewPlugin.fromClass(class {
     constructor(view) {
       this.view = view;
-      this.decorations = this.build(view);
       this._onChange = () => {
-        // Defer so other listeners (e.g. pane create) finish before we
-        // re-read the panes Map. Without this, a pane created in the
-        // same tick as the request would be missed.
+        // Defer so listeners that fire during a CM update tick (e.g.
+        // pane create called from a click handler) finish before we
+        // dispatch into the same view.
         queueMicrotask(() => {
           if (!this.view) return;
-          this.decorations = this.build(this.view);
-          this.view.dispatch({});
+          try {
+            this.view.dispatch({ effects: inlinePaneRebuildEffect.of(null) });
+          } catch {}
         });
       };
       appState?.on?.("panes-changed", this._onChange);
       appState?.on?.("files-changed", this._onChange);
       appState?.on?.("file-opened", this._onChange);
       appState?.on?.("inline-pane-resized", this._onChange);
-    }
-    update(update) {
-      if (update.docChanged || update.viewportChanged) {
-        this.decorations = this.build(update.view);
-      }
     }
     destroy() {
       appState?.off?.("panes-changed", this._onChange);
@@ -166,50 +232,9 @@ export function createInlinePanePlugin(appState) {
       appState?.off?.("inline-pane-resized", this._onChange);
       this.view = null;
     }
-    build(view) {
-      const ctx = getDocContext(appState);
-      if (!ctx) return Decoration.none;
-      // Sort by anchor pos so RangeSetBuilder gets ranges in order.
-      const entries = [];
-      for (const [, pane] of panes) {
-        if (!pane.inline) continue;
-        if (pane.ownerContext !== ctx) continue;
-        if (!pane.el) continue;
-        const pos = findAnchorPos(view.state.doc, pane.inline.anchorTitle, pane.inline.occurrence | 0);
-        if (pos == null) continue;
-        entries.push({ pos, pane });
-      }
-      entries.sort((a, b) => a.pos - b.pos);
-      const builder = new RangeSetBuilder();
-      for (const { pos, pane } of entries) {
-        // Ensure the host wrapper exists. The pane.el lives inside it so
-        // CM can reuse the same DOM node across rebuilds.
-        let host = pane._inlineHost;
-        if (!host) {
-          host = document.createElement("div");
-          host.className = "cm-inline-pane-host";
-          host.dataset.paneId = pane.id;
-          pane._inlineHost = host;
-        }
-        // If pane.el isn't already a child of the host, move it in and
-        // switch the pane to in-flow layout. Width/height still drive
-        // pane.el's inline styles — the host wraps tight around it.
-        if (pane.el && pane.el.parentNode !== host) {
-          host.appendChild(pane.el);
-          pane.el.style.position = "relative";
-          pane.el.style.left = "";
-          pane.el.style.top = "";
-          pane.el.style.margin = "0 auto";
-        }
-        builder.add(pos, pos, Decoration.widget({
-          widget: new InlinePaneWidget(pane.id, host),
-          block: true,
-          side: 1,
-        }));
-      }
-      return builder.finish();
-    }
-  }, { decorations: (v) => v.decorations });
+  });
+
+  return [field, listener];
 }
 
 /** Measure the live width of the main editor's text column so a fresh
