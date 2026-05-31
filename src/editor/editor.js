@@ -319,31 +319,38 @@ export function createEditor(container, state) {
   function applySystemSpellcheck() {
     const on = !!state.settings.systemSpellcheckEnabled;
     view.dispatch({ effects: spellcheckCompartment.reconfigure(spellcheckExtension(on)) });
-    // WKWebView (macOS / iPadOS) and most browsers only run the spell
-    // checker on freshly-edited text or on contenteditable elements that
-    // have just transitioned in/out of editability. Toggling
-    // `contenteditable` off then on inside a microtask forces the
-    // engine to walk the existing text — that's what makes
-    // already-typed misspellings actually get squiggles instead of just
-    // future input. Also re-focus so the WebView treats this as an
-    // active edit surface.
-    if (on) {
-      const cd = view.contentDOM;
-      cd.setAttribute("contenteditable", "false");
-      // Two rAFs so the off-state lands in a paint frame before we flip
-      // back; one rAF isn't always enough in WKWebView.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          cd.setAttribute("contenteditable", "true");
-          view.focus();
-        });
-      });
-    }
     // eslint-disable-next-line no-console
     console.log("[hush][spellcheck] system spellcheck:", on ? "ON" : "OFF",
       "→ cm-content spellcheck=", view.contentDOM.getAttribute("spellcheck"),
       "autocorrect=", view.contentDOM.getAttribute("autocorrect"),
       "hasFocus=", document.activeElement === view.contentDOM);
+    if (!on) return;
+    // WKWebView (macOS / iPadOS) doesn't retroactively paint squiggles
+    // on text that existed before `spellcheck` was flipped on — the
+    // engine only checks freshly-edited spans. Two tricks to force a
+    // walk of the existing document:
+    //   1. Toggle contenteditable off → on so the element is
+    //      "re-attached" from the engine's POV.
+    //   2. Dispatch a no-op CodeMirror edit (insert+delete a single
+    //      space) so CM rebuilds the line DOM and the engine sees an
+    //      input event on the focused field.
+    // Delay the whole dance ~120 ms so the command palette has finished
+    // closing and focus has actually returned to the editor — the
+    // log above will read `hasFocus=false` because the palette is
+    // still the activeElement when the action runs.
+    setTimeout(() => {
+      const cd = view.contentDOM;
+      view.focus();
+      cd.setAttribute("contenteditable", "false");
+      requestAnimationFrame(() => {
+        cd.setAttribute("contenteditable", "true");
+        view.focus();
+        // eslint-disable-next-line no-console
+        console.log("[hush][spellcheck] post-refocus → hasFocus=",
+          document.activeElement === view.contentDOM,
+          "spellcheck=", view.contentDOM.getAttribute("spellcheck"));
+      });
+    }, 120);
   }
   applySystemSpellcheck();
 
