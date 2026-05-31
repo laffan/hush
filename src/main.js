@@ -421,27 +421,43 @@ async function init() {
     // iOS fires both paths for the same code; the second `handleOAuthCode`
     // sees "code already used" and we swallow that rather than bubble up.
     try {
-      const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
-      await onOpenUrl(async (urls) => {
-        for (const url of urls) {
-          if (url.startsWith("hushwriter://auth/callback")) {
-            const code = new URLSearchParams(url.split("?")[1] || "").get("code");
-            if (code) {
-              try { await handleOAuthCode(state, invoke, code, "dropbox"); } catch (e) { console.warn("OAuth deep-link completion failed:", e); }
-            }
-            continue;
+      const { onOpenUrl, getCurrent } = await import("@tauri-apps/plugin-deep-link");
+      const handleUrl = async (url) => {
+        if (url.startsWith("hushwriter://auth/callback")) {
+          const code = new URLSearchParams(url.split("?")[1] || "").get("code");
+          if (code) {
+            try { await handleOAuthCode(state, invoke, code, "dropbox"); } catch (e) { console.warn("OAuth deep-link completion failed:", e); }
           }
-          // iPadOS hands externally-opened .hushnote / .hushstack / .md
-          // files to the app as file:// URLs through the same deep-link
-          // pipe. Route them through the sidebar import path so they
-          // land in the active desk's Inbox.
-          if (url.startsWith("file://") || url.startsWith("/")) {
+          return;
+        }
+        // iPadOS hands externally-opened .hushnote / .hushstack / .md
+        // files to the app as file:// URLs (cold launch surfaces
+        // through getCurrent(); already-running launches through
+        // onOpenUrl).
+        if (url.startsWith("file://") || url.startsWith("/")) {
+          try {
+            const { importExternalFile } = await import("./editor/external-open.js");
+            await importExternalFile(state, url);
+          } catch (e) {
+            console.warn("External file open failed:", e);
             try {
-              const { importExternalFile } = await import("./editor/external-open.js");
-              await importExternalFile(state, url);
-            } catch (e) { console.warn("External file open failed:", e); }
+              const { showImportToast } = await import("./editor/import-toast.js");
+              showImportToast(`Couldn't open ${url.split("/").pop()}: ${e?.message || e}`, "error");
+            } catch (_) {}
           }
         }
+      };
+      // Cold launch: the OS hands the URL to the process before any JS
+      // listener exists; getCurrent() returns those pending URLs so we
+      // don't drop the open-with payload that woke the app.
+      try {
+        const launchUrls = await getCurrent();
+        if (Array.isArray(launchUrls)) {
+          for (const url of launchUrls) await handleUrl(url);
+        }
+      } catch (e) { console.warn("Deep-link getCurrent failed:", e); }
+      await onOpenUrl(async (urls) => {
+        for (const url of urls) await handleUrl(url);
       });
     } catch (e) { console.error("Deep-link setup failed:", e); }
 

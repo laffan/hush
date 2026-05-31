@@ -11,6 +11,8 @@
  * imported file lands as a normal entry in the active desk's Inbox.
  */
 
+import { showImportToast } from "./import-toast.js";
+
 const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
 
 function pathFromUrl(rawUrl) {
@@ -40,21 +42,38 @@ export async function importExternalFile(state, rawUrl) {
 
   const fs = await import("@tauri-apps/plugin-fs");
   const parentId = state.getInboxId();
-
-  if (ext === ".hushnote") {
-    const bytes = await fs.readFile(path);
-    const { unpackNotebook } = await import("../sync/notebook-sync.js");
-    const content = await unpackNotebook(new Uint8Array(bytes));
-    return state.createNotebook(baseName, parentId, { openImmediately: true, initialContent: content });
+  if (!parentId) {
+    showImportToast(`Couldn't import ${name}: app not ready yet`, "error");
+    return;
   }
 
-  if (ext === ".hushstack") {
-    const text = await fs.readTextFile(path);
-    return state.createStack(baseName, parentId, { openImmediately: true, initialContent: text });
-  }
+  try {
+    if (ext === ".hushnote") {
+      const bytes = await fs.readFile(path);
+      const { unpackNotebook } = await import("../sync/notebook-sync.js");
+      const content = await unpackNotebook(new Uint8Array(bytes));
+      const result = await state.createNotebook(baseName, parentId, { openImmediately: true, initialContent: content });
+      showImportToast(`Imported ${name}`, "success");
+      return result;
+    }
 
-  if (TEXT_EXTENSIONS.includes(ext)) {
-    const text = await fs.readTextFile(path);
-    return state.newFile(parentId, { openImmediately: true, initialContent: text, initialName: baseName });
+    if (ext === ".hushstack") {
+      const text = await fs.readTextFile(path);
+      const result = await state.createStack(baseName, parentId, { openImmediately: true, initialContent: text });
+      showImportToast(`Imported ${name}`, "success");
+      return result;
+    }
+
+    if (TEXT_EXTENSIONS.includes(ext)) {
+      const text = await fs.readTextFile(path);
+      const result = await state.newFile(parentId, { openImmediately: true, initialContent: text, initialName: baseName });
+      showImportToast(`Imported ${name}`, "success");
+      return result;
+    }
+
+    showImportToast(`Unsupported file type: ${name}`, "error");
+  } catch (e) {
+    showImportToast(`Import failed for ${name}: ${e?.message || e}`, "error");
+    throw e;
   }
 }

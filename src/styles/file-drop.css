@@ -44,3 +44,39 @@
   background: rgba(128, 128, 128, 0.22);
   border-radius: 4px;
 }
+
+/* Floating banner for import success / error — surfaces drag-drop and
+   Files.app "Open With" feedback for iPad users who can't watch the
+   console. Pinned to the top centre clear of the iOS status bar. */
+.import-toast {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-family: var(--font-family, system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.35;
+  color: #fff;
+  background: rgba(40, 40, 40, 0.92);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  user-select: none;
+  opacity: 1;
+  transition: opacity 0.22s ease;
+}
+
+.import-toast-error {
+  background: rgba(170, 60, 60, 0.95);
+}
+
+.import-toast-success {
+  background: rgba(60, 130, 80, 0.95);
+}
+
+.import-toast-leaving {
+  opacity: 0;
+}

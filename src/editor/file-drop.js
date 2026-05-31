@@ -54,14 +54,40 @@ function findTextFile(e) {
   return null;
 }
 
-function findImportableFiles(e) {
-  const list = e.dataTransfer?.files;
-  if (!list) return [];
+/**
+ * Pull every File off the drop event. iPadOS WKWebView often hands
+ * external-app drops through `dataTransfer.items` (with `kind: "file"`)
+ * while leaving `dataTransfer.files` empty, so we union both sources
+ * and dedupe by name+size.
+ */
+function collectDroppedFiles(e) {
+  const seen = new Set();
   const out = [];
-  for (let i = 0; i < list.length; i++) {
-    if (isImportableFile(list[i])) out.push(list[i]);
+  const push = (f) => {
+    if (!f) return;
+    const key = `${f.name}|${f.size}|${f.lastModified ?? 0}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(f);
+  };
+  const list = e.dataTransfer?.files;
+  if (list) {
+    for (let i = 0; i < list.length; i++) push(list[i]);
+  }
+  const items = e.dataTransfer?.items;
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it && it.kind === "file") {
+        try { push(it.getAsFile()); } catch (_) { /* ignore */ }
+      }
+    }
   }
   return out;
+}
+
+function findImportableFiles(e) {
+  return collectDroppedFiles(e).filter(isImportableFile);
 }
 
 export function hasAcceptableDragPayload(e) {
@@ -202,16 +228,45 @@ export function setupFileDrop(state) {
   });
   panelOverlay.addEventListener("drop", async (e) => {
     if (!filesPanelMounted()) return;
-    const importable = findImportableFiles(e);
-    if (importable.length === 0) return;
+    const dropped = collectDroppedFiles(e);
+    const importable = dropped.filter(isImportableFile);
+    // Surface drops that landed on the sidebar but carried no usable
+    // payload — saves the user staring at a green-plus cursor that did
+    // nothing. iPadOS occasionally hands us file refs with empty names
+    // when the source app didn't co-ordinate the UTI properly.
+    if (importable.length === 0) {
+      if (dropped.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearRowHighlight();
+        hideImport();
+        const { showImportToast } = await import("./import-toast.js");
+        const names = dropped.map((f) => f.name || "(unnamed)").join(", ");
+        showImportToast(`Couldn't import dropped file: ${names}`, "error");
+      }
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     const parentId = resolveDropParent(e);
     clearRowHighlight();
     hideImport();
+    const { showImportToast } = await import("./import-toast.js");
+    let successes = 0;
+    let failures = 0;
     for (const file of importable) {
-      try { await importFileIntoTree(state, file, parentId); }
-      catch (err) { console.error("Sidebar import failed:", err); }
+      try {
+        await importFileIntoTree(state, file, parentId);
+        successes++;
+      } catch (err) {
+        console.error("Sidebar import failed:", err);
+        failures++;
+        showImportToast(`Import failed for ${file.name}: ${err?.message || err}`, "error");
+      }
+    }
+    if (successes > 0 && failures === 0) {
+      const label = successes === 1 ? importable[0].name : `${successes} files`;
+      showImportToast(`Imported ${label}`, "success");
     }
   });
 
