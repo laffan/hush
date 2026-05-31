@@ -311,7 +311,7 @@ function buildCommands(state) {
       action: (s) => s.emit("export-current-file") },
     { id: "fullscreen", label: "Toggle fullscreen", icon: null, shortcutKey: "shortcutOpenFullscreen", ctx: "shared",
       action: (s) => s.toggleFullscreen() },
-    { id: "find", label: "Find & replace", icon: null, shortcutKey: "shortcutFind", ctx: "shared",
+    { id: "find", label: "Find & replace", icon: icons.search, shortcutKey: "shortcutFind", ctx: "shared",
       action: (s) => { if (s.editor) openFindReplace(s.editor.view, s); } },
     { id: "find-in-doc", label: "Find in document", icon: icons.search, shortcutKey: "shortcutQuickFind", ctx: "doc",
       action: (s) => { if (s.editor) openQuickFindBar(s.editor.view, s); } },
