@@ -29,6 +29,7 @@ import {
   fitActivePaneToGap as _fitActivePaneToGap,
   centerPaneInViewport,
 } from "./pane-layout.js";
+import { measureEditorColumnWidth } from "./pane-inline.js";
 
 // Inject local DOM-builder + context handler (avoids pane-persistence → pane-manager cycle).
 const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
@@ -190,6 +191,9 @@ function _collectPaneMetrics() {
   let dockedRightWidth = 0;
   for (const [, p] of panes) {
     if (p.el?.style.display === "none") continue;
+    // Inline panes live inside the doc text via a CM block widget — they
+    // mustn't contribute to make-space metrics or docked footprints.
+    if (p.inline) continue;
     if (p.docked) {
       if (p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
       if (p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
@@ -253,6 +257,10 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   }
 
   const id = crypto.randomUUID();
+  // Inline panes default to column width × 500 px (resizable once mounted).
+  const inlineDefaults = opts.inline
+    ? { width: measureEditorColumnWidth() || DEFAULT_WIDTH, height: opts.inline.height || 500 }
+    : { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
   const pane = {
     id,
     fileId,
@@ -261,12 +269,17 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
     collapsed: false,
     attached: false,  // anchored to canvas (notebook) or scroll (doc)
     pinned: false,    // persists across document switches (blue header)
+    inline: opts.inline ? {
+      anchorTitle: opts.inline.anchorTitle,
+      occurrence: opts.inline.occurrence | 0,
+      height: inlineDefaults.height,
+    } : null,
     dirty: false,
     editor: null,       // CodeMirror wrapper (docs)
     notebook: null,     // NotesCanvas instance (notebooks)
     el: null,           // root DOM element
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
+    width: inlineDefaults.width,
+    height: inlineDefaults.height,
     // Clamp to the viewport so callers that pass a hard-coded anchor
     // (the command palette's "Open as pane" uses `62, 60`) never land
     // a pane off-screen on narrow windows. The lower bound also keeps
@@ -285,6 +298,11 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   };
 
   buildPaneDOM(pane);
+  if (pane.inline) {
+    // Park off-screen so CodeMirror can measure during loadPaneContent;
+    // the inline CM plugin reparents into its widget host on next build.
+    Object.assign(pane.el.style, { position: "absolute", left: "-99999px", top: "0px", width: pane.width + "px", height: pane.height + "px" });
+  }
   containerEl.appendChild(pane.el);
   pane.el.style.zIndex = zForPane(pane);
   panes.set(id, pane);
@@ -354,6 +372,10 @@ export function closePane(id) {
   if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
   if (pane.stackInstance) { try { pane.stackInstance.destroy(); } catch (_) {} pane.stackInstance = null; }
   if (pane._stackSaveInterval) { clearInterval(pane._stackSaveInterval); pane._stackSaveInterval = null; }
+  // Inline panes own a host wrapper inside the CM widget; removing
+  // pane.el is enough to collapse the reserved space — the next
+  // `panes-changed` build cycle drops the empty host.
+  if (pane._inlineHost) pane._inlineHost = null;
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);

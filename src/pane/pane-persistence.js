@@ -84,6 +84,17 @@ export function persistPanesNow() {
             year: p.zotero.year || "",
           }
         : null,
+      // Inline (in-doc) pane anchor — { anchorTitle, occurrence } points
+      // at the Nth `[[Title]]` wikilink in the owning doc. Height rides
+      // alongside so reopening lands at the user's resized size, not
+      // the default 500 px.
+      inline: p.inline
+        ? {
+            anchorTitle: p.inline.anchorTitle,
+            occurrence: p.inline.occurrence | 0,
+            height: p.height,
+          }
+        : null,
     });
   }
   appState.updateSettings({ persistedPanes: serialized });
@@ -169,6 +180,13 @@ export async function restorePanes(deps) {
       docked: !!s.docked,
       dockEdge: s.dockEdge || null,
       dockUserSize: typeof s.dockUserSize === "number" ? s.dockUserSize : null,
+      inline: s.inline
+        ? {
+            anchorTitle: s.inline.anchorTitle,
+            occurrence: s.inline.occurrence | 0,
+            height: s.inline.height || 500,
+          }
+        : null,
     };
     if (s.gutterPrev) pane._gutterPrev = s.gutterPrev;
     if (s.dockPrev) pane._dockPrev = s.dockPrev;
@@ -178,6 +196,17 @@ export async function restorePanes(deps) {
 
     buildPaneDOM(pane);
     applyPaneFontSize(pane);
+    if (pane.inline) {
+      // Park off-screen inside #pane-container so CodeMirror has a real
+      // DOM context to measure against during `loadPaneContent`. The
+      // inline CM plugin reparents into its widget host the next time
+      // the owning doc is the active editor.
+      pane.el.style.position = "absolute";
+      pane.el.style.left = "-99999px";
+      pane.el.style.top = "0px";
+      pane.el.style.width = pane.width + "px";
+      pane.el.style.height = pane.height + "px";
+    }
     containerEl.appendChild(pane.el);
     pane.el.style.zIndex = zForPane(pane);
     panes.set(id, pane);

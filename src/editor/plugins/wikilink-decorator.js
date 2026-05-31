@@ -23,35 +23,69 @@ import { openWikilinkPopup } from "../../links/wikilink-popup.js";
 const WIKILINK_RE = /\[\[([^\[\]\n]+?)\]\]/g;
 
 class WikilinkWidget extends WidgetType {
-  constructor(title, broken) {
+  constructor(title, broken, occurrence, fileType, showInlineArrow) {
     super();
     this.title = title;
     this.broken = !!broken;
+    // Nth occurrence of this title in the doc (0-based). Lets the inline
+    // pane plugin tell two `[[Same Title]]` widgets apart.
+    this.occurrence = occurrence | 0;
+    // null when broken; otherwise the resolved target's type.
+    this.fileType = fileType || null;
+    // Inline-pane affordance is only rendered in editors that host them
+    // (the main doc editor). Pane editors leave the arrow off entirely.
+    this.showInlineArrow = !!showInlineArrow;
   }
 
   eq(other) {
-    return this.title === other.title && this.broken === other.broken;
+    return this.title === other.title
+      && this.broken === other.broken
+      && this.occurrence === other.occurrence
+      && this.fileType === other.fileType
+      && this.showInlineArrow === other.showInlineArrow;
   }
 
   toDOM() {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-wikilink-wrap";
     const span = document.createElement("span");
     span.className = "cm-wikilink-rendered" + (this.broken ? " broken" : "");
     span.textContent = this.title;
     span.title = this.broken ? "No note named \"" + this.title + "\"" : this.title;
     span.dataset.wikilink = this.title;
-    return span;
+    wrap.appendChild(span);
+    // Down-arrow button — opens the target as a pane embedded in the
+    // doc text just below this line. Resolved wikilinks only (nothing
+    // to embed for broken links), and only in editors that opted in.
+    if (!this.broken && this.showInlineArrow) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cm-wikilink-arrow";
+      btn.dataset.wikilink = this.title;
+      btn.dataset.occurrence = String(this.occurrence);
+      if (this.fileType) btn.dataset.linkType = this.fileType;
+      btn.setAttribute("aria-label", "Open inline pane");
+      btn.title = "Open inline pane";
+      btn.innerHTML = `<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><polyline points="2.5,4 5,6.5 7.5,4" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      wrap.appendChild(btn);
+    }
+    return wrap;
   }
 
   ignoreEvent() { return false; }
 }
 
-function buildDecorations(view, appState) {
+function buildDecorations(view, appState, showInlineArrow) {
   const builder = new RangeSetBuilder();
   const doc = view.state.doc;
   const cursors = view.state.selection.ranges.map((r) => ({
     from: Math.min(r.from, r.to),
     to: Math.max(r.from, r.to),
   }));
+  // Per-title occurrence counter so two `[[Same Title]]` widgets in the
+  // same doc carry distinct indices — the inline-pane plugin keys block
+  // widgets by (title, occurrence).
+  const occCount = new Map();
 
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
@@ -62,6 +96,9 @@ function buildDecorations(view, appState) {
       const to = from + match[0].length;
       const title = match[1].trim();
       if (!title) continue;
+      const key = title.toLowerCase();
+      const occurrence = occCount.get(key) || 0;
+      occCount.set(key, occurrence + 1);
       // Skip if the cursor sits inside the link so the user can edit it.
       const cursorInside = cursors.some(
         (c) =>
@@ -73,7 +110,7 @@ function buildDecorations(view, appState) {
 
       const note = appState ? resolveWikilink(appState, title) : null;
       builder.add(from, to, Decoration.replace({
-        widget: new WikilinkWidget(title, !note),
+        widget: new WikilinkWidget(title, !note, occurrence, note?.type || null, showInlineArrow),
       }));
     }
   }
@@ -155,9 +192,24 @@ function tryOpenWikilinkAt(e, view, appState) {
   return false;
 }
 
-function createClickHandler(appState) {
+function createClickHandler(appState, opts) {
   return EditorView.domEventHandlers({
     mousedown(e, view) {
+      // Inline-pane arrow: open a pinned pane embedded under the wikilink.
+      // The arrow is a button — stop the mousedown from triggering the
+      // normal cmd-click-to-open path, since the click handler below
+      // routes through the same target resolver.
+      const arrow = e.target.closest && e.target.closest(".cm-wikilink-arrow");
+      if (arrow) {
+        e.preventDefault();
+        e.stopPropagation();
+        const title = arrow.dataset.wikilink;
+        const occurrence = parseInt(arrow.dataset.occurrence || "0", 10) || 0;
+        if (opts?.onInlinePaneRequest && title) {
+          void opts.onInlinePaneRequest(view, { title, occurrence });
+        }
+        return true;
+      }
       if (!hasModifier(e)) return false;
       return tryOpenWikilinkAt(e, view, appState);
     },
@@ -245,14 +297,15 @@ function createSearchController(view, appState) {
   };
 }
 
-export function createWikilinkPlugin(appState) {
+export function createWikilinkPlugin(appState, opts) {
   let controller = null;
+  const showInlineArrow = !!opts?.onInlinePaneRequest;
 
   const renderPlugin = ViewPlugin.fromClass(
     class {
       constructor(view) {
         controller = createSearchController(view, appState);
-        this.decorations = buildDecorations(view, appState);
+        this.decorations = buildDecorations(view, appState, showInlineArrow);
         // Re-render decorations when the file tree changes — links to a
         // renamed or newly-created note should resolve immediately.
         this._onFilesChanged = () => {
@@ -260,7 +313,7 @@ export function createWikilinkPlugin(appState) {
           // already in flight (the rename caller dispatches via the
           // sync layer, which can sit inside an update tick).
           queueMicrotask(() => {
-            this.decorations = buildDecorations(view, appState);
+            this.decorations = buildDecorations(view, appState, showInlineArrow);
             view.dispatch({});
           });
         };
@@ -268,7 +321,7 @@ export function createWikilinkPlugin(appState) {
       }
       update(update) {
         if (update.docChanged || update.selectionSet || update.viewportChanged) {
-          this.decorations = buildDecorations(update.view, appState);
+          this.decorations = buildDecorations(update.view, appState, showInlineArrow);
         }
         if (update.docChanged || update.selectionSet) {
           controller?.sync();
@@ -294,5 +347,5 @@ export function createWikilinkPlugin(appState) {
     { key: "Escape",    run: () => controller?.isOpen() ? (controller.close(), true) : false },
   ]));
 
-  return [renderPlugin, wikilinkKeymap, createClickHandler(appState)];
+  return [renderPlugin, wikilinkKeymap, createClickHandler(appState, opts)];
 }

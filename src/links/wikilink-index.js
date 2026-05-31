@@ -19,7 +19,7 @@ export function getLinkableNotes(state) {
   const out = [];
   walk(state.fileTree || [], [], (node, crumb) => {
     if (!node) return;
-    if (node.type === "document" || node.type === "notebook") {
+    if (node.type === "document" || node.type === "notebook" || node.type === "stack") {
       if (!node.fileId) return;
       out.push({
         nodeId: node.id,
@@ -75,6 +75,8 @@ export async function openWikilink(state, title) {
   if (!note) return false;
   if (note.type === "notebook") {
     await state.openNotebook(note.fileId);
+  } else if (note.type === "stack") {
+    await state.openStack(note.fileId);
   } else {
     await state.openFile(note.fileId);
   }

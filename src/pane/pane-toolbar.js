@@ -101,22 +101,31 @@ export function buildPaneDOM(pane, deps) {
     buttons.appendChild(sizeBtn);
   }
 
-  const attachLabel = appState.currentStackFileId ? "Attach to stack column" : appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
-  const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
-  attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
-  buttons.appendChild(attachBtn);
+  // Inline panes live inside the doc text — attach / pin / gutter / dock
+  // don't apply (and the manager already excludes them from make-space
+  // metrics). Drag the title bar to detach into a normal pane; the
+  // controls light up once that happens.
+  const isInline = !!pane.inline;
+  if (!isInline) {
+    const attachLabel = appState.currentStackFileId ? "Attach to stack column" : appState.currentPdfFileId ? "Attach to page" : appState.currentNotebookFileId ? "Attach to canvas" : "Attach to document";
+    const attachBtn = makeBtn("attach", ICON_ATTACH, attachLabel);
+    attachBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleAttach(pane); });
+    buttons.appendChild(attachBtn);
 
-  const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
-  pinBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (pinBtn.classList.contains("fp-btn-disabled")) return;
-    togglePinned(pane, deps.onContextChange);
-  });
-  buttons.appendChild(pinBtn);
+    const pinBtn = makeBtn("pin", ICON_PIN, "Pin (keep across documents)");
+    pinBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (pinBtn.classList.contains("fp-btn-disabled")) return;
+      togglePinned(pane, deps.onContextChange);
+    });
+    buttons.appendChild(pinBtn);
+  }
 
   // In a stack context, show "pop-in" button instead of gutter.
   // Otherwise show the gutter toggle.
-  if (appState.currentStackFileId) {
+  if (isInline) {
+    // No gutter / pop-in chrome for inline panes.
+  } else if (appState.currentStackFileId) {
     const popInBtn = makeBtn("pop-in", ICON_POP_IN, "Add to stack");
     popInBtn.addEventListener("click", async (e) => {
       e.stopPropagation();

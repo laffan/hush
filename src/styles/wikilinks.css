@@ -1,6 +1,13 @@
 /* Obsidian-style `[[Note Title]]` inter-note links and the floating
    search popup the user gets when typing `[[`. */
 
+.cm-wikilink-wrap {
+  /* Inline container so the rendered link + arrow stay glued together
+     when the line wraps mid-paragraph. */
+  display: inline;
+  white-space: nowrap;
+}
+
 .cm-wikilink-rendered {
   color: var(--link, currentColor);
   text-decoration: underline;
@@ -9,6 +16,53 @@
   text-underline-offset: 2px;
   cursor: pointer;
   transition: text-decoration-color 0.15s, color 0.15s;
+}
+
+/* Inline-pane affordance: small down-arrow button beside a resolved
+   wikilink. Click opens the target as a pane embedded under that line. */
+.cm-wikilink-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--link, currentColor);
+  opacity: 0.55;
+  cursor: pointer;
+  border-radius: 3px;
+  vertical-align: -1px;
+  transition: opacity 0.12s ease, background-color 0.12s ease;
+}
+.cm-wikilink-arrow:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--link, currentColor) 14%, transparent);
+}
+.cm-wikilink-arrow svg {
+  display: block;
+}
+
+/* CM block widget that hosts an inline pane. The doc text below shifts
+   to make room for whatever the host's intrinsic height is — that
+   height comes from the .floating-pane child sized to pane.height. */
+.cm-inline-pane-host {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+  /* No background / border — the .floating-pane inside paints its own
+     chrome. The host is purely a sizing wrapper for CodeMirror's
+     measure pass. */
+  text-align: left;
+}
+.cm-inline-pane-host > .floating-pane {
+  /* Override the absolute positioning the floating-pane class normally
+     applies, since inline panes flow with the doc text instead. */
+  position: relative !important;
+  left: 0 !important;
+  top: 0 !important;
 }
 .cm-wikilink-rendered:hover {
   text-decoration-color: currentColor;
