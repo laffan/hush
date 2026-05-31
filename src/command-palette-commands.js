@@ -46,8 +46,8 @@ import exportRaw from "./sidebar/sidebar_icons/export.svg?raw";
 import stylesRaw from "./sidebar/sidebar_icons/styles.svg?raw";
 import zoteroRaw from "./sidebar/sidebar_icons/zotero.svg?raw";
 import settingsRaw from "./sidebar/sidebar_icons/settings.svg?raw";
-import searchRaw from "../temp/temp-icons/search.svg?raw";
-import expandRaw from "../temp/temp-icons/expand.svg?raw";
+import searchRaw from "./sidebar/sidebar_icons/search.svg?raw";
+import expandRaw from "./sidebar/sidebar_icons/expand.svg?raw";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 
 /** Resolve the current "this file" tree-node id — the node behind
