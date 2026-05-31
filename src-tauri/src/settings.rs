@@ -307,9 +307,10 @@ pub struct AppSettings {
     #[serde(default)] pub cursor_mode: Option<String>,
 
     // Default style's active-line indicator. Per-style overrides live
-    // on `Style.line_indicator` / `Style.line_indicator_color`.
+    // on `Style.line_indicator`. The indicator colour rides per
+    // appearance on `default_light_colors` / `default_dark_colors`
+    // under the `lineIndicator` key — no dedicated AppSettings field.
     #[serde(default)] pub line_indicator: Option<String>,
-    #[serde(default)] pub line_indicator_color: Option<String>,
 
     // Extra shortcuts
     #[serde(default = "default_shortcut_strikethrough")]
@@ -632,7 +633,6 @@ impl Default for AppSettings {
             block_cursor_color: None,
             cursor_mode: None,
             line_indicator: None,
-            line_indicator_color: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
             panes_hidden_by_context: serde_json::json!({}),

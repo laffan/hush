@@ -131,29 +131,63 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 
 
 /* ===== Line Indicator (per-style "highlight current line" affordance) =====
-   The plugin (src/editor/line-indicator.js) adds `hush-active-line` plus a
-   variant class to the active line via Decoration.line. CSS below paints
-   the variant — colour is driven by `--line-indicator-color`, which the
-   style application step seeds with the style's override or the cursor
-   colour as a fallback. The selectors are intentionally container-agnostic
-   so the same rules paint the style-modal preview pane. */
-.hush-active-line {
+   The container (editor or preview) carries a `line-ind-<variant>` class
+   that scopes the rules below to whichever variant is currently active.
+   CodeMirror's `highlightActiveLine()` paints `.cm-activeLine` on the
+   live cursor line; the preview pane wraps its demo line in a matching
+   `.preview-active-line` element so the same CSS lights up both. Colour
+   is driven by `--line-indicator-color`, which falls back to the cursor
+   colour when unset. */
+
+/* Strip the theme's stock cm-activeLine background everywhere so the
+   line only paints when a variant container class is present. Without
+   this, enabling highlightActiveLine() globally would tint every
+   active line in every theme — a behaviour change unrelated to the
+   indicator feature. */
+.cm-editor .cm-activeLine,
+.cm-editor .cm-activeLineGutter {
+  background-color: transparent !important;
+}
+.line-ind-left-arrow .cm-activeLine,
+.line-ind-left-arrow .preview-active-line,
+.line-ind-double-arrow .cm-activeLine,
+.line-ind-double-arrow .preview-active-line,
+.line-ind-left-border .cm-activeLine,
+.line-ind-left-border .preview-active-line,
+.line-ind-border .cm-activeLine,
+.line-ind-border .preview-active-line,
+.line-ind-highlight .cm-activeLine,
+.line-ind-highlight .preview-active-line {
   position: relative;
 }
-.hush-li-highlight {
-  background-color: color-mix(in srgb, var(--line-indicator-color, var(--cursor)) 10%, transparent);
+.line-ind-highlight .cm-activeLine,
+.line-ind-highlight .preview-active-line {
+  background-color: color-mix(in srgb, var(--line-indicator-color, var(--cursor)) 10%, transparent) !important;
 }
-.hush-li-left-border {
+.line-ind-left-border .cm-activeLine,
+.line-ind-left-border .preview-active-line {
   box-shadow: inset 3px 0 0 0 var(--line-indicator-color, var(--cursor));
+  background-color: transparent !important;
 }
-.hush-li-border {
+.line-ind-border .cm-activeLine,
+.line-ind-border .preview-active-line {
   box-shadow:
     inset 3px 0 0 0 var(--line-indicator-color, var(--cursor)),
     inset -3px 0 0 0 var(--line-indicator-color, var(--cursor));
+  background-color: transparent !important;
 }
-.hush-li-left-arrow::before,
-.hush-li-double-arrow::before,
-.hush-li-double-arrow::after {
+.line-ind-left-arrow .cm-activeLine,
+.line-ind-double-arrow .cm-activeLine,
+.line-ind-left-arrow .preview-active-line,
+.line-ind-double-arrow .preview-active-line {
+  background-color: transparent !important;
+}
+.line-ind-left-arrow .cm-activeLine::before,
+.line-ind-left-arrow .preview-active-line::before,
+.line-ind-double-arrow .cm-activeLine::before,
+.line-ind-double-arrow .preview-active-line::before,
+.line-ind-double-arrow .cm-activeLine::after,
+.line-ind-double-arrow .preview-active-line::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -164,12 +198,15 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   transform: translateY(-50%);
   pointer-events: none;
 }
-.hush-li-left-arrow::before,
-.hush-li-double-arrow::before {
+.line-ind-left-arrow .cm-activeLine::before,
+.line-ind-left-arrow .preview-active-line::before,
+.line-ind-double-arrow .cm-activeLine::before,
+.line-ind-double-arrow .preview-active-line::before {
   left: -18px;
   border-left: 8px solid var(--line-indicator-color, var(--cursor));
 }
-.hush-li-double-arrow::after {
+.line-ind-double-arrow .cm-activeLine::after,
+.line-ind-double-arrow .preview-active-line::after {
   right: -18px;
   border-right: 8px solid var(--line-indicator-color, var(--cursor));
 }

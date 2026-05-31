@@ -1,95 +1,50 @@
 /**
- * Line Indicator — decorates the line under the primary cursor with a
- * class so a style's chosen "highlight the current line" affordance
- * (left arrow / double arrow / left border / border / highlight) can be
- * drawn via CSS. The indicator type and colour come from the active
- * style; rebuilds on selection change and on `style-changed`.
+ * Line Indicator — paints the active line with a per-style "highlight the
+ * current line" affordance (left arrow / double arrow / left border /
+ * border / highlight).
+ *
+ * Rendering is two halves:
+ *   1. CodeMirror's built-in `highlightActiveLine()` paints the
+ *      `.cm-activeLine` class on whichever line carries the cursor.
+ *   2. `applyLineIndicatorClass()` writes a `line-ind-<variant>` class
+ *      on each editor's container element so the matching CSS rule
+ *      (`.line-ind-left-arrow .cm-activeLine::before {…}`) lights up.
+ * Driving the visual through a container class avoids relying on
+ * Decoration.line surviving every other line-level decoration in the
+ * stack — the active-line element is owned by CodeMirror itself.
  */
-import { ViewPlugin, Decoration } from "@codemirror/view";
-import { StateEffect, StateField } from "@codemirror/state";
+import { highlightActiveLine } from "@codemirror/view";
 
-const VARIANT_CLASSES = {
-  "left-arrow": "hush-li-left-arrow",
-  "double-arrow": "hush-li-double-arrow",
-  "left-border": "hush-li-left-border",
-  "border": "hush-li-border",
-  "highlight": "hush-li-highlight",
-};
+const VARIANTS = ["left-arrow", "double-arrow", "left-border", "border", "highlight"];
 
-/** Effect dispatched when the active style's lineIndicator changes so
- *  the plugin rebuilds even without a selection / doc event. */
-export const setLineIndicatorEffect = StateEffect.define();
-
-const lineIndicatorField = StateField.define({
-  create() { return null; },
-  update(value, tr) {
-    for (const e of tr.effects) {
-      if (e.is(setLineIndicatorEffect)) return e.value || null;
-    }
-    return value;
-  },
-});
+export const lineIndicatorBaseExtension = highlightActiveLine();
 
 function resolveLineIndicator(state) {
   const styleId = state.settings.activeStyleId;
-  if (!styleId) return null;
+  if (!styleId) {
+    const v = state.settings.lineIndicator;
+    return v && v !== "none" ? v : null;
+  }
   const style = (state.settings.styles || []).find(s => s.id === styleId);
   if (!style) return null;
   const v = style.lineIndicator;
-  if (!v || v === "none") return null;
-  return v;
+  return v && v !== "none" ? v : null;
 }
 
-export function createLineIndicatorPlugin(state) {
-  return ViewPlugin.fromClass(
-    class {
-      constructor(view) {
-        this.decorations = this.build(view);
-      }
-
-      update(update) {
-        const indicatorChanged = update.transactions.some(tr =>
-          tr.effects.some(e => e.is(setLineIndicatorEffect))
-        );
-        if (
-          indicatorChanged ||
-          update.docChanged ||
-          update.selectionSet ||
-          update.viewportChanged
-        ) {
-          this.decorations = this.build(update.view);
-        }
-      }
-
-      build(view) {
-        const indicator = view.state.field(lineIndicatorField, false) ?? resolveLineIndicator(state);
-        const cls = VARIANT_CLASSES[indicator];
-        if (!cls) return Decoration.none;
-        const head = view.state.selection.main.head;
-        const line = view.state.doc.lineAt(head);
-        return Decoration.set([
-          Decoration.line({ class: `hush-active-line ${cls}` }).range(line.from),
-        ]);
-      }
-    },
-    { decorations: (v) => v.decorations }
-  );
+/** Toggle the `line-ind-<variant>` class on the given container so the
+ *  active-line CSS variant takes effect. Pass the same element you'd
+ *  attach the indicator to — main `#editor-container`, a pane host,
+ *  or any wrapper that contains the CodeMirror surface. */
+export function applyLineIndicatorClass(container, state) {
+  if (!container) return;
+  const indicator = resolveLineIndicator(state);
+  for (const v of VARIANTS) container.classList.toggle("line-ind-" + v, indicator === v);
 }
 
-/** Bridge AppState's `style-changed` event into every editor view so
- *  the plugin's StateField picks up the new indicator immediately,
- *  without waiting for the next selection / doc change. Called once
- *  per editor creation (main + each pane). */
-export function bindLineIndicatorToState(view, state) {
-  const push = () => {
-    if (!view || !view.state) return;
-    view.dispatch({
-      effects: setLineIndicatorEffect.of(resolveLineIndicator(state)),
-    });
-  };
-  push();
-  state.on("style-changed", push);
-  state.on("settings-changed", push);
+/** Wire a container to re-apply the indicator class on every
+ *  `style-changed` / `settings-changed` so dropdown edits land live. */
+export function bindLineIndicatorToContainer(container, state) {
+  applyLineIndicatorClass(container, state);
+  state.on("style-changed", () => applyLineIndicatorClass(container, state));
+  state.on("settings-changed", () => applyLineIndicatorClass(container, state));
 }
-
-export { lineIndicatorField };

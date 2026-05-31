@@ -75,7 +75,25 @@ export function toggleComment(view) {
   return toggleWrap(view, "%%");
 }
 
-/** Toggle ~~strikethrough~~ on the selection. */
+/** Toggle ~~strikethrough~~ on the selection, trimming any leading or
+ *  trailing whitespace / line breaks so the markers sit flush against
+ *  the first and last non-blank characters. Matches what users expect
+ *  when they drag a selection that overshoots the words they want
+ *  struck through. */
 export function toggleStrikethrough(view) {
+  const sel = view.state.selection.main;
+  if (sel.empty) return toggleWrap(view, "~~");
+  const text = view.state.doc.sliceString(sel.from, sel.to);
+  const leading = text.match(/^\s*/)[0].length;
+  const trailing = text.match(/\s*$/)[0].length;
+  // All whitespace, or no whitespace to trim — defer to the normal path.
+  if (leading + trailing >= text.length || (leading === 0 && trailing === 0)) {
+    return toggleWrap(view, "~~");
+  }
+  const innerFrom = sel.from + leading;
+  const innerTo = sel.to - trailing;
+  view.dispatch({
+    selection: EditorSelection.range(innerFrom, innerTo),
+  });
   return toggleWrap(view, "~~");
 }

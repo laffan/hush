@@ -34,11 +34,11 @@ export function createDefaultSettings() {
     // keep their setting.
     cursorMode: null,
     // Active-line indicator for the Default style. Per-style overrides
-    // live on `Style.lineIndicator` / `Style.lineIndicatorColor`.
-    // One of "none", "left-arrow", "double-arrow", "left-border",
-    // "border", "highlight". `null` colour falls back to the cursor colour.
+    // live on `Style.lineIndicator`. One of "none", "left-arrow",
+    // "double-arrow", "left-border", "border", "highlight". The
+    // indicator colour rides per-appearance on defaultLightColors /
+    // defaultDarkColors under the `lineIndicator` key.
     lineIndicator: "none",
-    lineIndicatorColor: null,
     typewriterLineOpacity: 0.08,
     // %% comment %% opacity. Markers dim to 2/3 of this value so the
     // delimiters fade further than the body content.

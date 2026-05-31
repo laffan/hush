@@ -31,7 +31,7 @@ export function applyBlockCursor(state) {
       const { colors } = resolveStyleForAppearance(style, state.settings.appearance);
       const overrides = colors || style.colorOverrides || {};
       cursorOverride = overrides.cursor || null;
-      lineIndicatorOverride = style.lineIndicatorColor || null;
+      lineIndicatorOverride = overrides.lineIndicator || null;
     }
   } else {
     let appearance = state.settings.appearance || "dark";
@@ -42,6 +42,7 @@ export function applyBlockCursor(state) {
       ? (state.settings.defaultDarkColors || {})
       : (state.settings.defaultLightColors || {});
     cursorOverride = def.cursor || null;
+    lineIndicatorOverride = def.lineIndicator || null;
   }
   const mode = resolveCursorMode(state, style);
   container.classList.toggle("block-cursor", mode === "block");
