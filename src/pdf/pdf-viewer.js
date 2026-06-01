@@ -1,9 +1,7 @@
 import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
 import { createThumbnailManager } from "./pdf-viewer-thumbnails.js";
-import {
-  VERTICAL_ICON, HORIZONTAL_ICON, THUMBNAIL_ICON, POPOUT_ICON,
-  FIT_ONE_ICON, FIT_TWO_ICON, FIT_THREE_ICON,
-} from "./pdf-viewer-icons.js";
+import { POPOUT_ICON } from "./pdf-viewer-icons.js";
+import { buildPdfToolbar } from "./pdf-toolbar-build.js";
 
 let pdfjsPromise = null;
 
@@ -65,47 +63,15 @@ export function createPdfViewer(container, opts = {}) {
 
   root.appendChild(body);
 
-  // ── Toolbar (bottom bar) ─────────────────────────────────────────
-  const toolbar = document.createElement("div");
-  toolbar.className = "pdf-zoom-toolbar";
-
-  const zoomOutBtn = btn("pdf-zoom-btn", "−", "Zoom out");
-  const zoomLabel = document.createElement("span");
-  zoomLabel.className = "pdf-zoom-label";
-  zoomLabel.textContent = "Fit";
-  const zoomInBtn = btn("pdf-zoom-btn", "+", "Zoom in");
-
-  const scrollToggleWrap = document.createElement("span");
-  scrollToggleWrap.className = "pdf-toggle-group";
-  const scrollHBtn = svgBtn("pdf-toggle-option active", "Horizontal scroll", HORIZONTAL_ICON);
-  const scrollVBtn = svgBtn("pdf-toggle-option", "Vertical scroll", VERTICAL_ICON);
-  scrollToggleWrap.append(scrollHBtn, scrollVBtn);
-
-  const fitToggleWrap = document.createElement("span");
-  fitToggleWrap.className = "pdf-toggle-group";
-  fitToggleWrap.style.display = "none";
-  const fitOneBtn = svgBtn("pdf-toggle-option active", "Fit one page", FIT_ONE_ICON);
-  const fitTwoBtn = svgBtn("pdf-toggle-option", "Fit two pages", FIT_TWO_ICON);
-  const fitThreeBtn = svgBtn("pdf-toggle-option", "Fit three pages", FIT_THREE_ICON);
-
-  fitToggleWrap.append(fitOneBtn, fitTwoBtn, fitThreeBtn);
-
-  const pageIndicator = document.createElement("span");
-  pageIndicator.className = "pdf-page-indicator";
-
-  const zoteroLink = document.createElement("a");
-  zoteroLink.className = "pdf-zotero-link";
-  zoteroLink.textContent = "Open in Zotero ↗";
-  zoteroLink.style.display = "none";
-
-  const thumbnailBtn = svgBtn("pdf-zoom-btn pdf-thumbnail-btn", "Thumbnail view", THUMBNAIL_ICON);
-
-  const toolbarInfo = document.createElement("span");
-  toolbarInfo.className = "pdf-toolbar-info";
-
-  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, scrollToggleWrap, fitToggleWrap, thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink);
+  // Bottom-bar toolbar: DOM-only, no closures. Event handlers wired below.
+  const {
+    toolbar,
+    zoomOutBtn, zoomLabel, zoomInBtn,
+    scrollHBtn, scrollVBtn,
+    fitOneBtn, fitTwoBtn, fitThreeBtn, fitToggleWrap,
+    pageIndicator, zoteroLink, thumbnailBtn, toolbarInfo,
+  } = buildPdfToolbar();
   root.appendChild(toolbar);
-
   container.appendChild(root);
 
   // ── Zotero link setup ────────────────────────────────────────────
@@ -539,12 +505,12 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   // ── Suspend / Resume (lightweight snapshot for inactive panes) ────
+  // The captured _suspend* values let resume() restore the user's
+  // pre-suspend viewport — without them resume reloads at scrollTop=0
+  // and host panes lose their scroll on every doc-switch.
   let suspended = false;
   let resuming = false;
   let suspendImg = null;
-  // Captured at suspend so resume can restore the user's pre-suspend
-  // viewport — without this, resume() reloads at scrollTop=0 and the
-  // host pane loses its scroll position on every doc-switch round trip.
   let _suspendScrollTop = 0;
   let _suspendScrollLeft = 0;
   let _suspendZoomLevel = null;
@@ -552,8 +518,6 @@ export function createPdfViewer(container, opts = {}) {
 
   function suspend() {
     if (suspended || destroyed || !pdfDoc) return;
-    // Snapshot the user's viewport before we tear pages down — resume()
-    // re-applies these once loadPdf has put pages back in place.
     _suspendScrollTop = scrollArea.scrollTop;
     _suspendScrollLeft = scrollArea.scrollLeft;
     try { _suspendZoomLevel = getZoom(); } catch (_) { _suspendZoomLevel = null; }
@@ -625,17 +589,13 @@ export function createPdfViewer(container, opts = {}) {
       if (savedAnnotations.length) annotLayer.setAnnotations(savedAnnotations);
     }
 
-    // Belt-and-suspenders — fitMode / layoutMode are closure-level so
-    // loadPdf already preserves them, but explicitly re-applying the
-    // zoom level catches any future code path that resets them and
-    // also forces a relayout against the current container size.
+    // Re-apply zoom before scroll: a horizontal layout clamps scrollTop
+    // to 0 (and vice versa for vertical), so the wrong axis would be
+    // lost if zoom isn't restored first. The rAF gap lets the new pages
+    // settle so scrollHeight reflects them before scroll is assigned.
     if (_suspendZoomLevel != null) {
       try { setZoom(_suspendZoomLevel); } catch (_) {}
     }
-    // Restore the saved viewport. Wait one frame so the new pages have
-    // settled into the scroll area and scrollHeight reflects them; an
-    // immediate assignment would clamp to 0. The `resuming` guard above
-    // keeps the scroll listener quiet during this final apply.
     requestAnimationFrame(() => {
       try {
         scrollArea.scrollTop = _suspendScrollTop;
@@ -718,19 +678,4 @@ export function createPdfViewer(container, opts = {}) {
   };
 }
 
-function btn(cls, text, title) {
-  const b = document.createElement("button");
-  b.className = cls;
-  b.textContent = text;
-  b.title = title;
-  return b;
-}
-
-function svgBtn(cls, title, svgContent) {
-  const b = document.createElement("button");
-  b.className = cls;
-  b.title = title;
-  b.innerHTML = svgContent;
-  return b;
-}
 
