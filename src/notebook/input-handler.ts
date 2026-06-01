@@ -261,9 +261,13 @@ export function bindInputEvents(
     }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-    // Space-to-pan
-    if (e.key === " " && !e.repeat) {
+    // Space-to-pan. We preventDefault on every space (including OS-
+    // auto-repeated keydowns) so an inline notebook canvas hosted
+    // inside a doc editor's contentEditable doesn't leak the held-
+    // down spaces into the doc as inserted characters.
+    if (e.key === " ") {
       e.preventDefault();
+      if (e.repeat) return;
       spaceDown = true;
       // Only flip isPanning if it wasn't already on (persistent grab
       // tool). Tracks whether we were the one who turned it on so
@@ -276,12 +280,18 @@ export function bindInputEvents(
       return;
     }
 
-    // Tool shortcuts (single-key, no modifiers)
+    // Tool shortcuts (single-key, no modifiers). When this canvas
+    // belongs to a pane whose focus is technically on a host editable
+    // (inline notebook pane case), preventDefault keeps those letters
+    // from being typed into the host doc as well.
     if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-      if (matchesKey(e, sc.shortcutNbSelect)) { state.tool = "select"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
-      if (matchesKey(e, sc.shortcutNbText)) { state.tool = "text"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
-      if (matchesKey(e, sc.shortcutNbDragArea)) { state.tool = "drag-area"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
+      const inHostEditable = !!activeEl?.isContentEditable && activeEl.contains(canvas);
+      const preventTypingLeak = () => { if (inHostEditable) e.preventDefault(); };
+      if (matchesKey(e, sc.shortcutNbSelect)) { preventTypingLeak(); state.tool = "select"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
+      if (matchesKey(e, sc.shortcutNbText)) { preventTypingLeak(); state.tool = "text"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
+      if (matchesKey(e, sc.shortcutNbDragArea)) { preventTypingLeak(); state.tool = "drag-area"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
       if (matchesKey(e, sc.shortcutNbBrainstorm)) {
+        preventTypingLeak();
         state.brainstormMode = !state.brainstormMode;
         if (state.brainstormMode) { state.tool = "text"; state.notify("tool"); }
         state.notify("brainstormMode"); return;

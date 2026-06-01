@@ -367,9 +367,21 @@ async function loadPdfPane(pane) {
     }
   } catch {}
 
-  if (typeof pane.editorScrollTop === "number" && pane.editorScrollTop > 0) {
-    const target = pane.editorScrollTop;
-    const apply = () => { try { viewer.setScrollTop(target); } catch (_) {} };
+  // Zoom level first — the layout has to match before scrollTop/Left
+  // are applied, otherwise scrolling on the wrong axis gets clamped to 0
+  // (e.g. a horizontal PDF restored with no setZoom has scrollHeight ≈
+  // clientHeight, so scrollTop won't take). setZoom is a no-op when the
+  // viewer is already in the desired mode.
+  if (typeof pane.pdfZoomLevel === "number") {
+    try { viewer.setZoom(pane.pdfZoomLevel); } catch (_) {}
+  }
+  const targetTop = typeof pane.editorScrollTop === "number" ? pane.editorScrollTop : 0;
+  const targetLeft = typeof pane.pdfScrollLeft === "number" ? pane.pdfScrollLeft : 0;
+  if (targetTop > 0 || targetLeft > 0) {
+    const apply = () => {
+      try { viewer.setScrollTop(targetTop); } catch (_) {}
+      try { viewer.setScrollLeft(targetLeft); } catch (_) {}
+    };
     requestAnimationFrame(apply);
     if (pane.inline) {
       setTimeout(apply, 100);
@@ -380,9 +392,16 @@ async function loadPdfPane(pane) {
   if (viewer.onScroll) {
     let scrollTimer = null;
     pane._scrollListenerCleanup = viewer.onScroll(() => {
-      const next = viewer.getScrollTop();
-      if (next === pane.editorScrollTop) return;
-      pane.editorScrollTop = next;
+      const nextTop = viewer.getScrollTop();
+      const nextLeft = viewer.getScrollLeft();
+      // getZoom may not exist on older viewer builds; coalesce to null.
+      const nextZoom = typeof viewer.getZoom === "function" ? viewer.getZoom() : null;
+      if (nextTop === pane.editorScrollTop
+          && nextLeft === pane.pdfScrollLeft
+          && nextZoom === pane.pdfZoomLevel) return;
+      pane.editorScrollTop = nextTop;
+      pane.pdfScrollLeft = nextLeft;
+      if (nextZoom != null) pane.pdfZoomLevel = nextZoom;
       if (scrollTimer) clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => {
         scrollTimer = null;
