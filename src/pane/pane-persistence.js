@@ -67,6 +67,12 @@ export function persistPanesNow() {
       // Editor scroll position inside doc panes — restored on next mount
       // so reopening a pane lands the reader where they left off.
       editorScrollTop: typeof p.editorScrollTop === "number" ? p.editorScrollTop : null,
+      // Per-pane notebook camera (pan + zoom). Stored separately from the
+      // notebook file's own camera so the same notebook open in the main
+      // canvas and as a pane each keep their own viewport.
+      notebookCamera: p.notebookCamera
+        ? { x: p.notebookCamera.x, y: p.notebookCamera.y, zoom: p.notebookCamera.zoom }
+        : null,
       localSync: p.localSync || null,
       // Per-pane font-size override. Keyed implicitly by the pane's
       // (ownerContext, fileId) pair, so the same file opened as a pane
@@ -175,6 +181,12 @@ export async function restorePanes(deps) {
       fontSize: typeof s.fontSize === "number" ? s.fontSize : null,
       zotero: s.zotero ? { ...s.zotero } : null,
       editorScrollTop: typeof s.editorScrollTop === "number" ? s.editorScrollTop : null,
+      // Restored per-pane notebook camera — consumed in loadNotebookPane
+      // (in lieu of the default centring) so the user's pan / zoom
+      // survives an app restart.
+      notebookCamera: s.notebookCamera
+        ? { x: s.notebookCamera.x, y: s.notebookCamera.y, zoom: s.notebookCamera.zoom }
+        : null,
       gutter: !!s.gutter,
       gutterSide: s.gutterSide || null,
       docked: !!s.docked,

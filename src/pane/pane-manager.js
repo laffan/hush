@@ -340,6 +340,10 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
   if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
   if (pane._bgChangeListener) { document.removeEventListener("notebook-bg-changed", pane._bgChangeListener); pane._bgChangeListener = null; }
+  if (pane._cameraChangeListener && pane._content) {
+    pane._content.removeEventListener("notebook-camera-change", pane._cameraChangeListener);
+    pane._cameraChangeListener = null;
+  }
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
   if (pane.editor) { try { pane.editor.destroy(); } catch (_) {} pane.editor = null; }
@@ -355,6 +359,7 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
   pane.fileType = fileType;
   pane.dirty = false;
   pane.editorScrollTop = 0;
+  pane.notebookCamera = null;
   pane.localSync = null;
   pane.zotero = null;
 
@@ -373,6 +378,10 @@ export function closePane(id) {
   if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
   if (pane._bgChangeListener) { document.removeEventListener("notebook-bg-changed", pane._bgChangeListener); pane._bgChangeListener = null; }
+  if (pane._cameraChangeListener && pane._content) {
+    pane._content.removeEventListener("notebook-camera-change", pane._cameraChangeListener);
+    pane._cameraChangeListener = null;
+  }
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
   if (pane.gutter) {
