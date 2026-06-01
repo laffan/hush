@@ -384,11 +384,20 @@ async function loadStackPane(pane) {
   const data = decodeStackContent(content);
   const stack = new StackComponent(pane._content, data, appState);
   pane.stackInstance = stack;
+  // Baseline so the first tick doesn't rewrite the just-loaded content.
+  {
+    const seed = stack.serialize();
+    pane._lastStackContent = encodeStackContent(seed.items, seed.scrollX);
+  }
 
   const saveInterval = setInterval(async () => {
     if (!pane.stackInstance) return;
     const snapshot = pane.stackInstance.serialize();
     const encoded = encodeStackContent(snapshot.items, snapshot.scrollX);
+    // Idle stack panes re-serialize identically every tick — skip the
+    // disk write + sync push unless the content actually changed.
+    if (encoded === pane._lastStackContent) return;
+    pane._lastStackContent = encoded;
     if (IS_TAURI) {
       try { await tauriInvoke("save_file", { id: pane.fileId, content: encoded }); }
       catch (e) { console.error("Stack pane save failed:", e); }

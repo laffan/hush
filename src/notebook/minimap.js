@@ -244,16 +244,23 @@ function paintPanes() {
 function startViewportLoop() {
   if (!_viewportRect) return;
   if (_rafToken) { try { cancelAnimationFrame(_rafToken); } catch (_) {} _rafToken = 0; }
-  const tick = async () => {
+  // Resolve the bridge lookup once instead of `await import(...)`-ing the
+  // module on every single frame (that allocated a promise + ran a module
+  // lookup 60×/sec the whole time the minimap was open).
+  let getCanvasInstance = null;
+  import("./notebook-bridge.js").then((m) => { getCanvasInstance = m.getCanvasInstance; });
+  let _lastGeom = "";
+  const tick = () => {
     if (!_viewportRect) return;
-    const { getCanvasInstance } = await import("./notebook-bridge.js");
-    const live = getCanvasInstance();
+    const live = getCanvasInstance && getCanvasInstance();
     const ok = live
       && _state?.currentNotebookFileId === _fileId
       && live.state?.canvasEl
       && _canvas?._snapshotCamera;
     if (!ok) {
-      _viewportRect.style.display = "none";
+      if (_lastGeom !== "hidden") { _viewportRect.style.display = "none"; _lastGeom = "hidden"; }
+      _rafToken = requestAnimationFrame(tick);
+      return;
     } else {
       const liveCam = live.state.camera;
       const liveCanvas = live.state.canvasEl;
@@ -270,15 +277,22 @@ function startViewportLoop() {
       const layerH = _viewportRect.parentNode?.clientHeight || cssH;
       const sx = layerW / cssW;
       const sy = layerH / cssH;
-      const x = (worldX * cam.zoom + cam.x) * sx;
-      const y = (worldY * cam.zoom + cam.y) * sy;
-      const w = worldW * cam.zoom * sx;
-      const h = worldH * cam.zoom * sy;
-      _viewportRect.style.display = "block";
-      _viewportRect.style.left = Math.round(x) + "px";
-      _viewportRect.style.top = Math.round(y) + "px";
-      _viewportRect.style.width = Math.max(2, Math.round(w)) + "px";
-      _viewportRect.style.height = Math.max(2, Math.round(h)) + "px";
+      const x = Math.round((worldX * cam.zoom + cam.x) * sx);
+      const y = Math.round((worldY * cam.zoom + cam.y) * sy);
+      const w = Math.max(2, Math.round(worldW * cam.zoom * sx));
+      const h = Math.max(2, Math.round(worldH * cam.zoom * sy));
+      // Only touch the DOM when the rect actually moved — an idle canvas
+      // produces identical geometry every frame, so this avoids forcing a
+      // style recalc 60×/sec while the user isn't panning or zooming.
+      const geom = `${x},${y},${w},${h}`;
+      if (geom !== _lastGeom) {
+        _lastGeom = geom;
+        _viewportRect.style.display = "block";
+        _viewportRect.style.left = x + "px";
+        _viewportRect.style.top = y + "px";
+        _viewportRect.style.width = w + "px";
+        _viewportRect.style.height = h + "px";
+      }
     }
     _rafToken = requestAnimationFrame(tick);
   };

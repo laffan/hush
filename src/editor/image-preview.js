@@ -18,20 +18,23 @@ let connectivityWatch = null;
 
 function cancelConnectivityWatch() {
   if (connectivityWatch) {
-    cancelAnimationFrame(connectivityWatch);
+    clearTimeout(connectivityWatch);
     connectivityWatch = null;
   }
 }
 
-/** Hide the tooltip the moment its source element leaves the DOM. */
+/** Hide the tooltip the moment its source element leaves the DOM.
+ *  Polls on a coarse timer rather than a 60 fps rAF — this only needs to
+ *  notice the source row being removed, which is fine to catch within a
+ *  fraction of a second, and a tooltip can be open for a while on hover. */
 function startConnectivityWatch(el) {
   cancelConnectivityWatch();
   const tick = () => {
     connectivityWatch = null;
     if (!el || !el.isConnected) { hideImageTooltip(); return; }
-    connectivityWatch = requestAnimationFrame(tick);
+    connectivityWatch = setTimeout(tick, 200);
   };
-  connectivityWatch = requestAnimationFrame(tick);
+  connectivityWatch = setTimeout(tick, 200);
 }
 
 function ensureTooltip() {

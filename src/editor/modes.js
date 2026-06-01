@@ -407,7 +407,10 @@ export function updateRatchetTimer(state) {
     const mins = Math.floor(remaining / 60000);
     const secs = Math.floor((remaining % 60000) / 1000);
     timerEl.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
-    requestAnimationFrame(tick);
+    // The display only changes once per second, so wake exactly on the
+    // next second boundary instead of burning a 60 fps rAF loop on a
+    // clock. Aligning to the boundary keeps the countdown visually crisp.
+    setTimeout(tick, remaining % 1000 || 1000);
   }
 
   tick();

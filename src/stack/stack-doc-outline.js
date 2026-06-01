@@ -29,21 +29,32 @@ function createStackDocOutline(contentEl, editorView) {
   list.className = "stack-doc-outline-list";
   panel.appendChild(list);
 
+  let lastSig = null;
   function render() {
-    list.innerHTML = "";
     if (!editorView?.state) return;
     const doc = editorView.state.doc;
+    // Collect headings first and fingerprint them. The outline polls every
+    // 3 s; in the common case nothing changed, so skip the DOM teardown +
+    // rebuild (and the per-row listener re-attach) unless the heading set
+    // actually moved.
+    const headings = [];
     for (let i = 1; i <= doc.lines; i++) {
       const line = doc.line(i);
       const m = line.text.match(HEADING_RE);
       if (!m) continue;
-      const level = m[1].length;
-      const text = m[2].trim();
+      headings.push({ level: m[1].length, text: m[2].trim(), offset: line.from });
+    }
+    const sig = headings.map((h) => `${h.level}:${h.offset}:${h.text}`).join("\n");
+    if (sig === lastSig) return;
+    lastSig = sig;
+
+    list.innerHTML = "";
+    for (const h of headings) {
       const row = document.createElement("div");
       row.className = "stack-doc-outline-row";
-      row.style.paddingLeft = (8 + (level - 1) * 14) + "px";
-      row.textContent = text;
-      const offset = line.from;
+      row.style.paddingLeft = (8 + (h.level - 1) * 14) + "px";
+      row.textContent = h.text;
+      const offset = h.offset;
       row.addEventListener("click", () => {
         const safe = Math.max(0, Math.min(offset, editorView.state.doc.length));
         editorView.dispatch({
