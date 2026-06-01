@@ -170,6 +170,14 @@ export async function openFile(state, id) {
     const file = state.files.find((f) => f.id === id);
     if (file) { state.currentFileId = file.id; if (state.editor) state.editor.setContent(file.content); }
   }
+  // Restore the saved per-doc scroll. setContent above resets scrollTop
+  // to 0, so we re-apply after CodeMirror has laid out the new buffer.
+  const savedScroll = state.settings.docScrollPositions?.[state.currentFileId];
+  if (typeof savedScroll === "number" && savedScroll > 0 && state.editor) {
+    requestAnimationFrame(() => {
+      try { state.editor.view.scrollDOM.scrollTop = savedScroll; } catch (_) {}
+    });
+  }
   state.emit("file-opened");
   // Clear the notebook + project pointers so the "restore last file"
   // branch on next launch picks the doc, not whichever notebook the

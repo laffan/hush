@@ -310,14 +310,31 @@ async function init() {
   // floating circular toggle are both gone.
   import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
 
-  // Save scroll position periodically (debounced on scroll)
+  // Save scroll position periodically (debounced on scroll). Tracks
+  // the current file under `docScrollPositions[fileId]` so switching
+  // away and back lands the reader where they left off; also writes
+  // `scrollPosition` for the legacy boot-time restore path.
   let scrollSaveTimer = null;
   if (state.editor) {
     state.editor.view.scrollDOM.addEventListener("scroll", () => {
       clearTimeout(scrollSaveTimer);
       scrollSaveTimer = setTimeout(() => {
         const scrollTop = state.editor.view.scrollDOM.scrollTop;
-        state.updateSettings({ scrollPosition: scrollTop });
+        const fileId = state.currentFileId;
+        const patch = { scrollPosition: scrollTop };
+        if (fileId) {
+          const positions = { ...(state.settings.docScrollPositions || {}) };
+          positions[fileId] = scrollTop;
+          // FIFO-trim — `delete` + reinsert isn't worth the churn since
+          // we re-touch the key on every save anyway, so just drop the
+          // oldest entries once we drift past 100.
+          const keys = Object.keys(positions);
+          if (keys.length > 100) {
+            for (const k of keys.slice(0, keys.length - 100)) delete positions[k];
+          }
+          patch.docScrollPositions = positions;
+        }
+        state.updateSettings(patch);
       }, 1000);
     });
   }

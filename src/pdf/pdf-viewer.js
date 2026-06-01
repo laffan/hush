@@ -293,6 +293,11 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   scrollArea.addEventListener("scroll", () => {
+    // Skip events fired by the suspend/resume teardown — clearing
+    // scrollArea.innerHTML resets scrollTop to 0, and we don't want
+    // that synthetic 0 to leak out and overwrite the host pane's saved
+    // scroll position before resume has put it back.
+    if (suspended || resuming) return;
     updatePageIndicator();
     for (const cb of scrollListeners) cb();
   });
@@ -535,19 +540,31 @@ export function createPdfViewer(container, opts = {}) {
 
   // ── Suspend / Resume (lightweight snapshot for inactive panes) ────
   let suspended = false;
+  let resuming = false;
   let suspendImg = null;
+  // Captured at suspend so resume can restore the user's pre-suspend
+  // viewport — without this, resume() reloads at scrollTop=0 and the
+  // host pane loses its scroll position on every doc-switch round trip.
+  let _suspendScrollTop = 0;
+  let _suspendScrollLeft = 0;
+  let _suspendZoomLevel = null;
   let cachedPdfData = null;
 
   function suspend() {
     if (suspended || destroyed || !pdfDoc) return;
+    // Snapshot the user's viewport before we tear pages down — resume()
+    // re-applies these once loadPdf has put pages back in place.
+    _suspendScrollTop = scrollArea.scrollTop;
+    _suspendScrollLeft = scrollArea.scrollLeft;
+    try { _suspendZoomLevel = getZoom(); } catch (_) { _suspendZoomLevel = null; }
     suspended = true;
     thumbs.destroy();
     window.removeEventListener("keydown", onKeydown);
     if (resizeObserver) resizeObserver.disconnect();
     if (observer) { observer.disconnect(); observer = null; }
 
-    const savedScroll = scrollArea.scrollTop;
-    const savedScrollLeft = scrollArea.scrollLeft;
+    const savedScroll = _suspendScrollTop;
+    const savedScrollLeft = _suspendScrollLeft;
 
     try {
       const snapshot = document.createElement("canvas");
@@ -593,6 +610,7 @@ export function createPdfViewer(container, opts = {}) {
   async function resume() {
     if (!suspended || destroyed) return;
     suspended = false;
+    resuming = true;
     scrollArea.classList.remove("pdf-suspended");
     if (suspendImg) { suspendImg.remove(); suspendImg = null; }
 
@@ -606,6 +624,25 @@ export function createPdfViewer(container, opts = {}) {
       await loadPdf(cachedPdfData);
       if (savedAnnotations.length) annotLayer.setAnnotations(savedAnnotations);
     }
+
+    // Belt-and-suspenders — fitMode / layoutMode are closure-level so
+    // loadPdf already preserves them, but explicitly re-applying the
+    // zoom level catches any future code path that resets them and
+    // also forces a relayout against the current container size.
+    if (_suspendZoomLevel != null) {
+      try { setZoom(_suspendZoomLevel); } catch (_) {}
+    }
+    // Restore the saved viewport. Wait one frame so the new pages have
+    // settled into the scroll area and scrollHeight reflects them; an
+    // immediate assignment would clamp to 0. The `resuming` guard above
+    // keeps the scroll listener quiet during this final apply.
+    requestAnimationFrame(() => {
+      try {
+        scrollArea.scrollTop = _suspendScrollTop;
+        scrollArea.scrollLeft = _suspendScrollLeft;
+      } catch (_) {}
+      resuming = false;
+    });
   }
 
   // Wrap loadPdf to cache the raw data for resume
