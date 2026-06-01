@@ -167,6 +167,9 @@
   font-size: var(--font-size, 20px);
   line-height: var(--line-height, 1.6);
   color: var(--fg);
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 
 /* ===== Diff preview ===== */
@@ -181,6 +184,9 @@
   font-size: var(--font-size, 16px);
   line-height: 1.5;
   color: var(--fg);
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 
 .version-diff-note {
@@ -290,6 +296,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   background: var(--theme-bg, var(--bg));
   border-top: 1px solid var(--panel-border);
   z-index: 2;

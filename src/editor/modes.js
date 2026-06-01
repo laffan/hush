@@ -1,3 +1,52 @@
+import { applyTypewriterPadding } from "./plugins/typewriter.js";
+
+/**
+ * Set padding on the editor's scroller so that the last line can always
+ * be scrolled to the vertical centre of the page — even on documents
+ * that only span a few lines.
+ *
+ * When typewriter mode owns the editor we defer to its own padding
+ * routine, which pins the first line to the typewriter boundary instead
+ * (the "scroll-to-middle from the top" companion to this bottom-anchored
+ * variant). Notebook surfaces have no scroller and are left alone.
+ */
+export function applyEditorScrollerPadding(state, opts = {}) {
+  const scroller = document.querySelector("#editor-container .cm-scroller");
+  if (!scroller) return;
+  const topInset = opts.topInset ?? (state.runtime.dockedTopHeight || 0);
+  const bottomInset = opts.bottomInset ?? (state.runtime.dockedBottomHeight || 0);
+
+  if (state.typewriterMode && state.editor?.view) {
+    // Typewriter manages both paddings to pin the cursor line to the
+    // boundary. Honour any top/bottom dock insets that have appeared
+    // since typewriter mode was first set up.
+    applyTypewriterPadding(state.editor.view, state);
+    return;
+  }
+
+  const hasScroller = !state.currentNotebookFileId;
+  scroller.style.paddingTop = topInset > 0 ? topInset + "px" : "";
+  if (!hasScroller) {
+    scroller.style.paddingBottom = bottomInset > 0 ? bottomInset + "px" : "";
+    return;
+  }
+
+  // 50vh bottom pad lets long-doc last lines scroll to centre. For docs
+  // shorter than half the viewport the scroll range alone can't bring
+  // the last line up to that point, so add enough top padding to push
+  // the content down — the last line now sits at (or just above) centre
+  // even with zero scroll.
+  const view = state.editor?.view;
+  const contentH = view ? (view.contentDOM?.offsetHeight || 0) : 0;
+  const centreY = window.innerHeight / 2;
+  const shortDocPad = contentH > 0 ? Math.max(0, centreY - contentH) : centreY;
+  const totalTopPad = topInset + shortDocPad;
+  scroller.style.paddingTop = totalTopPad > 0 ? totalTopPad + "px" : "";
+  scroller.style.paddingBottom = bottomInset > 0
+    ? `calc(50vh + ${bottomInset}px)`
+    : "50vh";
+}
+
 export function applyModes(state) {
   const app = document.getElementById("app");
   app.classList.toggle("ratchet-active", state.ratchetMode);
@@ -195,25 +244,11 @@ export function updateColumnResizers(state) {
     if (scroller) {
       scroller.style.paddingLeft = leftPad + "px";
       scroller.style.paddingRight = rightPad + "px";
-      // 50vh bottom pad for plain docs so the last line can scroll to
-      // approximately the vertical centre of the screen. Skip in
-      // projects (extra space between concatenated docs would read as
-      // a gap) and in notebook mode (no scroller there anyway).
-      // When typewriter mode is active its own paddingBottom
-      // calculation overrides this value.
-      // Top-dock height becomes paddingTop so the doc's first line
-      // shows below the dock; bottom-dock height is added to the 50vh
-      // (or replaces empty pad in non-scroller layouts) so the
-      // last-line-to-centre behaviour clears the dock.
-      const hasScroller = !state.currentNotebookFileId;
-      scroller.style.paddingTop = topInsetOffset > 0 ? topInsetOffset + "px" : "";
-      if (hasScroller) {
-        scroller.style.paddingBottom = bottomInsetOffset > 0
-          ? `calc(50vh + ${bottomInsetOffset}px)`
-          : "50vh";
-      } else {
-        scroller.style.paddingBottom = bottomInsetOffset > 0 ? bottomInsetOffset + "px" : "";
-      }
+      // Vertical padding is split out — typewriter mode owns the
+      // scroller's top/bottom pads when active, and short docs need
+      // dynamic top padding so the last line can still reach the
+      // vertical centre via scrolling.
+      applyEditorScrollerPadding(state, { topInset: topInsetOffset, bottomInset: bottomInsetOffset });
     }
     if (state.editor && state.editor.view) {
       // requestMeasure alone is not always enough after padding changes
