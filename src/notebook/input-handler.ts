@@ -210,6 +210,13 @@ export function bindInputEvents(
   let spaceDown = false;
   let spaceEnabledPan = false;
 
+  // Pane this canvas belongs to (null for the main canvas). Used by the
+  // global keydown guard so a pane's own canvas can still process input
+  // when focus is somewhere else inside the same pane (the title bar,
+  // a toolbar button, or — for an inline notebook pane — the host doc's
+  // contentEditable, which the canvas click can't blur).
+  const ownPane = canvas.closest(".floating-pane") as HTMLElement | null;
+
   // Keyboard shortcuts
   on(window as unknown as HTMLElement, "keydown", ((e: KeyboardEvent) => {
     if (state.editingText) {
@@ -224,16 +231,33 @@ export function bindInputEvents(
       e.preventDefault();
       return;
     }
-    // Skip if focus is in any editable area. .cm-content (the main document
-    // editor) is contentEditable but is neither INPUT nor TEXTAREA; without
-    // this guard the canvas handler would swallow space keystrokes meant
-    // for the doc editor whenever a notebook canvas is alive anywhere
-    // (including notebook panes opened over a doc).
+    // Decide whether this canvas should handle the keystroke. The
+    // tricky cases are panes: focus can be in a different pane (skip),
+    // in our own pane (handle), or — for an *inline* notebook pane —
+    // on the host doc's contentEditable that wraps the canvas. The
+    // inline case can't blur the host editor when the user clicks the
+    // canvas, so we use `.active` (set on the most-recently-focused
+    // pane by pane-manager.focusPane) to tell "user is interacting
+    // with this canvas" from "user is typing in the host doc".
     const activeEl = document.activeElement as HTMLElement | null;
     if (activeEl) {
+      const activePane = activeEl.closest(".floating-pane") as HTMLElement | null;
+      if (activePane && activePane !== ownPane) return;
       if (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA") return;
-      if (activeEl.isContentEditable) return;
-      if (activeEl.closest(".floating-pane")) return;
+      // contentEditable focus, editable doesn't wrap us → user is
+      // typing somewhere else (a different pane's editor, a stack
+      // column, etc.). Skip.
+      if (activeEl.isContentEditable && !activeEl.contains(canvas)) return;
+      // contentEditable focus that DOES wrap us — only the inline
+      // pane case. Require this pane to be the active pane so plain
+      // typing in the host doc doesn't trigger our tool shortcuts.
+      if (activeEl.isContentEditable && activeEl.contains(canvas)) {
+        if (!ownPane || !ownPane.classList.contains("active")) return;
+      }
+      // Pane canvas, focus is outside every pane (body / sidebar) and
+      // not inside a host editable wrapping us — let the main canvas
+      // handle.
+      if (!activePane && ownPane && !activeEl.contains(canvas)) return;
     }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
