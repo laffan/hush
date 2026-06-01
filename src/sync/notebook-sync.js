@@ -100,34 +100,7 @@ export async function packNotebook(jsonContent) {
  * @returns {Promise<string>}
  */
 export async function unpackNotebook(zipData) {
-  // .hushnote ships in two forms: a zip envelope from the sync path
-  // (packNotebook) and a plain pretty-printed JSON envelope from the
-  // export modal (notebook-export.ts). Both carry the same shapes
-  // payload — sniff the leading "PK" zip magic so either round-trips
-  // back into the canvas.
-  const bytes = zipData instanceof Uint8Array ? zipData : new Uint8Array(zipData);
-  const isZip = bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b;
-  if (!isZip) {
-    const text = new TextDecoder().decode(bytes);
-    let parsed;
-    try { parsed = JSON.parse(text); }
-    catch { return JSON.stringify({ format: "hushnote", version: 1, shapes: [] }); }
-    if (Array.isArray(parsed)) {
-      return JSON.stringify({ format: "hushnote", version: 1, shapes: parsed });
-    }
-    if (parsed && typeof parsed === "object") {
-      return JSON.stringify({
-        format: "hushnote",
-        version: 1,
-        shapes: Array.isArray(parsed.shapes) ? parsed.shapes : [],
-        layers: Array.isArray(parsed.layers) ? parsed.layers : undefined,
-        flowEdges: Array.isArray(parsed.flowEdges) ? parsed.flowEdges : undefined,
-      });
-    }
-    return JSON.stringify({ format: "hushnote", version: 1, shapes: [] });
-  }
-
-  const zip = await JSZip.loadAsync(bytes);
+  const zip = await JSZip.loadAsync(zipData);
   const dataFile = zip.file("data.json");
   if (!dataFile) return JSON.stringify({ format: "hushnote", version: 1, shapes: [] });
 
