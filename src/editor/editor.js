@@ -102,9 +102,17 @@ export function createEditor(container, state) {
         prevCursorLine = line;
       } catch { /* ignore — doc may be empty or in-flight */ }
     }
-    // Typewriter: scroll cursor to fixed position on every update
+    // Typewriter: scroll cursor to fixed position on every update. The
+    // doc-changed case also refreshes paddingBottom so the artificial
+    // runway shrinks one line at a time as the user types real content
+    // in (and grows back when they delete it). Without this, a doc
+    // that started short stays "stuck" with too much bottom pad even
+    // after it's filled past a screenful.
     if (state.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
-      requestAnimationFrame(() => scrollCursorToTypewriterLine(update.view, state));
+      requestAnimationFrame(() => {
+        if (update.docChanged) applyTypewriterPadding(update.view, state);
+        scrollCursorToTypewriterLine(update.view, state);
+      });
     }
     // Non-typewriter scroll-to-centre: paddingTop is a function of
     // contentHeight (shrinks as content grows). Recompute when the
