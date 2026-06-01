@@ -19,7 +19,12 @@ import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
-import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
+import {
+  setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding,
+  scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary,
+  ensureTypewriterRunway, stripTypewriterRunway, stripTypewriterRunwayText,
+  typewriterRunwayAnnotation,
+} from "./plugins/typewriter.js";
 import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer, applyEditorScrollerPadding } from "./modes.js";
 import { updateWordCountDisplay, scheduleWordCountRecompute } from "./plugins/word-count.js";
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
@@ -73,7 +78,15 @@ export function createEditor(container, state) {
   let titleDebounceTimer = null;
   const TITLE_DEBOUNCE_MS = 1500;
   const updateListener = EditorView.updateListener.of((update) => {
-    if (update.docChanged) {
+    // Typewriter runway dispatches are app-internal — they don't
+    // represent real edits, so skip the dirty / autosave / rename /
+    // word-count side effects. (The runway is the blank lines we
+    // append at the end of a short doc so the scroll lock has
+    // something to slide.)
+    const runwayOnly = update.docChanged
+      && update.transactions.length > 0
+      && update.transactions.every((tr) => tr.annotation(typewriterRunwayAnnotation));
+    if (update.docChanged && !runwayOnly) {
       state.markDirty();
       state.trackKeystroke();
       scheduleWordCountRecompute(state);
@@ -102,15 +115,12 @@ export function createEditor(container, state) {
         prevCursorLine = line;
       } catch { /* ignore — doc may be empty or in-flight */ }
     }
-    // Typewriter: scroll cursor to fixed position on every update. The
-    // doc-changed case also refreshes paddingBottom so the artificial
-    // runway shrinks one line at a time as the user types real content
-    // in (and grows back when they delete it). Without this, a doc
-    // that started short stays "stuck" with too much bottom pad even
-    // after it's filled past a screenful.
-    if (state.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
+    // Typewriter: keep the cursor on the boundary, and top up the
+    // runway whenever the user makes a real edit so the scroll lock
+    // always has enough doc length to slide against.
+    if (state.typewriterMode && !runwayOnly && (update.docChanged || update.selectionSet || update.focusChanged)) {
       requestAnimationFrame(() => {
-        if (update.docChanged) applyTypewriterPadding(update.view, state);
+        if (update.docChanged) ensureTypewriterRunway(update.view, state);
         scrollCursorToTypewriterLine(update.view, state);
       });
     }
@@ -341,6 +351,7 @@ export function createEditor(container, state) {
     if (state.typewriterMode) {
       setupTypewriterBoundary(view, state);
     } else {
+      stripTypewriterRunway(view);
       removeTypewriterBoundary(view, state);
       // Restore the short-doc-aware paddingTop / 50vh paddingBottom
       // that the typewriter just blew away.
@@ -454,12 +465,23 @@ export function createEditor(container, state) {
 
   return {
     view,
-    getContent: () => view.state.doc.toString(),
+    getContent: () => {
+      const text = view.state.doc.toString();
+      // While typewriter mode is on the doc carries an artificial
+      // runway of trailing blank lines. Every consumer of the editor
+      // text (autosave, sync, word count, paste, etc.) should see the
+      // clean version.
+      return state.typewriterMode ? stripTypewriterRunwayText(text) : text;
+    },
     setContent: (text) => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
         annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true)],
       });
+      // Seed the runway for the freshly-loaded doc — without this a
+      // file-switch while typewriter is on would land short docs back
+      // in the broken state until the user's next keystroke.
+      if (state.typewriterMode) ensureTypewriterRunway(view, state);
     },
     focus: () => view.focus(),
     reconfigureTheme: (ext) => {
