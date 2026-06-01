@@ -454,7 +454,11 @@ async function newFileFromSnapshot(snap, state) {
     }
     await state.openNotebook(created.fileId);
   } else {
-    const created = await state.newFile(null, { openImmediately: false, initialName: title, initialContent: content });
+    // Prepend the chosen title as line 1 so the doc's first-line
+    // auto-rename doesn't immediately undo our explicit filename by
+    // adopting whatever line 1 the original snapshot started with.
+    const seeded = `${title}\n\n${content || ""}`;
+    const created = await state.newFile(null, { openImmediately: false, initialName: title, initialContent: seeded });
     if (!created) return;
     await state.openFile(created.fileId);
   }
