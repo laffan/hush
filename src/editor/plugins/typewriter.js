@@ -99,13 +99,31 @@ export function removeTypewriterBoundary(view, state) {
 
 export function scrollCursorToTypewriterLine(view, state) {
   if (!state.typewriterMode) return;
+  // Defensive: re-apply our padding before measuring. Other layout
+  // passes (column reflow, sidebar toggles) periodically wipe the
+  // scroller's inline padding back to the CSS defaults; without enough
+  // top + bottom pad the scrollTop we want is clamped to the stale
+  // max and the cursor never reaches the boundary on short docs.
+  applyTypewriterPadding(view, state);
+
+  // Force a synchronous layout flush so scrollHeight reflects the
+  // freshly-typed content. Short-doc typing crosses the boundary on
+  // almost every keystroke, and without this the browser clamps
+  // scrollTop to the previous frame's max scroll range.
+  void view.scrollDOM.offsetHeight;
+
   const head = view.state.selection.main.head;
   const coords = view.coordsAtPos(head);
   if (!coords) return;
   const targetY = state.typewriterPosition * window.innerHeight;
-  const offset = coords.bottom - targetY;
-  if (Math.abs(offset) > 1) {
-    view.scrollDOM.scrollTop += offset;
+  const desired = view.scrollDOM.scrollTop + (coords.bottom - targetY);
+  // Clamp ourselves rather than relying on the browser — webkit has
+  // been seen to clamp against a stale scrollHeight in the same tick
+  // as a layout-affecting style change.
+  const maxScroll = Math.max(0, view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight);
+  const clamped = Math.max(0, Math.min(maxScroll, desired));
+  if (Math.abs(clamped - view.scrollDOM.scrollTop) > 0.5) {
+    view.scrollDOM.scrollTop = clamped;
   }
 }
 
