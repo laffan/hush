@@ -20,7 +20,7 @@ import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
 import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
-import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
+import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer, applyEditorScrollerPadding } from "./modes.js";
 import { updateWordCountDisplay, scheduleWordCountRecompute } from "./plugins/word-count.js";
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
 import { headingIndentPlugin } from "./heading-indent.js";
@@ -105,6 +105,13 @@ export function createEditor(container, state) {
     // Typewriter: scroll cursor to fixed position on every update
     if (state.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
       requestAnimationFrame(() => scrollCursorToTypewriterLine(update.view, state));
+    }
+    // Non-typewriter scroll-to-centre: paddingTop is a function of
+    // contentHeight (shrinks as content grows). Recompute when the
+    // doc changes so the last line stays reachable at the vertical
+    // midpoint across short → long transitions.
+    if (update.docChanged && !state.typewriterMode) {
+      requestAnimationFrame(() => applyEditorScrollerPadding(state));
     }
     // Ratchet: ensure cursor stays at end of document
     if (state.ratchetMode && update.selectionSet) {
@@ -327,6 +334,9 @@ export function createEditor(container, state) {
       setupTypewriterBoundary(view, state);
     } else {
       removeTypewriterBoundary(view, state);
+      // Restore the short-doc-aware paddingTop / 50vh paddingBottom
+      // that the typewriter just blew away.
+      applyEditorScrollerPadding(state);
     }
   });
 

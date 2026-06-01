@@ -19,6 +19,7 @@ let previewOverlay = null;
 let previewHost = null;
 let panelContainer = null;
 let panelState = null;
+let panelHidePanel = null;
 let keyHandler = null;
 
 /**
@@ -30,6 +31,7 @@ export function createVersionsPanel(container, state, hidePanel, options = {}) {
   hoveredSnapshotId = null;
   panelContainer = container;
   panelState = state;
+  panelHidePanel = typeof hidePanel === "function" ? hidePanel : null;
   // Modal callers pass a positioned host element so the preview overlay
   // scopes inside the modal instead of covering the viewport.
   previewHost = options.previewHost || document.body;
@@ -282,7 +284,15 @@ function showPreview(snap, state, committed) {
       restoreSnapshot(snap, state);
     });
 
+    const newFileBtn = document.createElement("button");
+    newFileBtn.className = "version-restore-btn version-new-file-btn";
+    newFileBtn.textContent = "New File From Version";
+    newFileBtn.addEventListener("click", () => {
+      newFileFromSnapshot(snap, state);
+    });
+
     restoreBar.appendChild(restoreBtn);
+    restoreBar.appendChild(newFileBtn);
     previewOverlay.appendChild(restoreBar);
   } else {
     previewContainer.style.bottom = "0";
@@ -426,6 +436,49 @@ async function restoreSnapshot(snap, state) {
   }
 }
 
+async function newFileFromSnapshot(snap, state) {
+  const notebook = isNotebookMode(state);
+  const origName = getActiveFileName(state) || (notebook ? "Notebook" : "Document");
+  const stamp = snapshotStamp(snap.createdAt);
+  const title = `${origName}-${stamp}`;
+  const content = snap.content;
+
+  closeVersionsSurface();
+
+  if (notebook) {
+    const created = await state.createNotebook(title, null, { openImmediately: false });
+    if (!created) return;
+    if (IS_TAURI) {
+      try { await tauriInvoke("save_file", { id: created.fileId, content }); }
+      catch (e) { console.error("Seed new notebook from version failed:", e); return; }
+    }
+    await state.openNotebook(created.fileId);
+  } else {
+    const created = await state.newFile(null, { openImmediately: false, initialName: title, initialContent: content });
+    if (!created) return;
+    await state.openFile(created.fileId);
+  }
+}
+
+function closeVersionsSurface() {
+  // Centered modal owner: prefer the close callback when supplied.
+  if (panelHidePanel) {
+    try { panelHidePanel(); } catch (e) { console.error("Versions modal close failed:", e); }
+    return;
+  }
+  // Sidebar-style fallback.
+  if (panelState) panelState.emit("hide-panel");
+}
+
+/** ddmmyy-hhmm zero-padded — mirrors selection-extract's makeStamp but
+ *  seeded from the snapshot's own createdAt so the new filename reflects
+ *  the version it came from rather than the moment of extraction. */
+function snapshotStamp(unixSeconds) {
+  const d = new Date(unixSeconds * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${pad(d.getFullYear() % 100)}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
 /**
  * Call this when the versions panel is closed to clean up.
  */
@@ -443,6 +496,7 @@ export function cleanupVersionsPanel() {
   hoveredSnapshotId = null;
   panelContainer = null;
   panelState = null;
+  panelHidePanel = null;
 }
 
 // ===== Time Formatting =====
