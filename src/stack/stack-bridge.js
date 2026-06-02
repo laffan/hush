@@ -15,6 +15,10 @@ async function tauriInvoke(cmd, args) {
 let currentInstance = null;
 let currentFileId = null;
 let autosaveTimer = null;
+// Last content actually written, keyed implicitly by currentFileId (reset
+// on mount). Lets the autosave tick skip the disk write + sync push when
+// the stack hasn't changed, instead of churning IPC/network every 2 s.
+let lastSavedContent = null;
 
 export async function mountStack(container, fileId, state) {
   if (currentInstance) {
@@ -39,6 +43,15 @@ export async function mountStack(container, fileId, state) {
   const { StackComponent } = await import("./stack-component.js");
   currentInstance = new StackComponent(container, data, state);
 
+  // Seed the dirty baseline so the first autosave tick doesn't rewrite
+  // the content we just loaded. Re-serialize through the same encoder the
+  // save path uses so the strings compare apples-to-apples.
+  const seed = currentInstance.serialize();
+  lastSavedContent = encodeStackContent(seed.items, seed.scrollX, {
+    scrollY: seed.scrollY,
+    scrollDirection: seed.scrollDirection,
+  });
+
   startAutosave(state);
 }
 
@@ -61,13 +74,16 @@ export function getStackFileId() {
   return currentFileId;
 }
 
-async function saveStack() {
+async function saveStack(force = false) {
   if (!currentInstance || !currentFileId) return null;
   const snapshot = currentInstance.serialize();
   const content = encodeStackContent(snapshot.items, snapshot.scrollX, {
     scrollY: snapshot.scrollY,
     scrollDirection: snapshot.scrollDirection,
   });
+  // Idle stacks re-serialize to byte-identical content every tick; skip
+  // the write + the caller's sync push unless something actually changed.
+  if (!force && content === lastSavedContent) return null;
   if (IS_TAURI) {
     try {
       await tauriInvoke("save_file", { id: currentFileId, content });
@@ -75,6 +91,7 @@ async function saveStack() {
       console.error("Stack save failed:", e);
     }
   }
+  lastSavedContent = content;
   return { fileId: currentFileId, content };
 }
 

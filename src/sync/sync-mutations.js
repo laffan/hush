@@ -21,6 +21,7 @@ import {
   enqueueCreateFolder,
   triggerDrain,
 } from "./op-log.js";
+import { appendSyncError } from "./sync-feedback.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -76,7 +77,7 @@ export async function syncRenameNode(state, nodeId, oldName, nodeType) {
     }
     triggerDrain(state);
   } catch (e) {
-    console.error("Sync rename enqueue failed:", e);
+    appendSyncError(`Sync rename enqueue failed: ${e?.message || e}`);
   }
 }
 
@@ -103,7 +104,7 @@ export async function syncDeleteNode(state, nodeId) {
     }
     triggerDrain(state);
   } catch (e) {
-    console.error("Sync delete enqueue failed:", e);
+    appendSyncError(`Sync delete enqueue failed: ${e?.message || e}`);
   }
 }
 
@@ -129,7 +130,7 @@ export async function syncCreateNode(state, nodeId, nodeType) {
       await pushProjectsToDropbox(state);
     }
   } catch (e) {
-    console.error("Sync create dir enqueue failed:", e);
+    appendSyncError(`Sync create dir enqueue failed: ${e?.message || e}`);
   }
 }
 
@@ -156,7 +157,7 @@ export async function syncCreateFile(state, nodeId, fileId, content) {
     await enqueueUpload({ internalId: fileId, path: relPath });
     triggerDrain(state);
   } catch (e) {
-    console.error("Sync create file enqueue failed:", e);
+    appendSyncError(`Sync create file enqueue failed: ${e?.message || e}`);
   }
 }
 
@@ -176,6 +177,6 @@ export async function syncProjectOrdering(state, projectNodeId) {
     const { pushProjectsToDropbox } = await import("./project-sync.js");
     await pushProjectsToDropbox(state);
   } catch (e) {
-    console.error("Sync project ordering push failed:", e);
+    appendSyncError(`Sync project ordering push failed: ${e?.message || e}`);
   }
 }

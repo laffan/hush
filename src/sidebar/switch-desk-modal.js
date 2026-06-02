@@ -10,6 +10,7 @@
  */
 
 import { escHtml } from "./files-panel-shared.js";
+import deskRaw from "./sidebar_icons/desk.svg?raw";
 
 let _overlayEl = null;
 
@@ -22,6 +23,7 @@ export function openSwitchDeskModal(state) {
   const rows = desks.map((d) => {
     const isActive = d.id === activeId;
     return `<button class="switch-desk-row${isActive ? " is-active" : ""}" type="button" data-desk-id="${d.id}">
+      <span class="switch-desk-row-icon">${deskRaw}</span>
       <span class="switch-desk-name">${escHtml(d.name || "Untitled desk")}</span>
       ${isActive ? '<span class="switch-desk-current">current</span>' : ""}
     </button>`;

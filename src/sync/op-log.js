@@ -16,6 +16,8 @@
  * this module owns execution.
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 const DRAIN_INTERVAL_MS = 30000; // safety-net retry cadence
 
@@ -165,7 +167,7 @@ async function drainOnce(state) {
         // Stop draining on failure — most likely network. The interval
         // (or the next caller-triggered drain) will retry. Leaving the op
         // at the head means we don't reorder past it.
-        console.warn(`op-log: ${op.kind} failed (will retry):`, msg);
+        appendSyncError(`op-log: ${op.kind} failed (will retry): ${msg}`);
         break;
       }
     }

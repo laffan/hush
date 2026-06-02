@@ -1,10 +1,13 @@
 /**
- * Zen-only quick controls.
+ * Quick-control pill that surfaces in Zen Focus mode (and is reused
+ * by Selection Focus via a sibling wrap mounted inside that overlay).
  *
- * Two affordances live in this module, both gated to Zen mode:
+ * Two affordances live in this module:
  *
  *   • A small `^` caret pinned to the bottom-centre of the viewport
- *     that fades in while `body.cmd-held` is set.
+ *     that fades in while the cursor is near the bottom of the window
+ *     (body class `sliders-near-bottom`, toggled by the proximity
+ *     tracker installed below).
  *   • A horizontal pill carrying Dim opacity + Font size sliders that
  *     reveals on caret hover (and stays revealed while the pointer is
  *     on the pill itself).
@@ -14,8 +17,37 @@
  * Settings window update live — and vice versa.
  */
 
+/** Vertical band — measured from the bottom edge — within which the
+ *  caret/pill reveals on mousemove. Sits comfortably above the macOS
+ *  Dock without forcing the user to chase the edge. */
+const NEAR_BOTTOM_PX = 200;
+
+/** Install a single mousemove listener that toggles
+ *  `body.sliders-near-bottom` based on cursor proximity to the bottom
+ *  of the viewport. CSS gates every Zen / Selection-Focus pill on
+ *  that class, so neither pill paints chrome over the editor unless
+ *  the user is already aiming at it. */
+function installNearBottomTracker() {
+  if (typeof window === "undefined") return;
+  if (window.__hushSlidersNearBottomTrackerInstalled) return;
+  window.__hushSlidersNearBottomTrackerInstalled = true;
+  let isNear = false;
+  const update = (clientY) => {
+    const threshold = window.innerHeight - NEAR_BOTTOM_PX;
+    const shouldBeNear = clientY >= threshold;
+    if (shouldBeNear === isNear) return;
+    isNear = shouldBeNear;
+    document.body.classList.toggle("sliders-near-bottom", isNear);
+  };
+  window.addEventListener("mousemove", (e) => update(e.clientY), { passive: true });
+  // Pointer can leave the window (alt-tab, dragged tab) — reset so the
+  // caret doesn't stay lit when the cursor isn't actually down there.
+  window.addEventListener("mouseleave", () => { isNear = false; document.body.classList.remove("sliders-near-bottom"); });
+}
+
 export function initCmdHeldSliders(state) {
   if (typeof document === "undefined") return;
+  installNearBottomTracker();
 
   // Wrapper hosts both the caret and the pill so the `:hover` rule on
   // the wrap can keep the pill open while the pointer is anywhere

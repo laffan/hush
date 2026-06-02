@@ -84,8 +84,12 @@ export function handleConvertContainer(nodeId, targetType, state, refreshAfter) 
   if (node.type === "project" && targetType === "folder") {
     showConfirmModal({
       title: `Convert "${node.name}" to a folder?`,
-      message: "Switching from a project to a folder loses the project's ordering and the joined preview view. Files will be preserved.",
-      confirmLabel: "Convert",
+      message:
+        "Switching from a project to a folder will lose project-only functionality: " +
+        "the joined preview view that reads all child docs as one buffer, the custom " +
+        "child ordering, outline numbering (Show numbers), and the ability to convert " +
+        "to a single tabbed document. The child files themselves stay where they are.",
+      confirmLabel: "Convert to folder",
       onConfirm: doConvert,
     });
   } else {

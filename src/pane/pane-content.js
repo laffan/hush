@@ -117,11 +117,20 @@ async function loadDocumentPane(pane) {
   // Restore the persisted editor scroll position (if any). Defer to the
   // next frame so CodeMirror has applied the document insert and laid
   // out its viewport — setting scrollTop before measure leaves the
-  // editor pinned to 0.
+  // editor pinned to 0. Inline panes are parked off-screen at restore
+  // time and only reparented into the CM widget host once the owning
+  // doc becomes the active editor — by then the first setScrollTop has
+  // already run against a zero-height scroller. A short re-apply
+  // schedule covers the reparent-after-measure case without a heavy
+  // observer.
   if (typeof pane.editorScrollTop === "number" && pane.editorScrollTop > 0 && editor.setScrollTop) {
-    requestAnimationFrame(() => {
-      try { editor.setScrollTop(pane.editorScrollTop); } catch (_) {}
-    });
+    const target = pane.editorScrollTop;
+    const apply = () => { try { editor.setScrollTop(target); } catch (_) {} };
+    requestAnimationFrame(apply);
+    if (pane.inline) {
+      setTimeout(apply, 100);
+      setTimeout(apply, 500);
+    }
   }
 
   // Track scroll changes so persist + sync see the latest position.
@@ -233,9 +242,17 @@ async function loadNotebookPane(pane) {
   // The gutter flag is set synchronously by `useActivePaneAsGutter` /
   // hydrated by `restorePanes` before this rAF fires, so the check sees
   // the final value in both the fresh and restore paths.
+  //
+  // Also skip when this pane has a persisted notebookCamera — restoring
+  // the user's saved pan / zoom takes precedence over the centring.
   requestAnimationFrame(() => {
     if (!canvas.state || !pane._content) return;
     if (pane.gutter) return;
+    if (pane.notebookCamera) {
+      canvas.state.camera = { ...pane.notebookCamera };
+      canvas.state.notify("camera");
+      return;
+    }
     const mainC = document.getElementById("notebook-container");
     const mainW = (mainC && mainC.clientWidth) || window.innerWidth;
     const mainH = (mainC && mainC.clientHeight) || window.innerHeight;
@@ -244,6 +261,24 @@ async function loadNotebookPane(pane) {
     canvas.state.camera = { x: (paneW - mainW) / 2, y: (paneH - mainH) / 2, zoom: 1 };
     canvas.state.notify("camera");
   });
+
+  // Capture pan / zoom changes so they survive app open/close. Gutter
+  // panes are excluded — their camera is scroll-driven (see
+  // `pane-gutter.js#syncCameraFromScroll`) and stashing it would round-
+  // trip a meaningless value through persistedPanes.
+  let cameraPersistTimer = null;
+  pane._cameraChangeListener = () => {
+    if (pane.gutter) return;
+    const c = pane.notebook?.state?.camera;
+    if (!c) return;
+    pane.notebookCamera = { x: c.x, y: c.y, zoom: c.zoom };
+    if (cameraPersistTimer) clearTimeout(cameraPersistTimer);
+    cameraPersistTimer = setTimeout(() => {
+      cameraPersistTimer = null;
+      import("./pane-persistence.js").then((m) => m.schedulePersist?.()).catch(() => {});
+    }, 200);
+  };
+  pane._content.addEventListener("notebook-camera-change", pane._cameraChangeListener);
 
   // Mark dirty + propagate shapes to main canvas on changes
   pane._content.addEventListener("notebook-change", () => {
@@ -332,18 +367,43 @@ async function loadPdfPane(pane) {
     }
   } catch {}
 
-  if (typeof pane.editorScrollTop === "number" && pane.editorScrollTop > 0) {
-    requestAnimationFrame(() => {
-      try { viewer.setScrollTop(pane.editorScrollTop); } catch (_) {}
-    });
+  // Restore zoom mode + scroll position. restoreView applies the zoom
+  // first (a horizontal layout clamps scrollTop to 0 and vice versa, so
+  // the mode has to match before scroll is assigned) and then re-flexes +
+  // re-asserts the scroll across several frames — the fit-mode page
+  // heights depend on the container's measured size, which often isn't
+  // settled the instant a pane mounts, so a single assignment would clamp
+  // the position back to the top.
+  const targetTop = typeof pane.editorScrollTop === "number" ? pane.editorScrollTop : 0;
+  const targetLeft = typeof pane.pdfScrollLeft === "number" ? pane.pdfScrollLeft : 0;
+  const zoomLevel = typeof pane.pdfZoomLevel === "number" ? pane.pdfZoomLevel : null;
+  if (viewer.restoreView) {
+    viewer.restoreView(zoomLevel, targetTop, targetLeft);
+  } else {
+    if (zoomLevel != null) { try { viewer.setZoom(zoomLevel); } catch (_) {} }
+    if (targetTop > 0 || targetLeft > 0) {
+      const apply = () => {
+        try { viewer.setScrollTop(targetTop); } catch (_) {}
+        try { viewer.setScrollLeft(targetLeft); } catch (_) {}
+      };
+      requestAnimationFrame(apply);
+      if (pane.inline) { setTimeout(apply, 100); setTimeout(apply, 500); }
+    }
   }
 
   if (viewer.onScroll) {
     let scrollTimer = null;
     pane._scrollListenerCleanup = viewer.onScroll(() => {
-      const next = viewer.getScrollTop();
-      if (next === pane.editorScrollTop) return;
-      pane.editorScrollTop = next;
+      const nextTop = viewer.getScrollTop();
+      const nextLeft = viewer.getScrollLeft();
+      // getZoom may not exist on older viewer builds; coalesce to null.
+      const nextZoom = typeof viewer.getZoom === "function" ? viewer.getZoom() : null;
+      if (nextTop === pane.editorScrollTop
+          && nextLeft === pane.pdfScrollLeft
+          && nextZoom === pane.pdfZoomLevel) return;
+      pane.editorScrollTop = nextTop;
+      pane.pdfScrollLeft = nextLeft;
+      if (nextZoom != null) pane.pdfZoomLevel = nextZoom;
       if (scrollTimer) clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => {
         scrollTimer = null;
@@ -384,11 +444,31 @@ async function loadStackPane(pane) {
   const data = decodeStackContent(content);
   const stack = new StackComponent(pane._content, data, appState);
   pane.stackInstance = stack;
+  // Baseline so the first tick doesn't rewrite the just-loaded content.
+  // Must mirror the tick's encode (incl. scrollY + scrollDirection) so the
+  // dirty comparison is apples-to-apples.
+  {
+    const seed = stack.serialize();
+    pane._lastStackContent = encodeStackContent(seed.items, seed.scrollX, {
+      scrollY: seed.scrollY,
+      scrollDirection: seed.scrollDirection,
+    });
+  }
 
   const saveInterval = setInterval(async () => {
     if (!pane.stackInstance) return;
     const snapshot = pane.stackInstance.serialize();
-    const encoded = encodeStackContent(snapshot.items, snapshot.scrollX);
+    // Pass scrollY + scrollDirection through — without them the pane save
+    // would silently reset the stack file's vertical scroll and snap the
+    // direction back to "horizontal" every 2 s.
+    const encoded = encodeStackContent(snapshot.items, snapshot.scrollX, {
+      scrollY: snapshot.scrollY,
+      scrollDirection: snapshot.scrollDirection,
+    });
+    // Idle stack panes re-serialize identically every tick — skip the
+    // disk write + sync push unless the content actually changed.
+    if (encoded === pane._lastStackContent) return;
+    pane._lastStackContent = encoded;
     if (IS_TAURI) {
       try { await tauriInvoke("save_file", { id: pane.fileId, content: encoded }); }
       catch (e) { console.error("Stack pane save failed:", e); }

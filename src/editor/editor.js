@@ -14,12 +14,18 @@ import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
+import { createInlinePanePlugin, openInlinePaneForWikilink } from "../pane/pane-inline.js";
 import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
 import { initEncourageTyping, clearEncourageTyping, onEncourageKeystroke, getEncourageDecorations } from "./plugins/encourage-typing.js";
-import { setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding, scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary } from "./plugins/typewriter.js";
-import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer } from "./modes.js";
+import {
+  setupTypewriterBoundary, removeTypewriterBoundary, applyTypewriterPadding,
+  scrollCursorToTypewriterLine, getTypewriterBoundary, repositionTypewriterBoundary,
+  ensureTypewriterRunway, stripTypewriterRunway, stripTypewriterRunwayText,
+  typewriterRunwayAnnotation,
+} from "./plugins/typewriter.js";
+import { applyModes, applyFullscreen, updateColumnResizers, updateRatchetTimer, applyEditorScrollerPadding } from "./modes.js";
 import { updateWordCountDisplay, scheduleWordCountRecompute } from "./plugins/word-count.js";
 import { createStickyHeadersPlugin, updateStickyHeaders } from "./plugins/sticky-headers.js";
 import { headingIndentPlugin } from "./heading-indent.js";
@@ -28,6 +34,7 @@ import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
+import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
 import {
   commentTag, commentMarkTag, highlightTag, highlightMarkTag,
@@ -38,6 +45,7 @@ import {
   defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions,
 } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
+import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
@@ -50,6 +58,7 @@ export { defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions }
 const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const shortcutCompartment = new Compartment();
+const readOnlyCompartment = new Compartment();
 const bypassRatchet = Annotation.define();
 
 /**
@@ -70,7 +79,15 @@ export function createEditor(container, state) {
   let titleDebounceTimer = null;
   const TITLE_DEBOUNCE_MS = 1500;
   const updateListener = EditorView.updateListener.of((update) => {
-    if (update.docChanged) {
+    // Typewriter runway dispatches are app-internal — they don't
+    // represent real edits, so skip the dirty / autosave / rename /
+    // word-count side effects. (The runway is the blank lines we
+    // append at the end of a short doc so the scroll lock has
+    // something to slide.)
+    const runwayOnly = update.docChanged
+      && update.transactions.length > 0
+      && update.transactions.every((tr) => tr.annotation(typewriterRunwayAnnotation));
+    if (update.docChanged && !runwayOnly) {
       state.markDirty();
       state.trackKeystroke();
       scheduleWordCountRecompute(state);
@@ -99,9 +116,21 @@ export function createEditor(container, state) {
         prevCursorLine = line;
       } catch { /* ignore — doc may be empty or in-flight */ }
     }
-    // Typewriter: scroll cursor to fixed position on every update
-    if (state.typewriterMode && (update.docChanged || update.selectionSet || update.focusChanged)) {
-      requestAnimationFrame(() => scrollCursorToTypewriterLine(update.view, state));
+    // Typewriter: keep the cursor on the boundary, and top up the
+    // runway whenever the user makes a real edit so the scroll lock
+    // always has enough doc length to slide against.
+    if (state.typewriterMode && !runwayOnly && (update.docChanged || update.selectionSet || update.focusChanged)) {
+      requestAnimationFrame(() => {
+        if (update.docChanged) ensureTypewriterRunway(update.view, state);
+        scrollCursorToTypewriterLine(update.view, state);
+      });
+    }
+    // Non-typewriter scroll-to-centre: paddingTop is a function of
+    // contentHeight (shrinks as content grows). Recompute when the
+    // doc changes so the last line stays reachable at the vertical
+    // midpoint across short → long transitions.
+    if (update.docChanged && !state.typewriterMode) {
+      requestAnimationFrame(() => applyEditorScrollerPadding(state));
     }
     // Ratchet: ensure cursor stays at end of document
     if (state.ratchetMode && update.selectionSet) {
@@ -219,7 +248,11 @@ export function createEditor(container, state) {
   const separatorFilter = createSeparatorFilter(state);
   const flagHighlightPlugin = createFlagHighlightPlugin(state);
   const linkDecoratorPlugin = createLinkDecoratorPlugin(state);
-  const wikilinkPlugin = createWikilinkPlugin(state);
+  const wikilinkPlugin = createWikilinkPlugin(state, {
+    onInlinePaneRequest: (_view, { title, occurrence }) =>
+      openInlinePaneForWikilink(state, { title, occurrence }),
+  });
+  const inlinePanePlugin = createInlinePanePlugin(state);
   const tabMarkerPlugin = createTabMarkerPlugin();
   const checkboxListPlugin = createCheckboxListPlugin();
   const imageDecoratorPlugin = createImageDecoratorPlugin(state, () => defaultLocalSyncContext(state));
@@ -228,6 +261,7 @@ export function createEditor(container, state) {
   const commentAfterPlugin = createCommentAfterPlugin();
   const grammarCheckPlugin = createGrammarCheckPlugin(state);
   const grammarHoverTooltip = createGrammarHoverTooltip(state);
+  const spellcheckPlugin = createSpellcheckPlugin(state);
 
   // Encourage typing decorations — fades new text when user stops typing in ratchet mode
   const encouragePlugin = ViewPlugin.fromClass(
@@ -259,6 +293,7 @@ export function createEditor(container, state) {
       updateListener,
       blurListener,
       shortcutCompartment.of(initialShortcuts),
+      readOnlyCompartment.of([]),
       ratchetKeymap,
       ratchetFilter,
       ratchetMouseFilter,
@@ -268,8 +303,10 @@ export function createEditor(container, state) {
       calloutPlugin,
       footnotePlugin,
       flagHighlightPlugin,
+      createLineIndicatorPlugin(state),
       linkDecoratorPlugin,
       wikilinkPlugin,
+      inlinePanePlugin,
       tabMarkerPlugin,
       checkboxListPlugin,
       imageDecoratorPlugin,
@@ -282,6 +319,8 @@ export function createEditor(container, state) {
       commentAfterPlugin,
       grammarCheckPlugin,
       grammarHoverTooltip,
+      spellcheckPlugin,
+      spellcheckClickHandler,
       encouragePlugin,
       projectViewField,
       separatorFilter,
@@ -297,6 +336,14 @@ export function createEditor(container, state) {
   });
 
   state.on("mode-changed", () => {
+    // Capture the resting scroll offset up front. The typewriter-off branch
+    // below clears the scroller padding and then re-applies it via a path
+    // that reads offsetHeight (forcing a reflow while the scroll range is
+    // momentarily shrunk) — the browser clamps scrollTop during that window
+    // and the document visibly jumps toward the top. We restore the saved
+    // offset afterwards so toggling e.g. focus mode leaves the view put.
+    const modeScroller = document.querySelector("#editor-container .cm-scroller");
+    const savedModeScrollTop = modeScroller ? modeScroller.scrollTop : null;
     applyModes(state);
     updateRatchetTimer(state);
     updateWordCountDisplay(state);
@@ -316,7 +363,18 @@ export function createEditor(container, state) {
     if (state.typewriterMode) {
       setupTypewriterBoundary(view, state);
     } else {
+      stripTypewriterRunway(view);
       removeTypewriterBoundary(view, state);
+      // Restore the short-doc-aware paddingTop / 50vh paddingBottom
+      // that the typewriter just blew away.
+      applyEditorScrollerPadding(state);
+      // Keep the user where they were instead of letting the padding churn
+      // clamp them upward. Skip when ratchet is active — it pins the current
+      // line to centre and owns the scroll position itself.
+      if (!state.ratchetMode && modeScroller && savedModeScrollTop != null
+          && modeScroller.scrollTop !== savedModeScrollTop) {
+        modeScroller.scrollTop = savedModeScrollTop;
+      }
     }
   });
 
@@ -363,6 +421,7 @@ export function createEditor(container, state) {
 
   updateColumnResizers(state);
   applyBlockCursor(state);
+  bindLineIndicatorToContainer(document.getElementById("editor-container"), state);
   updateWordCountDisplay(state);
   state.on("file-opened", () => scheduleWordCountRecompute(state));
 
@@ -425,16 +484,37 @@ export function createEditor(container, state) {
 
   return {
     view,
-    getContent: () => view.state.doc.toString(),
+    getContent: () => {
+      const text = view.state.doc.toString();
+      // While typewriter mode is on the doc carries an artificial
+      // runway of trailing blank lines. Every consumer of the editor
+      // text (autosave, sync, word count, paste, etc.) should see the
+      // clean version.
+      return state.typewriterMode ? stripTypewriterRunwayText(text) : text;
+    },
     setContent: (text) => {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
         annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true)],
       });
+      // Seed the runway for the freshly-loaded doc — without this a
+      // file-switch while typewriter is on would land short docs back
+      // in the broken state until the user's next keystroke.
+      if (state.typewriterMode) ensureTypewriterRunway(view, state);
     },
     focus: () => view.focus(),
     reconfigureTheme: (ext) => {
       view.dispatch({ effects: themeCompartment.reconfigure(ext || []) });
+    },
+    /** Toggle a hard read-only lock on the editor — used for trashed
+     *  files so the user can still read them without the risk of edits
+     *  being autosaved into a file they meant to delete. */
+    setReadOnly: (ro) => {
+      view.dispatch({
+        effects: readOnlyCompartment.reconfigure(
+          ro ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []
+        ),
+      });
     },
   };
 }

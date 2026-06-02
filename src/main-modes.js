@@ -104,6 +104,11 @@ export async function setupModeSwitching(state) {
       if (btn.textContent === "‹" || btn.textContent === "›") { btn.click(); break; }
     }
   });
+  // Quick-find (Cmd+F) in a notebook context opens the shape shelf and
+  // focuses its Search box rather than the doc-only find bar.
+  state.on("notebook-open-shelf-search", () => {
+    getCanvasInstance()?.openShelfSearch();
+  });
   state.on("notebook-toggle-brainstorm", () => {
     const c = getCanvasInstance();
     if (!c) return;

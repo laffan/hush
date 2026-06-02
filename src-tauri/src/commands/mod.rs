@@ -9,5 +9,6 @@ pub mod pdf_export;
 pub mod pdfs;
 pub mod settings;
 pub mod snapshots;
+pub mod spellcheck;
 pub mod window;
 pub mod zotero;

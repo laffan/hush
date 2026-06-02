@@ -1,0 +1,81 @@
+/* ===== Spellcheck: wavy red underline + click-to-fix popover ===== */
+
+/* Browser-style wavy red underline on misspelled words. `text-decoration:
+   wavy` is supported everywhere we care about and renders crisper than
+   a background SVG. The marker also bumps `cursor: pointer` so the
+   click affordance is visible — the underline is the click target. */
+.hush-spellcheck-error {
+  text-decoration: underline wavy #dc2626;
+  text-decoration-thickness: 1px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+[data-theme="dark"] .hush-spellcheck-error {
+  text-decoration-color: #f87171;
+}
+
+/* Suggestion popover. Mounted on <body> at the click point — see
+   `openSpellPopover` in spellcheck.js. Independent of CodeMirror's
+   tooltip surface so it can outlive blur and capture its own clicks. */
+.hush-spellcheck-popover {
+  position: fixed;
+  min-width: 160px;
+  max-width: 260px;
+  background: var(--bg, #ffffff);
+  color: var(--fg, #111111);
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  font-family: var(--font-family, system-ui, sans-serif);
+  font-size: 13px;
+  padding: 4px;
+  z-index: var(--z-overlay, 9999);
+  user-select: none;
+}
+
+.hush-spellcheck-popover-header {
+  padding: 6px 10px 4px;
+  font-weight: 600;
+  font-style: italic;
+  opacity: 0.7;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.18);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hush-spellcheck-popover-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.hush-spellcheck-popover-row {
+  appearance: none;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hush-spellcheck-popover-row:hover,
+.hush-spellcheck-popover-row:focus-visible {
+  background: rgba(128, 128, 128, 0.15);
+  outline: none;
+}
+
+.hush-spellcheck-popover-loading,
+.hush-spellcheck-popover-empty {
+  padding: 6px 10px;
+  opacity: 0.6;
+  font-style: italic;
+}

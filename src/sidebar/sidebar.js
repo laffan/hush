@@ -17,7 +17,7 @@ import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
 import { createRecentFilesPanel } from "./recent-files-panel.js";
-import refreshCircleRaw from "../../temp/temp-icons/refresh-circle.svg?raw";
+import refreshCircleRaw from "./sidebar_icons/refresh-circle.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -146,10 +146,18 @@ export function createSidebar(state) {
   mountProgressCenter(syncGroup, state);
 
   // Dropbox sync indicator — refresh-circle icon that rotates on sync.
+  // Click drops the user on Settings > Sync > Dropbox, mirroring the
+  // gear icon's general-settings entry point.
   const syncDot = document.createElement("div");
   syncDot.className = "sidebar-sync-dot";
-  syncDot.setAttribute("aria-hidden", "true");
+  syncDot.setAttribute("role", "button");
+  syncDot.setAttribute("tabindex", "0");
+  syncDot.setAttribute("title", "Dropbox sync settings");
+  syncDot.style.cursor = "pointer";
   syncDot.innerHTML = refreshCircleRaw;
+  syncDot.addEventListener("click", () => {
+    openSettingsWindow(state, { tab: "sync", subTab: "dropbox" });
+  });
   syncGroup.appendChild(syncDot);
   function syncDotVisible() {
     return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);
@@ -303,6 +311,11 @@ export function createSidebar(state) {
     showRatchetDropdownCentered(state, () => {});
   });
   state.on("export-current-file", async () => {
+    if (state.currentStackFileId) {
+      const { exportCurrentStack } = await import("./stack-export.js");
+      await exportCurrentStack(state);
+      return;
+    }
     if (state.currentNotebookFileId) {
       const { openNotebookExportModal } = await import("./notebook-export-modal.js");
       await openNotebookExportModal(state);

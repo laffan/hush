@@ -151,6 +151,7 @@ export class NotesCanvas {
 
   private _canvas: HTMLCanvasElement;
   private _rafId = 0;
+  private _needsRender = true;
   private _imageCache = new Map<string, HTMLImageElement>();
   private _cleanupInput: (() => void) | null = null;
   private _cleanupDropTarget: (() => void) | null = null;
@@ -432,9 +433,18 @@ export class NotesCanvas {
     };
     const onDockChanged = (e: Event) => {
       requestAnimationFrame(syncShelfRightInset);
-      const d = (e as CustomEvent).detail || {}, l = +d.leftWidth || 0, r = +d.rightWidth || 0;
-      if (this.state.dockedLeftWidth === l && this.state.dockedRightWidth === r) return;
-      this.state.dockedLeftWidth = l; this.state.dockedRightWidth = r; this.state.notify("theme");
+      const d = (e as CustomEvent).detail || {};
+      const l = +d.leftWidth || 0, r = +d.rightWidth || 0;
+      const t = +d.topHeight || 0, b = +d.bottomHeight || 0;
+      if (
+        this.state.dockedLeftWidth === l && this.state.dockedRightWidth === r
+        && this.state.dockedTopHeight === t && this.state.dockedBottomHeight === b
+      ) return;
+      this.state.dockedLeftWidth = l;
+      this.state.dockedRightWidth = r;
+      this.state.dockedTopHeight = t;
+      this.state.dockedBottomHeight = b;
+      this.state.notify("theme");
     };
     queueMicrotask(syncShelfRightInset);
     const shelfObs = new MutationObserver(syncShelfRightInset);
@@ -578,6 +588,12 @@ export class NotesCanvas {
     this.state.addEventListener(event, ((e: CustomEvent) => handler(e.detail)) as EventListener);
   }
 
+  /** Open the shape shelf and focus its search box — the notebook's
+   *  equivalent of the doc quick-find bar (Cmd+F). */
+  openShelfSearch() {
+    (this._shelfPanel as ShelfPanelEl | null)?.__openAndFocusSearch?.();
+  }
+
   destroy() {
     cancelAnimationFrame(this._rafId);
     if (this._cleanupInput) this._cleanupInput();
@@ -635,9 +651,56 @@ export class NotesCanvas {
 
   // === Private ===
 
+  /**
+   * Mark the canvas dirty and ensure a frame is scheduled. The render
+   * loop is no longer free-running — it renders only when state changes
+   * (every render-affecting mutation flows through `state.notify`, which
+   * fires the "change" event we subscribe to) or while an interaction is
+   * mid-flight, then parks itself until the next change. Keeping an idle
+   * notebook from repainting 60×/sec is the single biggest power win for
+   * canvas-heavy sessions, and multiplies across every live canvas
+   * (panes, stack columns, gutters).
+   */
+  private _scheduleRender = () => {
+    this._needsRender = true;
+    if (!this._rafId) this._rafId = requestAnimationFrame(this._renderLoop);
+  };
+
+  private _renderLoop = () => {
+    // Stay frame-locked while an interaction is in flight so motion is
+    // smooth even across frames that don't individually flip the dirty
+    // flag (e.g. an inertial pan that hasn't notified yet).
+    const interacting =
+      this.state.isActiveDrag ||
+      this.state.strokeEngineDragging ||
+      this.state.isPanning ||
+      this.state.selectionBox != null ||
+      this.state.creatingDragArea != null ||
+      this.state.reorderDragAreaId != null;
+
+    if (this._needsRender || interacting) {
+      this._needsRender = false;
+      this._renderFrame();
+    }
+
+    // Reschedule only if there's a reason to: an active interaction, or a
+    // change that landed while we were rendering this frame. Otherwise go
+    // idle — `_scheduleRender` restarts us on the next state change.
+    if (interacting || this._needsRender) {
+      this._rafId = requestAnimationFrame(this._renderLoop);
+    } else {
+      this._rafId = 0;
+    }
+  };
+
   private _startRenderLoop() {
-    const loop = () => {
-      render(this._canvas, {
+    // Any render-affecting state change schedules a frame.
+    this.state.addEventListener("change", this._scheduleRender);
+    this._scheduleRender();
+  }
+
+  private _renderFrame() {
+    render(this._canvas, {
         shapes: this.state.shapes,
         selectedIds: this.state.selectedIds,
         camera: this.state.camera,
@@ -671,16 +734,17 @@ export class NotesCanvas {
         reorderPreview: this.state.reorderPreview,
         flagColors: getFlagColorsFromHush(),
         touchMode: getTouchModeFromHush(),
-      });
-      this._rafId = requestAnimationFrame(loop);
-    };
-    this._rafId = requestAnimationFrame(loop);
+    });
   }
 
   private _syncImageCache() {
     for (const shape of this.state.shapes) {
       if (shape.type === "image" && !this._imageCache.has(shape.id)) {
         const img = new Image();
+        // Repaint once the bytes decode — the loop is dirty-driven now,
+        // so without this an async-loaded image wouldn't appear until the
+        // next unrelated state change.
+        img.addEventListener("load", this._scheduleRender);
         img.src = shape.dataUrl;
         this._imageCache.set(shape.id, img);
       }

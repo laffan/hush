@@ -14,6 +14,7 @@
  */
 
 import { EditorSelection } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { setFindHighlights, clearFindHighlights } from "./find-decorations.js";
 
 let activeView = null;
@@ -227,10 +228,11 @@ function applyCurrent() {
   const m = matches[currentIdx];
   if (!m) { updateCount(); return; }
   // Select the match in the editor (focus stays in the input so the user
-  // can keep refining the query) and scroll it into view.
+  // can keep refining the query) and scroll it to the vertical centre so the
+  // active hit lands somewhere the reader's eye is already aiming.
   activeView.dispatch({
     selection: EditorSelection.single(m.from, m.to),
-    scrollIntoView: true,
+    effects: EditorView.scrollIntoView(m.from, { y: "center" }),
   });
   setFindHighlights(activeView, matches, currentIdx);
   updateCount();

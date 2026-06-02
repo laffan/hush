@@ -12,6 +12,18 @@
  */
 
 import { filterNotes } from "./wikilink-index.js";
+import { typeIcons } from "../sidebar/files-panel-shared.js";
+
+// Map link types to the existing sidebar typeIcons. Projects, PDFs, and
+// stacks all live in the same registry; falling back to the document
+// icon keeps the popup safe if a new type appears.
+const ICON_BY_TYPE = {
+  document: typeIcons.document,
+  notebook: typeIcons.notebook,
+  stack: typeIcons.stack,
+  pdf: typeIcons.pdf,
+  project: typeIcons.project,
+};
 
 /** Mount a wikilink popup. Returns a handle with:
  *    update(query)         — re-filter and re-render
@@ -63,7 +75,7 @@ export function openWikilinkPopup(opts) {
 
       const icon = document.createElement("span");
       icon.className = "wikilink-popup-icon";
-      icon.textContent = n.type === "notebook" ? "◧" : "—";
+      icon.innerHTML = ICON_BY_TYPE[n.type] || ICON_BY_TYPE.document;
       row.appendChild(icon);
 
       const main = document.createElement("span");

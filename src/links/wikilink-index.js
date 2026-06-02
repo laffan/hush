@@ -9,26 +9,50 @@ import { findNodeByFileId } from "../state/tree-helpers.js";
 
 const SKIP_TYPES = new Set(["folder", "project", "desk", "image"]);
 
-/** Walk the file tree and collect every linkable note (docs + notebooks),
- *  skipping anything inside any desk's Trash. Returns:
+/** Resolve the active desk's tree node. Returns null when desks haven't
+ *  been initialised yet so callers can fall back to the whole tree. */
+function getActiveDeskNode(state) {
+  const tree = state.fileTree || [];
+  const id = state.settings?.activeDeskId;
+  if (id) {
+    const match = tree.find((n) => n && n.type === "desk" && n.id === id);
+    if (match) return match;
+  }
+  return tree.find((n) => n && n.type === "desk") || null;
+}
+
+/** Walk the file tree and collect every linkable note (docs + notebooks)
+ *  in the *active desk only*, skipping anything inside that desk's
+ *  Trash. A wikilink lives inside a document that belongs to a single
+ *  desk; resolving across desks would let a `[[Note]]` typed in Desk A
+ *  silently land on a same-named note in Desk B even though the two
+ *  desks are otherwise sealed from each other (sidebar, file picker,
+ *  Send Selected, sync). Returns:
  *    [{ nodeId, fileId, name, type, path }]
  *  where `path` is the breadcrumb of containing folders / projects, used
  *  in the search popup to disambiguate same-name notes living in
  *  different parents. */
 export function getLinkableNotes(state) {
   const out = [];
-  walk(state.fileTree || [], [], (node, crumb) => {
+  const desk = getActiveDeskNode(state);
+  // Pre-desk migrations have a flat tree with no desk node; fall back
+  // to walking everything so the popup still functions on first launch.
+  const roots = desk ? (desk.children || []) : (state.fileTree || []);
+  walk(roots, [], (node, crumb) => {
     if (!node) return;
-    if (node.type === "document" || node.type === "notebook") {
-      if (!node.fileId) return;
-      out.push({
-        nodeId: node.id,
-        fileId: node.fileId,
-        name: node.name || "Untitled",
-        type: node.type,
-        path: crumb.join(" / "),
-      });
-    }
+    const isFileBacked = node.type === "document" || node.type === "notebook"
+      || node.type === "stack" || node.type === "pdf";
+    const isProject = node.type === "project";
+    if (!isFileBacked && !isProject) return;
+    if (isFileBacked && !node.fileId) return;
+    out.push({
+      nodeId: node.id,
+      // Projects have no fileId — they're keyed by node.id at open time.
+      fileId: node.fileId || null,
+      name: node.name || "Untitled",
+      type: node.type,
+      path: crumb.join(" / "),
+    });
   }, (node) => {
     // Don't descend into trash, images folders, or skip-typed nodes.
     if (!node) return false;
@@ -75,9 +99,34 @@ export async function openWikilink(state, title) {
   if (!note) return false;
   if (note.type === "notebook") {
     await state.openNotebook(note.fileId);
+  } else if (note.type === "stack") {
+    await state.openStack(note.fileId);
+  } else if (note.type === "pdf") {
+    await state.openPdf(note.fileId);
+  } else if (note.type === "project") {
+    await state.openProject(note.nodeId);
   } else {
     await state.openFile(note.fileId);
   }
+  return true;
+}
+
+/** Open the note referenced by `title` as a floating pane in the current
+ *  context. Projects aren't pane-hostable, so they fall back to a normal
+ *  open. Returns true if a target was found, false if the link is broken. */
+export async function openWikilinkAsPane(state, title) {
+  const note = resolveWikilink(state, title);
+  if (!note) return false;
+  if (note.type === "project" || !note.fileId) {
+    // Projects can't be panes — fall back to opening in place.
+    return openWikilink(state, title);
+  }
+  const { createPane } = await import("../pane/pane-manager.js");
+  // Anchor the new pane near the viewport centre so it lands somewhere
+  // visible regardless of which surface (doc, notebook) opened it.
+  const cx = (typeof window !== "undefined" ? window.innerWidth : 800) / 2;
+  const cy = (typeof window !== "undefined" ? window.innerHeight : 600) / 2;
+  await createPane(note.fileId, note.name, note.type, cx, cy);
   return true;
 }
 

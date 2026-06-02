@@ -1,0 +1,68 @@
+/* Selection Focus — fullscreen overlay that hosts a fresh CodeMirror
+ * seeded with only the user's active editor selection, centred
+ * horizontally and vertically. Sits at the same z-layer as Zen so
+ * sidebars, toolbars, panes, and shelves all disappear behind its
+ * background. Unlike Zen, the type stays at the source editor's own
+ * size (bumped 10 % for legibility) and the editor only carries the
+ * selected block — Zen carries the whole doc. */
+
+.selection-focus-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-top);
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5vh 4vw;
+  animation: selection-focus-fade-in 200ms ease-out;
+}
+
+@keyframes selection-focus-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Stage carries the column width captured off the source view (set
+ * inline by selection-focus.js) so the line measure the user dialled
+ * in is preserved. Default width is a sensible fallback. */
+.selection-focus-stage {
+  width: 800px;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+/* Shadow CodeMirror styling — mirrors the Zen treatment so the
+ * focused editor reads as a clean editor surface rather than a card.
+ * No focus ring, transparent background, scrollbars hidden. */
+.selection-focus-stage .cm-editor,
+.selection-focus-stage .cm-editor.cm-focused {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  outline: none;
+  border: none;
+}
+.selection-focus-stage .cm-scroller {
+  font-size: var(--selection-focus-font-size, 1.1em);
+  line-height: 1.5;
+  scrollbar-width: none;
+}
+.selection-focus-stage .cm-scroller::-webkit-scrollbar { display: none; }
+
+/* Hide the same floating chrome Zen hides while Selection Focus is
+ * open. The overlay paints above `--z-modal-top` so most layers
+ * disappear naturally; these are the fixed-position widgets that
+ * sit above it and need an explicit nudge. */
+body.selection-focus-active .ratchet-timer,
+body.selection-focus-active .word-count-display,
+body.selection-focus-active .sidebar-floating-toggle,
+body.selection-focus-active .typewriter-boundary,
+body.selection-focus-active .column-resizer,
+body.selection-focus-active .column-mover {
+  display: none !important;
+}

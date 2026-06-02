@@ -8,6 +8,7 @@ import { getThemeById } from "./themes/index.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
 import { initZenFocus } from "./editor/zen-focus.js";
+import { initSelectionFocus } from "./editor/selection-focus.js";
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
@@ -40,8 +41,9 @@ async function init() {
   // Register the wikilink open hook before state.init so cmd-clicks on
   // an auto-opened notebook resolve immediately.
   if (typeof window !== "undefined") {
-    const { openWikilink } = await import("./links/wikilink-index.js");
+    const { openWikilink, openWikilinkAsPane } = await import("./links/wikilink-index.js");
     window.__hushOpenWikilink = (title) => { void openWikilink(state, title); };
+    window.__hushOpenWikilinkAsPane = (title) => { void openWikilinkAsPane(state, title); };
   }
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
   await state.init({ initialFile });
@@ -72,6 +74,42 @@ async function init() {
   const stackContainer = document.getElementById("stack-container");
   const editor = createEditor(editorContainer, state);
   state.setEditor(editor);
+
+  // "In the trash" banner — pinned above the editor whenever the active
+  // file is a doc that lives in a Trash folder. Pairs with the editor's
+  // setReadOnly() lock so trashed content can be read but not edited
+  // (autosave would otherwise quietly write changes into a file the
+  // user has already chosen to throw away). Restore (Remove from trash)
+  // or Permanently Delete actions live on the sidebar row's menu.
+  const trashBanner = document.createElement("div");
+  trashBanner.id = "trash-banner";
+  trashBanner.className = "trash-banner hidden";
+  trashBanner.textContent = "In the Trash — read only";
+  editorContainer.parentElement?.insertBefore(trashBanner, editorContainer);
+
+  async function syncTrashLock() {
+    if (!state.editor) return;
+    const fileId = state.currentNotebookFileId || state.currentFileId;
+    let inTrash = false;
+    if (fileId) {
+      const { findNodeByFileId } = await import("./state/tree-helpers.js");
+      const node = findNodeByFileId(state.fileTree, fileId);
+      if (node && state.isInTrash(node.id)) inTrash = true;
+    }
+    // Only the doc editor carries the readOnly compartment; the notebook
+    // canvas gates input via the body-level class instead.
+    state.editor.setReadOnly(inTrash && !state.currentNotebookFileId);
+    trashBanner.classList.toggle("hidden", !inTrash);
+    document.body.classList.toggle("file-in-trash", inTrash);
+  }
+  state.on("file-opened", syncTrashLock);
+  state.on("notebook-open", syncTrashLock);
+  state.on("notebook-unmount", syncTrashLock);
+  // Restore / Permanently Delete fire `files-changed` after the move —
+  // re-evaluate so a file restored back into the inbox loses the banner
+  // without needing to be re-opened.
+  state.on("files-changed", syncTrashLock);
+  syncTrashLock();
 
   import("./google-docs/link-bar.js").then((m) => m.initLinkBar(state)).catch((e) => console.warn("[google-docs] link-bar mount failed", e));
 
@@ -167,6 +205,7 @@ async function init() {
   createSidebar(state);
   setupFileDrop(state);
   initZenFocus(state);
+  initSelectionFocus(state);
   // Listing view shown when 2+ docs are multi-selected in the sidebar.
   import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
@@ -274,14 +313,31 @@ async function init() {
   // floating circular toggle are both gone.
   import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
 
-  // Save scroll position periodically (debounced on scroll)
+  // Save scroll position periodically (debounced on scroll). Tracks
+  // the current file under `docScrollPositions[fileId]` so switching
+  // away and back lands the reader where they left off; also writes
+  // `scrollPosition` for the legacy boot-time restore path.
   let scrollSaveTimer = null;
   if (state.editor) {
     state.editor.view.scrollDOM.addEventListener("scroll", () => {
       clearTimeout(scrollSaveTimer);
       scrollSaveTimer = setTimeout(() => {
         const scrollTop = state.editor.view.scrollDOM.scrollTop;
-        state.updateSettings({ scrollPosition: scrollTop });
+        const fileId = state.currentFileId;
+        const patch = { scrollPosition: scrollTop };
+        if (fileId) {
+          const positions = { ...(state.settings.docScrollPositions || {}) };
+          positions[fileId] = scrollTop;
+          // FIFO-trim — `delete` + reinsert isn't worth the churn since
+          // we re-touch the key on every save anyway, so just drop the
+          // oldest entries once we drift past 100.
+          const keys = Object.keys(positions);
+          if (keys.length > 100) {
+            for (const k of keys.slice(0, keys.length - 100)) delete positions[k];
+          }
+          patch.docScrollPositions = positions;
+        }
+        state.updateSettings(patch);
       }, 1000);
     });
   }
@@ -385,15 +441,43 @@ async function init() {
     // iOS fires both paths for the same code; the second `handleOAuthCode`
     // sees "code already used" and we swallow that rather than bubble up.
     try {
-      const { onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
-      await onOpenUrl(async (urls) => {
-        for (const url of urls) {
-          if (!url.startsWith("hushwriter://auth/callback")) continue;
+      const { onOpenUrl, getCurrent } = await import("@tauri-apps/plugin-deep-link");
+      const handleUrl = async (url) => {
+        if (url.startsWith("hushwriter://auth/callback")) {
           const code = new URLSearchParams(url.split("?")[1] || "").get("code");
           if (code) {
             try { await handleOAuthCode(state, invoke, code, "dropbox"); } catch (e) { console.warn("OAuth deep-link completion failed:", e); }
           }
+          return;
         }
+        // iPadOS hands externally-opened .hushnote / .hushstack / .md
+        // files to the app as file:// URLs (cold launch surfaces
+        // through getCurrent(); already-running launches through
+        // onOpenUrl).
+        if (url.startsWith("file://") || url.startsWith("/")) {
+          try {
+            const { importExternalFile } = await import("./editor/external-open.js");
+            await importExternalFile(state, url);
+          } catch (e) {
+            console.warn("External file open failed:", e);
+            try {
+              const { showImportToast } = await import("./editor/import-toast.js");
+              showImportToast(`Couldn't open ${url.split("/").pop()}: ${e?.message || e}`, "error");
+            } catch (_) {}
+          }
+        }
+      };
+      // Cold launch: the OS hands the URL to the process before any JS
+      // listener exists; getCurrent() returns those pending URLs so we
+      // don't drop the open-with payload that woke the app.
+      try {
+        const launchUrls = await getCurrent();
+        if (Array.isArray(launchUrls)) {
+          for (const url of launchUrls) await handleUrl(url);
+        }
+      } catch (e) { console.warn("Deep-link getCurrent failed:", e); }
+      await onOpenUrl(async (urls) => {
+        for (const url of urls) await handleUrl(url);
       });
     } catch (e) { console.error("Deep-link setup failed:", e); }
 

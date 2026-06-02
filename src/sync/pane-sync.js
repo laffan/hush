@@ -27,6 +27,8 @@
  * any that landed off-screen into view.
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 const PANES_PATH = ".hush/panes.json";
 // v2 adds `ownerDeskId` + `ownerInnerPath` for project-scoped panes,
@@ -602,7 +604,7 @@ export async function applyPanesFile(state, payload) {
         }
         return pane;
       } catch (e) {
-        console.warn("createPane (from sync) failed:", e);
+        appendSyncError(`createPane (from sync) failed: ${e?.message || e}`);
         return null;
       }
     },

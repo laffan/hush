@@ -45,6 +45,13 @@ export function toggleProofread(state) {
   // build doesn't gate startup.
 }
 
+export function toggleSpellcheck(state) {
+  if (state.currentNotebookFileId) return;
+  state.spellcheckMode = !state.spellcheckMode;
+  state.emit("mode-changed");
+  state.updateSettings({ spellcheckMode: state.spellcheckMode });
+}
+
 export function toggleFocus(state) {
   state.focusMode = !state.focusMode;
   state.emit("mode-changed");
@@ -54,6 +61,25 @@ export function toggleZenFocus(state) {
   state.zenFocus = !state.zenFocus;
   state.emit("mode-changed");
   state.emit("zen-focus-changed");
+}
+
+/** Toggle Selection Focus mode. Entry carries a `payload` object —
+ *  `{ text, fontSize, fontFamily, color, background }` — captured by the
+ *  caller from the active editor; exit ignores it. The view-side
+ *  handler (selection-focus.js) listens for `selection-focus-changed`
+ *  and mounts / tears down the overlay accordingly, reading the payload
+ *  off the same staging slot the caller wrote (`state._selectionFocusPayload`). */
+export function toggleSelectionFocus(state, payload) {
+  if (state.selectionFocus) {
+    state.selectionFocus = false;
+    state._selectionFocusPayload = null;
+  } else {
+    if (!payload || !payload.text) return; // nothing to focus on
+    state.selectionFocus = true;
+    state._selectionFocusPayload = payload;
+  }
+  state.emit("mode-changed");
+  state.emit("selection-focus-changed");
 }
 
 export function toggleFullscreen(state) {

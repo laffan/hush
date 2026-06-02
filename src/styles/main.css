@@ -16,6 +16,7 @@
 @import './project-view.css';
 @import './focus-mode.css';
 @import './zen-focus.css';
+@import './selection-focus.css';
 @import './file-drop.css';
 @import './longview.css';
 @import './callouts.css';
@@ -31,6 +32,7 @@
 @import './notebook-export.css';
 @import './split-combine.css';
 @import './proofreading.css';
+@import './spellcheck.css';
 @import './google-docs.css';
 @import './multi-select.css';
 @import './wikilinks.css';

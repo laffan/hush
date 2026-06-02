@@ -89,7 +89,7 @@ export function renderEditorTab(settings) {
       <div class="settings-slider-row">
         <label>Line opacity</label>
         <div class="slider-group">
-          <input type="range" id="setting-typewriter-line-opacity" min="0" max="0.5" step="0.01" value="${s.typewriterLineOpacity ?? 0.08}" />
+          <input type="range" id="setting-typewriter-line-opacity" min="0" max="1" step="0.01" value="${s.typewriterLineOpacity ?? 0.08}" />
           <span class="slider-value">${((s.typewriterLineOpacity ?? 0.08) * 100).toFixed(0)}%</span>
         </div>
       </div>

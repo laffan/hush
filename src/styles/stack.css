@@ -6,15 +6,16 @@
 
 #stack-container {
   position: absolute;
-  top: 0;
   /* Docked panes carve real estate out of the host editor — for stacks
      that means narrowing the container itself so the horizontal
      scrollbar stays inside the visible area rather than under a
-     right-docked pane. The dock module publishes the two vars on
-     documentElement; defaults of `0px` keep undocked layouts unchanged. */
+     right-docked pane. The dock module publishes width/height vars on
+     documentElement; defaults of `0px` keep undocked layouts unchanged.
+     Top/bottom equivalents shrink the column height the same way. */
+  top: var(--pane-dock-top-height, 0px);
   left: var(--pane-dock-left-width, 0px);
   right: var(--pane-dock-right-width, 0px);
-  bottom: 0;
+  bottom: var(--pane-dock-bottom-height, 0px);
   overflow: hidden;
   background: var(--theme-bg, #fff);
   transition: left 0.2s;
@@ -203,11 +204,29 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+  /* Spine is navigation chrome — match the files sidebar / command
+     palette font rather than the active style's editor font. */
+  font-family: var(--ui-font-family);
 }
 .stack-spine-label-author {
   font-size: 10px;
   font-weight: 400;
   opacity: 0.6;
+  font-family: var(--ui-font-family);
+}
+/* The title span carries the open-in-editor click — underline on
+   hover so the affordance is visible, matching the floating-pane
+   header's `.fp-title-link:hover` rule. inline-block + an explicit
+   thickness + offset are needed because the parent's `writing-mode:
+   vertical-rl; transform: rotate(180deg)` would otherwise put the
+   underline on an axis that's easy to miss. */
+.stack-spine-label-title {
+  display: inline-block;
+}
+.stack-spine-label-title:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 .stack-spine-buttons {
@@ -247,6 +266,12 @@
   height: 100%;
   overflow: hidden;
   position: relative;
+}
+/* When the doc outline mounts (absolutely positioned 200 px slot at
+   the right edge), shrink the content wrapper by the same amount so
+   the outline sits beside the editor rather than over it. */
+.stack-column-content:has(.stack-doc-outline) .stack-doc-wrapper {
+  width: calc(100% - 200px);
 }
 
 .stack-spine-icon { cursor: pointer; transition: opacity 0.15s; }
@@ -784,6 +809,10 @@ body.stack-resizing .stack-column,
   flex-direction: column;
   z-index: 5;
   overflow: hidden;
+  /* Outline reads as chrome, not editor text — pin the app UI font so
+     the active style's editor font doesn't bleed in via the column
+     wrapper. */
+  font-family: var(--ui-font-family);
 }
 
 .stack-doc-outline-header {

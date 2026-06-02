@@ -21,6 +21,7 @@ import { EditorState, EditorSelection } from "@codemirror/state";
 import { createBaseExtensions } from "./base-extensions.js";
 import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createProjectViewField, createSeparatorFilter } from "./plugins/project-view.js";
+import { applyBlockCursor } from "./block-cursor.js";
 import { panes } from "../pane/pane-state.js";
 import { getActivePaneId } from "../pane/pane-manager.js";
 import { getStackInstance } from "../stack/stack-bridge.js";
@@ -249,6 +250,12 @@ export function enterZenFocus(state) {
 
   document.body.classList.add("zen-focus-active");
   document.body.appendChild(overlay);
+
+  // Paint the cursor mode (system / block / underline) onto the freshly
+  // mounted overlay. The same call refreshes the main editor too, but
+  // it's the overlay that needs it — Zen mounts its CodeMirror outside
+  // `#editor-container` so the cursor CSS wouldn't otherwise reach it.
+  applyBlockCursor(state);
 
   // Build the Zen shadow editor. createBaseExtensions covers markdown,
   // callouts, links, etc. — but it intentionally omits focus mode (and

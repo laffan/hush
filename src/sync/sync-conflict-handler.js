@@ -17,6 +17,8 @@
  * local sync map up-to-date with it.
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function tauriInvoke(cmd, args) {
@@ -58,7 +60,7 @@ export async function handleUploadConflict(state, { internalId, relativePath, fu
       remoteContent = await dbx.downloadFile(fullPath);
     }
   } catch (e) {
-    console.warn("conflict: remote download failed, leaving op requeued:", e);
+    appendSyncError(`conflict: remote download failed, leaving op requeued: ${e?.message || e}`);
     throw e;
   }
 
@@ -88,7 +90,7 @@ export async function handleUploadConflict(state, { internalId, relativePath, fu
       if (result === "local" || result === "remote" || result === "versions") choice = result;
       else choice = "remote";
     } catch (e) {
-      console.warn("conflict modal failed, defaulting to remote:", e);
+      appendSyncError(`conflict modal failed, defaulting to remote: ${e?.message || e}`);
     }
   }
 

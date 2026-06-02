@@ -12,6 +12,7 @@ import {
   renderDryTab, renderFlagsSettingsTab, renderSyncTab, renderPrivacyTab, renderZoteroTab,
   renderProofreadTab, bindProofreadTab,
 } from "./settings-tabs.js";
+import { setSyncSubTab } from "./settings-tabs-sync.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -27,9 +28,41 @@ let shortcutSearchQuery = '';
  * Called automatically when #settings-root exists (standalone window),
  * or manually via renderSettingsModal() for the iOS modal.
  */
+/** Set the active tab (and optional sync sub-tab) from outside this
+ *  module — used by the sidebar sync icon and other deep-links that want
+ *  to drop the user on a specific settings page. Re-renders if the
+ *  settings UI is already mounted, otherwise just stores the choice so
+ *  the next `initSettingsInto` lands there. */
+export function setActiveTab(tab, subTab) {
+  if (!tab) return;
+  activeTab = tab;
+  if (tab === "sync" && subTab) setSyncSubTab(subTab);
+  if (settingsRootEl) render();
+}
+
+/** Parse a `#tab` or `#tab/subTab` hash into the parts the activator
+ *  needs. Returns null when the hash is empty so callers can fall back
+ *  to whatever activeTab they already have. */
+function readTabFromLocation() {
+  if (typeof window === "undefined") return null;
+  const h = (window.location?.hash || "").replace(/^#/, "");
+  if (!h) return null;
+  const [tab, subTab] = h.split("/", 2);
+  return tab ? { tab, subTab: subTab || null } : null;
+}
+
 export async function initSettingsInto(rootEl, saveCallback) {
   settingsRootEl = rootEl;
   onSaveCallback = saveCallback || null;
+  // Honour a `#sync/dropbox`-style deep link (set by the sidebar sync
+  // icon on the desktop path). The iOS modal path passes the tab in
+  // via setActiveTab() before this runs, so the hash check there is a
+  // no-op (the page URL never carries one).
+  const fromHash = readTabFromLocation();
+  if (fromHash) {
+    activeTab = fromHash.tab;
+    if (fromHash.tab === "sync" && fromHash.subTab) setSyncSubTab(fromHash.subTab);
+  }
 
   if (IS_TAURI) {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -96,6 +129,17 @@ export async function initSettingsInto(rootEl, saveCallback) {
         e.preventDefault();
         await getCurrentWindow().hide();
       }
+    });
+  }
+
+  // Cross-window deep-link: the main window emits this when the user
+  // clicks something (the sidebar sync icon, etc.) that should drop
+  // them on a specific settings tab while this window is already open.
+  if (IS_TAURI) {
+    const { listen } = await import("@tauri-apps/api/event");
+    listen("settings-goto-tab", (e) => {
+      const payload = e?.payload || {};
+      if (payload.tab) setActiveTab(payload.tab, payload.subTab || null);
     });
   }
 

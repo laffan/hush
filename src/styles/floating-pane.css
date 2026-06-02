@@ -46,6 +46,9 @@
   user-select: none;
   flex-shrink: 0;
   gap: 4px;
+  /* Title bar is navigation chrome, not editor content — use the
+     app's UI font instead of inheriting the active style's body font. */
+  font-family: var(--ui-font-family);
 }
 
 .floating-pane-titlebar:active {
@@ -487,17 +490,28 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
 .pane-dock-overlay.visible {
   opacity: 1;
 }
+/* Each zone fills the overlay and uses inline clip-path to carve a
+   trapezoid. Border-radius and a real border would only render on the
+   one outer-rect edge that survives clip-path (the other three edges
+   are clip cuts, not box edges), so we drop both and bump the fill
+   contrast on `.active` instead — the trapezoid shape itself is the
+   visual cue. */
 .pane-dock-zone {
   position: absolute;
   background: rgba(66, 153, 225, 0.18);
-  border: 2px dashed rgba(66, 153, 225, 0.55);
-  border-radius: 10px;
-  transition: background 80ms ease, border-color 80ms ease;
+  transition: opacity 120ms ease, background 80ms ease;
   box-sizing: border-box;
+  /* Hidden by default during a drag — the pointermove handler toggles
+     `.near` on a zone when the cursor is within ~200 px of its edge,
+     so the trapezoids surface lazily as the user approaches a corner
+     instead of flooding the canvas the whole drag. */
+  opacity: 0;
+}
+.pane-dock-zone.near {
+  opacity: 1;
 }
 .pane-dock-zone.active {
-  background: rgba(66, 153, 225, 0.42);
-  border-color: rgba(66, 153, 225, 0.9);
+  background: rgba(66, 153, 225, 0.55);
 }
 
 /* Docked panes: pin to the named edge, remove the floating shadow so

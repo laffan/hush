@@ -1,9 +1,7 @@
 import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
 import { createThumbnailManager } from "./pdf-viewer-thumbnails.js";
-import {
-  VERTICAL_ICON, HORIZONTAL_ICON, THUMBNAIL_ICON, POPOUT_ICON,
-  FIT_ONE_ICON, FIT_TWO_ICON, FIT_THREE_ICON,
-} from "./pdf-viewer-icons.js";
+import { POPOUT_ICON } from "./pdf-viewer-icons.js";
+import { buildPdfToolbar } from "./pdf-toolbar-build.js";
 
 let pdfjsPromise = null;
 
@@ -65,47 +63,15 @@ export function createPdfViewer(container, opts = {}) {
 
   root.appendChild(body);
 
-  // ── Toolbar (bottom bar) ─────────────────────────────────────────
-  const toolbar = document.createElement("div");
-  toolbar.className = "pdf-zoom-toolbar";
-
-  const zoomOutBtn = btn("pdf-zoom-btn", "−", "Zoom out");
-  const zoomLabel = document.createElement("span");
-  zoomLabel.className = "pdf-zoom-label";
-  zoomLabel.textContent = "Fit";
-  const zoomInBtn = btn("pdf-zoom-btn", "+", "Zoom in");
-
-  const scrollToggleWrap = document.createElement("span");
-  scrollToggleWrap.className = "pdf-toggle-group";
-  const scrollHBtn = svgBtn("pdf-toggle-option active", "Horizontal scroll", HORIZONTAL_ICON);
-  const scrollVBtn = svgBtn("pdf-toggle-option", "Vertical scroll", VERTICAL_ICON);
-  scrollToggleWrap.append(scrollHBtn, scrollVBtn);
-
-  const fitToggleWrap = document.createElement("span");
-  fitToggleWrap.className = "pdf-toggle-group";
-  fitToggleWrap.style.display = "none";
-  const fitOneBtn = svgBtn("pdf-toggle-option active", "Fit one page", FIT_ONE_ICON);
-  const fitTwoBtn = svgBtn("pdf-toggle-option", "Fit two pages", FIT_TWO_ICON);
-  const fitThreeBtn = svgBtn("pdf-toggle-option", "Fit three pages", FIT_THREE_ICON);
-
-  fitToggleWrap.append(fitOneBtn, fitTwoBtn, fitThreeBtn);
-
-  const pageIndicator = document.createElement("span");
-  pageIndicator.className = "pdf-page-indicator";
-
-  const zoteroLink = document.createElement("a");
-  zoteroLink.className = "pdf-zotero-link";
-  zoteroLink.textContent = "Open in Zotero ↗";
-  zoteroLink.style.display = "none";
-
-  const thumbnailBtn = svgBtn("pdf-zoom-btn pdf-thumbnail-btn", "Thumbnail view", THUMBNAIL_ICON);
-
-  const toolbarInfo = document.createElement("span");
-  toolbarInfo.className = "pdf-toolbar-info";
-
-  toolbar.append(zoomOutBtn, zoomLabel, zoomInBtn, scrollToggleWrap, fitToggleWrap, thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink);
+  // Bottom-bar toolbar: DOM-only, no closures. Event handlers wired below.
+  const {
+    toolbar,
+    zoomOutBtn, zoomLabel, zoomInBtn,
+    scrollHBtn, scrollVBtn,
+    fitOneBtn, fitTwoBtn, fitThreeBtn, fitToggleWrap,
+    pageIndicator, zoteroLink, thumbnailBtn, toolbarInfo,
+  } = buildPdfToolbar();
   root.appendChild(toolbar);
-
   container.appendChild(root);
 
   // ── Zotero link setup ────────────────────────────────────────────
@@ -271,6 +237,10 @@ export function createPdfViewer(container, opts = {}) {
     fitOneBtn.classList.toggle("active", fitMode === MODE_FIT);
     fitTwoBtn.classList.toggle("active", fitMode === MODE_FIT_2);
     fitThreeBtn.classList.toggle("active", fitMode === MODE_FIT_3);
+    // Persist view-state changes (fit / direction / fixed zoom) the instant
+    // they happen, not only on a later scroll. Guarded so restore + initial
+    // load don't echo back.
+    if (!suspended && !resuming) for (const cb of scrollListeners) cb();
   }
 
   function updatePageIndicator() {
@@ -293,6 +263,11 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   scrollArea.addEventListener("scroll", () => {
+    // Skip events fired by the suspend/resume teardown — clearing
+    // scrollArea.innerHTML resets scrollTop to 0, and we don't want
+    // that synthetic 0 to leak out and overwrite the host pane's saved
+    // scroll position before resume has put it back.
+    if (suspended || resuming) return;
     updatePageIndicator();
     for (const cb of scrollListeners) cb();
   });
@@ -528,26 +503,58 @@ export function createPdfViewer(container, opts = {}) {
   function setScrollTop(v) { scrollArea.scrollTop = v; }
   function getScrollLeft() { return scrollArea.scrollLeft; }
   function setScrollLeft(v) { scrollArea.scrollLeft = v; }
+
+  /** Restore zoom mode + scroll. Fit-mode page heights derive from the
+   *  container's measured size, often unsettled at mount/resume — a single
+   *  scrollTop then clamps to 0. Re-flex + re-assert until it sticks. */
+  function restoreView(zoomLevel, scrollTop, scrollLeft) {
+    if (typeof zoomLevel === "number") { try { setZoom(zoomLevel); } catch (_) {} }
+    const top = scrollTop || 0;
+    const left = scrollLeft || 0;
+    if (top <= 0 && left <= 0) return;
+    let attempts = 0;
+    resuming = true;
+    const tick = () => {
+      if (destroyed || suspended) { resuming = false; return; }
+      relayoutPages(); // re-flex so scrollHeight reflects the real layout
+      scrollArea.scrollTop = top;
+      scrollArea.scrollLeft = left;
+      const okTop = top <= 0 || Math.abs(scrollArea.scrollTop - top) <= 2;
+      const okLeft = left <= 0 || Math.abs(scrollArea.scrollLeft - left) <= 2;
+      if ((okTop && okLeft) || attempts >= 12) { resuming = false; return; }
+      attempts++;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
   function onScroll(cb) {
     scrollListeners.push(cb);
     return () => { scrollListeners = scrollListeners.filter(c => c !== cb); };
   }
 
   // ── Suspend / Resume (lightweight snapshot for inactive panes) ────
+  // _suspend* values let resume() restore the pre-suspend viewport.
   let suspended = false;
+  let resuming = false;
   let suspendImg = null;
+  let _suspendScrollTop = 0;
+  let _suspendScrollLeft = 0;
+  let _suspendZoomLevel = null;
   let cachedPdfData = null;
 
   function suspend() {
     if (suspended || destroyed || !pdfDoc) return;
+    _suspendScrollTop = scrollArea.scrollTop;
+    _suspendScrollLeft = scrollArea.scrollLeft;
+    try { _suspendZoomLevel = getZoom(); } catch (_) { _suspendZoomLevel = null; }
     suspended = true;
     thumbs.destroy();
     window.removeEventListener("keydown", onKeydown);
     if (resizeObserver) resizeObserver.disconnect();
     if (observer) { observer.disconnect(); observer = null; }
 
-    const savedScroll = scrollArea.scrollTop;
-    const savedScrollLeft = scrollArea.scrollLeft;
+    const savedScroll = _suspendScrollTop;
+    const savedScrollLeft = _suspendScrollLeft;
 
     try {
       const snapshot = document.createElement("canvas");
@@ -593,6 +600,7 @@ export function createPdfViewer(container, opts = {}) {
   async function resume() {
     if (!suspended || destroyed) return;
     suspended = false;
+    resuming = true;
     scrollArea.classList.remove("pdf-suspended");
     if (suspendImg) { suspendImg.remove(); suspendImg = null; }
 
@@ -606,6 +614,13 @@ export function createPdfViewer(container, opts = {}) {
       await loadPdf(cachedPdfData);
       if (savedAnnotations.length) annotLayer.setAnnotations(savedAnnotations);
     }
+
+    // restoreView re-applies zoom (a horizontal layout clamps scrollTop to
+    // 0 and vice versa, so the mode must match first) then re-asserts the
+    // scroll across frames so a not-yet-settled container size can't clamp
+    // the position to the top.
+    restoreView(_suspendZoomLevel, _suspendScrollTop, _suspendScrollLeft);
+    if (_suspendScrollTop <= 0 && _suspendScrollLeft <= 0) resuming = false;
   }
 
   // Wrap loadPdf to cache the raw data for resume
@@ -657,6 +672,7 @@ export function createPdfViewer(container, opts = {}) {
     setScrollTop,
     getScrollLeft,
     setScrollLeft,
+    restoreView,
     onScroll,
     setAnnotations: annotLayer.setAnnotations,
     refreshAnnotations: annotLayer.refreshAnnotations,
@@ -681,19 +697,4 @@ export function createPdfViewer(container, opts = {}) {
   };
 }
 
-function btn(cls, text, title) {
-  const b = document.createElement("button");
-  b.className = cls;
-  b.textContent = text;
-  b.title = title;
-  return b;
-}
-
-function svgBtn(cls, title, svgContent) {
-  const b = document.createElement("button");
-  b.className = cls;
-  b.title = title;
-  b.innerHTML = svgContent;
-  return b;
-}
 

@@ -38,18 +38,26 @@ export function canvasToScreen(canvasX, canvasY) {
 }
 
 export function startCanvasSync(pane) {
+  let last = "";
   function tick() {
     if (!pane.attached || !panes.has(pane.id)) return;
     const pos = canvasToScreen(pane._canvasX, pane._canvasY);
     if (pos) {
-      pane.x = pos.x;
-      pane.y = pos.y;
-      pane.el.style.left = pos.x + "px";
-      pane.el.style.top = pos.y + "px";
       const canvas = notebookBridge ? notebookBridge.getCanvasInstance() : null;
       const zoom = canvas ? canvas.state.camera.zoom : 1;
-      pane.el.style.transformOrigin = "top left";
-      pane.el.style.transform = `scale(${zoom})`;
+      // Only touch the DOM when the camera actually moved. A static canvas
+      // produces identical coords every frame, so skipping the style
+      // writes avoids forcing a layout/recalc 60×/sec per attached pane.
+      const sig = `${pos.x},${pos.y},${zoom}`;
+      if (sig !== last) {
+        last = sig;
+        pane.x = pos.x;
+        pane.y = pos.y;
+        pane.el.style.left = pos.x + "px";
+        pane.el.style.top = pos.y + "px";
+        pane.el.style.transformOrigin = "top left";
+        pane.el.style.transform = `scale(${zoom})`;
+      }
     }
     pane._syncFrame = requestAnimationFrame(tick);
   }
@@ -130,19 +138,30 @@ export function startStackPinSync(pane) {
   const scrollArea = document.querySelector("#stack-container .stack-scroll-area");
   if (!scrollArea) return;
 
+  let last = "";
   function tick() {
     if (!pane._stackPin || !panes.has(pane.id)) return;
     const col = document.querySelector(`.stack-column[data-item-id="${pane._stackPin.itemId}"]`);
     if (!col || col.classList.contains("stack-column-closed")) {
-      pane.el.style.display = "none";
+      if (last !== "hidden") { pane.el.style.display = "none"; last = "hidden"; }
     } else {
-      pane.el.style.display = "";
       const colRect = col.getBoundingClientRect();
       const containerRect = scrollArea.getBoundingClientRect();
-      pane.x = colRect.left - containerRect.left + pane._stackPin.xOffset + containerRect.left;
-      pane.y = colRect.top + pane._stackPin.yOffset;
-      pane.el.style.left = pane.x + "px";
-      pane.el.style.top = pane.y + "px";
+      const x = colRect.left - containerRect.left + pane._stackPin.xOffset + containerRect.left;
+      const y = colRect.top + pane._stackPin.yOffset;
+      // Skip the style writes when nothing moved so we don't dirty layout
+      // every frame — that keeps the getBoundingClientRect reads above
+      // cheap (a clean layout reads instantly) while the user isn't
+      // scrolling the stack.
+      const sig = `${x},${y}`;
+      if (sig !== last) {
+        last = sig;
+        pane.x = x;
+        pane.y = y;
+        pane.el.style.display = "";
+        pane.el.style.left = x + "px";
+        pane.el.style.top = y + "px";
+      }
     }
     pane._stackSyncFrame = requestAnimationFrame(tick);
   }

@@ -6,6 +6,8 @@
  * `.hushproject` files on Dropbox are skipped on receive.
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
 
@@ -260,7 +262,7 @@ export async function syncFileToExternal(state, fileId, content) {
     await enqueueUpload({ internalId: fileId, path });
     triggerDrain(state);
   } catch (e) {
-    console.error("Sync write enqueue failed:", e);
+    appendSyncError(`Sync write enqueue failed: ${e?.message || e}`);
   }
 }
 
@@ -290,7 +292,7 @@ export async function acceptExternalChange(state, internalId, content, syncedAt 
     state.emit("files-changed");
   } catch (e) {
     state.runtime.syncPulling = false;
-    console.error("Accept external change failed:", e);
+    appendSyncError(`Accept external change failed: ${e?.message || e}`);
   }
 }
 
@@ -324,7 +326,7 @@ export async function reconcileSync(state) {
   try {
     const { migrateFromDesksJson } = await import("./desk-sync.js");
     await migrateFromDesksJson(state);
-  } catch (e) { console.warn("reconcile: desks.json migration failed:", e); }
+  } catch (e) { appendSyncError(`reconcile: desks.json migration failed: ${e?.message || e}`); }
 
   const dbx = await import("./dropbox.js");
   const basePath = dropboxPath === "/" ? "" : dropboxPath;
@@ -394,7 +396,7 @@ export async function reconcileSync(state) {
   try {
     const { pushAllDesks } = await import("./desk-sync.js");
     await pushAllDesks(state);
-  } catch (e) { console.warn("reconcile: pushAllDesks failed:", e); }
+  } catch (e) { appendSyncError(`reconcile: pushAllDesks failed: ${e?.message || e}`); }
   await pushMetaIfAbsent(state, dbx, basePath, ".hush/projects.json", async () => {
     const { pushProjectsToDropbox } = await import("./project-sync.js");
     return pushProjectsToDropbox(state);
@@ -489,7 +491,7 @@ export async function clearLocalAndReseed(state) {
   const RESEED_HARD_DEADLINE_MS = 180_000;
   const safetyTimer = setTimeout(() => {
     if (state.runtime?.reseedActive) {
-      console.warn(
+      appendSyncError(
         "clearLocalAndReseed: hard deadline reached, lowering barrier"
       );
       state.runtime.reseedActive = false;
@@ -566,7 +568,7 @@ export async function clearLocalAndReseed(state) {
         data = await resp.json();
         total += countSyncableEntries(data.entries);
       }
-    } catch (e) { console.warn("clear: pre-count failed:", e); }
+    } catch (e) { appendSyncError(`clear: pre-count failed: ${e?.message || e}`); }
     sp.progressBegin(state, total, total > 0 ? `Pulling ${total} items from Dropbox…` : "Pulling items from Dropbox…");
 
     // 6. Run one full cycle. The cursor seed loops internally on
@@ -574,7 +576,7 @@ export async function clearLocalAndReseed(state) {
     //    paths (reconcile, op-log drain, push-meta) are still gated by
     //    `reseedActive` so this is a pull-only pass.
     sp.startSyncPolling(state);
-    try { await sp.runOneCycle(state); } catch (e) { console.warn("seed cycle failed:", e); }
+    try { await sp.runOneCycle(state); } catch (e) { appendSyncError(`seed cycle failed: ${e?.message || e}`); }
 
     // 7. Re-apply `.hush/*.json` meta in dependency order so any meta
     //    file that landed before its referent (e.g. projects.json
@@ -603,7 +605,7 @@ export async function clearLocalAndReseed(state) {
       // queued ops are our own desk metadata pushes.
       state.runtime.reseedActive = false;
       await pushAllDesks(state);
-    } catch (e) { console.warn("clear: finalize desks failed:", e); }
+    } catch (e) { appendSyncError(`clear: finalize desks failed: ${e?.message || e}`); }
 
     state.files = await tauriInvoke("list_files");
     state.emit("files-changed");

@@ -154,6 +154,8 @@ pub struct AppSettings {
     pub shortcut_zen_focus: String,
     #[serde(default = "default_zen_focus_font_size")]
     pub zen_focus_font_size: u32,
+    #[serde(default = "default_selection_focus_font_multiplier")]
+    pub selection_focus_font_multiplier: f32,
     #[serde(default)]
     pub word_count_visible: bool,
     #[serde(default = "default_shortcut_find")]
@@ -305,6 +307,12 @@ pub struct AppSettings {
     #[serde(default)] pub block_cursor: bool,
     #[serde(default)] pub block_cursor_color: Option<String>,
     #[serde(default)] pub cursor_mode: Option<String>,
+
+    // Default style's active-line indicator. Per-style overrides live
+    // on `Style.line_indicator`. The indicator colour rides per
+    // appearance on `default_light_colors` / `default_dark_colors`
+    // under the `lineIndicator` key — no dedicated AppSettings field.
+    #[serde(default)] pub line_indicator: Option<String>,
 
     // Extra shortcuts
     #[serde(default = "default_shortcut_strikethrough")]
@@ -480,7 +488,8 @@ pub struct AppSettings {
     // frontend forwards it on every `check_grammar` call.
     #[serde(default = "default_proofread_disabled_rules")]
     pub proofread_disabled_rules: Vec<String>,
-
+    #[serde(default)] // Spellcheck (spellbook) — persisted; ~10 ms load.
+    pub spellcheck_mode: bool,
     #[serde(skip)]
     pub data_dir: PathBuf,
 }
@@ -544,6 +553,7 @@ impl Default for AppSettings {
             shortcut_toggle_word_count: default_shortcut_toggle_word_count(),
             shortcut_zen_focus: default_shortcut_zen_focus(),
             zen_focus_font_size: default_zen_focus_font_size(),
+            selection_focus_font_multiplier: default_selection_focus_font_multiplier(),
             word_count_visible: false,
             shortcut_find: default_shortcut_find(),
             shortcut_quick_find: default_shortcut_quick_find(),
@@ -626,20 +636,17 @@ impl Default for AppSettings {
             block_cursor: false,
             block_cursor_color: None,
             cursor_mode: None,
+            line_indicator: None,
             ratchet_encourage_typing: false,
             persisted_panes: Vec::new(),
             panes_hidden_by_context: serde_json::json!({}),
-            window_width: None,
-            window_height: None,
-            window_x: None,
-            window_y: None,
-            last_file_id: None,
-            last_project_id: None,
-            last_stack_id: None,
+            window_width: None, window_height: None, window_x: None, window_y: None,
+            last_file_id: None, last_project_id: None, last_stack_id: None,
             typewriter_mode: false,
             dry_mode: false,
             scroll_position: None,
             proofread_disabled_rules: default_proofread_disabled_rules(),
+            spellcheck_mode: false,
             notebook_appearance_mode: default_notebook_appearance(),
             notebook_theme_id: default_notebook_theme(),
             notebook_background_pattern: default_notebook_bg_pattern(),

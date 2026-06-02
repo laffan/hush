@@ -1,13 +1,16 @@
 /* ===== Right Panel Overlay (mirrors left panel-overlay) ===== */
 #right-panel-overlay {
   position: fixed;
-  top: 0;
-  /* Shift left when a right-docked pane is present so the outline
-     stays associated with the editor rather than the pane. The dock
-     module writes `--pane-dock-right-width` on documentElement. */
+  /* Shift away from any docked panes so the outline stays associated
+     with the editor rather than the pane. The dock module writes the
+     width/height vars on documentElement; bottom/top vars shrink the
+     panel from the matching edge when a top/bottom-dock is present.
+     Height becomes auto so top + bottom can both clamp at once. */
+  top: var(--pane-dock-top-height, 0px);
   right: var(--pane-dock-right-width, 0px);
+  bottom: var(--pane-dock-bottom-height, 0px);
   width: 200px;
-  height: 100%;
+  height: auto;
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
   border-left: 1px solid var(--panel-border);
@@ -27,45 +30,6 @@
   transform: translateX(20px);
   opacity: 0;
   pointer-events: none;
-}
-
-/* Right panel pin button */
-.right-panel-pin-btn {
-  position: fixed;
-  bottom: 12px;
-  right: 172px; /* 200px panel - 15px btn - 13px margin */
-  width: 15px;
-  height: 15px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--sidebar-fg);
-  opacity: 0;
-  pointer-events: none;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  z-index: 101;
-}
-.right-panel-pin-btn svg circle {
-  transition: fill 0.15s;
-}
-
-.right-panel-pin-btn.pin-visible {
-  opacity: 0.4;
-  pointer-events: auto;
-}
-.right-panel-pin-btn.pin-visible:hover {
-  opacity: 0.8;
-}
-.right-panel-pin-btn.pin-visible:hover svg circle {
-  fill: currentColor;
-}
-.right-panel-pin-btn.pin-active {
-  opacity: 0.8;
-  pointer-events: auto;
-}
-.right-panel-pin-btn.pin-active svg circle {
-  fill: currentColor;
 }
 
 /* Right-edge hover trigger — shows a minimalist arrow so the user knows
@@ -269,7 +233,19 @@
   opacity: 1;
 }
 
-/* ===== Outline Content ===== */
+/* ===== Outline Content =====
+   Outline uses the app's UI font (matching the files sidebar / command
+   palette) rather than the active style's editor font, so it reads as
+   navigation chrome rather than as a second editor surface. */
+.longview-content,
+.longview-content .longview-heading,
+.longview-content .longview-line,
+.longview-content .longview-flag,
+.longview-content .longview-callout-title,
+.longview-content .longview-tab-header,
+.longview-content .longview-tab-label {
+  font-family: var(--ui-font-family);
+}
 .longview-content {
   flex: 1;
   overflow-y: auto;

@@ -1,7 +1,7 @@
 /**
  * Notebook export pipeline.
  *
- * Produces rasters (PNG / JPEG / PDF), or the notebook's native JSON
+ * Produces rasters (PNG / JPEG / PDF), or the notebook's native zip
  * (.hushnote), from an open NotesCanvas. The modal in
  * `src/sidebar/notebook-export-modal.js` collects the options and
  * hands them to `exportNotebook()`.
@@ -72,7 +72,7 @@ export async function exportNotebook(
   opts: ExportOptions,
 ): Promise<Uint8Array> {
   if (opts.format === "hushnote") {
-    return encodeHushnote(canvas);
+    return await encodeHushnote(canvas);
   }
 
   if (opts.format === "pdf") {
@@ -208,19 +208,21 @@ function computeContentBounds(shapes: { pocketed?: boolean }[], fontFamily: stri
 
 // ───────────────────── encoders ─────────────────────
 
-function encodeHushnote(canvas: NotesCanvas): Uint8Array {
-  // Same envelope shape used by autosave (see notebook-content.ts), but
-  // pretty-printed for the export-to-disk file. Keeps a single source
-  // of truth for what a `.hushnote` file contains.
-  const payload = {
+async function encodeHushnote(canvas: NotesCanvas): Promise<Uint8Array> {
+  // Route through the same zip writer the Dropbox sync uses
+  // (sync/notebook-sync.js) so the on-disk .hushnote wire format is a
+  // single thing — a zip with data.json + an images/ folder. Image
+  // data URLs get extracted into the zip so big binaries don't live
+  // inline.
+  const envelope = JSON.stringify({
     format: "hushnote",
     version: 1,
     shapes: canvas.getShapes(),
     layers: canvas.state.layers,
     flowEdges: canvas.state.flowchart.serialize(),
-  };
-  const json = JSON.stringify(payload, null, 2);
-  return new TextEncoder().encode(json);
+  });
+  const { packNotebook } = await import("../sync/notebook-sync.js");
+  return await packNotebook(envelope);
 }
 
 async function canvasToBytes(c: HTMLCanvasElement, mime: string, quality?: number): Promise<Uint8Array> {

@@ -169,11 +169,23 @@ body.notebook-mode .column-resizer {
 }
 .notebook-tool-panel-drag-tab[data-vertical="0"] .notebook-tool-panel-drag-grip {
   width: 36px;
-  height: 3px;
+  height: 5px;
 }
 .notebook-tool-panel-drag-tab[data-vertical="1"] .notebook-tool-panel-drag-grip {
-  width: 3px;
+  width: 5px;
   height: 36px;
+}
+
+/* Minimized toolbar — clicking the drag handle without dragging hides
+   the whole bar and parks the handle 15 px in from the docked edge so
+   it stays visible without covering canvas content. Click the handle
+   again to restore. The handle's position is owned by JS in this state
+   so it doesn't drift when the bar's bbox would otherwise change. */
+.notebook-toolbar.notebook-toolbar-minimized {
+  display: none !important;
+}
+.notebook-tool-panel-drag-tab-minimized .notebook-tool-panel-drag-grip {
+  opacity: 0.8;
 }
 .notebook-tool-panel-drag-tab:hover .notebook-tool-panel-drag-grip {
   opacity: 0.6;

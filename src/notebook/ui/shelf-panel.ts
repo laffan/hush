@@ -81,34 +81,79 @@ function allFlagHexes(label: string, flagColors: Record<string, string>): string
   return result;
 }
 
+/** Walk `text` and append a search-highlighted text fragment to `parent`.
+ *  Matches of `query` (case-insensitive) are painted with the shared
+ *  highlight tint so the user can see what their search is hitting in
+ *  the shelf row while typing. */
+function appendWithSearchHighlight(parent: Node, text: string, query: string, hlBg: string): void {
+  if (!query) { parent.appendChild(document.createTextNode(text)); return; }
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  let i = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(q, i);
+    if (idx === -1) {
+      parent.appendChild(document.createTextNode(text.slice(i)));
+      return;
+    }
+    if (idx > i) parent.appendChild(document.createTextNode(text.slice(i, idx)));
+    const hi = document.createElement("span");
+    hi.style.background = hlBg;
+    hi.style.borderRadius = "2px";
+    hi.textContent = text.slice(idx, idx + q.length);
+    parent.appendChild(hi);
+    i = idx + q.length;
+  }
+}
+
 /** Render a shelf-row label, painting `==highlight==` runs with the
- *  user's flag colour when the inner text matches a known flag, or the
- *  shared default highlight tint otherwise. Returns a span ready to
- *  drop into a row; falls back to a plain text node when there are no
- *  markers. */
-function renderLabelInline(label: string, flagColors: Record<string, string>): HTMLElement | Text {
-  if (!label.includes("==")) return document.createTextNode(label);
+ *  user's flag colour when the inner text matches a known flag (or the
+ *  shared default highlight tint otherwise), `**bold**` runs in 600,
+ *  and — when a `searchQuery` is supplied — wrapping every match of that
+ *  query in a subtle tint so the user can see what their search is
+ *  hitting while typing. Returns a span ready to drop into a row; falls
+ *  back to a plain text node when there are no markers and no query. */
+function renderLabelInline(
+  label: string,
+  flagColors: Record<string, string>,
+  searchQuery: string = "",
+  searchHlBg: string = "",
+): HTMLElement | Text {
+  const hasMarkers = label.includes("==") || label.includes("**");
+  if (!hasMarkers && !searchQuery) return document.createTextNode(label);
   const wrap = document.createElement("span");
-  const re = /==([^=]+?)==/g;
+  // Matches `==highlight==` OR `**bold**` — first capture group catches
+  // the highlight body, second the bold body. Lazy bodies so adjacent
+  // runs don't fuse.
+  const re = /==([^=]+?)==|\*\*([^*]+?)\*\*/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(label)) !== null) {
-    if (m.index > last) wrap.appendChild(document.createTextNode(label.slice(last, m.index)));
-    const hi = document.createElement("span");
-    const flag = m[1].match(SHELF_FLAG_RE);
-    let bg = DEFAULT_HIGHLIGHT_BG;
-    if (flag) {
-      const c = flagColors[flag[1].toUpperCase()];
-      if (c) bg = hexToRgba(c, 0.3);
+    if (m.index > last) appendWithSearchHighlight(wrap, label.slice(last, m.index), searchQuery, searchHlBg);
+    if (m[1] !== undefined) {
+      // ==highlight==
+      const hi = document.createElement("span");
+      const flag = m[1].match(SHELF_FLAG_RE);
+      let bg = DEFAULT_HIGHLIGHT_BG;
+      if (flag) {
+        const c = flagColors[flag[1].toUpperCase()];
+        if (c) bg = hexToRgba(c, 0.3);
+      }
+      Object.assign(hi.style, {
+        background: bg, padding: "0 2px", borderRadius: "2px",
+      } as Partial<CSSStyleDeclaration>);
+      appendWithSearchHighlight(hi, m[1], searchQuery, searchHlBg);
+      wrap.appendChild(hi);
+    } else if (m[2] !== undefined) {
+      // **bold**
+      const bold = document.createElement("span");
+      bold.style.fontWeight = "600";
+      appendWithSearchHighlight(bold, m[2], searchQuery, searchHlBg);
+      wrap.appendChild(bold);
     }
-    Object.assign(hi.style, {
-      background: bg, padding: "0 2px", borderRadius: "2px",
-    } as Partial<CSSStyleDeclaration>);
-    hi.textContent = m[1];
-    wrap.appendChild(hi);
     last = m.index + m[0].length;
   }
-  if (last < label.length) wrap.appendChild(document.createTextNode(label.slice(last)));
+  if (last < label.length) appendWithSearchHighlight(wrap, label.slice(last), searchQuery, searchHlBg);
   return wrap;
 }
 
@@ -138,7 +183,7 @@ export function createShelfPanel(
   let openWidth = Math.max(200, opts.initialWidth ?? 280);
 
   const panel = h("div", {
-    style: { position: "absolute", top: "calc(env(safe-area-inset-top) + 20px)", right: "calc(env(safe-area-inset-right) + var(--pane-dock-right-width, 0px))", bottom: "calc(env(safe-area-inset-bottom) + 20px)", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
+    style: { position: "absolute", top: "calc(env(safe-area-inset-top) + 20px + var(--pane-dock-top-height, 0px))", right: "calc(env(safe-area-inset-right) + var(--pane-dock-right-width, 0px))", bottom: "calc(env(safe-area-inset-bottom) + 20px + var(--pane-dock-bottom-height, 0px))", zIndex: "150", display: "flex", flexDirection: "column", transition: "width 0.2s", overflow: "hidden", width: "24px", minWidth: "24px", borderRadius: "12px 0 0 12px" },
   });
   panel.classList.add("notebook-shelf");
 
@@ -170,6 +215,10 @@ export function createShelfPanel(
   function applyTheme() {
     const theme = t();
     panel.style.background = theme.uiBackground;
+    // Use the app's UI font (matches the file sidebar) rather than the
+    // active style's editor font, which would otherwise cascade in via
+    // the canvas's `--font-family`.
+    panel.style.fontFamily = "var(--ui-font-family)";
     // Match the files sidebar's subtle panel border (--panel-border) rather
     // than the fainter canvas grid colour so the two read consistently.
     const panelBorder = getComputedStyle(document.documentElement)
@@ -449,10 +498,12 @@ export function createShelfPanel(
       },
     });
     row.appendChild(tag);
-    row.appendChild(h("span", {
-      text: p.fileName || "Untitled",
+    const nameSpan = h("span", {
       style: { flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    }));
+    });
+    const highlightBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
+    appendWithSearchHighlight(nameSpan, p.fileName || "Untitled", search.trim(), highlightBg);
+    row.appendChild(nameSpan);
     row.addEventListener("click", () => { if (opts.onFocusPane) opts.onFocusPane(p.id); });
     return row;
   }
@@ -514,7 +565,26 @@ export function createShelfPanel(
       },
       onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0),
     });
-    labelSpan.appendChild(renderLabelInline(node.label, flagColors));
+    const searchHlBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
+    const q = search.trim();
+    // When a search is active and the match only exists in the body
+    // (excerpt), swap the row's label for a snippet centred on the
+    // first hit so the user can see why the row matched. The label
+    // alone — usually the first line / heading — would read as an
+    // unhelpful "row with no visible match" otherwise. Falls back to
+    // the regular label when the query also hits the label (the
+    // standard inline highlight already shows the user where).
+    const labelHasMatch = q && node.label.toLowerCase().includes(q.toLowerCase());
+    if (q && !labelHasMatch && node.excerpt) {
+      const matches = findContentMatches(node.excerpt, q, 1);
+      if (matches.length > 0) {
+        labelSpan.appendChild(buildSnippet(node.excerpt, matches[0].start, q.length, muted, searchHlBg));
+      } else {
+        labelSpan.appendChild(renderLabelInline(node.label, flagColors, q, searchHlBg));
+      }
+    } else {
+      labelSpan.appendChild(renderLabelInline(node.label, flagColors, q, searchHlBg));
+    }
     row.appendChild(labelSpan);
     // Fall-back: clicks on the row that didn't land on the label span
     // (icon, padding) still pan. Without this the pin button + flow
@@ -540,6 +610,13 @@ export function createShelfPanel(
   };
   (panel as ShelfPanelEl).__getShelfWidth = () => openWidth;
   (panel as ShelfPanelEl).__isShelfOpen = () => isOpen;
+  // Quick-find (Cmd+F) in a notebook routes here instead of the doc find
+  // bar: open the shelf if needed and drop the caret into the search box.
+  (panel as ShelfPanelEl).__openAndFocusSearch = () => {
+    if (!isOpen) { isOpen = true; rebuild(); }
+    searchInput.focus();
+    searchInput.select();
+  };
 
   state.addEventListener("change", rebuild);
   rebuild();
@@ -550,6 +627,7 @@ export interface ShelfPanelEl extends HTMLElement {
   __setShelfWidth?: (w: number) => void;
   __getShelfWidth?: () => number;
   __isShelfOpen?: () => boolean;
+  __openAndFocusSearch?: () => void;
 }
 
 /** Find every occurrence of `q` (case-insensitive) inside `content` and

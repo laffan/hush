@@ -21,6 +21,40 @@
   z-index: 0; /* Creates stacking context so marginalia stays below sidebar/panels */
 }
 
+/* "In the trash" banner — fixed strip above the editor. Pairs with the
+   editor's read-only lock so trashed files stay viewable without the
+   autosave loop quietly writing into a file the user has thrown away. */
+.trash-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  padding: 6px 16px;
+  text-align: center;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: #c0392b;
+  pointer-events: none;
+}
+.trash-banner.hidden {
+  display: none;
+}
+
+/* When a trashed file is open, gate input on the notebook canvas the
+   same way the editor's CodeMirror read-only compartment gates the doc
+   surface. Pointer events on the canvas itself (and its overlays) are
+   blocked; the toolbar / shelf stay reachable so the user can still
+   navigate. */
+body.file-in-trash #notebook-container .notes-canvas,
+body.file-in-trash #notebook-container .notes-canvas + * {
+  pointer-events: none;
+}
+
 #editor-container .cm-editor {
   height: 100%;
   font-family: var(--font-family);
@@ -68,33 +102,123 @@
   line-height: var(--line-height);
 }
 
-#editor-container .cm-cursor {
+#editor-container .cm-cursor,
+.zen-focus-overlay .cm-cursor,
+.selection-focus-overlay .cm-cursor {
   border-left-color: var(--cursor);
   border-left-width: 2px;
 }
 
-/* Block cursor mode */
-#editor-container.block-cursor .cm-cursor {
+/* Block cursor mode — also targets the Zen Focus and Selection Focus
+   overlays, which mount their own CodeMirror outside `#editor-container`.
+   The cursor's `0.6em` width is relative to the cursor element's
+   computed font-size, which inherits from `.cm-scroller` (the main
+   editor uses --font-size; Zen uses --zen-font-size; Selection Focus
+   uses --selection-focus-font-size), so the block scales with whichever
+   surface it's painted in. */
+#editor-container.block-cursor .cm-cursor,
+.zen-focus-overlay.block-cursor .cm-cursor,
+.selection-focus-overlay.block-cursor .cm-cursor {
   border-left: none;
   background: var(--block-cursor-color, var(--cursor));
   opacity: 0.55;
   width: 0.6em !important;
 }
 
-/* Underline cursor mode — a 3 px block-width strip pinned below the
+/* Underline cursor mode — a block-width strip pinned below the
    text. We keep the cm-cursor's natural height (= line height) and
    draw the strip as a border-bottom so it sits at the bottom edge of
    the line box, well clear of the descenders rather than overlapping
-   the bottom of the glyphs. */
-#editor-container.underline-cursor .cm-cursor {
+   the bottom of the glyphs. Strip thickness is em-relative so it
+   scales with the surface's font size (Zen's larger font no longer
+   leaves a hairline strip under chunky text). */
+#editor-container.underline-cursor .cm-cursor,
+.zen-focus-overlay.underline-cursor .cm-cursor,
+.selection-focus-overlay.underline-cursor .cm-cursor {
   border-left: none;
-  border-bottom: 3px solid var(--block-cursor-color, var(--cursor));
+  border-bottom: 0.18em solid var(--block-cursor-color, var(--cursor));
   background: transparent;
   opacity: 0.7;
   width: 0.6em !important;
 }
 
 
+
+/* ===== Line Indicator (per-style "highlight current line" affordance) =====
+   The editor's createLineIndicatorPlugin appends a `.hush-line-ind`
+   overlay inside `view.scrollDOM`; its top + height track the cursor's
+   actual visual line (via `view.coordsAtPos`), so wrapped lines pick
+   the right band rather than centring inside a paragraph. The
+   container carries a `line-ind-<variant>` class — the rules below
+   skin the overlay accordingly. The preview pane uses the same
+   `.preview-active-line` shim it always had, since it only ever shows
+   one short line of demo text. */
+.line-ind-highlight .hush-line-ind,
+.line-ind-highlight .preview-active-line {
+  background-color: color-mix(in srgb, var(--line-indicator-color, var(--cursor)) 10%, transparent);
+}
+/* Borders sit 10 px outside the text column (matching the arrow gap)
+   rather than hugging the text edge, so the indicator reads as a
+   marker beside the line rather than a frame around it. ::before is
+   the left stripe; ::after (Border only) is the right stripe. */
+.line-ind-left-border .hush-line-ind::before,
+.line-ind-left-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::before,
+.line-ind-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::after,
+.line-ind-border .preview-active-line::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--line-indicator-color, var(--cursor));
+  pointer-events: none;
+}
+.line-ind-left-border .hush-line-ind::before,
+.line-ind-left-border .preview-active-line::before,
+.line-ind-border .hush-line-ind::before,
+.line-ind-border .preview-active-line::before {
+  left: -13px;
+}
+.line-ind-border .hush-line-ind::after,
+.line-ind-border .preview-active-line::after {
+  right: -13px;
+}
+.line-ind-left-arrow .preview-active-line,
+.line-ind-double-arrow .preview-active-line,
+.line-ind-left-border .preview-active-line,
+.line-ind-border .preview-active-line {
+  position: relative;
+}
+.line-ind-left-arrow .hush-line-ind::before,
+.line-ind-left-arrow .preview-active-line::before,
+.line-ind-double-arrow .hush-line-ind::before,
+.line-ind-double-arrow .preview-active-line::before,
+.line-ind-double-arrow .hush-line-ind::after,
+.line-ind-double-arrow .preview-active-line::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.line-ind-left-arrow .hush-line-ind::before,
+.line-ind-left-arrow .preview-active-line::before,
+.line-ind-double-arrow .hush-line-ind::before,
+.line-ind-double-arrow .preview-active-line::before {
+  left: -18px;
+  border-left: 8px solid var(--line-indicator-color, var(--cursor));
+}
+.line-ind-double-arrow .hush-line-ind::after,
+.line-ind-double-arrow .preview-active-line::after {
+  right: -18px;
+  border-right: 8px solid var(--line-indicator-color, var(--cursor));
+}
 
 #editor-container .cm-selectionBackground {
   background: var(--selection, rgba(128, 128, 128, 0.3)) !important;
@@ -238,7 +362,8 @@ body.cmd-held .column-mover:hover,
   z-index: calc(var(--z-modal-top) + 1);
   pointer-events: none;
 }
-body.zen-focus-active .cmd-held-sliders-wrap { display: flex; }
+body.zen-focus-active .cmd-held-sliders-wrap:not(.selection-focus-sliders),
+body.selection-focus-active .cmd-held-sliders-wrap.selection-focus-sliders { display: flex; }
 
 /* Caret — small chevron that only paints when Cmd is held. Hover
    target sits flush at the screen edge with generous padding so the
@@ -256,8 +381,10 @@ body.zen-focus-active .cmd-held-sliders-wrap { display: flex; }
   user-select: none;
 }
 .cmd-held-sliders-caret svg { display: block; }
-body.zen-focus-active.cmd-held .cmd-held-sliders-caret { opacity: 0.45; }
-body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-caret { opacity: 0.8; }
+body.zen-focus-active.sliders-near-bottom .cmd-held-sliders-wrap:not(.selection-focus-sliders) .cmd-held-sliders-caret,
+body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection-focus-sliders .cmd-held-sliders-caret { opacity: 0.45; }
+body.zen-focus-active.sliders-near-bottom .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders-caret,
+body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders-caret { opacity: 0.8; }
 
 /* Pill — hidden until the wrap is hovered (caret OR pill itself).
    No border; Zen's bottom curtain already isolates it from content. */
@@ -271,7 +398,10 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-ca
   background: color-mix(in srgb, var(--theme-bg, var(--bg)) 92%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  font: 500 12px/1 var(--font-family);
+  /* App UI font (system stack) so the pill reads as chrome rather
+     than picking up the editor's style font — matches sidebars,
+     modals, and the rest of the surrounding UI. */
+  font: 500 12px/1 var(--ui-font-family);
   color: var(--fg);
   opacity: 0;
   transform: translateY(8px);
@@ -280,7 +410,8 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-ca
      a click target while it's still invisible. */
   visibility: hidden;
 }
-body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
+body.zen-focus-active.sliders-near-bottom .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders,
+body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders {
   opacity: 1;
   transform: translateY(0);
   visibility: visible;

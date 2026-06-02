@@ -17,6 +17,11 @@
   --accent: #666;
   --private-box: #e0e0e0;
   --font-family: 'Source Sans Pro', 'Helvetica Neue', 'Arial', sans-serif;
+  /* App-chrome font used by the files sidebar, command palette, outline
+     view, pane title bars, and stack spines. Deliberately separate from
+     --font-family so the active style's editor font doesn't bleed into
+     navigation chrome. */
+  --ui-font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-size: 16px;
   --line-height: 1.5;
   --padding: 50px;
@@ -91,6 +96,17 @@ html, body {
   font-family: var(--font-family);
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Modals are app chrome, never editor surface — always paint them in
+   the UI font (system-ui stack) so the active style's editor font
+   doesn't bleed into Versions, Edit Styles, Export, Settings, etc.
+   Substring matches every existing modal root and its child elements.
+   The `body` prefix bumps specificity to (0,1,1) so per-modal
+   `.foo-modal { font-family: inherit }` rules in later-loading CSS
+   files no longer win on source-order alone. */
+body [class*="modal"] {
+  font-family: var(--ui-font-family);
 }
 
 /* iPad: a drag (incl. space+drag pan) on app chrome would otherwise begin

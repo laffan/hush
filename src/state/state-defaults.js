@@ -33,6 +33,12 @@ export function createDefaultSettings() {
     // the legacy `blockCursor` boolean when null so existing installs
     // keep their setting.
     cursorMode: null,
+    // Active-line indicator for the Default style. Per-style overrides
+    // live on `Style.lineIndicator`. One of "none", "left-arrow",
+    // "double-arrow", "left-border", "border", "highlight". The
+    // indicator colour rides per-appearance on defaultLightColors /
+    // defaultDarkColors under the `lineIndicator` key.
+    lineIndicator: "none",
     typewriterLineOpacity: 0.08,
     // %% comment %% opacity. Markers dim to 2/3 of this value so the
     // delimiters fade further than the body content.
@@ -242,6 +248,10 @@ export function createDefaultSettings() {
     // the per-rule disable list is.
     proofreadDisabledRules: ["LongSentences"],
 
+    // Spellcheck (spellbook crate, en_US Hunspell). Persisted because
+    // load is ~10 ms — no cold-start penalty worth deferring.
+    spellcheckMode: false,
+
     // Session state
     lastFileId: null,
     lastProjectId: null,
@@ -258,5 +268,9 @@ export function createDefaultSettings() {
     typewriterMode: false,
     dryMode: false,
     scrollPosition: null,
+    // Per-doc main-editor scroll positions, keyed by fileId. Persists
+    // across file switches and app restarts. FIFO-trimmed to 100 keys
+    // so it can't grow without bound.
+    docScrollPositions: {},
   };
 }

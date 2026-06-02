@@ -30,21 +30,40 @@ export function isPhone() {
 
 let settingsModal = null;
 
-export async function openSettingsWindow(state) {
+/** Serialise a {tab, subTab} request into the URL-hash form the settings
+ *  window reads on init (`#tab` or `#tab/subTab`). Returns "" when no
+ *  tab is requested so callers can land on the default landing tab. */
+function tabHash(opts) {
+  const tab = opts?.tab;
+  if (!tab) return "";
+  const sub = opts?.subTab;
+  return sub ? `#${tab}/${sub}` : `#${tab}`;
+}
+
+export async function openSettingsWindow(state, opts) {
   if (isIOS()) {
-    openSettingsModal(state);
+    openSettingsModal(state, opts);
     return;
   }
+
+  const hash = tabHash(opts);
 
   if (IS_TAURI) {
     const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
     const existing = await WebviewWindow.getByLabel("settings");
     if (existing) {
       await existing.setFocus();
+      if (opts?.tab) {
+        // Re-route the open window to the requested tab without forcing
+        // a reload, so any in-progress edits the user has on screen
+        // (e.g. an unsaved shortcut rebind) aren't lost.
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("settings-goto-tab", { tab: opts.tab, subTab: opts.subTab || null });
+      }
       return;
     }
     new WebviewWindow("settings", {
-      url: "/settings.html",
+      url: "/settings.html" + hash,
       title: "Hush Settings",
       width: 640,
       height: 580,
@@ -53,13 +72,21 @@ export async function openSettingsWindow(state) {
       decorations: true,
     });
   } else {
-    window.open("/settings.html", "_blank");
+    window.open("/settings.html" + hash, "_blank");
   }
 }
 
-async function openSettingsModal(state) {
-  // If already open, focus it
+async function openSettingsModal(state, opts) {
+  // If already open and a specific tab was requested, switch to it
+  // in-place rather than toggling the modal closed. With no tab arg
+  // the icon behaves as a toggle (matches the prior open-on-click,
+  // close-on-second-click sidebar Settings button).
   if (settingsModal) {
+    if (opts?.tab) {
+      const { setActiveTab } = await import("./settings-window.js");
+      setActiveTab(opts.tab, opts.subTab || null);
+      return;
+    }
     closeSettingsModal();
     return;
   }
@@ -113,8 +140,9 @@ async function openSettingsModal(state) {
   });
 
   // Render settings into the modal root
-  const { initSettingsInto } = await import("./settings-window.js");
+  const { initSettingsInto, setActiveTab } = await import("./settings-window.js");
   const root = modal.querySelector(".settings-modal-root");
+  if (opts?.tab) setActiveTab(opts.tab, opts.subTab || null);
 
   await initSettingsInto(root, (newSettings) => {
     // Directly apply settings to state (same window, no cross-window emit).

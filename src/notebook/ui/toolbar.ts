@@ -103,29 +103,49 @@ export function createToolbar(state: DrawingState): HTMLElement {
     // leftInset = sidebar; rightInset = shelf (which already shifts with
     // any right-dock via the CSS var). dockedLeftWidth is added so a
     // left-dock pushes the toolbar inboard the same way the sidebar does.
+    // The top/bottom dock heights similarly push the toolbar inboard
+    // when it's anchored to the top or bottom edge.
     const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
     const rightInset = state.rightInset || 0;
+    const topInset = state.dockedTopHeight || 0;
+    const bottomInset = state.dockedBottomHeight || 0;
     const offset = state.drawingToolbarOffset || { x: 0, y: 0 };
     const parentEl = container.parentElement;
     const parentW = parentEl?.clientWidth || window.innerWidth;
     const parentH = parentEl?.clientHeight || window.innerHeight;
     const usableW = Math.max(0, parentW - leftInset - rightInset);
+    const usableH = Math.max(0, parentH - topInset - bottomInset);
 
-    // Responsive compaction: applies in any horizontal layout.
+    // Responsive compaction: applies in any horizontal layout. Triggered
+    // when either the available width can't accommodate the natural bar
+    // width OR the parent's height is too short to leave breathing room
+    // around the full-size bar (e.g. a notebook pane that's been shrunk
+    // vertically — the previous logic only watched width so the bar
+    // stayed at 36 px and crowded a short pane).
     const vertical = state.drawingToolbarVertical;
     let compact = false;
     if (!vertical) {
       // Quick natural-width estimate: ~44px per visible child (36px button + 4px gap + padding).
       const childCount = Array.from(container.children).filter((c) => (c as HTMLElement).offsetParent !== null || true).length;
       const estimate = childCount * 44 + 64; // 64 for drag tab + bar padding
-      compact = estimate > usableW - 80;
+      // Full-size bar is ~38 px tall; with EDGE_PAD top + bottom plus the
+      // drag-handle strip we need ~120 px of vertical room. Below that
+      // we force compaction so the smaller buttons leave room for the
+      // canvas underneath.
+      const HEIGHT_COMPACT_THRESHOLD = 180;
+      compact = estimate > usableW - 80 || parentH < HEIGHT_COMPACT_THRESHOLD;
+    } else {
+      // Vertical bar: tall enough naturally already, but if the parent
+      // is very narrow we still want smaller hit targets.
+      const VERTICAL_WIDTH_COMPACT_THRESHOLD = 120;
+      compact = parentW < VERTICAL_WIDTH_COMPACT_THRESHOLD;
     }
     applyCompactMode(compact);
 
     switch (state.drawingToolbarPosition) {
       case "left": {
         container.style.flexDirection = "column";
-        container.style.top = (parentH / 2) + "px";
+        container.style.top = (topInset + usableH / 2) + "px";
         container.style.transform = "translateY(-50%)";
         container.style.left = `${leftInset + 16}px`;
         break;
@@ -135,7 +155,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = center + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.bottom = `${EDGE_PAD}px`;
+        container.style.bottom = `${EDGE_PAD + bottomInset}px`;
         break;
       }
       case "custom": {
@@ -143,7 +163,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = (center + offset.x) + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.top = `${EDGE_PAD + offset.y}px`;
+        container.style.top = `${EDGE_PAD + topInset + offset.y}px`;
         break;
       }
       case "top":
@@ -152,7 +172,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = center + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.top = `${EDGE_PAD}px`;
+        container.style.top = `${EDGE_PAD + topInset}px`;
         break;
       }
     }

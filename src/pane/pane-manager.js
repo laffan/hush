@@ -18,7 +18,6 @@ import {
 } from "./pane-state.js";
 import {
   loadPaneContent, savePaneContent, autosaveAllPanes,
-  findLockedStyleForFile,
   syncAllPaneWordCounts,
 } from "./pane-content.js";
 import { schedulePersist, restorePanes as _restorePanes } from "./pane-persistence.js";
@@ -29,6 +28,8 @@ import {
   fitActivePaneToGap as _fitActivePaneToGap,
   centerPaneInViewport,
 } from "./pane-layout.js";
+import { measureEditorColumnWidth } from "./pane-inline.js";
+import { syncPaneRatchetLock, previewPaneStyle, syncPaneThemes } from "./pane-theme-sync.js";
 
 // Inject local DOM-builder + context handler (avoids pane-persistence → pane-manager cycle).
 const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
@@ -49,30 +50,16 @@ export function initPaneManager(state) {
   setAutosaveTimer(setInterval(autosaveAllPanes, 2000));
   state.on("theme-changed", syncPaneThemes);
   state.on("style-changed", syncPaneThemes);
-  // Hover preview: the styles sidebar emits style-preview while a row
-  // is hovered and style-preview-end on leave. Panes need to track
-  // both so the user gets the same "what will this style look like?"
-  // affordance the main editor already has.
   state.on("style-preview", previewPaneStyle);
   state.on("style-preview-end", syncPaneThemes);
-  // Ratchet locks every pane to read-only — the forward-only contract
-  // doesn't survive if the user can drop into a pane and edit there.
-  // Scrolling and panning still work because we only flip the editor's
-  // editable flag, not the pane container's pointer events.
   state.on("mode-changed", syncPaneRatchetLock);
-  // The file-tree node stores `lockedStyleId`; re-sync whenever the tree
-  // changes so panes pick up a newly-set (or cleared) lock without the
-  // user having to reopen them.
+  // Pick up newly-set / cleared `lockedStyleId` on tree nodes.
   state.on("files-changed", syncPaneThemes);
-  // Refresh pane word-count chips when the global toggle flips.
   state.on("settings-changed", syncAllPaneWordCounts);
-  // Re-flow docked panes when the window or sidebar resizes so they
-  // keep filling their edge.
   import("./pane-dock.js").then((m) => m.installDockReflowListeners());
   getNotebookBridge().catch(() => {});
-  // Deactivate panes when clicking anywhere outside a pane. Zen Focus
-  // reparents the editor out of `.floating-pane` so we whitelist the
-  // overlay too — otherwise every click during Zen would deactivate.
+  // Zen Focus reparents the editor out of `.floating-pane`, so the
+  // overlay is whitelisted — otherwise every Zen click would deactivate.
   window.addEventListener("pointerdown", (e) => {
     if (!activePaneId) return;
     if (e.target instanceof Element && e.target.closest(".floating-pane")) return;
@@ -80,7 +67,6 @@ export function initPaneManager(state) {
     saveAllPanes();
     deactivateAllPanes();
   }, true);
-  // Show/hide panes when the active document changes
   state.on("file-opened", onContextChange);
   state.on("notebook-open", onContextChange);
   state.on("notebook-unmount", onContextChange);
@@ -174,8 +160,10 @@ function onContextChange() {
   notifyLayoutChange();
   // Context switches change which panes are visible — re-publish the
   // dock CSS vars so chrome in the new context stops shifting for a
-  // pane that's docked but hidden (owner is a different doc).
-  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
+  // pane that's docked but hidden (owner is a different doc), and
+  // re-flex remaining docks so a visible cross-axis sibling reclaims
+  // the space the hidden ones had carved out.
+  import("./pane-dock.js").then((m) => { m.publishDockCssVars(); m.reflowAllDockedPanes(); }).catch(() => {});
 }
 
 /** Collect pane-layout signals into a single payload. Floating panes
@@ -188,18 +176,26 @@ function _collectPaneMetrics() {
   let centroidSum = 0;
   let dockedLeftWidth = 0;
   let dockedRightWidth = 0;
+  let dockedTopHeight = 0;
+  let dockedBottomHeight = 0;
   for (const [, p] of panes) {
     if (p.el?.style.display === "none") continue;
+    if (p.inline) continue; // inline panes have their own CM block widget
     if (p.docked) {
       if (p.dockEdge === "left") dockedLeftWidth = Math.max(dockedLeftWidth, p.width || 0);
       if (p.dockEdge === "right") dockedRightWidth = Math.max(dockedRightWidth, p.width || 0);
+      if (p.dockEdge === "top") dockedTopHeight = Math.max(dockedTopHeight, p.height || 0);
+      if (p.dockEdge === "bottom") dockedBottomHeight = Math.max(dockedBottomHeight, p.height || 0);
       continue;
     }
     hasFloatingPane = true;
     floatingCount++;
     centroidSum += (p.x || 0) + (p.width || 0) / 2;
   }
-  return { hasFloatingPane, floatingCount, centroidSum, dockedLeftWidth, dockedRightWidth };
+  return {
+    hasFloatingPane, floatingCount, centroidSum,
+    dockedLeftWidth, dockedRightWidth, dockedTopHeight, dockedBottomHeight,
+  };
 }
 
 /** Lighter-weight refresh fired during a pane drag. Recomputes the
@@ -209,21 +205,29 @@ function _collectPaneMetrics() {
  *  which would churn unrelated subscribers on every pointermove. */
 export function refreshPaneLayoutMetrics() {
   const m = _collectPaneMetrics();
-  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane
+    || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0
+    || m.dockedTopHeight > 0 || m.dockedBottomHeight > 0;
   appState.runtime.visiblePaneCount = m.floatingCount;
   appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
   appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
   appState.runtime.dockedRightWidth = m.dockedRightWidth;
+  appState.runtime.dockedTopHeight = m.dockedTopHeight;
+  appState.runtime.dockedBottomHeight = m.dockedBottomHeight;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
 }
 
 function notifyLayoutChange() {
   const m = _collectPaneMetrics();
-  appState.runtime.hasVisibleDocPane = m.hasFloatingPane || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0;
+  appState.runtime.hasVisibleDocPane = m.hasFloatingPane
+    || m.dockedLeftWidth > 0 || m.dockedRightWidth > 0
+    || m.dockedTopHeight > 0 || m.dockedBottomHeight > 0;
   appState.runtime.visiblePaneCount = m.floatingCount;
   appState.runtime.visiblePaneCentroid = m.floatingCount > 0 ? m.centroidSum / m.floatingCount : null;
   appState.runtime.dockedLeftWidth = m.dockedLeftWidth;
   appState.runtime.dockedRightWidth = m.dockedRightWidth;
+  appState.runtime.dockedTopHeight = m.dockedTopHeight;
+  appState.runtime.dockedBottomHeight = m.dockedBottomHeight;
   if (appState.runtime.columnResizeHandler) appState.runtime.columnResizeHandler();
   // Surface pane-set changes to the notebook shelf (and any other
   // listener) so its pane rows can refresh on create/close/show/hide.
@@ -241,10 +245,7 @@ export function destroyPaneManager() {
 }
 
 export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
-  // Don't open duplicate panes for the same file in the same context
-  // (skip check when explicitly duplicating via opts.allowDuplicate).
-  // Local Sync panes use `fileId` composed of folder id + rel path so
-  // the check still works without per-type special-casing.
+  // De-dupe per (fileId, ownerContext) unless the caller explicitly opted in.
   if (!opts.allowDuplicate) {
     const ctx = opts.ownerContext || getCurrentContext();
     for (const [, p] of panes) {
@@ -253,38 +254,40 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   }
 
   const id = crypto.randomUUID();
+  const inline = opts.inline
+    ? { anchorTitle: opts.inline.anchorTitle, occurrence: opts.inline.occurrence | 0, height: opts.inline.height || 500 }
+    : null;
+  const initW = inline ? (measureEditorColumnWidth() || DEFAULT_WIDTH) : DEFAULT_WIDTH;
+  const initH = inline ? inline.height : DEFAULT_HEIGHT;
   const pane = {
     id,
     fileId,
     fileName,
     fileType,
     collapsed: false,
-    attached: false,  // anchored to canvas (notebook) or scroll (doc)
-    pinned: false,    // persists across document switches (blue header)
+    attached: false,
+    pinned: false,
+    inline,
     dirty: false,
-    editor: null,       // CodeMirror wrapper (docs)
-    notebook: null,     // NotesCanvas instance (notebooks)
-    el: null,           // root DOM element
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
-    // Clamp to the viewport so callers that pass a hard-coded anchor
-    // (the command palette's "Open as pane" uses `62, 60`) never land
-    // a pane off-screen on narrow windows. The lower bound also keeps
-    // the title bar visible when the requested anchor is well above
-    // the document area.
+    editor: null,
+    notebook: null,
+    el: null,
+    width: initW,
+    height: initH,
+    // Clamp so callers passing a hard-coded anchor (cmd palette uses 62, 60)
+    // never land a pane off-screen on narrow windows.
     x: clampPaneAxis(x - DEFAULT_WIDTH / 2, DEFAULT_WIDTH, window.innerWidth),
     y: clampPaneAxis(y - TITLEBAR_HEIGHT / 2, DEFAULT_HEIGHT, window.innerHeight),
-    // Owner context: doc/notebook/project active at creation. Nullish-coalesce so callers can pass "" to opt out (zotero panes).
+    // Nullish-coalesce so callers can pass "" to opt out (zotero panes).
     ownerContext: opts.ownerContext ?? getCurrentContext(),
-    // Local Sync coordinates — present only for panes backed by a
-    // mounted-folder file. `{ folderId, relPath }`. The load/save path
-    // branches on this to hit local_sync_read_file / local_sync_write_file
-    // instead of the internal file store.
     localSync: opts.localSync || null,
     zotero: opts.zotero || null,
   };
 
   buildPaneDOM(pane);
+  // Inline panes park off-screen so CM can measure during loadPaneContent;
+  // the inline plugin reparents into its widget host next.
+  if (pane.inline) Object.assign(pane.el.style, { position: "absolute", left: "-99999px", top: "0px", width: pane.width + "px", height: pane.height + "px" });
   containerEl.appendChild(pane.el);
   pane.el.style.zIndex = zForPane(pane);
   panes.set(id, pane);
@@ -299,18 +302,17 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
  *  pane visibility after merging remote panes from another device. */
 export { onContextChange as refreshPaneContextVisibility };
 
-/** Swap the file currently displayed in `paneId` for a different one,
- *  preserving the pane's position, size, attach, pin, and ownerContext.
- *  Called from the command palette's "Replace pane content" entry. */
-export async function replacePaneContent(paneId, fileId, fileName, fileType) {
-  const pane = panes.get(paneId);
-  if (!pane) return;
-  // Persist whatever is in the pane right now before tearing it down.
-  await savePaneContent(pane);
-  // Detach listeners + the canvas/scroll attach loop. Rebuilt by loadPaneContent.
+/** Detach every listener + content instance from a pane without touching
+ *  the DOM root. Shared by `closePane` (which then removes pane.el) and
+ *  `replacePaneContent` (which rebuilds in place). */
+function teardownPaneContent(pane) {
   if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
   if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
   if (pane._bgChangeListener) { document.removeEventListener("notebook-bg-changed", pane._bgChangeListener); pane._bgChangeListener = null; }
+  if (pane._cameraChangeListener && pane._content) {
+    pane._content.removeEventListener("notebook-camera-change", pane._cameraChangeListener);
+    pane._cameraChangeListener = null;
+  }
   if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
   if (pane.attached) stopAttachSync(pane);
   if (pane.editor) { try { pane.editor.destroy(); } catch (_) {} pane.editor = null; }
@@ -318,7 +320,15 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
   if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
   if (pane.stackInstance) { try { pane.stackInstance.destroy(); } catch (_) {} pane.stackInstance = null; }
   if (pane._stackSaveInterval) { clearInterval(pane._stackSaveInterval); pane._stackSaveInterval = null; }
-  // Reset content area so the new editor/notebook mounts into a clean DOM.
+}
+
+/** Swap the file currently displayed in `paneId` for a different one,
+ *  preserving the pane's position, size, attach, pin, and ownerContext. */
+export async function replacePaneContent(paneId, fileId, fileName, fileType) {
+  const pane = panes.get(paneId);
+  if (!pane) return;
+  await savePaneContent(pane);
+  teardownPaneContent(pane);
   if (pane._content) pane._content.replaceChildren();
 
   pane.fileId = fileId;
@@ -326,10 +336,10 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
   pane.fileType = fileType;
   pane.dirty = false;
   pane.editorScrollTop = 0;
+  pane.notebookCamera = null;
   pane.localSync = null;
   pane.zotero = null;
 
-  // Update the title bar text without rebuilding the toolbar.
   const titleLink = pane._titlebar?.querySelector(".fp-title-link");
   if (titleLink) titleLink.textContent = fileName;
 
@@ -341,28 +351,20 @@ export function closePane(id) {
   const pane = panes.get(id);
   if (!pane) return;
   savePaneContent(pane);
-  if (pane._mainSyncHandler) appState.off("doc-content-changed", pane._mainSyncHandler);
-  if (pane._mainNbSyncHandler) appState.off("notebook-shapes-changed", pane._mainNbSyncHandler);
-  if (pane._bgChangeListener) { document.removeEventListener("notebook-bg-changed", pane._bgChangeListener); pane._bgChangeListener = null; }
-  if (pane._scrollListenerCleanup) { try { pane._scrollListenerCleanup(); } catch (_) {} pane._scrollListenerCleanup = null; }
-  if (pane.attached) stopAttachSync(pane);
+  teardownPaneContent(pane);
   if (pane.gutter) {
     import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
   }
-  if (pane.editor) pane.editor.destroy();
-  if (pane.notebook) pane.notebook.destroy();
-  if (pane.pdfViewer) { try { pane.pdfViewer.destroy(); } catch (_) {} pane.pdfViewer = null; }
-  if (pane.stackInstance) { try { pane.stackInstance.destroy(); } catch (_) {} pane.stackInstance = null; }
-  if (pane._stackSaveInterval) { clearInterval(pane._stackSaveInterval); pane._stackSaveInterval = null; }
+  // Inline-pane host gets dropped on the next `panes-changed` build.
+  if (pane._inlineHost) pane._inlineHost = null;
   pane.el.remove();
   panes.delete(id);
   if (activePaneId === id) setActivePaneId(null);
   notifyLayoutChange();
-  // Make sure the dock CSS vars + chrome positions reset once the pane
-  // is gone — without this, a closed right-docked pane leaves
-  // --pane-dock-right-width pointing at its old width and the shelf
-  // stays shifted.
-  import("./pane-dock.js").then((m) => m.publishDockCssVars()).catch(() => {});
+  // Reset dock CSS vars + re-flex remaining docks so a sibling on the
+  // perpendicular axis reclaims the cross-axis space the closed pane
+  // had carved out.
+  import("./pane-dock.js").then((m) => { m.publishDockCssVars(); m.reflowAllDockedPanes(); }).catch(() => {});
   schedulePersist();
 }
 
@@ -578,87 +580,6 @@ export function fitActivePaneToGap() { return _fitActivePaneToGap(activePaneId);
  *  {@link fitActivePaneToGap}, which is direction-aware. */
 export const fitActivePaneToLeftGap = fitActivePaneToGap;
 
-// ── Ratchet lock + theme/style sync ──────────────────────────────────
-
-/** When ratchet flips on, blur + lock every pane editor so keystrokes
- *  bounce off. When it flips off, leave panes locked — the user has to
- *  click into one to re-activate it (matches the normal focus model).
- *  Notebook panes don't have an `editable` toggle on their own, so we
- *  just deactivate the active pane to clear focus. */
-function syncPaneRatchetLock() {
-  if (!appState?.ratchetMode) return;
-  for (const [, pane] of panes) {
-    if (pane.editor && typeof pane.editor.setEditable === "function") {
-      pane.editor.blur();
-      pane.editor.setEditable(false);
-    }
-    pane.el?.classList.remove("active");
-  }
-  setActivePaneId(null);
-}
-
-/** Apply a hovered-style preview to every non-locked pane. The styles
- *  sidebar emits the hovered style as `{ ...style, themeId, colorOverrides }`;
- *  we synthesise a settings object with that style as activeStyleId
- *  and route it through the existing reconfigureTheme path so the
- *  pane uses the same theme + colour-override pipeline the real
- *  selection does. Locked panes are skipped — they're pinned to a
- *  specific style and shouldn't flicker on hover. style-preview-end
- *  invokes syncPaneThemes() which restores the real session style. */
-async function previewPaneStyle(styleObj) {
-  if (!appState || !styleObj || !styleObj.id) return;
-  // Splice the previewed style into the styles list (or update it in
-  // place if already present) so reconfigureTheme can resolve the id.
-  const baseStyles = appState.settings.styles || [];
-  const styles = baseStyles.some((s) => s.id === styleObj.id)
-    ? baseStyles.map((s) => (s.id === styleObj.id ? { ...s, ...styleObj } : s))
-    : [...baseStyles, styleObj];
-  const synthSettings = { ...appState.settings, activeStyleId: styleObj.id, styles };
-  let bridge = null;
-  for (const [, pane] of panes) {
-    const lockedStyleId = findLockedStyleForFile(pane.fileId);
-    if (lockedStyleId) continue; // locked → ignore session previews
-    if (pane.editor?.reconfigureTheme) {
-      pane.editor.reconfigureTheme(synthSettings, null);
-    }
-    if (pane.notebook) {
-      if (!bridge) bridge = await getNotebookBridge();
-      // computeNotebookSettings reads `state.settings`; pass a state
-      // shim so we don't disturb the real appState.
-      pane.notebook.applySettings(
-        bridge.computeNotebookSettings({ ...appState, settings: synthSettings }, null),
-      );
-    }
-  }
-}
-
-async function syncPaneThemes() {
-  const { findNodeByFileId } = await import("../state/tree-helpers.js");
-  let bridge = null;
-  for (const [, pane] of panes) {
-    const lockedStyleId = findLockedStyleForFile(pane.fileId);
-    if (pane.editor?.reconfigureTheme) {
-      pane.editor.reconfigureTheme(appState.settings, lockedStyleId);
-    }
-    if (pane.notebook) {
-      if (!bridge) bridge = await getNotebookBridge();
-      pane.notebook.applySettings(bridge.computeNotebookSettings(appState, lockedStyleId));
-    }
-    // Track tree-side renames in the pane title — covers both manual
-    // sidebar renames and the auto-rename-from-first-line that fires for
-    // freshly-created "Untitled" docs.
-    if (pane.fileType === "document" || pane.fileType === "notebook" || pane.fileType === "stack") {
-      const node = findNodeByFileId(appState.fileTree, pane.fileId);
-      if (node && node.name && node.name !== pane.fileName) {
-        pane.fileName = node.name;
-        const titleLink = pane._titlebar?.querySelector(".fp-title-link");
-        if (titleLink) titleLink.textContent = node.name;
-      }
-    }
-  }
-}
-
-// ── Save all panes (called on focus switch to main editor) ────────────
 export function saveAllPanes() {
   for (const [, pane] of panes) {
     savePaneContent(pane);

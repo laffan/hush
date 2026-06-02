@@ -54,6 +54,19 @@ export class StackComponent {
 
   get _isVertical() { return this._scrollDirection === "vertical"; }
 
+  /** Re-apply the in-memory scroll position to the live DOM. Used by
+   *  the inline-pane plugin after CM detaches and re-mounts the widget
+   *  host — the reparent can land scrollArea back at 0 even though
+   *  `_scrollX` / `_scrollY` still hold the saved value. */
+  restoreScrollPosition() {
+    if (!this._scrollArea) return;
+    if (this._isVertical) {
+      this._scrollArea.scrollTop = this._scrollY || 0;
+    } else {
+      this._scrollArea.scrollLeft = this._scrollX || 0;
+    }
+  }
+
   _buildDOM() {
     this._el = document.createElement("div");
     this._el.className = "stack-root";
@@ -169,6 +182,7 @@ export class StackComponent {
       onResizeStart: (e) => this._startResizeLeft(item.id, e),
       onPopOut: (it) => this._popOutAsPane(it),
       onDuplicate: (it) => this._duplicateItem(it),
+      onOpenTitle: (it) => this._openInEditor(it),
     });
     col.appendChild(spine);
 
@@ -547,6 +561,15 @@ export class StackComponent {
     const y = window.innerHeight / 2;
     await createPane(item.fileId, resolveItemName(item), item.fileType, x, y);
     this.removeItem(item.id);
+  }
+
+  _openInEditor(item) {
+    const s = this._state;
+    if (!s || !item.fileId) return;
+    if (item.fileType === "notebook") s.openNotebook(item.fileId);
+    else if (item.fileType === "pdf") s.openPdf(item.fileId);
+    else if (item.fileType === "stack") s.openStack(item.fileId);
+    else s.openFile(item.fileId);
   }
 
   _duplicateItem(item) {

@@ -251,50 +251,90 @@ export function createDrawingToolPanel(
     };
   }
 
+  // Click vs drag detection: a pointerdown that releases within ~5 px and
+  // ~250 ms is a click (toggle minimized state); anything beyond either
+  // threshold is treated as a drag (existing behaviour). The minimized
+  // state hides every toolbar child except this handle so only the strip
+  // remains visible; clicking it again restores the bar.
+  const CLICK_THRESHOLD_PX = 5;
+  const CLICK_THRESHOLD_MS = 250;
   let dragStartClient: { x: number; y: number } | null = null;
   let dragStartOffset: { x: number; y: number } = { x: 0, y: 0 };
   let dragPointerId: number | null = null;
+  let pointerDownAt = 0;
+  let dragMovedPastClickThreshold = false;
+  function toggleMinimized() {
+    const wasMinimized = bottomToolbar.classList.contains("notebook-toolbar-minimized");
+    // Capture the bar's edge proximity before display:none zeroes its
+    // bbox — once the class is on, getBoundingClientRect would just
+    // return zeros and we'd snap to the default "top" branch.
+    if (!wasMinimized) captureMinimizedAnchor();
+    bottomToolbar.classList.toggle("notebook-toolbar-minimized", !wasMinimized);
+    // The drag tab is mounted at the canvas-container level (not as a
+    // child of the bar), so mirror the minimized state on the tab so
+    // CSS can style the grip when the bar is collapsed.
+    dragTab.classList.toggle("notebook-tool-panel-drag-tab-minimized", !wasMinimized);
+    applyLayout();
+  }
+  /** Lazily promote a snapped position to "custom" only once a real
+   *  drag is underway. The previous implementation promoted on every
+   *  pointerdown, which silently flipped a left-docked bar to
+   *  custom-horizontal *before* the click handler could read it — so a
+   *  click-to-minimize on the left bar ended up using the wrong axis. */
+  function promoteToCustomForDrag() {
+    const parent = bottomToolbar.parentElement;
+    if (!parent || state.drawingToolbarPosition === "custom") return;
+    const parentRect = parent.getBoundingClientRect();
+    const tbRect = bottomToolbar.getBoundingClientRect();
+    const sc = {
+      x: tbRect.left + tbRect.width / 2 - parentRect.left,
+      y: tbRect.top + tbRect.height / 2 - parentRect.top,
+    };
+    state.drawingToolbarPosition = "custom";
+    state.notify("drawingToolbarPosition");
+    state.notify("drawingToolbarVertical");
+    queueMicrotask(() => {
+      const pr = parent.getBoundingClientRect();
+      const tr = bottomToolbar.getBoundingClientRect();
+      const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
+      const natCx = (tr.left + tr.width / 2 - pr.left) - cur.x;
+      const natCy = (tr.top + tr.height / 2 - pr.top) - cur.y;
+      const desired = clampOffset(sc.x - natCx, sc.y - natCy);
+      state.setDrawingToolbarOffset(desired.x, desired.y);
+      dragStartOffset = { ...state.drawingToolbarOffset };
+    });
+  }
+
   function onDragPointerDown(e: PointerEvent) {
     if (e.button !== undefined && e.button !== 0) return;
     dragPointerId = e.pointerId;
     dragStartClient = { x: e.clientX, y: e.clientY };
-    // Promote a snapped position to custom while dragging so the offset
-    // delta paints live. Capture the pre-drag screen center so the bar
-    // starts the drag exactly where it sat before.
-    const parent = bottomToolbar.parentElement;
-    if (parent && state.drawingToolbarPosition !== "custom") {
-      const parentRect = parent.getBoundingClientRect();
-      const tbRect = bottomToolbar.getBoundingClientRect();
-      const sc = {
-        x: tbRect.left + tbRect.width / 2 - parentRect.left,
-        y: tbRect.top + tbRect.height / 2 - parentRect.top,
-      };
-      state.drawingToolbarPosition = "custom";
-      state.notify("drawingToolbarPosition");
-      state.notify("drawingToolbarVertical");
-      // After the layout pass switches to custom (centered on parent),
-      // back-compute the offset that puts the bar back at its old centre.
-      queueMicrotask(() => {
-        const pr = parent.getBoundingClientRect();
-        const tr = bottomToolbar.getBoundingClientRect();
-        const cur = state.drawingToolbarOffset || { x: 0, y: 0 };
-        const natCx = (tr.left + tr.width / 2 - pr.left) - cur.x;
-        const natCy = (tr.top + tr.height / 2 - pr.top) - cur.y;
-        const desired = clampOffset(sc.x - natCx, sc.y - natCy);
-        state.setDrawingToolbarOffset(desired.x, desired.y);
-        dragStartOffset = { ...state.drawingToolbarOffset };
-      });
-    }
+    pointerDownAt = performance.now();
+    dragMovedPastClickThreshold = false;
     dragStartOffset = { ...state.drawingToolbarOffset };
     try { dragTab.setPointerCapture(e.pointerId); } catch { /* noop */ }
     dragTab.style.cursor = "grabbing";
-    showSnapZones(true);
     e.preventDefault();
   }
   function onDragPointerMove(e: PointerEvent) {
     if (dragStartClient === null || e.pointerId !== dragPointerId) return;
     const dx = e.clientX - dragStartClient.x;
     const dy = e.clientY - dragStartClient.y;
+    if (!dragMovedPastClickThreshold &&
+        (Math.abs(dx) > CLICK_THRESHOLD_PX || Math.abs(dy) > CLICK_THRESHOLD_PX)) {
+      dragMovedPastClickThreshold = true;
+      if (!bottomToolbar.classList.contains("notebook-toolbar-minimized")) {
+        // Now that we know this is a drag (not a click), promote a
+        // snapped position to custom so the drag delta paints live.
+        // Re-read dragStartOffset since promote may schedule an update.
+        promoteToCustomForDrag();
+        dragStartOffset = { ...state.drawingToolbarOffset };
+        showSnapZones(true);
+      }
+    }
+    // While minimized, suppress drag-to-reposition — a small slip during
+    // a click shouldn't yank the bar into custom-positioned mode.
+    if (bottomToolbar.classList.contains("notebook-toolbar-minimized")) return;
     const clamped = clampOffset(dragStartOffset.x + dx, dragStartOffset.y + dy);
     state.setDrawingToolbarOffset(clamped.x, clamped.y);
     const zone = hitTestZone(e.clientX, e.clientY);
@@ -303,8 +343,14 @@ export function createDrawingToolPanel(
   function onDragPointerUp(e: PointerEvent) {
     if (dragStartClient === null || e.pointerId !== dragPointerId) return;
     try { dragTab.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    const zone = hitTestZone(e.clientX, e.clientY);
-    if (zone) state.setDrawingToolbarPosition(zone);
+    const elapsed = performance.now() - pointerDownAt;
+    const isClick = !dragMovedPastClickThreshold && elapsed < CLICK_THRESHOLD_MS;
+    if (isClick) {
+      toggleMinimized();
+    } else if (!bottomToolbar.classList.contains("notebook-toolbar-minimized")) {
+      const zone = hitTestZone(e.clientX, e.clientY);
+      if (zone) state.setDrawingToolbarPosition(zone);
+    }
     dragStartClient = null;
     dragPointerId = null;
     dragTab.style.cursor = "grab";
@@ -472,13 +518,79 @@ export function createDrawingToolPanel(
     dragTab.dataset.vertical = vertical ? "1" : "0";
   }
 
+  /** When the bar is collapsed, the toolbar element is display:none and
+   *  the drag handle is the only thing on screen. We park it 15 px in
+   *  from whichever edge the bar was sitting closest to, so a bar
+   *  docked at the bottom collapses *to* the bottom rather than springing
+   *  back to the top. The detection runs at minimize-time so the
+   *  decision survives even after display:none zeroes the bar's bbox. */
+  const MINIMIZED_EDGE_OFFSET = 15;
+  const MINIMIZED_HANDLE_LENGTH_HORIZONTAL = 220;
+  const MINIMIZED_HANDLE_LENGTH_VERTICAL = 220;
+
+  type MinimizedEdge = "top" | "bottom" | "left" | "right";
+  let minimizedEdge: MinimizedEdge = "top";
+  let minimizedAxisCenter = 0; // X (horizontal bar) or Y (vertical bar) in parent coords
+
+  function captureMinimizedAnchor(): void {
+    const parent = bottomToolbar.parentElement;
+    if (!parent) return;
+    const parentRect = parent.getBoundingClientRect();
+    const tbRect = bottomToolbar.getBoundingClientRect();
+    const vertical = state.drawingToolbarVertical;
+    if (vertical) {
+      // Vertical bar: snap to left or right edge based on which side of
+      // the parent its centre falls in.
+      const cx = tbRect.left + tbRect.width / 2 - parentRect.left;
+      minimizedEdge = cx < parentRect.width / 2 ? "left" : "right";
+      minimizedAxisCenter = tbRect.top + tbRect.height / 2 - parentRect.top;
+    } else {
+      const cy = tbRect.top + tbRect.height / 2 - parentRect.top;
+      minimizedEdge = cy < parentRect.height / 2 ? "top" : "bottom";
+      minimizedAxisCenter = tbRect.left + tbRect.width / 2 - parentRect.left;
+    }
+  }
+
+  function placeMinimizedDragTab(parent: HTMLElement): void {
+    const parentRect = parent.getBoundingClientRect();
+    const vertical = state.drawingToolbarVertical;
+    dragTab.style.left = "auto";
+    dragTab.style.right = "auto";
+    dragTab.style.top = "auto";
+    dragTab.style.bottom = "auto";
+    dragTab.style.transform = "none";
+    if (vertical) {
+      const handleH = Math.min(MINIMIZED_HANDLE_LENGTH_VERTICAL, parentRect.height);
+      dragTab.style.top = `${Math.max(0, minimizedAxisCenter - handleH / 2)}px`;
+      dragTab.style.width = `${DRAG_STRIP_THICKNESS}px`;
+      dragTab.style.height = `${handleH}px`;
+      if (minimizedEdge === "right") {
+        dragTab.style.right = `${MINIMIZED_EDGE_OFFSET}px`;
+      } else {
+        dragTab.style.left = `${MINIMIZED_EDGE_OFFSET}px`;
+      }
+    } else {
+      const handleW = Math.min(MINIMIZED_HANDLE_LENGTH_HORIZONTAL, parentRect.width);
+      dragTab.style.left = `${Math.max(0, minimizedAxisCenter - handleW / 2)}px`;
+      dragTab.style.width = `${handleW}px`;
+      dragTab.style.height = `${DRAG_STRIP_THICKNESS}px`;
+      if (minimizedEdge === "bottom") {
+        dragTab.style.bottom = `${MINIMIZED_EDGE_OFFSET}px`;
+      } else {
+        dragTab.style.top = `${MINIMIZED_EDGE_OFFSET}px`;
+      }
+    }
+  }
+
   function applyLayout(): void {
     const parent = bottomToolbar.parentElement;
     if (!parent) return;
     const vertical = state.drawingToolbarVertical;
     styleDragTab(vertical);
+    const minimized = bottomToolbar.classList.contains("notebook-toolbar-minimized");
 
     const place = () => {
+      if (minimized) { placeMinimizedDragTab(parent); return; }
       const parentRect = parent.getBoundingClientRect();
       const tbRect = bottomToolbar.getBoundingClientRect();
       dragTab.style.left = "auto";

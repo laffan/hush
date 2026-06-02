@@ -1,3 +1,52 @@
+import { applyTypewriterPadding } from "./plugins/typewriter.js";
+
+/**
+ * Set padding on the editor's scroller so that the last line can always
+ * be scrolled to the vertical centre of the page — even on documents
+ * that only span a few lines.
+ *
+ * When typewriter mode owns the editor we defer to its own padding
+ * routine, which pins the first line to the typewriter boundary instead
+ * (the "scroll-to-middle from the top" companion to this bottom-anchored
+ * variant). Notebook surfaces have no scroller and are left alone.
+ */
+export function applyEditorScrollerPadding(state, opts = {}) {
+  const scroller = document.querySelector("#editor-container .cm-scroller");
+  if (!scroller) return;
+  const topInset = opts.topInset ?? (state.runtime.dockedTopHeight || 0);
+  const bottomInset = opts.bottomInset ?? (state.runtime.dockedBottomHeight || 0);
+
+  if (state.typewriterMode && state.editor?.view) {
+    // Typewriter manages both paddings to pin the cursor line to the
+    // boundary. Honour any top/bottom dock insets that have appeared
+    // since typewriter mode was first set up.
+    applyTypewriterPadding(state.editor.view, state);
+    return;
+  }
+
+  const hasScroller = !state.currentNotebookFileId;
+  scroller.style.paddingTop = topInset > 0 ? topInset + "px" : "";
+  if (!hasScroller) {
+    scroller.style.paddingBottom = bottomInset > 0 ? bottomInset + "px" : "";
+    return;
+  }
+
+  // 50vh bottom pad lets long-doc last lines scroll to centre. For docs
+  // shorter than half the viewport the scroll range alone can't bring
+  // the last line up to that point, so add enough top padding to push
+  // the content down — the last line now sits at (or just above) centre
+  // even with zero scroll.
+  const view = state.editor?.view;
+  const contentH = view ? (view.contentDOM?.offsetHeight || 0) : 0;
+  const centreY = window.innerHeight / 2;
+  const shortDocPad = contentH > 0 ? Math.max(0, centreY - contentH) : centreY;
+  const totalTopPad = topInset + shortDocPad;
+  scroller.style.paddingTop = totalTopPad > 0 ? totalTopPad + "px" : "";
+  scroller.style.paddingBottom = bottomInset > 0
+    ? `calc(50vh + ${bottomInset}px)`
+    : "50vh";
+}
+
 export function applyModes(state) {
   const app = document.getElementById("app");
   app.classList.toggle("ratchet-active", state.ratchetMode);
@@ -65,6 +114,9 @@ export function updateColumnResizers(state) {
   document.querySelectorAll(".column-mover").forEach((el) => el.remove());
   if (state.runtime.columnResizeHandler) {
     window.removeEventListener("resize", state.runtime.columnResizeHandler);
+  }
+  if (state.runtime.dockChangedHandler) {
+    document.removeEventListener("pane-dock-changed", state.runtime.dockChangedHandler);
   }
 
   const leftResizer = document.createElement("div");
@@ -153,6 +205,13 @@ export function updateColumnResizers(state) {
     // leaves the column properly contained.
     leftInsetOffset += state.runtime.dockedLeftWidth || 0;
     rightInsetOffset += state.runtime.dockedRightWidth || 0;
+    // Top/bottom docks shrink the editor vertically the same way as if
+    // the window had shortened. The scroller is the only mounted CM
+    // surface that pads symmetrically, so we apply matching paddingTop
+    // / paddingBottom further down — and offset the column resizers'
+    // top / bottom rails too so they don't run behind the dock.
+    const topInsetOffset = state.runtime.dockedTopHeight || 0;
+    const bottomInsetOffset = state.runtime.dockedBottomHeight || 0;
 
     const availableWidth = w - leftInsetOffset - rightInsetOffset;
     let leftPad, rightPad;
@@ -188,14 +247,11 @@ export function updateColumnResizers(state) {
     if (scroller) {
       scroller.style.paddingLeft = leftPad + "px";
       scroller.style.paddingRight = rightPad + "px";
-      // 50vh bottom pad for plain docs so the last line can scroll to
-      // approximately the vertical centre of the screen. Skip in
-      // projects (extra space between concatenated docs would read as
-      // a gap) and in notebook mode (no scroller there anyway).
-      // When typewriter mode is active its own paddingBottom
-      // calculation overrides this value.
-      const hasScroller = !state.currentNotebookFileId;
-      scroller.style.paddingBottom = hasScroller ? "50vh" : "";
+      // Vertical padding is split out — typewriter mode owns the
+      // scroller's top/bottom pads when active, and short docs need
+      // dynamic top padding so the last line can still reach the
+      // vertical centre via scrolling.
+      applyEditorScrollerPadding(state, { topInset: topInsetOffset, bottomInset: bottomInsetOffset });
     }
     if (state.editor && state.editor.view) {
       // requestMeasure alone is not always enough after padding changes
@@ -215,6 +271,13 @@ export function updateColumnResizers(state) {
       rightResizer.style.display = "";
       leftResizer.style.left = (leftPad - 10) + "px";
       rightResizer.style.left = (w - rightPad + 10) + "px";
+      // Clip the rails so they don't run behind top / bottom docks —
+      // the dock is opaque and the resizer's hover stripe would peek
+      // out otherwise.
+      leftResizer.style.top = topInsetOffset + "px";
+      leftResizer.style.bottom = bottomInsetOffset + "px";
+      rightResizer.style.top = topInsetOffset + "px";
+      rightResizer.style.bottom = bottomInsetOffset + "px";
     } else {
       leftResizer.style.display = "none";
       rightResizer.style.display = "none";
@@ -254,6 +317,23 @@ export function updateColumnResizers(state) {
   applyColumnLayout();
   state.runtime.columnResizeHandler = applyColumnLayout;
   window.addEventListener("resize", applyColumnLayout);
+  // `dockPane` schedules `refreshPaneLayoutMetrics` through a lazy
+  // import to dodge a circular dependency, which means the editor's
+  // `state.runtime.docked*` values can lag behind the actual dock —
+  // the column then paints under a freshly-docked right pane until
+  // the promise resolves. `publishDockCssVars` fires
+  // `pane-dock-changed` synchronously after writing the new CSS
+  // vars, so picking up its detail here closes that gap.
+  const onDockChanged = (e) => {
+    const d = e.detail || {};
+    state.runtime.dockedLeftWidth = d.leftWidth || 0;
+    state.runtime.dockedRightWidth = d.rightWidth || 0;
+    state.runtime.dockedTopHeight = d.topHeight || 0;
+    state.runtime.dockedBottomHeight = d.bottomHeight || 0;
+    applyColumnLayout();
+  };
+  document.addEventListener("pane-dock-changed", onDockChanged);
+  state.runtime.dockChangedHandler = onDockChanged;
 
   function makeDraggable(el, isLeft) {
     let startX, startWidth;
@@ -347,7 +427,10 @@ export function updateRatchetTimer(state) {
     const mins = Math.floor(remaining / 60000);
     const secs = Math.floor((remaining % 60000) / 1000);
     timerEl.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
-    requestAnimationFrame(tick);
+    // The display only changes once per second, so wake exactly on the
+    // next second boundary instead of burning a 60 fps rAF loop on a
+    // clock. Aligning to the boundary keeps the countdown visually crisp.
+    setTimeout(tick, remaining % 1000 || 1000);
   }
 
   tick();
