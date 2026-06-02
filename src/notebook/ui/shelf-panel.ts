@@ -566,7 +566,25 @@ export function createShelfPanel(
       onClick: () => state.focusShape(node.shapeId, undefined, isOpen ? panel.offsetWidth : 0),
     });
     const searchHlBg = theme.variant === "dark" ? "rgba(255, 224, 102, 0.25)" : "rgba(255, 213, 0, 0.35)";
-    labelSpan.appendChild(renderLabelInline(node.label, flagColors, search.trim(), searchHlBg));
+    const q = search.trim();
+    // When a search is active and the match only exists in the body
+    // (excerpt), swap the row's label for a snippet centred on the
+    // first hit so the user can see why the row matched. The label
+    // alone — usually the first line / heading — would read as an
+    // unhelpful "row with no visible match" otherwise. Falls back to
+    // the regular label when the query also hits the label (the
+    // standard inline highlight already shows the user where).
+    const labelHasMatch = q && node.label.toLowerCase().includes(q.toLowerCase());
+    if (q && !labelHasMatch && node.excerpt) {
+      const matches = findContentMatches(node.excerpt, q, 1);
+      if (matches.length > 0) {
+        labelSpan.appendChild(buildSnippet(node.excerpt, matches[0].start, q.length, muted, searchHlBg));
+      } else {
+        labelSpan.appendChild(renderLabelInline(node.label, flagColors, q, searchHlBg));
+      }
+    } else {
+      labelSpan.appendChild(renderLabelInline(node.label, flagColors, q, searchHlBg));
+    }
     row.appendChild(labelSpan);
     // Fall-back: clicks on the row that didn't land on the label span
     // (icon, padding) still pan. Without this the pin button + flow

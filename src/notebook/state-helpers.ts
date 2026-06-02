@@ -82,16 +82,23 @@ export function toggleTaskLine(text: string, sourceLineIndex: number): string | 
   return lines.join("\n");
 }
 
-/** Hit-test a point against link runs in a text shape. Returns the URL or null. */
+/** Hit-test a point against link runs in a text shape. Returns the link
+ *  target (URL for `[…](url)` runs, title for `[[wikilink]]` runs) or
+ *  null when no link sits under the point. Callers that need to
+ *  distinguish kinds — e.g. routing a click to the URL opener vs the
+ *  in-app wikilink resolver — should use {@link hitTestLinkRun}
+ *  instead. The only consumers of this helper just need a yes/no on
+ *  "was this click on a clickable link" so the cmd-drag pane-extract
+ *  gesture stays out of the regular pointerdown handler's way. */
 export function hitTestLink(pt: Point, shape: TextShape): string | null {
   const hit = hitTestLinkRun(pt, shape);
-  return hit && hit.kind === "url" ? hit.target : null;
+  return hit ? hit.target : null;
 }
 
 /** Hit-test a point against link runs in a text shape, distinguishing
  *  between regular markdown links (`[text](url)` → `kind: "url"`) and
  *  Obsidian-style wikilinks (`[[Title]]` → `kind: "wikilink"`). Callers
- *  that only care about external URLs can use {@link hitTestLink}. */
+ *  that just want a yes/no can use {@link hitTestLink}. */
 export function hitTestLinkRun(
   pt: Point,
   shape: TextShape,
