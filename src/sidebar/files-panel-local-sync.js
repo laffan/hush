@@ -24,6 +24,30 @@ function openLocalSyncFolderMenu(anchorBtn, folder, state, refreshFilesPanel) {
   closeLocalSyncMenu();
   const menu = document.createElement("div");
   menu.className = "tree-row-menu";
+
+  // "View in Finder" (macOS) / "View in Files" (iOS) — reveal the mount
+  // on disk. revealItemInDir works on both platforms (Finder on macOS,
+  // the Files app on iOS).
+  const isIOS = /iPad|iPhone|iPod/.test(
+    (typeof navigator !== "undefined" && (navigator.platform || navigator.userAgent)) || ""
+  ) || (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
+  const reveal = document.createElement("button");
+  reveal.type = "button";
+  reveal.className = "tree-row-menu-item";
+  reveal.textContent = isIOS ? "View in Files" : "View in Finder";
+  reveal.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    closeLocalSyncMenu();
+    if (!folder.path) return;
+    try {
+      const opener = await import("@tauri-apps/plugin-opener");
+      await opener.revealItemInDir(folder.path);
+    } catch (err) {
+      console.error("Failed to reveal local folder:", err);
+    }
+  });
+  menu.appendChild(reveal);
+
   const unlink = document.createElement("button");
   unlink.type = "button";
   unlink.className = "tree-row-menu-item";

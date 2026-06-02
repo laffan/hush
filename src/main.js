@@ -363,6 +363,14 @@ async function init() {
       }
       // Re-apply background color to prevent black safe-area bars
       updatePrivateBoxColor(state);
+      // iOS has no filesystem watcher, so re-read the open Local Sync
+      // file on foreground — the iPad stand-in for the desktop notify
+      // watcher. No-ops when the buffer is dirty or unchanged.
+      if (state.currentLocalSync) {
+        import("./sync/local-sync.js")
+          .then(m => m.refreshOpenLocalSyncFile(state))
+          .catch(() => {});
+      }
     }
   });
 

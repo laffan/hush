@@ -275,10 +275,18 @@ export async function openLocalSyncFile(state, folderId, relPath) {
   state.currentLocalSync = { folderId, relPath };
   try {
     const content = await readFile(folderId, relPath);
-    if (state.editor) state.editor.setContent(content);
+    // setContent dispatches a doc change, which the editor's
+    // updateListener treats as an edit and marks the buffer dirty.
+    // Loading a file is not a user edit — clear the flag on the same
+    // tick so the next autosave doesn't write the just-loaded content
+    // straight back (bumping the file's mtime with no real change and
+    // clobbering a concurrent edit from another device). Mirrors every
+    // other reload path (sync-state, conflict-handler, the watcher
+    // reload below).
+    if (state.editor) { state.editor.setContent(content); state.dirty = false; }
   } catch (e) {
     console.error("Failed to load local-sync file:", e);
-    if (state.editor) state.editor.setContent("");
+    if (state.editor) { state.editor.setContent(""); state.dirty = false; }
   }
   state.emit("file-opened");
 }
@@ -292,6 +300,32 @@ export async function saveCurrentLocalSync(state) {
   state.dirty = false;
   try { await writeFile(folderId, relPath, content); }
   catch (e) { console.error("Local Sync save failed:", e); }
+}
+
+/** Re-read the open Local Sync file from disk if it changed underneath
+ *  us. iOS has no filesystem watcher (the notify crate is macOS-only),
+ *  so this is wired to the app-foreground (visibilitychange) event as
+ *  the iPad stand-in for the desktop watcher: when you switch back to
+ *  Hush, a file edited on another device shows its latest content.
+ *
+ *  Conservative by design — it bails when the buffer is dirty so an
+ *  in-progress edit is never clobbered by a stale-looking reload, and
+ *  skips when the on-disk content already matches the editor. */
+export async function refreshOpenLocalSyncFile(state) {
+  if (!IS_TAURI || !state.currentLocalSync || !state.editor) return;
+  if (state.dirty) return; // never overwrite unsaved edits
+  const { folderId, relPath } = state.currentLocalSync;
+  try {
+    const content = await readFile(folderId, relPath);
+    // Still on the same file, still clean, and the disk actually differs.
+    if (!state.currentLocalSync || state.currentLocalSync.relPath !== relPath) return;
+    if (state.dirty) return;
+    if (state.editor.getContent() === content) return;
+    state.editor.setContent(content);
+    state.dirty = false;
+  } catch (e) {
+    console.error("Local Sync foreground refresh failed:", e);
+  }
 }
 
 /** Listen for watcher events. Reloads the open file on external change,
