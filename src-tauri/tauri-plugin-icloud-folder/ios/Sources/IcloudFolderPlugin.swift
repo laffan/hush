@@ -201,6 +201,80 @@ class IcloudFolderPlugin: Plugin, UIDocumentPickerDelegate {
           + (writeErr?.localizedDescription ?? coordErr?.localizedDescription ?? "unknown"))
     }
   }
+
+  // MARK: - Binary file I/O (images that live beside a .md)
+
+  @objc public func readFileBytes(_ invoke: Invoke) throws {
+    struct Args: Decodable { let path: String }
+    let args = try invoke.parseArgs(Args.self)
+    let url = URL(fileURLWithPath: args.path)
+    try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+    var coordErr: NSError?
+    var data: Data?
+    var readErr: Error?
+    NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordErr) { (u) in
+      do { data = try Data(contentsOf: u) } catch { readErr = error }
+    }
+    if let d = data {
+      // Hand bytes to JS as base64 — Tauri's bridge balks at large raw
+      // byte arrays, and the JS side already base64-decodes for data URLs.
+      invoke.resolve(["base64": d.base64EncodedString()])
+    } else {
+      invoke.reject(
+        "read failed: "
+          + (readErr?.localizedDescription ?? coordErr?.localizedDescription ?? "unknown"))
+    }
+  }
+
+  @objc public func writeFileBytes(_ invoke: Invoke) throws {
+    struct Args: Decodable {
+      let path: String
+      let base64: String
+    }
+    let args = try invoke.parseArgs(Args.self)
+    guard let data = Data(base64Encoded: args.base64) else {
+      invoke.reject("payload is not valid base64")
+      return
+    }
+    let target = uniquePath(URL(fileURLWithPath: args.path))
+    // Ensure the parent directory exists (dropped images can land in a
+    // subfolder of the mount).
+    try? FileManager.default.createDirectory(
+      at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+    var coordErr: NSError?
+    var writeErr: Error?
+    NSFileCoordinator().coordinate(
+      writingItemAt: target, options: .forReplacing, error: &coordErr
+    ) { (u) in
+      do { try data.write(to: u, options: .atomic) } catch { writeErr = error }
+    }
+    if writeErr == nil && coordErr == nil {
+      // Return the actual filename written so JS can build a matching ref.
+      invoke.resolve(["name": target.lastPathComponent])
+    } else {
+      invoke.reject(
+        "write failed: "
+          + (writeErr?.localizedDescription ?? coordErr?.localizedDescription ?? "unknown"))
+    }
+  }
+
+  /// Append " 2", " 3", … before the extension if `url` already exists.
+  /// Mirrors the macOS `unique_path` in local_sync.rs.
+  private func uniquePath(_ url: URL) -> URL {
+    let fm = FileManager.default
+    if !fm.fileExists(atPath: url.path) { return url }
+    let dir = url.deletingLastPathComponent()
+    let ext = url.pathExtension
+    let stem = url.deletingPathExtension().lastPathComponent
+    var i = 2
+    while i < 10000 {
+      let name = ext.isEmpty ? "\(stem) \(i)" : "\(stem) \(i).\(ext)"
+      let candidate = dir.appendingPathComponent(name)
+      if !fm.fileExists(atPath: candidate.path) { return candidate }
+      i += 1
+    }
+    return url
+  }
 }
 
 @_cdecl("init_plugin_icloud_folder")

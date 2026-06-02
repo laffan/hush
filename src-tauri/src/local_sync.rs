@@ -54,6 +54,12 @@ pub struct LocalSyncFolder {
     /// active desk in that case).
     #[serde(default)]
     pub desk_id: Option<String>,
+    /// iOS-only — base64 security-scoped bookmark for the mount. On iOS
+    /// the `path` is not directly reachable across launches; the JS
+    /// layer resolves this bookmark through the icloud-folder plugin to
+    /// re-acquire access before any read/write. Absent on desktop mounts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmark: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

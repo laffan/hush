@@ -5,6 +5,8 @@ const COMMANDS: &[&str] = &[
     "list_dir",
     "read_file",
     "write_file",
+    "read_file_bytes",
+    "write_file_bytes",
 ];
 
 fn main() {

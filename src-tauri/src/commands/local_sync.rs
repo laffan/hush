@@ -24,9 +24,14 @@ pub fn local_sync_add(
     path: String,
     name: Option<String>,
     desk_id: Option<String>,
+    bookmark: Option<String>,
 ) -> Result<LocalSyncFolder, String> {
     let path_buf = PathBuf::from(&path);
-    if !path_buf.is_dir() {
+    // iOS mounts carry a security-scoped bookmark; the JS layer has
+    // already resolved it through the icloud-folder plugin (access is
+    // held) before calling us, so the std::fs `is_dir` check is skipped
+    // for those — the path may not be directly reachable here.
+    if bookmark.is_none() && !path_buf.is_dir() {
         return Err(format!("Not a directory: {}", path));
     }
     let final_name = name.unwrap_or_else(|| {
@@ -44,13 +49,20 @@ pub fn local_sync_add(
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0),
         desk_id,
+        bookmark,
     };
     {
         let mut settings = state.settings.lock().unwrap();
         settings.local_sync_folders.push(folder.clone());
         settings.save().map_err(|e| e.to_string())?;
     }
-    state.local_sync_manager.watch(app, &folder)?;
+    // The notify-crate watcher is macOS/desktop-only; iOS mounts (those
+    // with a bookmark) have no live external-change watching.
+    if folder.bookmark.is_none() {
+        state.local_sync_manager.watch(app, &folder)?;
+    } else {
+        let _ = app;
+    }
     Ok(folder)
 }
 

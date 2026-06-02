@@ -13,6 +13,7 @@
 
 import { escHtml, escAttr } from "./settings-tabs.js";
 import { SYNC_LOG_ERROR_PREFIX } from "../sync/sync-feedback.js";
+import { renderICloudSubTab } from "./settings-tabs-icloud.js";
 
 /** Render a single sync log row. Entries tagged with the error prefix
  *  (see {@link SYNC_LOG_ERROR_PREFIX}) paint red and strip the prefix
@@ -29,11 +30,11 @@ function renderSyncLogEntry(entry) {
   return `<div class="sync-log-entry">${escHtml(raw)}</div>`;
 }
 
-let _activeSubTab = "dropbox"; // "dropbox" | "google"
+let _activeSubTab = "dropbox"; // "dropbox" | "google" | "icloud"
 
 export function getSyncSubTab() { return _activeSubTab; }
 export function setSyncSubTab(id) {
-  if (id === "dropbox" || id === "google") _activeSubTab = id;
+  if (id === "dropbox" || id === "google" || id === "icloud") _activeSubTab = id;
 }
 
 function subTabNav() {
@@ -41,12 +42,14 @@ function subTabNav() {
   return `<div class="sync-subtab-nav">
     ${tab("dropbox", "Dropbox Sync")}
     ${tab("google", "Google Sync")}
+    ${tab("icloud", "iCloud")}
   </div>`;
 }
 
 export function renderSyncTab(settings) {
   let body = "";
   if (_activeSubTab === "dropbox") body = renderDropboxSubTab(settings);
+  else if (_activeSubTab === "icloud") body = renderICloudSubTab();
   else body = renderGoogleSubTab(settings);
   return subTabNav() + `<div class="sync-subtab-body">${body}</div>`;
 }

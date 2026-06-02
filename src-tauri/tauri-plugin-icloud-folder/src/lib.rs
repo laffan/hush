@@ -41,6 +41,12 @@ struct WriteArgs {
     contents: String,
 }
 
+#[derive(Serialize)]
+struct WriteBytesArgs {
+    path: String,
+    base64: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PickResult {
@@ -78,6 +84,20 @@ pub struct ListResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadResult {
     pub contents: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadBytesResult {
+    /// File bytes, base64-encoded (the bridge can't carry large raw
+    /// byte arrays reliably).
+    pub base64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WriteBytesResult {
+    /// Actual filename written (collision auto-suffixed) so the caller
+    /// can build a matching markdown ref.
+    pub name: String,
 }
 
 const IOS_ONLY: &str = "iCloud folder access is iOS-only (no-op on this platform)";
@@ -193,6 +213,47 @@ async fn write_file<R: Runtime>(
     }
 }
 
+#[tauri::command]
+async fn read_file_bytes<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+) -> Result<ReadBytesResult, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<ReadBytesResult>("readFileBytes", PathArgs { path })
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
+async fn write_file_bytes<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    base64: String,
+) -> Result<WriteBytesResult, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<WriteBytesResult>("writeFileBytes", WriteBytesArgs { path, base64 })
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path, base64);
+        Err(IOS_ONLY.into())
+    }
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("icloud-folder")
         .invoke_handler(tauri::generate_handler![
@@ -201,7 +262,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             stop_access,
             list_dir,
             read_file,
-            write_file
+            write_file,
+            read_file_bytes,
+            write_file_bytes
         ])
         .setup(|app, _api| {
             #[cfg(target_os = "ios")]

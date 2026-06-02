@@ -13,9 +13,77 @@
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
+// iOS reaches arbitrary (iCloud) folders through the icloud-folder
+// plugin rather than std::fs: the path isn't directly reachable across
+// launches, so each mount carries a security-scoped *bookmark* that we
+// resolve (re-acquiring access) into a live absolute path. Everything
+// else — settings storage, the sidebar, autosave — is shared with
+// desktop. `isIOS()` is the single platform fork.
+function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  const p = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "";
+  return /iPad|iPhone|iPod/.test(p) || (p === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
+}
+const IOS = IS_TAURI && isIOS();
+
+// File extensions surfaced in the tree on iOS — mirrors the
+// SUPPORTED_EXTENSIONS list in local_sync.rs so iOS and desktop agree on
+// what shows up (the desktop Rust filters server-side; the plugin's
+// listDir doesn't, so we filter here).
+const SUPPORTED_EXTS = new Set([
+  "md", "markdown", "txt",
+  "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
+  "heic", "heif", "avif", "tif", "tiff",
+]);
+const IMAGE_EXTS = new Set([
+  "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
+  "heic", "heif", "avif", "tif", "tiff",
+]);
+function extOf(name) {
+  const m = (name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : "";
+}
+
 async function invoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);
+}
+async function plugin(cmd, args) {
+  return invoke(`plugin:icloud-folder|${cmd}`, args);
+}
+
+// folderId → resolved absolute base path (access held by the plugin).
+const iosBasePaths = new Map();
+// In-flight resolutions so concurrent callers share one resolve call.
+const iosResolving = new Map();
+
+/** Resolve (and cache) the absolute base path for an iOS mount by
+ *  re-acquiring its security-scoped bookmark. Throws if unresolved. */
+async function iosBasePath(folderId) {
+  if (iosBasePaths.has(folderId)) return iosBasePaths.get(folderId);
+  if (iosResolving.has(folderId)) return iosResolving.get(folderId);
+  const p = (async () => {
+    const folders = await listLocalSyncFolders();
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder || !folder.bookmark) {
+      throw new Error(`No bookmark for local-sync mount ${folderId}`);
+    }
+    const res = await plugin("resolve_bookmark", { bookmark: folder.bookmark });
+    if (res?.stale) console.warn("local-sync bookmark is stale:", folderId);
+    iosBasePaths.set(folderId, res.path);
+    return res.path;
+  })();
+  iosResolving.set(folderId, p);
+  try { return await p; }
+  finally { iosResolving.delete(folderId); }
+}
+
+/** Join an iOS mount's base path with a relative path. */
+function joinPath(base, relPath) {
+  if (!relPath) return base;
+  const b = base.replace(/\/+$/, "");
+  const r = String(relPath).replace(/^\/+/, "");
+  return `${b}/${r}`;
 }
 
 export async function listLocalSyncFolders() {
@@ -27,11 +95,28 @@ export async function listLocalSyncFolders() {
 export async function addLocalSyncFolder(deskId = null) {
   if (!IS_TAURI) return null;
   try {
+    if (IOS) {
+      // iOS: present the folder picker via the plugin, persist the
+      // bookmark so the mount survives relaunches.
+      const picked = await plugin("pick_folder");
+      if (!picked) return null;
+      iosBasePaths.set("__pending__", picked.path); // not keyed yet
+      const folder = await invoke("local_sync_add", {
+        path: picked.path,
+        name: picked.name || null,
+        deskId,
+        bookmark: picked.bookmark,
+      });
+      iosBasePaths.delete("__pending__");
+      if (folder) iosBasePaths.set(folder.id, picked.path); // access already held
+      return folder;
+    }
     const { open } = await import("@tauri-apps/plugin-dialog");
     const picked = await open({ directory: true, multiple: false });
     if (!picked) return null;
     return await invoke("local_sync_add", { path: picked, deskId });
   } catch (e) {
+    if (String(e).includes("cancelled")) return null;
     console.error("local_sync_add failed:", e);
     return null;
   }
@@ -39,28 +124,75 @@ export async function addLocalSyncFolder(deskId = null) {
 
 export async function removeLocalSyncFolder(id) {
   if (!IS_TAURI) return;
-  try { await invoke("local_sync_remove", { id }); }
-  catch (e) { console.error("local_sync_remove failed:", e); }
+  try {
+    if (IOS && iosBasePaths.has(id)) {
+      try { await plugin("stop_access", { path: iosBasePaths.get(id) }); } catch (_) {}
+      iosBasePaths.delete(id);
+    }
+    await invoke("local_sync_remove", { id });
+  } catch (e) { console.error("local_sync_remove failed:", e); }
 }
 
 export async function readDir(id, relPath = "") {
   if (!IS_TAURI) return [];
-  try { return await invoke("local_sync_read_dir", { id, relPath }); }
-  catch (e) { console.error("local_sync_read_dir failed:", e); return []; }
+  try {
+    if (IOS) {
+      const base = await iosBasePath(id);
+      const res = await plugin("list_dir", { path: joinPath(base, relPath) });
+      const out = [];
+      for (const e of res?.entries || []) {
+        const ext = extOf(e.name);
+        if (!e.isDir && !SUPPORTED_EXTS.has(ext)) continue;
+        const rel = relPath ? `${relPath.replace(/\/+$/, "")}/${e.name}` : e.name;
+        out.push({
+          name: e.name,
+          relPath: rel,
+          isDir: !!e.isDir,
+          isImage: !e.isDir && IMAGE_EXTS.has(ext),
+        });
+      }
+      out.sort((a, b) =>
+        a.isDir === b.isDir
+          ? a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+          : a.isDir ? -1 : 1);
+      return out;
+    }
+    return await invoke("local_sync_read_dir", { id, relPath });
+  } catch (e) { console.error("local_sync_read_dir failed:", e); return []; }
 }
 
 export async function readFile(id, relPath) {
   if (!IS_TAURI) return "";
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const res = await plugin("read_file", { path: joinPath(base, relPath) });
+    return res?.contents ?? "";
+  }
   return invoke("local_sync_read_file", { id, relPath });
 }
 
 export async function writeFile(id, relPath, content) {
   if (!IS_TAURI) return;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    return plugin("write_file", { path: joinPath(base, relPath), contents: content });
+  }
   return invoke("local_sync_write_file", { id, relPath, content });
 }
 
 export async function readFileBytes(id, relPath) {
   if (!IS_TAURI) return null;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const res = await plugin("read_file_bytes", { path: joinPath(base, relPath) });
+    if (!res?.base64) return null;
+    // Match the desktop command's shape (an array of byte values) so
+    // readSiblingImageDataUrl re-encodes identically on both platforms.
+    const bin = atob(res.base64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
   return invoke("local_sync_read_file_bytes", { id, relPath });
 }
 
@@ -69,6 +201,20 @@ export async function readFileBytes(id, relPath) {
  *  matching markdown ref. */
 export async function writeFileBytes(id, relPath, bytes) {
   if (!IS_TAURI) return null;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const arr = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+    const res = await plugin("write_file_bytes", {
+      path: joinPath(base, relPath),
+      base64: bytesToBase64(arr),
+    });
+    // The plugin returns the actual filename written (collision-suffixed);
+    // rebuild the relative path against the original parent dir.
+    const slash = String(relPath).lastIndexOf("/");
+    const dir = slash >= 0 ? relPath.slice(0, slash) : "";
+    const finalName = res?.name || String(relPath).split("/").pop();
+    return dir ? `${dir}/${finalName}` : finalName;
+  }
   return invoke("local_sync_write_file_bytes", { id, relPath, bytes });
 }
 

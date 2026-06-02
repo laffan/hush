@@ -69,6 +69,9 @@ export function bindSyncTab(saveSetting, settings, render) {
   // ===== Google Sync sub-tab =====
   bindGoogleSubTab(saveSetting, settings, render);
 
+  // ===== iCloud (debug) sub-tab =====
+  import("./settings-tabs-icloud.js").then((m) => m.bindICloudSubTab()).catch(() => {});
+
   // OAuth connect
   const syncConnectBtn = document.getElementById("sync-connect-dropbox");
   if (syncConnectBtn) {

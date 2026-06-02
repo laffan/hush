@@ -25,8 +25,6 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
         "oauth-callback": resolve(__dirname, "oauth-callback.html"),
-        // Standalone iCloud-folder proof-of-concept harness (demo only).
-        "icloud-demo": resolve(__dirname, "icloud-demo.html"),
       },
     },
   },

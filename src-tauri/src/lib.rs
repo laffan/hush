@@ -221,7 +221,13 @@ pub fn run() {
                 let handle = _app.handle().clone();
                 let app_state: State<AppState> = _app.state();
                 for folder in &persisted_local_sync {
-                    let _ = app_state.local_sync_manager.watch(handle.clone(), folder);
+                    // iOS mounts (those carrying a security-scoped
+                    // bookmark) have no notify-crate watcher; access is
+                    // re-acquired by the JS layer via the icloud-folder
+                    // plugin on startup instead.
+                    if folder.bookmark.is_none() {
+                        let _ = app_state.local_sync_manager.watch(handle.clone(), folder);
+                    }
                 }
             }
 

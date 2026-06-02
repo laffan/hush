@@ -26,9 +26,19 @@ description = "Allow JS to read a file inside a security-scoped folder."
 commands.allow = ["read_file"]
 
 [[permission]]
+identifier = "allow-read-file-bytes"
+description = "Allow JS to read a binary file (e.g. an image) inside a security-scoped folder."
+commands.allow = ["read_file_bytes"]
+
+[[permission]]
 identifier = "allow-write-file"
 description = "Allow JS to write a file inside a security-scoped folder."
 commands.allow = ["write_file"]
+
+[[permission]]
+identifier = "allow-write-file-bytes"
+description = "Allow JS to write a binary file inside a security-scoped folder (collision auto-suffixed)."
+commands.allow = ["write_file_bytes"]
 
 [default]
 description = "Default permissions: allow the full folder-bookmark demo flow (pick, resolve, list, read, write, stop)."
@@ -38,5 +48,7 @@ permissions = [
   "allow-stop-access",
   "allow-list-dir",
   "allow-read-file",
+  "allow-read-file-bytes",
   "allow-write-file",
+  "allow-write-file-bytes",
 ]
