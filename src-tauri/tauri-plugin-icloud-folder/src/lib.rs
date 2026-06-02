@@ -80,9 +80,6 @@ pub struct ReadResult {
     pub contents: String,
 }
 
-#[derive(Deserialize)]
-struct EmptyResponse {}
-
 const IOS_ONLY: &str = "iCloud folder access is iOS-only (no-op on this platform)";
 
 #[tauri::command]
@@ -129,7 +126,7 @@ async fn stop_access<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), 
         let plugin = app.state::<IcloudFolder<R>>();
         let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
         handle
-            .run_mobile_plugin::<EmptyResponse>("stopAccess", PathArgs { path })
+            .run_mobile_plugin::<serde_json::Value>("stopAccess", PathArgs { path })
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
@@ -185,7 +182,7 @@ async fn write_file<R: Runtime>(
         let plugin = app.state::<IcloudFolder<R>>();
         let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
         handle
-            .run_mobile_plugin::<EmptyResponse>("writeFile", WriteArgs { path, contents })
+            .run_mobile_plugin::<serde_json::Value>("writeFile", WriteArgs { path, contents })
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
