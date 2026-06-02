@@ -381,10 +381,10 @@ body.selection-focus-active .cmd-held-sliders-wrap.selection-focus-sliders { dis
   user-select: none;
 }
 .cmd-held-sliders-caret svg { display: block; }
-body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:not(.selection-focus-sliders) .cmd-held-sliders-caret,
-body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-sliders .cmd-held-sliders-caret { opacity: 0.45; }
-body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders-caret,
-body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders-caret { opacity: 0.8; }
+body.zen-focus-active.sliders-near-bottom .cmd-held-sliders-wrap:not(.selection-focus-sliders) .cmd-held-sliders-caret,
+body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection-focus-sliders .cmd-held-sliders-caret { opacity: 0.45; }
+body.zen-focus-active.sliders-near-bottom .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders-caret,
+body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders-caret { opacity: 0.8; }
 
 /* Pill — hidden until the wrap is hovered (caret OR pill itself).
    No border; Zen's bottom curtain already isolates it from content. */
@@ -398,7 +398,10 @@ body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-slid
   background: color-mix(in srgb, var(--theme-bg, var(--bg)) 92%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  font: 500 12px/1 var(--font-family);
+  /* App UI font (system stack) so the pill reads as chrome rather
+     than picking up the editor's style font — matches sidebars,
+     modals, and the rest of the surrounding UI. */
+  font: 500 12px/1 var(--ui-font-family);
   color: var(--fg);
   opacity: 0;
   transform: translateY(8px);
@@ -407,8 +410,8 @@ body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-slid
      a click target while it's still invisible. */
   visibility: hidden;
 }
-body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders,
-body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders {
+body.zen-focus-active.sliders-near-bottom .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders,
+body.selection-focus-active.sliders-near-bottom .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders {
   opacity: 1;
   transform: translateY(0);
   visibility: visible;
