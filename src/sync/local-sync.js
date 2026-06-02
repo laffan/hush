@@ -302,6 +302,29 @@ export async function saveCurrentLocalSync(state) {
   catch (e) { console.error("Local Sync save failed:", e); }
 }
 
+/** Reveal a Local Sync mount on disk. macOS: Finder via the opener
+ *  plugin. iOS: the Files app via the icloud-folder plugin's
+ *  shareddocuments:// route (opener.revealItemInDir is a no-op on iOS).
+ *  `folderId` is needed on iOS to resolve the bookmark to a live path. */
+export async function revealLocalSyncFolder(folderId, path) {
+  if (!IS_TAURI || !path) return;
+  if (IOS) {
+    try {
+      const base = folderId ? await iosBasePath(folderId) : path;
+      await plugin("reveal_in_files", { path: base });
+    } catch (e) {
+      console.error("reveal_in_files failed:", e);
+    }
+    return;
+  }
+  try {
+    const opener = await import("@tauri-apps/plugin-opener");
+    await opener.revealItemInDir(path);
+  } catch (e) {
+    console.error("revealItemInDir failed:", e);
+  }
+}
+
 /** Re-read the open Local Sync file from disk if it changed underneath
  *  us. iOS has no filesystem watcher (the notify crate is macOS-only),
  *  so this is wired to the app-foreground (visibilitychange) event as

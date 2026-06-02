@@ -39,12 +39,8 @@ function openLocalSyncFolderMenu(anchorBtn, folder, state, refreshFilesPanel) {
     e.stopPropagation();
     closeLocalSyncMenu();
     if (!folder.path) return;
-    try {
-      const opener = await import("@tauri-apps/plugin-opener");
-      await opener.revealItemInDir(folder.path);
-    } catch (err) {
-      console.error("Failed to reveal local folder:", err);
-    }
+    const { revealLocalSyncFolder } = await import("../sync/local-sync.js");
+    await revealLocalSyncFolder(folder.id, folder.path);
   });
   menu.appendChild(reveal);
 

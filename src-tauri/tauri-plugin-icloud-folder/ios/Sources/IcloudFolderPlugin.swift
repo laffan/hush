@@ -130,6 +130,34 @@ class IcloudFolderPlugin: Plugin, UIDocumentPickerDelegate {
     invoke.resolve()
   }
 
+  // MARK: - Reveal in the Files app
+
+  /// Open the Files app at `path`. There is no UIKit "reveal" API (the
+  /// cross-platform tauri-plugin-opener `revealItemInDir` is a no-op on
+  /// iOS); the documented route is the `shareddocuments://` URL scheme
+  /// with the raw filesystem path appended. Works for iCloud Drive /
+  /// Files-app provider folders the user has already granted access to.
+  @objc public func revealInFiles(_ invoke: Invoke) throws {
+    struct Args: Decodable { let path: String }
+    let args = try invoke.parseArgs(Args.self)
+    // Percent-encode the path but keep "/" as path separators.
+    let encoded = args.path.addingPercentEncoding(
+      withAllowedCharacters: .urlPathAllowed) ?? args.path
+    guard let url = URL(string: "shareddocuments://" + encoded) else {
+      invoke.reject("Could not build shareddocuments URL")
+      return
+    }
+    DispatchQueue.main.async {
+      UIApplication.shared.open(url, options: [:]) { ok in
+        if ok {
+          invoke.resolve()
+        } else {
+          invoke.reject("Files app could not open the folder")
+        }
+      }
+    }
+  }
+
   // MARK: - File operations inside the scoped folder
 
   @objc public func listDir(_ invoke: Invoke) throws {

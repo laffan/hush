@@ -6,6 +6,8 @@
   <array>
     <string>zotero</string>
     <string>obsidian</string>
+    <!-- Lets "View in Files" open the Files app at a Local Sync mount. -->
+    <string>shareddocuments</string>
   </array>
   <key>CFBundleURLTypes</key>
   <array>

@@ -158,6 +158,24 @@ async fn stop_access<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), 
 }
 
 #[tauri::command]
+async fn reveal_in_files<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<serde_json::Value>("revealInFiles", PathArgs { path })
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
 async fn list_dir<R: Runtime>(app: AppHandle<R>, path: String) -> Result<ListResult, String> {
     #[cfg(target_os = "ios")]
     {
@@ -260,6 +278,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             pick_folder,
             resolve_bookmark,
             stop_access,
+            reveal_in_files,
             list_dir,
             read_file,
             write_file,

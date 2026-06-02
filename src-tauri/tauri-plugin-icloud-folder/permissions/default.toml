@@ -16,6 +16,11 @@ description = "Allow JS to relinquish security-scoped access to a previously res
 commands.allow = ["stop_access"]
 
 [[permission]]
+identifier = "allow-reveal-in-files"
+description = "Allow JS to open the iOS Files app at a folder via the shareddocuments:// scheme."
+commands.allow = ["reveal_in_files"]
+
+[[permission]]
 identifier = "allow-list-dir"
 description = "Allow JS to list the contents of a security-scoped folder."
 commands.allow = ["list_dir"]
@@ -46,6 +51,7 @@ permissions = [
   "allow-pick-folder",
   "allow-resolve-bookmark",
   "allow-stop-access",
+  "allow-reveal-in-files",
   "allow-list-dir",
   "allow-read-file",
   "allow-read-file-bytes",
