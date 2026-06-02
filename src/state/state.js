@@ -96,6 +96,11 @@ export class AppState {
     this.dryMode = false;
     this.focusMode = false;
     this.zenFocus = false;
+    // Selection Focus — a lightweight "show me only this text" overlay,
+    // fired by the Focus-mode shortcut when an active editor selection
+    // is non-empty. Stays at the editor's font size (unlike Zen) but
+    // hides every other piece of chrome (like Zen).
+    this.selectionFocus = false;
     this.isFullscreen = false;
     // Doc-only Proofread mode (harper-core via the `check_grammar`
     // Tauri command). Intentionally NOT persisted between sessions —
@@ -625,6 +630,7 @@ export class AppState {
   toggleSpellcheck() { _modes.toggleSpellcheck(this); }
   toggleFocus() { _modes.toggleFocus(this); }
   toggleZenFocus() { _modes.toggleZenFocus(this); }
+  toggleSelectionFocus(payload) { _modes.toggleSelectionFocus(this, payload); }
   toggleFullscreen() { _modes.toggleFullscreen(this); }
 
   // Event system

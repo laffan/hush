@@ -49,6 +49,41 @@ function toggleModeOnContext(state, modeName) {
   return true;
 }
 
+/** Hunt for an editor surface whose active selection is non-empty and
+ *  return a payload the Selection Focus overlay can render — the
+ *  selected text plus enough computed-style metadata to paint it the
+ *  same size / face / colour the editor was showing. Priority mirrors
+ *  the Zen source picker: explicit view arg > active stack column >
+ *  active pane > main editor. Returns null when nothing is selected,
+ *  in which case the focus shortcut falls through to its normal
+ *  per-context Focus toggle. */
+function captureSelectionFocusPayload(state, view) {
+  const candidates = [];
+  if (view) candidates.push(view);
+  const ctx = getActiveModeContext(state);
+  if (ctx?.view && !candidates.includes(ctx.view)) candidates.push(ctx.view);
+  if (state.editor?.view && !candidates.includes(state.editor.view)) {
+    candidates.push(state.editor.view);
+  }
+  for (const v of candidates) {
+    try {
+      const sel = v.state.selection.main;
+      if (sel.empty) continue;
+      const text = v.state.sliceDoc(sel.from, sel.to);
+      if (!text.trim()) continue;
+      const cs = getComputedStyle(v.contentDOM || v.dom);
+      return {
+        text,
+        fontSize: cs.fontSize,
+        fontFamily: cs.fontFamily,
+        color: cs.color,
+        lineHeight: cs.lineHeight,
+      };
+    } catch (_) { /* try next candidate */ }
+  }
+  return null;
+}
+
 /** Multi-cursor "select next occurrence" — was inline in editor.js. */
 function selectNextInstance(view) {
   const sel = view.state.selection.main;
@@ -147,7 +182,15 @@ export function buildEditorCommands() {
     shortcutToggleOutline: (state) => { state.emit("toggle-outline-panel"); return true; },
     shortcutTypewriter: (state) => toggleModeOnContext(state, "typewriterMode"),
     shortcutToggleDry: (state) => toggleModeOnContext(state, "dryMode"),
-    shortcutToggleFocus: (state) => toggleModeOnContext(state, "focusMode"),
+    shortcutToggleFocus: (state, view) => {
+      // Already inside Selection Focus — the same shortcut exits.
+      if (state.selectionFocus) { state.toggleSelectionFocus(); return true; }
+      // Non-empty selection in the active editor surface → enter
+      // Selection Focus instead of regular per-context Focus mode.
+      const captured = captureSelectionFocusPayload(state, view);
+      if (captured) { state.toggleSelectionFocus(captured); return true; }
+      return toggleModeOnContext(state, "focusMode");
+    },
     shortcutZenFocus: (state) => { state.toggleZenFocus(); return true; },
     shortcutToggleWordCount: (state) => toggleWordCount(state),
     shortcutNewFile: (state) => { state.newFile(); return true; },
