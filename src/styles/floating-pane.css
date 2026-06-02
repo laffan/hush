@@ -499,15 +499,8 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
 .pane-dock-zone {
   position: absolute;
   background: rgba(66, 153, 225, 0.18);
-  transition: opacity 120ms ease, background 80ms ease;
+  transition: background 80ms ease;
   box-sizing: border-box;
-  /* Zones stay invisible by default during a drag and only fade in
-     when the dragged pane's cursor is within ~200 px of the matching
-     edge (the JS toggles `.near` from the pointermove handler). */
-  opacity: 0;
-}
-.pane-dock-zone.near {
-  opacity: 1;
 }
 .pane-dock-zone.active {
   background: rgba(66, 153, 225, 0.55);
@@ -533,50 +526,3 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
 .floating-pane.docked.docked-bottom .fp-resize.fp-resize-n { display: block; }
 .floating-pane.docked.docked-left   .fp-resize.fp-resize-e { display: block; }
 .floating-pane.docked.docked-right  .fp-resize.fp-resize-w { display: block; }
-
-/* Dock hide / show strip — only visible while the pane is docked.
-   Lives on the canvas-facing edge (right for left-dock, etc.) so the
-   user has a single click target to retract the pane down to just the
-   strip and bring it back. Visual language mirrors the notebook
-   toolbar's drag-grip (5 px rounded bar centred inside a 8 px strip). */
-.fp-dock-hide-strip {
-  display: none;
-  position: absolute;
-  background: transparent;
-  border: none;
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-  z-index: 12;
-  color: inherit;
-}
-.floating-pane.docked .fp-dock-hide-strip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.floating-pane.docked.docked-left .fp-dock-hide-strip { top: 0; right: 0; bottom: 0; width: 8px; }
-.floating-pane.docked.docked-right .fp-dock-hide-strip { top: 0; left: 0; bottom: 0; width: 8px; }
-.floating-pane.docked.docked-top .fp-dock-hide-strip { left: 0; right: 0; bottom: 0; height: 8px; }
-.floating-pane.docked.docked-bottom .fp-dock-hide-strip { left: 0; right: 0; top: 0; height: 8px; }
-.fp-dock-hide-grip {
-  background: currentColor;
-  opacity: 0.3;
-  border-radius: 2px;
-  transition: opacity 0.15s;
-  pointer-events: none;
-}
-.floating-pane.docked-left .fp-dock-hide-grip,
-.floating-pane.docked-right .fp-dock-hide-grip { width: 5px; height: 36px; }
-.floating-pane.docked-top .fp-dock-hide-grip,
-.floating-pane.docked-bottom .fp-dock-hide-grip { width: 36px; height: 5px; }
-.fp-dock-hide-strip:hover .fp-dock-hide-grip { opacity: 0.6; }
-.floating-pane.dock-hidden .fp-dock-hide-grip { opacity: 0.8; }
-
-/* Retracted state — every interactive part except the strip retreats so
-   only the slim grip is visible against the host surface. The strip
-   itself keeps its position from the docked-* rules above; the resize
-   handle on the cross axis also hides since there's nothing to grab. */
-.floating-pane.docked.dock-hidden .floating-pane-titlebar,
-.floating-pane.docked.dock-hidden .floating-pane-content,
-.floating-pane.docked.dock-hidden .fp-resize { display: none !important; }

@@ -314,28 +314,6 @@ export function updateColumnResizers(state) {
   applyColumnLayout();
   state.runtime.columnResizeHandler = applyColumnLayout;
   window.addEventListener("resize", applyColumnLayout);
-  // Listen for dock geometry changes directly. The pane manager already
-  // calls columnResizeHandler from refreshPaneLayoutMetrics, but that
-  // path runs through a lazy import and can lose a wakeup if the
-  // promise resolves after the editor's measure pass has already run —
-  // right-side docks were occasionally landing on the canvas without
-  // the column reflowing to make room. This listener is the
-  // belt-and-suspenders: pane-dock-changed always fires immediately
-  // after publishDockCssVars, so we re-run applyColumnLayout in the
-  // same frame.
-  document.addEventListener("pane-dock-changed", (e) => {
-    // publishDockCssVars carries the freshly-computed dock footprints
-    // in the event detail. Copy them onto state.runtime synchronously
-    // so applyColumnLayout below reads the same values it would after
-    // a refreshPaneLayoutMetrics pass — without waiting on the lazy
-    // import in dockPane to resolve.
-    const d = e.detail || {};
-    state.runtime.dockedLeftWidth = d.leftWidth || 0;
-    state.runtime.dockedRightWidth = d.rightWidth || 0;
-    state.runtime.dockedTopHeight = d.topHeight || 0;
-    state.runtime.dockedBottomHeight = d.bottomHeight || 0;
-    applyColumnLayout();
-  });
 
   function makeDraggable(el, isLeft) {
     let startX, startWidth;

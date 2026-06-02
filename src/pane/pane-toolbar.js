@@ -171,25 +171,6 @@ export function buildPaneDOM(pane, deps) {
   content.className = "floating-pane-content";
   el.appendChild(content);
 
-  // Dock hide / show strip — only visible while the pane is docked.
-  // Lives on the pane's canvas-facing edge (right for left-dock, etc.)
-  // so the user has a single click target to retract the pane down to
-  // just the strip and bring it back. Mirrors the notebook toolbar's
-  // 5 px drag-grip visual language. Click toggles `pane.dockHidden`;
-  // CSS positions the strip per dock edge via the `docked-*` classes.
-  const hideStrip = document.createElement("button");
-  hideStrip.type = "button";
-  hideStrip.className = "fp-dock-hide-strip";
-  hideStrip.title = "Hide / show docked pane";
-  const hideGrip = document.createElement("span");
-  hideGrip.className = "fp-dock-hide-grip";
-  hideStrip.appendChild(hideGrip);
-  hideStrip.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleDockHidden(pane, deps);
-  });
-  el.appendChild(hideStrip);
-
   // Resize handles (8 directions)
   for (const dir of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]) {
     const handle = document.createElement("div");
@@ -253,21 +234,6 @@ export function toggleCollapse(pane, deps) {
   } else {
     pane.el.style.height = pane.collapsed ? TITLEBAR_HEIGHT + "px" : pane.height + "px";
   }
-  schedulePersist();
-}
-
-/** Docked-pane show / hide toggle — fires from the grip strip on the
- *  pane's canvas-facing edge. Hidden state retracts the pane to just
- *  the strip (8 px on the dock axis); the host content reclaims the
- *  rest. Only meaningful for docked panes; on a floating pane the
- *  strip isn't rendered, so this is never invoked. */
-export function toggleDockHidden(pane, deps) {
-  if (!isDocked(pane)) return;
-  pane.dockHidden = !pane.dockHidden;
-  pane.el.classList.toggle("dock-hidden", pane.dockHidden);
-  applyDockGeometry(pane);
-  reflowAllDockedPanes();
-  deps?.notifyPaneDragMove?.();
   schedulePersist();
 }
 
