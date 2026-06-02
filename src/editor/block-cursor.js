@@ -30,6 +30,8 @@ export function applyBlockCursor(state) {
   if (main) targets.push(main);
   const zen = document.querySelector(".zen-focus-overlay");
   if (zen) targets.push(zen);
+  const sel = document.querySelector(".selection-focus-overlay");
+  if (sel) targets.push(sel);
   if (!targets.length) return;
   let style = null;
   let cursorOverride = null;

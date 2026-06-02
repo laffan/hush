@@ -1,10 +1,10 @@
-/* Selection Focus — fullscreen overlay that paints ONLY the user's
- * active editor selection, centred horizontally and vertically. Sits at
- * the same z-layer as Zen so sidebars, toolbars, panes, and shelves all
- * disappear behind its background. Unlike Zen, the type stays at the
- * editor's own font size (the caller copies size + family + colour off
- * the source view) and there's no shadow CodeMirror — just a static
- * read-only render of the selected text. */
+/* Selection Focus — fullscreen overlay that hosts a fresh CodeMirror
+ * seeded with only the user's active editor selection, centred
+ * horizontally and vertically. Sits at the same z-layer as Zen so
+ * sidebars, toolbars, panes, and shelves all disappear behind its
+ * background. Unlike Zen, the type stays at the source editor's own
+ * size (bumped 10 % for legibility) and the editor only carries the
+ * selected block — Zen carries the whole doc. */
 
 .selection-focus-overlay {
   position: fixed;
@@ -17,7 +17,6 @@
   justify-content: center;
   padding: 5vh 4vw;
   animation: selection-focus-fade-in 200ms ease-out;
-  overflow: auto;
 }
 
 @keyframes selection-focus-fade-in {
@@ -25,26 +24,40 @@
   to   { opacity: 1; }
 }
 
-.selection-focus-text {
-  /* Track the editor column width so the line-length the user has
-     dialled in stays consistent inside the overlay. Capped to keep
-     things tidy on a wide window. */
-  width: min(100%, var(--column-width, 800px));
+/* Stage carries the column width captured off the source view (set
+ * inline by selection-focus.js) so the line measure the user dialled
+ * in is preserved. Default width is a sensible fallback. */
+.selection-focus-stage {
+  width: 800px;
+  max-width: 100%;
   max-height: 100%;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  text-align: left;
-  /* The caller writes font-size / font-family / color / line-height
-     inline off the source view, so this rule only carries defaults
-     in case the capture fell back. */
-  font-family: inherit;
-  line-height: 1.5;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
 }
 
+/* Shadow CodeMirror styling — mirrors the Zen treatment so the
+ * focused editor reads as a clean editor surface rather than a card.
+ * No focus ring, transparent background, scrollbars hidden. */
+.selection-focus-stage .cm-editor,
+.selection-focus-stage .cm-editor.cm-focused {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  outline: none;
+  border: none;
+}
+.selection-focus-stage .cm-scroller {
+  font-size: var(--selection-focus-font-size, 1.1em);
+  line-height: 1.5;
+  scrollbar-width: none;
+}
+.selection-focus-stage .cm-scroller::-webkit-scrollbar { display: none; }
+
 /* Hide the same floating chrome Zen hides while Selection Focus is
- * open — the overlay paints over `--z-modal-top` so most layers
- * disappear naturally, but a handful of fixed-position widgets sit
- * above it and need an explicit nudge. */
+ * open. The overlay paints above `--z-modal-top` so most layers
+ * disappear naturally; these are the fixed-position widgets that
+ * sit above it and need an explicit nudge. */
 body.selection-focus-active .ratchet-timer,
 body.selection-focus-active .word-count-display,
 body.selection-focus-active .sidebar-floating-toggle,

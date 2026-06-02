@@ -50,12 +50,13 @@ function toggleModeOnContext(state, modeName) {
 }
 
 /** Hunt for an editor surface whose active selection is non-empty and
- *  return a payload the Selection Focus overlay can render — the
- *  selected text plus enough computed-style metadata to paint it the
- *  same size / face / colour the editor was showing. Priority mirrors
- *  the Zen source picker: explicit view arg > active stack column >
- *  active pane > main editor. Returns null when nothing is selected,
- *  in which case the focus shortcut falls through to its normal
+ *  return a payload the Selection Focus overlay can mount a fresh
+ *  CodeMirror against: source view reference (for write-back), the
+ *  selection range, the selected text, the column width to mirror, and
+ *  the source's font-size in px so the overlay can bump it 10 %. Priority
+ *  mirrors the Zen source picker — explicit view arg > active stack
+ *  column > active pane > main editor. Returns null when nothing is
+ *  selected; the focus shortcut then falls through to its normal
  *  per-context Focus toggle. */
 function captureSelectionFocusPayload(state, view) {
   const candidates = [];
@@ -72,12 +73,19 @@ function captureSelectionFocusPayload(state, view) {
       const text = v.state.sliceDoc(sel.from, sel.to);
       if (!text.trim()) continue;
       const cs = getComputedStyle(v.contentDOM || v.dom);
+      // Column width: measure the content DOM rather than reading the
+      // CSS var, so panes / stack columns hand over their own
+      // narrower-than-main column instead of the global value.
+      const rect = (v.contentDOM || v.dom).getBoundingClientRect();
+      const columnWidth = Math.max(200, Math.round(rect.width));
+      const fontSizePx = parseFloat(cs.fontSize) || 16;
       return {
+        sourceView: v,
+        from: sel.from,
+        to: sel.to,
         text,
-        fontSize: cs.fontSize,
-        fontFamily: cs.fontFamily,
-        color: cs.color,
-        lineHeight: cs.lineHeight,
+        columnWidth,
+        fontSizePx,
       };
     } catch (_) { /* try next candidate */ }
   }
