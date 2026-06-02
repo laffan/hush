@@ -27,6 +27,11 @@ import {
  *  pane doesn't completely occlude the editor / other content). */
 const DOCK_MIN_FREE = 200;
 
+/** Thickness of the docked pane's hide-strip — when the user clicks
+ *  the canvas-facing grip the pane retracts to just this strip so the
+ *  host surface reclaims the rest of the carved territory. */
+const DOCK_HIDE_STRIP_PX = 8;
+
 /** Default size for the user-controlled axis when a pane is first
  *  docked. Subsequent resizes overwrite this on the pane object. */
 const DEFAULT_DOCK_HEIGHT = 240;
@@ -201,6 +206,28 @@ export function applyDockGeometry(pane) {
       case "right":
         pane.width = TITLEBAR_HEIGHT;
         pane.x = winW - TITLEBAR_HEIGHT - rightInset;
+        break;
+    }
+  }
+  // Dock-hidden: just the grip strip on the canvas-facing edge stays
+  // visible, the pane's body retracts. Like `collapsed` above this
+  // runs after the size switch so the strip thickness wins over the
+  // full size everything downstream reads.
+  if (pane.dockHidden) {
+    switch (pane.dockEdge) {
+      case "top":
+        pane.height = DOCK_HIDE_STRIP_PX;
+        break;
+      case "bottom":
+        pane.height = DOCK_HIDE_STRIP_PX;
+        pane.y = winH - DOCK_HIDE_STRIP_PX - bottomInset;
+        break;
+      case "left":
+        pane.width = DOCK_HIDE_STRIP_PX;
+        break;
+      case "right":
+        pane.width = DOCK_HIDE_STRIP_PX;
+        pane.x = winW - DOCK_HIDE_STRIP_PX - rightInset;
         break;
     }
   }

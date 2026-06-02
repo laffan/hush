@@ -55,6 +55,7 @@ export function persistPanesNow() {
       docked: !!p.docked,
       dockEdge: p.dockEdge || null,
       dockUserSize: typeof p.dockUserSize === "number" ? p.dockUserSize : null,
+      dockHidden: !!p.dockHidden,
       dockPrev: p._dockPrev || null,
       width: p.width,
       height: p.height,
@@ -200,6 +201,7 @@ export async function restorePanes(deps) {
       docked: !!s.docked,
       dockEdge: s.dockEdge || null,
       dockUserSize: typeof s.dockUserSize === "number" ? s.dockUserSize : null,
+      dockHidden: !!s.dockHidden,
       inline: s.inline
         ? {
             anchorTitle: s.inline.anchorTitle,
@@ -263,6 +265,12 @@ export async function restorePanes(deps) {
     // Re-apply docked layout (snap edge + user-controlled dimension).
     if (pane.docked && pane.dockEdge) {
       const { dockPane } = await import("./pane-dock.js");
+      // Preserve the hide-strip state across the re-dock — dockPane
+      // doesn't read pane.dockHidden directly; it just re-runs the
+      // geometry pass, so we set the CSS class up front and the
+      // applyDockGeometry call inside dockPane picks up the strip-
+      // thickness branch.
+      if (pane.dockHidden && pane.el) pane.el.classList.add("dock-hidden");
       dockPane(pane, pane.dockEdge);
     }
   }
