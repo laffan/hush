@@ -475,6 +475,8 @@ pub fn run() {
             commands::backup::backup_app_data,
             commands::grammar::check_grammar,
             commands::grammar::list_grammar_rules,
+            commands::spellcheck::check_spelling,
+            commands::spellcheck::spelling_suggestions,
             #[cfg(desktop)]
             commands::window::set_always_on_top,
             commands::window::set_activation_policy,

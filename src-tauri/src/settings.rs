@@ -486,7 +486,8 @@ pub struct AppSettings {
     // frontend forwards it on every `check_grammar` call.
     #[serde(default = "default_proofread_disabled_rules")]
     pub proofread_disabled_rules: Vec<String>,
-
+    #[serde(default)] // Spellcheck (spellbook) — persisted; ~10 ms load.
+    pub spellcheck_mode: bool,
     #[serde(skip)]
     pub data_dir: PathBuf,
 }
@@ -642,6 +643,7 @@ impl Default for AppSettings {
             dry_mode: false,
             scroll_position: None,
             proofread_disabled_rules: default_proofread_disabled_rules(),
+            spellcheck_mode: false,
             notebook_appearance_mode: default_notebook_appearance(),
             notebook_theme_id: default_notebook_theme(),
             notebook_background_pattern: default_notebook_bg_pattern(),

@@ -344,6 +344,8 @@ function buildCommands(state) {
       action: (s) => s.emit("toggle-outline-panel") },
     { id: "proofread", label: "Proofread mode", icon: icons.proofread, shortcutKey: null, ctx: "doc",
       action: (s) => s.toggleProofread() },
+    { id: "spellcheck", label: "Spellcheck", icon: icons.proofread, shortcutKey: null, ctx: "doc",
+      action: (s) => s.toggleSpellcheck() },
     { id: "copy-as-google-doc", label: "Copy as Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
     { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
@@ -501,6 +503,7 @@ function docModeTurnoffs(state) {
     { flag: "dryMode", label: "Turn off Show repeats", icon: icons.dry, shortcutKey: "shortcutToggleDry", action: (s) => s.toggleDry() },
     { flag: "focusMode", label: "Turn off Focus mode", icon: icons.focus, shortcutKey: "shortcutToggleFocus", action: (s) => s.toggleFocus() },
     { flag: "proofreadMode", label: "Turn off Proofread mode", icon: icons.proofread, action: (s) => s.toggleProofread() },
+    { flag: "spellcheckMode", label: "Turn off Spellcheck", icon: icons.proofread, action: (s) => s.toggleSpellcheck() },
   ];
   return modes
     .filter(m => state[m.flag])

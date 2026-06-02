@@ -248,6 +248,10 @@ export function createDefaultSettings() {
     // the per-rule disable list is.
     proofreadDisabledRules: ["LongSentences"],
 
+    // Spellcheck (spellbook crate, en_US Hunspell). Persisted because
+    // load is ~10 ms — no cold-start penalty worth deferring.
+    spellcheckMode: false,
+
     // Session state
     lastFileId: null,
     lastProjectId: null,

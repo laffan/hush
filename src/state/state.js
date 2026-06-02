@@ -103,6 +103,10 @@ export class AppState {
     // dictionary, which adds a noticeable startup pause. Each session
     // starts off; the user re-enables when they want it.
     this.proofreadMode = false;
+    // Doc-only Spellcheck (spellbook crate via `check_spelling`). Fast
+    // enough to persist between sessions — seeded from settings in
+    // state-defaults.js / loadSettings().
+    this.spellcheckMode = false;
 
     // Autosave interval
     this.autosaveInterval = null;
@@ -186,6 +190,7 @@ export class AppState {
         // Restore session state from settings
         this.typewriterMode = !!this.settings.typewriterMode;
         this.dryMode = !!this.settings.dryMode;
+        this.spellcheckMode = !!this.settings.spellcheckMode;
         this.runtime.pendingScrollPosition = this.settings.scrollPosition || null;
 
         if (initialFile && initialFile.fileId && initialFile.fileType) {
@@ -605,6 +610,7 @@ export class AppState {
       lastNotebookId: this.currentNotebookFileId || null,
       typewriterMode: this.typewriterMode,
       dryMode: this.dryMode,
+      spellcheckMode: this.spellcheckMode,
       scrollPosition: scrollTop,
     });
   }
@@ -616,6 +622,7 @@ export class AppState {
   toggleTypewriter() { _modes.toggleTypewriter(this); }
   toggleDry() { _modes.toggleDry(this); }
   toggleProofread() { _modes.toggleProofread(this); }
+  toggleSpellcheck() { _modes.toggleSpellcheck(this); }
   toggleFocus() { _modes.toggleFocus(this); }
   toggleZenFocus() { _modes.toggleZenFocus(this); }
   toggleFullscreen() { _modes.toggleFullscreen(this); }

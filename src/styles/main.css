@@ -31,6 +31,7 @@
 @import './notebook-export.css';
 @import './split-combine.css';
 @import './proofreading.css';
+@import './spellcheck.css';
 @import './google-docs.css';
 @import './multi-select.css';
 @import './wikilinks.css';

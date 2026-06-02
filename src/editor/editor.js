@@ -34,6 +34,7 @@ import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
+import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
 import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-highlight.js";
 import {
   commentTag, commentMarkTag, highlightTag, highlightMarkTag,
@@ -260,6 +261,7 @@ export function createEditor(container, state) {
   const commentAfterPlugin = createCommentAfterPlugin();
   const grammarCheckPlugin = createGrammarCheckPlugin(state);
   const grammarHoverTooltip = createGrammarHoverTooltip(state);
+  const spellcheckPlugin = createSpellcheckPlugin(state);
 
   // Encourage typing decorations — fades new text when user stops typing in ratchet mode
   const encouragePlugin = ViewPlugin.fromClass(
@@ -317,6 +319,8 @@ export function createEditor(container, state) {
       commentAfterPlugin,
       grammarCheckPlugin,
       grammarHoverTooltip,
+      spellcheckPlugin,
+      spellcheckClickHandler,
       encouragePlugin,
       projectViewField,
       separatorFilter,

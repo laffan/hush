@@ -45,6 +45,13 @@ export function toggleProofread(state) {
   // build doesn't gate startup.
 }
 
+export function toggleSpellcheck(state) {
+  if (state.currentNotebookFileId) return;
+  state.spellcheckMode = !state.spellcheckMode;
+  state.emit("mode-changed");
+  state.updateSettings({ spellcheckMode: state.spellcheckMode });
+}
+
 export function toggleFocus(state) {
   state.focusMode = !state.focusMode;
   state.emit("mode-changed");
