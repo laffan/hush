@@ -237,6 +237,10 @@ export function createPdfViewer(container, opts = {}) {
     fitOneBtn.classList.toggle("active", fitMode === MODE_FIT);
     fitTwoBtn.classList.toggle("active", fitMode === MODE_FIT_2);
     fitThreeBtn.classList.toggle("active", fitMode === MODE_FIT_3);
+    // Persist view-state changes (fit / direction / fixed zoom) the instant
+    // they happen, not only on a later scroll. Guarded so restore + initial
+    // load don't echo back.
+    if (!suspended && !resuming) for (const cb of scrollListeners) cb();
   }
 
   function updatePageIndicator() {
@@ -501,10 +505,8 @@ export function createPdfViewer(container, opts = {}) {
   function setScrollLeft(v) { scrollArea.scrollLeft = v; }
 
   /** Restore zoom mode + scroll. Fit-mode page heights derive from the
-   *  container's measured size, which often isn't settled the instant a
-   *  pane mounts/resumes — so a single scrollTop assignment clamps to 0
-   *  against a still-collapsed scrollHeight (the "type restored, position
-   *  lost" bug). Re-flex + re-assert across a few frames until it sticks. */
+   *  container's measured size, often unsettled at mount/resume — a single
+   *  scrollTop then clamps to 0. Re-flex + re-assert until it sticks. */
   function restoreView(zoomLevel, scrollTop, scrollLeft) {
     if (typeof zoomLevel === "number") { try { setZoom(zoomLevel); } catch (_) {} }
     const top = scrollTop || 0;
@@ -531,9 +533,7 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   // ── Suspend / Resume (lightweight snapshot for inactive panes) ────
-  // The captured _suspend* values let resume() restore the user's
-  // pre-suspend viewport — without them resume reloads at scrollTop=0
-  // and host panes lose their scroll on every doc-switch.
+  // _suspend* values let resume() restore the pre-suspend viewport.
   let suspended = false;
   let resuming = false;
   let suspendImg = null;
