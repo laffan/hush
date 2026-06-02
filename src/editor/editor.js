@@ -332,6 +332,14 @@ export function createEditor(container, state) {
   });
 
   state.on("mode-changed", () => {
+    // Capture the resting scroll offset up front. The typewriter-off branch
+    // below clears the scroller padding and then re-applies it via a path
+    // that reads offsetHeight (forcing a reflow while the scroll range is
+    // momentarily shrunk) — the browser clamps scrollTop during that window
+    // and the document visibly jumps toward the top. We restore the saved
+    // offset afterwards so toggling e.g. focus mode leaves the view put.
+    const modeScroller = document.querySelector("#editor-container .cm-scroller");
+    const savedModeScrollTop = modeScroller ? modeScroller.scrollTop : null;
     applyModes(state);
     updateRatchetTimer(state);
     updateWordCountDisplay(state);
@@ -356,6 +364,13 @@ export function createEditor(container, state) {
       // Restore the short-doc-aware paddingTop / 50vh paddingBottom
       // that the typewriter just blew away.
       applyEditorScrollerPadding(state);
+      // Keep the user where they were instead of letting the padding churn
+      // clamp them upward. Skip when ratchet is active — it pins the current
+      // line to centre and owns the scroll position itself.
+      if (!state.ratchetMode && modeScroller && savedModeScrollTop != null
+          && modeScroller.scrollTop !== savedModeScrollTop) {
+        modeScroller.scrollTop = savedModeScrollTop;
+      }
     }
   });
 

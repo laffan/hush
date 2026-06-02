@@ -23,6 +23,7 @@ import {
   screenToCanvas, startCanvasSync, startScrollSync, startPdfScrollSync, stopAttachSync, anchorPaneToPdf,
   anchorPaneToStackItem, startStackPinSync, stopStackPinSync,
 } from "./pane-attach-sync.js";
+import { isDocked, applyDockGeometry, reflowAllDockedPanes } from "./pane-dock.js";
 import { schedulePersist } from "./pane-persistence.js";
 
 // ── SVG icons ─────────────────────────────────────────────────────────
@@ -156,7 +157,7 @@ export function buildPaneDOM(pane, deps) {
   // equivalent gesture).
   if (isIOS()) {
     const collapseBtn = makeBtn("collapse", ICON_COLLAPSE, "Collapse");
-    collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(pane); });
+    collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(pane, deps); });
     buttons.appendChild(collapseBtn);
   }
   const closeBtn = makeBtn("close", ICON_CLOSE, "Close");
@@ -204,23 +205,34 @@ export function buildPaneDOM(pane, deps) {
     notifyPaneDragMove: deps.notifyPaneDragMove,
   });
   titlebar.addEventListener("dblclick", (e) => {
-    if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane);
+    if (!e.target.closest(".floating-pane-btn, .fp-title-link")) toggleCollapse(pane, deps);
   });
   el.addEventListener("pointerdown", () => focusPane(pane.id));
 }
 
 // ── Toggles wired into the title bar ─────────────────────────────────
 
-export function toggleCollapse(pane) {
+export function toggleCollapse(pane, deps) {
   pane.collapsed = !pane.collapsed;
   if (pane.collapsed) {
     pane._savedHeight = pane.height;
     pane.el.classList.add("collapsed");
-    pane.el.style.height = TITLEBAR_HEIGHT + "px";
   } else {
     pane.el.classList.remove("collapsed");
     pane.height = pane._savedHeight || DEFAULT_HEIGHT;
-    pane.el.style.height = pane.height + "px";
+  }
+  if (isDocked(pane)) {
+    // Docked panes are sized by the dock layout, not their own inline
+    // height — setting style.height directly would just get overwritten on
+    // the next reflow, leaving the carved host territory at full size. Re-
+    // flex the dock geometry (which now releases the title-bar-sized strip
+    // when collapsed) and refresh the editor insets so the surface actually
+    // reclaims the freed space. Mirrors the docked-resize reflow path.
+    applyDockGeometry(pane);
+    reflowAllDockedPanes();
+    deps?.notifyPaneDragMove?.();
+  } else {
+    pane.el.style.height = pane.collapsed ? TITLEBAR_HEIGHT + "px" : pane.height + "px";
   }
   schedulePersist();
 }

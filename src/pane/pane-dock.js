@@ -181,6 +181,29 @@ export function applyDockGeometry(pane) {
       break;
     }
   }
+  // A collapsed dock carves only its title bar along the dock axis so the
+  // host surface reclaims the rest. Top/bottom shrink height; left/right
+  // shrink width. Bottom/right re-pin to stay flush against their edge.
+  // This runs after the switch so the released dimension overrides the
+  // full size everything downstream reads (footprints, CSS vars, insets).
+  if (pane.collapsed) {
+    switch (pane.dockEdge) {
+      case "top":
+        pane.height = TITLEBAR_HEIGHT;
+        break;
+      case "bottom":
+        pane.height = TITLEBAR_HEIGHT;
+        pane.y = winH - TITLEBAR_HEIGHT - bottomInset;
+        break;
+      case "left":
+        pane.width = TITLEBAR_HEIGHT;
+        break;
+      case "right":
+        pane.width = TITLEBAR_HEIGHT;
+        pane.x = winW - TITLEBAR_HEIGHT - rightInset;
+        break;
+    }
+  }
   Object.assign(pane.el.style, {
     left: pane.x + "px",
     top: pane.y + "px",

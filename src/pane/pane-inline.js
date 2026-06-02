@@ -116,7 +116,13 @@ class InlinePaneWidget extends WidgetType {
 
   eq(other) { return this.paneId === other.paneId; }
   toDOM() { return this.host; }
-  ignoreEvent() { return false; }
+  // The inline pane hosts its own fully-functional editor / canvas, so the
+  // host document must treat every event originating inside the widget as
+  // none of its business. Returning false here let key events (notably
+  // Backspace / Delete) bubble up to the host editor's keymap and mutate
+  // the surrounding doc while the user was typing inside the pane. Ignoring
+  // them keeps each keystroke scoped to the focused pane.
+  ignoreEvent() { return true; }
   // We hand back the same DOM node each time, so CM doesn't need to
   // rebuild it; returning true tells CM the existing DOM is still valid.
   updateDOM(_dom) { return true; }
