@@ -102,19 +102,23 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   line-height: var(--line-height);
 }
 
-#editor-container .cm-cursor {
+#editor-container .cm-cursor,
+.zen-focus-overlay .cm-cursor,
+.selection-focus-overlay .cm-cursor {
   border-left-color: var(--cursor);
   border-left-width: 2px;
 }
 
-/* Block cursor mode — also targets the Zen Focus overlay, which mounts
-   its own CodeMirror outside `#editor-container`. The cursor's `0.6em`
-   width is relative to the cursor element's computed font-size, which
-   inherits from `.cm-scroller` (the main editor uses --font-size; Zen
-   uses --zen-font-size), so the block scales with whichever surface
-   it's painted in. */
+/* Block cursor mode — also targets the Zen Focus and Selection Focus
+   overlays, which mount their own CodeMirror outside `#editor-container`.
+   The cursor's `0.6em` width is relative to the cursor element's
+   computed font-size, which inherits from `.cm-scroller` (the main
+   editor uses --font-size; Zen uses --zen-font-size; Selection Focus
+   uses --selection-focus-font-size), so the block scales with whichever
+   surface it's painted in. */
 #editor-container.block-cursor .cm-cursor,
-.zen-focus-overlay.block-cursor .cm-cursor {
+.zen-focus-overlay.block-cursor .cm-cursor,
+.selection-focus-overlay.block-cursor .cm-cursor {
   border-left: none;
   background: var(--block-cursor-color, var(--cursor));
   opacity: 0.55;
@@ -129,7 +133,8 @@ body.file-in-trash #notebook-container .notes-canvas + * {
    scales with the surface's font size (Zen's larger font no longer
    leaves a hairline strip under chunky text). */
 #editor-container.underline-cursor .cm-cursor,
-.zen-focus-overlay.underline-cursor .cm-cursor {
+.zen-focus-overlay.underline-cursor .cm-cursor,
+.selection-focus-overlay.underline-cursor .cm-cursor {
   border-left: none;
   border-bottom: 0.18em solid var(--block-cursor-color, var(--cursor));
   background: transparent;
@@ -357,7 +362,8 @@ body.cmd-held .column-mover:hover,
   z-index: calc(var(--z-modal-top) + 1);
   pointer-events: none;
 }
-body.zen-focus-active .cmd-held-sliders-wrap { display: flex; }
+body.zen-focus-active .cmd-held-sliders-wrap:not(.selection-focus-sliders),
+body.selection-focus-active .cmd-held-sliders-wrap.selection-focus-sliders { display: flex; }
 
 /* Caret — small chevron that only paints when Cmd is held. Hover
    target sits flush at the screen edge with generous padding so the
@@ -375,8 +381,10 @@ body.zen-focus-active .cmd-held-sliders-wrap { display: flex; }
   user-select: none;
 }
 .cmd-held-sliders-caret svg { display: block; }
-body.zen-focus-active.cmd-held .cmd-held-sliders-caret { opacity: 0.45; }
-body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-caret { opacity: 0.8; }
+body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:not(.selection-focus-sliders) .cmd-held-sliders-caret,
+body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-sliders .cmd-held-sliders-caret { opacity: 0.45; }
+body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders-caret,
+body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders-caret { opacity: 0.8; }
 
 /* Pill — hidden until the wrap is hovered (caret OR pill itself).
    No border; Zen's bottom curtain already isolates it from content. */
@@ -399,7 +407,8 @@ body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders-ca
      a click target while it's still invisible. */
   visibility: hidden;
 }
-body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:hover .cmd-held-sliders {
+body.zen-focus-active.cmd-held .cmd-held-sliders-wrap:not(.selection-focus-sliders):hover .cmd-held-sliders,
+body.selection-focus-active.cmd-held .cmd-held-sliders-wrap.selection-focus-sliders:hover .cmd-held-sliders {
   opacity: 1;
   transform: translateY(0);
   visibility: visible;

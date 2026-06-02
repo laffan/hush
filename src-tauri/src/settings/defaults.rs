@@ -148,6 +148,9 @@ pub fn default_shortcut_zen_focus() -> String {
 pub fn default_zen_focus_font_size() -> u32 {
     30
 }
+pub fn default_selection_focus_font_multiplier() -> f32 {
+    1.2
+}
 pub fn default_shortcut_find() -> String {
     // Cross-file Find panel moved to Cmd+Shift+F; Cmd+F now drives the
     // minimal current-document quick find (default_shortcut_quick_find).

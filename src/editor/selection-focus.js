@@ -9,9 +9,10 @@
  * captured text, and supports the user's full editing surface (all
  * cursor types, all base-extension plugins). Unlike Zen, the editor
  * only carries the selected range (not the whole doc), so the user's
- * eye lands on exactly that block; type is the source's own size
- * bumped 10 %, and the column width tracks the source view's width
- * so the line measure the user dialled in is preserved.
+ * eye lands on exactly that block; type defaults to the source's own
+ * size bumped 20 % (with a Zen-style font slider for live tuning),
+ * and the column width tracks the source view's width so the line
+ * measure the user dialled in is preserved.
  *
  * On exit, the (possibly edited) content writes back over the
  * original selection range in the source view as a single transaction
@@ -25,13 +26,27 @@ import { applyBlockCursor } from "./block-cursor.js";
 
 let active = null;
 
-const FONT_SIZE_BUMP = 1.1;
+/** Default font-size multiplier — the source view's computed font-size
+ *  is scaled by this on first entry. Stored as a setting so the user's
+ *  slider tweak rides across the entire library rather than locking to
+ *  a single style's pixel value. */
+const DEFAULT_FONT_SIZE_MULTIPLIER = 1.2;
 
 export function initSelectionFocus(state) {
   state.on("selection-focus-changed", () => {
     if (state.selectionFocus) enterSelectionFocus(state);
     else exitSelectionFocus(state);
   });
+}
+
+/** Resolve the active font size in px. Honour the user's saved
+ *  multiplier from settings; fall back to the default if nothing's
+ *  saved. The source's px size is captured at entry time so a style
+ *  change while the overlay is open doesn't pull the rug out. */
+function resolveFontSize(state, basePx) {
+  const m = Number(state.settings?.selectionFocusFontMultiplier);
+  const mult = Number.isFinite(m) && m > 0 ? m : DEFAULT_FONT_SIZE_MULTIPLIER;
+  return basePx * mult;
 }
 
 function enterSelectionFocus(state) {
@@ -54,12 +69,17 @@ function enterSelectionFocus(state) {
   if (payload.columnWidth) stage.style.width = `${payload.columnWidth}px`;
   overlay.appendChild(stage);
 
-  // Bumped font size — the source's own size scaled by FONT_SIZE_BUMP
-  // so the focused text reads slightly larger without jumping to Zen's
-  // upsized scale.
-  if (payload.fontSizePx) {
-    overlay.style.setProperty("--selection-focus-font-size", `${payload.fontSizePx * FONT_SIZE_BUMP}px`);
+  // Bumped font size — the source's own size scaled by the saved
+  // multiplier (defaults to 1.2x). The font slider mounts next to
+  // the overlay and writes back to the multiplier live.
+  const basePx = payload.fontSizePx || 16;
+  function applyFontSize() {
+    overlay.style.setProperty(
+      "--selection-focus-font-size",
+      `${resolveFontSize(state, basePx)}px`,
+    );
   }
+  applyFontSize();
 
   document.body.classList.add("selection-focus-active");
   document.body.appendChild(overlay);
@@ -95,12 +115,25 @@ function enterSelectionFocus(state) {
   };
   document.addEventListener("keydown", onKeydown, true);
 
+  // Font-size pill — same visual language as Zen's cmd-held sliders,
+  // but only the Font control (no Dim, no Window). Mounts as a child
+  // of the overlay so it tears down automatically on exit, and lives
+  // outside the stage so it stays out of the centred text block.
+  const fontPill = mountFontPill(overlay, state, basePx, () => applyFontSize());
+
+  const onSettingsChanged = () => {
+    applyFontSize();
+    fontPill.refresh();
+  };
+  state.on("settings-changed", onSettingsChanged);
+
   view.focus();
 
   active = {
     overlay,
     view,
     onKeydown,
+    onSettingsChanged,
     sourceView: payload.sourceView,
     from: payload.from,
     to: payload.to,
@@ -118,6 +151,7 @@ function exitSelectionFocus(state) {
   const finalSel = a.view.state.selection.main;
 
   document.removeEventListener("keydown", a.onKeydown, true);
+  if (a.onSettingsChanged) state.off("settings-changed", a.onSettingsChanged);
   a.view.destroy();
   a.overlay.remove();
   document.body.classList.remove("selection-focus-active");
@@ -147,4 +181,79 @@ function exitSelectionFocus(state) {
     src.dispatch({ effects: EditorView.scrollIntoView(newTo, { y: "center" }) });
     src.focus();
   } catch (_) { /* source went away mid-focus */ }
+}
+
+/** Mount a cmd-held-styled Font pill into the overlay. The slider
+ *  adjusts the saved multiplier so the size scales relative to the
+ *  source's own font-size — switching between styles after a tweak
+ *  keeps the relative size the user dialled in. Returns a `refresh`
+ *  hook the entry path uses to re-seed the slider when settings
+ *  change underneath the overlay. */
+function mountFontPill(overlay, state, basePx, onUpdate) {
+  const wrap = document.createElement("div");
+  wrap.className = "cmd-held-sliders-wrap selection-focus-sliders";
+
+  const caret = document.createElement("div");
+  caret.className = "cmd-held-sliders-caret";
+  caret.setAttribute("aria-hidden", "true");
+  caret.innerHTML = `<svg viewBox="0 0 16 10" width="16" height="10" aria-hidden="true">
+    <path d="M2 9 L8 1.5 L14 9" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  </svg>`;
+  wrap.appendChild(caret);
+
+  const pill = document.createElement("div");
+  pill.className = "cmd-held-sliders";
+
+  const group = document.createElement("div");
+  group.className = "cmd-held-slider-group";
+
+  const label = document.createElement("span");
+  label.className = "cmd-held-slider-label";
+  label.textContent = "Font";
+
+  // Slider range expressed as a percentage of the source's own size
+  // (50 % – 250 %). The readout shows the resolved px so the user
+  // can match a specific style's typography by eye.
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = "50";
+  input.max = "250";
+  input.step = "1";
+  function currentMultiplier() {
+    const m = Number(state.settings?.selectionFocusFontMultiplier);
+    return Number.isFinite(m) && m > 0 ? m : DEFAULT_FONT_SIZE_MULTIPLIER;
+  }
+  input.value = String(Math.round(currentMultiplier() * 100));
+
+  const readout = document.createElement("span");
+  readout.className = "cmd-held-slider-readout";
+  function updateReadout(pct) {
+    readout.textContent = `${Math.round((pct / 100) * basePx)}px`;
+  }
+  updateReadout(parseFloat(input.value));
+
+  input.addEventListener("input", () => {
+    const pct = parseFloat(input.value);
+    updateReadout(pct);
+    state.updateSettings({ selectionFocusFontMultiplier: pct / 100 });
+    onUpdate();
+  });
+
+  group.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+  group.appendChild(label);
+  group.appendChild(input);
+  group.appendChild(readout);
+  pill.appendChild(group);
+  wrap.appendChild(pill);
+  overlay.appendChild(wrap);
+
+  return {
+    refresh() {
+      if (document.activeElement === input) return; // mid-drag — leave alone
+      const pct = Math.round(currentMultiplier() * 100);
+      input.value = String(pct);
+      updateReadout(pct);
+    },
+  };
 }
