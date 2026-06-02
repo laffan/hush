@@ -56,6 +56,35 @@ function showDockOverlay(show) {
   const overlay = ensureDockOverlay();
   overlay.classList.toggle("visible", show);
   if (show) positionDockZones();
+  if (!show) {
+    for (const z of overlay.querySelectorAll(".pane-dock-zone")) {
+      z.classList.remove("near");
+    }
+  }
+}
+
+/** Reveal each drop zone only while the cursor is within `NEAR_PX` of
+ *  its matching edge so the four blue trapezoids surface lazily as the
+ *  user approaches a corner instead of flooding the canvas for the
+ *  entire drag. The left edge is measured from the sidebar's right
+ *  edge (containerEl.left + leftInset), not the window edge, so a
+ *  sidebar-spanning drag doesn't trip the left zone halfway across. */
+const DOCK_ZONE_NEAR_PX = 200;
+function updateDockZoneProximity(clientX, clientY) {
+  if (!_dockOverlay || !containerEl) return;
+  const r = containerEl.getBoundingClientRect();
+  const distLeft = clientX - (r.left + getLeftInset());
+  const distRight = (r.right - getRightInset()) - clientX;
+  const distTop = clientY - (r.top + getTopInset());
+  const distBottom = (r.bottom - getBottomInset()) - clientY;
+  const set = (sel, near) => {
+    const el = _dockOverlay.querySelector(sel);
+    if (el) el.classList.toggle("near", near);
+  };
+  set(".pane-dock-zone-left", distLeft >= 0 && distLeft <= DOCK_ZONE_NEAR_PX);
+  set(".pane-dock-zone-right", distRight >= 0 && distRight <= DOCK_ZONE_NEAR_PX);
+  set(".pane-dock-zone-top", distTop >= 0 && distTop <= DOCK_ZONE_NEAR_PX);
+  set(".pane-dock-zone-bottom", distBottom >= 0 && distBottom <= DOCK_ZONE_NEAR_PX);
 }
 
 function positionDockZones() {
@@ -205,6 +234,7 @@ export function setupPaneDrag(pane, deps) {
         pane.el.style.left = pane.x + "px";
         pane.el.style.top = pane.y + "px";
       }
+      updateDockZoneProximity(me.clientX, me.clientY);
       highlightDockZone(dropZoneAt(me.clientX, me.clientY));
       // Live-refresh the editor column so the auto make-space follows
       // the pane as the user drags it. notifyPaneDragMove updates
@@ -260,6 +290,19 @@ export function setupPaneResize(pane, deps) {
 
       handle.setPointerCapture(e.pointerId);
 
+      // For docked panes the heavy work (applyDockGeometry +
+      // reflowAllDockedPanes + the editor column reflow downstream of
+      // notifyPaneDragMove) runs on every pointermove. Coalesce it to
+      // one pass per animation frame so a fast drag doesn't stack 60+
+      // synchronous layouts per second.
+      let dockFramePending = false;
+      const flushDockLayout = () => {
+        dockFramePending = false;
+        applyDockGeometry(pane);
+        reflowAllDockedPanes();
+        deps.notifyPaneDragMove?.();
+      };
+
       const onMove = (me) => {
         const dx = (me.clientX - startX) / zoomFactor;
         const dy = (me.clientY - startY) / zoomFactor;
@@ -272,12 +315,14 @@ export function setupPaneResize(pane, deps) {
         if (isDocked(pane)) {
           if (pane.dockEdge === "top" || pane.dockEdge === "bottom") pane.dockUserSize = h;
           else pane.dockUserSize = w;
-          applyDockGeometry(pane);
           // Perpendicular siblings need to re-flex when this dock's
           // cross-axis footprint changes — a wider left-dock means a
-          // narrower top-dock width.
-          reflowAllDockedPanes();
-          deps.notifyPaneDragMove?.();
+          // narrower top-dock width. Coalesced via rAF so a fast drag
+          // doesn't stack synchronous layouts per pointermove.
+          if (!dockFramePending) {
+            dockFramePending = true;
+            requestAnimationFrame(flushDockLayout);
+          }
           return;
         }
         // Inline panes are laid out in-flow inside a CM block widget —

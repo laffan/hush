@@ -115,6 +115,9 @@ export function updateColumnResizers(state) {
   if (state.runtime.columnResizeHandler) {
     window.removeEventListener("resize", state.runtime.columnResizeHandler);
   }
+  if (state.runtime.dockChangedHandler) {
+    document.removeEventListener("pane-dock-changed", state.runtime.dockChangedHandler);
+  }
 
   const leftResizer = document.createElement("div");
   leftResizer.className = "column-resizer left";
@@ -314,6 +317,23 @@ export function updateColumnResizers(state) {
   applyColumnLayout();
   state.runtime.columnResizeHandler = applyColumnLayout;
   window.addEventListener("resize", applyColumnLayout);
+  // `dockPane` schedules `refreshPaneLayoutMetrics` through a lazy
+  // import to dodge a circular dependency, which means the editor's
+  // `state.runtime.docked*` values can lag behind the actual dock —
+  // the column then paints under a freshly-docked right pane until
+  // the promise resolves. `publishDockCssVars` fires
+  // `pane-dock-changed` synchronously after writing the new CSS
+  // vars, so picking up its detail here closes that gap.
+  const onDockChanged = (e) => {
+    const d = e.detail || {};
+    state.runtime.dockedLeftWidth = d.leftWidth || 0;
+    state.runtime.dockedRightWidth = d.rightWidth || 0;
+    state.runtime.dockedTopHeight = d.topHeight || 0;
+    state.runtime.dockedBottomHeight = d.bottomHeight || 0;
+    applyColumnLayout();
+  };
+  document.addEventListener("pane-dock-changed", onDockChanged);
+  state.runtime.dockChangedHandler = onDockChanged;
 
   function makeDraggable(el, isLeft) {
     let startX, startWidth;

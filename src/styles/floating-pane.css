@@ -499,8 +499,16 @@ body.text-drag-active .floating-pane:not(.active) .floating-pane-content {
 .pane-dock-zone {
   position: absolute;
   background: rgba(66, 153, 225, 0.18);
-  transition: background 80ms ease;
+  transition: opacity 120ms ease, background 80ms ease;
   box-sizing: border-box;
+  /* Hidden by default during a drag — the pointermove handler toggles
+     `.near` on a zone when the cursor is within ~200 px of its edge,
+     so the trapezoids surface lazily as the user approaches a corner
+     instead of flooding the canvas the whole drag. */
+  opacity: 0;
+}
+.pane-dock-zone.near {
+  opacity: 1;
 }
 .pane-dock-zone.active {
   background: rgba(66, 153, 225, 0.55);
