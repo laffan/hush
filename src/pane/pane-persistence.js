@@ -67,6 +67,18 @@ export function persistPanesNow() {
       // Editor scroll position inside doc panes — restored on next mount
       // so reopening a pane lands the reader where they left off.
       editorScrollTop: typeof p.editorScrollTop === "number" ? p.editorScrollTop : null,
+      // PDF viewport — `pdfZoomLevel` is the encoded zoom mode (see
+      // pdf-viewer.getZoom: -1/-2 for fits, -3/-4 for fit2/fit3, positive
+      // for fixed zoom). `pdfScrollLeft` covers horizontal-scroll PDFs
+      // where the editorScrollTop above stays 0.
+      pdfZoomLevel: typeof p.pdfZoomLevel === "number" ? p.pdfZoomLevel : null,
+      pdfScrollLeft: typeof p.pdfScrollLeft === "number" ? p.pdfScrollLeft : null,
+      // Per-pane notebook camera (pan + zoom). Stored separately from the
+      // notebook file's own camera so the same notebook open in the main
+      // canvas and as a pane each keep their own viewport.
+      notebookCamera: p.notebookCamera
+        ? { x: p.notebookCamera.x, y: p.notebookCamera.y, zoom: p.notebookCamera.zoom }
+        : null,
       localSync: p.localSync || null,
       // Per-pane font-size override. Keyed implicitly by the pane's
       // (ownerContext, fileId) pair, so the same file opened as a pane
@@ -175,6 +187,14 @@ export async function restorePanes(deps) {
       fontSize: typeof s.fontSize === "number" ? s.fontSize : null,
       zotero: s.zotero ? { ...s.zotero } : null,
       editorScrollTop: typeof s.editorScrollTop === "number" ? s.editorScrollTop : null,
+      pdfZoomLevel: typeof s.pdfZoomLevel === "number" ? s.pdfZoomLevel : null,
+      pdfScrollLeft: typeof s.pdfScrollLeft === "number" ? s.pdfScrollLeft : null,
+      // Restored per-pane notebook camera — consumed in loadNotebookPane
+      // (in lieu of the default centring) so the user's pan / zoom
+      // survives an app restart.
+      notebookCamera: s.notebookCamera
+        ? { x: s.notebookCamera.x, y: s.notebookCamera.y, zoom: s.notebookCamera.zoom }
+        : null,
       gutter: !!s.gutter,
       gutterSide: s.gutterSide || null,
       docked: !!s.docked,
@@ -206,6 +226,12 @@ export async function restorePanes(deps) {
       pane.el.style.top = "0px";
       pane.el.style.width = pane.width + "px";
       pane.el.style.height = pane.height + "px";
+      // The inline plugin's first build counts as a re-mount from the
+      // user's perspective (the pane was "detached" between sessions),
+      // so flag it and let the same scroll-reapply path used after a
+      // mid-session doc switch put scrollTop / scrollLeft / stack
+      // scroll back where they were.
+      pane._inlineDetached = true;
     }
     containerEl.appendChild(pane.el);
     pane.el.style.zIndex = zForPane(pane);

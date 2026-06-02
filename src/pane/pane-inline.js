@@ -111,23 +111,25 @@ class InlinePaneWidget extends WidgetType {
   constructor(paneId, host) {
     super();
     this.paneId = paneId;
-    // `host` is the DOM element that holds `pane.el`. Stable across
-    // rebuilds so CM doesn't rip the editor out on every doc change.
     this.host = host;
   }
 
-  // Stable identity per pane id — CM reuses the same DOM (and therefore
-  // keeps `pane.el` mounted) across rebuilds. Height changes are picked
-  // up via `view.requestMeasure()` from `syncInlinePaneSize`.
   eq(other) { return this.paneId === other.paneId; }
-
   toDOM() { return this.host; }
-
   ignoreEvent() { return false; }
-
   // We hand back the same DOM node each time, so CM doesn't need to
   // rebuild it; returning true tells CM the existing DOM is still valid.
   updateDOM(_dom) { return true; }
+
+  // Fires when CM removes this widget from the editor (doc switched
+  // away). The host + pane.el go orphan together; flag the pane so the
+  // next buildInlineDecorations (when the user returns) knows to
+  // re-apply the saved scroll position, which CM's measure pass tends
+  // to drop to 0 on widget re-mount.
+  destroy() {
+    const pane = panes.get(this.paneId);
+    if (pane) pane._inlineDetached = true;
+  }
 }
 
 /** Effect dispatched whenever an external event (panes-changed,
@@ -174,6 +176,34 @@ function buildInlineDecorations(doc, appState) {
     host.style.height = (pane.height || 500) + "px";
     if (pane.el && pane.el.parentNode !== host) {
       host.appendChild(pane.el);
+    }
+    // Re-apply the saved scroll offset after a doc-switch detach. The
+    // browser preserves DOM scrollTop across reparenting in theory, but
+    // CM's measure pass on widget re-mount lands it back at 0 in
+    // practice. The flag is set by InlinePaneWidget.destroy below (mid-
+    // session) and by `restorePanes` at app start.
+    if (pane._inlineDetached) {
+      pane._inlineDetached = false;
+      const target = pane.editorScrollTop;
+      const apply = () => {
+        if (typeof target === "number" && target > 0) {
+          try { pane.editor?.setScrollTop?.(target); } catch (_) {}
+          try { pane.pdfViewer?.setScrollTop?.(target); } catch (_) {}
+        }
+        // PDF panes also carry a saved horizontal scroll for horizontal-
+        // layout PDFs. setScrollLeft is a no-op in vertical mode.
+        if (pane.pdfViewer && typeof pane.pdfScrollLeft === "number" && pane.pdfScrollLeft > 0) {
+          try { pane.pdfViewer.setScrollLeft?.(pane.pdfScrollLeft); } catch (_) {}
+        }
+        // Stacks own their scroll internally — re-applying from the
+        // component's cached `_scrollX` / `_scrollY` covers both the
+        // mid-session reparent and the first build after restore.
+        if (pane.stackInstance?.restoreScrollPosition) {
+          try { pane.stackInstance.restoreScrollPosition(); } catch (_) {}
+        }
+      };
+      requestAnimationFrame(apply);
+      setTimeout(apply, 100);
     }
     if (pane.el) {
       pane.el.style.position = "absolute";

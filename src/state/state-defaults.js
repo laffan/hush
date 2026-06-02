@@ -264,5 +264,9 @@ export function createDefaultSettings() {
     typewriterMode: false,
     dryMode: false,
     scrollPosition: null,
+    // Per-doc main-editor scroll positions, keyed by fileId. Persists
+    // across file switches and app restarts. FIFO-trimmed to 100 keys
+    // so it can't grow without bound.
+    docScrollPositions: {},
   };
 }

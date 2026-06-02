@@ -210,6 +210,13 @@ export function bindInputEvents(
   let spaceDown = false;
   let spaceEnabledPan = false;
 
+  // Pane this canvas belongs to (null for the main canvas). Used by the
+  // global keydown guard so a pane's own canvas can still process input
+  // when focus is somewhere else inside the same pane (the title bar,
+  // a toolbar button, or — for an inline notebook pane — the host doc's
+  // contentEditable, which the canvas click can't blur).
+  const ownPane = canvas.closest(".floating-pane") as HTMLElement | null;
+
   // Keyboard shortcuts
   on(window as unknown as HTMLElement, "keydown", ((e: KeyboardEvent) => {
     if (state.editingText) {
@@ -224,22 +231,43 @@ export function bindInputEvents(
       e.preventDefault();
       return;
     }
-    // Skip if focus is in any editable area. .cm-content (the main document
-    // editor) is contentEditable but is neither INPUT nor TEXTAREA; without
-    // this guard the canvas handler would swallow space keystrokes meant
-    // for the doc editor whenever a notebook canvas is alive anywhere
-    // (including notebook panes opened over a doc).
+    // Decide whether this canvas should handle the keystroke. The
+    // tricky cases are panes: focus can be in a different pane (skip),
+    // in our own pane (handle), or — for an *inline* notebook pane —
+    // on the host doc's contentEditable that wraps the canvas. The
+    // inline case can't blur the host editor when the user clicks the
+    // canvas, so we use `.active` (set on the most-recently-focused
+    // pane by pane-manager.focusPane) to tell "user is interacting
+    // with this canvas" from "user is typing in the host doc".
     const activeEl = document.activeElement as HTMLElement | null;
     if (activeEl) {
+      const activePane = activeEl.closest(".floating-pane") as HTMLElement | null;
+      if (activePane && activePane !== ownPane) return;
       if (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA") return;
-      if (activeEl.isContentEditable) return;
-      if (activeEl.closest(".floating-pane")) return;
+      // contentEditable focus, editable doesn't wrap us → user is
+      // typing somewhere else (a different pane's editor, a stack
+      // column, etc.). Skip.
+      if (activeEl.isContentEditable && !activeEl.contains(canvas)) return;
+      // contentEditable focus that DOES wrap us — only the inline
+      // pane case. Require this pane to be the active pane so plain
+      // typing in the host doc doesn't trigger our tool shortcuts.
+      if (activeEl.isContentEditable && activeEl.contains(canvas)) {
+        if (!ownPane || !ownPane.classList.contains("active")) return;
+      }
+      // Pane canvas, focus is outside every pane (body / sidebar) and
+      // not inside a host editable wrapping us — let the main canvas
+      // handle.
+      if (!activePane && ownPane && !activeEl.contains(canvas)) return;
     }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-    // Space-to-pan
-    if (e.key === " " && !e.repeat) {
+    // Space-to-pan. We preventDefault on every space (including OS-
+    // auto-repeated keydowns) so an inline notebook canvas hosted
+    // inside a doc editor's contentEditable doesn't leak the held-
+    // down spaces into the doc as inserted characters.
+    if (e.key === " ") {
       e.preventDefault();
+      if (e.repeat) return;
       spaceDown = true;
       // Only flip isPanning if it wasn't already on (persistent grab
       // tool). Tracks whether we were the one who turned it on so
@@ -252,12 +280,18 @@ export function bindInputEvents(
       return;
     }
 
-    // Tool shortcuts (single-key, no modifiers)
+    // Tool shortcuts (single-key, no modifiers). When this canvas
+    // belongs to a pane whose focus is technically on a host editable
+    // (inline notebook pane case), preventDefault keeps those letters
+    // from being typed into the host doc as well.
     if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-      if (matchesKey(e, sc.shortcutNbSelect)) { state.tool = "select"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
-      if (matchesKey(e, sc.shortcutNbText)) { state.tool = "text"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
-      if (matchesKey(e, sc.shortcutNbDragArea)) { state.tool = "drag-area"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
+      const inHostEditable = !!activeEl?.isContentEditable && activeEl.contains(canvas);
+      const preventTypingLeak = () => { if (inHostEditable) e.preventDefault(); };
+      if (matchesKey(e, sc.shortcutNbSelect)) { preventTypingLeak(); state.tool = "select"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
+      if (matchesKey(e, sc.shortcutNbText)) { preventTypingLeak(); state.tool = "text"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
+      if (matchesKey(e, sc.shortcutNbDragArea)) { preventTypingLeak(); state.tool = "drag-area"; state.brainstormMode = false; state.notify("tool"); state.notify("brainstormMode"); return; }
       if (matchesKey(e, sc.shortcutNbBrainstorm)) {
+        preventTypingLeak();
         state.brainstormMode = !state.brainstormMode;
         if (state.brainstormMode) { state.tool = "text"; state.notify("tool"); }
         state.notify("brainstormMode"); return;

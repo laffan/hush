@@ -40,16 +40,19 @@ export function getLinkableNotes(state) {
   const roots = desk ? (desk.children || []) : (state.fileTree || []);
   walk(roots, [], (node, crumb) => {
     if (!node) return;
-    if (node.type === "document" || node.type === "notebook" || node.type === "stack") {
-      if (!node.fileId) return;
-      out.push({
-        nodeId: node.id,
-        fileId: node.fileId,
-        name: node.name || "Untitled",
-        type: node.type,
-        path: crumb.join(" / "),
-      });
-    }
+    const isFileBacked = node.type === "document" || node.type === "notebook"
+      || node.type === "stack" || node.type === "pdf";
+    const isProject = node.type === "project";
+    if (!isFileBacked && !isProject) return;
+    if (isFileBacked && !node.fileId) return;
+    out.push({
+      nodeId: node.id,
+      // Projects have no fileId — they're keyed by node.id at open time.
+      fileId: node.fileId || null,
+      name: node.name || "Untitled",
+      type: node.type,
+      path: crumb.join(" / "),
+    });
   }, (node) => {
     // Don't descend into trash, images folders, or skip-typed nodes.
     if (!node) return false;
@@ -98,6 +101,10 @@ export async function openWikilink(state, title) {
     await state.openNotebook(note.fileId);
   } else if (note.type === "stack") {
     await state.openStack(note.fileId);
+  } else if (note.type === "pdf") {
+    await state.openPdf(note.fileId);
+  } else if (note.type === "project") {
+    await state.openProject(note.nodeId);
   } else {
     await state.openFile(note.fileId);
   }

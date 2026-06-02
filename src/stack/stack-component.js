@@ -54,6 +54,19 @@ export class StackComponent {
 
   get _isVertical() { return this._scrollDirection === "vertical"; }
 
+  /** Re-apply the in-memory scroll position to the live DOM. Used by
+   *  the inline-pane plugin after CM detaches and re-mounts the widget
+   *  host — the reparent can land scrollArea back at 0 even though
+   *  `_scrollX` / `_scrollY` still hold the saved value. */
+  restoreScrollPosition() {
+    if (!this._scrollArea) return;
+    if (this._isVertical) {
+      this._scrollArea.scrollTop = this._scrollY || 0;
+    } else {
+      this._scrollArea.scrollLeft = this._scrollX || 0;
+    }
+  }
+
   _buildDOM() {
     this._el = document.createElement("div");
     this._el.className = "stack-root";
