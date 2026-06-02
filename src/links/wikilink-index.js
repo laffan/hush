@@ -111,6 +111,25 @@ export async function openWikilink(state, title) {
   return true;
 }
 
+/** Open the note referenced by `title` as a floating pane in the current
+ *  context. Projects aren't pane-hostable, so they fall back to a normal
+ *  open. Returns true if a target was found, false if the link is broken. */
+export async function openWikilinkAsPane(state, title) {
+  const note = resolveWikilink(state, title);
+  if (!note) return false;
+  if (note.type === "project" || !note.fileId) {
+    // Projects can't be panes — fall back to opening in place.
+    return openWikilink(state, title);
+  }
+  const { createPane } = await import("../pane/pane-manager.js");
+  // Anchor the new pane near the viewport centre so it lands somewhere
+  // visible regardless of which surface (doc, notebook) opened it.
+  const cx = (typeof window !== "undefined" ? window.innerWidth : 800) / 2;
+  const cy = (typeof window !== "undefined" ? window.innerHeight : 600) / 2;
+  await createPane(note.fileId, note.name, note.type, cx, cy);
+  return true;
+}
+
 /** Filter notes by a search query. Case-insensitive substring match
  *  with a small ranking boost for prefix matches so typing `Pro` lands
  *  on `Project Plan` before `Reflections on Procrastination`. */

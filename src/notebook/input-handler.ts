@@ -310,6 +310,31 @@ export function bindInputEvents(
       return;
     }
 
+    // Cmd+Arrow aligns the current selection along the named edge;
+    // Cmd+Shift+Arrow distributes along the axis of the arrow (so
+    // horizontal arrows distribute horizontally, vertical arrows
+    // distribute vertically). Only fires when 2+ (align) / 3+ (distribute)
+    // shapes are selected; otherwise the state helpers no-op and we still
+    // swallow the event so the OS doesn't act on the arrow.
+    if ((e.metaKey || e.ctrlKey) && !e.altKey
+        && (e.key === "ArrowLeft" || e.key === "ArrowRight"
+         || e.key === "ArrowUp"   || e.key === "ArrowDown")) {
+      if (state.selectedIds.size < 2) return;
+      e.preventDefault();
+      if (e.shiftKey) {
+        const axis: "horizontal" | "vertical" =
+          (e.key === "ArrowLeft" || e.key === "ArrowRight") ? "horizontal" : "vertical";
+        state.distributeSelected(axis);
+      } else {
+        const direction =
+          e.key === "ArrowLeft"  ? "left"  :
+          e.key === "ArrowRight" ? "right" :
+          e.key === "ArrowUp"    ? "top"   : "bottom";
+        state.alignSelected(direction);
+      }
+      return;
+    }
+
     // Copy / Cut — write the current selection out as a `canvas-clipboard@1`
     // envelope so the shapes can be pasted back into Hush, into another Hush
     // window, or into Steiner. Cut additionally deletes the source.

@@ -15,6 +15,8 @@
  * and `state-tree.js`) plus `diffDropboxSync` (in `sync-state.js`).
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 export const IMAGES_NODE_ID = "__images__";
@@ -145,7 +147,7 @@ export async function syncCreateImage(state, filename, ownerDeskId = null) {
       filename, syncFolderId: SYNC_FOLDER_ID, relativePath: relPath,
     });
   } catch (e) {
-    console.error(`Image sync upload failed for ${filename}:`, e);
+    appendSyncError(`Image sync upload failed for ${filename}: ${e?.message || e}`);
   }
 }
 

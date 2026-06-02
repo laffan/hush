@@ -18,6 +18,8 @@
  * already pushed the moves).
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 async function tauriInvoke(cmd, args) {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke(cmd, args);
@@ -44,7 +46,7 @@ export async function migrateSyncToDesk(state, deskName) {
       await renameSyncFile(state, f.internalId, oldPath, newPath);
       moved += 1;
     } catch (e) {
-      console.warn("desk migration: rename enqueue failed for", oldPath, e);
+      appendSyncError(`desk migration: rename enqueue failed for ${oldPath}: ${e?.message || e}`);
     }
   }
   triggerDrain(state);
@@ -53,7 +55,7 @@ export async function migrateSyncToDesk(state, deskName) {
 
 async function getSyncedFiles() {
   try { return await tauriInvoke("get_synced_files", { syncFolderId: "__dropbox_sync__" }) || []; }
-  catch (e) { console.warn("get_synced_files failed:", e); return []; }
+  catch (e) { appendSyncError(`get_synced_files failed: ${e?.message || e}`); return []; }
 }
 
 async function renameSyncFile(state, internalId, oldPath, newPath) {
@@ -65,7 +67,7 @@ async function renameSyncFile(state, internalId, oldPath, newPath) {
       internalId,
     });
   } catch (e) {
-    console.warn("rename_sync_file failed:", e);
+    appendSyncError(`rename_sync_file failed: ${e?.message || e}`);
   }
 }
 

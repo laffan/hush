@@ -146,10 +146,18 @@ export function createSidebar(state) {
   mountProgressCenter(syncGroup, state);
 
   // Dropbox sync indicator — refresh-circle icon that rotates on sync.
+  // Click drops the user on Settings > Sync > Dropbox, mirroring the
+  // gear icon's general-settings entry point.
   const syncDot = document.createElement("div");
   syncDot.className = "sidebar-sync-dot";
-  syncDot.setAttribute("aria-hidden", "true");
+  syncDot.setAttribute("role", "button");
+  syncDot.setAttribute("tabindex", "0");
+  syncDot.setAttribute("title", "Dropbox sync settings");
+  syncDot.style.cursor = "pointer";
   syncDot.innerHTML = refreshCircleRaw;
+  syncDot.addEventListener("click", () => {
+    openSettingsWindow(state, { tab: "sync", subTab: "dropbox" });
+  });
   syncGroup.appendChild(syncDot);
   function syncDotVisible() {
     return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);

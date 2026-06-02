@@ -40,8 +40,9 @@ async function init() {
   // Register the wikilink open hook before state.init so cmd-clicks on
   // an auto-opened notebook resolve immediately.
   if (typeof window !== "undefined") {
-    const { openWikilink } = await import("./links/wikilink-index.js");
+    const { openWikilink, openWikilinkAsPane } = await import("./links/wikilink-index.js");
     window.__hushOpenWikilink = (title) => { void openWikilink(state, title); };
+    window.__hushOpenWikilinkAsPane = (title) => { void openWikilinkAsPane(state, title); };
   }
   const initialFile = state.isSecondaryWindow ? getInitialFileFromHash() : null;
   await state.init({ initialFile });

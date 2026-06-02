@@ -32,6 +32,20 @@ export function appendSyncLog(message) {
   _logFlushTimer = setTimeout(flushSyncLog, 2000);
 }
 
+/** Marker prefix used to distinguish error rows from normal sync rows in
+ *  the persisted log. Settings reads this prefix off the front of a row
+ *  to paint it red without needing a separate parallel store. Kept terse
+ *  and unlikely to collide with a real message body. */
+export const SYNC_LOG_ERROR_PREFIX = "[!] ";
+
+/** Like {@link appendSyncLog} but tagged so the settings panel can show
+ *  the row in red. Used by the sync paths that previously dumped failure
+ *  stack traces into the developer console — the user-facing surface is
+ *  now this log, not the console. */
+export function appendSyncError(message) {
+  appendSyncLog(SYNC_LOG_ERROR_PREFIX + String(message));
+}
+
 async function flushSyncLog() {
   _logFlushTimer = null;
   if (!IS_TAURI || _pendingLogMessages.length === 0) return;

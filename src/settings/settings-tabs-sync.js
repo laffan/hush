@@ -12,6 +12,22 @@
  */
 
 import { escHtml, escAttr } from "./settings-tabs.js";
+import { SYNC_LOG_ERROR_PREFIX } from "../sync/sync-feedback.js";
+
+/** Render a single sync log row. Entries tagged with the error prefix
+ *  (see {@link SYNC_LOG_ERROR_PREFIX}) paint red and strip the prefix
+ *  from the visible body so the row reads as a normal timestamped
+ *  message — just in danger colour. */
+function renderSyncLogEntry(entry) {
+  const raw = String(entry);
+  const errIdx = raw.indexOf(SYNC_LOG_ERROR_PREFIX);
+  if (errIdx >= 0) {
+    const before = raw.slice(0, errIdx);
+    const after = raw.slice(errIdx + SYNC_LOG_ERROR_PREFIX.length);
+    return `<div class="sync-log-entry sync-log-entry-error" style="color:#d33;">${escHtml(before + after)}</div>`;
+  }
+  return `<div class="sync-log-entry">${escHtml(raw)}</div>`;
+}
 
 let _activeSubTab = "dropbox"; // "dropbox" | "google"
 
@@ -101,7 +117,7 @@ function renderDropboxSubTab(settings) {
         <h2>Sync Log</h2>
         <div class="sync-log-box" id="sync-log-box">
           ${syncLog.length > 0
-            ? syncLog.slice(-20).reverse().map(entry => `<div class="sync-log-entry">${escHtml(entry)}</div>`).join("")
+            ? syncLog.slice(-20).reverse().map(renderSyncLogEntry).join("")
             : `<div class="sync-log-empty">No sync activity yet.</div>`
           }
         </div>

@@ -1110,7 +1110,10 @@ export class DrawingState extends EventTarget {
 
       // Cmd+click on a link: open in browser/app. Wikilinks (`[[Title]]`)
       // hand off to the Hush bridge so the referenced note opens inside
-      // the app instead of via the system URL handler.
+      // the app instead of via the system URL handler. Cmd+Shift+click on
+      // a wikilink opens the target as a floating pane instead. We only
+      // intercept when a link is actually under the cursor — otherwise
+      // cmd / cmd+shift drag-and-clone paths still run normally.
       const cmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
       if (hitShape && hitShape.type === "text" && cmdHeld) {
         const linkRun = hitTestLinkRun(canvasPt, hitShape);
@@ -1122,15 +1125,20 @@ export class DrawingState extends EventTarget {
           e.preventDefault();
           if (linkRun.kind === "url") { openExternalUrl(linkRun.target); return; }
           if (linkRun.kind === "wikilink") {
-            const w = window as unknown as { __hushOpenWikilink?: (t: string) => void };
-            if (typeof w.__hushOpenWikilink === "function") {
-              w.__hushOpenWikilink(linkRun.target);
+            const asPane = e.shiftKey;
+            const hookName = asPane ? "__hushOpenWikilinkAsPane" : "__hushOpenWikilink";
+            const w = window as unknown as Record<string, ((t: string) => void) | undefined>;
+            const hook = w[hookName];
+            if (typeof hook === "function") {
+              hook(linkRun.target);
             } else {
               // Late fallback: handler not yet registered (init race).
               // Dynamic import keeps this branch out of the cold path.
               import("../links/wikilink-index.js").then((m) => {
                 const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
-                if (appState) void m.openWikilink(appState, linkRun.target);
+                if (!appState) return;
+                if (asPane) void m.openWikilinkAsPane(appState, linkRun.target);
+                else void m.openWikilink(appState, linkRun.target);
               }).catch(() => {});
             }
             return;

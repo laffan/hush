@@ -19,6 +19,7 @@ import { uploadImage, downloadImage, insertImageIntoTree } from "./sync-images.j
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { buildSyncManifest } from "./sync-state.js";
 import { insertDocumentNode, ensureSeedDeskSpecials } from "./sync-tree-insert.js";
+import { appendSyncError } from "./sync-feedback.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
@@ -214,7 +215,7 @@ export async function performInitialSync(state, dropboxPath) {
   try {
     const { finalizeDesks } = await import("./desk-sync.js");
     await finalizeDesks(state);
-  } catch (e) { console.warn("initial sync: finalizeDesks failed:", e); }
+  } catch (e) { appendSyncError(`initial sync: finalizeDesks failed: ${e?.message || e}`); }
 
   // Push the local Google Doc link map (if any) AND fetch the remote
   // one. The local push translates local fileId → remoteId so other
@@ -228,7 +229,7 @@ export async function performInitialSync(state, dropboxPath) {
       const remoteGdocs = await dbx.downloadFile(`${basePath}/.hush/gdocs.json`);
       if (remoteGdocs) await gdocs.applyGoogleLinks(state, remoteGdocs);
     } catch (_) { /* not present yet */ }
-  } catch (e) { console.warn("initial sync: gdocs sync failed:", e); }
+  } catch (e) { appendSyncError(`initial sync: gdocs sync failed: ${e?.message || e}`); }
 
   await state.saveFileTree();
   state.files = await tauriInvoke("list_files");
@@ -250,7 +251,7 @@ async function uploadLocalFiles(state, dbx, manifest, basePath, remoteByPath, up
           filename: file.fileId, syncFolderId: SYNC_FOLDER_ID,
           relativePath: file.relativePath,
         });
-      } catch (e) { console.error(`Image upload failed for ${file.relativePath}:`, e); }
+      } catch (e) { appendSyncError(`Image upload failed for ${file.relativePath}: ${e?.message || e}`); }
       sp.progressTick(state);
       continue;
     }
@@ -285,7 +286,7 @@ async function uploadLocalFiles(state, dbx, manifest, basePath, remoteByPath, up
         });
       }
       remoteByPath.set(path, { relativePath: path });
-    } catch (e) { console.error(`Upload failed for ${path}:`, e); }
+    } catch (e) { appendSyncError(`Upload failed for ${path}: ${e?.message || e}`); }
     sp.progressTick(state);
   }
 }
@@ -313,7 +314,7 @@ async function downloadRemoteFiles(state, dbx, remoteEntries, basePath, manifest
         }
         insertImageIntoTree(state.fileTree, finalName, preferDeskId);
         downloaded.push(entry.relativePath);
-      } catch (e) { console.error(`Image download failed for ${entry.relativePath}:`, e); }
+      } catch (e) { appendSyncError(`Image download failed for ${entry.relativePath}: ${e?.message || e}`); }
       sp.progressTick(state);
       continue;
     }
@@ -335,7 +336,7 @@ async function downloadRemoteFiles(state, dbx, remoteEntries, basePath, manifest
       const isNotebook = entry.relativePath.endsWith(".hushnote");
       insertDocumentNode(state, entry.relativePath, file.id, isNotebook, entry.name);
       downloaded.push(entry.relativePath);
-    } catch (e) { console.error(`Download failed for ${entry.relativePath}:`, e); }
+    } catch (e) { appendSyncError(`Download failed for ${entry.relativePath}: ${e?.message || e}`); }
     sp.progressTick(state);
   }
 }

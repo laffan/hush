@@ -36,6 +36,8 @@
  *     auto-creates one with a fresh uuid and pushes it.
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 const DESK_FILENAME = ".hushdesk";
 const FORMAT_VERSION = 1;
 
@@ -99,7 +101,7 @@ export async function pushAllDesks(state) {
   const desks = (state.fileTree || []).filter((n) => n.type === "desk");
   for (const desk of desks) {
     try { await pushDesk(state, desk); }
-    catch (e) { console.warn("desks: push for", desk.name, "failed:", e); }
+    catch (e) { appendSyncError(`desks: push for ${desk.name} failed: ${e?.message || e}`); }
   }
 }
 
@@ -291,7 +293,7 @@ export async function finalizeDesks(state) {
         state.fileTree.push(desk);
       }
     }
-  } catch (e) { console.warn("finalize: empty-folder discovery failed:", e); }
+  } catch (e) { appendSyncError(`finalize: empty-folder discovery failed: ${e?.message || e}`); }
 
   const desks = (state.fileTree || []).filter((n) => n.type === "desk");
   for (const desk of desks) {
@@ -347,7 +349,7 @@ export async function migrateFromDesksJson(state) {
 
   let payload;
   try { payload = await dbx.downloadFile(legacyPath); }
-  catch (e) { console.warn("migrate: download desks.json failed:", e); return false; }
+  catch (e) { appendSyncError(`migrate: download desks.json failed: ${e?.message || e}`); return false; }
 
   let parsed;
   try { parsed = JSON.parse(payload); }
@@ -411,7 +413,7 @@ export async function migrateFromDesksJson(state) {
   try {
     await dbx.deleteEntry(legacyPath);
   } catch (e) {
-    console.warn("migrate: failed to delete .hush/desks.json:", e);
+    appendSyncError(`migrate: failed to delete .hush/desks.json: ${e?.message || e}`);
   }
 
   const { triggerDrain } = await import("./op-log.js");

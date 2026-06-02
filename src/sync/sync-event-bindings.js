@@ -20,6 +20,8 @@
  * isn't paid for at boot if the user never enables sync.
  */
 
+import { appendSyncError } from "./sync-feedback.js";
+
 export async function wireSyncEventBindings(state) {
   const { listen } = await import("@tauri-apps/api/event");
 
@@ -64,7 +66,7 @@ export async function wireSyncEventBindings(state) {
       }
       sp.startSyncPolling(state);
     } catch (e) {
-      console.error("Initial sync failed:", e);
+      appendSyncError(`Initial sync failed: ${e?.message || e}`);
     } finally {
       // Release — the barrier setter kicks an immediate cycle + drain
       // so anything queued during the barrier window catches up.
@@ -80,24 +82,24 @@ export async function wireSyncEventBindings(state) {
       const { disconnectSync } = await import("./sync-state.js");
       await disconnectSync(state, removeFromDropbox);
     } catch (e) {
-      console.error("Sync disconnect failed:", e);
+      appendSyncError(`Sync disconnect failed: ${e?.message || e}`);
     }
   });
 
   await listen("clear-local-data-request", async () => {
     try { await (await import("./sync-state.js")).clearLocalAndReseed(state); }
-    catch (e) { console.error("Clear local data failed:", e); }
+    catch (e) { appendSyncError(`Clear local data failed: ${e?.message || e}`); }
   });
 
   await listen("force-sync-request", async () => {
     try { await (await import("./sync-polling.js")).runForceSync(state); }
-    catch (e) { console.error("Force sync failed:", e); }
+    catch (e) { appendSyncError(`Force sync failed: ${e?.message || e}`); }
   });
 
   await listen("sync-trigger-drain", async () => {
     try {
       const { triggerDrain } = await import("./op-log.js");
       triggerDrain(state);
-    } catch (e) { console.warn("sync-trigger-drain failed:", e); }
+    } catch (e) { appendSyncError(`sync-trigger-drain failed: ${e?.message || e}`); }
   });
 }

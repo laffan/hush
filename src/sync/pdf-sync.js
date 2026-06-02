@@ -26,6 +26,7 @@
  */
 
 import { enqueueMetaUpload } from "./meta-sync.js";
+import { appendSyncError } from "./sync-feedback.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -126,7 +127,7 @@ async function persistRegistry() {
   if (IS_TAURI) {
     try {
       await tauriInvoke("save_pdf_registry", { content: payload });
-    } catch (e) { console.error("Failed to save pdf.json:", e); }
+    } catch (e) { appendSyncError(`Failed to save pdf.json: ${e?.message || e}`); }
   }
   scheduleSyncUpload();
 }
@@ -257,10 +258,10 @@ export function triggerBackgroundDownload(fileId, state) {
         const { getAnnotations } = await import("../zotero-annotations.js");
         await getAnnotations(meta.zoteroAttKey, userId, apiKey);
       } catch (e) {
-        console.error(`Annotation prefetch failed for ${fileId}:`, e);
+        appendSyncError(`Annotation prefetch failed for ${fileId}: ${e?.message || e}`);
       }
     } catch (e) {
-      console.error(`Background PDF download failed for ${fileId}:`, e);
+      appendSyncError(`Background PDF download failed for ${fileId}: ${e?.message || e}`);
       _downloadProgress.delete(fileId);
       state.emit("files-changed");
       _onBatchItemDone(state);

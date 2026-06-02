@@ -7,7 +7,7 @@ import {
   insertImageNode,
   insertExistingNode,
 } from "./sync-tree-insert.js";
-import { showSyncIndicator, appendSyncLog } from "./sync-feedback.js";
+import { showSyncIndicator, appendSyncLog, appendSyncError } from "./sync-feedback.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
@@ -147,19 +147,19 @@ export async function runForceSync(state) {
       data = await resp.json();
       total += countSyncableEntries(data.entries);
     }
-  } catch (e) { console.warn("force sync: pre-count failed:", e); }
+  } catch (e) { appendSyncError(`force sync: pre-count failed: ${e?.message || e}`); }
 
   progressPhase(state, "Reconciling local tree…");
   try {
     const { reconcileSync } = await import("./sync-state.js");
     await reconcileSync(state);
-  } catch (e) { console.warn("force sync: reconcile failed:", e); }
+  } catch (e) { appendSyncError(`force sync: reconcile failed: ${e?.message || e}`); }
 
   // Switch to a determinate run for the cursor-pull phase.
   _progressTotal = Math.max(0, total | 0);
   _progressDone = 0;
   progressPhase(state, total > 0 ? `Checking ${total} items on Dropbox…` : "Checking Dropbox for changes…");
-  try { await runOneCycle(state); } catch (e) { console.warn("force sync: cycle failed:", e); }
+  try { await runOneCycle(state); } catch (e) { appendSyncError(`force sync: cycle failed: ${e?.message || e}`); }
 
   progressPhase(state, "Pushing pending changes…");
   try {
@@ -242,7 +242,7 @@ async function startLongPollLoop(state) {
       // briefly and try again. The safety-net interval still catches
       // changes while we're recovering.
       if (myGen !== _longpollGen) break;
-      console.warn("longpoll error, backing off:", e?.message || e);
+      appendSyncError(`longpoll error, backing off: ${e?.message || e}`);
       await new Promise((r) => setTimeout(r, 5000));
     }
   }
@@ -334,7 +334,7 @@ async function runSyncCycle(state) {
     // self-resurrect from offline).
     if (!_longpollActive) startLongPollLoop(state);
   } catch (e) {
-    console.error("Sync poll error:", e);
+    appendSyncError(`Sync poll error: ${e?.message || e}`);
   } finally {
     syncing = false;
   }
@@ -363,7 +363,7 @@ async function syncDropboxCursor(state) {
           treeChanged = true;
           summary.created.push(ev.name);
         }
-      } catch (e) { console.warn("cursor: onCreated failed:", ev.relativePath, e); }
+      } catch (e) { appendSyncError(`cursor: onCreated failed: ${ev.relativePath} — ${e?.message || e}`); }
       _emitProgress(state);
     },
     onRenamed: async (ev) => {
@@ -371,7 +371,7 @@ async function syncDropboxCursor(state) {
         await applyRenamed(state, ev, invoke, findNodeByFileId);
         treeChanged = true;
         summary.renamed++;
-      } catch (e) { console.warn("cursor: onRenamed failed:", ev.newRelativePath || ev.oldRelativePath, e); }
+      } catch (e) { appendSyncError(`cursor: onRenamed failed: ${ev.newRelativePath || ev.oldRelativePath} — ${e?.message || e}`); }
       _emitProgress(state);
     },
     onContentChanged: async (ev) => {
@@ -380,7 +380,7 @@ async function syncDropboxCursor(state) {
         const name = node?.name || ev.relativePath;
         const applied = await applyContentChanged(state, ev, dbx, invoke);
         if (applied) summary.content.push(name);
-      } catch (e) { console.warn("cursor: onContentChanged failed:", ev.relativePath, e); }
+      } catch (e) { appendSyncError(`cursor: onContentChanged failed: ${ev.relativePath} — ${e?.message || e}`); }
       _emitProgress(state);
     },
     onDeleted: async (ev) => {
@@ -393,7 +393,7 @@ async function syncDropboxCursor(state) {
         }
         await invoke("delete_sync_file", { folderPath: "__dropbox__", internalId: ev.internalId })
           .catch(() => {});
-      } catch (e) { console.warn("cursor: onDeleted failed:", ev.relativePath, e); }
+      } catch (e) { appendSyncError(`cursor: onDeleted failed: ${ev.relativePath} — ${e?.message || e}`); }
       _emitProgress(state);
     },
     onMeta: async (ev) => {
@@ -411,7 +411,7 @@ async function syncDropboxCursor(state) {
           showSyncIndicator("pulled", `${filename} (${result.matched || 0}/${result.added || 0})`);
         }
       } catch (e) {
-        console.warn("cursor: meta apply failed:", e);
+        appendSyncError(`cursor: meta apply failed: ${e?.message || e}`);
       }
     },
     onDeskMeta: async (ev) => {
@@ -426,7 +426,7 @@ async function syncDropboxCursor(state) {
           showSyncIndicator("pulled", `desk ${ev.relativePath.split("/")[0]}`);
         }
       } catch (e) {
-        console.warn("cursor: deskmeta apply failed:", e);
+        appendSyncError(`cursor: deskmeta apply failed: ${e?.message || e}`);
       }
       _emitProgress(state);
     },
@@ -457,7 +457,7 @@ async function syncDropboxCursor(state) {
     if (summary.created.length) await reapplyMetaAfterCreates(state, dbx);
     updateDropboxStatus(state, true);
   } catch (e) {
-    console.error("Dropbox cursor sync failed:", e);
+    appendSyncError(`Dropbox cursor sync failed: ${e?.message || e}`);
     updateDropboxStatus(state, false);
   }
 }
@@ -481,7 +481,7 @@ async function reapplyMetaAfterCreates(state, dbx) {
       if (!payload) continue;
       const fn = (await import(/* @vite-ignore */ modPath))[fnName];
       if (typeof fn === "function") await fn(state, payload);
-    } catch (e) { console.warn(`cursor: post-create reapply ${filename} failed:`, e); }
+    } catch (e) { appendSyncError(`cursor: post-create reapply ${filename} failed: ${e?.message || e}`); }
   }
 }
 
@@ -495,7 +495,7 @@ async function applyCreated(state, ev, dbx, invoke, downloadImage) {
       insertImageNode(state, finalName, ev.relativePath);
       return true;
     } catch (e) {
-      console.error("cursor: image create failed:", e);
+      appendSyncError(`cursor: image create failed: ${e?.message || e}`);
       return false;
     }
   }
@@ -599,7 +599,7 @@ async function applyContentChanged(state, ev, dbx, invoke) {
         content = await dbx.downloadFile(ev.dropboxPath);
       }
     } catch (e) {
-      console.error("cursor: content download failed:", e);
+      appendSyncError(`cursor: content download failed: ${e?.message || e}`);
       return false;
     }
 
