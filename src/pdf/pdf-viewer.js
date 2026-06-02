@@ -499,6 +499,32 @@ export function createPdfViewer(container, opts = {}) {
   function setScrollTop(v) { scrollArea.scrollTop = v; }
   function getScrollLeft() { return scrollArea.scrollLeft; }
   function setScrollLeft(v) { scrollArea.scrollLeft = v; }
+
+  /** Restore zoom mode + scroll. Fit-mode page heights derive from the
+   *  container's measured size, which often isn't settled the instant a
+   *  pane mounts/resumes — so a single scrollTop assignment clamps to 0
+   *  against a still-collapsed scrollHeight (the "type restored, position
+   *  lost" bug). Re-flex + re-assert across a few frames until it sticks. */
+  function restoreView(zoomLevel, scrollTop, scrollLeft) {
+    if (typeof zoomLevel === "number") { try { setZoom(zoomLevel); } catch (_) {} }
+    const top = scrollTop || 0;
+    const left = scrollLeft || 0;
+    if (top <= 0 && left <= 0) return;
+    let attempts = 0;
+    resuming = true;
+    const tick = () => {
+      if (destroyed || suspended) { resuming = false; return; }
+      relayoutPages(); // re-flex so scrollHeight reflects the real layout
+      scrollArea.scrollTop = top;
+      scrollArea.scrollLeft = left;
+      const okTop = top <= 0 || Math.abs(scrollArea.scrollTop - top) <= 2;
+      const okLeft = left <= 0 || Math.abs(scrollArea.scrollLeft - left) <= 2;
+      if ((okTop && okLeft) || attempts >= 12) { resuming = false; return; }
+      attempts++;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
   function onScroll(cb) {
     scrollListeners.push(cb);
     return () => { scrollListeners = scrollListeners.filter(c => c !== cb); };
@@ -589,20 +615,12 @@ export function createPdfViewer(container, opts = {}) {
       if (savedAnnotations.length) annotLayer.setAnnotations(savedAnnotations);
     }
 
-    // Re-apply zoom before scroll: a horizontal layout clamps scrollTop
-    // to 0 (and vice versa for vertical), so the wrong axis would be
-    // lost if zoom isn't restored first. The rAF gap lets the new pages
-    // settle so scrollHeight reflects them before scroll is assigned.
-    if (_suspendZoomLevel != null) {
-      try { setZoom(_suspendZoomLevel); } catch (_) {}
-    }
-    requestAnimationFrame(() => {
-      try {
-        scrollArea.scrollTop = _suspendScrollTop;
-        scrollArea.scrollLeft = _suspendScrollLeft;
-      } catch (_) {}
-      resuming = false;
-    });
+    // restoreView re-applies zoom (a horizontal layout clamps scrollTop to
+    // 0 and vice versa, so the mode must match first) then re-asserts the
+    // scroll across frames so a not-yet-settled container size can't clamp
+    // the position to the top.
+    restoreView(_suspendZoomLevel, _suspendScrollTop, _suspendScrollLeft);
+    if (_suspendScrollTop <= 0 && _suspendScrollLeft <= 0) resuming = false;
   }
 
   // Wrap loadPdf to cache the raw data for resume
@@ -654,6 +672,7 @@ export function createPdfViewer(container, opts = {}) {
     setScrollTop,
     getScrollLeft,
     setScrollLeft,
+    restoreView,
     onScroll,
     setAnnotations: annotLayer.setAnnotations,
     refreshAnnotations: annotLayer.refreshAnnotations,

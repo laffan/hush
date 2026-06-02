@@ -367,25 +367,27 @@ async function loadPdfPane(pane) {
     }
   } catch {}
 
-  // Zoom level first — the layout has to match before scrollTop/Left
-  // are applied, otherwise scrolling on the wrong axis gets clamped to 0
-  // (e.g. a horizontal PDF restored with no setZoom has scrollHeight ≈
-  // clientHeight, so scrollTop won't take). setZoom is a no-op when the
-  // viewer is already in the desired mode.
-  if (typeof pane.pdfZoomLevel === "number") {
-    try { viewer.setZoom(pane.pdfZoomLevel); } catch (_) {}
-  }
+  // Restore zoom mode + scroll position. restoreView applies the zoom
+  // first (a horizontal layout clamps scrollTop to 0 and vice versa, so
+  // the mode has to match before scroll is assigned) and then re-flexes +
+  // re-asserts the scroll across several frames — the fit-mode page
+  // heights depend on the container's measured size, which often isn't
+  // settled the instant a pane mounts, so a single assignment would clamp
+  // the position back to the top.
   const targetTop = typeof pane.editorScrollTop === "number" ? pane.editorScrollTop : 0;
   const targetLeft = typeof pane.pdfScrollLeft === "number" ? pane.pdfScrollLeft : 0;
-  if (targetTop > 0 || targetLeft > 0) {
-    const apply = () => {
-      try { viewer.setScrollTop(targetTop); } catch (_) {}
-      try { viewer.setScrollLeft(targetLeft); } catch (_) {}
-    };
-    requestAnimationFrame(apply);
-    if (pane.inline) {
-      setTimeout(apply, 100);
-      setTimeout(apply, 500);
+  const zoomLevel = typeof pane.pdfZoomLevel === "number" ? pane.pdfZoomLevel : null;
+  if (viewer.restoreView) {
+    viewer.restoreView(zoomLevel, targetTop, targetLeft);
+  } else {
+    if (zoomLevel != null) { try { viewer.setZoom(zoomLevel); } catch (_) {} }
+    if (targetTop > 0 || targetLeft > 0) {
+      const apply = () => {
+        try { viewer.setScrollTop(targetTop); } catch (_) {}
+        try { viewer.setScrollLeft(targetLeft); } catch (_) {}
+      };
+      requestAnimationFrame(apply);
+      if (pane.inline) { setTimeout(apply, 100); setTimeout(apply, 500); }
     }
   }
 

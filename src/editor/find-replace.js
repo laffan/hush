@@ -31,6 +31,21 @@ export function openQuickFindBar(view, state) {
     closeQuickFind();
     return true;
   }
+  // Within-document find is doc-shaped, so it means different things per
+  // surface:
+  //   - Stacks: no single document to search → disabled outright (return
+  //     true so the keystroke is swallowed rather than half-opening a bar
+  //     against one column).
+  //   - Notebooks: open the shape shelf and focus its Search box — but
+  //     only when no editor actually holds focus. A focused doc/PDF pane
+  //     floating over the canvas still gets its own quick-find bar (the
+  //     `view` we get there is the focused pane, not the stale main one).
+  if (state && state.currentStackFileId) return true;
+  const viewFocused = !!(view && view.hasFocus);
+  if (state && state.currentNotebookFileId && !viewFocused) {
+    state.emit("notebook-open-shelf-search");
+    return true;
+  }
   const v = view || (state && state.editor ? state.editor.view : null);
   if (!v) return false;
   return openQuickFind(v);

@@ -544,6 +544,13 @@ export function createShelfPanel(
   };
   (panel as ShelfPanelEl).__getShelfWidth = () => openWidth;
   (panel as ShelfPanelEl).__isShelfOpen = () => isOpen;
+  // Quick-find (Cmd+F) in a notebook routes here instead of the doc find
+  // bar: open the shelf if needed and drop the caret into the search box.
+  (panel as ShelfPanelEl).__openAndFocusSearch = () => {
+    if (!isOpen) { isOpen = true; rebuild(); }
+    searchInput.focus();
+    searchInput.select();
+  };
 
   state.addEventListener("change", rebuild);
   rebuild();
@@ -554,6 +561,7 @@ export interface ShelfPanelEl extends HTMLElement {
   __setShelfWidth?: (w: number) => void;
   __getShelfWidth?: () => number;
   __isShelfOpen?: () => boolean;
+  __openAndFocusSearch?: () => void;
 }
 
 /** Find every occurrence of `q` (case-insensitive) inside `content` and

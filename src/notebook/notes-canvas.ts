@@ -588,6 +588,12 @@ export class NotesCanvas {
     this.state.addEventListener(event, ((e: CustomEvent) => handler(e.detail)) as EventListener);
   }
 
+  /** Open the shape shelf and focus its search box — the notebook's
+   *  equivalent of the doc quick-find bar (Cmd+F). */
+  openShelfSearch() {
+    (this._shelfPanel as ShelfPanelEl | null)?.__openAndFocusSearch?.();
+  }
+
   destroy() {
     cancelAnimationFrame(this._rafId);
     if (this._cleanupInput) this._cleanupInput();
