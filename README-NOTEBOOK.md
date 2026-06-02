@@ -113,6 +113,8 @@ Notebook shortcuts are registered in the Hush shortcut system:
 | `shortcutNbUngroup` | `Mod+Shift+G` | Ungroup selected shapes |
 | `shortcutNbResetZoom` | `Mod+0` | Reset zoom to 100% |
 
+Cmd + arrow keys align the current selection along the matching edge (Left/Right/Up/Down → left / right / top / bottom). Cmd + Shift + arrow keys distribute along the axis of the arrow — horizontal arrows distribute horizontally, vertical arrows vertically. These bindings live directly in `input-handler.ts` rather than the settings-driven shortcut table; the underlying state methods (`alignSelected`, `distributeSelected`) are the same ones the selection-toolbar's align flyout calls.
+
 Draw sub-tools (Lasso, Erase, Slice, brush slots) are reached through the right half of the unified toolbar (past the divider) — no keyboard shortcuts; the E/X hints in the button tooltips are placeholders. Hold space (or two-finger drag) to pan.
 
 These appear in Settings > Shortcuts > Notebooks and are stored in `AppSettings` (Rust) alongside the editor shortcuts. The input handler reads them from Hush settings at mount time via the `NotebookShortcuts` interface.
