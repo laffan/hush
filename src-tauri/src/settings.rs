@@ -384,12 +384,10 @@ pub struct AppSettings {
     pub notebook_text_styles: Vec<serde_json::Value>,
     #[serde(default)]
     pub last_notebook_id: Option<String>,
-    /// Legacy single-slot "desktop" pin (a thumbnail at the bottom of
-    /// the files panel). The feature is gone — replaced by per-row
-    /// pane indicators driven by `panes_hidden_by_context` — but the
-    /// field stays in the struct so existing settings.json files keep
-    /// parsing on first launch. Always serialized as null; the JS side
-    /// ignores it.
+    /// Legacy single-slot "desktop" pin (replaced by per-row pane
+    /// indicators driven by `panes_hidden_by_context`). Retained only so
+    /// existing settings.json files keep parsing; always null, ignored
+    /// by the JS side.
     #[serde(default, alias = "deskFileId")]
     pub desktop_file_id: Option<String>,
     /// Notebook-only floating minimap widget. Off by default; toggled
@@ -444,16 +442,13 @@ pub struct AppSettings {
     pub persisted_panes: Vec<serde_json::Value>,
 
     /// Per-context "panes are hidden" flags, keyed by `pane.ownerContext`
-    /// (`doc:<id>` / `nb:<id>` / `pj:<id>`). Each truthy entry means the
-    /// corresponding doc/notebook is in "file" mode — panes that would
-    /// normally participate in that context stay off-screen until the
-    /// flag is cleared via the command palette's **Show panes** entry.
-    /// Rides cross-device alongside the panes themselves (see
-    /// `serializePanesForSync` / `applyRemotePanes`): the JS layer
-    /// translates each local-id key to its Dropbox `remoteId` and
-    /// embeds a `hiddenOwners` list in `.hush/panes.json`. Local-Sync /
-    /// project contexts have no cross-device identity so their entries
-    /// stay per-device.
+    /// (`doc:<id>` / `nb:<id>` / `pj:<id>`); a truthy entry puts that
+    /// doc/notebook in "file" mode (its panes stay off-screen until
+    /// **Show panes** clears it). Rides cross-device via the JS layer
+    /// (`serializePanesForSync` / `applyRemotePanes`), which maps each
+    /// local-id key to its Dropbox `remoteId` and embeds a `hiddenOwners`
+    /// list in `.hush/panes.json`; Local-Sync / project contexts have no
+    /// cross-device identity so their entries stay per-device.
     #[serde(default)]
     pub panes_hidden_by_context: serde_json::Value,
 
