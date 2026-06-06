@@ -86,6 +86,55 @@ export const shortcutCategories = [
 // Flat list for conflict detection
 export const shortcutDefs = shortcutCategories.flatMap(cat => cat.shortcuts);
 
+// --- Filetype grouping (shared with the Show Shortcuts modal) ---
+// General-category keys that are really pane / panel toggles.
+export const PANE_SHORTCUT_KEYS = ["shortcutToggleSidebar", "shortcutToggleOutline"];
+// General-category keys that are doc-surface "modes" — filetype-specific
+// to documents rather than truly app-wide.
+export const DOC_MODE_SHORTCUT_KEYS = [
+  "shortcutTogglePrivate",
+  "shortcutTypewriter",
+  "shortcutToggleDry",
+  "shortcutToggleFocus",
+  "shortcutZenFocus",
+  "shortcutToggleWordCount",
+  "shortcutQuickFind",
+];
+
+// Dropdown options for the filetype filter (Shortcuts settings tab + modal).
+export const SHORTCUT_FILETYPES = [
+  ["all", "All filetypes"],
+  ["document", "Document"],
+  ["notebook", "Notebook"],
+  ["stack", "Stack"],
+  ["pdf", "PDF"],
+];
+
+function keysInCategory(name) {
+  return (shortcutCategories.find((c) => c.name === name)?.shortcuts || []).map((d) => d.key);
+}
+
+/** Setting keys relevant to a filetype — the editable shortcuts the Show
+ *  Shortcuts modal lists for that surface. Returned as a Set so callers
+ *  can filter the settings list (and the modal) by filetype. */
+export function filetypeShortcutKeys(filetype) {
+  const editing = keysInCategory("Editing");
+  const formatting = keysInCategory("Formatting");
+  const notebook = keysInCategory("Notebooks");
+  const general = keysInCategory("General");
+  const appWide = general.filter((k) => !PANE_SHORTCUT_KEYS.includes(k) && !DOC_MODE_SHORTCUT_KEYS.includes(k));
+  const docModes = general.filter((k) => DOC_MODE_SHORTCUT_KEYS.includes(k));
+  const panes = general.filter((k) => PANE_SHORTCUT_KEYS.includes(k));
+
+  let keys;
+  if (filetype === "notebook") keys = [...notebook, ...editing, ...formatting];
+  else if (filetype === "pdf") keys = []; // PDF zoom is hard-wired, not a settings field
+  else if (filetype === "stack") keys = [...editing, ...formatting];
+  else keys = [...docModes, ...editing, ...formatting]; // document / project
+  return new Set([...keys, ...panes, ...appWide]);
+}
+
+
 export function normalizeShortcut(s) {
   if (!s) return "";
   return s.replace(/CmdOrCtrl|Mod/g, "Cmd").toLowerCase();
@@ -102,8 +151,12 @@ export function findConflict(settings, key) {
   return null;
 }
 
-export function renderShortcutsTab(settings, searchQuery = "") {
+export function renderShortcutsTab(settings, searchQuery = "", filetype = "all") {
   const q = (searchQuery || "").trim().toLowerCase();
+  const ft = filetype || "all";
+  // When a filetype is picked, restrict the list to the shortcuts that
+  // surface on that surface (same grouping the Show Shortcuts modal uses).
+  const ftKeys = ft === "all" ? null : filetypeShortcutKeys(ft);
 
   // Collect all shortcuts with conflict + category info
   const all = [];
@@ -124,14 +177,21 @@ export function renderShortcutsTab(settings, searchQuery = "") {
     if (val && val.toLowerCase().includes(q)) return true;
     return false;
   };
+  const matchesFiletype = (item) => !ftKeys || ftKeys.has(item.key);
 
+  // Conflicts are a global concern — surface them whatever the filter.
   const conflictItems = all.filter((s) => s.conflict);
   const conflictKeys = new Set(conflictItems.map((s) => s.key));
+
+  const filetypeOptions = SHORTCUT_FILETYPES
+    .map(([id, label]) => `<option value="${id}"${ft === id ? " selected" : ""}>${escHtml(label)}</option>`)
+    .join("");
 
   let html = `
     <div class="settings-section shortcut-search-section">
       <div class="shortcut-search-row">
         <input type="text" id="shortcut-search-input" placeholder="Search shortcuts…" value="${escAttr(searchQuery)}" autocomplete="off" spellcheck="false" />
+        <select id="shortcut-filetype-filter" class="shortcut-filetype-filter" title="Filter shortcuts by filetype">${filetypeOptions}</select>
       </div>
     </div>
   `;
@@ -152,6 +212,7 @@ export function renderShortcutsTab(settings, searchQuery = "") {
     const items = category.shortcuts
       .filter((def) => !conflictKeys.has(def.key))
       .map((def) => ({ ...def, conflict: null }))
+      .filter(matchesFiletype)
       .filter(matchesQuery);
     if (items.length === 0) continue;
     anyMatches = true;

@@ -22,6 +22,7 @@ let settingsRootEl = null;
 let onSaveCallback = null;
 let drySearchQuery = '';
 let shortcutSearchQuery = '';
+let shortcutFiletype = 'all';
 
 /**
  * Initialize the settings UI into a given root element.
@@ -185,7 +186,7 @@ function render() {
           ${renderEditorTab(settings)}
         </div>
         <div class="settings-panel${activeTab === 'shortcuts' ? ' active' : ''}" id="panel-shortcuts">
-          ${renderShortcutsTab(settings, shortcutSearchQuery)}
+          ${renderShortcutsTab(settings, shortcutSearchQuery, shortcutFiletype)}
         </div>
         <div class="settings-panel${activeTab === 'dry' ? ' active' : ''}" id="panel-dry">
           ${renderDryTab(settings, drySearchQuery)}
@@ -506,6 +507,15 @@ function bindAll() {
         newInput.focus();
         try { newInput.setSelectionRange(pos, pos); } catch (e) { /* noop */ }
       }
+    });
+  }
+
+  // Shortcuts tab — filetype filter dropdown
+  const shortcutFiletypeSelect = document.getElementById("shortcut-filetype-filter");
+  if (shortcutFiletypeSelect) {
+    shortcutFiletypeSelect.addEventListener("change", () => {
+      shortcutFiletype = shortcutFiletypeSelect.value || "all";
+      render();
     });
   }
 

@@ -84,8 +84,15 @@
   margin-bottom: 8px;
 }
 
+.shortcut-search-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .shortcut-search-row input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 8px 12px;
   border: 1px solid var(--panel-border);
   border-radius: 6px;
@@ -93,6 +100,22 @@
   color: var(--fg);
   font-size: 13px;
   box-sizing: border-box;
+}
+
+.shortcut-filetype-filter {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--tab-bg);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.shortcut-filetype-filter:focus {
+  outline: none;
+  border-color: rgba(100, 150, 255, 0.5);
 }
 
 .shortcut-search-row input:focus {

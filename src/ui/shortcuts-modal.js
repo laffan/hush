@@ -23,24 +23,11 @@ import { escHtml, escAttr } from "../settings/settings-tabs.js";
 import {
   shortcutCategories,
   renderShortcutKeys,
+  PANE_SHORTCUT_KEYS as PANE_KEYS,
+  DOC_MODE_SHORTCUT_KEYS as DOC_MODE_KEYS,
 } from "../settings/settings-tabs-shortcuts.js";
 
 let _overlayEl = null;
-
-/** General-category keys that are really pane / panel toggles. */
-const PANE_KEYS = ["shortcutToggleSidebar", "shortcutToggleOutline"];
-
-/** General-category keys that are doc-surface "modes" — filetype-specific
- *  to documents rather than truly app-wide. */
-const DOC_MODE_KEYS = [
-  "shortcutTogglePrivate",
-  "shortcutTypewriter",
-  "shortcutToggleDry",
-  "shortcutToggleFocus",
-  "shortcutZenFocus",
-  "shortcutToggleWordCount",
-  "shortcutQuickFind",
-];
 
 /** Well-known shortcuts with no settings field — shown without an Edit
  *  affordance. Values use the stored "Mod+…" form so `renderShortcutKeys`
