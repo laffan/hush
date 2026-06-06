@@ -83,12 +83,10 @@ pub struct AppSettings {
     #[serde(default)]
     pub dropbox_sync_log: Vec<String>, // Recent sync events for display
 
-    // Google Docs (OAuth PKCE) — per-document link, no auto-sync.
-    // The user explicitly drives push/pull from a link bar; tokens live
-    // here, per-doc links live in a sibling map (`google_doc_links`).
-    // Client credentials live here too (entered in Settings > Sync >
-    // Google Sync) so each user supplies their own OAuth client rather
-    // than embedding one at build time.
+    // Google Docs (OAuth PKCE) — per-document link, no auto-sync. Tokens
+    // and per-doc links (`google_doc_links`) live here, as do the client
+    // credentials (entered in Settings > Sync > Google Sync) so each user
+    // supplies their own OAuth client rather than embedding one at build.
     #[serde(default)]
     pub google_client_id: Option<String>,
     #[serde(default)]
@@ -116,6 +114,13 @@ pub struct AppSettings {
     // sidebar. Writes go straight to disk; unsyncing is non-destructive.
     #[serde(default)]
     pub local_sync_folders: Vec<crate::local_sync::LocalSyncFolder>,
+
+    // Sidebar folder collapse state. `collapsed_folder_ids` is Option so
+    // the frontend tells "never set" (first-run defaults) from "set empty".
+    #[serde(default)]
+    pub collapsed_folder_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub local_sync_expanded: Vec<String>,
 
     // Window
     #[serde(default)]
@@ -442,13 +447,10 @@ pub struct AppSettings {
     pub persisted_panes: Vec<serde_json::Value>,
 
     /// Per-context "panes are hidden" flags, keyed by `pane.ownerContext`
-    /// (`doc:<id>` / `nb:<id>` / `pj:<id>`); a truthy entry puts that
-    /// doc/notebook in "file" mode (its panes stay off-screen until
-    /// **Show panes** clears it). Rides cross-device via the JS layer
-    /// (`serializePanesForSync` / `applyRemotePanes`), which maps each
-    /// local-id key to its Dropbox `remoteId` and embeds a `hiddenOwners`
-    /// list in `.hush/panes.json`; Local-Sync / project contexts have no
-    /// cross-device identity so their entries stay per-device.
+    /// (`doc:<id>` / `nb:<id>` / `pj:<id>`); a truthy entry puts that file
+    /// in "file" mode (panes off-screen until **Show panes** clears it).
+    /// Rides cross-device via the JS layer's `hiddenOwners` list in
+    /// `.hush/panes.json`; Local-Sync / project contexts stay per-device.
     #[serde(default)]
     pub panes_hidden_by_context: serde_json::Value,
 
@@ -474,13 +476,11 @@ pub struct AppSettings {
     #[serde(default)]
     pub scroll_position: Option<f64>,
 
-    // Proofread mode — harper-core toggle. The mode flag itself is
-    // *not* persisted (each session starts with proofread off, so the
-    // cold-start dictionary build doesn't gate startup); only the
-    // per-rule disable list round-trips. `proofread_disabled_rules`
-    // carries the harper rule names (e.g. "LongSentences") that the
-    // user has switched off in the Proofread settings tab; the JS
-    // frontend forwards it on every `check_grammar` call.
+    // Proofread mode — harper-core. The mode flag isn't persisted (each
+    // session starts off so the cold-start dictionary build doesn't gate
+    // startup); only the per-rule disable list round-trips.
+    // `proofread_disabled_rules` carries the harper rule names the user
+    // switched off; the JS frontend forwards it on every `check_grammar`.
     #[serde(default = "default_proofread_disabled_rules")]
     pub proofread_disabled_rules: Vec<String>,
     #[serde(default)] // Spellcheck (spellbook) — persisted; ~10 ms load.
@@ -530,6 +530,8 @@ impl Default for AppSettings {
             sync_folders: Vec::new(),
             dropbox_token: None,
             local_sync_folders: Vec::new(),
+            collapsed_folder_ids: None,
+            local_sync_expanded: Vec::new(),
             always_on_top: false,
             column_width: default_column_width(),
             zen_column_width: None,

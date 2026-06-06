@@ -37,6 +37,9 @@ export class SortableList {
       onDropExternal: options.onDropExternal || null,
       getDraggedSiblings: options.getDraggedSiblings || null,
       onClick: options.onClick || (() => {}),
+      // Fired after any collapse/expand toggle with the full collapsed-id
+      // array so the host can persist folder open/closed state.
+      onCollapseChange: options.onCollapseChange || null,
     };
 
     this.state = {
@@ -105,6 +108,7 @@ export class SortableList {
     } else {
       this.state.collapsedIds.add(itemId);
     }
+    this.config.onCollapseChange?.([...this.state.collapsedIds]);
     this.render();
   }
 
@@ -149,6 +153,7 @@ export class SortableList {
     } else {
       this.state.collapsedIds.add(itemId);
     }
+    this.config.onCollapseChange?.([...this.state.collapsedIds]);
     this.render();
   }
 

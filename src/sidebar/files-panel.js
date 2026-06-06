@@ -283,6 +283,7 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onDropExternal: (item, ev) => onLocalDropExternal(state, item, ev), // drop onto a Local Sync folder → move to disk
+    onCollapseChange: (ids) => state.updateSettings({ collapsedFolderIds: ids }), // persist folder open/closed state
     // Images can always escape the panel (no Cmd required) so the drop
     // lands in whatever editor/notebook is under the pointer.
     forceDragOutside: (item) => item && item.type === "image",
@@ -326,19 +327,17 @@ export function createFilesPanel(container, state, hidePanel) {
     },
   });
 
-  // Ensure each Inbox is expanded by default (one global when desks
-  // are off, one per desk when on).
-  for (const id of allSpecialIds(state, AppState.INBOX_ID)) {
-    if (sortableInstance.state.collapsedIds.has(id)) {
-      sortableInstance.state.collapsedIds.delete(id);
-    }
+  // Restore persisted folder collapse state. On first run (no persisted
+  // set) apply the defaults: Inbox open (a fresh set leaves it expanded),
+  // Trash / Images / PDFs collapsed.
+  const persistedCollapsed = state.settings?.collapsedFolderIds;
+  if (Array.isArray(persistedCollapsed)) {
+    for (const id of persistedCollapsed) sortableInstance.state.collapsedIds.add(id);
+  } else {
+    for (const id of allSpecialIds(state, AppState.TRASH_ID)) sortableInstance.state.collapsedIds.add(id);
+    for (const id of allSpecialIds(state, AppState.IMAGES_ID)) sortableInstance.state.collapsedIds.add(id);
+    for (const id of allSpecialIds(state, AppState.PDFS_ID)) sortableInstance.state.collapsedIds.add(id);
   }
-
-  // Trash and Images stay collapsed unless the user explicitly opens them
-  // (mirroring each other — both are "drawer" special nodes at the tail).
-  for (const id of allSpecialIds(state, AppState.TRASH_ID)) sortableInstance.state.collapsedIds.add(id);
-  for (const id of allSpecialIds(state, AppState.IMAGES_ID)) sortableInstance.state.collapsedIds.add(id);
-  for (const id of allSpecialIds(state, AppState.PDFS_ID)) sortableInstance.state.collapsedIds.add(id);
   sortableInstance.render();
 
   // Render the virtual Flagged folder

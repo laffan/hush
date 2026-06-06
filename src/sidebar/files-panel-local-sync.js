@@ -32,6 +32,21 @@ let storedLocalSyncContainer = null;
 let storedState = null;
 let storedHidePanel = null;
 const localSyncExpanded = new Set(); // folderId:relPath strings
+let _lsExpandedRestored = false; // seed from settings once per load
+
+/** Seed the expanded set from persisted settings on first render. */
+function restoreLocalSyncExpanded(state) {
+  if (_lsExpandedRestored) return;
+  _lsExpandedRestored = true;
+  const saved = state?.settings?.localSyncExpanded;
+  if (Array.isArray(saved)) for (const k of saved) localSyncExpanded.add(k);
+}
+
+/** Persist the expanded set so folder open/closed state survives a
+ *  restart (mirrors the normal tree's collapse persistence). */
+function persistLocalSyncExpanded(state) {
+  if (state?.updateSettings) state.updateSettings({ localSyncExpanded: [...localSyncExpanded] });
+}
 
 // Render token — bumped on every renderLocalSyncSection call. A stale
 // render (one whose async folder list resolves after a newer call has
@@ -108,6 +123,7 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   storedLocalSyncContainer = container;
   storedState = state;
   storedHidePanel = hidePanel;
+  restoreLocalSyncExpanded(state);
   const myToken = ++renderToken;
 
   let folders = [];
@@ -240,6 +256,7 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
 function toggleLocalSyncNode(key) {
   if (localSyncExpanded.has(key)) localSyncExpanded.delete(key);
   else localSyncExpanded.add(key);
+  persistLocalSyncExpanded(storedState);
 }
 
 async function populateLocalSyncChildren(container, folder, relPath, state, hidePanel, refreshFilesPanel) {
