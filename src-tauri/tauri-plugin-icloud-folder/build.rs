@@ -8,6 +8,12 @@ const COMMANDS: &[&str] = &[
     "write_file",
     "read_file_bytes",
     "write_file_bytes",
+    "create_file",
+    "create_dir",
+    "rename_entry",
+    "delete_entry",
+    "move_entry",
+    "copy_entry",
 ];
 
 fn main() {

@@ -47,6 +47,28 @@ struct WriteBytesArgs {
     base64: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameArgs {
+    path: String,
+    new_name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MoveArgs {
+    src_path: String,
+    dst_dir: String,
+}
+
+/// Result carrying the final absolute path of a create / rename / move /
+/// copy operation (collision auto-suffixed). The JS side strips the mount
+/// base to recover the relative path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathResult {
+    pub path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PickResult {
@@ -272,6 +294,121 @@ async fn write_file_bytes<R: Runtime>(
     }
 }
 
+#[tauri::command]
+async fn create_file<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    contents: String,
+) -> Result<PathResult, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<PathResult>("createFile", WriteArgs { path, contents })
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path, contents);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
+async fn create_dir<R: Runtime>(app: AppHandle<R>, path: String) -> Result<PathResult, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<PathResult>("createDir", PathArgs { path })
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
+async fn rename_entry<R: Runtime>(
+    app: AppHandle<R>,
+    path: String,
+    new_name: String,
+) -> Result<PathResult, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<PathResult>("renameEntry", RenameArgs { path, new_name })
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path, new_name);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
+async fn delete_entry<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<serde_json::Value>("deleteEntry", PathArgs { path })
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
+async fn move_entry<R: Runtime>(
+    app: AppHandle<R>,
+    src_path: String,
+    dst_dir: String,
+) -> Result<PathResult, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<PathResult>("moveEntry", MoveArgs { src_path, dst_dir })
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, src_path, dst_dir);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
+async fn copy_entry<R: Runtime>(app: AppHandle<R>, path: String) -> Result<PathResult, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<PathResult>("copyEntry", PathArgs { path })
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err(IOS_ONLY.into())
+    }
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("icloud-folder")
         .invoke_handler(tauri::generate_handler![
@@ -283,7 +420,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             read_file,
             write_file,
             read_file_bytes,
-            write_file_bytes
+            write_file_bytes,
+            create_file,
+            create_dir,
+            rename_entry,
+            delete_entry,
+            move_entry,
+            copy_entry
         ])
         .setup(|app, _api| {
             #[cfg(target_os = "ios")]

@@ -286,6 +286,145 @@ class IcloudFolderPlugin: Plugin, UIDocumentPickerDelegate {
     }
   }
 
+  // MARK: - Mutating operations (create / rename / delete / move / copy)
+
+  @objc public func createFile(_ invoke: Invoke) throws {
+    struct Args: Decodable {
+      let path: String
+      let contents: String
+    }
+    let args = try invoke.parseArgs(Args.self)
+    let target = uniquePath(URL(fileURLWithPath: args.path))
+    try? FileManager.default.createDirectory(
+      at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+    var coordErr: NSError?
+    var writeErr: Error?
+    NSFileCoordinator().coordinate(
+      writingItemAt: target, options: .forReplacing, error: &coordErr
+    ) { (u) in
+      do { try args.contents.write(to: u, atomically: true, encoding: .utf8) } catch { writeErr = error }
+    }
+    if writeErr == nil && coordErr == nil {
+      invoke.resolve(["path": target.path])
+    } else {
+      invoke.reject(
+        "createFile failed: "
+          + (writeErr?.localizedDescription ?? coordErr?.localizedDescription ?? "unknown"))
+    }
+  }
+
+  @objc public func createDir(_ invoke: Invoke) throws {
+    struct Args: Decodable { let path: String }
+    let args = try invoke.parseArgs(Args.self)
+    let target = uniqueDirPath(URL(fileURLWithPath: args.path, isDirectory: true))
+    do {
+      try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+      invoke.resolve(["path": target.path])
+    } catch {
+      invoke.reject("createDir failed: \(error.localizedDescription)")
+    }
+  }
+
+  @objc public func renameEntry(_ invoke: Invoke) throws {
+    struct Args: Decodable {
+      let path: String
+      let newName: String
+    }
+    let args = try invoke.parseArgs(Args.self)
+    if args.newName.contains("/") || args.newName.isEmpty {
+      invoke.reject("Invalid name")
+      return
+    }
+    let src = URL(fileURLWithPath: args.path)
+    let isDir = (try? src.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+    let dest = src.deletingLastPathComponent().appendingPathComponent(args.newName)
+    if dest.path == src.path {
+      invoke.resolve(["path": src.path])
+      return
+    }
+    let finalDest = isDir ? uniqueDirPath(dest) : uniquePath(dest)
+    do {
+      try FileManager.default.moveItem(at: src, to: finalDest)
+      invoke.resolve(["path": finalDest.path])
+    } catch {
+      invoke.reject("rename failed: \(error.localizedDescription)")
+    }
+  }
+
+  @objc public func deleteEntry(_ invoke: Invoke) throws {
+    struct Args: Decodable { let path: String }
+    let args = try invoke.parseArgs(Args.self)
+    let url = URL(fileURLWithPath: args.path)
+    do {
+      if FileManager.default.fileExists(atPath: url.path) {
+        try FileManager.default.removeItem(at: url)
+      }
+      invoke.resolve()
+    } catch {
+      invoke.reject("delete failed: \(error.localizedDescription)")
+    }
+  }
+
+  @objc public func moveEntry(_ invoke: Invoke) throws {
+    struct Args: Decodable {
+      let srcPath: String
+      let dstDir: String
+    }
+    let args = try invoke.parseArgs(Args.self)
+    let src = URL(fileURLWithPath: args.srcPath)
+    let isDir = (try? src.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+    let dstDir = URL(fileURLWithPath: args.dstDir, isDirectory: true)
+    let dest = dstDir.appendingPathComponent(src.lastPathComponent)
+    if dest.path == src.path {
+      invoke.resolve(["path": src.path])
+      return
+    }
+    let finalDest = isDir ? uniqueDirPath(dest) : uniquePath(dest)
+    do {
+      try FileManager.default.moveItem(at: src, to: finalDest)
+      invoke.resolve(["path": finalDest.path])
+    } catch {
+      invoke.reject("move failed: \(error.localizedDescription)")
+    }
+  }
+
+  @objc public func copyEntry(_ invoke: Invoke) throws {
+    struct Args: Decodable { let path: String }
+    let args = try invoke.parseArgs(Args.self)
+    let src = URL(fileURLWithPath: args.path)
+    let isDir = (try? src.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+    let parent = src.deletingLastPathComponent()
+    let ext = src.pathExtension
+    let stem = src.deletingPathExtension().lastPathComponent
+    let baseName = isDir
+      ? "\(src.lastPathComponent)-Copy"
+      : (ext.isEmpty ? "\(stem)-Copy" : "\(stem)-Copy.\(ext)")
+    let dest = parent.appendingPathComponent(baseName)
+    let finalDest = isDir ? uniqueDirPath(dest) : uniquePath(dest)
+    do {
+      try FileManager.default.copyItem(at: src, to: finalDest)
+      invoke.resolve(["path": finalDest.path])
+    } catch {
+      invoke.reject("copy failed: \(error.localizedDescription)")
+    }
+  }
+
+  /// Directory-flavoured `uniquePath`: appends " 2", " 3" (no extension
+  /// splitting) when a directory of that name already exists.
+  private func uniqueDirPath(_ url: URL) -> URL {
+    let fm = FileManager.default
+    if !fm.fileExists(atPath: url.path) { return url }
+    let dir = url.deletingLastPathComponent()
+    let name = url.lastPathComponent
+    var i = 2
+    while i < 10000 {
+      let candidate = dir.appendingPathComponent("\(name) \(i)")
+      if !fm.fileExists(atPath: candidate.path) { return candidate }
+      i += 1
+    }
+    return url
+  }
+
   /// Append " 2", " 3", … before the extension if `url` already exists.
   /// Mirrors the macOS `unique_path` in local_sync.rs.
   private func uniquePath(_ url: URL) -> URL {

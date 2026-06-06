@@ -45,6 +45,36 @@ identifier = "allow-write-file-bytes"
 description = "Allow JS to write a binary file inside a security-scoped folder (collision auto-suffixed)."
 commands.allow = ["write_file_bytes"]
 
+[[permission]]
+identifier = "allow-create-file"
+description = "Allow JS to create a new text file inside a security-scoped folder (collision auto-suffixed)."
+commands.allow = ["create_file"]
+
+[[permission]]
+identifier = "allow-create-dir"
+description = "Allow JS to create a new directory inside a security-scoped folder (collision auto-suffixed)."
+commands.allow = ["create_dir"]
+
+[[permission]]
+identifier = "allow-rename-entry"
+description = "Allow JS to rename a file or directory inside a security-scoped folder."
+commands.allow = ["rename_entry"]
+
+[[permission]]
+identifier = "allow-delete-entry"
+description = "Allow JS to permanently delete a file or directory inside a security-scoped folder."
+commands.allow = ["delete_entry"]
+
+[[permission]]
+identifier = "allow-move-entry"
+description = "Allow JS to move a file or directory into another folder inside a security-scoped folder."
+commands.allow = ["move_entry"]
+
+[[permission]]
+identifier = "allow-copy-entry"
+description = "Allow JS to duplicate a file or directory inside a security-scoped folder."
+commands.allow = ["copy_entry"]
+
 [default]
 description = "Default permissions: allow the full folder-bookmark demo flow (pick, resolve, list, read, write, stop)."
 permissions = [
@@ -57,4 +87,10 @@ permissions = [
   "allow-read-file-bytes",
   "allow-write-file",
   "allow-write-file-bytes",
+  "allow-create-file",
+  "allow-create-dir",
+  "allow-rename-entry",
+  "allow-delete-entry",
+  "allow-move-entry",
+  "allow-copy-entry",
 ]

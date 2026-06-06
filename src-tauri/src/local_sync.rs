@@ -26,6 +26,7 @@ use tauri::{AppHandle, Emitter};
 /// so the sidebar shows them with hover preview.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "md", "markdown", "txt",
+    "hushnote", "hushstack",
     "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
     "heic", "heif", "avif", "tif", "tiff",
 ];
@@ -250,6 +251,200 @@ pub fn write_file_bytes_unique(
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| rel_path.to_string());
     Ok(final_rel)
+}
+
+/// Create a new text file, auto-suffixing the name on collision. Returns
+/// the actual relative path written so the caller can open / select it.
+pub fn create_file_unique(
+    folder: &LocalSyncFolder,
+    rel_path: &str,
+    content: &str,
+) -> Result<String, String> {
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    if let Some(parent) = abs.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let final_abs = unique_path(&abs);
+    write_atomic_str(&final_abs, content).map_err(|e| e.to_string())?;
+    rel_of(&root, &final_abs, rel_path)
+}
+
+/// Create a new directory, auto-suffixing the name on collision. Returns
+/// the actual relative path created.
+pub fn create_dir_unique(folder: &LocalSyncFolder, rel_path: &str) -> Result<String, String> {
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    let final_abs = unique_dir_path(&abs);
+    fs::create_dir_all(&final_abs).map_err(|e| e.to_string())?;
+    rel_of(&root, &final_abs, rel_path)
+}
+
+/// Rename a file or directory in place (same parent dir). `new_name` is a
+/// bare filename (no slashes); on collision a numeric suffix is appended.
+/// Returns the new relative path.
+pub fn rename_entry(
+    folder: &LocalSyncFolder,
+    rel_path: &str,
+    new_name: &str,
+) -> Result<String, String> {
+    if new_name.contains('/') || new_name.contains('\\') || new_name.is_empty() {
+        return Err("Invalid name".to_string());
+    }
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    if !abs.exists() {
+        return Err(format!("No such entry: {}", rel_path));
+    }
+    let parent = abs.parent().ok_or_else(|| "No parent".to_string())?;
+    let dest = parent.join(new_name);
+    // Renaming to the same name is a no-op — return the current rel path.
+    if dest == abs {
+        return rel_of(&root, &abs, rel_path);
+    }
+    let is_dir = abs.is_dir();
+    let final_dest = if is_dir { unique_dir_path(&dest) } else { unique_path(&dest) };
+    fs::rename(&abs, &final_dest).map_err(|e| e.to_string())?;
+    rel_of(&root, &final_dest, rel_path)
+}
+
+/// Permanently delete a file or directory (recursive for directories).
+pub fn delete_entry(folder: &LocalSyncFolder, rel_path: &str) -> Result<(), String> {
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    if abs.is_dir() {
+        fs::remove_dir_all(&abs).map_err(|e| e.to_string())
+    } else if abs.exists() {
+        fs::remove_file(&abs).map_err(|e| e.to_string())
+    } else {
+        Ok(())
+    }
+}
+
+/// Move a file or directory into `dst_dir_rel` (a directory relative path,
+/// "" for the mount root), keeping its filename. Collision auto-suffixed.
+/// Returns the new relative path. Used for intra-mount drag.
+pub fn move_entry(
+    folder: &LocalSyncFolder,
+    src_rel: &str,
+    dst_dir_rel: &str,
+) -> Result<String, String> {
+    let root = PathBuf::from(&folder.path);
+    let src_abs = resolve_safely(&root, src_rel)?;
+    if !src_abs.exists() {
+        return Err(format!("No such entry: {}", src_rel));
+    }
+    let is_dir = src_abs.is_dir();
+    let file_name = src_abs
+        .file_name()
+        .ok_or_else(|| "No filename".to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let dst_dir_abs = resolve_dir_safely(&root, dst_dir_rel)?;
+    if !dst_dir_abs.is_dir() {
+        return Err("Destination is not a directory".to_string());
+    }
+    // Block moving a directory into itself or a descendant.
+    if is_dir && dst_dir_abs.starts_with(&src_abs) {
+        return Err("Cannot move a folder into itself".to_string());
+    }
+    let dest = dst_dir_abs.join(&file_name);
+    // Same location — no-op.
+    if dest == src_abs {
+        return rel_of(&root, &src_abs, src_rel);
+    }
+    let final_dest = if is_dir { unique_dir_path(&dest) } else { unique_path(&dest) };
+    fs::rename(&src_abs, &final_dest).map_err(|e| e.to_string())?;
+    rel_of(&root, &final_dest, src_rel)
+}
+
+/// Duplicate a file (within the same directory), appending "-Copy" before
+/// the extension and auto-suffixing further on collision. Directories are
+/// copied recursively. Returns the new relative path.
+pub fn copy_entry(folder: &LocalSyncFolder, rel_path: &str) -> Result<String, String> {
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    if !abs.exists() {
+        return Err(format!("No such entry: {}", rel_path));
+    }
+    let parent = abs.parent().ok_or_else(|| "No parent".to_string())?;
+    let is_dir = abs.is_dir();
+    let (stem, ext) = if is_dir {
+        (abs.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), None)
+    } else {
+        (
+            abs.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "copy".into()),
+            abs.extension().map(|s| s.to_string_lossy().into_owned()),
+        )
+    };
+    let base_name = match &ext {
+        Some(e) => format!("{}-Copy.{}", stem, e),
+        None => format!("{}-Copy", stem),
+    };
+    let dest = parent.join(&base_name);
+    let final_dest = if is_dir { unique_dir_path(&dest) } else { unique_path(&dest) };
+    if is_dir {
+        copy_dir_recursive(&abs, &final_dest).map_err(|e| e.to_string())?;
+    } else {
+        fs::copy(&abs, &final_dest).map_err(|e| e.to_string())?;
+    }
+    rel_of(&root, &final_dest, rel_path)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let target = dst.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &target)?;
+        } else {
+            fs::copy(&path, &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Compute the mount-relative path for `abs`, falling back to `fallback`
+/// when the strip fails (e.g. the canonical root differs by symlink).
+fn rel_of(root: &Path, abs: &Path, fallback: &str) -> Result<String, String> {
+    let canon_root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let canon_abs = fs::canonicalize(abs).unwrap_or_else(|_| abs.to_path_buf());
+    Ok(canon_abs
+        .strip_prefix(&canon_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| fallback.to_string()))
+}
+
+/// Like `resolve_safely` but tailored to an existing directory target —
+/// "" resolves to the mount root.
+fn resolve_dir_safely(root: &Path, rel_path: &str) -> Result<PathBuf, String> {
+    if rel_path.is_empty() {
+        return fs::canonicalize(root).map_err(|e| e.to_string());
+    }
+    resolve_safely(root, rel_path)
+}
+
+/// Directory-flavoured `unique_path`: appends " 2", " 3" (no extension
+/// splitting) when a directory of that name already exists.
+fn unique_dir_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or(Path::new(""));
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("folder")
+        .to_string();
+    for i in 2..u32::MAX {
+        let candidate = parent.join(format!("{} {}", name, i));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    path.to_path_buf()
 }
 
 /// Append " (2)", " (3)", ... before the extension if `path` already

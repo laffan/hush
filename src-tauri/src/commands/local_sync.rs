@@ -139,6 +139,75 @@ pub fn local_sync_write_file_bytes(
     local_sync::write_file_bytes_unique(&folder, &rel_path, &bytes)
 }
 
+/// Create a new text file (doc / stack envelope) inside a mount.
+#[tauri::command]
+pub fn local_sync_create_file(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+    content: String,
+) -> Result<String, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::create_file_unique(&folder, &rel_path, &content)
+}
+
+/// Create a new directory inside a mount.
+#[tauri::command]
+pub fn local_sync_create_dir(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+) -> Result<String, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::create_dir_unique(&folder, &rel_path)
+}
+
+/// Rename a file or directory in place. Returns the new relative path.
+#[tauri::command]
+pub fn local_sync_rename(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+    new_name: String,
+) -> Result<String, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::rename_entry(&folder, &rel_path, &new_name)
+}
+
+/// Permanently delete a file or directory (recursive).
+#[tauri::command]
+pub fn local_sync_delete(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+) -> Result<(), String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::delete_entry(&folder, &rel_path)
+}
+
+/// Move an entry into another directory within the same mount.
+#[tauri::command]
+pub fn local_sync_move(
+    state: State<AppState>,
+    id: String,
+    src_rel: String,
+    dst_dir_rel: String,
+) -> Result<String, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::move_entry(&folder, &src_rel, &dst_dir_rel)
+}
+
+/// Duplicate a file or directory (within the same parent dir).
+#[tauri::command]
+pub fn local_sync_copy(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+) -> Result<String, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::copy_entry(&folder, &rel_path)
+}
+
 fn uuid_like() -> String {
     // The app doesn't pull in `uuid`; a timestamp+rand string is good
     // enough for local-only ids that never leave disk.

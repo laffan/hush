@@ -218,6 +218,87 @@ export async function writeFileBytes(id, relPath, bytes) {
   return invoke("local_sync_write_file_bytes", { id, relPath, bytes });
 }
 
+/** Strip an iOS mount's absolute base path off `abs`, yielding a
+ *  mount-relative path (forward slashes, no leading slash). */
+function relFromAbs(base, abs) {
+  const b = String(base).replace(/\/+$/, "");
+  let rel = String(abs);
+  if (rel.startsWith(b)) rel = rel.slice(b.length);
+  return rel.replace(/^\/+/, "").replace(/\\/g, "/");
+}
+
+/** Create a new text file (doc body or `.hushstack` JSON) inside a mount.
+ *  Returns the actual relative path written (collision auto-suffixed). */
+export async function createLocalFile(id, relPath, content = "") {
+  if (!IS_TAURI) return null;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const res = await plugin("create_file", { path: joinPath(base, relPath), contents: content });
+    return res?.path ? relFromAbs(base, res.path) : relPath;
+  }
+  return invoke("local_sync_create_file", { id, relPath, content });
+}
+
+/** Create a new directory inside a mount. Returns its relative path. */
+export async function createLocalDir(id, relPath) {
+  if (!IS_TAURI) return null;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const res = await plugin("create_dir", { path: joinPath(base, relPath) });
+    return res?.path ? relFromAbs(base, res.path) : relPath;
+  }
+  return invoke("local_sync_create_dir", { id, relPath });
+}
+
+/** Rename a file/dir in place. `newName` is a bare filename. Returns the
+ *  new relative path. */
+export async function renameLocalEntry(id, relPath, newName) {
+  if (!IS_TAURI) return null;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const res = await plugin("rename_entry", { path: joinPath(base, relPath), newName });
+    return res?.path ? relFromAbs(base, res.path) : relPath;
+  }
+  return invoke("local_sync_rename", { id, relPath, newName });
+}
+
+/** Permanently delete a file or directory (recursive). */
+export async function deleteLocalEntry(id, relPath) {
+  if (!IS_TAURI) return;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    await plugin("delete_entry", { path: joinPath(base, relPath) });
+    return;
+  }
+  return invoke("local_sync_delete", { id, relPath });
+}
+
+/** Move a file/dir into another directory in the same mount (`dstDirRel`
+ *  is "" for the mount root). Returns the new relative path. */
+export async function moveLocalEntry(id, srcRel, dstDirRel) {
+  if (!IS_TAURI) return null;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const res = await plugin("move_entry", {
+      srcPath: joinPath(base, srcRel),
+      dstDir: joinPath(base, dstDirRel),
+    });
+    return res?.path ? relFromAbs(base, res.path) : srcRel;
+  }
+  return invoke("local_sync_move", { id, srcRel, dstDirRel });
+}
+
+/** Duplicate a file/dir (same parent, "-Copy" suffix). Returns new rel. */
+export async function copyLocalEntry(id, relPath) {
+  if (!IS_TAURI) return null;
+  if (IOS) {
+    const base = await iosBasePath(id);
+    const res = await plugin("copy_entry", { path: joinPath(base, relPath) });
+    return res?.path ? relFromAbs(base, res.path) : relPath;
+  }
+  return invoke("local_sync_copy", { id, relPath });
+}
+
 /** MIME type for an image filename's extension. */
 function mimeForFilename(name) {
   const m = (name || "").toLowerCase().match(/\.([a-z0-9]+)$/);
