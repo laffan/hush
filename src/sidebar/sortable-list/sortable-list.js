@@ -31,6 +31,10 @@ export class SortableList {
       onDragStart: options.onDragStart || (() => {}),
       onDragEnd: options.onDragEnd || (() => {}),
       onDragOutside: options.onDragOutside || null,
+      // Called on drop when the release point is over an element outside
+      // this list (e.g. a Local Sync folder row). Return true to claim the
+      // drop — the list then snaps the source back instead of reordering.
+      onDropExternal: options.onDropExternal || null,
       getDraggedSiblings: options.getDraggedSiblings || null,
       onClick: options.onClick || (() => {}),
     };

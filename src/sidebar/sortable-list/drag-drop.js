@@ -375,6 +375,28 @@ function finishDrag(pointerEvent) {
     }
   }
 
+  // External drop target (e.g. a Local Sync folder row sitting outside
+  // this list). If the hook claims the drop, snap the source back — the
+  // hook owns the actual move.
+  if (pointerEvent && this.config.onDropExternal && draggedItem) {
+    let handled = false;
+    try { handled = this.config.onDropExternal(draggedItem, pointerEvent) === true; }
+    catch (e) { console.error("onDropExternal failed:", e); }
+    if (handled) {
+      clearDropTarget.call(this);
+      if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
+      if (highlightedParentItem) highlightedParentItem.classList.remove("sl-drop-target-item");
+      ghost.remove();
+      originElement.classList.remove("dragging");
+      document.body.classList.remove("sl-dragging");
+      autoExpandedIds.forEach((id) => this.state.collapsedIds.add(id));
+      this.dragSession = null;
+      this.render();
+      this.config.onDragEnd(null, false);
+      return;
+    }
+  }
+
   clearDropTarget.call(this);
   if (highlightedParent) highlightedParent.classList.remove("sl-drop-target-list");
   if (highlightedParentItem) highlightedParentItem.classList.remove("sl-drop-target-item");

@@ -10,6 +10,11 @@ import { typeIcons, escHtml, escAttrValue, attachLeafHoverHandlers } from "./fil
 import { openLocalEntryMenu, localRowMenuButtonHtml } from "./files-panel-local-sync-ops.js";
 import { localKindForName, openLocalEntry } from "../sync/local-sync.js";
 
+// Re-export the SortableList drop hook so files-panel.js can wire it
+// without a separate import line (and so all Local Sync surface area is
+// reachable from this one module).
+export { onLocalDropExternal } from "./files-panel-local-sync-dnd.js";
+
 /** Remove a mount from the sidebar (non-destructive on disk). Rust
  *  persists settings.json inside local_sync_remove — mirror the removal
  *  into the in-memory cache and refresh, rather than round-tripping the
@@ -194,6 +199,8 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   contentWrapper.addEventListener("click", (e) => {
     if (e.target.closest("[data-local-sync-action]")) return;
     if (e.target.closest(".sl-fold-arrow")) return;
+    // A drag-out consumed the gesture — don't also toggle the folder.
+    if (contentWrapper.dataset.dragConsumed === "1") { delete contentWrapper.dataset.dragConsumed; return; }
     toggleLocalSyncNode(key);
     if (storedLocalSyncContainer && storedState && storedHidePanel) {
       renderLocalSyncSection(storedLocalSyncContainer, storedState, storedHidePanel, refreshFilesPanel);
@@ -201,6 +208,12 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   });
 
   li.appendChild(contentWrapper);
+
+  // Nested folders can be dragged on disk (into a sibling folder) or out
+  // into the normal tree; the mount root stays put (Unlink instead).
+  if (!isRoot) {
+    attachLocalSyncFileDrag(contentWrapper, folder, { name: displayName, isDir: true }, relPath, state, refreshFilesPanel);
+  }
 
   // Menu-button handler — the full parity dropdown for folder rows.
   const btn = contentWrapper.querySelector('[data-local-sync-action="menu"]');
@@ -316,7 +329,7 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPane
     })();
     // Image rows still support cmd-drag out (into a doc / notebook) and
     // cross-divide move, but a plain click opens the preview modal.
-    attachLocalSyncFileDrag(itemContent, folder, entry, relPath);
+    attachLocalSyncFileDrag(itemContent, folder, entry, relPath, state, refreshFilesPanel);
     itemContent.addEventListener("click", async (e) => {
       if (e.target.closest("[data-local-sync-action]")) return;
       if (itemContent.dataset.dragConsumed === "1") { delete itemContent.dataset.dragConsumed; return; }
@@ -348,13 +361,15 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPane
 }
 
 /**
- * Wire a pointerdown→move→up sequence on a Local Sync file row so a
- * Cmd/Ctrl-drag past the panel's right edge spawns a floating pane for
- * the file. The ghost element matches the SortableList's ghost so the
- * visual affordance is consistent with dragging a doc out of the
- * regular file tree.
+ * Wire a pointerdown→move→up drag on a Local Sync row. The gesture does
+ * triple duty, matching the regular file tree:
+ *   - Cmd/Ctrl-drag past the panel's right edge → floating pane (files).
+ *   - Drop onto a normal tree container → move the file into the VC store.
+ *   - Drop onto another Local Sync folder (same mount) → move on disk.
+ * `descriptor` is `{ name, isDir }`; the ghost mirrors the SortableList's.
  */
-function attachLocalSyncFileDrag(rowEl, folder, entry, relPath) {
+function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refreshFilesPanel) {
+  const sourceLi = rowEl.closest(".sl-item");
   rowEl.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     const startX = e.clientX;
@@ -365,7 +380,7 @@ function attachLocalSyncFileDrag(rowEl, folder, entry, relPath) {
     const buildGhost = () => {
       const g = document.createElement("div");
       g.className = "sl-drag-ghost";
-      g.textContent = entry.name;
+      g.textContent = descriptor.name;
       g.style.transform = `translate3d(${e.clientX - 40}px, ${e.clientY - 10}px, 0)`;
       document.body.appendChild(g);
       document.body.classList.add("sl-dragging");
@@ -379,9 +394,7 @@ function attachLocalSyncFileDrag(rowEl, folder, entry, relPath) {
         dragging = true;
         ghost = buildGhost();
       }
-      if (ghost) {
-        ghost.style.transform = `translate3d(${ev.clientX - 40}px, ${ev.clientY - 10}px, 0)`;
-      }
+      if (ghost) ghost.style.transform = `translate3d(${ev.clientX - 40}px, ${ev.clientY - 10}px, 0)`;
     };
 
     const onUp = async (ev) => {
@@ -390,21 +403,48 @@ function attachLocalSyncFileDrag(rowEl, folder, entry, relPath) {
       if (ghost) { ghost.remove(); ghost = null; }
       document.body.classList.remove("sl-dragging");
       if (!dragging) return;
-      // Mark this gesture so the subsequent click listener knows to
-      // skip "open in main editor" — the drag replaces that action.
+      // Mark this gesture so the subsequent click listener knows to skip
+      // "open in main editor" — the drag replaces that action.
       rowEl.dataset.dragConsumed = "1";
-      if (!(ev.metaKey || ev.ctrlKey || (typeof window !== "undefined" && window.__hushCmdHeld))) return;
+
+      const cmdHeld = ev.metaKey || ev.ctrlKey || (typeof window !== "undefined" && window.__hushCmdHeld);
       const panelOverlay = document.getElementById("panel-overlay");
       const rect = panelOverlay?.getBoundingClientRect();
-      if (!rect || ev.clientX <= rect.right) return;
+      const beyondRight = rect && ev.clientX > rect.right;
+
+      // Cmd-drag a file out past the panel → floating pane.
+      if (cmdHeld && beyondRight && !descriptor.isDir) {
+        const kind = localKindForName(descriptor.name);
+        if (kind === "doc" || kind === "image") {
+          try {
+            const { createPane } = await import("../pane/pane-manager.js");
+            await createPane(`ls:${folder.id}:${relPath}`, descriptor.name, "document", ev.clientX, ev.clientY, {
+              localSync: { folderId: folder.id, relPath },
+            });
+          } catch (err) { console.error("Failed to spawn Local Sync pane:", err); }
+        }
+        return;
+      }
+
+      // Otherwise resolve a drop target and move the entry.
       try {
-        const { createPane } = await import("../pane/pane-manager.js");
-        const paneFileId = `ls:${folder.id}:${relPath}`;
-        await createPane(paneFileId, entry.name, "document", ev.clientX, ev.clientY, {
-          localSync: { folderId: folder.id, relPath },
-        });
+        const { hitTestDropTarget, moveLocalToVc } = await import("./files-panel-local-sync-dnd.js");
+        const hit = hitTestDropTarget(state, ev.clientX, ev.clientY, sourceLi);
+        if (!hit) return;
+        if (hit.kind === "vc" && !descriptor.isDir) {
+          await moveLocalToVc(state, folder.id, relPath, descriptor.name, hit.nodeId);
+          if (refreshFilesPanel) refreshFilesPanel(state);
+        } else if (hit.kind === "local" && hit.folderId === folder.id) {
+          const srcDir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
+          // Same directory, or dropping a folder onto itself → no-op.
+          if (hit.dirRel === srcDir || hit.dirRel === relPath) return;
+          const { moveLocalEntry } = await import("../sync/local-sync.js");
+          await moveLocalEntry(folder.id, relPath, hit.dirRel);
+          invalidateLocalSyncCache();
+          refreshLocalSyncSection(refreshFilesPanel);
+        }
       } catch (err) {
-        console.error("Failed to spawn Local Sync pane:", err);
+        console.error("Local Sync move failed:", err);
       }
     };
 

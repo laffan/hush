@@ -12,7 +12,7 @@ import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml, computeNumberLabels } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
-import { renderLocalSyncSection, getLocalSyncContainer } from "./files-panel-local-sync.js";
+import { renderLocalSyncSection, getLocalSyncContainer, onLocalDropExternal } from "./files-panel-local-sync.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton, openRowMenu } from "./files-panel-row-menu.js";
 import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./files-panel-multi-select.js";
 import {
@@ -282,6 +282,7 @@ export function createFilesPanel(container, state, hidePanel) {
       }
     },
 
+    onDropExternal: (item, ev) => onLocalDropExternal(state, item, ev), // drop onto a Local Sync folder → move to disk
     // Images can always escape the panel (no Cmd required) so the drop
     // lands in whatever editor/notebook is under the pointer.
     forceDragOutside: (item) => item && item.type === "image",
