@@ -98,7 +98,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";
   if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
-  if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Alt+Shift+L";
+  if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Mod+Shift+L";
   if (!settings.shortcutSelectNext) settings.shortcutSelectNext = "Mod+D";
   if (!settings.shortcutJumpNextSentence) settings.shortcutJumpNextSentence = "Mod+ArrowRight";
   if (!settings.shortcutJumpPrevSentence) settings.shortcutJumpPrevSentence = "Mod+ArrowLeft";
@@ -116,7 +116,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutComment) settings.shortcutComment = "Mod+/";
   if (!settings.shortcutStrikethrough) settings.shortcutStrikethrough = "Mod+`";
   if (!settings.shortcutInsertFootnote) settings.shortcutInsertFootnote = "Mod+Shift+M";
-  if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Mod+Shift+L";
+  if (!settings.shortcutSelectParagraph) settings.shortcutSelectParagraph = "Alt+Shift+L";
   if (!settings.shortcutZotero) settings.shortcutZotero = "Mod+Shift+I";
   if (!settings.shortcutSwitchDesks) settings.shortcutSwitchDesks = "Ctrl+Shift+D";
   // shortcutSave intentionally not defaulted — autosave handles writes

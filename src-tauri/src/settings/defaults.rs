@@ -167,7 +167,7 @@ pub fn default_shortcut_select_sentence() -> String {
     "Mod+L".to_string()
 }
 pub fn default_shortcut_reduce_sentence() -> String {
-    "Alt+Shift+L".to_string()
+    "Mod+Shift+L".to_string()
 }
 pub fn default_shortcut_select_next() -> String {
     "Mod+D".to_string()
@@ -240,7 +240,7 @@ pub fn default_shortcut_strikethrough() -> String {
     "Mod+`".to_string()
 }
 pub fn default_shortcut_select_paragraph() -> String {
-    "Mod+Shift+L".to_string()
+    "Alt+Shift+L".to_string()
 }
 pub fn default_shortcut_select_paragraph_up() -> String {
     "Mod+Shift+ArrowUp".to_string()

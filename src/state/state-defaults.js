@@ -110,7 +110,9 @@ export function createDefaultSettings() {
 
     // Shortcuts — Editing (sentence navigation)
     shortcutSelectSentence: "Mod+L",
-    shortcutReduceSentence: "Alt+Shift+L",
+    // Reduce-sentence pairs with Cmd+L (grow). Select-paragraph takes the
+    // freed Alt+Shift+L (see below).
+    shortcutReduceSentence: "Mod+Shift+L",
     shortcutSelectNext: "Mod+D",
     shortcutJumpNextSentence: "Mod+ArrowRight",
     shortcutJumpPrevSentence: "Mod+ArrowLeft",
@@ -130,7 +132,7 @@ export function createDefaultSettings() {
     shortcutInsertFootnote: "Mod+Shift+M",
 
     // Shortcuts — Additional editing actions
-    shortcutSelectParagraph: "Mod+Shift+L",
+    shortcutSelectParagraph: "Alt+Shift+L",
     shortcutSelectParagraphUp: "Mod+Shift+ArrowUp",
     shortcutSelectParagraphDown: "Mod+Shift+ArrowDown",
     // Save is autosave-driven; the explicit shortcut is intentionally

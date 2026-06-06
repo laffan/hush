@@ -181,6 +181,9 @@ export class AppState {
     if (IS_TAURI) {
       try {
         Object.assign(this.settings, await tauriInvoke("get_settings"));
+        if (this._migrateShortcutDefaults()) {
+          try { await tauriInvoke("save_settings", { settings: this.settings }); } catch (_) {}
+        }
         this.files = await tauriInvoke("list_files");
         this.fileTree = await tauriInvoke("get_file_tree");
         await _desks.migrateLegacyTreeIfNeeded(this);
@@ -280,6 +283,7 @@ export class AppState {
     }
     const savedSettings = localStorage.getItem("hush_settings");
     if (savedSettings) Object.assign(this.settings, JSON.parse(savedSettings));
+    if (this._migrateShortcutDefaults()) localStorage.setItem("hush_settings", JSON.stringify(this.settings));
     _desks.migrateLegacyTreeIfNeeded(this).catch(() => {});
     this.ensureSpecialNodes();
     // Drop any empty Untitled docs that survived the last session.
@@ -548,6 +552,21 @@ export class AppState {
   async syncCreateFile(nid, fid, c) { return this._syncOp("syncCreateFile", nid, fid, c); }
   async syncProjectOrdering(pid) { return this._syncOp("syncProjectOrdering", pid); }
   async reconcileSync() { return this._syncOp("reconcileSync"); }
+
+  /** One-time keybinding migration: Reduce-sentence selection moved onto
+   *  Cmd+Shift+L (paired with Cmd+L grow) and Select-paragraph took the
+   *  freed Alt+Shift+L. Only swaps when both are still at the prior
+   *  defaults, so any user customisation is left untouched. Returns true
+   *  when a swap was applied (so the caller can persist). */
+  _migrateShortcutDefaults() {
+    const s = this.settings;
+    if (s.shortcutReduceSentence === "Alt+Shift+L" && s.shortcutSelectParagraph === "Mod+Shift+L") {
+      s.shortcutReduceSentence = "Mod+Shift+L";
+      s.shortcutSelectParagraph = "Alt+Shift+L";
+      return true;
+    }
+    return false;
+  }
 
   async updateSettings(partial, opts = {}) {
     Object.assign(this.settings, partial);

@@ -6,6 +6,7 @@
  * individual lines (matching Obsidian/markdown paragraph semantics).
  */
 import { EditorSelection } from "@codemirror/state";
+import { moveWordsForward, moveWordsBack } from "./word-shift.js";
 
 // ===== Helpers bridging Obsidian line/ch positions to CM6 offsets =====
 
@@ -248,10 +249,14 @@ export function shiftSelectionToPreviousSentence(view) {
   return true;
 }
 
-/** Swap the current sentence with the next one. */
+/** Swap the current sentence with the next one — unless the user has a
+ *  partial (sub-sentence) selection, in which case shift those selected
+ *  words forward past the next word instead (see `moveWordsForward`). A
+ *  full-sentence selection or a bare cursor keeps the sentence-swap. */
 export function moveSentenceForward(view) {
   const doc = view.state.doc;
   const sel = view.state.selection.main;
+  if (!sel.empty && !selectionIsFullSentence(doc, sel)) return moveWordsForward(view);
   const { csStart, csEnd, csStartOff, csEndOff, csText, csLen } =
     currentSentenceRange(doc, sel);
 
@@ -309,10 +314,13 @@ export function moveSentenceForward(view) {
   return true;
 }
 
-/** Swap the current sentence with the previous one. */
+/** Swap the current sentence with the previous one — unless the user has
+ *  a partial (sub-sentence) selection, in which case shift those selected
+ *  words back past the previous word instead (see `moveWordsBack`). */
 export function moveSentenceBack(view) {
   const doc = view.state.doc;
   const sel = view.state.selection.main;
+  if (!sel.empty && !selectionIsFullSentence(doc, sel)) return moveWordsBack(view);
   const { csStart, csEnd, csStartOff, csEndOff, csText, csLen } =
     currentSentenceRange(doc, sel);
 
@@ -608,6 +616,19 @@ export function joinLines(view) {
 }
 
 // ===== Internal helpers =====
+
+/** True when the selection covers exactly one full sentence (ignoring
+ *  leading / trailing whitespace), so the sentence-swap behaviour applies
+ *  rather than the word shift. */
+function selectionIsFullSentence(doc, sel) {
+  if (sel.empty) return false;
+  const fromPos = offsetToPos(doc, sel.from);
+  const ssOff = posToOffset(doc, findSentenceStart(doc, fromPos));
+  const seOff = posToOffset(doc, findSentenceEnd(doc, fromPos));
+  const selText = doc.sliceString(sel.from, sel.to).trim();
+  const sentText = doc.sliceString(ssOff, seOff).trim();
+  return selText.length > 0 && selText === sentText;
+}
 
 function dispatch(view, fromPos, toPos) {
   const doc = view.state.doc;

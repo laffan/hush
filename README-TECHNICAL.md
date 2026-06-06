@@ -1247,9 +1247,9 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 
 | Action | Default |
 |--------|---------|
-| Select sentence | `Cmd+L` |
-| Select paragraph | `Cmd+Shift+L` |
-| Reduce sentence selection | `Alt+Shift+L` |
+| Select sentence (grow by sentence on repeat) | `Cmd+L` |
+| Reduce sentence selection (shrink by sentence) | `Cmd+Shift+L` |
+| Select paragraph | `Alt+Shift+L` |
 | Select next instance | `Cmd+D` |
 | Select previous instance | `Cmd+Shift+D` |
 | Jump to next sentence | `Cmd+Right` |
@@ -1258,10 +1258,12 @@ All shortcuts are customizable in Settings > Shortcuts. Organized into three cat
 | Jump to previous paragraph | `Cmd+Up` |
 | Shift selection next | `Cmd+Shift+Right` |
 | Shift selection previous | `Cmd+Shift+Left` |
-| Move sentence forward | `Alt+Cmd+Right` |
-| Move sentence back | `Alt+Cmd+Left` |
+| Move sentence / shift words forward | `Alt+Cmd+Right` |
+| Move sentence / shift words back | `Alt+Cmd+Left` |
 | Delete to sentence end | `Alt+Shift+Backspace` |
 | Join lines (pull up) | `Cmd+J` |
+
+`Cmd+L` / `Cmd+Shift+L` form a grow/shrink pair around the current sentence. **Move sentence forward / back** (`Alt+Cmd+→/←`) does double duty: with a bare cursor or a full-sentence selection it swaps whole sentences (`sentence-navigator.js`); with a partial sub-sentence selection it instead shifts the selected word(s) past the adjacent word on the same line (`word-shift.js`), preserving the whitespace gap so words never conjoin. The `shortcutReduceSentence` ↔ `shortcutSelectParagraph` default swap is migrated for existing installs in `state.js` (`_migrateShortcutDefaults`, only when both are still at the prior defaults).
 
 ### Formatting
 
