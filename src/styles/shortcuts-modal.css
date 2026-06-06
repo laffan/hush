@@ -73,6 +73,13 @@
   margin-top: 14px;
 }
 
+/* A light separator above every section after the first. */
+.shortcuts-modal-section:not(:first-child) {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--panel-border);
+}
+
 .shortcuts-modal-section-title {
   margin: 0 0 6px;
   font-size: 11px;
@@ -81,6 +88,22 @@
   letter-spacing: 0.06em;
   color: var(--sidebar-fg);
   opacity: 0.75;
+}
+
+/* Subsections (Formatting / Selection / Navigation / Editing inside Editor). */
+.shortcuts-modal-subsection {
+  margin-top: 10px;
+}
+.shortcuts-modal-subsection:first-of-type {
+  margin-top: 2px;
+}
+.shortcuts-modal-subsection-title {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--sidebar-fg);
+  opacity: 0.55;
 }
 
 /* Two columns so the full description of each shortcut stays readable. */

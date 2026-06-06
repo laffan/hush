@@ -29,6 +29,35 @@ import {
 
 let _overlayEl = null;
 
+/** Subsection groupings for the Editor section. Between them they cover
+ *  every key in the "Editing" settings category; "Formatting" is its own
+ *  subsection pulled straight from that category. */
+const SELECTION_KEYS = [
+  "shortcutSelectSentence",
+  "shortcutSelectParagraph",
+  "shortcutSelectParagraphUp",
+  "shortcutSelectParagraphDown",
+  "shortcutReduceSentence",
+  "shortcutSelectNext",
+  "shortcutSelectPrevious",
+  "shortcutNextSentence",
+  "shortcutPrevSentence",
+];
+const NAVIGATION_KEYS = [
+  "shortcutJumpNextSentence",
+  "shortcutJumpPrevSentence",
+  "shortcutJumpNextParagraph",
+  "shortcutJumpPrevParagraph",
+];
+// Manipulation leftovers from "Editing" that are neither formatting,
+// selection, nor navigation (move / delete / join).
+const EDITING_KEYS = [
+  "shortcutMoveSentenceForward",
+  "shortcutMoveSentenceBack",
+  "shortcutDeleteToSentenceEnd",
+  "shortcutJoinLines",
+];
+
 /** Well-known shortcuts with no settings field — shown without an Edit
  *  affordance. Values use the stored "Mod+…" form so `renderShortcutKeys`
  *  paints them identically to the editable rows. */
@@ -82,12 +111,24 @@ const FILETYPE_LABELS = {
   document: "Document",
 };
 
+/** The Editor section, split into Formatting / Selection / Navigation /
+ *  Editing subsections. `title` varies per surface (doc / text shapes /
+ *  columns). */
+function editorSection(title) {
+  const subsections = [
+    { title: "Formatting", items: catItems("Formatting") },
+    { title: "Selection", items: catItems("Editing", { only: SELECTION_KEYS }) },
+    { title: "Navigation", items: catItems("Editing", { only: NAVIGATION_KEYS }) },
+    { title: "Editing", items: catItems("Editing", { only: EDITING_KEYS }) },
+  ].filter((s) => s.items.length);
+  return { title, subsections };
+}
+
 /** Build the ordered section list for the given filetype. Empty sections
  *  are dropped so a surface with no editor (PDF) doesn't show a blank
  *  "Editor" heading. */
 function buildSections(state) {
   const filetype = activeFiletype(state);
-  const editor = [...catItems("Editing"), ...catItems("Formatting")];
   const panes = catItems("General", { only: PANE_KEYS });
   const appWide = [
     ...catItems("General", { except: [...PANE_KEYS, ...DOC_MODE_KEYS] }),
@@ -97,23 +138,23 @@ function buildSections(state) {
   const sections = [];
   if (filetype === "notebook") {
     sections.push({ title: "Notebook", items: catItems("Notebooks") });
-    sections.push({ title: "Editor (text shapes)", items: editor });
+    sections.push(editorSection("Editor (text shapes)"));
   } else if (filetype === "pdf") {
     sections.push({ title: "PDF", items: staticItems(PDF_EXTRAS) });
   } else if (filetype === "stack") {
     // Columns are full doc/notebook editors — surface the editor set.
-    sections.push({ title: "Editor (columns)", items: editor });
+    sections.push(editorSection("Editor (columns)"));
   } else {
     // document / project
     sections.push({ title: "Document", items: catItems("General", { only: DOC_MODE_KEYS }) });
-    sections.push({ title: "Editor", items: editor });
+    sections.push(editorSection("Editor"));
   }
   sections.push({ title: "Panes & Panels", items: panes });
   sections.push({ title: "App-wide", items: appWide });
 
   return {
     filetypeLabel: FILETYPE_LABELS[filetype] || "Document",
-    sections: sections.filter((s) => s.items && s.items.length),
+    sections: sections.filter((s) => s.subsections?.length || s.items?.length),
   };
 }
 
@@ -130,11 +171,24 @@ function renderRow(state, item) {
   </div>`;
 }
 
+function renderGrid(state, items) {
+  return `<div class="shortcuts-modal-grid">${items.map((it) => renderRow(state, it)).join("")}</div>`;
+}
+
+function renderSubsection(state, sub) {
+  return `<div class="shortcuts-modal-subsection">
+    <h4 class="shortcuts-modal-subsection-title">${escHtml(sub.title)}</h4>
+    ${renderGrid(state, sub.items)}
+  </div>`;
+}
+
 function renderSection(state, section) {
-  const rows = section.items.map((it) => renderRow(state, it)).join("");
+  const inner = section.subsections
+    ? section.subsections.map((sub) => renderSubsection(state, sub)).join("")
+    : renderGrid(state, section.items);
   return `<section class="shortcuts-modal-section">
     <h3 class="shortcuts-modal-section-title">${escHtml(section.title)}</h3>
-    <div class="shortcuts-modal-grid">${rows}</div>
+    ${inner}
   </section>`;
 }
 
