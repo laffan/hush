@@ -3,72 +3,15 @@
  * Ported from obsidian-sentence-navigator (github.com/laffan/obsidian-sentence-navigator).
  *
  * Operates on the main selection. Sentence boundaries are detected within
- * individual lines (matching Obsidian/markdown paragraph semantics).
+ * individual lines (matching Obsidian/markdown paragraph semantics). The
+ * low-level position + boundary helpers live in `sentence-core.js`.
  */
 import { EditorSelection } from "@codemirror/state";
 import { moveWordsForward, moveWordsBack } from "./word-shift.js";
-
-// ===== Helpers bridging Obsidian line/ch positions to CM6 offsets =====
-
-function getLine(doc, lineNum) {
-  if (lineNum < 0 || lineNum >= doc.lines) return "";
-  return doc.line(lineNum + 1).text;
-}
-
-function posToOffset(doc, pos) {
-  const n = Math.min(Math.max(pos.line + 1, 1), doc.lines);
-  const line = doc.line(n);
-  return line.from + Math.min(pos.ch, line.length);
-}
-
-function offsetToPos(doc, offset) {
-  const clamped = Math.max(0, Math.min(doc.length, offset));
-  const line = doc.lineAt(clamped);
-  return { line: line.number - 1, ch: clamped - line.from };
-}
-
-function selBounds(doc, sel) {
-  return { from: offsetToPos(doc, sel.from), to: offsetToPos(doc, sel.to) };
-}
-
-// ===== Core sentence-boundary detection (ported as-is) =====
-
-function findSentenceStart(doc, pos) {
-  const { line } = pos;
-  let ch = pos.ch;
-  const content = getLine(doc, line);
-
-  while (ch > 0) {
-    if (/\s/.test(content.charAt(ch - 1))) {
-      let lb = ch - 1;
-      while (lb > 0 && /\s/.test(content.charAt(lb - 1))) lb--;
-      while (lb > 0 && /["')\]}*_`]/.test(content.charAt(lb - 1))) lb--;
-      if (lb > 0 && /[.!?]/.test(content.charAt(lb - 1))) {
-        while (ch < content.length && /\s/.test(content.charAt(ch))) ch++;
-        return { line, ch };
-      }
-    }
-    ch--;
-  }
-  return { line, ch: 0 };
-}
-
-function findSentenceEnd(doc, pos) {
-  const { line } = pos;
-  let ch = pos.ch;
-  const content = getLine(doc, line);
-
-  while (ch < content.length) {
-    if (/[.!?]/.test(content.charAt(ch))) {
-      ch++;
-      while (ch < content.length && /["')\]}*_`]/.test(content.charAt(ch))) ch++;
-      while (ch < content.length && /[ \t]/.test(content.charAt(ch))) ch++;
-      return { line, ch };
-    }
-    ch++;
-  }
-  return { line, ch: content.length };
-}
+import {
+  getLine, posToOffset, offsetToPos, selBounds,
+  findSentenceStart, findSentenceEnd, dispatch,
+} from "./sentence-core.js";
 
 // ===== Exported CM6 commands =====
 
@@ -117,135 +60,91 @@ export function selectSentence(view) {
   return true;
 }
 
-/** Shrink the selection by one sentence from the tail. */
+/** Shrink the selection by one sentence from the tail — the precise
+ *  inverse of `selectSentence`'s grow. Retracts the head to the start of
+ *  the last selected sentence; floors at the first sentence so repeated
+ *  presses never snap back to the whole original selection. */
 export function reduceSentenceSelection(view) {
   const doc = view.state.doc;
   const sel = view.state.selection.main;
-  if (sel.from === sel.to) return true;
-  const { from, to } = selBounds(doc, sel);
+  if (sel.empty) return true;
+  const from = sel.from; // anchor (sentence start) stays put
 
-  if (to.ch === 0 && to.line > from.line) {
-    const prev = to.line - 1;
-    dispatch(view, from, { line: prev, ch: getLine(doc, prev).length });
+  // Walk to the start of the sentence the head currently sits at the end
+  // of, and retract the head there — dropping exactly one sentence.
+  const probePos = offsetToPos(doc, Math.max(from, sel.to - 1));
+  const lastStart = posToOffset(doc, findSentenceStart(doc, probePos));
+  if (lastStart > from) {
+    view.dispatch({ selection: EditorSelection.single(from, lastStart) });
     return true;
   }
 
-  const text = doc.sliceString(sel.from, sel.to);
-  const matches = Array.from(text.matchAll(/[.!?](?:\s|$)/g));
-  if (matches.length >= 2) {
-    const prev = matches[matches.length - 2];
-    const end = (prev.index ?? 0) + prev[0].length;
-    const newHead = offsetToPos(doc, sel.from + end);
-    if (newHead.line > from.line || (newHead.line === from.line && newHead.ch > from.ch)) {
-      dispatch(view, from, newHead);
-      return true;
-    }
-  }
-  dispatch(view, findSentenceStart(doc, from), findSentenceEnd(doc, from));
+  // Only one sentence remains — keep it selected without expanding past
+  // the current head.
+  const firstEnd = posToOffset(doc, findSentenceEnd(doc, offsetToPos(doc, from)));
+  const head = Math.min(sel.to, Math.max(from, firstEnd));
+  view.dispatch({ selection: EditorSelection.single(from, head) });
   return true;
 }
 
-/** Extend the selection to the end of the current sentence, then on
- *  subsequent presses jump-select the next sentence in full. The
- *  intermediate "grow to sentence end first" step keeps Cmd+Shift+→
- *  feeling like an extend-by-sentence motion when the cursor is
- *  mid-sentence instead of skipping straight to the next one. */
+/** Shift the selection forward by as many sentences as it currently
+ *  spans, keeping that span size. With an empty selection it first grows
+ *  the head to the end of the current sentence (extend-by-sentence feel);
+ *  with N sentences selected it slides the N-sentence window forward by N. */
 export function shiftSelectionToNextSentence(view) {
   const doc = view.state.doc;
   const sel = view.state.selection.main;
 
-  // Step 1: cursor is mid-sentence — extend the head to the end of
-  // the sentence and bail. Only fires when the selection is empty so
-  // a non-empty selection (the post-first-press state) goes straight
-  // to the original "advance to next sentence" branch.
+  // Empty selection, cursor mid-sentence — extend the head to the
+  // sentence end and bail (matches the prior first-press behaviour).
   if (sel.empty) {
-    const headPos = offsetToPos(doc, sel.head);
-    const sentEnd = findSentenceEnd(doc, headPos);
-    const sentEndOff = posToOffset(doc, sentEnd);
+    const sentEndOff = posToOffset(doc, findSentenceEnd(doc, offsetToPos(doc, sel.head)));
     if (sentEndOff > sel.head) {
-      view.dispatch({
-        selection: EditorSelection.single(sel.anchor, sentEndOff),
-      });
+      view.dispatch({ selection: EditorSelection.single(sel.anchor, sentEndOff) });
       return true;
     }
   }
 
-  const { to } = selBounds(doc, sel);
-  let sp = to;
-
-  // Skip trailing whitespace
-  let lc = getLine(doc, sp.line);
-  while (sp.ch < lc.length && /\s/.test(lc.charAt(sp.ch))) sp = { line: sp.line, ch: sp.ch + 1 };
-
-  if (sp.ch >= lc.length) {
-    if (sp.line + 1 >= doc.lines) return true;
-    sp = { line: sp.line + 1, ch: 0 };
-    let nl = getLine(doc, sp.line);
-    while (nl.trim().length === 0) {
-      if (sp.line + 1 >= doc.lines) return true;
-      sp = { line: sp.line + 1, ch: 0 };
-      nl = getLine(doc, sp.line);
-    }
-    const fw = nl.search(/\S/);
-    if (fw !== -1) sp = { line: sp.line, ch: fw };
+  const n = sel.empty ? 1 : countSentencesInRange(doc, sel.from, sel.to);
+  const start = nextSentenceStart(doc, selBounds(doc, sel).to);
+  if (!start) return true;
+  const startPos = findSentenceStart(doc, start);
+  let endPos = findSentenceEnd(doc, start);
+  for (let i = 1; i < n; i++) {
+    const ns = nextSentenceStart(doc, endPos);
+    if (!ns) break;
+    endPos = findSentenceEnd(doc, ns);
   }
-  dispatch(view, findSentenceStart(doc, sp), findSentenceEnd(doc, sp));
+  dispatch(view, startPos, endPos);
   return true;
 }
 
-/** Mirror of `shiftSelectionToNextSentence` — first extends the head
- *  back to the start of the current sentence, then jumps to the
- *  previous sentence on subsequent presses. */
+/** Mirror of `shiftSelectionToNextSentence` — shifts the selection back by
+ *  as many sentences as it currently spans. Empty selection extends the
+ *  head back to the sentence start; an N-sentence window slides back by N. */
 export function shiftSelectionToPreviousSentence(view) {
   const doc = view.state.doc;
   const sel = view.state.selection.main;
 
-  // Step 1: cursor mid-sentence — extend the head backward to the
-  // sentence start. Empty-selection-only, same rationale as above.
   if (sel.empty) {
-    const headPos = offsetToPos(doc, sel.head);
-    const sentStart = findSentenceStart(doc, headPos);
-    const sentStartOff = posToOffset(doc, sentStart);
+    const sentStartOff = posToOffset(doc, findSentenceStart(doc, offsetToPos(doc, sel.head)));
     if (sentStartOff < sel.head) {
-      view.dispatch({
-        selection: EditorSelection.single(sel.anchor, sentStartOff),
-      });
+      view.dispatch({ selection: EditorSelection.single(sel.anchor, sentStartOff) });
       return true;
     }
   }
 
-  const { from } = selBounds(doc, sel);
-  let sp = from;
-
-  // Step back one char
-  if (sp.ch > 0) {
-    sp = { line: sp.line, ch: sp.ch - 1 };
-  } else if (sp.line > 0) {
-    sp = { line: sp.line - 1, ch: getLine(doc, sp.line - 1).length };
-  } else {
-    return true;
+  const n = sel.empty ? 1 : countSentencesInRange(doc, sel.from, sel.to);
+  const probe = prevSentenceProbe(doc, selBounds(doc, sel).from);
+  if (!probe) return true;
+  const endPos = findSentenceEnd(doc, probe);
+  let startPos = findSentenceStart(doc, probe);
+  for (let i = 1; i < n; i++) {
+    const pp = prevSentenceProbe(doc, startPos);
+    if (!pp) break;
+    startPos = findSentenceStart(doc, pp);
   }
-
-  // Skip whitespace backward
-  while (sp.ch > 0 || sp.line > 0) {
-    const lc = getLine(doc, sp.line);
-    if (sp.ch > 0) {
-      if (!/\s/.test(lc.charAt(sp.ch - 1))) break;
-      sp = { line: sp.line, ch: sp.ch - 1 };
-    } else {
-      if (sp.line === 0) break;
-      sp = { line: sp.line - 1, ch: getLine(doc, sp.line - 1).length };
-    }
-  }
-
-  // Skip closing delimiters and sentence-ending punctuation
-  const lc = getLine(doc, sp.line);
-  while (sp.ch > 0 && /["')\]}*_`]/.test(lc.charAt(sp.ch - 1))) sp = { line: sp.line, ch: sp.ch - 1 };
-  if (sp.ch > 0 && /[.!?]/.test(lc.charAt(sp.ch - 1)) && sp.ch > 1) {
-    sp = { line: sp.line, ch: sp.ch - 2 };
-  }
-
-  dispatch(view, findSentenceStart(doc, sp), findSentenceEnd(doc, sp));
+  dispatch(view, startPos, endPos);
   return true;
 }
 
@@ -630,11 +529,69 @@ function selectionIsFullSentence(doc, sel) {
   return selText.length > 0 && selText === sentText;
 }
 
-function dispatch(view, fromPos, toPos) {
-  const doc = view.state.doc;
-  view.dispatch({
-    selection: EditorSelection.single(posToOffset(doc, fromPos), posToOffset(doc, toPos)),
-  });
+/** Position where the next sentence begins after `pos` (skips trailing
+ *  whitespace and blank lines). Returns null at document end. */
+function nextSentenceStart(doc, pos) {
+  let sp = pos;
+  let lc = getLine(doc, sp.line);
+  while (sp.ch < lc.length && /\s/.test(lc.charAt(sp.ch))) sp = { line: sp.line, ch: sp.ch + 1 };
+  if (sp.ch >= lc.length) {
+    if (sp.line + 1 >= doc.lines) return null;
+    sp = { line: sp.line + 1, ch: 0 };
+    let nl = getLine(doc, sp.line);
+    while (nl.trim().length === 0) {
+      if (sp.line + 1 >= doc.lines) return null;
+      sp = { line: sp.line + 1, ch: 0 };
+      nl = getLine(doc, sp.line);
+    }
+    const fw = nl.search(/\S/);
+    if (fw !== -1) sp = { line: sp.line, ch: fw };
+  }
+  return sp;
+}
+
+/** A position inside the sentence preceding `pos` (steps back over the
+ *  whitespace + terminator separating them). Returns null at doc start. */
+function prevSentenceProbe(doc, pos) {
+  let sp = pos;
+  if (sp.ch > 0) sp = { line: sp.line, ch: sp.ch - 1 };
+  else if (sp.line > 0) sp = { line: sp.line - 1, ch: getLine(doc, sp.line - 1).length };
+  else return null;
+  while (sp.ch > 0 || sp.line > 0) {
+    const lc = getLine(doc, sp.line);
+    if (sp.ch > 0) {
+      if (!/\s/.test(lc.charAt(sp.ch - 1))) break;
+      sp = { line: sp.line, ch: sp.ch - 1 };
+    } else {
+      if (sp.line === 0) break;
+      sp = { line: sp.line - 1, ch: getLine(doc, sp.line - 1).length };
+    }
+  }
+  const lc = getLine(doc, sp.line);
+  while (sp.ch > 0 && /["')\]}*_`]/.test(lc.charAt(sp.ch - 1))) sp = { line: sp.line, ch: sp.ch - 1 };
+  if (sp.ch > 0 && /[.!?]/.test(lc.charAt(sp.ch - 1)) && sp.ch > 1) sp = { line: sp.line, ch: sp.ch - 2 };
+  return sp;
+}
+
+/** Count how many sentences the offset range [fromOff, toOff) spans, using
+ *  the same boundary stepping as the grow/select commands so the tally
+ *  matches what the user actually selected. Always at least 1. */
+function countSentencesInRange(doc, fromOff, toOff) {
+  if (toOff <= fromOff) return 1;
+  let count = 0;
+  let cur = fromOff;
+  let guard = 0;
+  while (cur < toOff && guard++ < 5000) {
+    const p = offsetToPos(doc, cur);
+    let endOff = posToOffset(doc, findSentenceEnd(doc, p));
+    if (endOff <= cur) {
+      if (p.line + 1 >= doc.lines) break;
+      endOff = posToOffset(doc, { line: p.line + 1, ch: 0 });
+    }
+    count++;
+    cur = endOff;
+  }
+  return Math.max(1, count);
 }
 
 function currentSentenceRange(doc, sel) {
