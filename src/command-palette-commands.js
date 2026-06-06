@@ -111,6 +111,8 @@ const icons = {
   expand: _wrapIcon(expandRaw),
   // Stroke-only "Aa" with a shallow cross overlay; picks up `stroke: currentColor`.
   proofread: `<svg viewBox="0 0 24 24"><path d="M3 19 L7 5 L11 19 M4.5 14 H9.5"/><circle cx="17" cy="14.5" r="3.5"/><path d="M20.5 11.5 V18"/><line x1="2" y1="14" x2="22" y2="10"/><line x1="2" y1="10" x2="22" y2="14"/></svg>`,
+  // Keyboard glyph (mirrors the Shortcuts settings-tab icon).
+  keyboard: `<svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="6" y1="9" x2="6" y2="9"/><line x1="10" y1="9" x2="10" y2="9"/><line x1="14" y1="9" x2="14" y2="9"/><line x1="18" y1="9" x2="18" y2="9"/><line x1="6" y1="13" x2="6" y2="13"/><line x1="18" y1="13" x2="18" y2="13"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
   doc: typeIcons.document, notebook: typeIcons.notebook, project: typeIcons.project, trash: typeIcons.trash,
   stack: typeIcons.stack,
 };
@@ -317,6 +319,11 @@ function buildCommands(state) {
       action: (s) => { if (s.editor) openFindReplace(s.editor.view, s); } },
     { id: "find-in-doc", label: "Find in document", icon: icons.search, shortcutKey: "shortcutQuickFind", ctx: "doc",
       action: (s) => { if (s.editor) openQuickFindBar(s.editor.view, s); } },
+    { id: "show-shortcuts", label: "Show Shortcuts", icon: icons.keyboard, shortcutKey: null, ctx: "shared",
+      action: async (s) => {
+        const { openShortcutsModal } = await import("./ui/shortcuts-modal.js");
+        openShortcutsModal(s);
+      } },
     { id: "settings", label: "Settings", icon: icons.settings, shortcutKey: null, ctx: "shared",
       action: (s) => openSettingsWindow(s) },
     { id: "backup", label: "Backup App Data", icon: icons.export, shortcutKey: null, ctx: "shared",

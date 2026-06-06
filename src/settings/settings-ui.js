@@ -37,7 +37,11 @@ function tabHash(opts) {
   const tab = opts?.tab;
   if (!tab) return "";
   const sub = opts?.subTab;
-  return sub ? `#${tab}/${sub}` : `#${tab}`;
+  let hash = sub ? `#${tab}/${sub}` : `#${tab}`;
+  // Carry a Shortcuts-tab search query so a deep-link can land on a
+  // single shortcut (used by the Show Shortcuts modal's Edit button).
+  if (opts?.shortcutSearch) hash += `?q=${encodeURIComponent(opts.shortcutSearch)}`;
+  return hash;
 }
 
 export async function openSettingsWindow(state, opts) {
@@ -58,7 +62,7 @@ export async function openSettingsWindow(state, opts) {
         // a reload, so any in-progress edits the user has on screen
         // (e.g. an unsaved shortcut rebind) aren't lost.
         const { emit } = await import("@tauri-apps/api/event");
-        await emit("settings-goto-tab", { tab: opts.tab, subTab: opts.subTab || null });
+        await emit("settings-goto-tab", { tab: opts.tab, subTab: opts.subTab || null, shortcutSearch: opts.shortcutSearch || null });
       }
       return;
     }
@@ -84,7 +88,7 @@ async function openSettingsModal(state, opts) {
   if (settingsModal) {
     if (opts?.tab) {
       const { setActiveTab } = await import("./settings-window.js");
-      setActiveTab(opts.tab, opts.subTab || null);
+      setActiveTab(opts.tab, opts.subTab || null, opts.shortcutSearch || null);
       return;
     }
     closeSettingsModal();
@@ -142,7 +146,7 @@ async function openSettingsModal(state, opts) {
   // Render settings into the modal root
   const { initSettingsInto, setActiveTab } = await import("./settings-window.js");
   const root = modal.querySelector(".settings-modal-root");
-  if (opts?.tab) setActiveTab(opts.tab, opts.subTab || null);
+  if (opts?.tab) setActiveTab(opts.tab, opts.subTab || null, opts.shortcutSearch || null);
 
   await initSettingsInto(root, (newSettings) => {
     // Directly apply settings to state (same window, no cross-window emit).

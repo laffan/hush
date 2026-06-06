@@ -1,0 +1,173 @@
+/* ===== Show Shortcuts modal ===== */
+.shortcuts-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popover);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(12vh, 100px) 16px 16px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.shortcuts-modal {
+  width: min(860px, 94vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--theme-bg, var(--bg));
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--fg);
+}
+
+.shortcuts-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--panel-border);
+  flex-shrink: 0;
+}
+
+.shortcuts-modal-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.shortcuts-modal-filetype {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--sidebar-fg);
+}
+
+.shortcuts-modal-close {
+  border: none;
+  background: transparent;
+  color: var(--sidebar-fg);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.7;
+  transition: opacity 0.1s;
+}
+.shortcuts-modal-close:hover { opacity: 1; }
+
+.shortcuts-modal-body {
+  overflow-y: auto;
+  padding: 6px 18px 18px;
+  overscroll-behavior: contain;
+}
+
+.shortcuts-modal-section {
+  margin-top: 14px;
+}
+
+.shortcuts-modal-section-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sidebar-fg);
+  opacity: 0.75;
+}
+
+/* Columns: the shortcut rows flow into as many columns as fit. */
+.shortcuts-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 2px 18px;
+}
+
+.shortcuts-modal-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  min-height: 30px;
+  transition: background 0.08s;
+}
+.shortcuts-modal-row:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.shortcuts-modal-row-label {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcuts-modal-row-keys {
+  flex-shrink: 0;
+  transition: opacity 0.1s;
+}
+
+/* On hover of an editable row the keys dim and the Edit button rises in
+   their place; static rows (no settings field) keep their keys solid. */
+.shortcuts-modal-row:not(.is-static):hover .shortcuts-modal-row-keys {
+  opacity: 0.12;
+}
+
+.shortcuts-modal-edit {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  border: 1px solid var(--panel-border);
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+.shortcuts-modal-row:hover .shortcuts-modal-edit {
+  opacity: 1;
+  pointer-events: auto;
+}
+.shortcuts-modal-edit:hover {
+  background: rgba(128, 128, 128, 0.18);
+}
+
+/* Graphic keycaps — square-ish bordered keys. */
+.shortcuts-modal-row-keys .shortcut-keys {
+  display: inline-flex;
+  gap: 3px;
+}
+.shortcuts-modal-row-keys kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  background: rgba(128, 128, 128, 0.12);
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  color: var(--fg);
+  line-height: 1;
+}

@@ -33,10 +33,12 @@ let shortcutSearchQuery = '';
  *  to drop the user on a specific settings page. Re-renders if the
  *  settings UI is already mounted, otherwise just stores the choice so
  *  the next `initSettingsInto` lands there. */
-export function setActiveTab(tab, subTab) {
+export function setActiveTab(tab, subTab, shortcutSearch) {
   if (!tab) return;
   activeTab = tab;
   if (tab === "sync" && subTab) setSyncSubTab(subTab);
+  // Pre-load the Shortcuts search field (Show Shortcuts modal Edit deep-link).
+  if (tab === "shortcuts" && shortcutSearch != null) shortcutSearchQuery = shortcutSearch;
   if (settingsRootEl) render();
 }
 
@@ -45,10 +47,16 @@ export function setActiveTab(tab, subTab) {
  *  to whatever activeTab they already have. */
 function readTabFromLocation() {
   if (typeof window === "undefined") return null;
-  const h = (window.location?.hash || "").replace(/^#/, "");
-  if (!h) return null;
-  const [tab, subTab] = h.split("/", 2);
-  return tab ? { tab, subTab: subTab || null } : null;
+  const raw = (window.location?.hash || "").replace(/^#/, "");
+  if (!raw) return null;
+  // Optional `?q=…` carries a Shortcuts-tab search query.
+  const [path, query] = raw.split("?", 2);
+  const [tab, subTab] = path.split("/", 2);
+  let shortcutSearch = null;
+  if (query) {
+    try { shortcutSearch = new URLSearchParams(query).get("q"); } catch (_) { /* noop */ }
+  }
+  return tab ? { tab, subTab: subTab || null, shortcutSearch } : null;
 }
 
 export async function initSettingsInto(rootEl, saveCallback) {
@@ -62,6 +70,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (fromHash) {
     activeTab = fromHash.tab;
     if (fromHash.tab === "sync" && fromHash.subTab) setSyncSubTab(fromHash.subTab);
+    if (fromHash.tab === "shortcuts" && fromHash.shortcutSearch) shortcutSearchQuery = fromHash.shortcutSearch;
   }
 
   if (IS_TAURI) {
@@ -139,7 +148,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
     const { listen } = await import("@tauri-apps/api/event");
     listen("settings-goto-tab", (e) => {
       const payload = e?.payload || {};
-      if (payload.tab) setActiveTab(payload.tab, payload.subTab || null);
+      if (payload.tab) setActiveTab(payload.tab, payload.subTab || null, payload.shortcutSearch || null);
     });
   }
 
