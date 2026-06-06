@@ -134,9 +134,16 @@ pub fn local_sync_write_file_bytes(
     id: String,
     rel_path: String,
     bytes: Vec<u8>,
+    overwrite: Option<bool>,
 ) -> Result<String, String> {
     let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
-    local_sync::write_file_bytes_unique(&folder, &rel_path, &bytes)
+    if overwrite.unwrap_or(false) {
+        // Overwrite the exact path (notebook autosave) — keep the rel path.
+        local_sync::write_file_bytes_exact(&folder, &rel_path, &bytes)?;
+        Ok(rel_path)
+    } else {
+        local_sync::write_file_bytes_unique(&folder, &rel_path, &bytes)
+    }
 }
 
 /// Create a new text file (doc / stack envelope) inside a mount.

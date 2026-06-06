@@ -609,10 +609,15 @@ export class AppState {
     const scrollTop = this.editor
       ? this.editor.view.scrollDOM.scrollTop
       : null;
+    // A Local Sync notebook rides on an `ls:` sentinel id; it isn't a VC
+    // file, so don't persist it as the cross-session last notebook (the
+    // restore path would call load_file on a non-existent id).
+    const nbId = typeof this.currentNotebookFileId === "string"
+      && this.currentNotebookFileId.startsWith("ls:") ? null : (this.currentNotebookFileId || null);
     await this.updateSettings({
       lastFileId: this.currentFileId || null,
       lastProjectId: this.currentProjectId || null,
-      lastNotebookId: this.currentNotebookFileId || null,
+      lastNotebookId: nbId,
       typewriterMode: this.typewriterMode,
       dryMode: this.dryMode,
       spellcheckMode: this.spellcheckMode,

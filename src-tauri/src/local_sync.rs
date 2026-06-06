@@ -229,6 +229,22 @@ pub fn read_file_bytes(folder: &LocalSyncFolder, rel_path: &str) -> Result<Vec<u
     fs::read(&abs).map_err(|e| e.to_string())
 }
 
+/// Overwrite (or create) a binary file at exactly `rel_path` — no
+/// collision suffixing. Used to autosave a notebook `.hushnote` back to
+/// the same file on every save.
+pub fn write_file_bytes_exact(
+    folder: &LocalSyncFolder,
+    rel_path: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    if let Some(parent) = abs.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    crate::atomic::write_atomic(&abs, bytes).map_err(|e| e.to_string())
+}
+
 /// Write raw bytes. Auto-suffixes on collision so a dropped image
 /// doesn't clobber an existing sibling. Returns the actual relative
 /// path written (the caller uses this for the markdown ref).

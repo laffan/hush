@@ -7,83 +7,20 @@
  * circular import with files-panel.js (which imports from this module).
  */
 import { typeIcons, escHtml, escAttrValue, attachLeafHoverHandlers } from "./files-panel-shared.js";
+import { openLocalEntryMenu, localRowMenuButtonHtml } from "./files-panel-local-sync-ops.js";
+import { localKindForName, openLocalEntry } from "../sync/local-sync.js";
 
-const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
-let openLocalSyncMenu = null;
-
-function closeLocalSyncMenu() {
-  if (!openLocalSyncMenu) return;
-  document.removeEventListener("mousedown", openLocalSyncMenu.onMouseDown, true);
-  document.removeEventListener("keydown", openLocalSyncMenu.onKey, true);
-  window.removeEventListener("blur", closeLocalSyncMenu);
-  openLocalSyncMenu.el.remove();
-  openLocalSyncMenu = null;
-}
-
-function openLocalSyncFolderMenu(anchorBtn, folder, state, refreshFilesPanel) {
-  closeLocalSyncMenu();
-  const menu = document.createElement("div");
-  menu.className = "tree-row-menu";
-
-  // "View in Finder" (macOS) / "View in Files" (iOS) — reveal the mount
-  // on disk. revealItemInDir works on both platforms (Finder on macOS,
-  // the Files app on iOS).
-  const isIOS = /iPad|iPhone|iPod/.test(
-    (typeof navigator !== "undefined" && (navigator.platform || navigator.userAgent)) || ""
-  ) || (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
-  const reveal = document.createElement("button");
-  reveal.type = "button";
-  reveal.className = "tree-row-menu-item";
-  reveal.textContent = isIOS ? "View in Files" : "View in Finder";
-  reveal.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    closeLocalSyncMenu();
-    if (!folder.path) return;
-    const { revealLocalSyncFolder } = await import("../sync/local-sync.js");
-    await revealLocalSyncFolder(folder.id, folder.path);
-  });
-  menu.appendChild(reveal);
-
-  const unlink = document.createElement("button");
-  unlink.type = "button";
-  unlink.className = "tree-row-menu-item";
-  unlink.textContent = "Unlink Folder";
-  unlink.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    closeLocalSyncMenu();
-    const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
-    // Rust persists settings.json inside local_sync_remove — mirror the
-    // removal into the in-memory cache and refresh the panel. Skipping
-    // the JS-side updateSettings here avoids round-tripping the full
-    // settings object back through save_settings, which can clobber
-    // unrelated fields Rust touched in the meantime.
-    await removeLocalSyncFolder(folder.id);
-    state.settings.localSyncFolders = (state.settings.localSyncFolders || []).filter(f => f.id !== folder.id);
-    invalidateLocalSyncCache();
-    if (refreshFilesPanel) refreshFilesPanel(state);
-  });
-  menu.appendChild(unlink);
-
-  document.body.appendChild(menu);
-  const rect = anchorBtn.getBoundingClientRect();
-  const menuW = menu.offsetWidth;
-  const menuH = menu.offsetHeight;
-  let top = rect.bottom + 4;
-  if (top + menuH > window.innerHeight - 6) top = Math.max(6, rect.top - menuH - 4);
-  let left = rect.right - menuW;
-  if (left < 6) left = 6;
-  if (left + menuW > window.innerWidth - 6) left = window.innerWidth - menuW - 6;
-  menu.style.top = top + "px";
-  menu.style.left = left + "px";
-
-  const onMouseDown = (e) => { if (!menu.contains(e.target)) closeLocalSyncMenu(); };
-  const onKey = (e) => { if (e.key === "Escape") closeLocalSyncMenu(); };
-  openLocalSyncMenu = { el: menu, onMouseDown, onKey };
-  requestAnimationFrame(() => {
-    document.addEventListener("mousedown", onMouseDown, true);
-    document.addEventListener("keydown", onKey, true);
-    window.addEventListener("blur", closeLocalSyncMenu);
-  });
+/** Remove a mount from the sidebar (non-destructive on disk). Rust
+ *  persists settings.json inside local_sync_remove — mirror the removal
+ *  into the in-memory cache and refresh, rather than round-tripping the
+ *  full settings object back through save_settings (which can clobber
+ *  fields Rust touched in the meantime). */
+async function unlinkLocalFolder(folder, state, refreshFilesPanel) {
+  const { removeLocalSyncFolder } = await import("../sync/local-sync.js");
+  await removeLocalSyncFolder(folder.id);
+  state.settings.localSyncFolders = (state.settings.localSyncFolders || []).filter(f => f.id !== folder.id);
+  invalidateLocalSyncCache();
+  if (refreshFilesPanel) refreshFilesPanel(state);
 }
 
 let storedLocalSyncContainer = null;
@@ -140,6 +77,21 @@ function updateActiveRows(container, state) {
  *  capture file-level mutations. */
 export function invalidateLocalSyncCache() {
   lastStructureFingerprint = null;
+}
+
+/** Force a folder subtree (`folderId:relPath` key) to render expanded —
+ *  used after creating a file inside it so the new row is visible. */
+export function expandLocalSyncKey(key) {
+  localSyncExpanded.add(key);
+}
+
+/** Re-render the Local Sync section using the stored container/state refs.
+ *  Invalidates the structure cache first so on-disk mutations repaint. */
+export function refreshLocalSyncSection(refreshFilesPanel) {
+  lastStructureFingerprint = null;
+  if (storedLocalSyncContainer && storedState && storedHidePanel) {
+    renderLocalSyncSection(storedLocalSyncContainer, storedState, storedHidePanel, refreshFilesPanel);
+  }
 }
 
 /** Returns the stored container reference for refresh callers. */
@@ -225,14 +177,15 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
   main.className = "sl-item-main-label";
   const row = document.createElement("span");
   row.className = "tree-item-row";
-  const removeBtn = isRoot
-    ? `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}"><button class="tree-action-menu" data-local-sync-action="menu" data-tooltip="Menu" aria-label="Menu">${HAMBURGER_SVG}</button></span>`
-    : "";
+  // Every folder row (root + nested) carries the hamburger menu now —
+  // New Doc/Notebook/Stack/Folder, Rename, Duplicate, Delete, Reveal,
+  // and (root only) Unlink.
+  const menuBtn = `<span class="tree-actions" data-node-id="${escAttrValue(folder.id)}">${localRowMenuButtonHtml()}</span>`;
   // The Local Sync icon marks only the mount root; nested folders read
   // fine without a leading glyph — the disclosure arrow alone signals
   // containerhood (matching how plain folders render in the main tree).
-  const icon = isRoot ? typeIcons.localSync : "";
-  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(displayName)}</span>${removeBtn}`;
+  const icon = isRoot ? typeIcons.localSync : typeIcons.folder;
+  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(displayName)}</span>${menuBtn}`;
   main.appendChild(row);
   label.appendChild(main);
   contentWrapper.appendChild(label);
@@ -249,16 +202,16 @@ function buildLocalSyncNode(folder, relPath, displayName, isRoot, state, hidePan
 
   li.appendChild(contentWrapper);
 
-  // Delegated menu-button handler — opens a small dropdown with the
-  // unlink action (replaces the previous inline × button).
-  if (isRoot) {
-    const btn = contentWrapper.querySelector('[data-local-sync-action="menu"]');
-    if (btn) {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openLocalSyncFolderMenu(btn, folder, state, refreshFilesPanel);
+  // Menu-button handler — the full parity dropdown for folder rows.
+  const btn = contentWrapper.querySelector('[data-local-sync-action="menu"]');
+  if (btn) {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openLocalEntryMenu(btn, { folder, relPath, name: displayName, isDir: true, isRoot }, {
+        state, refreshFilesPanel,
+        onUnlink: isRoot ? () => unlinkLocalFolder(folder, state, refreshFilesPanel) : null,
       });
-    }
+    });
   }
 
   if (isExpanded) {
@@ -279,7 +232,7 @@ function toggleLocalSyncNode(key) {
 async function populateLocalSyncChildren(container, folder, relPath, state, hidePanel, refreshFilesPanel) {
   container.innerHTML = '<li class="local-sync-loading"><span class="sl-item-label">Loading…</span></li>';
   try {
-    const { readDir, openLocalSyncFile } = await import("../sync/local-sync.js");
+    const { readDir } = await import("../sync/local-sync.js");
     const entries = await readDir(folder.id, relPath);
     container.innerHTML = "";
     if (entries.length === 0) {
@@ -294,7 +247,7 @@ async function populateLocalSyncChildren(container, folder, relPath, state, hide
         const sub = buildLocalSyncNode(folder, entry.relPath || entry.rel_path, entry.name, false, state, hidePanel, refreshFilesPanel);
         container.appendChild(sub);
       } else {
-        const fileLi = buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFile);
+        const fileLi = buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPanel);
         container.appendChild(fileLi);
       }
     }
@@ -304,9 +257,10 @@ async function populateLocalSyncChildren(container, folder, relPath, state, hide
   }
 }
 
-function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFile) {
+function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPanel) {
   const relPath = entry.relPath || entry.rel_path;
   const isImage = entry.isImage || entry.is_image || false;
+  const kind = localKindForName(entry.name);
   const li = document.createElement("li");
   li.className = "sl-item local-sync-file" + (isImage ? " local-sync-image" : "");
   li.dataset.id = `${folder.id}:${relPath}`;
@@ -330,12 +284,24 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFil
   main.className = "sl-item-main-label";
   const row = document.createElement("span");
   row.className = "tree-item-row" + (li.classList.contains("active") ? " active" : "");
-  const icon = isImage ? (typeIcons.image || typeIcons.document) : typeIcons.document;
-  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(entry.name)}</span>`;
+  const icon = kind === "notebook" ? typeIcons.notebook
+    : kind === "stack" ? typeIcons.stack
+    : typeIcons.document;
+  // Every file row gets the parity dropdown (Rename / Duplicate / Delete).
+  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(entry.name)}</span>${localRowMenuButtonHtml()}`;
   main.appendChild(row);
   label.appendChild(main);
   itemContent.appendChild(label);
   li.appendChild(itemContent);
+
+  const menuBtn = row.querySelector('[data-local-sync-action="menu"]');
+  if (menuBtn) {
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openLocalEntryMenu(menuBtn, { folder, relPath, name: entry.name, isDir: false, isRoot: false },
+        { state, refreshFilesPanel });
+    });
+  }
 
   if (isImage) {
     // Sibling-file context so the preview path (and hover) reads bytes
@@ -348,7 +314,12 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFil
       const { attachImageHoverTooltip } = await import("../editor/image-preview.js");
       attachImageHoverTooltip(itemContent, entry.name, entry.name, ctx);
     })();
+    // Image rows still support cmd-drag out (into a doc / notebook) and
+    // cross-divide move, but a plain click opens the preview modal.
+    attachLocalSyncFileDrag(itemContent, folder, entry, relPath);
     itemContent.addEventListener("click", async (e) => {
+      if (e.target.closest("[data-local-sync-action]")) return;
+      if (itemContent.dataset.dragConsumed === "1") { delete itemContent.dataset.dragConsumed; return; }
       e.preventDefault();
       const { openImagePreviewModal } = await import("../editor/image-preview.js");
       openImagePreviewModal(entry.name, entry.name, ctx);
@@ -356,19 +327,19 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, openLocalSyncFil
     return li;
   }
 
-  // Cmd/Ctrl-drag to spawn a floating pane for this file.  Mirrors the
-  // SortableList's drag-outside behaviour so Local Sync files feel
-  // identical to normal sidebar docs.
+  // Cmd/Ctrl-drag to spawn a floating pane (docs) or move across the
+  // local/normal divide. Mirrors the SortableList's drag-outside
+  // behaviour so Local Sync files feel identical to normal sidebar docs.
   attachLocalSyncFileDrag(itemContent, folder, entry, relPath);
 
   itemContent.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-local-sync-action]")) return;
     // A drag-out consumed the gesture — don't also open the file.
     if (itemContent.dataset.dragConsumed === "1") {
       delete itemContent.dataset.dragConsumed;
       return;
     }
-    // Cmd+click alone (no drag) is treated as "open" as well.
-    await openLocalSyncFile(state, folder.id, relPath);
+    await openLocalEntry(state, folder.id, relPath, entry.name);
     const overlay = document.querySelector("#panel-overlay");
     if (overlay && !overlay.classList.contains("panel-inset") && hidePanel) hidePanel();
   });

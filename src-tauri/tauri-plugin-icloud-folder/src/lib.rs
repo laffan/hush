@@ -45,6 +45,7 @@ struct WriteArgs {
 struct WriteBytesArgs {
     path: String,
     base64: String,
+    overwrite: bool,
 }
 
 #[derive(Serialize)]
@@ -278,18 +279,22 @@ async fn write_file_bytes<R: Runtime>(
     app: AppHandle<R>,
     path: String,
     base64: String,
+    overwrite: Option<bool>,
 ) -> Result<WriteBytesResult, String> {
     #[cfg(target_os = "ios")]
     {
         let plugin = app.state::<IcloudFolder<R>>();
         let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
         handle
-            .run_mobile_plugin::<WriteBytesResult>("writeFileBytes", WriteBytesArgs { path, base64 })
+            .run_mobile_plugin::<WriteBytesResult>(
+                "writeFileBytes",
+                WriteBytesArgs { path, base64, overwrite: overwrite.unwrap_or(false) },
+            )
             .map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (app, path, base64);
+        let _ = (app, path, base64, overwrite);
         Err(IOS_ONLY.into())
     }
 }

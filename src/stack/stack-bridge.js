@@ -30,7 +30,16 @@ export async function mountStack(container, fileId, state) {
   currentFileId = fileId;
 
   let content = null;
-  if (IS_TAURI) {
+  const { parseLocalSentinel } = await import("../sync/local-sync.js");
+  const local = parseLocalSentinel(fileId);
+  if (local) {
+    try {
+      const { readFile } = await import("../sync/local-sync.js");
+      content = await readFile(local.folderId, local.relPath);
+    } catch (e) {
+      console.error("Failed to load local-sync stack:", e);
+    }
+  } else if (IS_TAURI) {
     try {
       const file = await tauriInvoke("load_file", { id: fileId });
       content = file.content;
@@ -84,6 +93,19 @@ async function saveStack(force = false) {
   // Idle stacks re-serialize to byte-identical content every tick; skip
   // the write + the caller's sync push unless something actually changed.
   if (!force && content === lastSavedContent) return null;
+  const { parseLocalSentinel } = await import("../sync/local-sync.js");
+  const local = parseLocalSentinel(currentFileId);
+  if (local) {
+    // Local Sync stack — write the `.hushstack` JSON straight to disk.
+    try {
+      const { writeFile } = await import("../sync/local-sync.js");
+      await writeFile(local.folderId, local.relPath, content);
+    } catch (e) {
+      console.error("Local-sync stack save failed:", e);
+    }
+    lastSavedContent = content;
+    return null; // no VC fileId to sync
+  }
   if (IS_TAURI) {
     try {
       await tauriInvoke("save_file", { id: currentFileId, content });

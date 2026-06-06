@@ -79,7 +79,23 @@ export async function mountNotebook(container, fileId, state) {
   // which tolerates the legacy bare-Shape[] form for older notebooks.
   let snapshot = null;
   try {
-    if (IS_TAURI) {
+    const { parseLocalSentinel } = await import("../sync/local-sync.js");
+    const local = parseLocalSentinel(fileId);
+    if (local) {
+      // Local Sync notebook — read the `.hushnote` zip straight off disk,
+      // unpack it to the JSON envelope, then decode like any notebook.
+      const { readFileBytes } = await import("../sync/local-sync.js");
+      const bytes = await readFileBytes(local.folderId, local.relPath);
+      if (bytes) {
+        const { unpackNotebook } = await import("../sync/notebook-sync.js");
+        const json = await unpackNotebook(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes));
+        const { decodeNotebookContent } = await import("./notebook-content.ts");
+        snapshot = decodeNotebookContent(json);
+      } else {
+        const { decodeNotebookContent } = await import("./notebook-content.ts");
+        snapshot = decodeNotebookContent(null);
+      }
+    } else if (IS_TAURI) {
       const file = await tauriInvoke("load_file", { id: fileId });
       const { decodeNotebookContent } = await import("./notebook-content.ts");
       snapshot = decodeNotebookContent(file.content);
@@ -385,6 +401,18 @@ export async function saveNotebook() {
     },
   });
   try {
+    const { parseLocalSentinel } = await import("../sync/local-sync.js");
+    const local = parseLocalSentinel(currentNotebookFileId);
+    if (local) {
+      // Local Sync notebook — pack the JSON envelope into a `.hushnote`
+      // zip and overwrite the file on disk. No VC snapshot / sync push.
+      const { packNotebook } = await import("../sync/notebook-sync.js");
+      const { writeFileBytes } = await import("../sync/local-sync.js");
+      const bytes = await packNotebook(content);
+      await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
+      _lastSavedContent = content;
+      return null;
+    }
     if (IS_TAURI) {
       await tauriInvoke("save_file", { id: currentNotebookFileId, content });
       _lastSavedContent = content;

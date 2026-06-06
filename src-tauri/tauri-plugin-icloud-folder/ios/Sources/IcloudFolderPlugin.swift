@@ -258,13 +258,18 @@ class IcloudFolderPlugin: Plugin, UIDocumentPickerDelegate {
     struct Args: Decodable {
       let path: String
       let base64: String
+      let overwrite: Bool?
     }
     let args = try invoke.parseArgs(Args.self)
     guard let data = Data(base64Encoded: args.base64) else {
       invoke.reject("payload is not valid base64")
       return
     }
-    let target = uniquePath(URL(fileURLWithPath: args.path))
+    // overwrite=true keeps the exact path (notebook autosave); otherwise
+    // collision-suffix so a dropped image never clobbers a sibling.
+    let target = (args.overwrite ?? false)
+      ? URL(fileURLWithPath: args.path)
+      : uniquePath(URL(fileURLWithPath: args.path))
     // Ensure the parent directory exists (dropped images can land in a
     // subfolder of the mount).
     try? FileManager.default.createDirectory(

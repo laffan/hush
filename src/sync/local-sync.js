@@ -199,7 +199,7 @@ export async function readFileBytes(id, relPath) {
 /** Write a binary blob into a Local Sync folder with collision auto-suffix.
  *  Returns the actual relative path written so the caller can build a
  *  matching markdown ref. */
-export async function writeFileBytes(id, relPath, bytes) {
+export async function writeFileBytes(id, relPath, bytes, overwrite = false) {
   if (!IS_TAURI) return null;
   if (IOS) {
     const base = await iosBasePath(id);
@@ -207,15 +207,16 @@ export async function writeFileBytes(id, relPath, bytes) {
     const res = await plugin("write_file_bytes", {
       path: joinPath(base, relPath),
       base64: bytesToBase64(arr),
+      overwrite,
     });
-    // The plugin returns the actual filename written (collision-suffixed);
-    // rebuild the relative path against the original parent dir.
+    // The plugin returns the actual filename written (collision-suffixed
+    // unless overwrite); rebuild the relative path against the parent dir.
     const slash = String(relPath).lastIndexOf("/");
     const dir = slash >= 0 ? relPath.slice(0, slash) : "";
     const finalName = res?.name || String(relPath).split("/").pop();
     return dir ? `${dir}/${finalName}` : finalName;
   }
-  return invoke("local_sync_write_file_bytes", { id, relPath, bytes });
+  return invoke("local_sync_write_file_bytes", { id, relPath, bytes, overwrite });
 }
 
 /** Strip an iOS mount's absolute base path off `abs`, yielding a
@@ -343,6 +344,80 @@ export async function readSiblingImageDataUrl(folderId, baseDir, filename) {
   }
 }
 
+/** Classify a Local Sync filename by extension into the surface that
+ *  should open it. */
+export function localKindForName(name) {
+  const ext = extOf(name);
+  if (ext === "hushnote") return "notebook";
+  if (ext === "hushstack") return "stack";
+  if (IMAGE_EXTS.has(ext)) return "image";
+  return "doc";
+}
+
+/** Sentinel fileId used to thread a Local Sync notebook / stack through
+ *  the existing fileId-keyed notebook / stack bridges. The bridges parse
+ *  the `ls:` prefix to load / save from disk instead of the VC store. */
+export function localSentinelId(folderId, relPath) {
+  return `ls:${folderId}:${relPath}`;
+}
+
+/** Parse a sentinel id back into `{ folderId, relPath }`, or null. */
+export function parseLocalSentinel(fileId) {
+  const m = typeof fileId === "string" && fileId.match(/^ls:([^:]+):(.*)$/);
+  return m ? { folderId: m[1], relPath: m[2] } : null;
+}
+
+/** Tear down whatever surface is currently active before opening a new
+ *  Local Sync entry. Mirrors the teardown in openNotebook / openStack. */
+async function teardownForLocalOpen(state) {
+  if (state.dirty) await state.saveCurrentFile();
+  if (state.currentNotebookFileId) {
+    state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
+  if (state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
+  }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
+  state.currentFileId = null;
+  state.currentProjectId = null;
+  state.projectDocIds = [];
+}
+
+/** Open any Local Sync entry on the right surface (doc editor, notebook
+ *  canvas, stack, or image preview) based on its extension. */
+export async function openLocalEntry(state, folderId, relPath, name) {
+  const kind = localKindForName(name || relPath);
+  if (kind === "notebook") return openLocalNotebook(state, folderId, relPath);
+  if (kind === "stack") return openLocalStack(state, folderId, relPath);
+  return openLocalSyncFile(state, folderId, relPath);
+}
+
+/** Open a Local Sync `.hushnote` on the notebook canvas. Routes through
+ *  the existing notebook bridge via an `ls:` sentinel fileId. */
+export async function openLocalNotebook(state, folderId, relPath) {
+  if (state.ratchetMode) return;
+  await teardownForLocalOpen(state);
+  const sentinel = localSentinelId(folderId, relPath);
+  state.currentNotebookFileId = sentinel;
+  state.currentLocalSync = { folderId, relPath, kind: "notebook" };
+  state.emit("notebook-open", sentinel);
+}
+
+/** Open a Local Sync `.hushstack` on the stack surface. */
+export async function openLocalStack(state, folderId, relPath) {
+  if (state.ratchetMode) return;
+  await teardownForLocalOpen(state);
+  const sentinel = localSentinelId(folderId, relPath);
+  state.currentStackFileId = sentinel;
+  state.currentLocalSync = { folderId, relPath, kind: "stack" };
+  state.emit("stack-open", sentinel);
+}
+
 /** Open a Local Sync file into the main editor. */
 export async function openLocalSyncFile(state, folderId, relPath) {
   if (state.dirty) await state.saveCurrentFile();
@@ -350,10 +425,14 @@ export async function openLocalSyncFile(state, folderId, relPath) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
   }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
   state.currentFileId = null;
   state.currentProjectId = null;
   state.projectDocIds = [];
-  state.currentLocalSync = { folderId, relPath };
+  state.currentLocalSync = { folderId, relPath, kind: "doc" };
   try {
     const content = await readFile(folderId, relPath);
     // setContent dispatches a doc change, which the editor's
@@ -375,6 +454,10 @@ export async function openLocalSyncFile(state, folderId, relPath) {
 /** Save the currently-open Local Sync doc (called from the autosave hook). */
 export async function saveCurrentLocalSync(state) {
   if (!state.currentLocalSync || !state.editor) return;
+  // Notebook / stack Local Sync surfaces autosave through their own
+  // bridges (keyed off the `ls:` sentinel id); only docs write the
+  // editor buffer back here.
+  if (state.currentLocalSync.kind && state.currentLocalSync.kind !== "doc") return;
   const { folderId, relPath } = state.currentLocalSync;
   const content = state.editor.getContent();
   state.runtime.localSyncWriteFlag = Date.now();
@@ -417,6 +500,7 @@ export async function revealLocalSyncFolder(folderId, path) {
  *  skips when the on-disk content already matches the editor. */
 export async function refreshOpenLocalSyncFile(state) {
   if (!IS_TAURI || !state.currentLocalSync || !state.editor) return;
+  if (state.currentLocalSync.kind && state.currentLocalSync.kind !== "doc") return;
   if (state.dirty) return; // never overwrite unsaved edits
   const { folderId, relPath } = state.currentLocalSync;
   try {
@@ -443,8 +527,10 @@ export async function startLocalSyncWatcher(state, onChanged) {
     if (state.runtime.localSyncWriteFlag && Date.now() - state.runtime.localSyncWriteFlag < 500) {
       return;
     }
-    // If the currently-open local-sync file changed on disk, reload it.
-    if (state.currentLocalSync && state.currentLocalSync.folderId === id) {
+    // If the currently-open local-sync *doc* changed on disk, reload it.
+    // Notebook / stack surfaces own their disk state via their bridges.
+    if (state.currentLocalSync && state.currentLocalSync.folderId === id
+        && (!state.currentLocalSync.kind || state.currentLocalSync.kind === "doc")) {
       const editedPath = state.currentLocalSync.relPath;
       // Match by suffix-with-separator, not bare endsWith — `a/foo.md`
       // shouldn't match `b/a/foo.md`'s ancestor walk.
