@@ -158,13 +158,28 @@ function updateDropTarget(clientX, clientY) {
   // `data-path`). Don't compute an in-list drop target for them — the
   // drop is handled by `onDropExternal` (move onto disk). Leaving the
   // previous target set would otherwise reparent the dragged item to the
-  // list root when the drop lands over a Local Sync row.
+  // list root when the drop lands over a Local Sync row. Outline the
+  // destination container so the user sees where the file will land.
   if (hoveredItem && !hoveredItem.hasAttribute("data-path")) {
     clearDropTarget.call(this);
     this.dragSession.dropTarget = null;
+    const extRow = hoveredItem.classList.contains("has-children")
+      ? hoveredItem
+      : hoveredItem.parentElement?.closest(".sl-item.has-children");
+    if (this.dragSession.extDropRow && this.dragSession.extDropRow !== extRow) {
+      this.dragSession.extDropRow.classList.remove("sl-drop-target-item");
+    }
+    if (extRow) extRow.classList.add("sl-drop-target-item");
+    this.dragSession.extDropRow = extRow || null;
     this.dragSession.lastDropUpdateX = clientX;
     this.dragSession.lastDropUpdateY = clientY;
     return;
+  }
+
+  // No longer over a Local Sync row — drop the external outline.
+  if (this.dragSession.extDropRow) {
+    this.dragSession.extDropRow.classList.remove("sl-drop-target-item");
+    this.dragSession.extDropRow = null;
   }
 
   if (hoveredItem) {
@@ -272,6 +287,10 @@ function canDropIntoParent(parentPath) {
 
 function clearDropTarget() {
   if (!this.dragSession) return;
+  if (this.dragSession.extDropRow) {
+    this.dragSession.extDropRow.classList.remove("sl-drop-target-item");
+    this.dragSession.extDropRow = null;
+  }
   if (this.dragSession.highlightedParent) {
     this.dragSession.highlightedParent.classList.remove("sl-drop-target-list");
     this.dragSession.highlightedParent = null;

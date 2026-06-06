@@ -376,6 +376,10 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
     const startY = e.clientY;
     let dragging = false;
     let ghost = null;
+    // Preload the DnD helpers so onMove can outline the drop target
+    // without a dynamic import on every pointer frame.
+    let dnd = null;
+    import("./files-panel-local-sync-dnd.js").then((m) => { dnd = m; });
 
     const buildGhost = () => {
       const g = document.createElement("div");
@@ -395,6 +399,7 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
         ghost = buildGhost();
       }
       if (ghost) ghost.style.transform = `translate3d(${ev.clientX - 40}px, ${ev.clientY - 10}px, 0)`;
+      if (dragging && dnd) dnd.highlightDropTargetAt(ev.clientX, ev.clientY, sourceLi);
     };
 
     const onUp = async (ev) => {
@@ -402,6 +407,7 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
       document.removeEventListener("pointerup", onUp);
       if (ghost) { ghost.remove(); ghost = null; }
       document.body.classList.remove("sl-dragging");
+      if (dnd) dnd.clearDropHighlight();
       if (!dragging) return;
       // Mark this gesture so the subsequent click listener knows to skip
       // "open in main editor" — the drag replaces that action.
@@ -442,9 +448,19 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
           if (hit.dirRel === srcDir || hit.dirRel === relPath) return;
           if (descriptor.isDir && hit.dirRel.startsWith(relPath + "/")) return;
           const { moveLocalEntry } = await import("../sync/local-sync.js");
-          await moveLocalEntry(folder.id, relPath, hit.dirRel);
+          const newRel = await moveLocalEntry(folder.id, relPath, hit.dirRel);
           invalidateLocalSyncCache();
           refreshLocalSyncSection(refreshFilesPanel);
+          // Re-point the editor if the moved entry (or a file inside a
+          // moved folder) is currently open, so autosave doesn't keep
+          // writing to the old path.
+          const cur = state.currentLocalSync;
+          if (newRel && cur && cur.folderId === folder.id) {
+            let target = null;
+            if (cur.relPath === relPath) target = newRel;
+            else if (descriptor.isDir && cur.relPath.startsWith(relPath + "/")) target = newRel + cur.relPath.slice(relPath.length);
+            if (target) await openLocalEntry(state, folder.id, target, target.split("/").pop());
+          }
         }
       } catch (err) {
         console.error("Local Sync move failed:", err);

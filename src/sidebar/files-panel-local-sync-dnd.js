@@ -15,7 +15,7 @@
  */
 import {
   readFile, readFileBytes, writeFileBytes, createLocalFile, moveLocalEntry,
-  deleteLocalEntry, localKindForName,
+  deleteLocalEntry, localKindForName, openLocalEntry,
 } from "../sync/local-sync.js";
 import {
   invalidateLocalSyncCache, refreshLocalSyncSection,
@@ -81,9 +81,16 @@ export function hitTestDropTarget(state, clientX, clientY, excludeEl) {
   const nodeId = item.dataset.id;
   const node = nodeId ? findNode(state.fileTree, nodeId) : null;
   if (node && (node.type === "folder" || node.type === "project")) return { kind: "vc", nodeId };
-  if (node && node.type === "desk") return { kind: "vc", nodeId: state.getInboxId(nodeId) || state.getInboxId() };
+  if (node && node.type === "desk") return { kind: "vc", nodeId: deskInboxId(state, node.id) };
   if (nodeId && (nodeId === "__inbox__" || nodeId.startsWith("__inbox__"))) return { kind: "vc", nodeId };
   return { kind: "vc", nodeId: state.getInboxId() };
+}
+
+/** The Inbox id for a specific desk, falling back to the active desk's
+ *  Inbox when that desk has no per-desk Inbox node. */
+function deskInboxId(state, deskId) {
+  const perDesk = `__inbox__:${deskId}`;
+  return findNode(state.fileTree, perDesk) ? perDesk : state.getInboxId();
 }
 
 /** Move a Local Sync entry into the VC store under `vcParentId`, then
@@ -93,36 +100,46 @@ export async function moveLocalToVc(state, folderId, relPath, name, vcParentId) 
   const base = baseName(name, false);
   let parent = vcParentId || state.getInboxId();
   const pNode = findNode(state.fileTree, parent);
-  if (pNode && pNode.type === "desk") parent = state.getInboxId(parent) || state.getInboxId();
+  if (pNode && pNode.type === "desk") parent = deskInboxId(state, pNode.id);
+  // Was this the file currently open on a Local Sync surface? If so we
+  // re-open the freshly-imported VC copy after the move so the editor
+  // doesn't keep showing the now-deleted on-disk file.
+  const cur = state.currentLocalSync;
+  const wasOpen = !!cur && cur.folderId === folderId && cur.relPath === relPath;
 
+  let created = null;
   if (kind === "notebook") {
     const bytes = await readFileBytes(folderId, relPath);
     const { unpackNotebook } = await import("../sync/notebook-sync.js");
     const json = await unpackNotebook(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes));
-    await state.createNotebook(base, parent, { openImmediately: false, initialContent: json });
+    created = await state.createNotebook(base, parent, { openImmediately: false, initialContent: json });
   } else if (kind === "stack") {
     const text = await readFile(folderId, relPath);
-    await state.createStack(base, parent, { openImmediately: false, initialContent: text });
+    created = await state.createStack(base, parent, { openImmediately: false, initialContent: text });
   } else if (kind === "image") {
     const bytes = await readFileBytes(folderId, relPath);
     const arr = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
     const file = new File([arr], name, { type: "application/octet-stream" });
     await state.createImageFromFile(file);
   } else {
-    const content = await readFile(folderId, relPath);
-    await state.newFile(parent, { openImmediately: false, initialContent: content, initialName: base });
+    created = await state.newFile(parent, { openImmediately: false, initialContent: await readFile(folderId, relPath), initialName: base });
   }
 
   // The original now lives in the VC store — remove it from disk (move).
   await deleteLocalEntry(folderId, relPath);
-  // If the moved file was the open Local Sync file, drop the editor back
-  // so it doesn't keep autosaving to a path that's gone.
-  const cur = state.currentLocalSync;
-  if (cur && cur.folderId === folderId && cur.relPath === relPath) {
+  if (wasOpen) {
+    // Detach from the deleted on-disk file before opening so no autosave
+    // recreates it, then open the VC copy on the right surface.
     state.currentLocalSync = null;
+    state.dirty = false;
   }
   invalidateLocalSyncCache();
   state.emit("files-changed");
+  if (wasOpen && created?.fileId) {
+    if (kind === "notebook") await state.openNotebook(created.fileId);
+    else if (kind === "stack") await state.openStack(created.fileId);
+    else await state.openFile(created.fileId);
+  }
 }
 
 /** Move a VC tree node onto disk inside a Local Sync mount, then move the
@@ -131,22 +148,29 @@ export async function moveLocalToVc(state, folderId, relPath, name, vcParentId) 
 export async function moveVcToLocal(state, node, folderId, dirRel) {
   if (!node || !node.fileId) return false;
   const dir = dirRel || "";
+  // Was this VC item the open file? If so, re-open the on-disk copy after
+  // the move so the editor doesn't get stranded on the trashed original
+  // (which would otherwise flip to the read-only "In the Trash" banner).
+  const wasOpen = state.currentFileId === node.fileId
+    || state.currentNotebookFileId === node.fileId
+    || state.currentStackFileId === node.fileId;
+  let finalRel = null;
   if (node.type === "document") {
     const content = await loadVcContent(node.fileId, state);
-    await createLocalFile(folderId, joinRel(dir, `${node.name}.md`), content);
+    finalRel = await createLocalFile(folderId, joinRel(dir, `${node.name}.md`), content);
   } else if (node.type === "notebook") {
     const content = await loadVcContent(node.fileId, state);
     const { packNotebook } = await import("../sync/notebook-sync.js");
     const bytes = await packNotebook(content || '{"format":"hushnote","version":1,"shapes":[]}');
-    await writeFileBytes(folderId, joinRel(dir, `${node.name}.hushnote`), Array.from(bytes), false);
+    finalRel = await writeFileBytes(folderId, joinRel(dir, `${node.name}.hushnote`), Array.from(bytes), false);
   } else if (node.type === "stack") {
     const content = await loadVcContent(node.fileId, state);
-    await createLocalFile(folderId, joinRel(dir, `${node.name}.hushstack`), content);
+    finalRel = await createLocalFile(folderId, joinRel(dir, `${node.name}.hushstack`), content);
   } else if (node.type === "image") {
     const dataUrl = await state.loadImageDataUrl(node.fileId);
     if (!dataUrl) return false;
     const arr = dataUrlToBytes(dataUrl);
-    await writeFileBytes(folderId, joinRel(dir, node.name), Array.from(arr), false);
+    finalRel = await writeFileBytes(folderId, joinRel(dir, node.name), Array.from(arr), false);
   } else {
     return false; // folders / projects / pdfs aren't single-file reflections
   }
@@ -156,7 +180,37 @@ export async function moveVcToLocal(state, node, folderId, dirRel) {
   invalidateLocalSyncCache();
   refreshLocalSyncSection();
   state.emit("files-changed");
+  if (wasOpen && finalRel && node.type !== "image") {
+    await openLocalEntry(state, folderId, finalRel, finalRel.split("/").pop());
+  }
   return true;
+}
+
+// ── Drop-target outline (for the local-origin pointer drag) ─────────
+let _highlightedRow = null;
+export function clearDropHighlight() {
+  if (_highlightedRow) { _highlightedRow.classList.remove("sl-drop-target-item"); _highlightedRow = null; }
+}
+/** Outline the row under the pointer if it's a valid drop destination —
+ *  a normal-tree container (folder/project/desk/inbox) or a Local Sync
+ *  folder. Mirrors the SortableList's own `sl-drop-target-item` cue. */
+export function highlightDropTargetAt(clientX, clientY, excludeEl) {
+  const stack = document.elementsFromPoint(clientX, clientY);
+  const item = stack.find((n) =>
+    n instanceof HTMLElement && n.classList.contains("sl-item") && n !== excludeEl
+    && !(excludeEl && excludeEl.contains(n)));
+  let target = null;
+  if (item) {
+    if (item.closest(".local-sync-root")) {
+      target = item.classList.contains("has-children") ? item : item.parentElement?.closest(".sl-item.has-children");
+    } else if (item.hasAttribute("data-path")) {
+      const t = item.dataset.type;
+      if (t === "folder" || t === "project" || t === "desk") target = item;
+    }
+  }
+  if (_highlightedRow && _highlightedRow !== target) _highlightedRow.classList.remove("sl-drop-target-item");
+  if (target) target.classList.add("sl-drop-target-item");
+  _highlightedRow = target || null;
 }
 
 const MOVABLE_TO_LOCAL = new Set(["document", "notebook", "stack", "image"]);
