@@ -154,6 +154,19 @@ function updateDropTarget(clientX, clientY) {
     (n) => n instanceof HTMLElement && n.classList.contains("sl-item") && !n.classList.contains("dragging")
   );
 
+  // Local Sync rows are also `.sl-item` but live outside this list (no
+  // `data-path`). Don't compute an in-list drop target for them — the
+  // drop is handled by `onDropExternal` (move onto disk). Leaving the
+  // previous target set would otherwise reparent the dragged item to the
+  // list root when the drop lands over a Local Sync row.
+  if (hoveredItem && !hoveredItem.hasAttribute("data-path")) {
+    clearDropTarget.call(this);
+    this.dragSession.dropTarget = null;
+    this.dragSession.lastDropUpdateX = clientX;
+    this.dragSession.lastDropUpdateY = clientY;
+    return;
+  }
+
   if (hoveredItem) {
     const itemPath = parsePath(hoveredItem.dataset.path ?? "");
     const rect = hoveredItem.getBoundingClientRect();
