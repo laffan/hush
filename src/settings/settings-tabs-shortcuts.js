@@ -257,12 +257,20 @@ function highlightMatch(text, query) {
   return `${escHtml(before)}<mark class="shortcut-search-hit">${escHtml(match)}</mark>${escHtml(after)}`;
 }
 
+// Arrow-key tokens → glyphs (matches the command palette's keycaps).
+const ARROW_GLYPHS = {
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+};
+
 export function renderShortcutKeys(shortcut) {
   if (!shortcut) return `<span class="shortcut-keys"><kbd>None</kbd></span>`;
   const display = shortcut
     .replace(/CmdOrCtrl|Mod/g, navigator.platform.includes("Mac") ? "⌘" : "Ctrl");
   const parts = display.split("+").map((p) => {
-    const d = p
+    const d = (ARROW_GLYPHS[p] || p)
       .replace("Shift", "⇧")
       .replace("Alt", navigator.platform.includes("Mac") ? "⌥" : "Alt");
     return `<kbd>${d}</kbd>`;
