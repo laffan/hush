@@ -15,6 +15,7 @@ async function tauriInvoke(cmd, args) {
 let currentInstance = null;
 let currentFileId = null;
 let autosaveTimer = null;
+let currentState = null; // AppState ref, for the local-sync write echo flag
 // Last content actually written, keyed implicitly by currentFileId (reset
 // on mount). Lets the autosave tick skip the disk write + sync push when
 // the stack hasn't changed, instead of churning IPC/network every 2 s.
@@ -28,6 +29,7 @@ export async function mountStack(container, fileId, state) {
   }
   container.innerHTML = "";
   currentFileId = fileId;
+  currentState = state;
 
   let content = null;
   const { parseLocalSentinel } = await import("../sync/local-sync.js");
@@ -99,6 +101,8 @@ async function saveStack(force = false) {
     // Local Sync stack — write the `.hushstack` JSON straight to disk.
     try {
       const { writeFile } = await import("../sync/local-sync.js");
+      // Flag our own write so the desktop fs watcher skips the echo.
+      if (currentState?.runtime) currentState.runtime.localSyncWriteFlag = Date.now();
       await writeFile(local.folderId, local.relPath, content);
     } catch (e) {
       console.error("Local-sync stack save failed:", e);

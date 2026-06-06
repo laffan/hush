@@ -343,7 +343,7 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPane
   // Cmd/Ctrl-drag to spawn a floating pane (docs) or move across the
   // local/normal divide. Mirrors the SortableList's drag-outside
   // behaviour so Local Sync files feel identical to normal sidebar docs.
-  attachLocalSyncFileDrag(itemContent, folder, entry, relPath);
+  attachLocalSyncFileDrag(itemContent, folder, entry, relPath, state, refreshFilesPanel);
 
   itemContent.addEventListener("click", async (e) => {
     if (e.target.closest("[data-local-sync-action]")) return;
@@ -436,8 +436,11 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
           if (refreshFilesPanel) refreshFilesPanel(state);
         } else if (hit.kind === "local" && hit.folderId === folder.id) {
           const srcDir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
-          // Same directory, or dropping a folder onto itself → no-op.
+          // Same directory, dropping a folder onto itself, or dropping a
+          // folder into its own descendant → no-op (the last would be
+          // rejected by Rust anyway, but skip the round-trip).
           if (hit.dirRel === srcDir || hit.dirRel === relPath) return;
+          if (descriptor.isDir && hit.dirRel.startsWith(relPath + "/")) return;
           const { moveLocalEntry } = await import("../sync/local-sync.js");
           await moveLocalEntry(folder.id, relPath, hit.dirRel);
           invalidateLocalSyncCache();

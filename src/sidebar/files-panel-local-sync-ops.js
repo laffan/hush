@@ -194,11 +194,16 @@ function renameEntry(folder, relPath, name, isDir, ctx) {
       if (!trimmed || trimmed === base) return;
       const newRel = await renameLocalEntry(folder.id, relPath, `${trimmed}${ext}`);
       afterMutation(folder, dir, ctx);
-      // If the renamed file was open, re-open it at its new path so the
-      // editor / canvas keeps tracking the right file on disk.
+      // If the renamed entry — or, for a folder rename, a file *inside* it
+      // — is currently open, re-open it at its new path so the editor /
+      // canvas keeps tracking the right file on disk (otherwise the next
+      // autosave writes to the now-stale path).
       const cur = ctx.state.currentLocalSync;
-      if (newRel && cur && cur.folderId === folder.id && cur.relPath === relPath) {
-        await openLocalEntry(ctx.state, folder.id, newRel, newRel.split("/").pop());
+      if (newRel && cur && cur.folderId === folder.id) {
+        let target = null;
+        if (cur.relPath === relPath) target = newRel;
+        else if (isDir && cur.relPath.startsWith(relPath + "/")) target = newRel + cur.relPath.slice(relPath.length);
+        if (target) await openLocalEntry(ctx.state, folder.id, target, target.split("/").pop());
       }
     },
   });
@@ -235,9 +240,9 @@ function deleteEntry(folder, relPath, name, isDir, ctx) {
 
 async function reveal(folder, relPath) {
   const { revealLocalSyncFolder } = await import("../sync/local-sync.js");
-  // Reveal the folder itself; nested folders resolve through the same
-  // bookmark path on iOS by passing the relative segment along.
-  await revealLocalSyncFolder(folder.id, folder.path);
+  // Reveal the actual row: the mount root for the root folder, or the
+  // nested subfolder (relPath) for a nested one.
+  await revealLocalSyncFolder(folder.id, folder.path, relPath || "");
 }
 
 export { localKindForName };

@@ -409,6 +409,9 @@ export async function saveNotebook() {
       const { packNotebook } = await import("../sync/notebook-sync.js");
       const { writeFileBytes } = await import("../sync/local-sync.js");
       const bytes = await packNotebook(content);
+      // Flag our own write so the desktop fs watcher skips the echo event
+      // (and its sidebar repaint) for the next ~500 ms.
+      if (_appState?.runtime) _appState.runtime.localSyncWriteFlag = Date.now();
       await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
       _lastSavedContent = content;
       return null;

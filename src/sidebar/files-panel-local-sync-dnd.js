@@ -40,6 +40,9 @@ function joinRel(dir, name) { return dir ? `${dir}/${name}` : name; }
 
 function dataUrlToBytes(dataUrl) {
   const comma = dataUrl.indexOf(",");
+  // A well-formed data URL always has a comma; bail rather than feed the
+  // `data:...;base64` prefix into atob (which would throw).
+  if (comma < 0) return new Uint8Array(0);
   const b64 = dataUrl.slice(comma + 1);
   const bin = atob(b64);
   const arr = new Uint8Array(bin.length);

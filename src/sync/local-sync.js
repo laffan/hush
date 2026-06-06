@@ -470,12 +470,12 @@ export async function saveCurrentLocalSync(state) {
  *  plugin. iOS: the Files app via the icloud-folder plugin's
  *  shareddocuments:// route (opener.revealItemInDir is a no-op on iOS).
  *  `folderId` is needed on iOS to resolve the bookmark to a live path. */
-export async function revealLocalSyncFolder(folderId, path) {
+export async function revealLocalSyncFolder(folderId, path, relPath = "") {
   if (!IS_TAURI || !path) return;
   if (IOS) {
     try {
       const base = folderId ? await iosBasePath(folderId) : path;
-      await plugin("reveal_in_files", { path: base });
+      await plugin("reveal_in_files", { path: relPath ? joinPath(base, relPath) : base });
     } catch (e) {
       console.error("reveal_in_files failed:", e);
     }
@@ -483,7 +483,8 @@ export async function revealLocalSyncFolder(folderId, path) {
   }
   try {
     const opener = await import("@tauri-apps/plugin-opener");
-    await opener.revealItemInDir(path);
+    const target = relPath ? `${path.replace(/\/+$/, "")}/${relPath}` : path;
+    await opener.revealItemInDir(target);
   } catch (e) {
     console.error("revealItemInDir failed:", e);
   }
