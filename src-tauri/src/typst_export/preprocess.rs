@@ -39,7 +39,24 @@ const SEPARATOR_LINE: &str = "---hush-separator---";
 pub const TAB_MARKER_OPEN: char = '\x1D';
 pub const TAB_MARKER_CLOSE: char = '\x1C';
 
-pub fn run(src: &str, strip_comments: bool, strip_flags: bool, include_tabs: bool) -> String {
+/// Sentinels for a footnote's body — `[^id]` references become a real
+/// Typst footnote in `markdown.rs`, carrying the text of their `[^id]:`
+/// definition. Same ASCII-control trick as the tab markers.
+pub const FOOTNOTE_OPEN: char = '\x12';
+pub const FOOTNOTE_CLOSE: char = '\x13';
+
+/// Sentinels for an imported Google-Docs comment's note — `{>text<id}`
+/// anchors become a margin note in `markdown.rs`.
+pub const COMMENT_NOTE_OPEN: char = '\x11';
+pub const COMMENT_NOTE_CLOSE: char = '\x14';
+
+pub fn run(
+    src: &str,
+    strip_comments: bool,
+    strip_flags: bool,
+    include_tabs: bool,
+    comment_notes: bool,
+) -> String {
     let mut out = src.to_string();
     if strip_comments {
         out = strip_comment_after(&out);
@@ -48,8 +65,190 @@ pub fn run(src: &str, strip_comments: bool, strip_flags: bool, include_tabs: boo
     if strip_flags {
         out = strip_double_equals(&out);
     }
+    // Footnotes and Google-Docs comments share the same machinery: a
+    // marker in the prose plus a definition elsewhere. Both collapse to a
+    // sentinel-wrapped body that `markdown.rs` expands — footnotes into a
+    // real Typst `#footnote[...]`, comments into a margin note. When
+    // `comment_notes` is off the comment scaffolding is removed entirely,
+    // leaving just the commented prose.
+    out = process_footnotes(&out);
+    out = process_comments(&out, comment_notes);
     out = process_tabs(&out, include_tabs);
     out
+}
+
+// ───────────────────── footnotes ─────────────────────
+
+/// Replace `[^id]` references with a sentinel-wrapped copy of their
+/// `[^id]:` definition body, and drop the definition lines. Mirrors the
+/// editor's footnote model (`editor/plugins/footnotes.js`). Done before
+/// pulldown so the body text flows through the normal escape/markup pass.
+fn process_footnotes(s: &str) -> String {
+    let (defs, body) = collect_definitions(s, '^');
+    replace_footnote_refs(&body, &defs)
+}
+
+fn replace_footnote_refs(s: &str, defs: &std::collections::HashMap<String, String>) -> String {
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'[' && bytes.get(i + 1) == Some(&b'^') {
+            if let Some((id, consumed)) = parse_ref(&s[i..], '^') {
+                let body = defs.get(&id).cloned().unwrap_or(id);
+                out.push(FOOTNOTE_OPEN);
+                out.push_str(&body);
+                out.push(FOOTNOTE_CLOSE);
+                i += consumed;
+                continue;
+            }
+        }
+        let ch = s[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+// ───────────────────── comments ─────────────────────
+
+/// Transform `{>text<id}` comment anchors. The commented text always
+/// survives; when `render` is true a sentinel carrying the `[>id]:` note
+/// is planted right after it (expanded to a margin note in `markdown.rs`),
+/// otherwise the scaffolding is simply dropped. Definition lines are
+/// consumed in both cases.
+fn process_comments(s: &str, render: bool) -> String {
+    let (defs, body) = collect_definitions(s, '>');
+    let bytes = body.as_bytes();
+    let mut out = String::with_capacity(body.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'>') {
+            if let Some((text, id, consumed)) = parse_comment_anchor(&body[i..]) {
+                out.push_str(&text);
+                if render {
+                    let note = defs.get(&id).cloned().unwrap_or_default();
+                    if !note.is_empty() {
+                        out.push(COMMENT_NOTE_OPEN);
+                        out.push_str(&note);
+                        out.push(COMMENT_NOTE_CLOSE);
+                    }
+                }
+                i += consumed;
+                continue;
+            }
+        }
+        let ch = body[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// Parse a `{>text<id}` anchor at the start of `s`. Returns the inner
+/// text, the id, and the byte length consumed. The text may span lines.
+fn parse_comment_anchor(s: &str) -> Option<(String, String, usize)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'{') || bytes.get(1) != Some(&b'>') {
+        return None;
+    }
+    let mut j = 2;
+    while j < bytes.len() {
+        if bytes[j] == b'<' {
+            let mut k = j + 1;
+            while k < bytes.len() && is_id_byte(bytes[k]) {
+                k += 1;
+            }
+            if k > j + 1 && bytes.get(k) == Some(&b'}') {
+                let text = s[2..j].to_string();
+                let id = s[j + 1..k].to_string();
+                return Some((text, id, k + 1));
+            }
+        }
+        j += 1;
+    }
+    None
+}
+
+// ───────────────────── shared definition parsing ─────────────────────
+
+/// Collect `[<sigil>id]: body` definition lines (with two-space-indented
+/// continuations) into an id → body map, returning the map plus the
+/// source with those lines removed. `sigil` is `^` for footnotes, `>`
+/// for comments.
+fn collect_definitions(
+    s: &str,
+    sigil: char,
+) -> (std::collections::HashMap<String, String>, String) {
+    let mut defs = std::collections::HashMap::new();
+    let mut kept: Vec<&str> = Vec::new();
+    let mut cur_id: Option<String> = None;
+    let mut cur_body = String::new();
+    for line in s.split('\n') {
+        if let Some((id, body)) = parse_def_line(line, sigil) {
+            if let Some(pid) = cur_id.take() {
+                defs.insert(pid, cur_body.trim().to_string());
+            }
+            cur_id = Some(id);
+            cur_body = body.to_string();
+        } else if cur_id.is_some() && line.starts_with("  ") && !line.trim().is_empty() {
+            cur_body.push(' ');
+            cur_body.push_str(line.trim());
+        } else {
+            if let Some(pid) = cur_id.take() {
+                defs.insert(pid, cur_body.trim().to_string());
+                cur_body.clear();
+            }
+            kept.push(line);
+        }
+    }
+    if let Some(pid) = cur_id.take() {
+        defs.insert(pid, cur_body.trim().to_string());
+    }
+    (defs, kept.join("\n"))
+}
+
+/// Parse a definition line `[<sigil>id]: body`. Returns `(id, body)`.
+fn parse_def_line(line: &str, sigil: char) -> Option<(String, &str)> {
+    let rest = line.strip_prefix('[')?;
+    let rest = rest.strip_prefix(sigil)?;
+    let close = rest.find("]:")?;
+    let id = &rest[..close];
+    if id.is_empty() || !id.bytes().all(is_id_byte) {
+        return None;
+    }
+    let body = rest[close + 2..].trim_start();
+    Some((id.to_string(), body))
+}
+
+/// Parse a reference `[<sigil>id]` at the start of `s`. Returns the id and
+/// bytes consumed. Refuses a trailing `:` so a definition line never reads
+/// as a reference.
+fn parse_ref(s: &str, sigil: char) -> Option<(String, usize)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'[') {
+        return None;
+    }
+    let mut i = 1;
+    if bytes.get(i) != Some(&(sigil as u8)) {
+        return None;
+    }
+    i += 1;
+    let start = i;
+    while i < bytes.len() && is_id_byte(bytes[i]) {
+        i += 1;
+    }
+    if i == start || bytes.get(i) != Some(&b']') {
+        return None;
+    }
+    if bytes.get(i + 1) == Some(&b':') {
+        return None;
+    }
+    Some((s[start..i].to_string(), i + 1))
+}
+
+fn is_id_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
 }
 
 /// Walk the source line by line, transforming each tab marker line
@@ -248,13 +447,13 @@ mod tests {
 
     #[test]
     fn strips_inline_comment() {
-        let out = run("before %% note %% after", true, false, false);
+        let out = run("before %% note %% after", true, false, false, true);
         assert_eq!(out, "before  after");
     }
 
     #[test]
     fn strips_multiline_comment() {
-        let out = run("alpha\n%% spans\nseveral lines %%\nbeta", true, false, false);
+        let out = run("alpha\n%% spans\nseveral lines %%\nbeta", true, false, false, true);
         assert!(!out.contains("spans"));
         assert!(out.contains("alpha"));
         assert!(out.contains("beta"));
@@ -263,7 +462,7 @@ mod tests {
     #[test]
     fn strips_to_end_of_section() {
         let src = "keep\n---% drafty\nthis goes\nso does this\n---hush-separator---\nkeep too";
-        let out = run(src, true, false, false);
+        let out = run(src, true, false, false, true);
         assert!(out.contains("keep"));
         assert!(out.contains("keep too"));
         assert!(!out.contains("drafty"));
@@ -274,13 +473,13 @@ mod tests {
 
     #[test]
     fn strips_named_flag() {
-        let out = run("text ==MISSING: a thing== more", false, true, false);
+        let out = run("text ==MISSING: a thing== more", false, true, false, true);
         assert_eq!(out, "text more");
     }
 
     #[test]
     fn strips_bare_highlight() {
-        let out = run("text ==important== more", false, true, false);
+        let out = run("text ==important== more", false, true, false, true);
         assert_eq!(out, "text more");
     }
 
@@ -288,20 +487,20 @@ mod tests {
     fn flags_with_trailing_space_inside_braces() {
         // The user's term paper had `==MISSING: foo ==` with the space
         // before the closing `==`. Make sure that shape also goes.
-        let out = run("a ==MISSING: foo == b", false, true, false);
+        let out = run("a ==MISSING: foo == b", false, true, false, true);
         assert!(!out.contains("MISSING"), "got: {}", out);
     }
 
     #[test]
     fn off_passes_through() {
         let src = "x %% y %% z ==Q==";
-        let out = run(src, false, false, true);
+        let out = run(src, false, false, true, true);
         assert_eq!(out, src);
     }
 
     #[test]
     fn triple_percent_is_not_a_comment() {
-        let out = run("a %%% literal", true, false, false);
+        let out = run("a %%% literal", true, false, false, true);
         assert!(out.contains("%"), "got: {}", out);
         assert!(out.contains("literal"));
     }
@@ -309,7 +508,7 @@ mod tests {
     #[test]
     fn tab_markers_dropped_when_off() {
         let src = "before\n---Intro---\nbody\n---Parent---/---Child---\nmore";
-        let out = run(src, false, false, false);
+        let out = run(src, false, false, false, true);
         assert!(!out.contains("Intro"), "got: {}", out);
         assert!(!out.contains("Parent"), "got: {}", out);
         assert!(!out.contains("Child"), "got: {}", out);
@@ -321,7 +520,7 @@ mod tests {
     #[test]
     fn tab_markers_wrapped_when_on() {
         let src = "---Intro---\nbody";
-        let out = run(src, false, false, true);
+        let out = run(src, false, false, true, true);
         let expected = format!("{}Intro{}", TAB_MARKER_OPEN, TAB_MARKER_CLOSE);
         assert!(out.contains(&expected), "got: {:?}", out);
         assert!(out.contains("body"));
@@ -330,7 +529,7 @@ mod tests {
     #[test]
     fn nested_tab_marker_path_joined() {
         let src = "---Parent---/---Child---\nbody";
-        let out = run(src, false, false, true);
+        let out = run(src, false, false, true, true);
         let expected = format!("{}Parent / Child{}", TAB_MARKER_OPEN, TAB_MARKER_CLOSE);
         assert!(out.contains(&expected), "got: {:?}", out);
     }
@@ -338,7 +537,7 @@ mod tests {
     #[test]
     fn plain_hr_not_a_tab_marker() {
         // `---` alone is a thematic break and must pass through unchanged.
-        let out = run("para\n\n---\n\npara2", false, false, false);
+        let out = run("para\n\n---\n\npara2", false, false, false, true);
         assert!(out.contains("---"), "got: {}", out);
     }
 
@@ -347,9 +546,49 @@ mod tests {
         // `---%` looks tab-marker-shaped but must keep its end-of-doc
         // meaning even when tab processing is enabled.
         let src = "keep\n---% drafty\ngone\n---hush-separator---\nkeep too";
-        let out = run(src, true, false, true);
+        let out = run(src, true, false, true, true);
         assert!(out.contains("keep"));
         assert!(out.contains("keep too"));
         assert!(!out.contains("drafty"));
+    }
+
+    #[test]
+    fn footnote_ref_inlines_definition_into_sentinel() {
+        let src = "Text with a note[^1].\n\n[^1]: the note body";
+        let out = run(src, false, false, false, true);
+        let expected = format!("{}the note body{}", FOOTNOTE_OPEN, FOOTNOTE_CLOSE);
+        assert!(out.contains(&expected), "got: {:?}", out);
+        // The definition line is consumed, not left in the body.
+        assert!(!out.contains("[^1]:"), "got: {:?}", out);
+    }
+
+    #[test]
+    fn footnote_orphan_ref_falls_back_to_id() {
+        let src = "Dangling[^x] ref";
+        let out = run(src, false, false, false, true);
+        let expected = format!("{}x{}", FOOTNOTE_OPEN, FOOTNOTE_CLOSE);
+        assert!(out.contains(&expected), "got: {:?}", out);
+    }
+
+    #[test]
+    fn comment_anchor_renders_note_when_on() {
+        let src = "before {>flagged span<ab} after\n\n[>ab]: a reviewer note";
+        let out = run(src, false, false, false, true);
+        // Commented text survives, markers gone.
+        assert!(out.contains("flagged span"), "got: {:?}", out);
+        assert!(!out.contains("{>"), "got: {:?}", out);
+        assert!(!out.contains("[>ab]:"), "got: {:?}", out);
+        let expected = format!("{}a reviewer note{}", COMMENT_NOTE_OPEN, COMMENT_NOTE_CLOSE);
+        assert!(out.contains(&expected), "got: {:?}", out);
+    }
+
+    #[test]
+    fn comment_anchor_dropped_when_notes_off() {
+        let src = "before {>flagged span<ab} after\n\n[>ab]: a reviewer note";
+        let out = run(src, false, false, false, false);
+        assert!(out.contains("flagged span"), "got: {:?}", out);
+        assert!(!out.contains("{>"), "got: {:?}", out);
+        assert!(!out.contains(COMMENT_NOTE_OPEN), "got: {:?}", out);
+        assert!(!out.contains("reviewer note"), "got: {:?}", out);
     }
 }

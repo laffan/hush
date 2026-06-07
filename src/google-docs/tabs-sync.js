@@ -43,6 +43,7 @@ import {
 import { parseTabs, joinTabs } from "../editor/tabs.js";
 import { markdownToHtml } from "../editor/google-docs/markdown-to-html.js";
 import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
+import { stripCommentSyntax } from "../editor/comment-syntax.js";
 import { documentTabToMarkdown } from "./docs-walker.js";
 
 // ===== Push =====
@@ -129,7 +130,11 @@ export async function pushMarkdownWithTabs(docId, md) {
     const newTabId = await createTab(docId, idx, leaf, parentTabId);
     if (!newTabId) continue;
     pathToTabId.set(pathKey(path), newTabId);
-    const content = (section.content || "").trim();
+    // Strip comment scaffolding here too — the root tab's content rides
+    // `markdownToHtml` (which already strips), but non-root tabs push as
+    // plain text and would otherwise carry the `{>...<id}` markers and
+    // `[>id]:` notes into the Google Doc verbatim.
+    const content = stripCommentSyntax(section.content || "").trim();
     if (content) {
       await replaceTabPlainText(docId, newTabId, content);
     }

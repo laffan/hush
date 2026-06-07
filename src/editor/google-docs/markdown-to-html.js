@@ -15,6 +15,19 @@
  * a general-purpose markdown engine; it's a one-way exporter.
  */
 
+import { stripCommentSyntax } from "../comment-syntax.js";
+
+// Google Docs imports CSS margins faithfully, so a small space-after on
+// each block reproduces Hush's blank-line-between-paragraphs rhythm.
+// `margin:0` (the previous value) collapsed paragraphs flush against one
+// another on push — the user saw no spacing between paragraphs.
+const BLOCK_SPACE = "10pt";
+// One Google Docs indent level ≈ 36pt (0.5in). Google Docs has no native
+// "Block quote" format, so a once-indented paragraph *is* Hush's `> `
+// block quote on the Google side (and the pull path reads it back the
+// same way — see `html-to-markdown.js` / `docs-walker.js`).
+const QUOTE_INDENT = "36pt";
+
 const LIST_RE = /^(\s*)(?:[-*+]|(\d+)\.)\s+(.*)$/;
 const HR_RE = /^\s*(?:---|\*\*\*|___)\s*$/;
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
@@ -28,7 +41,12 @@ const TAB_SEGMENT_RE = /^---([^\n]+?)---$/;
 
 export function markdownToHtml(md) {
   if (typeof md !== "string" || !md) return "";
-  const stripped = md.replace(/%%[\s\S]*?%%/g, "");
+  // Drop Google-comment scaffolding (anchors + `[>id]:` notes) but keep
+  // the commented prose — comment sync is pull-only, so the document body
+  // we push back stays clean and Google's own comment anchors are left
+  // untouched.
+  const noComments = stripCommentSyntax(md);
+  const stripped = noComments.replace(/%%[\s\S]*?%%/g, "");
   const lines = stripped.split(/\r?\n/);
   const blocks = parseBlocks(lines);
   return blocks.map(renderBlock).join("");
@@ -158,17 +176,20 @@ function renderBlock(block) {
   switch (block.type) {
     case "hr": return "<hr>";
     case "heading":
-      // `margin:0` on the heading itself — Drive's HTML importer keeps
-      // CSS margins, so the default user-agent <h*> top/bottom margin
-      // would land on top of the paragraph-spacing fix below.
-      return `<h${block.level} style="margin:0">${renderInline(block.text)}</h${block.level}>`;
+      // A bottom margin separates the heading from the following block;
+      // top margin stays 0 so Drive's user-agent <h*> margin doesn't
+      // stack on top of the previous block's space-after.
+      return `<h${block.level} style="margin:0 0 ${BLOCK_SPACE} 0">${renderInline(block.text)}</h${block.level}>`;
     case "paragraph":
-      // `margin:0` collapses the blank line Google Docs would otherwise
-      // insert between paragraphs on import. Without it every paragraph
-      // gains a visible extra-line gap on push.
-      return `<p style="margin:0">${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p>`;
+      // A space-after on every paragraph reproduces the blank line Hush
+      // shows between paragraphs. `margin:0` (the old value) collapsed
+      // them flush together on push.
+      return `<p style="margin:0 0 ${BLOCK_SPACE} 0">${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p>`;
     case "blockquote":
-      return `<blockquote style="margin:0"><p style="margin:0">${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p></blockquote>`;
+      // Google Docs has no block-quote style, so emit a once-indented
+      // paragraph. `margin:0 0 X 0` then `margin-left` — the later
+      // longhand wins for the left edge, the shorthand sets the rest.
+      return `<p style="margin:0 0 ${BLOCK_SPACE} 0;margin-left:${QUOTE_INDENT}">${renderInline(block.text.replace(/\s*\n\s*/g, " "))}</p>`;
     case "code":
       return `<pre style="margin:0"><code>${escapeHtml(block.text)}</code></pre>`;
     case "list":

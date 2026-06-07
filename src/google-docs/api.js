@@ -151,6 +151,31 @@ export async function replaceDocumentContent(docId, html) {
   return asJson(resp);
 }
 
+/**
+ * List a document's comments via the Drive Comments API. Each comment
+ * carries its note `content`, `author`, the `quotedFileContent.value`
+ * (the exact text the comment is anchored to — what we match against the
+ * pulled markdown to place the anchor), `resolved` state, and any
+ * `replies`. The `fields` parameter is mandatory for this endpoint.
+ *
+ * Comment sync is pull-only, so this is the only comment call we make —
+ * Hush never writes comments back, which means Google's own anchor (and
+ * therefore the selection range) is never disturbed by a push.
+ */
+export async function listComments(docId) {
+  const params = new URLSearchParams({
+    fields:
+      "comments(id,content,resolved,author/displayName," +
+      "quotedFileContent/value,replies(content,author/displayName))",
+    pageSize: "100",
+  });
+  const resp = await gFetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(docId)}/comments?${params}`
+  );
+  const data = await asJson(resp);
+  return data.comments || [];
+}
+
 /** Build a `https://docs.google.com/document/d/{id}/edit` URL for the link bar's title chip. */
 export function viewUrl(docId) {
   return `https://docs.google.com/document/d/${encodeURIComponent(docId)}/edit`;

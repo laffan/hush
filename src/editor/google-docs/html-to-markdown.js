@@ -108,7 +108,30 @@ function blockPara(node, ctx) {
   // no-op so the pulled markdown doesn't accumulate blank lines.
   const collapsed = inner.replace(/[\s ]+/g, "");
   if (!collapsed) return "";
-  return "\n\n" + inner.trim() + "\n\n";
+  const body = inner.trim();
+  // Google Docs has no block-quote style — it represents one as an
+  // indented paragraph (Drive's HTML export emits `margin-left:36pt`).
+  // Read a once-indented paragraph back as Hush's `> ` block quote.
+  if (paragraphIndentPt(node) >= QUOTE_INDENT_THRESHOLD_PT) {
+    const lined = body.split("\n").map((l) => (l.length ? "> " + l : ">")).join("\n");
+    return "\n\n" + lined + "\n\n";
+  }
+  return "\n\n" + body + "\n\n";
+}
+
+// Half a Google indent level (one level ≈ 36pt). Using half as the
+// threshold tolerates rounding in Drive's exported point values while
+// still ignoring the small hanging indents Google sometimes emits.
+const QUOTE_INDENT_THRESHOLD_PT = 18;
+
+// Left indent of a paragraph in points, read from its inline style.
+// Google's HTML export indents block quotes with `margin-left`; some
+// pastes use `padding-left`. Either signals an indented paragraph.
+function paragraphIndentPt(node) {
+  const style = (node.getAttribute && node.getAttribute("style")) || "";
+  const m = /margin-left\s*:\s*([\d.]+)pt/i.exec(style)
+    || /padding-left\s*:\s*([\d.]+)pt/i.exec(style);
+  return m ? parseFloat(m[1]) : 0;
 }
 
 // Block-level entry point for a <ul>/<ol>. Coalesces consecutive sibling

@@ -75,6 +75,13 @@ pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
     out.push_str(style.preamble);
     out.push('\n');
 
+    // `#hush-comment` renders an imported Google-Docs comment as a margin
+    // note: a small numbered marker inline plus the note floated into the
+    // right margin, keyed by the same number. Defined for every style so
+    // the comment-sentinel expansion in `notes.rs` always resolves.
+    out.push_str(HUSH_COMMENT_DEF);
+    out.push('\n');
+
     // Page numbering rides on top of whatever the style already
     // configured for `#set page(...)`. Typst lets a later `#set` win
     // over earlier ones in the same scope, so this is safe to append.
@@ -169,6 +176,23 @@ mod tests {
         assert!(double.contains("#set par(leading: 1.5em)"), "got: {}", double);
     }
 }
+
+/// Margin-note helper shared by every style. A counter drives the marker
+/// number; the note is `place`d into the right margin (`dx` pushes past
+/// the text edge — both bundled styles leave ≥1in there). `place` draws
+/// out of flow, so notes never disturb the body's line breaking.
+const HUSH_COMMENT_DEF: &str = r##"
+#let hush-comment(body) = {
+  counter("hushcomment").step()
+  context {
+    let n = counter("hushcomment").display()
+    super(text(size: 0.7em, fill: rgb("#b8860b"))[#n])
+    place(right, dx: 0.2in, dy: 0pt, box(width: 1in)[
+      #text(size: 0.72em, fill: luma(90))[#super(text(fill: rgb("#b8860b"))[#n]) #body]
+    ])
+  }
+}
+"##;
 
 // ───────────────────── registered styles ─────────────────────
 

@@ -34,6 +34,7 @@ import { setLink, clearLink, appendLog, getLink } from "./link-store.js";
 import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
+import { fetchAndWeaveComments } from "./comments-sync.js";
 
 // "drive.file" reference: listDocuments suppressed unused import warning.
 void listDocuments;
@@ -71,7 +72,9 @@ export async function importFromGoogleDoc(state) {
   // Tab-aware pull so the imported doc keeps `---Tab name---` markers
   // for every Google Doc tab; falls back to a flat single-tab export
   // when the doc has no tabs.
-  const md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
+  let md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
+  // Weave any Google comments in as anchored Hush comments.
+  md = await fetchAndWeaveComments(picked.id, md);
   // Create the file but don't open it yet — we need the link stored
   // before the editor switches so the link bar paints in one pass on
   // `file-opened`, instead of waiting for a follow-up settings-changed
@@ -209,7 +212,9 @@ export async function pullFromGoogleDoc(state, link) {
   // Tab-aware pull: walks every top-level tab, exports each in
   // isolation, converts each to markdown, and rejoins them with
   // `---Tab name---` separators.
-  const md = await pullMarkdownWithTabs(link.docId, htmlToMarkdownSafe);
+  let md = await pullMarkdownWithTabs(link.docId, htmlToMarkdownSafe);
+  // Weave any Google comments in as anchored Hush comments.
+  md = await fetchAndWeaveComments(link.docId, md);
   // Replace the editor buffer; existing autosave + snapshot pipeline
   // captures this transition for free, so the user can recover via
   // Versions if the pull was a mistake.

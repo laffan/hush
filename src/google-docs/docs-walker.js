@@ -61,8 +61,20 @@ function renderParagraph(paragraph, lists) {
   }
   const headingPrefix = HEADING_PREFIX[styleType];
   if (headingPrefix && text) return `${headingPrefix} ${text}`;
+  // Google Docs has no block-quote style — it shows one as an indented
+  // paragraph. A non-heading, non-list paragraph indented once (≈ 36pt)
+  // reads back as Hush's `> ` block quote. Mirror of the push side, which
+  // emits block quotes as `margin-left:36pt` paragraphs.
+  const indentPt = paragraph.paragraphStyle?.indentStart?.magnitude || 0;
+  if (indentPt >= QUOTE_INDENT_THRESHOLD_PT && text) {
+    return text.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
+  }
   return text;
 }
+
+// Half a Google indent level (one level ≈ 36pt) — tolerates rounding in
+// the API's point values while ignoring small hanging indents.
+const QUOTE_INDENT_THRESHOLD_PT = 18;
 
 function isOrderedList(lists, listId, nesting) {
   if (!listId) return false;

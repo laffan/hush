@@ -86,6 +86,7 @@ export async function openDocExportModal(state) {
     stripComments: true,
     stripFlags: true,
     includeTabs: true,
+    commentNotes: true,
     numberHeadings: false,
     pageNumbers: true,
   };
@@ -139,6 +140,10 @@ export async function openDocExportModal(state) {
           <label class="nxm-checkbox-label">
             <input type="checkbox" data-choice="includeTabs" checked />
             Include tabs
+          </label>
+          <label class="nxm-checkbox-label">
+            <input type="checkbox" data-choice="commentNotes" checked />
+            Comment margin notes
           </label>
           <label class="nxm-checkbox-label">
             <input type="checkbox" data-choice="numberHeadings" />
@@ -288,6 +293,7 @@ export async function openDocExportModal(state) {
       stripComments: choices.stripComments,
       stripFlags: choices.stripFlags,
       includeTabs: choices.includeTabs,
+      commentNotes: choices.commentNotes,
       numberHeadings: choices.numberHeadings,
       pageNumbers: choices.pageNumbers,
     });
@@ -469,6 +475,7 @@ async function renderPdfBytes(state, content, choices) {
       stripComments: !!choices.stripComments,
       stripFlags: !!choices.stripFlags,
       includeTabs: !!choices.includeTabs,
+      commentNotes: !!choices.commentNotes,
       numberHeadings: !!choices.numberHeadings,
       pageNumbers: !!choices.pageNumbers,
       lineSpacing: Number.isFinite(choices.lineSpacing) ? choices.lineSpacing : 1.5,

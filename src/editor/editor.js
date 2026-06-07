@@ -32,6 +32,7 @@ import { headingIndentPlugin } from "./heading-indent.js";
 import { findHighlightField } from "./find-decorations.js";
 import { instanceHighlightField } from "./select-instance-highlight.js";
 import { createMultiLineCommentPlugin, createCommentAfterPlugin } from "./comment-plugins.js";
+import { createCommentAnchorPlugin } from "./plugins/comment-anchors.js";
 import { createGoogleDocsPasteExtension } from "./google-docs/paste-extension.js";
 import { createGrammarCheckPlugin, createGrammarHoverTooltip } from "./plugins/grammar-check.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
@@ -259,6 +260,7 @@ export function createEditor(container, state) {
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
   const commentAfterPlugin = createCommentAfterPlugin();
+  const commentAnchorPlugin = createCommentAnchorPlugin();
   const grammarCheckPlugin = createGrammarCheckPlugin(state);
   const grammarHoverTooltip = createGrammarHoverTooltip(state);
   const spellcheckPlugin = createSpellcheckPlugin(state);
@@ -317,6 +319,7 @@ export function createEditor(container, state) {
       stickyHeadersPlugin,
       multiLineCommentPlugin,
       commentAfterPlugin,
+      commentAnchorPlugin,
       grammarCheckPlugin,
       grammarHoverTooltip,
       spellcheckPlugin,
