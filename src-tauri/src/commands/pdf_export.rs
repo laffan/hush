@@ -36,8 +36,6 @@ pub struct PdfExportArgs {
     pub page_numbers: bool,
     #[serde(default = "true_default")]
     pub include_tabs: bool,
-    #[serde(default = "true_default")]
-    pub comment_notes: bool,
     #[serde(default = "default_line_spacing")]
     pub line_spacing: f32,
     #[serde(default)]
@@ -67,7 +65,6 @@ pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result
         number_headings: args.number_headings,
         page_numbers: args.page_numbers,
         include_tabs: args.include_tabs,
-        comment_notes: args.comment_notes,
         line_spacing: args.line_spacing,
         references: args.references,
         images,

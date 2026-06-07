@@ -34,7 +34,7 @@ import { setLink, clearLink, appendLog, getLink } from "./link-store.js";
 import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
-import { fetchAndWeaveComments } from "./comments-sync.js";
+import { fetchAndWeaveComments, resolveMarkedComments } from "./comments-sync.js";
 
 // "drive.file" reference: listDocuments suppressed unused import warning.
 void listDocuments;
@@ -183,6 +183,9 @@ export async function pushToGoogleDoc(state, link) {
   await requireConnection();
   if (!link?.docId) throw new Error("No Google Doc linked to this document.");
   const md = state.editor?.view?.state?.doc?.toString() || "";
+  // Apply any locally-resolved comments to Google before we strip the
+  // comment scaffolding from the pushed body. Best-effort.
+  await resolveMarkedComments(link.docId, md);
   // Tab-aware push: parses `---Tab name---` markers, mirrors them to
   // real Google Doc tabs, and pushes the root section's HTML via Drive
   // media upload (Drive's upload only touches the root tab on tabbed

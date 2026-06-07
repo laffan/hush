@@ -92,11 +92,6 @@ pub struct ExportRequest {
     /// When false, marker lines are dropped entirely.
     #[serde(default = "true_default")]
     pub include_tabs: bool,
-    /// Render imported Google-Docs comments (`{>text<id}` + `[>id]:`) as
-    /// margin notes. When false, the comment scaffolding is dropped and
-    /// only the commented prose remains.
-    #[serde(default = "true_default")]
-    pub comment_notes: bool,
     /// Line-spacing multiplier (1.0 / 1.5 / 2.0). Mapped to a concrete
     /// Typst `leading` value inside `styles::wrap`.
     #[serde(default = "default_line_spacing")]
@@ -120,7 +115,6 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         req.strip_comments,
         req.strip_flags,
         req.include_tabs,
-        req.comment_notes,
     );
 
     let have_refs = !req.references.is_empty();
@@ -253,7 +247,6 @@ mod tests {
             number_headings: false,
             page_numbers: true,
             include_tabs: true,
-            comment_notes: true,
             line_spacing: 1.5,
             references: vec![],
             images: vec![],
@@ -275,7 +268,6 @@ mod tests {
             number_headings: false,
             page_numbers: true,
             include_tabs: true,
-            comment_notes: true,
             line_spacing: 1.5,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
@@ -308,7 +300,6 @@ mod tests {
             number_headings: false,
             page_numbers: true,
             include_tabs: true,
-            comment_notes: true,
             line_spacing: 1.5,
             references: vec![],
             images: vec![],
@@ -333,7 +324,6 @@ mod tests {
             number_headings: false,
             page_numbers: true,
             include_tabs: true,
-            comment_notes: true,
             line_spacing: 1.5,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
@@ -364,7 +354,6 @@ mod tests {
             number_headings: false,
             page_numbers: true,
             include_tabs: true,
-            comment_notes: true,
             line_spacing: 1.5,
             references: vec![],
             images: vec![],
@@ -375,10 +364,10 @@ mod tests {
     }
 
     #[test]
-    fn renders_footnotes_and_comment_margin_notes() {
-        // A real footnote (`[^1]`) and an imported Google comment
-        // (`{>span<ab}` + `[>ab]:`) must both compile end to end — this
-        // exercises the `#footnote[...]` and `#hush-comment[...]` paths.
+    fn renders_footnotes_and_strips_comments() {
+        // A real footnote (`[^1]`) renders as `#footnote[...]`; an imported
+        // Google comment (`{>span<ab}` + `[>ab]:`) is stripped to plain
+        // prose. Both must compile end to end.
         let req = ExportRequest {
             markdown: "Body with a note[^1] and a {>flagged span<ab} here.\n\n\
                        [^1]: the footnote body\n\n[>ab]: a reviewer comment"
@@ -391,7 +380,6 @@ mod tests {
             number_headings: false,
             page_numbers: true,
             include_tabs: true,
-            comment_notes: true,
             line_spacing: 1.5,
             references: vec![],
             images: vec![],

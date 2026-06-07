@@ -78,7 +78,6 @@ pub fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
     let out = expand_cite_sentinels(&out, &cite_mode);
     let out = expand_tab_sentinels(&out);
     let out = super::notes::expand_footnote_sentinels(&out);
-    let out = super::notes::expand_comment_sentinels(&out);
 
     if out.ends_with('\n') { out } else { out + "\n" }
 }

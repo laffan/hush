@@ -176,6 +176,27 @@ export async function listComments(docId) {
   return data.comments || [];
 }
 
+/**
+ * Resolve a comment in Google by posting a reply with `action: "resolve"`
+ * — the Drive API's mechanism for resolving (there's no direct field
+ * toggle). Idempotent: resolving an already-resolved comment succeeds.
+ * This is Hush's only comment write-back; comment *content* stays
+ * pull-only, so a comment's anchored range is never disturbed.
+ */
+export async function resolveComment(docId, commentId) {
+  const params = new URLSearchParams({ fields: "id,action" });
+  const resp = await gFetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(docId)}/comments/` +
+      `${encodeURIComponent(commentId)}/replies?${params}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resolve", content: "Resolved in Hush" }),
+    }
+  );
+  return asJson(resp);
+}
+
 /** Build a `https://docs.google.com/document/d/{id}/edit` URL for the link bar's title chip. */
 export function viewUrl(docId) {
   return `https://docs.google.com/document/d/${encodeURIComponent(docId)}/edit`;

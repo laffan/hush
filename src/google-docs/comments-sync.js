@@ -18,8 +18,10 @@
  * We never write comments back, so Google's own anchor stays authoritative
  * and pushing the document body can't lose a comment's selection range.
  */
-import { listComments } from "./api.js";
-import { COMMENT_ANCHOR_RE } from "../editor/comment-syntax.js";
+import { listComments, resolveComment } from "./api.js";
+import {
+  COMMENT_ANCHOR_RE, formatCommentMeta, parseCommentDefinitions,
+} from "../editor/comment-syntax.js";
 
 /** Fetch the linked doc's comments and weave them into `md`. Best-effort:
  *  any API failure leaves the markdown unchanged. */
@@ -33,6 +35,28 @@ export async function fetchAndWeaveComments(docId, md) {
     return md;
   }
   return weaveComments(md, comments);
+}
+
+/**
+ * Resolve, in Google, every comment the user flagged resolved locally
+ * (a `resolved` token in the `[>id]:` definition's `%%cmnt …%%` metadata).
+ * Called on push, before the comment scaffolding is stripped. Best-effort
+ * and idempotent — a comment already resolved in Google just no-ops.
+ */
+export async function resolveMarkedComments(docId, md) {
+  if (!docId) return;
+  const defs = parseCommentDefinitions(md);
+  const tasks = [];
+  for (const info of defs.values()) {
+    if (info.resolved && info.gid) {
+      tasks.push(
+        resolveComment(docId, info.gid).catch((e) =>
+          console.warn("[google-docs] resolve comment failed:", e)
+        )
+      );
+    }
+  }
+  await Promise.all(tasks);
 }
 
 /** Pure transform: given markdown and a list of Drive comment resources,
@@ -55,6 +79,9 @@ export function weaveComments(md, comments) {
     do { id = shortId(counter++); } while (usedIds.has(id));
     usedIds.add(id);
 
+    // Carry Google's comment id as hidden metadata so a later Resolve
+    // can reach the right comment via the Drive API.
+    const meta = formatCommentMeta(c?.id || null, false);
     const quoted = (c?.quotedFileContent?.value || "").trim();
     const at = quoted ? findAnchorable(body, quoted) : -1;
     if (at !== -1) {
@@ -62,12 +89,12 @@ export function weaveComments(md, comments) {
         body.slice(0, at) +
         `{>${body.slice(at, at + quoted.length)}<${id}}` +
         body.slice(at + quoted.length);
-      defs.push(`[>${id}]: ${note}`);
+      defs.push(`[>${id}]: ${note}${meta}`);
     } else {
       // Couldn't locate the range — keep the note, echo the quote so the
       // user can still tell what it referred to.
       const echo = quoted ? ` (re: “${oneLine(quoted)}”)` : "";
-      defs.push(`[>${id}]: ${note}${echo}`);
+      defs.push(`[>${id}]: ${note}${echo}${meta}`);
     }
   }
 

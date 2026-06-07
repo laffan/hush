@@ -42,8 +42,42 @@ export function htmlToMarkdown(html) {
     gdocs.remove();
   }
 
+  stripGoogleCommentArtifacts(root);
+
   const out = renderChildren(root, { inPre: false });
   return out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
+}
+
+// Google Docs's HTML export renders comments as `<sup><a href="#cmntN">
+// [a]</a></sup>` markers in the body, plus a back-linked list at the foot
+// (`<a href="#cmnt_refN">`). Hush imports comments through the Drive
+// Comments API instead (see `google-docs/comments-sync.js`), which is
+// cleaner and carries the anchored range, so we drop both here — otherwise
+// the pulled markdown would carry duplicate `[[a]](#cmntN)` junk inline
+// and a wall of comment text in the footer.
+function stripGoogleCommentArtifacts(root) {
+  let removedAny = false;
+  for (const a of root.querySelectorAll('a[href^="#cmnt"]')) {
+    const href = a.getAttribute("href") || "";
+    if (href.startsWith("#cmnt_ref")) {
+      // Foot-list back-reference — remove the whole comment entry.
+      (a.closest("li") || a.closest("p") || a).remove();
+    } else {
+      // In-body reference marker — remove it (and its <sup> wrapper).
+      (a.closest("sup") || a).remove();
+    }
+    removedAny = true;
+  }
+  if (!removedAny) return;
+  // Tidy up: drop now-empty <sup> wrappers and the trailing rule/empty
+  // containers Google leaves where the comment list used to be.
+  root.querySelectorAll("sup").forEach((s) => { if (!s.textContent.trim()) s.remove(); });
+  let last = root.lastElementChild;
+  while (last && (last.tagName === "HR" || !last.textContent.trim())) {
+    const prev = last.previousElementSibling;
+    last.remove();
+    last = prev;
+  }
 }
 
 function renderChildren(node, ctx) {
