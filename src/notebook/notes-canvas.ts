@@ -159,6 +159,7 @@ export class NotesCanvas {
   private _shelfPanel: HTMLElement | null = null;
   private _shelfResizer: HTMLElement | null = null;
   private _shelfRightInsetCleanup: (() => void) | null = null;
+  private _shelfTrackRaf = 0;
   private _drawingLayer: DrawingLayer | null = null;
 
   constructor(container: HTMLElement, shortcuts?: Partial<NotebookShortcuts>) {
@@ -431,6 +432,27 @@ export class NotesCanvas {
       const cr = container.getBoundingClientRect();
       if (rect && cr.width) this.setRightInset(Math.max(0, cr.right - rect.left));
     };
+    // The shelf opens / closes via a `transition: width 0.2s`. A single
+    // observer-driven read lands on the *pre*-transition width, which left
+    // the inset (and so the minimap + bg button) stuck after a close — on
+    // open, mounting the shelf content kicked further re-measures that
+    // happened to settle it, but close detaches content and nothing
+    // followed up. Re-measure every frame for the transition's duration so
+    // the inset tracks the animating width both ways and settles correctly.
+    let _shelfTrackUntil = 0;
+    const trackShelfInsetDuringTransition = () => {
+      _shelfTrackUntil = performance.now() + 260;
+      if (this._shelfTrackRaf) return;
+      const step = () => {
+        syncShelfRightInset();
+        if (performance.now() < _shelfTrackUntil) {
+          this._shelfTrackRaf = requestAnimationFrame(step);
+        } else {
+          this._shelfTrackRaf = 0;
+        }
+      };
+      this._shelfTrackRaf = requestAnimationFrame(step);
+    };
     const onDockChanged = (e: Event) => {
       requestAnimationFrame(syncShelfRightInset);
       const d = (e as CustomEvent).detail || {};
@@ -447,11 +469,12 @@ export class NotesCanvas {
       this.state.notify("theme");
     };
     queueMicrotask(syncShelfRightInset);
-    const shelfObs = new MutationObserver(syncShelfRightInset);
+    const onShelfMutate = () => { syncShelfRightInset(); trackShelfInsetDuringTransition(); };
+    const shelfObs = new MutationObserver(onShelfMutate);
     shelfObs.observe(this._shelfPanel, { attributes: true, attributeFilter: ["style", "class"] });
     window.addEventListener("resize", syncShelfRightInset);
     document.addEventListener("pane-dock-changed", onDockChanged);
-    this._shelfRightInsetCleanup = () => { shelfObs.disconnect(); window.removeEventListener("resize", syncShelfRightInset); document.removeEventListener("pane-dock-changed", onDockChanged); };
+    this._shelfRightInsetCleanup = () => { shelfObs.disconnect(); window.removeEventListener("resize", syncShelfRightInset); document.removeEventListener("pane-dock-changed", onDockChanged); if (this._shelfTrackRaf) { cancelAnimationFrame(this._shelfTrackRaf); this._shelfTrackRaf = 0; } };
     // Shelf resize handle. Mounted to body so its fixed-position math is independent of the canvas container.
     const shelfResizer = createShelfResizer(this._shelfPanel as ShelfPanelEl, {
       onCommit: (w: number) => {
