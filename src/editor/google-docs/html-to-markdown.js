@@ -49,35 +49,46 @@ export function htmlToMarkdown(html) {
 }
 
 // Google Docs's HTML export renders comments as `<sup><a href="#cmntN">
-// [a]</a></sup>` markers in the body, plus a back-linked list at the foot
-// (`<a href="#cmnt_refN">`). Hush imports comments through the Drive
-// Comments API instead (see `google-docs/comments-sync.js`), which is
-// cleaner and carries the anchored range, so we drop both here — otherwise
-// the pulled markdown would carry duplicate `[[a]](#cmntN)` junk inline
-// and a wall of comment text in the footer.
+// [a]</a></sup>` markers in the body, plus — at the very foot of the
+// document — a back-linked list of the comment threads (`<a
+// href="#cmnt_refN">`) including reply text and reaction lines ("Alex
+// reacted with ⭐ …"). Hush imports comments through the Drive Comments
+// API instead (see `google-docs/comments-sync.js`), which is cleaner and
+// carries the anchored range, so we drop all of it here — otherwise the
+// pulled markdown carries `[[a]](#cmntN)` junk inline and a wall of
+// comment/reaction text in the footer (which then gets pushed back into
+// the Google Doc as literal body paragraphs).
 function stripGoogleCommentArtifacts(root) {
-  let removedAny = false;
+  // 1. In-body reference markers (`#cmntN`, but not the foot back-refs).
   for (const a of root.querySelectorAll('a[href^="#cmnt"]')) {
     const href = a.getAttribute("href") || "";
-    if (href.startsWith("#cmnt_ref")) {
-      // Foot-list back-reference — remove the whole comment entry.
-      (a.closest("li") || a.closest("p") || a).remove();
-    } else {
-      // In-body reference marker — remove it (and its <sup> wrapper).
-      (a.closest("sup") || a).remove();
+    if (!href.startsWith("#cmnt_ref")) (a.closest("sup") || a).remove();
+  }
+  // 2. The whole foot section. Google always places the comment thread
+  //    list last, so from the first back-reference onward (plus any
+  //    immediately-preceding separator rule) everything is comment
+  //    scaffolding — comment text, replies, and reaction lines alike.
+  const backRef = root.querySelector('a[href^="#cmnt_ref"]');
+  if (backRef) {
+    // Climb to the direct child of the body that contains the back-ref.
+    let node = backRef;
+    while (node.parentNode && node.parentNode !== root) node = node.parentNode;
+    // Eat a preceding <hr>/empty separator.
+    let prev = node.previousElementSibling;
+    while (prev && (prev.tagName === "HR" || !prev.textContent.trim())) {
+      const p = prev.previousElementSibling;
+      prev.remove();
+      prev = p;
     }
-    removedAny = true;
+    // Remove this node and every following sibling.
+    while (node) {
+      const next = node.nextSibling;
+      node.remove();
+      node = next;
+    }
   }
-  if (!removedAny) return;
-  // Tidy up: drop now-empty <sup> wrappers and the trailing rule/empty
-  // containers Google leaves where the comment list used to be.
+  // 3. Tidy now-empty <sup> wrappers left by step 1.
   root.querySelectorAll("sup").forEach((s) => { if (!s.textContent.trim()) s.remove(); });
-  let last = root.lastElementChild;
-  while (last && (last.tagName === "HR" || !last.textContent.trim())) {
-    const prev = last.previousElementSibling;
-    last.remove();
-    last = prev;
-  }
 }
 
 function renderChildren(node, ctx) {

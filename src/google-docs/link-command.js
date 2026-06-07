@@ -35,6 +35,7 @@ import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
 import { fetchAndWeaveComments, resolveMarkedComments } from "./comments-sync.js";
+import { tryIncrementalPush } from "./incremental-push.js";
 
 // "drive.file" reference: listDocuments suppressed unused import warning.
 void listDocuments;
@@ -63,6 +64,27 @@ function currentDocName(state) {
   return node?.name || "Untitled";
 }
 
+// Google Docs's HTML export can render the document title twice at the
+// very top (the styled title paragraph plus a heading carrying the same
+// text), which then round-trips back as a doubled title on push. Collapse
+// an immediate duplicate of the first content line so the imported doc
+// leads with a single title.
+function dropDuplicateLeadingTitle(md) {
+  if (typeof md !== "string" || !md) return md || "";
+  const lines = md.split("\n");
+  const norm = (s) => s.replace(/^#{1,6}\s+/, "").replace(/\s+/g, " ").trim().toLowerCase();
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  if (i >= lines.length) return md;
+  let j = i + 1;
+  while (j < lines.length && lines[j].trim() === "") j++;
+  if (j < lines.length && norm(lines[i]) && norm(lines[i]) === norm(lines[j])) {
+    lines.splice(i + 1, j - i); // drop the blank gap + the duplicate line
+    return lines.join("\n");
+  }
+  return md;
+}
+
 // ===== Phase 2a: Import =====
 
 export async function importFromGoogleDoc(state) {
@@ -73,6 +95,7 @@ export async function importFromGoogleDoc(state) {
   // for every Google Doc tab; falls back to a flat single-tab export
   // when the doc has no tabs.
   let md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
+  md = dropDuplicateLeadingTitle(md);
   // Weave any Google comments in as anchored Hush comments.
   md = await fetchAndWeaveComments(picked.id, md);
   // Create the file but don't open it yet — we need the link stored
@@ -186,11 +209,20 @@ export async function pushToGoogleDoc(state, link) {
   // Apply any locally-resolved comments to Google before we strip the
   // comment scaffolding from the pushed body. Best-effort.
   await resolveMarkedComments(link.docId, md);
-  // Tab-aware push: parses `---Tab name---` markers, mirrors them to
-  // real Google Doc tabs, and pushes the root section's HTML via Drive
-  // media upload (Drive's upload only touches the root tab on tabbed
-  // docs, so other tabs survive and are reconciled via the Docs API).
-  await pushMarkdownWithTabs(link.docId, md);
+  // Prefer an incremental, non-destructive push (paragraph-level diff via
+  // batchUpdate) so existing comments and formatting survive. It returns
+  // false for cases it can't safely handle (multi-tab, footnotes, etc.),
+  // in which case we fall back to the whole-document push. A thrown error
+  // means the incremental apply already partially landed, so we must NOT
+  // fall back to an overwrite on top of it — let it propagate.
+  const applied = await tryIncrementalPush(link.docId, md);
+  if (!applied) {
+    // Tab-aware push: parses `---Tab name---` markers, mirrors them to
+    // real Google Doc tabs, and pushes the root section's HTML via Drive
+    // media upload (Drive's upload only touches the root tab on tabbed
+    // docs, so other tabs survive and are reconciled via the Docs API).
+    await pushMarkdownWithTabs(link.docId, md);
+  }
   // Read the post-push title for the link cache so a stale title from
   // the link object doesn't shadow what Drive currently shows.
   const meta = await getDocumentMeta(link.docId).catch(() => null);
@@ -216,6 +248,7 @@ export async function pullFromGoogleDoc(state, link) {
   // isolation, converts each to markdown, and rejoins them with
   // `---Tab name---` separators.
   let md = await pullMarkdownWithTabs(link.docId, htmlToMarkdownSafe);
+  md = dropDuplicateLeadingTitle(md);
   // Weave any Google comments in as anchored Hush comments.
   md = await fetchAndWeaveComments(link.docId, md);
   // Replace the editor buffer; existing autosave + snapshot pipeline
