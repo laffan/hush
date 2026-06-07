@@ -21,6 +21,7 @@ import { sendSelectedToFile } from "./selection-extract.js";
 import { useActivePaneAsGutter } from "./pane/pane-gutter.js";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
+import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
 
 /** Pane lands centred on its (x,y) anchor — pre-shift by half the
  *  default pane size so the click-point coordinate (returned by
@@ -154,6 +155,26 @@ export function enterSendSelectedPicker(palette, state) {
   }));
   const placeholder = inNotebook ? "Send selection to notebook…" : "Send selection to document…";
   palette.setItems(items, placeholder);
+}
+
+/** Replace the palette's command list with one row per desk so the
+ *  "Switch Desks" flow runs inside the command palette — same look and
+ *  arrow-key / return navigation as the file picker. The active desk is
+ *  marked "current" and picking it is a no-op. */
+export function enterDeskPicker(palette, state) {
+  const desks = state.settings?.desks || [];
+  const activeId = state.settings?.activeDeskId;
+  const items = desks.map((d) => ({
+    id: "desk-pick-" + d.id,
+    label: (d.name || "Untitled desk") + (d.id === activeId ? "  (current)" : ""),
+    icon: deskRaw,
+    shortcutKey: null,
+    action: async () => {
+      if (d.id === activeId || typeof state.setActiveDesk !== "function") return;
+      try { await state.setActiveDesk(d.id); } catch (e) { console.error("setActiveDesk failed:", e); }
+    },
+  }));
+  palette.setItems(items, "Switch to desk…");
 }
 
 /** Replace the palette's command list with file rows that pipe back into

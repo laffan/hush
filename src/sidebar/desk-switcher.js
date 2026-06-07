@@ -13,7 +13,7 @@
  * to refresh in place; outside clicks dismiss the popover.
  */
 
-import { escHtml } from "./files-panel-shared.js";
+import { escHtml, showDeleteConfirmModal } from "./files-panel-shared.js";
 
 let _state = null;
 let _container = null;
@@ -191,7 +191,8 @@ async function onPopoverClick(ev, popover) {
   } else if (action === "rename") {
     beginInlineRename(deskId);
   } else if (action === "delete") {
-    await runDeleteDesk(deskId);
+    closePopover();
+    runDeleteDesk(deskId);
   }
 }
 
@@ -238,12 +239,20 @@ function beginInlineRename(deskId) {
   input.addEventListener("blur", () => commit(true));
 }
 
-async function runDeleteDesk(deskId) {
+function runDeleteDesk(deskId) {
   const desk = (_state.settings.desks || []).find(d => d.id === deskId);
   const name = desk?.name || "this desk";
-  const ok = window.confirm(`Delete "${name}" and everything inside it?\n\nThis cannot be undone.`);
-  if (!ok) return;
-  try { await _state.deleteDesk(deskId); } catch (e) { console.warn("delete desk failed:", e); }
+  // The WebView's native `window.confirm` doesn't reliably block here,
+  // so the desk was being deleted before the user could answer. Use the
+  // app's own confirm modal (the same one the file tree's delete flow
+  // uses) and only delete from its onConfirm callback.
+  showDeleteConfirmModal(
+    `Delete "${name}"`,
+    `Delete "${name}" and everything inside it?\n\nThis cannot be undone.`,
+    async () => {
+      try { await _state.deleteDesk(deskId); } catch (e) { console.warn("delete desk failed:", e); }
+    },
+  );
 }
 
 function closePopover() {

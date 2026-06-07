@@ -24,8 +24,6 @@ import {
   updatePreview as renderPreview,
 } from "./style-modal-preview.js";
 
-const lightThemes = themeList.filter(t => t.type === "light");
-const darkThemes = themeList.filter(t => t.type === "dark");
 const builtInFonts = ["Source Sans Pro", "Source Serif Pro", "Libre Franklin", "Libre Baskerville", "Karla", "Lora", "EB Garamond", "Inter", "Fira Code", "iA Writer Duo", "iA Writer Mono", "iA Writer Quattro"];
 const systemFonts = [
   "Arial", "Avenir", "Avenir Next", "Baskerville", "Courier New",
@@ -348,7 +346,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
                 <div class="custom-dropdown" id="style-theme-dropdown" data-value="${escAttr(colorTab === 'light' ? ltId : dtId)}">
                   <div class="custom-dropdown-selected">${escHtml(colorTab === 'light' ? ltLabel : dtLabel)}</div>
                   <div class="custom-dropdown-options">
-                    ${(colorTab === 'light' ? lightThemes : darkThemes).map(t => {
+                    ${themeList.map(t => {
                       const selId = colorTab === 'light' ? ltId : dtId;
                       return `<div class="custom-dropdown-option${t.id === selId ? ' selected' : ''}" data-value="${t.id}">${escHtml(t.name)}</div>`;
                     }).join('')}

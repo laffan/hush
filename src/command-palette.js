@@ -7,7 +7,7 @@
  */
 import { formatShortcutKeys } from "./command-palette-helpers.js";
 import {
-  paneAnchorClickPoint, enterFilePicker,
+  paneAnchorClickPoint, enterFilePicker, enterDeskPicker,
 } from "./command-palette-pickers.js";
 import { createPane } from "./pane/pane-manager.js";
 import { icons, buildCommands, buildActiveModeTurnoffs } from "./command-palette-commands.js";
@@ -74,6 +74,19 @@ export function openFilePalette(state, mode) {
       else state.openFile(f.fileId);
     }, { includeProjects: true });
   }
+}
+
+/**
+ * Open the palette directly into desk-picker mode — the keyboard
+ * shortcut entry point for "Switch Desks". Mirrors openFilePalette so
+ * the picker carries the command palette's look and arrow-key / return
+ * navigation. No-ops with fewer than two desks.
+ */
+export function openDeskPalette(state) {
+  if ((state.settings?.desks || []).length < 2) return;
+  if (isOpen()) close();
+  open(state);
+  enterDeskPicker(paletteApi(state), state);
 }
 
 /** Internal handle to the currently-open palette so openFilePalette can
