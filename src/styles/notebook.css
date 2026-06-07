@@ -254,12 +254,7 @@ body.notebook-mode .column-resizer {
   background: var(--theme-bg, var(--bg, #f4f5f7));
   color: var(--fg, #555);
   z-index: 200;
-  opacity: 0;
-  animation: notebook-loading-fade-in 0.15s ease forwards;
   pointer-events: all;
-}
-@keyframes notebook-loading-fade-in {
-  to { opacity: 1; }
 }
 .notebook-loading-overlay .notebook-loading-label {
   font-family: system-ui, -apple-system, sans-serif;

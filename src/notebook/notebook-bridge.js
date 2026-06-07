@@ -31,32 +31,49 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-/**
- * Mount a "Loading Notebook…" overlay into the notebook container, but
- * only once loading has run past a short threshold — small notebooks that
- * mount near-instantly never append it, so there's no flash. Returns an
- * idempotent cleanup that cancels the pending append and/or removes the
- * overlay once shapes are ready.
- */
-function _showNotebookLoading(container) {
-  let overlay = null;
-  const timer = setTimeout(() => {
-    overlay = document.createElement("div");
-    overlay.className = "notebook-loading-overlay";
-    const label = document.createElement("div");
-    label.className = "notebook-loading-label";
-    label.textContent = "Loading Notebook…";
-    const bar = document.createElement("div");
-    bar.className = "notebook-loading-bar";
-    overlay.appendChild(label);
-    overlay.appendChild(bar);
-    container.appendChild(overlay);
-  }, 150);
-  return () => {
-    clearTimeout(timer);
-    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    overlay = null;
-  };
+/** Element ref for the active "Loading Notebook…" overlay, if any. */
+let _loadingOverlayEl = null;
+
+/** Shape count above which a notebook is treated as "large" enough to
+ *  warrant the loading overlay. Below this, `loadShapes` finishes in a
+ *  frame or two and showing the overlay would just flash. */
+const LARGE_NOTEBOOK_SHAPE_COUNT = 60;
+
+/** Mount the "Loading Notebook…" overlay into the notebook container.
+ *  Idempotent. Painted at full opacity so it's visible on the very next
+ *  frame — the caller yields a frame (`_nextPaint`) before kicking off the
+ *  synchronous `loadShapes` work, which would otherwise block the event
+ *  loop (and any paint) until it finished. */
+function _mountLoadingOverlay(container) {
+  if (_loadingOverlayEl) return;
+  const overlay = document.createElement("div");
+  overlay.className = "notebook-loading-overlay";
+  const label = document.createElement("div");
+  label.className = "notebook-loading-label";
+  label.textContent = "Loading Notebook…";
+  const bar = document.createElement("div");
+  bar.className = "notebook-loading-bar";
+  overlay.appendChild(label);
+  overlay.appendChild(bar);
+  container.appendChild(overlay);
+  _loadingOverlayEl = overlay;
+}
+
+function _unmountLoadingOverlay() {
+  if (_loadingOverlayEl && _loadingOverlayEl.parentNode) {
+    _loadingOverlayEl.parentNode.removeChild(_loadingOverlayEl);
+  }
+  _loadingOverlayEl = null;
+}
+
+/** Resolve after the browser has had a chance to paint (two rAFs: the
+ *  first runs before the next paint, the second after it). Used to
+ *  guarantee the loading overlay actually renders before the blocking
+ *  `loadShapes` pass starts. */
+function _nextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
 
 /**
@@ -70,12 +87,7 @@ export async function mountNotebook(container, fileId, state) {
     canvasInstance = null;
   }
   if (_mainDragCleanup) { _mainDragCleanup(); _mainDragCleanup = null; }
-
-  // Show a loading overlay while shapes decode/sync so a large notebook
-  // doesn't sit on an empty canvas (or the doc editor's "Start writing…"
-  // placeholder). The CSS fade-in only becomes visible after ~150ms, so
-  // small notebooks that mount instantly never flash it.
-  const _loadingDone = _showNotebookLoading(container);
+  _unmountLoadingOverlay();
 
   currentNotebookFileId = fileId;
   notebookDirty = false;
@@ -139,6 +151,16 @@ export async function mountNotebook(container, fileId, state) {
   }
 
   if (snapshot) {
+    // For a large notebook, `loadShapes` (engine stroke sync) runs long
+    // enough to be felt. Show the loading overlay and force a paint before
+    // it so the user sees "Loading Notebook…" instead of an empty canvas
+    // while the main thread is busy. Small notebooks skip this — they
+    // finish in a frame and the overlay would only flash.
+    const shapeCount = Array.isArray(snapshot.shapes) ? snapshot.shapes.length : 0;
+    if (shapeCount > LARGE_NOTEBOOK_SHAPE_COUNT) {
+      _mountLoadingOverlay(container);
+      await _nextPaint();
+    }
     canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
     canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
     if (Array.isArray(snapshot.bookmarks)) {
@@ -162,7 +184,7 @@ export async function mountNotebook(container, fileId, state) {
   applyNotebookSettings(state);
 
   // Shapes are loaded and the first render is queued — drop the overlay.
-  _loadingDone();
+  _unmountLoadingOverlay();
 
   _appState = state;
 

@@ -67,13 +67,30 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
     button.style.border = `1px solid ${theme.uiBorder}`;
   }
 
+  // Gap mirrors the minimap's SHELF_GAP_PX so the spacing between the
+  // shelf edge, button, and minimap reads evenly.
+  const SHELF_GAP = 10;
+
   function applyRightInset() {
     // state.rightInset already measures the shelf's left edge against
     // the container's right edge — so when a right-docked pane shifts
     // the shelf left, this picks up the extended distance and the
     // button stays just inboard of the shelf without double counting.
     const ri = state.rightInset || 0;
-    button.style.right = `calc(env(safe-area-inset-right) + ${ri + 16}px)`;
+    const container = button.parentElement;
+    const minimap = container ? container.querySelector(".notebook-minimap") : null;
+    if (minimap && container) {
+      // Minimap is visible: sit it 10px inboard of the shelf edge (same as
+      // the minimap) and stack directly above the minimap with a 10px gap.
+      button.style.right = `calc(env(safe-area-inset-right) + ${ri + SHELF_GAP}px)`;
+      const mmRect = minimap.getBoundingClientRect();
+      const cRect = container.getBoundingClientRect();
+      button.style.bottom = `${Math.round(cRect.bottom - mmRect.top + SHELF_GAP)}px`;
+    } else {
+      // No minimap: park in the bottom-right corner just inboard of the shelf.
+      button.style.right = `calc(env(safe-area-inset-right) + ${ri + 16}px)`;
+      button.style.bottom = "20px";
+    }
     bg.reposition();
   }
 
@@ -87,9 +104,24 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
   }) as EventListener);
 
   window.addEventListener("resize", applyRightInset);
+  // Minimap mount / unmount restacks the button above (or away from) it.
+  // Self-removing once the button is detached so stale buttons don't pile
+  // up listeners across notebook re-mounts.
+  const onMinimapChange = () => {
+    if (!button.isConnected) {
+      document.removeEventListener("notebook-minimap-changed", onMinimapChange);
+      return;
+    }
+    applyRightInset();
+  };
+  document.addEventListener("notebook-minimap-changed", onMinimapChange);
 
   refresh();
   applyRightInset();
+  // Re-run once mounted: at construction the button isn't in the DOM yet, so
+  // it can't see a minimap that was already mounted (e.g. minimap-on-by-
+  // default). A deferred pass picks it up and stacks correctly.
+  requestAnimationFrame(applyRightInset);
 
   return { button, popup: bg.popup, reposition: bg.reposition };
 }

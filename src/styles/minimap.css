@@ -4,9 +4,10 @@
    default. The minimap mounts itself only while a notebook is open. */
 .notebook-minimap {
   position: absolute;
-  /* Shifted left to clear the fixed Background-settings button in the
-     bottom-right corner (40px wide at right: ~16px + safe-area). */
-  right: calc(env(safe-area-inset-right) + 66px);
+  /* Default (shelf-collapsed) offset. minimap.js overrides `right` live so
+     the widget sits 10px inboard of the shelf's left edge and tracks it as
+     the shelf opens / resizes; the Background-settings button stacks above. */
+  right: calc(env(safe-area-inset-right) + 10px);
   bottom: 18px;
   width: 200px;
   height: 140px;

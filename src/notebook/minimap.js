@@ -29,6 +29,11 @@ let _renderToken = 0;
 let _rafToken = 0;
 let _listeners = null;
 let _editTimer = null;
+let _lastRightOffset = -1;   // last applied distance from the shelf edge
+
+/** Distance (px) the minimap keeps from the shelf's left edge. The
+ *  Background-settings button stacks above the minimap with the same gap. */
+const SHELF_GAP_PX = 10;
 
 const EDIT_REFRESH_DELAY_MS = 1500;
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -66,9 +71,13 @@ export function mountMinimap(state, fileId) {
   unmountMinimap();
   _state = state;
   _fileId = fileId;
+  _lastRightOffset = -1;
   buildDom();
   attachListeners();
   refreshMinimap();
+  // Let the bg-settings button restack itself above the freshly-mounted
+  // minimap.
+  document.dispatchEvent(new CustomEvent("notebook-minimap-changed"));
 }
 
 export function unmountMinimap() {
@@ -82,7 +91,11 @@ export function unmountMinimap() {
   _viewportRect = null;
   _fileId = null;
   _state = null;
+  _lastRightOffset = -1;
   if (_editTimer) { clearTimeout(_editTimer); _editTimer = null; }
+  // Tell the bg-settings button the minimap is gone so it drops back to the
+  // bottom-right corner.
+  document.dispatchEvent(new CustomEvent("notebook-minimap-changed"));
 }
 
 /** Repaint the snapshot + overlays (without rebuilding the DOM). */
@@ -262,6 +275,14 @@ function startViewportLoop() {
       _rafToken = requestAnimationFrame(tick);
       return;
     } else {
+      // Track the shelf's inboard edge so the minimap sits SHELF_GAP_PX
+      // left of it and slides as the shelf opens / resizes.
+      const ri = (live.state && live.state.rightInset) || 0;
+      const rightOffset = ri + SHELF_GAP_PX;
+      if (rightOffset !== _lastRightOffset && _container) {
+        _lastRightOffset = rightOffset;
+        _container.style.right = `calc(env(safe-area-inset-right) + ${rightOffset}px)`;
+      }
       const liveCam = live.state.camera;
       const liveCanvas = live.state.canvasEl;
       const liveW = liveCanvas.clientWidth || liveCanvas.getBoundingClientRect().width || window.innerWidth;
