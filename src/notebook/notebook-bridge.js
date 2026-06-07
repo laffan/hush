@@ -32,6 +32,34 @@ async function tauriInvoke(cmd, args) {
 }
 
 /**
+ * Mount a "Loading Notebook…" overlay into the notebook container, but
+ * only once loading has run past a short threshold — small notebooks that
+ * mount near-instantly never append it, so there's no flash. Returns an
+ * idempotent cleanup that cancels the pending append and/or removes the
+ * overlay once shapes are ready.
+ */
+function _showNotebookLoading(container) {
+  let overlay = null;
+  const timer = setTimeout(() => {
+    overlay = document.createElement("div");
+    overlay.className = "notebook-loading-overlay";
+    const label = document.createElement("div");
+    label.className = "notebook-loading-label";
+    label.textContent = "Loading Notebook…";
+    const bar = document.createElement("div");
+    bar.className = "notebook-loading-bar";
+    overlay.appendChild(label);
+    overlay.appendChild(bar);
+    container.appendChild(overlay);
+  }, 150);
+  return () => {
+    clearTimeout(timer);
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    overlay = null;
+  };
+}
+
+/**
  * Mount or re-mount the NotesCanvas into the notebook container.
  * If already mounted, destroys the previous instance first.
  */
@@ -42,6 +70,12 @@ export async function mountNotebook(container, fileId, state) {
     canvasInstance = null;
   }
   if (_mainDragCleanup) { _mainDragCleanup(); _mainDragCleanup = null; }
+
+  // Show a loading overlay while shapes decode/sync so a large notebook
+  // doesn't sit on an empty canvas (or the doc editor's "Start writing…"
+  // placeholder). The CSS fade-in only becomes visible after ~150ms, so
+  // small notebooks that mount instantly never flash it.
+  const _loadingDone = _showNotebookLoading(container);
 
   currentNotebookFileId = fileId;
   notebookDirty = false;
@@ -126,6 +160,9 @@ export async function mountNotebook(container, fileId, state) {
   // then overlay any per-notebook background overrides on top.
   if (snapshot?.background) _notebookBackground = { ...snapshot.background };
   applyNotebookSettings(state);
+
+  // Shapes are loaded and the first render is queued — drop the overlay.
+  _loadingDone();
 
   _appState = state;
 

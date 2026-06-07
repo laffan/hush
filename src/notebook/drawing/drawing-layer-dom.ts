@@ -38,6 +38,13 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
     height: worldSize + "px",
     transformOrigin: "0 0",
     pointerEvents: "none",
+    // Keep the stroke layer on its own stable compositor layer so panning
+    // is a pure GPU transform with no per-frame repaint of the baked
+    // strokes. Declaring it up-front (rather than letting the browser
+    // promote/demote around each gesture) avoids the hitch a layer
+    // create/destroy causes at pan start on stroke-heavy notebooks. The
+    // cost is just GPU memory while idle — no extra compute.
+    willChange: "transform",
   });
   container.appendChild(wrapper);
 

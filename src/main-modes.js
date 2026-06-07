@@ -37,7 +37,13 @@ export async function setupModeSwitching(state) {
   const showPdf = () => activateMode("pdf-mode");
   const showStack = () => activateMode("stack-mode");
 
-  state.on("notebook-open", async (fileId) => { await mountNotebook(notebookContainer, fileId, state); showNotebook(); });
+  state.on("notebook-open", async (fileId) => {
+    // Switch to notebook mode *before* the (async) mount so a large
+    // notebook shows its own loading overlay instead of leaving the doc
+    // editor's "Start writing…" placeholder visible while shapes decode.
+    showNotebook();
+    await mountNotebook(notebookContainer, fileId, state);
+  });
   state.on("notebook-unmount", async () => {
     const result = await unmountNotebook();
     if (result) state.syncFileToExternal(result.fileId, result.content);
@@ -132,8 +138,8 @@ export async function setupModeSwitching(state) {
   // Load current file content into the newly created editor
   // (init() already opened the last file/project — re-open only if editor wasn't set yet)
   if (state.currentNotebookFileId) {
-    await mountNotebook(notebookContainer, state.currentNotebookFileId, state);
     showNotebook();
+    await mountNotebook(notebookContainer, state.currentNotebookFileId, state);
   } else if (state.currentPdfFileId) {
     const { mountPdf } = await import("./pdf/pdf-bridge.js");
     await mountPdf(pdfContainer, state.currentPdfFileId, state);

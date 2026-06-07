@@ -4,7 +4,9 @@
    default. The minimap mounts itself only while a notebook is open. */
 .notebook-minimap {
   position: absolute;
-  right: 18px;
+  /* Shifted left to clear the fixed Background-settings button in the
+     bottom-right corner (40px wide at right: ~16px + safe-area). */
+  right: calc(env(safe-area-inset-right) + 66px);
   bottom: 18px;
   width: 200px;
   height: 140px;

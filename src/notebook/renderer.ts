@@ -177,7 +177,21 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   if (state.flowDropTargetId) {
     const target = shapes.find((s) => s.id === state.flowDropTargetId);
     if (target && !pocketedIds.has(target.id)) {
+      // Outline the whole group when the target is grouped (e.g. a cluster
+      // of brushstrokes) so the highlight signals the entire node the drop
+      // will connect to, not just the one stray member under the cursor.
       const tb = getShapeBounds(target, state.fontFamily);
+      if (target.groupId) {
+        for (const o of shapes) {
+          if (o.id === target.id || o.groupId !== target.groupId) continue;
+          if (pocketedIds.has(o.id)) continue;
+          const ob = getShapeBounds(o, state.fontFamily);
+          if (ob.minX < tb.minX) tb.minX = ob.minX;
+          if (ob.minY < tb.minY) tb.minY = ob.minY;
+          if (ob.maxX > tb.maxX) tb.maxX = ob.maxX;
+          if (ob.maxY > tb.maxY) tb.maxY = ob.maxY;
+        }
+      }
       const pad = 8;
       ctx.save();
       ctx.strokeStyle = theme.accent;

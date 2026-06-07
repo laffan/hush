@@ -131,6 +131,14 @@ export function bindInputEvents(
   let twoFingerStartDist = 0;
   let cameraAtTwoFingerStart = { x: 0, y: 0, zoom: 1 };
   let scrollTopAtTwoFingerStart = 0;
+  // Pinch hysteresis: until the finger spread drifts past this many CSS px
+  // the gesture is treated as a pure pan (zoom locked). Without it, the
+  // natural wobble in two fingers during a pan produces a continuous stream
+  // of micro-zooms that rescale the whole canvas every frame — felt as
+  // jitter, and worst on stroke-heavy notebooks where every stroke resamples.
+  // Mirrors the drawing engine's PINCH_START (gestures.js).
+  const PINCH_ENGAGE_PX = 12;
+  let twoFingerZoomEngaged = false;
 
   function pinchMid(t0: Touch, t1: Touch) {
     return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
@@ -152,6 +160,7 @@ export function bindInputEvents(
       // so the chrome doesn't render between the user's fingers.
       state.cancelActiveInteraction();
       twoFingerActive = true;
+      twoFingerZoomEngaged = false;
       twoFingerStartMid = pinchMid(e.targetTouches[0], e.targetTouches[1]);
       twoFingerStartDist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
       cameraAtTwoFingerStart = { ...state.camera };
@@ -176,17 +185,38 @@ export function bindInputEvents(
         state.notify("camera");
         return;
       }
+      // Pinch hysteresis. Until the spread drifts past PINCH_ENGAGE_PX the
+      // gesture is a pure pan at locked zoom — this kills the per-frame
+      // micro-zoom jitter that two-finger panning otherwise produces. Once
+      // it engages, rebaseline the start references to the current frame so
+      // zoom ramps up from the present state with no visible jump.
+      if (!twoFingerZoomEngaged && Math.abs(dist - twoFingerStartDist) > PINCH_ENGAGE_PX) {
+        twoFingerZoomEngaged = true;
+        cameraAtTwoFingerStart = { ...state.camera };
+        twoFingerStartMid = mid;
+        twoFingerStartDist = dist;
+      }
+      const cs = cameraAtTwoFingerStart;
+      if (!twoFingerZoomEngaged) {
+        // Pure pan — midpoint delta only, zoom held at the gesture's start.
+        state.camera = {
+          x: cs.x + (mid.x - twoFingerStartMid.x),
+          y: cs.y + (mid.y - twoFingerStartMid.y),
+          zoom: cs.zoom,
+        };
+        state.notify("camera");
+        return;
+      }
       // Need a non-zero start distance to compute a ratio. If two
       // fingers landed at the exact same point, fall back to pure pan
       // until they separate.
       const rawScale = twoFingerStartDist > 1 ? dist / twoFingerStartDist : 1;
       // Match the wheel handler's zoom envelope exactly: [0.25, 1].
-      const newZoom = Math.min(1, Math.max(0.25, cameraAtTwoFingerStart.zoom * rawScale));
-      const effectiveScale = newZoom / cameraAtTwoFingerStart.zoom;
+      const newZoom = Math.min(1, Math.max(0.25, cs.zoom * rawScale));
+      const effectiveScale = newZoom / cs.zoom;
       // Pivot zoom around the *initial* midpoint (M0) and translate
       // by (M1 - M0) — equivalent to "the world point that was under
       // the start midpoint stays under the current midpoint".
-      const cs = cameraAtTwoFingerStart;
       state.camera = {
         x: mid.x - effectiveScale * (twoFingerStartMid.x - cs.x),
         y: mid.y - effectiveScale * (twoFingerStartMid.y - cs.y),
