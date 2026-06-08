@@ -36,6 +36,7 @@ import { findNodeByFileId } from "../state/tree-helpers.js";
 import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
 import {
   fetchAndWeaveComments, resolveMarkedComments, extractCommentMarkers,
+  stripResolvedComments,
 } from "./comments-sync.js";
 import { tryIncrementalPush } from "./incremental-push.js";
 
@@ -66,25 +67,32 @@ function currentDocName(state) {
   return node?.name || "Untitled";
 }
 
-// Google Docs's HTML export can render the document title twice at the
-// very top (the styled title paragraph plus a heading carrying the same
-// text), which then round-trips back as a doubled title on push. Collapse
-// an immediate duplicate of the first content line so the imported doc
-// leads with a single title.
+// Google Docs's HTML export can render the document title more than once
+// at the very top (the styled title paragraph plus a heading carrying the
+// same text), and a prior destructive push can leave extra copies behind —
+// so on each pull/push cycle a title could accumulate. Collapse *every*
+// consecutive copy of the first content line down to one. Skips a leading
+// `---Tab---` marker so the first tab's title is handled too.
 function dropDuplicateLeadingTitle(md) {
   if (typeof md !== "string" || !md) return md || "";
-  const lines = md.split("\n");
   const norm = (s) => s.replace(/^#{1,6}\s+/, "").replace(/\s+/g, " ").trim().toLowerCase();
+  const lines = md.split("\n");
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
-  if (i >= lines.length) return md;
-  let j = i + 1;
-  while (j < lines.length && lines[j].trim() === "") j++;
-  if (j < lines.length && norm(lines[i]) && norm(lines[i]) === norm(lines[j])) {
-    lines.splice(i + 1, j - i); // drop the blank gap + the duplicate line
-    return lines.join("\n");
+  if (i < lines.length && /^---.+---$/.test(lines[i].trim())) {
+    i++;
+    while (i < lines.length && lines[i].trim() === "") i++;
   }
-  return md;
+  if (i >= lines.length) return md;
+  const first = norm(lines[i]);
+  if (!first) return md;
+  for (;;) {
+    let k = i + 1;
+    while (k < lines.length && lines[k].trim() === "") k++;
+    if (k < lines.length && norm(lines[k]) === first) lines.splice(i + 1, k - i);
+    else break;
+  }
+  return lines.join("\n");
 }
 
 // ===== Phase 2a: Import =====
@@ -231,6 +239,16 @@ export async function pushToGoogleDoc(state, link) {
     // media upload (Drive's upload only touches the root tab on tabbed
     // docs, so other tabs survive and are reconciled via the Docs API).
     await pushMarkdownWithTabs(link.docId, md);
+  }
+  // The push succeeded, so any locally-resolved comments are now resolved
+  // in Google (or queued for the next pull if the API call failed). Drop
+  // them from the editor immediately rather than waiting for a pull —
+  // resolved comments stay resolved.
+  const cleaned = stripResolvedComments(md);
+  if (cleaned !== md && state.editor?.setContent) {
+    state.editor.setContent(cleaned);
+    state.markDirty?.();
+    await state.saveCurrentFile?.();
   }
   // Read the post-push title for the link cache so a stale title from
   // the link object doesn't shadow what Drive currently shows.

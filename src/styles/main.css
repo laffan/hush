@@ -19,6 +19,7 @@
 @import './selection-focus.css';
 @import './file-drop.css';
 @import './longview.css';
+@import './comments-panel.css';
 @import './callouts.css';
 @import './versions-panel.css';
 @import './sync-conflict.css';

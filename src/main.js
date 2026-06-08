@@ -312,6 +312,8 @@ async function init() {
   // open/close affordance now — the left-edge hover trigger and the
   // floating circular toggle are both gone.
   import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
+  // Comments panel rides the left edge of the outline, sharing its toggle.
+  import("./ui/comments-panel.js").then(m => m.setupCommentsPanel(state));
 
   // Save scroll position periodically (debounced on scroll). Tracks
   // the current file under `docScrollPositions[fileId]` so switching

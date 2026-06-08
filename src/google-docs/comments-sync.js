@@ -25,8 +25,42 @@
 import { listComments, resolveComment } from "./api.js";
 import { COMMENT_MARKER_SENTINEL } from "../editor/google-docs/html-to-markdown.js";
 import {
-  COMMENT_ANCHOR_RE, formatCommentMeta, parseCommentDefinitions,
+  COMMENT_ANCHOR_RE, COMMENT_DEF_RE, formatCommentMeta, parseCommentDefinitions,
 } from "../editor/comment-syntax.js";
+
+/**
+ * Remove every locally-resolved comment from the markdown: unwrap its
+ * `{>text<id}` anchor to the bare text and drop its `[>id]:` definition
+ * (plus continuations). Unresolved comments are left untouched. Called
+ * after a push so a resolved comment disappears immediately instead of
+ * lingering until the next pull.
+ */
+export function stripResolvedComments(md) {
+  if (typeof md !== "string" || !md) return md || "";
+  const defs = parseCommentDefinitions(md);
+  const resolved = new Set();
+  for (const [id, info] of defs) if (info.resolved) resolved.add(id);
+  if (resolved.size === 0) return md;
+
+  const unwrapped = md.replace(COMMENT_ANCHOR_RE, (full, text, id) =>
+    resolved.has(id) ? text : full
+  );
+  const kept = [];
+  let dropping = false;
+  for (const line of unwrapped.split("\n")) {
+    const m = line.match(COMMENT_DEF_RE);
+    if (m) {
+      dropping = resolved.has(m[1]);
+      if (dropping) continue;
+    } else if (dropping && /^  \S/.test(line)) {
+      continue;
+    } else {
+      dropping = false;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
+}
 
 /**
  * Pull out the inline comment-position sentinels the HTML converter left
