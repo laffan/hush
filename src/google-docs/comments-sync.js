@@ -10,22 +10,47 @@
  *   [>ab]: Jane Doe: interesting, i love this thought
  *
  * The anchor is placed by matching the comment's `quotedFileContent`
- * against the pulled text. When the quoted text can't be located (the
- * document changed since the comment was made, or the formatting differs),
- * the note is still appended — unanchored, with the quote echoed inline —
- * so the comment is never silently dropped.
+ * against the pulled text. When the same word recurs, the inline marker
+ * positions Google's HTML export embeds (recovered by
+ * `extractCommentMarkers`) break the tie so the comment lands on the
+ * instance it was actually attached to — not the first occurrence. When
+ * the quoted text can't be located at all (the document changed since the
+ * comment was made), the note is still appended unanchored, with the quote
+ * echoed inline, so the comment is never silently dropped.
  *
- * We never write comments back, so Google's own anchor stays authoritative
- * and pushing the document body can't lose a comment's selection range.
+ * Comment *content* is never written back, so Google's own anchor stays
+ * authoritative and pushing the body can't lose a selection range. The one
+ * write-back is resolving (`resolveMarkedComments`).
  */
 import { listComments, resolveComment } from "./api.js";
+import { COMMENT_MARKER_SENTINEL } from "../editor/google-docs/html-to-markdown.js";
 import {
   COMMENT_ANCHOR_RE, formatCommentMeta, parseCommentDefinitions,
 } from "../editor/comment-syntax.js";
 
+/**
+ * Pull out the inline comment-position sentinels the HTML converter left
+ * in `md` (pull path), returning the cleaned markdown plus the character
+ * offsets where Google's comment markers sat. Those offsets disambiguate
+ * which occurrence of a quoted word a comment anchors to.
+ */
+export function extractCommentMarkers(md) {
+  const s = String(md || "");
+  if (s.indexOf(COMMENT_MARKER_SENTINEL) === -1) return { clean: s, positions: [] };
+  let clean = "";
+  const positions = [];
+  for (const ch of s) {
+    if (ch === COMMENT_MARKER_SENTINEL) positions.push(clean.length);
+    else clean += ch;
+  }
+  return { clean, positions };
+}
+
 /** Fetch the linked doc's comments and weave them into `md`. Best-effort:
- *  any API failure leaves the markdown unchanged. */
-export async function fetchAndWeaveComments(docId, md) {
+ *  any API failure leaves the markdown unchanged. `markerPositions` are the
+ *  offsets recovered by `extractCommentMarkers` (empty for the Docs-API
+ *  multi-tab path, which has no marker info). */
+export async function fetchAndWeaveComments(docId, md, markerPositions = []) {
   if (!docId) return md;
   let comments = [];
   try {
@@ -34,37 +59,47 @@ export async function fetchAndWeaveComments(docId, md) {
     console.warn("[google-docs] comment pull failed:", e);
     return md;
   }
-  return weaveComments(md, comments);
+  return weaveComments(md, comments, markerPositions);
 }
 
 /**
  * Resolve, in Google, every comment the user flagged resolved locally
  * (a `resolved` token in the `[>id]:` definition's `%%cmnt …%%` metadata).
- * Called on push, before the comment scaffolding is stripped. Best-effort
- * and idempotent — a comment already resolved in Google just no-ops.
+ * Called on push, before the comment scaffolding is stripped. Idempotent —
+ * a comment already resolved in Google just no-ops. Returns
+ * `{ resolved, failed }` counts so the caller can surface them.
  */
 export async function resolveMarkedComments(docId, md) {
-  if (!docId) return;
+  const result = { resolved: 0, failed: 0 };
+  if (!docId) return result;
   const defs = parseCommentDefinitions(md);
   const tasks = [];
   for (const info of defs.values()) {
     if (info.resolved && info.gid) {
       tasks.push(
-        resolveComment(docId, info.gid).catch((e) =>
-          console.warn("[google-docs] resolve comment failed:", e)
-        )
+        resolveComment(docId, info.gid)
+          .then(() => { result.resolved++; })
+          .catch((e) => {
+            result.failed++;
+            console.warn("[google-docs] resolve comment failed:", info.gid, e);
+          })
       );
     }
   }
   await Promise.all(tasks);
+  return result;
 }
 
-/** Pure transform: given markdown and a list of Drive comment resources,
- *  return markdown with comment anchors + definitions woven in. */
-export function weaveComments(md, comments) {
+/** Pure transform: given markdown, a list of Drive comment resources, and
+ *  the marker offsets, return markdown with comment anchors + definitions
+ *  woven in. */
+export function weaveComments(md, comments, markerPositions = []) {
   if (!Array.isArray(comments) || comments.length === 0) return md || "";
-  let body = String(md || "");
+  const body = String(md || "");
   const usedIds = collectExistingIds(body);
+  const markers = (markerPositions || []).slice().sort((a, b) => a - b);
+  const occupied = anchorSpans(body); // pre-existing anchors (usually none)
+  const placements = [];
   const defs = [];
   let counter = 0;
 
@@ -83,12 +118,10 @@ export function weaveComments(md, comments) {
     // can reach the right comment via the Drive API.
     const meta = formatCommentMeta(c?.id || null, false);
     const quoted = (c?.quotedFileContent?.value || "").trim();
-    const at = quoted ? findAnchorable(body, quoted) : -1;
-    if (at !== -1) {
-      body =
-        body.slice(0, at) +
-        `{>${body.slice(at, at + quoted.length)}<${id}}` +
-        body.slice(at + quoted.length);
+    const target = quoted ? chooseOccurrence(body, quoted, markers, occupied) : null;
+    if (target) {
+      occupied.push({ from: target.start, to: target.end });
+      placements.push({ start: target.start, end: target.end, id });
       defs.push(`[>${id}]: ${note}${meta}`);
     } else {
       // Couldn't locate the range — keep the note, echo the quote so the
@@ -98,9 +131,16 @@ export function weaveComments(md, comments) {
     }
   }
 
-  if (defs.length === 0) return body;
-  const sep = body.endsWith("\n") ? "\n" : "\n\n";
-  return body + sep + defs.join("\n") + "\n";
+  // Apply anchors from the end backwards so earlier offsets stay valid.
+  let out = body;
+  placements.sort((a, b) => b.start - a.start);
+  for (const p of placements) {
+    out = out.slice(0, p.start) + "{>" + out.slice(p.start, p.end) + "<" + p.id + "}" + out.slice(p.end);
+  }
+
+  if (defs.length === 0) return out;
+  const sep = out.endsWith("\n") ? "\n" : "\n\n";
+  return out + sep + defs.join("\n") + "\n";
 }
 
 // Flatten a comment + its replies into a single-line note. Author names
@@ -123,19 +163,33 @@ function oneLine(s) {
   return String(s || "").replace(/\s+/g, " ").trim();
 }
 
-// Find the first occurrence of `quoted` that doesn't already sit inside a
-// comment anchor (so two comments quoting overlapping text don't nest).
-function findAnchorable(body, quoted) {
-  const spans = anchorSpans(body);
+// Choose which occurrence of `quoted` a comment anchors to. When the word
+// recurs, the inline marker positions Google exported (`markers`) break the
+// tie: we pick the occurrence whose end is nearest an unconsumed marker and
+// consume that marker. With no markers (or a single occurrence) we fall
+// back to the first free occurrence. Returns `{ start, end }` or null.
+function chooseOccurrence(body, quoted, markers, occupied) {
+  const occ = [];
   let from = 0;
   for (;;) {
     const idx = body.indexOf(quoted, from);
-    if (idx === -1) return -1;
+    if (idx === -1) break;
     const end = idx + quoted.length;
-    const inside = spans.some((s) => idx < s.to && end > s.from);
-    if (!inside) return idx;
+    if (!occupied.some((s) => idx < s.to && end > s.from)) occ.push({ start: idx, end });
     from = idx + 1;
   }
+  if (occ.length === 0) return null;
+  if (occ.length === 1 || markers.length === 0) return occ[0];
+
+  let best = null;
+  for (const o of occ) {
+    for (let mi = 0; mi < markers.length; mi++) {
+      const d = Math.abs(o.end - markers[mi]);
+      if (!best || d < best.d) best = { o, mi, d };
+    }
+  }
+  markers.splice(best.mi, 1); // consume the matched marker
+  return best.o;
 }
 
 function anchorSpans(body) {

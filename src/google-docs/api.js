@@ -184,7 +184,7 @@ export async function listComments(docId) {
  * pull-only, so a comment's anchored range is never disturbed.
  */
 export async function resolveComment(docId, commentId) {
-  const params = new URLSearchParams({ fields: "id,action" });
+  const params = new URLSearchParams({ fields: "id" });
   const resp = await gFetch(
     `${DRIVE_BASE}/files/${encodeURIComponent(docId)}/comments/` +
       `${encodeURIComponent(commentId)}/replies?${params}`,

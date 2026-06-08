@@ -49,7 +49,7 @@ export function parseCommentMeta(body) {
   const m = s.match(COMMENT_META_RE);
   if (!m) return { note: s.trim(), gid: null, resolved: false };
   const meta = m[1] || "";
-  const gid = (meta.match(/id=([A-Za-z0-9_-]+)/) || [])[1] || null;
+  const gid = (meta.match(/id=([^\s%]+)/) || [])[1] || null;
   const resolved = /\bresolved\b/.test(meta);
   return { note: s.slice(0, m.index).trim(), gid, resolved };
 }

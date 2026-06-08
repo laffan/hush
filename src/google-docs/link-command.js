@@ -34,7 +34,9 @@ import { setLink, clearLink, appendLog, getLink } from "./link-store.js";
 import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
-import { fetchAndWeaveComments, resolveMarkedComments } from "./comments-sync.js";
+import {
+  fetchAndWeaveComments, resolveMarkedComments, extractCommentMarkers,
+} from "./comments-sync.js";
 import { tryIncrementalPush } from "./incremental-push.js";
 
 // "drive.file" reference: listDocuments suppressed unused import warning.
@@ -96,8 +98,10 @@ export async function importFromGoogleDoc(state) {
   // when the doc has no tabs.
   let md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
   md = dropDuplicateLeadingTitle(md);
-  // Weave any Google comments in as anchored Hush comments.
-  md = await fetchAndWeaveComments(picked.id, md);
+  // Recover the inline comment-marker positions, then weave comments in at
+  // the exact instance Google anchored them to.
+  const { clean, positions } = extractCommentMarkers(md);
+  md = await fetchAndWeaveComments(picked.id, clean, positions);
   // Create the file but don't open it yet — we need the link stored
   // before the editor switches so the link bar paints in one pass on
   // `file-opened`, instead of waiting for a follow-up settings-changed
@@ -207,8 +211,12 @@ export async function pushToGoogleDoc(state, link) {
   if (!link?.docId) throw new Error("No Google Doc linked to this document.");
   const md = state.editor?.view?.state?.doc?.toString() || "";
   // Apply any locally-resolved comments to Google before we strip the
-  // comment scaffolding from the pushed body. Best-effort.
-  await resolveMarkedComments(link.docId, md);
+  // comment scaffolding from the pushed body. Surface the outcome so a
+  // failure (e.g. a permissions issue) is visible in the sync log rather
+  // than silently swallowed.
+  const res = await resolveMarkedComments(link.docId, md);
+  if (res.resolved) appendLog(state, `Resolved ${res.resolved} comment${res.resolved === 1 ? "" : "s"} in Google`);
+  if (res.failed) appendLog(state, `Failed to resolve ${res.failed} comment${res.failed === 1 ? "" : "s"} (see console)`);
   // Prefer an incremental, non-destructive push (paragraph-level diff via
   // batchUpdate) so existing comments and formatting survive. It returns
   // false for cases it can't safely handle (multi-tab, footnotes, etc.),
@@ -249,8 +257,10 @@ export async function pullFromGoogleDoc(state, link) {
   // `---Tab name---` separators.
   let md = await pullMarkdownWithTabs(link.docId, htmlToMarkdownSafe);
   md = dropDuplicateLeadingTitle(md);
-  // Weave any Google comments in as anchored Hush comments.
-  md = await fetchAndWeaveComments(link.docId, md);
+  // Recover the inline comment-marker positions, then weave comments in at
+  // the exact instance Google anchored them to.
+  const { clean, positions } = extractCommentMarkers(md);
+  md = await fetchAndWeaveComments(link.docId, clean, positions);
   // Replace the editor buffer; existing autosave + snapshot pipeline
   // captures this transition for free, so the user can recover via
   // Versions if the pull was a mistake.
@@ -280,7 +290,9 @@ export async function pullFromGoogleDoc(state, link) {
 function htmlToMarkdownSafe(html) {
   if (!html) return "";
   const inlined = inlineGoogleExportStyles(html);
-  const md = htmlToMarkdown(inlined);
+  // `commentMarkers: true` keeps each inline comment marker as a position
+  // sentinel so the comment weaver can anchor to the right text instance.
+  const md = htmlToMarkdown(inlined, { commentMarkers: true });
   if (md == null) return "";
   return md;
 }

@@ -21,7 +21,7 @@ const STYLE_BG_RE = /background(?:-color)?\s*:\s*([^;]+)/i;
 
 const HEADER_LEVELS = { H1: 1, H2: 2, H3: 3, H4: 4, H5: 5, H6: 6 };
 
-export function htmlToMarkdown(html) {
+export function htmlToMarkdown(html, opts = {}) {
   if (typeof html !== "string" || !html.trim()) return null;
   if (!RICH_TAG_RE.test(html)) return null;
   let doc;
@@ -42,11 +42,18 @@ export function htmlToMarkdown(html) {
     gdocs.remove();
   }
 
-  stripGoogleCommentArtifacts(root);
+  stripGoogleCommentArtifacts(root, !!opts.commentMarkers);
 
   const out = renderChildren(root, { inPre: false });
   return out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
 }
+
+// Position sentinel left in place of an inline comment marker when the
+// caller asks to keep marker positions (pull path). Private-use char so it
+// can't collide with document text; the pull flow extracts and removes it
+// (see `comments-sync.js#extractCommentMarkers`) to recover the exact
+// offset each Google comment was anchored to.
+export const COMMENT_MARKER_SENTINEL = "\uF8FF";
 
 // Google Docs's HTML export renders comments as `<sup><a href="#cmntN">
 // [a]</a></sup>` markers in the body, plus — at the very foot of the
@@ -58,11 +65,21 @@ export function htmlToMarkdown(html) {
 // pulled markdown carries `[[a]](#cmntN)` junk inline and a wall of
 // comment/reaction text in the footer (which then gets pushed back into
 // the Google Doc as literal body paragraphs).
-function stripGoogleCommentArtifacts(root) {
+function stripGoogleCommentArtifacts(root, keepMarkers) {
   // 1. In-body reference markers (`#cmntN`, but not the foot back-refs).
+  //    On the pull path (`keepMarkers`) we replace each with a position
+  //    sentinel instead of deleting it, so the comment weaver can anchor
+  //    each comment to the exact instance Google marked — otherwise a
+  //    comment on a word that recurs earlier lands on the wrong one.
   for (const a of root.querySelectorAll('a[href^="#cmnt"]')) {
     const href = a.getAttribute("href") || "";
-    if (!href.startsWith("#cmnt_ref")) (a.closest("sup") || a).remove();
+    if (href.startsWith("#cmnt_ref")) continue;
+    const node = a.closest("sup") || a;
+    if (keepMarkers) {
+      node.replaceWith(root.ownerDocument.createTextNode(COMMENT_MARKER_SENTINEL));
+    } else {
+      node.remove();
+    }
   }
   // 2. The whole foot section. Google always places the comment thread
   //    list last, so from the first back-reference onward (plus any
