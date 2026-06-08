@@ -145,25 +145,12 @@
 /* ===== Comments (imported Google-Docs comments) ===== */
 
 /* The commented range — a soft amber tint + dotted underline so it reads
-   as an annotated span without competing with highlights or links. */
+   as an annotated span without competing with highlights or links. Hover
+   it to see the note (see `.comment-tooltip`). */
 .comment-anchor {
   background: rgba(184, 134, 11, 0.12);
   border-bottom: 1px dotted rgba(184, 134, 11, 0.7);
   border-radius: 2px;
-}
-
-/* Clickable speech-balloon dropped at the end of a commented range. */
-.comment-bubble {
-  cursor: pointer;
-  font-size: 0.85em;
-  margin: 0 1px;
-  vertical-align: baseline;
-  user-select: none;
-  transition: transform 0.1s;
-}
-
-.comment-bubble:hover {
-  transform: scale(1.15);
 }
 
 /* A resolved comment reads as settled — muted tint, no underline. */
@@ -173,44 +160,26 @@
   opacity: 0.7;
 }
 
-.comment-bubble-resolved {
-  color: var(--sidebar-fg, #888);
-  opacity: 0.7;
-}
-
-/* Click-to-open note popover — mirrors the footnote overlay shell. */
-.comment-overlay {
-  position: fixed;
-  background: var(--panel-bg, var(--bg));
-  border: 1px solid var(--panel-border);
+/* Hover tooltip — the note plus a Resolve button. Rendered inside the
+   CodeMirror tooltip shell (`.cm-tooltip`), so this only styles the body. */
+.comment-tooltip {
   border-left: 3px solid #b8860b;
-  border-radius: 8px;
-  padding: 12px 16px;
-  padding-right: 32px;
-  z-index: var(--z-popover);
+  padding: 10px 14px;
+  max-width: 300px;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
   color: var(--fg);
   line-height: 1.5;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
-.comment-overlay.comment-resolved {
+.comment-tooltip.comment-resolved {
   border-left-color: #888;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
-.comment-overlay-content {
+.comment-tooltip-note {
   word-wrap: break-word;
-  outline: none;
-  cursor: text;
-  min-height: 1.4em;
-}
-
-.comment-overlay-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
+  margin-bottom: 8px;
 }
 
 .comment-resolve-btn {

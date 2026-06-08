@@ -217,6 +217,7 @@ export async function pushToGoogleDoc(state, link) {
   const res = await resolveMarkedComments(link.docId, md);
   if (res.resolved) appendLog(state, `Resolved ${res.resolved} comment${res.resolved === 1 ? "" : "s"} in Google`);
   if (res.failed) appendLog(state, `Failed to resolve ${res.failed} comment${res.failed === 1 ? "" : "s"} (see console)`);
+  if (res.noId) appendLog(state, `${res.noId} resolved comment${res.noId === 1 ? "" : "s"} have no Google id — pull the doc again to enable resolving`);
   // Prefer an incremental, non-destructive push (paragraph-level diff via
   // batchUpdate) so existing comments and formatting survive. It returns
   // false for cases it can't safely handle (multi-tab, footnotes, etc.),

@@ -70,21 +70,27 @@ export async function fetchAndWeaveComments(docId, md, markerPositions = []) {
  * `{ resolved, failed }` counts so the caller can surface them.
  */
 export async function resolveMarkedComments(docId, md) {
-  const result = { resolved: 0, failed: 0 };
+  const result = { resolved: 0, failed: 0, noId: 0 };
   if (!docId) return result;
   const defs = parseCommentDefinitions(md);
   const tasks = [];
   for (const info of defs.values()) {
-    if (info.resolved && info.gid) {
-      tasks.push(
-        resolveComment(docId, info.gid)
-          .then(() => { result.resolved++; })
-          .catch((e) => {
-            result.failed++;
-            console.warn("[google-docs] resolve comment failed:", info.gid, e);
-          })
-      );
+    if (!info.resolved) continue;
+    if (!info.gid) {
+      // Marked resolved locally but no Google comment id is stored — the
+      // comment was imported before id capture shipped, so we can't reach
+      // it via the API. A re-pull will re-attach the id.
+      result.noId++;
+      continue;
     }
+    tasks.push(
+      resolveComment(docId, info.gid)
+        .then(() => { result.resolved++; })
+        .catch((e) => {
+          result.failed++;
+          console.warn("[google-docs] resolve comment failed:", info.gid, e);
+        })
+    );
   }
   await Promise.all(tasks);
   return result;
@@ -163,24 +169,41 @@ function oneLine(s) {
   return String(s || "").replace(/\s+/g, " ").trim();
 }
 
-// Choose which occurrence of `quoted` a comment anchors to. When the word
-// recurs, the inline marker positions Google exported (`markers`) break the
-// tie: we pick the occurrence whose end is nearest an unconsumed marker and
-// consume that marker. With no markers (or a single occurrence) we fall
-// back to the first free occurrence. Returns `{ start, end }` or null.
+// Choose which occurrence of `quoted` a comment anchors to. The strongest
+// signal is the inline marker Google places at the *end* of the commented
+// range: when the text immediately before a marker equals the quote, that
+// marker is unambiguously this comment's — so a comment on a single "."
+// lands on the marked period, not the first one in the document. Failing an
+// exact match we fall back to the occurrence nearest a marker, then (no
+// markers — the multi-tab path) the first free occurrence. Returns
+// `{ start, end }` or null. Consumes the marker it uses.
 function chooseOccurrence(body, quoted, markers, occupied) {
+  const free = (start, end) => !occupied.some((s) => start < s.to && end > s.from);
+
+  // 1. Exact: a marker whose preceding text is the quote.
+  for (let mi = 0; mi < markers.length; mi++) {
+    const end = markers[mi];
+    const start = end - quoted.length;
+    if (start >= 0 && body.slice(start, end) === quoted && free(start, end)) {
+      markers.splice(mi, 1);
+      return { start, end };
+    }
+  }
+
+  // 2. Gather free occurrences.
   const occ = [];
   let from = 0;
   for (;;) {
     const idx = body.indexOf(quoted, from);
     if (idx === -1) break;
     const end = idx + quoted.length;
-    if (!occupied.some((s) => idx < s.to && end > s.from)) occ.push({ start: idx, end });
+    if (free(idx, end)) occ.push({ start: idx, end });
     from = idx + 1;
   }
   if (occ.length === 0) return null;
   if (occ.length === 1 || markers.length === 0) return occ[0];
 
+  // 3. Nearest remaining marker.
   let best = null;
   for (const o of occ) {
     for (let mi = 0; mi < markers.length; mi++) {
@@ -188,7 +211,7 @@ function chooseOccurrence(body, quoted, markers, occupied) {
       if (!best || d < best.d) best = { o, mi, d };
     }
   }
-  markers.splice(best.mi, 1); // consume the matched marker
+  markers.splice(best.mi, 1);
   return best.o;
 }
 
