@@ -48,6 +48,8 @@ export const themeList = [
   { id: "nuttyLight", name: "Nutty Light", type: "light", extension: nuttyLight, headingColor: "#7A3F7D" },
   { id: "softContrast", name: "Soft Contrast", type: "light", extension: softContrast, headingColor: "#1F6AA5" },
   { id: "solsticeEstival", name: "Solstice Estival", type: "light", extension: solsticeEstival, headingColor: "#68685F" },
+  { id: "espresso", name: "Espresso", type: "light", extension: espresso, headingColor: "#c5956b" },
+  { id: "tomorrow", name: "Tomorrow", type: "light", extension: tomorrow, headingColor: "#7aa6da" },
 
   // Dark themes
   { id: "amy", name: "Amy", type: "dark", extension: amy, headingColor: "#ff6600" },
@@ -58,8 +60,6 @@ export const themeList = [
   { id: "cobalt", name: "Cobalt", type: "dark", extension: cobalt, headingColor: "#ffc600" },
   { id: "coolGlow", name: "Cool Glow", type: "dark", extension: coolGlow, headingColor: "#7cb7ff" },
   { id: "dracula", name: "Dracula", type: "dark", extension: dracula, headingColor: "#bd93f9" },
-  { id: "espresso", name: "Espresso", type: "dark", extension: espresso, headingColor: "#c5956b" },
-  { id: "tomorrow", name: "Tomorrow", type: "dark", extension: tomorrow, headingColor: "#7aa6da" },
   { id: "akariNight", name: "Akari Night", type: "dark", extension: akariNight, headingColor: "#E26A3B" },
   { id: "aurumDusk", name: "Aurum Dusk", type: "dark", extension: aurumDusk, headingColor: "#c99d5a" },
   { id: "calmDark", name: "Calm Dark", type: "dark", extension: calmDark, headingColor: "#dedbd3" },
