@@ -255,10 +255,12 @@ export function enterConvertFolderPicker(palette, state, { typeIcons, fallbackIc
   palette.setItems(items, "Convert folder to desk…");
 }
 
-/** Swap the palette into "pick a desk to collapse" mode. The collapse
- *  gate (Inbox + Trash must be empty) is enforced inside
- *  `collapseDeskToFolder`; if it trips, surface the message via
- *  `window.alert` so the user knows what to clear before retrying. */
+/** Swap the palette into "pick a desk to collapse" mode. Picking a desk
+ *  asks for confirmation first (collapse drops the desk's Inbox/Trash
+ *  specials, so it's not a silent no-op). The collapse gate (Inbox +
+ *  Trash must be empty) is enforced inside `collapseDeskToFolder`; if it
+ *  trips, surface the message via `window.alert` so the user knows what
+ *  to clear before retrying. */
 export function enterCollapseDeskPicker(palette, state, { fallbackIcon } = {}) {
   const desks = state.settings?.desks || [];
   const items = desks.map((d) => ({
@@ -266,13 +268,23 @@ export function enterCollapseDeskPicker(palette, state, { fallbackIcon } = {}) {
     label: d.name || "Untitled desk",
     icon: fallbackIcon || null,
     shortcutKey: null,
-    action: () => collapseDeskToFolder(state, d.id).catch((e) => {
-      if (e?.code === "desk-collapse-blocked") {
-        window.alert(e.message || "Empty Inbox and Trash before collapsing this desk.");
-      } else {
-        console.error("collapse failed:", e);
-      }
-    }),
+    action: () => {
+      const name = d.name || "this desk";
+      import("../sidebar/files-panel-shared.js").then(({ showConfirmModal }) => {
+        showConfirmModal({
+          title: `Collapse "${name}"`,
+          message: `Collapse "${name}" into a folder?\n\nIt stops being a desk and becomes a regular folder; its Inbox and Trash are dropped.`,
+          confirmLabel: "Collapse",
+          onConfirm: () => collapseDeskToFolder(state, d.id).catch((e) => {
+            if (e?.code === "desk-collapse-blocked") {
+              window.alert(e.message || "Empty Inbox and Trash before collapsing this desk.");
+            } else {
+              console.error("collapse failed:", e);
+            }
+          }),
+        });
+      });
+    },
   }));
   palette.setItems(items, "Collapse desk into folder…");
 }

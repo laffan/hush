@@ -219,7 +219,7 @@ export function buildEditorCommands() {
     shortcutSwitchDesks: (state) => {
       const desks = state.settings?.desks || [];
       if (desks.length < 2) return false;
-      import("../sidebar/switch-desk-modal.js").then((m) => m.openSwitchDeskModal(state));
+      import("../command-palette.js").then((m) => m.openDeskPalette(state));
       return true;
     },
 
