@@ -197,6 +197,13 @@ export function updateColumnResizers(state) {
     let rightInsetOffset = 0;
     if (rightInset && rightOpen) {
       rightInsetOffset = 200; // right panel (200)
+      // The comments panel is pinned to the outline's left edge; when it's
+      // showing it carves out its own width too, so the column is pushed in
+      // rather than overlaid (matches its CSS width).
+      const commentsEl = document.getElementById("comments-panel");
+      if (commentsEl && !commentsEl.classList.contains("hidden")) {
+        rightInsetOffset += 240;
+      }
     }
 
     // Docked panes carve out additional space the editor column must

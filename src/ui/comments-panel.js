@@ -73,11 +73,12 @@ export function setupCommentsPanel(state) {
 
       const quote = document.createElement("div");
       quote.className = "comments-item-quote";
-      quote.textContent = truncate(c.quoted, 60);
+      quote.textContent = String(c.quoted || "").replace(/\s+/g, " ").trim();
 
       const note = document.createElement("div");
       note.className = "comments-item-note";
-      note.textContent = truncate(c.note, 160) || "(empty comment)";
+      // Show the whole comment — no excerpting.
+      note.textContent = String(c.note || "").trim() || "(empty comment)";
 
       item.append(quote, note);
       item.addEventListener("click", () => scrollEditorTo(c.offset));
@@ -90,16 +91,17 @@ export function setupCommentsPanel(state) {
     return !!rp && !rp.classList.contains("hidden");
   }
 
-  // Show only when the outline is open AND there's something to list.
+  // Show only when the outline is open AND there's something to list. A
+  // visibility change relayouts the editor column so the panel pushes
+  // content in (inset) rather than overlaying it.
   function sync(showWithOutline) {
-    if (state.currentNotebookFileId) { panel.classList.add("hidden"); return; }
-    const items = (showWithOutline ?? outlineVisible()) ? collectComments() : [];
-    if (items.length === 0) {
-      panel.classList.add("hidden");
-      return;
-    }
-    render(items);
-    panel.classList.remove("hidden");
+    const shouldShow = !state.currentNotebookFileId && (showWithOutline ?? outlineVisible());
+    const items = shouldShow ? collectComments() : [];
+    const willShow = items.length > 0;
+    if (willShow) render(items);
+    const wasHidden = panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !willShow);
+    if (wasHidden === willShow) state.runtime?.columnResizeHandler?.();
   }
 
   state.on("show-outline", () => sync(true));
@@ -110,9 +112,4 @@ export function setupCommentsPanel(state) {
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => sync(), 250);
   });
-
-  function truncate(s, n) {
-    const t = String(s || "").replace(/\s+/g, " ").trim();
-    return t.length > n ? t.slice(0, n - 1) + "…" : t;
-  }
 }

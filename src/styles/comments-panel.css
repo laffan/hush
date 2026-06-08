@@ -51,7 +51,8 @@
   background: none;
   border: none;
   border-left: 2px solid rgba(184, 134, 11, 0.6);
-  padding: 8px 14px;
+  border-bottom: 1px solid var(--panel-border);
+  padding: 10px 14px;
   cursor: pointer;
   color: var(--fg);
   font-family: system-ui, -apple-system, sans-serif;
@@ -65,10 +66,9 @@
   font-size: 12px;
   font-style: italic;
   color: var(--sidebar-fg);
-  margin-bottom: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin-bottom: 4px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .comments-item-note {
