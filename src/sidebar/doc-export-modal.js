@@ -26,19 +26,30 @@
  * styling is purely cosmetic and the visual language should match.
  */
 
-import { findNode } from "../state/tree-helpers.js";
 import { exportCurrentFile } from "./sidebar-export.js";
 import { loadReferences } from "../zotero.js";
-import { collectImageRefs } from "../state/state-images.js";
 import { isIOS } from "../settings/settings-ui.js";
+import { applyCitations } from "./export-citations.js";
+import { markdownToRtf } from "./markdown-to-rtf.js";
+import { hasTokensAsync } from "../google-docs/auth.js";
+import {
+  paintPdfPreview,
+  fetchStyles,
+  fetchCitationStyles,
+  renderPdfBytes,
+  deliver,
+  deliverText,
+  exportToGoogleDoc,
+  isAbort,
+  deriveDocName,
+  sanitize,
+  escHtml,
+  escAttr,
+} from "./doc-export-render.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 const CITE_RE = /\[@([A-Za-z0-9_:.+-]+)\](?:\([^)\n]*\))?/;
-
-// How many pages to rasterize into the preview pane. Keeps big docs from
-// stalling the modal — a note appears when there are more.
-const PREVIEW_MAX_PAGES = 12;
 
 export async function openDocExportModal(state) {
   if (!state.editor) return () => {};
@@ -54,9 +65,26 @@ export async function openDocExportModal(state) {
 
   const hasZotero = !!(state.settings?.zoteroUserId && state.settings?.zoteroApiKey);
   const hasCitations = CITE_RE.test(content);
+  // Citation toggles only matter when Zotero is set up *and* the doc
+  // actually cites something — same precondition the PDF cite row uses.
+  const showCiteControls = hasZotero && hasCitations;
+
+  // The Google Doc format is offered only once Google Sync is connected.
+  // `hasTokensAsync` primes its cache from settings, so this works even
+  // in the main editor window where the module starts unprimed.
+  const googleReady = await hasTokensAsync().catch(() => false);
 
   const styles = await fetchStyles();
   const citationStyles = await fetchCitationStyles();
+
+  // Loaded lazily the first time a citation-aware format needs them, then
+  // reused for previews and the final export.
+  let referencesCache = null;
+  async function getReferences() {
+    if (referencesCache) return referencesCache;
+    referencesCache = await loadReferences().catch(() => []);
+    return referencesCache;
+  }
 
   // Desktop save dialogs surface a filename field already, so the
   // modal-level input only mounts on iOS — where the system share
@@ -79,10 +107,18 @@ export async function openDocExportModal(state) {
     format: "pdf",
     style: styles[0]?.id || "formal",
     lineSpacing: 1.5,
+    // Header-size slider (PDF). Scales every heading level by the same
+    // factor so they keep their relationship while shifting relative to
+    // the body text. 1.0 = the style's design sizes.
+    headerScale: 1.0,
     // Whether to append a bibliography section. Inline citations are
     // formatted regardless (see renderPdfBytes / the Rust side).
-    includeBibliography: hasZotero && hasCitations,
+    includeBibliography: showCiteControls,
     citationStyle: citationStyles[0]?.id || "numbered",
+    // Citation knobs for the text-shaped formats (Markdown / RTF /
+    // Google Doc). Independent of the PDF's always-on inline formatting.
+    renderCitations: showCiteControls,
+    includeBibliographyText: showCiteControls,
     stripComments: true,
     stripFlags: true,
     includeTabs: true,
@@ -107,6 +143,8 @@ export async function openDocExportModal(state) {
           <div class="nxm-seg" data-group="format">
             <button data-value="md">Markdown</button>
             <button data-value="pdf" class="active">PDF</button>
+            <button data-value="rtf">RTF</button>
+            ${googleReady ? `<button data-value="gdoc">Google Doc</button>` : ""}
           </div>
         </div>
 
@@ -124,6 +162,11 @@ export async function openDocExportModal(state) {
             <option value="1.5" selected>1.5</option>
             <option value="2">2</option>
           </select>
+        </div>
+
+        <div class="nxm-section" data-visible-when="format=pdf">
+          <div class="nxm-label">Header size <span class="nxm-header-scale-val">100%</span></div>
+          <input type="range" class="nxm-header-scale" min="60" max="180" step="5" value="100" />
         </div>
 
         <div class="nxm-section" data-visible-when="format=pdf">
@@ -162,6 +205,18 @@ export async function openDocExportModal(state) {
               </select>
             </label>
           </div>
+        </div>
+
+        <div class="nxm-section" data-visible-in="md rtf gdoc" data-cite-text-row style="${showCiteControls ? "" : "display:none"}">
+          <div class="nxm-label">Zotero</div>
+          <label class="nxm-checkbox-label">
+            <input type="checkbox" data-choice="renderCitations" ${choices.renderCitations ? "checked" : ""} />
+            Render citations
+          </label>
+          <label class="nxm-checkbox-label">
+            <input type="checkbox" data-choice="includeBibliographyText" ${choices.includeBibliographyText ? "checked" : ""} />
+            Include bibliography
+          </label>
         </div>
       </div>
 
@@ -237,6 +292,17 @@ export async function openDocExportModal(state) {
     markChanged();
   });
 
+  const headerScaleInput = modal.querySelector(".nxm-header-scale");
+  const headerScaleVal = modal.querySelector(".nxm-header-scale-val");
+  headerScaleInput.addEventListener("input", () => {
+    const pct = parseInt(headerScaleInput.value, 10) || 100;
+    choices.headerScale = pct / 100;
+    headerScaleVal.textContent = `${pct}%`;
+    // `input` fires continuously while dragging; the preview is already
+    // debounced (350 ms) so a quick drag only renders once it settles.
+    markChanged();
+  });
+
   const citeToggle = modal.querySelector(".nxm-cite-toggle");
   const citeStyleRow = modal.querySelector(".nxm-cite-style-row");
   const citeStyleSelect = modal.querySelector(".nxm-cite-style-select");
@@ -269,10 +335,19 @@ export async function openDocExportModal(state) {
       // The citation row has an additional precondition — only show
       // when Zotero is set up and the document actually contains cites.
       if (el.hasAttribute("data-cite-row")) {
-        el.style.display = (choices[key] === val && hasZotero && hasCitations) ? "" : "none";
+        el.style.display = (choices[key] === val && showCiteControls) ? "" : "none";
       } else {
         el.style.display = choices[key] === val ? "" : "none";
       }
+    }
+    // `data-visible-in="md rtf gdoc"` — show when the active format is in
+    // the space-separated list. The text-format cite row layers on the
+    // same Zotero precondition as the PDF one.
+    for (const el of modal.querySelectorAll("[data-visible-in]")) {
+      const formats = el.dataset.visibleIn.split(/\s+/).filter(Boolean);
+      let visible = formats.includes(choices.format);
+      if (el.hasAttribute("data-cite-text-row")) visible = visible && showCiteControls;
+      el.style.display = visible ? "" : "none";
     }
   }
 
@@ -283,6 +358,7 @@ export async function openDocExportModal(state) {
       format: choices.format,
       style: choices.style,
       lineSpacing: choices.lineSpacing,
+      headerScale: choices.headerScale,
       includeBibliography: choices.includeBibliography,
       citationStyle: choices.citationStyle,
       stripComments: choices.stripComments,
@@ -300,11 +376,16 @@ export async function openDocExportModal(state) {
 
   async function renderPreview() {
     const token = ++previewToken;
-    if (choices.format === "md") {
+    // Every non-PDF format is text-shaped: show the markdown that will be
+    // written / converted, with citation processing already applied so
+    // the preview reflects the Zotero toggles.
+    if (choices.format !== "pdf") {
       previewEl.classList.add("is-text");
+      const text = await processedTextContent();
+      if (token !== previewToken) return;
       const pre = document.createElement("pre");
       pre.className = "nxm-preview-text";
-      pre.textContent = content || "(empty document)";
+      pre.textContent = text || "(empty document)";
       previewEl.replaceChildren(pre);
       return;
     }
@@ -320,7 +401,7 @@ export async function openDocExportModal(state) {
       if (lastRender.key === key && lastRender.bytes) {
         bytes = lastRender.bytes;
       } else {
-        bytes = await renderPdfBytes(state, content, choices);
+        bytes = await renderPdfBytes(state, content, choices, name);
         lastRender = { key, bytes };
       }
       if (token !== previewToken) return; // a newer render superseded us
@@ -338,12 +419,26 @@ export async function openDocExportModal(state) {
     previewEl.replaceChildren(div);
   }
 
+  // The markdown that the text-shaped formats (Markdown / RTF / Google
+  // Doc) start from — citation processing applied per the Zotero toggles.
+  async function processedTextContent() {
+    if (!showCiteControls) return content;
+    const refs = await getReferences();
+    return applyCitations(content, refs, {
+      renderCitations: choices.renderCitations,
+      includeBibliography: choices.includeBibliographyText,
+    });
+  }
+
   async function runExport() {
     if (choices.format === "md") {
       // Defer to the established markdown path so iOS share-sheet
-      // handling and folder-with-images export stays in one place.
+      // handling and folder-with-images export stays in one place. The
+      // citation-processed body is handed over so the Zotero toggles
+      // apply (when no toggles fire, this equals the raw content).
+      const processed = await processedTextContent();
       cleanup();
-      await exportCurrentFile(state);
+      await exportCurrentFile(state, { content: processed });
       return;
     }
 
@@ -351,6 +446,40 @@ export async function openDocExportModal(state) {
     const original = confirmBtn.textContent;
     confirmBtn.textContent = "Exporting…";
     confirmBtn.disabled = true;
+    const fail = (msg, err) => {
+      console.error(msg, err);
+      confirmBtn.textContent = "Export failed";
+      confirmBtn.disabled = false;
+      setTimeout(() => { confirmBtn.textContent = original; }, 2200);
+    };
+
+    if (choices.format === "rtf") {
+      try {
+        const processed = await processedTextContent();
+        const rtf = markdownToRtf(processed);
+        const baseName = sanitize(choices.filename) || name;
+        await deliverText(`${baseName.replace(/\.rtf$/i, "")}.rtf`, rtf, "rtf",
+          "application/rtf");
+        cleanup();
+      } catch (err) {
+        if (isAbort(err)) { cleanup(); return; }
+        fail("RTF export failed:", err);
+      }
+      return;
+    }
+
+    if (choices.format === "gdoc") {
+      try {
+        confirmBtn.textContent = "Creating…";
+        const processed = await processedTextContent();
+        const baseName = sanitize(choices.filename) || name;
+        await exportToGoogleDoc(state, processed, baseName);
+        cleanup();
+      } catch (err) {
+        fail("Google Doc export failed:", err);
+      }
+      return;
+    }
 
     try {
       // Reuse the bytes the preview already rendered when nothing that
@@ -361,7 +490,7 @@ export async function openDocExportModal(state) {
         bytes = lastRender.bytes;
       } else {
         confirmBtn.textContent = "Rendering…";
-        bytes = await renderPdfBytes(state, content, choices);
+        bytes = await renderPdfBytes(state, content, choices, name);
         lastRender = { key, bytes };
       }
       const baseName = sanitize(choices.filename) || name;
@@ -369,159 +498,9 @@ export async function openDocExportModal(state) {
       await deliver(bytes, fileName);
       cleanup();
     } catch (err) {
-      console.error("PDF export failed:", err);
-      confirmBtn.textContent = "Export failed";
-      confirmBtn.disabled = false;
-      setTimeout(() => { confirmBtn.textContent = original; }, 2200);
+      fail("PDF export failed:", err);
     }
   }
 
   return cleanup;
-}
-
-/** Rasterize the rendered PDF into the preview pane via pdf.js. */
-async function paintPdfPreview(previewEl, bytes) {
-  const { getPdfjs } = await import("../pdf/pdf-viewer.js");
-  const pdfjs = await getPdfjs();
-  // pdf.js can detach the underlying buffer, so hand it a private copy
-  // and keep our cached bytes intact for the eventual save.
-  const doc = await pdfjs.getDocument({ data: bytes.slice() }).promise;
-  const frag = document.createDocumentFragment();
-  const dpr = window.devicePixelRatio || 1;
-  const avail = Math.max(160, (previewEl.clientWidth || 320) - 8);
-  const pageCount = Math.min(doc.numPages, PREVIEW_MAX_PAGES);
-  for (let p = 1; p <= pageCount; p++) {
-    const page = await doc.getPage(p);
-    const base = page.getViewport({ scale: 1 });
-    const cssScale = avail / base.width;
-    const viewport = page.getViewport({ scale: cssScale * dpr });
-    const canvas = document.createElement("canvas");
-    canvas.className = "nxm-preview-page";
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    canvas.style.width = "100%";
-    canvas.style.height = "auto";
-    const ctx = canvas.getContext("2d");
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    frag.appendChild(canvas);
-  }
-  if (doc.numPages > pageCount) {
-    const note = document.createElement("div");
-    note.className = "nxm-preview-note";
-    note.textContent = `… ${doc.numPages - pageCount} more page${doc.numPages - pageCount === 1 ? "" : "s"} not shown`;
-    frag.appendChild(note);
-  }
-  previewEl.replaceChildren(frag);
-  doc.cleanup?.();
-}
-
-async function fetchStyles() {
-  if (!IS_TAURI) {
-    return [{ id: "formal", name: "Formal" }];
-  }
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const list = await invoke("list_doc_styles");
-    if (Array.isArray(list) && list.length > 0) return list;
-  } catch (_) { /* fall through to hardcoded default */ }
-  return [{ id: "formal", name: "Formal" }];
-}
-
-const CITATION_FALLBACK = [
-  { id: "numbered", name: "Numbered (gutter)" },
-  { id: "apa", name: "APA" },
-  { id: "mla", name: "MLA" },
-  { id: "chicago", name: "Chicago / Turabian" },
-  { id: "ieee", name: "IEEE" },
-  { id: "harvard", name: "Harvard" },
-];
-
-async function fetchCitationStyles() {
-  if (!IS_TAURI) return CITATION_FALLBACK;
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const list = await invoke("list_citation_styles");
-    if (Array.isArray(list) && list.length > 0) return list;
-  } catch (_) { /* fall through */ }
-  return CITATION_FALLBACK;
-}
-
-async function renderPdfBytes(state, content, choices) {
-  if (!IS_TAURI) {
-    throw new Error("PDF export requires the desktop or iOS app");
-  }
-  // Load references whenever the doc cites anything — they're needed both
-  // for the bibliography (when on) and for inline author-date formatting
-  // (always, so the prose never shows raw citekeys).
-  const references = CITE_RE.test(content)
-    ? await loadReferences().catch(() => [])
-    : [];
-  const imageFilenames = collectImageRefs(state, content);
-  const { invoke } = await import("@tauri-apps/api/core");
-  const bytes = await invoke("render_doc_pdf", {
-    args: {
-      markdown: content,
-      styleId: choices.style,
-      // Wire name stays `includeCitations` for IPC back-compat; on the
-      // Rust side it now gates the bibliography specifically.
-      includeCitations: !!choices.includeBibliography,
-      citationStyle: choices.citationStyle,
-      stripComments: !!choices.stripComments,
-      stripFlags: !!choices.stripFlags,
-      includeTabs: !!choices.includeTabs,
-      numberHeadings: !!choices.numberHeadings,
-      pageNumbers: !!choices.pageNumbers,
-      lineSpacing: Number.isFinite(choices.lineSpacing) ? choices.lineSpacing : 1.5,
-      references,
-      imageFilenames,
-    },
-  });
-  return new Uint8Array(bytes);
-}
-
-async function deliver(bytes, fileName) {
-  if (isIOS()) {
-    const file = new File([bytes], fileName, { type: "application/pdf" });
-    if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
-      throw new Error("Web Share API cannot share this file on this device");
-    }
-    try {
-      await navigator.share({ files: [file] });
-    } catch (e) {
-      // User-dismissed share sheets throw AbortError — not a failure.
-      if (e && (e.name === "AbortError" || /aborted|cancel/i.test(e.message || ""))) return;
-      throw e;
-    }
-    return;
-  }
-  const { save } = await import("@tauri-apps/plugin-dialog");
-  const filePath = await save({
-    defaultPath: fileName,
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  });
-  if (!filePath) return; // user cancelled
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("write_binary_file", { path: filePath, bytes: Array.from(bytes) });
-}
-
-function deriveDocName(state, content) {
-  if (state.currentProjectId) {
-    const node = findNode(state.fileTree, state.currentProjectId);
-    return sanitize(node?.name || "project-export");
-  }
-  return sanitize(state._deriveName(content) || "hush-export");
-}
-
-function sanitize(name) {
-  return (name || "document").replace(/[\/\\:*?"<>|]/g, "-").slice(0, 120) || "document";
-}
-
-function escHtml(s) {
-  const div = document.createElement("div");
-  div.textContent = s || "";
-  return div.innerHTML;
-}
-
-function escAttr(s) {
-  return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }

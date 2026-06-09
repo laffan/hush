@@ -1,11 +1,19 @@
 import { findNode } from "../state/tree-helpers.js";
 
-export async function exportCurrentFile(state) {
+export async function exportCurrentFile(state, opts = {}) {
   if (!state.editor) return;
-  let content = state.editor.getContent();
-  // For project view, strip separator markers for clean export
-  if (state.currentProjectId) {
-    content = content.replace(/\n---hush-separator---\n/g, "\n\n");
+  // Callers (the export modal's Markdown path) may hand us a body that's
+  // already had separators stripped and citation processing applied —
+  // use it verbatim rather than re-reading the editor.
+  let content;
+  if (typeof opts.content === "string") {
+    content = opts.content;
+  } else {
+    content = state.editor.getContent();
+    // For project view, strip separator markers for clean export
+    if (state.currentProjectId) {
+      content = content.replace(/\n---hush-separator---\n/g, "\n\n");
+    }
   }
   const name = state.currentProjectId
     ? (findNode(state.fileTree, state.currentProjectId)?.name || "project-export")

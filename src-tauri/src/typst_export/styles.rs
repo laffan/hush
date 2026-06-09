@@ -41,6 +41,13 @@ pub struct WrapOptions {
     /// Multiplier exposed in the modal — 1.0, 1.5, or 2.0. Mapped to a
     /// concrete Typst `leading` value inside `wrap`.
     pub line_spacing: f32,
+    /// Header-size multiplier from the modal's slider. Each style's
+    /// preamble multiplies its per-level heading `em` sizes by the
+    /// `header-scale` binding `wrap` emits, so the headings keep their
+    /// relationship to one another while their size *relative to the
+    /// body text* tracks the slider. `1.0` leaves the style's design
+    /// sizes untouched.
+    pub header_scale: f32,
 }
 
 pub fn lookup(id: &str) -> Option<&'static Style> {
@@ -72,6 +79,19 @@ fn leading_for(mult: f32) -> f32 {
 /// the export filename carries the document name into the OS.
 pub fn wrap(style: &Style, body: &str, opts: &WrapOptions) -> String {
     let mut out = String::with_capacity(style.preamble.len() + body.len() + 256);
+
+    // Header-size slider. The styles' preambles reference `header-scale`
+    // when sizing each heading level, so binding it here (before the
+    // preamble) scales every heading by the same factor — preserving the
+    // levels' relationship while changing their size relative to the
+    // body. Clamp to a sane range so a stray value can't blow the layout.
+    let header_scale = if opts.header_scale.is_finite() {
+        opts.header_scale.clamp(0.5, 3.0)
+    } else {
+        1.0
+    };
+    out.push_str(&format!("#let header-scale = {}\n", header_scale));
+
     out.push_str(style.preamble);
     out.push('\n');
 
@@ -137,6 +157,7 @@ mod tests {
             number_headings: false,
             page_numbers: false,
             line_spacing: 1.5,
+            header_scale: 1.0,
         }
     }
 
@@ -157,6 +178,15 @@ mod tests {
         let out = wrap(formal(), "body", &base());
         assert!(!out.contains("#set heading(numbering"));
         assert!(!out.contains("#set page(numbering"));
+    }
+
+    #[test]
+    fn header_scale_binding_emitted() {
+        let scaled = wrap(formal(), "body", &WrapOptions { header_scale: 1.5, ..base() });
+        assert!(scaled.contains("#let header-scale = 1.5"), "got: {}", scaled);
+        // Out-of-range values clamp rather than passing through raw.
+        let huge = wrap(formal(), "body", &WrapOptions { header_scale: 99.0, ..base() });
+        assert!(huge.contains("#let header-scale = 3"), "got: {}", huge);
     }
 
     #[test]
@@ -206,9 +236,9 @@ const FORMAL_PREAMBLE: &str = r##"
   spacing: 1.2em,
 )
 #show heading: set text(weight: "semibold")
-#show heading.where(level: 1): it => block(below: 1.8em)[#text(size: 1.4em)[#it]]
-#show heading.where(level: 2): it => block(above: 1.4em, below: 1.4em)[#text(size: 1.2em)[#it]]
-#show heading.where(level: 3): it => block(above: 1.1em, below: 1.1em)[#text(size: 1.05em)[#it]]
+#show heading.where(level: 1): it => block(below: 1.8em)[#text(size: header-scale * 1.4em)[#it]]
+#show heading.where(level: 2): it => block(above: 1.4em, below: 1.4em)[#text(size: header-scale * 1.2em)[#it]]
+#show heading.where(level: 3): it => block(above: 1.1em, below: 1.1em)[#text(size: header-scale * 1.05em)[#it]]
 #show link: set text(fill: rgb("#1a4b8c"))
 #show raw.where(block: true): block.with(
   fill: luma(245),
@@ -247,9 +277,9 @@ const ARTICLE_TWO_COLUMN_PREAMBLE: &str = r##"
   spacing: 0.9em,
 )
 #show heading: set text(weight: "bold")
-#show heading.where(level: 1): it => block(above: 1.4em, below: 1.1em)[#text(size: 1.5em)[#it]]
-#show heading.where(level: 2): it => block(above: 2em, below: 0.7em)[#text(size: 1.2em)[#it]]
-#show heading.where(level: 3): it => block(above: 1.5em, below: 0.6em)[#text(size: 1.05em)[#it]]
+#show heading.where(level: 1): it => block(above: 1.4em, below: 1.1em)[#text(size: header-scale * 1.5em)[#it]]
+#show heading.where(level: 2): it => block(above: 2em, below: 0.7em)[#text(size: header-scale * 1.2em)[#it]]
+#show heading.where(level: 3): it => block(above: 1.5em, below: 0.6em)[#text(size: header-scale * 1.05em)[#it]]
 #show link: set text(fill: rgb("#1a4b8c"))
 #show raw.where(block: true): block.with(
   fill: luma(245),

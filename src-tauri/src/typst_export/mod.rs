@@ -96,6 +96,10 @@ pub struct ExportRequest {
     /// Typst `leading` value inside `styles::wrap`.
     #[serde(default = "default_line_spacing")]
     pub line_spacing: f32,
+    /// Header-size multiplier from the modal slider (default 1.0). Scales
+    /// every heading level by the same factor — see `styles::WrapOptions`.
+    #[serde(default = "default_header_scale")]
+    pub header_scale: f32,
     #[serde(default)]
     pub references: Vec<ZoteroRef>,
     #[serde(default)]
@@ -105,6 +109,7 @@ pub struct ExportRequest {
 fn true_default() -> bool { true }
 fn default_cite_style() -> String { csl::default_id().to_string() }
 fn default_line_spacing() -> f32 { 1.5 }
+fn default_header_scale() -> f32 { 1.0 }
 
 pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
     let style = styles::lookup(&req.style_id)
@@ -176,6 +181,7 @@ pub fn render_pdf(req: &ExportRequest) -> Result<Vec<u8>, String> {
         number_headings: req.number_headings,
         page_numbers: req.page_numbers,
         line_spacing: req.line_spacing,
+        header_scale: req.header_scale,
     };
     let main_source = styles::wrap(style, &body, &wrap_opts);
 
@@ -248,6 +254,7 @@ mod tests {
             page_numbers: true,
             include_tabs: true,
             line_spacing: 1.5,
+            header_scale: 1.0,
             references: vec![],
             images: vec![],
         };
@@ -269,6 +276,7 @@ mod tests {
             page_numbers: true,
             include_tabs: true,
             line_spacing: 1.5,
+            header_scale: 1.0,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
                 citekey: "halbwachs1992".into(),
@@ -301,6 +309,7 @@ mod tests {
             page_numbers: true,
             include_tabs: true,
             line_spacing: 1.5,
+            header_scale: 1.0,
             references: vec![],
             images: vec![],
         };
@@ -325,6 +334,7 @@ mod tests {
             page_numbers: true,
             include_tabs: true,
             line_spacing: 1.5,
+            header_scale: 1.0,
             references: vec![ZoteroRef {
                 key: "ABC".into(),
                 citekey: "halbwachs1992".into(),
@@ -355,6 +365,7 @@ mod tests {
             page_numbers: true,
             include_tabs: true,
             line_spacing: 1.5,
+            header_scale: 1.0,
             references: vec![],
             images: vec![],
         };
@@ -381,6 +392,7 @@ mod tests {
             page_numbers: true,
             include_tabs: true,
             line_spacing: 1.5,
+            header_scale: 1.0,
             references: vec![],
             images: vec![],
         };

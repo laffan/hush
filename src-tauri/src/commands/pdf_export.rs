@@ -38,6 +38,8 @@ pub struct PdfExportArgs {
     pub include_tabs: bool,
     #[serde(default = "default_line_spacing")]
     pub line_spacing: f32,
+    #[serde(default = "default_header_scale")]
+    pub header_scale: f32,
     #[serde(default)]
     pub references: Vec<ZoteroRef>,
     /// Filenames of images referenced in the markdown. We load their
@@ -50,6 +52,7 @@ pub struct PdfExportArgs {
 fn true_default() -> bool { true }
 fn default_cite_style() -> String { csl::default_id().to_string() }
 fn default_line_spacing() -> f32 { 1.5 }
+fn default_header_scale() -> f32 { 1.0 }
 
 #[tauri::command]
 pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result<Vec<u8>, String> {
@@ -66,6 +69,7 @@ pub fn render_doc_pdf(state: State<'_, AppState>, args: PdfExportArgs) -> Result
         page_numbers: args.page_numbers,
         include_tabs: args.include_tabs,
         line_spacing: args.line_spacing,
+        header_scale: args.header_scale,
         references: args.references,
         images,
     };

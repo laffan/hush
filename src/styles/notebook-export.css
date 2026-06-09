@@ -141,6 +141,21 @@
   font-size: 12px;
 }
 
+.notebook-export-modal .nxm-header-scale {
+  width: 100%;
+  margin-top: 4px;
+  accent-color: var(--accent, #4a9eff);
+  cursor: pointer;
+}
+
+.notebook-export-modal .nxm-header-scale-val {
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+
 .notebook-export-modal .nxm-filename-input {
   width: 100%;
   padding: 6px 8px;
