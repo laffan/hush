@@ -310,6 +310,12 @@ function buildCommands(state) {
         const { openSplitAtHeadingsModal } = await import("./sidebar/split-at-headings-modal.js");
         await openSplitAtHeadingsModal(s);
       } },
+    { id: "convert-headings-to-tabs", label: "Convert Headings to Tabs", icon: icons.doc, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !s.currentFileId,
+      action: async (s) => {
+        const { openConvertHeadingsToTabsModal } = await import("./sidebar/convert-headings-to-tabs-modal.js");
+        await openConvertHeadingsToTabsModal(s);
+      } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",
@@ -410,6 +416,19 @@ function buildCommands(state) {
     { id: "pane-pin", label: "Pin pane across documents", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !!panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(true) },
     { id: "pane-unpin", label: "Unpin pane", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(false) },
     { id: "pane-close-current", label: "Close current pane", icon: icons.trash, shortcutKey: null, ctx: "pane", action: () => { const id = getActivePaneId(); if (id) closePane(id); } },
+    { id: "pane-close-and-delete", label: "Close pane and delete document", icon: icons.trash, shortcutKey: null, ctx: "pane",
+      action: async (s) => {
+        const id = getActivePaneId();
+        if (!id) return;
+        const pane = panes.get(id);
+        const fileId = pane?.fileId;
+        const node = fileId ? findNodeByFileId(s.fileTree, fileId) : null;
+        if (!node) { closePane(id); return; }
+        const ok = window.confirm(`Close pane and move "${node.name || "Untitled"}" to Trash?`);
+        if (!ok) return;
+        closePane(id);
+        await deleteTreeNode(s, node.id);
+      } },
 
     // === PANE SET (current document's panes) ===
     { id: "panes-hide", label: "Hide panes", icon: icons.pane, shortcutKey: null, ctx: "shared",
