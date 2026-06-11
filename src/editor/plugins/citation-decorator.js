@@ -16,8 +16,11 @@
  *      existing Zotero Save PDF pipeline) when the reference has a PDF
  *      that isn't in Hush yet, or "View PDF" when it is.
  *   3. Typing `[@` pops a floating search over the cached Zotero
- *      references (mirroring the `[[` wikilink selector). Enter / Tab
- *      commits `[@citekey](zotero://select/library/items/KEY)`.
+ *      references. Unlike the wikilink selector, the popup carries its
+ *      own fuzzy-search input (focus jumps into it, like the Insert
+ *      Reference modal) so the user can search by title, author, year,
+ *      or citekey. Enter / Tab / click commits
+ *      `[@citekey](zotero://select/library/items/KEY)`.
  */
 
 import { ViewPlugin, Decoration, WidgetType, EditorView, keymap } from "@codemirror/view";
@@ -77,6 +80,7 @@ export function parseCitations(text) {
 
 let card = null;
 let cardAnchor = null;
+let cardCleanup = null;
 let showTimer = null;
 let hideTimer = null;
 
@@ -85,6 +89,8 @@ function destroyCard() {
   clearTimeout(hideTimer);
   showTimer = null;
   hideTimer = null;
+  cardCleanup?.();
+  cardCleanup = null;
   if (card) { card.remove(); card = null; cardAnchor = null; }
 }
 
@@ -138,6 +144,100 @@ function makeBtn(label, onClick) {
   return btn;
 }
 
+function makeSpinner() {
+  const s = document.createElement("span");
+  s.className = "citation-card-spinner";
+  return s;
+}
+
+/**
+ * PDF action slot — re-renders itself as the download state changes so
+ * "Save PDF" flows into a spinner and then "View PDF" within the same
+ * hover. Watches `files-changed` (pdf-sync emits it when a background
+ * download lands or fails); returns a cleanup that detaches the watch.
+ */
+function mountPdfSlot(actions, citekey, ref, appState, pdfSync) {
+  const pdfAtt = ref?.attachments?.find((a) => a.isPdf) || null;
+  const slot = document.createElement("span");
+  slot.className = "citation-card-pdf-slot";
+  actions.appendChild(slot);
+
+  let initiated = false; // a save was kicked off from this card
+  let unsub = null;
+
+  function startWatch() {
+    if (unsub || !appState?.on) return;
+    const handler = () => renderSlot();
+    appState.on("files-changed", handler);
+    unsub = () => { appState.off?.("files-changed", handler); unsub = null; };
+  }
+
+  function renderSlot() {
+    slot.innerHTML = "";
+    if (!pdfSync) return;
+    const existing = findHushPdf(pdfSync.getPdfRegistry(), citekey, ref);
+
+    if (existing && pdfSync.isPdfDownloaded(existing.fileId)) {
+      unsub?.();
+      slot.appendChild(makeBtn("View PDF", (e) => {
+        e.preventDefault();
+        void appState?.openPdf?.(existing.fileId);
+        destroyCard();
+      }));
+      return;
+    }
+
+    if (existing) {
+      const inFlight = pdfSync.getPdfDownloadProgress(existing.fileId) !== undefined;
+      if (!inFlight && initiated) {
+        // The download we started died — offer a retry against the
+        // placeholder that's already registered.
+        slot.appendChild(makeBtn("Save failed — retry", (e) => {
+          e.preventDefault();
+          pdfSync.triggerBackgroundDownload(existing.fileId, appState);
+          renderSlot();
+        }));
+        return;
+      }
+      const btn = makeBtn("Saving PDF…", null);
+      btn.prepend(makeSpinner());
+      slot.appendChild(btn);
+      startWatch();
+      return;
+    }
+
+    if (ref && pdfAtt && appState?.registerPdfPlaceholder) {
+      const btn = makeBtn("Save PDF", async (e) => {
+        e.preventDefault();
+        btn.disabled = true;
+        initiated = true;
+        try {
+          const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
+          const result = await appState.registerPdfPlaceholder(baseName, {
+            zoteroAttKey: pdfAtt.key,
+            zoteroItemKey: ref.key,
+            zoteroTitle: ref.title || "Untitled",
+            zoteroAuthors: ref.authors || "",
+            zoteroFirstAuthor: ref.firstAuthor || "",
+            zoteroYear: ref.year || "",
+            zoteroCitekey: ref.citekey || "",
+          });
+          if (result) pdfSync.startBatchDownload([result.fileId], appState);
+        } catch (err) {
+          console.error("Save PDF from citation failed:", err);
+          btn.textContent = "Save failed";
+          return;
+        }
+        renderSlot(); // placeholder is registered + in flight → spinner
+      });
+      slot.appendChild(btn);
+    }
+  }
+
+  renderSlot();
+  return () => unsub?.();
+}
+
 async function buildCardContent(el, citekey, url, appState) {
   let ref = null;
   try {
@@ -172,53 +272,14 @@ async function buildCardContent(el, citekey, url, appState) {
     }));
   }
 
-  // PDF action — resolve against the Hush PDF registry first, then the
-  // reference's Zotero attachments.
-  const pdfAtt = ref?.attachments?.find((a) => a.isPdf) || null;
-  let registry = {};
-  let isPdfDownloaded = () => false;
+  // PDF action — resolved against the Hush PDF registry and the
+  // reference's Zotero attachments; the slot keeps itself current as
+  // the download progresses. Returns the slot's watch-cleanup.
+  let pdfSync = null;
   try {
-    const pdfSync = await import("../../sync/pdf-sync.js");
-    registry = pdfSync.getPdfRegistry();
-    isPdfDownloaded = pdfSync.isPdfDownloaded;
+    pdfSync = await import("../../sync/pdf-sync.js");
   } catch (_) { /* registry unavailable */ }
-  const existing = findHushPdf(registry, citekey, ref);
-
-  if (existing && isPdfDownloaded(existing.fileId)) {
-    actions.appendChild(makeBtn("View PDF", (e) => {
-      e.preventDefault();
-      void appState?.openPdf?.(existing.fileId);
-      destroyCard();
-    }));
-  } else if (existing) {
-    actions.appendChild(makeBtn("Saving PDF…", null));
-  } else if (ref && pdfAtt && appState?.registerPdfPlaceholder) {
-    const btn = makeBtn("Save PDF", async (e) => {
-      e.preventDefault();
-      btn.disabled = true;
-      btn.textContent = "Saving PDF…";
-      try {
-        const baseName = sanitizeFilename(ref.shortTitle || ref.title || "PDF");
-        const result = await appState.registerPdfPlaceholder(baseName, {
-          zoteroAttKey: pdfAtt.key,
-          zoteroItemKey: ref.key,
-          zoteroTitle: ref.title || "Untitled",
-          zoteroAuthors: ref.authors || "",
-          zoteroFirstAuthor: ref.firstAuthor || "",
-          zoteroYear: ref.year || "",
-          zoteroCitekey: ref.citekey || "",
-        });
-        if (result) {
-          const { startBatchDownload } = await import("../../sync/pdf-sync.js");
-          startBatchDownload([result.fileId], appState);
-        }
-      } catch (err) {
-        console.error("Save PDF from citation failed:", err);
-        btn.textContent = "Save failed";
-      }
-    });
-    actions.appendChild(btn);
-  }
+  return mountPdfSlot(actions, citekey, ref, appState, pdfSync);
 }
 
 function positionCard(el, rect) {
@@ -246,11 +307,14 @@ function showCardFor(span, citekey, url, appState) {
   card.addEventListener("mouseleave", scheduleHide);
   document.body.appendChild(card);
   cardAnchor = span;
+  const el = card;
   positionCard(card, span.getBoundingClientRect());
-  void buildCardContent(card, citekey, url, appState).then(() => {
+  void buildCardContent(el, citekey, url, appState).then((cleanup) => {
+    if (card !== el) { cleanup?.(); return; } // card replaced mid-build
+    cardCleanup = cleanup || null;
     // Content arrived async — re-measure in case the card grew.
-    if (card && cardAnchor === span && span.isConnected) {
-      positionCard(card, span.getBoundingClientRect());
+    if (cardAnchor === span && span.isConnected) {
+      positionCard(el, span.getBoundingClientRect());
     }
   });
 }
@@ -413,10 +477,21 @@ function createSearchController(view) {
   let scheduled = false;
   let refs = null;
   let refsLoading = false;
+  // `[@` position of an explicitly-dismissed popup — the popup steals
+  // focus on open, so re-opening on every later keystroke while the
+  // unfinished `[@…` is still on the line would keep yanking focus out
+  // of the editor. Cleared when the cursor leaves the context.
+  let dismissedAt = null;
 
   function close() {
     if (popup) { popup.destroy(); popup = null; }
     activeRange = null;
+  }
+
+  function dismiss() {
+    dismissedAt = activeRange ? activeRange.from : null;
+    close();
+    view.focus();
   }
 
   function anchorAt(pos) {
@@ -427,7 +502,7 @@ function createSearchController(view) {
 
   function pick(ref) {
     if (!activeRange) return;
-    if (!ref) { close(); return; }
+    if (!ref) { close(); view.focus(); return; }
     const citekey = ref.citekey || ref.key;
     const insert = `${citekey}](zotero://select/library/items/${ref.key})`;
     view.dispatch({
@@ -435,6 +510,7 @@ function createSearchController(view) {
       selection: { anchor: activeRange.from + insert.length },
     });
     close();
+    view.focus();
   }
 
   function ensureRefs() {
@@ -448,24 +524,27 @@ function createSearchController(view) {
 
   function runSync() {
     const ctx = findActiveCitationContext(view.state);
-    if (!ctx) { close(); return; }
+    // The popup owns its own search input (focus moves into it on
+    // open), so once it's up the editor context only refreshes the
+    // commit range — the query lives in the popup, not the doc.
+    if (popup) {
+      if (ctx) activeRange = { from: ctx.from, to: ctx.to };
+      return;
+    }
+    if (!ctx) { dismissedAt = null; return; }
+    if (dismissedAt === ctx.from) return; // user already waved this one off
     if (!refs) { ensureRefs(); return; }
     if (!refs.length) return; // Zotero not configured — stay inert
     activeRange = { from: ctx.from, to: ctx.to };
-    if (!popup) {
-      const anchor = anchorAt(ctx.from);
-      if (!anchor) return;
-      popup = openCitationPopup({
-        refs,
-        anchor,
-        initialQuery: ctx.query,
-        onPick: (r) => pick(r),
-      });
-    } else {
-      popup.update(ctx.query);
-      const anchor = anchorAt(ctx.from);
-      if (anchor) popup.setAnchor(anchor);
-    }
+    const anchor = anchorAt(ctx.from);
+    if (!anchor) return;
+    popup = openCitationPopup({
+      refs,
+      anchor,
+      initialQuery: ctx.query,
+      onPick: (r) => pick(r),
+      onDismiss: dismiss,
+    });
   }
 
   // Defer layout reads out of the ViewPlugin.update() pass.
@@ -481,6 +560,7 @@ function createSearchController(view) {
   return {
     sync,
     close,
+    dismiss,
     moveSelection(delta) { popup?.moveSelection(delta); },
     commit() { popup?.commit(); },
     isOpen() { return !!popup; },
@@ -517,7 +597,7 @@ export function createCitationPlugin(appState) {
     { key: "ArrowUp",   run: () => controller?.isOpen() ? (controller.moveSelection(-1), true) : false },
     { key: "Enter",     run: () => controller?.isOpen() ? (controller.commit(), true) : false },
     { key: "Tab",       run: () => controller?.isOpen() ? (controller.commit(), true) : false },
-    { key: "Escape",    run: () => controller?.isOpen() ? (controller.close(), true) : false },
+    { key: "Escape",    run: () => controller?.isOpen() ? (controller.dismiss(), true) : false },
   ]));
 
   return [renderPlugin, citationKeymap, createClickHandler()];

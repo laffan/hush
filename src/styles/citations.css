@@ -76,9 +76,56 @@
   cursor: default;
 }
 
-/* `[@` search popup — extends .wikilink-popup. */
+.citation-card-spinner {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--fg, #888) 30%, transparent);
+  border-top-color: var(--accent, #4a86e8);
+  animation: citation-spin 0.8s linear infinite;
+}
+
+@keyframes citation-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* `[@` search popup — extends .wikilink-popup. The popup carries its
+   own search input (focus jumps into it on open). */
 .citation-popup {
   max-width: 420px;
+  max-height: 300px;
+  overflow: hidden; /* the results list scrolls; the input row stays put */
+  padding: 0 0 4px;
+}
+
+.citation-popup-input-row {
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg, #888) 12%, transparent);
+  margin-bottom: 4px;
+}
+
+.citation-popup-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  font-family: var(--ui-font-family);
+  font-size: 13px;
+  color: var(--fg, #ddd);
+  background: color-mix(in srgb, var(--fg, #888) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 18%, transparent);
+  border-radius: 4px;
+  outline: none;
+}
+.citation-popup-input:focus {
+  border-color: color-mix(in srgb, var(--accent, #4a86e8) 55%, transparent);
+}
+
+.citation-popup-results {
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .citation-popup-key {

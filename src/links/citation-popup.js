@@ -1,23 +1,30 @@
 /**
  * Floating Zotero citation search popup. Triggered when the user types
- * `[@` in a doc — lists the cached Zotero references, narrows by typed
- * query, commits on Enter / click. Mirrors the wikilink popup's handle
- * API and reuses its CSS (with a `citation-popup` modifier class).
+ * `[@` in a doc. Unlike the wikilink popup (where the query lives in
+ * the document), this one carries its own search input — focus jumps
+ * into it on open so the user can fuzzy-search by title, author, year,
+ * or citekey exactly like the Insert Reference modal. Enter / click
+ * commits, Esc or a click outside dismisses.
  */
 
 import { fuzzySearch } from "../zotero.js";
 
 const MAX_ROWS = 12;
 
-/** Mount a citation popup. Returns the same handle shape as
- *  `openWikilinkPopup`: update(query), moveSelection(delta), commit(),
- *  setAnchor(rect), destroy(), isEmpty().
+/** Mount a citation popup. Returns a handle:
+ *    moveSelection(delta) — bump the highlighted row
+ *    commit()             — fire `onPick` with the active row
+ *    setAnchor(rect)      — reposition near a new caret point
+ *    destroy()            — unmount and detach listeners
  *
  *  Options:
  *    refs         — full Zotero reference list ({ key, title, citekey, … })
- *    onPick       — called with the chosen reference (or null on empty commit)
+ *    onPick       — called with the chosen reference on commit
+ *    onDismiss    — called when the user aborts (Esc / click outside);
+ *                   the caller closes the popup and restores focus
  *    anchor       — initial { left, top, bottom } viewport coords
- *    initialQuery — seed query
+ *    initialQuery — seeds the search input (anything typed after `[@`
+ *                   before the popup opened)
  */
 export function openCitationPopup(opts) {
   const refs = opts.refs || [];
@@ -26,16 +33,30 @@ export function openCitationPopup(opts) {
 
   const el = document.createElement("div");
   el.className = "wikilink-popup citation-popup";
-  el.setAttribute("role", "listbox");
   document.body.appendChild(el);
 
+  const inputRow = document.createElement("div");
+  inputRow.className = "citation-popup-input-row";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "citation-popup-input";
+  input.placeholder = "Search Zotero library...";
+  input.value = opts.initialQuery || "";
+  inputRow.appendChild(input);
+  el.appendChild(inputRow);
+
+  const results = document.createElement("div");
+  results.className = "citation-popup-results";
+  results.setAttribute("role", "listbox");
+  el.appendChild(results);
+
   function render() {
-    el.innerHTML = "";
+    results.innerHTML = "";
     if (!filtered.length) {
       const empty = document.createElement("div");
       empty.className = "wikilink-popup-empty";
       empty.textContent = "No matching references.";
-      el.appendChild(empty);
+      results.appendChild(empty);
       return;
     }
     filtered.forEach((r, i) => {
@@ -59,7 +80,7 @@ export function openCitationPopup(opts) {
       meta.textContent = [r.firstAuthor, r.year].filter(Boolean).join(" ");
       row.appendChild(meta);
 
-      // mousedown so the pick fires before the editor's blur.
+      // mousedown so the pick fires before the input's blur.
       row.addEventListener("mousedown", (e) => {
         e.preventDefault();
         active = i;
@@ -67,12 +88,22 @@ export function openCitationPopup(opts) {
       });
       row.addEventListener("mouseenter", () => {
         active = i;
-        for (const child of el.querySelectorAll(".wikilink-popup-row")) {
+        for (const child of results.querySelectorAll(".wikilink-popup-row")) {
           child.classList.toggle("active", Number(child.dataset.index) === active);
         }
       });
-      el.appendChild(row);
+      results.appendChild(row);
     });
+  }
+
+  function moveSelection(delta) {
+    if (!filtered.length) return;
+    active = (active + delta + filtered.length) % filtered.length;
+    for (const child of results.querySelectorAll(".wikilink-popup-row")) {
+      const isActive = Number(child.dataset.index) === active;
+      child.classList.toggle("active", isActive);
+      if (isActive) child.scrollIntoView({ block: "nearest" });
+    }
   }
 
   function position(rect) {
@@ -93,35 +124,45 @@ export function openCitationPopup(opts) {
 
   function commit() {
     const picked = filtered[active];
-    opts.onPick?.(picked || null);
+    if (picked) opts.onPick?.(picked);
+    else opts.onDismiss?.();
   }
+
+  input.addEventListener("input", () => {
+    filtered = fuzzySearch(refs, input.value || "").slice(0, MAX_ROWS);
+    active = 0;
+    render();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); moveSelection(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); moveSelection(-1); }
+    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); opts.onDismiss?.(); }
+  });
+
+  // Click outside aborts — deferred a tick so the mousedown that may
+  // have caused the popup to open doesn't immediately dismiss it.
+  function onDocMousedown(e) {
+    if (!el.contains(e.target)) opts.onDismiss?.();
+  }
+  setTimeout(() => document.addEventListener("mousedown", onDocMousedown), 0);
 
   render();
   if (opts.anchor) position(opts.anchor);
+  input.focus();
+  // Caret at the end of any seeded query.
+  input.setSelectionRange(input.value.length, input.value.length);
 
   return {
     el,
-    update(query) {
-      filtered = fuzzySearch(refs, query || "").slice(0, MAX_ROWS);
-      active = 0;
-      render();
-    },
-    moveSelection(delta) {
-      if (!filtered.length) return;
-      active = (active + delta + filtered.length) % filtered.length;
-      for (const child of el.querySelectorAll(".wikilink-popup-row")) {
-        child.classList.toggle("active", Number(child.dataset.index) === active);
-      }
-    },
+    moveSelection,
     commit,
     setAnchor(rect) {
       if (rect) position(rect);
     },
     destroy() {
+      document.removeEventListener("mousedown", onDocMousedown);
       if (el.parentNode) el.parentNode.removeChild(el);
-    },
-    isEmpty() {
-      return filtered.length === 0;
     },
   };
 }
