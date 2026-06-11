@@ -218,15 +218,16 @@ export function weaveComments(md, comments, markerInfo = [], footerIndex = null)
 
     // A Google Docs *suggested edit* arrives through the Comments API as a
     // thread whose content is the auto-generated description ("Replace: …
-    // with …", "Delete: …", "Insert: …"). Flag it so the editor can tint
-    // it differently, and strike the affected text for delete/replace so
-    // the markdown mirrors what the Google Doc shows.
+    // with …", "Delete: …", "Insert: …"). Flag it (with which side the
+    // anchor wraps) so the editor can tint it and offer Accept / Reject,
+    // and strike the affected text for delete/replace so the markdown
+    // mirrors what the Google Doc shows.
     const kind = suggestionKind(c?.content);
     const strike = kind === "replace" || kind === "delete";
 
     // Carry Google's comment id as hidden metadata so a later Resolve
     // can reach the right comment via the Drive API.
-    const meta = formatCommentMeta(c?.id || null, false, !!kind);
+    const meta = formatCommentMeta(c?.id || null, false, kind ? (strike ? "del" : "ins") : false);
     const target = quoted ? chooseOccurrence(body, quoted, markers, occupied, marker) : null;
     if (target) {
       occupied.push({ from: target.start, to: target.end });

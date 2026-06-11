@@ -66,12 +66,16 @@ function locateDef(doc, id) {
 }
 
 /**
- * Resolve a comment: strip every trace of its syntax from the document —
- * unwrap the `{>text<id}` anchor(s) to the bare prose and delete the
- * `[>id]:` definition line(s) — in one transaction so undo restores the
- * comment whole. Returns the definition info (for its `gid`) or null.
+ * Remove a comment from the document in one transaction (undo restores
+ * it whole). Default mode keeps the prose: the `{>text<id}` anchor(s)
+ * unwrap to their inner text (suggestion anchors also shed the `~~` the
+ * importer added) and the `[>id]:` definition line(s) are deleted. With
+ * `dropInner` the anchored text itself goes too — used when accepting a
+ * suggested deletion or rejecting a suggested insertion — and an anchor
+ * that occupied its own paragraph takes the now-empty line with it.
+ * Returns the definition info (for its `gid` / `sugKind`) or null.
  */
-export function removeCommentFromDoc(view, id) {
+export function removeCommentFromDoc(view, id, { dropInner = false } = {}) {
   const doc = view.state.doc;
   const text = doc.toString();
   const info = locateDef(doc, id);
@@ -82,11 +86,32 @@ export function removeCommentFromDoc(view, id) {
     if (m[2] !== id) continue;
     const start = m.index;
     const end = start + m[0].length;
+    if (dropInner) {
+      let from = start;
+      let to = end;
+      const firstLine = doc.lineAt(start);
+      const lastLine = doc.lineAt(end - 1);
+      if (!text.slice(firstLine.from, start).trim() && !text.slice(end, lastLine.to).trim()) {
+        // The anchor occupied whole line(s) — remove them and the blank
+        // separator after so no empty paragraph is left behind.
+        from = firstLine.from;
+        to = Math.min(doc.length, lastLine.to + 1);
+        if (text[to] === "\n") to += 1;
+        else if (from >= 2 && text.slice(from - 2, from) === "\n\n") from -= 1;
+      } else if (from > 0 && /[ \t]/.test(text[from - 1])
+          && (to >= text.length || /[ \t.,;:!?]/.test(text[to]))) {
+        // Inline drop — absorb the now-orphaned space so the prose
+        // doesn't read "word ." or carry a double space.
+        from -= 1;
+      }
+      changes.push({ from, to });
+      continue;
+    }
     changes.push({ from: start, to: start + 2 }); // `{>`
     changes.push({ from: end - (id.length + 2), to: end }); // `<id}`
     // A suggested-edit anchor carries the `~~` the importer added to
-    // mirror the GDoc's strikethrough — resolving drops those too so the
-    // prose comes out clean.
+    // mirror the GDoc's strikethrough — drop those too so the prose
+    // comes out clean.
     const inner = m[1];
     if (info?.sug && /^~~[\s\S]*~~$/.test(inner) && inner.length >= 4) {
       changes.push({ from: start + 2, to: start + 4 });
@@ -106,6 +131,29 @@ export function removeCommentFromDoc(view, id) {
   return info;
 }
 
+/**
+ * Which side of a suggested edit an anchor wraps: explicit `sug=del` /
+ * `sug=ins` metadata when present, otherwise inferred from the struck
+ * inner text (legacy `sug` entries).
+ */
+export function suggestionSide(info, inner) {
+  if (info?.sugKind) return info.sugKind;
+  return /~~/.test(inner || "") ? "del" : "ins";
+}
+
+/**
+ * Apply the user's verdict on a suggested edit, locally: accepting a
+ * deletion (or rejecting an insertion) drops the anchored text; rejecting
+ * a deletion (or accepting an insertion) keeps the prose. Either way the
+ * anchor + definition disappear. The suggestion itself still has to be
+ * accepted / rejected in Google Docs — the API doesn't allow it.
+ */
+export function applySuggestion(view, id, inner, info, verdict) {
+  const side = suggestionSide(info, inner);
+  const drop = verdict === "accept" ? side === "del" : side === "ins";
+  return removeCommentFromDoc(view, id, { dropInner: drop });
+}
+
 // ───────────────────── hover tooltip ─────────────────────
 
 // Find the comment anchor whose visible range covers `pos`.
@@ -121,8 +169,12 @@ function commentAt(doc, pos) {
     const openEnd = start + 2;
     const closeStart = end - (id.length + 2);
     if (pos >= openEnd && pos <= closeStart) {
-      const info = defs.get(id) || { note: "", resolved: false, sug: false };
-      return { from: openEnd, to: closeStart, id, note: info.note, resolved: info.resolved, sug: info.sug };
+      const info = defs.get(id) || { note: "", gid: null, resolved: false, sug: false, sugKind: null };
+      return {
+        from: openEnd, to: closeStart, id,
+        note: info.note, gid: info.gid, resolved: info.resolved,
+        sug: info.sug, sugKind: info.sugKind,
+      };
     }
   }
   return null;
@@ -162,19 +214,40 @@ function tooltipDom(view, found, state) {
   const note = document.createElement("div");
   note.className = "comment-tooltip-note";
   renderNoteSegments(note, found.note);
-  const btn = document.createElement("button");
-  btn.className = "comment-resolve-btn";
-  btn.textContent = "Resolve";
-  btn.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    const info = removeCommentFromDoc(view, found.id);
-    if (info?.gid && state) {
-      import("../../google-docs/comments-sync.js")
-        .then((m) => m.resolveCommentInGoogle(state, info.gid))
-        .catch((err) => console.warn("[google-docs] resolve on Resolve click failed:", err));
-    }
-  });
-  dom.append(note, btn);
+  dom.appendChild(note);
+
+  const button = (label, cls, onClick) => {
+    const btn = document.createElement("button");
+    btn.className = cls;
+    btn.textContent = label;
+    btn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      onClick();
+    });
+    dom.appendChild(btn);
+    return btn;
+  };
+
+  if (found.sug) {
+    // A suggested edit gets a verdict, not a Resolve: Accept applies the
+    // edit to the prose, Reject discards it. (Google-side accept/reject
+    // isn't possible through the API — do that in the GDoc.)
+    const inner = view.state.doc.sliceString(found.from, found.to);
+    const info = { sug: true, sugKind: found.sugKind, gid: found.gid };
+    button("Accept", "comment-resolve-btn comment-accept-btn", () =>
+      applySuggestion(view, found.id, inner, info, "accept"));
+    button("Reject", "comment-resolve-btn comment-reject-btn", () =>
+      applySuggestion(view, found.id, inner, info, "reject"));
+  } else {
+    button("Resolve", "comment-resolve-btn", () => {
+      const info = removeCommentFromDoc(view, found.id);
+      if (info?.gid && state) {
+        import("../../google-docs/comments-sync.js")
+          .then((m) => m.resolveCommentInGoogle(state, info.gid))
+          .catch((err) => console.warn("[google-docs] resolve on Resolve click failed:", err));
+      }
+    });
+  }
   return dom;
 }
 

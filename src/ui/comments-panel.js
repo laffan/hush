@@ -13,7 +13,7 @@
 import { EditorView } from "@codemirror/view";
 import { COMMENT_ANCHOR_RE, parseCommentDefinitions } from "../editor/comment-syntax.js";
 import {
-  removeCommentFromDoc, renderNoteSegments, setActiveCommentId,
+  removeCommentFromDoc, applySuggestion, renderNoteSegments, setActiveCommentId,
 } from "../editor/plugins/comment-anchors.js";
 
 export function setupCommentsPanel(state) {
@@ -49,10 +49,11 @@ export function setupCommentsPanel(state) {
     let m;
     while ((m = COMMENT_ANCHOR_RE.exec(text)) !== null) {
       const id = m[2];
-      const info = defs.get(id) || { note: "", gid: null, resolved: false, sug: false };
+      const info = defs.get(id) || { note: "", gid: null, resolved: false, sug: false, sugKind: null };
       out.push({
         id, offset: m.index, quoted: m[1],
-        note: info.note, gid: info.gid, resolved: info.resolved, sug: info.sug,
+        note: info.note, gid: info.gid, resolved: info.resolved,
+        sug: info.sug, sugKind: info.sugKind,
       });
     }
     return out;
@@ -74,20 +75,26 @@ export function setupCommentsPanel(state) {
     setActiveCommentId(view, id);
   }
 
-  // Resolve from the panel: strip the comment syntax from the document
-  // (the prose stays) and, when the Google comment id is known, resolve
-  // it in Google right away — same behavior as the editor hover tooltip.
-  function resolveComment(c) {
+  // Act on a comment from the panel — same behavior as the editor hover
+  // tooltip. "resolve" strips the syntax (prose stays) and resolves in
+  // Google when the comment id is known; "accept" / "reject" apply a
+  // suggested edit's verdict to the prose (no Google call — the API
+  // can't accept or reject suggestions).
+  function actOnComment(c, verdict) {
     const view = state.editor?.view;
     if (!view) return;
-    const info = removeCommentFromDoc(view, c.id);
-    setActiveCommentId(view, null);
-    const gid = info?.gid || c.gid;
-    if (gid) {
-      import("../google-docs/comments-sync.js")
-        .then((m) => m.resolveCommentInGoogle(state, gid))
-        .catch((err) => console.warn("[google-docs] resolve from panel failed:", err));
+    if (verdict === "resolve") {
+      const info = removeCommentFromDoc(view, c.id);
+      const gid = info?.gid || c.gid;
+      if (gid) {
+        import("../google-docs/comments-sync.js")
+          .then((m) => m.resolveCommentInGoogle(state, gid))
+          .catch((err) => console.warn("[google-docs] resolve from panel failed:", err));
+      }
+    } else {
+      applySuggestion(view, c.id, c.quoted, c, verdict);
     }
+    setActiveCommentId(view, null);
     if (selectedId === c.id) selectedId = null;
     sync();
   }
@@ -105,7 +112,8 @@ export function setupCommentsPanel(state) {
 
       const quote = document.createElement("div");
       quote.className = "comments-item-quote";
-      quote.textContent = String(c.quoted || "").replace(/\s+/g, " ").trim();
+      // Suggestion anchors carry `~~` strike markers — display the prose.
+      quote.textContent = String(c.quoted || "").replace(/~~/g, "").replace(/\s+/g, " ").trim();
 
       const note = document.createElement("div");
       note.className = "comments-item-note";
@@ -113,14 +121,22 @@ export function setupCommentsPanel(state) {
 
       item.append(quote, note);
       if (selected) {
-        const btn = document.createElement("span");
-        btn.className = "comments-item-resolve";
-        btn.textContent = "Resolve";
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          resolveComment(c);
-        });
-        item.appendChild(btn);
+        const addButton = (label, verdict, cls = "") => {
+          const btn = document.createElement("span");
+          btn.className = "comments-item-resolve" + cls;
+          btn.textContent = label;
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            actOnComment(c, verdict);
+          });
+          item.appendChild(btn);
+        };
+        if (c.sug) {
+          addButton("Accept", "accept", " comments-item-accept");
+          addButton("Reject", "reject", " comments-item-reject");
+        } else {
+          addButton("Resolve", "resolve");
+        }
       }
       item.addEventListener("click", () => {
         selectedId = c.id;

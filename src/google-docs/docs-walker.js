@@ -15,6 +15,7 @@
  * Inline objects (images, equations, drawings) are dropped — they'd
  * need binary upload to round-trip and aren't a tabs-feature concern.
  */
+import { stripFullLineEmphasis } from "../editor/google-docs/html-to-markdown.js";
 
 const HEADING_PREFIX = {
   TITLE: "#",
@@ -61,13 +62,17 @@ function renderParagraph(paragraph, lists) {
   }
   const headingPrefix = HEADING_PREFIX[styleType];
   if (headingPrefix && text) return `${headingPrefix} ${text}`;
-  // Google Docs has no block-quote style — it shows one as an indented
-  // paragraph. A non-heading, non-list paragraph indented once (≈ 36pt)
-  // reads back as Hush's `> ` block quote. Mirror of the push side, which
-  // emits block quotes as `margin-left:36pt` paragraphs.
+  // Google Docs shows a block quote as an indented paragraph. A
+  // non-heading, non-list paragraph indented once (≈ 36pt) reads back as
+  // Hush's `> ` block quote — shedding the quote style's own bold/italic
+  // (style, not author emphasis). Mirror of the push side, which emits
+  // block quotes as `margin-left:36pt` paragraphs.
   const indentPt = paragraph.paragraphStyle?.indentStart?.magnitude || 0;
   if (indentPt >= QUOTE_INDENT_THRESHOLD_PT && text) {
-    return text.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
+    return text.split("\n").map((l) => {
+      const t = stripFullLineEmphasis(l);
+      return t ? `> ${t}` : ">";
+    }).join("\n");
   }
   return text;
 }

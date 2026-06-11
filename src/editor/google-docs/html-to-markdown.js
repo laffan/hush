@@ -202,12 +202,12 @@ function blockPara(node, ctx) {
   const collapsed = inner.replace(/[\s ]+/g, "");
   if (!collapsed) return "";
   const body = inner.trim();
-  // Google Docs has no block-quote style — it represents one as an
-  // indented paragraph (Drive's HTML export emits `margin-left:36pt`).
-  // Read a once-indented paragraph back as Hush's `> ` block quote.
+  // Google Docs represents a block quote as an indented paragraph
+  // (Drive's HTML export emits `margin-left:36pt`). Read a once-indented
+  // paragraph back as Hush's `> ` block quote, shedding the quote
+  // *style*'s own emphasis on the way.
   if (paragraphIndentPt(node) >= QUOTE_INDENT_THRESHOLD_PT) {
-    const lined = body.split("\n").map((l) => (l.length ? "> " + l : ">")).join("\n");
-    return "\n\n" + lined + "\n\n";
+    return "\n\n" + quoteLines(body) + "\n\n";
   }
   return "\n\n" + body + "\n\n";
 }
@@ -303,8 +303,41 @@ function collectListItems(listNode, items, fallbackDepth, ctx) {
 function blockQuote(node, ctx) {
   const inner = renderChildren(node, ctx).trim();
   if (!inner) return "";
-  const lined = inner.split("\n").map((l) => (l.length ? "> " + l : ">")).join("\n");
+  const lined = quoteLines(inner);
   return "\n\n" + lined + "\n\n";
+}
+
+// Prefix each line with `> `, shedding style-level emphasis first.
+function quoteLines(body) {
+  return body.split("\n").map((l) => {
+    const t = stripFullLineEmphasis(l);
+    return t.length ? "> " + t : ">";
+  }).join("\n");
+}
+
+/**
+ * Google Docs's block-quote paragraph style carries its own font styling
+ * — the export marks the whole quote bold (sometimes italic), which is
+ * the *style*, not author emphasis. Strip emphasis that wraps an entire
+ * quote line; emphasis on part of the line (an explicitly bolded word
+ * inside the quote) is left alone. Shared with the Docs-API walker.
+ */
+export function stripFullLineEmphasis(line) {
+  let s = String(line).trim();
+  for (;;) {
+    let next = s;
+    if (/^\*\*[\s\S]+\*\*$/.test(next) && !next.slice(2, -2).includes("**")) {
+      next = next.slice(2, -2).trim();
+    } else if (/^\*[^*][\s\S]*[^*]\*$/.test(next) && !next.slice(1, -1).includes("*")) {
+      next = next.slice(1, -1).trim();
+    }
+    if (next === s) break;
+    s = next;
+  }
+  // Style bold split across spans — `**a** **b**` with only whitespace
+  // between all-bold runs is still the quote style, not emphasis.
+  if (/^(\*\*[^*]+\*\*[ \t]*)+$/.test(s)) s = s.replace(/\*\*/g, "");
+  return s;
 }
 
 function blockPre(node) {

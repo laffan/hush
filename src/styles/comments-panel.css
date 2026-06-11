@@ -123,6 +123,21 @@
   background: rgba(128, 128, 128, 0.15);
 }
 
+.comments-item-resolve + .comments-item-resolve {
+  margin-left: 6px;
+}
+
+/* Suggested edits get a verdict pair instead of Resolve. */
+.comments-item-accept {
+  color: #188038;
+  border-color: rgba(24, 128, 56, 0.5);
+}
+
+.comments-item-reject {
+  color: #b3261e;
+  border-color: rgba(179, 38, 30, 0.4);
+}
+
 /* One block per thread segment (top comment + each reply), author name
    set off from the comment text. */
 .comment-note-segment {

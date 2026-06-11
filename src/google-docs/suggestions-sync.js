@@ -13,14 +13,15 @@
  *
  *   deletion:   {>~~the removed text~~<a}      (struck, mirrors the GDoc)
  *   insertion:  {>the proposed text<a}
- *   [>a]: Suggested deletion %%cmnt sug%%
+ *   [>a]: Suggested deletion %%cmnt sug=del%%
  *
  * When the pulled markdown doesn't contain the suggested text (the HTML
  * export rendered the other side of the suggestion), it's re-inserted at
  * the position located via the segment's surrounding context, so the
  * Hush doc mirrors what the Google Doc shows in Suggesting mode either
- * way. Resolve removes the anchor (and the `~~` we added) locally — Hush
- * can't accept/reject suggestions in Google; do that in the GDoc.
+ * way. The anchor offers Accept / Reject (see `comment-anchors.js#
+ * applySuggestion`) — applied to the local prose only; Hush can't
+ * accept/reject suggestions in Google, so do that in the GDoc too.
  */
 import { getDocumentWithTabs } from "./api.js";
 import { anchorSpans, collectExistingIds, shortId } from "./comments-sync.js";
@@ -154,12 +155,13 @@ export function weaveSuggestions(md, segments) {
     const free = (start, end) => !occupied.some((s) => start < s.to && end > s.from);
     const id = nextId();
     const label = seg.kind === "delete" ? "Suggested deletion" : "Suggested insertion";
+    const meta = ` %%cmnt sug=${seg.kind === "delete" ? "del" : "ins"}%%`;
     const target = findSegment(body, seg, free);
     if (target) {
       const inner = body.slice(target.start, target.end);
       const wrapped = `{>${seg.kind === "delete" ? strikeLines(inner) : inner}<${id}}`;
       body = body.slice(0, target.start) + wrapped + body.slice(target.end);
-      defs.push(`[>${id}]: ${label} %%cmnt sug%%`);
+      defs.push(`[>${id}]: ${label}${meta}`);
       placed++;
       continue;
     }
@@ -167,7 +169,7 @@ export function weaveSuggestions(md, segments) {
     // the text at the context position so the doc mirrors Suggesting mode.
     const at = findInsertionPoint(body, seg, occupied);
     if (at == null) {
-      defs.push(`[>${id}]: ${label} (re: “${normalizeWs(seg.text)}”) %%cmnt sug%%`);
+      defs.push(`[>${id}]: ${label} (re: “${normalizeWs(seg.text)}”)${meta}`);
       continue;
     }
     // A segment that owned its paragraph(s) lands as its own paragraph;
@@ -183,7 +185,7 @@ export function weaveSuggestions(md, segments) {
       if (alnum(body[at])) insert += " ";
     }
     body = body.slice(0, at) + insert + body.slice(at);
-    defs.push(`[>${id}]: ${label} %%cmnt sug%%`);
+    defs.push(`[>${id}]: ${label}${meta}`);
     placed++;
   }
 

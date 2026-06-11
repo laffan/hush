@@ -417,7 +417,13 @@ function makeHtmlConverter() {
   };
 }
 
-const RELEVANT_CSS_PROPS = ["font-weight", "font-style", "text-decoration", "background-color"];
+// margin-left / padding-left carry Google's block-quote indentation —
+// without them an export whose indent lives in a class rule (rather than
+// inline) never reads back as a `> ` quote.
+const RELEVANT_CSS_PROPS = [
+  "font-weight", "font-style", "text-decoration", "background-color",
+  "margin-left", "padding-left",
+];
 
 function inlineGoogleExportStyles(html) {
   if (!html.includes("<style") || typeof DOMParser === "undefined") return html;

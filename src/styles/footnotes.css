@@ -222,3 +222,18 @@
   opacity: 1;
   background: rgba(128, 128, 128, 0.15);
 }
+
+.comment-resolve-btn + .comment-resolve-btn {
+  margin-left: 6px;
+}
+
+/* Suggested edits get an Accept / Reject pair instead of Resolve. */
+.comment-accept-btn {
+  color: #188038;
+  border-color: rgba(24, 128, 56, 0.5);
+}
+
+.comment-reject-btn {
+  color: #b3261e;
+  border-color: rgba(179, 38, 30, 0.4);
+}
