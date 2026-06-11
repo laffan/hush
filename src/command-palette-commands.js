@@ -304,7 +304,7 @@ function buildCommands(state) {
         const ok = window.confirm("Convert this document to a project? Each tab will become a separate document.");
         if (ok) await s.convertDocToProject(node.id);
       } },
-    { id: "split-at-headings", label: "Split at Headings", icon: icons.doc, shortcutKey: null, ctx: "doc",
+    { id: "split-at-headings", label: "Split Headings to Files", icon: icons.doc, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.currentFileId,
       action: async (s) => {
         const { openSplitAtHeadingsModal } = await import("./sidebar/split-at-headings-modal.js");

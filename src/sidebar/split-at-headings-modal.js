@@ -58,7 +58,7 @@ export async function openSplitAtHeadingsModal(state, nodeId = null) {
 
   if (levels.length === 0) {
     modal.innerHTML = `
-      <div class="nxm-title">Split at Headings</div>
+      <div class="nxm-title">Split Headings to Files</div>
       <div class="sah-empty">This document has no headings to split on.</div>
       <div class="nxm-actions">
         <button class="nxm-cancel">Close</button>
@@ -72,7 +72,7 @@ export async function openSplitAtHeadingsModal(state, nodeId = null) {
   }
 
   modal.innerHTML = `
-    <div class="nxm-title">Split at Headings</div>
+    <div class="nxm-title">Split Headings to Files</div>
 
     <div class="nxm-section">
       <div class="nxm-label">Split at</div>
