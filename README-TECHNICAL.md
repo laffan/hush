@@ -95,6 +95,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │       ├── image-decorator.js
 │       ├── link-decorator.js
 │       ├── wikilink-decorator.js     (Obsidian-style `[[Note Title]]` — see "Wikilinks")
+│       ├── citation-decorator.js     (Zotero `[@citekey]` pills, hover card, `[@` trigger — see "Citations")
 │       ├── tab-marker.js              (renders `---Tab name---` / nested `---a---/---b---` as a pill with the Google Docs glyph + path label)
 │       ├── private-mode.js
 │       ├── project-view.js
@@ -196,6 +197,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 ├── links/                              (Obsidian-style `[[Note]]` wikilink resolver + popup)
 │   ├── wikilink-index.js               (tree walk + resolver + open dispatcher)
 │   ├── wikilink-popup.js               (floating search widget shared by docs + notebooks)
+│   ├── citation-popup.js               (Zotero reference search popup for the `[@` trigger)
 │   └── wikilink-rename.js              (rewrite every `[[OldName]]` → `[[NewName]]` on rename)
 │
 ├── longview/
@@ -630,7 +632,17 @@ Markdown toggle commands using a generic `toggleWrap(view, marker)`: `toggleBold
 
 ### Link Decorator (`editor/plugins/link-decorator.js`)
 
-Makes URLs in the editor clickable. Decorates detected links with click handlers.
+Makes URLs in the editor clickable. Decorates detected links with click handlers. Skips `[text](url)` matches whose text starts with `@` — those are citations, owned by the citation decorator below.
+
+### Citations (`editor/plugins/citation-decorator.js` + `links/citation-popup.js`)
+
+Pandoc-style Zotero citations. `parseCitations(lineText)` scans for citation chains — a bracketed `[@citekey]` (optionally followed by a `(zotero://…)` deep link) plus any number of `;`-joined continuations, which may be bare `@key` or bracketed/linked — and returns one item per citation so every member of a chain decorates independently. The citekey charset (`[A-Za-z0-9_:.+-]`) is kept in sync with `CITE_RE` in `doc-export-modal.js` and `is_citekey_char` in `src-tauri/src/typst_export/citations.rs`. Three behaviours:
+
+- **Decorations** — each item replaces with a `CitationWidget` pill (`.cm-citation-rendered`, `.linked` when it carries a deep link) showing `[@citekey]` with brackets visible (bare continuations render `@key`); only the URL is hidden. The cursor entering an item reveals that item's raw markdown for editing. Cmd+click opens the deep link.
+- **Hover card** — a singleton `.citation-hover-card` mounts on widget hover (250 ms in / 300 ms grace out). Content is built async: the citekey resolves against `loadReferences()` (title + year header), **View in Zotero** follows the item's URL or `zotero://select/library/items/KEY`, and the PDF slot checks the `.hush/pdf.json` registry (`getPdfRegistry()`, matched by `citekey` or `zoteroItemKey`) — **View PDF** (`state.openPdf`) when downloaded, a disabled "Saving PDF…" while a placeholder is pending, or **Save PDF** (`state.registerPdfPlaceholder` + `startBatchDownload`, the same pipeline as Zotero: Save PDF) when the reference has a PDF attachment not yet in Hush.
+- **`[@` trigger** — mirrors the wikilink controller: `findActiveCitationContext` finds an unclosed `[@…` at the caret (aborting on `]`, `)`, a plain `[`, or a bare `@` so emails and finished cites stay inert), `links/citation-popup.js` reuses the `.wikilink-popup` chrome with `@citekey` / title / author-year rows filtered through `zotero.js#fuzzySearch` (which includes `citekey` in its match fields), and commit inserts `[@citekey](zotero://select/library/items/KEY)`. References load lazily on first trigger; an empty library keeps the trigger inert. Popup navigation rides the same `Prec.highest` keymap pattern as wikilinks.
+
+On the export side, `typst_export/citations.rs` (split out of `markdown.rs`) collapses each chain into one `\x1F…\x1E` sentinel with `;`-joined keys; expansion emits adjacent `#cite` calls in Resolve mode (Typst groups adjacent cites into a single citation), `; `-joined labels in Inline mode, and `; `-joined keys in Strip mode.
 
 ### Wikilinks (`editor/plugins/wikilink-decorator.js` + `src/links/`)
 

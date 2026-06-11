@@ -23,27 +23,11 @@ When in doubt: a slightly degraded rendering beats refusing to compile.
 */
 
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use std::collections::{HashMap, HashSet};
 
+use super::citations::{expand_cite_sentinels, preprocess_cites};
 use super::preprocess::{TAB_MARKER_CLOSE, TAB_MARKER_OPEN};
 
-#[derive(Clone, Debug)]
-pub enum CitationMode {
-    /// Replace citation-shaped links with Typst `@citekey` references.
-    /// The supplied set lists the citekeys present in the bibliography
-    /// — anything else renders as a visible "missing reference" marker
-    /// so the export still succeeds.
-    Resolve { known_keys: HashSet<String> },
-    /// Render each citation as a pre-formatted inline label (e.g. the
-    /// author-date `(Author Year)` built by `bibliography::inline_citation`)
-    /// instead of a Typst `#cite`. Used when the user wants citations
-    /// formatted in the prose but opted out of the bibliography section,
-    /// so there's no `#bibliography` for `#cite` to resolve against. Keys
-    /// missing from the map render as the same "missing reference" marker.
-    Inline { formatted: HashMap<String, String> },
-    /// Strip the brackets and the deep-link URL, leaving the bare key.
-    Strip,
-}
+pub use super::citations::CitationMode;
 
 pub fn to_typst(markdown: &str, cite_mode: CitationMode) -> String {
     let mut opts = Options::empty();
@@ -118,98 +102,6 @@ inset: (x: 0.9em, y: 0.3em))[#text(size: 0.85em, fill: luma(80))[",
         out.push_str("]]]\n\n");
     }
     out
-}
-
-// ───────────────────── citation sentinels ─────────────────────
-
-// Unit-Separator brackets a citekey through pulldown and the markup
-// escape pass. The escape table excludes ASCII control characters, so
-// these survive untouched.
-const CITE_OPEN: char = '\x1F';
-const CITE_CLOSE: char = '\x1E';
-
-fn preprocess_cites(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = String::with_capacity(s.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'[' {
-            if let Some((key, consumed)) = parse_bracket_cite(&s[i..]) {
-                out.push(CITE_OPEN);
-                out.push_str(key);
-                out.push(CITE_CLOSE);
-                i += consumed;
-                continue;
-            }
-        }
-        let ch = s[i..].chars().next().unwrap();
-        out.push(ch);
-        i += ch.len_utf8();
-    }
-    out
-}
-
-fn expand_cite_sentinels(s: &str, mode: &CitationMode) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c != CITE_OPEN {
-            out.push(c);
-            continue;
-        }
-        let mut key = String::new();
-        for k in chars.by_ref() {
-            if k == CITE_CLOSE { break; }
-            key.push(k);
-        }
-        match mode {
-            // Function form sidesteps the whitespace-sensitive `@key`
-            // markup rules, so cites that sit flush against adjacent
-            // text (`acts[@mandolessi2024]`) still resolve cleanly. If
-            // the key isn't in the supplied bibliography we render a
-            // visible "missing" marker instead of `#cite(...)` — the
-            // latter would fail compilation and sink the whole export.
-            CitationMode::Resolve { known_keys } => {
-                if known_keys.contains(&key) {
-                    out.push_str("#cite(<");
-                    out.push_str(&key);
-                    out.push_str(">)");
-                } else {
-                    out.push_str(&missing_cite_marker(&key));
-                }
-            }
-            // Pre-formatted label (author-date etc.). Emit it as a
-            // `#text("…")` code expression rather than bare markup: a
-            // citation flush against a preceding code expression (e.g.
-            // `*word*[@key]` → `#emph[word]…`) would otherwise let Typst
-            // parse the label's `(…)` as a call on that expression and
-            // fail with "expected comma". The leading `#` starts a fresh
-            // expression, exactly like Resolve's `#cite(…)`. Unknown keys
-            // fall back to the visible missing marker.
-            CitationMode::Inline { formatted } => match formatted.get(&key) {
-                Some(label) => {
-                    out.push_str("#text(\"");
-                    out.push_str(&escape_string(label));
-                    out.push_str("\")");
-                }
-                None => out.push_str(&missing_cite_marker(&key)),
-            },
-            CitationMode::Strip => out.push_str(&key),
-        }
-    }
-    out
-}
-
-/// Inline marker for a citation key that's not in the bibliography.
-/// Bold red `[@key]` so the gap is obvious on the printed page. The
-/// `@` is escaped so Typst doesn't try to resolve it as a label, which
-/// would re-trigger the very compile failure this marker exists to
-/// prevent.
-fn missing_cite_marker(key: &str) -> String {
-    format!(
-        "#text(fill: rgb(\"#c0392b\"), weight: \"bold\")[\\[\\@{}\\]]",
-        key
-    )
 }
 
 struct Emitter {
@@ -451,12 +343,8 @@ impl Emitter {
     }
 }
 
-fn is_citekey_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':' | '.' | '+')
-}
-
 /// Escape a string for use inside Typst `"..."` literals.
-fn escape_string(s: &str) -> String {
+pub(super) fn escape_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {
@@ -484,34 +372,6 @@ fn escape_typst_text(s: &str) -> String {
         }
     }
     out
-}
-
-/// Returns (citekey, bytes-consumed) if `s` starts with a `[@key]` or
-/// `[@key](url)` citation pattern, else None.
-fn parse_bracket_cite(s: &str) -> Option<(&str, usize)> {
-    let bytes = s.as_bytes();
-    if bytes.first() != Some(&b'[') || bytes.get(1) != Some(&b'@') {
-        return None;
-    }
-    let end_bracket = bytes[2..].iter().position(|&b| b == b']' || b == b'\n')?;
-    if bytes[2 + end_bracket] != b']' {
-        return None;
-    }
-    let key = &s[2..2 + end_bracket];
-    if key.is_empty() || !key.chars().all(is_citekey_char) {
-        return None;
-    }
-    let mut consumed = 2 + end_bracket + 1; // past the `]`
-    // Optionally swallow `(...)` so the deep link doesn't render.
-    if bytes.get(consumed) == Some(&b'(') {
-        if let Some(end_paren) = bytes[consumed + 1..].iter().position(|&b| b == b')' || b == b'\n')
-        {
-            if bytes[consumed + 1 + end_paren] == b')' {
-                consumed += 1 + end_paren + 1;
-            }
-        }
-    }
-    Some((key, consumed))
 }
 
 fn image_path(dest_url: &str) -> String {
@@ -612,6 +472,42 @@ mod tests {
         assert!(out.contains("\\@notfound2099"), "key not surfaced: {}", out);
         assert!(!out.contains("#cite(<notfound2099>)"), "missing cite emitted as live ref: {}", out);
         assert!(out.contains("#cite(<known2020>)"), "known cite swapped: {}", out);
+    }
+
+    /// Semicolon-chained citations — `[@a](url);@b;@c;[@d](url)` —
+    /// resolve every key in the chain, emitting adjacent #cite calls so
+    /// Typst groups them into one citation.
+    #[test]
+    fn citation_chain_resolve() {
+        let src = "See [@adriaansen2025](zotero://select/library/items/JN3KPW6D);@hoskins2011;@hoskins2016;[@bendavid2024](zotero://select/library/items/4LG9HWU6).";
+        let out = to_typst(
+            src,
+            resolve_with(&["adriaansen2025", "hoskins2011", "hoskins2016", "bendavid2024"]),
+        );
+        assert!(
+            out.contains("#cite(<adriaansen2025>)#cite(<hoskins2011>)#cite(<hoskins2016>)#cite(<bendavid2024>)"),
+            "got: {}",
+            out
+        );
+        assert!(!out.contains("zotero://"), "got: {}", out);
+    }
+
+    #[test]
+    fn citation_chain_strip() {
+        let out = to_typst("See [@a2020];@b2021;@c2022.", CitationMode::Strip);
+        assert!(out.contains("a2020; b2021; c2022"), "got: {}", out);
+        assert!(!out.contains("#cite"), "got: {}", out);
+    }
+
+    /// A semicolon that isn't followed by a citation ends the chain —
+    /// the rest of the text renders normally.
+    #[test]
+    fn citation_chain_stops_at_non_cite() {
+        let out = to_typst(
+            "See [@a2020];later text.",
+            resolve_with(&["a2020"]),
+        );
+        assert!(out.contains("#cite(<a2020>);later text"), "got: {}", out);
     }
 
     #[test]

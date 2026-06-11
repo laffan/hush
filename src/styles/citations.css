@@ -1,0 +1,92 @@
+/* Zotero citations — `[@citekey]` pills in the editor, the hover
+   action card, and the `[@` search popup (which reuses the wikilink
+   popup base styles). */
+
+.cm-citation-rendered {
+  background: color-mix(in srgb, var(--link, currentColor) 9%, transparent);
+  border-radius: 4px;
+  padding: 0 3px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.cm-citation-rendered.linked {
+  color: var(--link, currentColor);
+}
+.cm-citation-rendered:not(.linked) {
+  color: color-mix(in srgb, var(--fg, currentColor) 80%, transparent);
+}
+.cm-citation-rendered:hover {
+  background: color-mix(in srgb, var(--link, currentColor) 18%, transparent);
+}
+
+/* Hover action card — "View in Zotero" / "Save PDF" / "View PDF". */
+.citation-hover-card {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  max-width: 280px;
+  background: var(--bg, #1c1c1c);
+  color: var(--fg, #ddd);
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 18%, transparent);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-family: var(--ui-font-family);
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 8px 10px;
+}
+
+.citation-card-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.citation-card-note {
+  color: color-mix(in srgb, var(--fg, #888) 55%, transparent);
+  font-style: italic;
+  margin: -2px 0 6px;
+}
+
+.citation-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.citation-card-btn {
+  font-family: var(--ui-font-family);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 25%, transparent);
+  background: color-mix(in srgb, var(--fg, #888) 8%, transparent);
+  color: var(--fg, #ddd);
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.citation-card-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #4a86e8) 18%, transparent);
+}
+.citation-card-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* `[@` search popup — extends .wikilink-popup. */
+.citation-popup {
+  max-width: 420px;
+}
+
+.citation-popup-key {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--accent, #4a86e8);
+  white-space: nowrap;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

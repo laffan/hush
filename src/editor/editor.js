@@ -14,6 +14,7 @@ import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
+import { createCitationPlugin } from "./plugins/citation-decorator.js";
 import { createInlinePanePlugin, openInlinePaneForWikilink } from "../pane/pane-inline.js";
 import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
@@ -253,6 +254,7 @@ export function createEditor(container, state) {
     onInlinePaneRequest: (_view, { title, occurrence }) =>
       openInlinePaneForWikilink(state, { title, occurrence }),
   });
+  const citationPlugin = createCitationPlugin(state);
   const inlinePanePlugin = createInlinePanePlugin(state);
   const tabMarkerPlugin = createTabMarkerPlugin();
   const checkboxListPlugin = createCheckboxListPlugin();
@@ -308,6 +310,7 @@ export function createEditor(container, state) {
       createLineIndicatorPlugin(state),
       linkDecoratorPlugin,
       wikilinkPlugin,
+      citationPlugin,
       inlinePanePlugin,
       tabMarkerPlugin,
       checkboxListPlugin,

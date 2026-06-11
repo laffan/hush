@@ -145,7 +145,7 @@ export function fuzzySearch(refs, query) {
   const q = query.toLowerCase();
   const scored = [];
   for (const ref of refs) {
-    const fields = [ref.title, ref.shortTitle, ref.authors, ref.year, ref.key];
+    const fields = [ref.title, ref.shortTitle, ref.authors, ref.year, ref.key, ref.citekey];
     let bestScore = 0;
     for (const field of fields) {
       if (!field) continue;

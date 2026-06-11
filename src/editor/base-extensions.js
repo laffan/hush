@@ -11,6 +11,7 @@ import { createFocusModePlugin } from "./plugins/focus-mode.js";
 import { createCalloutPlugin } from "./plugins/callouts.js";
 import { createLinkDecoratorPlugin } from "./plugins/link-decorator.js";
 import { createWikilinkPlugin } from "./plugins/wikilink-decorator.js";
+import { createCitationPlugin } from "./plugins/citation-decorator.js";
 import { createTabMarkerPlugin } from "./plugins/tab-marker.js";
 import { createCheckboxListPlugin } from "./plugins/checkbox-list.js";
 import { createImageDecoratorPlugin } from "./plugins/image-decorator.js";
@@ -148,6 +149,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createLineIndicatorPlugin(state),
     createLinkDecoratorPlugin(state),
     createWikilinkPlugin(state),
+    createCitationPlugin(state),
     createTabMarkerPlugin(),
     createCheckboxListPlugin(),
     createImageDecoratorPlugin(state, getImageContext),

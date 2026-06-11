@@ -42,6 +42,7 @@ function linkAtPos(doc, pos) {
   LINK_RE.lastIndex = 0;
   let match;
   while ((match = LINK_RE.exec(line.text)) !== null) {
+    if (match[1].startsWith("@")) continue; // citation — handled by citation-decorator
     const from = line.from + match.index;
     const to = from + match[0].length;
     if (pos >= from && pos <= to) {
@@ -70,6 +71,9 @@ function buildDecorations(view, appState) {
     LINK_RE.lastIndex = 0;
     let match;
     while ((match = LINK_RE.exec(line.text)) !== null) {
+      // `[@citekey](url)` is a citation, not a link — the citation
+      // decorator renders those with visible brackets and a hover card.
+      if (match[1].startsWith("@")) continue;
       const from = line.from + match.index;
       const to = from + match[0].length;
       const text = match[1];
