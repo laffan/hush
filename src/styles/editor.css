@@ -78,6 +78,7 @@ body.file-in-trash #notebook-container .notes-canvas + * {
   background-position: center;
   opacity: var(--style-bg-opacity, 0);
   mix-blend-mode: var(--style-bg-blend, normal);
+  filter: var(--style-bg-filter, none);
   pointer-events: none;
   z-index: 0;
 }

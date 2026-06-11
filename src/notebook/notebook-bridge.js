@@ -366,6 +366,19 @@ export function computeNotebookSettings(state, lockedStyleId) {
   } else {
     bgColors = appearance === "dark" ? s.defaultDarkColors : s.defaultLightColors;
   }
+  // Resolve the background image's per-appearance opacity + invert so the
+  // canvas matches the editor. Light/dark each carry their own opacity and
+  // invert flag; the legacy single `opacity` is the fallback for both.
+  let resolvedBackgroundImage = null;
+  if (styleBackgroundImage && styleBackgroundImage.enabled && styleBackgroundImage.src) {
+    const isDark = appearance === "dark";
+    const legacy = styleBackgroundImage.opacity != null ? styleBackgroundImage.opacity : 1;
+    const opacity = isDark
+      ? (styleBackgroundImage.darkOpacity != null ? styleBackgroundImage.darkOpacity : legacy)
+      : (styleBackgroundImage.lightOpacity != null ? styleBackgroundImage.lightOpacity : legacy);
+    const invert = isDark ? !!styleBackgroundImage.darkInvert : !!styleBackgroundImage.lightInvert;
+    resolvedBackgroundImage = { ...styleBackgroundImage, opacity, invert };
+  }
   if (bgColors?.bg) canvasBackgroundOverride = bgColors.bg;
   // Foreground override — same source as the bg override. Lets default /
   // auto-coloured text shapes and the toolbar icons follow the style's
@@ -385,7 +398,7 @@ export function computeNotebookSettings(state, lockedStyleId) {
     fontFamily,
     fontSize: s.notebookFontSize || 16,
     canvasBackgroundOverride,
-    backgroundImage: styleBackgroundImage,
+    backgroundImage: resolvedBackgroundImage,
     foregroundOverride,
     headingColorOverride,
     linkColorOverride,

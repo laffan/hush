@@ -3,9 +3,12 @@
  * Split out of style-modal.js to keep that file under the 700-line cap.
  *
  * A style's `backgroundImage` is `{ enabled, src, fit, repeat, blend,
- * opacity }`. `src` is a data-URL so the image rides Dropbox sync and
- * JSON export without a separate asset. The editor applies it as a
- * blended layer behind the text (see style-application.js).
+ * lightOpacity, darkOpacity, lightInvert, darkInvert }` (the legacy
+ * single `opacity` is still honoured as a fallback for both modes).
+ * `src` is a data-URL so the image rides Dropbox sync and JSON export
+ * without a separate asset. The editor applies it as a blended layer
+ * behind the text (see style-application.js); opacity + invert resolve
+ * per light / dark appearance.
  */
 import { escAttr, escHtml } from "./styles-panel-shared.js";
 
@@ -28,7 +31,11 @@ export function renderStyleExtras(draft) {
   const fit = bi.fit || "cover";
   const repeat = bi.repeat || "no-repeat";
   const blend = bi.blend || "normal";
-  const opacity = bi.opacity != null ? bi.opacity : 1;
+  const legacyOpacity = bi.opacity != null ? bi.opacity : 1;
+  const lightOpacity = bi.lightOpacity != null ? bi.lightOpacity : legacyOpacity;
+  const darkOpacity = bi.darkOpacity != null ? bi.darkOpacity : legacyOpacity;
+  const lightInvert = !!bi.lightInvert;
+  const darkInvert = !!bi.darkInvert;
   const hasSrc = !!bi.src;
   return `
     <div class="style-modal-section">
@@ -62,10 +69,29 @@ export function renderStyleExtras(draft) {
           <select id="style-bg-blend">${BLEND_MODES.map((b) => opt(b, cap(b), blend)).join("")}</select>
         </div>
         <div class="style-editor-row">
-          <label>Opacity</label>
+          <label>Opacity (Light)</label>
           <div class="style-slider-group">
-            <input type="range" id="style-bg-opacity" min="0" max="1" step="0.05" value="${opacity}" />
-            <span class="style-slider-value">${Math.round(opacity * 100)}%</span>
+            <input type="range" id="style-bg-opacity-light" min="0" max="1" step="0.05" value="${lightOpacity}" />
+            <span class="style-slider-value">${Math.round(lightOpacity * 100)}%</span>
+          </div>
+        </div>
+        <div class="style-editor-row">
+          <label>Opacity (Dark)</label>
+          <div class="style-slider-group">
+            <input type="range" id="style-bg-opacity-dark" min="0" max="1" step="0.05" value="${darkOpacity}" />
+            <span class="style-slider-value">${Math.round(darkOpacity * 100)}%</span>
+          </div>
+        </div>
+        <div class="style-editor-row">
+          <label>Invert (Light)</label>
+          <div class="style-checkbox-group">
+            <input type="checkbox" id="style-bg-invert-light" ${lightInvert ? "checked" : ""} />
+          </div>
+        </div>
+        <div class="style-editor-row">
+          <label>Invert (Dark)</label>
+          <div class="style-checkbox-group">
+            <input type="checkbox" id="style-bg-invert-dark" ${darkInvert ? "checked" : ""} />
           </div>
         </div>
       </div>
@@ -111,13 +137,26 @@ export function bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave
   if (repeatEl) repeatEl.addEventListener("change", () => { ensure().repeat = repeatEl.value; scheduleSave(); });
   const blendEl = backdrop.querySelector("#style-bg-blend");
   if (blendEl) blendEl.addEventListener("change", () => { ensure().blend = blendEl.value; scheduleSave(); });
-  const opacityEl = backdrop.querySelector("#style-bg-opacity");
-  if (opacityEl) opacityEl.addEventListener("input", () => {
-    const v = parseFloat(opacityEl.value);
-    ensure().opacity = v;
-    if (opacityEl.nextElementSibling) opacityEl.nextElementSibling.textContent = Math.round(v * 100) + "%";
-    scheduleSave();
-  });
+  const bindOpacity = (sel, field) => {
+    const el = backdrop.querySelector(sel);
+    if (!el) return;
+    el.addEventListener("input", () => {
+      const v = parseFloat(el.value);
+      ensure()[field] = v;
+      if (el.nextElementSibling) el.nextElementSibling.textContent = Math.round(v * 100) + "%";
+      scheduleSave();
+    });
+  };
+  bindOpacity("#style-bg-opacity-light", "lightOpacity");
+  bindOpacity("#style-bg-opacity-dark", "darkOpacity");
+
+  const bindInvert = (sel, field) => {
+    const el = backdrop.querySelector(sel);
+    if (!el) return;
+    el.addEventListener("change", () => { ensure()[field] = el.checked; scheduleSave(); });
+  };
+  bindInvert("#style-bg-invert-light", "lightInvert");
+  bindInvert("#style-bg-invert-dark", "darkInvert");
 
   const exportBtn = backdrop.querySelector(".style-modal-export");
   if (exportBtn) exportBtn.addEventListener("click", () => {

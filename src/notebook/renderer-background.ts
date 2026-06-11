@@ -7,6 +7,7 @@ export interface BackgroundImageConfig {
   repeat?: string;  // "no-repeat" | "repeat" | "repeat-x" | "repeat-y"
   blend?: string;   // CSS mix-blend-mode value
   opacity?: number;
+  invert?: boolean; // resolved per-appearance: paint the image inverted
 }
 
 const bgImageCache = new Map<string, HTMLImageElement>();
@@ -40,6 +41,7 @@ export function drawBackgroundImage(
   if (bi.blend && bi.blend !== "normal") {
     ctx.globalCompositeOperation = bi.blend as GlobalCompositeOperation;
   }
+  if (bi.invert) ctx.filter = "invert(1)";
   const repeat = bi.repeat || "no-repeat";
   if (repeat !== "no-repeat") {
     const rep = repeat === "repeat-x" ? "repeat-x" : repeat === "repeat-y" ? "repeat-y" : "repeat";

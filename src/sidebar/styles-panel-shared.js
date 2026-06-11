@@ -40,6 +40,21 @@ export function applyPreviewCursorMode(el, mode, accent, cursor) {
   else Object.assign(el.style, { borderLeft: `2px solid ${cursor}`, width: "0" });
 }
 
+/** Resolve a style's `backgroundImage` config for the active appearance.
+ *  Opacity and invert can diverge between light and dark; the legacy
+ *  single `opacity` field is the fallback for both. Returns
+ *  `{ opacity, invert }` (or null when no image config is present). */
+export function resolveBackgroundImage(bi, appearance) {
+  if (!bi) return null;
+  const isDark = appearance === "dark";
+  const legacy = bi.opacity != null ? bi.opacity : 1;
+  const opacity = isDark
+    ? (bi.darkOpacity != null ? bi.darkOpacity : legacy)
+    : (bi.lightOpacity != null ? bi.lightOpacity : legacy);
+  const invert = isDark ? !!bi.darkInvert : !!bi.lightInvert;
+  return { opacity, invert };
+}
+
 /** Migrate old single-mode styles to dual light/dark format. */
 export function migrateStyle(st) {
   if (!st._migrated && st.themeId && !st.lightThemeId && !st.darkThemeId) {

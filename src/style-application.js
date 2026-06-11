@@ -6,6 +6,7 @@
  */
 import { applyAppearance } from "./settings/settings-ui.js";
 import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
+import { resolveBackgroundImage } from "./sidebar/styles-panel-shared.js";
 import { themeBackgrounds, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 
 // Tracks whether the shader-layer module has ever been loaded this session.
@@ -64,18 +65,21 @@ export function applyDeskGlobalStyle(state) {
 /** Publish (or clear) the decorative background-image CSS variables read
  *  by the `.cm-editor::before` layer. `cfg` is a style's `backgroundImage`
  *  object or null. */
-function applyStyleBackgroundImage(cfg) {
+function applyStyleBackgroundImage(cfg, appearance) {
   const root = document.documentElement.style;
   if (cfg && cfg.enabled && cfg.src) {
+    const { opacity, invert } = resolveBackgroundImage(cfg, appearance) || { opacity: 1, invert: false };
     root.setProperty("--style-bg-image", `url("${cfg.src}")`);
     root.setProperty("--style-bg-size", cfg.fit || "cover");
     root.setProperty("--style-bg-repeat", cfg.repeat || "no-repeat");
     root.setProperty("--style-bg-blend", cfg.blend || "normal");
-    root.setProperty("--style-bg-opacity", String(cfg.opacity != null ? cfg.opacity : 1));
+    root.setProperty("--style-bg-opacity", String(opacity));
+    root.setProperty("--style-bg-filter", invert ? "invert(1)" : "none");
     document.body.classList.add("style-bg-image-active");
   } else {
     root.removeProperty("--style-bg-image");
     root.setProperty("--style-bg-opacity", "0");
+    root.removeProperty("--style-bg-filter");
     document.body.classList.remove("style-bg-image-active");
   }
 }
@@ -174,7 +178,11 @@ export function applyActiveStyle(state) {
   const style = (state.settings.styles || []).find(s => s.id === styleId);
   if (!style) return;
   syncShaderLayerForStyle(style);
-  applyStyleBackgroundImage(style.backgroundImage);
+  let bgAppearance = state.settings.appearance || "dark";
+  if (bgAppearance === "auto") {
+    bgAppearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  applyStyleBackgroundImage(style.backgroundImage, bgAppearance);
 
   // Apply style overrides
   document.body.classList.add("style-active");
