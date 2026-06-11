@@ -55,7 +55,7 @@ export function createSpellcheckPlugin(stateRef) {
         this._timer = null;
         _viewState.set(view, { issues: [], lastText: null, runId: 0 });
         this.decorations = Decoration.none;
-        if (stateRef.spellcheckMode) this.runCheckNow();
+        if (stateRef.spellcheckMode && view.hasFocus) this.runCheckNow();
       }
 
       destroy() {
@@ -83,12 +83,21 @@ export function createSpellcheckPlugin(stateRef) {
 
         if (active && flipped) {
           if (this._timer) { clearTimeout(this._timer); this._timer = null; }
-          this.runCheckNow();
-        } else if (active && update.docChanged) {
+          if (this.view.hasFocus) this.runCheckNow();
+        } else if (active && update.docChanged && this.view.hasFocus) {
           this.scheduleCheck();
         }
 
-        if (annot || update.viewportChanged || flipped) {
+        // Spellcheck underlines belong to the editor that currently holds
+        // focus — a stack of open panes shouldn't all paint at once. When
+        // this editor gains focus, make sure its issues are fresh; when it
+        // loses focus, the rebuild below drops its decorations.
+        if (active && update.focusChanged) {
+          if (this.view.hasFocus) this.runCheckNow();
+          else closeSpellPopover();
+        }
+
+        if (annot || update.viewportChanged || flipped || update.focusChanged) {
           this.decorations = this.buildDecorations();
         }
       }
@@ -117,6 +126,8 @@ export function createSpellcheckPlugin(stateRef) {
 
       buildDecorations() {
         if (!stateRef.spellcheckMode) return Decoration.none;
+        // Only the focused editor surface shows underlines.
+        if (!this.view.hasFocus) return Decoration.none;
         const s = _viewState.get(this.view);
         if (!s || !s.issues.length) return Decoration.none;
         const docLen = this.view.state.doc.length;

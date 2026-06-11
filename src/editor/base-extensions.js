@@ -30,6 +30,7 @@ import { getMarkdownHighlight, resolveHeaderColorOverride } from "./markdown-hig
 import { CommentExtension, HighlightExtension } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin } from "./flag-highlight.js";
 import { createLineIndicatorPlugin } from "./line-indicator.js";
+import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
 
 /**
  * Default image-context resolver used by the main editor: when the user
@@ -162,6 +163,8 @@ export function createBaseExtensions(state, onChange, opts) {
     createMultiLineCommentPlugin(),
     createCommentAfterPlugin(),
     createCommentAnchorPlugin(state),
+    createSpellcheckPlugin(state),
+    spellcheckClickHandler,
     createFocusModePlugin(state),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),
