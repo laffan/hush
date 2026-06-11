@@ -13,7 +13,7 @@
 export function openIncludeCommentsModal(count) {
   return new Promise((resolve) => {
     const n = Math.max(1, count | 0);
-    const noun = n === 1 ? "comment" : "comments";
+    const noun = n === 1 ? "comment" : "comments"; // covers suggestions too — one word keeps the choice simple
     const backdrop = document.createElement("div");
     backdrop.className = "gdoc-sot-backdrop";
     const modal = document.createElement("div");

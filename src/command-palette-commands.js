@@ -28,6 +28,7 @@ import {
 } from "./pane/pane-manager.js";
 import { panes } from "./pane/pane-state.js";
 import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
+import { isCommentsHidden } from "./google-docs/comments-visibility.js";
 import { arePanesHiddenForActive } from "./state/state-panes.js";
 import { createNewFromSelected } from "./selection-extract.js";
 import { openInNewWindow } from "./multi-window.js";
@@ -374,6 +375,12 @@ function buildCommands(state) {
       hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("createGoogleDocFromCurrent") },
     { id: "google-unlink", label: "Unlink Document from Google Doc", icon: icons.trash, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("unlinkCurrentDocument") },
+    { id: "google-hide-comments", label: "Google : Hide comments", icon: icons.export, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId] || isCommentsHidden(s.currentFileId),
+      action: _gdocAction("hideGoogleComments") },
+    { id: "google-show-comments", label: "Google : Show comments", icon: icons.export, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId] || !isCommentsHidden(s.currentFileId),
+      action: _gdocAction("showGoogleComments") },
     { id: "remove-all-comments", label: "Remove all Comments", icon: icons.trash, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !/\{>[\s\S]*?<[A-Za-z0-9]+\}|^\[>[A-Za-z0-9]+\]:/m.test(s.editor?.view?.state?.doc?.toString() || ""),
       action: async (s) => {

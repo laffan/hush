@@ -42,17 +42,23 @@ export function htmlToMarkdown(html, opts = {}) {
     gdocs.remove();
   }
 
-  stripGoogleCommentArtifacts(root, !!opts.commentMarkers);
+  stripGoogleCommentArtifacts(root, !!opts.commentMarkers, opts.collect);
 
   const out = renderChildren(root, { inPre: false });
-  return out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
+  // Trailing spaces first, then collapse — the other order leaves
+  // `\n\n \n\n` runs (inter-paragraph whitespace text nodes) as four
+  // newlines, which read as phantom blank lines in the pulled markdown.
+  return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // Position sentinel left in place of an inline comment marker when the
 // caller asks to keep marker positions (pull path). Private-use char so it
 // can't collide with document text; the pull flow extracts and removes it
 // (see `comments-sync.js#extractCommentMarkers`) to recover the exact
-// offset each Google comment was anchored to.
+// offset each Google comment was anchored to. The marker's reference
+// number (`#cmnt7` \u2192 `7`) rides between a sentinel pair \u2014
+// `\uF8FF7\uF8FF` \u2014 so a marker can be paired with the exact comment
+// thread it belongs to via the export's footer (see `opts.collect`).
 export const COMMENT_MARKER_SENTINEL = "\uF8FF";
 
 // Google Docs's HTML export renders comments as `<sup><a href="#cmntN">
@@ -65,20 +71,42 @@ export const COMMENT_MARKER_SENTINEL = "\uF8FF";
 // pulled markdown carries `[[a]](#cmntN)` junk inline and a wall of
 // comment/reaction text in the footer (which then gets pushed back into
 // the Google Doc as literal body paragraphs).
-function stripGoogleCommentArtifacts(root, keepMarkers) {
+function stripGoogleCommentArtifacts(root, keepMarkers, collect) {
   // 1. In-body reference markers (`#cmntN`, but not the foot back-refs).
   //    On the pull path (`keepMarkers`) we replace each with a position
-  //    sentinel instead of deleting it, so the comment weaver can anchor
-  //    each comment to the exact instance Google marked — otherwise a
-  //    comment on a word that recurs earlier lands on the wrong one.
+  //    sentinel carrying the marker's reference number instead of
+  //    deleting it, so the comment weaver can anchor each comment to the
+  //    exact instance Google marked — otherwise a comment on a word that
+  //    recurs earlier lands on the wrong one.
   for (const a of root.querySelectorAll('a[href^="#cmnt"]')) {
     const href = a.getAttribute("href") || "";
     if (href.startsWith("#cmnt_ref")) continue;
     const node = a.closest("sup") || a;
     if (keepMarkers) {
-      node.replaceWith(root.ownerDocument.createTextNode(COMMENT_MARKER_SENTINEL));
+      const ref = (href.match(/^#cmnt([\w.-]+)$/) || [])[1] || "";
+      node.replaceWith(root.ownerDocument.createTextNode(
+        COMMENT_MARKER_SENTINEL + ref + COMMENT_MARKER_SENTINEL
+      ));
     } else {
       node.remove();
+    }
+  }
+  // 1b. Harvest the footer's thread texts before removing it: each foot
+  //     block's back-ref (`#cmnt_refN`) pairs reference number N with
+  //     the thread's full text, which lets the comment weaver match a
+  //     Drive API comment to the exact in-body marker it belongs to.
+  if (collect) {
+    collect.commentFooter = collect.commentFooter || {};
+    for (const a of root.querySelectorAll('a[href^="#cmnt_ref"]')) {
+      const ref = ((a.getAttribute("href") || "").match(/^#cmnt_ref([\w.-]+)$/) || [])[1];
+      if (!ref) continue;
+      // The back-ref's own paragraph holds the thread's opening comment
+      // (replies are sibling paragraphs) — enough text to pair against
+      // the API comment's `content`.
+      const block = a.closest("p") || a.parentElement || a;
+      const label = a.textContent || "";
+      const text = (block.textContent || "").replace(label, " ").replace(/\s+/g, " ").trim();
+      if (text) collect.commentFooter[ref] = text;
     }
   }
   // 2. The whole foot section. Google always places the comment thread

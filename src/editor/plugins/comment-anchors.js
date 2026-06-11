@@ -84,6 +84,14 @@ export function removeCommentFromDoc(view, id) {
     const end = start + m[0].length;
     changes.push({ from: start, to: start + 2 }); // `{>`
     changes.push({ from: end - (id.length + 2), to: end }); // `<id}`
+    // A suggested-edit anchor carries the `~~` the importer added to
+    // mirror the GDoc's strikethrough — resolving drops those too so the
+    // prose comes out clean.
+    const inner = m[1];
+    if (info?.sug && /^~~[\s\S]*~~$/.test(inner) && inner.length >= 4) {
+      changes.push({ from: start + 2, to: start + 4 });
+      changes.push({ from: end - (id.length + 4), to: end - (id.length + 2) });
+    }
   }
   if (info) {
     // Take the trailing newline with the definition (or the leading one
