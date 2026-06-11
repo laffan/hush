@@ -317,27 +317,21 @@ function quoteLines(body) {
 
 /**
  * Google Docs's block-quote paragraph style carries its own font styling
- * — the export marks the whole quote bold (sometimes italic), which is
- * the *style*, not author emphasis. Strip emphasis that wraps an entire
- * quote line; emphasis on part of the line (an explicitly bolded word
- * inside the quote) is left alone. Shared with the Docs-API walker.
+ * — the export marks the whole quote bold and/or italic, often split
+ * across several runs with punctuation between them (`*"**text**"*
+ * *(citation)*`), which is the *style*, not author emphasis. If every
+ * word character on the line sits inside an emphasis run, drop all the
+ * emphasis; a line with plain words outside the runs keeps its (explicit)
+ * emphasis untouched. Shared with the Docs-API walker.
  */
 export function stripFullLineEmphasis(line) {
-  let s = String(line).trim();
-  for (;;) {
-    let next = s;
-    if (/^\*\*[\s\S]+\*\*$/.test(next) && !next.slice(2, -2).includes("**")) {
-      next = next.slice(2, -2).trim();
-    } else if (/^\*[^*][\s\S]*[^*]\*$/.test(next) && !next.slice(1, -1).includes("*")) {
-      next = next.slice(1, -1).trim();
-    }
-    if (next === s) break;
-    s = next;
-  }
-  // Style bold split across spans — `**a** **b**` with only whitespace
-  // between all-bold runs is still the quote style, not emphasis.
-  if (/^(\*\*[^*]+\*\*[ \t]*)+$/.test(s)) s = s.replace(/\*\*/g, "");
-  return s;
+  const s = String(line).trim();
+  if (!s.includes("*")) return s;
+  const outside = s
+    .replace(/\*\*[^*]+\*\*/g, "")
+    .replace(/\*[^*\s][^*]*\*/g, "");
+  if (/[A-Za-z0-9]/.test(outside)) return s;
+  return s.replace(/\*+/g, "");
 }
 
 function blockPre(node) {
