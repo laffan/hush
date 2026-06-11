@@ -14,6 +14,7 @@
   background: var(--theme-bg, var(--bg));
   color: var(--fg);
   border-left: 1px solid var(--panel-border);
+  border-right: 1px solid var(--panel-border);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -50,7 +51,9 @@
   text-align: left;
   background: none;
   border: none;
-  border-left: 2px solid rgba(184, 134, 11, 0.6);
+  /* The amber accent only marks the selected comment — unselected items
+     keep the slot so selection doesn't shift the text. */
+  border-left: 2px solid transparent;
   border-bottom: 1px solid var(--panel-border);
   padding: 10px 14px;
   cursor: pointer;
@@ -62,13 +65,19 @@
   background: rgba(128, 128, 128, 0.1);
 }
 
+.comments-item-selected {
+  border-left-color: rgba(184, 134, 11, 0.6);
+}
+
+/* The commented document text — a single-line excerpt. */
 .comments-item-quote {
   font-size: 12px;
   font-style: italic;
   color: var(--sidebar-fg);
   margin-bottom: 4px;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .comments-item-note {
@@ -80,10 +89,45 @@
 }
 
 .comments-item-resolved {
-  border-left-color: rgba(128, 128, 128, 0.5);
   opacity: 0.6;
 }
 
 .comments-item-resolved .comments-item-note {
   text-decoration: line-through;
+}
+
+.comments-item-resolve {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  opacity: 0.8;
+}
+
+.comments-item-resolve:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+/* One block per thread segment (top comment + each reply), author name
+   set off from the comment text. */
+.comment-note-segment {
+  margin-bottom: 4px;
+}
+
+.comment-note-segment:last-child {
+  margin-bottom: 0;
+}
+
+.comment-note-author {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.comment-note-author::after {
+  content: ":";
 }

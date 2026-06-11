@@ -374,6 +374,19 @@ function buildCommands(state) {
       hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("createGoogleDocFromCurrent") },
     { id: "google-unlink", label: "Unlink Document from Google Doc", icon: icons.trash, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("unlinkCurrentDocument") },
+    { id: "remove-all-comments", label: "Remove all Comments", icon: icons.trash, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => !/\{>[\s\S]*?<[A-Za-z0-9]+\}|^\[>[A-Za-z0-9]+\]:/m.test(s.editor?.view?.state?.doc?.toString() || ""),
+      action: async (s) => {
+        const view = s.editor?.view;
+        if (!view) return;
+        const { stripCommentSyntax } = await import("./editor/comment-syntax.js");
+        const text = view.state.doc.toString();
+        const cleaned = stripCommentSyntax(text);
+        if (cleaned === text) return;
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: cleaned } });
+        s.markDirty?.();
+        await s.saveCurrentFile?.();
+      } },
 
     // === ACTIVE PANE ONLY (doc or notebook) ===
     { id: "fit-pane-gap", label: "Fit pane to gap", icon: icons.pane, shortcutKey: null, ctx: "pane",

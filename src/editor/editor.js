@@ -262,7 +262,7 @@ export function createEditor(container, state) {
   const stickyHeadersPlugin = createStickyHeadersPlugin(state);
   const multiLineCommentPlugin = createMultiLineCommentPlugin();
   const commentAfterPlugin = createCommentAfterPlugin();
-  const commentAnchorPlugin = createCommentAnchorPlugin();
+  const commentAnchorPlugin = createCommentAnchorPlugin(state);
   const grammarCheckPlugin = createGrammarCheckPlugin(state);
   const grammarHoverTooltip = createGrammarHoverTooltip(state);
   const spellcheckPlugin = createSpellcheckPlugin(state);

@@ -152,7 +152,10 @@ function renderNode(node, ctx) {
 }
 
 function blockHeader(node, level, ctx) {
-  const inner = renderChildren(node, ctx).trim().replace(/\s*\n\s*/g, " ");
+  // Suppress bold inside headings: Google's export styles heading runs
+  // with `font-weight:700`, which would otherwise wrap every pulled
+  // heading in redundant `**` (a `#` heading is already bold).
+  const inner = renderChildren(node, { ...ctx, inHeading: true }).trim().replace(/\s*\n\s*/g, " ");
   if (!inner) return "";
   return "\n\n" + "#".repeat(level) + " " + inner + "\n\n";
 }
@@ -309,6 +312,7 @@ function renderInline(node, ctx) {
     const m = STYLE_BG_RE.exec(style);
     if (m && !isPlainBackground(m[1])) hi = true;
   }
+  if (ctx.inHeading) bold = false; // headings are bold by definition
   let inner = renderChildren(node, ctx);
   if (!inner) return "";
   // Wrap, but only the trimmed run — leading/trailing whitespace stays

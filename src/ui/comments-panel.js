@@ -12,6 +12,7 @@
  */
 import { EditorView } from "@codemirror/view";
 import { COMMENT_ANCHOR_RE, parseCommentDefinitions } from "../editor/comment-syntax.js";
+import { removeCommentFromDoc, renderNoteSegments } from "../editor/plugins/comment-anchors.js";
 
 export function setupCommentsPanel(state) {
   const panel = document.createElement("div");
@@ -34,6 +35,7 @@ export function setupCommentsPanel(state) {
   panel.addEventListener("mousedown", (e) => e.stopPropagation());
 
   let refreshTimer = null;
+  let selectedId = null; // anchor id of the comment last clicked in the panel
 
   function collectComments() {
     const view = state.editor?.view;
@@ -45,8 +47,8 @@ export function setupCommentsPanel(state) {
     let m;
     while ((m = COMMENT_ANCHOR_RE.exec(text)) !== null) {
       const id = m[2];
-      const info = defs.get(id) || { note: "", resolved: false };
-      out.push({ offset: m.index, quoted: m[1], note: info.note, resolved: info.resolved });
+      const info = defs.get(id) || { note: "", gid: null, resolved: false };
+      out.push({ id, offset: m.index, quoted: m[1], note: info.note, gid: info.gid, resolved: info.resolved });
     }
     return out;
   }
@@ -64,12 +66,32 @@ export function setupCommentsPanel(state) {
     view.focus();
   }
 
+  // Resolve from the panel: strip the comment syntax from the document
+  // (the prose stays) and, when the Google comment id is known, resolve
+  // it in Google right away — same behavior as the editor hover tooltip.
+  function resolveComment(c) {
+    const view = state.editor?.view;
+    if (!view) return;
+    const info = removeCommentFromDoc(view, c.id);
+    const gid = info?.gid || c.gid;
+    if (gid) {
+      import("../google-docs/comments-sync.js")
+        .then((m) => m.resolveCommentInGoogle(state, gid))
+        .catch((err) => console.warn("[google-docs] resolve from panel failed:", err));
+    }
+    if (selectedId === c.id) selectedId = null;
+    sync();
+  }
+
   function render(items) {
     listEl.replaceChildren();
     for (const c of items) {
+      const selected = c.id === selectedId;
       const item = document.createElement("button");
       item.type = "button";
-      item.className = "comments-item" + (c.resolved ? " comments-item-resolved" : "");
+      item.className = "comments-item"
+        + (c.resolved ? " comments-item-resolved" : "")
+        + (selected ? " comments-item-selected" : "");
 
       const quote = document.createElement("div");
       quote.className = "comments-item-quote";
@@ -77,11 +99,24 @@ export function setupCommentsPanel(state) {
 
       const note = document.createElement("div");
       note.className = "comments-item-note";
-      // Show the whole comment — no excerpting.
-      note.textContent = String(c.note || "").trim() || "(empty comment)";
+      renderNoteSegments(note, String(c.note || "").trim());
 
       item.append(quote, note);
-      item.addEventListener("click", () => scrollEditorTo(c.offset));
+      if (selected) {
+        const btn = document.createElement("span");
+        btn.className = "comments-item-resolve";
+        btn.textContent = "Resolve";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          resolveComment(c);
+        });
+        item.appendChild(btn);
+      }
+      item.addEventListener("click", () => {
+        selectedId = c.id;
+        scrollEditorTo(c.offset);
+        render(items);
+      });
       listEl.appendChild(item);
     }
   }

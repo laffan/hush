@@ -35,9 +35,10 @@ import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
 import {
-  fetchAndWeaveComments, resolveMarkedComments, extractCommentMarkers,
-  stripResolvedComments,
+  fetchOpenComments, weaveComments, resolveMarkedComments,
+  extractCommentMarkers, stripResolvedComments,
 } from "./comments-sync.js";
+import { openIncludeCommentsModal } from "./include-comments-modal.js";
 import { tryIncrementalPush } from "./incremental-push.js";
 
 // "drive.file" reference: listDocuments suppressed unused import warning.
@@ -95,6 +96,19 @@ function dropDuplicateLeadingTitle(md) {
   return lines.join("\n");
 }
 
+// Shared comment step for Import + Pull: recover the inline comment-marker
+// positions, and — when the GDoc has open comments — ask the user whether
+// to weave them in (anchored to the exact instance Google marked) or skip
+// them. The marker sentinels are stripped either way.
+async function maybeWeaveComments(docId, md) {
+  const { clean, positions } = extractCommentMarkers(md);
+  const comments = await fetchOpenComments(docId);
+  if (comments.length === 0) return clean;
+  const include = await openIncludeCommentsModal(comments.length);
+  if (!include) return clean;
+  return weaveComments(clean, comments, positions);
+}
+
 // ===== Phase 2a: Import =====
 
 export async function importFromGoogleDoc(state) {
@@ -106,10 +120,7 @@ export async function importFromGoogleDoc(state) {
   // when the doc has no tabs.
   let md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
   md = dropDuplicateLeadingTitle(md);
-  // Recover the inline comment-marker positions, then weave comments in at
-  // the exact instance Google anchored them to.
-  const { clean, positions } = extractCommentMarkers(md);
-  md = await fetchAndWeaveComments(picked.id, clean, positions);
+  md = await maybeWeaveComments(picked.id, md);
   // Create the file but don't open it yet — we need the link stored
   // before the editor switches so the link bar paints in one pass on
   // `file-opened`, instead of waiting for a follow-up settings-changed
@@ -276,10 +287,7 @@ export async function pullFromGoogleDoc(state, link) {
   // `---Tab name---` separators.
   let md = await pullMarkdownWithTabs(link.docId, htmlToMarkdownSafe);
   md = dropDuplicateLeadingTitle(md);
-  // Recover the inline comment-marker positions, then weave comments in at
-  // the exact instance Google anchored them to.
-  const { clean, positions } = extractCommentMarkers(md);
-  md = await fetchAndWeaveComments(link.docId, clean, positions);
+  md = await maybeWeaveComments(link.docId, md);
   // Replace the editor buffer; existing autosave + snapshot pipeline
   // captures this transition for free, so the user can recover via
   // Versions if the pull was a mistake.

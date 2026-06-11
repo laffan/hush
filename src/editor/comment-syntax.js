@@ -93,6 +93,23 @@ export function parseCommentDefinitions(text) {
 }
 
 /**
+ * Split a flattened note into its individual comment segments. Imported
+ * notes pack a whole thread into one line — the top comment plus each
+ * reply prefixed with `↳ ` (see `comments-sync.js#buildNote`). Each
+ * segment is split into its author (the `Name:` prefix Google supplies)
+ * and the comment text so UI surfaces can format the two distinctly.
+ * Returns `[{ author, text }]` — `author` is null when no prefix exists.
+ */
+export function splitNoteSegments(note) {
+  const segments = String(note || "").split(/\s*↳\s*/).map((s) => s.trim()).filter(Boolean);
+  return segments.map((seg) => {
+    const m = seg.match(/^([^:]{1,80}?):\s+([\s\S]*)$/);
+    if (m) return { author: m[1].trim(), text: m[2].trim() };
+    return { author: null, text: seg };
+  });
+}
+
+/**
  * Remove all comment scaffolding from a markdown string, keeping the
  * commented prose. Used on push / clipboard copy so the target document
  * shows clean text — the anchors are unwrapped to their inner text and

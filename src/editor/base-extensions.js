@@ -161,7 +161,7 @@ export function createBaseExtensions(state, onChange, opts) {
     createStickyHeadersPlugin(state),
     createMultiLineCommentPlugin(),
     createCommentAfterPlugin(),
-    createCommentAnchorPlugin(),
+    createCommentAnchorPlugin(state),
     createFocusModePlugin(state),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),

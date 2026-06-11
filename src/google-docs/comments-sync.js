@@ -80,20 +80,48 @@ export function extractCommentMarkers(md) {
   return { clean, positions };
 }
 
+/** Fetch the linked doc's *open* (unresolved) comments. Best-effort: any
+ *  API failure reads as "no comments" so a pull is never blocked on the
+ *  Comments endpoint. */
+export async function fetchOpenComments(docId) {
+  if (!docId) return [];
+  try {
+    const comments = await listComments(docId);
+    return (comments || []).filter((c) => !c?.resolved);
+  } catch (e) {
+    console.warn("[google-docs] comment pull failed:", e);
+    return [];
+  }
+}
+
 /** Fetch the linked doc's comments and weave them into `md`. Best-effort:
  *  any API failure leaves the markdown unchanged. `markerPositions` are the
  *  offsets recovered by `extractCommentMarkers` (empty for the Docs-API
  *  multi-tab path, which has no marker info). */
 export async function fetchAndWeaveComments(docId, md, markerPositions = []) {
   if (!docId) return md;
-  let comments = [];
-  try {
-    comments = await listComments(docId);
-  } catch (e) {
-    console.warn("[google-docs] comment pull failed:", e);
-    return md;
-  }
+  const comments = await fetchOpenComments(docId);
   return weaveComments(md, comments, markerPositions);
+}
+
+/**
+ * Resolve a single comment in Google right away — used by the Resolve
+ * button (editor tooltip / comments panel), which strips the comment's
+ * local syntax immediately. Best-effort: the local removal stands even if
+ * the API call fails (the outcome lands in the sync log either way).
+ */
+export async function resolveCommentInGoogle(state, gid) {
+  if (!gid || !state) return;
+  const { getLink, appendLog } = await import("./link-store.js");
+  const link = getLink(state, state.currentFileId);
+  if (!link?.docId) return;
+  try {
+    await resolveComment(link.docId, gid);
+    appendLog(state, `Resolved a comment in "${link.title}"`);
+  } catch (e) {
+    console.warn("[google-docs] resolve comment failed:", gid, e);
+    appendLog(state, `Failed to resolve a comment in "${link.title}" (see console)`);
+  }
 }
 
 /**

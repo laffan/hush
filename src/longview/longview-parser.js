@@ -3,6 +3,7 @@
  * Ported from obsidian-long-view/src/utils/documentParser.ts
  */
 import { parseTabMarkerPath, pathToLabel } from "../editor/tabs.js";
+import { COMMENT_ANCHOR_RE, COMMENT_DEF_RE } from "../editor/comment-syntax.js";
 
 /**
  * @typedef {{ level: number, text: string, startOffset: number, callout?: { type: string, title: string, color: string } }} DocumentHeading
@@ -27,7 +28,9 @@ export function parseHeadings(text, baseOffset = 0) {
     const match = line.match(/^(#{1,6})\s+(.+)/);
     if (match) {
       const level = match[1].length;
-      const headingText = match[2].trim();
+      // Unwrap Google-Docs comment anchors (`{>text<id}`) so the outline
+      // shows the heading prose, not the raw comment syntax.
+      const headingText = match[2].replace(COMMENT_ANCHOR_RE, "$1").trim();
       const heading = { level, text: headingText, startOffset: baseOffset + offset };
 
       // Check if next non-empty line is a callout (> [!type] title)
@@ -81,12 +84,15 @@ export function parseFlags(text, baseOffset = 0) {
     });
   }
 
-  // %% comments %%
+  // %% comments %% — except `%%cmnt …%%`, which is the Google-Docs
+  // comment definitions' hidden machine metadata, not a user note.
   const commentRegex = /%%([^%]+)%%/g;
   while ((match = commentRegex.exec(text)) !== null) {
+    const message = match[1].trim();
+    if (/^cmnt\b/.test(message)) continue;
     flags.push({
       type: "COMMENT",
-      message: match[1].trim(),
+      message,
       startOffset: baseOffset + match.index,
     });
   }
@@ -238,7 +244,17 @@ export function getFirstWords(text, n) {
  * Sanitize a line of text, stripping markdown syntax.
  */
 export function sanitizeLine(line) {
+  // Google-Docs comment scaffolding: a `[>id]:` definition line is pure
+  // metadata (drop it whole); an inline `{>text<id}` anchor unwraps to
+  // its commented prose.
+  if (COMMENT_DEF_RE.test(line)) return "";
   return line
+    .replace(COMMENT_ANCHOR_RE, "$1")
+    // A multi-line anchor leaves a dangling `{>` or `<id}` on this line —
+    // the pair sits on different lines, so the full-anchor unwrap above
+    // can't catch it.
+    .replace(/\{>/g, "")
+    .replace(/<[A-Za-z0-9]{1,4}\}/g, "")
     .replace(/^#{1,6}\s+/g, "")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")

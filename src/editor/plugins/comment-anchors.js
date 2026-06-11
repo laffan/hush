@@ -9,16 +9,19 @@
  *
  * A reader sees only the tinted commented range — every delimiter (`{>`,
  * `<id}`) and the whole `[>id]:` definition block are hidden. Hovering the
- * range pops a tooltip with the note and a Resolve/Unresolve button
- * (resolving is applied to Google on the next push — see
- * `google-docs/comments-sync.js`). Raw syntax is revealed whenever the
- * selection touches a comment, so everything stays directly editable.
+ * range pops a tooltip with the note and a Resolve button. Resolving
+ * removes the comment syntax from the document entirely (the commented
+ * prose stays) and — when the doc is linked and the Google comment id is
+ * known — resolves the comment in Google right away (best-effort; see
+ * `google-docs/comments-sync.js#resolveCommentInGoogle`). Raw syntax is
+ * revealed whenever the selection touches a comment, so everything stays
+ * directly editable.
  */
 import { ViewPlugin, Decoration, hoverTooltip } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 import {
   COMMENT_ANCHOR_RE, COMMENT_DEF_RE,
-  parseCommentDefinitions, parseCommentMeta, formatCommentMeta,
+  parseCommentDefinitions, parseCommentMeta, splitNoteSegments,
 } from "../comment-syntax.js";
 
 // ───────────────────── definition read / write ─────────────────────
@@ -41,15 +44,37 @@ function locateDef(doc, id) {
   return null;
 }
 
-// Rewrite a comment's definition with a new note / resolved state,
-// preserving the Google comment id metadata.
-function saveComment(view, id, note, resolved) {
-  const info = locateDef(view.state.doc, id);
-  if (!info) return;
-  const clean = String(note || "").replace(/\s+/g, " ").trim();
-  const line = `[>${id}]: ${clean}${formatCommentMeta(info.gid, resolved)}`;
-  if (line === view.state.doc.sliceString(info.from, info.to)) return;
-  view.dispatch({ changes: { from: info.from, to: info.to, insert: line } });
+/**
+ * Resolve a comment: strip every trace of its syntax from the document —
+ * unwrap the `{>text<id}` anchor(s) to the bare prose and delete the
+ * `[>id]:` definition line(s) — in one transaction so undo restores the
+ * comment whole. Returns the definition info (for its `gid`) or null.
+ */
+export function removeCommentFromDoc(view, id) {
+  const doc = view.state.doc;
+  const text = doc.toString();
+  const info = locateDef(doc, id);
+  const changes = [];
+  COMMENT_ANCHOR_RE.lastIndex = 0;
+  let m;
+  while ((m = COMMENT_ANCHOR_RE.exec(text)) !== null) {
+    if (m[2] !== id) continue;
+    const start = m.index;
+    const end = start + m[0].length;
+    changes.push({ from: start, to: start + 2 }); // `{>`
+    changes.push({ from: end - (id.length + 2), to: end }); // `<id}`
+  }
+  if (info) {
+    // Take the trailing newline with the definition (or the leading one
+    // when it's the last line) so no blank line is left behind.
+    let from = info.from;
+    let to = info.to;
+    if (to < doc.length) to += 1;
+    else if (from > 0) from -= 1;
+    changes.push({ from, to });
+  }
+  if (changes.length) view.dispatch({ changes });
+  return info;
 }
 
 // ───────────────────── hover tooltip ─────────────────────
@@ -74,24 +99,55 @@ function commentAt(doc, pos) {
   return null;
 }
 
-function tooltipDom(view, found) {
+/**
+ * Render a flattened note into `host` as one block per thread segment —
+ * author name on its own styled run, comment text after it — so a thread
+ * with several voices doesn't read as one run-on line. Shared by the hover
+ * tooltip and the comments panel.
+ */
+export function renderNoteSegments(host, note) {
+  const segments = splitNoteSegments(note);
+  if (segments.length === 0) {
+    host.textContent = "(empty comment)";
+    return;
+  }
+  for (const seg of segments) {
+    const row = document.createElement("div");
+    row.className = "comment-note-segment";
+    if (seg.author) {
+      const who = document.createElement("span");
+      who.className = "comment-note-author";
+      who.textContent = seg.author;
+      row.appendChild(who);
+    }
+    row.appendChild(document.createTextNode(seg.text));
+    host.appendChild(row);
+  }
+}
+
+function tooltipDom(view, found, state) {
   const dom = document.createElement("div");
   dom.className = "comment-tooltip" + (found.resolved ? " comment-resolved" : "");
   const note = document.createElement("div");
   note.className = "comment-tooltip-note";
-  note.textContent = found.note || "(empty comment)";
+  renderNoteSegments(note, found.note);
   const btn = document.createElement("button");
   btn.className = "comment-resolve-btn";
-  btn.textContent = found.resolved ? "Unresolve" : "Resolve";
+  btn.textContent = "Resolve";
   btn.addEventListener("mousedown", (e) => {
     e.preventDefault();
-    saveComment(view, found.id, found.note, !found.resolved);
+    const info = removeCommentFromDoc(view, found.id);
+    if (info?.gid && state) {
+      import("../../google-docs/comments-sync.js")
+        .then((m) => m.resolveCommentInGoogle(state, info.gid))
+        .catch((err) => console.warn("[google-docs] resolve on Resolve click failed:", err));
+    }
   });
   dom.append(note, btn);
   return dom;
 }
 
-function commentHoverTooltip() {
+function commentHoverTooltip(state) {
   return hoverTooltip((view, pos) => {
     const found = commentAt(view.state.doc, pos);
     if (!found) return null;
@@ -99,7 +155,7 @@ function commentHoverTooltip() {
       pos: found.from,
       end: found.to,
       above: true,
-      create: () => ({ dom: tooltipDom(view, found) }),
+      create: () => ({ dom: tooltipDom(view, found, state) }),
     };
   });
 }
@@ -162,7 +218,7 @@ function buildDecorations(view) {
   return builder.finish();
 }
 
-export function createCommentAnchorPlugin() {
+export function createCommentAnchorPlugin(state) {
   const plugin = ViewPlugin.fromClass(
     class {
       constructor(view) { this.decorations = buildDecorations(view); }
@@ -174,5 +230,5 @@ export function createCommentAnchorPlugin() {
     },
     { decorations: (v) => v.decorations }
   );
-  return [plugin, commentHoverTooltip()];
+  return [plugin, commentHoverTooltip(state)];
 }
