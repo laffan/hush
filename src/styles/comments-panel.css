@@ -69,6 +69,16 @@
   border-left-color: rgba(184, 134, 11, 0.6);
 }
 
+/* Suggested edits carry Google's suggestion green instead of comment
+   amber — both in the selected accent and on the quoted excerpt. */
+.comments-item-suggestion.comments-item-selected {
+  border-left-color: rgba(24, 128, 56, 0.7);
+}
+
+.comments-item-suggestion .comments-item-quote {
+  color: rgba(24, 128, 56, 0.9);
+}
+
 /* The commented document text — a single-line excerpt. */
 .comments-item-quote {
   font-size: 12px;

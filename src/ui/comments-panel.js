@@ -12,7 +12,9 @@
  */
 import { EditorView } from "@codemirror/view";
 import { COMMENT_ANCHOR_RE, parseCommentDefinitions } from "../editor/comment-syntax.js";
-import { removeCommentFromDoc, renderNoteSegments } from "../editor/plugins/comment-anchors.js";
+import {
+  removeCommentFromDoc, renderNoteSegments, setActiveCommentId,
+} from "../editor/plugins/comment-anchors.js";
 
 export function setupCommentsPanel(state) {
   const panel = document.createElement("div");
@@ -47,23 +49,29 @@ export function setupCommentsPanel(state) {
     let m;
     while ((m = COMMENT_ANCHOR_RE.exec(text)) !== null) {
       const id = m[2];
-      const info = defs.get(id) || { note: "", gid: null, resolved: false };
-      out.push({ id, offset: m.index, quoted: m[1], note: info.note, gid: info.gid, resolved: info.resolved });
+      const info = defs.get(id) || { note: "", gid: null, resolved: false, sug: false };
+      out.push({
+        id, offset: m.index, quoted: m[1],
+        note: info.note, gid: info.gid, resolved: info.resolved, sug: info.sug,
+      });
     }
     return out;
   }
 
-  function scrollEditorTo(offset) {
+  // Scroll the editor to the comment WITHOUT moving the cursor — a cursor
+  // inside the anchor would reveal the raw syntax and drop the tint. The
+  // clicked comment is marked "active" instead, which paints its anchor in
+  // a stronger highlight so it's findable in the text.
+  function scrollEditorTo(offset, id) {
     const view = state.editor?.view;
     if (!view) return;
     const safe = Math.max(0, Math.min(offset, view.state.doc.length));
     // EditorView.scrollIntoView is the only reliable path for offsets below
     // the rendered viewport (mirrors the outline's scrollToOffset).
     view.dispatch({
-      selection: { anchor: safe },
       effects: EditorView.scrollIntoView(safe, { y: "start", yMargin: 80 }),
     });
-    view.focus();
+    setActiveCommentId(view, id);
   }
 
   // Resolve from the panel: strip the comment syntax from the document
@@ -73,6 +81,7 @@ export function setupCommentsPanel(state) {
     const view = state.editor?.view;
     if (!view) return;
     const info = removeCommentFromDoc(view, c.id);
+    setActiveCommentId(view, null);
     const gid = info?.gid || c.gid;
     if (gid) {
       import("../google-docs/comments-sync.js")
@@ -90,6 +99,7 @@ export function setupCommentsPanel(state) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "comments-item"
+        + (c.sug ? " comments-item-suggestion" : "")
         + (c.resolved ? " comments-item-resolved" : "")
         + (selected ? " comments-item-selected" : "");
 
@@ -114,7 +124,7 @@ export function setupCommentsPanel(state) {
       }
       item.addEventListener("click", () => {
         selectedId = c.id;
-        scrollEditorTo(c.offset);
+        scrollEditorTo(c.offset, c.id);
         render(items);
       });
       listEl.appendChild(item);
@@ -141,7 +151,7 @@ export function setupCommentsPanel(state) {
 
   state.on("show-outline", () => sync(true));
   state.on("hide-outline", () => sync(false));
-  state.on("file-opened", () => sync());
+  state.on("file-opened", () => { selectedId = null; sync(); });
 
   state.on("doc-content-changed", () => {
     clearTimeout(refreshTimer);

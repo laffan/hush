@@ -41,25 +41,29 @@ export const COMMENT_META_RE = /\s*%%\s*cmnt\b([^%]*)%%\s*$/;
 
 /**
  * Split a definition body into its human note and machine metadata.
- * Returns `{ note, gid, resolved }` — `gid` is the Google comment id (or
- * null), `resolved` whether the user has flagged it resolved.
+ * Returns `{ note, gid, resolved, sug }` — `gid` is the Google comment id
+ * (or null), `resolved` whether the user has flagged it resolved, `sug`
+ * whether the entry is a Google Docs *suggested edit* rather than a plain
+ * comment (rendered in a different color).
  */
 export function parseCommentMeta(body) {
   const s = String(body || "");
   const m = s.match(COMMENT_META_RE);
-  if (!m) return { note: s.trim(), gid: null, resolved: false };
+  if (!m) return { note: s.trim(), gid: null, resolved: false, sug: false };
   const meta = m[1] || "";
   const gid = (meta.match(/id=([^\s%]+)/) || [])[1] || null;
   const resolved = /\bresolved\b/.test(meta);
-  return { note: s.slice(0, m.index).trim(), gid, resolved };
+  const sug = /\bsug\b/.test(meta);
+  return { note: s.slice(0, m.index).trim(), gid, resolved, sug };
 }
 
 /** Render the `%%cmnt …%%` metadata suffix (empty when there's nothing to
  *  record). Inverse of `parseCommentMeta`. */
-export function formatCommentMeta(gid, resolved) {
-  if (!gid && !resolved) return "";
+export function formatCommentMeta(gid, resolved, sug = false) {
+  if (!gid && !resolved && !sug) return "";
   const parts = [];
   if (gid) parts.push(`id=${gid}`);
+  if (sug) parts.push("sug");
   if (resolved) parts.push("resolved");
   return ` %%cmnt ${parts.join(" ")}%%`;
 }

@@ -18,11 +18,32 @@
  * directly editable.
  */
 import { ViewPlugin, Decoration, hoverTooltip } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import {
   COMMENT_ANCHOR_RE, COMMENT_DEF_RE,
   parseCommentDefinitions, parseCommentMeta, splitNoteSegments,
 } from "../comment-syntax.js";
+
+// ───────────────────── active comment ─────────────────────
+
+// The comments panel marks one comment "active" (clicked) — its anchor
+// paints in a stronger tint so the reader can spot the clicked comment in
+// the text without the cursor having to move into it (which would reveal
+// the raw syntax and drop the highlight entirely).
+export const setActiveComment = StateEffect.define();
+
+export const activeCommentField = StateField.define({
+  create: () => null,
+  update(value, tr) {
+    for (const e of tr.effects) if (e.is(setActiveComment)) value = e.value;
+    return value;
+  },
+});
+
+/** Mark the comment with this anchor id active (null clears). */
+export function setActiveCommentId(view, id) {
+  view.dispatch({ effects: setActiveComment.of(id || null) });
+}
 
 // ───────────────────── definition read / write ─────────────────────
 
@@ -92,8 +113,8 @@ function commentAt(doc, pos) {
     const openEnd = start + 2;
     const closeStart = end - (id.length + 2);
     if (pos >= openEnd && pos <= closeStart) {
-      const info = defs.get(id) || { note: "", resolved: false };
-      return { from: openEnd, to: closeStart, id, note: info.note, resolved: info.resolved };
+      const info = defs.get(id) || { note: "", resolved: false, sug: false };
+      return { from: openEnd, to: closeStart, id, note: info.note, resolved: info.resolved, sug: info.sug };
     }
   }
   return null;
@@ -127,7 +148,9 @@ export function renderNoteSegments(host, note) {
 
 function tooltipDom(view, found, state) {
   const dom = document.createElement("div");
-  dom.className = "comment-tooltip" + (found.resolved ? " comment-resolved" : "");
+  dom.className = "comment-tooltip"
+    + (found.sug ? " comment-tooltip-suggestion" : "")
+    + (found.resolved ? " comment-resolved" : "");
   const note = document.createElement("div");
   note.className = "comment-tooltip-note";
   renderNoteSegments(note, found.note);
@@ -166,6 +189,7 @@ function buildDecorations(view) {
   const doc = view.state.doc;
   const text = doc.toString();
   const defs = parseCommentDefinitions(text);
+  const activeId = view.state.field(activeCommentField, false) ?? null;
   const sel = view.state.selection.ranges;
   const overlaps = (from, to) => sel.some((r) => r.from <= to && r.to >= from);
   const items = [];
@@ -177,7 +201,7 @@ function buildDecorations(view) {
     const start = m.index;
     const end = start + m[0].length;
     const id = m[2];
-    const info = defs.get(id) || { resolved: false };
+    const info = defs.get(id) || { resolved: false, sug: false };
     const openEnd = start + 2;
     const closeStart = end - (id.length + 2);
     if (overlaps(start, end)) continue; // editing — show raw
@@ -186,7 +210,10 @@ function buildDecorations(view) {
       items.push({
         from: openEnd, to: closeStart,
         deco: Decoration.mark({
-          class: "comment-anchor" + (info.resolved ? " comment-anchor-resolved" : ""),
+          class: "comment-anchor"
+            + (info.sug ? " comment-anchor-suggestion" : "")
+            + (info.resolved ? " comment-anchor-resolved" : "")
+            + (id === activeId ? " comment-anchor-active" : ""),
         }),
       });
     }
@@ -223,12 +250,15 @@ export function createCommentAnchorPlugin(state) {
     class {
       constructor(view) { this.decorations = buildDecorations(view); }
       update(update) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        const activeChanged =
+          update.startState.field(activeCommentField, false) !==
+          update.state.field(activeCommentField, false);
+        if (update.docChanged || update.viewportChanged || update.selectionSet || activeChanged) {
           this.decorations = buildDecorations(update.view);
         }
       }
     },
     { decorations: (v) => v.decorations }
   );
-  return [plugin, commentHoverTooltip(state)];
+  return [activeCommentField, plugin, commentHoverTooltip(state)];
 }

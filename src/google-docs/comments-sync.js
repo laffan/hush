@@ -171,10 +171,17 @@ export function weaveComments(md, comments, markerPositions = []) {
   const defs = [];
   let counter = 0;
 
-  for (const c of comments) {
-    // Resolved comments are conversational history in Google — skip them
-    // so the imported document only carries open notes.
-    if (c?.resolved) continue;
+  // Resolved comments are conversational history in Google — skip them
+  // so the imported document only carries open notes. Place comments with
+  // the *longest* quoted text first: a specific quote binds its marker
+  // before a generic one (a single "." or a recurring word) can steal a
+  // marker that merely happens to be preceded by the same characters.
+  const open = comments
+    .filter((c) => !c?.resolved)
+    .map((c) => ({ c, quoted: (c?.quotedFileContent?.value || "").trim() }))
+    .sort((a, b) => b.quoted.length - a.quoted.length);
+
+  for (const { c, quoted } of open) {
     const note = buildNote(c);
     if (!note) continue;
 
@@ -182,14 +189,21 @@ export function weaveComments(md, comments, markerPositions = []) {
     do { id = shortId(counter++); } while (usedIds.has(id));
     usedIds.add(id);
 
+    // A Google Docs *suggested edit* arrives through the Comments API as a
+    // thread whose content is the auto-generated description ("Replace: …
+    // with …", "Delete: …", "Insert: …"). Flag it so the editor can tint
+    // it differently, and strike the affected text for delete/replace so
+    // the markdown mirrors what the Google Doc shows.
+    const kind = suggestionKind(c?.content);
+    const strike = kind === "replace" || kind === "delete";
+
     // Carry Google's comment id as hidden metadata so a later Resolve
     // can reach the right comment via the Drive API.
-    const meta = formatCommentMeta(c?.id || null, false);
-    const quoted = (c?.quotedFileContent?.value || "").trim();
+    const meta = formatCommentMeta(c?.id || null, false, !!kind);
     const target = quoted ? chooseOccurrence(body, quoted, markers, occupied) : null;
     if (target) {
       occupied.push({ from: target.start, to: target.end });
-      placements.push({ start: target.start, end: target.end, id });
+      placements.push({ start: target.start, end: target.end, id, strike });
       defs.push(`[>${id}]: ${note}${meta}`);
     } else {
       // Couldn't locate the range — keep the note, echo the quote so the
@@ -203,12 +217,35 @@ export function weaveComments(md, comments, markerPositions = []) {
   let out = body;
   placements.sort((a, b) => b.start - a.start);
   for (const p of placements) {
-    out = out.slice(0, p.start) + "{>" + out.slice(p.start, p.end) + "<" + p.id + "}" + out.slice(p.end);
+    let inner = out.slice(p.start, p.end);
+    if (p.strike && shouldStrike(out, p.start, p.end, inner)) {
+      inner = "~~" + inner + "~~";
+    }
+    out = out.slice(0, p.start) + "{>" + inner + "<" + p.id + "}" + out.slice(p.end);
   }
 
   if (defs.length === 0) return out;
   const sep = out.endsWith("\n") ? "\n" : "\n\n";
   return out + sep + defs.join("\n") + "\n";
+}
+
+// Identify a suggested-edit thread by its auto-generated description.
+// Returns "replace" | "delete" | "insert" | null.
+function suggestionKind(content) {
+  const m = oneLine(content).match(/^(replace|delete|insert)\s*:/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Wrap a suggestion's affected text in `~~…~~` only when it isn't struck
+// already (Drive's export styles suggested deletions with line-through,
+// which the HTML converter may have turned into `~~` on its own) and the
+// run is single-line (markdown strikethrough doesn't span paragraphs).
+function shouldStrike(body, start, end, inner) {
+  if (!inner.trim() || inner.includes("\n")) return false;
+  if (/^~~[\s\S]*~~$/.test(inner)) return false;
+  if (body.slice(Math.max(0, start - 2), start) === "~~") return false;
+  if (body.slice(end, end + 2) === "~~") return false;
+  return true;
 }
 
 // Flatten a comment + its replies into a single-line note. Author names
@@ -227,32 +264,40 @@ function buildNote(c) {
   return segments.join(" ");
 }
 
+// The Drive API returns comment content "with HTML formatting" — drop any
+// tags and decode the common entities so notes read as plain prose instead
+// of mangled markup.
 function oneLine(s) {
-  return String(s || "").replace(/\s+/g, " ").trim();
+  return String(s || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Choose which occurrence of `quoted` a comment anchors to. The strongest
 // signal is the inline marker Google places at the *end* of the commented
-// range: when the text immediately before a marker equals the quote, that
-// marker is unambiguously this comment's — so a comment on a single "."
-// lands on the marked period, not the first one in the document. Failing an
-// exact match we fall back to the occurrence nearest a marker, then (no
-// markers — the multi-tab path) the first free occurrence. Returns
+// range: an occurrence whose end lands on a marker (or a few characters
+// shy of one, when the gap is just markdown syntax the converter inserted
+// — a closing `**`, `~~`, `==`, a quote mark) is unambiguously this
+// comment's — so a comment on a single "." lands on the marked period, not
+// the first one in the document. Failing that we fall back to the
+// occurrence nearest a marker (preferring text that *ends before* the
+// marker, since Google places markers after the commented range), then
+// (no markers — the multi-tab path) the first free occurrence. Returns
 // `{ start, end }` or null. Consumes the marker it uses.
+const MARKER_GAP_MAX = 6;
+const MARKER_GAP_SYNTAX_RE = /^[*~=_`"'”’)\]\s]*$/;
+
 function chooseOccurrence(body, quoted, markers, occupied) {
   const free = (start, end) => !occupied.some((s) => start < s.to && end > s.from);
 
-  // 1. Exact: a marker whose preceding text is the quote.
-  for (let mi = 0; mi < markers.length; mi++) {
-    const end = markers[mi];
-    const start = end - quoted.length;
-    if (start >= 0 && body.slice(start, end) === quoted && free(start, end)) {
-      markers.splice(mi, 1);
-      return { start, end };
-    }
-  }
-
-  // 2. Gather free occurrences.
+  // 1. Gather free occurrences.
   const occ = [];
   let from = 0;
   for (;;) {
@@ -263,13 +308,35 @@ function chooseOccurrence(body, quoted, markers, occupied) {
     from = idx + 1;
   }
   if (occ.length === 0) return null;
-  if (occ.length === 1 || markers.length === 0) return occ[0];
 
-  // 3. Nearest remaining marker.
+  // 2. Marker-anchored: an occurrence whose end coincides with a marker,
+  //    allowing a small all-syntax gap. Smallest gap wins; ties go to the
+  //    earliest occurrence so repeated identical quotes pair off with
+  //    their markers in document order.
   let best = null;
   for (const o of occ) {
     for (let mi = 0; mi < markers.length; mi++) {
-      const d = Math.abs(o.end - markers[mi]);
+      const gap = markers[mi] - o.end;
+      if (gap < 0 || gap > MARKER_GAP_MAX) continue;
+      if (gap > 0 && !MARKER_GAP_SYNTAX_RE.test(body.slice(o.end, markers[mi]))) continue;
+      if (!best || gap < best.gap || (gap === best.gap && o.start < best.o.start)) {
+        best = { o, mi, gap };
+      }
+    }
+  }
+  if (best) {
+    markers.splice(best.mi, 1);
+    return best.o;
+  }
+
+  if (occ.length === 1 || markers.length === 0) return occ[0];
+
+  // 3. Nearest remaining marker — text ending at or before a marker beats
+  //    text that starts after it, because the marker trails its range.
+  for (const o of occ) {
+    for (let mi = 0; mi < markers.length; mi++) {
+      const after = o.end > markers[mi] + 2; // small slack for converter drift
+      const d = Math.abs(o.end - markers[mi]) + (after ? 1000 : 0);
       if (!best || d < best.d) best = { o, mi, d };
     }
   }

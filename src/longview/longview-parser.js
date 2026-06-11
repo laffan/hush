@@ -241,20 +241,27 @@ export function getFirstWords(text, n) {
 }
 
 /**
- * Sanitize a line of text, stripping markdown syntax.
+ * Sanitize a line of text, stripping markdown syntax. With
+ * `keepComments`, Google-Docs comment anchors (`{>text<id}` and the
+ * dangling `{>` / `<id}` halves of a multi-line anchor) survive so the
+ * caller can render the commented runs as highlights; everything else is
+ * stripped the same either way.
  */
-export function sanitizeLine(line) {
+export function sanitizeLine(line, { keepComments = false } = {}) {
   // Google-Docs comment scaffolding: a `[>id]:` definition line is pure
   // metadata (drop it whole); an inline `{>text<id}` anchor unwraps to
   // its commented prose.
   if (COMMENT_DEF_RE.test(line)) return "";
+  if (!keepComments) {
+    line = line
+      .replace(COMMENT_ANCHOR_RE, "$1")
+      // A multi-line anchor leaves a dangling `{>` or `<id}` on this line —
+      // the pair sits on different lines, so the full-anchor unwrap above
+      // can't catch it.
+      .replace(/\{>/g, "")
+      .replace(/<[A-Za-z0-9]{1,4}\}/g, "");
+  }
   return line
-    .replace(COMMENT_ANCHOR_RE, "$1")
-    // A multi-line anchor leaves a dangling `{>` or `<id}` on this line —
-    // the pair sits on different lines, so the full-anchor unwrap above
-    // can't catch it.
-    .replace(/\{>/g, "")
-    .replace(/<[A-Za-z0-9]{1,4}\}/g, "")
     .replace(/^#{1,6}\s+/g, "")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
@@ -262,7 +269,9 @@ export function sanitizeLine(line) {
     .replace(/_([^_]+)_/g, "$1")
     .replace(/~~([^~]+)~~/g, "$1")
     .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
-    .replace(/>\s*/g, "")
+    // Blockquote markers — leading only, so the `>` inside a kept comment
+    // anchor (`{>`) survives.
+    .replace(/^(?:>\s*)+/, "")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/!\[\[[^\]]*\]\]/g, "")
     .replace(/==[A-Za-z][A-Za-z0-9_-]*:[^=]+==/g, "")

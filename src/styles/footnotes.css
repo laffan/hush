@@ -153,6 +153,26 @@
   border-radius: 2px;
 }
 
+/* The comment clicked in the comments panel — a stronger tint so the
+   reader can spot it in the text without moving the cursor into it
+   (which would reveal the raw syntax and drop the tint entirely). */
+.comment-anchor-active {
+  background: rgba(184, 134, 11, 0.32);
+  border-bottom: 1px solid rgba(184, 134, 11, 0.9);
+}
+
+/* A Google Docs *suggested edit* — green, matching Google's suggestion
+   color, so it reads as a proposed change rather than a margin note. */
+.comment-anchor-suggestion {
+  background: rgba(24, 128, 56, 0.12);
+  border-bottom: 1px dotted rgba(24, 128, 56, 0.7);
+}
+
+.comment-anchor-suggestion.comment-anchor-active {
+  background: rgba(24, 128, 56, 0.3);
+  border-bottom: 1px solid rgba(24, 128, 56, 0.9);
+}
+
 /* A resolved comment reads as settled — muted tint, no underline. */
 .comment-anchor-resolved {
   background: rgba(128, 128, 128, 0.1);
@@ -170,6 +190,10 @@
   font-size: 13px;
   color: var(--fg);
   line-height: 1.5;
+}
+
+.comment-tooltip.comment-tooltip-suggestion {
+  border-left-color: #188038;
 }
 
 .comment-tooltip.comment-resolved {
