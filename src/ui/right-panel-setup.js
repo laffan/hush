@@ -8,6 +8,17 @@ export function setupRightPanel(state) {
   const rightPanelOverlay = document.getElementById("right-panel-overlay");
   let longViewInstance = null;
 
+  // Desks own the outline (right-sidebar) toggle state: record open /
+  // closed against the active desk so switching back restores it. Stored
+  // alongside the left-panel state under `settings.deskSidebars[deskId]`.
+  function saveDeskOutline(open) {
+    const deskId = state.settings?.activeDeskId;
+    if (!deskId) return;
+    const deskSidebars = { ...(state.settings?.deskSidebars || {}) };
+    deskSidebars[deskId] = { ...(deskSidebars[deskId] || {}), right: open };
+    state.updateSettings({ deskSidebars }).catch((e) => console.warn("Save outline state failed:", e));
+  }
+
   // Right panel inset mode — mirror left panel logic
   function updateRightPanelMode() {
     const w = window.innerWidth;
@@ -36,12 +47,24 @@ export function setupRightPanel(state) {
     }
     longViewInstance.render();
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    saveDeskOutline(true);
   });
 
   state.on("hide-outline", () => {
     rightPanelOverlay.classList.add("hidden");
     rightTrigger.classList.remove("is-hidden");
     if (state.runtime.columnResizeHandler) state.runtime.columnResizeHandler();
+    saveDeskOutline(false);
+  });
+
+  // Restore this desk's saved outline state once the desk's last file has
+  // opened (main.js emits this after `openLastFileForDesk` resolves, so
+  // the notebook guard in show-outline sees the correct surface).
+  state.on("desk-outline-restore", (deskId) => {
+    const id = deskId || state.settings?.activeDeskId;
+    const saved = id ? (state.settings?.deskSidebars || {})[id] : null;
+    if (!saved || typeof saved.right !== "boolean") return;
+    state.emit(saved.right ? "show-outline" : "hide-outline");
   });
 
   // Close right panel on click outside — only when overlaying the

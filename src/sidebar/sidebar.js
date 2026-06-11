@@ -36,9 +36,22 @@ export function createSidebar(state) {
   let _suppressStatePersist = true;
   function persistSidebarState() {
     if (_suppressStatePersist) return;
+    // Desks own the left-panel toggle state: record it against the active
+    // desk so switching back restores this layout. `right` is owned by the
+    // outline panel (right-panel-setup.js) — preserve whatever it stored.
+    const deskId = state.settings?.activeDeskId;
+    const deskSidebars = { ...(state.settings?.deskSidebars || {}) };
+    if (deskId) {
+      deskSidebars[deskId] = {
+        ...(deskSidebars[deskId] || {}),
+        left: panelOpen,
+        leftPinned: panelPinned,
+      };
+    }
     state.updateSettings({
       sidebarOpenPanel: panelOpen ? "files" : null,
       sidebarPinned: panelPinned,
+      deskSidebars,
     }).catch((e) => console.warn("Save sidebar state failed:", e));
   }
 
@@ -333,7 +346,24 @@ export function createSidebar(state) {
       li.classList.toggle("multi-selected", selected.has(li.dataset.fileId));
     });
   });
-  state.on("active-desk-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
+  state.on("active-desk-changed", (deskId) => {
+    // Restore this desk's saved left-panel layout (desks own the toggle
+    // state). Only act when the desk has a recorded preference so a
+    // first-ever switch leaves the current layout untouched.
+    const id = deskId || state.settings?.activeDeskId;
+    const saved = id ? (state.settings?.deskSidebars || {})[id] : null;
+    if (saved && typeof saved.left === "boolean") {
+      if (saved.leftPinned && !isWideViewport()) {
+        panelPinned = true;
+        panelOverlay.classList.add("panel-pinned");
+      } else if (panelPinned) {
+        panelPinned = false;
+        panelOverlay.classList.remove("panel-pinned");
+      }
+      if (saved.left) openPanel(); else hidePanel();
+    }
+    if (panelOpen && panelMode === "files") refreshFilesPanel(state);
+  });
   state.on("desks-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
 
   let _lastLocalSyncSerialised = JSON.stringify(state.settings.localSyncFolders || []);

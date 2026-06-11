@@ -531,7 +531,11 @@ async function init() {
   state.on("active-desk-changed", async (deskId) => {
     const node = state.currentFileId ? findNodeByFileId(state.fileTree, state.currentFileId) : null;
     if (!node?.lockedStyleId) applyDeskGlobalStyle(state);
-    await (await import("./state/state-desks-ops.js")).openLastFileForDesk(state, deskId || state.settings.activeDeskId);
+    const targetDeskId = deskId || state.settings.activeDeskId;
+    await (await import("./state/state-desks-ops.js")).openLastFileForDesk(state, targetDeskId);
+    // Desks own the outline toggle state — restore it now that the desk's
+    // last file is open (so the notebook guard sees the right surface).
+    state.emit("desk-outline-restore", targetDeskId);
   });
 
   // Style changes (from sidebar or settings)

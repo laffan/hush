@@ -299,17 +299,27 @@ export async function openLastFileForDesk(state, deskId) {
   const desk = tree.find((n) => n.type === "desk" && n.id === deskId);
   if (!desk) return;
 
+  // Leaving a desk ends any forward-only writing session. The open*
+  // helpers all no-op while ratchet mode is active, which would otherwise
+  // strand the editor on the *previous* desk's file after the switch.
+  if (state.ratchetMode && state.stopRatchet) state.stopRatchet();
+
   // 1. Try the saved per-desk last file. Verify it still exists in this
   //    desk's subtree — a remote rename / delete or a sync-translated
   //    payload that resolved to a file outside the desk shouldn't drag
-  //    the editor away from the desk's own content.
+  //    the editor away from the desk's own content. Honour every openable
+  //    type (doc / notebook / PDF / stack) so the desk restores the exact
+  //    surface the user last had, not just docs and notebooks.
   const last = state.getDeskLastFile?.(deskId);
   if (last?.fileId && last?.type) {
     const node = findNodeInSubtree(desk.children, (n) =>
-      (n.type === "document" || n.type === "notebook") && n.fileId === last.fileId
+      (n.type === "document" || n.type === "notebook" || n.type === "pdf" || n.type === "stack")
+      && n.fileId === last.fileId
     );
     if (node) {
-      if (last.type === "notebook") await state.openNotebook(node.fileId);
+      if (node.type === "notebook") await state.openNotebook(node.fileId);
+      else if (node.type === "pdf") await state.openPdf(node.fileId);
+      else if (node.type === "stack") await state.openStack(node.fileId);
       else await state.openFile(node.fileId);
       return;
     }
