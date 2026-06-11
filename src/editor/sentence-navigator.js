@@ -514,6 +514,25 @@ export function joinLines(view) {
   return true;
 }
 
+/** Remove the previous line break, joining the current line with the line above. */
+export function joinLinesUp(view) {
+  const doc = view.state.doc;
+  const head = view.state.selection.main.head;
+  const line = doc.lineAt(head);
+  if (line.number <= 1) return true; // already first line
+  const prevLine = doc.line(line.number - 1);
+  // Replace the newline + any leading whitespace on the current line with a single space
+  const leadingWs = line.text.match(/^\s*/)[0].length;
+  const from = prevLine.to;          // end of previous line (before \n)
+  const to = line.from + leadingWs;  // start of current line content
+  const insert = line.text.trim().length > 0 ? " " : "";
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: EditorSelection.cursor(from + insert.length),
+  });
+  return true;
+}
+
 // ===== Internal helpers =====
 
 /** True when the selection covers exactly one full sentence (ignoring

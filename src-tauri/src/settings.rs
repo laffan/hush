@@ -334,6 +334,8 @@ pub struct AppSettings {
     pub shortcut_find_prev: String,
     #[serde(default = "default_shortcut_join_lines")]
     pub shortcut_join_lines: String,
+    #[serde(default = "default_shortcut_join_lines_up")]
+    pub shortcut_join_lines_up: String,
     #[serde(default = "default_shortcut_jump_next_paragraph")]
     pub shortcut_jump_next_paragraph: String,
     #[serde(default = "default_shortcut_jump_prev_paragraph")]
@@ -621,6 +623,7 @@ impl Default for AppSettings {
             shortcut_find_next: default_shortcut_find_next(),
             shortcut_find_prev: default_shortcut_find_prev(),
             shortcut_join_lines: default_shortcut_join_lines(),
+            shortcut_join_lines_up: default_shortcut_join_lines_up(),
             shortcut_jump_next_paragraph: default_shortcut_jump_next_paragraph(),
             shortcut_jump_prev_paragraph: default_shortcut_jump_prev_paragraph(),
             shortcut_style_default: default_shortcut_style_default(),

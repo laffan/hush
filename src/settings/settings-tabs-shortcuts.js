@@ -52,7 +52,8 @@ export const shortcutCategories = [
       { key: "shortcutMoveSentenceForward", label: "Move sentence forward" },
       { key: "shortcutMoveSentenceBack", label: "Move sentence back" },
       { key: "shortcutDeleteToSentenceEnd", label: "Delete to sentence end" },
-      { key: "shortcutJoinLines", label: "Join lines (pull up)" },
+      { key: "shortcutJoinLines", label: "Join lines (remove next line break)" },
+      { key: "shortcutJoinLinesUp", label: "Join lines (remove previous line break)" },
     ],
   },
   {

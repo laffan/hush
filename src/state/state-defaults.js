@@ -83,6 +83,10 @@ export function createDefaultSettings() {
     // Local-only fields like lastFileId / scrollPosition stay on the
     // top-level `settings` so they per-device-per-window restore.
     desksMeta: {},
+    // Per-desk sidebar toggle state (local, per-device), keyed by desk id:
+    // `{ left, leftPinned, right }`. Switching desks restores that desk's
+    // saved left files-panel and right outline-panel open/closed state.
+    deskSidebars: {},
     // Active desk id for this device. Persisted as a regular setting so
     // the choice rides across restarts; intentionally NOT considered a
     // synced field — each device picks its own active desk.
@@ -141,6 +145,7 @@ export function createDefaultSettings() {
     shortcutFindNext: "Mod+G",
     shortcutFindPrev: "Mod+Shift+G",
     shortcutJoinLines: "Mod+J",
+    shortcutJoinLinesUp: "Mod+Shift+J",
     shortcutJumpNextParagraph: "Mod+ArrowDown",
     shortcutJumpPrevParagraph: "Mod+ArrowUp",
     shortcutZotero: "Mod+Shift+I",

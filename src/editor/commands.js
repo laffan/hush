@@ -25,7 +25,7 @@ import {
   selectSentence, reduceSentenceSelection, shiftSelectionToNextSentence,
   shiftSelectionToPreviousSentence, moveSentenceForward, moveSentenceBack,
   deleteToSentenceEnd, jumpToNextSentence, jumpToPrevSentence,
-  jumpToPrevParagraph, jumpToNextParagraph, joinLines, selectParagraph,
+  jumpToPrevParagraph, jumpToNextParagraph, joinLines, joinLinesUp, selectParagraph,
   selectToParagraphAbove, selectToParagraphBelow,
 } from "./sentence-navigator.js";
 import {
@@ -241,6 +241,7 @@ export function buildEditorCommands() {
     shortcutMoveSentenceBack: (_state, view) => (view ? moveSentenceBack(view) : false),
     shortcutDeleteToSentenceEnd: (_state, view) => (view ? deleteToSentenceEnd(view) : false),
     shortcutJoinLines: (_state, view) => (view ? joinLines(view) : false),
+    shortcutJoinLinesUp: (_state, view) => (view ? joinLinesUp(view) : false),
 
     // ===== Formatting =====
     shortcutBold: (_state, view) => (view ? toggleBold(view) : false),

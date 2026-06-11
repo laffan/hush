@@ -266,6 +266,9 @@ pub fn default_shortcut_find_prev() -> String {
 pub fn default_shortcut_join_lines() -> String {
     "Mod+J".to_string()
 }
+pub fn default_shortcut_join_lines_up() -> String {
+    "Mod+Shift+J".to_string()
+}
 pub fn default_shortcut_jump_next_paragraph() -> String {
     "Mod+ArrowDown".to_string()
 }
