@@ -127,6 +127,79 @@ export function splitSections(content, level, opts = {}) {
   return sections;
 }
 
+/**
+ * Convert the headings at `level` in `content` into Hush tab markers.
+ * Content before the first matching heading stays as the document's root
+ * (no marker). Each heading at `level` opens a new `---Name---` tab.
+ * When `keepHeadings` is set the heading line is kept at the top of its
+ * tab's content; otherwise the marker replaces it. Returns
+ * `{ markdown, tabs: [name, …] }` so callers can both write the result
+ * and preview the tab names.
+ */
+export function headingsToTabs(content, level, opts = {}) {
+  const { keepHeadings = false } = opts;
+  const lines = String(content || "").split(/\n/);
+  const sections = [];
+  let cur = { path: [], buf: [] }; // leading root section (pre-first-heading)
+  const push = () => {
+    sections.push({ path: cur.path, content: trimBlankEdges(cur.buf).join("\n") });
+  };
+  for (const line of lines) {
+    const m = HEADING_RE.exec(line);
+    if (m && m[1].length === level) {
+      push();
+      cur = { path: [sanitizeName(m[2])], buf: keepHeadings ? [line] : [] };
+    } else {
+      cur.buf.push(line);
+    }
+  }
+  push();
+  const tabs = sections.filter((s) => s.path.length).map((s) => s.path[0]);
+  return { markdown: joinTabs(sections), tabs };
+}
+
+/**
+ * Rewrite a single document in place so its headings at `level` become
+ * Hush tab markers. Unlike splitDocAtHeadings (which spreads sections
+ * across multiple files), this keeps everything in the one document.
+ */
+export async function convertHeadingsToTabs(state, nodeId, opts = {}) {
+  const { level, keepHeadings = false } = opts;
+  const node = findNode(state.fileTree, nodeId);
+  if (!node || node.type !== "document" || !node.fileId) return;
+  if (!Number.isInteger(level) || level < 1 || level > 6) return;
+
+  // Honour unsaved edits in the open doc before reading its content.
+  if (state.currentFileId === node.fileId && state.dirty) {
+    await state.saveCurrentFile();
+  }
+  const content = await getDocContent(state, node.fileId);
+  const { markdown, tabs } = headingsToTabs(content, level, { keepHeadings });
+  if (tabs.length === 0) return;
+
+  if (state.currentFileId === node.fileId && state.editor?.setContent) {
+    // Live doc: replace the buffer and persist through the normal save
+    // path (which also pushes the change to sync).
+    state.editor.setContent(markdown);
+    state.dirty = true;
+    await state.saveCurrentFile();
+  } else if (IS_TAURI) {
+    await tauriInvoke("save_file", { id: node.fileId, content: markdown });
+    state.files = await tauriInvoke("list_files");
+    state.syncFileToExternal(node.fileId, markdown);
+  } else {
+    const file = state.files.find((f) => f.id === node.fileId);
+    if (file) {
+      file.content = markdown;
+      file.modified = Math.floor(Date.now() / 1000);
+      state._saveFilesLocal();
+    }
+    state.syncFileToExternal(node.fileId, markdown);
+  }
+
+  state.emit("files-changed");
+}
+
 /** Create a backing file + content for a child doc, returning its
  *  fileId. Mirrors the create/save/rename dance used by state-convert. */
 async function createDocFile(state, name, content) {

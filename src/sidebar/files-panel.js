@@ -381,6 +381,8 @@ function dispatchRowAction(action, nodeId, opts) {
     handleConvertDocToProject(nodeId, storedState, refresh);
   } else if (action === "split-at-headings") {
     import("./split-at-headings-modal.js").then((m) => m.openSplitAtHeadingsModal(storedState, nodeId));
+  } else if (action === "convert-headings-to-tabs") {
+    import("./convert-headings-to-tabs-modal.js").then((m) => m.openConvertHeadingsToTabsModal(storedState, nodeId));
   } else if (action === "toggle-numbering") {
     const node = findNode(storedState.fileTree, nodeId);
     if (node) {

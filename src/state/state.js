@@ -432,6 +432,7 @@ export class AppState {
   async convertProjectToDoc(nodeId) { const m = await import("./state-convert.js"); return m.convertProjectToDoc(this, nodeId); }
   async convertDocToProject(nodeId) { const m = await import("./state-convert.js"); return m.convertDocToProject(this, nodeId); }
   async splitDocAtHeadings(nodeId, opts) { const m = await import("./state-split-combine.js"); return m.splitDocAtHeadings(this, nodeId, opts); }
+  async convertHeadingsToTabs(nodeId, opts) { const m = await import("./state-split-combine.js"); return m.convertHeadingsToTabs(this, nodeId, opts); }
   async combineDocsIntoDoc(fileIds, opts) { const m = await import("./state-split-combine.js"); return m.combineDocsIntoDoc(this, fileIds, opts); }
 
   async createImageFromFile(file) { const m = await import("./state-images.js"); return m.createImageFromFile(this, file); }

@@ -141,6 +141,7 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   // project; a doc already inside a project splits into sibling docs.
   if (isDoc) {
     entries.push({ action: "split-at-headings", label: "Split at Headings" });
+    entries.push({ action: "convert-headings-to-tabs", label: "Convert Headings to Tabs" });
   }
   if (isContainer && !isImagesId(nodeId)) {
     entries.push({ action: "open-as-stack", label: "Open as Stack" });
