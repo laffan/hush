@@ -317,6 +317,13 @@
   padding-bottom: calc(var(--lv-line-gap, 2px) / 2);
 }
 
+/* Imported Google-Docs comment ranges — the same amber wash the editor
+   uses, so commented text is spottable from the outline. */
+.longview-comment-highlight {
+  background: rgba(184, 134, 11, 0.25);
+  border-radius: 1px;
+}
+
 /* Paragraph currently nearest the editor cursor — picked up by the
    selectionchange/scroll handlers in longview.js. Low-opacity wash of
    the heading colour with no border, so it reads as a subtle accent

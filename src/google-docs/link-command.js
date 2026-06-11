@@ -35,9 +35,13 @@ import { htmlToMarkdown } from "../editor/google-docs/html-to-markdown.js";
 import { findNodeByFileId } from "../state/tree-helpers.js";
 import { pushMarkdownWithTabs, pullMarkdownWithTabs } from "./tabs-sync.js";
 import {
-  fetchAndWeaveComments, resolveMarkedComments, extractCommentMarkers,
-  stripResolvedComments,
+  fetchOpenComments, weaveComments, resolveMarkedComments,
+  extractCommentMarkers, stripResolvedComments,
 } from "./comments-sync.js";
+import { fetchSuggestions, weaveSuggestions } from "./suggestions-sync.js";
+import { isCommentsHidden, setCommentsHidden } from "./comments-visibility.js";
+import { openIncludeCommentsModal } from "./include-comments-modal.js";
+import { stripCommentSyntax } from "../editor/comment-syntax.js";
 import { tryIncrementalPush } from "./incremental-push.js";
 
 // "drive.file" reference: listDocuments suppressed unused import warning.
@@ -95,6 +99,25 @@ function dropDuplicateLeadingTitle(md) {
   return lines.join("\n");
 }
 
+// Shared annotation step for Import + Pull: recover the inline
+// comment-marker positions (and the export footer's marker↔thread index
+// from `collect`), then weave comments and pending suggested edits in.
+// `include: false` strips the marker sentinels and weaves nothing.
+async function weaveDocAnnotations(docId, md, { include, collect = null }) {
+  const { clean, markers } = extractCommentMarkers(md);
+  if (!include) return clean;
+  let out = clean;
+  const comments = await fetchOpenComments(docId);
+  if (comments.length) {
+    out = weaveComments(out, comments, markers, collect?.commentFooter || null);
+  }
+  const suggestions = await fetchSuggestions(docId);
+  if (suggestions.length) {
+    out = weaveSuggestions(out, suggestions);
+  }
+  return out;
+}
+
 // ===== Phase 2a: Import =====
 
 export async function importFromGoogleDoc(state) {
@@ -104,12 +127,23 @@ export async function importFromGoogleDoc(state) {
   // Tab-aware pull so the imported doc keeps `---Tab name---` markers
   // for every Google Doc tab; falls back to a flat single-tab export
   // when the doc has no tabs.
-  let md = await pullMarkdownWithTabs(picked.id, htmlToMarkdownSafe);
+  const conv = makeHtmlConverter();
+  let md = await pullMarkdownWithTabs(picked.id, conv.convert);
   md = dropDuplicateLeadingTitle(md);
-  // Recover the inline comment-marker positions, then weave comments in at
-  // the exact instance Google anchored them to.
-  const { clean, positions } = extractCommentMarkers(md);
-  md = await fetchAndWeaveComments(picked.id, clean, positions);
+  // Import is the one place that asks about comments — Pull respects the
+  // choice from then on (flip it later with Google : Show / Hide comments).
+  const comments = await fetchOpenComments(picked.id);
+  const suggestions = await fetchSuggestions(picked.id);
+  let include = false;
+  if (comments.length || suggestions.length) {
+    include = await openIncludeCommentsModal(comments.length + suggestions.length);
+  }
+  const { clean, markers } = extractCommentMarkers(md);
+  md = clean;
+  if (include) {
+    if (comments.length) md = weaveComments(md, comments, markers, conv.collect.commentFooter || null);
+    if (suggestions.length) md = weaveSuggestions(md, suggestions);
+  }
   // Create the file but don't open it yet — we need the link stored
   // before the editor switches so the link bar paints in one pass on
   // `file-opened`, instead of waiting for a follow-up settings-changed
@@ -120,6 +154,11 @@ export async function importFromGoogleDoc(state) {
     openImmediately: false,
   });
   if (!created?.fileId) return created;
+  // Skipping at import means future Pulls skip too, until the user runs
+  // Google : Show comments.
+  if (!include && (comments.length || suggestions.length)) {
+    setCommentsHidden(created.fileId, true);
+  }
   await setLink(state, created.fileId, {
     docId: picked.id,
     title: picked.name || "Untitled",
@@ -274,12 +313,15 @@ export async function pullFromGoogleDoc(state, link) {
   // Tab-aware pull: walks every top-level tab, exports each in
   // isolation, converts each to markdown, and rejoins them with
   // `---Tab name---` separators.
-  let md = await pullMarkdownWithTabs(link.docId, htmlToMarkdownSafe);
+  const conv = makeHtmlConverter();
+  let md = await pullMarkdownWithTabs(link.docId, conv.convert);
   md = dropDuplicateLeadingTitle(md);
-  // Recover the inline comment-marker positions, then weave comments in at
-  // the exact instance Google anchored them to.
-  const { clean, positions } = extractCommentMarkers(md);
-  md = await fetchAndWeaveComments(link.docId, clean, positions);
+  // No prompt on Pull — the include/skip choice was made at import time
+  // and is toggled via Google : Show / Hide comments.
+  md = await weaveDocAnnotations(link.docId, md, {
+    include: !isCommentsHidden(currentDocFileId(state)),
+    collect: conv.collect,
+  });
   // Replace the editor buffer; existing autosave + snapshot pipeline
   // captures this transition for free, so the user can recover via
   // Versions if the pull was a mistake.
@@ -296,6 +338,53 @@ export async function pullFromGoogleDoc(state, link) {
   appendLog(state, `Pulled "${meta?.name || link.title}" from Google Docs`);
 }
 
+// ===== Hide / Show comments (command palette) =====
+
+/** Strip every comment / suggestion anchor from the current doc and mark
+ *  it comments-hidden, so subsequent Pulls skip weaving them back in. */
+export async function hideGoogleComments(state) {
+  const fileId = currentDocFileId(state);
+  if (!fileId) return;
+  setCommentsHidden(fileId, true);
+  const view = state.editor?.view;
+  if (!view) return;
+  const text = view.state.doc.toString();
+  const cleaned = stripCommentSyntax(text);
+  if (cleaned !== text) {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: cleaned } });
+    state.markDirty?.();
+    await state.saveCurrentFile?.();
+  }
+  appendLog(state, "Comments hidden for this document");
+}
+
+/** Clear the comments-hidden flag and weave the linked GDoc's current
+ *  comments + suggestions back into the document. */
+export async function showGoogleComments(state) {
+  await requireConnection();
+  const fileId = currentDocFileId(state);
+  if (!fileId) return;
+  const link = getLink(state, fileId);
+  if (!link?.docId) {
+    throw new Error("This document isn't linked to a Google Doc.");
+  }
+  setCommentsHidden(fileId, false);
+  const view = state.editor?.view;
+  if (!view) return;
+  const current = view.state.doc.toString();
+  // Re-weave from a clean slate so repeat runs can't duplicate anchors.
+  // No export markers here (no pull happened) — placement rides the
+  // quoted-text matching alone.
+  let md = stripCommentSyntax(current);
+  md = await weaveDocAnnotations(link.docId, md, { include: true });
+  if (md !== current) {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: md } });
+    state.markDirty?.();
+    await state.saveCurrentFile?.();
+  }
+  appendLog(state, "Comments shown for this document");
+}
+
 // ===== Conversion shims =====
 
 // Drive's HTML *export* differs from Google Docs's *clipboard* HTML:
@@ -306,17 +395,35 @@ export async function pullFromGoogleDoc(state, link) {
 // apply to. The conversion is intentionally narrow: only the four
 // properties we care about (`font-weight`, `font-style`,
 // `text-decoration`, `background-color`).
-function htmlToMarkdownSafe(html) {
-  if (!html) return "";
-  const inlined = inlineGoogleExportStyles(html);
-  // `commentMarkers: true` keeps each inline comment marker as a position
-  // sentinel so the comment weaver can anchor to the right text instance.
-  const md = htmlToMarkdown(inlined, { commentMarkers: true });
-  if (md == null) return "";
-  return md;
+//
+// The returned converter carries a `collect` object the HTML pass fills
+// with side-channel data — currently `commentFooter`, the export
+// footer's marker-ref → thread-text index used to pair each Drive
+// comment with its exact in-body marker.
+function makeHtmlConverter() {
+  const collect = {};
+  return {
+    collect,
+    convert(html) {
+      if (!html) return "";
+      const inlined = inlineGoogleExportStyles(html);
+      // `commentMarkers: true` keeps each inline comment marker as a
+      // position sentinel so the comment weaver can anchor to the right
+      // text instance.
+      const md = htmlToMarkdown(inlined, { commentMarkers: true, collect });
+      if (md == null) return "";
+      return md;
+    },
+  };
 }
 
-const RELEVANT_CSS_PROPS = ["font-weight", "font-style", "text-decoration", "background-color"];
+// margin-left / padding-left carry Google's block-quote indentation —
+// without them an export whose indent lives in a class rule (rather than
+// inline) never reads back as a `> ` quote.
+const RELEVANT_CSS_PROPS = [
+  "font-weight", "font-style", "text-decoration", "background-color",
+  "margin-left", "padding-left",
+];
 
 function inlineGoogleExportStyles(html) {
   if (!html.includes("<style") || typeof DOMParser === "undefined") return html;

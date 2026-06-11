@@ -223,8 +223,12 @@ export function viewUrl(docId) {
  *  Drive's `files.export` doesn't filter by tab (`tabIds` is a
  *  `files.get` parameter, not an export one), so a multi-tab pull
  *  has to walk the Docs API's structured response instead. */
-export async function getDocumentWithTabs(docId) {
+export async function getDocumentWithTabs(docId, { suggestionsInline = false } = {}) {
   const params = new URLSearchParams({ includeTabsContent: "true" });
+  // SUGGESTIONS_INLINE marks pending Suggesting-mode edits on text runs
+  // (suggestedInsertionIds / suggestedDeletionIds) — used by the
+  // suggestion pull (`suggestions-sync.js`).
+  if (suggestionsInline) params.set("suggestionsViewMode", "SUGGESTIONS_INLINE");
   const resp = await gFetch(
     `${DOCS_BASE}/documents/${encodeURIComponent(docId)}?${params}`
   );

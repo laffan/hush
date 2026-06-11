@@ -42,17 +42,23 @@ export function htmlToMarkdown(html, opts = {}) {
     gdocs.remove();
   }
 
-  stripGoogleCommentArtifacts(root, !!opts.commentMarkers);
+  stripGoogleCommentArtifacts(root, !!opts.commentMarkers, opts.collect);
 
   const out = renderChildren(root, { inPre: false });
-  return out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim();
+  // Trailing spaces first, then collapse — the other order leaves
+  // `\n\n \n\n` runs (inter-paragraph whitespace text nodes) as four
+  // newlines, which read as phantom blank lines in the pulled markdown.
+  return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // Position sentinel left in place of an inline comment marker when the
 // caller asks to keep marker positions (pull path). Private-use char so it
 // can't collide with document text; the pull flow extracts and removes it
 // (see `comments-sync.js#extractCommentMarkers`) to recover the exact
-// offset each Google comment was anchored to.
+// offset each Google comment was anchored to. The marker's reference
+// number (`#cmnt7` \u2192 `7`) rides between a sentinel pair \u2014
+// `\uF8FF7\uF8FF` \u2014 so a marker can be paired with the exact comment
+// thread it belongs to via the export's footer (see `opts.collect`).
 export const COMMENT_MARKER_SENTINEL = "\uF8FF";
 
 // Google Docs's HTML export renders comments as `<sup><a href="#cmntN">
@@ -65,20 +71,42 @@ export const COMMENT_MARKER_SENTINEL = "\uF8FF";
 // pulled markdown carries `[[a]](#cmntN)` junk inline and a wall of
 // comment/reaction text in the footer (which then gets pushed back into
 // the Google Doc as literal body paragraphs).
-function stripGoogleCommentArtifacts(root, keepMarkers) {
+function stripGoogleCommentArtifacts(root, keepMarkers, collect) {
   // 1. In-body reference markers (`#cmntN`, but not the foot back-refs).
   //    On the pull path (`keepMarkers`) we replace each with a position
-  //    sentinel instead of deleting it, so the comment weaver can anchor
-  //    each comment to the exact instance Google marked — otherwise a
-  //    comment on a word that recurs earlier lands on the wrong one.
+  //    sentinel carrying the marker's reference number instead of
+  //    deleting it, so the comment weaver can anchor each comment to the
+  //    exact instance Google marked — otherwise a comment on a word that
+  //    recurs earlier lands on the wrong one.
   for (const a of root.querySelectorAll('a[href^="#cmnt"]')) {
     const href = a.getAttribute("href") || "";
     if (href.startsWith("#cmnt_ref")) continue;
     const node = a.closest("sup") || a;
     if (keepMarkers) {
-      node.replaceWith(root.ownerDocument.createTextNode(COMMENT_MARKER_SENTINEL));
+      const ref = (href.match(/^#cmnt([\w.-]+)$/) || [])[1] || "";
+      node.replaceWith(root.ownerDocument.createTextNode(
+        COMMENT_MARKER_SENTINEL + ref + COMMENT_MARKER_SENTINEL
+      ));
     } else {
       node.remove();
+    }
+  }
+  // 1b. Harvest the footer's thread texts before removing it: each foot
+  //     block's back-ref (`#cmnt_refN`) pairs reference number N with
+  //     the thread's full text, which lets the comment weaver match a
+  //     Drive API comment to the exact in-body marker it belongs to.
+  if (collect) {
+    collect.commentFooter = collect.commentFooter || {};
+    for (const a of root.querySelectorAll('a[href^="#cmnt_ref"]')) {
+      const ref = ((a.getAttribute("href") || "").match(/^#cmnt_ref([\w.-]+)$/) || [])[1];
+      if (!ref) continue;
+      // The back-ref's own paragraph holds the thread's opening comment
+      // (replies are sibling paragraphs) — enough text to pair against
+      // the API comment's `content`.
+      const block = a.closest("p") || a.parentElement || a;
+      const label = a.textContent || "";
+      const text = (block.textContent || "").replace(label, " ").replace(/\s+/g, " ").trim();
+      if (text) collect.commentFooter[ref] = text;
     }
   }
   // 2. The whole foot section. Google always places the comment thread
@@ -152,7 +180,10 @@ function renderNode(node, ctx) {
 }
 
 function blockHeader(node, level, ctx) {
-  const inner = renderChildren(node, ctx).trim().replace(/\s*\n\s*/g, " ");
+  // Suppress bold inside headings: Google's export styles heading runs
+  // with `font-weight:700`, which would otherwise wrap every pulled
+  // heading in redundant `**` (a `#` heading is already bold).
+  const inner = renderChildren(node, { ...ctx, inHeading: true }).trim().replace(/\s*\n\s*/g, " ");
   if (!inner) return "";
   return "\n\n" + "#".repeat(level) + " " + inner + "\n\n";
 }
@@ -171,12 +202,12 @@ function blockPara(node, ctx) {
   const collapsed = inner.replace(/[\s ]+/g, "");
   if (!collapsed) return "";
   const body = inner.trim();
-  // Google Docs has no block-quote style — it represents one as an
-  // indented paragraph (Drive's HTML export emits `margin-left:36pt`).
-  // Read a once-indented paragraph back as Hush's `> ` block quote.
+  // Google Docs represents a block quote as an indented paragraph
+  // (Drive's HTML export emits `margin-left:36pt`). Read a once-indented
+  // paragraph back as Hush's `> ` block quote, shedding the quote
+  // *style*'s own emphasis on the way.
   if (paragraphIndentPt(node) >= QUOTE_INDENT_THRESHOLD_PT) {
-    const lined = body.split("\n").map((l) => (l.length ? "> " + l : ">")).join("\n");
-    return "\n\n" + lined + "\n\n";
+    return "\n\n" + quoteLines(body) + "\n\n";
   }
   return "\n\n" + body + "\n\n";
 }
@@ -272,8 +303,35 @@ function collectListItems(listNode, items, fallbackDepth, ctx) {
 function blockQuote(node, ctx) {
   const inner = renderChildren(node, ctx).trim();
   if (!inner) return "";
-  const lined = inner.split("\n").map((l) => (l.length ? "> " + l : ">")).join("\n");
+  const lined = quoteLines(inner);
   return "\n\n" + lined + "\n\n";
+}
+
+// Prefix each line with `> `, shedding style-level emphasis first.
+function quoteLines(body) {
+  return body.split("\n").map((l) => {
+    const t = stripFullLineEmphasis(l);
+    return t.length ? "> " + t : ">";
+  }).join("\n");
+}
+
+/**
+ * Google Docs's block-quote paragraph style carries its own font styling
+ * — the export marks the whole quote bold and/or italic, often split
+ * across several runs with punctuation between them (`*"**text**"*
+ * *(citation)*`), which is the *style*, not author emphasis. If every
+ * word character on the line sits inside an emphasis run, drop all the
+ * emphasis; a line with plain words outside the runs keeps its (explicit)
+ * emphasis untouched. Shared with the Docs-API walker.
+ */
+export function stripFullLineEmphasis(line) {
+  const s = String(line).trim();
+  if (!s.includes("*")) return s;
+  const outside = s
+    .replace(/\*\*[^*]+\*\*/g, "")
+    .replace(/\*[^*\s][^*]*\*/g, "");
+  if (/[A-Za-z0-9]/.test(outside)) return s;
+  return s.replace(/\*+/g, "");
 }
 
 function blockPre(node) {
@@ -309,6 +367,7 @@ function renderInline(node, ctx) {
     const m = STYLE_BG_RE.exec(style);
     if (m && !isPlainBackground(m[1])) hi = true;
   }
+  if (ctx.inHeading) bold = false; // headings are bold by definition
   let inner = renderChildren(node, ctx);
   if (!inner) return "";
   // Wrap, but only the trimmed run — leading/trailing whitespace stays

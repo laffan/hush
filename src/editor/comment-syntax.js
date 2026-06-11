@@ -41,25 +41,34 @@ export const COMMENT_META_RE = /\s*%%\s*cmnt\b([^%]*)%%\s*$/;
 
 /**
  * Split a definition body into its human note and machine metadata.
- * Returns `{ note, gid, resolved }` — `gid` is the Google comment id (or
- * null), `resolved` whether the user has flagged it resolved.
+ * Returns `{ note, gid, resolved, sug, sugKind }` — `gid` is the Google
+ * comment id (or null), `resolved` whether the user has flagged it
+ * resolved, `sug` whether the entry is a Google Docs *suggested edit*
+ * rather than a plain comment, and `sugKind` which side of the edit the
+ * anchor wraps: `"del"` (text pending deletion) or `"ins"` (proposed
+ * insertion); null for plain comments or legacy `sug` tokens.
  */
 export function parseCommentMeta(body) {
   const s = String(body || "");
   const m = s.match(COMMENT_META_RE);
-  if (!m) return { note: s.trim(), gid: null, resolved: false };
+  if (!m) return { note: s.trim(), gid: null, resolved: false, sug: false, sugKind: null };
   const meta = m[1] || "";
   const gid = (meta.match(/id=([^\s%]+)/) || [])[1] || null;
   const resolved = /\bresolved\b/.test(meta);
-  return { note: s.slice(0, m.index).trim(), gid, resolved };
+  const sm = meta.match(/\bsug(?:=(\w+))?\b/);
+  const sug = !!sm;
+  const sugKind = sm?.[1] === "del" || sm?.[1] === "ins" ? sm[1] : null;
+  return { note: s.slice(0, m.index).trim(), gid, resolved, sug, sugKind };
 }
 
 /** Render the `%%cmnt …%%` metadata suffix (empty when there's nothing to
- *  record). Inverse of `parseCommentMeta`. */
-export function formatCommentMeta(gid, resolved) {
-  if (!gid && !resolved) return "";
+ *  record). Inverse of `parseCommentMeta`. `sug` may be `true` or a kind
+ *  string (`"del"` / `"ins"`). */
+export function formatCommentMeta(gid, resolved, sug = false) {
+  if (!gid && !resolved && !sug) return "";
   const parts = [];
   if (gid) parts.push(`id=${gid}`);
+  if (sug) parts.push(typeof sug === "string" ? `sug=${sug}` : "sug");
   if (resolved) parts.push("resolved");
   return ` %%cmnt ${parts.join(" ")}%%`;
 }
@@ -90,6 +99,23 @@ export function parseCommentDefinitions(text) {
   }
   flush();
   return defs;
+}
+
+/**
+ * Split a flattened note into its individual comment segments. Imported
+ * notes pack a whole thread into one line — the top comment plus each
+ * reply prefixed with `↳ ` (see `comments-sync.js#buildNote`). Each
+ * segment is split into its author (the `Name:` prefix Google supplies)
+ * and the comment text so UI surfaces can format the two distinctly.
+ * Returns `[{ author, text }]` — `author` is null when no prefix exists.
+ */
+export function splitNoteSegments(note) {
+  const segments = String(note || "").split(/\s*↳\s*/).map((s) => s.trim()).filter(Boolean);
+  return segments.map((seg) => {
+    const m = seg.match(/^([^:]{1,80}?):\s+([\s\S]*)$/);
+    if (m) return { author: m[1].trim(), text: m[2].trim() };
+    return { author: null, text: seg };
+  });
 }
 
 /**

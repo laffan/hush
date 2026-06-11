@@ -21,6 +21,7 @@ pipeline deterministic and avoids tempfile permissions issues on iOS.
 */
 
 pub mod bibliography;
+pub mod citations;
 pub mod csl;
 pub mod markdown;
 pub mod notes;

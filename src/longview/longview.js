@@ -8,12 +8,11 @@
 import {
   parseDocument,
   computeHeadingCalloutStacks,
-  sanitizeLine,
   getFirstWords,
 } from "./longview-parser.js";
+import { tokenizeLinesWithOffsets, renderLineWithCommentHighlights } from "./longview-lines.js";
 import { CALLOUT_COLORS, getCalloutColor } from "../editor/plugins/callouts.js";
 import { getActiveTheme } from "../themes/index.js";
-import { parseTabMarkerLine } from "../editor/tabs.js";
 import { buildTabContainers } from "./longview-tabs.js";
 import { EditorView } from "@codemirror/view";
 
@@ -225,7 +224,7 @@ export function createLongView(container, state) {
             const p = document.createElement("p");
             p.className = "longview-line";
             p.dataset.offset = String(entry.offset);
-            p.textContent = entry.line;
+            renderLineWithCommentHighlights(p, entry.line);
             // Click navigates the editor to this paragraph; mirrors the
             // heading-click behaviour so the whole outline is interactive.
             p.addEventListener("click", (e) => {
@@ -533,35 +532,6 @@ function tokenizeContent(text, headings, flags) {
     if (tail.trim()) fragments.push({ type: "text", text: tail, startOffset: cursor });
   }
   return fragments;
-}
-
-function tokenizeLines(text) {
-  return text
-    .replace(/\r\n/g, "\n")
-    .split(/\n+/)
-    .map(l => l.trim())
-    .filter(l => l.length > 0 && !l.startsWith("#") && l !== "---hush-separator---")
-    .map(l => sanitizeLine(l))
-    .filter(l => l.length > 0);
-}
-
-/** Like tokenizeLines but preserves each surviving line's start
- *  offset (in the original document) so the outline can highlight the
- *  paragraph nearest the cursor. */
-function tokenizeLinesWithOffsets(text, baseOffset) {
-  const normalized = text.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-  const out = [];
-  let cursor = 0;
-  for (const raw of lines) {
-    const trimmed = raw.trim();
-    if (trimmed.length > 0 && !trimmed.startsWith("#") && parseTabMarkerLine(trimmed) == null && trimmed !== "---hush-separator---") {
-      const clean = sanitizeLine(trimmed);
-      if (clean.length > 0) out.push({ line: clean, offset: baseOffset + cursor });
-    }
-    cursor += raw.length + 1; // +1 for the \n we split on
-  }
-  return out;
 }
 
 function createSectionStructure(container, level) {
