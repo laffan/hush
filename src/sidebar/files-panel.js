@@ -1,7 +1,6 @@
 /**
- * Files panel — nested tree view with folders, projects and documents
- * Uses SortableList for drag-and-drop reordering
- * Special nodes: Inbox (pinned top), Trash (pinned bottom), Flagged (virtual)
+ * Files panel — nested tree view with folders, projects and documents.
+ * SortableList drag-and-drop; special nodes: Inbox (top), Trash (bottom), Flagged (virtual).
  */
 
 import { SortableList } from "./sortable-list/sortable-list.js";

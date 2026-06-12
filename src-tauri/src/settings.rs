@@ -228,10 +228,7 @@ pub struct AppSettings {
     pub footnote_margin_side: String,
 
     // Sidebar / global tooltips. Default off — when on, native browser
-    // tooltips are shown on sidebar, pane header, and notebook toolbar
-    // buttons. Renamed from `hide_sidebar_tooltips` (an inverted flag);
-    // serde alias preserves any legacy persisted value as a true→false
-    // conversion would be incorrect anyway, so we just drop the old key.
+    // tooltips show on sidebar, pane header, and notebook toolbar buttons.
     #[serde(default)]
     pub show_tooltips: bool,
     #[serde(default)]
