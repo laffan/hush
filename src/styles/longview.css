@@ -32,6 +32,15 @@
   pointer-events: none;
 }
 
+/* iOS / iPadOS safe zones — the outline runs edge-to-edge like the
+   notebook shelf, so without the insets its top rows hide under the
+   notch / status bar (and the last rows under the home indicator).
+   env() resolves to 0 off-device, so this is a no-op on desktop. */
+html.ios #right-panel-overlay {
+  top: calc(env(safe-area-inset-top, 0px) + var(--pane-dock-top-height, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--pane-dock-bottom-height, 0px));
+}
+
 /* Right-edge hover trigger — shows a minimalist arrow so the user knows
    the outline panel exists. Opening the panel is via click or keyboard
    shortcut; hovering alone doesn't open it. Mirrors the notebook shelf
