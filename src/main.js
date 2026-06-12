@@ -314,6 +314,9 @@ async function init() {
   import("./ui/right-panel-setup.js").then(m => m.setupRightPanel(state));
   // Comments panel rides the left edge of the outline, sharing its toggle.
   import("./ui/comments-panel.js").then(m => m.setupCommentsPanel(state));
+  // Phone-only edge swipes: left→right opens the files sidebar, right→left
+  // opens the outline / shelf for the active file type.
+  import("./ui/mobile-swipe.js").then(m => m.initMobileSwipe(state));
 
   // Save scroll position periodically (debounced on scroll). Tracks
   // the current file under `docScrollPositions[fileId]` so switching

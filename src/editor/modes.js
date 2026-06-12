@@ -1,4 +1,5 @@
 import { applyTypewriterPadding } from "./plugins/typewriter.js";
+import { isPhone } from "../settings/settings-ui.js";
 
 /**
  * Set padding on the editor's scroller so that the last line can always
@@ -39,7 +40,12 @@ export function applyEditorScrollerPadding(state, opts = {}) {
   const view = state.editor?.view;
   const contentH = view ? (view.contentDOM?.offsetHeight || 0) : 0;
   const centreY = window.innerHeight / 2;
-  const shortDocPad = contentH > 0 ? Math.max(0, centreY - contentH) : centreY;
+  // Phone keeps short docs (and the empty "Start writing…" prompt) pinned
+  // to the top — the centre-the-content behaviour reads as a misalignment
+  // on a narrow screen where the keyboard already eats the lower half.
+  const shortDocPad = isPhone()
+    ? 0
+    : (contentH > 0 ? Math.max(0, centreY - contentH) : centreY);
   const totalTopPad = topInset + shortDocPad;
   scroller.style.paddingTop = totalTopPad > 0 ? totalTopPad + "px" : "";
   scroller.style.paddingBottom = bottomInset > 0

@@ -37,30 +37,79 @@ function onPointerDown(event) {
   // hold-delay before a drag starts) never highlights the file list text.
   document.body.classList.add("sl-drag-pending");
 
-  const handlePointerUp = (upEvent) => {
-    if (upEvent.pointerId !== event.pointerId) return;
-    document.body.classList.remove("sl-drag-pending");
-    if (this.pendingDrag && this.pendingDrag.timeoutId) {
-      clearTimeout(this.pendingDrag.timeoutId);
-    }
-    if (this.pendingDrag && !this.dragSession) {
+  // Track movement during the pending (pre-drag-hold) window. A tap that
+  // barely moves is a click; movement past the threshold before the hold
+  // timer fires means the user is scrolling the panel, so we abort the
+  // pending intent and let the browser scroll natively.
+  const TAP_SLOP = 10;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  let movedFar = false;
+
+  const fireClickIfTap = (endEvent) => {
+    if (this.pendingDrag && !this.dragSession && !movedFar) {
       // Don't fire onClick when user clicked an interactive element (button, input, link)
       const isInteractive = event.target.closest("button:not(.sl-fold-arrow)") || event.target.closest("input") || event.target.closest("a");
       if (!isInteractive) {
         const item = this._getItemAtPath(targetPath);
-        // Forward modifier-key state from the up-event so callers can
+        // Forward modifier-key state from the end-event so callers can
         // do shift / cmd-aware selection without a separate listener.
-        // Falls back to the down-event when (rarely) the up-event has
+        // Falls back to the down-event when (rarely) the end-event has
         // stale modifier state — e.g. user released the modifier key
         // mid-click.
-        if (item) this.config.onClick(item, upEvent || event);
+        if (item) this.config.onClick(item, endEvent || event);
       }
+    }
+  };
+
+  const cleanupPending = () => {
+    document.body.classList.remove("sl-drag-pending");
+    if (this.pendingDrag && this.pendingDrag.timeoutId) {
+      clearTimeout(this.pendingDrag.timeoutId);
     }
     this.pendingDrag = null;
     window.removeEventListener("pointerup", handlePointerUp);
+    window.removeEventListener("pointercancel", handlePointerCancel);
+    window.removeEventListener("pointermove", handlePendingMove);
   };
 
-  window.addEventListener("pointerup", handlePointerUp, { once: true });
+  const handlePendingMove = (moveEvent) => {
+    if (moveEvent.pointerId !== event.pointerId) return;
+    if (movedFar || this.dragSession) return;
+    const dx = moveEvent.clientX - startX;
+    const dy = moveEvent.clientY - startY;
+    if (dx * dx + dy * dy > TAP_SLOP * TAP_SLOP) {
+      // Past the slop radius this is no longer a tap, so never fire a click.
+      movedFar = true;
+      // On touch, movement before the hold timer means the user is
+      // scrolling the panel — drop the pending intent so the drag-hold
+      // timer can't hijack the scroll and a later cancel won't be
+      // mistaken for a tap. A mouse has no scroll-by-drag, so we leave the
+      // hold timer alone there and let a fast drag start a reorder.
+      if (moveEvent.pointerType !== "mouse") cleanupPending();
+    }
+  };
+
+  const handlePointerUp = (upEvent) => {
+    if (upEvent.pointerId !== event.pointerId) return;
+    fireClickIfTap(upEvent);
+    cleanupPending();
+  };
+
+  // iOS fires `pointercancel` (not `pointerup`) when it claims a touch for
+  // its own scroll gesture, even on a near-stationary tap. Without this the
+  // tap was silently dropped — the cause of "files need two or three taps".
+  // A cancel with little movement is recovered as a click; a cancel after
+  // real movement is a genuine scroll and just cleans up.
+  const handlePointerCancel = (cancelEvent) => {
+    if (cancelEvent.pointerId !== event.pointerId) return;
+    fireClickIfTap(cancelEvent);
+    cleanupPending();
+  };
+
+  window.addEventListener("pointerup", handlePointerUp);
+  window.addEventListener("pointercancel", handlePointerCancel);
+  window.addEventListener("pointermove", handlePendingMove);
 
   const timeoutId = setTimeout(() => {
     if (!this.pendingDrag) return;

@@ -143,11 +143,15 @@ export function createToolbar(state: DrawingState): HTMLElement {
     applyCompactMode(compact);
 
     switch (state.drawingToolbarPosition) {
+      // Edge-anchored positions add env(safe-area-inset-*) so the bar
+      // clears the iOS notch / status bar (top) and home indicator
+      // (bottom) instead of hiding underneath them. env() resolves to 0
+      // on desktop, so these are no-ops off-device.
       case "left": {
         container.style.flexDirection = "column";
         container.style.top = (topInset + usableH / 2) + "px";
         container.style.transform = "translateY(-50%)";
-        container.style.left = `${leftInset + 16}px`;
+        container.style.left = `calc(env(safe-area-inset-left, 0px) + ${leftInset + 16}px)`;
         break;
       }
       case "bottom": {
@@ -155,7 +159,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = center + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.bottom = `${EDGE_PAD + bottomInset}px`;
+        container.style.bottom = `calc(env(safe-area-inset-bottom, 0px) + ${EDGE_PAD + bottomInset}px)`;
         break;
       }
       case "custom": {
@@ -163,7 +167,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = (center + offset.x) + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.top = `${EDGE_PAD + topInset + offset.y}px`;
+        container.style.top = `calc(env(safe-area-inset-top, 0px) + ${EDGE_PAD + topInset + offset.y}px)`;
         break;
       }
       case "top":
@@ -172,7 +176,7 @@ export function createToolbar(state: DrawingState): HTMLElement {
         const center = leftInset + usableW / 2;
         container.style.left = center + "px";
         container.style.transform = "translateX(-50%)";
-        container.style.top = `${EDGE_PAD + topInset}px`;
+        container.style.top = `calc(env(safe-area-inset-top, 0px) + ${EDGE_PAD + topInset}px)`;
         break;
       }
     }

@@ -151,6 +151,19 @@ body.typing-fade .tree-create-btns {
   padding: 20px 20px 0;
 }
 
+/* iOS / iPadOS safe zones — the sidebar runs edge-to-edge so the desk
+   switcher at the top and the Add / Settings footer at the bottom would
+   otherwise sit under the notch / status bar and home indicator. Pull
+   them inboard by the system insets so their buttons + dropdowns stay
+   tappable. */
+html.ios .panel-overlay-header {
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+}
+
+html.ios .panel-overlay-footer {
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+}
+
 .panel-overlay-body {
   flex: 1;
   min-height: 0;
@@ -561,14 +574,14 @@ html.phone .sidebar-panel-resizer {
 }
 
 html.phone .cmd-floating-button.cmd-palette-button {
-  right: auto;
-  left: calc(50% + 6px);
+  left: auto;
+  right: calc(20px + env(safe-area-inset-right, 0px));
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
 html.phone .cmd-floating-button.cmd-paste-button {
-  right: auto;
-  left: calc(50% - 42px);
+  left: auto;
+  right: calc(20px + (36px + 12px) + env(safe-area-inset-right, 0px));
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
