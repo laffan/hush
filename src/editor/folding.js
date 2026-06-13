@@ -16,6 +16,7 @@
  * `fold*` command helpers exported here.
  */
 import { codeFolding, foldEffect, unfoldEffect, foldedRanges } from "@codemirror/language";
+import { countWords } from "./plugins/word-count.js";
 
 const HEADING_RE = /^(#{1,6})\s+\S/;
 
@@ -218,16 +219,26 @@ export function unfoldAllSections(view) {
 export function buildFoldingExtension() {
   return codeFolding({
     preparePlaceholder: (state, range) => {
-      const lines = state.doc.lineAt(range.to).number - state.doc.lineAt(range.from).number;
-      return { lines: Math.max(1, lines) };
+      // Header (section) folds start at the end of a heading line and
+      // report a line count; everything else is a selection fold and
+      // reports a word count instead.
+      const line = state.doc.lineAt(range.from);
+      const isHeaderFold = line.to === range.from && headingLevel(line.text) > 0;
+      if (isHeaderFold) {
+        const lines = state.doc.lineAt(range.to).number - line.number;
+        return { unit: "line", count: Math.max(1, lines) };
+      }
+      return { unit: "word", count: countWords(state.sliceDoc(range.from, range.to)) };
     },
     placeholderDOM: (view, onclick, prepared) => {
       const el = document.createElement("span");
       el.className = "hush-fold-pill";
-      const n = prepared?.lines || 1;
-      el.textContent = `▸ ${n} ${n === 1 ? "line" : "lines"}`;
+      const n = prepared?.count ?? 1;
+      const unit = prepared?.unit || "line";
+      const label = `▸ ${n} ${unit}${n === 1 ? "" : "s"}`;
+      el.textContent = label;
       el.title = "Unfold";
-      el.setAttribute("aria-label", `Unfold ${n} ${n === 1 ? "line" : "lines"}`);
+      el.setAttribute("aria-label", `Unfold (${label.slice(2)})`);
       el.onclick = onclick;
       return el;
     },
