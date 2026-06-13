@@ -50,6 +50,19 @@ import settingsRaw from "./sidebar/sidebar_icons/settings.svg?raw";
 import searchRaw from "./sidebar/sidebar_icons/search.svg?raw";
 import expandRaw from "./sidebar/sidebar_icons/expand.svg?raw";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
+import { getActiveModeContext } from "./state/mode-context.js";
+import {
+  foldCurrentSection, unfoldCurrentSection, foldSelection,
+  foldAllSections, unfoldAllSections, foldAllAtLevel,
+} from "./editor/folding.js";
+
+/** Resolve the editor view the fold commands should act on: the focused
+ *  pane / stack column if one owns the active mode context, else the
+ *  main editor. */
+function foldView(s) {
+  const ctx = getActiveModeContext(s);
+  return ctx?.view || s.editor?.view || null;
+}
 
 /** Resolve the current "this file" tree-node id — the node behind
  *  the open notebook, doc, or project (in that priority). Used to
@@ -116,6 +129,9 @@ const icons = {
   keyboard: `<svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="6" y1="9" x2="6" y2="9"/><line x1="10" y1="9" x2="10" y2="9"/><line x1="14" y1="9" x2="14" y2="9"/><line x1="18" y1="9" x2="18" y2="9"/><line x1="6" y1="13" x2="6" y2="13"/><line x1="18" y1="13" x2="18" y2="13"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
   doc: typeIcons.document, notebook: typeIcons.notebook, project: typeIcons.project, trash: typeIcons.trash,
   stack: typeIcons.stack,
+  // Chevron-down = collapse a section; chevron-right = expand it back.
+  fold: `<svg viewBox="0 0 24 24"><path d="M6 9 L12 15 L18 9"/></svg>`,
+  unfold: `<svg viewBox="0 0 24 24"><path d="M9 6 L15 12 L9 18"/></svg>`,
 };
 
 /** Build the per-style "Use Style: <name>" command rows. Mirrors the
@@ -316,6 +332,23 @@ function buildCommands(state) {
         const { openConvertHeadingsToTabsModal } = await import("./sidebar/convert-headings-to-tabs-modal.js");
         await openConvertHeadingsToTabsModal(s);
       } },
+    { id: "fold-section", label: "Fold current section", icon: icons.fold, shortcutKey: null, ctx: "doc",
+      action: (s) => { const v = foldView(s); if (v) foldCurrentSection(v); } },
+    { id: "unfold-section", label: "Unfold current section", icon: icons.unfold, shortcutKey: null, ctx: "doc",
+      action: (s) => { const v = foldView(s); if (v) unfoldCurrentSection(v); } },
+    { id: "fold-selection", label: "Fold selection", icon: icons.fold, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => { const v = foldView(s); return !v || v.state.selection.main.empty; },
+      action: (s) => { const v = foldView(s); if (v) foldSelection(v); } },
+    { id: "fold-all", label: "Fold all sections", icon: icons.fold, shortcutKey: null, ctx: "doc",
+      action: (s) => { const v = foldView(s); if (v) foldAllSections(v); } },
+    { id: "unfold-all", label: "Unfold all sections", icon: icons.unfold, shortcutKey: null, ctx: "doc",
+      action: (s) => { const v = foldView(s); if (v) unfoldAllSections(v); } },
+    { id: "fold-h1", label: "Fold all H1", icon: icons.fold, shortcutKey: null, ctx: "doc",
+      action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 1); } },
+    { id: "fold-h2", label: "Fold all H2", icon: icons.fold, shortcutKey: null, ctx: "doc",
+      action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 2); } },
+    { id: "fold-h3", label: "Fold all H3", icon: icons.fold, shortcutKey: null, ctx: "doc",
+      action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 3); } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",

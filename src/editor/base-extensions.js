@@ -31,6 +31,8 @@ import { CommentExtension, HighlightExtension } from "./markdown-extensions.js";
 import { createFlagHighlightPlugin } from "./flag-highlight.js";
 import { createLineIndicatorPlugin } from "./line-indicator.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
+import { buildFoldingExtension } from "./folding.js";
+import { createFoldArrowPlugin } from "./fold-arrow.js";
 
 /**
  * Default image-context resolver used by the main editor: when the user
@@ -165,6 +167,8 @@ export function createBaseExtensions(state, onChange, opts) {
     createCommentAnchorPlugin(state),
     createSpellcheckPlugin(state),
     spellcheckClickHandler,
+    buildFoldingExtension(),
+    createFoldArrowPlugin(),
     createFocusModePlugin(state),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),

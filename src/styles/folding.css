@@ -1,0 +1,56 @@
+/* ===== Doc folding =====
+   The fold arrow (createFoldArrowPlugin) appends a `.hush-fold-arrow`
+   element inside `view.scrollDOM`; its `left` is set to the text
+   column's left edge and a translateX pulls it just into the left
+   margin, mirroring the line-indicator arrow gutter. The unwrap pill
+   (`.hush-fold-pill`) is the placeholder rendered in place of folded
+   content. */
+
+.hush-fold-arrow {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  cursor: pointer;
+  color: var(--fg, currentColor);
+  opacity: 0.45;
+  transform: translateX(calc(-100% - 4px));
+  z-index: 5;
+  transition: opacity 0.12s ease;
+}
+.hush-fold-arrow:hover {
+  opacity: 0.95;
+}
+.hush-fold-arrow svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hush-fold-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 7px;
+  font-size: 0.78em;
+  line-height: 1.5;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: baseline;
+  user-select: none;
+  color: var(--fg, currentColor);
+  background: color-mix(in srgb, var(--fg, #888) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 24%, transparent);
+  opacity: 0.72;
+  transition: opacity 0.12s ease;
+}
+.hush-fold-pill:hover {
+  opacity: 1;
+}
