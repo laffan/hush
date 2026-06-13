@@ -33,10 +33,9 @@
   stroke-linejoin: round;
   transition: transform 0.12s ease;
 }
-/* Folded sections paint a persistent red unfold arrow (right-pointing)
-   so they read as collapsed and can be toggled without the pill. */
+/* Folded sections keep a persistent unfold arrow (right-pointing) in the
+   gutter so they read as collapsed and can be toggled without the pill. */
 .hush-fold-arrow-folded {
-  color: var(--hush-fold-red, #e5484d);
   opacity: 0.85;
 }
 .hush-fold-arrow-folded:hover {
@@ -49,7 +48,7 @@
 .hush-fold-pill {
   display: inline-flex;
   align-items: center;
-  margin-left: 6px;
+  margin: 0 5px;
   padding: 0 7px;
   font-size: 0.78em;
   line-height: 1.5;
