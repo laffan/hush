@@ -48,6 +48,8 @@ import {
 } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
 import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
+import { buildFoldingExtension } from "./folding.js";
+import { createFoldArrowPlugin } from "./fold-arrow.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
@@ -56,7 +58,6 @@ export { commentTag, commentMarkTag, highlightTag, highlightMarkTag };
 export { CommentExtension, HighlightExtension };
 export { hexToRgba, createFlagHighlightPlugin };
 export { defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions };
-
 const themeCompartment = new Compartment();
 const highlightCompartment = new Compartment();
 const shortcutCompartment = new Compartment();
@@ -307,6 +308,8 @@ export function createEditor(container, state) {
       calloutPlugin,
       footnotePlugin,
       flagHighlightPlugin,
+      buildFoldingExtension(),
+      createFoldArrowPlugin(),
       createLineIndicatorPlugin(state),
       linkDecoratorPlugin,
       wikilinkPlugin,
