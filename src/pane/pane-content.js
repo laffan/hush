@@ -264,7 +264,7 @@ async function loadNotebookPane(pane) {
 
   // Capture pan / zoom changes so they survive app open/close. Gutter
   // panes are excluded — their camera is scroll-driven (see
-  // `pane-gutter.js#syncCameraFromScroll`) and stashing it would round-
+  // `project/gutter.js#syncCameraFromScroll`) and stashing it would round-
   // trip a meaningless value through persistedPanes.
   let cameraPersistTimer = null;
   pane._cameraChangeListener = () => {
@@ -495,7 +495,7 @@ export async function savePaneContent(pane) {
       } else if (pane.fileType === "notebook" && pane.notebook) {
         const { encodeNotebookContent } = await import("../notebook/notebook-content.ts");
         // In gutter mode `state.camera.y` is driven by the host doc's
-        // scrollTop (see `pane-gutter.js#syncCameraFromScroll`) rather
+        // scrollTop (see `project/gutter.js#syncCameraFromScroll`) rather
         // than tracking a meaningful canvas viewport. Persisting it
         // would write a scroll-tied value into the file, and on the
         // next mount the main-canvas restore path

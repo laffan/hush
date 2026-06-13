@@ -109,7 +109,7 @@ function onContextChange() {
       if (pane.pdfViewer && !pane.pdfViewer.suspended) pane.pdfViewer.suspend();
       if (pane.attached) stopAttachSync(pane);
       if (pane.gutter) {
-        import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+        import("../project/gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
       }
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
@@ -141,14 +141,14 @@ function onContextChange() {
         else startScrollSync(pane);
       }
       if (pane.gutter) {
-        import("./pane-gutter.js").then(({ restoreGutterLayout }) => restoreGutterLayout(pane));
+        import("../project/gutter.js").then(({ restoreGutterLayout }) => restoreGutterLayout(pane));
       }
     } else {
       pane.el.style.display = "none";
       if (pane.pdfViewer && !pane.pdfViewer.suspended) pane.pdfViewer.suspend();
       if (pane.attached) stopAttachSync(pane);
       if (pane.gutter) {
-        import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+        import("../project/gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
       }
       if (activePaneId === pane.id) {
         pane.el.classList.remove("active");
@@ -353,7 +353,7 @@ export function closePane(id) {
   savePaneContent(pane);
   teardownPaneContent(pane);
   if (pane.gutter) {
-    import("./pane-gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
+    import("../project/gutter.js").then(({ teardownGutterListeners }) => teardownGutterListeners(pane));
   }
   // Inline-pane host gets dropped on the next `panes-changed` build.
   if (pane._inlineHost) pane._inlineHost = null;

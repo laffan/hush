@@ -174,7 +174,7 @@ The `"change"` event carries `{ detail: { keys: string[] } }` so listeners can c
 
 Two sibling files keep `renderer.ts` under the line limit while preserving purity: `renderer-selection.ts` (the dashed bbox + handle drawing for selected shapes, group-selection bounds, crop overlay, drag-selection box, the per-edge flowchart delete dot / X badge, plus `drawShadowHeaders` for the gutter pane overlay) and `renderer-background.ts` (background patterns: `dot-grid`, `grid`, `lined` — horizontal rules only, like notebook paper — and `isometric` — two sets of ±30° diagonals from horizontal, no vertical cross-line). All exports are pure functions called from `render()` and `renderForExport()`.
 
-`DrawingState` exposes a small surface for gutter mode that the canvas treats as no-ops outside of it: `gutterScrollDOM` (when set, vertical pan, wheel, and `focusShape` route to the host doc's scroller; zoom is disabled and `camera.y` tracks `-scrollTop`); `shadowHeaders` (the doc-heading list above). All gutter geometry, doc scanning, anchor reflow, and toolbar wiring live in `src/pane/pane-gutter.js`.
+`DrawingState` exposes a small surface for gutter mode that the canvas treats as no-ops outside of it: `gutterScrollDOM` (when set, vertical pan, wheel, and `focusShape` route to the host doc's scroller; zoom is disabled and `camera.y` tracks `-scrollTop`); `shadowHeaders` (the doc-heading list above). All gutter geometry, doc scanning, anchor reflow, and toolbar wiring live in `src/project/gutter.js` (gutter is owned by the `.hushproject` module).
 
 ### Canvas themes
 

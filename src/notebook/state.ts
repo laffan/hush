@@ -205,12 +205,12 @@ export class DrawingState extends EventTarget {
   /** Constant added to `-scrollTop` when writing `camera.y` while in
    *  gutter mode — accounts for the fact that the pane no longer sits
    *  flush against the doc content top, so world-y == doc-content-y
-   *  still holds. Owned by `pane-gutter.js#syncCameraFromScroll`. */
+   *  still holds. Owned by `project/gutter.js#syncCameraFromScroll`. */
   gutterCameraOffset = 0;
   /** Faded doc headings rendered into the gutter canvas. World-y maps
    *  1:1 to doc-content-y under the gutter geometry, so `y` here is
    *  consumed directly by the renderer after the camera transform.
-   *  Owned by pane-gutter.js — overwritten on every doc-change. */
+   *  Owned by project/gutter.js — overwritten on every doc-change. */
   shadowHeaders: { y: number; level: number; text: string }[] = [];
 
   // Hooks driven by notes-canvas to route DrawShape drags through

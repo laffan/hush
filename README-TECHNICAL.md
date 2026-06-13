@@ -151,9 +151,11 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── pane-dock.js                   (edge docking — four edges, mutually-exclusive footprints: geometry, --pane-dock-{left,right}-width / --pane-dock-{top,bottom}-height / *-edge CSS vars, reflow listeners; dock/undock kick refreshPaneLayoutMetrics so the editor column shifts immediately, and re-flex perpendicular siblings so cross-axis docks stay tiled)
 │   ├── pane-size-popover.js           (per-pane font-size override)
 │   ├── pane-persistence.js            (persist + restore across restarts)
-│   ├── pane-gutter.js                 (Use as Gutter: doc-aligned notebook gutter pane)
 │   ├── pane-inline.js                 (Inline panes: CM block-widget host + wikilink `▾` opener + drag-to-detach)
 │   └── text-drag.js
+│
+├── project/                           (.hushproject owns the project + gutter pairing — see "Projects" / "Gutter Mode")
+│   └── gutter.js                      (Gutter Mode: doc-aligned notebook gutter pane — promote/demote, scroll sync, camera lock, shadow headers, shape anchoring)
 │
 ├── sidebar/
 │   ├── sidebar.js

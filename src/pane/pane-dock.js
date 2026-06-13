@@ -46,7 +46,7 @@ export function dockPane(pane, edge) {
     btn?.classList.remove("attach-active");
   }
   if (pane.gutter) {
-    import("./pane-gutter.js").then(({ undoGutter }) => undoGutter(pane));
+    import("../project/gutter.js").then(({ undoGutter }) => undoGutter(pane));
   }
   if (!pane._dockPrev) {
     pane._dockPrev = {

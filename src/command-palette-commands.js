@@ -27,7 +27,7 @@ import {
   setActivePanePinned, closePane,
 } from "./pane/pane-manager.js";
 import { panes } from "./pane/pane-state.js";
-import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./pane/pane-gutter.js";
+import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./project/gutter.js";
 import { isCommentsHidden } from "./google-docs/comments-visibility.js";
 import { arePanesHiddenForActive } from "./state/state-panes.js";
 import { createNewFromSelected } from "./selection-extract.js";

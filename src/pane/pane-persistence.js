@@ -257,7 +257,7 @@ export async function restorePanes(deps) {
     }
     // Re-apply gutter geometry after the DOM is in place.
     if (pane.gutter) {
-      const { restoreGutterLayout } = await import("./pane-gutter.js");
+      const { restoreGutterLayout } = await import("../project/gutter.js");
       restoreGutterLayout(pane);
     }
     // Re-apply docked layout (snap edge + user-controlled dimension).

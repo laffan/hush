@@ -18,9 +18,9 @@
  * notebook — the gutter is meant to host visual notes that ride
  * alongside long-form writing.
  */
-import { panes, activePaneId, appState, GUTTER_Z, TITLEBAR_HEIGHT, zForPane } from "./pane-state.js";
-import { stopAttachSync } from "./pane-attach-sync.js";
-import { schedulePersist } from "./pane-persistence.js";
+import { panes, activePaneId, appState, GUTTER_Z, TITLEBAR_HEIGHT, zForPane } from "../pane/pane-state.js";
+import { stopAttachSync } from "../pane/pane-attach-sync.js";
+import { schedulePersist } from "../pane/pane-persistence.js";
 
 const VIEWPORT_TOP_MARGIN = 60;
 // Match `fitActivePaneToGap`'s vertical envelope so a gutter pane
@@ -395,7 +395,7 @@ export function useActivePaneAsGutter() {
   // pane / canvas / WebView paint has settled.
   setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 250);
   setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 1000);
-  import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
+  import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
   schedulePersist();
   return true;
@@ -439,7 +439,7 @@ export function stopActivePaneAsGutter() {
   pane._gutterHeaders = null;
   pane._shapeAnchors = null;
   pane.el.style.zIndex = zForPane(pane);
-  import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
+  import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
   schedulePersist();
   return true;
@@ -478,7 +478,7 @@ export function restoreGutterLayout(pane) {
   setTimeout(resync, 100);
   setTimeout(resync, 500);
   setTimeout(resync, 1500);
-  import("./pane-toolbar.js").then((m) => m.syncGutterButton(pane));
+  import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 }
 
 export function teardownGutterListeners(pane) {

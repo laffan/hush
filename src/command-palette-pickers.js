@@ -18,7 +18,7 @@ import { setPanesHiddenForContext } from "./state/state-panes.js";
 import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { sendSelectedToFile } from "./selection-extract.js";
-import { useActivePaneAsGutter } from "./pane/pane-gutter.js";
+import { useActivePaneAsGutter } from "./project/gutter.js";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
@@ -70,7 +70,7 @@ export function promptNewStackName(onConfirm) {
 }
 
 /** Does the active doc already host a notebook pane promoted to gutter?
- *  Mirrors `pane-gutter.js`'s `docHasGutter()` — a doc can carry at
+ *  Mirrors `project/gutter.js`'s `docHasGutter()` — a doc can carry at
  *  most one gutter at a time. Walks the live `panes` Map directly
  *  (rather than `getPanesForContext`, which returns shallow copies
  *  without the `gutter` flag). */

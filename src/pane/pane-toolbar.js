@@ -239,7 +239,7 @@ export function toggleCollapse(pane, deps) {
 
 async function toggleAttach(pane) {
   if (pane.gutter) {
-    const { stopActivePaneAsGutter } = await import("./pane-gutter.js");
+    const { stopActivePaneAsGutter } = await import("../project/gutter.js");
     stopActivePaneAsGutter();
   }
   if (pane.pinned) {
@@ -297,7 +297,7 @@ async function toggleGutterFromButton(pane) {
   // they read `activePaneId` to decide which pane to mutate. The
   // button click already focuses via the pane's pointerdown handler,
   // but a programmatic call wouldn't, so be explicit.
-  const { useActivePaneAsGutter, stopActivePaneAsGutter, isActivePaneAGutter } = await import("./pane-gutter.js");
+  const { useActivePaneAsGutter, stopActivePaneAsGutter, isActivePaneAGutter } = await import("../project/gutter.js");
   if (isActivePaneAGutter()) stopActivePaneAsGutter();
   else useActivePaneAsGutter();
   syncGutterButton(pane);
@@ -318,7 +318,7 @@ export function syncGutterButton(pane) {
 
 async function togglePinned(pane, onContextChange) {
   if (pane.gutter) {
-    const { stopActivePaneAsGutter } = await import("./pane-gutter.js");
+    const { stopActivePaneAsGutter } = await import("../project/gutter.js");
     stopActivePaneAsGutter();
   }
   if (pane.attached) {
