@@ -227,8 +227,10 @@ export function normalizeProjectChildren(nodes) {
         // Only notebooks, stacks, and `useAsNote` docs drop to the
         // supplementary block. Flow docs AND nested projects / folders
         // keep their custom drag order at the top so a nested project
-        // stays wherever the user placed it.
-        if (c.type === "notebook" || c.type === "stack" || (c.type === "document" && c.useAsNote)) below.push(c);
+        // stays wherever the user placed it. The project's gutter notebook
+        // is the exception among notebooks: it stays up top (right after the
+        // docs it tracks) rather than sinking into the supplementary block.
+        if ((c.type === "notebook" && !c.gutter) || c.type === "stack" || (c.type === "document" && c.useAsNote)) below.push(c);
         else top.push(c);
       }
       n.children = [...top, ...below];

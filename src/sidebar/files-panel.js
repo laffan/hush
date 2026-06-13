@@ -59,6 +59,9 @@ function getIcon(item) {
   // Individual image nodes render without an icon so the sidebar stays
   // readable — hovering the row is the primary affordance anyway.
   if (item.type === "image") return "";
+  // A project's gutter notebook reads as an attachment of the doc it sits
+  // directly beneath, so it carries no file-type icon of its own.
+  if (item.type === "notebook" && item.gutter) return "";
   if (item.syncFolderId && item.type === "folder") {
     // Legacy synced folder nodes — show broken icon if Dropbox disconnected
     if (!isDropboxConnected()) return typeIcons.syncedFolderBroken;

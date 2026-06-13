@@ -30,6 +30,10 @@ export function renderList(items, container, path, ctx) {
     // them at 50 % opacity alongside notebooks. Persisted on the tree
     // node and read straight off the rendered item.
     if (item && item.useAsNote) li.dataset.useAsNote = "true";
+    // A project's gutter notebook is an attachment of the doc above it, not
+    // supplementary material — mark it so the CSS skips the 50 % dimming and
+    // the iconless gutter row reads as connected to its doc.
+    if (item && item.type === "notebook" && item.gutter) li.dataset.gutter = "true";
 
     const bgRgba = rowColorRgba(item?.bgColor);
     if (bgRgba) li.style.setProperty("--item-bg", bgRgba);

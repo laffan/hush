@@ -443,10 +443,32 @@
   pointer-events: none;
 }
 
-.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row,
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"]:not([data-gutter="true"]) > .sl-item-content .tree-item-row,
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="stack"] > .sl-item-content .tree-item-row,
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"][data-use-as-note="true"] > .sl-item-content .tree-item-row {
   opacity: 0.5;
+}
+
+/* The gutter notebook reads as an attachment of the doc directly above it:
+   no icon (handled in getIcon), full opacity, and a short connector linking
+   it up to that doc — mirroring the doc-doc I-beam connector. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] > .sl-item-content .tree-item-row {
+  position: relative;
+}
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] > .sl-item-content .tree-item-row::before {
+  content: "";
+  position: absolute;
+  left: 30px;
+  transform: translateX(-50%);
+  top: -8px;
+  width: 5px;
+  height: 15px;
+  background:
+    linear-gradient(currentColor, currentColor) top    / 100% 1px no-repeat,
+    linear-gradient(currentColor, currentColor) bottom / 100% 1px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 /* "Use as Note" docs sort with notebooks under the joined buffer, so
