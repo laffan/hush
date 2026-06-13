@@ -203,7 +203,7 @@
 }
 
 /* ── Gutter pane ──────────────────────────────────────────────────────
-   "Use Pane as Gutter" pins a notebook pane to the side of the doc text:
+   A gutter is a right-docked notebook pane (geometry owned by pane-dock):
    tall, full-height, with the edge facing the text painted red so the
    pane reads as part of the writing surface rather than a free-floater. */
 

@@ -1,22 +1,23 @@
 /**
- * "Use Pane as Gutter" — promote an active notebook pane to a tall
- * sidebar pinned alongside the doc text for the *entire* document.
+ * Gutter mode — pair a notebook canvas with a project's joined doc buffer as
+ * a right-docked sidebar that scrolls in lockstep with the doc.
  *
- * Architecture: the pane DOM is *viewport-sized and fixed at the top
- * of the editor* — it does not extend doc-tall and does not move on
- * scroll. Instead, the notebook's `camera.y` tracks `-scrollTop`, so
- * shape world-y maps 1:1 to doc-content-y and the canvas shows
- * whatever vertical slice the doc is currently scrolled to.
+ * Architecture: the pane is a **right-docked pane** (geometry owned by
+ * pane-dock.js — full height, flush right, carving space out of the text
+ * column). It does not extend doc-tall and does not move on scroll. Instead
+ * the notebook's `camera.y` tracks `-scrollTop`, so shape world-y maps 1:1 to
+ * doc-content-y and the canvas shows whatever vertical slice the doc is
+ * currently scrolled to.
  *
- * Why not a doc-tall pane? A pane whose DOM matches scrollHeight
- * triggers the stroke engine's re-anchor path on every resize (which
- * fights CodeMirror's incremental line measurement on long docs and
- * drifts) and the engine's coverage logic assumes `cam.y = -scrollTop`
- * for the viewport math to come out right.
+ * Why not a doc-tall pane? A pane whose DOM matches scrollHeight triggers the
+ * stroke engine's re-anchor path on every resize (which fights CodeMirror's
+ * incremental line measurement on long docs and drifts) and the engine's
+ * coverage logic assumes `cam.y = -scrollTop` for the viewport math to come
+ * out right.
  *
- * Only applies in a Doc context with the active pane backed by a
- * notebook — the gutter is meant to host visual notes that ride
- * alongside long-form writing.
+ * Only applies inside a Project (the joined buffer is the doc surface) with
+ * the active pane backed by a notebook. The assignment + Add/Open/Close flows
+ * live in project/gutter-commands.js.
  */
 import { panes, activePaneId, appState, GUTTER_Z, TITLEBAR_HEIGHT, zForPane } from "../pane/pane-state.js";
 import { stopAttachSync } from "../pane/pane-attach-sync.js";
@@ -387,7 +388,7 @@ export function useActivePaneAsGutter() {
 
   // Record the pairing on the project so it rides the .hushproject envelope,
   // regardless of which entry point promoted the pane (Add Gutter, Add
-  // notebook as gutter, or the manual "Use Pane as Gutter" command).
+  // notebook as gutter, or Open Gutter).
   if (appState?.currentProjectId && pane.fileId && typeof appState.markProjectGutterNotebook === "function") {
     appState.markProjectGutterNotebook(appState.currentProjectId, pane.fileId);
   }
