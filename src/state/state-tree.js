@@ -332,6 +332,17 @@ export async function convertContainerType(state, nodeId, targetType) {
   if (node.type === targetType) return;
   if (node.type !== "folder" && node.type !== "project") return;
   const wasProject = node.type === "project";
+  // Demoting a project to a folder dissolves the project's special
+  // structure: a folder has no joined buffer for a gutter to track, so the
+  // gutter notebook is unpaired back into a normal sibling. (The child files
+  // themselves already live in the container, so there's nothing else to
+  // "unpack" in the current tree model.)
+  if (wasProject && targetType === "folder") {
+    for (const c of (node.children || [])) {
+      if (c.gutter) delete c.gutter;
+    }
+    if (node.showNumbers) delete node.showNumbers;
+  }
   node.type = targetType;
   await state.saveFileTree();
   state.emit("files-changed");
