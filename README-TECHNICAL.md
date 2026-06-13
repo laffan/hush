@@ -155,7 +155,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   └── text-drag.js
 │
 ├── project/                           (.hushproject owns the project + gutter pairing — see "Projects" / "Gutter Mode")
-│   └── gutter.js                      (Gutter Mode: doc-aligned notebook gutter pane — promote/demote, scroll sync, camera lock, shadow headers, shape anchoring)
+│   ├── gutter.js                      (Gutter Mode: doc-aligned notebook gutter pane — promote/demote, scroll sync, camera lock, shadow headers, shape anchoring)
+│   └── project-pack.js                (pack/unpack the .hushproject zip envelope — data.json manifest + docs/ + nested notebooks/*.hushnote + stacks/; mirrors notebook-sync.js)
 │
 ├── sidebar/
 │   ├── sidebar.js
