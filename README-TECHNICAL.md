@@ -157,7 +157,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 ├── project/                           (.hushproject owns the project + gutter pairing — see "Projects" / "Gutter Mode")
 │   ├── gutter.js                      (Gutter Mode: doc-aligned notebook gutter pane — promote/demote, scroll sync, camera lock, shadow headers, shape anchoring; promote/demote keep the project's gutter marker in step. Gutter only runs in a project context)
 │   ├── gutter-commands.js             (Add Gutter / Add notebook as gutter flows: convert the doc to a project with a warning, create/copy the gutter notebook, promote it)
-│   └── project-pack.js                (pack/unpack the .hushproject zip envelope — data.json manifest + docs/ + nested notebooks/*.hushnote + stacks/; mirrors notebook-sync.js)
+│   ├── project-pack.js                (pack/unpack the .hushproject zip envelope — data.json manifest + docs/ + nested notebooks/*.hushnote + stacks/; mirrors notebook-sync.js)
+│   └── project-export.js              (collect a project node's child contents → packProject → save/share a .hushproject; import side is state/state-project-import.js)
 │
 ├── sidebar/
 │   ├── sidebar.js
