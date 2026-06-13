@@ -144,14 +144,10 @@ export function buildPaneDOM(pane, deps) {
       if (pane.pdfViewer?.toggleShelf) pane.pdfViewer.toggleShelf();
     });
     buttons.appendChild(shelfBtn);
-  } else {
-    const gutterBtn = makeBtn("gutter", ICON_GUTTER, "Use as gutter");
-    gutterBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleGutterFromButton(pane);
-    });
-    buttons.appendChild(gutterBtn);
   }
+  // Gutter is no longer toggled from a pane-header button — it's owned by
+  // the .hushproject flow (command palette "Add Gutter" / "Add notebook as
+  // gutter"), which pairs the gutter notebook to its doc inside a project.
 
   // Collapse button (iOS only — desktop's title-bar double-click is the
   // equivalent gesture).
@@ -290,17 +286,6 @@ async function toggleAttach(pane) {
     stopAttachSync(pane);
   }
   schedulePersist();
-}
-
-async function toggleGutterFromButton(pane) {
-  // The pane has to be focused for the gutter helpers to act on it —
-  // they read `activePaneId` to decide which pane to mutate. The
-  // button click already focuses via the pane's pointerdown handler,
-  // but a programmatic call wouldn't, so be explicit.
-  const { useActivePaneAsGutter, stopActivePaneAsGutter, isActivePaneAGutter } = await import("../project/gutter.js");
-  if (isActivePaneAGutter()) stopActivePaneAsGutter();
-  else useActivePaneAsGutter();
-  syncGutterButton(pane);
 }
 
 /** Reflect pane.gutter on the toolbar: the Gutter button picks up the
