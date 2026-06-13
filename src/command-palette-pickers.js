@@ -11,14 +11,14 @@
  */
 import {
   contextIdForFile, copyPanesBetweenContexts, getActivePaneId,
-  clearPanesForContext, createPane, getInitialPanePosition,
+  clearPanesForContext, getInitialPanePosition,
 } from "./pane/pane-manager.js";
 import { panes } from "./pane/pane-state.js";
 import { setPanesHiddenForContext } from "./state/state-panes.js";
 import { paneIndicatorsFor } from "./sidebar/files-panel-pane-indicators.js";
 import { DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "./pane/pane-state.js";
 import { sendSelectedToFile } from "./selection-extract.js";
-import { useActivePaneAsGutter } from "./project/gutter.js";
+import { addNotebookAsGutter } from "./project/gutter-commands.js";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 import { collectFileLeaves, activeDeskSubtree } from "./command-palette-helpers.js";
 import deskRaw from "./sidebar/sidebar_icons/desk.svg?raw";
@@ -69,33 +69,6 @@ export function promptNewStackName(onConfirm) {
   });
 }
 
-/** Does the active doc already host a notebook pane promoted to gutter?
- *  Mirrors `project/gutter.js`'s `docHasGutter()` — a doc can carry at
- *  most one gutter at a time. Walks the live `panes` Map directly
- *  (rather than `getPanesForContext`, which returns shallow copies
- *  without the `gutter` flag). */
-export function docContextHasGutterAlready(state) {
-  if (state.currentNotebookFileId || state.currentProjectId) return true;
-  if (!state.currentFileId) return true;
-  const ctx = "doc:" + state.currentFileId;
-  for (const [, p] of panes) {
-    if (p.gutter && p.ownerContext === ctx) return true;
-  }
-  return false;
-}
-
-/** Spawn a notebook pane in the active doc and immediately promote it
- *  to a gutter. `useActivePaneAsGutter` keys off the module-local
- *  `activePaneId`, which `createPane`'s focusPane() call sets — a
- *  microtask wait lets focus's downstream effects settle before we
- *  kick the gutter promotion. */
-export async function openNotebookAsGutter(state, fileId, name) {
-  const { x, y } = paneAnchorClickPoint(state);
-  await createPane(fileId, name, "notebook", x, y);
-  await Promise.resolve();
-  useActivePaneAsGutter();
-}
-
 export function enterNotebookGutterPicker(palette, state) {
   const leaves = collectFileLeaves(activeDeskSubtree(state))
     .filter((f) => f.type === "notebook");
@@ -104,7 +77,9 @@ export function enterNotebookGutterPicker(palette, state) {
     label: f.name,
     icon: typeIcons.notebook,
     shortcutKey: null,
-    action: () => openNotebookAsGutter(state, f.fileId, f.name),
+    // Copies the chosen notebook into the project as its gutter (converting
+    // a bare doc into a project first, with a warning).
+    action: () => addNotebookAsGutter(state, f),
   }));
   palette.setItems(items, "Add notebook as gutter…");
 }

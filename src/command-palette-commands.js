@@ -16,10 +16,10 @@ import {
 } from "./command-palette-helpers.js";
 import {
   paneAnchorClickPoint, promptNewNotebookName, promptNewStackName,
-  docContextHasGutterAlready, openNotebookAsGutter,
   enterNotebookGutterPicker, enterPaneCopyPicker,
   enterSendSelectedPicker, enterFilePicker, enterDeskPicker,
 } from "./command-palette-pickers.js";
+import { addGutter, currentSurfaceHasGutter } from "./project/gutter-commands.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import {
   getActivePaneId, fitActivePaneToGap, createPane,
@@ -397,16 +397,13 @@ function buildCommands(state) {
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsGoogleDoc(s.editor.view)) },
     { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsHtml(s.editor.view)) },
+    { id: "add-gutter", label: "Add Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => currentSurfaceHasGutter(s),
+      action: (s) => addGutter(s) },
     { id: "add-notebook-as-gutter", label: "Add notebook as gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
       keepOpen: true,
-      hiddenIf: (s) => docContextHasGutterAlready(s),
+      hiddenIf: (s) => currentSurfaceHasGutter(s),
       action: (s, p) => enterNotebookGutterPicker(p, s) },
-    { id: "new-notebook-as-gutter", label: "New notebook as gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => docContextHasGutterAlready(s),
-      action: (s) => promptNewNotebookName(async (name) => {
-        const created = await s.createNotebook(name, null, { openImmediately: false });
-        if (created) await openNotebookAsGutter(s, created.fileId, created.name);
-      }) },
     { id: "google-import", label: "Import from Google Doc", icon: icons.export, shortcutKey: null, ctx: "shared", action: _gdocAction("importFromGoogleDoc") },
     { id: "google-link", label: "Link Document to Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("linkCurrentDocument") },

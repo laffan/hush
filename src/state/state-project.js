@@ -68,6 +68,45 @@ export async function openProject(state, projectId) {
   state.updateSettings({ lastProjectId: projectId, lastFileId: null, lastNotebookId: null });
 }
 
+/** Mark `fileId`'s notebook child as the project's gutter (and clear the
+ *  flag from any sibling — at most one gutter per project). The marking
+ *  lives on the tree node so the pairing is the project's own metadata
+ *  (it rides the .hushproject envelope and drives gutter materialization
+ *  on import / a fresh device). Within a device the gutter *pane* itself
+ *  is persisted by panes.json, so opening the project restores it without
+ *  consulting this flag. */
+export async function markProjectGutterNotebook(state, projectId, fileId) {
+  const node = findNode(state.fileTree, projectId);
+  if (!node || node.type !== "project") return;
+  let target = null;
+  for (const c of (node.children || [])) {
+    if (c.type === "notebook" && c.fileId === fileId) { c.gutter = true; target = c; }
+    else if (c.gutter) delete c.gutter;
+  }
+  if (!target) return;
+  await state.saveFileTree();
+  state.emit("files-changed");
+}
+
+/** Clear the project's gutter marking for `fileId` (demote path). */
+export async function unmarkProjectGutterNotebook(state, projectId, fileId) {
+  const node = findNode(state.fileTree, projectId);
+  if (!node || node.type !== "project") return;
+  let changed = false;
+  for (const c of (node.children || [])) {
+    if (c.type === "notebook" && c.fileId === fileId && c.gutter) { delete c.gutter; changed = true; }
+  }
+  if (!changed) return;
+  await state.saveFileTree();
+  state.emit("files-changed");
+}
+
+/** Find the project's gutter notebook child, if any. */
+export function projectGutterChild(node) {
+  if (!node || node.type !== "project") return null;
+  return (node.children || []).find((c) => c.type === "notebook" && c.gutter && c.fileId) || null;
+}
+
 export async function saveProjectContent(state) {
   if (!state.currentProjectId || !state.editor || !state.projectDocIds.length) return;
   const parts = splitProjectBuffer(state.editor.getContent(), state.projectDocIds.length);

@@ -3,7 +3,7 @@
  */
 
 import { findNode, findNodeByFileId } from "./tree-helpers.js";
-import { openProject as _openProject, saveProjectContent as _saveProjectContent } from "./state-project.js";
+import { openProject as _openProject, saveProjectContent as _saveProjectContent, markProjectGutterNotebook as _markProjectGutterNotebook, unmarkProjectGutterNotebook as _unmarkProjectGutterNotebook } from "./state-project.js";
 import { createDefaultSettings } from "./state-defaults.js";
 import * as _modes from "./state-modes.js";
 import * as _snapshots from "./state-snapshots.js";
@@ -446,6 +446,8 @@ export class AppState {
     return _openProject(this, projectId);
   }
   async saveProjectContent() { return _saveProjectContent(this); }
+  async markProjectGutterNotebook(projectId, fileId) { return _markProjectGutterNotebook(this, projectId, fileId); }
+  async unmarkProjectGutterNotebook(projectId, fileId) { return _unmarkProjectGutterNotebook(this, projectId, fileId); }
 
   // ===== Notebook Operations (delegated to state-files.js) =====
 

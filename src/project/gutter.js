@@ -44,12 +44,23 @@ function getScrollerPadding() {
   };
 }
 
-/** Does any pane in the active doc context already wear the gutter
- *  crown? Only one per doc — the gutter is meant as doc chrome, not
+/** The pane context a gutter belongs to. Gutter is now owned by the
+ *  .hushproject flow: the project's joined buffer is the doc surface the
+ *  gutter notebook pairs with, so the project context wins. A bare doc
+ *  context is still recognised so a gutter promoted mid-conversion (or by
+ *  legacy persistence) is found by `stopActivePaneAsGutter`. */
+export function gutterContext() {
+  if (!appState) return "";
+  if (appState.currentProjectId) return "pj:" + appState.currentProjectId;
+  if (appState.currentFileId) return "doc:" + appState.currentFileId;
+  return "";
+}
+
+/** Does any pane in the active context already wear the gutter crown?
+ *  Only one per project — the gutter is meant as project chrome, not
  *  another stacking surface to manage. */
 function docHasGutter() {
-  if (!appState) return false;
-  const ctx = appState.currentFileId ? "doc:" + appState.currentFileId : "";
+  const ctx = gutterContext();
   if (!ctx) return false;
   for (const [, p] of panes) {
     if (p.gutter && p.ownerContext === ctx) return true;
@@ -58,7 +69,10 @@ function docHasGutter() {
 }
 
 export function canUseActivePaneAsGutter() {
-  if (!appState || appState.currentNotebookFileId) return false;
+  // Gutter only lives inside a .hushproject — the joined project buffer is
+  // the doc surface the gutter notebook tracks. A standalone doc has to be
+  // converted into a project first (see project/gutter-commands.js).
+  if (!appState || !appState.currentProjectId) return false;
   if (!activePaneId) return false;
   const pane = panes.get(activePaneId);
   if (!pane || pane.fileType !== "notebook") return false;
@@ -397,6 +411,13 @@ export function useActivePaneAsGutter() {
   setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 1000);
   import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
+  // Record the pairing on the project so it rides the .hushproject envelope,
+  // regardless of which entry point promoted the pane (Add Gutter, Add
+  // notebook as gutter, or the manual "Use Pane as Gutter" command).
+  if (appState?.currentProjectId && pane.fileId && typeof appState.markProjectGutterNotebook === "function") {
+    appState.markProjectGutterNotebook(appState.currentProjectId, pane.fileId);
+  }
+
   schedulePersist();
   return true;
 }
@@ -440,6 +461,13 @@ export function stopActivePaneAsGutter() {
   pane._shapeAnchors = null;
   pane.el.style.zIndex = zForPane(pane);
   import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
+
+  // Keep the project's gutter metadata in step with an explicit demote so a
+  // later .hushproject export / import doesn't re-pair a notebook the user
+  // unpaired.
+  if (appState?.currentProjectId && pane.fileId && typeof appState.unmarkProjectGutterNotebook === "function") {
+    appState.unmarkProjectGutterNotebook(appState.currentProjectId, pane.fileId);
+  }
 
   schedulePersist();
   return true;
