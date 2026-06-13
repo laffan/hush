@@ -18,6 +18,7 @@ const TEXT_EXTENSIONS = [".md", ".txt", ".text", ".markdown"];
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".heic", ".heif", ".avif", ".tif", ".tiff"];
 const NOTEBOOK_EXTENSIONS = [".hushnote"];
 const STACK_EXTENSIONS = [".hushstack"];
+const PROJECT_EXTENSIONS = [".hushproject"];
 function getExtension(name) {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(i).toLowerCase() : "";
@@ -35,8 +36,12 @@ function isStackFile(file) {
   return STACK_EXTENSIONS.includes(getExtension(file.name));
 }
 
+function isProjectFile(file) {
+  return PROJECT_EXTENSIONS.includes(getExtension(file.name));
+}
+
 function isImportableFile(file) {
-  return isTextFile(file) || isNotebookFile(file) || isStackFile(file);
+  return isTextFile(file) || isNotebookFile(file) || isStackFile(file) || isProjectFile(file);
 }
 
 function isImageFile(file) {
@@ -346,6 +351,12 @@ async function importFileIntoTree(state, file, parentId) {
     // items, widths, and scroll state ride along with the copy.
     const text = await file.text();
     return state.createStack(baseName, parentId, { openImmediately: false, initialContent: text });
+  }
+  if (isProjectFile(file)) {
+    // .hushproject is a zip envelope bundling the project's docs, notebooks,
+    // and stacks — unpack it into a real project subtree.
+    const buf = await file.arrayBuffer();
+    return state.importProject(new Uint8Array(buf), parentId, { openImmediately: false });
   }
   if (isTextFile(file)) {
     const text = await file.text();

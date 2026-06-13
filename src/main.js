@@ -463,8 +463,8 @@ async function init() {
           }
           return;
         }
-        // iPadOS hands externally-opened .hushnote / .hushstack / .md
-        // files to the app as file:// URLs (cold launch surfaces
+        // iPadOS hands externally-opened .hushnote / .hushstack /
+        // .hushproject / .md files to the app as file:// URLs (cold launch surfaces
         // through getCurrent(); already-running launches through
         // onOpenUrl).
         if (url.startsWith("file://") || url.startsWith("/")) {

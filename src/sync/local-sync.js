@@ -31,7 +31,7 @@ const IOS = IS_TAURI && isIOS();
 // what shows up (the desktop Rust filters server-side; the plugin's
 // listDir doesn't, so we filter here).
 const SUPPORTED_EXTS = new Set([
-  "md", "markdown", "txt",
+  "md", "markdown", "txt", "hushproject",
   "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
   "heic", "heif", "avif", "tif", "tiff",
 ]);
@@ -350,6 +350,7 @@ export function localKindForName(name) {
   const ext = extOf(name);
   if (ext === "hushnote") return "notebook";
   if (ext === "hushstack") return "stack";
+  if (ext === "hushproject") return "project";
   if (IMAGE_EXTS.has(ext)) return "image";
   return "doc";
 }
@@ -394,7 +395,17 @@ export async function openLocalEntry(state, folderId, relPath, name) {
   const kind = localKindForName(name || relPath);
   if (kind === "notebook") return openLocalNotebook(state, folderId, relPath);
   if (kind === "stack") return openLocalStack(state, folderId, relPath);
+  if (kind === "project") return openLocalProject(state, folderId, relPath);
   return openLocalSyncFile(state, folderId, relPath);
+}
+
+/** A Local Sync `.hushproject` is a packaged container, not a single
+ *  editable surface — opening it imports a copy into the active desk's
+ *  tree (same as dragging the file into the sidebar). */
+export async function openLocalProject(state, folderId, relPath) {
+  if (state.ratchetMode) return;
+  const bytes = await readFileBytes(folderId, relPath);
+  return state.importProject(new Uint8Array(bytes), null, { openImmediately: true });
 }
 
 /** Open a Local Sync `.hushnote` on the notebook canvas. Routes through

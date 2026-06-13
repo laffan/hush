@@ -2,7 +2,7 @@
  * External file open — handles files handed to the app by the OS.
  *
  * On iPadOS this fires when the user taps a .hushnote / .hushstack /
- * .md file in Files.app and picks Hush from "Open With", or shares one
+ * .hushproject / .md file in Files.app and picks Hush from "Open With", or shares one
  * into Hush from another app. The URL arrives via the deep-link plugin
  * (`onOpenUrl`) as a `file://…` (or absolute) path.
  *
@@ -60,6 +60,13 @@ export async function importExternalFile(state, rawUrl) {
     if (ext === ".hushstack") {
       const text = await fs.readTextFile(path);
       const result = await state.createStack(baseName, parentId, { openImmediately: true, initialContent: text });
+      showImportToast(`Imported ${name}`, "success");
+      return result;
+    }
+
+    if (ext === ".hushproject") {
+      const bytes = await fs.readFile(path);
+      const result = await state.importProject(new Uint8Array(bytes), parentId, { openImmediately: true });
       showImportToast(`Imported ${name}`, "success");
       return result;
     }

@@ -73,6 +73,28 @@
         </array>
       </dict>
     </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.hushwriter.app.hushproject</string>
+      <key>UTTypeDescription</key>
+      <string>Hush Project</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.content</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>hushproject</string>
+        </array>
+        <key>public.mime-type</key>
+        <array>
+          <string>application/x-hushproject</string>
+        </array>
+      </dict>
+    </dict>
   </array>
 
   <!--
@@ -106,6 +128,18 @@
       <key>LSItemContentTypes</key>
       <array>
         <string>com.hushwriter.app.hushstack</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Hush Project</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.hushwriter.app.hushproject</string>
       </array>
     </dict>
     <dict>

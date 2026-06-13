@@ -26,7 +26,7 @@ use tauri::{AppHandle, Emitter};
 /// so the sidebar shows them with hover preview.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "md", "markdown", "txt",
-    "hushnote", "hushstack",
+    "hushnote", "hushstack", "hushproject",
     "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
     "heic", "heif", "avif", "tif", "tiff",
 ];

@@ -422,6 +422,17 @@ export class AppState {
   _activeDeskParent(parentId) { return parentId || _desks.getActiveDesk(this)?.id || null; }
   async createFolder(name, parentId = null) { const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_folder", "folder", name, this._activeDeskParent(parentId)); }
   async createProject(name, parentId = null) { const m = await import("./state-tree.js"); return m.createTreeNode(this, "create_project", "project", name, this._activeDeskParent(parentId)); }
+  /** Import a .hushproject — `data` is the zip bytes (Uint8Array/ArrayBuffer)
+   *  or an already-unpacked envelope descriptor. */
+  async importProject(data, parentId = null, opts = {}) {
+    let envelope = data;
+    if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
+      const { unpackProject } = await import("../project/project-pack.js");
+      envelope = await unpackProject(data);
+    }
+    const m = await import("./state-project-import.js");
+    return m.createProjectFromEnvelope(this, envelope, parentId, opts);
+  }
   async deleteTreeNode(nodeId) { const m = await import("./state-tree.js"); return m.deleteTreeNode(this, nodeId); }
   async emptyTrash() { const m = await import("./state-tree.js"); return m.emptyTrash(this); }
   async renameTreeNode(nodeId, newName) { const m = await import("./state-tree.js"); return m.renameTreeNode(this, nodeId, newName); }
