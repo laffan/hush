@@ -21,14 +21,7 @@
 import { panes, activePaneId, appState, GUTTER_Z, TITLEBAR_HEIGHT, zForPane } from "../pane/pane-state.js";
 import { stopAttachSync } from "../pane/pane-attach-sync.js";
 import { schedulePersist } from "../pane/pane-persistence.js";
-
-const VIEWPORT_TOP_MARGIN = 60;
-// Match `fitActivePaneToGap`'s vertical envelope so a gutter pane
-// claims the full doc-text height instead of being trimmed by the
-// scroller's CSS padding (which can run ~130 px on phone safe-areas).
-const GUTTER_TOP_MARGIN = 35;
-const GUTTER_BOTTOM_MARGIN = 12;
-const PANE_BOTTOM_INSET = 12;
+import { dockPane, undockPane, applyDockGeometry } from "../pane/pane-dock.js";
 
 /** Read the cm-scroller's vertical padding so the gutter pane can sit
  *  flush against the actual top of the doc text — that way world-y
@@ -90,11 +83,6 @@ export function isActivePaneAGutter() {
 function getScroller() {
   return appState?.editor?.view?.scrollDOM
     || document.querySelector("#editor-container .cm-scroller");
-}
-
-function getContentEl() {
-  return appState?.editor?.view?.contentDOM
-    || document.querySelector("#editor-container .cm-content");
 }
 
 /** Walk the doc, return the y position + text + level of every ATX
@@ -219,28 +207,6 @@ function scheduleSync(pane) {
   });
 }
 
-function detectGutterSide(pane) {
-  const content = getContentEl();
-  let textCenter = window.innerWidth / 2;
-  if (content) {
-    const cr = content.getBoundingClientRect();
-    if (cr.width > 0) textCenter = cr.left + cr.width / 2;
-  }
-  const paneCenter = pane.x + pane.width / 2;
-  return paneCenter < textCenter ? "left" : "right";
-}
-
-/** Pane geometry — fixed in the viewport using the same vertical
- *  envelope as fitActivePaneToGap so the gutter claims the full
- *  doc-text-area height. World-y inside the canvas is brought back into
- *  alignment with doc-content-y by `syncCameraFromScroll`. */
-function applyGutterGeometry(pane) {
-  pane.y = GUTTER_TOP_MARGIN;
-  pane.height = Math.max(120, window.innerHeight - GUTTER_TOP_MARGIN - GUTTER_BOTTOM_MARGIN);
-  pane.el.style.top = pane.y + "px";
-  pane.el.style.height = pane.height + "px";
-}
-
 /** Recompute the cached alignment offset between the canvas's world-y
  *  origin and doc-content-y. Triggers a `getBoundingClientRect` read so
  *  any pending CodeMirror measure pass flushes — `scanDocHeaders` (which
@@ -324,7 +290,10 @@ function startGutterSync(pane) {
   scroller.addEventListener("scroll", pane._gutterScrollHandler, { passive: true });
   pane._gutterWindowHandler = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
-    applyGutterGeometry(pane);
+    // Re-flex the docked box, then re-derive the camera offset against the
+    // new geometry. (The dock module also re-flexes on resize; doing it here
+    // too keeps the camera resync ordered after the geometry settles.)
+    applyDockGeometry(pane);
     invalidateGutterPadCache(pane);
     recomputeGutterOffset(pane);
     syncCameraFromScroll(pane);
@@ -382,11 +351,13 @@ export function useActivePaneAsGutter() {
     camera: pane.notebook?.state ? { ...pane.notebook.state.camera } : null,
   };
 
-  const side = detectGutterSide(pane);
+  // The gutter is a right-docked pane: it carves real estate out of the doc
+  // text column (which shrinks from the right) rather than floating over it.
+  // Side is always "right".
   pane.gutter = true;
-  pane.gutterSide = side;
-  pane.el.classList.add("gutter", "gutter-" + side);
-  pane.el.classList.remove("gutter-" + (side === "left" ? "right" : "left"));
+  pane.gutterSide = "right";
+  pane.el.classList.add("gutter", "gutter-right");
+  pane.el.classList.remove("gutter-left");
   pane.el.style.zIndex = GUTTER_Z;
 
   // Point the notebook at the host doc's scroller — wheel / pan /
@@ -396,7 +367,10 @@ export function useActivePaneAsGutter() {
     pane.notebook.state.gutterScrollDOM = getScroller();
   }
 
-  applyGutterGeometry(pane);
+  // Dock geometry owns the pane's box (full height, flush right, doc column
+  // shrinks); the scroll-driven camera below maps canvas world-y to
+  // doc-content-y on top of that.
+  dockPane(pane, "right");
   recomputeGutterOffset(pane);
   syncCameraFromScroll(pane);
   startGutterSync(pane);
@@ -435,21 +409,9 @@ export function stopActivePaneAsGutter() {
   pane._gutterPrev = null;
   pane.el.classList.remove("gutter", "gutter-left", "gutter-right");
 
-  if (typeof prev.width === "number") {
-    pane.width = prev.width;
-    pane.el.style.width = prev.width + "px";
-  }
-  if (typeof prev.height === "number") {
-    pane.height = prev.height;
-    pane.el.style.height = prev.height + "px";
-  }
-  if (typeof prev.x === "number") {
-    pane.x = prev.x;
-    pane.el.style.left = prev.x + "px";
-  }
-  const y = VIEWPORT_TOP_MARGIN;
-  pane.y = y;
-  pane.el.style.top = y + "px";
+  // Undock back to the pre-gutter floating geometry (dockPane snapshotted it
+  // in pane._dockPrev when the gutter was promoted).
+  undockPane(pane);
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = null;
     pane.notebook.state.gutterCameraOffset = 0;
@@ -462,12 +424,10 @@ export function stopActivePaneAsGutter() {
   pane.el.style.zIndex = zForPane(pane);
   import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
-  // Keep the project's gutter metadata in step with an explicit demote so a
-  // later .hushproject export / import doesn't re-pair a notebook the user
-  // unpaired.
-  if (appState?.currentProjectId && pane.fileId && typeof appState.unmarkProjectGutterNotebook === "function") {
-    appState.unmarkProjectGutterNotebook(appState.currentProjectId, pane.fileId);
-  }
+  // NOTE: the project's gutter *assignment* (the notebook child's `gutter`
+  // marker) is intentionally kept here — demoting / closing the pane doesn't
+  // unpair the gutter, so "Open Gutter" can re-open it later. The marker is
+  // only cleared by Convert to Folder (full dissolution).
 
   schedulePersist();
   return true;
@@ -475,14 +435,16 @@ export function stopActivePaneAsGutter() {
 
 export function restoreGutterLayout(pane) {
   if (!pane || !pane.gutter || !pane.el) return;
-  const side = pane.gutterSide || detectGutterSide(pane);
-  pane.gutterSide = side;
-  pane.el.classList.add("gutter", "gutter-" + side);
+  pane.gutterSide = "right";
+  pane.el.classList.add("gutter", "gutter-right");
+  pane.el.classList.remove("gutter-left");
   pane.el.style.zIndex = GUTTER_Z;
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = getScroller();
   }
-  applyGutterGeometry(pane);
+  // Re-dock to the right (persistence stored docked/dockEdge, but a gutter
+  // owns its own re-dock so the camera resync below stays ordered after it).
+  dockPane(pane, "right");
   recomputeGutterOffset(pane);
   syncCameraFromScroll(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);

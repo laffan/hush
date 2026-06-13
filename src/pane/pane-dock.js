@@ -39,14 +39,13 @@ export function isDocked(pane) {
 export function dockPane(pane, edge) {
   if (!pane || !edge) return;
   if (!["left", "right", "top", "bottom"].includes(edge)) return;
-  // Detach from any anchored / gutter mode — docking owns geometry.
+  // Detach from any anchored mode — docking owns geometry. (A gutter pane
+  // is *intentionally* docked: gutter.js drives dockPane itself and layers
+  // its scroll-sync on top, so we don't tear gutter mode down here.)
   if (pane.attached) {
     pane.attached = false;
     const btn = pane.el?.querySelector(".fp-btn-attach");
     btn?.classList.remove("attach-active");
-  }
-  if (pane.gutter) {
-    import("../project/gutter.js").then(({ undoGutter }) => undoGutter(pane));
   }
   if (!pane._dockPrev) {
     pane._dockPrev = {

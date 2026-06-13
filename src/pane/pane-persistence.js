@@ -261,7 +261,10 @@ export async function restorePanes(deps) {
       restoreGutterLayout(pane);
     }
     // Re-apply docked layout (snap edge + user-controlled dimension).
-    if (pane.docked && pane.dockEdge) {
+    // Gutter panes are docked too, but restoreGutterLayout above already
+    // re-docks them (and re-establishes the scroll-sync), so skip them here
+    // to avoid a double-dock.
+    if (pane.docked && pane.dockEdge && !pane.gutter) {
       const { dockPane } = await import("./pane-dock.js");
       dockPane(pane, pane.dockEdge);
     }

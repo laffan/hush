@@ -19,8 +19,8 @@
  */
 
 import { panes, DEFAULT_WIDTH as PANE_DEFAULT_WIDTH, TITLEBAR_HEIGHT as PANE_TITLEBAR_HEIGHT } from "../pane/pane-state.js";
-import { createPane, getInitialPanePosition } from "../pane/pane-manager.js";
-import { findNodeByFileId } from "../state/tree-helpers.js";
+import { createPane, getInitialPanePosition, closePane } from "../pane/pane-manager.js";
+import { findNode, findNodeByFileId } from "../state/tree-helpers.js";
 import { useActivePaneAsGutter } from "./gutter.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -38,17 +38,43 @@ export function currentGutterContext(state) {
   return "";
 }
 
-/** True when the surface that would receive a gutter already owns one. A
- *  bare doc never does (Add Gutter will convert it); a project might. Used
- *  to hide the palette entries once a gutter is present. */
-export function currentSurfaceHasGutter(state) {
-  if (state.currentNotebookFileId || state.currentStackFileId || state.currentPdfFileId) return true;
+/** The notebook child currently assigned as the active project's gutter (the
+ *  persistent pairing), or null. The assignment survives closing the gutter
+ *  pane — that's what makes "Open Gutter" possible. */
+export function assignedGutterChild(state) {
+  if (!state.currentProjectId) return null;
+  const node = findNode(state.fileTree, state.currentProjectId);
+  if (!node || node.type !== "project") return null;
+  return (node.children || []).find((c) => c.type === "notebook" && c.gutter && c.fileId) || null;
+}
+
+/** The live (on-screen) gutter pane for the active surface, or null. */
+export function liveGutterPane(state) {
   const ctx = currentGutterContext(state);
-  if (!ctx) return true;
+  if (!ctx) return null;
   for (const [, p] of panes) {
-    if (p.gutter && p.ownerContext === ctx) return true;
+    if (p.gutter && p.ownerContext === ctx) return p;
   }
-  return false;
+  return null;
+}
+
+/** Hide the "Add Gutter" / "Add notebook as gutter" entries on surfaces that
+ *  can't host a gutter (notebook / stack / pdf), or once the active project
+ *  already has a gutter assigned (then Open / Close Gutter take over). */
+export function gutterAddHidden(state) {
+  if (state.currentNotebookFileId || state.currentStackFileId || state.currentPdfFileId) return true;
+  if (!state.currentProjectId && !state.currentFileId) return true;
+  return !!assignedGutterChild(state);
+}
+
+/** "Open Gutter" shows only when a gutter is assigned but not on screen. */
+export function gutterOpenHidden(state) {
+  return !assignedGutterChild(state) || !!liveGutterPane(state);
+}
+
+/** "Close Gutter" shows only when a gutter pane is on screen. */
+export function gutterCloseHidden(state) {
+  return !liveGutterPane(state);
 }
 
 /** Pane lands centred on its (x,y) anchor — pre-shift by half the default
@@ -92,7 +118,7 @@ async function loadNotebookContent(state, fileId) {
 /** "Add Gutter" — convert the current doc to a project (if needed) and pair
  *  it with a fresh, empty gutter notebook. */
 export async function addGutter(state) {
-  if (currentSurfaceHasGutter(state)) return;
+  if (assignedGutterChild(state)) return;
   const projectId = await ensureProjectContext(
     state,
     "Adding a gutter will convert this document into a Project. Continue?",
@@ -108,7 +134,7 @@ export async function addGutter(state) {
 /** "Add notebook as gutter" — convert the current doc to a project (if
  *  needed) and pair it with a copy of an existing notebook. */
 export async function addNotebookAsGutter(state, fileLeaf) {
-  if (currentSurfaceHasGutter(state)) return;
+  if (assignedGutterChild(state)) return;
   if (!confirm("This copies the selected notebook into the Project as its gutter. Continue?")) return;
   const projectId = state.currentProjectId
     ? state.currentProjectId
@@ -118,4 +144,20 @@ export async function addNotebookAsGutter(state, fileLeaf) {
   const created = await state.createNotebook(fileLeaf.name, projectId, { openImmediately: false, initialContent: content });
   if (!created) return;
   await promoteNotebookPaneAsGutter(state, created.fileId, created.name);
+}
+
+/** "Open Gutter" — re-open the project's assigned gutter notebook as a docked
+ *  gutter pane (the assignment persists across close, so this just
+ *  re-materializes the pane). */
+export async function openGutter(state) {
+  const child = assignedGutterChild(state);
+  if (!child || liveGutterPane(state)) return;
+  await promoteNotebookPaneAsGutter(state, child.fileId, child.name);
+}
+
+/** "Close Gutter" — close the gutter pane but keep the assignment, so it can
+ *  be re-opened later. */
+export function closeGutter(state) {
+  const pane = liveGutterPane(state);
+  if (pane) closePane(pane.id);
 }

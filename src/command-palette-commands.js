@@ -19,7 +19,7 @@ import {
   enterNotebookGutterPicker, enterPaneCopyPicker,
   enterSendSelectedPicker, enterFilePicker, enterDeskPicker,
 } from "./command-palette-pickers.js";
-import { addGutter, currentSurfaceHasGutter } from "./project/gutter-commands.js";
+import { addGutter, openGutter, closeGutter, gutterAddHidden, gutterOpenHidden, gutterCloseHidden } from "./project/gutter-commands.js";
 import { deleteTreeNode } from "./state/state-tree.js";
 import {
   getActivePaneId, fitActivePaneToGap, createPane,
@@ -27,7 +27,7 @@ import {
   setActivePanePinned, closePane,
 } from "./pane/pane-manager.js";
 import { panes } from "./pane/pane-state.js";
-import { canUseActivePaneAsGutter, isActivePaneAGutter, useActivePaneAsGutter, stopActivePaneAsGutter } from "./project/gutter.js";
+import { isActivePaneAGutter } from "./project/gutter.js";
 import { isCommentsHidden } from "./google-docs/comments-visibility.js";
 import { arePanesHiddenForActive } from "./state/state-panes.js";
 import { createNewFromSelected } from "./selection-extract.js";
@@ -401,12 +401,18 @@ function buildCommands(state) {
     { id: "copy-as-html", label: "Copy as HTML", icon: icons.export, shortcutKey: null, ctx: "doc",
       action: (s) => import("./editor/google-docs/copy-command.js").then((m) => s.editor?.view && m.copyAsHtml(s.editor.view)) },
     { id: "add-gutter", label: "Add Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
-      hiddenIf: (s) => currentSurfaceHasGutter(s),
+      hiddenIf: (s) => gutterAddHidden(s),
       action: (s) => addGutter(s) },
     { id: "add-notebook-as-gutter", label: "Add notebook as gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
       keepOpen: true,
-      hiddenIf: (s) => currentSurfaceHasGutter(s),
+      hiddenIf: (s) => gutterAddHidden(s),
       action: (s, p) => enterNotebookGutterPicker(p, s) },
+    { id: "open-gutter", label: "Open Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => gutterOpenHidden(s),
+      action: (s) => openGutter(s) },
+    { id: "close-gutter", label: "Close Gutter", icon: icons.notebook, shortcutKey: null, ctx: "doc",
+      hiddenIf: (s) => gutterCloseHidden(s),
+      action: (s) => closeGutter(s) },
     { id: "google-import", label: "Import from Google Doc", icon: icons.export, shortcutKey: null, ctx: "shared", action: _gdocAction("importFromGoogleDoc") },
     { id: "google-link", label: "Link Document to Google Doc", icon: icons.export, shortcutKey: null, ctx: "doc",
       hiddenIf: (s) => !!s.settings?.googleDocLinks?.[s.currentFileId], action: _gdocAction("linkCurrentDocument") },
@@ -444,8 +450,6 @@ function buildCommands(state) {
         const id = getActivePaneId();
         if (id) replacePaneContent(id, f.fileId, f.name, f.type);
       }) },
-    { id: "pane-gutter-on", label: "Use Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !canUseActivePaneAsGutter(), action: () => useActivePaneAsGutter() },
-    { id: "pane-gutter-off", label: "Stop using Pane as Gutter", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !isActivePaneAGutter(), action: () => stopActivePaneAsGutter() },
     { id: "pane-pin", label: "Pin pane across documents", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !!panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(true) },
     { id: "pane-unpin", label: "Unpin pane", icon: icons.pane, shortcutKey: null, ctx: "pane", hiddenIf: () => !panes.get(getActivePaneId())?.pinned, action: () => setActivePanePinned(false) },
     { id: "pane-close-current", label: "Close current pane", icon: icons.trash, shortcutKey: null, ctx: "pane", action: () => { const id = getActivePaneId(); if (id) closePane(id); } },
