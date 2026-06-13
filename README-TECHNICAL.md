@@ -53,7 +53,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── block-cursor.js                (extracted from editor.js — applyBlockCursor; routes system/block/underline cursor modes via .block-cursor / .underline-cursor classes)
 │   ├── heading-indent.js              (extracted from editor.js)
 │   ├── folding.js                     (doc folding — codeFolding state field + unwrap pill + fold/unfold command helpers; header + selection ranges)
-│   ├── fold-arrow.js                  (in-margin hover/selection fold arrow ViewPlugin — mirrors a code-fold gutter)
+│   ├── fold-arrow.js                  (in-margin fold-arrow ViewPlugin — pooled arrows: hover/selection fold + persistent red unfold arrows on folded headers)
 │   ├── comment-plugins.js             (extracted from editor.js)
 │   ├── markdown-highlight.js          (extracted from editor.js — getMarkdownHighlight + resolveHeaderColorOverride)
 │   ├── modes.js

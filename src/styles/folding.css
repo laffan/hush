@@ -31,6 +31,19 @@
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: transform 0.12s ease;
+}
+/* Folded sections paint a persistent red unfold arrow (right-pointing)
+   so they read as collapsed and can be toggled without the pill. */
+.hush-fold-arrow-folded {
+  color: var(--hush-fold-red, #e5484d);
+  opacity: 0.85;
+}
+.hush-fold-arrow-folded:hover {
+  opacity: 1;
+}
+.hush-fold-arrow-folded svg {
+  transform: rotate(-90deg);
 }
 
 .hush-fold-pill {
@@ -45,10 +58,10 @@
   white-space: nowrap;
   vertical-align: baseline;
   user-select: none;
-  color: var(--fg, currentColor);
-  background: color-mix(in srgb, var(--fg, #888) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--fg, #888) 24%, transparent);
-  opacity: 0.72;
+  color: var(--hush-fold-red, #e5484d);
+  background: color-mix(in srgb, var(--hush-fold-red, #e5484d) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hush-fold-red, #e5484d) 36%, transparent);
+  opacity: 0.82;
   transition: opacity 0.12s ease;
 }
 .hush-fold-pill:hover {
