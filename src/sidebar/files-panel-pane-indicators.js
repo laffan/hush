@@ -10,40 +10,9 @@
  */
 import { getPanesForContext, contextIdForFile } from "../pane/pane-manager.js";
 
-/** True when the doc identified by `docFileId` currently has its gutter
- *  notebook open as an on-screen gutter pane. The standalone gutter tree
- *  row reads this to drop its own label while the gutter is open — the
- *  label is shown inline with the pane icons instead (see paneIndicatorsFor). */
-export function isGutterOpenForDoc(docFileId) {
-  if (!docFileId) return false;
-  const ctx = contextIdForFile(docFileId, "document");
-  return getPanesForContext(ctx).some((p) => p.gutter);
-}
-
-export function paneIndicatorsFor(item, state) {
-  if (!item.fileId) return null;
-  if (item.type !== "document" && item.type !== "notebook") return null;
-  const ctx = contextIdForFile(item.fileId, item.type);
-  const ctxPanes = getPanesForContext(ctx);
-  if (!ctxPanes.length) return null;
-  const hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
+function buildStrip(ctxPanes, hidden) {
   const strip = document.createElement("span");
   strip.className = "tree-pane-indicators" + (hidden ? " dimmed" : "");
-  // A doc with its gutter open carries a clickable "Gutter" link on the same
-  // line as the pane icons, before them. It opens the gutter notebook — the
-  // standalone gutter row hides its label while the gutter is open so the
-  // label reads as relocated rather than duplicated.
-  const gutterPane = ctxPanes.find((p) => p.gutter);
-  if (gutterPane) {
-    const link = document.createElement("span");
-    link.className = "tree-pane-gutter-link";
-    link.textContent = "Gutter";
-    link.addEventListener("click", (e) => {
-      e.stopPropagation();
-      state.openNotebook?.(gutterPane.fileId);
-    });
-    strip.appendChild(link);
-  }
   for (const p of ctxPanes) {
     const cell = document.createElement("span");
     cell.className = "tree-pane-cell";
@@ -51,6 +20,27 @@ export function paneIndicatorsFor(item, state) {
     strip.appendChild(cell);
   }
   return strip;
+}
+
+export function paneIndicatorsFor(item, state) {
+  if (!item.fileId) return null;
+  // A gutter notebook's pane lives in its paired doc's context, but we paint
+  // its indicator under the gutter ROW (below its label) so the sidebar reads
+  // doc → gutter → pane row, and the gutter keeps its own dropdown.
+  if (item.type === "notebook" && item.gutter) {
+    const ctx = contextIdForFile(item.gutterForDoc, "document");
+    const gPanes = getPanesForContext(ctx).filter((p) => p.gutter && p.fileId === item.fileId);
+    if (!gPanes.length) return null;
+    return buildStrip(gPanes, !!(state.settings?.panesHiddenByContext || {})[ctx]);
+  }
+  if (item.type !== "document" && item.type !== "notebook") return null;
+  const ctx = contextIdForFile(item.fileId, item.type);
+  // Gutter panes surface on their own gutter row (above), so drop them from the
+  // doc's strip — otherwise the gutter would show a square under the doc too.
+  const ctxPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
+  if (!ctxPanes.length) return null;
+  const hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
+  return buildStrip(ctxPanes, hidden);
 }
 
 let _paneTooltipEl = null;
