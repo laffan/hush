@@ -459,6 +459,12 @@
   margin-left: 18px;
 }
 
+/* Tuck the gutter row up closer to the doc above it — half the usual top
+   padding (.sl-item default is 4px) so it reads as attached. */
+.sl-item[data-type="notebook"][data-gutter="true"] {
+  padding-top: 2px;
+}
+
 /* "Use as Note" docs sort with notebooks under the joined buffer, so
    the doc-doc connector should NOT render across the boundary into a
    note (or between two consecutive notes). */

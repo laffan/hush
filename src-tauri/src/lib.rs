@@ -94,6 +94,12 @@ pub struct TreeNode {
     // outline numbers (decimals for nested projects).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub show_numbers: bool,
+    // Notebook-only — when true (inside a project), this notebook is the
+    // project's gutter: paired with the joined doc buffer and rendered as a
+    // right-docked sidebar. The pairing is the project's own metadata, so it
+    // must survive the save_file_tree / get_file_tree round trip.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gutter: bool,
 }
 
 pub fn get_data_dir() -> PathBuf {

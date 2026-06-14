@@ -274,6 +274,22 @@ export function createDrawingToolPanel(
     // child of the bar), so mirror the minimized state on the tab so
     // CSS can style the grip when the bar is collapsed.
     dragTab.classList.toggle("notebook-tool-panel-drag-tab-minimized", !wasMinimized);
+    // Keep the state flag in lockstep with the DOM (silent — no notify /
+    // tool side-effects) so a programmatic `setDrawingToolbarMinimized`
+    // (e.g. gutter init) and this button stay consistent.
+    state.drawingToolbarMinimized = !wasMinimized;
+    applyLayout();
+  }
+  /** Apply `state.drawingToolbarMinimized` to the DOM. Driven both at setup
+   *  (so a flag set before the toolbar mounted — e.g. a gutter promotion —
+   *  takes effect) and on the matching state notify. */
+  function applyMinimizedFromState() {
+    const min = !!state.drawingToolbarMinimized;
+    const was = bottomToolbar.classList.contains("notebook-toolbar-minimized");
+    if (min === was) return;
+    if (min) captureMinimizedAnchor();
+    bottomToolbar.classList.toggle("notebook-toolbar-minimized", min);
+    dragTab.classList.toggle("notebook-tool-panel-drag-tab-minimized", min);
     applyLayout();
   }
   /** Lazily promote a snapped position to "custom" only once a real
@@ -645,11 +661,13 @@ export function createDrawingToolPanel(
       const lassoLive = state.tool === "pen" && state.drawingSubTool === "select";
       if (!lassoLive) closeLassoFlyout();
     }
+    if (keys.includes("drawingToolbarMinimized")) applyMinimizedFromState();
     updateActiveClasses();
     applyLayout();
   }) as EventListener);
 
   updateActiveClasses();
+  applyMinimizedFromState();
   applyLayout();
   applyActiveSlot();
   drawingLayer.setTool(state.drawingSubTool);

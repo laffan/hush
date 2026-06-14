@@ -368,6 +368,23 @@ export function useActivePaneAsGutter() {
     pane.notebook.state.gutterScrollDOM = getScroller();
   }
 
+  // Start the gutter with its canvas toolbar out of the way — docked left
+  // and minimized — so the narrow gutter isn't crowded. This only runs on
+  // initialization (restore uses restoreGutterLayout, not this path), so a
+  // user who later reopens the toolbar keeps it open for the session. Best
+  // effort now, retried once the canvas has mounted.
+  const initGutterToolbar = () => {
+    const st = pane.notebook?.state;
+    if (!st) return false;
+    st.setDrawingToolbarPosition?.("left");
+    st.setDrawingToolbarMinimized?.(true);
+    return true;
+  };
+  if (!initGutterToolbar()) {
+    setTimeout(initGutterToolbar, 300);
+    setTimeout(initGutterToolbar, 1000);
+  }
+
   // Dock geometry owns the pane's box (full height, flush right, doc column
   // shrinks); the scroll-driven camera below maps canvas world-y to
   // doc-content-y on top of that.

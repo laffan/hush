@@ -68,6 +68,24 @@ export async function deleteTreeNode(state, nodeId) {
   }
   await state.saveFileTree();
   const { docFileIds, pdfFileIds, stackFileIds } = collectTypedFileIds(node);
+  // Close any open panes backed by a file we just removed so they don't
+  // linger orphaned — most importantly a gutter notebook: deleting the
+  // gutter file detaches it from its doc (the node, with its `gutter`
+  // marker, left the project) and the gutter pane closes here.
+  const deletedFileIds = new Set([...docFileIds, ...pdfFileIds, ...stackFileIds]);
+  if (deletedFileIds.size) {
+    try {
+      const [{ panes }, { closePane }] = await Promise.all([
+        import("../pane/pane-state.js"),
+        import("../pane/pane-manager.js"),
+      ]);
+      const victims = [];
+      for (const [id, p] of panes) {
+        if (p.fileId && deletedFileIds.has(p.fileId)) victims.push(id);
+      }
+      for (const id of victims) closePane(id);
+    } catch (_) {}
+  }
   if (docFileIds.includes(state.currentNotebookFileId)) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
