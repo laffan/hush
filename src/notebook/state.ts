@@ -2904,13 +2904,19 @@ export class DrawingState extends EventTarget {
     // centring still adjusts camera.x. Instant scroll — `smooth` would
     // fight any user gesture arriving before the animation completes.
     if (this.gutterScrollDOM) {
-      // World-y maps 1:1 onto doc-content-y under the gutter camera
-      // offset. Aim for the viewport vertical centre and snap there
-      // in one step (smooth scroll fights any user gesture arriving
-      // mid-animation).
-      const scrollerRect = this.gutterScrollDOM.getBoundingClientRect();
-      const viewportH = window.innerHeight || h;
-      const target = Math.max(0, scrollerRect.top + cy - viewportH / 2);
+      // Gutter mode: scroll the host doc so the shape's centre lands at the
+      // gutter canvas's vertical centre, then re-derive camera.y from the
+      // resulting scrollTop so the 1:1 doc<->notebook mapping is preserved.
+      //
+      // Shape world-y maps 1:1 onto doc-content-y, and the gutter renders it
+      // at canvas-y = (gutterCameraOffset - scrollTop) + cy. Solving for the
+      // scrollTop that puts that at the canvas centre (h/2) gives
+      // scrollTop = gutterCameraOffset + cy - h/2. Deriving the target from
+      // the SAME `gutterCameraOffset` the steady-state sync uses keeps the doc
+      // scroll and the canvas camera in lockstep — the earlier formula mixed
+      // viewport coords (`scrollerRect.top`, `window.innerHeight`) into the
+      // scroll target, which over-scrolled the doc and threw the sync off.
+      const target = Math.max(0, this.gutterCameraOffset + cy - h / 2);
       this.gutterScrollDOM.scrollTop = target;
       this.camera = {
         x: (left + w - right) / 2 - cx,
