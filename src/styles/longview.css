@@ -48,7 +48,11 @@ html.ios #right-panel-overlay {
 .right-panel-trigger {
   position: fixed;
   top: 50%;
-  right: 0;
+  /* Slide inboard of a right-docked pane (e.g. a gutter) so the trigger
+     sits at the outline panel's edge rather than overlapping the dock's
+     own right-edge chrome — otherwise this arrow lands on top of the gutter
+     notebook's shelf grip and clicking the shelf opens the doc outline. */
+  right: var(--pane-dock-right-width, 0px);
   transform: translateY(-50%);
   width: 20px;
   height: 60px;
