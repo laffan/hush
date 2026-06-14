@@ -144,10 +144,17 @@ export async function promoteNotebookPaneAsGutter(state, fileId, name) {
 /** Ensure we're inside a project. A bare doc is converted in place (with a
  *  confirm); returns the project id, or "" if the user cancelled / no doc. */
 async function ensureProjectContext(state, convertMessage) {
-  if (state.currentProjectId) return state.currentProjectId;
+  // Only treat the current project as the target if it's a REAL project node.
+  // A stale `currentProjectId` (a project that was deleted or converted to a
+  // folder, never cleared) would otherwise short-circuit the conversion and
+  // dump the gutter notebook next to the doc instead of converting it.
+  if (state.currentProjectId) {
+    const pn = findNode(state.fileTree, state.currentProjectId);
+    if (pn && pn.type === "project") return state.currentProjectId;
+  }
   if (!state.currentFileId) return "";
   const node = findNodeByFileId(state.fileTree, state.currentFileId);
-  if (!node) return "";
+  if (!node || node.type !== "document") return "";
   if (!(await confirmModal(convertMessage))) return "";
   await state.convertDocToProject(node.id);
   return state.currentProjectId || "";
@@ -166,16 +173,22 @@ async function loadNotebookContent(state, fileId) {
  *  it with a fresh, empty gutter notebook. */
 export async function addGutter(state) {
   if (assignedGutterChild(state)) return;
+  // TEMP DIAGNOSTICS — remove once "Add Gutter doesn't create a project" is
+  // confirmed fixed. Open devtools and look for the [gutter] lines.
+  console.log("[gutter] addGutter start: currentProjectId=", state.currentProjectId, "currentFileId=", state.currentFileId);
   const projectId = await ensureProjectContext(
     state,
     "Adding a gutter will convert this document into a Project. Continue?",
   );
+  console.log("[gutter] addGutter: resolved projectId=", projectId, "currentProjectId now=", state.currentProjectId);
   if (!projectId) return;
   const created = await state.createNotebook("Gutter", projectId, { openImmediately: false });
+  console.log("[gutter] addGutter: created gutter fileId=", created?.fileId, "into projectId=", projectId);
   if (!created) return;
   // promoteNotebookPaneAsGutter → useActivePaneAsGutter records the project's
   // gutter pairing, so no explicit mark is needed here.
   await promoteNotebookPaneAsGutter(state, created.fileId, created.name);
+  console.log("[gutter] addGutter done: live gutter pane=", !!liveGutterPane(state));
 }
 
 /** "Add notebook as gutter" — convert the current doc to a project (if
