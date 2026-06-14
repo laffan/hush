@@ -193,6 +193,18 @@ async function init() {
     }
     if (state.currentPdfFileId) { state.emit("pdf-toggle-shelf"); return; }
     if (state.currentNotebookFileId) { state.emit("notebook-toggle-shelf"); return; }
+    // A focused notebook pane (most notably a gutter, which has no main
+    // notebook context of its own) toggles ITS shape shelf rather than the
+    // doc / project outline sitting behind it.
+    {
+      const { panes, activePaneId } = await import("./pane/pane-state.js");
+      const ap = activePaneId ? panes.get(activePaneId) : null;
+      if (ap && ap.fileType === "notebook") {
+        const grip = ap.notebook?.container?.querySelector(".notebook-shelf button")
+          || ap.el?.querySelector(".notebook-shelf button");
+        if (grip) { grip.click(); return; }
+      }
+    }
     const rp = document.getElementById("right-panel-overlay");
     if (!rp) return;
     if (rp.classList.contains("hidden")) state.emit("show-outline");

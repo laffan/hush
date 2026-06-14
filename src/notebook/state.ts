@@ -48,7 +48,7 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "bookmarks" | "brainstormMode" | "creatingDragArea" | "theme"
   | "drawingMode" | "drawingSubTool" | "activeBrushSlot" | "brushSlots"
   | "layers" | "activeLayerId" | "isPanning" | "lassoHoldMs"
-  | "drawingToolbarMinimized" | "drawingToolbarOffset"
+  | "drawingToolbarMinimized" | "drawingToolbarOffset" | "drawingToolbarPosition"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
   | "strokeEngineDragging" | "reorderDragAreaId" | "reorderMode"
   | "reorderHoverTargetId" | "reorderPreview";

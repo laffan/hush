@@ -487,6 +487,17 @@ export function restoreGutterLayout(pane) {
   setTimeout(resync, 500);
   setTimeout(resync, 1500);
   import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
+
+  // Self-heal: backfill the project's gutter marker for a restored gutter
+  // (e.g. one created before the marker was persisted) so Open/Close Gutter
+  // surface correctly. Guarded to the pane's own project context — marking a
+  // foreign project would wipe its real gutter marker.
+  if (appState?.currentProjectId
+      && pane.fileId
+      && pane.ownerContext === "pj:" + appState.currentProjectId
+      && typeof appState.markProjectGutterNotebook === "function") {
+    appState.markProjectGutterNotebook(appState.currentProjectId, pane.fileId);
+  }
 }
 
 export function teardownGutterListeners(pane) {

@@ -456,8 +456,14 @@ export class NotesCanvas {
     const onDockChanged = (e: Event) => {
       requestAnimationFrame(syncShelfRightInset);
       const d = (e as CustomEvent).detail || {};
-      const l = +d.leftWidth || 0, r = +d.rightWidth || 0;
-      const t = +d.topHeight || 0, b = +d.bottomHeight || 0;
+      // The pane-dock CSS vars describe panes docked in the MAIN editor area.
+      // A gutter canvas is itself a right-docked pane, so the global
+      // right-dock width is its OWN width — applying it as `dockedRightWidth`
+      // would push the pocket inset across the whole canvas and pocket every
+      // dropped shape. A gutter canvas hosts no docks of its own, so zero them.
+      const isGutter = !!this.state.gutterScrollDOM;
+      const l = isGutter ? 0 : (+d.leftWidth || 0), r = isGutter ? 0 : (+d.rightWidth || 0);
+      const t = isGutter ? 0 : (+d.topHeight || 0), b = isGutter ? 0 : (+d.bottomHeight || 0);
       if (
         this.state.dockedLeftWidth === l && this.state.dockedRightWidth === r
         && this.state.dockedTopHeight === t && this.state.dockedBottomHeight === b
