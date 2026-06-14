@@ -185,7 +185,38 @@ export async function convertDocToProject(state, nodeId) {
     });
   }
 
-  if (childNodes.length === 0) return;
+  if (childNodes.length === 0) {
+    // An empty (or whitespace-only) doc still converts — it becomes a project
+    // with a single child doc carrying the original content. Without this the
+    // conversion silently no-ops, which made "Add Gutter" on a fresh/empty
+    // document appear to do nothing (no project created).
+    let childFileId;
+    if (IS_TAURI) {
+      try {
+        const file = await tauriInvoke("create_file");
+        childFileId = file.id;
+        await tauriInvoke("save_file", { id: childFileId, content });
+        await tauriInvoke("rename_file", { id: childFileId, name: node.name });
+      } catch (e) {
+        console.error("Create child doc for conversion failed:", e);
+        return;
+      }
+    } else {
+      childFileId = crypto.randomUUID();
+      state.files.unshift({
+        id: childFileId, name: node.name, content,
+        modified: Math.floor(Date.now() / 1000),
+      });
+    }
+    childNodes.push({
+      id: crypto.randomUUID(),
+      type: "document",
+      name: node.name,
+      fileId: childFileId,
+      children: [],
+      flagged: false,
+    });
+  }
 
   const projectNode = {
     id: crypto.randomUUID(),
