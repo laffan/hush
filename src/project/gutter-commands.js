@@ -33,18 +33,31 @@ async function tauriInvoke(cmd, args) {
 /** Awaited confirmation modal. `window.confirm` doesn't reliably block in the
  *  Tauri webview (it can return truthy immediately while the dialog shows
  *  async), which let the doc→project conversion + gutter creation run *before*
- *  the user actually confirmed. This resolves only once the user chooses. */
+ *  the user actually confirmed. Self-contained (reuses the shared modal CSS)
+ *  and resolves ONLY on an explicit button press — no backdrop-auto-cancel, so
+ *  the click/keypress that launched the command can't dismiss it. */
 function confirmModal(message, confirmLabel = "Continue") {
   return new Promise((resolve) => {
-    import("../sidebar/files-panel-shared.js").then(({ showConfirmModal }) => {
-      showConfirmModal({
-        title: "Add Gutter",
-        message,
-        confirmLabel,
-        onConfirm: () => resolve(true),
-        onCancel: () => resolve(false),
-      });
-    }).catch(() => resolve(false));
+    document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
+    const backdrop = document.createElement("div");
+    backdrop.className = "tree-delete-modal-backdrop";
+    const modal = document.createElement("div");
+    modal.className = "tree-delete-modal";
+    modal.innerHTML = `
+      <div class="tree-delete-modal-title">Add Gutter</div>
+      <pre class="tree-delete-modal-message"></pre>
+      <div class="tree-delete-modal-btns">
+        <button class="tree-delete-cancel">Cancel</button>
+        <button class="tree-delete-confirm"></button>
+      </div>`;
+    modal.querySelector(".tree-delete-modal-message").textContent = message;
+    modal.querySelector(".tree-delete-confirm").textContent = confirmLabel;
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; backdrop.remove(); resolve(v); };
+    modal.querySelector(".tree-delete-cancel").addEventListener("click", () => finish(false));
+    modal.querySelector(".tree-delete-confirm").addEventListener("click", () => finish(true));
   });
 }
 

@@ -454,6 +454,11 @@ export function stopActivePaneAsGutter() {
 export function restoreGutterLayout(pane) {
   if (!pane || !pane.gutter || !pane.el) return;
   pane.gutterSide = "right";
+  // Defensive: a gutter that was hidden on a context switch must be made
+  // visible again here (the context-switch handler sets display before this
+  // dynamic-import callback runs, but make it explicit so a stale `none` can't
+  // leave the pane in the map yet invisible).
+  pane.el.style.display = "";
   pane.el.classList.add("gutter", "gutter-right");
   pane.el.classList.remove("gutter-left");
   pane.el.style.zIndex = GUTTER_Z;
@@ -478,6 +483,10 @@ export function restoreGutterLayout(pane) {
   // landing late on iOS too.
   const resync = () => {
     if (!pane.gutter || !panes.has(pane.id)) return;
+    // Re-apply the docked box too — on a context-switch restore the project
+    // editor may not have been laid out when the synchronous dockPane ran, so
+    // the pane could land at a stale/zero size and read as "closed".
+    applyDockGeometry(pane);
     invalidateGutterPadCache(pane);
     recomputeGutterOffset(pane);
     syncCameraFromScroll(pane);
