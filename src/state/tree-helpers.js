@@ -212,27 +212,40 @@ export function findSyncContext(nodes, targetId) {
  * under a folder gets normalized too. Mutates in place; safe to call
  * repeatedly (idempotent).
  */
+/** A real, user project — not the Inbox (which is typed `project` for legacy
+ *  reasons but behaves like a folder). */
+export function isRealProjectNode(n) {
+  return !!n && n.type === "project" && n.id !== "__inbox__" && !String(n.id || "").startsWith("__inbox__:");
+}
+
 export function normalizeProjectChildren(nodes) {
   if (!Array.isArray(nodes)) return nodes;
   for (const n of nodes) {
     if (!n || !Array.isArray(n.children)) continue;
-    if (n.type === "project" && n.id !== "__inbox__" && !n.id?.startsWith("__inbox__:")) {
-      // Flow docs are hoisted to the top so the joined editor buffer reads
-      // contiguously. Everything else (notebooks, stacks, `useAsNote`
-      // docs, and nested projects / folders) stays in the user's custom
-      // drag order below — nested projects must NOT be force-sorted to the
-      // very bottom past the supplementary block.
+    if (isRealProjectNode(n)) {
+      // Flow docs hoist to the top so the joined buffer reads contiguously,
+      // and each doc's gutter notebook sits *directly under that doc*. Other
+      // notebooks, stacks, and `useAsNote` docs sink to the supplementary
+      // block; nested projects / folders keep their custom order at the top.
+      const gutterFor = new Map(); // docFileId -> gutter notebook node
+      for (const c of n.children) {
+        if (c.type === "notebook" && c.gutter && c.gutterForDoc) gutterFor.set(c.gutterForDoc, c);
+      }
       const top = [], below = [];
       for (const c of n.children) {
-        // Only notebooks, stacks, and `useAsNote` docs drop to the
-        // supplementary block. Flow docs AND nested projects / folders
-        // keep their custom drag order at the top so a nested project
-        // stays wherever the user placed it. The project's gutter notebook
-        // is the exception among notebooks: it stays up top (right after the
-        // docs it tracks) rather than sinking into the supplementary block.
-        if ((c.type === "notebook" && !c.gutter) || c.type === "stack" || (c.type === "document" && c.useAsNote)) below.push(c);
-        else top.push(c);
+        if (c.type === "notebook" && c.gutter) continue; // placed with its doc below
+        if (c.type === "stack" || c.type === "notebook" || (c.type === "document" && c.useAsNote)) {
+          below.push(c);
+          continue;
+        }
+        top.push(c);
+        if (c.type === "document" && c.fileId && gutterFor.has(c.fileId)) {
+          top.push(gutterFor.get(c.fileId));
+          gutterFor.delete(c.fileId);
+        }
       }
+      // Orphan gutter notebooks (their doc isn't here) fall to the bottom.
+      for (const g of gutterFor.values()) below.push(g);
       n.children = [...top, ...below];
     }
     normalizeProjectChildren(n.children);
@@ -240,35 +253,40 @@ export function normalizeProjectChildren(nodes) {
   return nodes;
 }
 
-/** Re-stamp each project's gutter-notebook `gutter` flag from the in-memory
- *  `state.gutterAssignments` map (keyed by project id → notebook fileId).
- *  Keeps the sidebar styling robust within a session even when the tree the
- *  Rust backend returns dropped the flag on the round trip (older builds
- *  without the TreeNode.gutter field). Mutates in place. */
-export function reapplyGutterMarkers(nodes, assignments) {
-  if (!Array.isArray(nodes) || !assignments) return nodes;
+/** Derive each project's gutter pairings from the naming convention: a
+ *  notebook named `<docName>-gutter` that sits beside a doc named `<docName>`
+ *  is that doc's gutter. Stamps `gutter` + `gutterForDoc` on the notebook (and
+ *  clears stale flags). Names are Rust-persisted and synced, so this survives
+ *  the tree round trip and a fresh device without a dedicated TreeNode field.
+ *  Mutates in place. */
+export function reapplyGutterMarkers(nodes) {
+  if (!Array.isArray(nodes)) return nodes;
   for (const n of nodes) {
-    if (!n || !Array.isArray(n.children)) continue;
-    if (n.type === "project" && assignments[n.id]) {
-      const fid = assignments[n.id];
+    if (!n) continue;
+    if (isRealProjectNode(n) && Array.isArray(n.children)) {
+      const docByName = new Map();
       for (const c of n.children) {
-        if (c.type === "notebook" && c.fileId === fid) c.gutter = true;
-        else if (c.gutter) delete c.gutter;
+        if (c.type === "document" && c.name && !c.useAsNote) docByName.set(c.name, c);
+      }
+      for (const c of n.children) {
+        if (c.type !== "notebook") continue;
+        const m = typeof c.name === "string" && c.name.match(/^(.*)-gutter$/);
+        const doc = m && docByName.get(m[1]);
+        if (doc && doc.fileId) { c.gutter = true; c.gutterForDoc = doc.fileId; }
+        else { if (c.gutter) delete c.gutter; if (c.gutterForDoc) delete c.gutterForDoc; }
       }
     }
-    reapplyGutterMarkers(n.children, assignments);
+    if (Array.isArray(n.children)) reapplyGutterMarkers(n.children);
   }
   return nodes;
 }
 
-/** Walk up from `nodeId` and return the id of the nearest ancestor project,
- *  or null. Used so opening a doc that lives inside a project lands on the
- *  project view (pj:) — which carries the gutter and the joined buffer —
- *  rather than the bare doc (doc:). */
+/** Walk up from `nodeId` and return the id of the nearest *real* ancestor
+ *  project (excluding the Inbox), or null. */
 export function nearestAncestorProjectId(nodes, nodeId) {
   let cur = findParentOfNode(nodes, nodeId);
   while (cur) {
-    if (cur.type === "project") return cur.id;
+    if (isRealProjectNode(cur)) return cur.id;
     cur = findParentOfNode(nodes, cur.id);
   }
   return null;

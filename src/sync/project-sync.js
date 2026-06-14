@@ -28,7 +28,7 @@ async function tauriInvoke(cmd, args) {
  *  every project node. Projects are always nested inside a desk node
  *  (or in the legacy flat-tree case under no desk at all, in which
  *  case `deskId` is empty and `innerPath` is the absolute path). */
-export function serializeProjects(fileTree, gutterAssignments) {
+export function serializeProjects(fileTree) {
   const out = [];
 
   function walk(nodes, deskId, innerParts) {
@@ -46,26 +46,17 @@ export function serializeProjects(fileTree, gutterAssignments) {
 
       const nextInner = [...innerParts, node.name];
       if (node.type === "project") {
-        const children = node.children || [];
-        const ordering = children
+        const ordering = (node.children || [])
           .filter(c => c.type === "document" || c.type === "notebook")
           .map(c => c.name);
-        const entry = {
+        // The doc<->gutter pairing rides for free: a gutter notebook is named
+        // `<docName>-gutter`, so it's already in `ordering` and the pairing is
+        // re-derived from names on receive (see reapplyGutterMarkers).
+        out.push({
           deskId: deskId || "",
           innerPath: nextInner.join("/"),
           ordering,
-        };
-        // The doc<->gutter pairing rides in the registry (a saved, synced
-        // file) keyed by the gutter notebook's name, which is stable across
-        // devices. Prefer the in-memory assignment map (the source of truth),
-        // falling back to the tree-node `gutter` flag.
-        const assignedId = gutterAssignments && gutterAssignments[node.id];
-        let gutterChild = assignedId
-          ? children.find(c => c.type === "notebook" && c.fileId === assignedId)
-          : null;
-        if (!gutterChild) gutterChild = children.find(c => c.type === "notebook" && c.gutter);
-        if (gutterChild) entry.gutter = gutterChild.name;
-        out.push(entry);
+        });
       }
       if (node.children?.length) walk(node.children, deskId, nextInner);
     }
@@ -179,19 +170,8 @@ export async function applyProjectsFile(state, payload) {
         treeChanged = true;
       }
     }
-    // Apply the doc<->gutter pairing: resolve the gutter notebook by name to
-    // the local child, stamp the tree-node flag, and seed the in-memory
-    // assignment map so Open/Close Gutter + the sidebar styling work.
-    if (typeof entry.gutter === "string" && Array.isArray(node.children)) {
-      const gutterChild = node.children.find(c => c.type === "notebook" && c.name === entry.gutter);
-      if (gutterChild) {
-        for (const c of node.children) {
-          if (c.type === "notebook" && c.fileId === gutterChild.fileId) { if (!c.gutter) { c.gutter = true; treeChanged = true; } }
-          else if (c.gutter) { delete c.gutter; treeChanged = true; }
-        }
-        (state.gutterAssignments || (state.gutterAssignments = {}))[node.id] = gutterChild.fileId;
-      }
-    }
+    // The doc<->gutter pairing rides in via the child names (a gutter is
+    // `<docName>-gutter`); reapplyGutterMarkers derives it on render.
     matched++;
   }
 
@@ -211,7 +191,7 @@ export async function applyProjectsFile(state, payload) {
 export async function pushProjectsToDropbox(state) {
   const { isSyncWriteGatedSync } = await import("./sync-gate.js");
   if (isSyncWriteGatedSync(state)) return;
-  const payload = serializeProjects(state.fileTree, state.gutterAssignments);
+  const payload = serializeProjects(state.fileTree);
   const { enqueueMetaUpload } = await import("./meta-sync.js");
   await enqueueMetaUpload(PROJECTS_FILENAME, payload);
 }

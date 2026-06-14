@@ -3,7 +3,7 @@
  * Each function takes the AppState instance as the first argument.
  */
 
-import { findNode, collectDocumentIds } from "./tree-helpers.js";
+import { findNode, findNodeByFileId, collectDocumentIds, nearestAncestorProjectId } from "./tree-helpers.js";
 import { SEPARATOR } from "../editor/plugins/project-view.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -68,53 +68,38 @@ export async function openProject(state, projectId) {
   state.updateSettings({ lastProjectId: projectId, lastFileId: null, lastNotebookId: null });
 }
 
-/** Mark `fileId`'s notebook child as the project's gutter (and clear the
- *  flag from any sibling — at most one gutter per project). The marking is
- *  recorded two ways: (1) on the tree node so it rides the .hushproject
- *  envelope, persists across restart, and drives the sidebar styling; and
- *  (2) in an in-memory `state.gutterAssignments` map keyed by projectId,
- *  which survives `get_file_tree` reloads within a session (the tree the
- *  Rust backend returns can drop the node flag on older builds). The map is
- *  the source of truth the Open/Close/Add predicates read first. */
-export async function markProjectGutterNotebook(state, projectId, fileId) {
-  // In-memory assignment first — independent of the tree round-trip.
-  (state.gutterAssignments || (state.gutterAssignments = {}))[projectId] = fileId;
-  const node = findNode(state.fileTree, projectId);
-  if (!node || node.type !== "project") return;
-  let target = null;
-  for (const c of (node.children || [])) {
-    if (c.type === "notebook" && c.fileId === fileId) { c.gutter = true; target = c; }
-    else if (c.gutter) delete c.gutter;
-  }
-  if (!target) return;
+/** Pair `notebookFileId` as the gutter for the document `docFileId`. A gutter
+ *  belongs to a single doc, not the project. The pairing is recorded in the
+ *  in-memory `state.gutterAssignments` map (keyed by docFileId → gutter
+ *  notebook fileId, which survives `get_file_tree` reloads within a session)
+ *  and stamped on the notebook node (`gutter`, `gutterForDoc`) for the sidebar
+ *  styling + nesting. The notebook is itself named `<docName>-gutter`, so the
+ *  pairing is also derivable from names across a restart / fresh device. */
+export async function markGutterForDoc(state, docFileId, notebookFileId) {
+  (state.gutterAssignments || (state.gutterAssignments = {}))[docFileId] = notebookFileId;
+  const nb = findNodeByFileId(state.fileTree, notebookFileId);
+  if (!nb || nb.type !== "notebook") return;
+  nb.gutter = true;
+  nb.gutterForDoc = docFileId;
   await state.saveFileTree();
-  // Push the pairing into .hush/projects.json (a saved, synced file) so the
-  // relationship survives independently of the tree-node round trip.
-  state.syncProjectOrdering?.(projectId);
+  const projId = nearestAncestorProjectId(state.fileTree, nb.id);
+  if (projId) state.syncProjectOrdering?.(projId);
   state.emit("files-changed");
 }
 
-/** Clear the project's gutter marking for `fileId` (demote path). */
-export async function unmarkProjectGutterNotebook(state, projectId, fileId) {
-  if (state.gutterAssignments && state.gutterAssignments[projectId] === fileId) {
-    delete state.gutterAssignments[projectId];
-  }
-  const node = findNode(state.fileTree, projectId);
-  if (!node || node.type !== "project") return;
-  let changed = false;
-  for (const c of (node.children || [])) {
-    if (c.type === "notebook" && c.fileId === fileId && c.gutter) { delete c.gutter; changed = true; }
-  }
-  if (!changed) return;
+/** Clear the gutter pairing for doc `docFileId` (used when the gutter is
+ *  permanently unpaired — closing the gutter keeps the pairing). */
+export async function unmarkGutterForDoc(state, docFileId) {
+  const nbId = state.gutterAssignments && state.gutterAssignments[docFileId];
+  if (state.gutterAssignments) delete state.gutterAssignments[docFileId];
+  const nb = nbId ? findNodeByFileId(state.fileTree, nbId) : null;
+  if (!nb) return;
+  delete nb.gutter;
+  delete nb.gutterForDoc;
   await state.saveFileTree();
-  state.syncProjectOrdering?.(projectId);
+  const projId = nearestAncestorProjectId(state.fileTree, nb.id);
+  if (projId) state.syncProjectOrdering?.(projId);
   state.emit("files-changed");
-}
-
-/** Find the project's gutter notebook child, if any. */
-export function projectGutterChild(node) {
-  if (!node || node.type !== "project") return null;
-  return (node.children || []).find((c) => c.type === "notebook" && c.gutter && c.fileId) || null;
 }
 
 export async function saveProjectContent(state) {

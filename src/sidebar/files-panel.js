@@ -162,7 +162,7 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance = null;
   }
 
-  reapplyGutterMarkers(state.fileTree, state.gutterAssignments);
+  reapplyGutterMarkers(state.fileTree);
   const sortedTree = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
@@ -549,7 +549,10 @@ function renderFlaggedNode(item, state, isBubbled) {
   // Only items directly flagged by the user get the unflag button —
   // descendants of a flagged folder bubble up without one.
   const button = (item.flagged && !isBubbled) ? flagOnlyButton(item.id) : "";
-  itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(item.name)}</span>${button}`;
+  // A gutter notebook is stored as `<docName>-gutter` (to avoid same-name
+  // collisions) but reads as just "gutter" beneath its doc.
+  const displayName = (item.type === "notebook" && item.gutter) ? "gutter" : item.name;
+  itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(displayName)}</span>${button}`;
   itemMain.appendChild(itemRow);
   itemLabel.appendChild(itemMain);
   itemContent.appendChild(itemLabel);
@@ -645,7 +648,7 @@ function isItemActive(item, state) {
 
 function refreshList(state) {
   if (sortableInstance) {
-    reapplyGutterMarkers(state.fileTree, state.gutterAssignments);
+    reapplyGutterMarkers(state.fileTree);
     const sorted = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);

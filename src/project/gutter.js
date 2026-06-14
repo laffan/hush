@@ -38,21 +38,17 @@ function getScrollerPadding() {
   };
 }
 
-/** The pane context a gutter belongs to. Gutter is now owned by the
- *  .hushproject flow: the project's joined buffer is the doc surface the
- *  gutter notebook pairs with, so the project context wins. A bare doc
- *  context is still recognised so a gutter promoted mid-conversion (or by
- *  legacy persistence) is found by `stopActivePaneAsGutter`. */
+/** The pane context a gutter belongs to. A gutter pairs with a single
+ *  *document* (which lives inside a .hushproject for packaging), so it binds
+ *  to the doc context — viewing that doc shows the doc + its gutter, while the
+ *  project's combined buffer shows no gutter. */
 export function gutterContext() {
   if (!appState) return "";
-  if (appState.currentProjectId) return "pj:" + appState.currentProjectId;
   if (appState.currentFileId) return "doc:" + appState.currentFileId;
   return "";
 }
 
-/** Does any pane in the active context already wear the gutter crown?
- *  Only one per project — the gutter is meant as project chrome, not
- *  another stacking surface to manage. */
+/** Does the active doc already host a gutter pane? One gutter per doc. */
 function docHasGutter() {
   const ctx = gutterContext();
   if (!ctx) return false;
@@ -63,10 +59,9 @@ function docHasGutter() {
 }
 
 export function canUseActivePaneAsGutter() {
-  // Gutter only lives inside a .hushproject — the joined project buffer is
-  // the doc surface the gutter notebook tracks. A standalone doc has to be
-  // converted into a project first (see project/gutter-commands.js).
-  if (!appState || !appState.currentProjectId) return false;
+  // A gutter pairs with the doc currently in the main editor. (Add Gutter on a
+  // standalone doc packages it into a project first — see gutter-commands.js.)
+  if (!appState || !appState.currentFileId) return false;
   if (!activePaneId) return false;
   const pane = panes.get(activePaneId);
   if (!pane || pane.fileType !== "notebook") return false;
@@ -403,11 +398,10 @@ export function useActivePaneAsGutter() {
   setTimeout(() => { if (pane.gutter && panes.has(pane.id)) scanAndSync(pane); }, 1000);
   import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
-  // Record the pairing on the project so it rides the .hushproject envelope,
-  // regardless of which entry point promoted the pane (Add Gutter, Add
-  // notebook as gutter, or Open Gutter).
-  if (appState?.currentProjectId && pane.fileId && typeof appState.markProjectGutterNotebook === "function") {
-    appState.markProjectGutterNotebook(appState.currentProjectId, pane.fileId);
+  // Record the doc<->gutter pairing (keyed by the doc currently in the editor)
+  // regardless of which entry point promoted the pane.
+  if (appState?.currentFileId && pane.fileId && typeof appState.markGutterForDoc === "function") {
+    appState.markGutterForDoc(appState.currentFileId, pane.fileId);
   }
 
   schedulePersist();
@@ -497,15 +491,13 @@ export function restoreGutterLayout(pane) {
   setTimeout(resync, 1500);
   import("../pane/pane-toolbar.js").then((m) => m.syncGutterButton(pane));
 
-  // Self-heal: backfill the project's gutter marker for a restored gutter
-  // (e.g. one created before the marker was persisted) so Open/Close Gutter
-  // surface correctly. Guarded to the pane's own project context — marking a
-  // foreign project would wipe its real gutter marker.
-  if (appState?.currentProjectId
+  // Self-heal: backfill the doc<->gutter pairing for a restored gutter pane,
+  // guarded to the pane's own doc context so a foreign doc isn't re-paired.
+  if (appState?.currentFileId
       && pane.fileId
-      && pane.ownerContext === "pj:" + appState.currentProjectId
-      && typeof appState.markProjectGutterNotebook === "function") {
-    appState.markProjectGutterNotebook(appState.currentProjectId, pane.fileId);
+      && pane.ownerContext === "doc:" + appState.currentFileId
+      && typeof appState.markGutterForDoc === "function") {
+    appState.markGutterForDoc(appState.currentFileId, pane.fileId);
   }
 }
 

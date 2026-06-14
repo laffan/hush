@@ -146,15 +146,6 @@ export async function openFile(state, id) {
     if (node.type === "stack") return openStack(state, id);
     if (node.type === "notebook") return openNotebook(state, id);
     if (node.type === "pdf") return openPdf(state, id);
-    // A flow doc that lives inside a project opens the PROJECT (joined buffer
-    // + gutter), not the bare doc — otherwise the gutter (bound to the pj:
-    // context) vanishes and the doc<->gutter pairing reads as lost. `useAsNote`
-    // docs are supplementary notes and still open standalone.
-    if (node.type === "document" && !node.useAsNote) {
-      const { nearestAncestorProjectId } = await import("./tree-helpers.js");
-      const projId = nearestAncestorProjectId(state.fileTree, node.id);
-      if (projId) return state.openProject(projId);
-    }
   }
   if (state.dirty) await state.saveCurrentFile();
   if (state.currentNotebookFileId) {
