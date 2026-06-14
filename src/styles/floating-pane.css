@@ -256,10 +256,20 @@
   display: none;
 }
 
-/* Gutter title-bar still drags — but only horizontally (vertical and size
-   are doc-driven). Keep the move cursor so the affordance is obvious. */
-.floating-pane.gutter .floating-pane-titlebar { cursor: ew-resize; }
-.floating-pane.gutter .floating-pane-titlebar:active { cursor: grabbing; }
+/* A gutter pane can't be pinned, attached, or dragged — its geometry is
+   doc-driven. Hide the pin + attach affordances entirely (they don't apply to
+   a gutter) and drop the drag cursor on the title bar. Width is still
+   resizable from the inboard edge handle. */
+.floating-pane.gutter .fp-btn-pin,
+.floating-pane.gutter .fp-btn-attach {
+  display: none;
+}
+.floating-pane.gutter .floating-pane-titlebar { cursor: default; }
+
+/* The gutter side <-> toggle is created for every notebook pane but only
+   means anything once the pane is acting as a gutter, so reveal it there. */
+.floating-pane-btn.fp-btn-gutter-side { display: none; }
+.floating-pane.gutter .fp-btn-gutter-side { display: flex; }
 
 /* Pane is viewport-sized in gutter mode (camera.y tracks doc scroll),
    so the toolbar / shelf / pocket all live in canvas-pixel coords that

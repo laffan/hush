@@ -236,7 +236,9 @@ export function createFilesPanel(container, state, hidePanel) {
       } else {
         const numLabel = numberLabels.get(item.id);
         const numPrefix = numLabel ? `<span class="tree-item-number">${escHtml(numLabel)}</span> ` : "";
-        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(item.name)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+        // Gutter notebooks are stored as `<docName>-gutter` but read as "Gutter".
+        const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
+        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(displayName)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);
@@ -550,8 +552,8 @@ function renderFlaggedNode(item, state, isBubbled) {
   // descendants of a flagged folder bubble up without one.
   const button = (item.flagged && !isBubbled) ? flagOnlyButton(item.id) : "";
   // A gutter notebook is stored as `<docName>-gutter` (to avoid same-name
-  // collisions) but reads as just "gutter" beneath its doc.
-  const displayName = (item.type === "notebook" && item.gutter) ? "gutter" : item.name;
+  // collisions) but reads as just "Gutter" beneath its doc.
+  const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
   itemRow.innerHTML = `${getIcon(item)}<span class="tree-item-name">${escHtml(displayName)}</span>${button}`;
   itemMain.appendChild(itemRow);
   itemLabel.appendChild(itemMain);

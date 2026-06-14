@@ -149,6 +149,11 @@ export function setupPaneDrag(pane, deps) {
 
   pane._titlebar.addEventListener("pointerdown", (e) => {
     if (e.target.closest(".floating-pane-btn, .fp-title-link")) return;
+    // Gutter panes can't be dragged — their geometry is doc-driven (full
+    // height, docked to a side the user picks via the <-> toggle). Let the
+    // pointerdown fall through to the el-level focus handler without starting
+    // a drag.
+    if (pane.gutter) return;
     e.preventDefault();
     e.stopPropagation();
     startX = e.clientX;
@@ -210,11 +215,6 @@ export function setupPaneDrag(pane, deps) {
         startLeft = pane.x;
         startTop = pane.y;
         deps.notifyPaneDragMove?.();
-        return;
-      }
-      if (pane.gutter) {
-        pane.x = startLeft + dx;
-        pane.el.style.left = pane.x + "px";
         return;
       }
       if (pane.attached && appState.currentNotebookFileId) {

@@ -347,13 +347,14 @@ export function useActivePaneAsGutter() {
     camera: pane.notebook?.state ? { ...pane.notebook.state.camera } : null,
   };
 
-  // The gutter is a right-docked pane: it carves real estate out of the doc
-  // text column (which shrinks from the right) rather than floating over it.
-  // Side is always "right".
+  // The gutter is a docked pane: it carves real estate out of the doc text
+  // column rather than floating over it. New gutters default to the right;
+  // the user can flip the side from the title-bar <-> toggle (toggleGutterSide).
+  const side = pane.gutterSide === "left" ? "left" : "right";
   pane.gutter = true;
-  pane.gutterSide = "right";
-  pane.el.classList.add("gutter", "gutter-right");
-  pane.el.classList.remove("gutter-left");
+  pane.gutterSide = side;
+  pane.el.classList.add("gutter", side === "left" ? "gutter-left" : "gutter-right");
+  pane.el.classList.remove(side === "left" ? "gutter-right" : "gutter-left");
   pane.el.style.zIndex = GUTTER_Z;
 
   // Point the notebook at the host doc's scroller — wheel / pan /
@@ -380,10 +381,10 @@ export function useActivePaneAsGutter() {
     setTimeout(initGutterToolbar, 1000);
   }
 
-  // Dock geometry owns the pane's box (full height, flush right, doc column
-  // shrinks); the scroll-driven camera below maps canvas world-y to
-  // doc-content-y on top of that.
-  dockPane(pane, "right");
+  // Dock geometry owns the pane's box (full height, flush against the gutter
+  // side, doc column shrinks); the scroll-driven camera below maps canvas
+  // world-y to doc-content-y on top of that.
+  dockPane(pane, side);
   recomputeGutterOffset(pane);
   syncCameraFromScroll(pane);
   startGutterSync(pane);
@@ -445,23 +446,51 @@ export function stopActivePaneAsGutter() {
   return true;
 }
 
+/** Flip a live gutter between docking on the left and the right edge of the
+ *  editor. Re-docks to the other side, repaints the red gutter line, and
+ *  re-derives the scroll-aligned camera offset against the new geometry.
+ *  The offset math depends only on vertical position (both edges are full-
+ *  height docks at the same y), so the canvas slice stays aligned to the doc
+ *  scroll across the flip. */
+export function toggleGutterSide(paneArg) {
+  const pane = paneArg || (activePaneId ? panes.get(activePaneId) : null);
+  if (!pane || !pane.gutter || !pane.el) return false;
+  const side = pane.gutterSide === "left" ? "right" : "left";
+  pane.gutterSide = side;
+  // dockPane only snapshots the pre-dock geometry once, so re-docking the
+  // already-docked gutter just re-flexes onto the new edge without losing the
+  // original floating box. Clear the old edge classes first (dockPane adds the
+  // new docked-<edge> but doesn't strip the prior one).
+  pane.el.classList.remove("gutter-left", "gutter-right", "docked-left", "docked-right");
+  pane.el.classList.add("gutter", side === "left" ? "gutter-left" : "gutter-right");
+  dockPane(pane, side);
+  invalidateGutterPadCache(pane);
+  recomputeGutterOffset(pane);
+  syncCameraFromScroll(pane);
+  scheduleSync(pane);
+  schedulePersist();
+  return true;
+}
+
 export function restoreGutterLayout(pane) {
   if (!pane || !pane.gutter || !pane.el) return;
-  pane.gutterSide = "right";
+  const side = pane.gutterSide === "left" ? "left" : "right";
+  pane.gutterSide = side;
   // Defensive: a gutter that was hidden on a context switch must be made
   // visible again here (the context-switch handler sets display before this
   // dynamic-import callback runs, but make it explicit so a stale `none` can't
   // leave the pane in the map yet invisible).
   pane.el.style.display = "";
-  pane.el.classList.add("gutter", "gutter-right");
-  pane.el.classList.remove("gutter-left");
+  pane.el.classList.add("gutter", side === "left" ? "gutter-left" : "gutter-right");
+  pane.el.classList.remove(side === "left" ? "gutter-right" : "gutter-left");
   pane.el.style.zIndex = GUTTER_Z;
   if (pane.notebook && pane.notebook.state) {
     pane.notebook.state.gutterScrollDOM = getScroller();
   }
-  // Re-dock to the right (persistence stored docked/dockEdge, but a gutter
-  // owns its own re-dock so the camera resync below stays ordered after it).
-  dockPane(pane, "right");
+  // Re-dock to the persisted side (persistence stored docked/dockEdge, but a
+  // gutter owns its own re-dock so the camera resync below stays ordered after
+  // it).
+  dockPane(pane, side);
   recomputeGutterOffset(pane);
   syncCameraFromScroll(pane);
   if (!pane._gutterScrollHandler) startGutterSync(pane);

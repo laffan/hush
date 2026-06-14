@@ -38,6 +38,9 @@ const ICON_POP_IN = `<svg viewBox="0 0 24 24" width="10" height="10" fill="none"
 // horizontal lines (the content below it). Read this as "header label
 // territory" so the gutter affordance is recognisable at toolbar size.
 const ICON_GUTTER = `<svg viewBox="0 0 10 10"><rect x="1" y="1" width="1.5" height="8" fill="currentColor" stroke="none"/><line x1="4.5" y1="2.5" x2="9" y2="2.5"/><line x1="4.5" y1="5" x2="9" y2="5"/><line x1="4.5" y1="7.5" x2="9" y2="7.5"/></svg>`;
+// Double-headed horizontal arrow — toggles which edge a gutter docks against
+// (left <-> right). Only shown while the pane is acting as a gutter.
+const ICON_GUTTER_SIDE = `<svg viewBox="0 0 10 10"><line x1="1.5" y1="5" x2="8.5" y2="5"/><polyline points="3.5,3 1.5,5 3.5,7"/><polyline points="6.5,3 8.5,5 6.5,7"/></svg>`;
 
 function makeBtn(name, svg, ariaLabel) {
   const btn = document.createElement("button");
@@ -144,10 +147,23 @@ export function buildPaneDOM(pane, deps) {
       if (pane.pdfViewer?.toggleShelf) pane.pdfViewer.toggleShelf();
     });
     buttons.appendChild(shelfBtn);
+  } else if (pane.fileType === "notebook") {
+    // Gutter side toggle — flips the gutter between the left and right edge of
+    // the editor. Created for every notebook pane but hidden via CSS unless the
+    // pane is acting as a gutter (the only state where docking a side applies).
+    const sideBtn = makeBtn("gutter-side", ICON_GUTTER_SIDE, "Dock gutter left / right");
+    sideBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const { toggleGutterSide } = await import("../project/gutter.js");
+      toggleGutterSide(pane);
+    });
+    buttons.appendChild(sideBtn);
   }
   // Gutter is no longer toggled from a pane-header button — it's owned by
   // the .hushproject flow (command palette "Add Gutter" / "Add notebook as
   // gutter"), which pairs the gutter notebook to its doc inside a project.
+  // A gutter pane can't be pinned, attached, or dragged — those affordances
+  // are hidden via the .floating-pane.gutter CSS rules in floating-pane.css.
 
   // Collapse button (iOS only — desktop's title-bar double-click is the
   // equivalent gesture).
