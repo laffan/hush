@@ -88,6 +88,9 @@ export async function markProjectGutterNotebook(state, projectId, fileId) {
   }
   if (!target) return;
   await state.saveFileTree();
+  // Push the pairing into .hush/projects.json (a saved, synced file) so the
+  // relationship survives independently of the tree-node round trip.
+  state.syncProjectOrdering?.(projectId);
   state.emit("files-changed");
 }
 
@@ -104,6 +107,7 @@ export async function unmarkProjectGutterNotebook(state, projectId, fileId) {
   }
   if (!changed) return;
   await state.saveFileTree();
+  state.syncProjectOrdering?.(projectId);
   state.emit("files-changed");
 }
 

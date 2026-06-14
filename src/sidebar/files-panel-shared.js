@@ -92,7 +92,7 @@ export function escAttrValue(str) {
  */
 /** Generic confirmation modal — used by the rename / duplicate / delete
  *  flows. Shares the existing `tree-delete-modal-*` styles. */
-export function showConfirmModal({ title, message, confirmLabel = "Confirm", onConfirm }) {
+export function showConfirmModal({ title, message, confirmLabel = "Confirm", onConfirm, onCancel }) {
   document.querySelectorAll(".tree-delete-modal-backdrop").forEach((el) => el.remove());
   const backdrop = document.createElement("div");
   backdrop.className = "tree-delete-modal-backdrop";
@@ -107,12 +107,13 @@ export function showConfirmModal({ title, message, confirmLabel = "Confirm", onC
     </div>`;
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
-  modal.querySelector(".tree-delete-cancel").addEventListener("click", () => backdrop.remove());
+  const cancel = () => { backdrop.remove(); if (onCancel) onCancel(); };
+  modal.querySelector(".tree-delete-cancel").addEventListener("click", cancel);
   modal.querySelector(".tree-delete-confirm").addEventListener("click", () => {
     backdrop.remove();
     onConfirm();
   });
-  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) backdrop.remove(); });
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) cancel(); });
 }
 
 export function showDeleteConfirmModal(title, message, onConfirm) {

@@ -261,6 +261,19 @@ export function reapplyGutterMarkers(nodes, assignments) {
   return nodes;
 }
 
+/** Walk up from `nodeId` and return the id of the nearest ancestor project,
+ *  or null. Used so opening a doc that lives inside a project lands on the
+ *  project view (pj:) — which carries the gutter and the joined buffer —
+ *  rather than the bare doc (doc:). */
+export function nearestAncestorProjectId(nodes, nodeId) {
+  let cur = findParentOfNode(nodes, nodeId);
+  while (cur) {
+    if (cur.type === "project") return cur.id;
+    cur = findParentOfNode(nodes, cur.id);
+  }
+  return null;
+}
+
 export function insertNode(tree, node, parentId, findNodeFn) {
   if (!parentId) { insertBeforeTrash(tree, node); return; }
   const parent = findNodeFn(tree, parentId);

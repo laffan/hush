@@ -30,6 +30,24 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
+/** Awaited confirmation modal. `window.confirm` doesn't reliably block in the
+ *  Tauri webview (it can return truthy immediately while the dialog shows
+ *  async), which let the doc→project conversion + gutter creation run *before*
+ *  the user actually confirmed. This resolves only once the user chooses. */
+function confirmModal(message, confirmLabel = "Continue") {
+  return new Promise((resolve) => {
+    import("../sidebar/files-panel-shared.js").then(({ showConfirmModal }) => {
+      showConfirmModal({
+        title: "Add Gutter",
+        message,
+        confirmLabel,
+        onConfirm: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    }).catch(() => resolve(false));
+  });
+}
+
 /** Context the current surface would host a gutter in — a project (the
  *  joined buffer) or, transitionally, a bare doc. */
 export function currentGutterContext(state) {
@@ -117,7 +135,7 @@ async function ensureProjectContext(state, convertMessage) {
   if (!state.currentFileId) return "";
   const node = findNodeByFileId(state.fileTree, state.currentFileId);
   if (!node) return "";
-  if (!confirm(convertMessage)) return "";
+  if (!(await confirmModal(convertMessage))) return "";
   await state.convertDocToProject(node.id);
   return state.currentProjectId || "";
 }
@@ -151,7 +169,7 @@ export async function addGutter(state) {
  *  needed) and pair it with a copy of an existing notebook. */
 export async function addNotebookAsGutter(state, fileLeaf) {
   if (assignedGutterChild(state)) return;
-  if (!confirm("This copies the selected notebook into the Project as its gutter. Continue?")) return;
+  if (!(await confirmModal("This copies the selected notebook into the Project as its gutter. Continue?"))) return;
   const projectId = state.currentProjectId
     ? state.currentProjectId
     : await ensureProjectContext(state, "Adding a gutter will convert this document into a Project. Continue?");
