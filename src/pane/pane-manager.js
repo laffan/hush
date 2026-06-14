@@ -448,6 +448,7 @@ export function getPanesForContext(contextId) {
       fileName: p.fileName || "Untitled",
       fileType: p.fileType,
       pinned: !!p.pinned,
+      gutter: !!p.gutter,
     });
   }
   return out;

@@ -141,8 +141,24 @@
   margin-top: 2px;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;   /* keep the Gutter link baseline-aligned with the squares */
   gap: 2px;
   transition: opacity 0.12s ease;
+}
+
+/* "Gutter" link sitting before the pane squares on the same line — the
+   relocated label for an open gutter. Reads as quiet chrome until hovered. */
+.tree-pane-gutter-link {
+  font-size: 0.78em;
+  line-height: 1;
+  opacity: 0.5;
+  cursor: pointer;
+  margin-right: 4px;
+  flex: 0 0 auto;
+}
+.tree-pane-gutter-link:hover {
+  opacity: 0.85;
+  text-decoration: underline;
 }
 
 .tree-pane-cell {

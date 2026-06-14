@@ -8,7 +8,7 @@ import { AppState } from "../state/state.js";
 import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
-import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
+import { paneIndicatorsFor, attachPaneIndicatorTooltip, isGutterOpenForDoc } from "./files-panel-pane-indicators.js";
 import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml, computeNumberLabels } from "./files-panel-shared.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer, onLocalDropExternal } from "./files-panel-local-sync.js";
@@ -237,7 +237,13 @@ export function createFilesPanel(container, state, hidePanel) {
         const numLabel = numberLabels.get(item.id);
         const numPrefix = numLabel ? `<span class="tree-item-number">${escHtml(numLabel)}</span> ` : "";
         // Gutter notebooks are stored as `<docName>-gutter` but read as "Gutter".
-        const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
+        // While the gutter pane is open the label moves up onto the doc's
+        // pane-icons line, so the standalone row renders label-less (kept in
+        // place, just no duplicate text).
+        const isGutter = item.type === "notebook" && item.gutter;
+        const displayName = isGutter
+          ? (isGutterOpenForDoc(item.gutterForDoc) ? "" : "Gutter")
+          : item.name;
         row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(displayName)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);

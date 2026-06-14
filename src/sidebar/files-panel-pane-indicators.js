@@ -10,6 +10,16 @@
  */
 import { getPanesForContext, contextIdForFile } from "../pane/pane-manager.js";
 
+/** True when the doc identified by `docFileId` currently has its gutter
+ *  notebook open as an on-screen gutter pane. The standalone gutter tree
+ *  row reads this to drop its own label while the gutter is open — the
+ *  label is shown inline with the pane icons instead (see paneIndicatorsFor). */
+export function isGutterOpenForDoc(docFileId) {
+  if (!docFileId) return false;
+  const ctx = contextIdForFile(docFileId, "document");
+  return getPanesForContext(ctx).some((p) => p.gutter);
+}
+
 export function paneIndicatorsFor(item, state) {
   if (!item.fileId) return null;
   if (item.type !== "document" && item.type !== "notebook") return null;
@@ -19,6 +29,21 @@ export function paneIndicatorsFor(item, state) {
   const hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
   const strip = document.createElement("span");
   strip.className = "tree-pane-indicators" + (hidden ? " dimmed" : "");
+  // A doc with its gutter open carries a clickable "Gutter" link on the same
+  // line as the pane icons, before them. It opens the gutter notebook — the
+  // standalone gutter row hides its label while the gutter is open so the
+  // label reads as relocated rather than duplicated.
+  const gutterPane = ctxPanes.find((p) => p.gutter);
+  if (gutterPane) {
+    const link = document.createElement("span");
+    link.className = "tree-pane-gutter-link";
+    link.textContent = "Gutter";
+    link.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.openNotebook?.(gutterPane.fileId);
+    });
+    strip.appendChild(link);
+  }
   for (const p of ctxPanes) {
     const cell = document.createElement("span");
     cell.className = "tree-pane-cell";
