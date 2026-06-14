@@ -360,6 +360,7 @@ export async function convertContainerType(state, nodeId, targetType) {
       if (c.gutter) delete c.gutter;
     }
     if (node.showNumbers) delete node.showNumbers;
+    if (state.gutterAssignments) delete state.gutterAssignments[nodeId];
   }
   node.type = targetType;
   await state.saveFileTree();

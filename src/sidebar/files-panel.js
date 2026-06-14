@@ -5,7 +5,7 @@
 
 import { SortableList } from "./sortable-list/sortable-list.js";
 import { AppState } from "../state/state.js";
-import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode } from "../state/tree-helpers.js";
+import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
 import { isDropboxConnected } from "../sync/sync-polling.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
@@ -162,6 +162,7 @@ export function createFilesPanel(container, state, hidePanel) {
     sortableInstance = null;
   }
 
+  reapplyGutterMarkers(state.fileTree, state.gutterAssignments);
   const sortedTree = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
   numberLabels = computeNumberLabels(sortedTree, numberSkip, isInboxId);
 
@@ -644,6 +645,7 @@ function isItemActive(item, state) {
 
 function refreshList(state) {
   if (sortableInstance) {
+    reapplyGutterMarkers(state.fileTree, state.gutterAssignments);
     const sorted = augmentTreeWithTabs(state, sortFlaggedItems(normalizeProjectChildren(visibleTopLevel(state))));
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);

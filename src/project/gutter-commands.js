@@ -40,12 +40,28 @@ export function currentGutterContext(state) {
 
 /** The notebook child currently assigned as the active project's gutter (the
  *  persistent pairing), or null. The assignment survives closing the gutter
- *  pane — that's what makes "Open Gutter" possible. */
+ *  pane — that's what makes "Open Gutter" possible.
+ *
+ *  Reads the in-memory `state.gutterAssignments` map first (survives
+ *  `get_file_tree` reloads within a session), falling back to the persisted
+ *  tree-node `gutter` flag (which seeds the map on a fresh session / after a
+ *  restart). Stale map entries — pointing at a notebook that's been moved or
+ *  deleted — are cleaned up here. */
 export function assignedGutterChild(state) {
   if (!state.currentProjectId) return null;
   const node = findNode(state.fileTree, state.currentProjectId);
   if (!node || node.type !== "project") return null;
-  return (node.children || []).find((c) => c.type === "notebook" && c.gutter && c.fileId) || null;
+  const children = node.children || [];
+  const map = state.gutterAssignments || (state.gutterAssignments = {});
+  const mappedId = map[state.currentProjectId];
+  if (mappedId) {
+    const child = children.find((c) => c.type === "notebook" && c.fileId === mappedId);
+    if (child) return child;
+    delete map[state.currentProjectId]; // assigned notebook is gone
+  }
+  const marked = children.find((c) => c.type === "notebook" && c.gutter && c.fileId);
+  if (marked) { map[state.currentProjectId] = marked.fileId; return marked; }
+  return null;
 }
 
 /** The live (on-screen) gutter pane for the active surface, or null. */

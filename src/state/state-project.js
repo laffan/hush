@@ -69,13 +69,16 @@ export async function openProject(state, projectId) {
 }
 
 /** Mark `fileId`'s notebook child as the project's gutter (and clear the
- *  flag from any sibling — at most one gutter per project). The marking
- *  lives on the tree node so the pairing is the project's own metadata
- *  (it rides the .hushproject envelope and drives gutter materialization
- *  on import / a fresh device). Within a device the gutter *pane* itself
- *  is persisted by panes.json, so opening the project restores it without
- *  consulting this flag. */
+ *  flag from any sibling — at most one gutter per project). The marking is
+ *  recorded two ways: (1) on the tree node so it rides the .hushproject
+ *  envelope, persists across restart, and drives the sidebar styling; and
+ *  (2) in an in-memory `state.gutterAssignments` map keyed by projectId,
+ *  which survives `get_file_tree` reloads within a session (the tree the
+ *  Rust backend returns can drop the node flag on older builds). The map is
+ *  the source of truth the Open/Close/Add predicates read first. */
 export async function markProjectGutterNotebook(state, projectId, fileId) {
+  // In-memory assignment first — independent of the tree round-trip.
+  (state.gutterAssignments || (state.gutterAssignments = {}))[projectId] = fileId;
   const node = findNode(state.fileTree, projectId);
   if (!node || node.type !== "project") return;
   let target = null;
@@ -90,6 +93,9 @@ export async function markProjectGutterNotebook(state, projectId, fileId) {
 
 /** Clear the project's gutter marking for `fileId` (demote path). */
 export async function unmarkProjectGutterNotebook(state, projectId, fileId) {
+  if (state.gutterAssignments && state.gutterAssignments[projectId] === fileId) {
+    delete state.gutterAssignments[projectId];
+  }
   const node = findNode(state.fileTree, projectId);
   if (!node || node.type !== "project") return;
   let changed = false;

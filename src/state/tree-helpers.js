@@ -240,6 +240,27 @@ export function normalizeProjectChildren(nodes) {
   return nodes;
 }
 
+/** Re-stamp each project's gutter-notebook `gutter` flag from the in-memory
+ *  `state.gutterAssignments` map (keyed by project id → notebook fileId).
+ *  Keeps the sidebar styling robust within a session even when the tree the
+ *  Rust backend returns dropped the flag on the round trip (older builds
+ *  without the TreeNode.gutter field). Mutates in place. */
+export function reapplyGutterMarkers(nodes, assignments) {
+  if (!Array.isArray(nodes) || !assignments) return nodes;
+  for (const n of nodes) {
+    if (!n || !Array.isArray(n.children)) continue;
+    if (n.type === "project" && assignments[n.id]) {
+      const fid = assignments[n.id];
+      for (const c of n.children) {
+        if (c.type === "notebook" && c.fileId === fid) c.gutter = true;
+        else if (c.gutter) delete c.gutter;
+      }
+    }
+    reapplyGutterMarkers(n.children, assignments);
+  }
+  return nodes;
+}
+
 export function insertNode(tree, node, parentId, findNodeFn) {
   if (!parentId) { insertBeforeTrash(tree, node); return; }
   const parent = findNodeFn(tree, parentId);
