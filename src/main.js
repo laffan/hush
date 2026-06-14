@@ -193,15 +193,24 @@ async function init() {
     }
     if (state.currentPdfFileId) { state.emit("pdf-toggle-shelf"); return; }
     if (state.currentNotebookFileId) { state.emit("notebook-toggle-shelf"); return; }
-    // A focused notebook pane (most notably a gutter, which has no main
-    // notebook context of its own) toggles ITS shape shelf rather than the
-    // doc / project outline sitting behind it.
+    // In a doc / project that has a gutter, the shelf shortcut targets the
+    // GUTTER's shape shelf — the gutter is the notebook surface the user
+    // annotates with, so that's the intended target regardless of which pane
+    // currently holds focus. The doc / project outline stays reachable via its
+    // edge trigger and the "Outline view" command.
     {
-      const { panes, activePaneId } = await import("./pane/pane-state.js");
-      const ap = activePaneId ? panes.get(activePaneId) : null;
-      if (ap && ap.fileType === "notebook") {
-        const grip = ap.notebook?.container?.querySelector(".notebook-shelf button")
-          || ap.el?.querySelector(".notebook-shelf button");
+      const { panes } = await import("./pane/pane-state.js");
+      const ctx = state.currentProjectId ? "pj:" + state.currentProjectId
+        : state.currentFileId ? "doc:" + state.currentFileId : "";
+      let gutterPane = null;
+      if (ctx) {
+        for (const [, p] of panes) {
+          if (p.gutter && p.ownerContext === ctx) { gutterPane = p; break; }
+        }
+      }
+      if (gutterPane) {
+        const grip = gutterPane.notebook?.container?.querySelector(".notebook-shelf button")
+          || gutterPane.el?.querySelector(".notebook-shelf button");
         if (grip) { grip.click(); return; }
       }
     }

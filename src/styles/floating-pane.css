@@ -215,6 +215,15 @@
   border-left-color: #e44b3a;
 }
 
+/* A gutter pane IS the right-dock, so the global --pane-dock-right-width var
+   equals the gutter's OWN width. The notebook shelf's inline style offsets
+   its `right` by that var, which would shove the shelf (and its grip) right
+   off the canvas — making the shelf button vanish. Pin the shelf to the
+   gutter canvas's own right edge instead. */
+.floating-pane.gutter .notebook-shelf {
+  right: env(safe-area-inset-right, 0px) !important;
+}
+
 /* iOS WKWebView clips inset box-shadows behind the notebook canvas so
    the 2 px gutter line only shows at the rounded corners. Paint the
    line as a dedicated overlay element instead — pseudo, fixed width,
