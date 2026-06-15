@@ -23,6 +23,75 @@ import {
 
 const DRAG_THRESHOLD = 5; // px of pointer travel before a press becomes a drag
 
+/* ===== Capitalization + combining helpers ===== */
+
+/** Capitalize the first alphabetic character of a string, leaving the
+ *  rest untouched (so an all-caps acronym mid-sentence survives). */
+export function capitalizeFirst(str) {
+  const s = String(str || "");
+  const i = s.search(/[a-z]/i);
+  if (i === -1) return s;
+  return s.slice(0, i) + s[i].toUpperCase() + s.slice(i + 1);
+}
+
+/** Lowercase the first alphabetic character — used when a sentence is
+ *  combined onto the end of another and becomes a mid-sentence clause. */
+function lowerFirst(str) {
+  const s = String(str || "");
+  const i = s.search(/[a-z]/i);
+  if (i === -1) return s;
+  return s.slice(0, i) + s[i].toLowerCase() + s.slice(i + 1);
+}
+
+/** Drop a single trailing run of concluding punctuation (and any closing
+ *  quotes/markup after it) from the end of a sentence. */
+function stripTrailingPunct(str) {
+  return String(str || "").replace(/[.!?]+["')\]}*_`]*\s*$/, "").trimEnd();
+}
+
+/** Merge `follower` onto the end of `target`: the target's concluding
+ *  punctuation is removed and the follower joins as a continuing clause. */
+export function combineInto(targetText, followerText) {
+  const base = stripTrailingPunct(targetText);
+  return `${base} ${lowerFirst(followerText.trim())}`.trim();
+}
+
+/** CodeMirror extension that auto-capitalizes the first letter of each
+ *  sentence as the user types — the doc's very first letter, and any
+ *  letter typed directly after concluding punctuation + whitespace. The
+ *  fix is deferred to a microtask so it never dispatches synchronously
+ *  from inside the update cycle. */
+export function autoCapitalizeExtension() {
+  return EditorView.updateListener.of((u) => {
+    if (!u.docChanged) return;
+    let hit = null;
+    u.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+      if (inserted.length === 1) hit = { pos: fromB, ch: inserted.toString() };
+    });
+    if (!hit || !/[a-z]/.test(hit.ch)) return;
+    if (!atSentenceStart(u.state.doc, hit.pos)) return;
+    const { pos, ch } = hit;
+    queueMicrotask(() => {
+      try {
+        if (u.view.state.doc.sliceString(pos, pos + 1) !== ch) return;
+        u.view.dispatch({ changes: { from: pos, to: pos + 1, insert: ch.toUpperCase() } });
+      } catch (_) { /* view gone */ }
+    });
+  });
+}
+
+/** True when `pos` begins a sentence: doc start, or preceded by
+ *  whitespace whose nearest non-space neighbour is concluding punctuation. */
+function atSentenceStart(doc, pos) {
+  if (pos === 0) return true;
+  let j = pos - 1;
+  let sawSpace = false;
+  while (j >= 0 && /\s/.test(doc.sliceString(j, j + 1))) { sawSpace = true; j--; }
+  if (j < 0) return true; // only whitespace before the cursor
+  if (!sawSpace) return false; // letter butts straight against prior text
+  return /[.!?]/.test(doc.sliceString(j, j + 1));
+}
+
 /* ===== Sentence tokenizing ===== */
 
 /** Split prose into sentence strings. Mirrors the boundary rules in
@@ -221,6 +290,12 @@ export function installChipDrag(ctrl, chip) {
       ctrl.removeGhost(ghost);
       if (ctrl.isOverEditor(e2.clientX, e2.clientY)) {
         ctrl.insertSentenceIntoEditor(chip.text, e2.clientX, e2.clientY);
+        ctrl.removeChip(chip);
+        return;
+      }
+      const target = ctrl.chipAtClient(e2.clientX, e2.clientY, chip);
+      if (target) {
+        ctrl.combineChips(target, chip.text);
         ctrl.removeChip(chip);
       } else {
         ctrl.placeChipAtClient(chip, e2.clientX, e2.clientY);

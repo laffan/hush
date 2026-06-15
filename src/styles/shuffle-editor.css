@@ -20,24 +20,28 @@
 }
 
 /* The scrollable world: full width, grows tall enough to hold the editor
- * plus every margin chip (min-height driven inline by shuffle-editor.js). */
+ * plus every margin chip (min-height driven inline by shuffle-editor.js).
+ * Flex-centers the editor stage both axes so it sits in the middle of the
+ * window; margin chips are absolutely positioned over the top. */
 .shuffle-editor-canvas {
   position: relative;
   width: 100%;
-  min-height: 100%;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* The center editor — a light boundary marks where dropped sentences
- * reflow as normal text. Centred horizontally; width set inline from the
- * captured column width. */
+/* The center editor — left/right boundary lines mark where dropped
+ * sentences reflow as normal text. Centred; width set inline from the
+ * captured column width. No fill so it reads as plain text space. */
 .shuffle-editor-stage {
-  margin: 48px auto;
   min-height: 320px;
   max-width: calc(100% - 48px);
-  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
-  border-radius: 8px;
+  border: none;
+  border-left: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  border-right: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
   padding: 24px 28px;
-  background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
 
 .shuffle-editor-stage .cm-editor,
@@ -67,9 +71,9 @@
   position: absolute;
   box-sizing: border-box;
   padding: 8px 12px;
-  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  border: 1px solid color-mix(in srgb, #4a90d9 45%, var(--bg));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  background: color-mix(in srgb, #4a90d9 14%, var(--bg));
   color: var(--fg);
   font-size: 0.92em;
   line-height: 1.45;
@@ -78,8 +82,8 @@
   transition: box-shadow 120ms ease, border-color 120ms ease;
 }
 .shuffle-chip:hover {
-  border-color: var(--accent, #4a90d9);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  border-color: color-mix(in srgb, #4a90d9 70%, var(--bg));
+  box-shadow: 0 2px 10px rgba(74, 144, 217, 0.25);
 }
 .shuffle-chip.editing {
   cursor: text;

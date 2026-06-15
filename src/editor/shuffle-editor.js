@@ -35,6 +35,7 @@ import { getActiveModeContext } from "../state/mode-context.js";
 import {
   splitIntoSentences, shuffleHoverExtension,
   installEditorSentenceDrag, installChipDrag,
+  autoCapitalizeExtension, capitalizeFirst, combineInto,
 } from "./shuffle-editor-dnd.js";
 
 const CHIP_WIDTH = 280; // px — the "300px wrapped" margin form (incl. padding)
@@ -115,7 +116,7 @@ function enterShuffleEditor(state) {
   const view = new EditorView({
     state: EditorState.create({
       doc: "",
-      extensions: [...extensions, shuffleHoverExtension()],
+      extensions: [...extensions, shuffleHoverExtension(), autoCapitalizeExtension()],
     }),
     parent: stage,
   });
@@ -220,15 +221,61 @@ function buildController(a) {
       chip.el.classList.add("editing");
       chip.el.contentEditable = "true";
       chip.el.focus();
+      // Adding concluding punctuation mid-text divides the chip into one
+      // node per sentence (each capitalized) — mirrors the editor's flow.
+      const onInput = (e) => {
+        if (e.data !== "." && e.data !== "!" && e.data !== "?") return;
+        const parts = splitIntoSentences(chip.el.textContent);
+        if (parts.length > 1) ctrl.splitChip(chip, parts);
+      };
       const onBlur = () => {
         chip.editing = false;
         chip.el.classList.remove("editing");
         chip.el.contentEditable = "false";
-        chip.text = chip.el.textContent.trim();
+        chip.text = capitalizeFirst(chip.el.textContent.trim());
+        chip.el.textContent = chip.text;
         if (!chip.text) ctrl.removeChip(chip);
         chip.el.removeEventListener("blur", onBlur);
+        chip.el.removeEventListener("input", onInput);
       };
+      chip.el.addEventListener("input", onInput);
       chip.el.addEventListener("blur", onBlur);
+    },
+
+    /** Replace a chip's text with the first sentence and spawn the rest as
+     *  fresh chips stacked just below it. Capitalizes every resulting
+     *  sentence. Called when the user types punctuation mid-chip. */
+    splitChip(chip, parts) {
+      chip.text = capitalizeFirst(parts[0].trim());
+      chip.el.textContent = chip.text;
+      let y = chip.y;
+      let prev = chip;
+      for (let i = 1; i < parts.length; i++) {
+        y += prev.el.offsetHeight + CHIP_V_GAP;
+        prev = ctrl.addChip(capitalizeFirst(parts[i].trim()), chip.x, y);
+      }
+      chip.el.blur(); // commit — splitting ends the single edit session
+      growCanvas();
+    },
+
+    /** Find a margin chip whose box contains a client point, excluding the
+     *  chip currently being dragged. */
+    chipAtClient(clientX, clientY, exclude) {
+      for (const c of a.chips) {
+        if (c === exclude) continue;
+        const r = c.el.getBoundingClientRect();
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+          return c;
+        }
+      }
+      return null;
+    },
+
+    /** Merge a sentence onto the end of `target`: the target's concluding
+     *  punctuation drops and the follower joins as a continuing clause. */
+    combineChips(target, followerText) {
+      target.text = combineInto(target.text, followerText);
+      target.el.textContent = target.text;
     },
 
     /** Reposition an existing chip to a drop point given in client coords. */
@@ -240,15 +287,21 @@ function buildController(a) {
       growCanvas();
     },
 
-    /** Spawn a brand-new chip (dragged out of the editor) at a drop point. */
+    /** Spawn a chip (dragged out of the editor) at a drop point — or merge
+     *  it onto a margin chip if dropped on top of one. */
     dropChipAtClient(text, clientX, clientY) {
+      const target = ctrl.chipAtClient(clientX, clientY, null);
+      if (target) { ctrl.combineChips(target, text); return; }
       const p = clientToCanvas(clientX, clientY);
       ctrl.addChip(text, clampX(p.x - CHIP_WIDTH / 2), Math.max(8, p.y - 16));
       growCanvas();
     },
 
+    // Drop target is the whole bounded editor box (the stage), so a
+    // sentence dropped anywhere inside it joins the flow — not just when
+    // released over the rendered text.
     isOverEditor(clientX, clientY) {
-      const r = view.contentDOM.getBoundingClientRect();
+      const r = stage.getBoundingClientRect();
       return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
     },
 
@@ -324,7 +377,9 @@ function buildController(a) {
   function growCanvas() {
     let bottom = stage.offsetTop + stage.offsetHeight;
     for (const chip of a.chips) bottom = Math.max(bottom, chip.y + chip.el.offsetHeight);
-    canvas.style.minHeight = `${bottom + 80}px`;
+    // Keep the canvas at least a viewport tall so the flex-centered stage
+    // stays vertically centered when there's little margin content.
+    canvas.style.minHeight = `${Math.max(window.innerHeight, bottom + 80)}px`;
   }
 
   // expose for resize re-measure of the stage column
