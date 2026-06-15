@@ -454,7 +454,11 @@
    its filename slightly smaller than a doc filename and indented so the
    project's doc-connector column stays clear on its left. */
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] > .sl-item-content .tree-item-row {
+  /* Indent the icon + label, but shorten the row by the same amount so its
+     right edge — and the dropdown button on it — stays aligned with every
+     other row. */
   margin-left: 16px;
+  width: calc(100% - 16px);
 }
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] > .sl-item-content .tree-item-row .tree-item-name {
   font-size: 0.9em;

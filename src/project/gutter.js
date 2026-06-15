@@ -405,6 +405,10 @@ export function useActivePaneAsGutter() {
     appState.markGutterForDoc(appState.currentFileId, pane.fileId);
   }
 
+  // The pane became a gutter after createPane's panes-changed already fired, so
+  // re-emit: the sidebar re-renders with `gutter` set, moving its square from
+  // under the doc (stale, unfiltered) to inline beside the gutter row.
+  appState?.emit?.("panes-changed");
   schedulePersist();
   return true;
 }
@@ -442,6 +446,9 @@ export function stopActivePaneAsGutter() {
   // unpair the gutter, so "Open Gutter" can re-open it later. The marker is
   // only cleared by Convert to Folder (full dissolution).
 
+  // Re-render the sidebar so a now-plain pane (if it stays open) drops back to
+  // its normal below-row strip instead of the gutter's inline slot.
+  appState?.emit?.("panes-changed");
   schedulePersist();
   return true;
 }
