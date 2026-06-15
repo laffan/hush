@@ -168,6 +168,11 @@
   pointer-events: none;
   z-index: calc(var(--z-modal-top) + 1);
 }
+.shuffle-editor-toolbar-right {
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+}
 .shuffle-editor-btn {
   pointer-events: auto;
   font: inherit;

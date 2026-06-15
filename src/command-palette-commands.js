@@ -393,9 +393,17 @@ function buildCommands(state) {
       action: (s) => s.toggleZenFocus() },
     // Sentence mode only for now; word / paragraph are planned but not yet
     // surfaced. Shown only when there's a live selection to break apart.
-    { id: "shuffle-sentences", label: "Shuffle Editor: Sentences", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
+    // Three start configs: explode (all in margins), or seed the column
+    // with every sentence shuffled / in original order.
+    { id: "shuffle-sentences-explode", label: "Shuffle Editor: Sentences (explode)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !shuffleSelectionAvailable(s),
-      action: (s) => openShuffleEditor(s) },
+      action: (s) => openShuffleEditor(s, "explode") },
+    { id: "shuffle-sentences-list-shuffle", label: "Shuffle Editor: Sentences (list shuffle)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !shuffleSelectionAvailable(s),
+      action: (s) => openShuffleEditor(s, "list-shuffle") },
+    { id: "shuffle-sentences-list-current", label: "Shuffle Editor: Sentences (list current)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !shuffleSelectionAvailable(s),
+      action: (s) => openShuffleEditor(s, "list-current") },
     { id: "word-count", label: "Toggle word count", icon: null, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",

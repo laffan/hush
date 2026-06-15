@@ -82,11 +82,15 @@ export function shuffleSelectionAvailable(state) {
   return !!captureShufflePayload(state);
 }
 
-/** Open the Shuffle Editor on the current selection. Returns false (so the
- *  caller can fall through) when there's nothing selected. */
-export function openShuffleEditor(state) {
+/** Open the Shuffle Editor on the current selection. `config` picks the
+ *  start layout: "explode" (every sentence in the margins — the default),
+ *  "list-current" (every sentence already in the column, in order), or
+ *  "list-shuffle" (in the column, shuffled). Returns false (so the caller
+ *  can fall through) when there's nothing selected. */
+export function openShuffleEditor(state, config = "explode") {
   const payload = captureShufflePayload(state);
   if (!payload) return false;
+  payload.config = config;
   state.toggleShuffleEditor(payload);
   return true;
 }
@@ -119,18 +123,30 @@ function enterShuffleEditor(state) {
     marginNodes: [],    // loose chips in the margins
     history: [],        // structural-undo snapshots
     ghost: null,
+    dragGrab: { x: CHIP_WIDTH / 2, y: 16 }, // grab offset for the active drag
   };
   const ctrl = buildController(active);
   active.ctrl = ctrl;
 
-  // Every sentence starts life as a margin node.
-  for (const text of splitIntoSentences(payload.text)) {
-    active.marginNodes.push(makeNode(text, "margin"));
+  // Seed the start layout from the chosen config.
+  const sentences = splitIntoSentences(payload.text);
+  if ((payload.config || "explode") === "explode") {
+    for (const text of sentences) active.marginNodes.push(makeNode(text, "margin"));
+  } else {
+    const list = sentences.slice();
+    if (payload.config === "list-shuffle") {
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+    }
+    for (const text of list) active.editorNodes.push(makeNode(text, "editor"));
   }
   ctrl.render();
   ctrl.layoutMargins();
 
   toolbar.shuffleBtn.addEventListener("click", () => ctrl.shuffleMargins());
+  toolbar.cancelBtn.addEventListener("click", () => finalize(null));
   toolbar.doneBtn.addEventListener("click", () => beginClose());
 
   // Double-click an empty margin to spawn a node to type into.
@@ -288,13 +304,21 @@ function buildController(a) {
       if (e.target.closest(".shuffle-node-tools")) return; // tool button, not a drag
       e.preventDefault(); // suppress text selection / native drag
       const preSnapshot = serialize();
+      // Capture where inside the node the user grabbed (clamped to the
+      // chip's width) so a margin drag keeps the exact grab relationship.
+      const rect = node.el.getBoundingClientRect();
+      const grab = {
+        x: Math.max(0, Math.min(CHIP_WIDTH, e.clientX - rect.left)),
+        y: Math.max(0, Math.min(60, e.clientY - rect.top)),
+      };
       startDragGesture(e, {
         onBegin: () => {
           pushSnapshot(preSnapshot);
+          a.dragGrab = grab;
           detachNode(node);              // remove from model — no faint leftover
           a.ghost = makeGhost(node.text);
         },
-        onMove: (ev) => moveGhost(a.ghost, ev.clientX, ev.clientY),
+        onMove: (ev) => positionGhost(ev.clientX, ev.clientY),
         onDrop: (ev) => { removeGhost(); dropNode(node, ev.clientX, ev.clientY); },
         onClick: (ev) => editNode(node, ev),
       });
@@ -367,11 +391,12 @@ function buildController(a) {
       render();
       return;
     }
-    // Park as a margin chip at the drop point.
+    // Park as a margin chip at the drop point, honouring the grab offset so
+    // the chip lands exactly where the ghost was (no jump).
     node.where = "margin";
     const p = clientToCanvas(cx, cy);
-    node.x = clampX(p.x - CHIP_WIDTH / 2);
-    node.y = Math.max(8, p.y - 16);
+    node.x = clampX(p.x - a.dragGrab.x);
+    node.y = Math.max(8, p.y - a.dragGrab.y);
     a.marginNodes.push(node);
     render();
   }
@@ -416,10 +441,22 @@ function buildController(a) {
     document.body.appendChild(g);
     return g;
   }
-  function moveGhost(g, cx, cy) {
+  /** Position the drag ghost relative to the cursor based on context. The
+   *  two relationships are tracked across the whole drag so moving back and
+   *  forth over the editor boundary switches between them live:
+   *   • over the editor — park the ghost below-and-right of the cursor so
+   *     the insertion point stays visible;
+   *   • in the margins — keep the exact grab offset so it doesn't jump. */
+  function positionGhost(cx, cy) {
+    const g = a.ghost;
     if (!g) return;
-    g.style.left = `${cx - CHIP_WIDTH / 2}px`;
-    g.style.top = `${cy - 16}px`;
+    if (pointInColumn(cx, cy)) {
+      g.style.left = `${cx + 14}px`;
+      g.style.top = `${cy + 18}px`;
+    } else {
+      g.style.left = `${cx - a.dragGrab.x}px`;
+      g.style.top = `${cy - a.dragGrab.y}px`;
+    }
   }
   function removeGhost() { if (a.ghost) { a.ghost.remove(); a.ghost = null; } }
 
@@ -639,9 +676,14 @@ function buildToolbar() {
   const wrap = el("div", "shuffle-editor-toolbar");
   const shuffleBtn = el("button", "shuffle-editor-btn shuffle-editor-shuffle");
   shuffleBtn.textContent = "Shuffle";
+  const right = el("div", "shuffle-editor-toolbar-right");
+  const cancelBtn = el("button", "shuffle-editor-btn shuffle-editor-cancel");
+  cancelBtn.textContent = "Cancel";
   const doneBtn = el("button", "shuffle-editor-btn shuffle-editor-done");
   doneBtn.textContent = "Done";
+  right.appendChild(cancelBtn);
+  right.appendChild(doneBtn);
   wrap.appendChild(shuffleBtn);
-  wrap.appendChild(doneBtn);
-  return { el: wrap, shuffleBtn, doneBtn };
+  wrap.appendChild(right);
+  return { el: wrap, shuffleBtn, cancelBtn, doneBtn };
 }
