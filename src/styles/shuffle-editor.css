@@ -128,6 +128,11 @@
 .shuffle-node.in-editor.editing {
   background: color-mix(in srgb, #4a90d9 8%, transparent);
 }
+/* Keyboard focus ring for cmd/shift arrow navigation. */
+.shuffle-node.in-editor.focused {
+  background: color-mix(in srgb, #4a90d9 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #4a90d9 55%, var(--bg));
+}
 
 .shuffle-node.in-margin {
   position: absolute;

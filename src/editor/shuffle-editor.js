@@ -31,6 +31,7 @@
 
 import {
   splitIntoSentences, capitalizeFirst, combineInto, startDragGesture,
+  buildToolbar, placeCaretAtPoint, fakeCenterEvent, buildCompareModal,
 } from "./shuffle-editor-dnd.js";
 import {
   captureAnyShufflePayload, shuffleSelectionAvailable, writeBackShuffle,
@@ -102,6 +103,8 @@ function enterShuffleEditor(state) {
     preview: null,      // live drop-position preview shown over the column
     dragText: "",       // text of the node being dragged
     dragGrab: { x: CHIP_WIDTH / 2, y: 16 }, // grab offset for the active drag
+    hoverNode: null,    // node under the pointer (drives a/d/s/c shortcuts)
+    focusNode: null,    // focused column node (drives cmd/shift arrow nav)
   };
   const ctrl = buildController(active);
   active.ctrl = ctrl;
@@ -120,6 +123,7 @@ function enterShuffleEditor(state) {
     }
     for (const text of list) active.editorNodes.push(makeNode(text, "editor"));
   }
+  active.focusNode = active.editorNodes[0] || null; // seed for arrow nav
   ctrl.render();
   ctrl.layoutMargins();
 
@@ -148,6 +152,26 @@ function enterShuffleEditor(state) {
       if (ae && ae.classList?.contains("shuffle-node") && ae.isContentEditable) return;
       e.preventDefault();
       ctrl.undo();
+      return;
+    }
+    // The shortcuts below only apply when no node is being edited and no
+    // compare modal is open.
+    if (active.compare || document.activeElement?.isContentEditable) return;
+
+    // Hover shortcuts (no modifiers): act on the node under the pointer.
+    if (!meta && !e.shiftKey && !e.altKey && active.hoverNode) {
+      const k = e.key.toLowerCase();
+      if (k === "a") { e.preventDefault(); ctrl.moveNodeToEditor(active.hoverNode); return; }
+      if (k === "d") { e.preventDefault(); ctrl.moveNodeToMargin(active.hoverNode); return; }
+      if (k === "s") { e.preventDefault(); ctrl.toggleNodeFlag(active.hoverNode, "strike"); return; }
+      if (k === "c") { e.preventDefault(); ctrl.toggleNodeFlag(active.hoverNode, "comment"); return; }
+    }
+    // Column arrow nav: cmd+↑/↓ shifts the focused sentence, shift+↑/↓ moves
+    // the focus.
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const dir = e.key === "ArrowUp" ? -1 : 1;
+      if (meta) { e.preventDefault(); ctrl.shiftFocusedSentence(dir); return; }
+      if (e.shiftKey) { e.preventDefault(); ctrl.moveFocus(dir); return; }
     }
   };
   document.addEventListener("keydown", onKeydown, true);
@@ -260,7 +284,9 @@ function buildController(a) {
     column.innerHTML = "";
     column.appendChild(makeGap(0));
     a.editorNodes.forEach((node, i) => {
-      column.appendChild(makeNodeEl(node, "in-editor"));
+      const node_el = makeNodeEl(node, "in-editor");
+      if (node === a.focusNode) node_el.classList.add("focused");
+      column.appendChild(node_el);
       column.appendChild(makeGap(i + 1));
     });
     // Margins.
@@ -304,6 +330,9 @@ function buildController(a) {
     });
     node.textEl.addEventListener("input", (e) => onNodeInput(node, e));
     node.textEl.addEventListener("blur", () => commitEdit(node));
+    // Track the hovered node so the a / d / s / c shortcuts know their target.
+    node.el.addEventListener("mouseenter", () => { a.hoverNode = node; });
+    node.el.addEventListener("mouseleave", () => { if (a.hoverNode === node) a.hoverNode = null; });
   }
 
   function editNode(node, ev) {
@@ -555,9 +584,76 @@ function buildController(a) {
     return out;
   }
 
+  /* ----- keyboard-driven ops ----- */
+
+  /** x of the left margin column, just outside the editor. */
+  function marginLeftX() {
+    const cr = canvasRect();
+    const colLeft = column.getBoundingClientRect().left - cr.left;
+    return Math.max(8, colLeft - CHIP_WIDTH - MARGIN_GAP);
+  }
+
+  /** `a` over a hovered node — move it into the column (appended at end). */
+  function moveNodeToEditor(node) {
+    if (!node || node.where === "editor") return;
+    pushSnapshot(serialize());
+    a.marginNodes = a.marginNodes.filter((n) => n !== node);
+    node.where = "editor";
+    a.editorNodes.push(node);
+    a.focusNode = node;
+    render();
+    node.el?.scrollIntoView({ block: "nearest" });
+  }
+
+  /** `d` over a hovered node — move it out to the margin at its current
+   *  vertical position. */
+  function moveNodeToMargin(node) {
+    if (!node || node.where === "margin") return;
+    const rect = node.el?.getBoundingClientRect();
+    const cr = canvasRect();
+    pushSnapshot(serialize());
+    a.editorNodes = a.editorNodes.filter((n) => n !== node);
+    if (a.focusNode === node) a.focusNode = a.editorNodes[0] || null;
+    node.where = "margin";
+    node.x = clampX(marginLeftX());
+    node.y = rect ? Math.max(8, rect.top - cr.top) : 24;
+    a.marginNodes.push(node);
+    render();
+  }
+
+  function applyFocusClass() {
+    for (const n of a.editorNodes) n.el?.classList.toggle("focused", n === a.focusNode);
+  }
+
+  /** shift+↑/↓ — move the focus to the previous / next column sentence. */
+  function moveFocus(dir) {
+    const list = a.editorNodes;
+    if (!list.length) return;
+    let idx = list.indexOf(a.focusNode);
+    if (idx === -1) idx = dir > 0 ? -1 : list.length;
+    idx = Math.max(0, Math.min(list.length - 1, idx + dir));
+    a.focusNode = list[idx];
+    applyFocusClass();
+    a.focusNode.el?.scrollIntoView({ block: "nearest" });
+  }
+
+  /** cmd+↑/↓ — shift the focused sentence up / down one slot. */
+  function shiftFocusedSentence(dir) {
+    const list = a.editorNodes;
+    const i = list.indexOf(a.focusNode);
+    if (i === -1) return;
+    const j = i + dir;
+    if (j < 0 || j >= list.length) return;
+    pushSnapshot(serialize());
+    [list[i], list[j]] = [list[j], list[i]];
+    render();
+    a.focusNode.el?.scrollIntoView({ block: "nearest" });
+  }
+
   const ctrl = {
     render, layoutMargins, reflowOnResize, shuffleMargins, undo,
     createEditorNodeAt, createMarginNodeAt, buildResult,
+    moveNodeToEditor, moveNodeToMargin, toggleNodeFlag: toggleFlag, moveFocus, shiftFocusedSentence,
   };
   return ctrl;
 }
@@ -570,36 +666,12 @@ function beginClose() {
 }
 
 function showCompare(originalText, newText) {
-  const back = el("div", "shuffle-compare-backdrop");
-  const modal = el("div", "shuffle-compare-modal");
-  modal.innerHTML = `
-    <div class="shuffle-compare-cols">
-      <div class="shuffle-compare-col">
-        <div class="shuffle-compare-label">Original</div>
-        <div class="shuffle-compare-text" data-role="original"></div>
-      </div>
-      <div class="shuffle-compare-col">
-        <div class="shuffle-compare-label">Shuffled</div>
-        <div class="shuffle-compare-text" data-role="shuffled"></div>
-      </div>
-    </div>
-    <div class="shuffle-compare-btns">
-      <button class="shuffle-compare-cancel">Cancel</button>
-      <button class="shuffle-compare-keep-original">Keep Original</button>
-      <button class="shuffle-compare-keep-shuffled">Keep Shuffled</button>
-    </div>`;
-  modal.querySelector('[data-role="original"]').textContent = originalText;
-  modal.querySelector('[data-role="shuffled"]').textContent = newText || "(empty)";
-  back.appendChild(modal);
-  active.overlay.appendChild(back);
-  active.compare = back;
-
-  modal.querySelector(".shuffle-compare-cancel")
-    .addEventListener("click", () => dismissCompare());
-  modal.querySelector(".shuffle-compare-keep-original")
-    .addEventListener("click", () => finalize(null));
-  modal.querySelector(".shuffle-compare-keep-shuffled")
-    .addEventListener("click", () => finalize(newText));
+  active.compare = buildCompareModal(originalText, newText, {
+    onCancel: () => dismissCompare(),
+    onKeepOriginal: () => finalize(null),
+    onKeepShuffled: () => finalize(newText),
+  });
+  active.overlay.appendChild(active.compare);
 }
 
 function dismissCompare() {
@@ -625,58 +697,3 @@ function el(tag, className) {
   return node;
 }
 
-/** Best-effort caret placement at a client point inside a contenteditable;
- *  falls back to the end of the node. */
-function placeCaretAtPoint(node_el, cx, cy) {
-  const sel = window.getSelection();
-  let range = null;
-  if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(cx, cy);
-  else if (document.caretPositionFromPoint) {
-    const p = document.caretPositionFromPoint(cx, cy);
-    if (p) { range = document.createRange(); range.setStart(p.offsetNode, p.offset); }
-  }
-  sel.removeAllRanges();
-  if (range && node_el.contains(range.startContainer)) {
-    range.collapse(true);
-    sel.addRange(range);
-  } else {
-    const r = document.createRange();
-    r.selectNodeContents(node_el);
-    r.collapse(false);
-    sel.addRange(r);
-  }
-}
-
-/** A synthetic event positioned at a node's centre — used to seed caret
- *  placement when a node is created (rather than clicked). */
-function fakeCenterEvent(node_el) {
-  const r = node_el.getBoundingClientRect();
-  return { clientX: r.left + 12, clientY: r.top + r.height / 2 };
-}
-
-const TOOLBAR_ICONS = {
-  shuffle: '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/>',
-  done: '<path d="M20 6 9 17l-5-5"/>',
-  cancel: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-};
-
-function iconBtn(name, title, extraClass) {
-  const b = el("button", `shuffle-editor-btn ${extraClass}`);
-  b.title = title;
-  b.setAttribute("aria-label", title);
-  b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${TOOLBAR_ICONS[name]}</svg>`;
-  return b;
-}
-
-function buildToolbar() {
-  const wrap = el("div", "shuffle-editor-toolbar");
-  const shuffleBtn = iconBtn("shuffle", "Shuffle the margin sentences", "shuffle-editor-shuffle");
-  const right = el("div", "shuffle-editor-toolbar-right");
-  const cancelBtn = iconBtn("cancel", "Cancel — discard changes", "shuffle-editor-cancel");
-  const doneBtn = iconBtn("done", "Done — choose a version", "shuffle-editor-done");
-  right.appendChild(cancelBtn);
-  right.appendChild(doneBtn);
-  wrap.appendChild(shuffleBtn);
-  wrap.appendChild(right);
-  return { el: wrap, shuffleBtn, cancelBtn, doneBtn };
-}

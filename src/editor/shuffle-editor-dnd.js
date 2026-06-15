@@ -110,3 +110,99 @@ export function startDragGesture(startEvent, handlers) {
   document.addEventListener("mousemove", onMove);
   document.addEventListener("mouseup", onUp);
 }
+
+/* ===== Presentation helpers (kept here so the lifecycle file stays under
+ *       the 700-line cap) ===== */
+
+function el(tag, className) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  return node;
+}
+
+const TOOLBAR_ICONS = {
+  shuffle: '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/>',
+  done: '<path d="M20 6 9 17l-5-5"/>',
+  cancel: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+};
+
+function iconBtn(name, title, extraClass) {
+  const b = el("button", `shuffle-editor-btn ${extraClass}`);
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${TOOLBAR_ICONS[name]}</svg>`;
+  return b;
+}
+
+/** The bottom toolbar: Shuffle pinned left, Cancel + Done right. */
+export function buildToolbar() {
+  const wrap = el("div", "shuffle-editor-toolbar");
+  const shuffleBtn = iconBtn("shuffle", "Shuffle the margin sentences", "shuffle-editor-shuffle");
+  const right = el("div", "shuffle-editor-toolbar-right");
+  const cancelBtn = iconBtn("cancel", "Cancel — discard changes", "shuffle-editor-cancel");
+  const doneBtn = iconBtn("done", "Done — choose a version", "shuffle-editor-done");
+  right.appendChild(cancelBtn);
+  right.appendChild(doneBtn);
+  wrap.appendChild(shuffleBtn);
+  wrap.appendChild(right);
+  return { el: wrap, shuffleBtn, cancelBtn, doneBtn };
+}
+
+/** Best-effort caret placement at a client point inside a contenteditable;
+ *  falls back to the end of the node. */
+export function placeCaretAtPoint(node_el, cx, cy) {
+  const sel = window.getSelection();
+  let range = null;
+  if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(cx, cy);
+  else if (document.caretPositionFromPoint) {
+    const p = document.caretPositionFromPoint(cx, cy);
+    if (p) { range = document.createRange(); range.setStart(p.offsetNode, p.offset); }
+  }
+  sel.removeAllRanges();
+  if (range && node_el.contains(range.startContainer)) {
+    range.collapse(true);
+    sel.addRange(range);
+  } else {
+    const r = document.createRange();
+    r.selectNodeContents(node_el);
+    r.collapse(false);
+    sel.addRange(r);
+  }
+}
+
+/** A synthetic event positioned at a node's centre — used to seed caret
+ *  placement when a node is created (rather than clicked). */
+export function fakeCenterEvent(node_el) {
+  const r = node_el.getBoundingClientRect();
+  return { clientX: r.left + 12, clientY: r.top + r.height / 2 };
+}
+
+/** Build the close-time compare modal (original vs shuffled). Returns the
+ *  backdrop element; the caller mounts it and tracks it for dismissal. */
+export function buildCompareModal(originalText, newText, handlers) {
+  const back = el("div", "shuffle-compare-backdrop");
+  const modal = el("div", "shuffle-compare-modal");
+  modal.innerHTML = `
+    <div class="shuffle-compare-cols">
+      <div class="shuffle-compare-col">
+        <div class="shuffle-compare-label">Original</div>
+        <div class="shuffle-compare-text" data-role="original"></div>
+      </div>
+      <div class="shuffle-compare-col">
+        <div class="shuffle-compare-label">Shuffled</div>
+        <div class="shuffle-compare-text" data-role="shuffled"></div>
+      </div>
+    </div>
+    <div class="shuffle-compare-btns">
+      <button class="shuffle-compare-cancel">Cancel</button>
+      <button class="shuffle-compare-keep-original">Keep Original</button>
+      <button class="shuffle-compare-keep-shuffled">Keep Shuffled</button>
+    </div>`;
+  modal.querySelector('[data-role="original"]').textContent = originalText;
+  modal.querySelector('[data-role="shuffled"]').textContent = newText || "(empty)";
+  back.appendChild(modal);
+  modal.querySelector(".shuffle-compare-cancel").addEventListener("click", handlers.onCancel);
+  modal.querySelector(".shuffle-compare-keep-original").addEventListener("click", handlers.onKeepOriginal);
+  modal.querySelector(".shuffle-compare-keep-shuffled").addEventListener("click", handlers.onKeepShuffled);
+  return back;
+}
