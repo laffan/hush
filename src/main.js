@@ -15,6 +15,7 @@ import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { applyNotebookSettings, previewNotebookStyle, setNotebookLeftInset } from "./notebook/notebook-bridge.js";
 import { setupModeSwitching } from "./main-modes.js";
+import { installNotebookAppearanceSync, installDropboxSyncLifecycle } from "./main-listeners.js";
 import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
 import { initCmdHeldSliders } from "./cmd-held-sliders.js";
@@ -617,92 +618,10 @@ async function init() {
     if (state.currentNotebookFileId) applyNotebookSettings(state);
   });
 
-  // Apply notebook settings when settings, style, or theme changes
-  function syncNotebookIfActive() {
-    if (state.currentNotebookFileId) applyNotebookSettings(state);
-  }
-  state.on("settings-changed", syncNotebookIfActive);
-  state.on("style-changed", syncNotebookIfActive);
-  state.on("theme-changed", syncNotebookIfActive);
-
-  // System appearance changes — when set to "auto", re-apply appearance AND
-  // the active style so its light/dark palette follows the system switch.
-  // The matchMedia "change" event covers the foreground case, but iOS /
-  // iPadOS WKWebView frequently doesn't fire it while Hush is backgrounded.
-  // Re-checking on visibility/focus catches the missed transition so the
-  // user doesn't have to restart the app to pick up the new appearance.
-  let _lastSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  function refreshAutoAppearance() {
-    if (state.settings.appearance !== "auto") return;
-    const nowDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    _lastSystemDark = nowDark;
-    applyAppearance("auto");
-    if (state.settings.activeStyleId) applyActiveStyle(state);
-    updatePrivateBoxColor(state);
-    state.emit("theme-changed");
-    syncNotebookIfActive();
-  }
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refreshAutoAppearance);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
-    if (state.settings.appearance !== "auto") return;
-    const nowDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (nowDark !== _lastSystemDark) refreshAutoAppearance();
-  });
-  window.addEventListener("focus", () => {
-    if (state.settings.appearance !== "auto") return;
-    const nowDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (nowDark !== _lastSystemDark) refreshAutoAppearance();
-  });
-
-  // Dropbox sync: start polling if sync is enabled.
-  // Initialize tokens from settings on startup.
-  if (IS_TAURI && state.settings.dropboxEnabled && state.settings.dropboxSyncPath) {
-    (async () => {
-      try {
-        const dbx = await import("./sync/dropbox.js");
-        if (state.settings.dropboxAccessToken) {
-          dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
-        }
-        const sp = await import("./sync/sync-polling.js");
-        sp.startSyncPolling(state);
-      } catch (e) {
-        console.error("Sync startup failed:", e);
-      }
-    })();
-  }
-  state.on("settings-changed", async () => {
-    const sp = await import("./sync/sync-polling.js");
-    if (IS_TAURI && state.settings.dropboxEnabled && state.settings.dropboxSyncPath) {
-      // Re-initialize tokens in case they changed
-      const dbx = await import("./sync/dropbox.js");
-      if (state.settings.dropboxAccessToken) {
-        dbx.setTokens(state.settings.dropboxAccessToken, state.settings.dropboxRefreshToken);
-      }
-      sp.startSyncPolling(state);
-    } else {
-      sp.stopSyncPolling();
-    }
-  });
-
-  // Reconcile Dropbox sync when the window regains focus.
-  if (IS_TAURI) {
-    let lastFocusReconcile = 0;
-    const maybeReconcile = async () => {
-      if (!state.settings.dropboxEnabled || !state.settings.dropboxSyncPath) return;
-      const now = Date.now();
-      if (now - lastFocusReconcile < 2000) return;
-      lastFocusReconcile = now;
-      try {
-        const sp = await import("./sync/sync-polling.js");
-        sp.triggerFullReconcile();
-      } catch (e) {
-        console.error("Focus reconcile failed:", e);
-      }
-    };
-    window.addEventListener("focus", maybeReconcile);
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") maybeReconcile(); });
-  }
+  // Notebook/appearance sync + Dropbox sync lifecycle (extracted to
+  // main-listeners.js to keep init() under the line limit).
+  installNotebookAppearanceSync(state);
+  installDropboxSyncLifecycle(state);
 }
 
 init().catch(console.error);
