@@ -37,6 +37,7 @@ import {
 import {
   captureAnyShufflePayload, shuffleSelectionAvailable, writeBackShuffle,
 } from "./shuffle-editor-source.js";
+import { installShuffleKeyboard } from "./shuffle-editor-keys.js";
 
 export { shuffleSelectionAvailable };
 
@@ -106,6 +107,7 @@ function enterShuffleEditor(state) {
     dragGrab: { x: CHIP_WIDTH / 2, y: 16 }, // grab offset for the active drag
     hoverNode: null,    // node under the pointer (drives a/d/s/c shortcuts)
     focusNode: null,    // focused column node (drives cmd/shift arrow nav)
+    editingNode: null,  // node currently being text-edited
   };
   const ctrl = buildController(active);
   active.ctrl = ctrl;
@@ -138,43 +140,7 @@ function enterShuffleEditor(state) {
     ctrl.createMarginNodeAt(e.clientX, e.clientY);
   });
 
-  const onKeydown = (e) => {
-    if (e.key === "Escape") {
-      e.preventDefault(); e.stopPropagation();
-      if (active && active.compare) { dismissCompare(); return; }
-      beginClose();
-      return;
-    }
-    const meta = e.metaKey || e.ctrlKey;
-    if (meta && (e.key === "z" || e.key === "Z") && !e.shiftKey) {
-      // Let the browser handle text undo inside a node being edited;
-      // otherwise step back through structural changes.
-      const ae = document.activeElement;
-      if (ae && ae.classList?.contains("shuffle-node") && ae.isContentEditable) return;
-      e.preventDefault();
-      ctrl.undo();
-      return;
-    }
-    // Below: only when not editing a node and no compare modal is open.
-    if (active.compare || document.activeElement?.isContentEditable) return;
-
-    // Hover shortcuts (no modifiers): act on the node under the pointer.
-    if (!meta && !e.shiftKey && !e.altKey && active.hoverNode) {
-      const k = e.key.toLowerCase();
-      if (k === "a") { e.preventDefault(); ctrl.moveNodeToEditor(active.hoverNode); return; }
-      if (k === "d") { e.preventDefault(); ctrl.moveNodeToMargin(active.hoverNode); return; }
-      if (k === "s") { e.preventDefault(); ctrl.toggleNodeFlag(active.hoverNode, "strike"); return; }
-      if (k === "c") { e.preventDefault(); ctrl.toggleNodeFlag(active.hoverNode, "comment"); return; }
-    }
-    // Column arrow nav: cmd shifts the focused sentence, shift moves focus.
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      const dir = e.key === "ArrowUp" ? -1 : 1;
-      if (meta) { e.preventDefault(); ctrl.shiftFocusedSentence(dir); return; }
-      if (e.shiftKey) { e.preventDefault(); ctrl.moveFocus(dir); return; }
-    }
-  };
-  document.addEventListener("keydown", onKeydown, true);
-  active.cleanups = [() => document.removeEventListener("keydown", onKeydown, true)];
+  active.cleanups = [installShuffleKeyboard(active, ctrl, { beginClose, dismissCompare })];
 
   const onResize = () => ctrl.reflowOnResize();
   window.addEventListener("resize", onResize);
@@ -335,15 +301,32 @@ function buildController(a) {
 
   function editNode(node, ev) {
     node.editing = true;
+    a.editingNode = node;
     node.el.classList.add("editing");
     node.textEl.contentEditable = "true";
     node.textEl.focus();
     placeCaretAtPoint(node.textEl, ev.clientX, ev.clientY);
   }
 
+  /** Re-enter edit on a node with the caret parked at the end. */
+  function reEditAtEnd(node) {
+    node.editing = true;
+    a.editingNode = node;
+    node.el.classList.add("editing");
+    node.textEl.contentEditable = "true";
+    node.textEl.focus();
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(node.textEl);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
   function commitEdit(node) {
     if (!node.editing) return;
     node.editing = false;
+    if (a.editingNode === node) a.editingNode = null;
     node.el.classList.remove("editing");
     node.textEl.contentEditable = "false";
     node.text = capitalizeFirst(node.textEl.textContent.trim());
@@ -447,8 +430,7 @@ function buildController(a) {
     document.body.appendChild(g);
     return g;
   }
-  /** Ghost parks below-and-right of the cursor over the column (clear of
-   *  the drop preview) and keeps the exact grab offset over the margins. */
+  /** Ghost: below-right of the cursor over the column, grab offset over margins. */
   function positionGhost(cx, cy) {
     const g = a.ghost;
     if (!g) return;
@@ -461,8 +443,7 @@ function buildController(a) {
     }
   }
 
-  /** Over the column, show a full-opacity preview of the dragged sentence
-   *  at the position it would drop into. Hidden over the margins. */
+  /** Full-opacity preview of where the dragged sentence drops (column only). */
   function updateDropPreview(cx, cy) {
     if (!pointInColumn(cx, cy)) { removePreview(); return; }
     if (!a.preview) {
@@ -489,8 +470,7 @@ function buildController(a) {
     const colR = column.getBoundingClientRect();
     const colLeft = colR.left - cr.left;
     const colRight = colR.right - cr.left;
-    // Spread each side's stack so it sits vertically centred *around* the
-    // editor column rather than starting at the top of the window.
+    // Centre each side's stack vertically around the editor column.
     const colMidY = (colR.top - cr.top) + colR.height / 2;
     const leftCol = Math.max(8, colLeft - CHIP_WIDTH - MARGIN_GAP);
     const rightCol = clampX(colRight + MARGIN_GAP);
@@ -592,13 +572,17 @@ function buildController(a) {
     node.el?.scrollIntoView({ block: "nearest" });
   }
 
-  /** `d` over a hovered node — scatter it out to a free spot in the margins
-   *  (avoiding overlap with the existing chips). */
+  /** `d` — scatter the node out to a free margin spot, advancing the
+   *  selection to the next sentence so repeated presses walk the column. */
   function moveNodeToMargin(node) {
     if (!node || node.where === "margin") return;
     pushSnapshot(serialize());
+    const wasFocus = a.focusNode === node;
+    const idx = a.editorNodes.indexOf(node);
     a.editorNodes = a.editorNodes.filter((n) => n !== node);
-    if (a.focusNode === node) a.focusNode = a.editorNodes[0] || null;
+    if (wasFocus) {
+      a.focusNode = a.editorNodes[Math.min(idx, a.editorNodes.length - 1)] || null;
+    }
     node.where = "margin";
     const spot = freeMarginSpot();
     node.x = clampX(spot.x);
@@ -651,10 +635,26 @@ function buildController(a) {
     a.focusNode.el?.scrollIntoView({ block: "nearest" });
   }
 
+  /** Arrow nav. Works mid-edit: commit the edited node, treat it as focus,
+   *  run the op (cmd = reorder, shift = move focus), then re-enter edit. */
+  function arrowNav(dir, meta) {
+    const wasEditing = !!a.editingNode;
+    if (a.editingNode) {
+      const ed = a.editingNode;
+      commitEdit(ed);
+      if (a.editorNodes.includes(ed)) a.focusNode = ed;
+    }
+    if (!a.focusNode) a.focusNode = a.editorNodes[0] || null;
+    if (!a.focusNode) return;
+    if (meta) shiftFocusedSentence(dir);
+    else moveFocus(dir);
+    if (wasEditing && a.focusNode) reEditAtEnd(a.focusNode);
+  }
+
   const ctrl = {
     render, layoutMargins, reflowOnResize, shuffleMargins, undo,
     createEditorNodeAt, createMarginNodeAt, buildResult,
-    moveNodeToEditor, moveNodeToMargin, toggleNodeFlag: toggleFlag, moveFocus, shiftFocusedSentence,
+    moveNodeToEditor, moveNodeToMargin, toggleNodeFlag: toggleFlag, arrowNav,
   };
   return ctrl;
 }
