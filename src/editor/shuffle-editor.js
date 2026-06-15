@@ -420,14 +420,20 @@ function buildController(a) {
     document.body.appendChild(g);
     return g;
   }
-  /** The ghost always keeps the exact grab relationship (like a margin
-   *  drag) so it never jumps. Over the column, a separate full-opacity drop
-   *  preview (see updateDropPreview) shows where the sentence would land. */
+  /** The ghost parks below-and-right of the cursor while over the column
+   *  (so it doesn't cover the drop preview) and keeps the exact grab
+   *  relationship over the margins (no jump). Both relationships are
+   *  tracked live, so crossing the boundary mid-drag switches between them. */
   function positionGhost(cx, cy) {
     const g = a.ghost;
     if (!g) return;
-    g.style.left = `${cx - a.dragGrab.x}px`;
-    g.style.top = `${cy - a.dragGrab.y}px`;
+    if (pointInColumn(cx, cy)) {
+      g.style.left = `${cx + 14}px`;
+      g.style.top = `${cy + 18}px`;
+    } else {
+      g.style.left = `${cx - a.dragGrab.x}px`;
+      g.style.top = `${cy - a.dragGrab.y}px`;
+    }
   }
 
   /** While the cursor is over the column, show a full-opacity preview of
@@ -648,15 +654,26 @@ function fakeCenterEvent(node_el) {
   return { clientX: r.left + 12, clientY: r.top + r.height / 2 };
 }
 
+const TOOLBAR_ICONS = {
+  shuffle: '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/>',
+  done: '<path d="M20 6 9 17l-5-5"/>',
+  cancel: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+};
+
+function iconBtn(name, title, extraClass) {
+  const b = el("button", `shuffle-editor-btn ${extraClass}`);
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${TOOLBAR_ICONS[name]}</svg>`;
+  return b;
+}
+
 function buildToolbar() {
   const wrap = el("div", "shuffle-editor-toolbar");
-  const shuffleBtn = el("button", "shuffle-editor-btn shuffle-editor-shuffle");
-  shuffleBtn.textContent = "Shuffle";
+  const shuffleBtn = iconBtn("shuffle", "Shuffle the margin sentences", "shuffle-editor-shuffle");
   const right = el("div", "shuffle-editor-toolbar-right");
-  const cancelBtn = el("button", "shuffle-editor-btn shuffle-editor-cancel");
-  cancelBtn.textContent = "Cancel";
-  const doneBtn = el("button", "shuffle-editor-btn shuffle-editor-done");
-  doneBtn.textContent = "Done";
+  const cancelBtn = iconBtn("cancel", "Cancel — discard changes", "shuffle-editor-cancel");
+  const doneBtn = iconBtn("done", "Done — choose a version", "shuffle-editor-done");
   right.appendChild(cancelBtn);
   right.appendChild(doneBtn);
   wrap.appendChild(shuffleBtn);
