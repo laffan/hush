@@ -1,13 +1,14 @@
-/* Shuffle Editor — fullscreen revision surface. A bounded CodeMirror sits
- * centred in a vertically-scrolling canvas; sentence chips live in the
- * margins around it. Sits at the same z-layer as Zen / Selection Focus so
- * every other piece of chrome disappears behind its background. */
+/* Shuffle Editor — fullscreen revision surface. A pure-background centre
+ * column holds the sentence nodes as a spaced vertical list; the flanking
+ * margins are lightly tinted and hold loose sentence chips. Sits at the
+ * same z-layer as Zen / Selection Focus so all other chrome disappears. */
 
 .shuffle-editor-overlay {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal-top);
-  background: var(--bg);
+  /* Slightly tinted — the margins read as a soft wash around the column. */
+  background: color-mix(in srgb, var(--fg) 5%, var(--bg));
   color: var(--fg);
   overflow-x: hidden;
   overflow-y: auto;
@@ -19,10 +20,8 @@
   to   { opacity: 1; }
 }
 
-/* The scrollable world: full width, grows tall enough to hold the editor
- * plus every margin chip (min-height driven inline by shuffle-editor.js).
- * Flex-centers the editor stage both axes so it sits in the middle of the
- * window; margin chips are absolutely positioned over the top. */
+/* The scrollable world. Flex-centers the editor column on both axes;
+ * margin chips are absolutely positioned over the top. */
 .shuffle-editor-canvas {
   position: relative;
   width: 100%;
@@ -32,44 +31,63 @@
   justify-content: center;
 }
 
-/* The center editor — left/right boundary lines mark where dropped
- * sentences reflow as normal text. Centred; width set inline from the
- * captured column width. No fill so it reads as plain text space. */
-.shuffle-editor-stage {
+/* Absolute layer the margin chips live in (full canvas, click-through so
+ * double-clicks reach the canvas, individual chips re-enable events). */
+.shuffle-margin-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.shuffle-margin-layer .shuffle-node { pointer-events: auto; }
+
+/* The centre column — pure background, no border, sentences stacked with
+ * the gap elements supplying the space between them. */
+.shuffle-editor-column {
+  position: relative;
+  z-index: 1;
   min-height: 320px;
   max-width: calc(100% - 48px);
-  border: none;
-  border-left: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
-  border-right: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
   padding: 24px 28px;
+  background: var(--bg);
+  border-radius: 6px;
 }
 
-.shuffle-editor-stage .cm-editor,
-.shuffle-editor-stage .cm-editor.cm-focused {
-  width: 100%;
-  background: transparent;
-  outline: none;
-  border: none;
+/* Drop / create affordance between sentences. */
+.shuffle-gap {
+  height: 16px;
+  border-radius: 4px;
+  transition: background 100ms ease;
 }
-.shuffle-editor-stage .cm-scroller {
-  line-height: 1.6;
-  scrollbar-width: none;
-}
-.shuffle-editor-stage .cm-scroller::-webkit-scrollbar { display: none; }
-
-/* A sentence under the pointer inside the editor highlights so the user
- * knows it can be dragged. */
-.shuffle-sentence-hover {
-  background: color-mix(in srgb, var(--accent, #4a90d9) 22%, transparent);
-  border-radius: 3px;
-  cursor: grab;
+.shuffle-gap:hover {
+  background: color-mix(in srgb, #4a90d9 12%, transparent);
+  cursor: text;
 }
 
-/* Margin chips — the "300px wrapped" form a sentence takes outside the
- * editor. Absolutely positioned within the canvas (left/top set inline). */
-.shuffle-chip {
-  position: absolute;
+/* A sentence node. Shared base; column nodes flow full-width, margin nodes
+ * are absolutely-placed light-blue chips. */
+.shuffle-node {
   box-sizing: border-box;
+  line-height: 1.55;
+  cursor: grab;
+  user-select: none;
+  outline: none;
+}
+.shuffle-node.editing { cursor: text; user-select: text; }
+
+.shuffle-node.in-editor {
+  padding: 4px 8px;
+  border-radius: 5px;
+  transition: background 100ms ease;
+}
+.shuffle-node.in-editor:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+.shuffle-node.in-editor.editing {
+  background: color-mix(in srgb, #4a90d9 8%, transparent);
+}
+
+.shuffle-node.in-margin {
+  position: absolute;
   padding: 8px 12px;
   border: 1px solid color-mix(in srgb, #4a90d9 45%, var(--bg));
   border-radius: 8px;
@@ -77,26 +95,22 @@
   color: var(--fg);
   font-size: 0.92em;
   line-height: 1.45;
-  cursor: grab;
-  user-select: none;
   transition: box-shadow 120ms ease, border-color 120ms ease;
 }
-.shuffle-chip:hover {
+.shuffle-node.in-margin:hover {
   border-color: color-mix(in srgb, #4a90d9 70%, var(--bg));
   box-shadow: 0 2px 10px rgba(74, 144, 217, 0.25);
 }
-.shuffle-chip.editing {
-  cursor: text;
-  user-select: text;
-  border-color: var(--accent, #4a90d9);
+.shuffle-node.in-margin.editing {
+  border-color: color-mix(in srgb, #4a90d9 80%, var(--bg));
 }
-.shuffle-chip.dragging { opacity: 0.25; }
 
-/* The floating clone that tracks the cursor mid-drag. */
-.shuffle-chip-ghost {
+/* The floating clone that tracks the cursor mid-drag. The original node is
+ * removed from the model on drag start, so there's no faint leftover. */
+.shuffle-ghost {
   position: fixed;
   pointer-events: none;
-  opacity: 0.92;
+  opacity: 0.95;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
   z-index: calc(var(--z-modal-top) + 2);
   cursor: grabbing;
@@ -159,7 +173,6 @@ body.shuffle-editor-active .column-mover {
   padding: 20px 22px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
 }
-.shuffle-compare-title { font-size: 1.05em; font-weight: 600; margin-bottom: 14px; }
 .shuffle-compare-cols { display: flex; gap: 16px; flex: 1; min-height: 0; }
 .shuffle-compare-col { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .shuffle-compare-label {
@@ -179,7 +192,7 @@ body.shuffle-editor-active .column-mover {
   border-radius: 8px;
   background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
-.shuffle-compare-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.shuffle-compare-btns { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }
 .shuffle-compare-btns button {
   font: inherit;
   font-size: 0.9em;
