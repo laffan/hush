@@ -178,7 +178,11 @@ function exitShuffleEditor() {
 /* ===== Node model ===== */
 
 function makeNode(text, where, x = 0, y = 0) {
-  return { id: ++nodeSeq, text, where, x, y, editing: false, el: null };
+  return {
+    id: ++nodeSeq, text, where, x, y,
+    editing: false, strike: false, comment: false,
+    el: null, textEl: null,
+  };
 }
 
 /* ===== Controller ===== */
@@ -220,11 +224,41 @@ function buildController(a) {
   }
 
   function makeNodeEl(node, variant) {
-    const node_el = el("div", `shuffle-node ${variant}`);
-    node_el.textContent = node.text;
-    node.el = node_el;
+    const wrap = el("div", `shuffle-node ${variant}`);
+    if (node.strike) wrap.classList.add("struck");
+    if (node.comment) wrap.classList.add("commented");
+    const textEl = el("div", "shuffle-node-text");
+    textEl.textContent = node.text;
+    wrap.appendChild(textEl);
+    wrap.appendChild(buildNodeTools(node));
+    node.el = wrap;
+    node.textEl = textEl;
     wireNode(node);
-    return node_el;
+    return wrap;
+  }
+
+  /** The `~~` (strike) and `%%` (comment) toggles that ride beside each
+   *  node. Struck nodes are dropped on close; commented nodes move beneath
+   *  the text as a `%%…%%` comment. */
+  function buildNodeTools(node) {
+    const tools = el("div", "shuffle-node-tools");
+    const mk = (label, flag, title) => {
+      const b = el("button", `shuffle-node-tool${node[flag] ? " active" : ""}`);
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener("mousedown", (e) => { e.stopPropagation(); e.preventDefault(); });
+      b.addEventListener("click", (e) => { e.stopPropagation(); toggleFlag(node, flag); });
+      return b;
+    };
+    tools.appendChild(mk("~~", "strike", "Strike out — removed on close"));
+    tools.appendChild(mk("%%", "comment", "Comment — moved beneath the text on close"));
+    return tools;
+  }
+
+  function toggleFlag(node, flag) {
+    pushSnapshot(serialize());
+    node[flag] = !node[flag];
+    render();
   }
 
   function render() {
@@ -249,9 +283,9 @@ function buildController(a) {
 
   /* ----- per-node interactions ----- */
   function wireNode(node) {
-    const node_el = node.el;
-    node_el.addEventListener("mousedown", (e) => {
+    node.el.addEventListener("mousedown", (e) => {
       if (e.button !== 0 || node.editing) return;
+      if (e.target.closest(".shuffle-node-tools")) return; // tool button, not a drag
       e.preventDefault(); // suppress text selection / native drag
       const preSnapshot = serialize();
       startDragGesture(e, {
@@ -265,32 +299,32 @@ function buildController(a) {
         onClick: (ev) => editNode(node, ev),
       });
     });
-    node_el.addEventListener("input", (e) => onNodeInput(node, e));
-    node_el.addEventListener("blur", () => commitEdit(node));
+    node.textEl.addEventListener("input", (e) => onNodeInput(node, e));
+    node.textEl.addEventListener("blur", () => commitEdit(node));
   }
 
   function editNode(node, ev) {
     node.editing = true;
     node.el.classList.add("editing");
-    node.el.contentEditable = "true";
-    node.el.focus();
-    placeCaretAtPoint(node.el, ev.clientX, ev.clientY);
+    node.textEl.contentEditable = "true";
+    node.textEl.focus();
+    placeCaretAtPoint(node.textEl, ev.clientX, ev.clientY);
   }
 
   function commitEdit(node) {
     if (!node.editing) return;
     node.editing = false;
     node.el.classList.remove("editing");
-    node.el.contentEditable = "false";
-    node.text = capitalizeFirst(node.el.textContent.trim());
+    node.textEl.contentEditable = "false";
+    node.text = capitalizeFirst(node.textEl.textContent.trim());
     if (!node.text) { removeNode(node); return; }
-    node.el.textContent = node.text;
+    node.textEl.textContent = node.text;
   }
 
   function onNodeInput(node, e) {
-    node.text = node.el.textContent;
+    node.text = node.textEl.textContent;
     if (e.data !== "." && e.data !== "!" && e.data !== "?") return;
-    const parts = splitIntoSentences(node.el.textContent);
+    const parts = splitIntoSentences(node.textEl.textContent);
     if (parts.length > 1) splitNode(node, parts);
   }
 
@@ -395,21 +429,32 @@ function buildController(a) {
     const colR = column.getBoundingClientRect();
     const colLeft = colR.left - cr.left;
     const colRight = colR.right - cr.left;
+    // Spread each side's stack so it sits vertically centred *around* the
+    // editor column rather than starting at the top of the window.
+    const colMidY = (colR.top - cr.top) + colR.height / 2;
     const leftCol = Math.max(8, colLeft - CHIP_WIDTH - MARGIN_GAP);
     const rightCol = clampX(colRight + MARGIN_GAP);
-    let ly = 24;
-    let ry = 24;
-    a.marginNodes.forEach((node, i) => {
-      const onLeft = i % 2 === 0;
-      node.x = onLeft ? leftCol : rightCol;
-      node.y = onLeft ? ly : ry;
-      if (!node.el) return;
-      node.el.style.left = `${node.x}px`;
-      node.el.style.top = `${node.y}px`;
-      const h = node.el.offsetHeight + CHIP_V_GAP;
-      if (onLeft) ly += h; else ry += h;
-    });
+    const leftNodes = [];
+    const rightNodes = [];
+    a.marginNodes.forEach((n, i) => (i % 2 === 0 ? leftNodes : rightNodes).push(n));
+    placeStack(leftNodes, leftCol, colMidY);
+    placeStack(rightNodes, rightCol, colMidY);
     growCanvas();
+  }
+
+  function placeStack(nodes, x, midY) {
+    let total = 0;
+    for (const n of nodes) if (n.el) total += n.el.offsetHeight + CHIP_V_GAP;
+    total = Math.max(0, total - CHIP_V_GAP);
+    let y = Math.max(24, midY - total / 2);
+    for (const n of nodes) {
+      n.x = x;
+      n.y = y;
+      if (!n.el) continue;
+      n.el.style.left = `${x}px`;
+      n.el.style.top = `${y}px`;
+      y += n.el.offsetHeight + CHIP_V_GAP;
+    }
   }
 
   function reflowOnResize() {
@@ -430,10 +475,19 @@ function buildController(a) {
   }
 
   /* ----- undo ----- */
+  function snapNode(n) {
+    return { text: n.text, strike: n.strike, comment: n.comment, x: n.x, y: n.y };
+  }
+  function nodeFromSnap(s, where) {
+    const n = makeNode(s.text, where, s.x || 0, s.y || 0);
+    n.strike = !!s.strike;
+    n.comment = !!s.comment;
+    return n;
+  }
   function serialize() {
     return {
-      editor: a.editorNodes.map((n) => ({ text: n.text })),
-      margin: a.marginNodes.map((n) => ({ text: n.text, x: n.x, y: n.y })),
+      editor: a.editorNodes.map(snapNode),
+      margin: a.marginNodes.map(snapNode),
     };
   }
   function pushSnapshot(snap) {
@@ -443,15 +497,31 @@ function buildController(a) {
   function undo() {
     const snap = a.history.pop();
     if (!snap) return;
-    a.editorNodes = snap.editor.map((s) => makeNode(s.text, "editor"));
-    a.marginNodes = snap.margin.map((s) => makeNode(s.text, "margin", s.x, s.y));
+    a.editorNodes = snap.editor.map((s) => nodeFromSnap(s, "editor"));
+    a.marginNodes = snap.margin.map((s) => nodeFromSnap(s, "margin"));
     render();
+  }
+
+  /** Assemble the text written back on accept: struck nodes are dropped,
+   *  the surviving column nodes join into prose, and every commented node
+   *  (column or margin) is appended beneath as a single `%%…%%` block. */
+  function buildResult() {
+    const main = a.editorNodes
+      .filter((n) => !n.strike && !n.comment)
+      .map((n) => n.text.trim()).filter(Boolean).join(" ");
+    const commented = [...a.editorNodes, ...a.marginNodes]
+      .filter((n) => !n.strike && n.comment)
+      .map((n) => n.text.trim()).filter(Boolean);
+    let out = main;
+    if (commented.length) {
+      out = (out ? `${out}\n\n` : "") + `%%\n${commented.join("\n")}\n%%`;
+    }
+    return out;
   }
 
   const ctrl = {
     render, layoutMargins, reflowOnResize, shuffleMargins, undo,
-    createEditorNodeAt, createMarginNodeAt,
-    editorText: () => a.editorNodes.map((n) => n.text).join(" ").trim(),
+    createEditorNodeAt, createMarginNodeAt, buildResult,
   };
   return ctrl;
 }
@@ -460,7 +530,7 @@ function buildController(a) {
 
 function beginClose() {
   if (!active || active.compare) return;
-  showCompare(active.payload.text, active.ctrl.editorText());
+  showCompare(active.payload.text, active.ctrl.buildResult());
 }
 
 function showCompare(originalText, newText) {

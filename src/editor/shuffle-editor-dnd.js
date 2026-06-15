@@ -29,10 +29,16 @@ function lowerFirst(str) {
   return s.slice(0, i) + s[i].toLowerCase() + s.slice(i + 1);
 }
 
-/** Drop a trailing run of concluding punctuation (+ any closing
- *  quotes/markup) from the end of a sentence. */
+/** Drop the concluding punctuation from the end of a sentence while
+ *  preserving any trailing closing quotes / brackets — so a quoted
+ *  sentence like `He said "hello."` becomes `He said "hello"` (the period
+ *  goes, the quote stays) rather than losing its closing quote. */
 function stripTrailingPunct(str) {
-  return String(str || "").replace(/[.!?]+["')\]}*_`]*\s*$/, "").trimEnd();
+  let s = String(str || "").trimEnd();
+  const closers = (s.match(/[")'’”»\]}*_`]+$/) || [""])[0];
+  let core = closers ? s.slice(0, s.length - closers.length) : s;
+  core = core.replace(/[.!?]+$/, "");
+  return (core + closers).trimEnd();
 }
 
 /** Merge `follower` onto the end of `target`: the target's concluding
@@ -58,7 +64,7 @@ export function splitIntoSentences(text) {
     while (i < line.length) {
       if (/[.!?]/.test(line[i])) {
         let j = i + 1;
-        while (j < line.length && /["')\]}*_`]/.test(line[j])) j++;
+        while (j < line.length && /["')\]}*_`’”»]/.test(line[j])) j++;
         if (j >= line.length || /\s/.test(line[j])) {
           while (j < line.length && /\s/.test(line[j])) j++;
           const s = line.slice(start, j).trim();

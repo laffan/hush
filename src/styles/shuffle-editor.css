@@ -66,13 +66,53 @@
 /* A sentence node. Shared base; column nodes flow full-width, margin nodes
  * are absolutely-placed light-blue chips. */
 .shuffle-node {
+  position: relative;
   box-sizing: border-box;
   line-height: 1.55;
   cursor: grab;
   user-select: none;
   outline: none;
 }
-.shuffle-node.editing { cursor: text; user-select: text; }
+.shuffle-node.editing { cursor: text; }
+.shuffle-node-text { outline: none; }
+.shuffle-node.editing .shuffle-node-text { user-select: text; cursor: text; }
+
+/* Struck nodes (removed on close) fade out with a line through them;
+ * commented nodes (moved beneath the text on close) dim + italicise. */
+.shuffle-node.struck .shuffle-node-text { text-decoration: line-through; opacity: 0.1; }
+.shuffle-node.commented .shuffle-node-text { opacity: 0.55; font-style: italic; }
+
+/* ~~ / %% toggles — revealed on hover, kept visible while active. */
+.shuffle-node-tools {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+.shuffle-node:hover .shuffle-node-tools,
+.shuffle-node.struck .shuffle-node-tools,
+.shuffle-node.commented .shuffle-node-tools { opacity: 1; }
+.shuffle-node-tool {
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  background: var(--bg);
+  color: var(--fg);
+  opacity: 0.6;
+  cursor: pointer;
+}
+.shuffle-node-tool:hover { opacity: 1; }
+.shuffle-node-tool.active {
+  opacity: 1;
+  border-color: var(--accent, #4a90d9);
+  background: color-mix(in srgb, var(--accent, #4a90d9) 22%, var(--bg));
+}
 
 .shuffle-node.in-editor {
   padding: 4px 8px;
