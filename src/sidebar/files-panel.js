@@ -244,6 +244,13 @@ export function createFilesPanel(container, state, hidePanel) {
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);
       if (!indicators) return row;
+      // The gutter row carries its pane square INLINE, right after the label,
+      // so it doesn't claim an extra line. Everything else gets the strip
+      // below the row via the tree-item-cell wrapper.
+      if (item.type === "notebook" && item.gutter) {
+        row.querySelector(".tree-item-name")?.after(indicators);
+        return row;
+      }
       const wrap = document.createElement("span");
       wrap.className = "tree-item-cell";
       wrap.append(row, indicators);

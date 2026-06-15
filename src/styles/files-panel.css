@@ -451,9 +451,11 @@
 
 /* The gutter notebook reads as a sub-entry of the doc directly above it:
    dimmed to 0.5 like the rest of the supplementary block (rule above), with
-   its filename slightly smaller than a doc filename. Its bracketed-notebook
-   icon (getIcon → typeIcons.gutter) lines the row up under the doc's own icon,
-   so no extra indent is needed. */
+   its filename slightly smaller than a doc filename and indented so the
+   project's doc-connector column stays clear on its left. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] > .sl-item-content .tree-item-row {
+  margin-left: 16px;
+}
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] > .sl-item-content .tree-item-row .tree-item-name {
   font-size: 0.9em;
 }
@@ -462,6 +464,44 @@
    padding (.sl-item default is 4px) so it reads as attached. */
 .sl-item[data-type="notebook"][data-gutter="true"] {
   padding-top: 2px;
+}
+
+/* Because the gutter sits between two joined docs (or under the last one),
+   the doc-connector I-beam can't span across it. Carry the connector through
+   the gutter row as a vertical stem at the same x (30px) so the joined-doc
+   column reads continuously alongside the indented gutter: up into the gap to
+   the doc above (always present), and — only when a doc follows — down into
+   the gap below. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"] {
+  position: relative;
+}
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"]::before {
+  content: "";
+  position: absolute;
+  left: 30px;
+  transform: translateX(-50%);
+  top: -8px;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"][data-gutter="true"]:has(+ .sl-item[data-type="document"])::before {
+  bottom: -8px;
+}
+
+/* Gutter pane square sits inline after the "Gutter" label (request: keep the
+   gutter to a single row). Static flow, vertically centred with the text. */
+.tree-pane-indicators-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.tree-pane-indicators-inline.dimmed {
+  opacity: 0.3;
 }
 
 /* "Use as Note" docs sort with notebooks under the joined buffer, so

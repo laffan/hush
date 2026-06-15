@@ -10,9 +10,9 @@
  */
 import { getPanesForContext, contextIdForFile } from "../pane/pane-manager.js";
 
-function buildStrip(ctxPanes, hidden) {
+function buildStrip(ctxPanes, hidden, inline) {
   const strip = document.createElement("span");
-  strip.className = "tree-pane-indicators" + (hidden ? " dimmed" : "");
+  strip.className = (inline ? "tree-pane-indicators-inline" : "tree-pane-indicators") + (hidden ? " dimmed" : "");
   for (const p of ctxPanes) {
     const cell = document.createElement("span");
     cell.className = "tree-pane-cell";
@@ -24,14 +24,15 @@ function buildStrip(ctxPanes, hidden) {
 
 export function paneIndicatorsFor(item, state) {
   if (!item.fileId) return null;
-  // A gutter notebook's pane lives in its paired doc's context, but we paint
-  // its indicator under the gutter ROW (below its label) so the sidebar reads
-  // doc → gutter → pane row, and the gutter keeps its own dropdown.
+  // A gutter notebook's pane lives in its paired doc's context. We paint its
+  // indicator INLINE on the gutter row (right after the "Gutter" label) so the
+  // gutter never claims an extra line in the tree. renderItem inserts it after
+  // the name rather than as a strip below.
   if (item.type === "notebook" && item.gutter) {
     const ctx = contextIdForFile(item.gutterForDoc, "document");
     const gPanes = getPanesForContext(ctx).filter((p) => p.gutter && p.fileId === item.fileId);
     if (!gPanes.length) return null;
-    return buildStrip(gPanes, !!(state.settings?.panesHiddenByContext || {})[ctx]);
+    return buildStrip(gPanes, !!(state.settings?.panesHiddenByContext || {})[ctx], true);
   }
   if (item.type !== "document" && item.type !== "notebook") return null;
   const ctx = contextIdForFile(item.fileId, item.type);
@@ -40,7 +41,7 @@ export function paneIndicatorsFor(item, state) {
   const ctxPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
   if (!ctxPanes.length) return null;
   const hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];
-  return buildStrip(ctxPanes, hidden);
+  return buildStrip(ctxPanes, hidden, false);
 }
 
 let _paneTooltipEl = null;
