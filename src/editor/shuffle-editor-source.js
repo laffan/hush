@@ -17,24 +17,33 @@ import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import { getActiveModeContext } from "../state/mode-context.js";
 import { getCanvasInstance } from "../notebook/notebook-bridge.js";
+import { panes, activePaneId } from "../pane/pane-state.js";
 
-/** Resolve the source surface to shuffle. A notebook with selected text
- *  shapes hands over their text; otherwise a doc / pane / stack hands over
- *  its active selection. Returns null when there's nothing to shuffle. */
+/** Resolve the source surface to shuffle. A focused doc surface (main
+ *  editor, any floating pane, or stack column) with a live selection wins
+ *  — even over a notebook canvas, since a doc pane can float above one.
+ *  Falling back to a notebook's selected text shapes. Returns null when
+ *  there's nothing to shuffle. */
 export function captureAnyShufflePayload(state) {
+  const doc = captureDocShufflePayload(state);
+  if (doc) return doc;
   if (state.currentNotebookFileId) return captureNotebookShufflePayload();
-  return captureDocShufflePayload(state);
+  return null;
 }
 
-/** Doc surfaces: a non-empty selection in the active mode context
- *  (focused pane / stack column) or the main editor. */
+/** Doc surfaces: the first non-empty CodeMirror selection among the active
+ *  mode context, every open pane (active one first), and — unless a
+ *  notebook is the main surface — the main editor. Scanning all panes
+ *  keeps it working even when the active-pane bookkeeping is stale (e.g.
+ *  after the command palette took focus). */
 function captureDocShufflePayload(state) {
+  const seen = new Set();
   const candidates = [];
-  const ctx = getActiveModeContext(state);
-  if (ctx?.view) candidates.push(ctx.view);
-  if (state.editor?.view && !candidates.includes(state.editor.view)) {
-    candidates.push(state.editor.view);
-  }
+  const add = (v) => { if (v && !seen.has(v)) { seen.add(v); candidates.push(v); } };
+  add(getActiveModeContext(state)?.view);
+  if (activePaneId) add(panes.get(activePaneId)?.editor?.view);
+  for (const [, p] of panes) add(p?.editor?.view);
+  if (!state.currentNotebookFileId) add(state.editor?.view);
   for (const v of candidates) {
     try {
       const sel = v.state.selection.main;
