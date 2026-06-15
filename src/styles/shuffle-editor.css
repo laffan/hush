@@ -145,15 +145,23 @@
   border-color: color-mix(in srgb, #4a90d9 80%, var(--bg));
 }
 
-/* The floating clone that tracks the cursor mid-drag. The original node is
- * removed from the model on drag start, so there's no faint leftover. */
+/* The translucent clone that tracks the cursor mid-drag, keeping the grab
+ * relationship. A full-opacity drop preview shows the landing spot. */
 .shuffle-ghost {
   position: fixed;
   pointer-events: none;
-  opacity: 0.95;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  opacity: 0.5;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
   z-index: calc(var(--z-modal-top) + 2);
   cursor: grabbing;
+}
+
+/* Full-opacity preview of where the dragged sentence would land in the
+ * column. Lives in the flow at the computed insertion index. */
+.shuffle-drop-preview {
+  pointer-events: none;
+  background: color-mix(in srgb, #4a90d9 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent, #4a90d9);
 }
 
 /* Bottom toolbar — Shuffle pinned left, Done pinned right. */

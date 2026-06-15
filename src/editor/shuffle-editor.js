@@ -29,12 +29,14 @@
  * layer can be added later without reworking capture / write-back.
  */
 
-import { EditorView } from "@codemirror/view";
-import { EditorSelection } from "@codemirror/state";
-import { getActiveModeContext } from "../state/mode-context.js";
 import {
   splitIntoSentences, capitalizeFirst, combineInto, startDragGesture,
 } from "./shuffle-editor-dnd.js";
+import {
+  captureAnyShufflePayload, shuffleSelectionAvailable, writeBackShuffle,
+} from "./shuffle-editor-source.js";
+
+export { shuffleSelectionAvailable };
 
 const CHIP_WIDTH = 280; // px — the "300px wrapped" margin form (incl. padding)
 const MARGIN_GAP = 16;
@@ -50,37 +52,7 @@ export function initShuffleEditor(state) {
   });
 }
 
-/* ===== Capture / availability (mirrors Selection Focus) ===== */
-
-/** Hunt for an editor surface with a non-empty selection and return the
- *  payload the overlay mounts against. Priority: the active mode context
- *  (focused pane / stack column) > the main editor. Returns null when
- *  nothing is selected. */
-export function captureShufflePayload(state) {
-  const candidates = [];
-  const ctx = getActiveModeContext(state);
-  if (ctx?.view) candidates.push(ctx.view);
-  if (state.editor?.view && !candidates.includes(state.editor.view)) {
-    candidates.push(state.editor.view);
-  }
-  for (const v of candidates) {
-    try {
-      const sel = v.state.selection.main;
-      if (sel.empty) continue;
-      const text = v.state.sliceDoc(sel.from, sel.to);
-      if (!text.trim()) continue;
-      const rect = (v.contentDOM || v.dom).getBoundingClientRect();
-      const columnWidth = Math.max(360, Math.round(rect.width));
-      return { sourceView: v, from: sel.from, to: sel.to, text, columnWidth };
-    } catch (_) { /* try next candidate */ }
-  }
-  return null;
-}
-
-/** Palette gate — the Shuffle command only shows with a live selection. */
-export function shuffleSelectionAvailable(state) {
-  return !!captureShufflePayload(state);
-}
+/* ===== Open ===== */
 
 /** Open the Shuffle Editor on the current selection. `config` picks the
  *  start layout: "explode" (every sentence in the margins — the default),
@@ -88,7 +60,7 @@ export function shuffleSelectionAvailable(state) {
  *  "list-shuffle" (in the column, shuffled). Returns false (so the caller
  *  can fall through) when there's nothing selected. */
 export function openShuffleEditor(state, config = "explode") {
-  const payload = captureShufflePayload(state);
+  const payload = captureAnyShufflePayload(state);
   if (!payload) return false;
   payload.config = config;
   state.toggleShuffleEditor(payload);
@@ -107,6 +79,10 @@ function enterShuffleEditor(state) {
   const marginLayer = el("div", "shuffle-margin-layer");
   const column = el("div", "shuffle-editor-column");
   column.style.width = `${Math.min(payload.columnWidth, 900)}px`;
+  // Match the source editor's text size (margin chips stay relative).
+  const fontPx = payload.fontSizePx || 16;
+  column.style.fontSize = `${fontPx}px`;
+  marginLayer.style.fontSize = `${fontPx}px`;
   canvas.appendChild(marginLayer);
   canvas.appendChild(column);
   overlay.appendChild(canvas);
@@ -123,6 +99,8 @@ function enterShuffleEditor(state) {
     marginNodes: [],    // loose chips in the margins
     history: [],        // structural-undo snapshots
     ghost: null,
+    preview: null,      // live drop-position preview shown over the column
+    dragText: "",       // text of the node being dragged
     dragGrab: { x: CHIP_WIDTH / 2, y: 16 }, // grab offset for the active drag
   };
   const ctrl = buildController(active);
@@ -315,11 +293,12 @@ function buildController(a) {
         onBegin: () => {
           pushSnapshot(preSnapshot);
           a.dragGrab = grab;
+          a.dragText = node.text;
           detachNode(node);              // remove from model — no faint leftover
           a.ghost = makeGhost(node.text);
         },
-        onMove: (ev) => positionGhost(ev.clientX, ev.clientY),
-        onDrop: (ev) => { removeGhost(); dropNode(node, ev.clientX, ev.clientY); },
+        onMove: (ev) => { positionGhost(ev.clientX, ev.clientY); updateDropPreview(ev.clientX, ev.clientY); },
+        onDrop: (ev) => { removePreview(); removeGhost(); dropNode(node, ev.clientX, ev.clientY); },
         onClick: (ev) => editNode(node, ev),
       });
     });
@@ -441,22 +420,36 @@ function buildController(a) {
     document.body.appendChild(g);
     return g;
   }
-  /** Position the drag ghost relative to the cursor based on context. The
-   *  two relationships are tracked across the whole drag so moving back and
-   *  forth over the editor boundary switches between them live:
-   *   • over the editor — park the ghost below-and-right of the cursor so
-   *     the insertion point stays visible;
-   *   • in the margins — keep the exact grab offset so it doesn't jump. */
+  /** The ghost always keeps the exact grab relationship (like a margin
+   *  drag) so it never jumps. Over the column, a separate full-opacity drop
+   *  preview (see updateDropPreview) shows where the sentence would land. */
   function positionGhost(cx, cy) {
     const g = a.ghost;
     if (!g) return;
-    if (pointInColumn(cx, cy)) {
-      g.style.left = `${cx + 14}px`;
-      g.style.top = `${cy + 18}px`;
-    } else {
-      g.style.left = `${cx - a.dragGrab.x}px`;
-      g.style.top = `${cy - a.dragGrab.y}px`;
+    g.style.left = `${cx - a.dragGrab.x}px`;
+    g.style.top = `${cy - a.dragGrab.y}px`;
+  }
+
+  /** While the cursor is over the column, show a full-opacity preview of
+   *  the dragged sentence at the position it would drop into, so the user
+   *  can see the result before releasing. Hidden over the margins. */
+  function updateDropPreview(cx, cy) {
+    if (!pointInColumn(cx, cy)) { removePreview(); return; }
+    if (!a.preview) {
+      a.preview = el("div", "shuffle-node in-editor shuffle-drop-preview");
+      const textEl = el("div", "shuffle-node-text");
+      textEl.textContent = a.dragText;
+      a.preview.appendChild(textEl);
     }
+    // Detach first so the index is measured against the real node layout.
+    if (a.preview.parentNode) a.preview.remove();
+    const idx = editorIndexAt(cy);
+    const ref = a.editorNodes[idx]?.el || null;
+    if (ref) column.insertBefore(a.preview, ref);
+    else column.appendChild(a.preview);
+  }
+  function removePreview() {
+    if (a.preview) { a.preview.remove(); a.preview = null; }
   }
   function removeGhost() { if (a.ghost) { a.ghost.remove(); a.ghost = null; } }
 
@@ -614,25 +607,8 @@ function dismissCompare() {
 function finalize(content) {
   if (!active) return;
   const { state, payload } = active;
-  if (typeof content === "string") writeBack(payload, content);
+  if (typeof content === "string") writeBackShuffle(payload, content);
   state.toggleShuffleEditor(); // tears the overlay down via the listener
-}
-
-function writeBack(payload, content) {
-  try {
-    const src = payload.sourceView;
-    if (!src || !src.state) return;
-    const docLen = src.state.doc.length;
-    const from = Math.max(0, Math.min(payload.from, docLen));
-    const to = Math.max(from, Math.min(payload.to, docLen));
-    const caret = from + content.length;
-    src.dispatch({
-      changes: { from, to, insert: content },
-      selection: EditorSelection.range(caret, caret),
-    });
-    src.dispatch({ effects: EditorView.scrollIntoView(caret, { y: "center" }) });
-    src.focus();
-  } catch (_) { /* source went away mid-shuffle */ }
 }
 
 /* ===== Small DOM helpers ===== */
