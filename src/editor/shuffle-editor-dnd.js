@@ -177,6 +177,41 @@ export function fakeCenterEvent(node_el) {
   return { clientX: r.left + 12, clientY: r.top + r.height / 2 };
 }
 
+function rectsOverlap(p, q, pad) {
+  return !(p.x + p.w + pad <= q.x || q.x + q.w + pad <= p.x ||
+           p.y + p.h + pad <= q.y || q.y + q.h + pad <= p.y);
+}
+
+/** Pick a scattered position somewhere around the margins (either gutter,
+ *  anywhere down the canvas) that avoids overlapping the existing chips.
+ *  `geo`: { canvasW, canvasH, colLeft, colRight, chipW, gap, existing,
+ *  estH }. Tries random candidates, returns the first clash-free one (or
+ *  the least-overlapping fallback). */
+export function findFreeMarginSpot(geo) {
+  const estH = geo.estH || 64;
+  const gutters = [];
+  const leftMax = geo.colLeft - geo.chipW - geo.gap;
+  if (leftMax >= 8) gutters.push([8, leftMax]);
+  const rightMin = geo.colRight + geo.gap;
+  const rightMax = geo.canvasW - geo.chipW - 8;
+  if (rightMax >= rightMin) gutters.push([rightMin, rightMax]);
+  if (!gutters.length) gutters.push([8, Math.max(8, geo.canvasW - geo.chipW - 8)]);
+  const yMax = Math.max(24, geo.canvasH - estH - 24);
+  let best = null;
+  let bestScore = Infinity;
+  for (let i = 0; i < 60; i++) {
+    const [lo, hi] = gutters[Math.floor(Math.random() * gutters.length)];
+    const x = lo + Math.random() * Math.max(0, hi - lo);
+    const y = 24 + Math.random() * Math.max(0, yMax - 24);
+    const cand = { x, y, w: geo.chipW, h: estH };
+    let score = 0;
+    for (const r of geo.existing) if (rectsOverlap(cand, r, 8)) score++;
+    if (score === 0) return { x, y };
+    if (score < bestScore) { bestScore = score; best = cand; }
+  }
+  return best ? { x: best.x, y: best.y } : { x: gutters[0][0], y: 24 };
+}
+
 /** Build the close-time compare modal (original vs shuffled). Returns the
  *  backdrop element; the caller mounts it and tracks it for dismissal. */
 export function buildCompareModal(originalText, newText, handlers) {

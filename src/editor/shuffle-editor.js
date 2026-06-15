@@ -32,6 +32,7 @@
 import {
   splitIntoSentences, capitalizeFirst, combineInto, startDragGesture,
   buildToolbar, placeCaretAtPoint, fakeCenterEvent, buildCompareModal,
+  findFreeMarginSpot,
 } from "./shuffle-editor-dnd.js";
 import {
   captureAnyShufflePayload, shuffleSelectionAvailable, writeBackShuffle,
@@ -154,8 +155,7 @@ function enterShuffleEditor(state) {
       ctrl.undo();
       return;
     }
-    // The shortcuts below only apply when no node is being edited and no
-    // compare modal is open.
+    // Below: only when not editing a node and no compare modal is open.
     if (active.compare || document.activeElement?.isContentEditable) return;
 
     // Hover shortcuts (no modifiers): act on the node under the pointer.
@@ -166,8 +166,7 @@ function enterShuffleEditor(state) {
       if (k === "s") { e.preventDefault(); ctrl.toggleNodeFlag(active.hoverNode, "strike"); return; }
       if (k === "c") { e.preventDefault(); ctrl.toggleNodeFlag(active.hoverNode, "comment"); return; }
     }
-    // Column arrow nav: cmd+↑/↓ shifts the focused sentence, shift+↑/↓ moves
-    // the focus.
+    // Column arrow nav: cmd shifts the focused sentence, shift moves focus.
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       const dir = e.key === "ArrowUp" ? -1 : 1;
       if (meta) { e.preventDefault(); ctrl.shiftFocusedSentence(dir); return; }
@@ -308,8 +307,7 @@ function buildController(a) {
       if (e.target.closest(".shuffle-node-tools")) return; // tool button, not a drag
       e.preventDefault(); // suppress text selection / native drag
       const preSnapshot = serialize();
-      // Capture where inside the node the user grabbed (clamped to the
-      // chip's width) so a margin drag keeps the exact grab relationship.
+      // Grab offset (clamped to chip width) so a margin drag never jumps.
       const rect = node.el.getBoundingClientRect();
       const grab = {
         x: Math.max(0, Math.min(CHIP_WIDTH, e.clientX - rect.left)),
@@ -449,10 +447,8 @@ function buildController(a) {
     document.body.appendChild(g);
     return g;
   }
-  /** The ghost parks below-and-right of the cursor while over the column
-   *  (so it doesn't cover the drop preview) and keeps the exact grab
-   *  relationship over the margins (no jump). Both relationships are
-   *  tracked live, so crossing the boundary mid-drag switches between them. */
+  /** Ghost parks below-and-right of the cursor over the column (clear of
+   *  the drop preview) and keeps the exact grab offset over the margins. */
   function positionGhost(cx, cy) {
     const g = a.ghost;
     if (!g) return;
@@ -465,9 +461,8 @@ function buildController(a) {
     }
   }
 
-  /** While the cursor is over the column, show a full-opacity preview of
-   *  the dragged sentence at the position it would drop into, so the user
-   *  can see the result before releasing. Hidden over the margins. */
+  /** Over the column, show a full-opacity preview of the dragged sentence
+   *  at the position it would drop into. Hidden over the margins. */
   function updateDropPreview(cx, cy) {
     if (!pointInColumn(cx, cy)) { removePreview(); return; }
     if (!a.preview) {
@@ -567,9 +562,8 @@ function buildController(a) {
     render();
   }
 
-  /** Assemble the text written back on accept: struck nodes are dropped,
-   *  the surviving column nodes join into prose, and every commented node
-   *  (column or margin) is appended beneath as a single `%%…%%` block. */
+  /** Text written back on accept: struck nodes dropped, surviving column
+   *  nodes joined into prose, commented nodes appended in a `%%…%%` block. */
   function buildResult() {
     const main = a.editorNodes
       .filter((n) => !n.strike && !n.comment)
@@ -586,13 +580,6 @@ function buildController(a) {
 
   /* ----- keyboard-driven ops ----- */
 
-  /** x of the left margin column, just outside the editor. */
-  function marginLeftX() {
-    const cr = canvasRect();
-    const colLeft = column.getBoundingClientRect().left - cr.left;
-    return Math.max(8, colLeft - CHIP_WIDTH - MARGIN_GAP);
-  }
-
   /** `a` over a hovered node — move it into the column (appended at end). */
   function moveNodeToEditor(node) {
     if (!node || node.where === "editor") return;
@@ -605,20 +592,34 @@ function buildController(a) {
     node.el?.scrollIntoView({ block: "nearest" });
   }
 
-  /** `d` over a hovered node — move it out to the margin at its current
-   *  vertical position. */
+  /** `d` over a hovered node — scatter it out to a free spot in the margins
+   *  (avoiding overlap with the existing chips). */
   function moveNodeToMargin(node) {
     if (!node || node.where === "margin") return;
-    const rect = node.el?.getBoundingClientRect();
-    const cr = canvasRect();
     pushSnapshot(serialize());
     a.editorNodes = a.editorNodes.filter((n) => n !== node);
     if (a.focusNode === node) a.focusNode = a.editorNodes[0] || null;
     node.where = "margin";
-    node.x = clampX(marginLeftX());
-    node.y = rect ? Math.max(8, rect.top - cr.top) : 24;
+    const spot = freeMarginSpot();
+    node.x = clampX(spot.x);
+    node.y = Math.max(8, spot.y);
     a.marginNodes.push(node);
     render();
+  }
+
+  /** Geometry + existing chip rects → a scattered, non-overlapping spot. */
+  function freeMarginSpot() {
+    const cr = canvasRect();
+    const colR = column.getBoundingClientRect();
+    const existing = a.marginNodes.filter((n) => n.el).map((n) => ({
+      x: n.x, y: n.y, w: n.el.offsetWidth || CHIP_WIDTH, h: n.el.offsetHeight || 64,
+    }));
+    return findFreeMarginSpot({
+      canvasW: canvas.clientWidth,
+      canvasH: Math.max(window.innerHeight, canvas.clientHeight),
+      colLeft: colR.left - cr.left, colRight: colR.right - cr.left,
+      chipW: CHIP_WIDTH, gap: MARGIN_GAP, existing,
+    });
   }
 
   function applyFocusClass() {
