@@ -69,6 +69,10 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── image-preview.js
 │   ├── image-paste.js
 │   ├── zen-focus.js
+│   ├── shuffle-editor.js             (Shuffle Editor: fullscreen sentence-recombination overlay — node model, lifecycle, drag/drop, layout, compare)
+│   ├── shuffle-editor-dnd.js         (sentence tokenizing, capitalize/combine rules, drag-gesture util, toolbar/caret/compare/free-spot helpers)
+│   ├── shuffle-editor-source.js      (cross-surface capture + write-back: doc selection / notebook text shapes)
+│   ├── shuffle-editor-keys.js        (keydown handler: Esc, undo, hover a/d/s/c, cmd/shift arrow nav)
 │   ├── tabs.js                        (`---Tab name---` + nested `---a---/---b---` parser + joinTabs)
 │   ├── google-docs/                   (Phase 1 paste/copy bridge — see README)
 │   │   ├── html-to-markdown.js
@@ -603,6 +607,20 @@ Fullscreen distraction-free overlay activated by `Cmd+Shift+S`. Available in fou
 **Settings.** `zenFocusFontSize` (Settings > Editor > Zen Focus, default 30 px), `zenFocusWindow` (1 / 3 / 5 / 7, default 1 — surfaced both as a `<select>` in Settings > Editor > Zen Focus and as a chip group in the cmd-held pill, see below) and `shortcutZenFocus` (Settings > Shortcuts > General, default `Mod+Shift+S`). Surrounding-sentence dim uses the user's existing `focusModeOpacity` slider — Zen reads through to it rather than introducing a parallel knob.
 
 **Cmd-held quick controls (`cmd-held-sliders.js`).** A separate module mounts a caret + horizontal pill at the bottom-centre of the viewport that's gated to Zen (`body.zen-focus-active`) and revealed by `body.cmd-held`. The pill carries three groups — Dim opacity (writes `focusModeOpacity`), Font size (writes `zenFocusFontSize`), and Window (writes `zenFocusWindow`, rendered as 1 / 3 / 5 / 7 chips with an active-state circle outline). Every write goes through `state.updateSettings`, so the in-editor pill and the Settings window are reading and writing the same keys — no parallel state to keep in sync. The state's own `settings-changed` listener reflects external updates back into the pill so opening Settings during Zen and tweaking values there updates the pill in lockstep.
+
+### Shuffle Editor (`editor/shuffle-editor.js` + `-dnd.js` / `-source.js` / `-keys.js`, `styles/shuffle-editor.css`)
+
+A fullscreen revision mode that breaks a selection into sentences and lets the user recombine them. Like Zen it mounts an overlay at `--z-modal-top` and like Selection Focus it captures a selection and writes the chosen result back; unlike either, the editing surface is **not** CodeMirror. It's a plain-DOM **node model** so sentences can be individually dragged, reordered, struck, commented, and edited.
+
+**Standalone, transient mode.** `state.shuffleEditor` + `state._shuffleEditorPayload` mirror Selection Focus (`state-modes.js` `toggleShuffleEditor`; `initShuffleEditor` listens for `shuffle-editor-changed`). Nothing is persisted yet — the payload is built fresh each open — but capture/write-back are isolated in `shuffle-editor-source.js` so a saved-state layer can be added without touching the lifecycle. Three command-palette entries pass a `config` (`explode` / `list-shuffle` / `list-current`), all gated on `shuffleSelectionAvailable`.
+
+**Cross-surface capture (`shuffle-editor-source.js`).** `captureAnyShufflePayload` prefers a focused doc surface (it scans the active mode context, then **every** open pane via `pane-state.js`, then the main editor unless a notebook is the main surface — so it survives the command palette stealing focus) and only falls back to a notebook's selected text shapes. The payload carries `kind: "doc" | "notebook"`, the source view + range (doc) or canvas state + drop point (notebook), plus `columnWidth` / `fontSizePx` so the overlay column matches the source. `writeBackShuffle` dispatches a single replacement transaction (doc) or calls `addTextShapeAtPosition` to drop a new shape near the selection (notebook — originals untouched).
+
+**Node model + rendering (`shuffle-editor.js`).** Two arrays — `editorNodes` (ordered column list) and `marginNodes` (loose chips) — drive a full re-`render()` on every structural change. Each node is `{ id, text, where, x, y, strike, comment, editing, el, textEl }`; `el` is rebuilt per render (wrapper + `.shuffle-node-text` editable + `~~`/`%%` tool buttons), so listeners re-wire each pass. The column is gap/node/gap so a drop index maps to a gap; margins are absolutely positioned and laid out vertically centred around the column (`layoutMargins`/`placeStack`). Undo is snapshot-based: `serialize()` captures text + flags + positions, structural ops `pushSnapshot` before mutating, and `Cmd+Z` (intercepted while editing yields to native text undo) restores.
+
+**Drag + drop (`shuffle-editor-dnd.js`).** `startDragGesture` is a threshold-based click-vs-drag helper. On drag start the node detaches from the model (no faint leftover) and a translucent ghost follows the cursor — grab-offset over the margins, below-right over the column where a full-opacity `.shuffle-drop-preview` shows the landing index instead. Dropping onto another margin chip combines them (`combineInto` strips the target's concluding punctuation, preserving trailing quotes, and lowercases the follower). `splitIntoSentences` divides a node on concluding punctuation; `findFreeMarginSpot` scatters the `d` shortcut's node to a non-overlapping margin position.
+
+**Keyboard (`shuffle-editor-keys.js`).** A capture-phase keydown handles Esc (close / dismiss compare), undo, hover-or-focus `a`/`d`/`s`/`c` (hover wins), and `Cmd`/`Shift`+↑/↓ column nav. Arrow nav works mid-edit: it commits the edited node, runs the op (cmd = reorder the focused sentence, shift = move focus), and re-enters edit so typing flows on. **Done** opens a compare modal (original vs the assembled result — struck nodes dropped, commented nodes appended in one `%%…%%` block); **Cancel** closes without writing back.
 
 ### Find & Replace (`editor/find-replace.js`, `editor/quick-find.js`, `sidebar/find-panel.js`, `sidebar/find-panel-search.js`, `sidebar/find-panel-sources.js`, `editor/find-decorations.js`)
 
