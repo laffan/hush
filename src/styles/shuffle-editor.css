@@ -1,0 +1,192 @@
+/* Shuffle Editor — fullscreen revision surface. A bounded CodeMirror sits
+ * centred in a vertically-scrolling canvas; sentence chips live in the
+ * margins around it. Sits at the same z-layer as Zen / Selection Focus so
+ * every other piece of chrome disappears behind its background. */
+
+.shuffle-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-top);
+  background: var(--bg);
+  color: var(--fg);
+  overflow-x: hidden;
+  overflow-y: auto;
+  animation: shuffle-editor-fade-in 200ms ease-out;
+}
+
+@keyframes shuffle-editor-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* The scrollable world: full width, grows tall enough to hold the editor
+ * plus every margin chip (min-height driven inline by shuffle-editor.js). */
+.shuffle-editor-canvas {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+}
+
+/* The center editor — a light boundary marks where dropped sentences
+ * reflow as normal text. Centred horizontally; width set inline from the
+ * captured column width. */
+.shuffle-editor-stage {
+  margin: 48px auto;
+  min-height: 320px;
+  max-width: calc(100% - 48px);
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  border-radius: 8px;
+  padding: 24px 28px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+.shuffle-editor-stage .cm-editor,
+.shuffle-editor-stage .cm-editor.cm-focused {
+  width: 100%;
+  background: transparent;
+  outline: none;
+  border: none;
+}
+.shuffle-editor-stage .cm-scroller {
+  line-height: 1.6;
+  scrollbar-width: none;
+}
+.shuffle-editor-stage .cm-scroller::-webkit-scrollbar { display: none; }
+
+/* A sentence under the pointer inside the editor highlights so the user
+ * knows it can be dragged. */
+.shuffle-sentence-hover {
+  background: color-mix(in srgb, var(--accent, #4a90d9) 22%, transparent);
+  border-radius: 3px;
+  cursor: grab;
+}
+
+/* Margin chips — the "300px wrapped" form a sentence takes outside the
+ * editor. Absolutely positioned within the canvas (left/top set inline). */
+.shuffle-chip {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  color: var(--fg);
+  font-size: 0.92em;
+  line-height: 1.45;
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+.shuffle-chip:hover {
+  border-color: var(--accent, #4a90d9);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+.shuffle-chip.editing {
+  cursor: text;
+  user-select: text;
+  border-color: var(--accent, #4a90d9);
+}
+.shuffle-chip.dragging { opacity: 0.25; }
+
+/* The floating clone that tracks the cursor mid-drag. */
+.shuffle-chip-ghost {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0.92;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  z-index: calc(var(--z-modal-top) + 2);
+  cursor: grabbing;
+}
+
+/* Bottom toolbar — Shuffle pinned left, Done pinned right. */
+.shuffle-editor-toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 20px;
+  pointer-events: none;
+  z-index: calc(var(--z-modal-top) + 1);
+}
+.shuffle-editor-btn {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 0.9em;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  color: var(--fg);
+  cursor: pointer;
+}
+.shuffle-editor-btn:hover { border-color: var(--accent, #4a90d9); }
+
+/* Hide the same floating chrome Zen / Selection Focus hide. */
+body.shuffle-editor-active .ratchet-timer,
+body.shuffle-editor-active .word-count-display,
+body.shuffle-editor-active .sidebar-floating-toggle,
+body.shuffle-editor-active .typewriter-boundary,
+body.shuffle-editor-active .column-resizer,
+body.shuffle-editor-active .column-mover {
+  display: none !important;
+}
+
+/* Compare modal — original beside shuffled on close. */
+.shuffle-compare-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal-top) + 3);
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.shuffle-compare-modal {
+  width: min(900px, 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+.shuffle-compare-title { font-size: 1.05em; font-weight: 600; margin-bottom: 14px; }
+.shuffle-compare-cols { display: flex; gap: 16px; flex: 1; min-height: 0; }
+.shuffle-compare-col { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.shuffle-compare-label {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  margin-bottom: 6px;
+}
+.shuffle-compare-text {
+  flex: 1;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.55;
+  padding: 12px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.25));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+.shuffle-compare-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.shuffle-compare-btns button {
+  font: inherit;
+  font-size: 0.9em;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  color: var(--fg);
+  cursor: pointer;
+}
+.shuffle-compare-keep-shuffled {
+  border-color: var(--accent, #4a90d9) !important;
+  background: color-mix(in srgb, var(--accent, #4a90d9) 18%, var(--bg)) !important;
+}

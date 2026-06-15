@@ -101,6 +101,10 @@ export class AppState {
     // is non-empty. Stays at the editor's font size (unlike Zen) but
     // hides every other piece of chrome (like Zen).
     this.selectionFocus = false;
+    // Shuffle Editor — a fullscreen revision mode that breaks the active
+    // selection into draggable sentence chips. Transient like Selection
+    // Focus (payload staged on `_shuffleEditorPayload`); not persisted yet.
+    this.shuffleEditor = false;
     this.isFullscreen = false;
     // Doc-only Proofread mode (harper-core via the `check_grammar`
     // Tauri command). Intentionally NOT persisted between sessions —
@@ -669,6 +673,7 @@ export class AppState {
   toggleFocus() { _modes.toggleFocus(this); }
   toggleZenFocus() { _modes.toggleZenFocus(this); }
   toggleSelectionFocus(payload) { _modes.toggleSelectionFocus(this, payload); }
+  toggleShuffleEditor(payload) { _modes.toggleShuffleEditor(this, payload); }
   toggleFullscreen() { _modes.toggleFullscreen(this); }
 
   // Event system

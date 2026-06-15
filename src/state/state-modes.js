@@ -82,6 +82,23 @@ export function toggleSelectionFocus(state, payload) {
   state.emit("selection-focus-changed");
 }
 
+/** Toggle the Shuffle Editor. Entry carries a `payload` captured from the
+ *  active editor selection (`{ sourceView, from, to, text, columnWidth }`),
+ *  staged on `state._shuffleEditorPayload`; exit clears it. The view-side
+ *  handler (shuffle-editor.js) listens for `shuffle-editor-changed`. */
+export function toggleShuffleEditor(state, payload) {
+  if (state.shuffleEditor) {
+    state.shuffleEditor = false;
+    state._shuffleEditorPayload = null;
+  } else {
+    if (!payload || !payload.text) return; // nothing to shuffle
+    state.shuffleEditor = true;
+    state._shuffleEditorPayload = payload;
+  }
+  state.emit("mode-changed");
+  state.emit("shuffle-editor-changed");
+}
+
 export function toggleFullscreen(state) {
   state.isFullscreen = !state.isFullscreen;
   state.emit("fullscreen-changed");

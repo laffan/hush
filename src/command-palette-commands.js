@@ -51,6 +51,7 @@ import searchRaw from "./sidebar/sidebar_icons/search.svg?raw";
 import expandRaw from "./sidebar/sidebar_icons/expand.svg?raw";
 import { typeIcons } from "./sidebar/files-panel-shared.js";
 import { getActiveModeContext } from "./state/mode-context.js";
+import { openShuffleEditor, shuffleSelectionAvailable } from "./editor/shuffle-editor.js";
 import {
   foldCurrentSection, unfoldCurrentSection, foldSelection,
   foldAllSections, unfoldAllSections, foldAllAtLevel,
@@ -132,6 +133,8 @@ const icons = {
   // Chevron-down = collapse a section; chevron-right = expand it back.
   fold: `<svg viewBox="0 0 24 24"><path d="M6 9 L12 15 L18 9"/></svg>`,
   unfold: `<svg viewBox="0 0 24 24"><path d="M9 6 L15 12 L9 18"/></svg>`,
+  // Two crossing arrows — the standard "shuffle" glyph.
+  shuffle: `<svg viewBox="0 0 24 24"><path d="M3 7 H7 L17 17 H21 M17 7 H21 M3 17 H7 L11 13 M14 10 L17 7 M18 4 L21 7 L18 10 M18 14 L21 17 L18 20"/></svg>`,
 };
 
 /** Build the per-style "Use Style: <name>" command rows. Mirrors the
@@ -388,6 +391,11 @@ function buildCommands(state) {
       action: (s) => s.toggleFocus() },
     { id: "zen", label: "Zen Focus", icon: icons.focus, shortcutKey: "shortcutZenFocus", ctx: "shared",
       action: (s) => s.toggleZenFocus() },
+    // Sentence mode only for now; word / paragraph are planned but not yet
+    // surfaced. Shown only when there's a live selection to break apart.
+    { id: "shuffle-sentences", label: "Shuffle Editor: Sentences", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !shuffleSelectionAvailable(s),
+      action: (s) => openShuffleEditor(s) },
     { id: "word-count", label: "Toggle word count", icon: null, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
       action: async (s) => { const { toggleWordCount } = await import("./editor/plugins/word-count.js"); toggleWordCount(s); } },
     { id: "outline", label: "Outline view", icon: null, shortcutKey: "shortcutToggleOutline", ctx: "doc",

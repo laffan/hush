@@ -9,6 +9,7 @@ import { resolveStyleForAppearance } from "./sidebar/styles-panel.js";
 import { setupFileDrop } from "./editor/file-drop.js";
 import { initZenFocus } from "./editor/zen-focus.js";
 import { initSelectionFocus } from "./editor/selection-focus.js";
+import { initShuffleEditor } from "./editor/shuffle-editor.js";
 import { dispatchDomShortcut, matchesDomEvent } from "./shortcuts.js";
 import { buildEditorCommands } from "./editor/commands.js";
 import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
@@ -228,6 +229,7 @@ async function init() {
   setupFileDrop(state);
   initZenFocus(state);
   initSelectionFocus(state);
+  initShuffleEditor(state);
   // Listing view shown when 2+ docs are multi-selected in the sidebar.
   import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
