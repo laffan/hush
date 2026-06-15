@@ -2,12 +2,18 @@ import type { Bounds, Camera, ImageShape, SelectionBox, Shape } from "./types";
 import type { CanvasTheme } from "./themes";
 import { getShapeBounds } from "./utils";
 
+/** Inset of the shadow-header text from the pane's left edge: 15px to the
+ *  right of the gutter's red orientation rule (which sits at 20px). The
+ *  headers are still fixed in screen space (horizontal pan doesn't move them)
+ *  even though the rule pans with the canvas — that relationship is expected
+ *  to change later. */
+const SHADOW_HEADER_X = 35;
+
 /** Draw faded doc headings inside a gutter pane. Drawn in screen space
  *  with manual vertical offset (cameraY) so the canvas scroll carries
- *  them along but horizontal camera-pan does not — they stay pinned to
- *  the pane's left edge regardless of where the user has panned the
- *  canvas. A faint horizontal rule sits above each so the section
- *  break reads at a glance even off-screen horizontally. */
+ *  them along but horizontal camera-pan does not. A faint horizontal rule
+ *  sits above each so the section break reads at a glance even off-screen
+ *  horizontally. */
 export function drawShadowHeaders(
   ctx: CanvasRenderingContext2D,
   headers: { y: number; level: number; text: string }[],
@@ -23,12 +29,12 @@ export function drawShadowHeaders(
     const y = cameraY + h.y; // canvas-pixel y
     if (y < -40 || y > canvasH + 4) continue; // skip off-screen
     const fontPx = h.level <= 1 ? 18 : h.level === 2 ? 15 : 13;
-    // Rule above the header text (4px gap)
+    // Rule above the header text (4px gap), starting at the header inset.
     ctx.strokeStyle = theme.foreground;
     ctx.globalAlpha = 0.18;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, y - 4);
+    ctx.moveTo(SHADOW_HEADER_X, y - 4);
     ctx.lineTo(canvasW, y - 4);
     ctx.stroke();
     // Header text
@@ -36,9 +42,9 @@ export function drawShadowHeaders(
     ctx.globalAlpha = 0.4;
     ctx.font = `600 ${fontPx}px ${fontFamily}, system-ui, sans-serif`;
     let text = h.text;
-    const maxChars = Math.max(8, Math.floor((canvasW - 24) / (fontPx * 0.55)));
+    const maxChars = Math.max(8, Math.floor((canvasW - SHADOW_HEADER_X - 8) / (fontPx * 0.55)));
     if (text.length > maxChars) text = text.slice(0, maxChars - 1) + "…";
-    ctx.fillText(text, 8, y);
+    ctx.fillText(text, SHADOW_HEADER_X, y);
   }
   ctx.restore();
 }

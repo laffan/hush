@@ -753,6 +753,7 @@ export class NotesCanvas {
         pocketInZone: this.state.pocketInZone,
         leftInset: this.state.leftInset,
         shadowHeaders: this.state.shadowHeaders,
+        gutter: !!this.state.gutterScrollDOM,
         // Inject DPR so renderer.ts stays free of `window` reads.
         dpr: window.devicePixelRatio || 1,
         flowchart: this.state.flowchart,

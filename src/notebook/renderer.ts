@@ -29,6 +29,10 @@ export interface RenderState {
   // True while the drag cursor sits inside the pocket drop zone.
   pocketInZone?: boolean;
   leftInset: number; shadowHeaders?: { y: number; level: number; text: string }[];
+  /** True while this canvas is acting as a doc gutter. Draws the 2px red
+   *  orientation rule (panning with the canvas, full height) and shifts the
+   *  shadow headers inboard of it. */
+  gutter?: boolean;
   /** Layer list, top-first. Used to iterate shapes in layer order
    *  and skip shapes on hidden layers. Optional: falls back to
    *  single-pass iteration when absent (tests, legacy callers). */
@@ -273,6 +277,21 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
   }
 
   ctx.restore();
+  // Gutter orientation rule: a 2px red vertical line fixed at world-x = 20, so
+  // it pans horizontally with the canvas (screenX = 20*zoom + camera.x) but
+  // spans the full height regardless of scroll. The gutter "begins" with this
+  // line ~20px in from its left edge at the default pan.
+  if (state.gutter) {
+    const lineX = 20 * camera.zoom + camera.x;
+    ctx.save();
+    ctx.strokeStyle = "#e44b3a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(lineX, 0);
+    ctx.lineTo(lineX, h);
+    ctx.stroke();
+    ctx.restore();
+  }
   if (state.shadowHeaders?.length) drawShadowHeaders(ctx, state.shadowHeaders, theme, state.fontFamily, camera.y, w, h);
 
   // Per-edge delete affordances — all drawn in screen space so they stay

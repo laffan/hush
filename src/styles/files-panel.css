@@ -442,6 +442,14 @@
   opacity: 0.5;
   pointer-events: none;
 }
+/* When the upper doc carries a pane-indicator strip its padding-bottom grows
+   from 4px to 15px (room for the absolutely-positioned squares), which would
+   otherwise push this connector down off the upper icon. Stretch it up by the
+   same 11px so the joined-doc line still meets both icons. */
+.sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="document"]:has(.tree-pane-indicators) + .sl-item[data-type="document"]::before {
+  top: -19px;
+  height: 26px;
+}
 
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="notebook"] > .sl-item-content .tree-item-row,
 .sl-item[data-type="project"]:not([data-id="__inbox__"]):not([data-id^="__inbox__:"]) > .sl-list > .sl-item[data-type="stack"] > .sl-item-content .tree-item-row,
@@ -496,13 +504,16 @@
 }
 
 /* Gutter pane square sits inline after the "Gutter" label (request: keep the
-   gutter to a single row). Static flow, vertically centred with the text. */
+   gutter to a single row). Static flow, nudged up 2px so the cells centre on
+   the label text rather than riding a touch low under vertical-align:middle. */
 .tree-pane-indicators-inline {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   margin-left: 6px;
   vertical-align: middle;
+  position: relative;
+  top: -2px;
 }
 .tree-pane-indicators-inline.dimmed {
   opacity: 0.3;
