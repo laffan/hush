@@ -24,20 +24,20 @@ function buildStrip(ctxPanes, hidden, inline) {
 
 export function paneIndicatorsFor(item, state) {
   if (!item.fileId) return null;
-  // A gutter notebook's pane lives in its paired doc's context. We paint its
-  // indicator INLINE on the gutter row (right after the "Gutter" label) so the
-  // gutter never claims an extra line in the tree. renderItem inserts it after
-  // the name rather than as a strip below.
+  // The gutter row is where its paired DOC's pane icons live (inline, after the
+  // "Gutter" label). The gutter pane ITSELF gets no square — so pull the doc's
+  // panes and drop the gutter from them. renderItem appends this inside the
+  // name span; the doc's own below-strip is suppressed when it has a gutter.
   if (item.type === "notebook" && item.gutter) {
     const ctx = contextIdForFile(item.gutterForDoc, "document");
-    const gPanes = getPanesForContext(ctx).filter((p) => p.gutter && p.fileId === item.fileId);
-    if (!gPanes.length) return null;
-    return buildStrip(gPanes, !!(state.settings?.panesHiddenByContext || {})[ctx], true);
+    const docPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
+    if (!docPanes.length) return null;
+    return buildStrip(docPanes, !!(state.settings?.panesHiddenByContext || {})[ctx], true);
   }
   if (item.type !== "document" && item.type !== "notebook") return null;
   const ctx = contextIdForFile(item.fileId, item.type);
-  // Gutter panes surface on their own gutter row (above), so drop them from the
-  // doc's strip — otherwise the gutter would show a square under the doc too.
+  // Drop the gutter pane — a gutter never shows a square (its row carries the
+  // doc's other panes instead).
   const ctxPanes = getPanesForContext(ctx).filter((p) => !p.gutter);
   if (!ctxPanes.length) return null;
   const hidden = !!(state.settings?.panesHiddenByContext || {})[ctx];

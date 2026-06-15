@@ -51,6 +51,16 @@ const visibleTopLevel = (s) => {
 let numberLabels = new Map();
 const numberSkip = (n) => isAnySpecialId(n.id) || isTabMarkerItem(n);
 
+/** A doc has a paired gutter when one of its project siblings is a gutter
+ *  notebook stamped for this doc. Such docs show their pane icons on the
+ *  gutter row (inline), so their own below-row strip is suppressed. */
+function hasPairedGutter(state, docItem) {
+  if (docItem.type !== "document" || !docItem.fileId) return false;
+  const sibs = findParentOfNode(state.fileTree, docItem.id)?.children;
+  return Array.isArray(sibs)
+    && sibs.some((c) => c.type === "notebook" && c.gutter && c.gutterForDoc === docItem.fileId);
+}
+
 function getIcon(item) {
   if (isInboxId(item.id)) return typeIcons.inbox;
   if (isImagesId(item.id)) return typeIcons.images;
@@ -244,13 +254,16 @@ export function createFilesPanel(container, state, hidePanel) {
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);
       if (!indicators) return row;
-      // The gutter row carries its pane square INLINE, appended inside the name
-      // span so it sits directly after the "Gutter" text (not pushed to the
-      // row's right edge by the name's flex:1). It never claims an extra line.
+      // The gutter row carries the doc's pane icons INLINE, appended inside the
+      // name span so they sit directly after the "Gutter" text (not pushed to
+      // the row's right edge by the name's flex:1).
       if (item.type === "notebook" && item.gutter) {
         row.querySelector(".tree-item-name")?.append(indicators);
         return row;
       }
+      // A doc with a gutter shows its pane icons on the gutter row, not below
+      // itself — drop the doc's own strip.
+      if (item.type === "document" && hasPairedGutter(state, item)) return row;
       const wrap = document.createElement("span");
       wrap.className = "tree-item-cell";
       wrap.append(row, indicators);
