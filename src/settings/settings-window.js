@@ -97,6 +97,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
   if (!settings.shortcutNewNotebook) settings.shortcutNewNotebook = "Mod+Shift+N";
+  if (!settings.shortcutShuffleSentences) settings.shortcutShuffleSentences = "Mod+Shift+E";
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";
   if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
   if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Mod+Shift+L";

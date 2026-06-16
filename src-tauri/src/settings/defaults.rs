@@ -139,6 +139,9 @@ pub fn default_shortcut_new_file() -> String {
 pub fn default_shortcut_new_notebook() -> String {
     "Mod+Shift+N".to_string()
 }
+pub fn default_shortcut_shuffle_sentences() -> String {
+    "Mod+Shift+E".to_string()
+}
 pub fn default_shortcut_toggle_dry() -> String {
     "Mod+Shift+R".to_string()
 }

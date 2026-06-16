@@ -119,7 +119,7 @@ body.zen-focus-active > .column-mover {
   border-radius: 999px;
   background: var(--panel-bg, rgba(0, 0, 0, 0.08));
   color: var(--fg);
-  font: 600 12px/1 var(--font-family);
+  font: 600 12px/1 var(--ui-font-family);
   letter-spacing: 0.05em;
   opacity: 0;
   pointer-events: none;

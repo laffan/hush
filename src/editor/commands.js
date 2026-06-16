@@ -33,6 +33,7 @@ import {
 } from "./formatting.js";
 import { insertFootnote } from "./plugins/footnotes.js";
 import { openZoteroModal } from "../zotero.js";
+import { openShuffleEditor } from "./shuffle-editor.js";
 import { toggleWordCount } from "./plugins/word-count.js";
 import { getActiveModeContext } from "../state/mode-context.js";
 import { setInstanceHighlightsEffect, findAllOccurrences } from "./select-instance-highlight.js";
@@ -232,6 +233,9 @@ export function buildEditorCommands() {
       openZoteroModal(view || null, state);
       return true;
     },
+    // Shuffle Editor (sentences, list-current). Returns false when there's
+    // no selection to shuffle so the key falls through.
+    shortcutShuffleSentences: (state) => openShuffleEditor(state, "list-current"),
     shortcutSwitchDesks: (state) => {
       const desks = state.settings?.desks || [];
       if (desks.length < 2) return false;

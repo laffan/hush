@@ -102,7 +102,14 @@
   font: inherit;
   font-size: 10px;
   line-height: 1;
-  padding: 2px 4px;
+  /* Square buttons — fixed equal width/height with centred glyphs. */
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   border-radius: 4px;
   border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
   background: var(--bg);
@@ -115,6 +122,32 @@
   opacity: 1;
   border-color: var(--accent, #4a90d9);
   background: color-mix(in srgb, var(--accent, #4a90d9) 22%, var(--bg));
+}
+
+/* Inline markdown rendered inside a node's text (collapses back to raw
+   source while editing). */
+.shuffle-md-h { font-weight: 700; }
+.shuffle-md-h1 { font-size: 1.6em; }
+.shuffle-md-h2 { font-size: 1.35em; }
+.shuffle-md-h3 { font-size: 1.15em; }
+.shuffle-node-text del { opacity: 0.55; }
+.shuffle-md-link {
+  color: var(--accent, #4a90d9);
+  text-decoration: underline;
+}
+.shuffle-md-highlight {
+  background: color-mix(in srgb, #ffd54a 70%, transparent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.shuffle-md-flag {
+  background: color-mix(in srgb, var(--accent, #4a90d9) 22%, transparent);
+  color: var(--fg);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 .shuffle-node.in-editor {

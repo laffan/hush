@@ -37,6 +37,7 @@ import {
 import {
   captureAnyShufflePayload, shuffleSelectionAvailable, writeBackShuffle,
 } from "./shuffle-editor-source.js";
+import { renderShuffleMarkdown } from "./shuffle-editor-markdown.js";
 import { installShuffleKeyboard } from "./shuffle-editor-keys.js";
 
 export { shuffleSelectionAvailable };
@@ -208,14 +209,11 @@ function buildController(a) {
 
   function makeNodeEl(node, variant) {
     const wrap = el("div", `shuffle-node ${variant}`);
-    if (node.strike) wrap.classList.add("struck");
-    if (node.comment) wrap.classList.add("commented");
-    const textEl = el("div", "shuffle-node-text");
-    textEl.textContent = node.text;
+    wrap.classList.toggle("struck", !!node.strike); wrap.classList.toggle("commented", !!node.comment);
+    const textEl = el("div", "shuffle-node-text"); textEl.innerHTML = renderShuffleMarkdown(node.text);
     wrap.appendChild(textEl);
     wrap.appendChild(buildNodeTools(node));
-    node.el = wrap;
-    node.textEl = textEl;
+    node.el = wrap; node.textEl = textEl;
     wireNode(node);
     return wrap;
   }
@@ -299,22 +297,24 @@ function buildController(a) {
     node.el.addEventListener("mouseleave", () => { if (a.hoverNode === node) a.hoverNode = null; });
   }
 
-  function editNode(node, ev) {
+  /** Enter edit mode: swap rendered markdown back to raw text, then focus. */
+  function beginEdit(node) {
     node.editing = true;
     a.editingNode = node;
     node.el.classList.add("editing");
+    node.textEl.textContent = node.text;
     node.textEl.contentEditable = "true";
     node.textEl.focus();
+  }
+
+  function editNode(node, ev) {
+    beginEdit(node);
     placeCaretAtPoint(node.textEl, ev.clientX, ev.clientY);
   }
 
   /** Re-enter edit on a node with the caret parked at the end. */
   function reEditAtEnd(node) {
-    node.editing = true;
-    a.editingNode = node;
-    node.el.classList.add("editing");
-    node.textEl.contentEditable = "true";
-    node.textEl.focus();
+    beginEdit(node);
     const sel = window.getSelection();
     const r = document.createRange();
     r.selectNodeContents(node.textEl);
@@ -331,7 +331,7 @@ function buildController(a) {
     node.textEl.contentEditable = "false";
     node.text = capitalizeFirst(node.textEl.textContent.trim());
     if (!node.text) { removeNode(node); return; }
-    node.textEl.textContent = node.text;
+    node.textEl.innerHTML = renderShuffleMarkdown(node.text);
   }
 
   function onNodeInput(node, e) {
@@ -426,7 +426,7 @@ function buildController(a) {
   function makeGhost(text) {
     const g = el("div", "shuffle-node in-margin shuffle-ghost");
     g.style.width = `${CHIP_WIDTH}px`;
-    g.textContent = text;
+    g.innerHTML = renderShuffleMarkdown(text);
     document.body.appendChild(g);
     return g;
   }
@@ -449,7 +449,7 @@ function buildController(a) {
     if (!a.preview) {
       a.preview = el("div", "shuffle-node in-editor shuffle-drop-preview");
       const textEl = el("div", "shuffle-node-text");
-      textEl.textContent = a.dragText;
+      textEl.innerHTML = renderShuffleMarkdown(a.dragText);
       a.preview.appendChild(textEl);
     }
     // Detach first so the index is measured against the real node layout.

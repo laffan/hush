@@ -114,6 +114,7 @@ export function createDefaultSettings() {
     shortcutTypewriter: "Mod+Shift+T",
     shortcutNewFile: "Mod+N",
     shortcutNewNotebook: "Mod+Shift+N",
+    shortcutShuffleSentences: "Mod+Shift+E",
     shortcutToggleDry: "Mod+Shift+R",
     shortcutToggleFocus: "Mod+S",
     shortcutToggleWordCount: "Mod+Shift+W",

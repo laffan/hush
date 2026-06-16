@@ -150,6 +150,7 @@ pub struct AppSettings {
     #[serde(default = "default_shortcut_typewriter")] pub shortcut_typewriter: String,
     #[serde(default = "default_shortcut_new_file")] pub shortcut_new_file: String,
     #[serde(default = "default_shortcut_new_notebook")] pub shortcut_new_notebook: String,
+    #[serde(default = "default_shortcut_shuffle_sentences")] pub shortcut_shuffle_sentences: String,
     #[serde(default = "default_shortcut_toggle_dry")]
     pub shortcut_toggle_dry: String,
     #[serde(default = "default_shortcut_toggle_focus")]
@@ -550,6 +551,7 @@ impl Default for AppSettings {
             shortcut_typewriter: default_shortcut_typewriter(),
             shortcut_new_file: default_shortcut_new_file(),
             shortcut_new_notebook: default_shortcut_new_notebook(),
+            shortcut_shuffle_sentences: default_shortcut_shuffle_sentences(),
             shortcut_toggle_dry: default_shortcut_toggle_dry(),
             shortcut_toggle_focus: default_shortcut_toggle_focus(),
             shortcut_toggle_word_count: default_shortcut_toggle_word_count(),

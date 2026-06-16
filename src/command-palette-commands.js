@@ -401,7 +401,7 @@ function buildCommands(state) {
     { id: "shuffle-sentences-list-shuffle", label: "Shuffle Editor: Sentences (list shuffle)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
       hiddenIf: (s) => !shuffleSelectionAvailable(s),
       action: (s) => openShuffleEditor(s, "list-shuffle") },
-    { id: "shuffle-sentences-list-current", label: "Shuffle Editor: Sentences (list current)", icon: icons.shuffle, shortcutKey: null, ctx: "shared",
+    { id: "shuffle-sentences-list-current", label: "Shuffle Editor: Sentences (list current)", icon: icons.shuffle, shortcutKey: "shortcutShuffleSentences", ctx: "shared",
       hiddenIf: (s) => !shuffleSelectionAvailable(s),
       action: (s) => openShuffleEditor(s, "list-current") },
     { id: "word-count", label: "Toggle word count", icon: null, shortcutKey: "shortcutToggleWordCount", ctx: "doc",
