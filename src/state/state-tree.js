@@ -99,9 +99,10 @@ export async function deleteTreeNode(state, nodeId) {
     state.currentStackFileId = null;
   }
   if (docFileIds.includes(state.currentFileId) || nodeId === state.currentProjectId || docFileIds.includes(state.currentNotebookFileId) || pdfFileIds.includes(state.currentPdfFileId) || stackFileIds.includes(state.currentStackFileId)) {
-    state.currentProjectId = null; state.projectDocIds = [];
-    if (state.files.length > 0) await state.openFile(state.files[0].id);
-    else await state.newFile();
+    // The open surface was just deleted. Drop to the "no file selected"
+    // pane instead of jumping to an arbitrary DB file (which often lived
+    // in a different desk).
+    await state.clearActiveFile();
   }
   state.emit("files-changed");
 }

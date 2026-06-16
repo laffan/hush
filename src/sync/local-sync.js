@@ -368,6 +368,14 @@ export function parseLocalSentinel(fileId) {
   return m ? { folderId: m[1], relPath: m[2] } : null;
 }
 
+/** Basename of a Local Sync relative path — used for the last-file
+ *  descriptor's display name and for extension-based kind routing on
+ *  restore. */
+function nameFromRelPath(relPath) {
+  const parts = String(relPath || "").split("/");
+  return parts[parts.length - 1] || relPath || "";
+}
+
 /** Tear down whatever surface is currently active before opening a new
  *  Local Sync entry. Mirrors the teardown in openNotebook / openStack. */
 async function teardownForLocalOpen(state) {
@@ -416,6 +424,7 @@ export async function openLocalNotebook(state, folderId, relPath) {
   const sentinel = localSentinelId(folderId, relPath);
   state.currentNotebookFileId = sentinel;
   state.currentLocalSync = { folderId, relPath, kind: "notebook" };
+  state.recordLocalSyncOpen(folderId, relPath, nameFromRelPath(relPath));
   state.emit("notebook-open", sentinel);
 }
 
@@ -426,6 +435,7 @@ export async function openLocalStack(state, folderId, relPath) {
   const sentinel = localSentinelId(folderId, relPath);
   state.currentStackFileId = sentinel;
   state.currentLocalSync = { folderId, relPath, kind: "stack" };
+  state.recordLocalSyncOpen(folderId, relPath, nameFromRelPath(relPath));
   state.emit("stack-open", sentinel);
 }
 
@@ -444,6 +454,7 @@ export async function openLocalSyncFile(state, folderId, relPath) {
   state.currentProjectId = null;
   state.projectDocIds = [];
   state.currentLocalSync = { folderId, relPath, kind: "doc" };
+  state.recordLocalSyncOpen(folderId, relPath, nameFromRelPath(relPath));
   try {
     const content = await readFile(folderId, relPath);
     // setContent dispatches a doc change, which the editor's

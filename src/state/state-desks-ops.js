@@ -304,6 +304,23 @@ export async function openLastFileForDesk(state, deskId) {
   // strand the editor on the *previous* desk's file after the switch.
   if (state.ratchetMode && state.stopRatchet) state.stopRatchet();
 
+  // 0. A Local Folder file was the most recent thing open in this desk.
+  //    Local-sync files live on disk (not in the desk subtree), so they
+  //    need their own restore path. The per-desk tree slot and this local
+  //    slot are kept mutually exclusive (each open path clears the other),
+  //    so whichever is set here is genuinely the most recent.
+  const lastLocal = state.settings?.deskLastLocalSync?.[deskId];
+  if (lastLocal?.folderId && lastLocal?.relPath) {
+    const folders = state.settings?.localSyncFolders || [];
+    if (folders.some((f) => f.id === lastLocal.folderId)) {
+      try {
+        const m = await import("../sync/local-sync.js");
+        await m.openLocalEntry(state, lastLocal.folderId, lastLocal.relPath, lastLocal.name);
+        return;
+      } catch (e) { console.warn("desk restore: local file open failed:", e); }
+    }
+  }
+
   // 1. Try the saved per-desk last file. Verify it still exists in this
   //    desk's subtree — a remote rename / delete or a sync-translated
   //    payload that resolved to a file outside the desk shouldn't drag
@@ -335,10 +352,10 @@ export async function openLastFileForDesk(state, deskId) {
     return;
   }
 
-  // 3. Empty desk — spin a fresh doc in the inbox so the editor lands
-  //    on something rather than continuing to show the previous desk's
-  //    file. Mirrors the boot fallback in init().
-  await state.newFile(inboxId);
+  // 3. Empty desk — drop to the "no file selected" pane rather than
+  //    continuing to show the previous desk's file (or spawning a
+  //    throwaway Untitled doc). Mirrors the boot fallback in init().
+  await state.clearActiveFile();
 }
 
 /** Walk a tree subtree (depth-first) for the first node matching `test`. */

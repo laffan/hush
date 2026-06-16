@@ -21,6 +21,75 @@
   z-index: 0; /* Creates stacking context so marginalia stays below sidebar/panels */
 }
 
+/* ===== Empty state ("no file selected") ===== */
+#editor-empty-state {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 0;
+  background: var(--bg-color, #1e1e1e);
+  -webkit-app-region: drag; /* let the user drag the window from the blank area */
+}
+#editor-empty-state.hidden {
+  display: none;
+}
+/* Hide the doc editor while the empty pane is up. */
+.empty-mode #editor-container {
+  display: none !important;
+}
+.empty-state-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  -webkit-app-region: no-drag;
+}
+.empty-state-title {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--text-color, #888);
+  opacity: 0.55;
+}
+.empty-state-actions {
+  display: flex;
+  gap: 12px;
+}
+.empty-state-actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  min-width: 96px;
+  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.25));
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-color, #ccc);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.empty-state-actions button:hover {
+  opacity: 1;
+  background: var(--hover-bg, rgba(128, 128, 128, 0.1));
+  border-color: var(--text-color, rgba(128, 128, 128, 0.5));
+}
+.empty-state-actions button .tree-type-icon {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+}
+
 /* "In the trash" banner — fixed strip above the editor. Pairs with the
    editor's read-only lock so trashed files stay viewable without the
    autosave loop quietly writing into a file the user has thrown away. */

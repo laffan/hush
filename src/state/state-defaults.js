@@ -91,6 +91,20 @@ export function createDefaultSettings() {
     // the choice rides across restarts; intentionally NOT considered a
     // synced field — each device picks its own active desk.
     activeDeskId: null,
+    // How desks surface in the files panel: "single" (the default — the
+    // active desk's contents only, with the dropdown switcher) or "all"
+    // (every desk shown as a top-level folder, one of them active).
+    deskDisplayMode: "single",
+    // Last-opened Local Folder file for this window (local, per-device).
+    // Local-sync files live on disk rather than in the file tree, so they
+    // can't ride the normal lastFileId slot — `{ folderId, relPath, name }`
+    // or null. Kept mutually exclusive with lastFileId/lastNotebookId/etc.
+    lastLocalSync: null,
+    // Per-desk last-opened Local Folder file (local, per-device), keyed by
+    // desk id: `{ [deskId]: { folderId, relPath, name } }`. Mutually
+    // exclusive with the synced desksMeta tree last-file so the most
+    // recent open always wins on a desk switch.
+    deskLastLocalSync: {},
     // Shortcuts — General
     shortcutOpenEditor: "CmdOrCtrl+Shift+H",
     shortcutOpenFullscreen: "CmdOrCtrl+Alt+F",

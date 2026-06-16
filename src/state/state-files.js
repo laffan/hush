@@ -225,10 +225,48 @@ export async function deleteFile(state, id) {
     catch (e) { console.error("Delete failed:", e); }
   } else { state.files = state.files.filter((f) => f.id !== id); state._saveFilesLocal(); }
   if (state.currentFileId === id) {
-    if (state.files.length > 0) await state.openFile(state.files[0].id);
-    else await state.newFile();
+    // Don't jump to an arbitrary file in the DB (often in another desk) —
+    // drop to the "no file selected" pane instead.
+    await clearActiveFile(state);
   }
   state.emit("files-changed");
+}
+
+/** Tear down whatever surface is currently active and drop the editor
+ *  into the "no file selected" empty state. Used when the open file is
+ *  deleted, when a desk has nothing to restore, or when there are no
+ *  files at all. Clears the persisted last-file slots so a restart lands
+ *  on the empty pane too rather than resurrecting a deleted file. Safe
+ *  to call during init() (before the editor exists): it just leaves the
+ *  current* pointers null and emits the event the mode-switcher consumes
+ *  once it's wired. */
+export async function clearActiveFile(state) {
+  if (state.currentNotebookFileId) {
+    state.emit("notebook-unmount");
+    state.currentNotebookFileId = null;
+  }
+  if (state.currentPdfFileId) {
+    state.emit("pdf-unmount");
+    state.currentPdfFileId = null;
+  }
+  if (state.currentStackFileId) {
+    state.emit("stack-unmount");
+    state.currentStackFileId = null;
+  }
+  state.currentFileId = null;
+  state.currentProjectId = null;
+  state.projectDocIds = [];
+  state.currentLocalSync = null;
+  state.dirty = false;
+  if (state.editor) state.editor.setContent("");
+  await state.updateSettings({
+    lastFileId: null, lastProjectId: null, lastNotebookId: null,
+    lastPdfId: null, lastStackId: null, lastLocalSync: null,
+  });
+  // Clear the active desk's saved last-file slot so switching away and
+  // back doesn't try to reopen the file we just left.
+  state.recordActiveDeskLastFile(null, null);
+  state.emit("no-file-state");
 }
 
 export async function renameFile(state, id, newName) {

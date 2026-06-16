@@ -35,6 +35,7 @@ const _PER_WINDOW_SETTINGS_KEYS = new Set([
   "lastNotebookId",
   "lastProjectId",
   "lastStackId",
+  "lastLocalSync",
   "scrollPosition",
   "typewriterMode",
   "dryMode",
@@ -240,17 +241,15 @@ export class AppState {
             await this.openProject(lastProjectId);
           } else if (lastFileId && this.files.some(f => f.id === lastFileId)) {
             await this.openFile(lastFileId);
-          } else if (this.files.length > 0) {
-            // Find a plain document — don't open a stack/notebook/PDF
-            // file as a document (their JSON content would show as text).
-            const docFile = this.files.find(f => {
-              const node = findNodeByFileId(this.fileTree, f.id);
-              return !node || node.type === "document";
-            });
-            if (docFile) await this.openFile(docFile.id);
-            else await this.newFile();
+          } else if (this.settings.lastLocalSync?.folderId) {
+            // A Local Folder file was the last thing open. Defer the
+            // actual open to main-modes (it needs a live editor); just
+            // stash the descriptor here.
+            this.runtime.pendingLocalSync = { ...this.settings.lastLocalSync };
           } else {
-            await this.newFile();
+            // Nothing to restore — leave every current* pointer null so
+            // main-modes drops to the "no file selected" pane rather than
+            // opening an unrelated DB file or spawning an Untitled doc.
           }
         }
       } catch (e) {
@@ -534,6 +533,7 @@ export class AppState {
   }
 
   deleteFile(id) { return _files.deleteFile(this, id); }
+  clearActiveFile() { return _files.clearActiveFile(this); }
   renameFile(id, newName) { return _files.renameFile(this, id, newName); }
   duplicateFile(id) { return _files.duplicateFile(this, id); }
 
@@ -557,6 +557,7 @@ export class AppState {
   // handler.
   getDeskLastFile(deskId) { return _desks.getDeskLastFile(this, deskId); }
   recordActiveDeskLastFile(fileId, type) { return _desks.recordActiveDeskLastFile(this, fileId, type); }
+  recordLocalSyncOpen(folderId, relPath, name) { return _desks.recordLocalSyncOpen(this, folderId, relPath, name); }
   async toggleMinimap() { const n = !this.settings?.minimapVisible; await this.updateSettings({ minimapVisible: n }); this.emit("minimap-visibility-changed", n); }
 
   // ===== Pane visibility (delegated to state-panes.js) =====

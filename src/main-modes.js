@@ -13,15 +13,18 @@
 
 import { mountNotebook, unmountNotebook, saveNotebook, getCanvasInstance, reloadNotebookShapes } from "./notebook/notebook-bridge.js";
 import { applyActiveStyle } from "./style-application.js";
+import { mountEmptyState } from "./editor/empty-state.js";
 
 export async function setupModeSwitching(state) {
-  // === Mode switching (notebook / PDF / stack) ===
+  // === Mode switching (notebook / PDF / stack / empty) ===
   const appEl = document.getElementById("app");
   const notebookContainer = document.getElementById("notebook-container");
   const pdfContainer = document.getElementById("pdf-container");
   const stackContainer = document.getElementById("stack-container");
-  const modeCls = ["notebook-mode", "pdf-mode", "stack-mode"];
-  const modeContainers = { "notebook-mode": notebookContainer, "pdf-mode": pdfContainer, "stack-mode": stackContainer };
+  const emptyContainer = document.getElementById("editor-empty-state");
+  mountEmptyState(emptyContainer, state);
+  const modeCls = ["notebook-mode", "pdf-mode", "stack-mode", "empty-mode"];
+  const modeContainers = { "notebook-mode": notebookContainer, "pdf-mode": pdfContainer, "stack-mode": stackContainer, "empty-mode": emptyContainer };
 
   function activateMode(mode) {
     modeCls.forEach(c => { appEl.classList.remove(c); document.body.classList.remove(c); });
@@ -36,6 +39,12 @@ export async function setupModeSwitching(state) {
   const showNotebook = () => activateMode("notebook-mode");
   const showPdf = () => activateMode("pdf-mode");
   const showStack = () => activateMode("stack-mode");
+  const showEmpty = () => activateMode("empty-mode");
+
+  // Editor was cleared (last file deleted, desk has nothing to restore,
+  // or no files at all) — surface the create-a-file pane instead of
+  // silently leaving a stale buffer or jumping to an unrelated file.
+  state.on("no-file-state", () => showEmpty());
 
   state.on("notebook-open", async (fileId) => {
     // Switch to notebook mode *before* the (async) mount so a large
@@ -152,5 +161,22 @@ export async function setupModeSwitching(state) {
     await state.openProject(state.currentProjectId);
   } else if (state.currentFileId) {
     await state.openFile(state.currentFileId);
+  } else if (state.runtime?.pendingLocalSync) {
+    // Local Folder file was the last thing open — re-open it now that the
+    // editor exists (init() deferred it because local opens need a live
+    // editor and emit surface-mount events).
+    const { folderId, relPath, name } = state.runtime.pendingLocalSync;
+    state.runtime.pendingLocalSync = null;
+    try {
+      const m = await import("./sync/local-sync.js");
+      await m.openLocalEntry(state, folderId, relPath, name);
+    } catch (e) {
+      console.warn("restore local-sync file failed:", e);
+      showEmpty();
+    }
+  } else {
+    // Nothing to restore — show the "no file selected" pane rather than
+    // spawning a throwaway Untitled doc.
+    showEmpty();
   }
 }

@@ -534,10 +534,51 @@ export async function recordActiveDeskLastFile(state, fileId, type) {
   if (!desk) return;
   const meta = { ...(state.settings?.desksMeta || {}) };
   const existing = meta[desk.id] || {};
-  if (existing.lastFileId === fileId && existing.lastFileType === type) return;
-  meta[desk.id] = { ...existing, lastFileId: fileId || null, lastFileType: fileId ? type : null };
-  await state.updateSettings({ desksMeta: meta });
-  pushDesksJson(state);
+  // Opening a tree file supersedes any Local Folder last-open — clear the
+  // local slot (per-desk + per-window) so restore lands on this file.
+  const patch = {};
+  const deskLocal = state.settings?.deskLastLocalSync || {};
+  if (deskLocal[desk.id]) {
+    const nextLocal = { ...deskLocal };
+    delete nextLocal[desk.id];
+    patch.deskLastLocalSync = nextLocal;
+  }
+  if (state.settings?.lastLocalSync) patch.lastLocalSync = null;
+  const metaUnchanged = existing.lastFileId === fileId && existing.lastFileType === type;
+  if (metaUnchanged && Object.keys(patch).length === 0) return;
+  if (!metaUnchanged) {
+    meta[desk.id] = { ...existing, lastFileId: fileId || null, lastFileType: fileId ? type : null };
+    patch.desksMeta = meta;
+  }
+  await state.updateSettings(patch);
+  if (!metaUnchanged) pushDesksJson(state);
+}
+
+/** Record that a Local Folder file is the active desk's most-recent open.
+ *  Local-sync files live on disk, not in the desk subtree, so they keep
+ *  their own local-per-device slots (`lastLocalSync` per window +
+ *  `deskLastLocalSync` per desk) instead of the synced `desksMeta`. Clears
+ *  the tree last-file slots so the most recent open wins on restore. */
+export async function recordLocalSyncOpen(state, folderId, relPath, name) {
+  if (!folderId || !relPath) return;
+  const descriptor = { folderId, relPath, name: name || relPath };
+  const patch = {
+    lastLocalSync: descriptor,
+    lastFileId: null, lastProjectId: null,
+    lastNotebookId: null, lastPdfId: null, lastStackId: null,
+  };
+  const desk = getActiveDesk(state);
+  if (desk) {
+    const deskLocal = { ...(state.settings?.deskLastLocalSync || {}) };
+    deskLocal[desk.id] = descriptor;
+    patch.deskLastLocalSync = deskLocal;
+    const meta = { ...(state.settings?.desksMeta || {}) };
+    if (meta[desk.id]?.lastFileId) {
+      meta[desk.id] = { ...meta[desk.id], lastFileId: null, lastFileType: null };
+      patch.desksMeta = meta;
+    }
+  }
+  await state.updateSettings(patch);
 }
 
 /** Read the active desk's saved global style id. Falls back to the
