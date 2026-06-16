@@ -153,12 +153,15 @@ export function createFilesPanel(container, state, hidePanel) {
         // Desk rows carry a reorder handle pinned to the right (just left
         // of the absolutely-positioned menu button), so it never pushes
         // the desk name over. The active desk (theme / Cmd+N owner) wears
-        // an inverted name pill.
+        // an inverted pill wrapping both the icon and the name — the icon
+        // strokes recolor to the pill text color via currentColor.
         const deskHandle = isDesk ? `<span class="desk-drag-handle" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>` : "";
-        const nameInner = isActiveDesk
-          ? `<span class="desk-active-pill">${escHtml(displayName)}</span>`
-          : `${numPrefix}${escHtml(displayName)}`;
-        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${nameInner}</span>${windowBadgesHtml(item, state)}${deskHandle}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+        const trailing = `${windowBadgesHtml(item, state)}${deskHandle}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+        if (isActiveDesk) {
+          row.innerHTML = `<span class="desk-active-pill">${icon}<span class="desk-active-name">${escHtml(displayName)}</span></span>${trailing}`;
+        } else {
+          row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(displayName)}</span>${trailing}`;
+        }
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);

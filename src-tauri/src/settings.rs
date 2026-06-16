@@ -400,25 +400,29 @@ pub struct AppSettings {
     #[serde(default)]
     pub minimap_visible: bool,
     /// "Desks" — top-level containers above all other tree nodes.
-    /// Always-on; the field is retained as a deprecated boolean so
-    /// settings.json files written by older builds still parse, but
-    /// the JS side ignores its value and treats desks as structural.
+    /// Always-on; kept as a deprecated boolean so older settings.json
+    /// files still parse. The JS side treats desks as structural.
     #[serde(default = "default_true")]
     pub use_desks: bool,
     /// Desk list. Each entry is opaque JSON `{ id, name, createdAt }`.
-    /// Always carries at least one entry once the boot migration runs;
-    /// fresh installs see the JS layer seed a default "Personal" desk
-    /// before any file operations land.
     #[serde(default)]
     pub desks: Vec<serde_json::Value>,
-    /// Per-desk synced metadata, keyed by desk id. Opaque JSON so the
-    /// JS side owns the shape — typical fields: active style, last
-    /// opened file, persisted panes.
+    /// Per-desk synced metadata, keyed by desk id. Opaque JSON owned by
+    /// the JS side (active style, last opened file, persisted panes).
     #[serde(default)]
     pub desks_meta: serde_json::Value,
     /// Active desk id for this device. Null when desks are off.
     #[serde(default)]
     pub active_desk_id: Option<String>,
+    /// Files-panel desk view: "single" (active desk only) or "all".
+    #[serde(default = "default_desk_display_mode")]
+    pub desk_display_mode: String,
+    /// Last-opened Local Folder file for this window. Opaque JSON.
+    #[serde(default)]
+    pub last_local_sync: serde_json::Value,
+    /// Per-desk last-opened Local Folder file, keyed by desk id. Opaque.
+    #[serde(default)]
+    pub desk_last_local_sync: serde_json::Value,
 
     // Notebook shortcuts
     #[serde(default = "default_nb_select")]
@@ -662,6 +666,9 @@ impl Default for AppSettings {
             desks: Vec::new(),
             desks_meta: serde_json::json!({}),
             active_desk_id: None,
+            desk_display_mode: default_desk_display_mode(),
+            last_local_sync: serde_json::Value::Null,
+            desk_last_local_sync: serde_json::json!({}),
             shortcut_nb_select: default_nb_select(),
             shortcut_nb_text: default_nb_text(),
             shortcut_nb_drag_area: default_nb_drag_area(),

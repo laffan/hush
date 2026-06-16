@@ -979,14 +979,26 @@ button.desk-switcher-row.desk-switcher-add {
 /* Desks rendered as top-level rows (deskDisplayMode === "all"). */
 .tree-item-row.desk-row .tree-item-name { font-weight: 600; }
 .tree-item-row.desk-row .desk-icon { stroke: currentColor; fill: none; stroke-width: 2; }
-/* Active desk: invert the name into a pill (theme fg as bg, theme bg as
-   text) so the theme-/Cmd-N-owning desk is unmistakable. */
+/* Active desk: invert the icon + name into a pill (theme fg as bg, theme
+   bg as text) so the theme-/Cmd-N-owning desk is unmistakable. The icon
+   strokes follow currentColor, so they recolor to the pill text. */
 .desk-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   background: var(--fg);
   color: var(--theme-bg, var(--bg));
   padding: 1px 6px;
   border-radius: 3px;
   font-weight: 600;
+}
+.desk-active-pill .desk-icon { stroke: currentColor; }
+.desk-active-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Reorder handle, pinned just left of the (absolute) row menu button so
    it never shifts the desk name. Revealed on row hover like the menu. */

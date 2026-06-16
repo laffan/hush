@@ -79,6 +79,9 @@ pub fn default_longview_current_position_color() -> String {
 pub fn default_visibility() -> String {
     "both".to_string()
 }
+pub fn default_desk_display_mode() -> String {
+    "single".to_string()
+}
 pub fn default_appearance() -> String {
     "auto".to_string()
 }

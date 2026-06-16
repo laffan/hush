@@ -22,6 +22,8 @@
 }
 
 /* ===== Empty state ("no file selected") ===== */
+/* Colors follow the active desk's style (and light/dark) via the same
+   theme variables the editor uses. */
 #editor-empty-state {
   position: absolute;
   top: 0;
@@ -32,8 +34,15 @@
   align-items: center;
   justify-content: center;
   z-index: 0;
-  background: var(--bg-color, #1e1e1e);
+  color: var(--fg);
+  background: var(--theme-bg, var(--bg));
   -webkit-app-region: drag; /* let the user drag the window from the blank area */
+  transition: padding-left 0.2s;
+}
+/* Centre within the space the open sidebar leaves, not the whole window:
+   pad past the panel whenever it's showing (it overlays from the left). */
+#app:has(#panel-overlay:not(.hidden)) #editor-empty-state {
+  padding-left: var(--panel-width, 300px);
 }
 #editor-empty-state.hidden {
   display: none;
@@ -54,8 +63,8 @@
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   letter-spacing: 0.04em;
-  color: var(--text-color, #888);
-  opacity: 0.55;
+  color: var(--fg);
+  opacity: 0.5;
 }
 .empty-state-actions {
   display: flex;
@@ -68,26 +77,31 @@
   gap: 8px;
   padding: 16px 20px;
   min-width: 96px;
-  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.25));
+  border: 1px solid color-mix(in srgb, var(--fg) 22%, transparent);
   border-radius: 10px;
   background: transparent;
-  color: var(--text-color, #ccc);
+  color: var(--fg);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 12px;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.75;
   transition: opacity 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 .empty-state-actions button:hover {
   opacity: 1;
-  background: var(--hover-bg, rgba(128, 128, 128, 0.1));
-  border-color: var(--text-color, rgba(128, 128, 128, 0.5));
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
 }
 .empty-state-actions button .tree-type-icon {
   width: 22px;
   height: 22px;
   stroke: currentColor;
   fill: none;
+}
+/* The notebook dot-grid icon is fill-based — keep it visible here too. */
+.empty-state-actions button .notebook-icon circle {
+  fill: currentColor;
+  stroke: none;
 }
 
 /* "In the trash" banner — fixed strip above the editor. Pairs with the
