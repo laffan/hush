@@ -8,7 +8,7 @@ import { AppState } from "../state/state.js";
 import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, showDeleteConfirmModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
   visibleTopLevel, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
@@ -22,7 +22,7 @@ import {
   handleRename, handleRevealInFinder, handleConvertContainer,
   handleDuplicate, handleDelete, handleEmptyTrash, handleOpenAsStack,
   handleConvertProjectToDoc, handleConvertDocToProject,
-  handleRestore, handlePermanentDelete,
+  handleRestore, handlePermanentDelete, handleDeskAction,
 } from "./files-panel-actions.js";
 import {
   isTabMarkerItem, augmentTreeWithTabs, stripTabMarkersFromTree,
@@ -33,6 +33,11 @@ let sortableInstance = null;
 let flaggedContainerEl = null;
 let storedHidePanel = null;
 let storedState = null;
+// Refs used to relocate the Local Folders section (nested in the active
+// desk in the all-desks view; at the panel root in single-desk view).
+let panelRootEl = null;
+let treeListEl = null;
+let localSyncRootEl = null;
 
 // Outline-number labels for rows inside a project with `showNumbers`.
 let numberLabels = new Map();
@@ -56,11 +61,15 @@ export function createFilesPanel(container, state, hidePanel) {
   listContainer.className = "tree-list-root";
   container.appendChild(listContainer);
 
-  // Local Sync section — rendered below the normal tree; each entry is a
-  // top-level disclosure that expands to its on-disk contents async.
+  // Local Sync section — top-level disclosures that expand to on-disk
+  // contents async. `positionLocalSync` nests it inside the active desk
+  // in the all-desks view after the tree renders.
   const localSyncContainer = document.createElement("ul");
   localSyncContainer.className = "tree-list-root local-sync-root";
   container.appendChild(localSyncContainer);
+  panelRootEl = container;
+  treeListEl = listContainer;
+  localSyncRootEl = localSyncContainer;
   renderLocalSyncSection(localSyncContainer, state, hidePanel, refreshFilesPanel);
 
   // Destroy previous instance
@@ -150,11 +159,9 @@ export function createFilesPanel(container, state, hidePanel) {
         const numPrefix = numLabel ? `<span class="tree-item-number">${escHtml(numLabel)}</span> ` : "";
         // Gutter notebooks are stored as `<docName>-gutter` but read as "Gutter".
         const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
-        // Desk rows carry a reorder handle pinned to the right (just left
-        // of the absolutely-positioned menu button), so it never pushes
-        // the desk name over. The active desk (theme / Cmd+N owner) wears
-        // an inverted pill wrapping both the icon and the name — the icon
-        // strokes recolor to the pill text color via currentColor.
+        // Reorder handle pinned right (left of the menu button). Active
+        // desk: an inverted pill wrapping icon + name (icon strokes follow
+        // currentColor, so they recolor to the pill text).
         const deskHandle = isDesk ? `<span class="desk-drag-handle" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>` : "";
         const trailing = `${windowBadgesHtml(item, state)}${deskHandle}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
         if (isActiveDesk) {
@@ -221,7 +228,11 @@ export function createFilesPanel(container, state, hidePanel) {
     },
 
     onDropExternal: (item, ev) => onLocalDropExternal(state, item, ev), // drop onto a Local Sync folder → move to disk
-    onCollapseChange: (ids) => state.updateSettings({ collapsedFolderIds: ids }), // persist folder open/closed state
+    onCollapseChange: (ids) => {
+      state.updateSettings({ collapsedFolderIds: ids }); // persist folder open/closed state
+      // The toggle re-rendered the tree — re-nest Local Folders after.
+      queueMicrotask(() => positionLocalSync(state));
+    },
     // Images can always escape the panel (no Cmd required) so the drop
     // lands in whatever editor/notebook is under the pointer.
     forceDragOutside: (item) => item && item.type === "image",
@@ -254,17 +265,15 @@ export function createFilesPanel(container, state, hidePanel) {
       // the persisted tree never inherits one (re-added on next render).
       const cleaned = stripTabMarkersFromTree(newData);
       if (isAllDesksMode(state)) {
-        // The top level *is* the desk list here. Re-pin specials inside
-        // each desk (a cross-desk move can land an item beside Inbox /
-        // Trash) and write the desks straight back as the tree.
+        // The top level *is* the desk list. Re-pin specials inside each
+        // desk (a cross-desk move can land an item beside Inbox/Trash).
         for (const desk of cleaned) {
           if (desk?.type !== "desk" || !Array.isArray(desk.children)) continue;
           enforceSpecialPositions(desk.children);
           normalizeProjectChildren(desk.children);
         }
         state.fileTree = cleaned;
-        // A drag may have reordered the desk rows — mirror that order into
-        // the `settings.desks` registry so the switcher / pickers agree.
+        // Mirror any desk-row reorder into the settings.desks registry.
         const orderedIds = cleaned.filter(n => n.type === "desk").map(n => n.id);
         const reg = state.settings?.desks || [];
         const regById = new Map(reg.map(d => [d.id, d]));
@@ -275,6 +284,7 @@ export function createFilesPanel(container, state, hidePanel) {
         state.reconcileSync();
         state.syncProjectOrdering(state.currentProjectId || null);
         if (state.currentProjectId) state.openProject(state.currentProjectId);
+        queueMicrotask(() => positionLocalSync(state)); // re-nest Local Folders after the re-render
         return;
       }
       enforceSpecialPositions(cleaned);
@@ -301,6 +311,7 @@ export function createFilesPanel(container, state, hidePanel) {
     for (const id of allSpecialIds(state, AppState.PDFS_ID)) sortableInstance.state.collapsedIds.add(id);
   }
   sortableInstance.render();
+  positionLocalSync(state);
 
   // Render the virtual Flagged folder
   renderFlaggedSection(state);
@@ -379,25 +390,8 @@ function dispatchRowAction(action, nodeId, opts) {
     handleRestore(nodeId, storedState, refresh);
   } else if (action === "permanent-delete") {
     handlePermanentDelete(nodeId, storedState, refresh);
-  } else if (action === "set-active-desk") {
-    storedState.setActiveDesk(nodeId);
-  } else if (action === "rename-desk") {
-    const desk = (storedState.settings.desks || []).find(d => d.id === nodeId);
-    showPromptModal({
-      title: "Rename desk",
-      label: "Name",
-      initialValue: desk?.name || "",
-      confirmLabel: "Rename",
-      onConfirm: async (name) => { await storedState.renameDesk(nodeId, name); },
-    });
-  } else if (action === "delete-desk") {
-    const desk = (storedState.settings.desks || []).find(d => d.id === nodeId);
-    const name = desk?.name || "this desk";
-    showDeleteConfirmModal(
-      `Delete "${name}"`,
-      `Delete "${name}" and everything inside it?\n\nThis cannot be undone.`,
-      async () => { try { await storedState.deleteDesk(nodeId); } catch (e) { console.warn("delete desk failed:", e); } },
-    );
+  } else if (action === "set-active-desk" || action === "rename-desk" || action === "delete-desk") {
+    handleDeskAction(action, nodeId, storedState);
   }
 }
 
@@ -624,6 +618,25 @@ function isItemActive(item, state) {
   return false;
 }
 
+/** Place the Local Folders section: nested in the active desk's row (just
+ *  below its Inbox/Images/Trash) in the all-desks view, else at the panel
+ *  root. Re-run after every tree render — `setData` detaches the host. */
+function positionLocalSync(state) {
+  if (!localSyncRootEl) return;
+  if (isAllDesksMode(state) && treeListEl) {
+    const activeId = state?.settings?.activeDeskId;
+    const sel = activeId && window.CSS?.escape ? CSS.escape(activeId) : activeId;
+    const deskLi = activeId ? treeListEl.querySelector(`:scope > .sl-item[data-id="${sel}"]`) : null;
+    if (deskLi) {
+      localSyncRootEl.classList.add("local-sync-nested");
+      if (localSyncRootEl.parentElement !== deskLi) deskLi.appendChild(localSyncRootEl);
+      return;
+    }
+  }
+  localSyncRootEl.classList.remove("local-sync-nested");
+  if (panelRootEl && localSyncRootEl.parentElement !== panelRootEl) panelRootEl.appendChild(localSyncRootEl);
+}
+
 function refreshList(state) {
   if (sortableInstance) {
     reapplyGutterMarkers(state.fileTree);
@@ -631,6 +644,7 @@ function refreshList(state) {
     numberLabels = computeNumberLabels(sorted, numberSkip, isInboxId);
     sortableInstance.setData(sorted);
   }
+  positionLocalSync(state);
   renderFlaggedSection(state);
   // Any rows we might have had a tooltip open over may have been re-
   // rendered or removed — drop the tooltip so it can't linger.
@@ -657,9 +671,9 @@ function scheduleTabRefresh(state) {
 
 export function refreshFilesPanel(state) {
   refreshList(state);
-  // Re-render the local-sync section too. Prefer the cached reference,
-  // falling back to a live DOM query if it got out of sync.
-  const cached = getLocalSyncContainer();
+  // refreshList already repositioned the local-sync container (nesting it
+  // inside the active desk in all-desks mode); render its contents into it.
+  const cached = getLocalSyncContainer() || localSyncRootEl;
   const root = cached?.isConnected ? cached : document.querySelector(".local-sync-root");
   if (root && storedState && storedHidePanel) {
     renderLocalSyncSection(root, storedState, storedHidePanel, refreshFilesPanel);

@@ -11,7 +11,26 @@
  * create a circular dependency).
  */
 import { findNode } from "../state/tree-helpers.js";
-import { showConfirmModal, showDeleteConfirmModal } from "./files-panel-shared.js";
+import { showConfirmModal, showDeleteConfirmModal, showPromptModal } from "./files-panel-shared.js";
+
+/** Desk row-menu actions (all-desks view): set-active / rename / delete.
+ *  Kept here so files-panel.js stays under the line cap. */
+export function handleDeskAction(action, deskId, state) {
+  if (action === "set-active-desk") { state.setActiveDesk(deskId); return; }
+  const desk = (state.settings.desks || []).find(d => d.id === deskId);
+  if (action === "rename-desk") {
+    showPromptModal({
+      title: "Rename desk", label: "Name", initialValue: desk?.name || "",
+      confirmLabel: "Rename",
+      onConfirm: async (name) => { await state.renameDesk(deskId, name); },
+    });
+  } else if (action === "delete-desk") {
+    const name = desk?.name || "this desk";
+    showDeleteConfirmModal(`Delete "${name}"`,
+      `Delete "${name}" and everything inside it?\n\nThis cannot be undone.`,
+      async () => { try { await state.deleteDesk(deskId); } catch (e) { console.warn("delete desk failed:", e); } });
+  }
+}
 
 function escAttrValue(str) {
   return (str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
