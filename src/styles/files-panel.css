@@ -1028,6 +1028,11 @@ button.desk-switcher-row.desk-switcher-add {
   margin-left: 8px;
   padding-left: 2px;
   border-left: 1px solid rgba(128, 128, 128, 0.25);
+  /* No separator from the tree above — these read as part of the desk's
+     own child list (continuing the Inbox/Trash connector line). */
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
 }
 .sl-item.collapsed > .local-sync-root.local-sync-nested,
 .local-sync-root.local-sync-nested:empty { display: none; }

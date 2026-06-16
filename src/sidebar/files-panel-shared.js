@@ -66,7 +66,7 @@ export const typeIcons = {
   // Desk: the same writing-desk glyph used in the command palette
   // (sidebar_icons/desk.svg), scaled down for the tree row. Used only in
   // the "show all desks" view where desks render as top-level rows.
-  desk: `<svg viewBox="0 0 24 24" class="tree-type-icon desk-icon"><path d="M4 7L4 17"/><path d="M1 7L23 7"/><path d="M14 10L20 10"/><path d="M14 14H20"/><path d="M20 7L20 17"/><path d="M14 7L14 17"/><path d="M17 10L17 11"/><path d="M17 14L17 15"/></svg>`,
+  desk: `<svg viewBox="0 0 24 24" class="tree-type-icon desk-icon"><path d="M4 7L4 17"/><path d="M1 7L23 7"/><path d="M14 14H20"/><path d="M20 7L20 17"/><path d="M14 7L14 17"/><path d="M17 10L17 11"/><path d="M17 14L17 15"/></svg>`,
 };
 
 // Six-dot drag-handle glyph, shared by the desk-switcher popover rows and
