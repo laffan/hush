@@ -131,6 +131,13 @@
 .shuffle-md-h2 { font-size: 1.35em; }
 .shuffle-md-h3 { font-size: 1.15em; }
 .shuffle-node-text del { opacity: 0.55; }
+.shuffle-md-bq {
+  display: inline-block;
+  font-style: italic;
+  opacity: 0.85;
+  border-left: 3px solid color-mix(in srgb, var(--fg) 35%, transparent);
+  padding-left: 8px;
+}
 .shuffle-md-link {
   color: var(--accent, #4a90d9);
   text-decoration: underline;

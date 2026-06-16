@@ -3,9 +3,10 @@
  * their formatting visible (so a shuffled selection reads like the prose it
  * came from) while the raw markdown is restored for editing.
  *
- * Supports: # / ## / ### headings, **bold**, *italic* / _italic_,
- * ~~strike~~, [text](url) links, ==highlight==, and ==FLAG== / ==FLAG: body==
- * callouts. Text is HTML-escaped first so node content can't inject markup.
+ * Supports: # / ## / ### headings, > blockquotes, **bold**, *italic* /
+ * _italic_, ~~strike~~, [text](url) links, ==highlight==, and ==FLAG== /
+ * ==FLAG: body== callouts. Text is HTML-escaped first so node content can't
+ * inject markup.
  */
 
 const FLAG_INNER_RE = /^([A-Za-z][A-Za-z0-9_-]{0,24})(?::([\s\S]*))?$/;
@@ -47,6 +48,8 @@ export function renderShuffleMarkdown(text) {
   return String(text ?? "").split("\n").map((line) => {
     const h = line.match(/^(#{1,3})\s+(.*)$/);
     if (h) return `<span class="shuffle-md-h shuffle-md-h${h[1].length}">${inlineMd(h[2])}</span>`;
+    const bq = line.match(/^>\s?(.*)$/);
+    if (bq) return `<span class="shuffle-md-bq">${inlineMd(bq[1])}</span>`;
     return inlineMd(line);
   }).join("<br>");
 }
