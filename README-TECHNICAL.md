@@ -591,7 +591,7 @@ Snapshot history viewer for both docs and notebooks. Shows timestamped snapshots
 
 ### Focus Mode (`editor/plugins/focus-mode.js`)
 
-CodeMirror ViewPlugin that dims all text except the current sentence to 50% opacity. Uses sentence-boundary detection from `sentence-navigator.js`. On empty lines, all text is dimmed. The plugin is included in `createBaseExtensions()` so it's available in floating panes and stack columns, not just the main editor. Each pane and stack column has its own mode context (see below) so toggling focus mode affects only the active editor surface.
+CodeMirror ViewPlugin that dims all text except the current sentence to 50% opacity. Uses sentence-boundary detection from `sentence-navigator.js`. On empty lines, all text is dimmed. The plugin is included in `createBaseExtensions()` so it's available in floating panes and stack columns, not just the main editor. Each pane and stack column has its own mode context (see below) so toggling focus mode affects only the active editor surface. `focusSentenceBounds(view, state)` is exported so widget-based decorators can dim their own DOM: `Decoration.replace` widgets (rendered links **and** Zotero citation pills) render outside the surrounding `.focus-mode-dim` mark span, so the link and citation decorators each bake a `focus-mode-dim` class onto their widget when it falls outside the focused sentence and rebuild on focus-mode toggle.
 
 ### Zen Focus (`editor/zen-focus.js`, `styles/zen-focus.css`)
 

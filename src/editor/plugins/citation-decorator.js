@@ -27,6 +27,7 @@ import { ViewPlugin, Decoration, WidgetType, EditorView, keymap } from "@codemir
 import { RangeSetBuilder, Prec } from "@codemirror/state";
 import { isIOS } from "../../settings/settings-ui.js";
 import { openCitationPopup } from "../../links/citation-popup.js";
+import { focusSentenceBounds } from "./focus-mode.js";
 
 // Keep in sync with CITE_RE in doc-export-modal.js and is_citekey_char
 // in src-tauri/src/typst_export/markdown.rs.
@@ -335,23 +336,29 @@ function attachHover(span, citekey, url, appState) {
 // ───────────────────── decorations ─────────────────────
 
 class CitationWidget extends WidgetType {
-  constructor(citekey, url, bracketed, appState) {
+  constructor(citekey, url, bracketed, appState, dimmed) {
     super();
     this.citekey = citekey;
     this.url = url;
     this.bracketed = bracketed;
     this.appState = appState;
+    this.dimmed = !!dimmed;
   }
 
   eq(other) {
     return this.citekey === other.citekey
       && this.url === other.url
-      && this.bracketed === other.bracketed;
+      && this.bracketed === other.bracketed
+      && this.dimmed === other.dimmed;
   }
 
   toDOM() {
     const span = document.createElement("span");
-    span.className = "cm-citation-rendered" + (this.url ? " linked" : "");
+    // Bake focus-mode dimming into the widget's own DOM — `Decoration.replace`
+    // widgets render outside the surrounding `.focus-mode-dim` mark span, so
+    // citations would otherwise stay at full opacity while the rest of the
+    // sentence dims.
+    span.className = "cm-citation-rendered" + (this.url ? " linked" : "") + (this.dimmed ? " focus-mode-dim" : "");
     // Citations always show their brackets — only the deep-link URL is
     // hidden in the rendered form.
     span.textContent = this.bracketed ? `[@${this.citekey}]` : `@${this.citekey}`;
@@ -371,6 +378,9 @@ function buildDecorations(view, appState) {
     from: Math.min(r.from, r.to),
     to: Math.max(r.from, r.to),
   }));
+  // Dim citations outside the focused sentence to match the surrounding
+  // text (see CitationWidget.toDOM).
+  const focusBounds = appState ? focusSentenceBounds(view, appState) : null;
 
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
@@ -387,8 +397,11 @@ function buildDecorations(view, appState) {
           (c.from <= from && c.to >= to),
       );
       if (cursorInside) continue;
+      const dimmed = focusBounds
+        ? (to <= focusBounds.from || from >= focusBounds.to)
+        : false;
       builder.add(from, to, Decoration.replace({
-        widget: new CitationWidget(item.citekey, item.url, item.bracketed, appState),
+        widget: new CitationWidget(item.citekey, item.url, item.bracketed, appState, dimmed),
       }));
     }
   }
@@ -574,10 +587,15 @@ export function createCitationPlugin(appState) {
     class {
       constructor(view) {
         controller = createSearchController(view);
+        this.lastFocusMode = !!appState?.focusMode;
         this.decorations = buildDecorations(view, appState);
       }
       update(update) {
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        // Rebuild on focus-mode toggle too — it changes which citations
+        // dim but doesn't fire docChanged / selectionSet on its own.
+        const focusToggled = !!appState?.focusMode !== this.lastFocusMode;
+        this.lastFocusMode = !!appState?.focusMode;
+        if (focusToggled || update.docChanged || update.selectionSet || update.viewportChanged) {
           this.decorations = buildDecorations(update.view, appState);
         }
         if (update.docChanged || update.selectionSet) {
