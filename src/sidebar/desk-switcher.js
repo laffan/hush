@@ -13,7 +13,7 @@
  * to refresh in place; outside clicks dismiss the popover.
  */
 
-import { escHtml, showDeleteConfirmModal } from "./files-panel-shared.js";
+import { escHtml, showDeleteConfirmModal, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 
 let _state = null;
 let _container = null;
@@ -47,15 +47,21 @@ function attachListeners() {
   if (!_state) return;
   const onDesks = () => render();
   const onActive = () => render();
+  // The "show all desks" toggle lives in settings; re-render so the
+  // switcher hides itself when that view takes over (the desk list in
+  // the panel becomes the switcher there).
+  const onSettings = () => render();
   _state.on("desks-changed", onDesks);
   _state.on("active-desk-changed", onActive);
-  _refreshHandlers = { onDesks, onActive };
+  _state.on("settings-changed", onSettings);
+  _refreshHandlers = { onDesks, onActive, onSettings };
 }
 
 function detachListeners() {
   if (!_state || !_refreshHandlers) { _refreshHandlers = null; return; }
   _state.off("desks-changed", _refreshHandlers.onDesks);
   _state.off("active-desk-changed", _refreshHandlers.onActive);
+  _state.off("settings-changed", _refreshHandlers.onSettings);
   _refreshHandlers = null;
   closePopover();
 }
@@ -63,7 +69,9 @@ function detachListeners() {
 function render() {
   if (!_container || !_state) return;
   const desks = _state.settings?.desks || [];
-  if (desks.length < 2) {
+  // Hidden when there's nothing to switch (single desk) or when the
+  // all-desks panel view is active (the desk rows there replace it).
+  if (desks.length < 2 || _state.settings?.deskDisplayMode === "all") {
     _container.style.display = "none";
     _container.innerHTML = "";
     return;
@@ -116,6 +124,7 @@ function openPopover() {
   _container.appendChild(popover);
 
   popover.addEventListener("click", (ev) => onPopoverClick(ev, popover));
+  attachReorder(popover);
 
   // Capture-phase outside-click closes the popover. We attach on the
   // next tick so the click that opened it doesn't immediately close.
@@ -144,7 +153,9 @@ function deskRowHtml(d, activeId, canDelete) {
   const trashBtn = canDelete
     ? `<button class="desk-switcher-action" type="button" data-action="delete" data-tooltip="Delete">${TRASH}</button>`
     : "";
+  const handle = `<span class="desk-switcher-drag-handle" data-action="drag" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>`;
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
+    ${handle}
     <button class="desk-switcher-row-pick" type="button" data-action="pick">
       <span class="desk-switcher-row-mark">${mark}</span>
       <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>
@@ -194,6 +205,50 @@ async function onPopoverClick(ev, popover) {
     closePopover();
     runDeleteDesk(deskId);
   }
+}
+
+/** Wire pointer-drag reordering off the per-row drag handles. Reorders
+ *  the rows in place during the drag, then commits the new order via
+ *  `state.reorderDesks` on pointer-up (which fires desks-changed and
+ *  rebuilds the popover body in the committed order). */
+function attachReorder(popover) {
+  popover.addEventListener("pointerdown", (e) => {
+    const handle = e.target.closest(".desk-switcher-drag-handle");
+    if (!handle) return;
+    const row = handle.closest(".desk-switcher-row[data-desk-id]");
+    if (!row) return;
+    // While a rename input is open we leave reordering alone.
+    if (popover.querySelector(".desk-switcher-rename-input")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    startRowDrag(popover, row);
+  });
+}
+
+function startRowDrag(popover, row) {
+  const body = row.parentElement;
+  if (!body) return;
+  row.classList.add("dragging");
+  const dataRows = () => [...body.querySelectorAll(".desk-switcher-row[data-desk-id]")];
+  const onMove = (e) => {
+    const target = dataRows().find((r) => {
+      if (r === row) return false;
+      const rect = r.getBoundingClientRect();
+      return e.clientY < rect.top + rect.height / 2;
+    });
+    if (target) { body.insertBefore(row, target); return; }
+    const addRow = body.querySelector(".desk-switcher-add");
+    if (addRow) body.insertBefore(row, addRow); else body.appendChild(row);
+  };
+  const onUp = () => {
+    row.classList.remove("dragging");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    const ids = dataRows().map((r) => r.dataset.deskId);
+    _state?.reorderDesks(ids);
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 }
 
 function beginInlineRename(deskId) {

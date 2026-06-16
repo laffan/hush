@@ -955,6 +955,54 @@ button.desk-switcher-row.desk-switcher-add {
   min-width: 0;
 }
 
+/* Desk reorder handle (switcher popover rows). Revealed on row hover so
+   it doesn't compete with the desk name at rest. */
+.desk-switcher-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  padding-left: 4px;
+  cursor: grab;
+  color: var(--fg);
+  opacity: 0;
+  transition: opacity 0.1s;
+  touch-action: none;
+}
+.desk-switcher-row:hover .desk-switcher-drag-handle,
+.desk-switcher-row:focus-within .desk-switcher-drag-handle { opacity: 0.45; }
+.desk-switcher-drag-handle:hover { opacity: 0.9 !important; }
+.desk-switcher-row.dragging { opacity: 0.6; background: rgba(128, 128, 128, 0.18); }
+.drag-handle-icon { fill: currentColor; stroke: none; }
+
+/* ===== All-desks file-panel rows ===== */
+/* Desks rendered as top-level rows (deskDisplayMode === "all"). */
+.tree-item-row.desk-row .tree-item-name { font-weight: 600; }
+.tree-item-row.desk-row .desk-icon { stroke: currentColor; fill: none; }
+.tree-item-row.desk-row.active-desk { color: var(--accent, var(--fg)); }
+.desk-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  margin-right: 2px;
+  cursor: grab;
+  color: var(--fg);
+  opacity: 0;
+  transition: opacity 0.1s;
+  touch-action: none;
+}
+.sl-item:hover > .sl-item-content .desk-drag-handle,
+.tree-item-row.desk-row:hover .desk-drag-handle { opacity: 0.4; }
+.desk-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent, currentColor);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
 /* ===== Send / Copy to desk modal ===== */
 .send-to-desk-overlay {
   position: fixed;

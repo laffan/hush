@@ -65,6 +65,13 @@ export function renderGeneralTab(settings) {
         <label>Show Recent Files</label>
         <input type="checkbox" id="setting-show-recent-files" ${s.showRecentFiles ? "checked" : ""} />
       </div>
+      <div class="settings-row">
+        <label>Desks</label>
+        <select id="setting-desk-display-mode">
+          <option value="single" ${s.deskDisplayMode !== "all" ? "selected" : ""}>Show single desk</option>
+          <option value="all" ${s.deskDisplayMode === "all" ? "selected" : ""}>Show all desks</option>
+        </select>
+      </div>
       ${isIOSSettings() ? `<div class="settings-row"><label>Touch mode</label><input type="checkbox" id="setting-touch-mode" ${s.touchMode ? "checked" : ""} /></div>` : ""}
       ${isIOSSettings() ? `<div class="settings-row"><label>Hide system chrome</label><input type="checkbox" id="setting-hide-system-chrome" ${s.hideSystemChrome !== false ? "checked" : ""} /></div>` : ""}
     </div>

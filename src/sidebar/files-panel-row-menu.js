@@ -86,6 +86,16 @@ export function renderFlagOnlyMenuButton(nodeId) {
 /** Compute the list of menu entries that apply to a given tree row.
  *  Each entry: `{ action, label, targetType? }`. */
 function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
+  // Desk rows (only rendered in the all-desks view) carry their own
+  // small action set — set-active is the headline action since the
+  // active desk owns theme / Cmd+N / which Local Folders show.
+  if (nodeType === "desk") {
+    return [
+      { action: "set-active-desk", label: "Set as Active" },
+      { action: "rename-desk", label: "Rename" },
+      { action: "delete-desk", label: "Delete" },
+    ];
+  }
   if (isTrashId(nodeId)) return [{ action: "empty-trash", label: "Empty Trash" }];
   if (item?.syncFolderId && item.type === "folder") return [];
 

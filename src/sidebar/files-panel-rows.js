@@ -22,10 +22,17 @@ export const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppS
 export const isAnySpecialId = (id) => isInboxId(id) || isImagesId(id) || isPdfsId(id) || isTrashId(id);
 export const allSpecialIds = (s, k) => [k, ...(s.settings?.desks || []).map(d => `${k}:${d.id}`)];
 
+/** True when the user has chosen the "show all desks" panel view. */
+export const isAllDesksMode = (s) =>
+  s.settings?.deskDisplayMode === "all" && s.fileTree.some(n => n.type === "desk");
+
 // Render the active desk's children only (the desk wrapper stays out
-// of the panel). Pre-migration boot tick falls back to the raw tree.
+// of the panel). In "show all desks" mode every desk surfaces as a
+// top-level row instead. Pre-migration boot tick falls back to the raw
+// tree.
 export const visibleTopLevel = (s) => {
   const desks = s.fileTree.filter(n => n.type === "desk");
+  if (isAllDesksMode(s)) return desks;
   const active = desks.find(n => n.id === s.settings?.activeDeskId) || desks[0];
   const children = active ? (active.children || []) : s.fileTree;
   return children.filter(n => !isPdfsId(n.id) || (n.children && n.children.length > 0));
@@ -45,6 +52,7 @@ export function hasPairedGutter(state, docItem) {
 }
 
 export function getIcon(item) {
+  if (item.type === "desk") return typeIcons.desk;
   if (isInboxId(item.id)) return typeIcons.inbox;
   if (isImagesId(item.id)) return typeIcons.images;
   if (isPdfsId(item.id)) return typeIcons.pdf;

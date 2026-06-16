@@ -255,6 +255,7 @@ function bindAll() {
   bindCheckbox("setting-always-on-top", "alwaysOnTop");
   bindCheckbox("setting-show-tooltips", "showTooltips");
   bindCheckbox("setting-show-recent-files", "showRecentFiles");
+  bindSelect("setting-desk-display-mode", "deskDisplayMode");
   bindCheckbox("setting-touch-mode", "touchMode");
   bindCheckbox("setting-hide-system-chrome", "hideSystemChrome");
 

@@ -289,6 +289,44 @@ export function enterCollapseDeskPicker(palette, state, { fallbackIcon } = {}) {
   palette.setItems(items, "Collapse desk into folder…");
 }
 
+/** Reorder the desks to match `orderedIds` (an array of desk ids in the
+ *  desired top-to-bottom order). Reorders both the file-tree desk nodes
+ *  and the `settings.desks` registry so the two stay in lockstep, then
+ *  persists and republishes. Ids missing from `orderedIds` keep their
+ *  relative order at the tail; unknown ids are ignored. No-op when the
+ *  order is already correct. */
+export async function reorderDesks(state, orderedIds) {
+  const tree = state.fileTree || [];
+  const deskNodes = tree.filter((n) => n.type === "desk");
+  if (deskNodes.length < 2) return;
+  const byId = new Map(deskNodes.map((n) => [n.id, n]));
+  const ordered = [];
+  for (const id of orderedIds || []) {
+    const n = byId.get(id);
+    if (n && !ordered.includes(n)) ordered.push(n);
+  }
+  for (const n of deskNodes) if (!ordered.includes(n)) ordered.push(n);
+  if (ordered.length !== deskNodes.length) return;
+  // Bail if nothing actually moved.
+  if (deskNodes.every((n, i) => n === ordered[i])) return;
+
+  // Substitute the reordered desk nodes back into their top-level slots,
+  // leaving any (rare) non-desk top-level node where it sits.
+  let i = 0;
+  state.fileTree = tree.map((n) => (n.type === "desk" ? ordered[i++] : n));
+
+  // Mirror the order into the registry.
+  const reg = state.settings?.desks || [];
+  const regById = new Map(reg.map((d) => [d.id, d]));
+  const newReg = ordered.map((n) => regById.get(n.id)).filter(Boolean);
+  for (const d of reg) if (!newReg.includes(d)) newReg.push(d);
+
+  await state.updateSettings({ desks: newReg });
+  await state.saveFileTree();
+  state.emit("desks-changed");
+  pushDesksJson(state);
+}
+
 /** Drive the editor view to the desk's last-opened file when the user
  *  switches desks. Resolution priority: the per-desk last-file slot
  *  (synced via desks.json), then the first doc/notebook in that desk's

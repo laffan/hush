@@ -8,10 +8,10 @@ import { AppState } from "../state/state.js";
 import { collectFlaggedItems, findAncestorIds, findNode, findNodeByFileId, normalizeProjectChildren, enforceSpecialPositions, findParentOfNode, reapplyGutterMarkers } from "../state/tree-helpers.js";
 import { createPane } from "../pane/pane-manager.js";
 import { paneIndicatorsFor, attachPaneIndicatorTooltip } from "./files-panel-pane-indicators.js";
-import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLinkBadgeHtml, computeNumberLabels } from "./files-panel-shared.js";
+import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, showDeleteConfirmModal, googleLinkBadgeHtml, computeNumberLabels, DRAG_HANDLE_SVG } from "./files-panel-shared.js";
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
-  visibleTopLevel, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
+  visibleTopLevel, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
   actionButtons, flagOnlyButton, getPdfSync, buildPdfRowHtml,
 } from "./files-panel-rows.js";
 import { refreshTooltips } from "../tooltips.js";
@@ -97,9 +97,11 @@ export function createFilesPanel(container, state, hidePanel) {
       return false;
     },
     canDrag: (item) => {
-      // Special nodes and desk containers themselves can't be dragged.
       if (isTabMarkerItem(item)) return false;
-      return !isAnySpecialId(item.id) && item.type !== "desk";
+      // In the all-desks view, desk rows are reorderable; everywhere else
+      // the desk container itself stays put.
+      if (item.type === "desk") return isAllDesksMode(state);
+      return !isAnySpecialId(item.id);
     },
     // Multi-drag: if the dragged row belongs to a multi-selection, return
     // the node ids of the *other* selected files so they move together.
@@ -134,8 +136,11 @@ export function createFilesPanel(container, state, hidePanel) {
         context.li.classList.toggle("multi-selected", !!isMultiSelected);
         if (item.fileId) context.li.dataset.fileId = item.fileId;
       }
+      const isDesk = item.type === "desk";
+      const isActiveDesk = isDesk && item.id === state.settings?.activeDeskId;
       const row = document.createElement("span");
-      row.className = "tree-item-row" + (isActive ? " active" : "");
+      row.className = "tree-item-row" + (isActive ? " active" : "")
+        + (isDesk ? " desk-row" : "") + (isActiveDesk ? " active-desk" : "");
 
       if (item.type === "pdf" && item.fileId && !isPdfsId(item.id)) {
         const pdfHtml = buildPdfRowHtml(item, icon, state, inTrash, inProject);
@@ -145,7 +150,11 @@ export function createFilesPanel(container, state, hidePanel) {
         const numPrefix = numLabel ? `<span class="tree-item-number">${escHtml(numLabel)}</span> ` : "";
         // Gutter notebooks are stored as `<docName>-gutter` but read as "Gutter".
         const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
-        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(displayName)}</span>${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+        // Desk rows lead with a drag handle (reorder) and trail an active
+        // marker so the theme-/Cmd-N-owning desk is obvious at a glance.
+        const deskHandle = isDesk ? `<span class="desk-drag-handle" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>` : "";
+        const deskMark = isActiveDesk ? `<span class="desk-active-dot" data-tooltip="Active desk"></span>` : "";
+        row.innerHTML = `${deskHandle}${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(displayName)}</span>${deskMark}${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);
@@ -237,6 +246,30 @@ export function createFilesPanel(container, state, hidePanel) {
       // Tab markers are synthetic — strip them before any tree write so
       // the persisted tree never inherits one (re-added on next render).
       const cleaned = stripTabMarkersFromTree(newData);
+      if (isAllDesksMode(state)) {
+        // The top level *is* the desk list here. Re-pin specials inside
+        // each desk (a cross-desk move can land an item beside Inbox /
+        // Trash) and write the desks straight back as the tree.
+        for (const desk of cleaned) {
+          if (desk?.type !== "desk" || !Array.isArray(desk.children)) continue;
+          enforceSpecialPositions(desk.children);
+          normalizeProjectChildren(desk.children);
+        }
+        state.fileTree = cleaned;
+        // A drag may have reordered the desk rows — mirror that order into
+        // the `settings.desks` registry so the switcher / pickers agree.
+        const orderedIds = cleaned.filter(n => n.type === "desk").map(n => n.id);
+        const reg = state.settings?.desks || [];
+        const regById = new Map(reg.map(d => [d.id, d]));
+        const newReg = orderedIds.map(id => regById.get(id)).filter(Boolean);
+        for (const d of reg) if (!newReg.includes(d)) newReg.push(d);
+        if (newReg.some((d, i) => d !== reg[i])) state.updateSettings({ desks: newReg });
+        state.saveFileTree();
+        state.reconcileSync();
+        state.syncProjectOrdering(state.currentProjectId || null);
+        if (state.currentProjectId) state.openProject(state.currentProjectId);
+        return;
+      }
       enforceSpecialPositions(cleaned);
       normalizeProjectChildren(cleaned);
       const active = state.fileTree.find(n => n.type === "desk" && n.id === state.settings?.activeDeskId)
@@ -339,6 +372,25 @@ function dispatchRowAction(action, nodeId, opts) {
     handleRestore(nodeId, storedState, refresh);
   } else if (action === "permanent-delete") {
     handlePermanentDelete(nodeId, storedState, refresh);
+  } else if (action === "set-active-desk") {
+    storedState.setActiveDesk(nodeId);
+  } else if (action === "rename-desk") {
+    const desk = (storedState.settings.desks || []).find(d => d.id === nodeId);
+    showPromptModal({
+      title: "Rename desk",
+      label: "Name",
+      initialValue: desk?.name || "",
+      confirmLabel: "Rename",
+      onConfirm: async (name) => { await storedState.renameDesk(nodeId, name); },
+    });
+  } else if (action === "delete-desk") {
+    const desk = (storedState.settings.desks || []).find(d => d.id === nodeId);
+    const name = desk?.name || "this desk";
+    showDeleteConfirmModal(
+      `Delete "${name}"`,
+      `Delete "${name}" and everything inside it?\n\nThis cannot be undone.`,
+      async () => { try { await storedState.deleteDesk(nodeId); } catch (e) { console.warn("delete desk failed:", e); } },
+    );
   }
 }
 

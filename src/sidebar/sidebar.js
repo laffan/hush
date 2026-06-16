@@ -368,6 +368,7 @@ export function createSidebar(state) {
 
   let _lastLocalSyncSerialised = JSON.stringify(state.settings.localSyncFolders || []);
   let _lastGoogleLinksSerialised = JSON.stringify(state.settings.googleDocLinks || {});
+  let _lastDeskDisplayMode = state.settings.deskDisplayMode || "single";
   state.on("settings-changed", () => {
     const next = JSON.stringify(state.settings.localSyncFolders || []);
     if (next !== _lastLocalSyncSerialised) {
@@ -377,6 +378,13 @@ export function createSidebar(state) {
     const nextGdoc = JSON.stringify(state.settings.googleDocLinks || {});
     if (nextGdoc !== _lastGoogleLinksSerialised) {
       _lastGoogleLinksSerialised = nextGdoc;
+      if (panelMode === "files") refreshFilesPanel(state);
+    }
+    // Switching between "single desk" and "all desks" reshapes the whole
+    // tree (desks become top-level rows or fold away), so repaint.
+    const nextMode = state.settings.deskDisplayMode || "single";
+    if (nextMode !== _lastDeskDisplayMode) {
+      _lastDeskDisplayMode = nextMode;
       if (panelMode === "files") refreshFilesPanel(state);
     }
   });

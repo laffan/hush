@@ -63,7 +63,14 @@ export const typeIcons = {
   pdfFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1" fill="none"/><line x1="5" y1="8" x2="11" y2="8" /></svg>`,
   stack: `<svg viewBox="0 0 16 16" class="tree-type-icon"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></svg>`,
   stackFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></svg>`,
+  // Desk: a workspace surface — a wide tray/desktop glyph. Used only in
+  // the "show all desks" view where desks render as top-level rows.
+  desk: `<svg viewBox="0 0 16 16" class="tree-type-icon desk-icon"><rect x="2" y="4" width="12" height="8" rx="1" /><line x1="2" y1="7.5" x2="14" y2="7.5" /></svg>`,
 };
+
+// Six-dot drag-handle glyph, shared by the desk-switcher popover rows and
+// the all-desks file-panel rows so desks can be grabbed for reordering.
+export const DRAG_HANDLE_SVG = `<svg viewBox="0 0 16 16" class="drag-handle-icon" width="12" height="12" aria-hidden="true"><circle cx="6" cy="4" r="1.2"/><circle cx="10" cy="4" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="10" cy="8" r="1.2"/><circle cx="6" cy="12" r="1.2"/><circle cx="10" cy="12" r="1.2"/></svg>`;
 
 export function escHtml(str) {
   const div = document.createElement("div");

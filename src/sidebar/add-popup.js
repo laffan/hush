@@ -21,6 +21,11 @@ export function mountAddPopup(state, anchorEl) {
   const localFolderBtn = IS_TAURI
     ? `<button type="button" data-action="new-local-folder">${typeIcons.localSync}<span>Local Folder</span></button>`
     : "";
+  // The desk-switcher's "Add desk" entry is hidden in the all-desks view,
+  // so surface desk creation here instead.
+  const newDeskBtn = state.settings?.deskDisplayMode === "all"
+    ? `<button type="button" data-action="new-desk">${typeIcons.desk}<span>New Desk</span></button>`
+    : "";
   popup.innerHTML = `
     <button type="button" data-action="new-doc">${typeIcons.document}<span>New Doc</span></button>
     <button type="button" data-action="new-notebook">${typeIcons.notebook}<span>New Notebook</span></button>
@@ -28,6 +33,7 @@ export function mountAddPopup(state, anchorEl) {
     <button type="button" data-action="new-folder">${typeIcons.folder}<span>New Folder</span></button>
     <button type="button" data-action="new-project">${typeIcons.project}<span>New Project</span></button>
     ${localFolderBtn}
+    ${newDeskBtn}
   `;
   document.body.appendChild(popup);
 
@@ -67,6 +73,18 @@ export function mountAddPopup(state, anchorEl) {
       await state.createFolder("New Folder");
     } else if (action === "new-project") {
       await state.createProject("New Project");
+    } else if (action === "new-desk") {
+      showPromptModal({
+        title: "New desk",
+        label: "Name",
+        placeholder: "Untitled desk",
+        initialValue: "Untitled desk",
+        confirmLabel: "Create",
+        onConfirm: async (name) => {
+          const id = await state.createDesk(name);
+          await state.setActiveDesk(id);
+        },
+      });
     } else if (action === "new-local-folder") {
       const { addLocalSyncFolder } = await import("../sync/local-sync.js");
       // Stamp the new mount with the currently active desk. Rust
