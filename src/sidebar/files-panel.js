@@ -150,11 +150,15 @@ export function createFilesPanel(container, state, hidePanel) {
         const numPrefix = numLabel ? `<span class="tree-item-number">${escHtml(numLabel)}</span> ` : "";
         // Gutter notebooks are stored as `<docName>-gutter` but read as "Gutter".
         const displayName = (item.type === "notebook" && item.gutter) ? "Gutter" : item.name;
-        // Desk rows lead with a drag handle (reorder) and trail an active
-        // marker so the theme-/Cmd-N-owning desk is obvious at a glance.
+        // Desk rows carry a reorder handle pinned to the right (just left
+        // of the absolutely-positioned menu button), so it never pushes
+        // the desk name over. The active desk (theme / Cmd+N owner) wears
+        // an inverted name pill.
         const deskHandle = isDesk ? `<span class="desk-drag-handle" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>` : "";
-        const deskMark = isActiveDesk ? `<span class="desk-active-dot" data-tooltip="Active desk"></span>` : "";
-        row.innerHTML = `${deskHandle}${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${numPrefix}${escHtml(displayName)}</span>${deskMark}${windowBadgesHtml(item, state)}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
+        const nameInner = isActiveDesk
+          ? `<span class="desk-active-pill">${escHtml(displayName)}</span>`
+          : `${numPrefix}${escHtml(displayName)}`;
+        row.innerHTML = `${icon}${googleLinkBadgeHtml(item, state)}<span class="tree-item-name">${nameInner}</span>${windowBadgesHtml(item, state)}${deskHandle}${actionButtons(item.id, item.type, inTrash, item, inProject)}`;
       }
       if (item.type === "image" && item.fileId) attachImageTooltipToRow(row, item.fileId, item.name);
       const indicators = paneIndicatorsFor(item, state);

@@ -978,30 +978,36 @@ button.desk-switcher-row.desk-switcher-add {
 /* ===== All-desks file-panel rows ===== */
 /* Desks rendered as top-level rows (deskDisplayMode === "all"). */
 .tree-item-row.desk-row .tree-item-name { font-weight: 600; }
-.tree-item-row.desk-row .desk-icon { stroke: currentColor; fill: none; }
-.tree-item-row.desk-row.active-desk { color: var(--accent, var(--fg)); }
+.tree-item-row.desk-row .desk-icon { stroke: currentColor; fill: none; stroke-width: 2; }
+/* Active desk: invert the name into a pill (theme fg as bg, theme bg as
+   text) so the theme-/Cmd-N-owning desk is unmistakable. */
+.desk-active-pill {
+  background: var(--fg);
+  color: var(--theme-bg, var(--bg));
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+/* Reorder handle, pinned just left of the (absolute) row menu button so
+   it never shifts the desk name. Revealed on row hover like the menu. */
 .desk-drag-handle {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 14px;
-  margin-right: 2px;
   cursor: grab;
   color: var(--fg);
   opacity: 0;
   transition: opacity 0.1s;
   touch-action: none;
 }
-.sl-item:hover > .sl-item-content .desk-drag-handle,
-.tree-item-row.desk-row:hover .desk-drag-handle { opacity: 0.4; }
-.desk-active-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent, currentColor);
-  margin: 0 6px;
-  flex-shrink: 0;
-}
+.sl-item.sl-hovered > .sl-item-content .desk-drag-handle,
+.tree-item-row.desk-row:hover .desk-drag-handle { opacity: 0.5; }
+.desk-drag-handle:active { cursor: grabbing; }
 
 /* ===== Send / Copy to desk modal ===== */
 .send-to-desk-overlay {

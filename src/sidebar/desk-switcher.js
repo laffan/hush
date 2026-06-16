@@ -155,12 +155,11 @@ function deskRowHtml(d, activeId, canDelete) {
     : "";
   const handle = `<span class="desk-switcher-drag-handle" data-action="drag" data-tooltip="Drag to reorder">${DRAG_HANDLE_SVG}</span>`;
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
-    ${handle}
     <button class="desk-switcher-row-pick" type="button" data-action="pick">
       <span class="desk-switcher-row-mark">${mark}</span>
       <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>
     </button>
-    <span class="desk-switcher-row-actions">${pencilBtn}${trashBtn}</span>
+    <span class="desk-switcher-row-actions">${handle}${pencilBtn}${trashBtn}</span>
   </div>`;
 }
 

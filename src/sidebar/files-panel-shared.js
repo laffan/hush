@@ -63,9 +63,10 @@ export const typeIcons = {
   pdfFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><rect x="3" y="1" width="10" height="14" rx="1" fill="none"/><line x1="5" y1="8" x2="11" y2="8" /></svg>`,
   stack: `<svg viewBox="0 0 16 16" class="tree-type-icon"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></svg>`,
   stackFlagged: `<svg viewBox="0 0 16 16" class="tree-type-icon flagged-icon"><line x1="4" y1="2" x2="4" y2="14"/><line x1="8" y1="2" x2="8" y2="14"/><line x1="12" y1="2" x2="12" y2="14"/></svg>`,
-  // Desk: a workspace surface — a wide tray/desktop glyph. Used only in
+  // Desk: the same writing-desk glyph used in the command palette
+  // (sidebar_icons/desk.svg), scaled down for the tree row. Used only in
   // the "show all desks" view where desks render as top-level rows.
-  desk: `<svg viewBox="0 0 16 16" class="tree-type-icon desk-icon"><rect x="2" y="4" width="12" height="8" rx="1" /><line x1="2" y1="7.5" x2="14" y2="7.5" /></svg>`,
+  desk: `<svg viewBox="0 0 24 24" class="tree-type-icon desk-icon"><path d="M4 7L4 17"/><path d="M1 7L23 7"/><path d="M4 10L20 10"/><path d="M14 14H20"/><path d="M20 7L20 17"/><path d="M14 7L14 17"/><path d="M17 10L17 11"/><path d="M17 14L17 15"/></svg>`,
 };
 
 // Six-dot drag-handle glyph, shared by the desk-switcher popover rows and
