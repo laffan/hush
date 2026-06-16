@@ -35,7 +35,11 @@ export const visibleTopLevel = (s) => {
   if (isAllDesksMode(s)) return desks;
   const active = desks.find(n => n.id === s.settings?.activeDeskId) || desks[0];
   const children = active ? (active.children || []) : s.fileTree;
-  return children.filter(n => !isPdfsId(n.id) || (n.children && n.children.length > 0));
+  // The PDFs and Images folders only earn a row once they hold something —
+  // an empty specials folder is just noise pinned above Trash.
+  return children.filter(n =>
+    (!isPdfsId(n.id) || (n.children && n.children.length > 0)) &&
+    (!isImagesId(n.id) || (n.children && n.children.length > 0)));
 };
 
 // Skip predicate for outline-number labels (specials + tab markers).

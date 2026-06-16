@@ -24,6 +24,7 @@ export const shortcutCategories = [
       { key: "shortcutZenFocus", label: "Toggle Zen Focus" },
       { key: "shortcutToggleWordCount", label: "Toggle word count" },
       { key: "shortcutNewFile", label: "New file" },
+      { key: "shortcutNewNotebook", label: "New notebook" },
       { key: "shortcutSave", label: "Save file" },
       { key: "shortcutQuickFind", label: "Quick find (current document)" },
       { key: "shortcutFind", label: "Find / replace (all files)" },

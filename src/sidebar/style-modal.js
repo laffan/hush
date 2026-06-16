@@ -130,8 +130,15 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
   // ordinary updates from then on.
   let createdNewStyle = !isNew;
   let saveTimer = null;
+  // Set once the user deletes this style from the settings pane. The host
+  // (Edit Styles shell) tears this editor down and remounts on Default, but
+  // its `flush()` would otherwise re-commit the draft — and since the style
+  // was just removed from `state.settings.styles`, applyDraftLive would
+  // happily push it straight back. The guard makes every save path a no-op.
+  let deleted = false;
 
   function applyDraftLive() {
+    if (deleted) return;
     if (isDefault) {
       Object.assign(state.settings, {
         fontFamily: draft.fontFamily || state.settings.fontFamily,
@@ -199,12 +206,14 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
   }
 
   function scheduleSave() {
+    if (deleted) return;
     applyDraftLive();
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { saveTimer = null; commitDraft(); }, 200);
   }
 
   function flushSave() {
+    if (deleted) { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } return; }
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; commitDraft(); }
   }
 
@@ -240,15 +249,12 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
     const activeColors = colorTab === "light" ? (draft.lightColors || {}) : (draft.darkColors || {});
 
     const headerScale = draft.headerScale != null ? draft.headerScale : 1.0;
-    const title = isDefault ? "Edit Default Style" : isNew ? "New Style" : "Edit Style";
-
-    const nameSection = isDefault ? "" : `
-      <div class="style-modal-section">
-        <h3 class="style-modal-section-title">Name</h3>
-        <div class="style-editor-row">
-          <input type="text" id="style-name" value="${escAttr(draft.name)}" placeholder="Style name" />
-        </div>
-      </div>`;
+    // The Default style isn't renameable, so it keeps a static heading. Every
+    // other style turns the heading slot itself into the editable name field —
+    // there's no separate "Name" section, the title *is* the name.
+    const titleHtml = isDefault
+      ? `<h2 class="style-modal-title">Edit Default Style</h2>`
+      : `<input type="text" id="style-name" class="style-modal-title style-modal-title-input" value="${escAttr(draft.name)}" placeholder="${isNew ? "New style name" : "Style name"}" aria-label="Style name" />`;
 
     backdrop.innerHTML = `
       <div class="style-modal${ownsBackdrop ? "" : " in-host"}">
@@ -257,9 +263,7 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
 
           <!-- LEFT: settings column -->
           <div class="style-modal-settings">
-            <h2 class="style-modal-title">${title}</h2>
-
-            ${nameSection}
+            ${titleHtml}
 
             <div class="style-modal-section">
               <h3 class="style-modal-section-title">Editing</h3>
@@ -375,6 +379,11 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
 
             ${renderShaderSection(draft)}
             ${renderStyleExtras(draft)}
+
+            ${(!isDefault && !isNew && typeof options.onDelete === "function") ? `
+            <div class="style-modal-section">
+              <button type="button" class="style-modal-delete">Delete style</button>
+            </div>` : ""}
           </div>
 
           <!-- Draggable divider — only visible in narrow-window stack layout -->
@@ -545,6 +554,26 @@ export function openStyleModal(state, existingStyle, onDone, options = {}) {
 
     bindShaderSection(backdrop, draft, scheduleSave);
     bindStyleExtras(backdrop, draft, scheduleSave, render, flushSave);
+
+    const deleteBtn = backdrop.querySelector(".style-modal-delete");
+    if (deleteBtn) deleteBtn.addEventListener("click", () => {
+      // Native window.confirm doesn't reliably block in the WebView (it
+      // returns immediately), which is why the style used to vanish before
+      // the user could answer. Route through the real confirm modal instead.
+      import("./files-panel-shared.js").then(({ showDeleteConfirmModal }) => {
+        showDeleteConfirmModal(
+          "Delete style",
+          `Delete the style "${draft.name || "Untitled"}"? This can't be undone.`,
+          () => {
+            // Stop this editor from re-saving the now-removed style, then
+            // hand off to the host to drop it and remount on Default.
+            deleted = true;
+            if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+            if (typeof options.onDelete === "function") options.onDelete(draft.id);
+          },
+        );
+      });
+    });
 
     backdrop.querySelectorAll(".style-editor-color-row input[type='color']").forEach(input => {
       input.addEventListener("input", () => {

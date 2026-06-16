@@ -136,6 +136,9 @@ pub fn default_shortcut_typewriter() -> String {
 pub fn default_shortcut_new_file() -> String {
     "Mod+N".to_string()
 }
+pub fn default_shortcut_new_notebook() -> String {
+    "Mod+Shift+N".to_string()
+}
 pub fn default_shortcut_toggle_dry() -> String {
     "Mod+Shift+R".to_string()
 }

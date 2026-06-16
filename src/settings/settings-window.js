@@ -96,6 +96,7 @@ export async function initSettingsInto(rootEl, saveCallback) {
   if (!settings.shortcutToggleOutline) settings.shortcutToggleOutline = "CmdOrCtrl+Shift+\\";
   if (!settings.shortcutTypewriter) settings.shortcutTypewriter = "Mod+T";
   if (!settings.shortcutNewFile) settings.shortcutNewFile = "Mod+N";
+  if (!settings.shortcutNewNotebook) settings.shortcutNewNotebook = "Mod+Shift+N";
   if (!settings.shortcutFind) settings.shortcutFind = "Mod+F";
   if (!settings.shortcutSelectSentence) settings.shortcutSelectSentence = "Mod+L";
   if (!settings.shortcutReduceSentence) settings.shortcutReduceSentence = "Mod+Shift+L";

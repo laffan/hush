@@ -10,6 +10,7 @@
 import { openStyleModal } from "./style-modal.js";
 import { escAttr, escHtml, themeBackgrounds, themeForegrounds } from "./styles-panel-shared.js";
 import { resolveStyleForAppearance } from "./styles-panel.js";
+import { fontFallback } from "./style-modal-preview.js";
 import { applyAppearance } from "../settings/settings-ui.js";
 import appearanceLightRaw from "./sidebar_icons/appearance-light.svg?raw";
 import appearanceDarkRaw from "./sidebar_icons/appearance-dark.svg?raw";
@@ -57,28 +58,46 @@ export function openStyleEditorModal(state) {
     const appearance = state.settings.appearance || "auto";
     const rows = [];
 
+    // The Default row has no stored style object — synthesize one from the
+    // global settings so it gets the same font + light/dark swatch treatment
+    // as every user style.
+    const s = state.settings;
+    const defaultStyle = {
+      fontFamily: s.fontFamily || null,
+      lightThemeId: s.lightTheme || "ayuLight",
+      darkThemeId: s.darkTheme || "dracula",
+      lightColors: s.defaultLightColors || {},
+      darkColors: s.defaultDarkColors || {},
+    };
+
+    // A small "Aa" chip painted with one appearance's text-on-background, in
+    // the style's own font — shown for both light and dark so the rail
+    // previews each half at a glance.
+    function swatch(style, mode, fontCss) {
+      const resolved = resolveStyleForAppearance(style, mode);
+      const bg = (resolved.colors && resolved.colors.bg) || themeBackgrounds[resolved.themeId] || (mode === "dark" ? "#2d2f3f" : "#ffffff");
+      const fg = (resolved.colors && resolved.colors.fg) || themeForegrounds[resolved.themeId] || (mode === "dark" ? "#f8f8f2" : "#000000");
+      return `<span class="style-editor-row-swatch" style="background:${bg};color:${fg};${fontCss}">Aa</span>`;
+    }
+
     function rowHtml(id, name, isActive, style) {
       const safeName = escHtml(name);
-      let bg = "transparent";
-      let fg = "var(--fg)";
-      if (style) {
-        const resolved = resolveStyleForAppearance(style, appearance);
-        bg = (resolved.colors && resolved.colors.bg) || themeBackgrounds[resolved.themeId] || "transparent";
-        fg = (resolved.colors && resolved.colors.fg) || themeForegrounds[resolved.themeId] || "var(--fg)";
-      }
+      const fam = (style && style.fontFamily) || state.settings.fontFamily || "EB Garamond";
+      const fontCss = `font-family:${fontFallback(fam)};`;
+      const swatches = `<span class="style-editor-row-swatches">${swatch(style, "light", fontCss)}${swatch(style, "dark", fontCss)}</span>`;
       const actions = id === "__default__"
         ? ""
         : `<span class="style-editor-row-actions">
             <button data-action="duplicate" data-id="${escAttr(id)}" title="Duplicate">&plus;</button>
-            <button data-action="delete" data-id="${escAttr(id)}" title="Delete">&times;</button>
           </span>`;
-      return `<div class="style-editor-row${isActive ? " active" : ""}" data-id="${escAttr(id)}" style="background:${bg};color:${fg}">
-        <span class="style-editor-row-name">${safeName}</span>
+      return `<div class="style-editor-row${isActive ? " active" : ""}" data-id="${escAttr(id)}">
+        ${swatches}
+        <span class="style-editor-row-name" style="${fontCss}">${safeName}</span>
         ${actions}
       </div>`;
     }
 
-    rows.push(rowHtml("__default__", "Default", selectedId === "__default__", null));
+    rows.push(rowHtml("__default__", "Default", selectedId === "__default__", defaultStyle));
     for (const st of styles) {
       rows.push(rowHtml(st.id, st.name || "Untitled", selectedId === st.id, st));
     }
@@ -98,7 +117,21 @@ export function openStyleEditorModal(state) {
       // After a save commits, re-render the rail so style names + swatch
       // colours stay in lockstep with the edits.
       renderRail();
-    }, { host: pane });
+    }, { host: pane, onDelete: () => deleteStyleById(selectedId) });
+  }
+
+  /** Drop a style and reselect Default. Driven by the Delete button at the
+   *  bottom of the settings pane (the confirmation lives there). */
+  function deleteStyleById(id) {
+    if (!id || id === "__default__") return;
+    const styles = (state.settings.styles || []).filter((st) => st.id !== id);
+    const updates = { styles };
+    if (state.settings.activeStyleId === id) updates.activeStyleId = null;
+    state.updateSettings(updates);
+    if (selectedId === id) selectedId = "__default__";
+    state.emit("style-changed");
+    renderRail();
+    mountEditor();
   }
 
   function close() {
@@ -125,16 +158,6 @@ export function openStyleEditorModal(state) {
         const copy = { ...JSON.parse(JSON.stringify(src)), id: "style_" + Date.now(), name: src.name + " copy" };
         state.updateSettings({ styles: [...styles, copy] });
         selectedId = copy.id;
-        renderRail();
-        mountEditor();
-      } else if (actionBtn.dataset.action === "delete") {
-        if (!window.confirm("Delete this style?")) return;
-        const styles = (state.settings.styles || []).filter((s) => s.id !== id);
-        const updates = { styles };
-        if (state.settings.activeStyleId === id) updates.activeStyleId = null;
-        state.updateSettings(updates);
-        if (selectedId === id) selectedId = "__default__";
-        state.emit("style-changed");
         renderRail();
         mountEditor();
       }

@@ -9,6 +9,7 @@
 import { typeIcons, escHtml, escAttrValue, attachLeafHoverHandlers } from "./files-panel-shared.js";
 import { openLocalEntryMenu, localRowMenuButtonHtml } from "./files-panel-local-sync-ops.js";
 import { localKindForName, openLocalEntry } from "../sync/local-sync.js";
+import { isAllDesksMode, isTrashId } from "./files-panel-rows.js";
 
 // Re-export the SortableList drop hook so files-panel.js can wire it
 // without a separate import line (and so all Local Sync surface area is
@@ -117,6 +118,41 @@ export function refreshLocalSyncSection(refreshFilesPanel) {
 /** Returns the stored container reference for refresh callers. */
 export function getLocalSyncContainer() {
   return storedLocalSyncContainer;
+}
+
+/** Locate the Trash `.sl-item` within a container (the root list or a desk
+ *  row), so the Local Folders section can be slotted in just above it. */
+function findTrashRow(container) {
+  return [...container.querySelectorAll(".sl-item")].find((li) => isTrashId(li.dataset.id)) || null;
+}
+
+/** Place the Local Folders section: nested in the active desk's row (just
+ *  above its Trash) in the all-desks view, else at the panel root — always
+ *  immediately above the Trash row so Trash stays the last thing in the
+ *  panel, below any mounted Local Folders. Re-run after every tree render
+ *  (SortableList's `innerHTML = ""` detaches the host). */
+export function positionLocalSync(state, treeListEl, panelRootEl) {
+  const localSyncRootEl = storedLocalSyncContainer;
+  if (!localSyncRootEl) return;
+  if (isAllDesksMode(state) && treeListEl) {
+    const activeId = state?.settings?.activeDeskId;
+    const sel = activeId && window.CSS?.escape ? CSS.escape(activeId) : activeId;
+    const deskLi = activeId ? treeListEl.querySelector(`:scope > .sl-item[data-id="${sel}"]`) : null;
+    if (deskLi) {
+      localSyncRootEl.classList.add("local-sync-nested");
+      const trashRow = findTrashRow(deskLi);
+      if (trashRow?.parentElement) trashRow.parentElement.insertBefore(localSyncRootEl, trashRow);
+      else if (localSyncRootEl.parentElement !== deskLi) deskLi.appendChild(localSyncRootEl);
+      return;
+    }
+  }
+  localSyncRootEl.classList.remove("local-sync-nested");
+  const trashRow = treeListEl ? findTrashRow(treeListEl) : null;
+  if (trashRow?.parentElement) {
+    if (trashRow.previousElementSibling !== localSyncRootEl) trashRow.parentElement.insertBefore(localSyncRootEl, trashRow);
+  } else if (panelRootEl && localSyncRootEl.parentElement !== panelRootEl) {
+    panelRootEl.appendChild(localSyncRootEl);
+  }
 }
 
 export async function renderLocalSyncSection(container, state, hidePanel, refreshFilesPanel) {

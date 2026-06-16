@@ -202,6 +202,22 @@ export function buildEditorCommands() {
     shortcutZenFocus: (state) => { state.toggleZenFocus(); return true; },
     shortcutToggleWordCount: (state) => toggleWordCount(state),
     shortcutNewFile: (state) => { state.newFile(); return true; },
+    shortcutNewNotebook: (state) => {
+      // Mirror promptNewNotebookName (command-palette-pickers) without
+      // pulling in that module's heavy dependency graph from the editor
+      // command registry — lazy-import the modal helper directly.
+      import("../sidebar/files-panel-shared.js").then(({ showPromptModal }) => {
+        showPromptModal({
+          title: "New notebook",
+          label: "Name",
+          placeholder: "New Notebook",
+          initialValue: "New Notebook",
+          confirmLabel: "Create",
+          onConfirm: (name) => state.createNotebook(name),
+        });
+      });
+      return true;
+    },
     shortcutSave: (state) => {
       state.saveCurrentFile();
       if (typeof state.createManualSnapshot === "function") state.createManualSnapshot();

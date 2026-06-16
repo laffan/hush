@@ -113,6 +113,7 @@ export function createDefaultSettings() {
     shortcutToggleOutline: "CmdOrCtrl+Shift+\\",
     shortcutTypewriter: "Mod+Shift+T",
     shortcutNewFile: "Mod+N",
+    shortcutNewNotebook: "Mod+Shift+N",
     shortcutToggleDry: "Mod+Shift+R",
     shortcutToggleFocus: "Mod+S",
     shortcutToggleWordCount: "Mod+Shift+W",

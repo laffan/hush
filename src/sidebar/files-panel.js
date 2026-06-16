@@ -15,7 +15,7 @@ import {
   actionButtons, flagOnlyButton, getPdfSync, buildPdfRowHtml,
 } from "./files-panel-rows.js";
 import { refreshTooltips } from "../tooltips.js";
-import { renderLocalSyncSection, getLocalSyncContainer, onLocalDropExternal } from "./files-panel-local-sync.js";
+import { renderLocalSyncSection, getLocalSyncContainer, onLocalDropExternal, positionLocalSync as positionLocalSyncImpl } from "./files-panel-local-sync.js";
 import { openRowMenu } from "./files-panel-row-menu.js";
 import { collectVisibleDocs, handleDocMultiClick, installDragSelect } from "./files-panel-multi-select.js";
 import {
@@ -233,6 +233,10 @@ export function createFilesPanel(container, state, hidePanel) {
       // The toggle re-rendered the tree — re-nest Local Folders after.
       queueMicrotask(() => positionLocalSync(state));
     },
+    // Drag-end snap-backs and external/outside drops re-render the list
+    // without an onChange, which would strand the Local Folders section
+    // (it lives inside the list, just above Trash) — re-place it after.
+    onDragEnd: () => { queueMicrotask(() => positionLocalSync(state)); },
     // Images can always escape the panel (no Cmd required) so the drop
     // lands in whatever editor/notebook is under the pointer.
     forceDragOutside: (item) => item && item.type === "image",
@@ -618,24 +622,9 @@ function isItemActive(item, state) {
   return false;
 }
 
-/** Place the Local Folders section: nested in the active desk's row (just
- *  below its Inbox/Images/Trash) in the all-desks view, else at the panel
- *  root. Re-run after every tree render — `setData` detaches the host. */
-function positionLocalSync(state) {
-  if (!localSyncRootEl) return;
-  if (isAllDesksMode(state) && treeListEl) {
-    const activeId = state?.settings?.activeDeskId;
-    const sel = activeId && window.CSS?.escape ? CSS.escape(activeId) : activeId;
-    const deskLi = activeId ? treeListEl.querySelector(`:scope > .sl-item[data-id="${sel}"]`) : null;
-    if (deskLi) {
-      localSyncRootEl.classList.add("local-sync-nested");
-      if (localSyncRootEl.parentElement !== deskLi) deskLi.appendChild(localSyncRootEl);
-      return;
-    }
-  }
-  localSyncRootEl.classList.remove("local-sync-nested");
-  if (panelRootEl && localSyncRootEl.parentElement !== panelRootEl) panelRootEl.appendChild(localSyncRootEl);
-}
+/** Re-place the Local Folders section above Trash. Thin wrapper over the
+ *  impl in files-panel-local-sync.js (which owns the localSync container). */
+function positionLocalSync(state) { positionLocalSyncImpl(state, treeListEl, panelRootEl); }
 
 function refreshList(state) {
   if (sortableInstance) {

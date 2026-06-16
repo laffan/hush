@@ -185,7 +185,7 @@ function buildCommands(state) {
     // === SHARED ===
     { id: "new-doc", label: "New document", icon: icons.doc, shortcutKey: "shortcutNewFile", ctx: "shared",
       action: (s) => s.newFile() },
-    { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: null, ctx: "shared",
+    { id: "new-notebook", label: "New notebook", icon: icons.notebook, shortcutKey: "shortcutNewNotebook", ctx: "shared",
       action: (s) => promptNewNotebookName((name) => s.createNotebook(name)) },
     { id: "new-stack", label: "New stack", icon: icons.stack, shortcutKey: null, ctx: "shared", action: (s) => promptNewStackName((name) => s.createStack(name)) },
     { id: "new-doc-pane", label: "New document as pane", icon: icons.pane, shortcutKey: null, ctx: "shared",

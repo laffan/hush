@@ -17,7 +17,10 @@
 /* iOS Cmd-mode floating pills — anchored to the bottom-left of the
    viewport, past the always-present sidebar grip strip. */
 :root {
-  --sidebar-grip-width: 24px;
+  /* Grip width doubles as the panel's effective right margin: the content
+     columns drop their right padding (see .panel-overlay-* rules) and let
+     the grip strip stand in, so it's sized to match the 20px left padding. */
+  --sidebar-grip-width: 20px;
 }
 
 .cmd-floating-button {
@@ -148,7 +151,9 @@ body.typing-fade .tree-create-btns {
 /* Stable header that persists across renders — owns the desk switcher. */
 .panel-overlay-header {
   flex: 0 0 auto;
-  padding: 20px 20px 0;
+  /* No right padding — the always-present grip strip is the right margin,
+     so doubling up here pushed content a full grip-width too far inboard. */
+  padding: 20px 0 0 20px;
 }
 
 /* iOS / iPadOS safe zones — the sidebar runs edge-to-edge so the desk
@@ -168,14 +173,17 @@ html.ios .panel-overlay-footer {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 20px 20px;
+  /* Right padding dropped — the grip strip stands in as the right margin. */
+  padding: 0 0 20px 20px;
 }
 
 /* Footer — pinned at the bottom of the body-stack. No top border;
    icon-only buttons that reveal their label on hover. */
 .panel-overlay-footer {
   flex: 0 0 auto;
-  padding: 8px 16px 14px;
+  /* Match the body: no right padding so the sync group lines up with the
+     grip strip rather than sitting a grip-width short of it. */
+  padding: 8px 0 14px 16px;
   display: flex;
   flex-direction: row;
   gap: 6px;
