@@ -250,9 +250,9 @@ async function finalizeFileDeletion(state, fileIds) {
     state.currentPdfFileId = null;
   }
   if (fileIds.includes(state.currentFileId) || fileIds.includes(state.currentNotebookFileId) || fileIds.includes(state.currentPdfFileId)) {
-    state.currentProjectId = null; state.projectDocIds = [];
-    if (state.files.length > 0) await state.openFile(state.files[0].id);
-    else await state.newFile();
+    // The open surface was just permanently deleted — drop to the "no
+    // file selected" pane rather than jumping to an arbitrary DB file.
+    await state.clearActiveFile();
   }
   state.emit("files-changed");
 }

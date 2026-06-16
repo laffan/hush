@@ -226,13 +226,9 @@ function deleteEntry(folder, relPath, name, isDir, ctx) {
       const cur = ctx.state.currentLocalSync;
       const hit = cur && cur.folderId === folder.id
         && (cur.relPath === relPath || (isDir && cur.relPath.startsWith(relPath + "/")));
-      if (hit) {
-        if (ctx.state.currentNotebookFileId) { ctx.state.emit("notebook-unmount"); ctx.state.currentNotebookFileId = null; }
-        if (ctx.state.currentStackFileId) { ctx.state.emit("stack-unmount"); ctx.state.currentStackFileId = null; }
-        ctx.state.currentLocalSync = null;
-        if (ctx.state.editor) { ctx.state.editor.setContent(""); ctx.state.dirty = false; }
-        ctx.state.emit("file-opened");
-      }
+      // Drop to the "no file selected" pane so the editor doesn't keep
+      // saving to a path that no longer exists.
+      if (hit) await ctx.state.clearActiveFile();
       afterMutation(folder, parentDir(relPath), ctx);
     }
   );
