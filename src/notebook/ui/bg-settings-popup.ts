@@ -85,6 +85,7 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
       display: "none", position: "absolute",
       padding: "12px 14px", borderRadius: "8px",
       zIndex: "300", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", minWidth: "200px",
+      fontFamily: "var(--ui-font-family)",
     },
   });
   popup.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -183,7 +184,7 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
           padding: "3px 10px", border: `1px solid ${active ? theme.accent : theme.uiBorder}`,
           borderRadius: "4px", background: active ? theme.accent : "transparent",
           color: active ? "#fff" : theme.foreground, cursor: "pointer",
-          fontSize: "11px", fontWeight: active ? "600" : "400",
+          fontFamily: "inherit", fontSize: "11px", fontWeight: active ? "600" : "400",
         },
         onClick: () => { state.backgroundPattern = pat.value; state.notify("theme"); emitBgChange(); render(); },
       }));

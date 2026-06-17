@@ -17,7 +17,7 @@ export function createReorderBanner(state: DrawingState): HTMLElement {
       zIndex: "200", pointerEvents: "auto",
       whiteSpace: "nowrap",
       boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-      fontFamily: "inherit", fontSize: "12px", fontWeight: "500",
+      fontFamily: "var(--ui-font-family)", fontSize: "12px", fontWeight: "500",
     },
   });
 

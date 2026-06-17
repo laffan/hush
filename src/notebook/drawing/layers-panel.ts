@@ -174,6 +174,7 @@ export function createLayersPanel(state: DrawingState): LayersPanelHandle {
         style: {
           flex: "1", padding: "0 6px",
           fontSize: "12px",
+          fontFamily: "var(--ui-font-family)",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           cursor: "text",
         },
@@ -184,6 +185,7 @@ export function createLayersPanel(state: DrawingState): LayersPanelHandle {
           style: {
             flex: "1", padding: "1px 6px", margin: "-1px 0",
             fontSize: "12px",
+            fontFamily: "var(--ui-font-family)",
             border: `1px solid ${theme.accent}`, borderRadius: "4px",
             background: theme.canvasBackground, color: theme.foreground,
             outline: "none",

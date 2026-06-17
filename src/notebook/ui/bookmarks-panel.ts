@@ -22,6 +22,7 @@ export function createBookmarksPanel(state: DrawingState): HTMLElement {
       // edge).
       position: "absolute", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
       width: "220px", overflow: "hidden", display: "none", zIndex: "300",
+      fontFamily: "var(--ui-font-family)",
     },
   });
   container.appendChild(dropdown);
@@ -146,12 +147,12 @@ export function createBookmarksPanel(state: DrawingState): HTMLElement {
     if (adding) {
       const inputBg = theme.variant === "dark" ? "rgba(255,255,255,0.06)" : "#fff";
       const form = h("div", { style: { display: "flex", padding: "6px", gap: "4px" } });
-      const input = h("input", { style: { flex: "1", padding: "4px 8px", border: `1px solid ${theme.uiBorder}`, borderRadius: "4px", fontSize: "12px", outline: "none", background: inputBg, color: fg }, attrs: { type: "text", placeholder: "Bookmark name" } });
+      const input = h("input", { style: { flex: "1", padding: "4px 8px", border: `1px solid ${theme.uiBorder}`, borderRadius: "4px", fontFamily: "var(--ui-font-family)", fontSize: "12px", outline: "none", background: inputBg, color: fg }, attrs: { type: "text", placeholder: "Bookmark name" } });
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") doAdd();
         if (e.key === "Escape") { adding = false; rebuild(); }
       });
-      const addBtn = h("button", { text: "\u2713", style: { border: "none", background: theme.accent, color: "#fff", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "12px" }, onClick: doAdd });
+      const addBtn = h("button", { text: "\u2713", style: { border: "none", background: theme.accent, color: "#fff", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontFamily: "var(--ui-font-family)", fontSize: "12px" }, onClick: doAdd });
       form.appendChild(input);
       form.appendChild(addBtn);
       dropdown.appendChild(form);
@@ -162,7 +163,7 @@ export function createBookmarksPanel(state: DrawingState): HTMLElement {
         if (name) { state.addBookmark(name); adding = false; rebuild(); }
       }
     } else {
-      dropdown.appendChild(h("button", { text: "+ Save current view", style: { width: "100%", padding: "8px 12px", border: "none", background: theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa", cursor: "pointer", fontSize: "12px", color: theme.accent, textAlign: "left" }, onClick: () => { adding = true; rebuild(); } }));
+      dropdown.appendChild(h("button", { text: "+ Save current view", style: { width: "100%", padding: "8px 12px", border: "none", background: theme.variant === "dark" ? "rgba(255,255,255,0.04)" : "#f8f9fa", cursor: "pointer", fontFamily: "var(--ui-font-family)", fontSize: "12px", color: theme.accent, textAlign: "left" }, onClick: () => { adding = true; rebuild(); } }));
     }
   }
 
