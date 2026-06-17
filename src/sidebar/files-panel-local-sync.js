@@ -323,6 +323,15 @@ async function populateLocalSyncChildren(container, folder, relPath, state, hide
   }
 }
 
+// Strip the trailing extension for display only — the row's icon already
+// signals the file kind, so the suffix (".md", ".hushnote", …) is noise.
+// All operations still use the real on-disk `entry.name`. Leading-dot
+// names ("file.gitignore" style dotfiles) keep their full name.
+function localDisplayName(name) {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
 function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPanel) {
   const relPath = entry.relPath || entry.rel_path;
   const isImage = entry.isImage || entry.is_image || false;
@@ -354,7 +363,7 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPane
     : kind === "stack" ? typeIcons.stack
     : typeIcons.document;
   // Every file row gets the parity dropdown (Rename / Duplicate / Delete).
-  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(entry.name)}</span>${localRowMenuButtonHtml()}`;
+  row.innerHTML = `${icon}<span class="tree-item-name">${escHtml(localDisplayName(entry.name))}</span>${localRowMenuButtonHtml()}`;
   main.appendChild(row);
   label.appendChild(main);
   itemContent.appendChild(label);
@@ -437,7 +446,7 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
     const buildGhost = () => {
       const g = document.createElement("div");
       g.className = "sl-drag-ghost";
-      g.textContent = descriptor.name;
+      g.textContent = descriptor.isDir ? descriptor.name : localDisplayName(descriptor.name);
       g.style.transform = `translate3d(${e.clientX - 40}px, ${e.clientY - 10}px, 0)`;
       document.body.appendChild(g);
       document.body.classList.add("sl-dragging");
