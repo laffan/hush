@@ -62,19 +62,24 @@
    base `.cmd-floating-button` rule is the Cmd-pill slot (slot index 1)
    so it applies even though that pill carries no second class. */
 .cmd-floating-button.cmd-palette-button {
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  /* 11px lands the 36px pill's vertical centre level with the sidebar's
+     Add / Settings footer buttons (their centre sits ~29px above the
+     panel bottom). The rest of the stack shifts with it. */
+  bottom: calc(11px + env(safe-area-inset-bottom, 0px));
+  /* No border — match the notebook background-settings button. */
+  border: none;
 }
 
 .cmd-floating-button {
-  bottom: calc(20px + (36px + 12px) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(11px + (36px + 12px) + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.cmd-paste-button {
-  bottom: calc(20px + (36px + 12px) * 2 + env(safe-area-inset-bottom, 0px));
+  bottom: calc(11px + (36px + 12px) * 2 + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.cmd-undo-button {
-  bottom: calc(20px + (36px + 12px) * 3 + env(safe-area-inset-bottom, 0px));
+  bottom: calc(11px + (36px + 12px) * 3 + env(safe-area-inset-bottom, 0px));
 }
 
 .cmd-floating-button.panel-open {

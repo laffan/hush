@@ -34,7 +34,10 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
     title: "Background settings",
     style: {
       position: "absolute",
-      bottom: "20px",
+      // 9px lands the 40px button's vertical centre level with the
+      // sidebar's Add / Settings footer buttons and the command-palette
+      // pill (their centres sit ~29px above the window bottom).
+      bottom: "9px",
       width: "40px",
       height: "40px",
       borderRadius: "10px",
@@ -87,9 +90,10 @@ export function createBgSettingsFixedButton(state: DrawingState): BgSettingsFixe
       const cRect = container.getBoundingClientRect();
       button.style.bottom = `${Math.round(cRect.bottom - mmRect.top + SHELF_GAP)}px`;
     } else {
-      // No minimap: park in the bottom-right corner just inboard of the shelf.
+      // No minimap: park in the bottom-right corner just inboard of the
+      // shelf, its centre level with the sidebar footer buttons.
       button.style.right = `calc(env(safe-area-inset-right) + ${ri + 16}px)`;
-      button.style.bottom = "20px";
+      button.style.bottom = "9px";
     }
     bg.reposition();
   }

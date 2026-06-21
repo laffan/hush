@@ -109,6 +109,9 @@ struct Emitter {
     /// Set while inside a Link so Text events accumulate into a buffer
     /// the link handler can sniff before deciding how to emit.
     pending: Option<PendingLink>,
+    /// Set while inside an Image so the alt text accumulates into a
+    /// buffer; the figure (with caption) is emitted on image end.
+    image: Option<PendingImage>,
     code_block: Option<String>,
 }
 
@@ -124,11 +127,20 @@ struct PendingLink {
     text: String,
 }
 
+struct PendingImage {
+    path: String,
+    /// Markdown title (`![alt](url "title")`) — wins as the caption when present.
+    title: String,
+    /// Bracket contents (`alt` or `alt|caption`), accumulated raw.
+    alt: String,
+}
+
 impl Emitter {
     fn new() -> Self {
         Self {
             list_stack: Vec::new(),
             pending: None,
+            image: None,
             code_block: None,
         }
     }
@@ -159,7 +171,9 @@ impl Emitter {
     }
 
     fn write(&mut self, s: &str, out: &mut String) {
-        if let Some(p) = self.pending.as_mut() {
+        if let Some(img) = self.image.as_mut() {
+            img.alt.push_str(s);
+        } else if let Some(p) = self.pending.as_mut() {
             p.text.push_str(s);
         } else if let Some(buf) = self.code_block.as_mut() {
             buf.push_str(s);
@@ -177,6 +191,10 @@ impl Emitter {
         if self.code_block.is_some() {
             self.write(t, out);
         } else if self.pending.is_some() {
+            self.write(t, out);
+        } else if self.image.is_some() {
+            // Keep the alt/caption raw; the caption is escaped once on
+            // image end after the `alt|caption` split.
             self.write(t, out);
         } else {
             self.write(&escape_typst_text(t), out);
@@ -245,17 +263,16 @@ impl Emitter {
                 //    will read via World::file).
                 //  - http(s)://...  passed through; will fail inside
                 //    Typst (no network) and surface as a diagnostic.
-                let path = image_path(&dest_url);
-                let caption = if title.is_empty() {
-                    String::new()
-                } else {
-                    format!(", caption: [{}]", escape_typst_text(&title))
-                };
-                out.push_str(&format!(
-                    "\n#figure(image(\"{}\", width: 80%){})\n\n",
-                    escape_string(&path),
-                    caption
-                ));
+                // Defer the figure to TagEnd::Image so the alt text (which
+                // arrives as Text events between start and end) can be
+                // captured. Hush images carry the caption after a pipe
+                // (`![alt|caption](url)`); the figure caption shows that
+                // caption, not the alt text.
+                self.image = Some(PendingImage {
+                    path: image_path(&dest_url),
+                    title: title.to_string(),
+                    alt: String::new(),
+                });
             }
             Tag::Table(_) => out.push_str("\n#table(columns: auto,\n"),
             Tag::TableHead | Tag::TableRow => {}
@@ -302,8 +319,33 @@ impl Emitter {
                     out.push_str(&emitted);
                 }
             }
-            TagEnd::Image
-            | TagEnd::HtmlBlock
+            TagEnd::Image => {
+                if let Some(img) = self.image.take() {
+                    // Caption precedence: an explicit markdown title wins;
+                    // otherwise the text after the first `|` in the alt
+                    // (Hush's `![alt|caption](url)` form). A bare alt with
+                    // no caption shows no caption at all — the alt is
+                    // typically just the image id/filename.
+                    let caption_text = if !img.title.is_empty() {
+                        img.title.clone()
+                    } else if let Some(idx) = img.alt.find('|') {
+                        img.alt[idx + 1..].trim().to_string()
+                    } else {
+                        String::new()
+                    };
+                    let caption = if caption_text.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", caption: [{}]", escape_typst_text(&caption_text))
+                    };
+                    out.push_str(&format!(
+                        "\n#figure(image(\"{}\", width: 80%){})\n\n",
+                        escape_string(&img.path),
+                        caption
+                    ));
+                }
+            }
+            TagEnd::HtmlBlock
             | TagEnd::MetadataBlock(_)
             | TagEnd::DefinitionList
             | TagEnd::DefinitionListTitle

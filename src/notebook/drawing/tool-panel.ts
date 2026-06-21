@@ -581,9 +581,14 @@ export function createDrawingToolPanel(
       dragTab.style.width = `${DRAG_STRIP_THICKNESS}px`;
       dragTab.style.height = `${handleH}px`;
       if (minimizedEdge === "right") {
-        dragTab.style.right = `${MINIMIZED_EDGE_OFFSET}px`;
+        const rightInset = (state.rightInset || 0);
+        dragTab.style.right = `${MINIMIZED_EDGE_OFFSET + rightInset}px`;
       } else {
-        dragTab.style.left = `${MINIMIZED_EDGE_OFFSET}px`;
+        // Track the left chrome (sidebar + any left-dock) so the minimized
+        // handle parks at the visible canvas edge instead of springing to
+        // the window edge and hiding under the sidebar.
+        const leftInset = (state.leftInset || 0) + (state.dockedLeftWidth || 0);
+        dragTab.style.left = `${MINIMIZED_EDGE_OFFSET + leftInset}px`;
       }
     } else {
       const handleW = Math.min(MINIMIZED_HANDLE_LENGTH_HORIZONTAL, parentRect.width);

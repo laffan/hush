@@ -82,7 +82,7 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
       for (let pos = from; pos <= to;) {
         const line = doc.lineAt(pos);
         const headingMatch = line.text.match(/^(#{1,6})\s/);
-        const blockquoteMatch = !headingMatch && /^>+\s?/.test(line.text);
+        const blockquoteMatch = !headingMatch && line.text.match(/^>+\s?/);
         const listMatch = !headingMatch && !blockquoteMatch && line.text.match(/^(\s*)([-*+]|\d+[.)])(\s+)/);
         if (headingMatch) {
           const markerEnd = line.from + headingMatch[0].length;
@@ -97,6 +97,14 @@ export const headingIndentPlugin = ViewPlugin.fromClass(
           // Line-level decoration so the indent + left border span the
           // wrapped continuation as well as the leading `>`.
           builder.add(line.from, line.from, blockquoteLineDeco);
+          // Hide the `>` marker(s) the same way heading `#` markers collapse
+          // away — they reappear inline for editing once a cursor or
+          // selection touches the line. The cm-blockquote border + indent
+          // keep the quote visually distinct even with the marker hidden.
+          if (!lineTouchesSelection(line.from, line.to)) {
+            const markerEnd = line.from + blockquoteMatch[0].length;
+            builder.add(line.from, markerEnd, headingMarkerHideDeco);
+          }
         } else if (listMatch) {
           // Hang-indent wrapped lines by the actual pixel width of the
           // marker + space so continuation lines line up with the content,

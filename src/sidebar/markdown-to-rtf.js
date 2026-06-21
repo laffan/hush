@@ -148,7 +148,12 @@ function wrapDoc(body) {
  */
 function inline(text) {
   let t = text;
-  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_, alt) => alt); // image → alt
+  // image → caption (the text after a pipe in `![alt|caption](url)`),
+  // falling back to the alt when there's no caption.
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_, alt) => {
+    const pipe = alt.indexOf("|");
+    return pipe === -1 ? alt : alt.slice(pipe + 1).trim();
+  });
   t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, (_, label) => label); // link → label
   t = t.replace(/(^|[\s(])_(\S(?:[^_]*\S)?)_(?=[\s).,;:!?]|$)/g, "$1*$2*");
 
