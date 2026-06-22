@@ -125,6 +125,14 @@ export function setupFileDrop(state) {
   document.addEventListener("dragover", (e) => e.preventDefault(), true);
   document.addEventListener("drop", (e) => {
     if (!e.defaultPrevented) e.preventDefault();
+    // Always clear the sidebar import overlay on any drop. This runs in
+    // the capture phase so it fires even when a descendant target (the
+    // editor / notebook canvas) handles the drop and calls
+    // stopPropagation() before a bubble-phase listener could reset it —
+    // otherwise the "Import file" outline lingers after dropping into a
+    // doc.
+    dragCounter = 0;
+    hideImport();
   }, true);
 
   // ── Sidebar import overlay (lives inside #panel-overlay) ─────────
@@ -324,10 +332,8 @@ export function setupFileDrop(state) {
     dragCounter--;
     if (dragCounter <= 0) { dragCounter = 0; hideImport(); }
   });
-  document.addEventListener("drop", () => {
-    dragCounter = 0;
-    hideImport();
-  });
+  // The drop-reset is handled by the capture-phase listener in the global
+  // safety net above so it survives a descendant's stopPropagation().
 
   function hideImport() {
     importOverlay.classList.add("hidden");
