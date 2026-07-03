@@ -116,9 +116,16 @@ function showOverlay(entry) {
   // picture of the whole recorded workspace, not just the panes.
   renderBaseGhost(entry, surface, base);
 
+  // Only panes that were actually on screen in this snapshot — the
+  // journal records the full pane set (other documents' panes ride
+  // along hidden, and restore needs them all), but the ghost must show
+  // exactly what the user saw. Entries recorded before the `visible`
+  // stamp existed have no flag; treat those as visible.
+  const visiblePanes = (entry.state.panes || []).filter((p) => p && p.visible !== false);
+
   const card = document.createElement("div");
   card.className = "history-preview-card";
-  const inlineCount = (entry.state.panes || []).filter((p) => p && p.inline).length;
+  const inlineCount = visiblePanes.filter((p) => p.inline).length;
   card.innerHTML = `
     <span class="history-preview-kind">${kindLabel(surface.kind)}</span>
     <span class="history-preview-name"></span>
@@ -129,10 +136,10 @@ function showOverlay(entry) {
     `${formatTime(entry.timestamp)}${inlineCount ? ` · ${inlineCount} inline pane${inlineCount === 1 ? "" : "s"}` : ""}`;
   overlayEl.appendChild(card);
 
-  // Ghost rectangles for every recorded pane, positioned against the
-  // live pane container so they land where the panes actually sat.
-  for (const p of entry.state.panes || []) {
-    if (!p || p.inline) continue;
+  // Ghost rectangles for every pane visible in the snapshot, positioned
+  // against the live pane container so they land where they actually sat.
+  for (const p of visiblePanes) {
+    if (p.inline) continue;
     const rect = paneGhostRect(p, base);
     if (!rect) continue;
     const ghost = document.createElement("div");

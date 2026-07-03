@@ -109,6 +109,17 @@ async function fillWorkspaceDetail(entry) {
       import("../pane/pane-state.js"),
     ]);
     entry.state.panes = serializePanes();
+    // Stamp each serialized pane with whether it was actually on screen
+    // at this moment. The pane Map keeps every context's panes alive
+    // (hidden with display:none when their document isn't open), so
+    // without this the preview would draw every pane from every
+    // document into every snapshot. Zip by index — serializePanes walks
+    // the same Map in the same tick, so order matches.
+    const live = [...paneState.panes.values()];
+    entry.state.panes.forEach((sp, i) => {
+      const p = live[i];
+      sp.visible = !!(p && p.el && p.el.style.display !== "none");
+    });
     const activeId = paneState.activePaneId;
     const active = activeId ? paneState.panes.get(activeId) : null;
     entry.state.activePaneFileId = active ? active.fileId : null;
