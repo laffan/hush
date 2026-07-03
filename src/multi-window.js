@@ -15,6 +15,7 @@
  */
 
 import { isIOSTauri } from "./command-palette-helpers.js";
+import { applyExternalDocContent } from "./sync/apply-external.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -354,18 +355,9 @@ export async function setupMultiWindow(state) {
 function applyRemoteDocChange(state, fileId, content) {
   if (!state.editor) return;
   if (state.currentFileId !== fileId) return;
-  const view = state.editor.view;
-  const sel = view.state.selection.main;
-  const anchor = Math.min(sel.anchor, content.length);
-  const head = Math.min(sel.head, content.length);
-  state.acquirePullLock(fileId);
-  try {
-    state.editor.setContent(content);
-    try { view.dispatch({ selection: { anchor, head } }); } catch (_) {}
-  } finally {
-    state.releasePullLock();
-  }
-  state.dirty = false;
+  // Shared apply layer: pull-locked, diff-based — the local cursor maps
+  // through the sibling's edit rather than being clamped to doc bounds.
+  applyExternalDocContent(state, { content, lockKey: fileId });
 }
 
 /** Apply a sibling notebook save to our open canvas via the lazy

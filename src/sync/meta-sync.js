@@ -30,71 +30,52 @@
  *     here at import time; the cursor's onMeta routes by filename.
  */
 
+import { createRing, createKeyedRing } from "./echo-ring.js";
+
 const HUSH_PREFIX = ".hush/";
 
 // ===== Echo suppression — meta files (single global ring) =====
 
-const _ourRevs = new Set();
-const _ourRevsOrder = [];
-const OUR_REVS_MAX = 64;
+const _ourRevs = createRing(64);
 
 export function markOurRev(rev) {
-  if (!rev || _ourRevs.has(rev)) return;
-  _ourRevs.add(rev);
-  _ourRevsOrder.push(rev);
-  while (_ourRevsOrder.length > OUR_REVS_MAX) {
-    const old = _ourRevsOrder.shift();
-    _ourRevs.delete(old);
-  }
+  _ourRevs.mark(rev);
 }
 
 export function isOurRev(rev) {
-  return !!rev && _ourRevs.has(rev);
+  return _ourRevs.has(rev);
 }
 
 // ===== Echo suppression — user content (per-file ring) =====
 
-/** fileId → { set: Set<rev>, order: rev[] } */
-const _fileRevs = new Map();
-// Increased from 16 → 64 in the 2026-05 audit pass. With three active
-// devices (desktop + iPad + iPhone) a slow device's cursor can lag
-// far enough behind that the ring would roll over before it caught up
-// to a rev we wrote — that device would then pull-back its own old
-// rev as a "foreign change." 64 slots covers a comfortably long lag
-// without measurably affecting memory.
-const PER_FILE_REVS_MAX = 64;
+// Ring capacity increased from 16 → 64 in the 2026-05 audit pass. With
+// three active devices (desktop + iPad + iPhone) a slow device's cursor
+// can lag far enough behind that the ring would roll over before it
+// caught up to a rev we wrote — that device would then pull-back its
+// own old rev as a "foreign change." 64 slots covers a comfortably long
+// lag without measurably affecting memory.
+const _fileRevs = createKeyedRing(64);
 
 /**
  * Record a rev we just successfully uploaded for `fileId`. The ring
- * keeps the last `PER_FILE_REVS_MAX` revs so the cursor consumer can
- * recognize any of them as our own write — the single-slot
- * `last_known_rev` in SQLite gets overwritten by the *next* push and
- * stops protecting earlier ones. Without this, a fast type → push →
- * type → push sequence can have the cursor poll observe the older
- * rev (Dropbox's index hasn't caught up to the newer one yet), miss
- * the lastKnownRev match, and pull the older content back over the
- * newer local edit.
+ * keeps the last few revs so the cursor consumer can recognize any of
+ * them as our own write — the single-slot `last_known_rev` in SQLite
+ * gets overwritten by the *next* push and stops protecting earlier
+ * ones. Without this, a fast type → push → type → push sequence can
+ * have the cursor poll observe the older rev (Dropbox's index hasn't
+ * caught up to the newer one yet), miss the lastKnownRev match, and
+ * pull the older content back over the newer local edit.
+ *
+ * Local Sync keeps the direct analog of this ring (content hashes in
+ * place of server revs — a plain folder has no revs) in local-sync.js;
+ * both are instances of echo-ring.js.
  */
 export function markOurFileRev(fileId, rev) {
-  if (!fileId || !rev) return;
-  let entry = _fileRevs.get(fileId);
-  if (!entry) {
-    entry = { set: new Set(), order: [] };
-    _fileRevs.set(fileId, entry);
-  }
-  if (entry.set.has(rev)) return;
-  entry.set.add(rev);
-  entry.order.push(rev);
-  while (entry.order.length > PER_FILE_REVS_MAX) {
-    const old = entry.order.shift();
-    entry.set.delete(old);
-  }
+  _fileRevs.mark(fileId, rev);
 }
 
 export function wasOurFileRev(fileId, rev) {
-  if (!fileId || !rev) return false;
-  const entry = _fileRevs.get(fileId);
-  return !!entry && entry.set.has(rev);
+  return _fileRevs.has(fileId, rev);
 }
 
 // ===== Hashing =====

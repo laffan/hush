@@ -511,6 +511,37 @@ export function createEditor(container, state) {
       // in the broken state until the user's next keystroke.
       if (state.typewriterMode) ensureTypewriterRunway(view, state);
     },
+    /** Apply externally-produced content (sync pull, watcher reload,
+     *  sibling-window broadcast) as a minimal diff rather than the
+     *  whole-doc replace setContent does. Replacing [0, docLength]
+     *  collapses the selection to the top of the document; dispatching
+     *  only the changed range lets CodeMirror map the cursor through
+     *  the edit so it stays where the user left it. Callers go through
+     *  sync/apply-external.js#applyExternalDocContent, which owns the
+     *  pull-lock / dirty bookkeeping around this dispatch. */
+    applyExternalContent: (text) => {
+      const cur = view.state.doc.toString();
+      if (cur === text) return;
+      // Common prefix / suffix trim — the classic minimal-splice diff.
+      let from = 0;
+      const minLen = Math.min(cur.length, text.length);
+      while (from < minLen && cur.charCodeAt(from) === text.charCodeAt(from)) from++;
+      let curTo = cur.length;
+      let newTo = text.length;
+      while (curTo > from && newTo > from
+        && cur.charCodeAt(curTo - 1) === text.charCodeAt(newTo - 1)) {
+        curTo--;
+        newTo--;
+      }
+      view.dispatch({
+        changes: { from, to: curTo, insert: text.slice(from, newTo) },
+        annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true)],
+      });
+      // In typewriter mode the buffer carries an artificial trailing
+      // runway the incoming text doesn't have; the diff strips it, so
+      // re-seed like setContent does.
+      if (state.typewriterMode) ensureTypewriterRunway(view, state);
+    },
     focus: () => view.focus(),
     reconfigureTheme: (ext) => {
       view.dispatch({ effects: themeCompartment.reconfigure(ext || []) });

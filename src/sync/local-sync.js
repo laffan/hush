@@ -7,11 +7,44 @@
  *
  * The currently-open file is tracked on `AppState` via two extra fields:
  *   - `state.currentLocalSync = { folderId, relPath }`
- *   - `state.runtime.localSyncWriteFlag` — guards against watcher-echo reloads
- *     when we just wrote the file ourselves.
+ *   - `state.runtime.localSyncWriteFlag` — suppresses the *sidebar refresh*
+ *     for the watcher event our own write fires. Buffer-reload echo
+ *     suppression is identity-based instead (`_ourWrites` below).
  */
 
+import { applyExternalDocContent } from "./apply-external.js";
+import { createKeyedRing } from "./echo-ring.js";
+import { sha256Hex } from "./meta-sync.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+
+// ===== Echo suppression — content-hash ring =====
+//
+// The direct analog of Dropbox's per-file recent-revs ring
+// (meta-sync.js#markOurFileRev), with a SHA-256 of the written content
+// standing in for the server rev — a plain folder on disk has no revs.
+// Identity-based detection is load-bearing here: a timestamp window
+// cannot work, because iCloud's bird daemon re-touches a mounted file
+// *seconds* after our autosave (upload + xattr bookkeeping) and the
+// resulting watcher events arrive long after any reasonable window has
+// closed. Reloading on those late echoes wiped the keystrokes typed
+// since the last autosave and threw the cursor to the top of the doc.
+const _ourWrites = createKeyedRing(8);
+const _writeKey = (folderId, relPath) => `${folderId}:${relPath}`;
+
+async function markOurLocalWrite(folderId, relPath, content) {
+  try {
+    _ourWrites.mark(_writeKey(folderId, relPath), await sha256Hex(content));
+  } catch (_) { /* hashing unavailable — reload paths stay conservative */ }
+}
+
+async function wasOurLocalWrite(folderId, relPath, content) {
+  try {
+    return _ourWrites.has(_writeKey(folderId, relPath), await sha256Hex(content));
+  } catch (_) {
+    return false;
+  }
+}
 
 // iOS reaches arbitrary (iCloud) folders through the icloud-folder
 // plugin rather than std::fs: the path isn't directly reachable across
@@ -482,8 +515,15 @@ export async function saveCurrentLocalSync(state) {
   if (state.currentLocalSync.kind && state.currentLocalSync.kind !== "doc") return;
   const { folderId, relPath } = state.currentLocalSync;
   const content = state.editor.getContent();
+  // Clear dirty on the same tick as the content snapshot — hashing is
+  // async, and a keystroke landing in that gap must re-mark the buffer
+  // dirty *after* this clear, not be swallowed by it.
   state.runtime.localSyncWriteFlag = Date.now();
   state.dirty = false;
+  // Remember what we're writing — by identity, not by time — so the
+  // watcher recognizes this write's echo no matter how late iCloud
+  // replays it. Marked before the write so the echo can't outrun it.
+  await markOurLocalWrite(folderId, relPath, content);
   try { await writeFile(folderId, relPath, content); }
   catch (e) { console.error("Local Sync save failed:", e); }
 }
@@ -528,12 +568,17 @@ export async function refreshOpenLocalSyncFile(state) {
   const { folderId, relPath } = state.currentLocalSync;
   try {
     const content = await readFile(folderId, relPath);
-    // Still on the same file, still clean, and the disk actually differs.
+    // Still on the same file after the async read.
     if (!state.currentLocalSync || state.currentLocalSync.relPath !== relPath) return;
-    if (state.dirty) return;
-    if (state.editor.getContent() === content) return;
-    state.editor.setContent(content);
-    state.dirty = false;
+    // Content we ourselves wrote — however long ago — is an echo, not a
+    // remote change. Same policy as Dropbox's recent-revs ring.
+    if (await wasOurLocalWrite(folderId, relPath, content)) return;
+    if (!state.currentLocalSync || state.currentLocalSync.relPath !== relPath) return;
+    applyExternalDocContent(state, {
+      content,
+      lockKey: `localsync:${folderId}:${relPath}`,
+      skipWhenDirty: true,
+    });
   } catch (e) {
     console.error("Local Sync foreground refresh failed:", e);
   }
@@ -546,12 +591,11 @@ export async function startLocalSyncWatcher(state, onChanged) {
   const { listen } = await import("@tauri-apps/api/event");
   await listen("local-sync-changed", (event) => {
     const { id, paths } = event.payload || {};
-    // Ignore events that echo our own write (within 500ms of last write)
-    if (state.runtime.localSyncWriteFlag && Date.now() - state.runtime.localSyncWriteFlag < 500) {
-      return;
-    }
     // If the currently-open local-sync *doc* changed on disk, reload it.
     // Notebook / stack surfaces own their disk state via their bridges.
+    // No time-window gate here — echo detection is by content identity
+    // (`wasOurLocalWrite`), because iCloud replays our own writes as
+    // watcher events seconds after the fact.
     if (state.currentLocalSync && state.currentLocalSync.folderId === id
         && (!state.currentLocalSync.kind || state.currentLocalSync.kind === "doc")) {
       const editedPath = state.currentLocalSync.relPath;
@@ -562,21 +606,34 @@ export async function startLocalSyncWatcher(state, onChanged) {
         return p.endsWith("/" + editedPath) || p.endsWith("\\" + editedPath);
       });
       if (matches) {
-        readFile(id, editedPath).then((content) => {
+        readFile(id, editedPath).then(async (content) => {
           if (!state.editor || !state.currentLocalSync || state.currentLocalSync.relPath !== editedPath) return;
-          // Skip identical-content events. notify can emit duplicate events
-          // (e.g. metadata-only changes, atomic-write races) and reapplying
-          // identical content would jump the cursor without any user-visible
-          // benefit.
-          if (state.editor.getContent() === content) return;
-          // Local-sync paths don't have a Hush fileId; use a synthetic
-          // lock key. _isPullLockedForCurrent matches it against
-          // state.currentLocalSync so saves are correctly blocked.
-          state.acquirePullLock(`localsync:${id}:${editedPath}`);
-          try { state.editor.setContent(content); state.dirty = false; }
-          finally { state.releasePullLock(); }
+          // On-disk bytes we ourselves wrote are our own write echoing
+          // back — skip, even when the buffer has already moved ahead
+          // (reloading the stale echo is exactly what used to eat the
+          // keystrokes typed since the last autosave).
+          if (await wasOurLocalWrite(id, editedPath, content)) return;
+          if (!state.currentLocalSync || state.currentLocalSync.relPath !== editedPath) return;
+          // Genuine external change → shared apply layer: dirty-guarded
+          // (unsaved keystrokes are newer than the disk; the next
+          // autosave reasserts them), pull-locked under the synthetic
+          // localsync key (_isPullLockedForCurrent matches it against
+          // state.currentLocalSync), applied as a minimal diff so the
+          // cursor stays put.
+          applyExternalDocContent(state, {
+            content,
+            lockKey: `localsync:${id}:${editedPath}`,
+            skipWhenDirty: true,
+          });
         }).catch(() => {});
       }
+    }
+    // Sidebar refresh: the short write-flag window survives here (and
+    // only here) — without it every 2 s autosave would re-read the
+    // sidebar subtree. A late iCloud echo slipping past it costs one
+    // directory re-read, never a buffer reload.
+    if (state.runtime.localSyncWriteFlag && Date.now() - state.runtime.localSyncWriteFlag < 500) {
+      return;
     }
     onChanged && onChanged(id);
   });

@@ -303,6 +303,36 @@ re-promote on iPad.
 **Pass:** Stuck ops are visible without opening sync.db; restoring
 connectivity + clicking Retry drains the queue.
 
+### 17. Local Folder inside iCloud Drive — typing is never interrupted
+
+**Why:** iCloud's bird daemon re-touches a file (upload + xattr
+bookkeeping) *seconds* after every Hush autosave. The old 500 ms
+write-origin window read those late events as external edits and
+reloaded the last-autosaved content over the buffer — wiping the
+keystrokes typed since the save and throwing the cursor to the top,
+every few seconds while typing. Echo detection is now by content
+identity (SHA-256 ring, `echo-ring.js`), the reload is dirty-guarded,
+and genuine external changes apply as a cursor-preserving diff
+(`apply-external.js`).
+
+1. On **Mac**, mount a folder that lives inside iCloud Drive via
+   Add (+) → Local Folder. Open a `.md` in it.
+2. Type continuously for 60+ seconds (past many 2 s autosaves and
+   iCloud upload cycles — the file's Finder badge should cycle
+   through "uploading").
+3. The cursor must never move on its own and no typed characters may
+   disappear.
+4. Now edit the same file in another app (e.g. TextEdit) and save.
+   With Hush's buffer clean (pause typing ~3 s), the change should
+   appear in Hush without the cursor jumping to the top.
+5. Repeat step 4 while Hush has unsaved keystrokes (type, then within
+   2 s save from the other app): Hush must not lose the in-buffer
+   keystrokes; its next autosave wins (last-write-wins, as with
+   Dropbox).
+
+**Pass:** Zero cursor jumps and zero lost characters while typing;
+external edits still land when the buffer is clean.
+
 ---
 
 ## What success looks like, in one sentence per area

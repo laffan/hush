@@ -11,6 +11,7 @@
 //! changes is that the folder disappears from the sidebar.
 
 use crate::atomic::write_atomic_str;
+use notify::event::ModifyKind;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -102,12 +103,23 @@ impl LocalSyncManager {
         let mut watcher: RecommendedWatcher = notify::recommended_watcher(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(ev) = res {
-                    // Filter to content-affecting events. Metadata changes
-                    // (access time, etc.) would otherwise flood the UI.
-                    if matches!(
-                        ev.kind,
-                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-                    ) {
+                    // Filter to content-affecting events. Metadata-only
+                    // modifies are excluded *explicitly* — they're a
+                    // `Modify` variant, so the old bare `Modify(_)` arm
+                    // let them through. That mattered inside iCloud
+                    // Drive folders: bird sets xattrs / upload
+                    // bookkeeping on a file seconds after every write,
+                    // and those no-content events reached the frontend
+                    // as apparent external edits. (The JS side also
+                    // detects echoes by content hash; this just drops
+                    // the noise at the source.)
+                    let content_affecting = match ev.kind {
+                        EventKind::Create(_) | EventKind::Remove(_) => true,
+                        EventKind::Modify(ModifyKind::Metadata(_)) => false,
+                        EventKind::Modify(_) => true,
+                        _ => false,
+                    };
+                    if content_affecting {
                         let payload = serde_json::json!({
                             "id": id_for_cb,
                             "paths": ev

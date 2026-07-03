@@ -8,6 +8,7 @@ import {
   insertExistingNode,
 } from "./sync-tree-insert.js";
 import { showSyncIndicator, appendSyncLog, appendSyncError } from "./sync-feedback.js";
+import { applyExternalDocContent } from "./apply-external.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 const SYNC_FOLDER_ID = "__dropbox_sync__";
@@ -616,10 +617,12 @@ async function applyContentChanged(state, ev, dbx, invoke) {
     });
 
     if (isDocOpen) {
-      state.editor.setContent(content);
-      // We just synced the editor's content with the remote. Clear dirty
-      // so the next autosave doesn't push the same content right back.
-      state.dirty = false;
+      // Shared apply layer — clears dirty so the next autosave doesn't
+      // push the same content right back, and lands the change as a
+      // minimal diff so the cursor holds position. The pull lock is
+      // already held (acquired above, across the download); the helper
+      // detects that and leaves the release to our finally.
+      applyExternalDocContent(state, { content, lockKey: ev.internalId });
     }
     // Notebooks: swap shapes in place. The pull lock is held across
     // this so a concurrent notebook autosave (2 s timer) can't fire

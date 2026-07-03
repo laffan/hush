@@ -18,6 +18,7 @@
  */
 
 import { appendSyncError } from "./sync-feedback.js";
+import { applyExternalDocContent } from "./apply-external.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
@@ -123,9 +124,7 @@ async function _applyRemoteSide(state, internalId, content, remoteMeta) {
     syncedAt: serverModifiedSecsFromMeta(remoteMeta),
   });
   if (state.currentFileId === internalId && state.editor) {
-    state.acquirePullLock(internalId);
-    try { state.editor.setContent(content); state.dirty = false; }
-    finally { state.releasePullLock(); }
+    applyExternalDocContent(state, { content, lockKey: internalId });
   }
   if (state.currentNotebookFileId === internalId) {
     state.emit("notebook-sync-reload", content);
