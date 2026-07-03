@@ -1,5 +1,5 @@
 import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
-import { Prec, Compartment } from "@codemirror/state";
+import { Prec, Compartment, Annotation, Transaction } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
 import { Strikethrough } from "@lezer/markdown";
@@ -33,6 +33,30 @@ import { createLineIndicatorPlugin } from "./line-indicator.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
 import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
+
+/**
+ * Marks a transaction as app-driven rather than user-typed: file loads,
+ * pane↔main mirrors, external sync applies, version restores. Dispatches
+ * carrying this annotation are excluded from the CodeMirror undo history
+ * (paired with `Transaction.addToHistory.of(false)`) and skip the
+ * dirty / keystroke / rename side effects in the editors' update
+ * listeners — loading a doc is not an edit. History entries recorded
+ * before such a change are mapped through it by CodeMirror, so a user's
+ * undo stack survives a sync pull or a pane mirror instead of treating
+ * it as one giant undoable replacement.
+ */
+export const programmaticChange = Annotation.define();
+
+/** Annotation list for a programmatic dispatch. */
+export function programmaticAnnotations() {
+  return [programmaticChange.of(true), Transaction.addToHistory.of(false)];
+}
+
+/** True when every transaction in `update` is a programmatic change. */
+export function isProgrammaticUpdate(update) {
+  return update.transactions.length > 0
+    && update.transactions.every((tr) => tr.annotation(programmaticChange));
+}
 
 /**
  * Default image-context resolver used by the main editor: when the user
@@ -95,7 +119,10 @@ export function createBaseExtensions(state, onChange, opts) {
   const underlineHeaders = _s?.underlineHeaders ?? state.settings.underlineHeaders ?? false;
 
   const updateListener = EditorView.updateListener.of((update) => {
-    if (update.docChanged && onChange) onChange(update);
+    // Programmatic changes (content load, pane mirror, external sync
+    // apply) are not user edits — skip the dirty/sync onChange so a
+    // mirror can't mark the pane dirty or echo back to its source.
+    if (update.docChanged && onChange && !isProgrammaticUpdate(update)) onChange(update);
   });
 
   // Catch Cmd+Backquote at the DOM-event layer so the strikethrough toggle

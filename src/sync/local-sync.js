@@ -413,6 +413,10 @@ function nameFromRelPath(relPath) {
  *  Local Sync entry. Mirrors the teardown in openNotebook / openStack. */
 async function teardownForLocalOpen(state) {
   if (state.dirty) await state.saveCurrentFile();
+  // Park the outgoing doc's editor state — the notebook / stack surface
+  // hides the editor without touching its buffer.
+  const { stashActiveEditorState } = await import("../state/editor-cache-key.js");
+  stashActiveEditorState(state);
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
@@ -475,6 +479,11 @@ export async function openLocalStack(state, folderId, relPath) {
 /** Open a Local Sync file into the main editor. */
 export async function openLocalSyncFile(state, folderId, relPath) {
   if (state.dirty) await state.saveCurrentFile();
+  // Park the outgoing doc's editor state (undo history) before the
+  // pointers move; the Local Sync file restores its own stashed state
+  // (or starts fresh) under its `localsync:` key.
+  const { stashActiveEditorState } = await import("../state/editor-cache-key.js");
+  stashActiveEditorState(state);
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
@@ -488,20 +497,20 @@ export async function openLocalSyncFile(state, folderId, relPath) {
   state.projectDocIds = [];
   state.currentLocalSync = { folderId, relPath, kind: "doc" };
   state.recordLocalSyncOpen(folderId, relPath, nameFromRelPath(relPath));
+  const cacheKey = `localsync:${folderId}:${relPath}`;
   try {
     const content = await readFile(folderId, relPath);
-    // setContent dispatches a doc change, which the editor's
-    // updateListener treats as an edit and marks the buffer dirty.
-    // Loading a file is not a user edit — clear the flag on the same
-    // tick so the next autosave doesn't write the just-loaded content
-    // straight back (bumping the file's mtime with no real change and
-    // clobbering a concurrent edit from another device). Mirrors every
-    // other reload path (sync-state, conflict-handler, the watcher
-    // reload below).
-    if (state.editor) { state.editor.setContent(content); state.dirty = false; }
+    // Loading a file is not a user edit — loadDocState applies the
+    // content as a history-excluded programmatic change, but clear the
+    // dirty flag anyway so the next autosave doesn't write the
+    // just-loaded content straight back (bumping the file's mtime with
+    // no real change and clobbering a concurrent edit from another
+    // device). Mirrors every other reload path (sync-state,
+    // conflict-handler, the watcher reload below).
+    if (state.editor) { state.editor.loadDocState(cacheKey, content); state.dirty = false; }
   } catch (e) {
     console.error("Failed to load local-sync file:", e);
-    if (state.editor) { state.editor.setContent(""); state.dirty = false; }
+    if (state.editor) { state.editor.loadDocState(cacheKey, ""); state.dirty = false; }
   }
   state.emit("file-opened");
 }

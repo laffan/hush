@@ -8,7 +8,7 @@ import {
   generateId, getShapeBounds, hitTestShape,
   pointInBounds, screenToCanvas,
 } from "./utils";
-import { UndoManager } from "./undo-manager";
+import { UndoManager, type NotebookCheckpoint } from "./undo-manager";
 import { FlowchartLayer } from "./flowchart";
 import { isEmojiOnly, emojiToDataUrl } from "./emoji-sticker";
 import {
@@ -506,28 +506,50 @@ export class DrawingState extends EventTarget {
   // Undo/redo
   private _undo = new UndoManager();
 
-  /** Record current shapes as an undo checkpoint. Call after completed actions. */
-  recordHistory() { this._undo.record(this.shapes); }
+  /** Assemble the full undoable state — shapes plus the flowchart edges
+   *  and layers that must restore alongside them (an edge delete or a
+   *  layer change recorded a checkpoint that previously couldn't bring
+   *  them back). */
+  private _checkpoint(): NotebookCheckpoint {
+    return {
+      shapes: this.shapes,
+      flowEdges: this.flowchart.serialize(),
+      layers: this.layers,
+    };
+  }
 
-  /** Initialize undo history (call after loading shapes). */
-  initHistory() { this._undo.init(this.shapes); }
-
-  undo() {
-    const snapshot = this._undo.undo();
-    if (!snapshot) return;
-    this.shapes = snapshot;
+  private _applyCheckpoint(cp: NotebookCheckpoint) {
+    this.shapes = cp.shapes;
+    if (cp.flowEdges) this.flowchart.deserialize(cp.flowEdges);
+    if (cp.layers && cp.layers.length) {
+      this.layers = cp.layers;
+      if (!cp.layers.some((l) => l.id === this.activeLayerId)) {
+        this.activeLayerId = cp.layers[0]?.id ?? this.activeLayerId;
+        this.notify("activeLayerId");
+      }
+      this.notify("layers");
+    }
     this.selectedIds = new Set();
     this.notify("shapes");
     this.notify("selectedIds");
   }
 
+  /** Record the current state as an undo checkpoint. Call after completed actions. */
+  recordHistory() { this._undo.record(this._checkpoint()); }
+
+  /** Initialize undo history (call after loading shapes). */
+  initHistory() { this._undo.init(this._checkpoint()); }
+
+  undo() {
+    const snapshot = this._undo.undo();
+    if (!snapshot) return;
+    this._applyCheckpoint(snapshot);
+  }
+
   redo() {
     const snapshot = this._undo.redo();
     if (!snapshot) return;
-    this.shapes = snapshot;
-    this.selectedIds = new Set();
-    this.notify("shapes");
-    this.notify("selectedIds");
+    this._applyCheckpoint(snapshot);
   }
 
   get canUndo() { return this._undo.canUndo; }

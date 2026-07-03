@@ -5,6 +5,7 @@
  */
 
 import { findNode, findNodeByFileId, insertNode, removeNode, uniqueChildName } from "./tree-helpers.js";
+import { stashActiveEditorState } from "./editor-cache-key.js";
 import * as _naming from "./state-naming.js";
 
 /** A doc is "empty Untitled" when it carries the placeholder name and
@@ -118,11 +119,14 @@ export async function newFile(state, parentId = null, opts = {}) {
     state.syncCreateFile(treeNode.id, fileId, initialContent);
   }
   if (openImmediately) {
+    // Park the outgoing doc's undo history before pointing the editor
+    // at the new file (which starts with a fresh, empty history).
+    stashActiveEditorState(state);
     state.currentFileId = fileId;
     state.currentProjectId = null;
     state.projectDocIds = [];
     if (state.editor) {
-      state.editor.setContent(initialContent);
+      state.editor.loadDocState(`doc:${fileId}`, initialContent);
       state.editor.focus();
     }
   }
@@ -148,6 +152,11 @@ export async function openFile(state, id) {
     if (node.type === "pdf") return openPdf(state, id);
   }
   if (state.dirty) await state.saveCurrentFile();
+  // Park the outgoing doc's EditorState (undo history, selection, folds)
+  // so revisiting it restores its own history — and the incoming doc
+  // starts from its stashed state or a fresh one, never inheriting the
+  // outgoing doc's undo entries.
+  stashActiveEditorState(state);
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
@@ -164,11 +173,11 @@ export async function openFile(state, id) {
   state.projectDocIds = [];
   state.currentLocalSync = null;
   if (IS_TAURI) {
-    try { const file = await tauriInvoke("load_file", { id }); state.currentFileId = file.id; if (state.editor) state.editor.setContent(file.content); }
+    try { const file = await tauriInvoke("load_file", { id }); state.currentFileId = file.id; if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content); }
     catch (e) { console.error("Load file failed:", e); }
   } else {
     const file = state.files.find((f) => f.id === id);
-    if (file) { state.currentFileId = file.id; if (state.editor) state.editor.setContent(file.content); }
+    if (file) { state.currentFileId = file.id; if (state.editor) state.editor.loadDocState(`doc:${file.id}`, file.content); }
   }
   // Restore the saved per-doc scroll. setContent above resets scrollTop
   // to 0, so we re-apply after CodeMirror has laid out the new buffer.
@@ -226,8 +235,9 @@ export async function deleteFile(state, id) {
   } else { state.files = state.files.filter((f) => f.id !== id); state._saveFilesLocal(); }
   if (state.currentFileId === id) {
     // Don't jump to an arbitrary file in the DB (often in another desk) —
-    // drop to the "no file selected" pane instead.
-    await clearActiveFile(state);
+    // drop to the "no file selected" pane instead. The deleted doc's
+    // editor state must not be stashed for a revisit.
+    await clearActiveFile(state, { stash: false });
   }
   state.emit("files-changed");
 }
@@ -240,7 +250,10 @@ export async function deleteFile(state, id) {
  *  to call during init() (before the editor exists): it just leaves the
  *  current* pointers null and emits the event the mode-switcher consumes
  *  once it's wired. */
-export async function clearActiveFile(state) {
+export async function clearActiveFile(state, opts = {}) {
+  // `stash: false` is the deleted-file path — the doc is gone, so its
+  // editor state (undo history) must not be parked for a revisit.
+  if (opts.stash !== false) stashActiveEditorState(state);
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
@@ -258,7 +271,7 @@ export async function clearActiveFile(state) {
   state.projectDocIds = [];
   state.currentLocalSync = null;
   state.dirty = false;
-  if (state.editor) state.editor.setContent("");
+  if (state.editor) state.editor.loadDocState(null, "");
   await state.updateSettings({
     lastFileId: null, lastProjectId: null, lastNotebookId: null,
     lastPdfId: null, lastStackId: null, lastLocalSync: null,
@@ -343,6 +356,10 @@ export async function openPdf(state, fileId) {
   } catch {}
 
   if (state.dirty) await state.saveCurrentFile();
+  // The PDF surface hides the editor without touching its buffer — park
+  // the outgoing doc's state under its key so its undo history is
+  // restored when the user comes back to it.
+  stashActiveEditorState(state);
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;
@@ -455,6 +472,8 @@ export async function registerPdfPlaceholder(state, name, opts = {}) {
 export async function openNotebook(state, fileId) {
   if (state.ratchetMode) return;
   if (state.dirty) await state.saveCurrentFile();
+  // Park the outgoing doc's editor state (see openPdf).
+  stashActiveEditorState(state);
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
   }
@@ -481,6 +500,8 @@ export async function openNotebook(state, fileId) {
 export async function openStack(state, fileId) {
   if (state.ratchetMode) return;
   if (state.dirty) await state.saveCurrentFile();
+  // Park the outgoing doc's editor state (see openPdf).
+  stashActiveEditorState(state);
   if (state.currentNotebookFileId) {
     state.emit("notebook-unmount");
     state.currentNotebookFileId = null;

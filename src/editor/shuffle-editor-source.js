@@ -111,15 +111,55 @@ export function writeBackShuffle(payload, content) {
   try {
     const src = payload.sourceView;
     if (!src || !src.state) return;
-    const docLen = src.state.doc.length;
-    const from = Math.max(0, Math.min(payload.from, docLen));
-    const to = Math.max(from, Math.min(payload.to, docLen));
-    const caret = from + content.length;
-    src.dispatch({
-      changes: { from, to, insert: content },
-      selection: EditorSelection.range(caret, caret),
-    });
-    src.dispatch({ effects: EditorView.scrollIntoView(caret, { y: "center" }) });
+    // The captured offsets are only trustworthy if the doc still holds
+    // the captured text there — the buffer can shift underneath a long
+    // shuffle session (a sync pull, a pane mirror, a watcher reload).
+    // Verify before replacing; blindly splicing at stale offsets is how
+    // unrelated prose gets destroyed.
+    const range = resolveWriteBackRange(src.state, payload);
+    if (range.mode === "replace") {
+      const caret = range.from + content.length;
+      src.dispatch({
+        changes: { from: range.from, to: range.to, insert: content },
+        selection: EditorSelection.range(caret, caret),
+      });
+      src.dispatch({ effects: EditorView.scrollIntoView(caret, { y: "center" }) });
+    } else {
+      // Original text is nowhere to be found — insert the result at the
+      // nearest safe point rather than deleting content that is no
+      // longer what the user shuffled.
+      const at = range.from;
+      const insert = (at > 0 ? "\n\n" : "") + content;
+      const caret = at + insert.length;
+      src.dispatch({
+        changes: { from: at, to: at, insert },
+        selection: EditorSelection.range(caret, caret),
+      });
+      src.dispatch({ effects: EditorView.scrollIntoView(caret, { y: "center" }) });
+    }
     src.focus();
   } catch (_) { /* source went away mid-shuffle */ }
+}
+
+/** Find where the shuffled text should land in the (possibly changed)
+ *  source doc. Preference order: the captured range if it still holds
+ *  the captured text; the text's unique new location if the range
+ *  drifted; otherwise fall back to insert-only at the clamped offset. */
+function resolveWriteBackRange(editorState, payload) {
+  const docLen = editorState.doc.length;
+  const from = Math.max(0, Math.min(payload.from, docLen));
+  const to = Math.max(from, Math.min(payload.to, docLen));
+  const original = payload.text;
+  if (typeof original === "string" && original.length) {
+    if (editorState.sliceDoc(from, to) === original) {
+      return { mode: "replace", from, to };
+    }
+    // The doc moved under us — look for the captured text elsewhere.
+    const doc = editorState.doc.toString();
+    const first = doc.indexOf(original);
+    if (first !== -1 && doc.indexOf(original, first + 1) === -1) {
+      return { mode: "replace", from: first, to: first + original.length };
+    }
+  }
+  return { mode: "insert", from: to };
 }

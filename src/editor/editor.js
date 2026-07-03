@@ -45,6 +45,7 @@ import {
 import { createFlagHighlightPlugin, hexToRgba } from "./flag-highlight.js";
 import {
   defaultLocalSyncContext, buildShortcutExtension, createBaseExtensions,
+  programmaticAnnotations, isProgrammaticUpdate,
 } from "./base-extensions.js";
 import { applyBlockCursor } from "./block-cursor.js";
 import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
@@ -90,7 +91,12 @@ export function createEditor(container, state) {
     const runwayOnly = update.docChanged
       && update.transactions.length > 0
       && update.transactions.every((tr) => tr.annotation(typewriterRunwayAnnotation));
-    if (update.docChanged && !runwayOnly) {
+    // Programmatic changes (file load, pane mirror, sync apply, version
+    // restore) are not user edits: no dirty flag, no snapshot keystroke,
+    // no title-rename debounce. Word count still needs a recompute since
+    // the visible text changed.
+    const programmatic = update.docChanged && isProgrammaticUpdate(update);
+    if (update.docChanged && !runwayOnly && !programmatic) {
       state.markDirty();
       state.trackKeystroke();
       scheduleWordCountRecompute(state);
@@ -99,6 +105,8 @@ export function createEditor(container, state) {
         queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); });
       }, TITLE_DEBOUNCE_MS);
       if (state.ratchetMode) onEncourageKeystroke(update.view, state);
+    } else if (programmatic && !runwayOnly) {
+      scheduleWordCountRecompute(state);
     } else if (update.selectionSet) {
       // Selection changes feed the word count for two reasons:
       // project mode tracks which sub-doc the cursor is in (per-doc /
@@ -111,7 +119,10 @@ export function createEditor(container, state) {
       try {
         const head = update.state.selection.main.head;
         const line = update.state.doc.lineAt(head).number;
-        if (prevCursorLine === 1 && line !== 1) {
+        // A programmatic load can land the mapped cursor on any line —
+        // that's not the user leaving the title, so track the new line
+        // without firing the rename.
+        if (prevCursorLine === 1 && line !== 1 && !programmatic) {
           // Fire in a microtask so any in-flight dispatch completes
           // before we trigger rename + tree mutation.
           queueMicrotask(() => { void state.maybeRenameFromFirstLine?.(); });
@@ -277,9 +288,9 @@ export function createEditor(container, state) {
     { decorations: (v) => v.decorations }
   );
 
-  const startState = EditorState.create({
-    doc: "",
-    extensions: [
+  // Retained so fresh per-file EditorStates (see loadDocState below) can
+  // be created with the exact extension set the live state uses.
+  const baseExtensions = [
       hushTheme,
       themeCompartment.of(initialCmTheme),
       highlightCompartment.of(syntaxHighlighting((() => {
@@ -336,13 +347,70 @@ export function createEditor(container, state) {
       keymap.of([...defaultKeymap, ...historyKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
-    ],
+  ];
+
+  const startState = EditorState.create({
+    doc: "",
+    extensions: baseExtensions,
   });
 
   const view = new EditorView({
     state: startState,
     parent: container,
   });
+
+  // ── Per-file EditorState cache ────────────────────────────────────
+  // The main editor shows every doc / project / Local Folder file the
+  // user opens. Historically it kept ONE EditorState across all of
+  // them, so a single CodeMirror undo history spanned file switches —
+  // pressing ⌘Z past a switch boundary replaced the current file's
+  // content with the previous file's text. Instead, the state (with
+  // its undo history, selection, and fold state) is stashed per file
+  // key on switch-away and restored on revisit; opening a file with no
+  // stashed state starts a fresh state with an empty history.
+  const MAX_CACHED_STATES = 20;
+  const docStateCache = new Map(); // key -> EditorState, insertion order = LRU
+
+  const carriedCompartments = [
+    themeCompartment, highlightCompartment, shortcutCompartment, readOnlyCompartment,
+  ];
+
+  /** Swap in `next` as the editor state, carrying the live compartment
+   *  configuration (theme / highlight / shortcuts / read-only) with it —
+   *  a stashed state remembers the style that was active when it was
+   *  put away, and a fresh state only knows the boot-time config. */
+  function swapEditorState(next) {
+    const liveConfigs = carriedCompartments.map((c) => c.get(view.state));
+    view.setState(next);
+    const effects = [];
+    carriedCompartments.forEach((c, i) => {
+      if (liveConfigs[i] !== undefined) effects.push(c.reconfigure(liveConfigs[i]));
+    });
+    if (effects.length) view.dispatch({ effects });
+  }
+
+  /** Bring the buffer to `text` as a minimal-splice diff, excluded from
+   *  the undo history (`programmaticAnnotations`). Loading, mirroring,
+   *  and restoring content are app actions, not user edits — existing
+   *  history entries are mapped through the change by CodeMirror. */
+  function applyContentDiff(text) {
+    const cur = view.state.doc.toString();
+    if (cur === text) return;
+    let from = 0;
+    const minLen = Math.min(cur.length, text.length);
+    while (from < minLen && cur.charCodeAt(from) === text.charCodeAt(from)) from++;
+    let curTo = cur.length;
+    let newTo = text.length;
+    while (curTo > from && newTo > from
+      && cur.charCodeAt(curTo - 1) === text.charCodeAt(newTo - 1)) {
+      curTo--;
+      newTo--;
+    }
+    view.dispatch({
+      changes: { from, to: curTo, insert: text.slice(from, newTo) },
+      annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true), ...programmaticAnnotations()],
+    });
+  }
 
   state.on("mode-changed", () => {
     // Capture the resting scroll offset up front. The typewriter-off branch
@@ -501,46 +569,54 @@ export function createEditor(container, state) {
       // clean version.
       return state.typewriterMode ? stripTypewriterRunwayText(text) : text;
     },
+    /** Replace the buffer with `text`. Every caller is a programmatic
+     *  path (file load, mirror from a pane, restore, ref rewrite), so
+     *  the change is applied as a minimal diff excluded from the undo
+     *  history — user edits recorded before it survive and map through. */
     setContent: (text) => {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: text },
-        annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true)],
-      });
+      applyContentDiff(text);
       // Seed the runway for the freshly-loaded doc — without this a
       // file-switch while typewriter is on would land short docs back
       // in the broken state until the user's next keystroke.
       if (state.typewriterMode) ensureTypewriterRunway(view, state);
     },
     /** Apply externally-produced content (sync pull, watcher reload,
-     *  sibling-window broadcast) as a minimal diff rather than the
-     *  whole-doc replace setContent does. Replacing [0, docLength]
-     *  collapses the selection to the top of the document; dispatching
-     *  only the changed range lets CodeMirror map the cursor through
-     *  the edit so it stays where the user left it. Callers go through
+     *  sibling-window broadcast) as a minimal diff so the cursor and
+     *  the undo history map through the change. Callers go through
      *  sync/apply-external.js#applyExternalDocContent, which owns the
      *  pull-lock / dirty bookkeeping around this dispatch. */
     applyExternalContent: (text) => {
-      const cur = view.state.doc.toString();
-      if (cur === text) return;
-      // Common prefix / suffix trim — the classic minimal-splice diff.
-      let from = 0;
-      const minLen = Math.min(cur.length, text.length);
-      while (from < minLen && cur.charCodeAt(from) === text.charCodeAt(from)) from++;
-      let curTo = cur.length;
-      let newTo = text.length;
-      while (curTo > from && newTo > from
-        && cur.charCodeAt(curTo - 1) === text.charCodeAt(newTo - 1)) {
-        curTo--;
-        newTo--;
-      }
-      view.dispatch({
-        changes: { from, to: curTo, insert: text.slice(from, newTo) },
-        annotations: [bypassRatchet.of(true), bypassSeparatorFilter.of(true)],
-      });
+      applyContentDiff(text);
       // In typewriter mode the buffer carries an artificial trailing
       // runway the incoming text doesn't have; the diff strips it, so
       // re-seed like setContent does.
       if (state.typewriterMode) ensureTypewriterRunway(view, state);
+    },
+    /** Stash the live EditorState under a file key before switching
+     *  away, so the file's undo history / selection / folds are still
+     *  there when it's reopened. Callers: openFile / openProject /
+     *  openLocalSyncFile / newFile / showEmptyPane in the state layer. */
+    stashDocState: (key) => {
+      if (!key) return;
+      docStateCache.delete(key);
+      docStateCache.set(key, view.state);
+      while (docStateCache.size > MAX_CACHED_STATES) {
+        docStateCache.delete(docStateCache.keys().next().value);
+      }
+    },
+    /** Load `text` for the file identified by `key`: restore the
+     *  stashed EditorState when one exists (diffing in any content the
+     *  file gained while it was away — sync pulls, pane edits), or
+     *  start a fresh state with an empty undo history. Either way this
+     *  file's ⌘Z can never reach back into the previously open file. */
+    loadDocState: (key, text) => {
+      const cached = key ? docStateCache.get(key) : null;
+      if (cached) docStateCache.delete(key);
+      swapEditorState(cached || EditorState.create({ doc: "", extensions: baseExtensions }));
+      applyContentDiff(text);
+      if (state.typewriterMode) ensureTypewriterRunway(view, state);
+      requestAnimationFrame(() => applyEditorScrollerPadding(state));
+      scheduleWordCountRecompute(state);
     },
     focus: () => view.focus(),
     reconfigureTheme: (ext) => {

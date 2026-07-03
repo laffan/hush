@@ -566,19 +566,23 @@ export async function reloadNotebookShapes(jsonContent) {
   if (!canvasInstance) return;
   // Echo guard: if the incoming pull is byte-identical to what we last
   // wrote to disk, it's our own upload coming back through the cursor.
-  // Skipping avoids a destructive `loadShapes` (undo wipe + engine
-  // stroke-id churn) for a no-op change.
+  // Skipping avoids a pointless mirror (engine stroke reconcile + a
+  // no-op checkpoint) for content we already have.
   if (jsonContent === _lastSavedContent) return;
   try {
     const { decodeNotebookContent } = await import("./notebook-content.ts");
     const snapshot = decodeNotebookContent(jsonContent);
     if (snapshot) {
-      canvasInstance.loadShapes(snapshot.shapes, snapshot.layers);
-      canvasInstance.state.flowchart.deserialize(snapshot.flowEdges);
-      if (Array.isArray(snapshot.bookmarks)) {
-        canvasInstance.state.bookmarks = snapshot.bookmarks;
-        canvasInstance.state.notify("bookmarks");
-      }
+      // Mirror (not load): this is new content for the SAME open
+      // notebook, so the local undo history survives and the incoming
+      // change lands as a checkpoint — ⌘Z can step back over a remote
+      // edit instead of finding a freshly wiped history.
+      canvasInstance.mirrorContent({
+        shapes: snapshot.shapes,
+        layers: snapshot.layers,
+        flowEdges: snapshot.flowEdges,
+        bookmarks: Array.isArray(snapshot.bookmarks) ? snapshot.bookmarks : undefined,
+      });
       // Deliberately skip applying snapshot.camera here — viewports differ
       // across devices, and an incoming sync nudging the local pan / zoom
       // would feel like the canvas was being yanked around.

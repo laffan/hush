@@ -602,6 +602,9 @@ export function syncDocToPane(pane) {
     try { paneView.dispatch({ selection: { anchor, head } }); } catch (_) {}
     // Don't mark pane dirty — this came from the main editor
     pane.dirty = false;
+    // The mirror is a programmatic change, so the editor's onChange
+    // (which used to refresh the chip) no longer fires — do it here.
+    updatePaneWordCount(pane);
   } finally {
     setSyncing(false);
   }
@@ -618,17 +621,16 @@ export function syncNotebookFromPane(pane) {
   setSyncing(true);
   let deferred = false;
   try {
-    const shapes = pane.notebook.getShapes();
-    mainCanvas.loadShapes(JSON.parse(JSON.stringify(shapes)));
-    // Mirror flowchart edges too — without this, edges added in the
-    // pane wouldn't surface in the main canvas (or vice versa below).
-    mainCanvas.state.flowchart.deserialize(pane.notebook.state.flowchart.serialize());
-    // Bookmarks travel with the canvas state too — sync them so a
-    // bookmark added in the pane appears in the main toolbar (and the
-    // disk write from either side keeps both in lockstep).
-    mainCanvas.state.bookmarks = JSON.parse(JSON.stringify(pane.notebook.state.bookmarks || []));
-    mainCanvas.state.notify("bookmarks");
-    // Defer reset: loadShapes triggers change events via queueMicrotask,
+    // Mirror (not load): the main canvas keeps its undo history and
+    // records this change as a checkpoint, so pane-made edits stay
+    // undoable from the main surface. Flowchart edges + bookmarks ride
+    // in the same snapshot.
+    mainCanvas.mirrorContent({
+      shapes: JSON.parse(JSON.stringify(pane.notebook.getShapes())),
+      flowEdges: pane.notebook.state.flowchart.serialize(),
+      bookmarks: JSON.parse(JSON.stringify(pane.notebook.state.bookmarks || [])),
+    });
+    // Defer reset: the mirror triggers change events via queueMicrotask,
     // so syncing must stay true until those microtasks have fired.
     queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
     deferred = true;
@@ -650,11 +652,13 @@ export function syncNotebookToPane(pane) {
   setSyncing(true);
   let deferred = false;
   try {
-    const shapes = mainCanvas.getShapes();
-    pane.notebook.loadShapes(JSON.parse(JSON.stringify(shapes)));
-    pane.notebook.state.flowchart.deserialize(mainCanvas.state.flowchart.serialize());
-    pane.notebook.state.bookmarks = JSON.parse(JSON.stringify(mainCanvas.state.bookmarks || []));
-    pane.notebook.state.notify("bookmarks");
+    // Mirror (not load) — see syncNotebookFromPane: the pane keeps its
+    // own undo history and records main-canvas changes as checkpoints.
+    pane.notebook.mirrorContent({
+      shapes: JSON.parse(JSON.stringify(mainCanvas.getShapes())),
+      flowEdges: mainCanvas.state.flowchart.serialize(),
+      bookmarks: JSON.parse(JSON.stringify(mainCanvas.state.bookmarks || [])),
+    });
     pane.dirty = false;
     queueMicrotask(() => queueMicrotask(() => setSyncing(false)));
     deferred = true;

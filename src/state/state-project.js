@@ -4,6 +4,7 @@
  */
 
 import { findNode, findNodeByFileId, collectDocumentIds, nearestAncestorProjectId } from "./tree-helpers.js";
+import { stashActiveEditorState } from "./editor-cache-key.js";
 import { SEPARATOR } from "../editor/plugins/project-view.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -36,6 +37,9 @@ export async function openProject(state, projectId) {
   const node = findNode(state.fileTree, projectId);
   if (!node || node.type !== "project") return;
   if (state.dirty) await state.saveCurrentFile();
+  // Park the outgoing doc's editor state (undo history) under its own
+  // key; the project buffer keeps a separate per-project history.
+  stashActiveEditorState(state);
   // Unmount any active notebook / PDF / stack so their views don't stay
   // mounted over the project editor (e.g. opening a project from a stack).
   if (state.currentNotebookFileId) {
@@ -60,7 +64,7 @@ export async function openProject(state, projectId) {
       catch (e) { console.warn(`Project load: skipping file ${fid}:`, e); }
     }
   } else { ordered = state.projectDocIds.map(fid => state.files.find(e => e.id === fid)).filter(Boolean); }
-  if (state.editor) state.editor.setContent(ordered.map(e => e.content).join(SEPARATOR));
+  if (state.editor) state.editor.loadDocState(`project:${projectId}`, ordered.map(e => e.content).join(SEPARATOR));
   state.emit("file-opened");
   // Clear lastNotebookId so a notebook the user had open before
   // switching to this project doesn't reopen on next launch (init

@@ -39,6 +39,7 @@ import {
 } from "./shuffle-editor-source.js";
 import { renderShuffleMarkdown } from "./shuffle-editor-markdown.js";
 import { installShuffleKeyboard } from "./shuffle-editor-keys.js";
+import { createShuffleHistory } from "./shuffle-editor-history.js";
 
 export { shuffleSelectionAvailable };
 
@@ -102,6 +103,7 @@ function enterShuffleEditor(state) {
     editorNodes: [],   // ordered list rendered in the centre column
     marginNodes: [],    // loose chips in the margins
     history: [],        // structural-undo snapshots
+    redoStack: [],      // snapshots popped by undo, replayable via redo
     ghost: null,
     preview: null,      // live drop-position preview shown over the column
     dragText: "",       // text of the node being dragged
@@ -301,6 +303,9 @@ function buildController(a) {
   function beginEdit(node) {
     node.editing = true;
     a.editingNode = node;
+    // Remember the text as it stood before this edit so commitEdit can
+    // record an undo checkpoint that restores it.
+    node.preEditText = node.text;
     node.el.classList.add("editing");
     node.textEl.textContent = node.text;
     node.textEl.contentEditable = "true";
@@ -329,8 +334,19 @@ function buildController(a) {
     if (a.editingNode === node) a.editingNode = null;
     node.el.classList.remove("editing");
     node.textEl.contentEditable = "false";
+    const preEdit = typeof node.preEditText === "string" ? node.preEditText : node.text;
     node.text = capitalizeFirst(node.textEl.textContent.trim());
-    if (!node.text) { removeNode(node); return; }
+    if (!node.text) {
+      // Committing an emptied sentence removes the node. Restore the
+      // pre-edit text first so the removal snapshot preserves the
+      // sentence — undo brings the words back, not an empty chip.
+      node.text = preEdit;
+      if (node.text) removeNode(node); else detachNode(node);
+      return;
+    }
+    // Text edits are undoable structural steps too: record the pre-edit
+    // state (everything else as it stands now, this node's old text).
+    if (node.text !== preEdit) pushSnapshot(serializeWithNodeText(node, preEdit));
     node.textEl.innerHTML = renderShuffleMarkdown(node.text);
   }
 
@@ -514,33 +530,9 @@ function buildController(a) {
     layoutMargins();
   }
 
-  /* ----- undo ----- */
-  function snapNode(n) {
-    return { text: n.text, strike: n.strike, comment: n.comment, x: n.x, y: n.y };
-  }
-  function nodeFromSnap(s, where) {
-    const n = makeNode(s.text, where, s.x || 0, s.y || 0);
-    n.strike = !!s.strike;
-    n.comment = !!s.comment;
-    return n;
-  }
-  function serialize() {
-    return {
-      editor: a.editorNodes.map(snapNode),
-      margin: a.marginNodes.map(snapNode),
-    };
-  }
-  function pushSnapshot(snap) {
-    a.history.push(snap);
-    if (a.history.length > 120) a.history.shift();
-  }
-  function undo() {
-    const snap = a.history.pop();
-    if (!snap) return;
-    a.editorNodes = snap.editor.map((s) => nodeFromSnap(s, "editor"));
-    a.marginNodes = snap.margin.map((s) => nodeFromSnap(s, "margin"));
-    render();
-  }
+  /* ----- undo / redo (see shuffle-editor-history.js) ----- */
+  const { serialize, serializeWithNodeText, pushSnapshot, undo, redo } =
+    createShuffleHistory(a, { makeNode, render });
 
   /** Text written back on accept: struck nodes dropped, surviving column
    *  nodes joined into prose, commented nodes appended in a `%%…%%` block. */
@@ -652,7 +644,7 @@ function buildController(a) {
   }
 
   const ctrl = {
-    render, layoutMargins, reflowOnResize, shuffleMargins, undo,
+    render, layoutMargins, reflowOnResize, shuffleMargins, undo, redo,
     createEditorNodeAt, createMarginNodeAt, buildResult,
     moveNodeToEditor, moveNodeToMargin, toggleNodeFlag: toggleFlag, arrowNav,
   };

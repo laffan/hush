@@ -415,6 +415,11 @@ async function restoreSnapshot(snap, state) {
     try {
       await tauriInvoke("save_file", { id: fileId, content });
       await tauriInvoke("create_snapshot", { documentId: fileId, content });
+      // Push the restore through sync too. Restoring clears the dirty
+      // flag (it's not a user edit), so without an explicit push the
+      // remote keeps the pre-restore rev and the next poll would pull
+      // the old content right back over the restore.
+      try { await state.syncFileToExternal?.(fileId, content); } catch (_) {}
     } catch (e) {
       console.error("Restore failed:", e);
     }

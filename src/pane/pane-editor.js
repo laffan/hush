@@ -9,7 +9,7 @@ import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { syntaxHighlighting } from "@codemirror/language";
 import { getActiveTheme } from "../themes/index.js";
-import { createBaseExtensions, buildShortcutExtension } from "../editor/base-extensions.js";
+import { createBaseExtensions, buildShortcutExtension, programmaticAnnotations } from "../editor/base-extensions.js";
 import { bindLineIndicatorToContainer } from "../editor/line-indicator.js";
 import { getMarkdownHighlight } from "../editor/markdown-highlight.js";
 import { bypassSeparatorFilter } from "../editor/plugins/project-view.js";
@@ -72,10 +72,26 @@ export function createPaneEditor(container, appState, onChange, opts) {
   return {
     view,
     getContent: () => view.state.doc.toString(),
+    /** Programmatic load / mirror (initial content, main-editor sync).
+     *  Applied as a minimal diff excluded from the pane's undo history,
+     *  so mirrors from the main editor can't be "undone" from the pane
+     *  and the pane's own edit history maps through them intact. */
     setContent: (text) => {
+      const cur = view.state.doc.toString();
+      if (cur === text) return;
+      let from = 0;
+      const minLen = Math.min(cur.length, text.length);
+      while (from < minLen && cur.charCodeAt(from) === text.charCodeAt(from)) from++;
+      let curTo = cur.length;
+      let newTo = text.length;
+      while (curTo > from && newTo > from
+        && cur.charCodeAt(curTo - 1) === text.charCodeAt(newTo - 1)) {
+        curTo--;
+        newTo--;
+      }
       view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: text },
-        annotations: bypassSeparatorFilter.of(true),
+        changes: { from, to: curTo, insert: text.slice(from, newTo) },
+        annotations: [bypassSeparatorFilter.of(true), ...programmaticAnnotations()],
       });
     },
     focus: () => view.focus(),

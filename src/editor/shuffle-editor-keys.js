@@ -5,8 +5,8 @@
  * Installs a capture-phase keydown listener for the open overlay:
  *
  *   • Escape — close (or dismiss the compare modal).
- *   • Cmd/Ctrl+Z — structural undo (yields to native text undo while a node
- *     is being edited).
+ *   • Cmd/Ctrl+Z — structural undo; Cmd/Ctrl+Shift+Z — structural redo
+ *     (both yield to native text undo while a node is being edited).
  *   • Cmd/Ctrl+↑/↓ — shift the current sentence; Shift+↑/↓ — move the focus.
  *     These work even while a node is being edited (overriding the default
  *     caret movement).
@@ -23,10 +23,10 @@ export function installShuffleKeyboard(active, ctrl, hooks) {
     }
     const meta = e.metaKey || e.ctrlKey;
     const editing = !!document.activeElement?.isContentEditable;
-    if (meta && (e.key === "z" || e.key === "Z") && !e.shiftKey) {
-      if (editing) return; // let the browser handle text undo
+    if (meta && (e.key === "z" || e.key === "Z")) {
+      if (editing) return; // let the browser handle text undo/redo
       e.preventDefault();
-      ctrl.undo();
+      if (e.shiftKey) ctrl.redo(); else ctrl.undo();
       return;
     }
     // Arrow nav works whether or not a sentence is being edited.

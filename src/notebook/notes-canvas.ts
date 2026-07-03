@@ -548,6 +548,56 @@ export class NotesCanvas {
     this.state.notify("shapes");
   }
 
+  /** Mirror externally-produced content for the SAME notebook onto this
+   *  canvas — pane↔main sync, a remote sync pull, a version restore —
+   *  without resetting the undo history the way `loadShapes` (a fresh
+   *  hydration) does. The applied state is recorded as a checkpoint, so
+   *  ⌘Z on this surface steps back through changes made on the other
+   *  surface instead of finding an empty history. */
+  mirrorContent(snapshot: {
+    shapes: Shape[];
+    layers?: import("./types").Layer[];
+    flowEdges?: import("./flowchart").FlowEdge[];
+    bookmarks?: import("./types").CameraBookmark[];
+  }) {
+    // Bookmarks travel outside the undo checkpoint — apply them even
+    // when the shape content turns out to be identical.
+    if (Array.isArray(snapshot.bookmarks)) {
+      this.state.bookmarks = snapshot.bookmarks;
+      this.state.notify("bookmarks");
+    }
+    // No-op guard: mirror events can fire for changes that don't touch
+    // the shape content (or echo content this side already has).
+    // Recording a checkpoint for those would silently clear this
+    // surface's redo stack.
+    const sameShapes = JSON.stringify(this.state.shapes) === JSON.stringify(snapshot.shapes);
+    const sameEdges = !snapshot.flowEdges
+      || JSON.stringify(this.state.flowchart.serialize()) === JSON.stringify(snapshot.flowEdges);
+    const sameLayers = !snapshot.layers || !snapshot.layers.length
+      || JSON.stringify(this.state.layers) === JSON.stringify(snapshot.layers);
+    if (sameShapes && sameEdges && sameLayers) return;
+
+    const nextLayers = snapshot.layers && snapshot.layers.length ? snapshot.layers : this.state.layers;
+    const topLayerId = nextLayers[0]?.id ?? this.state.activeLayerId;
+    this.state.layers = nextLayers;
+    if (!nextLayers.some((l) => l.id === this.state.activeLayerId)) {
+      this.state.activeLayerId = topLayerId;
+      this.state.notify("activeLayerId");
+    }
+    this.state.shapes = snapshot.shapes.map((s) => s.layerId ? s : ({ ...s, layerId: topLayerId }));
+    if (snapshot.flowEdges) this.state.flowchart.deserialize(snapshot.flowEdges);
+    // Keep whatever part of the selection survived the mirror.
+    const surviving = new Set(this.state.shapes.map((s) => s.id));
+    const nextSel = new Set([...this.state.selectedIds].filter((id) => surviving.has(id)));
+    if (nextSel.size !== this.state.selectedIds.size) {
+      this.state.selectedIds = nextSel;
+      this.state.notify("selectedIds");
+    }
+    this.state.recordHistory();
+    this.state.notify("layers");
+    this.state.notify("shapes");
+  }
+
   getShapes(): Shape[] {
     return this.state.shapes;
   }
