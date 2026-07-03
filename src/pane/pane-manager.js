@@ -34,6 +34,22 @@ import { syncPaneRatchetLock, previewPaneStyle, syncPaneThemes } from "./pane-th
 // Inject local DOM-builder + context handler (avoids pane-persistence → pane-manager cycle).
 const restorePanes = () => _restorePanes({ buildPaneDOM, onContextChange });
 
+/** Rebuild the pane set from a serialized layout (History journal
+ *  restore). Callers close the existing panes first; this re-hydrates
+ *  the recorded ones and re-persists the result as the live layout. */
+export async function restorePanesFromList(list) {
+  await _restorePanes({ buildPaneDOM, onContextChange }, Array.isArray(list) ? list : []);
+  schedulePersist();
+}
+
+/** Emit a pane-activity breadcrumb for the History journal. Fire-and-
+ *  forget; the journal subscribes on appState. */
+function emitPaneActivity(kind, pane) {
+  try {
+    appState?.emit("pane-activity", { kind, name: pane?.fileName || "", fileType: pane?.fileType || "" });
+  } catch (_) {}
+}
+
 // pane-toolbar's buttons need close/focus/context handlers — bind once.
 function buildPaneDOM(pane) {
   return _buildPaneDOM(pane, {
@@ -292,6 +308,7 @@ export async function createPane(fileId, fileName, fileType, x, y, opts = {}) {
   pane.el.style.zIndex = zForPane(pane);
   panes.set(id, pane);
   await loadPaneContent(pane);
+  emitPaneActivity("opened", pane);
   if (!opts.skipFocus) focusPane(id);
   notifyLayoutChange();
   schedulePersist();
@@ -350,6 +367,7 @@ export async function replacePaneContent(paneId, fileId, fileName, fileType) {
 export function closePane(id) {
   const pane = panes.get(id);
   if (!pane) return;
+  emitPaneActivity("closed", pane);
   savePaneContent(pane);
   teardownPaneContent(pane);
   if (pane.gutter) {
@@ -385,6 +403,7 @@ export function focusPane(id) {
   setActivePaneId(id);
   const pane = panes.get(id);
   if (!pane) return;
+  if (!wasActive) emitPaneActivity("focused", pane);
   pane.el.classList.add("active");
   pane.el.style.zIndex = zForPane(pane);
   // Skip the notebook notify when the pane was already active — every

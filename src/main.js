@@ -234,6 +234,9 @@ async function init() {
   import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
+  // Session history journal — records workspace states (open surface,
+  // pane layout, focus) for the History panel's 100-step timeline.
+  import("./state/history-journal.js").then(({ initHistoryJournal }) => initHistoryJournal(state));
 
   // iOS-only on-screen Cmd button (gated by `showCmdButton` setting); plus pencil bridge on iOS Tauri.
   initCmdButton(state);

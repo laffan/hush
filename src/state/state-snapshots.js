@@ -12,6 +12,21 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
+/** The snapshots-table key for whatever the main editor is showing.
+ *  Plain docs use their fileId (the historical key, so existing
+ *  snapshots keep working); projects and Local Folder docs — which
+ *  previously never got Versions at all — use stable synthetic keys.
+ *  Shared with versions-panel.js so browse/restore resolve the same
+ *  history the auto-snapshots write. */
+export function versionDocId(state) {
+  if (state.currentProjectId) return `project:${state.currentProjectId}`;
+  const ls = state.currentLocalSync;
+  if (ls && ls.kind === "doc" && ls.folderId && ls.relPath) {
+    return `localsync:${ls.folderId}:${ls.relPath}`;
+  }
+  return state.currentFileId || null;
+}
+
 export function trackKeystroke(state) {
   state._keystrokeCount++;
   if (state._keystrokeCount >= 30 && state.dirty) {
@@ -21,7 +36,7 @@ export function trackKeystroke(state) {
 }
 
 async function createAutoSnapshot(state) {
-  const docId = state.currentProjectId ? null : state.currentFileId;
+  const docId = versionDocId(state);
   if (!docId || !state.editor || state._snapshotPending) return;
   state._snapshotPending = true;
   try {
@@ -31,7 +46,7 @@ async function createAutoSnapshot(state) {
 }
 
 export async function createManualSnapshot(state) {
-  const docId = state.currentProjectId ? null : state.currentFileId;
+  const docId = versionDocId(state);
   if (!docId || !state.editor) return;
   if (IS_TAURI) {
     try { await tauriInvoke("create_snapshot", { documentId: docId, content: state.editor.getContent() }); }

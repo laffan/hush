@@ -129,8 +129,14 @@ async function loadSnapshots(container, state) {
 }
 
 function getActiveDocumentId(state) {
-  if (state.currentProjectId) return null; // versions not supported for projects yet
   if (state.currentNotebookFileId) return state.currentNotebookFileId;
+  // Projects and Local Folder docs snapshot under synthetic keys — the
+  // same mapping the auto-snapshot pipeline writes (state-snapshots.js).
+  if (state.currentProjectId) return `project:${state.currentProjectId}`;
+  const ls = state.currentLocalSync;
+  if (ls && ls.kind === "doc" && ls.folderId && ls.relPath) {
+    return `localsync:${ls.folderId}:${ls.relPath}`;
+  }
   return state.currentFileId;
 }
 
@@ -405,37 +411,95 @@ function removePreview() {
 
 async function restoreSnapshot(snap, state) {
   const notebook = isNotebookMode(state);
-  const fileId = notebook ? state.currentNotebookFileId : state.currentFileId;
-  if (!fileId) return;
+  const docId = getActiveDocumentId(state);
+  if (!docId) return;
 
   const content = snap.content;
+  const isProject = typeof docId === "string" && docId.startsWith("project:");
+  const isLocalSync = typeof docId === "string" && docId.startsWith("localsync:");
 
-  // Save the snapshot content directly to the backend first
-  if (IS_TAURI) {
-    try {
-      await tauriInvoke("save_file", { id: fileId, content });
-      await tauriInvoke("create_snapshot", { documentId: fileId, content });
-      // Push the restore through sync too. Restoring clears the dirty
-      // flag (it's not a user edit), so without an explicit push the
-      // remote keeps the pre-restore rev and the next poll would pull
-      // the old content right back over the restore.
-      try { await state.syncFileToExternal?.(fileId, content); } catch (_) {}
-    } catch (e) {
-      console.error("Restore failed:", e);
-    }
-  }
-
-  // Close the versions panel, then update the active surface
+  // Close the versions panel, then write + update the active surface.
   if (panelState) panelState.emit("hide-panel");
 
   if (notebook) {
+    if (IS_TAURI) {
+      try {
+        // Local Folder notebooks live on disk as `.hushnote` zips keyed
+        // by an `ls:` sentinel — write through the same pack path the
+        // notebook autosave uses. Internal notebooks take save_file.
+        const { parseLocalSentinel } = await import("../sync/local-sync.js");
+        const local = parseLocalSentinel(docId);
+        if (local) {
+          const { packNotebook } = await import("../sync/notebook-sync.js");
+          const { writeFileBytes } = await import("../sync/local-sync.js");
+          const bytes = await packNotebook(content);
+          if (state.runtime) state.runtime.localSyncWriteFlag = Date.now();
+          await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
+          await tauriInvoke("create_snapshot", { documentId: docId, content });
+        } else {
+          await tauriInvoke("save_file", { id: docId, content });
+          await tauriInvoke("create_snapshot", { documentId: docId, content });
+          try { await state.syncFileToExternal?.(docId, content); } catch (_) {}
+        }
+      } catch (e) { console.error("Restore failed:", e); }
+    }
     try {
       const { reloadNotebookShapes } = await import("../notebook/notebook-bridge.js");
       await reloadNotebookShapes(content);
     } catch (e) {
       console.error("Notebook restore reload failed:", e);
     }
-  } else if (state.editor) {
+    return;
+  }
+
+  if (isProject) {
+    // The snapshot is the joined project buffer. Reseed the editor and
+    // run the normal project save so the content splits back into the
+    // child docs (and each child rides sync as usual).
+    if (!state.editor) return;
+    state.editor.setContent(content);
+    state.dirty = true;
+    try { await state.saveCurrentFile(); } catch (e) { console.error("Project restore save failed:", e); }
+    if (IS_TAURI) {
+      try { await tauriInvoke("create_snapshot", { documentId: docId, content }); } catch (_) {}
+    }
+    return;
+  }
+
+  if (isLocalSync) {
+    // Write straight into the mounted folder; the watcher-echo guard
+    // keeps the write from bouncing back as an external change.
+    try {
+      const ls = state.currentLocalSync;
+      if (state.runtime) state.runtime.localSyncWriteFlag = Date.now();
+      const { writeFile } = await import("../sync/local-sync.js");
+      await writeFile(ls.folderId, ls.relPath, content);
+      if (IS_TAURI) {
+        try { await tauriInvoke("create_snapshot", { documentId: docId, content }); } catch (_) {}
+      }
+    } catch (e) { console.error("Local Folder restore failed:", e); }
+    if (state.editor) {
+      state.editor.setContent(content);
+      state.dirty = false;
+    }
+    return;
+  }
+
+  // Plain internal doc.
+  if (IS_TAURI) {
+    try {
+      await tauriInvoke("save_file", { id: docId, content });
+      await tauriInvoke("create_snapshot", { documentId: docId, content });
+      // Push the restore through sync too. Restoring clears the dirty
+      // flag (it's not a user edit), so without an explicit push the
+      // remote keeps the pre-restore rev and the next poll would pull
+      // the old content right back over the restore.
+      try { await state.syncFileToExternal?.(docId, content); } catch (_) {}
+    } catch (e) {
+      console.error("Restore failed:", e);
+    }
+  }
+  if (state.editor) {
     state.editor.setContent(content);
     state.dirty = false;
   }
@@ -538,6 +602,25 @@ function formatTimestamp(unixSeconds) {
 }
 
 function getActiveFileName(state) {
+  // Projects title by their tree node; Local Folder docs by filename.
+  if (!state.currentNotebookFileId && state.currentProjectId && state.fileTree) {
+    function searchNodes(nodes) {
+      for (const node of nodes) {
+        if (node.id === state.currentProjectId) return node.name;
+        if (node.children) {
+          const found = searchNodes(node.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    return searchNodes(state.fileTree);
+  }
+  const ls = state.currentLocalSync;
+  if (!state.currentNotebookFileId && ls && ls.kind === "doc" && ls.relPath) {
+    const base = String(ls.relPath).split("/").pop() || "";
+    return base.replace(/\.[^.]+$/, "") || base;
+  }
   const activeId = state.currentNotebookFileId || state.currentFileId;
   if (!activeId || !state.fileTree) return null;
   // Search tree for a node with matching fileId

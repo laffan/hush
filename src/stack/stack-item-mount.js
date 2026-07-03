@@ -79,7 +79,11 @@ async function mountDocContent(contentEl, item, state, liveData) {
     const { createModeContext } = await import("../state/mode-context.js");
     const mc = createModeContext(state);
     let dirty = false;
-    const editor = createPaneEditor(wrapper, state, () => { dirty = true; }, { modeContext: mc.proxy });
+    // Stack columns count their own keystrokes for the 30-keystroke
+    // version-snapshot cadence — like panes, their edits never reach
+    // the main editor's counter.
+    let snapKeystrokes = 0;
+    const editor = createPaneEditor(wrapper, state, () => { dirty = true; snapKeystrokes++; }, { modeContext: mc.proxy });
     editor.setContent(content);
     // Apply the active style's theme + colour overrides to the column's
     // editor. Unlike floating panes (handled by pane-content), stack
@@ -94,6 +98,11 @@ async function mountDocContent(contentEl, item, state, liveData) {
       if (IS_TAURI) {
         try { await tauriInvoke("save_file", { id: item.fileId, content: text }); }
         catch (e) { console.error("Stack doc save failed:", e); }
+        if (snapKeystrokes >= 30) {
+          snapKeystrokes = 0;
+          try { await tauriInvoke("create_snapshot", { documentId: item.fileId, content: text }); }
+          catch (_) {}
+        }
       }
       state.syncFileToExternal?.(item.fileId, text);
     }, 2000);

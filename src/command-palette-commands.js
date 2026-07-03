@@ -135,6 +135,8 @@ const icons = {
   unfold: `<svg viewBox="0 0 24 24"><path d="M9 6 L15 12 L9 18"/></svg>`,
   // Two crossing arrows — the standard "shuffle" glyph.
   shuffle: `<svg viewBox="0 0 24 24"><path d="M3 7 H7 L17 17 H21 M17 7 H21 M3 17 H7 L11 13 M14 10 L17 7 M18 4 L21 7 L18 10 M18 14 L21 17 L18 20"/></svg>`,
+  // Clock face with a counter-clockwise arrow — session history.
+  history: `<svg viewBox="0 0 24 24"><path d="M4 12 a8 8 0 1 0 2.5 -5.8 M4 4 v4 h4"/><path d="M12 8 v4 l3 2"/></svg>`,
 };
 
 /** Build the per-style "Use Style: <name>" command rows. Mirrors the
@@ -354,6 +356,8 @@ function buildCommands(state) {
       action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 3); } },
     { id: "versions", label: "Versions", icon: icons.versions, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("show-versions-panel") },
+    { id: "history", label: "History", icon: icons.history, shortcutKey: null, ctx: "shared",
+      action: (s) => s.emit("show-history-panel") },
     { id: "export", label: "Export", icon: icons.export, shortcutKey: null, ctx: "shared",
       action: (s) => s.emit("export-current-file") },
     { id: "export-hushproject", label: "Export Project (.hushproject)", icon: icons.export, shortcutKey: null, ctx: "doc",

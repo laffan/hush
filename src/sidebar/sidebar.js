@@ -319,6 +319,10 @@ export function createSidebar(state) {
     const { openVersionsModal } = await import("./versions-modal.js");
     openVersionsModal(state);
   });
+  state.on("show-history-panel", async () => {
+    const { toggleHistoryPanel } = await import("./history-panel.js");
+    toggleHistoryPanel(state);
+  });
   state.on("show-ratchet-dropdown", () => {
     if (state.ratchetMode) { state.stopRatchet(); return; }
     showRatchetDropdownCentered(state, () => {});

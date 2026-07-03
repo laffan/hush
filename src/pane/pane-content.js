@@ -16,6 +16,8 @@ import {
   setSyncing,
 } from "./pane-state.js";
 import { createPaneEditor, attachPaneTextDrop } from "./pane-editor.js";
+import { findLockedStyleForFile } from "./pane-locked-style.js";
+export { findLockedStyleForFile };
 import { attachEditorTextDrag, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } from "./text-drag.js";
 import { countWords } from "../editor/plugins/word-count.js";
 import { createModeContext } from "../state/mode-context.js";
@@ -68,6 +70,11 @@ async function loadDocumentPane(pane) {
 
   const editor = createPaneEditor(pane._content, appState, () => {
     pane.dirty = true;
+    // Version-snapshot cadence for pane-driven edits — the main
+    // editor's keystroke counter never sees pane typing (the mirror is
+    // a programmatic change), so panes count their own keystrokes and
+    // savePaneContent snapshots every 30.
+    pane._snapKeystrokes = (pane._snapKeystrokes || 0) + 1;
     syncDocFromPane(pane);
     updatePaneWordCount(pane);
   }, {
@@ -551,6 +558,24 @@ export async function savePaneContent(pane) {
           && appState && pane.fileId !== appState.currentFileId) {
         await appState.maybeRenameFileFromContent(pane.fileId, content);
       }
+      // Version snapshots for pane-driven edits — they previously never
+      // reached the snapshots table at all. Docs follow the main
+      // editor's 30-keystroke cadence; notebook panes mirror the main
+      // canvas's snapshot-per-successful-autosave behaviour (skipped
+      // when the same notebook is also the open main canvas, whose
+      // bridge autosave already snapshots it).
+      const snapDocId = pane.localSync
+        ? `localsync:${pane.localSync.folderId}:${pane.localSync.relPath}`
+        : pane.fileId;
+      if (pane.fileType === "document" && (pane._snapKeystrokes || 0) >= 30) {
+        pane._snapKeystrokes = 0;
+        try { await tauriInvoke("create_snapshot", { documentId: snapDocId, content }); }
+        catch (_) {}
+      } else if (pane.fileType === "notebook"
+          && pane.fileId !== appState?.currentNotebookFileId) {
+        try { await tauriInvoke("create_snapshot", { documentId: snapDocId, content }); }
+        catch (_) {}
+      }
     }
   } catch (e) {
     console.error("Failed to save pane content:", e);
@@ -667,21 +692,3 @@ export function syncNotebookToPane(pane) {
   }
 }
 
-/** Shared lookup used by load + theme paths. Walks the file tree for
- *  the pane's fileId and returns its `lockedStyleId`, if any. */
-export function findLockedStyleForFile(fileId) {
-
-  if (!fileId || !appState || !appState.fileTree) return null;
-  function walk(nodes) {
-    for (const n of nodes) {
-      if (n.fileId === fileId) return n.lockedStyleId || null;
-      if (n.children) {
-        const r = walk(n.children);
-        if (r !== undefined) return r;
-      }
-    }
-    return undefined;
-  }
-  const v = walk(appState.fileTree);
-  return v || null;
-}

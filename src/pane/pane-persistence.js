@@ -37,9 +37,9 @@ export function schedulePersist() {
   }, 300);
 }
 
-export function persistPanesNow() {
-  if (!appState) return;
-  if (_persistSuppressDepth > 0) return;
+/** Serialize the live pane set to the persistable shape. Shared by the
+ *  settings persist below and the History journal's workspace capture. */
+export function serializePanes() {
   const serialized = [];
   for (const [, p] of panes) {
     serialized.push({
@@ -109,6 +109,13 @@ export function persistPanesNow() {
         : null,
     });
   }
+  return serialized;
+}
+
+export function persistPanesNow() {
+  if (!appState) return;
+  if (_persistSuppressDepth > 0) return;
+  const serialized = serializePanes();
   appState.updateSettings({ persistedPanes: serialized });
 
   // Cross-device pane sync — fire-and-forget; the op log handles retry.
@@ -125,11 +132,13 @@ async function pushPanesToDropbox() {
   await enqueuePaneUpload(payload);
 }
 
-export async function restorePanes(deps) {
+export async function restorePanes(deps, listOverride) {
   const { buildPaneDOM, onContextChange } = deps;
   if (!appState) return;
-  const list = appState.settings?.persistedPanes;
-  if (!Array.isArray(list) || list.length === 0) return;
+  // `listOverride` lets the History journal rebuild a recorded pane set
+  // mid-session; without it this is the boot path reading settings.
+  const list = listOverride || appState.settings?.persistedPanes;
+  if (!Array.isArray(list) || list.length === 0) { onContextChange(); return; }
 
   for (const s of list) {
     if (!s || !s.fileId || !s.fileType) continue;

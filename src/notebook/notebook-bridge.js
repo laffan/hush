@@ -477,7 +477,7 @@ export async function saveNotebook() {
     const local = parseLocalSentinel(currentNotebookFileId);
     if (local) {
       // Local Sync notebook — pack the JSON envelope into a `.hushnote`
-      // zip and overwrite the file on disk. No VC snapshot / sync push.
+      // zip and overwrite the file on disk. No sync push.
       const { packNotebook } = await import("../sync/notebook-sync.js");
       const { writeFileBytes } = await import("../sync/local-sync.js");
       const bytes = await packNotebook(content);
@@ -486,6 +486,12 @@ export async function saveNotebook() {
       if (_appState?.runtime) _appState.runtime.localSyncWriteFlag = Date.now();
       await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
       _lastSavedContent = content;
+      // Version snapshots key on the `ls:` sentinel id, so Local Folder
+      // notebooks get the same content history internal ones do.
+      if (IS_TAURI && wasContentDirty) {
+        try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
+        catch (e) { console.error("Notebook snapshot failed:", e); }
+      }
       return null;
     }
     if (IS_TAURI) {
