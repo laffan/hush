@@ -17,6 +17,68 @@ import { getShapeBounds } from "../notebook/utils.ts";
 
 const PADDING = 32;
 
+const FALLBACK_THEME = {
+  canvasBackground: "#ffffff",
+  foreground: "#222222",
+  headingColor: "#222222",
+  selection: "rgba(80,140,255,0.3)",
+  accent: "#3b82f6",
+  gridColor: "#999999",
+  uiBackground: "#f8f8f8",
+  uiBorder: "#e0e0e0",
+};
+
+/** Render an in-memory `{ shapes, layers }` payload into `targetCanvas`,
+ *  optionally at an explicit `camera` (the History panel passes the
+ *  recorded viewport so the ghost matches what the user actually saw;
+ *  omit to fit-to-content like the Versions thumbnail). */
+export function renderShapesPreview(targetCanvas, payload, liveCanvas, camera) {
+  const shapes = (payload?.shapes || []).filter((s) => !s.pocketed);
+  const layers = payload?.layers;
+
+  const cssW = Math.max(1, Math.round(targetCanvas.clientWidth || targetCanvas.width));
+  const cssH = Math.max(1, Math.round(targetCanvas.clientHeight || targetCanvas.height));
+  const dpr = window.devicePixelRatio || 1;
+  targetCanvas.width = cssW * dpr;
+  targetCanvas.height = cssH * dpr;
+  const ctx = targetCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const fontFamily = liveCanvas?.state?.fontFamily || "Inter";
+  const theme = liveCanvas?.state?.theme || FALLBACK_THEME;
+
+  let cam = camera && typeof camera.zoom === "number" ? camera : null;
+  if (!cam) {
+    const bounds = computeContentBounds(shapes, fontFamily);
+    if (!bounds) {
+      ctx.fillStyle = theme.canvasBackground;
+      ctx.fillRect(0, 0, cssW, cssH);
+      drawEmptyMessage(ctx, cssW, cssH, theme);
+      return;
+    }
+    cam = computeSnapshotCamera(bounds, cssW, cssH);
+  }
+
+  renderForExport(ctx, cssW, cssH, {
+    shapes,
+    camera: cam,
+    imageCache: liveCanvas?.getImageCache?.() || new Map(),
+    theme,
+    backgroundPattern: liveCanvas?.state?.backgroundPattern || "blank",
+    gridSpacing: liveCanvas?.state?.gridSpacing || 25,
+    gridOpacity: liveCanvas?.state?.gridOpacity ?? 0,
+    fontFamily,
+    layers,
+    includeBackground: true,
+    canvasBackgroundOverride: liveCanvas?.state?.canvasBackgroundOverride || "",
+    flowchart: undefined,
+    omitTextGlyphs: false,
+  });
+
+  drawApproximateStrokes(ctx, shapes, cam, theme);
+}
+
 /** Render a notebook snapshot's JSON content into `targetCanvas`.
  *  `liveCanvas` is the active NotesCanvas (used for theme/font/imageCache).
  *  Returns `{ shapeCount, layerCount, camera, contentBounds }` — the

@@ -83,6 +83,12 @@ function record(type, label, subject = "") {
       activePaneFileId: null,
       scrollTop: null,
       camera: null,
+      // Content ghost for the hover preview: the doc buffer's text, or
+      // the notebook's shapes (image bitmaps stripped). The preview is
+      // meant to be an exact picture of what the user saw — pane boxes
+      // over the wrong base document read as the wrong state entirely.
+      docText: null,
+      notebook: null,
     },
   };
   _entries.push(entry);
@@ -111,12 +117,26 @@ async function fillWorkspaceDetail(entry) {
   // restores settle before we sample them.
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
-    if (entry.state.surface.kind === "notebook") {
+    const kind = entry.state.surface.kind;
+    if (kind === "notebook") {
       const { getCanvasInstance } = await import("../notebook/notebook-bridge.js");
-      const cam = getCanvasInstance()?.state?.camera;
+      const canvas = getCanvasInstance();
+      const cam = canvas?.state?.camera;
       if (cam) entry.state.camera = { x: cam.x, y: cam.y, zoom: cam.zoom };
-    } else if (_state?.editor?.view) {
-      entry.state.scrollTop = _state.editor.view.scrollDOM.scrollTop;
+      if (canvas) {
+        // Deep-clone shapes with image bitmaps dropped — an ImageShape
+        // inlines its whole file as a dataUrl, and 100 retained entries
+        // must not hoard megabytes of pixels. The preview re-resolves
+        // images from the live canvas's cache when it can.
+        const shapes = canvas.getShapes().map((s) =>
+          s.type === "image" ? { ...s, dataUrl: "" } : s);
+        const json = JSON.stringify({ shapes, layers: canvas.state.layers });
+        if (json.length <= 2_000_000) entry.state.notebook = JSON.parse(json);
+      }
+    } else if (kind === "doc" || kind === "localsync-doc" || kind === "project") {
+      if (_state?.editor?.view) entry.state.scrollTop = _state.editor.view.scrollDOM.scrollTop;
+      const text = _state?.editor?.getContent?.();
+      if (typeof text === "string") entry.state.docText = text.slice(0, 200_000);
     }
   } catch (_) {}
 }

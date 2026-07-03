@@ -108,13 +108,21 @@ function showOverlay(entry) {
   overlayEl.className = "history-preview-overlay";
 
   const surface = entry.state.surface || { kind: "empty" };
+  const container = document.getElementById("pane-container");
+  const base = container ? container.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+
+  // Base-document ghost FIRST so the pane rectangles stack over it the
+  // way real panes stacked over the real document — the preview is a
+  // picture of the whole recorded workspace, not just the panes.
+  renderBaseGhost(entry, surface, base);
+
   const card = document.createElement("div");
   card.className = "history-preview-card";
   const inlineCount = (entry.state.panes || []).filter((p) => p && p.inline).length;
   card.innerHTML = `
-    <div class="history-preview-kind">${kindLabel(surface.kind)}</div>
-    <div class="history-preview-name"></div>
-    <div class="history-preview-meta"></div>
+    <span class="history-preview-kind">${kindLabel(surface.kind)}</span>
+    <span class="history-preview-name"></span>
+    <span class="history-preview-meta"></span>
   `;
   card.querySelector(".history-preview-name").textContent = surface.name || "No file";
   card.querySelector(".history-preview-meta").textContent =
@@ -123,8 +131,6 @@ function showOverlay(entry) {
 
   // Ghost rectangles for every recorded pane, positioned against the
   // live pane container so they land where the panes actually sat.
-  const container = document.getElementById("pane-container");
-  const base = container ? container.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
   for (const p of entry.state.panes || []) {
     if (!p || p.inline) continue;
     const rect = paneGhostRect(p, base);
@@ -154,6 +160,63 @@ function kindLabel(kind) {
     case "stack": return "Stack";
     case "pdf": return "PDF";
     default: return "Empty";
+  }
+}
+
+/** Paint the recorded base document into the overlay: doc surfaces get
+ *  their captured buffer text laid out as a blue editor column (scrolled
+ *  to the recorded offset); notebooks get their captured shapes rendered
+ *  to a canvas at the recorded camera, under a blue wash. Both fill the
+ *  workspace area so pane ghosts stack over them like the real thing. */
+function renderBaseGhost(entry, surface, base) {
+  const rectStyle = {
+    left: `${Math.round(base.left)}px`,
+    top: `${Math.round(base.top)}px`,
+    width: `${Math.round(base.width)}px`,
+    height: `${Math.round(base.height)}px`,
+  };
+
+  const isDocKind = surface.kind === "doc" || surface.kind === "localsync-doc" || surface.kind === "project";
+  if (isDocKind && typeof entry.state.docText === "string") {
+    const layer = document.createElement("div");
+    layer.className = "history-preview-doc";
+    Object.assign(layer.style, rectStyle);
+    const column = document.createElement("div");
+    column.className = "history-preview-doc-column";
+    // Match the live editor's column width so the ghost's line measure
+    // reads like the page the user remembers.
+    const liveContent = document.querySelector("#editor-container .cm-content");
+    if (liveContent && liveContent.clientWidth) column.style.maxWidth = `${liveContent.clientWidth}px`;
+    // Project buffers join docs with a machine separator line — swap it
+    // for the dashed rule the editor renders in its place.
+    column.textContent = entry.state.docText.replace(/---hush-separator---/g, "— — — — —");
+    if (typeof entry.state.scrollTop === "number" && entry.state.scrollTop > 0) {
+      column.style.transform = `translateY(-${Math.round(entry.state.scrollTop)}px)`;
+    }
+    layer.appendChild(column);
+    overlayEl.appendChild(layer);
+    return;
+  }
+
+  if (surface.kind === "notebook" && entry.state.notebook) {
+    const canvas = document.createElement("canvas");
+    canvas.className = "history-preview-canvas";
+    Object.assign(canvas.style, rectStyle);
+    overlayEl.appendChild(canvas);
+    const wash = document.createElement("div");
+    wash.className = "history-preview-wash";
+    Object.assign(wash.style, rectStyle);
+    overlayEl.appendChild(wash);
+    // Async render (the notebook renderer lives in its own chunk); the
+    // overlay may have been dismissed by the time it resolves.
+    const myOverlay = overlayEl;
+    Promise.all([
+      import("./notebook-snapshot-preview.js"),
+      import("../notebook/notebook-bridge.js"),
+    ]).then(([{ renderShapesPreview }, { getCanvasInstance }]) => {
+      if (overlayEl !== myOverlay || !canvas.isConnected) return;
+      renderShapesPreview(canvas, entry.state.notebook, getCanvasInstance(), entry.state.camera);
+    }).catch(() => {});
   }
 }
 
