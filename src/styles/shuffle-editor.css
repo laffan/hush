@@ -275,26 +275,30 @@
   opacity: 0.6;
   margin-bottom: 8px;
 }
+/* Description column first, then the keys — both left-aligned. The label
+   column is fixed-width so the keycaps line up down the card. */
 .shuffle-help-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 14px;
   padding: 3px 0;
+}
+.shuffle-help-label {
+  flex: 0 0 auto;
+  min-width: 160px;
+  text-align: left;
+  opacity: 0.9;
 }
 .shuffle-help-keys {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  min-width: 74px;
 }
 .shuffle-help-or {
   opacity: 0.4;
   margin: 0 1px;
-}
-.shuffle-help-label {
-  flex: 1;
-  opacity: 0.9;
 }
 .shuffle-help-panel kbd {
   display: inline-flex;

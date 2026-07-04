@@ -140,10 +140,13 @@ export function createEditor(container, state) {
       });
     }
     // Non-typewriter scroll-to-centre: paddingTop is a function of
-    // contentHeight (shrinks as content grows). Recompute when the
-    // doc changes so the last line stays reachable at the vertical
-    // midpoint across short → long transitions.
-    if (update.docChanged && !state.typewriterMode) {
+    // contentHeight (shrinks as content grows). Recompute when the doc
+    // changes, and also on geometryChanged — the initial content height is
+    // an estimate that CM only firms up after it measures the DOM, and web
+    // fonts load asynchronously and reflow line heights afterwards. Both
+    // arrive as geometryChanged (not docChanged), so without this the
+    // padding stays pinned to a stale height and short docs never centre.
+    if ((update.docChanged || update.geometryChanged) && !state.typewriterMode) {
       requestAnimationFrame(() => applyEditorScrollerPadding(state));
     }
     // Ratchet: ensure cursor stays at end of document

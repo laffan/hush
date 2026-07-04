@@ -167,8 +167,8 @@ function buildHelpButton() {
       .map((combo) => combo.map((k) => `<kbd>${escHtml(k)}</kbd>`).join(""))
       .join('<span class="shuffle-help-or">/</span>');
     return `<div class="shuffle-help-row">
-      <span class="shuffle-help-keys">${keys}</span>
       <span class="shuffle-help-label">${escHtml(label)}</span>
+      <span class="shuffle-help-keys">${keys}</span>
     </div>`;
   }).join("");
   btn.innerHTML = `<span class="shuffle-help-glyph" aria-hidden="true">?</span>
@@ -260,18 +260,25 @@ export function findFreeMarginSpot(geo) {
   return best ? { x: best.x, y: best.y } : { x: gutters[0][0], y: 24 };
 }
 
+/** Extra breathing room past the gutter gap when a chip snaps out from under
+ *  the column, so the hover toggles (which sit ~26px off the chip's left edge)
+ *  clear the editor instead of hiding beneath it. */
+const BUTTON_CLEARANCE = 15;
+
 /** Clamp a parked margin chip's x so it never sits under the centre column.
  *  `geo`: { canvasW, colLeft, colRight, chipW, gap }. If the chip's span
  *  [x, x+chipW] would overlap the column band, shove it into the nearer
  *  gutter (falling back to the far gutter, or a plain clamp when a narrow
- *  window leaves no clear gutter either side). */
+ *  window leaves no clear gutter either side). The right gutter adds
+ *  BUTTON_CLEARANCE so the chip's left-hand toggles don't tuck under the
+ *  column. */
 export function snapMarginToGutter(x, geo) {
   const { canvasW, colLeft, colRight, chipW, gap } = geo;
   const clamp = (v) => Math.max(8, Math.min(Math.max(8, canvasW - chipW - 8), v));
   const overlaps = (x + chipW > colLeft) && (x < colRight);
   if (!overlaps) return clamp(x);
-  const leftMax = colLeft - chipW - gap;  // x for a fully-left chip
-  const rightMin = colRight + gap;        // x for a fully-right chip
+  const leftMax = colLeft - chipW - gap;             // x for a fully-left chip
+  const rightMin = colRight + gap + BUTTON_CLEARANCE; // x for a fully-right chip
   const canLeft = leftMax >= 8;
   const canRight = rightMin <= canvasW - chipW - 8;
   const preferLeft = (x + chipW / 2) < (colLeft + colRight) / 2;
