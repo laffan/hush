@@ -159,6 +159,9 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── pane-inline.js                 (Inline panes: CM block-widget host + wikilink `▾` opener + drag-to-detach)
 │   └── text-drag.js
 │
+├── sticky/
+│   └── sticky-notes.js                (Sticky Notes: scoped floating reminders above all content — see "Sticky Notes")
+│
 ├── project/                           (.hushproject owns the project + gutter pairing — see "Projects" / "Gutter Mode")
 │   ├── gutter.js                      (Gutter Mode: doc-aligned notebook gutter pane — promote/demote, scroll sync, camera lock, shadow headers, shape anchoring. Binds to the doc: context; promote records the doc↔gutter pairing)
 │   ├── gutter-commands.js             (Add / Open / Close Gutter flows: package the doc into a project, create/copy + dock a `<docName>-gutter` notebook; per-doc pairing via the naming convention + visibility predicates)
@@ -964,6 +967,18 @@ Input redirect is gated by `state.gutterScrollDOM` (set to the live cm-scroller 
 
 **Drag-from-sidebar integration:** `sortable-list/drag-drop.js` has an `onDragOutside(item, x, y)` callback. In `finishDrag`, the callback fires instead of the normal reorder drop when the pointer is right of the panel overlay AND either Cmd/Ctrl is held (real `metaKey`/`ctrlKey` OR the virtual `window.__hushCmdHeld` flag from Touch mode's ⌘ pill) OR `forceDragOutside(item)` returns true. `files-panel.js` uses the modifier path for documents and notebooks (creating a floating pane via `createPane()`) and `forceDragOutside` for image rows so they escape the panel without a modifier — `onDragOutside` then calls `dropSidebarImageAt` in `pane/text-drag.js` to insert markdown into the editor or add an `ImageShape` to the notebook under the pointer. `canDropIntoParent` also runs `canDrop` for sibling reorders and root-level drops (not just "drop into" targets), which is how the images-stay-in-Images rule is enforced.
 
+### Sticky Notes (`sticky/sticky-notes.js`)
+
+Square temporary reminders floating above every other surface in a dedicated `#sticky-container` (appended to `document.body`) at `--z-sticky: 250` — above panes (90), the notebook shelf (150), and the sidebar (200); below overlays, popovers, and modals. Stickies are **not files**: they live entirely in `AppSettings.stickyNotes` (mirrored as `sticky_notes: Vec<serde_json::Value>` in the Rust struct, opaque to Rust like `persisted_panes`), never appear in the file tree, and closing one deletes it permanently.
+
+**Note record:** `{ id, kind, target, x, y, width, height, collapsed, fontSize, text, createdAt }`. `kind` is one of `"file"` / `"project"` / `"desk"` / `"global"`; `target` is the pane-style context id (`doc:` / `nb:` / `pdf:` / `st:` + fileId) for file notes, a project tree-node id for project notes, a desk node id for desk notes, and null for global. Persistence runs through `state.updateSettings({ stickyNotes })` on a 500 ms debounce (drag end, resize end, collapse, font change, text input).
+
+**Palette entries** (`command-palette-commands.js`, gated by the exported `canAddFileSticky` / `canAddProjectSticky` predicates): **Add File Sticky** (a doc / notebook / PDF / stack is open), **Add Project Sticky** (a project — or a file whose ancestors include one — is open; the target resolves via `nearestAncestorProjectId`), **Add Desk Sticky** (targets `state.getActiveDesk()`), **Add Global Sticky** (always). New notes cascade from the viewport centre and focus their textarea immediately.
+
+**Visibility** re-evaluates on `file-opened`, `notebook-open`/`-unmount`, `pdf-open`/`-unmount`, `stack-open`/`-unmount`, `active-desk-changed`, and `files-changed`: global notes always show; desk notes show while their desk is active; project notes show when `currentProjectId` matches or the open file's `findAncestorIds` path contains the target; file notes show when the current context id matches. `files-changed` also refreshes header labels (they track renames) and prunes notes whose target no longer exists anywhere in the tree — a file in Trash still exists, so its sticky merely hides until restore or permanent delete; the restore path applies the same pruning so orphans don't survive a restart.
+
+**Interaction** mirrors panes where it makes sense: header drag (PointerCapture), double-click header to collapse to the 35 px title bar (width kept; expand restores the resized height), pointerdown raises the note to the top of the sticky z-band via a module z-counter, and eight `sn-resize` handles (same geometry as `fp-resize`) resize between 120 px and the 300 × 300 default/max. The body is a plain `<textarea>` in `--ui-font-family` with fixed black text on the scope colour (file/project `#ffe4ec` pink, desk `#fff6c4` yellow, global `#dcebfa` blue) — deliberately independent of the active theme. A keydown handler on the note element catches `⌘+` / `⌘−` (steps `fontSize` by 2 between 10–48 px) before the window-level shortcut fallback; the header label is the attachment's name (file / project / desk name, or "Global").
+
 ### Zotero Integration (`zotero.js`, `zotero-snapshot.js`, `zotero-annotations.js`, `zotero/highlight-pane.js`)
 
 Citation management plus a highlight browser pane. Connects to the Zotero Web API with a user key, downloads references (and their attachments) with progress tracking, caches the result locally. The shared fuzzy search (`fuzzySearch` in `zotero.js`) is matched against title / shortTitle / authors / year / item key.
@@ -1141,6 +1156,7 @@ The settings window has its own standalone `src/settings/settings-window.css` si
 --z-pane: 90            floating reference panes above editor content
 --z-shelf: 150          notebook shelf panel
 --z-sidebar: 200        left sidebar column + floating toggle
+--z-sticky: 250         sticky notes — above all content chrome, below overlays
 --z-overlay: 300        find-replace, action sheets, sidebar tooltip
 --z-popover: 400        footnote popover, command palette, image hover
 --z-modal: 500          full-screen modal backdrops + standard modals
