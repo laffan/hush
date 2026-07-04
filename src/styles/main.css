@@ -31,6 +31,7 @@
 @import './notebook.css';
 @import './minimap.css';
 @import './floating-pane.css';
+@import './sticky-notes.css';
 @import './image-preview.css';
 @import './notebook-export.css';
 @import './split-combine.css';

@@ -1,0 +1,135 @@
+/* ===== Sticky Notes =====
+ * Square 400×400 temporary reminders floating above every other
+ * surface (--z-sticky sits above panes, shelf, and sidebar; below
+ * transient overlays / popovers / modals). Header + close button
+ * mirror the floating-pane design; colors are fixed per scope
+ * (file/project pink, desk yellow, global blue) with black text,
+ * independent of the active theme — a sticky reads like paper stuck
+ * on the glass, not like app chrome. */
+
+#sticky-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: var(--z-sticky);
+}
+
+.sticky-note {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  color: #1a1a1a;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sticky-note.active {
+  border-color: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+/* Scope colors — file + project stickies are "document" pink. */
+.sticky-file,
+.sticky-project { background: #ffe4ec; }
+.sticky-desk    { background: #fff6c4; }
+.sticky-global  { background: #dcebfa; }
+
+/* ── Header — same geometry + affordances as the pane title bar ──── */
+
+.sticky-note-titlebar {
+  height: 15px;
+  min-height: 15px;
+  padding: 10px 12px;
+  box-sizing: content-box;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+  -webkit-user-select: none;
+  flex-shrink: 0;
+  font-family: var(--ui-font-family);
+}
+
+.sticky-note-titlebar:active {
+  cursor: grabbing;
+}
+
+.sticky-note-title {
+  flex: 1;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 15px;
+}
+
+.sticky-note-btn {
+  width: 15px;
+  height: 15px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #1a1a1a;
+  border-radius: 3px;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+}
+
+.sticky-note-btn:hover {
+  opacity: 0.9;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.sticky-note-btn svg {
+  width: 10px;
+  height: 10px;
+  stroke: currentColor;
+  stroke-width: 1;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Text body ────────────────────────────────────────────────────── */
+
+.sticky-note-text {
+  flex: 1;
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 2px 14px 14px;
+  font-family: var(--ui-font-family);
+  color: #1a1a1a;
+  line-height: 1.45;
+  caret-color: #1a1a1a;
+}
+
+.sticky-note-text::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.sticky-note-text::selection {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* ── Collapsed — header only, like a collapsed pane ───────────────── */
+
+.sticky-note.collapsed .sticky-note-text {
+  display: none;
+}

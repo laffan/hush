@@ -63,6 +63,11 @@ export function createDefaultSettings() {
     // panes** is run again, and the sidebar's per-file indicator
     // collapses to a thin strip.
     panesHiddenByContext: {},
+    // Sticky notes — floating temporary reminders (see sticky/sticky-notes.js).
+    // Each entry: { id, kind: "file"|"project"|"desk"|"global", target,
+    // x, y, collapsed, fontSize, text, createdAt }. Closing a note
+    // deletes it permanently.
+    stickyNotes: [],
     // Notebook-only floating minimap widget. Off by default; toggled
     // via the command palette ("Show minimap" / "Hide minimap"). The
     // widget unmounts itself whenever a non-notebook is open.

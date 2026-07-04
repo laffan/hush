@@ -36,6 +36,8 @@
    *   --z-pane           floating reference panes above editor content
    *   --z-shelf          notebook shelf panel
    *   --z-sidebar        left sidebar column + floating toggle
+   *   --z-sticky         sticky notes — above all content chrome
+   *                      (panes, shelf, sidebar), below overlays/modals
    *   --z-overlay        transient inline overlays (find/replace, action sheets)
    *   --z-popover        detached popovers (footnote, command palette, image preview)
    *   --z-modal          full-screen modal backdrops + standard modals
@@ -51,6 +53,7 @@
   --z-pane: 90;
   --z-shelf: 150;
   --z-sidebar: 200;
+  --z-sticky: 250;
   --z-overlay: 300;
   --z-popover: 400;
   --z-modal: 500;
