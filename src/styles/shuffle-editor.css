@@ -223,10 +223,93 @@
   pointer-events: none;
   z-index: calc(var(--z-modal-top) + 1);
 }
+.shuffle-editor-toolbar-left,
 .shuffle-editor-toolbar-right {
   display: flex;
   gap: 10px;
   pointer-events: none;
+}
+
+/* "?" help button — hover surfaces a card of the current shortcuts. */
+.shuffle-editor-help {
+  position: relative;
+  font-size: 18px;
+  font-weight: 600;
+}
+.shuffle-help-glyph {
+  line-height: 1;
+  pointer-events: none;
+}
+.shuffle-help-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 300px;
+  white-space: nowrap;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  font-family: var(--ui-font-family);
+  font-size: 12.5px;
+  font-weight: 400;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  z-index: 1;
+}
+.shuffle-editor-help:hover .shuffle-help-panel,
+.shuffle-editor-help:focus-visible .shuffle-help-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.shuffle-help-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+.shuffle-help-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+.shuffle-help-keys {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 74px;
+}
+.shuffle-help-or {
+  opacity: 0.4;
+  margin: 0 1px;
+}
+.shuffle-help-label {
+  flex: 1;
+  opacity: 0.9;
+}
+.shuffle-help-panel kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 20px;
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.35));
+  border-radius: 5px;
+  font-family: var(--ui-font-family);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--fg);
 }
 /* Icon buttons — no outline until hover; render in the app's UI font. */
 .shuffle-editor-btn {

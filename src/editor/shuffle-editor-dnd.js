@@ -134,16 +134,64 @@ function iconBtn(name, title, extraClass) {
   return b;
 }
 
-/** The bottom toolbar: Shuffle pinned left, Cancel + Done right. */
+/** The current keyboard shortcuts, rendered into the "?" hover card so the
+ *  reference stays next to the surface it describes. Keep in lockstep with
+ *  installShuffleKeyboard (shuffle-editor-keys.js). */
+const isMacPlatform = /Mac/i.test((typeof navigator !== "undefined" && (navigator.platform || navigator.userAgent)) || "");
+const MOD_KEY = isMacPlatform ? "⌘" : "Ctrl";
+const SHIFT_KEY = isMacPlatform ? "⇧" : "Shift";
+const SHUFFLE_SHORTCUTS = [
+  { combos: [["A"]], label: "Send to column" },
+  { combos: [["D"]], label: "Scatter to margin" },
+  { combos: [["S"]], label: "Toggle strikethrough" },
+  { combos: [["C"]], label: "Toggle comment" },
+  { combos: [[MOD_KEY, "↑"], [MOD_KEY, "↓"]], label: "Move sentence up / down" },
+  { combos: [[SHIFT_KEY, "↑"], [SHIFT_KEY, "↓"]], label: "Move focus up / down" },
+  { combos: [[MOD_KEY, "Z"]], label: "Undo" },
+  { combos: [[MOD_KEY, SHIFT_KEY, "Z"]], label: "Redo" },
+  { combos: [["Double-click"]], label: "New sentence" },
+  { combos: [["Esc"]], label: "Cancel" },
+];
+
+function escHtml(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+/** Build the "?" button whose hover card lists the shuffle shortcuts. */
+function buildHelpButton() {
+  const btn = el("button", "shuffle-editor-btn shuffle-editor-help");
+  btn.type = "button";
+  btn.setAttribute("aria-label", "Keyboard shortcuts");
+  const rows = SHUFFLE_SHORTCUTS.map(({ combos, label }) => {
+    const keys = combos
+      .map((combo) => combo.map((k) => `<kbd>${escHtml(k)}</kbd>`).join(""))
+      .join('<span class="shuffle-help-or">/</span>');
+    return `<div class="shuffle-help-row">
+      <span class="shuffle-help-keys">${keys}</span>
+      <span class="shuffle-help-label">${escHtml(label)}</span>
+    </div>`;
+  }).join("");
+  btn.innerHTML = `<span class="shuffle-help-glyph" aria-hidden="true">?</span>
+    <div class="shuffle-help-panel" role="tooltip">
+      <div class="shuffle-help-title">Keyboard shortcuts</div>
+      ${rows}
+    </div>`;
+  return btn;
+}
+
+/** The bottom toolbar: Shuffle + "?" pinned left, Cancel + Done right. */
 export function buildToolbar() {
   const wrap = el("div", "shuffle-editor-toolbar");
+  const left = el("div", "shuffle-editor-toolbar-left");
   const shuffleBtn = iconBtn("shuffle", "Shuffle the margin sentences", "shuffle-editor-shuffle");
+  left.appendChild(shuffleBtn);
+  left.appendChild(buildHelpButton());
   const right = el("div", "shuffle-editor-toolbar-right");
   const cancelBtn = iconBtn("cancel", "Cancel — discard changes", "shuffle-editor-cancel");
   const doneBtn = iconBtn("done", "Done — choose a version", "shuffle-editor-done");
   right.appendChild(cancelBtn);
   right.appendChild(doneBtn);
-  wrap.appendChild(shuffleBtn);
+  wrap.appendChild(left);
   wrap.appendChild(right);
   return { el: wrap, shuffleBtn, cancelBtn, doneBtn };
 }
@@ -210,6 +258,28 @@ export function findFreeMarginSpot(geo) {
     if (score < bestScore) { bestScore = score; best = cand; }
   }
   return best ? { x: best.x, y: best.y } : { x: gutters[0][0], y: 24 };
+}
+
+/** Clamp a parked margin chip's x so it never sits under the centre column.
+ *  `geo`: { canvasW, colLeft, colRight, chipW, gap }. If the chip's span
+ *  [x, x+chipW] would overlap the column band, shove it into the nearer
+ *  gutter (falling back to the far gutter, or a plain clamp when a narrow
+ *  window leaves no clear gutter either side). */
+export function snapMarginToGutter(x, geo) {
+  const { canvasW, colLeft, colRight, chipW, gap } = geo;
+  const clamp = (v) => Math.max(8, Math.min(Math.max(8, canvasW - chipW - 8), v));
+  const overlaps = (x + chipW > colLeft) && (x < colRight);
+  if (!overlaps) return clamp(x);
+  const leftMax = colLeft - chipW - gap;  // x for a fully-left chip
+  const rightMin = colRight + gap;        // x for a fully-right chip
+  const canLeft = leftMax >= 8;
+  const canRight = rightMin <= canvasW - chipW - 8;
+  const preferLeft = (x + chipW / 2) < (colLeft + colRight) / 2;
+  if (preferLeft && canLeft) return clamp(leftMax);
+  if (!preferLeft && canRight) return clamp(rightMin);
+  if (canLeft) return clamp(leftMax);
+  if (canRight) return clamp(rightMin);
+  return clamp(x);
 }
 
 /** Build the close-time compare modal (original vs shuffled). Returns the

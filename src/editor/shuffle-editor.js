@@ -32,7 +32,7 @@
 import {
   splitIntoSentences, capitalizeFirst, combineInto, startDragGesture,
   buildToolbar, placeCaretAtPoint, fakeCenterEvent, buildCompareModal,
-  findFreeMarginSpot,
+  findFreeMarginSpot, snapMarginToGutter,
 } from "./shuffle-editor-dnd.js";
 import {
   captureAnyShufflePayload, shuffleSelectionAvailable, writeBackShuffle,
@@ -189,6 +189,13 @@ function buildController(a) {
   function pointInColumn(cx, cy) {
     const r = column.getBoundingClientRect();
     return cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+  }
+  // Keep a parked margin chip clear of the centre column (geometry lives in
+  // snapMarginToGutter so this file stays under the line cap).
+  function snapMarginX(x) {
+    const cr = canvasRect(), colR = column.getBoundingClientRect();
+    return snapMarginToGutter(x, { canvasW: canvas.clientWidth, chipW: CHIP_WIDTH,
+      gap: MARGIN_GAP, colLeft: colR.left - cr.left, colRight: colR.right - cr.left });
   }
   function growCanvas() {
     let bottom = column.offsetTop + column.offsetHeight;
@@ -400,7 +407,7 @@ function buildController(a) {
     // the chip lands exactly where the ghost was (no jump).
     node.where = "margin";
     const p = clientToCanvas(cx, cy);
-    node.x = clampX(p.x - a.dragGrab.x);
+    node.x = snapMarginX(p.x - a.dragGrab.x);
     node.y = Math.max(8, p.y - a.dragGrab.y);
     a.marginNodes.push(node);
     render();
@@ -432,7 +439,7 @@ function buildController(a) {
   function createMarginNodeAt(cx, cy) {
     pushSnapshot(serialize());
     const p = clientToCanvas(cx, cy);
-    const node = makeNode("", "margin", clampX(p.x - CHIP_WIDTH / 2), Math.max(8, p.y - 16));
+    const node = makeNode("", "margin", snapMarginX(p.x - CHIP_WIDTH / 2), Math.max(8, p.y - 16));
     a.marginNodes.push(node);
     render();
     editNode(node, { clientX: cx, clientY: cy });

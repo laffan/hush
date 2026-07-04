@@ -205,7 +205,10 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 .selection-focus-overlay.block-cursor .cm-cursor {
   border-left: none;
   background: var(--block-cursor-color, var(--cursor));
-  opacity: 0.55;
+  /* Kept in sync with the style-preview block swatch
+     (styles-panel-shared.js → applyPreviewCursorMode) so the caret looks the
+     same in the editor as it does in the preview. */
+  opacity: 0.85;
   width: 0.6em !important;
 }
 

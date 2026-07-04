@@ -35,7 +35,7 @@ export function renderCursorOptions(active) {
  *  the strip sits below the descenders instead of overlapping them. */
 export function applyPreviewCursorMode(el, mode, accent, cursor) {
   Object.assign(el.style, { borderLeft: "", borderBottom: "", background: "", opacity: "", width: "", height: "", verticalAlign: "" });
-  if (mode === "block") Object.assign(el.style, { background: accent, opacity: "0.55", width: "0.6em" });
+  if (mode === "block") Object.assign(el.style, { background: accent, opacity: "0.85", width: "0.6em" });
   else if (mode === "underline") Object.assign(el.style, { borderBottom: `3px solid ${accent}`, background: "transparent", opacity: "0.7", width: "0.6em" });
   else Object.assign(el.style, { borderLeft: `2px solid ${cursor}`, width: "0" });
 }

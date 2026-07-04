@@ -38,7 +38,14 @@ export function applyEditorScrollerPadding(state, opts = {}) {
   // the content down — the last line now sits at (or just above) centre
   // even with zero scroll.
   const view = state.editor?.view;
-  const contentH = view ? (view.contentDOM?.offsetHeight || 0) : 0;
+  // Measure the *text* height, not `contentDOM.offsetHeight`: CodeMirror's
+  // base theme pins `.cm-content { min-height: 100% }`, so offsetHeight
+  // reports the full scroller height even for a three-line doc — which made
+  // `shortDocPad` collapse to 0 and left short docs stuck at the top (the
+  // centring only ever "kicked in" once the doc was long enough to scroll
+  // natively). `view.contentHeight` is CM's own layout height and tracks the
+  // real line count.
+  const contentH = view ? (view.contentHeight || 0) : 0;
   const centreY = window.innerHeight / 2;
   // Phone keeps short docs (and the empty "Start writing…" prompt) pinned
   // to the top — the centre-the-content behaviour reads as a misalignment
