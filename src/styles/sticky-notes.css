@@ -1,5 +1,6 @@
 /* ===== Sticky Notes =====
- * Square 400×400 temporary reminders floating above every other
+ * Small square temporary reminders (300×300 default and max,
+ * resizable down to 120px) floating above every other
  * surface (--z-sticky sits above panes, shelf, and sidebar; below
  * transient overlays / popovers / modals). Header + close button
  * mirror the floating-pane design; colors are fixed per scope
@@ -128,8 +129,26 @@
   background: rgba(0, 0, 0, 0.15);
 }
 
+/* ── Resize handles — same geometry as pane handles. Notes resize
+ * from any edge or corner between 120px and the 300px max. ────────── */
+
+.sn-resize {
+  position: absolute;
+  z-index: 1;
+}
+
+.sn-resize-n  { top: -4px;    left: 8px;   right: 8px;  height: 8px; cursor: n-resize; }
+.sn-resize-s  { bottom: -4px; left: 8px;   right: 8px;  height: 8px; cursor: s-resize; }
+.sn-resize-e  { right: -4px;  top: 8px;    bottom: 8px; width: 8px;  cursor: e-resize; }
+.sn-resize-w  { left: -4px;   top: 8px;    bottom: 8px; width: 8px;  cursor: w-resize; }
+.sn-resize-ne { top: -4px;    right: -4px; width: 12px; height: 12px; cursor: ne-resize; }
+.sn-resize-nw { top: -4px;    left: -4px;  width: 12px; height: 12px; cursor: nw-resize; }
+.sn-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: se-resize; }
+.sn-resize-sw { bottom: -4px; left: -4px;  width: 12px; height: 12px; cursor: sw-resize; }
+
 /* ── Collapsed — header only, like a collapsed pane ───────────────── */
 
-.sticky-note.collapsed .sticky-note-text {
+.sticky-note.collapsed .sticky-note-text,
+.sticky-note.collapsed .sn-resize {
   display: none;
 }

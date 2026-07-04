@@ -65,8 +65,8 @@ export function createDefaultSettings() {
     panesHiddenByContext: {},
     // Sticky notes — floating temporary reminders (see sticky/sticky-notes.js).
     // Each entry: { id, kind: "file"|"project"|"desk"|"global", target,
-    // x, y, collapsed, fontSize, text, createdAt }. Closing a note
-    // deletes it permanently.
+    // x, y, width, height, collapsed, fontSize, text, createdAt }.
+    // Closing a note deletes it permanently.
     stickyNotes: [],
     // Notebook-only floating minimap widget. Off by default; toggled
     // via the command palette ("Show minimap" / "Hide minimap"). The

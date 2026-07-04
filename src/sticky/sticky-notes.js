@@ -1,8 +1,11 @@
 /**
- * Sticky Notes — square 400×400 temporary reminders that float above
+ * Sticky Notes — small square temporary reminders that float above
  * every other surface. Not files: they live in AppSettings
  * (`stickyNotes`), never show in the sidebar, and are deleted forever
  * when closed.
+ *
+ * Notes start 300×300 and can be resized from any edge or corner up to
+ * 300×300 (the default is also the max — a sticky can only shrink).
  *
  * Each note is attached to one of four scopes and only shows while its
  * scope is on screen:
@@ -27,11 +30,14 @@ import {
   isRealProjectNode,
 } from "../state/tree-helpers.js";
 
-const SIZE = 400;
+const DEFAULT_SIZE = 300;
+const MAX_SIZE = 300;
+const MIN_SIZE = 120;
 const HEADER_HEIGHT = 35;
 const MIN_FONT = 10;
 const MAX_FONT = 48;
-const DEFAULT_FONT = 15;
+const FONT_STEP = 2;
+const DEFAULT_FONT = 21;
 
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
 
@@ -84,6 +90,7 @@ function schedulePersist() {
       serialized.push({
         id: n.id, kind: n.kind, target: n.target,
         x: n.x, y: n.y,
+        width: n.width, height: n.height,
         collapsed: !!n.collapsed,
         fontSize: n.fontSize,
         text: n.textarea ? n.textarea.value : (n.text || ""),
@@ -100,12 +107,16 @@ function restoreNotes() {
   for (const s of list) {
     if (!s || !s.id || !s.kind) continue;
     if (!targetStillExists(s.kind, s.target)) continue; // dropped forever
+    const width = clampSize(s.width);
+    const height = clampSize(s.height);
     const note = {
       id: s.id,
       kind: s.kind,
       target: s.target ?? null,
-      x: clampAxis(s.x ?? 40, SIZE, window.innerWidth),
+      x: clampAxis(s.x ?? 40, width, window.innerWidth),
       y: clampAxis(s.y ?? 40, HEADER_HEIGHT, window.innerHeight),
+      width,
+      height,
       collapsed: !!s.collapsed,
       fontSize: clampFont(s.fontSize),
       text: typeof s.text === "string" ? s.text : "",
@@ -168,8 +179,10 @@ export function addSticky(state, kind) {
     id: crypto.randomUUID(),
     kind,
     target,
-    x: clampAxis(Math.round(window.innerWidth / 2 - SIZE / 2) + step, SIZE, window.innerWidth),
-    y: clampAxis(Math.round(window.innerHeight / 2 - SIZE / 2) + step, HEADER_HEIGHT, window.innerHeight),
+    x: clampAxis(Math.round(window.innerWidth / 2 - DEFAULT_SIZE / 2) + step, DEFAULT_SIZE, window.innerWidth),
+    y: clampAxis(Math.round(window.innerHeight / 2 - DEFAULT_SIZE / 2) + step, HEADER_HEIGHT, window.innerHeight),
+    width: DEFAULT_SIZE,
+    height: DEFAULT_SIZE,
     collapsed: false,
     fontSize: DEFAULT_FONT,
     text: "",
@@ -190,8 +203,8 @@ function buildNoteDOM(note) {
   Object.assign(el.style, {
     left: note.x + "px",
     top: note.y + "px",
-    width: SIZE + "px",
-    height: (note.collapsed ? HEADER_HEIGHT : SIZE) + "px",
+    width: note.width + "px",
+    height: (note.collapsed ? HEADER_HEIGHT : note.height) + "px",
     zIndex: ++zCounter,
   });
 
@@ -222,8 +235,8 @@ function buildNoteDOM(note) {
   // Cmd+= / Cmd+- adjust this note's text size (browser zoom stays put).
   el.addEventListener("keydown", (e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-    if (e.key === "=" || e.key === "+") adjustFont(note, +2, e);
-    else if (e.key === "-" || e.key === "_") adjustFont(note, -2, e);
+    if (e.key === "=" || e.key === "+") adjustFont(note, +FONT_STEP, e);
+    else if (e.key === "-" || e.key === "_") adjustFont(note, -FONT_STEP, e);
   });
 
   titlebar.addEventListener("dblclick", (e) => {
@@ -233,9 +246,18 @@ function buildNoteDOM(note) {
   el.addEventListener("pointerdown", () => activateNote(note));
   setupDrag(note, titlebar);
 
+  // Resize handles (8 directions, same layout as panes).
+  for (const dir of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]) {
+    const handle = document.createElement("div");
+    handle.className = `sn-resize sn-resize-${dir}`;
+    handle.dataset.dir = dir;
+    el.appendChild(handle);
+  }
+
   note.el = el;
   note.textarea = textarea;
   note._titleEl = title;
+  setupResize(note);
   ensureContainer().appendChild(el);
 }
 
@@ -250,7 +272,7 @@ function adjustFont(note, delta, e) {
 function toggleCollapse(note) {
   note.collapsed = !note.collapsed;
   note.el.classList.toggle("collapsed", note.collapsed);
-  note.el.style.height = (note.collapsed ? HEADER_HEIGHT : SIZE) + "px";
+  note.el.style.height = (note.collapsed ? HEADER_HEIGHT : note.height) + "px";
   schedulePersist();
 }
 
@@ -289,6 +311,40 @@ function setupDrag(note, titlebar) {
     titlebar.addEventListener("pointermove", onMove);
     titlebar.addEventListener("pointerup", onUp);
   });
+}
+
+function setupResize(note) {
+  for (const handle of note.el.querySelectorAll(".sn-resize")) {
+    handle.addEventListener("pointerdown", (e) => {
+      if (note.collapsed) return;
+      e.preventDefault();
+      e.stopPropagation();
+      activateNote(note);
+      const dir = handle.dataset.dir;
+      const startX = e.clientX, startY = e.clientY;
+      const startW = note.width, startH = note.height;
+      const startLeft = note.x, startTop = note.y;
+      handle.setPointerCapture(e.pointerId);
+      const onMove = (me) => {
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
+        let w = startW, h = startH, nx = startLeft, ny = startTop;
+        if (dir.includes("e")) w = clampSize(startW + dx);
+        if (dir.includes("w")) { w = clampSize(startW - dx); nx = startLeft + (startW - w); }
+        if (dir.includes("s")) h = clampSize(startH + dy);
+        if (dir.includes("n")) { h = clampSize(startH - dy); ny = startTop + (startH - h); }
+        note.width = w; note.height = h; note.x = nx; note.y = ny;
+        Object.assign(note.el.style, { width: w + "px", height: h + "px", left: nx + "px", top: ny + "px" });
+      };
+      const onUp = () => {
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        schedulePersist();
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+    });
+  }
 }
 
 // ── Visibility / labels / pruning ─────────────────────────────────────
@@ -376,6 +432,11 @@ function targetStillExists(kind, target) {
 function clampAxis(requested, size, viewport) {
   const max = Math.max(0, viewport - size);
   return Math.min(max, Math.max(0, requested));
+}
+
+function clampSize(size) {
+  const n = typeof size === "number" && isFinite(size) ? size : DEFAULT_SIZE;
+  return Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(n)));
 }
 
 function clampFont(size) {
