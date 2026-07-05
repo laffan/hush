@@ -63,14 +63,111 @@
   cursor: grabbing;
 }
 
-.sticky-note-title {
+/* Context button — the note's coloured body signals the scope, so this
+   just shows the current scope glyph and opens the switcher. Slightly
+   more present than the close button since it's the header's main
+   affordance now. */
+.sticky-note-context {
+  opacity: 0.55;
+}
+.sticky-note-context:hover {
+  opacity: 0.95;
+}
+.sticky-note-context svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.4;
+}
+
+/* Collapsed-note content excerpt. Always present as a flex spacer (so the
+   close button stays flush right); its text only shows while the note is
+   collapsed and truncates before it can reach the close button. */
+.sticky-note-excerpt {
   flex: 1;
+  min-width: 0;
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.55);
+  color: rgba(0, 0, 0, 0.5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 15px;
+  visibility: hidden;
+  padding-right: 6px;
+}
+
+.sticky-note.collapsed .sticky-note-excerpt {
+  visibility: visible;
+}
+
+/* ── Context switcher menu ─────────────────────────────────────────────
+   Lives in #sticky-container (the note is overflow:hidden and would clip
+   it) and is positioned to the context button. Paper-on-glass styling to
+   match the notes: fixed light palette, independent of the editor theme. */
+
+.sticky-context-menu {
+  position: absolute;
+  pointer-events: auto;
+  min-width: 132px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+  font-family: var(--ui-font-family);
+}
+
+.sticky-context-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 8px;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: #1a1a1a;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sticky-context-option:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.sticky-context-option.current {
+  font-weight: 600;
+}
+
+.sticky-context-option:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sticky-ctx-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.sticky-ctx-ico svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sticky-context-option.current .sticky-ctx-ico svg {
+  stroke-width: 1.9;
 }
 
 .sticky-note-btn {

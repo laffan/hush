@@ -41,6 +41,38 @@ const DEFAULT_FONT = 21;
 
 const ICON_CLOSE = `<svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>`;
 
+// Context glyphs. The note's coloured body already signals the scope, so
+// the header shows just this small button — the document (file), desk, or
+// globe (app) glyph — and clicking it opens a menu to change the scope.
+// Reuse the sidebar's document + writing-desk glyphs so the iconography
+// reads the same across the app.
+const CTX_ICON = {
+  file: `<svg viewBox="0 0 16 16"><line x1="4" y1="4" x2="12" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="4" y1="12" x2="9" y2="12"/></svg>`,
+  desk: `<svg viewBox="0 0 24 24"><path d="M4 7L4 17"/><path d="M1 7L23 7"/><path d="M14 14H20"/><path d="M20 7L20 17"/><path d="M14 7L14 17"/></svg>`,
+  global: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><line x1="2" y1="8" x2="14" y2="8"/><ellipse cx="8" cy="8" rx="3" ry="6"/></svg>`,
+};
+
+// The context switcher offers exactly these three scopes. Project stickies
+// (created from the palette) keep working and borrow the document glyph.
+const CTX_MENU = [
+  { key: "file", label: "Document" },
+  { key: "desk", label: "Desk" },
+  { key: "global", label: "App" },
+];
+
+function ctxIconFor(kind) {
+  return CTX_ICON[kind === "project" ? "file" : kind] || CTX_ICON.global;
+}
+
+/** First few words of the note body, on one line — shown in the header
+ *  only while the note is collapsed so the user can tell stickies apart
+ *  without expanding them. Kept short so it never crowds the buttons. */
+function excerptFor(text) {
+  const t = (text || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return t.length > 42 ? t.slice(0, 42).trimEnd() + "…" : t;
+}
+
 const notes = new Map(); // id → note record
 let appState = null;
 let containerEl = null;
@@ -210,10 +242,27 @@ function buildNoteDOM(note) {
 
   const titlebar = document.createElement("div");
   titlebar.className = "sticky-note-titlebar";
-  const title = document.createElement("span");
-  title.className = "sticky-note-title";
-  title.textContent = labelFor(note);
-  titlebar.appendChild(title);
+
+  // Context button — replaces the old text label. Shows the current
+  // scope's glyph; clicking opens the Document / Desk / App switcher.
+  const ctxBtn = document.createElement("button");
+  ctxBtn.className = "sticky-note-btn sticky-note-context";
+  ctxBtn.innerHTML = ctxIconFor(note.kind);
+  ctxBtn.title = labelFor(note);
+  ctxBtn.setAttribute("aria-label", "Change context (Document / Desk / App)");
+  ctxBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleContextMenu(note, ctxBtn);
+  });
+  titlebar.appendChild(ctxBtn);
+
+  // Flex spacer that doubles as the collapsed-note content excerpt. Its
+  // text is hidden (but still reserves the space) unless the note is
+  // collapsed, so the close button always sits flush right.
+  const excerpt = document.createElement("span");
+  excerpt.className = "sticky-note-excerpt";
+  excerpt.textContent = excerptFor(note.text);
+  titlebar.appendChild(excerpt);
 
   const closeBtn = document.createElement("button");
   closeBtn.className = "sticky-note-btn sticky-note-close";
@@ -229,7 +278,11 @@ function buildNoteDOM(note) {
   textarea.spellcheck = false;
   textarea.value = note.text || "";
   textarea.style.fontSize = note.fontSize + "px";
-  textarea.addEventListener("input", () => { note.text = textarea.value; schedulePersist(); });
+  textarea.addEventListener("input", () => {
+    note.text = textarea.value;
+    if (note._excerptEl) note._excerptEl.textContent = excerptFor(note.text);
+    schedulePersist();
+  });
   el.appendChild(textarea);
 
   // Cmd+= / Cmd+- adjust this note's text size (browser zoom stays put).
@@ -256,7 +309,8 @@ function buildNoteDOM(note) {
 
   note.el = el;
   note.textarea = textarea;
-  note._titleEl = title;
+  note._ctxBtn = ctxBtn;
+  note._excerptEl = excerpt;
   setupResize(note);
   ensureContainer().appendChild(el);
 }
@@ -273,6 +327,113 @@ function toggleCollapse(note) {
   note.collapsed = !note.collapsed;
   note.el.classList.toggle("collapsed", note.collapsed);
   note.el.style.height = (note.collapsed ? HEADER_HEIGHT : note.height) + "px";
+  if (note.collapsed && note._excerptEl) note._excerptEl.textContent = excerptFor(note.text);
+  schedulePersist();
+}
+
+// ── Context switcher ──────────────────────────────────────────────────
+
+let activeMenu = null;
+let activeMenuCleanup = null;
+
+function closeContextMenu() {
+  if (activeMenu) { activeMenu.remove(); activeMenu = null; }
+  if (activeMenuCleanup) { activeMenuCleanup(); activeMenuCleanup = null; }
+}
+
+/** Does scope `key` describe the note's current attachment? Project and
+ *  file notes both read as "Document" (they share the pink body). */
+function contextKeyMatches(kind, key) {
+  if (key === "file") return kind === "file" || kind === "project";
+  return kind === key;
+}
+
+/** Can the note be switched to scope `key` right now? Document needs a
+ *  file on screen to attach to; Desk needs an active desk; App is always
+ *  available. */
+function contextAvailable(key) {
+  if (key === "file") return !!currentFileContext(appState);
+  if (key === "desk") return !!(appState?.getActiveDesk?.()?.id);
+  return true;
+}
+
+function toggleContextMenu(note, anchorBtn) {
+  if (activeMenu && activeMenu._noteId === note.id) { closeContextMenu(); return; }
+  closeContextMenu();
+  activateNote(note);
+
+  const menu = document.createElement("div");
+  menu.className = "sticky-context-menu";
+  menu._noteId = note.id;
+  for (const opt of CTX_MENU) {
+    const isCurrent = contextKeyMatches(note.kind, opt.key);
+    const available = contextAvailable(opt.key);
+    const row = document.createElement("button");
+    row.className = "sticky-context-option" + (isCurrent ? " current" : "");
+    row.innerHTML = `<span class="sticky-ctx-ico">${CTX_ICON[opt.key]}</span><span>${opt.label}</span>`;
+    if (!available && !isCurrent) row.disabled = true;
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeContextMenu();
+      if (available && !isCurrent) changeContext(note, opt.key);
+    });
+    menu.appendChild(row);
+  }
+
+  // The note itself is overflow:hidden, so the menu lives in the
+  // full-screen sticky container and is positioned to the button.
+  const rect = anchorBtn.getBoundingClientRect();
+  menu.style.left = Math.round(rect.left) + "px";
+  menu.style.top = Math.round(rect.bottom + 4) + "px";
+  ensureContainer().appendChild(menu);
+  activeMenu = menu;
+  // Nudge back on screen if it would spill off the right / bottom edge.
+  const mrect = menu.getBoundingClientRect();
+  if (mrect.right > window.innerWidth - 8) {
+    menu.style.left = Math.round(window.innerWidth - 8 - mrect.width) + "px";
+  }
+  if (mrect.bottom > window.innerHeight - 8) {
+    menu.style.top = Math.round(rect.top - 4 - mrect.height) + "px";
+  }
+
+  const onDown = (e) => {
+    // Clicks inside the menu are handled by the option buttons; clicks on
+    // a context button are left for its own handler to toggle the menu.
+    if (e.target instanceof Element
+        && e.target.closest(".sticky-context-menu, .sticky-note-context")) return;
+    closeContextMenu();
+  };
+  const onKey = (e) => { if (e.key === "Escape") closeContextMenu(); };
+  setTimeout(() => {
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+  }, 0);
+  activeMenuCleanup = () => {
+    window.removeEventListener("pointerdown", onDown, true);
+    window.removeEventListener("keydown", onKey, true);
+  };
+}
+
+/** Re-attach the note to a new scope, repaint its colour + glyph, and
+ *  re-evaluate whether it's visible on the current surface. */
+function changeContext(note, key) {
+  let target = null;
+  if (key === "file") {
+    target = currentFileContext(appState);
+    if (!target) return;
+  } else if (key === "desk") {
+    target = appState?.getActiveDesk?.()?.id || null;
+    if (!target) return;
+  }
+  note.el.classList.remove("sticky-file", "sticky-project", "sticky-desk", "sticky-global");
+  note.kind = key;
+  note.target = target;
+  note.el.classList.add("sticky-" + key);
+  if (note._ctxBtn) {
+    note._ctxBtn.innerHTML = ctxIconFor(key);
+    note._ctxBtn.title = labelFor(note);
+  }
+  refreshVisibility();
   schedulePersist();
 }
 
@@ -392,7 +553,9 @@ function labelFor(note) {
 }
 
 function refreshLabels() {
-  for (const [, n] of notes) if (n._titleEl) n._titleEl.textContent = labelFor(n);
+  // The label now lives as the context button's tooltip (the visible
+  // header shows only the scope glyph + collapsed excerpt).
+  for (const [, n] of notes) if (n._ctxBtn) n._ctxBtn.title = labelFor(n);
 }
 
 /** A note whose attachment target was deleted is removed for good —
