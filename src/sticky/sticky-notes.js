@@ -381,10 +381,14 @@ function toggleContextMenu(note, anchorBtn) {
   }
 
   // The note itself is overflow:hidden, so the menu lives in the
-  // full-screen sticky container and is positioned to the button.
+  // full-screen sticky container and is positioned to the button. It
+  // must out-stack the notes too — every note carries an inline
+  // z-index from zCounter, and a z:auto sibling would paint *behind*
+  // the very note that opened it (the menu overlaps the note body).
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.left = Math.round(rect.left) + "px";
   menu.style.top = Math.round(rect.bottom + 4) + "px";
+  menu.style.zIndex = ++zCounter;
   ensureContainer().appendChild(menu);
   activeMenu = menu;
   // Nudge back on screen if it would spill off the right / bottom edge.

@@ -3,15 +3,18 @@ import { applyTypewriterPadding } from "./plugins/typewriter.js";
 /**
  * Set vertical padding on the editor's scroller.
  *
- * The top only carries the inset a top-docked pane carves out — content
- * starts at the top and scrolls the standard way (no scroll-to-centre
- * padding that would drag a short doc's first line down).
+ * The scroller itself only carries the insets that top/bottom-docked
+ * panes carve out — content starts at the top and scrolls the standard
+ * way (no scroll-to-centre padding that would drag a short doc's first
+ * line down).
  *
- * The bottom adds half a viewport of empty space below the content (docs
- * only). Once a doc grows past half a screen tall the user can scroll up
- * far enough to leave the last line resting at the vertical midpoint —
- * the IDE-style "scroll the bottom line above the halfway mark" affordance
- * — while a short doc simply can't be scrolled and stays pinned at the top.
+ * The half-screen scroll runway below doc content (the IDE-style
+ * "scroll the last line up to the midpoint" affordance) is NOT set
+ * here: WebKit doesn't count a scroll container's own paddingBottom as
+ * scrollable overflow, so scroller padding never produced any scroll
+ * range. It lives as a static `padding-bottom: 50vh` on `.cm-content`
+ * in editor.css instead — the same mechanism CodeMirror's own
+ * scrollPastEnd() uses, measured and accounted for by CM natively.
  *
  * When typewriter mode owns the editor we defer to its own padding
  * routine, which pins the cursor line to the typewriter boundary.
@@ -31,11 +34,8 @@ export function applyEditorScrollerPadding(state, opts = {}) {
     return;
   }
 
-  const isDoc = !state.currentNotebookFileId;
   scroller.style.paddingTop = topInset > 0 ? topInset + "px" : "";
-  scroller.style.paddingBottom = isDoc
-    ? (bottomInset > 0 ? `calc(50vh + ${bottomInset}px)` : "50vh")
-    : (bottomInset > 0 ? bottomInset + "px" : "");
+  scroller.style.paddingBottom = bottomInset > 0 ? bottomInset + "px" : "";
 }
 
 export function applyModes(state) {

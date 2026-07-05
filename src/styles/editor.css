@@ -179,6 +179,21 @@ body.file-in-trash #notebook-container .notes-canvas + * {
 
 #editor-container .cm-content {
   font-family: var(--font-family) !important;
+  /* Half-screen scroll runway below doc content: once a doc grows past
+     half a screen tall, the user can always scroll the last line up to
+     the vertical midpoint (IDE-style); a shorter doc has no scroll
+     range so it stays pinned at the top. The padding lives on
+     .cm-content — NOT on .cm-scroller — because WebKit doesn't count a
+     scroll container's own bottom padding as scrollable overflow;
+     content padding is the mechanism CodeMirror's own scrollPastEnd()
+     uses, and CM measures + accounts for it natively. */
+  padding-bottom: 50vh;
+}
+
+/* Typewriter mode owns the scroller geometry (boundary pinning + runway
+   lines) — keep the content runway out of its math. */
+#app.typewriter-mode #editor-container .cm-content {
+  padding-bottom: 0;
 }
 
 #editor-container .cm-line {
