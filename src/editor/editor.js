@@ -139,14 +139,8 @@ export function createEditor(container, state) {
         scrollCursorToTypewriterLine(update.view, state);
       });
     }
-    // Non-typewriter scroll-to-centre: paddingTop is a function of
-    // contentHeight (shrinks as content grows). Recompute when the doc
-    // changes, and also on geometryChanged — the initial content height is
-    // an estimate that CM only firms up after it measures the DOM, and web
-    // fonts load asynchronously and reflow line heights afterwards. Both
-    // arrive as geometryChanged (not docChanged), so without this the
-    // padding stays pinned to a stale height and short docs never centre.
-    if ((update.docChanged || update.geometryChanged) && !state.typewriterMode) {
+    // Keep the scroller's dock insets in sync when the doc changes.
+    if (update.docChanged && !state.typewriterMode) {
       requestAnimationFrame(() => applyEditorScrollerPadding(state));
     }
     // Ratchet: ensure cursor stays at end of document
@@ -445,8 +439,8 @@ export function createEditor(container, state) {
     } else {
       stripTypewriterRunway(view);
       removeTypewriterBoundary(view, state);
-      // Restore the short-doc-aware paddingTop / 50vh paddingBottom
-      // that the typewriter just blew away.
+      // Restore the plain scroller padding (dock insets) that the
+      // typewriter just blew away.
       applyEditorScrollerPadding(state);
       // Keep the user where they were instead of letting the padding churn
       // clamp them upward. Skip when ratchet is active — it pins the current

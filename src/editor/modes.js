@@ -1,15 +1,15 @@
 import { applyTypewriterPadding } from "./plugins/typewriter.js";
-import { isPhone } from "../settings/settings-ui.js";
 
 /**
- * Set padding on the editor's scroller so that the last line can always
- * be scrolled to the vertical centre of the page — even on documents
- * that only span a few lines.
+ * Set vertical padding on the editor's scroller.
+ *
+ * The scroller only carries the top / bottom insets that docked panes
+ * carve out of the editor column — content otherwise starts at the top
+ * and scrolls normally (no scroll-to-centre padding).
  *
  * When typewriter mode owns the editor we defer to its own padding
- * routine, which pins the first line to the typewriter boundary instead
- * (the "scroll-to-middle from the top" companion to this bottom-anchored
- * variant). Notebook surfaces have no scroller and are left alone.
+ * routine, which pins the cursor line to the typewriter boundary.
+ * Notebook surfaces have no scroller and are left alone.
  */
 export function applyEditorScrollerPadding(state, opts = {}) {
   const scroller = document.querySelector("#editor-container .cm-scroller");
@@ -25,39 +25,8 @@ export function applyEditorScrollerPadding(state, opts = {}) {
     return;
   }
 
-  const hasScroller = !state.currentNotebookFileId;
   scroller.style.paddingTop = topInset > 0 ? topInset + "px" : "";
-  if (!hasScroller) {
-    scroller.style.paddingBottom = bottomInset > 0 ? bottomInset + "px" : "";
-    return;
-  }
-
-  // 50vh bottom pad lets long-doc last lines scroll to centre. For docs
-  // shorter than half the viewport the scroll range alone can't bring
-  // the last line up to that point, so add enough top padding to push
-  // the content down — the last line now sits at (or just above) centre
-  // even with zero scroll.
-  const view = state.editor?.view;
-  // Measure the *text* height, not `contentDOM.offsetHeight`: CodeMirror's
-  // base theme pins `.cm-content { min-height: 100% }`, so offsetHeight
-  // reports the full scroller height even for a three-line doc — which made
-  // `shortDocPad` collapse to 0 and left short docs stuck at the top (the
-  // centring only ever "kicked in" once the doc was long enough to scroll
-  // natively). `view.contentHeight` is CM's own layout height and tracks the
-  // real line count.
-  const contentH = view ? (view.contentHeight || 0) : 0;
-  const centreY = window.innerHeight / 2;
-  // Phone keeps short docs (and the empty "Start writing…" prompt) pinned
-  // to the top — the centre-the-content behaviour reads as a misalignment
-  // on a narrow screen where the keyboard already eats the lower half.
-  const shortDocPad = isPhone()
-    ? 0
-    : (contentH > 0 ? Math.max(0, centreY - contentH) : centreY);
-  const totalTopPad = topInset + shortDocPad;
-  scroller.style.paddingTop = totalTopPad > 0 ? totalTopPad + "px" : "";
-  scroller.style.paddingBottom = bottomInset > 0
-    ? `calc(50vh + ${bottomInset}px)`
-    : "50vh";
+  scroller.style.paddingBottom = bottomInset > 0 ? bottomInset + "px" : "";
 }
 
 export function applyModes(state) {
