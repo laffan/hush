@@ -17,16 +17,16 @@ import ObjectiveC.runtime
 //     build, so it has been removed. Touch-type gating now lives
 //     entirely in JS via `PointerEvent.pointerType`.)
 //
-//  2. Hide / show iPad "system chrome" — the top status bar (time,
-//     battery, wifi) and the Stage Manager corner resize handle.
-//     iPadOS doesn't expose a runtime toggle for either, so we
-//     swizzle `prefersStatusBarHidden` and `prefersHomeIndicatorAutoHidden`
+//  2. Hide / show the iPad top status bar (time, battery, wifi).
+//     iPadOS doesn't expose a runtime toggle, so we swizzle
+//     `prefersStatusBarHidden` and `prefersHomeIndicatorAutoHidden`
 //     onto whichever UIViewController is hosting the webview, then
 //     call `setNeedsStatusBarAppearanceUpdate()` so the change paints
-//     immediately. The Stage-Manager resize handle is reduced by
-//     pinning the `UIWindowScene.sizeRestrictions` to the current
-//     scene size when chrome is hidden — that's not a perfect "hide
-//     the handle" but it stops the handle from being draggable.
+//     immediately. The window is left freely resizable in every chrome
+//     state (only a 320×320 floor) so iPad Split View / Slide Over keep
+//     working — an earlier build pinned the scene size restrictions to
+//     suppress the Stage-Manager resize handle, but that locked the
+//     window and blocked multitasking resize entirely.
 
 private var chromeHidden = false
 
@@ -105,20 +105,17 @@ private enum ChromeControl {
                 window.rootViewController?.setNeedsUpdateOfHomeIndicatorAutoHidden()
             }
         }
-        // Stage-Manager resize handle: collapse the size range so the
-        // handle has nowhere to drag the window to. iPadOS still paints
-        // a tiny grabber, but it no longer responds. There's no first-
-        // party API to remove the handle entirely without setting
-        // UIRequiresFullScreen in Info.plist (which forces fullscreen).
-        if hidden {
-            let size = scene.coordinateSpace.bounds.size
-            scene.sizeRestrictions?.minimumSize = size
-            scene.sizeRestrictions?.maximumSize = size
-        } else {
-            scene.sizeRestrictions?.minimumSize = CGSize(width: 320, height: 320)
-            scene.sizeRestrictions?.maximumSize = CGSize(width: CGFloat.greatestFiniteMagnitude,
-                                                          height: CGFloat.greatestFiniteMagnitude)
-        }
+        // Keep the window freely resizable in every chrome state so iPad
+        // Split View / Slide Over still work — only enforce a sane 320×320
+        // floor. Hiding chrome used to pin minimumSize == maximumSize == the
+        // current scene size to suppress the Stage-Manager resize handle,
+        // but that locked the window and blocked multitasking resize
+        // entirely (the app could no longer be scaled down into split
+        // screen or slide over). Leave the resize handle painted; letting
+        // it work is the whole point.
+        scene.sizeRestrictions?.minimumSize = CGSize(width: 320, height: 320)
+        scene.sizeRestrictions?.maximumSize = CGSize(width: CGFloat.greatestFiniteMagnitude,
+                                                      height: CGFloat.greatestFiniteMagnitude)
     }
 
     private static func swap(_ original: Selector, with replacement: Selector) {
