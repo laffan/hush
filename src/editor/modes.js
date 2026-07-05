@@ -3,9 +3,15 @@ import { applyTypewriterPadding } from "./plugins/typewriter.js";
 /**
  * Set vertical padding on the editor's scroller.
  *
- * The scroller only carries the top / bottom insets that docked panes
- * carve out of the editor column — content otherwise starts at the top
- * and scrolls normally (no scroll-to-centre padding).
+ * The top only carries the inset a top-docked pane carves out — content
+ * starts at the top and scrolls the standard way (no scroll-to-centre
+ * padding that would drag a short doc's first line down).
+ *
+ * The bottom adds half a viewport of empty space below the content (docs
+ * only). Once a doc grows past half a screen tall the user can scroll up
+ * far enough to leave the last line resting at the vertical midpoint —
+ * the IDE-style "scroll the bottom line above the halfway mark" affordance
+ * — while a short doc simply can't be scrolled and stays pinned at the top.
  *
  * When typewriter mode owns the editor we defer to its own padding
  * routine, which pins the cursor line to the typewriter boundary.
@@ -25,8 +31,11 @@ export function applyEditorScrollerPadding(state, opts = {}) {
     return;
   }
 
+  const isDoc = !state.currentNotebookFileId;
   scroller.style.paddingTop = topInset > 0 ? topInset + "px" : "";
-  scroller.style.paddingBottom = bottomInset > 0 ? bottomInset + "px" : "";
+  scroller.style.paddingBottom = isDoc
+    ? (bottomInset > 0 ? `calc(50vh + ${bottomInset}px)` : "50vh")
+    : (bottomInset > 0 ? bottomInset + "px" : "");
 }
 
 export function applyModes(state) {
