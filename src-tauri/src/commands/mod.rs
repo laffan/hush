@@ -1,8 +1,11 @@
 pub mod backup;
 pub mod files;
 pub mod google_docs;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub mod apple_objc;
 pub mod grammar;
 pub mod handwriting;
+pub mod handwriting_ink;
 pub mod images;
 pub mod local_sync;
 pub mod multi_window;

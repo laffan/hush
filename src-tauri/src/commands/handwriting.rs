@@ -11,14 +11,20 @@
 use base64::Engine as _;
 
 #[tauri::command]
-pub fn recognize_handwriting(png_base64: String) -> Result<String, String> {
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(png_base64.as_bytes())
-        .map_err(|e| format!("Invalid image payload: {e}"))?;
-    if bytes.is_empty() {
-        return Err("Empty image payload".into());
-    }
-    recognize(&bytes)
+pub async fn recognize_handwriting(png_base64: String) -> Result<String, String> {
+    // Accurate-level Vision recognition can take a second or two on a
+    // large raster — keep it off the main thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(png_base64.as_bytes())
+            .map_err(|e| format!("Invalid image payload: {e}"))?;
+        if bytes.is_empty() {
+            return Err("Empty image payload".into());
+        }
+        recognize(&bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -33,10 +39,11 @@ fn recognize(_png: &[u8]) -> Result<String, String> {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod vision {
+    use crate::commands::apple_objc::{describe_nserror, nsstring_to_string};
     use objc2::rc::autoreleasepool;
     use objc2::runtime::{AnyObject, Bool};
     use objc2::{class, msg_send, sel};
-    use std::ffi::{c_char, c_void, CStr};
+    use std::ffi::c_void;
     use std::ptr;
 
     // Pull in the Vision framework at link time; `class!` resolves the
@@ -103,7 +110,7 @@ mod vision {
             let result = if ok.as_bool() {
                 Ok(collect_lines(request))
             } else {
-                Err(describe_nserror(error))
+                Err(describe_nserror(error, "Vision recognition failed"))
             };
             let _: () = msg_send![request, release];
             let _: () = msg_send![handler, release];
@@ -144,22 +151,4 @@ mod vision {
         lines.join("\n")
     }
 
-    unsafe fn nsstring_to_string(s: *mut AnyObject) -> Option<String> {
-        if s.is_null() {
-            return None;
-        }
-        let utf8: *const c_char = msg_send![s, UTF8String];
-        if utf8.is_null() {
-            return None;
-        }
-        Some(CStr::from_ptr(utf8).to_string_lossy().into_owned())
-    }
-
-    unsafe fn describe_nserror(err: *mut AnyObject) -> String {
-        if err.is_null() {
-            return "Vision recognition failed".into();
-        }
-        let desc: *mut AnyObject = msg_send![err, localizedDescription];
-        nsstring_to_string(desc).unwrap_or_else(|| "Vision recognition failed".into())
-    }
 }

@@ -1,8 +1,8 @@
 import type { DrawingState } from "../state";
 import type { DrawingLayer } from "../drawing/drawing-layer-types";
 import { canvasToScreen, computePocketLayout, getShapeBounds } from "../utils";
-import { rasterizeSelectionToImage, recognizeSelectionHandwriting } from "../selection-raster";
-import { isHandwritingRecognitionAvailable } from "../../recognition/handwriting";
+import { rasterizeSelectionToImage, recognizeSelectionHandwriting, recognizeSelectionInkMlkit } from "../selection-raster";
+import { isHandwritingRecognitionAvailable, isInkRecognitionAvailable } from "../../recognition/handwriting";
 import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
 import { makeColorsMenu } from "./selection-colors-menu";
@@ -168,17 +168,16 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
 
   // ----- raster-backed actions (Rasterize group / Recognize handwriting) -----
   // Logic lives in selection-raster.ts; the toolbar only owns the
-  // buttons and the in-flight dimming for the async recognize path.
+  // buttons and the in-flight dimming for the async recognize paths.
+  // One busy flag covers both engines so they can't run concurrently.
   let recognizeBusy = false;
-  async function runRecognize(btn: HTMLButtonElement): Promise<void> {
-    if (!access || recognizeBusy) return;
+  async function runRecognize(btn: HTMLButtonElement, action: () => Promise<void>): Promise<void> {
+    if (recognizeBusy) return;
     recognizeBusy = true;
     btn.style.opacity = "0.4";
     btn.style.pointerEvents = "none";
     try {
-      await recognizeSelectionHandwriting({
-        state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),
-      });
+      await action();
     } catch (err) {
       console.error("[hush] Handwriting recognition failed:", err);
     } finally {
@@ -288,13 +287,30 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
         container.appendChild(makeIconBtn("group", "Group", () => state.groupSelected()));
       }
     }
-    // Recognize handwriting: shown when the selection carries anything
-    // recognizable — strokes or images (so a previously-rasterized
-    // stroke group stays recognizable). Places the recognized text
-    // beneath the ink.
+    // Recognize handwriting (Apple Vision): shown when the selection
+    // carries anything recognizable — strokes or images (so a
+    // previously-rasterized stroke group stays recognizable). Places
+    // the recognized text beneath the ink.
     const hasRecognizable = selected.some((s) => s.type === "draw" || s.type === "image");
     if (access && hasRecognizable && isHandwritingRecognitionAvailable()) {
-      const btn = makeIconBtn("recognize-text", "Recognize handwriting", () => { void runRecognize(btn); });
+      const btn = makeIconBtn("recognize-text", "Recognize handwriting (Apple Vision)", () => {
+        void runRecognize(btn, () => recognizeSelectionHandwriting({
+          state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),
+        }));
+      });
+      if (recognizeBusy) { btn.style.opacity = "0.4"; btn.style.pointerEvents = "none"; }
+      container.appendChild(btn);
+    }
+
+    // Recognize handwriting (Google ML Kit): the stroke-based engine,
+    // kept alongside Vision for comparison. Strokes only (a stroke
+    // recognizer can't read images) and iPad-only (Google doesn't
+    // ship ML Kit for macOS).
+    const hasStrokes = selected.some((s) => s.type === "draw");
+    if (access && hasStrokes && isInkRecognitionAvailable()) {
+      const btn = makeIconBtn("recognize-text-g", "Recognize handwriting (Google ML Kit)", () => {
+        void runRecognize(btn, () => recognizeSelectionInkMlkit(state));
+      });
       if (recognizeBusy) { btn.style.opacity = "0.4"; btn.style.pointerEvents = "none"; }
       container.appendChild(btn);
     }

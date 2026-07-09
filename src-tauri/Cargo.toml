@@ -48,9 +48,12 @@ comemo = "0.5"
 ecow = "0.2"
 
 # objc2 serves the traffic-light window buttons on macOS and the
-# Vision-backed handwriting recognition command on both Apple targets.
+# Vision-backed handwriting recognition command on both Apple targets;
+# block2 bridges ML Kit's completion blocks for the iOS-only Digital
+# Ink recognizer (handwriting_ink.rs).
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2 = "0.5"
+block2 = "0.5"
 
 [dev-dependencies]
 tempfile = "3"

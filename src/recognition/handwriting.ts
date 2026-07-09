@@ -37,3 +37,58 @@ export async function recognizeHandwriting(canvas: HTMLCanvasElement): Promise<s
   const { invoke } = await import("@tauri-apps/api/core");
   return await invoke<string>("recognize_handwriting", { pngBase64 });
 }
+
+// ───────────── stroke-based backend (Google ML Kit) ─────────────
+//
+// The second engine, kept alongside Vision for comparison. ML Kit's
+// Digital Ink Recognition works from the pen's actual point sequence
+// rather than a raster, which is what Apple's own Scribble does
+// internally — but Google only ships it for iOS/Android, so this
+// path is iPad-only. The pod is linked into the Tauri iOS project by
+// scripts/ios-add-mlkit-pod.mjs.
+
+export interface InkPoint {
+  x: number;
+  y: number;
+  /** Milliseconds. Hush doesn't record pen timing, so callers
+   *  synthesize a monotonic sequence. */
+  t: number;
+}
+
+export interface InkStroke {
+  points: InkPoint[];
+}
+
+/** True when the ML Kit ink recognizer can run — a Tauri build on
+ *  iOS / iPadOS. (iPadOS 13+ reports `MacIntel` for
+ *  navigator.platform, so also accept Mac + touch, mirroring
+ *  pencil-bridge.js.) */
+export function isInkRecognitionAvailable(): boolean {
+  if (!IS_TAURI || typeof navigator === "undefined") return false;
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent || "")) return true;
+  const tp = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return /Mac/i.test(navigator.platform || "") && tp > 0;
+}
+
+/** Recognize a stroke sequence with ML Kit. Coordinates should be
+ *  relative to the writing area's top-left corner; `writingArea` is
+ *  its size in the same units. Resolves to the top candidate ("" when
+ *  nothing was legible); rejects when ML Kit isn't linked into the
+ *  build, the model download is still in flight, or recognition
+ *  fails. */
+export async function recognizeHandwritingInk(
+  strokes: InkStroke[],
+  writingArea: { width: number; height: number },
+  language = "en-US",
+): Promise<string> {
+  if (!IS_TAURI) throw new Error("Handwriting recognition requires the iOS app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<string>("recognize_handwriting_ink", {
+    payload: {
+      strokes,
+      language,
+      writingAreaWidth: writingArea.width,
+      writingAreaHeight: writingArea.height,
+    },
+  });
+}

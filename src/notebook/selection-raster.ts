@@ -21,7 +21,7 @@
 
 import type { DrawingState } from "./state";
 import type { DrawingLayer } from "./drawing/drawing-layer-types";
-import type { Bounds, Shape } from "./types";
+import type { Bounds, DrawShape, Shape } from "./types";
 import { renderForExport } from "./renderer-export";
 import { getShapeBounds } from "./utils";
 
@@ -222,4 +222,38 @@ export async function recognizeSelectionHandwriting(source: RasterSource): Promi
   const text = (await recognizeHandwriting(raster.canvas)).trim();
   if (!text) return;
   source.state.addTextShapeAtPosition(text, { x: contentBounds.minX, y: contentBounds.maxY + 16 });
+}
+
+/** "Recognize handwriting (ML Kit)": the stroke-based Google backend,
+ *  kept beside the Vision one for comparison. No raster — the
+ *  DrawShapes' actual point sequences go to the recognizer, shifted
+ *  to the selection bbox origin with the bbox as the writing area.
+ *  Timestamps are synthesized (~15 ms per point, 300 ms between
+ *  strokes) since Hush doesn't record pen timing; stroke order comes
+ *  from state.shapes, which appends in drawing order. Strokes only —
+ *  images can't feed a stroke-based recognizer. iPad-only (Google
+ *  doesn't ship ML Kit for macOS). */
+export async function recognizeSelectionInkMlkit(state: DrawingState): Promise<void> {
+  const shapes = collectRasterShapes(state)
+    .filter((s): s is DrawShape => s.type === "draw");
+  if (!shapes.length) return;
+  const bounds = rasterBounds(shapes, state.fontFamily);
+  if (!bounds) return;
+  let t = 0;
+  const strokes = shapes.map((s) => {
+    const points = s.points.map((p) => ({
+      x: p.x - bounds.minX,
+      y: p.y - bounds.minY,
+      t: (t += 15),
+    }));
+    t += 300; // pen-lift gap between strokes
+    return { points };
+  });
+  const { recognizeHandwritingInk } = await import("../recognition/handwriting");
+  const text = (await recognizeHandwritingInk(strokes, {
+    width: bounds.maxX - bounds.minX,
+    height: bounds.maxY - bounds.minY,
+  })).trim();
+  if (!text) return;
+  state.addTextShapeAtPosition(text, { x: bounds.minX, y: bounds.maxY + 16 });
 }
