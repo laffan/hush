@@ -492,6 +492,7 @@ pub fn run() {
             commands::local_sync::local_sync_create_dir,
             commands::local_sync::local_sync_rename,
             commands::local_sync::local_sync_delete,
+            commands::local_sync::local_sync_delete_dir_if_clean,
             commands::local_sync::local_sync_move,
             commands::local_sync::local_sync_copy,
             commands::backup::backup_app_data,

@@ -14,12 +14,13 @@
  * hook wired in files-panel.js.
  */
 import {
-  readFile, readFileBytes, writeFileBytes, createLocalFile, moveLocalEntry,
-  deleteLocalEntry, localKindForName, openLocalEntry,
+  writeFileBytes, createLocalFile,
+  localKindForName, openLocalEntry,
 } from "../sync/local-sync.js";
 import {
   invalidateLocalSyncCache, refreshLocalSyncSection,
 } from "./files-panel-local-sync.js";
+import { importLocalFileToVc, importLocalDirToVc } from "./files-panel-local-import.js";
 import { findNode } from "../state/tree-helpers.js";
 
 async function invoke(cmd, args) {
@@ -27,11 +28,6 @@ async function invoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-function baseName(name, isDir) {
-  if (isDir) return name;
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(0, dot) : name;
-}
 function parentDir(rel) {
   const i = String(rel).lastIndexOf("/");
   return i >= 0 ? rel.slice(0, i) : "";
@@ -96,37 +92,18 @@ function deskInboxId(state, deskId) {
 /** Move a Local Sync entry into the VC store under `vcParentId`, then
  *  delete it from disk. */
 export async function moveLocalToVc(state, folderId, relPath, name, vcParentId) {
-  const kind = localKindForName(name);
-  const base = baseName(name, false);
   let parent = vcParentId || state.getInboxId();
   const pNode = findNode(state.fileTree, parent);
   if (pNode && pNode.type === "desk") parent = deskInboxId(state, pNode.id);
   // Was this the file currently open on a Local Sync surface? If so we
   // re-open the freshly-imported VC copy after the move so the editor
-  // doesn't keep showing the now-deleted on-disk file.
+  // doesn't keep showing the now-deleted on-disk file. Flush unsaved
+  // keystrokes to disk first so the import reads the latest content.
   const cur = state.currentLocalSync;
   const wasOpen = !!cur && cur.folderId === folderId && cur.relPath === relPath;
+  if (wasOpen && state.dirty) await state.saveCurrentFile();
 
-  let created = null;
-  if (kind === "notebook") {
-    const bytes = await readFileBytes(folderId, relPath);
-    const { unpackNotebook } = await import("../sync/notebook-sync.js");
-    const json = await unpackNotebook(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes));
-    created = await state.createNotebook(base, parent, { openImmediately: false, initialContent: json });
-  } else if (kind === "stack") {
-    const text = await readFile(folderId, relPath);
-    created = await state.createStack(base, parent, { openImmediately: false, initialContent: text });
-  } else if (kind === "image") {
-    const bytes = await readFileBytes(folderId, relPath);
-    const arr = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
-    const file = new File([arr], name, { type: "application/octet-stream" });
-    await state.createImageFromFile(file);
-  } else {
-    created = await state.newFile(parent, { openImmediately: false, initialContent: await readFile(folderId, relPath), initialName: base });
-  }
-
-  // The original now lives in the VC store — remove it from disk (move).
-  await deleteLocalEntry(folderId, relPath);
+  const { created, kind } = await importLocalFileToVc(state, folderId, relPath, name, parent, { deleteOriginal: true });
   if (wasOpen) {
     // Detach from the deleted on-disk file before opening so no autosave
     // recreates it, then open the VC copy on the right surface.
@@ -139,6 +116,46 @@ export async function moveLocalToVc(state, folderId, relPath, name, vcParentId) 
     if (kind === "notebook") await state.openNotebook(created.fileId);
     else if (kind === "stack") await state.openStack(created.fileId);
     else await state.openFile(created.fileId);
+  }
+}
+
+/** Move a whole Local Sync directory into the VC store under
+ *  `vcParentId` — recursive import as a folder (or nested project when
+ *  the destination is a project), then per-file deletes plus a
+ *  clean-only directory removal so unimported files survive. */
+export async function moveLocalDirToVc(state, folderId, relPath, name, vcParentId) {
+  let parent = vcParentId || state.getInboxId();
+  const pNode = findNode(state.fileTree, parent);
+  if (pNode && pNode.type === "desk") parent = deskInboxId(state, pNode.id);
+
+  // If the open Local Sync file lives inside the moved directory, track
+  // its imported copy so the editor can be re-pointed after the move.
+  const cur = state.currentLocalSync;
+  const openInside = !!cur && cur.folderId === folderId
+    && (cur.relPath === relPath || cur.relPath.startsWith(relPath + "/"));
+  if (openInside && state.dirty) await state.saveCurrentFile();
+  let openImport = null;
+
+  await importLocalDirToVc(state, folderId, relPath, name, parent, {
+    deleteOriginal: true,
+    onFileImported: (rel, created, kind) => {
+      if (openInside && cur.relPath === rel) openImport = { created, kind };
+    },
+  });
+
+  if (openInside) {
+    state.currentLocalSync = null;
+    state.dirty = false;
+  }
+  invalidateLocalSyncCache();
+  state.emit("files-changed");
+  if (openImport?.created?.fileId) {
+    const { created, kind } = openImport;
+    if (kind === "notebook") await state.openNotebook(created.fileId);
+    else if (kind === "stack") await state.openStack(created.fileId);
+    else await state.openFile(created.fileId);
+  } else if (openInside) {
+    await state.clearActiveFile();
   }
 }
 

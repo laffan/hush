@@ -307,6 +307,37 @@ export async function deleteLocalEntry(id, relPath) {
   return invoke("local_sync_delete", { id, relPath });
 }
 
+/** Delete a directory only when nothing meaningful remains inside —
+ *  empty, or nothing but `.DS_Store` junk. Returns true when removed.
+ *  Used after a folder-move into Hush so files the listing filter hid
+ *  (unsupported extensions, dotfiles) are never destroyed. */
+export async function deleteLocalDirIfClean(id, relPath) {
+  if (!IS_TAURI || !relPath) return false;
+  if (IOS) {
+    // The plugin's list_dir is unfiltered, so an explicit check here is
+    // equivalent to the desktop command's recursive clean test.
+    const base = await iosBasePath(id);
+    const clean = await iosDirIsClean(base, relPath);
+    if (!clean) return false;
+    await plugin("delete_entry", { path: joinPath(base, relPath) });
+    return true;
+  }
+  return invoke("local_sync_delete_dir_if_clean", { id, relPath });
+}
+
+async function iosDirIsClean(base, relPath) {
+  const res = await plugin("list_dir", { path: joinPath(base, relPath) });
+  for (const e of res?.entries || []) {
+    if (e.isDir) {
+      const rel = `${String(relPath).replace(/\/+$/, "")}/${e.name}`;
+      if (!(await iosDirIsClean(base, rel))) return false;
+    } else if (e.name !== ".DS_Store") {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Move a file/dir into another directory in the same mount (`dstDirRel`
  *  is "" for the mount root). Returns the new relative path. */
 export async function moveLocalEntry(id, srcRel, dstDirRel) {

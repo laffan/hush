@@ -181,6 +181,19 @@ pub fn local_sync_rename(
     local_sync::rename_entry(&folder, &rel_path, &new_name)
 }
 
+/// Delete a directory only if nothing but ignorable junk remains inside.
+/// Returns true when removed. Used after moving a folder's contents into
+/// the Hush tree so files the listing filter hid are never destroyed.
+#[tauri::command]
+pub fn local_sync_delete_dir_if_clean(
+    state: State<AppState>,
+    id: String,
+    rel_path: String,
+) -> Result<bool, String> {
+    let folder = find_local_sync_folder(&state.settings.lock().unwrap(), &id)?;
+    local_sync::delete_dir_if_clean(&folder, &rel_path)
+}
+
 /// Permanently delete a file or directory (recursive).
 #[tauri::command]
 pub fn local_sync_delete(

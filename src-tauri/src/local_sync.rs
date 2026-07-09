@@ -337,6 +337,43 @@ pub fn rename_entry(
 }
 
 /// Permanently delete a file or directory (recursive for directories).
+/// Delete a directory only when nothing meaningful remains inside it —
+/// empty directories and macOS `.DS_Store` junk are the only tolerated
+/// contents (checked recursively). Returns true when the directory was
+/// removed. Used after a folder-move into Hush: the listing filter hides
+/// unsupported files (PDFs, dotfiles, `.git`, …), so an unconditional
+/// recursive delete could destroy data the import never saw.
+pub fn delete_dir_if_clean(folder: &LocalSyncFolder, rel_path: &str) -> Result<bool, String> {
+    if rel_path.is_empty() {
+        return Err("refusing to remove the mount root".to_string());
+    }
+    let root = PathBuf::from(&folder.path);
+    let abs = resolve_safely(&root, rel_path)?;
+    if !abs.is_dir() {
+        return Ok(false);
+    }
+    if !dir_is_clean(&abs)? {
+        return Ok(false);
+    }
+    fs::remove_dir_all(&abs).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn dir_is_clean(dir: &Path) -> Result<bool, String> {
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())?.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        if meta.is_dir() {
+            if !dir_is_clean(&entry.path())? {
+                return Ok(false);
+            }
+        } else if name != ".DS_Store" {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub fn delete_entry(folder: &LocalSyncFolder, rel_path: &str) -> Result<(), String> {
     let root = PathBuf::from(&folder.path);
     let abs = resolve_safely(&root, rel_path)?;

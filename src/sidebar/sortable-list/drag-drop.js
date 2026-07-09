@@ -3,6 +3,7 @@
  */
 
 import { parsePath, pathsEqual, isAncestorPath, getChildrenAtPath, getItemAtPath, removeItemById } from "./utils.js";
+import { updateDragAutoScroll, stopDragAutoScroll } from "../drag-autoscroll.js";
 
 export function initDragHandlers(instance) {
   instance._onPointerDown = onPointerDown.bind(instance);
@@ -180,6 +181,9 @@ function onPointerMove(event) {
   const { offsetX, offsetY, ghost } = this.dragSession;
   ghost.style.transform = `translate3d(${event.clientX - offsetX}px, ${event.clientY - offsetY}px, 0)`;
   updateDropTarget.call(this, event.clientX, event.clientY);
+  // Near the panel's top/bottom edge → scroll the file list so a drag
+  // that started deep in a long tree can reach targets above the fold.
+  updateDragAutoScroll(event.clientX, event.clientY);
 }
 
 function onPointerUp(event) {
@@ -425,6 +429,7 @@ function ensureChildList(item, itemPath) {
 function finishDrag(pointerEvent) {
   if (!this.dragSession) return;
   window.removeEventListener("pointermove", this._onPointerMove);
+  stopDragAutoScroll();
 
   const { originElement, ghost, dropTarget, originPath, originParentPath, originIndex, autoExpandedIds, highlightedParent, highlightedParentItem, draggedItem } = this.dragSession;
 

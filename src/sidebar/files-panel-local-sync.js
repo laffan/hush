@@ -10,6 +10,11 @@ import { typeIcons, escHtml, escAttrValue, attachLeafHoverHandlers } from "./fil
 import { openLocalEntryMenu, localRowMenuButtonHtml } from "./files-panel-local-sync-ops.js";
 import { localKindForName, openLocalEntry } from "../sync/local-sync.js";
 import { isAllDesksMode, isTrashId } from "./files-panel-rows.js";
+import {
+  handleLocalMultiClick, clearLocalSelection, applyLocalSelectionClasses,
+  resolveLocalDragBatch,
+} from "./files-panel-local-multi-select.js";
+import { updateDragAutoScroll, stopDragAutoScroll } from "./drag-autoscroll.js";
 
 // Re-export the SortableList drop hook so files-panel.js can wire it
 // without a separate import line (and so all Local Sync surface area is
@@ -200,6 +205,7 @@ export async function renderLocalSyncSection(container, state, hidePanel, refres
   }
   // Atomic swap — old content stays put until this line runs.
   container.replaceChildren(fragment);
+  applyLocalSelectionClasses(container);
   lastStructureFingerprint = fingerprint;
 }
 
@@ -396,6 +402,12 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPane
       if (e.target.closest("[data-local-sync-action]")) return;
       if (itemContent.dataset.dragConsumed === "1") { delete itemContent.dataset.dragConsumed; return; }
       e.preventDefault();
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        if (state.selectedDocIds?.length) state.clearSelectedDocs();
+        handleLocalMultiClick({ folderId: folder.id, relPath, name: entry.name }, e, itemContent);
+        return;
+      }
+      clearLocalSelection();
       const { openImagePreviewModal } = await import("../editor/image-preview.js");
       openImagePreviewModal(entry.name, entry.name, ctx);
     });
@@ -414,6 +426,14 @@ function buildLocalSyncFileRow(folder, entry, state, hidePanel, refreshFilesPane
       delete itemContent.dataset.dragConsumed;
       return;
     }
+    // Shift / Cmd-click joins the row to the local multi-selection
+    // instead of opening it (mirrors the main tree's batch semantics).
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      if (state.selectedDocIds?.length) state.clearSelectedDocs();
+      handleLocalMultiClick({ folderId: folder.id, relPath, name: entry.name }, e, itemContent);
+      return;
+    }
+    clearLocalSelection();
     await openLocalEntry(state, folder.id, relPath, entry.name);
     const overlay = document.querySelector("#panel-overlay");
     if (overlay && !overlay.classList.contains("panel-inset") && hidePanel) hidePanel();
@@ -446,7 +466,9 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
     const buildGhost = () => {
       const g = document.createElement("div");
       g.className = "sl-drag-ghost";
-      g.textContent = descriptor.isDir ? descriptor.name : localDisplayName(descriptor.name);
+      const batchN = resolveLocalDragBatch(folder.id, relPath, descriptor).length;
+      g.textContent = batchN > 1 ? `${batchN} items`
+        : descriptor.isDir ? descriptor.name : localDisplayName(descriptor.name);
       g.style.transform = `translate3d(${e.clientX - 40}px, ${e.clientY - 10}px, 0)`;
       document.body.appendChild(g);
       document.body.classList.add("sl-dragging");
@@ -462,6 +484,9 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
       }
       if (ghost) ghost.style.transform = `translate3d(${ev.clientX - 40}px, ${ev.clientY - 10}px, 0)`;
       if (dragging && dnd) dnd.highlightDropTargetAt(ev.clientX, ev.clientY, sourceLi);
+      // Near the panel's top/bottom edge → scroll the file list so long
+      // folders can be traversed mid-drag.
+      if (dragging) updateDragAutoScroll(ev.clientX, ev.clientY);
     };
 
     const onUp = async (ev) => {
@@ -470,6 +495,7 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
       if (ghost) { ghost.remove(); ghost = null; }
       document.body.classList.remove("sl-dragging");
       if (dnd) dnd.clearDropHighlight();
+      stopDragAutoScroll();
       if (!dragging) return;
       // Mark this gesture so the subsequent click listener knows to skip
       // "open in main editor" — the drag replaces that action.
@@ -494,34 +520,51 @@ function attachLocalSyncFileDrag(rowEl, folder, descriptor, relPath, state, refr
         return;
       }
 
-      // Otherwise resolve a drop target and move the entry.
+      // Otherwise resolve a drop target and move the entry (or, when the
+      // dragged row is part of the local multi-selection, the whole batch).
       try {
-        const { hitTestDropTarget, moveLocalToVc } = await import("./files-panel-local-sync-dnd.js");
+        const { hitTestDropTarget, moveLocalToVc, moveLocalDirToVc } = await import("./files-panel-local-sync-dnd.js");
         const hit = hitTestDropTarget(state, ev.clientX, ev.clientY, sourceLi);
         if (!hit) return;
-        if (hit.kind === "vc" && !descriptor.isDir) {
-          await moveLocalToVc(state, folder.id, relPath, descriptor.name, hit.nodeId);
+        const batch = resolveLocalDragBatch(folder.id, relPath, descriptor);
+        if (hit.kind === "vc") {
+          for (const entry of batch) {
+            if (entry.isDir) await moveLocalDirToVc(state, entry.folderId, entry.relPath, entry.name, hit.nodeId);
+            else await moveLocalToVc(state, entry.folderId, entry.relPath, entry.name, hit.nodeId);
+          }
+          clearLocalSelection();
           if (refreshFilesPanel) refreshFilesPanel(state);
-        } else if (hit.kind === "local" && hit.folderId === folder.id) {
-          const srcDir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
-          // Same directory, dropping a folder onto itself, or dropping a
-          // folder into its own descendant → no-op (the last would be
-          // rejected by Rust anyway, but skip the round-trip).
-          if (hit.dirRel === srcDir || hit.dirRel === relPath) return;
-          if (descriptor.isDir && hit.dirRel.startsWith(relPath + "/")) return;
+        } else if (hit.kind === "local") {
           const { moveLocalEntry } = await import("../sync/local-sync.js");
-          const newRel = await moveLocalEntry(folder.id, relPath, hit.dirRel);
-          invalidateLocalSyncCache();
-          refreshLocalSyncSection(refreshFilesPanel);
-          // Re-point the editor if the moved entry (or a file inside a
-          // moved folder) is currently open, so autosave doesn't keep
-          // writing to the old path.
-          const cur = state.currentLocalSync;
-          if (newRel && cur && cur.folderId === folder.id) {
-            let target = null;
-            if (cur.relPath === relPath) target = newRel;
-            else if (descriptor.isDir && cur.relPath.startsWith(relPath + "/")) target = newRel + cur.relPath.slice(relPath.length);
-            if (target) await openLocalEntry(state, folder.id, target, target.split("/").pop());
+          let movedAny = false;
+          for (const entry of batch) {
+            // Cross-mount local→local moves aren't supported (the move
+            // command is same-mount); skip foreign entries.
+            if (entry.folderId !== hit.folderId) continue;
+            const src = entry.relPath;
+            const srcDir = src.includes("/") ? src.slice(0, src.lastIndexOf("/")) : "";
+            // Same directory, dropping a folder onto itself, or dropping a
+            // folder into its own descendant → no-op (the last would be
+            // rejected by Rust anyway, but skip the round-trip).
+            if (hit.dirRel === srcDir || hit.dirRel === src) continue;
+            if (entry.isDir && hit.dirRel.startsWith(src + "/")) continue;
+            const newRel = await moveLocalEntry(entry.folderId, src, hit.dirRel);
+            movedAny = true;
+            // Re-point the editor if the moved entry (or a file inside a
+            // moved folder) is currently open, so autosave doesn't keep
+            // writing to the old path.
+            const cur = state.currentLocalSync;
+            if (newRel && cur && cur.folderId === entry.folderId) {
+              let target = null;
+              if (cur.relPath === src) target = newRel;
+              else if (entry.isDir && cur.relPath.startsWith(src + "/")) target = newRel + cur.relPath.slice(src.length);
+              if (target) await openLocalEntry(state, entry.folderId, target, target.split("/").pop());
+            }
+          }
+          if (movedAny) {
+            clearLocalSelection();
+            invalidateLocalSyncCache();
+            refreshLocalSyncSection(refreshFilesPanel);
           }
         }
       } catch (err) {

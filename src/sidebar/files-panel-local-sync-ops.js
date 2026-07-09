@@ -16,6 +16,9 @@ import {
 import {
   invalidateLocalSyncCache, refreshLocalSyncSection, expandLocalSyncKey,
 } from "./files-panel-local-sync.js";
+import {
+  isLocalSelected, localSelectionSize, getLocalSelection,
+} from "./files-panel-local-multi-select.js";
 
 const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
 
@@ -86,6 +89,11 @@ export function openLocalEntryMenu(anchorBtn, target, ctx) {
     add("New Stack", () => newStack(folder, dir, ctx));
     add("New Folder", () => newFolder(folder, dir, ctx));
   }
+
+  // Copy the entry (or, when the row is part of the local multi-
+  // selection, the whole batch) into the Hush tree — a destination
+  // picker chooses the folder; nothing on disk is touched.
+  add(copyToHushLabel(folder, relPath, isDir), () => copyToHush(folder, relPath, name, isDir, ctx));
 
   // Rename / Duplicate / Delete apply to every nested row; the mount root
   // is renamed/removed via Unlink (renaming the on-disk root would move
@@ -206,6 +214,32 @@ function renameEntry(folder, relPath, name, isDir, ctx) {
         if (target) await openLocalEntry(ctx.state, folder.id, target, target.split("/").pop());
       }
     },
+  });
+}
+
+/** Targets for a Copy to Hush launched from this row: the whole local
+ *  multi-selection when the clicked file is part of it, else the row. */
+function copyToHushTargets(folder, relPath, name, isDir) {
+  if (!isDir) {
+    const key = `${folder.id}:${relPath}`;
+    if (localSelectionSize() > 1 && isLocalSelected(key)) {
+      return getLocalSelection().map((e) => ({
+        folder: { id: e.folderId }, relPath: e.relPath, name: e.name, isDir: false,
+      }));
+    }
+  }
+  return [{ folder, relPath, name, isDir }];
+}
+
+function copyToHushLabel(folder, relPath, isDir) {
+  const n = copyToHushTargets(folder, relPath, "", isDir).length;
+  return n > 1 ? `Copy ${n} items to Hush` : "Copy to Hush";
+}
+
+async function copyToHush(folder, relPath, name, isDir, ctx) {
+  const { openCopyToHushModal } = await import("./files-panel-local-import.js");
+  openCopyToHushModal(ctx.state, copyToHushTargets(folder, relPath, name, isDir), {
+    onDone: () => { if (ctx.refreshFilesPanel) ctx.refreshFilesPanel(ctx.state); },
   });
 }
 
