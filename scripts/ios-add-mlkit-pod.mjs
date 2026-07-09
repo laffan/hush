@@ -71,7 +71,45 @@ if (!iosTarget.test(podfile)) {
 }
 podfile = podfile.replace(iosTarget, `$1\n  ${POD_LINE}`);
 
-// 3. ML Kit needs iOS >= 15.5; raise the platform line if lower.
+// 3. Keep Tauri's Rust staticlib linkable. The generated project finds
+//    libapp.a via an arch-conditional build setting
+//    (LIBRARY_SEARCH_PATHS[arch=arm64] -> $(PROJECT_DIR)/Externals/...),
+//    which stops matching once CocoaPods layers its base xcconfig in
+//    (Xcode resolves the link step with arch=undefined_arch), so the
+//    app dies with "ld: library 'app' not found". Patch the generated
+//    Pods xcconfig from post_install to re-add the path unconditionally.
+const MLKIT_HOOK = `  # hush-mlkit: CocoaPods' base xcconfig shadows the arch-conditional
+  # LIBRARY_SEARCH_PATHS pointing at Tauri's Rust staticlib
+  # (Externals/<arch>/<config>/libapp.a), which breaks the link with
+  # "library 'app' not found". Re-add the path unconditionally.
+  installer.aggregate_targets.each do |agg|
+    agg.user_build_configurations.each_key do |config_name|
+      xcconfig_path = agg.xcconfig_path(config_name)
+      next unless File.exist?(xcconfig_path)
+      text = File.read(xcconfig_path)
+      next if text.include?('/Externals/')
+      extra = ' "$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)" "$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)"'
+      if text =~ /^LIBRARY_SEARCH_PATHS = .*$/
+        text = text.sub(/^LIBRARY_SEARCH_PATHS = .*$/) { |line| line + extra }
+      else
+        text += "\\nLIBRARY_SEARCH_PATHS = $(inherited)#{extra}\\n"
+      end
+      File.write(xcconfig_path, text)
+    end
+  end
+`;
+if (!podfile.includes("hush-mlkit:")) {
+  if (/^post_install do \|installer\|[ \t]*$/m.test(podfile)) {
+    // Merge into the template's existing hook — CocoaPods allows only
+    // one post_install per Podfile.
+    podfile = podfile.replace(/^(post_install do \|installer\|[ \t]*)$/m, `$1\n${MLKIT_HOOK}`);
+  } else {
+    podfile += `\npost_install do |installer|\n${MLKIT_HOOK}end\n`;
+  }
+  console.log("Adding post_install patch that keeps Tauri's Rust staticlib search path.");
+}
+
+// 4. ML Kit needs iOS >= 15.5; raise the platform line if lower.
 podfile = podfile.replace(/^([ \t]*platform :ios, ['"])([\d.]+)(['"])/m, (line, pre, ver, post) => {
   if (parseFloat(ver) >= MIN_IOS) return line;
   console.log(`Raising Podfile iOS platform ${ver} -> ${MIN_IOS} (ML Kit minimum).`);
