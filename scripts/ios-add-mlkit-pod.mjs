@@ -84,9 +84,12 @@ podfile = podfile.replace(iosTarget, `$1\n  ${POD_LINE}`);
 //       ML Kit framework binaries so their ObjC classes always land
 //       in the app.
 const MLKIT_HOOK = `  # hush-mlkit BEGIN — managed by scripts/ios-add-mlkit-pod.mjs
-  # a) Re-add Tauri's Rust staticlib search path (the project's
-  #    arch-conditional entry stops matching under the Pods xcconfig
-  #    -> "library 'app' not found").
+  # a) Re-add the search paths the project defines arch-conditionally
+  #    (LIBRARY_SEARCH_PATHS[arch=arm64]) — that entry stops matching
+  #    under the Pods xcconfig, killing both Tauri's Rust staticlib
+  #    ("library 'app' not found") and the Swift toolchain dirs that
+  #    hold libswiftCompatibility56.a & co ("__swift_FORCE_LOAD_$_
+  #    swiftCompatibility56" undefined).
   # b) Force-load the ML Kit framework binaries: the app references no
   #    ML Kit symbol at link time (classes are looked up dynamically),
   #    so without this the linker drops them and NSClassFromString
@@ -101,7 +104,10 @@ const MLKIT_HOOK = `  # hush-mlkit BEGIN — managed by scripts/ios-add-mlkit-po
       next unless File.exist?(xcconfig_path)
       text = File.read(xcconfig_path)
       unless text.include?('/Externals/')
-        extra = ' "$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)" "$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)"'
+        extra = ' "$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)" "$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)"' \
+          ' "$(SDKROOT)/usr/lib/swift"' \
+          ' "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)"' \
+          ' "$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)"'
         if text =~ /^LIBRARY_SEARCH_PATHS = .*$/
           text = text.sub(/^LIBRARY_SEARCH_PATHS = .*$/) { |line| line + extra }
         else
