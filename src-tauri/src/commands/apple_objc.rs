@@ -42,3 +42,25 @@ pub unsafe fn describe_nserror(err: *mut AnyObject, fallback: &str) -> String {
     let desc: *mut AnyObject = msg_send![err, localizedDescription];
     nsstring_to_string(desc).unwrap_or_else(|| fallback.into())
 }
+
+/// Render an NSException caught by `objc2::exception::catch` into a
+/// readable command error — a wrong selector in the dynamic bridges
+/// raises instead of returning, and without this the app would abort.
+pub fn describe_objc_exception(
+    ex: Option<objc2::rc::Id<objc2::exception::Exception>>,
+    what: &str,
+) -> String {
+    match ex {
+        Some(e) => unsafe {
+            let ptr = &*e as *const objc2::exception::Exception as *mut AnyObject;
+            let name: *mut AnyObject = msg_send![ptr, name];
+            let reason: *mut AnyObject = msg_send![ptr, reason];
+            format!(
+                "Objective-C exception in {what}: {} — {}",
+                nsstring_to_string(name).unwrap_or_else(|| "?".into()),
+                nsstring_to_string(reason).unwrap_or_else(|| "no reason given".into()),
+            )
+        },
+        None => format!("Unknown Objective-C exception in {what}"),
+    }
+}

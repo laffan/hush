@@ -39,11 +39,12 @@ fn recognize(_png: &[u8]) -> Result<String, String> {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod vision {
-    use crate::commands::apple_objc::{describe_nserror, nsstring_to_string};
+    use crate::commands::apple_objc::{describe_nserror, describe_objc_exception, nsstring_to_string};
     use objc2::rc::autoreleasepool;
     use objc2::runtime::{AnyObject, Bool};
     use objc2::{class, msg_send, sel};
     use std::ffi::c_void;
+    use std::panic::AssertUnwindSafe;
     use std::ptr;
 
     // Pull in the Vision framework at link time; `class!` resolves the
@@ -52,6 +53,15 @@ mod vision {
     extern "C" {}
 
     pub fn recognize_text(png: &[u8]) -> Result<String, String> {
+        // Convert any NSException from the dynamic calls into a command
+        // error rather than aborting the app.
+        match objc2::exception::catch(AssertUnwindSafe(|| recognize_text_inner(png))) {
+            Ok(result) => result,
+            Err(ex) => Err(describe_objc_exception(ex, "Vision recognition")),
+        }
+    }
+
+    fn recognize_text_inner(png: &[u8]) -> Result<String, String> {
         autoreleasepool(|_| unsafe {
             let data: *mut AnyObject = msg_send![
                 class!(NSData),

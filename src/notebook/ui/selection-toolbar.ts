@@ -6,6 +6,7 @@ import { isHandwritingRecognitionAvailable, isInkRecognitionAvailable } from "..
 import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
 import { makeColorsMenu } from "./selection-colors-menu";
+import { nbLog, describeError } from "./debug-log";
 
 /** Accessors the toolbar needs from the owning NotesCanvas for the
  *  raster-backed actions (Rasterize group, Recognize handwriting).
@@ -171,14 +172,20 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
   // buttons and the in-flight dimming for the async recognize paths.
   // One busy flag covers both engines so they can't run concurrently.
   let recognizeBusy = false;
-  async function runRecognize(btn: HTMLButtonElement, action: () => Promise<void>): Promise<void> {
-    if (recognizeBusy) return;
+  async function runRecognize(btn: HTMLButtonElement, label: string, action: () => Promise<void>): Promise<void> {
+    if (recognizeBusy) {
+      nbLog(`${label}: press ignored — a recognition is already running`);
+      return;
+    }
     recognizeBusy = true;
     btn.style.opacity = "0.4";
     btn.style.pointerEvents = "none";
+    nbLog(`${label}: started`);
     try {
       await action();
+      nbLog(`${label}: finished`);
     } catch (err) {
+      nbLog(`${label}: FAILED — ${describeError(err)}`);
       console.error("[hush] Handwriting recognition failed:", err);
     } finally {
       recognizeBusy = false;
@@ -294,7 +301,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     const hasRecognizable = selected.some((s) => s.type === "draw" || s.type === "image");
     if (access && hasRecognizable && isHandwritingRecognitionAvailable()) {
       const btn = makeIconBtn("recognize-text", "Recognize handwriting (Apple Vision)", () => {
-        void runRecognize(btn, () => recognizeSelectionHandwriting({
+        void runRecognize(btn, "Vision", () => recognizeSelectionHandwriting({
           state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),
         }));
       });
@@ -309,7 +316,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     const hasStrokes = selected.some((s) => s.type === "draw");
     if (access && hasStrokes && isInkRecognitionAvailable()) {
       const btn = makeIconBtn("recognize-text-g", "Recognize handwriting (Google ML Kit)", () => {
-        void runRecognize(btn, () => recognizeSelectionInkMlkit(state));
+        void runRecognize(btn, "ML Kit", () => recognizeSelectionInkMlkit(state));
       });
       if (recognizeBusy) { btn.style.opacity = "0.4"; btn.style.pointerEvents = "none"; }
       container.appendChild(btn);

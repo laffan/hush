@@ -52,7 +52,9 @@ ecow = "0.2"
 # block2 bridges ML Kit's completion blocks for the iOS-only Digital
 # Ink recognizer (handwriting_ink.rs).
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-objc2 = "0.5"
+# "exception" lets the handwriting bridges catch NSExceptions (a wrong
+# selector in a dynamic ML Kit call would otherwise abort the app).
+objc2 = { version = "0.5", features = ["exception"] }
 block2 = "0.5"
 
 [dev-dependencies]

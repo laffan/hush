@@ -63,11 +63,14 @@ fn recognize(_payload: &InkPayload) -> Result<String, String> {
 #[cfg(target_os = "ios")]
 mod mlkit {
     use super::{InkPayload, InkStroke};
-    use crate::commands::apple_objc::{describe_nserror, nsstring_from_str, nsstring_to_string};
+    use crate::commands::apple_objc::{
+        describe_nserror, describe_objc_exception, nsstring_from_str, nsstring_to_string,
+    };
     use block2::RcBlock;
     use objc2::rc::autoreleasepool;
     use objc2::runtime::{AnyClass, AnyObject, Bool};
     use objc2::{msg_send, sel};
+    use std::panic::AssertUnwindSafe;
     use std::ptr;
     use std::sync::mpsc;
     use std::time::Duration;
@@ -80,6 +83,16 @@ mod mlkit {
     }
 
     pub fn recognize(payload: &InkPayload) -> Result<String, String> {
+        // ML Kit's ObjC surface varies across releases; a selector we
+        // guessed wrong raises an NSException, which would abort the
+        // whole app — surface it as a command error instead.
+        match objc2::exception::catch(AssertUnwindSafe(|| recognize_inner(payload))) {
+            Ok(result) => result,
+            Err(ex) => Err(describe_objc_exception(ex, "ML Kit ink recognition")),
+        }
+    }
+
+    fn recognize_inner(payload: &InkPayload) -> Result<String, String> {
         autoreleasepool(|_| unsafe {
             let ink = build_ink(&payload.strokes)?;
             let tag = payload.language.as_deref().unwrap_or("en-US");
@@ -119,15 +132,25 @@ mod mlkit {
             // a channel and block this (non-main) thread on the result.
             let (tx, rx) = mpsc::channel::<Result<String, String>>();
             let block = RcBlock::new(move |result: *mut AnyObject, error: *mut AnyObject| {
-                let out = unsafe { extract_top_candidate(result, error) };
+                let out = extract_top_candidate(result, error);
                 let _ = tx.send(out);
             });
-            let _: () = msg_send![
+            // The context-taking variant postdates the plain one —
+            // probe and fall back so older pods still work.
+            let has_ctx_variant: Bool = msg_send![
                 recognizer,
-                recognizeInk: ink,
-                context: context,
-                completion: &*block
+                respondsToSelector: sel!(recognizeInk:context:completion:)
             ];
+            if has_ctx_variant.as_bool() {
+                let _: () = msg_send![
+                    recognizer,
+                    recognizeInk: ink,
+                    context: context,
+                    completion: &*block
+                ];
+            } else {
+                let _: () = msg_send![recognizer, recognizeInk: ink, completion: &*block];
+            }
 
             let out = rx
                 .recv_timeout(Duration::from_secs(30))
@@ -150,13 +173,22 @@ mod mlkit {
         let ink_cls = cls("MLKInk")?;
         let array_cls = cls("NSMutableArray")?;
 
+        // The timed initializer is the normal one; probe it anyway so a
+        // pod release without it degrades to untimed points instead of
+        // raising.
+        let has_timed_init: Bool =
+            msg_send![point_cls, instancesRespondToSelector: sel!(initWithX:y:t:)];
+
         let stroke_arr: *mut AnyObject = msg_send![array_cls, array];
         for s in strokes {
             let point_arr: *mut AnyObject = msg_send![array_cls, array];
             for p in &s.points {
                 let sp: *mut AnyObject = msg_send![point_cls, alloc];
-                let sp: *mut AnyObject =
-                    msg_send![sp, initWithX: p.x as f32, y: p.y as f32, t: p.t as isize];
+                let sp: *mut AnyObject = if has_timed_init.as_bool() {
+                    msg_send![sp, initWithX: p.x as f32, y: p.y as f32, t: p.t as isize]
+                } else {
+                    msg_send![sp, initWithX: p.x as f32, y: p.y as f32]
+                };
                 if sp.is_null() {
                     continue;
                 }

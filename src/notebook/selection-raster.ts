@@ -24,6 +24,7 @@ import type { DrawingLayer } from "./drawing/drawing-layer-types";
 import type { Bounds, DrawShape, Shape } from "./types";
 import { renderForExport } from "./renderer-export";
 import { getShapeBounds } from "./utils";
+import { nbLog } from "./ui/debug-log";
 
 export const RASTER_SCALE = 2;
 
@@ -208,18 +209,21 @@ function normalizeForRecognition(canvas: HTMLCanvasElement): void {
 export async function recognizeSelectionHandwriting(source: RasterSource): Promise<void> {
   const shapes = collectRasterShapes(source.state)
     .filter((s) => s.type === "draw" || s.type === "image");
-  if (!shapes.length) return;
+  if (!shapes.length) { nbLog("Vision: nothing recognizable in the selection (no strokes/images)"); return; }
   const contentBounds = rasterBounds(shapes, source.state.fontFamily);
-  if (!contentBounds) return;
+  if (!contentBounds) { nbLog("Vision: selection has no finite bounds"); return; }
   const raster = rasterizeShapes(source, shapes, {
     includeBackground: true,
     scale: recognitionScale(contentBounds),
     margin: 24,
   });
-  if (!raster) return;
+  if (!raster) { nbLog("Vision: rasterization produced no canvas"); return; }
   normalizeForRecognition(raster.canvas);
+  nbLog(`Vision: ${shapes.length} shape(s) rasterized to ${raster.canvas.width}×${raster.canvas.height}px — invoking…`);
+  const t0 = performance.now();
   const { recognizeHandwriting } = await import("../recognition/handwriting");
   const text = (await recognizeHandwriting(raster.canvas)).trim();
+  nbLog(`Vision: replied in ${Math.round(performance.now() - t0)} ms → ${text ? JSON.stringify(text.slice(0, 80)) : "(empty — nothing legible)"}`);
   if (!text) return;
   source.state.addTextShapeAtPosition(text, { x: contentBounds.minX, y: contentBounds.maxY + 16 });
 }
@@ -239,9 +243,9 @@ export async function recognizeSelectionHandwriting(source: RasterSource): Promi
 export async function recognizeSelectionInkMlkit(state: DrawingState): Promise<void> {
   const shapes = collectRasterShapes(state)
     .filter((s): s is DrawShape => s.type === "draw");
-  if (!shapes.length) return;
+  if (!shapes.length) { nbLog("ML Kit: no strokes in the selection (images can't feed a stroke recognizer)"); return; }
   const bounds = rasterBounds(shapes, state.fontFamily);
-  if (!bounds) return;
+  if (!bounds) { nbLog("ML Kit: selection has no finite bounds"); return; }
   let clock = 0;
   const strokes = shapes.map((s) => {
     const points = s.points.map((p, i) => {
@@ -261,11 +265,21 @@ export async function recognizeSelectionInkMlkit(state: DrawingState): Promise<v
     clock += 300; // pen-lift gap between strokes
     return { points };
   });
+  const totalPoints = strokes.reduce((n, s) => n + s.points.length, 0);
+  const hasRealTiming = shapes.some((s) => s.points.some((p) => p.t !== undefined));
+  nbLog(
+    `ML Kit: ${strokes.length} stroke(s), ${totalPoints} point(s), `
+    + `area ${Math.round(bounds.maxX - bounds.minX)}×${Math.round(bounds.maxY - bounds.minY)}, `
+    + `${hasRealTiming ? "real" : "synthesized"} pen timing — invoking `
+    + `(first run downloads a ~20 MB language model)…`,
+  );
+  const t0 = performance.now();
   const { recognizeHandwritingInk } = await import("../recognition/handwriting");
   const text = (await recognizeHandwritingInk(strokes, {
     width: bounds.maxX - bounds.minX,
     height: bounds.maxY - bounds.minY,
   })).trim();
+  nbLog(`ML Kit: replied in ${Math.round(performance.now() - t0)} ms → ${text ? JSON.stringify(text.slice(0, 80)) : "(empty — nothing legible)"}`);
   if (!text) return;
   state.addTextShapeAtPosition(text, { x: bounds.minX, y: bounds.maxY + 16 });
 }
