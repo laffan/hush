@@ -71,42 +71,69 @@ if (!iosTarget.test(podfile)) {
 }
 podfile = podfile.replace(iosTarget, `$1\n  ${POD_LINE}`);
 
-// 3. Keep Tauri's Rust staticlib linkable. The generated project finds
-//    libapp.a via an arch-conditional build setting
-//    (LIBRARY_SEARCH_PATHS[arch=arm64] -> $(PROJECT_DIR)/Externals/...),
-//    which stops matching once CocoaPods layers its base xcconfig in
-//    (Xcode resolves the link step with arch=undefined_arch), so the
-//    app dies with "ld: library 'app' not found". Patch the generated
-//    Pods xcconfig from post_install to re-add the path unconditionally.
-const MLKIT_HOOK = `  # hush-mlkit: CocoaPods' base xcconfig shadows the arch-conditional
-  # LIBRARY_SEARCH_PATHS pointing at Tauri's Rust staticlib
-  # (Externals/<arch>/<config>/libapp.a), which breaks the link with
-  # "library 'app' not found". Re-add the path unconditionally.
+// 3. Patch the generated Pods xcconfig from post_install. Two fixes:
+//    a) The project finds Tauri's Rust staticlib via an
+//       arch-conditional LIBRARY_SEARCH_PATHS[arch=arm64], which stops
+//       matching once CocoaPods layers its xcconfig in (the link step
+//       resolves with arch=undefined_arch) -> "library 'app' not
+//       found". Re-add the Externals path unconditionally.
+//    b) Nothing references ML Kit symbols at link time (the Rust side
+//       looks the MLK* classes up dynamically), so the linker never
+//       pulls the members out of the static framework archives and
+//       NSClassFromString returns nil at runtime. -force_load the
+//       ML Kit framework binaries so their ObjC classes always land
+//       in the app.
+const MLKIT_HOOK = `  # hush-mlkit BEGIN — managed by scripts/ios-add-mlkit-pod.mjs
+  # a) Re-add Tauri's Rust staticlib search path (the project's
+  #    arch-conditional entry stops matching under the Pods xcconfig
+  #    -> "library 'app' not found").
+  # b) Force-load the ML Kit framework binaries: the app references no
+  #    ML Kit symbol at link time (classes are looked up dynamically),
+  #    so without this the linker drops them and NSClassFromString
+  #    returns nil.
+  mlkit_force_load = Dir[File.join(installer.sandbox.root, 'MLKit*', 'Frameworks', '*.framework')].map do |fw|
+    bin = File.join(fw, File.basename(fw, '.framework'))
+    ' -force_load "' + bin.sub(installer.sandbox.root.to_s, '$(PODS_ROOT)') + '"'
+  end.join
   installer.aggregate_targets.each do |agg|
     agg.user_build_configurations.each_key do |config_name|
       xcconfig_path = agg.xcconfig_path(config_name)
       next unless File.exist?(xcconfig_path)
       text = File.read(xcconfig_path)
-      next if text.include?('/Externals/')
-      extra = ' "$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)" "$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)"'
-      if text =~ /^LIBRARY_SEARCH_PATHS = .*$/
-        text = text.sub(/^LIBRARY_SEARCH_PATHS = .*$/) { |line| line + extra }
-      else
-        text += "\\nLIBRARY_SEARCH_PATHS = $(inherited)#{extra}\\n"
+      unless text.include?('/Externals/')
+        extra = ' "$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)" "$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)"'
+        if text =~ /^LIBRARY_SEARCH_PATHS = .*$/
+          text = text.sub(/^LIBRARY_SEARCH_PATHS = .*$/) { |line| line + extra }
+        else
+          text += "\\nLIBRARY_SEARCH_PATHS = $(inherited)#{extra}\\n"
+        end
+      end
+      unless mlkit_force_load.empty? || text.include?('-force_load')
+        if text =~ /^OTHER_LDFLAGS = .*$/
+          text = text.sub(/^OTHER_LDFLAGS = .*$/) { |line| line + mlkit_force_load }
+        else
+          text += "\\nOTHER_LDFLAGS = $(inherited)#{mlkit_force_load}\\n"
+        end
       end
       File.write(xcconfig_path, text)
     end
   end
+  # hush-mlkit END
 `;
-if (!podfile.includes("hush-mlkit:")) {
-  if (/^post_install do \|installer\|[ \t]*$/m.test(podfile)) {
+// Strip any previously injected hook (marked v2+ form, then the
+// unmarked first version) so upgrades replace instead of stacking;
+// swallow trailing blank lines so re-runs don't accumulate them.
+podfile = podfile.replace(/^ {2}# hush-mlkit BEGIN[^]*?^ {2}# hush-mlkit END\n+/m, "");
+podfile = podfile.replace(/^ {2}# hush-mlkit:[^]*?^ {2}end\n+/m, "");
+{
+  if (/^post_install do \|installer\|[ \t]*\n/m.test(podfile)) {
     // Merge into the template's existing hook — CocoaPods allows only
     // one post_install per Podfile.
-    podfile = podfile.replace(/^(post_install do \|installer\|[ \t]*)$/m, `$1\n${MLKIT_HOOK}`);
+    podfile = podfile.replace(/^(post_install do \|installer\|[ \t]*\n)/m, `$1${MLKIT_HOOK}`);
   } else {
     podfile += `\npost_install do |installer|\n${MLKIT_HOOK}end\n`;
   }
-  console.log("Adding post_install patch that keeps Tauri's Rust staticlib search path.");
+  console.log("Adding post_install patch (Rust staticlib search path + ML Kit force_load).");
 }
 
 // 4. ML Kit needs iOS >= 15.5; raise the platform line if lower.
