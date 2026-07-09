@@ -80,34 +80,43 @@ export function rasterBounds(shapes: Shape[], fontFamily: string): Bounds | null
 }
 
 /**
- * Render `shapes` into an offscreen canvas at RASTER_SCALE.
+ * Render `shapes` into an offscreen canvas at `opts.scale`
+ * (RASTER_SCALE by default).
  *
  * `includeBackground` fills the theme canvas colour first — used by
  * the recognition path so strokes always sit on their intended
  * background (an "auto" white stroke on a dark theme stays legible).
  * The rasterize-group path leaves it transparent so the canvas
- * background shows through the resulting ImageShape.
+ * background shows through the resulting ImageShape. `margin` pads
+ * extra world px around the content bbox (the recognizer reads
+ * better with whitespace around the ink).
  */
 export function rasterizeShapes(
   source: RasterSource,
   shapes: Shape[],
-  opts: { includeBackground: boolean },
+  opts: { includeBackground: boolean; scale?: number; margin?: number },
 ): SelectionRaster | null {
   const { state, imageCache, drawingLayer } = source;
   if (!shapes.length) return null;
-  const bounds = rasterBounds(shapes, state.fontFamily);
-  if (!bounds) return null;
+  const contentBounds = rasterBounds(shapes, state.fontFamily);
+  if (!contentBounds) return null;
+  const m = opts.margin ?? 0;
+  const bounds = {
+    minX: contentBounds.minX - m, minY: contentBounds.minY - m,
+    maxX: contentBounds.maxX + m, maxY: contentBounds.maxY + m,
+  };
+  const scale = opts.scale ?? RASTER_SCALE;
 
   const cssW = Math.max(1, Math.ceil(bounds.maxX - bounds.minX));
   const cssH = Math.max(1, Math.ceil(bounds.maxY - bounds.minY));
   const camera = { x: -bounds.minX, y: -bounds.minY, zoom: 1 };
 
   const out = document.createElement("canvas");
-  out.width = cssW * RASTER_SCALE;
-  out.height = cssH * RASTER_SCALE;
+  out.width = Math.max(1, Math.round(cssW * scale));
+  out.height = Math.max(1, Math.round(cssH * scale));
   const ctx = out.getContext("2d");
   if (!ctx) return null;
-  ctx.setTransform(RASTER_SCALE, 0, 0, RASTER_SCALE, 0, 0);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
   renderForExport(ctx, cssW, cssH, {
     shapes,
@@ -159,18 +168,58 @@ export function rasterizeSelectionToImage(source: RasterSource): void {
   );
 }
 
-/** "Recognize handwriting": rasterize the selected strokes (background
- *  on, so "auto" white ink on a dark theme stays legible) and run them
- *  through the recognition engine (src/recognition/). For now the
- *  recognized text lands as a TextShape beneath the strokes; a later
- *  pass will offer replacing the ink outright. */
+/** Recognizers read best around a ~1600 px long side: small ink gets
+ *  upscaled (glyph detail), huge canvases aren't rendered at a
+ *  wasteful 6×. Hard-capped so the raster never exceeds 4096 px. */
+function recognitionScale(bounds: Bounds): number {
+  const maxSide = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1);
+  const scale = Math.max(1, Math.min(6, 1600 / maxSide));
+  return Math.min(scale, 4096 / maxSide);
+}
+
+/** Vision is noticeably weaker on light-ink-on-dark rasters. Sample a
+ *  corner pixel (guaranteed pure background thanks to the margin) and,
+ *  when the background reads dark, invert the raster in place so the
+ *  recognizer always sees dark-on-light. Pixel loop rather than
+ *  ctx.filter="invert(1)" for older-WebKit safety. */
+function normalizeForRecognition(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const corner = ctx.getImageData(0, 0, 1, 1).data;
+  const luma = 0.299 * corner[0] + 0.587 * corner[1] + 0.114 * corner[2];
+  if (luma >= 128) return;
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = 255 - d[i];
+    d[i + 1] = 255 - d[i + 1];
+    d[i + 2] = 255 - d[i + 2];
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/** "Recognize handwriting": rasterize the ink in the selection —
+ *  strokes plus images, so already-rasterized handwriting stays
+ *  recognizable — and run it through the recognition engine
+ *  (src/recognition/). Background on, so "auto" white ink on a dark
+ *  theme stays legible (then normalized to dark-on-light). For now
+ *  the recognized text lands as a TextShape beneath the ink; a later
+ *  pass will offer replacing it outright. */
 export async function recognizeSelectionHandwriting(source: RasterSource): Promise<void> {
-  const shapes = collectRasterShapes(source.state).filter((s) => s.type === "draw");
+  const shapes = collectRasterShapes(source.state)
+    .filter((s) => s.type === "draw" || s.type === "image");
   if (!shapes.length) return;
-  const raster = rasterizeShapes(source, shapes, { includeBackground: true });
+  const contentBounds = rasterBounds(shapes, source.state.fontFamily);
+  if (!contentBounds) return;
+  const raster = rasterizeShapes(source, shapes, {
+    includeBackground: true,
+    scale: recognitionScale(contentBounds),
+    margin: 24,
+  });
   if (!raster) return;
+  normalizeForRecognition(raster.canvas);
   const { recognizeHandwriting } = await import("../recognition/handwriting");
   const text = (await recognizeHandwriting(raster.canvas)).trim();
   if (!text) return;
-  source.state.addTextShapeAtPosition(text, { x: raster.bounds.minX, y: raster.bounds.maxY + 16 });
+  source.state.addTextShapeAtPosition(text, { x: contentBounds.minX, y: contentBounds.maxY + 16 });
 }

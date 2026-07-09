@@ -288,11 +288,12 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
         container.appendChild(makeIconBtn("group", "Group", () => state.groupSelected()));
       }
     }
-    // Recognize handwriting: shown when the selection is nothing but
-    // ink (a stroke group, or any all-stroke selection). Places the
-    // recognized text beneath the strokes.
-    const allStrokes = selected.every((s) => s.type === "draw");
-    if (access && allStrokes && isHandwritingRecognitionAvailable()) {
+    // Recognize handwriting: shown when the selection carries anything
+    // recognizable — strokes or images (so a previously-rasterized
+    // stroke group stays recognizable). Places the recognized text
+    // beneath the ink.
+    const hasRecognizable = selected.some((s) => s.type === "draw" || s.type === "image");
+    if (access && hasRecognizable && isHandwritingRecognitionAvailable()) {
       const btn = makeIconBtn("recognize-text", "Recognize handwriting", () => { void runRecognize(btn); });
       if (recognizeBusy) { btn.style.opacity = "0.4"; btn.style.pointerEvents = "none"; }
       container.appendChild(btn);

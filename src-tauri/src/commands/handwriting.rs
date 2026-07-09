@@ -35,7 +35,7 @@ fn recognize(_png: &[u8]) -> Result<String, String> {
 mod vision {
     use objc2::rc::autoreleasepool;
     use objc2::runtime::{AnyObject, Bool};
-    use objc2::{class, msg_send};
+    use objc2::{class, msg_send, sel};
     use std::ffi::{c_char, c_void, CStr};
     use std::ptr;
 
@@ -71,6 +71,29 @@ mod vision {
             // recognizes handwriting (Fast = 1 is print-only).
             let _: () = msg_send![request, setRecognitionLevel: 0isize];
             let _: () = msg_send![request, setUsesLanguageCorrection: Bool::YES];
+            // Pin the newest recognizer revision the OS ships. Left
+            // unset, the revision tracks the SDK the binary was linked
+            // against, which can select an older (worse) handwriting
+            // model than the one actually installed.
+            let revisions: *mut AnyObject =
+                msg_send![class!(VNRecognizeTextRequest), supportedRevisions];
+            if !revisions.is_null() {
+                let last: usize = msg_send![revisions, lastIndex];
+                // NSNotFound (empty index set) is NSIntegerMax.
+                if last != isize::MAX as usize {
+                    let _: () = msg_send![request, setRevision: last];
+                }
+            }
+            // Language auto-detection (macOS 13+ / iOS 16+) helps with
+            // mixed or non-English handwriting; probe the selector so
+            // older systems don't throw.
+            let has_auto_lang: Bool = msg_send![
+                request,
+                respondsToSelector: sel!(setAutomaticallyDetectsLanguage:)
+            ];
+            if has_auto_lang.as_bool() {
+                let _: () = msg_send![request, setAutomaticallyDetectsLanguage: Bool::YES];
+            }
 
             let requests: *mut AnyObject = msg_send![class!(NSArray), arrayWithObject: request];
             let mut error: *mut AnyObject = ptr::null_mut();
