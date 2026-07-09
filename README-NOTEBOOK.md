@@ -23,9 +23,11 @@ src/notebook/
   utils.ts                Geometry, hit testing, text measurement, alignment, pocket layout
   flowchart.ts            Portable flowchart layer (edges, drop-to-connect, bezier arrows)
   notebook-content.ts     Persistence envelope (encode/decode, legacy bare-array fallback)
+  selection-raster.ts     Per-selection rasterizer (2×) + the Rasterize / Recognize toolbar actions
   ui/
     toolbar.ts             Bottom tool bar (tools, grid popup, bookmarks, undo/redo)
     selection-toolbar.ts   Context toolbar above selected shapes
+    selection-colors-menu.ts  Colors popup (text/bg/border rows + saved-style chips), split out of selection-toolbar
     bookmarks-panel.ts     Camera bookmark dropdown
     shelf-panel.ts         Right-side hierarchical shape browser
     text-editor.ts         Inline textarea overlay for text shapes
@@ -260,6 +262,13 @@ A single thin **drag handle** runs along the bar's canvas-facing edge (bottom ed
 A long press during draw/erase promotes the in-flight stroke into a lasso pick. The hold duration is user-configurable from a slider in the Lasso flyout (500–2000 ms, default 500). Tapping the already-active Lasso button toggles the flyout open.
 
 `DrawShape` instances are first-class shapes — they group, layer, pocket, route through the shelf, and participate in Hush's undo stack. Stroke rendering itself is delegated to a bake-to-canvas engine inside `src/notebook/drawing/`. Full architectural notes, the sync-shim invariants, and the engine deltas are in [README-DRAWING.md](README-DRAWING.md).
+
+### Rasterize & handwriting recognition (selection toolbar)
+
+Two raster-backed actions share one pipeline (`selection-raster.ts`), which mirrors the export path: `renderForExport()` paints the selected text / image / drag-area shapes into an offscreen canvas at **2×**, then the drawing layer re-renders just the selected strokes on top via `DrawingLayer.renderStrokesTo(ctx, hushIds)` — a new per-stroke render entry point (backed by engine delta #20's `renderStrokeTo`), so unselected strokes overlapping the same region never leak into the raster the way a done-canvas blit would. `collectRasterShapes()` expands the selection with the transitive children of any selected drag-area — rasterizing a container captures its contents.
+
+- **Rasterize as image** — shown for every selection (except a lone ImageShape, where it'd be a no-op). Bakes the collected shapes into a single ImageShape on a transparent background; the image is sized to the original bounding box, so the 2× pixels display scaled back down and stay crisp on HiDPI. `DrawingState.replaceShapesWithImage()` commits the swap in one undo entry — it keeps a shared surviving drag-area parent and the topmost replaced shape's layer, drops replaced nodes from the flowchart (images aren't flowable), and selects the new image.
+- **Recognize handwriting** — shown when the selection is nothing but `DrawShape`s (and the runtime is a Tauri build on an Apple platform). The strokes are rasterized *with* the theme background (so "auto" white ink on a dark theme stays legible) and handed to the recognition engine in **`src/recognition/handwriting.ts`** — deliberately outside `src/notebook/` so Docs can adopt the same engine later. The engine base64s the PNG into the `recognize_handwriting` Tauri command (`src-tauri/src/commands/handwriting.rs`), which runs Apple's on-device **Vision** framework (`VNRecognizeTextRequest` at the "accurate" level, the one that handles handwriting) via raw `objc2` message sends; recognized lines come back joined with newlines and land as a TextShape 16 px beneath the strokes. For now the ink is left in place — replacing it with the text is a planned follow-up. Non-Apple targets return a descriptive error and the toolbar hides the button there anyway.
 
 ### Emoji stickers
 

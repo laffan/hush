@@ -2,6 +2,7 @@ pub mod backup;
 pub mod files;
 pub mod google_docs;
 pub mod grammar;
+pub mod handwriting;
 pub mod images;
 pub mod local_sync;
 pub mod multi_window;

@@ -2496,6 +2496,46 @@ export class DrawingState extends EventTarget {
     this.notify("selectedIds");
   }
 
+  /** Swap a set of shapes for a single ImageShape covering `bounds` —
+   *  the commit half of "Rasterize group" (the raster itself is built
+   *  by selection-raster.ts at 2×; sizing the image to the original
+   *  bounding box scales it back down so it stays crisp). The image
+   *  keeps a shared surviving drag-area parent and the topmost
+   *  replaced shape's layer, and lands at the end of the shapes array
+   *  (top of the stack) — where the eye already reads the selection,
+   *  since it was frontmost while selected. One undo entry. */
+  replaceShapesWithImage(ids: Set<string>, dataUrl: string, name: string, bounds: Bounds) {
+    const replaced = this.shapes.filter((s) => ids.has(s.id));
+    if (replaced.length === 0) return;
+    const sharedParent = replaced[0].parentId;
+    const parentId = sharedParent && !ids.has(sharedParent)
+      && replaced.every((s) => s.parentId === sharedParent)
+      ? sharedParent : undefined;
+    const layerId = replaced[replaced.length - 1].layerId || this.activeLayerId;
+    const id = generateId();
+    const img: ImageShape = {
+      id, type: "image",
+      position: { x: bounds.minX, y: bounds.minY },
+      width: bounds.maxX - bounds.minX,
+      height: bounds.maxY - bounds.minY,
+      dataUrl, name, color: "#000000",
+      parentId, layerId,
+    };
+    this.shapes = [
+      ...this.shapes
+        .filter((s) => !ids.has(s.id))
+        .map((s) => s.parentId && ids.has(s.parentId) ? { ...s, parentId: undefined } : s),
+      img,
+    ];
+    // Rasterized text nodes leave the flowchart — images aren't flowable.
+    for (const rid of ids) this.flowchart.removeNode(rid);
+    if (this.reorderDragAreaId && ids.has(this.reorderDragAreaId)) this.exitReorderMode();
+    this.selectedIds = new Set([id]);
+    this.recordHistory();
+    this.notify("shapes");
+    this.notify("selectedIds");
+  }
+
   groupSelected() {
     if (this.selectedIds.size < 2) return;
     const gid = generateId();

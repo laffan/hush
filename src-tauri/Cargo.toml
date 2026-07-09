@@ -47,7 +47,9 @@ hayagriva = "0.9"
 comemo = "0.5"
 ecow = "0.2"
 
-[target.'cfg(target_os = "macos")'.dependencies]
+# objc2 serves the traffic-light window buttons on macOS and the
+# Vision-backed handwriting recognition command on both Apple targets.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2 = "0.5"
 
 [dev-dependencies]
