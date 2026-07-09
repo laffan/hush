@@ -515,7 +515,7 @@ function shiftShape(shape: Shape, dx: number, dy: number): Shape {
     case "draw":
       return {
         ...shape,
-        points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy, pressure: p.pressure })),
+        points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy, pressure: p.pressure, t: p.t })),
       };
     case "text":
     case "image":

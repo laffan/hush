@@ -493,8 +493,8 @@ export function createDrawingLayer({
     // downstream Hush subsystem — box-select, getShapeBounds, file
     // I/O — can treat them like any other shape. Translate here at
     // the boundary.
-    localToWorld: (p) => ({ x: p.x + anchor.originX, y: p.y + anchor.originY, pressure: p.pressure }),
-    worldToLocal: (p) => ({ x: p.x - anchor.originX, y: p.y - anchor.originY, pressure: p.pressure }),
+    localToWorld: (p) => ({ x: p.x + anchor.originX, y: p.y + anchor.originY, pressure: p.pressure, t: p.t }),
+    worldToLocal: (p) => ({ x: p.x - anchor.originX, y: p.y - anchor.originY, pressure: p.pressure, t: p.t }),
   });
   shimBox.current = shim;
 

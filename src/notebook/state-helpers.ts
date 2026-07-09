@@ -134,7 +134,7 @@ export function normalizeBox(box: SelectionBox) {
 
 export function moveShape(shape: Shape, dx: number, dy: number): Shape {
   switch (shape.type) {
-    case "draw": return { ...shape, points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy, pressure: p.pressure })) };
+    case "draw": return { ...shape, points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy, pressure: p.pressure, t: p.t })) };
     case "text": case "image": case "drag-area":
       return { ...shape, position: { x: shape.position.x + dx, y: shape.position.y + dy } };
   }
@@ -180,7 +180,7 @@ export function applyResize(origShape: Shape, handle: ResizeHandle, orig: { minX
     case "drag-area": return { ...origShape, position: { x: minX, y: minY }, width: newW, height: newH };
     case "draw": {
       const ow = orig.maxX - orig.minX || 1, oh = orig.maxY - orig.minY || 1;
-      return { ...origShape, points: origShape.points.map((p) => ({ x: minX + ((p.x - orig.minX) / ow) * newW, y: minY + ((p.y - orig.minY) / oh) * newH, pressure: p.pressure })) };
+      return { ...origShape, points: origShape.points.map((p) => ({ x: minX + ((p.x - orig.minX) / ow) * newW, y: minY + ((p.y - orig.minY) / oh) * newH, pressure: p.pressure, t: p.t })) };
     }
   }
 }

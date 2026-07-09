@@ -228,25 +228,37 @@ export async function recognizeSelectionHandwriting(source: RasterSource): Promi
  *  kept beside the Vision one for comparison. No raster — the
  *  DrawShapes' actual point sequences go to the recognizer, shifted
  *  to the selection bbox origin with the bbox as the writing area.
- *  Timestamps are synthesized (~15 ms per point, 300 ms between
- *  strokes) since Hush doesn't record pen timing; stroke order comes
- *  from state.shapes, which appends in drawing order. Strokes only —
- *  images can't feed a stroke-based recognizer. iPad-only (Google
- *  doesn't ship ML Kit for macOS). */
+ *  Timing: real capture deltas when the points carry timestamps
+ *  (engine delta #21 — the recognizer models pen velocity), rebased
+ *  onto one monotonic clock with synthesized 300 ms pen-lift gaps
+ *  between strokes; legacy points without timestamps fall back to
+ *  ~15 ms per point. Stroke order comes from state.shapes, which
+ *  appends in drawing order. Strokes only — images can't feed a
+ *  stroke-based recognizer. iPad-only (Google doesn't ship ML Kit
+ *  for macOS). */
 export async function recognizeSelectionInkMlkit(state: DrawingState): Promise<void> {
   const shapes = collectRasterShapes(state)
     .filter((s): s is DrawShape => s.type === "draw");
   if (!shapes.length) return;
   const bounds = rasterBounds(shapes, state.fontFamily);
   if (!bounds) return;
-  let t = 0;
+  let clock = 0;
   const strokes = shapes.map((s) => {
-    const points = s.points.map((p) => ({
-      x: p.x - bounds.minX,
-      y: p.y - bounds.minY,
-      t: (t += 15),
-    }));
-    t += 300; // pen-lift gap between strokes
+    const points = s.points.map((p, i) => {
+      if (i > 0) {
+        const prev = s.points[i - 1];
+        // Real delta when both ends carry timing, clamped to [1 ms,
+        // 1 s] so coalesced same-frame points and mid-stroke pauses
+        // don't skew the velocity model.
+        let dt = 15;
+        if (p.t !== undefined && prev.t !== undefined && Number.isFinite(p.t - prev.t)) {
+          dt = Math.min(1000, Math.max(1, p.t - prev.t));
+        }
+        clock += dt;
+      }
+      return { x: p.x - bounds.minX, y: p.y - bounds.minY, t: Math.round(clock) };
+    });
+    clock += 300; // pen-lift gap between strokes
     return { points };
   });
   const { recognizeHandwritingInk } = await import("../recognition/handwriting");
