@@ -3,13 +3,21 @@
  * Link Google ML Kit Digital Ink Recognition into the Tauri-generated
  * iOS project. `tauri ios init` regenerates src-tauri/gen/apple, so
  * this runs right after it (chained in `npm run ios:init`) and is
- * safe to re-run — it's a no-op when the pod is already present.
+ * safe to re-run — it's a no-op when the Podfile is already in shape.
  *
  * ML Kit ships via CocoaPods only (no SPM), so it can't ride a Tauri
  * plugin's Swift package; instead the pod links the MLK* classes into
  * the app binary and the Rust side reaches them dynamically
  * (src-tauri/src/commands/handwriting_ink.rs). Without the pod the
  * app still builds — the "G" recognize action just returns an error.
+ *
+ * Beyond adding the pod, this repairs a Tauri template quirk: the
+ * generated Podfile declares both `<app>_iOS` and `<app>_macOS`
+ * targets, but `tauri ios init` only puts `<app>_iOS` in the Xcode
+ * project, so `pod install` dies with "Unable to find a target named
+ * `hush_macOS`". The macOS desktop build doesn't use gen/apple at
+ * all (it's a plain cargo bundle), so the phantom macOS target block
+ * is removed outright.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
@@ -37,34 +45,44 @@ if (!existsSync(podfilePath)) {
   process.exit(1);
 }
 
-let podfile = readFileSync(podfilePath, "utf8");
-let changed = false;
+const original = readFileSync(podfilePath, "utf8");
+let podfile = original;
 
-if (!podfile.includes(POD_LINE)) {
-  // Insert into every `target '...' do` block (the template has the
-  // iOS app target; inserting into all targets is harmless).
-  const before = podfile;
-  podfile = podfile.replace(/^([ \t]*target\s+['"][^'"]+['"]\s+do[ \t]*)$/gm, `$1\n  ${POD_LINE}`);
-  if (podfile === before) {
-    console.error("Couldn't find a `target ... do` block in the Podfile — add this line manually:\n  " + POD_LINE);
-    process.exit(1);
-  }
-  changed = true;
+// 1. Drop macOS target blocks — they aren't in the generated Xcode
+//    project and make `pod install` fail before installing anything.
+//    (Flat non-greedy match: the template's target blocks contain only
+//    pod/platform lines, no nested do...end.)
+podfile = podfile.replace(
+  /^[ \t]*target\s+['"][^'"]*macOS['"]\s+do\b[\s\S]*?^end[ \t]*\n?/gm,
+  () => {
+    console.log("Removing phantom macOS target block from Podfile (not present in the Xcode project).");
+    return "";
+  },
+);
+
+// 2. Ensure the ML Kit pod sits in every iOS app target (and only
+//    there). Strip any previous insertion first so this stays
+//    idempotent even if an earlier script version put it elsewhere.
+podfile = podfile.replace(new RegExp(`^[ \\t]*${POD_LINE.replace(/[/'.]/g, "\\$&")}[ \\t]*\\n`, "gm"), "");
+const iosTarget = /^([ \t]*target\s+['"][^'"]*iOS['"]\s+do[ \t]*)$/gm;
+if (!iosTarget.test(podfile)) {
+  console.error("Couldn't find an iOS `target ... do` block in the Podfile — add this line to your app target manually:\n  " + POD_LINE);
+  process.exit(1);
 }
+podfile = podfile.replace(iosTarget, `$1\n  ${POD_LINE}`);
 
-// ML Kit needs iOS >= 15.5; raise the Podfile platform line if lower.
+// 3. ML Kit needs iOS >= 15.5; raise the platform line if lower.
 podfile = podfile.replace(/^([ \t]*platform :ios, ['"])([\d.]+)(['"])/m, (line, pre, ver, post) => {
   if (parseFloat(ver) >= MIN_IOS) return line;
-  changed = true;
   console.log(`Raising Podfile iOS platform ${ver} -> ${MIN_IOS} (ML Kit minimum).`);
   return `${pre}${MIN_IOS}${post}`;
 });
 
-if (changed) {
+if (podfile !== original) {
   writeFileSync(podfilePath, podfile);
-  console.log("Added ML Kit Digital Ink Recognition to " + podfilePath);
+  console.log("Updated " + podfilePath);
 } else {
-  console.log("ML Kit pod already present in Podfile.");
+  console.log("Podfile already in shape.");
 }
 
 try {
