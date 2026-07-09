@@ -54,8 +54,10 @@ mod vision {
 
     pub fn recognize_text(png: &[u8]) -> Result<String, String> {
         // Convert any NSException from the dynamic calls into a command
-        // error rather than aborting the app.
-        match objc2::exception::catch(AssertUnwindSafe(|| recognize_text_inner(png))) {
+        // error rather than aborting the app. Safety: the closure only
+        // touches its own locals, so unwinding through the catch can't
+        // leave broken state behind.
+        match unsafe { objc2::exception::catch(AssertUnwindSafe(|| recognize_text_inner(png))) } {
             Ok(result) => result,
             Err(ex) => Err(describe_objc_exception(ex, "Vision recognition")),
         }

@@ -85,8 +85,10 @@ mod mlkit {
     pub fn recognize(payload: &InkPayload) -> Result<String, String> {
         // ML Kit's ObjC surface varies across releases; a selector we
         // guessed wrong raises an NSException, which would abort the
-        // whole app — surface it as a command error instead.
-        match objc2::exception::catch(AssertUnwindSafe(|| recognize_inner(payload))) {
+        // whole app — surface it as a command error instead. Safety:
+        // the closure only touches its own locals, so unwinding through
+        // the catch can't leave broken state behind.
+        match unsafe { objc2::exception::catch(AssertUnwindSafe(|| recognize_inner(payload))) } {
             Ok(result) => result,
             Err(ex) => Err(describe_objc_exception(ex, "ML Kit ink recognition")),
         }
