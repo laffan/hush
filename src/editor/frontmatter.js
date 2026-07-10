@@ -11,12 +11,31 @@
  *
  * The parsed model is a list of entries:
  *   { type: "text",     key, value: string }
+ *   { type: "number",   key, value: string }   — kept as the raw digits
  *   { type: "checkbox", key, value: boolean }
+ *   { type: "date",     key, value: string }   — YYYY-MM-DD
+ *   { type: "datetime", key, value: string }   — YYYY-MM-DDTHH:MM(:SS)
  *   { type: "list",     key, value: string[] }
- *   { type: "comment",  text }                  — `# …` preserved verbatim
+ *   { type: "tags",     key, value: string[] } — the `tags` key, list-shaped
+ *   { type: "comment",  text }                 — `# …` preserved verbatim
+ *
+ * Types are inferred Obsidian-style: unquoted scalars that look like a
+ * number / date / datetime / boolean get the matching type; quoting a
+ * value pins it to text. The `tags` key is always the Tags type.
  *
  * `serializeProperties` round-trips that model back to a `---` block.
  */
+
+// Scalar-type detection for unquoted values. Exported for the widget's
+// type-conversion logic so both sides agree on what "looks like" each type.
+export const NUMBER_RE = /^-?(\d+\.?\d*|\.\d+)$/;
+export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const DATETIME_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/;
+
+/** True when `key` gets the Tags treatment (Obsidian: the `tags` key). */
+export function isTagsKey(key) {
+  return String(key || "").trim().toLowerCase() === "tags";
+}
 
 // Only scan the head of the doc for a closing delimiter — a lone `---`
 // horizontal rule deep in a long doc must not swallow everything above
@@ -127,8 +146,8 @@ export function parseProperties(content) {
     // List item — only valid while collecting under a `key:` line.
     if (/^[-]\s/.test(trimmed) || trimmed === "-") {
       if (!pendingListOwner) return null;
-      if (pendingListOwner.type !== "list") {
-        pendingListOwner.type = "list";
+      if (pendingListOwner.type !== "list" && pendingListOwner.type !== "tags") {
+        pendingListOwner.type = isTagsKey(pendingListOwner.key) ? "tags" : "list";
         pendingListOwner.value = [];
       }
       const item = trimmed === "-" ? "" : trimmed.slice(1).trim();
@@ -144,9 +163,11 @@ export function parseProperties(content) {
     const rest = m[2].trim();
     if (!key) return null;
     if (rest === "") {
-      // Either an empty text value or a block list header — list items
-      // on following lines upgrade it.
-      const entry = { type: "text", key, value: "" };
+      // Either an empty value or a block list header — list items on
+      // following lines upgrade it. A bare `tags:` is an empty Tags list.
+      const entry = isTagsKey(key)
+        ? { type: "tags", key, value: [] }
+        : { type: "text", key, value: "" };
       entries.push(entry);
       pendingListOwner = entry;
       continue;
@@ -154,23 +175,43 @@ export function parseProperties(content) {
     pendingListOwner = null;
     if (rest.startsWith("[") && rest.endsWith("]")) {
       entries.push({
-        type: "list",
+        type: isTagsKey(key) ? "tags" : "list",
         key,
         value: splitInlineList(rest.slice(1, -1)).map((s) => parseScalar(s).value),
       });
       continue;
     }
     const { value, quoted } = parseScalar(rest);
-    if (!quoted && (value === "true" || value === "false")) {
-      entries.push({ type: "checkbox", key, value: value === "true" });
+    if (isTagsKey(key)) {
+      entries.push({ type: "tags", key, value: [value] });
       continue;
+    }
+    if (!quoted) {
+      if (value === "true" || value === "false") {
+        entries.push({ type: "checkbox", key, value: value === "true" });
+        continue;
+      }
+      if (NUMBER_RE.test(value)) {
+        entries.push({ type: "number", key, value });
+        continue;
+      }
+      if (DATE_RE.test(value)) {
+        entries.push({ type: "date", key, value });
+        continue;
+      }
+      if (DATETIME_RE.test(value)) {
+        entries.push({ type: "datetime", key, value: value.replace(" ", "T") });
+        continue;
+      }
     }
     entries.push({ type: "text", key, value });
   }
   return entries;
 }
 
-/** Quote a scalar when plain YAML would mangle or retype it. */
+/** Quote a scalar when plain YAML would mangle or retype it — including
+ *  values that would re-infer as number / date / datetime / boolean, so
+ *  a Text property stays Text on the next parse. */
 function serializeScalar(value) {
   const s = String(value ?? "");
   if (s === "") return '""';
@@ -180,9 +221,19 @@ function serializeScalar(value) {
     || s.includes(": ")
     || s.endsWith(":")
     || s.includes(" #")
-    || /^(true|false|null|yes|no|on|off)$/i.test(s);
+    || /^(true|false|null|yes|no|on|off)$/i.test(s)
+    || NUMBER_RE.test(s)
+    || DATE_RE.test(s)
+    || DATETIME_RE.test(s);
   if (!needsQuote) return s;
   return '"' + s.replace(/"/g, '\\"') + '"';
+}
+
+/** Serialize a typed scalar (number / date / datetime) unquoted when it
+ *  still matches its type's shape, else fall back to text quoting. */
+function serializeTyped(value, re) {
+  const s = String(value ?? "").trim();
+  return re.test(s) ? s : serializeScalar(s);
 }
 
 /**
@@ -196,7 +247,7 @@ export function serializeProperties(entries) {
     if (e.type === "comment") { lines.push(e.text); continue; }
     const key = (e.key || "").trim();
     if (!key) continue;
-    if (e.type === "list") {
+    if (e.type === "list" || e.type === "tags") {
       const items = (e.value || []).filter((v) => String(v).trim() !== "");
       if (items.length === 0) {
         lines.push(`${key}: []`);
@@ -206,6 +257,10 @@ export function serializeProperties(entries) {
       }
     } else if (e.type === "checkbox") {
       lines.push(`${key}: ${e.value ? "true" : "false"}`);
+    } else if (e.type === "number" || e.type === "date" || e.type === "datetime") {
+      const re = e.type === "number" ? NUMBER_RE : e.type === "date" ? DATE_RE : DATETIME_RE;
+      const v = String(e.value ?? "").trim();
+      lines.push(v === "" ? `${key}:` : `${key}: ${serializeTyped(v, re)}`);
     } else {
       const v = String(e.value ?? "");
       lines.push(v === "" ? `${key}:` : `${key}: ${serializeScalar(v)}`);

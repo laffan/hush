@@ -19,6 +19,7 @@
 
 import {
   findFrontmatterRange, serializeProperties, FRONTMATTER_SCAN_LIMIT,
+  NUMBER_RE, DATE_RE, DATETIME_RE,
 } from "../frontmatter.js";
 
 // Focus to restore after the one rebuild we can't avoid: committing from
@@ -29,8 +30,14 @@ let pendingFocus = null; // { docDom, desc: { row, field } }
 const TYPE_OPTIONS = [
   ["text", "Text"],
   ["list", "List"],
+  ["number", "Number"],
   ["checkbox", "Checkbox"],
+  ["date", "Date"],
+  ["datetime", "Date & time"],
+  ["tags", "Tags"],
 ];
+
+const LIST_TYPES = new Set(["list", "tags"]);
 
 function el(tag, cls, attrs) {
   const node = document.createElement(tag);
@@ -148,19 +155,40 @@ export function buildPropertiesDOM(view, initialEntries, text, editAnnotation) {
     }
   }
 
+  /** The entry's value flattened to one string, for type conversions. */
+  function toScalar(entry) {
+    if (LIST_TYPES.has(entry.type)) return (entry.value || []).join(", ");
+    if (entry.type === "checkbox") return entry.value ? "true" : "false";
+    return String(entry.value ?? "");
+  }
+
   function convertType(entry, nextType) {
     if (entry.type === nextType) return;
-    if (nextType === "list") {
-      const v = entry.type === "checkbox" ? (entry.value ? "true" : "false") : String(entry.value ?? "");
-      entry.value = v.trim() === "" ? [] : [v];
+    if (LIST_TYPES.has(nextType)) {
+      // List ↔ Tags keeps the items; scalars become a one-item list.
+      if (LIST_TYPES.has(entry.type)) {
+        entry.type = nextType;
+        return;
+      }
+      const v = toScalar(entry).trim();
+      entry.value = v === "" ? [] : [v];
     } else if (nextType === "checkbox") {
-      entry.value = entry.type === "list"
+      entry.value = LIST_TYPES.has(entry.type)
         ? entry.value.length > 0
-        : String(entry.value).trim().toLowerCase() === "true";
+        : toScalar(entry).trim().toLowerCase() === "true";
+    } else if (nextType === "number") {
+      const m = toScalar(entry).match(/-?(\d+\.?\d*|\.\d+)/);
+      entry.value = m ? m[0] : "";
+    } else if (nextType === "date") {
+      const m = toScalar(entry).match(/\d{4}-\d{2}-\d{2}/);
+      entry.value = m ? m[0] : "";
+    } else if (nextType === "datetime") {
+      const s = toScalar(entry).trim().replace(" ", "T");
+      entry.value = DATETIME_RE.test(s) ? s
+        : DATE_RE.test(s) ? s + "T00:00"
+        : "";
     } else {
-      entry.value = entry.type === "list" ? entry.value.join(", ")
-        : entry.type === "checkbox" ? (entry.value ? "true" : "false")
-        : String(entry.value ?? "");
+      entry.value = toScalar(entry);
     }
     entry.type = nextType;
   }
@@ -191,10 +219,11 @@ export function buildPropertiesDOM(view, initialEntries, text, editAnnotation) {
       wrap.appendChild(box);
       return wrap;
     }
-    if (entry.type === "list") {
+    if (LIST_TYPES.has(entry.type)) {
+      const isTags = entry.type === "tags";
       const wrap = el("div", "cm-property-value cm-property-list");
       for (let i = 0; i < entry.value.length; i++) {
-        const chip = el("span", "cm-property-chip");
+        const chip = el("span", "cm-property-chip" + (isTags ? " cm-property-chip-tag" : ""));
         const label = el("span", "cm-property-chip-label");
         label.textContent = entry.value[i];
         chip.appendChild(label);
@@ -209,9 +238,13 @@ export function buildPropertiesDOM(view, initialEntries, text, editAnnotation) {
         chip.appendChild(x);
         wrap.appendChild(chip);
       }
-      const input = el("input", "cm-property-list-input", { type: "text", placeholder: entry.value.length ? "" : "List item…" });
+      const input = el("input", "cm-property-list-input", {
+        type: "text",
+        placeholder: entry.value.length ? "" : (isTags ? "Tag…" : "List item…"),
+      });
       const addChip = (refocus = true) => {
-        const v = input.value.trim();
+        // Tags never store the leading `#` — Obsidian keeps YAML tags bare.
+        const v = (isTags ? input.value.replace(/^#+/, "") : input.value).trim();
         if (!v) return false;
         entry.value.push(v);
         input.value = "";
@@ -240,11 +273,27 @@ export function buildPropertiesDOM(view, initialEntries, text, editAnnotation) {
       wrap.appendChild(input);
       return wrap;
     }
+    // Scalar types share one input element with a type-specific control:
+    // plain text, a numeric spinner, or the native date / datetime picker.
+    const inputType = entry.type === "number" ? "number"
+      : entry.type === "date" ? "date"
+      : entry.type === "datetime" ? "datetime-local"
+      : "text";
     const wrap = el("div", "cm-property-value");
-    const input = el("input", "cm-property-value-input", { type: "text", placeholder: "Empty" });
+    const input = el("input", "cm-property-value-input", { type: inputType, placeholder: "Empty" });
+    if (inputType === "number") input.setAttribute("step", "any");
     input.value = String(entry.value ?? "");
     input.addEventListener("input", () => { entry.value = input.value; });
     input.addEventListener("keydown", (e) => commitKeys(e, { row: idx, field: "value" }));
+    if (inputType === "date" || inputType === "datetime-local") {
+      // Picking from the native calendar fires `change` without Enter or
+      // blur — commit right away so the doc tracks the picker.
+      input.addEventListener("change", () => {
+        entry.value = input.value;
+        dirty = true;
+        commit({ row: idx, field: "value" });
+      });
+    }
     wrap.appendChild(input);
     return wrap;
   }
