@@ -294,7 +294,10 @@ export function createStrokeEngine({
     else if (raw > 0 && raw !== 0.5 && raw < 1) pressure = min(1, raw * 1.25);
     else pressure = 0.5;
     const local = toLocal({ x: e.clientX, y: e.clientY });
-    return { x: local.x, y: local.y, pressure };
+    // Hush delta #21: capture the event timestamp per point so the
+    // ML Kit ink recognizer sees real pen velocity. Only deltas
+    // within a stroke are meaningful (timeStamp is page-relative).
+    return { x: local.x, y: local.y, pressure, t: e.timeStamp };
   }
 
   // --------- long-press timer ---------
@@ -604,7 +607,7 @@ export function createStrokeEngine({
       const before = s.points;
       const after = before.map((p) => {
         const [x, y] = fn(p.x, p.y);
-        return { x, y, pressure: p.pressure };
+        return { x, y, pressure: p.pressure, t: p.t };
       });
       s.points = after;
       // Proportional resize also scales the brush thickness so

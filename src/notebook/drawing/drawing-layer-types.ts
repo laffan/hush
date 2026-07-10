@@ -79,6 +79,12 @@ export interface DrawingLayer {
    *  its current transform, positioned so world coords line up. Used by
    *  the export path. */
   blitDoneCanvasAtWorldOrigin(ctx: CanvasRenderingContext2D): void;
+  /** Render ONLY the strokes matching the given hush shape ids into
+   *  `ctx` (whose transform must already map world coords → target
+   *  pixels), in canonical z-order. Unlike the done-canvas blits this
+   *  re-renders each stroke through the atlas, so nothing that overlaps
+   *  the same region leaks in. Used by the selection rasterizer. */
+  renderStrokesTo(ctx: CanvasRenderingContext2D, hushIds: Iterable<string>): void;
 
   // ----- hush select-drag integration -----
   //

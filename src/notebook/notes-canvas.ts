@@ -346,7 +346,10 @@ export class NotesCanvas {
     // inter-pill shadow seam. The end-cap tabs (drag, rotate,
     // bg-settings) are returned separately and mounted alongside.
     // Bottom toolbar must already exist before we get here.
-    container.appendChild(createSelectionToolbar(this.state));
+    container.appendChild(createSelectionToolbar(this.state, {
+      getImageCache: () => this._imageCache,
+      getDrawingLayer: () => this._drawingLayer,
+    }));
     container.appendChild(createTextEditor(this.state));
     container.appendChild(createBrainstormInput(this.state));
     container.appendChild(createReorderBanner(this.state));

@@ -11,7 +11,8 @@
     "build:macos": "tauri build",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
     "build:linux": "tauri build --target x86_64-unknown-linux-gnu",
-    "ios:init": "tauri ios init",
+    "ios:init": "tauri ios init && node scripts/ios-add-mlkit-pod.mjs",
+    "ios:add-mlkit": "node scripts/ios-add-mlkit-pod.mjs",
     "build:ios": "bash scripts/ios-deploy.sh",
     "build:ios:export": "tauri ios build --debug && ios-deploy --bundle src-tauri/gen/apple/build/arm64/Hush.ipa"
   },

@@ -52,6 +52,12 @@ interface ShapeBase {
  *  is upgraded at load time by file-io. */
 export interface DrawPoint extends Point {
   pressure: number;
+  /** Capture timestamp in ms (PointerEvent.timeStamp — relative to
+   *  page load, so only *deltas within a stroke* are meaningful).
+   *  Optional: strokes drawn before timing shipped don't have it.
+   *  Consumed by the ML Kit ink recognizer, which reads pen velocity;
+   *  every point-rebuilding transform must carry it through. */
+  t?: number;
 }
 
 export interface DrawShape extends ShapeBase {

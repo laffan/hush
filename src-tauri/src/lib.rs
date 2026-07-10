@@ -414,6 +414,8 @@ pub fn run() {
             commands::images::list_images,
             commands::images::export_with_images,
             commands::images::write_binary_file,
+            commands::handwriting::recognize_handwriting,
+            commands::handwriting_ink::recognize_handwriting_ink,
             commands::snapshots::create_snapshot,
             commands::snapshots::get_snapshots,
             commands::snapshots::get_snapshot,
