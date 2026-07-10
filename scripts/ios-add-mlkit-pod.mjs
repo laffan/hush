@@ -90,14 +90,23 @@ const MLKIT_HOOK = `  # hush-mlkit BEGIN — managed by scripts/ios-add-mlkit-po
   #    ("library 'app' not found") and the Swift toolchain dirs that
   #    hold libswiftCompatibility56.a & co ("__swift_FORCE_LOAD_$_
   #    swiftCompatibility56" undefined).
-  # b) Force-load the ML Kit framework binaries: the app references no
-  #    ML Kit symbol at link time (classes are looked up dynamically),
-  #    so without this the linker drops them and NSClassFromString
-  #    returns nil.
-  mlkit_force_load = Dir[File.join(installer.sandbox.root, 'MLKit*', 'Frameworks', '*.framework')].map do |fw|
+  # b) Load every Google archive exactly once, eagerly. The app
+  #    references no ML Kit symbol at link time (classes are looked up
+  #    dynamically), so lazy archive semantics drop them; but the
+  #    global -ObjC flag CocoaPods adds eager-loads every ObjC/Swift
+  #    member of EVERY archive — including Tauri's libapp.a, which
+  #    embeds the Tauri swift objects once per plugin and relies on
+  #    lazy dedup (=> thousands of duplicate-symbol errors). So:
+  #    remove -ObjC and the pods' -framework/-l references to the
+  #    Google archives, and -force_load each of them exactly once
+  #    (which also keeps their ObjC categories without -ObjC).
+  mlkit_fw_paths = Dir[File.join(installer.sandbox.root, 'MLKit*', 'Frameworks', '*.framework')]
+  mlkit_frameworks = mlkit_fw_paths.map { |fw| File.basename(fw, '.framework') }
+  mlkit_force_load = mlkit_fw_paths.map do |fw|
     bin = File.join(fw, File.basename(fw, '.framework'))
     ' -force_load "' + bin.sub(installer.sandbox.root.to_s, '$(PODS_ROOT)') + '"'
   end.join
+  google_support_libs = %w[GTMSessionFetcher GoogleDataTransport GoogleToolboxForMac GoogleUtilities PromisesObjC SSZipArchive nanopb]
   installer.aggregate_targets.each do |agg|
     agg.user_build_configurations.each_key do |config_name|
       xcconfig_path = agg.xcconfig_path(config_name)
@@ -116,7 +125,19 @@ const MLKIT_HOOK = `  # hush-mlkit BEGIN — managed by scripts/ios-add-mlkit-po
       end
       unless mlkit_force_load.empty? || text.include?('-force_load')
         if text =~ /^OTHER_LDFLAGS = .*$/
-          text = text.sub(/^OTHER_LDFLAGS = .*$/) { |line| line + mlkit_force_load }
+          text = text.sub(/^OTHER_LDFLAGS = .*$/) do |line|
+            line = line.gsub(/ -ObjC\\b/, '')
+            mlkit_frameworks.each do |fw|
+              line = line.gsub(/ -framework "#{fw}"/, '')
+            end
+            google_support_libs.each do |libname|
+              line = line.gsub(
+                / -l"#{libname}"/,
+                %Q{ -force_load "\${PODS_CONFIGURATION_BUILD_DIR}/#{libname}/lib#{libname}.a"},
+              )
+            end
+            line + mlkit_force_load
+          end
         else
           text += "\\nOTHER_LDFLAGS = $(inherited)#{mlkit_force_load}\\n"
         end
