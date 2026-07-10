@@ -51,6 +51,7 @@ import { applyBlockCursor } from "./block-cursor.js";
 import { bindLineIndicatorToContainer, createLineIndicatorPlugin } from "./line-indicator.js";
 import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
+import { createPropertiesPlugin } from "./plugins/properties.js";
 
 // Re-export for callers that imported these from editor.js historically.
 export { headingIndentPlugin, createMultiLineCommentPlugin, createCommentAfterPlugin };
@@ -339,6 +340,7 @@ export function createEditor(container, state) {
       spellcheckPlugin,
       spellcheckClickHandler,
       encouragePlugin,
+      createPropertiesPlugin(state),
       projectViewField,
       separatorFilter,
       keymap.of([...defaultKeymap, ...historyKeymap]),

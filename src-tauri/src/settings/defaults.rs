@@ -151,6 +151,9 @@ pub fn default_shortcut_toggle_focus() -> String {
 pub fn default_shortcut_toggle_word_count() -> String {
     "Mod+Shift+W".to_string()
 }
+pub fn default_shortcut_toggle_properties() -> String {
+    "Mod+;".to_string()
+}
 pub fn default_shortcut_zen_focus() -> String {
     "Mod+Shift+S".to_string()
 }

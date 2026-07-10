@@ -23,6 +23,7 @@ export const shortcutCategories = [
       { key: "shortcutToggleFocus", label: "Toggle focus mode" },
       { key: "shortcutZenFocus", label: "Toggle Zen Focus" },
       { key: "shortcutToggleWordCount", label: "Toggle word count" },
+      { key: "shortcutToggleProperties", label: "View/Hide properties" },
       { key: "shortcutNewFile", label: "New file" },
       { key: "shortcutNewNotebook", label: "New notebook" },
       { key: "shortcutSave", label: "Save file" },
@@ -101,6 +102,7 @@ export const DOC_MODE_SHORTCUT_KEYS = [
   "shortcutToggleFocus",
   "shortcutZenFocus",
   "shortcutToggleWordCount",
+  "shortcutToggleProperties",
   "shortcutQuickFind",
 ];
 

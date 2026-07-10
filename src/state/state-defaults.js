@@ -72,6 +72,10 @@ export function createDefaultSettings() {
     // via the command palette ("Show minimap" / "Hide minimap"). The
     // widget unmounts itself whenever a non-notebook is open.
     minimapVisible: false,
+    // Metadata frontmatter ("Properties"). Hidden by default; Cmd+; /
+    // the command palette toggles the integrated editing UI at the top
+    // of every doc that carries a frontmatter block.
+    propertiesVisible: false,
     // "Desks" — top-level container above all other tree nodes. The
     // top level is always one or more desk nodes, each with its own
     // namespaced Inbox/Images/Trash. Sessions started before desks
@@ -123,6 +127,7 @@ export function createDefaultSettings() {
     shortcutToggleDry: "Mod+Shift+R",
     shortcutToggleFocus: "Mod+S",
     shortcutToggleWordCount: "Mod+Shift+W",
+    shortcutToggleProperties: "Mod+;",
     shortcutZenFocus: "Mod+Shift+S",
     // Literal Ctrl on Mac (not Cmd) so it doesn't clash with Mod+Shift+D
     // (Select previous instance). Translates to Ctrl+Shift+D on every

@@ -9,14 +9,16 @@
 
 import { findNodeByFileId } from "./tree-helpers.js";
 import { parseTabMarkerLine } from "../editor/tabs.js";
+import { stripFrontmatter } from "../editor/frontmatter.js";
 
 /** Pick the first content-bearing line as the doc's title. Skips blank
- *  lines and `---Tab name---` markers — markers are structural, not
+ *  lines, a leading metadata frontmatter block (properties are not a
+ *  title), and `---Tab name---` markers — markers are structural, not
  *  titles, so an imported GDoc whose first tab is `---Slow Show---`
  *  should not end up with `---Slow Show---` as its filename. */
 export function deriveName(content) {
   if (typeof content !== "string" || !content.trim()) return "Untitled";
-  for (const rawLine of content.split("\n")) {
+  for (const rawLine of stripFrontmatter(content).split("\n")) {
     const trimmed = rawLine.trim();
     if (!trimmed) continue;
     if (parseTabMarkerLine(trimmed)) continue;

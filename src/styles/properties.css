@@ -1,0 +1,203 @@
+/* ===== Properties (metadata frontmatter) widget ===== */
+
+.cm-properties {
+  font-family: var(--ui-font-family);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 0 0 1.2em 0;
+  max-width: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cm-properties-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.cm-property-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+  border-radius: 4px;
+}
+
+.cm-property-row:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+/* Inert `# comment` lines preserved from the YAML */
+.cm-property-comment {
+  opacity: 0.45;
+  font-style: italic;
+  padding-left: 4px;
+}
+
+.cm-property-type {
+  flex: 0 0 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  opacity: 0.45;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 2px;
+  width: 62px;
+  cursor: pointer;
+}
+
+.cm-property-type:hover,
+.cm-property-type:focus {
+  opacity: 0.9;
+  outline: none;
+}
+
+.cm-property-type option {
+  color: initial;
+}
+
+.cm-property-key {
+  flex: 0 0 140px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.cm-property-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cm-property-key,
+.cm-property-value-input,
+.cm-property-list-input {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 6px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.cm-property-value-input {
+  width: 100%;
+}
+
+.cm-property-list-input {
+  flex: 1 1 60px;
+  min-width: 60px;
+}
+
+.cm-property-key:hover,
+.cm-property-value-input:hover,
+.cm-property-list-input:hover {
+  border-color: var(--panel-border);
+}
+
+.cm-property-key:focus,
+.cm-property-value-input:focus,
+.cm-property-list-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.cm-property-key::placeholder,
+.cm-property-value-input::placeholder,
+.cm-property-list-input::placeholder {
+  color: var(--fg);
+  opacity: 0.3;
+}
+
+.cm-property-checkbox {
+  margin: 5px 6px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.cm-property-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 10px;
+  padding: 1px 4px 1px 8px;
+  max-width: 100%;
+}
+
+.cm-property-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-property-chip-remove,
+.cm-property-remove {
+  background: none;
+  border: none;
+  color: var(--fg);
+  opacity: 0.4;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.cm-property-remove {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  /* Only surface on row hover, like Obsidian */
+  visibility: hidden;
+}
+
+.cm-property-row:hover .cm-property-remove {
+  visibility: visible;
+}
+
+.cm-property-chip-remove:hover,
+.cm-property-remove:hover {
+  opacity: 0.9;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.cm-properties-add {
+  display: inline-block;
+  background: none;
+  border: none;
+  color: var(--fg);
+  opacity: 0.4;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  margin-top: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.cm-properties-add:hover {
+  opacity: 0.85;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+/* Draft mode (no frontmatter yet): shrink to a quiet one-line pill */
+.cm-properties-empty {
+  border-color: transparent;
+  padding: 0;
+}
+
+.cm-properties-empty:hover {
+  border-color: var(--panel-border);
+}

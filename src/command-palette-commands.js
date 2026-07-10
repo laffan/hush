@@ -357,6 +357,15 @@ function buildCommands(state) {
       action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 2); } },
     { id: "fold-h3", label: "Fold all H3", icon: icons.fold, shortcutKey: null, ctx: "doc",
       action: (s) => { const v = foldView(s); if (v) foldAllAtLevel(v, 3); } },
+    // === PROPERTIES (metadata frontmatter) ===
+    { id: "properties-view", label: "View properties", icon: icons.doc, shortcutKey: "shortcutToggleProperties", ctx: "doc",
+      hiddenIf: (s) => !!s.settings?.propertiesVisible,
+      action: (s) => import("./editor/plugins/properties.js").then((m) => m.togglePropertiesVisibility(s)) },
+    { id: "properties-hide", label: "Hide properties", icon: icons.doc, shortcutKey: "shortcutToggleProperties", ctx: "doc",
+      hiddenIf: (s) => !s.settings?.propertiesVisible,
+      action: (s) => import("./editor/plugins/properties.js").then((m) => m.togglePropertiesVisibility(s)) },
+    { id: "properties-add", label: "Add property", icon: icons.doc, shortcutKey: null, ctx: "doc",
+      action: (s) => import("./editor/plugins/properties.js").then((m) => m.addPropertyFromPalette(s)) },
     // === STICKY NOTES ===
     // Temporary reminders floating above every surface. File + project
     // stickies show while their target (or any file in the project) is
