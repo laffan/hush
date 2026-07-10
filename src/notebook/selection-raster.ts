@@ -24,7 +24,7 @@ import type { DrawingLayer } from "./drawing/drawing-layer-types";
 import type { Bounds, DrawShape, Shape } from "./types";
 import { renderForExport } from "./renderer-export";
 import { getShapeBounds } from "./utils";
-import { nbLog } from "./ui/debug-log";
+import { isInkRecognitionAvailable } from "../recognition/handwriting";
 
 export const RASTER_SCALE = 2;
 
@@ -199,31 +199,27 @@ function normalizeForRecognition(canvas: HTMLCanvasElement): void {
   ctx.putImageData(img, 0, 0);
 }
 
-/** "Recognize handwriting": rasterize the ink in the selection —
- *  strokes plus images, so already-rasterized handwriting stays
- *  recognizable — and run it through the recognition engine
- *  (src/recognition/). Background on, so "auto" white ink on a dark
- *  theme stays legible (then normalized to dark-on-light). For now
- *  the recognized text lands as a TextShape beneath the ink; a later
- *  pass will offer replacing it outright. */
-export async function recognizeSelectionHandwriting(source: RasterSource): Promise<void> {
-  const shapes = collectRasterShapes(source.state)
-    .filter((s) => s.type === "draw" || s.type === "image");
-  if (!shapes.length) { nbLog("Vision: nothing recognizable in the selection (no strokes/images)"); return; }
+/** Image branch of Recognize handwriting: rasterize the selected
+ *  images (e.g. a previously-rasterized stroke group) and run the
+ *  pixels through Apple's Vision recognizer via the recognition
+ *  engine (src/recognition/). Background on, so transparent images
+ *  sit on their intended canvas colour (then normalized to
+ *  dark-on-light). The recognized text lands as a TextShape beneath
+ *  the images. */
+export async function recognizeSelectionImagesVision(source: RasterSource): Promise<void> {
+  const shapes = collectRasterShapes(source.state).filter((s) => s.type === "image");
+  if (!shapes.length) return;
   const contentBounds = rasterBounds(shapes, source.state.fontFamily);
-  if (!contentBounds) { nbLog("Vision: selection has no finite bounds"); return; }
+  if (!contentBounds) return;
   const raster = rasterizeShapes(source, shapes, {
     includeBackground: true,
     scale: recognitionScale(contentBounds),
     margin: 24,
   });
-  if (!raster) { nbLog("Vision: rasterization produced no canvas"); return; }
+  if (!raster) return;
   normalizeForRecognition(raster.canvas);
-  nbLog(`Vision: ${shapes.length} shape(s) rasterized to ${raster.canvas.width}×${raster.canvas.height}px — invoking…`);
-  const t0 = performance.now();
   const { recognizeHandwriting } = await import("../recognition/handwriting");
   const text = (await recognizeHandwriting(raster.canvas)).trim();
-  nbLog(`Vision: replied in ${Math.round(performance.now() - t0)} ms → ${text ? JSON.stringify(text.slice(0, 80)) : "(empty — nothing legible)"}`);
   if (!text) return;
   source.state.addTextShapeAtPosition(text, { x: contentBounds.minX, y: contentBounds.maxY + 16 });
 }
@@ -243,9 +239,9 @@ export async function recognizeSelectionHandwriting(source: RasterSource): Promi
 export async function recognizeSelectionInkMlkit(state: DrawingState): Promise<void> {
   const shapes = collectRasterShapes(state)
     .filter((s): s is DrawShape => s.type === "draw");
-  if (!shapes.length) { nbLog("ML Kit: no strokes in the selection (images can't feed a stroke recognizer)"); return; }
+  if (!shapes.length) return;
   const bounds = rasterBounds(shapes, state.fontFamily);
-  if (!bounds) { nbLog("ML Kit: selection has no finite bounds"); return; }
+  if (!bounds) return;
   let clock = 0;
   const strokes = shapes.map((s) => {
     const points = s.points.map((p, i) => {
@@ -265,21 +261,33 @@ export async function recognizeSelectionInkMlkit(state: DrawingState): Promise<v
     clock += 300; // pen-lift gap between strokes
     return { points };
   });
-  const totalPoints = strokes.reduce((n, s) => n + s.points.length, 0);
-  const hasRealTiming = shapes.some((s) => s.points.some((p) => p.t !== undefined));
-  nbLog(
-    `ML Kit: ${strokes.length} stroke(s), ${totalPoints} point(s), `
-    + `area ${Math.round(bounds.maxX - bounds.minX)}×${Math.round(bounds.maxY - bounds.minY)}, `
-    + `${hasRealTiming ? "real" : "synthesized"} pen timing — invoking `
-    + `(first run downloads a ~20 MB language model)…`,
-  );
-  const t0 = performance.now();
   const { recognizeHandwritingInk } = await import("../recognition/handwriting");
   const text = (await recognizeHandwritingInk(strokes, {
     width: bounds.maxX - bounds.minX,
     height: bounds.maxY - bounds.minY,
   })).trim();
-  nbLog(`ML Kit: replied in ${Math.round(performance.now() - t0)} ms → ${text ? JSON.stringify(text.slice(0, 80)) : "(empty — nothing legible)"}`);
   if (!text) return;
   state.addTextShapeAtPosition(text, { x: bounds.minX, y: bounds.maxY + 16 });
+}
+
+/** The single Recognize-handwriting action — one button, two engines
+ *  under the hood. Strokes go to Google's stroke-based ML Kit
+ *  recognizer (iPad only; on desktop stroke recognition is
+ *  intentionally unavailable). Image selections — e.g. a rasterized
+ *  stroke group — go through Apple's Vision raster path. A mixed
+ *  selection on iPad prefers the strokes. `canRecognizeSelection`
+ *  is the matching visibility test for the toolbar button. */
+export function canRecognizeSelection(state: DrawingState): boolean {
+  const shapes = collectRasterShapes(state);
+  const hasStrokes = shapes.some((s) => s.type === "draw");
+  if (hasStrokes && isInkRecognitionAvailable()) return true;
+  return shapes.some((s) => s.type === "image");
+}
+
+export async function recognizeSelection(source: RasterSource): Promise<void> {
+  const hasStrokes = collectRasterShapes(source.state).some((s) => s.type === "draw");
+  if (hasStrokes && isInkRecognitionAvailable()) {
+    return recognizeSelectionInkMlkit(source.state);
+  }
+  return recognizeSelectionImagesVision(source);
 }

@@ -39,24 +39,28 @@ pub struct InkPayload {
 }
 
 #[tauri::command]
-pub async fn recognize_handwriting_ink(payload: InkPayload) -> Result<String, String> {
+pub async fn recognize_handwriting_ink(
+    app: tauri::AppHandle,
+    payload: InkPayload,
+) -> Result<String, String> {
     if payload.strokes.is_empty() {
         return Err("No strokes to recognize".into());
     }
     // Model download polling + recognition can take a while — keep it
-    // off the main thread.
-    tauri::async_runtime::spawn_blocking(move || recognize(&payload))
+    // off the main thread. The AppHandle rides along so the download
+    // loop can stream progress events to the frontend.
+    tauri::async_runtime::spawn_blocking(move || recognize(&app, &payload))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[cfg(target_os = "ios")]
-fn recognize(payload: &InkPayload) -> Result<String, String> {
-    mlkit::recognize(payload)
+fn recognize(app: &tauri::AppHandle, payload: &InkPayload) -> Result<String, String> {
+    mlkit::recognize(app, payload)
 }
 
 #[cfg(not(target_os = "ios"))]
-fn recognize(_payload: &InkPayload) -> Result<String, String> {
+fn recognize(_app: &tauri::AppHandle, _payload: &InkPayload) -> Result<String, String> {
     Err("ML Kit ink recognition is only available on iOS / iPadOS (Google doesn't ship ML Kit for macOS)".into())
 }
 
@@ -82,24 +86,24 @@ mod mlkit {
         AnyClass::get(name).ok_or_else(|| format!("{NOT_LINKED} (class {name} missing)"))
     }
 
-    pub fn recognize(payload: &InkPayload) -> Result<String, String> {
+    pub fn recognize(app: &tauri::AppHandle, payload: &InkPayload) -> Result<String, String> {
         // ML Kit's ObjC surface varies across releases; a selector we
         // guessed wrong raises an NSException, which would abort the
         // whole app — surface it as a command error instead. Safety:
         // the closure only touches its own locals, so unwinding through
         // the catch can't leave broken state behind.
-        match unsafe { objc2::exception::catch(AssertUnwindSafe(|| recognize_inner(payload))) } {
+        match unsafe { objc2::exception::catch(AssertUnwindSafe(|| recognize_inner(app, payload))) } {
             Ok(result) => result,
             Err(ex) => Err(describe_objc_exception(ex, "ML Kit ink recognition")),
         }
     }
 
-    fn recognize_inner(payload: &InkPayload) -> Result<String, String> {
+    fn recognize_inner(app: &tauri::AppHandle, payload: &InkPayload) -> Result<String, String> {
         autoreleasepool(|_| unsafe {
             let ink = build_ink(&payload.strokes)?;
             let tag = payload.language.as_deref().unwrap_or("en-US");
             let model = model_for_language(tag)?;
-            ensure_model_downloaded(model)?;
+            ensure_model_downloaded(app, model)?;
 
             let options_cls = cls("MLKDigitalInkRecognizerOptions")?;
             let options: *mut AnyObject = msg_send![options_cls, alloc];
@@ -253,8 +257,15 @@ mod mlkit {
 
     /// The per-language model (~20 MB) downloads on first use. Kick the
     /// download and poll — the notification-based completion API isn't
-    /// worth bridging dynamically when a 500 ms poll does the job.
-    unsafe fn ensure_model_downloaded(model: *mut AnyObject) -> Result<(), String> {
+    /// worth bridging dynamically when a 500 ms poll does the job. The
+    /// returned NSProgress fraction streams to the frontend so the
+    /// one-time wait shows as a progress pill instead of a hang; with
+    /// that feedback in place the window is a generous 5 minutes.
+    unsafe fn ensure_model_downloaded(
+        app: &tauri::AppHandle,
+        model: *mut AnyObject,
+    ) -> Result<(), String> {
+        use tauri::Emitter;
         let mm_cls = cls("MLKModelManager")?;
         let mm: *mut AnyObject = msg_send![mm_cls, modelManager];
         let downloaded: Bool = msg_send![mm, isModelDownloaded: model];
@@ -268,13 +279,21 @@ mod mlkit {
             initWithAllowsCellularAccess: Bool::YES,
             allowsBackgroundDownloading: Bool::NO
         ];
-        let _progress: *mut AnyObject = msg_send![mm, downloadModel: model, conditions: cond];
+        let progress: *mut AnyObject = msg_send![mm, downloadModel: model, conditions: cond];
         let _: () = msg_send![cond, release];
-        for _ in 0..120 {
+        let _ = app.emit("mlkit-ink-download-progress", 0.0f64);
+        for _ in 0..600 {
             std::thread::sleep(Duration::from_millis(500));
             let ok: Bool = msg_send![mm, isModelDownloaded: model];
             if ok.as_bool() {
+                let _ = app.emit("mlkit-ink-download-progress", 1.0f64);
                 return Ok(());
+            }
+            if !progress.is_null() {
+                let fraction: f64 = msg_send![progress, fractionCompleted];
+                if fraction.is_finite() {
+                    let _ = app.emit("mlkit-ink-download-progress", fraction.clamp(0.0, 1.0));
+                }
             }
         }
         Err("The ML Kit language model is still downloading — try again in a moment".into())

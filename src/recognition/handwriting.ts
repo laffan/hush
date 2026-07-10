@@ -74,8 +74,12 @@ export function isInkRecognitionAvailable(): boolean {
  *  relative to the writing area's top-left corner; `writingArea` is
  *  its size in the same units. Resolves to the top candidate ("" when
  *  nothing was legible); rejects when ML Kit isn't linked into the
- *  build, the model download is still in flight, or recognition
- *  fails. */
+ *  build or recognition fails.
+ *
+ *  The first recognition on a device downloads the per-language model
+ *  (~20 MB, one time). The Rust side streams NSProgress fractions via
+ *  the `mlkit-ink-download-progress` event; a progress pill shows for
+ *  the duration so the wait reads as work rather than a hang. */
 export async function recognizeHandwritingInk(
   strokes: InkStroke[],
   writingArea: { width: number; height: number },
@@ -83,12 +87,22 @@ export async function recognizeHandwritingInk(
 ): Promise<string> {
   if (!IS_TAURI) throw new Error("Handwriting recognition requires the iOS app");
   const { invoke } = await import("@tauri-apps/api/core");
-  return await invoke<string>("recognize_handwriting_ink", {
-    payload: {
-      strokes,
-      language,
-      writingAreaWidth: writingArea.width,
-      writingAreaHeight: writingArea.height,
-    },
+  const { listen } = await import("@tauri-apps/api/event");
+  const { showModelDownloadProgress, hideModelDownloadProgress } = await import("./recognition-ui");
+  const unlisten = await listen<number>("mlkit-ink-download-progress", (e) => {
+    showModelDownloadProgress(typeof e.payload === "number" ? e.payload : 0);
   });
+  try {
+    return await invoke<string>("recognize_handwriting_ink", {
+      payload: {
+        strokes,
+        language,
+        writingAreaWidth: writingArea.width,
+        writingAreaHeight: writingArea.height,
+      },
+    });
+  } finally {
+    unlisten();
+    hideModelDownloadProgress();
+  }
 }
