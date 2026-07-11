@@ -47,8 +47,15 @@ hayagriva = "0.9"
 comemo = "0.5"
 ecow = "0.2"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.5"
+# objc2 serves the traffic-light window buttons on macOS and the
+# Vision-backed handwriting recognition command on both Apple targets;
+# block2 bridges ML Kit's completion blocks for the iOS-only Digital
+# Ink recognizer (handwriting_ink.rs).
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+# "exception" lets the handwriting bridges catch NSExceptions (a wrong
+# selector in a dynamic ML Kit call would otherwise abort the app).
+objc2 = { version = "0.5", features = ["exception"] }
+block2 = "0.5"
 
 [dev-dependencies]
 tempfile = "3"

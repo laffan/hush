@@ -33,6 +33,7 @@ import { createLineIndicatorPlugin } from "./line-indicator.js";
 import { createSpellcheckPlugin, spellcheckClickHandler } from "./plugins/spellcheck.js";
 import { buildFoldingExtension } from "./folding.js";
 import { createFoldArrowPlugin } from "./fold-arrow.js";
+import { createPropertiesPlugin } from "./plugins/properties.js";
 
 /**
  * Marks a transaction as app-driven rather than user-typed: file loads,
@@ -196,6 +197,7 @@ export function createBaseExtensions(state, onChange, opts) {
     spellcheckClickHandler,
     buildFoldingExtension(),
     createFoldArrowPlugin(),
+    createPropertiesPlugin(state),
     createFocusModePlugin(state),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     Prec.highest(keymap.of(buildFixedKeymap(state))),

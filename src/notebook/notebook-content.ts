@@ -91,12 +91,16 @@ function isCamera(v: unknown): boolean {
 
 function quantizeShape(s: Shape): Shape {
   if (s.type !== "draw") return s;
-  const ds = s as Shape & { points?: Array<{ x: number; y: number; pressure: number }> };
+  const ds = s as Shape & { points?: Array<{ x: number; y: number; pressure: number; t?: number }> };
   if (!ds.points || ds.points.length === 0) return s;
   const points = ds.points.map((p) => ({
     x: Math.round(p.x),
     y: Math.round(p.y),
     pressure: Math.round(p.pressure * 20) / 20,
+    // Capture timestamp (ms) — feeds the ML Kit ink recognizer's
+    // velocity model; whole ms is plenty. Omitted for legacy points
+    // so the JSON doesn't grow "t": undefined noise.
+    ...(p.t !== undefined ? { t: Math.round(p.t) } : {}),
   }));
   return { ...ds, points } as Shape;
 }

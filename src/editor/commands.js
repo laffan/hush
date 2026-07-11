@@ -202,6 +202,13 @@ export function buildEditorCommands() {
     },
     shortcutZenFocus: (state) => { state.toggleZenFocus(); return true; },
     shortcutToggleWordCount: (state) => toggleWordCount(state),
+    // View/Hide properties (metadata frontmatter). Lazy-import keeps the
+    // command registry out of the plugin's import cycle with
+    // base-extensions.js.
+    shortcutToggleProperties: (state) => {
+      import("./plugins/properties.js").then((m) => m.togglePropertiesVisibility(state));
+      return true;
+    },
     shortcutNewFile: (state) => { state.newFile(); return true; },
     shortcutNewNotebook: (state) => {
       // Mirror promptNewNotebookName (command-palette-pickers) without

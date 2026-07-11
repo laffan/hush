@@ -493,8 +493,8 @@ export function createDrawingLayer({
     // downstream Hush subsystem — box-select, getShapeBounds, file
     // I/O — can treat them like any other shape. Translate here at
     // the boundary.
-    localToWorld: (p) => ({ x: p.x + anchor.originX, y: p.y + anchor.originY, pressure: p.pressure }),
-    worldToLocal: (p) => ({ x: p.x - anchor.originX, y: p.y - anchor.originY, pressure: p.pressure }),
+    localToWorld: (p) => ({ x: p.x + anchor.originX, y: p.y + anchor.originY, pressure: p.pressure, t: p.t }),
+    worldToLocal: (p) => ({ x: p.x - anchor.originX, y: p.y - anchor.originY, pressure: p.pressure, t: p.t }),
   });
   shimBox.current = shim;
 
@@ -537,6 +537,34 @@ export function createDrawingLayer({
 
   function rebake(): void {
     strokeEngine.fullRebake();
+  }
+
+  // Re-render just the strokes matching `hushIds` into an arbitrary
+  // ctx whose transform maps world → target pixels. The strokes are
+  // walked in the engine's canonical order so z-stacking matches the
+  // done canvas; the origin translate converts engine-local coords
+  // back to world. Unlike blitWorldRegion / blitDoneCanvasAtWorldOrigin
+  // this paints through the atlas renderer, so strokes that merely
+  // overlap the same region don't leak into the output — that's what
+  // the selection rasterizer needs.
+  function renderStrokesTo(ctx: CanvasRenderingContext2D, hushIds: Iterable<string>): void {
+    const wanted = new Set<number>();
+    for (const hid of hushIds) {
+      const eid = shim.getEngineStrokeId(hid);
+      if (eid !== undefined) wanted.add(eid);
+    }
+    if (!wanted.size) return;
+    // renderStrokeTo (Hush delta #20) postdates the inferred engine
+    // surface — same cast pattern as cancelActiveStroke above.
+    const engine = strokeEngine as unknown as {
+      renderStrokeTo: (ctx: CanvasRenderingContext2D, s: EngineStroke) => void;
+    };
+    ctx.save();
+    ctx.translate(anchor.originX, anchor.originY);
+    for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
+      if (wanted.has(s.id)) engine.renderStrokeTo(ctx, s);
+    }
+    ctx.restore();
   }
 
   // ----- hush select-drag integration -----
@@ -626,6 +654,7 @@ export function createDrawingLayer({
     rebake,
     blitWorldRegion,
     blitDoneCanvasAtWorldOrigin,
+    renderStrokesTo,
     beginSelectionDrag,
     updateSelectionDrag,
     endSelectionDrag,

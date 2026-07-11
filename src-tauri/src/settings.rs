@@ -157,6 +157,8 @@ pub struct AppSettings {
     pub shortcut_toggle_focus: String,
     #[serde(default = "default_shortcut_toggle_word_count")]
     pub shortcut_toggle_word_count: String,
+    #[serde(default = "default_shortcut_toggle_properties")]
+    pub shortcut_toggle_properties: String,
     #[serde(default = "default_shortcut_zen_focus")]
     pub shortcut_zen_focus: String,
     #[serde(default = "default_zen_focus_font_size")]
@@ -401,6 +403,12 @@ pub struct AppSettings {
     /// across restarts.
     #[serde(default)]
     pub minimap_visible: bool,
+    /// Metadata frontmatter ("Properties") visibility. Hidden by
+    /// default; Cmd+; / the command palette toggles the editing UI at
+    /// the top of docs that carry a frontmatter block. Persisted so the
+    /// choice rides across restarts.
+    #[serde(default)]
+    pub properties_visible: bool,
     /// "Desks" — top-level containers above all other tree nodes.
     /// Always-on; kept as a deprecated boolean so older settings.json
     /// files still parse. The JS side treats desks as structural.
@@ -560,6 +568,7 @@ impl Default for AppSettings {
             shortcut_toggle_dry: default_shortcut_toggle_dry(),
             shortcut_toggle_focus: default_shortcut_toggle_focus(),
             shortcut_toggle_word_count: default_shortcut_toggle_word_count(),
+            shortcut_toggle_properties: default_shortcut_toggle_properties(),
             shortcut_zen_focus: default_shortcut_zen_focus(),
             zen_focus_font_size: default_zen_focus_font_size(),
             selection_focus_font_multiplier: default_selection_focus_font_multiplier(),
@@ -672,6 +681,7 @@ impl Default for AppSettings {
             last_notebook_id: None,
             desktop_file_id: None,
             minimap_visible: false,
+            properties_visible: false,
             use_desks: true,
             desks: Vec::new(),
             desks_meta: serde_json::json!({}),

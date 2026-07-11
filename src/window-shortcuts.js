@@ -109,6 +109,16 @@ export function installWindowShortcuts(state, windowCommands) {
         }
       }
     }
+    // Properties UI — the View/Hide toggle should still work while focus
+    // sits in one of the frontmatter widget's inputs, so the same key
+    // that opened the panel can close it mid-edit.
+    if (isTextField && t.closest?.(".cm-properties")) {
+      const sc = state.settings.shortcutToggleProperties;
+      if (sc && matchesDomEvent(e, sc)) {
+        const handler = windowCommands.shortcutToggleProperties;
+        if (handler) { e.preventDefault(); handler(state, null); return; }
+      }
+    }
     // Don't hijack keystrokes in text input fields.  In notebook mode the
     // target is the canvas element, not body — let shortcuts through.
     if (isTextField) return;
