@@ -1,181 +1,212 @@
-# Local Desks — Planning
+# Local Desks — Planning (v2)
 
-*Proposal, 2026-07. Nothing here is implemented yet — this document is the
-plan to review before work starts.*
+*Proposal, 2026-07, revised after review. Supersedes v1, which proposed a
+per-desk mirror engine layered on the internal store while keeping Dropbox
+sync. The revision adopts two directives: **Dropbox sync is removed
+entirely**, and **desks become self-contained, portable units** that carry
+their own databases — with full structural parity between internal and
+local desks. Backwards compatibility is explicitly not required.*
 
-## Goal
+## The model: a desk *is* a folder
 
-A desk should have the option of **operating from a local folder**: a plain
-directory on disk (including an iCloud Drive folder on iPad) that holds the
-desk's content in open formats, visible and editable from Finder or any
-other app. Two hard requirements shape everything below:
+Every desk — whether it lives in Hush's app data or in a folder the user
+picked — is one directory with one layout:
 
-1. **No features may be lost.** Versions, wikilinks, panes, projects,
-   stacks, gutters, styles, stickies, find, multi-window — everything that
-   works in a normal desk must keep working in a Local Desk.
-2. **Moving back and forth must be painless.** Internal desk → Local Desk
-   and back again, without data loss, re-setup, or broken references.
+```
+<Desk root>/
+├── .hushdesk                    desk identity + per-desk meta (style, last file)
+├── .hush/
+│   ├── index.json               fileId ↔ relative path (the identity map)
+│   ├── tree.json                ordering + row decoration, keyed by fileId
+│   ├── versions/                snapshot store — one file per snapshot
+│   │   └── <fileId>/<ts>-<deviceId>.snap
+│   ├── panes.json               pane layouts (per-desk now, not global)
+│   └── pdf.json                 Zotero PDF registry (per-desk)
+├── Inbox/                       real directories; structure IS the tree
+├── Trash/
+├── Images/
+├── <Project>/                   project = directory (+ ordering in tree.json)
+│   └── ...
+├── Some Doc.md
+├── Some Notebook.hushnote
+└── Some Stack.hushstack
+```
 
-## The three candidate architectures
+- An **internal desk** is this folder at `{data_dir}/desks/<deskId>/`.
+- A **local desk** is this folder wherever the user pointed Hush —
+  including an iCloud Drive or Dropbox folder, on both macOS and iPad.
+- **Conversion between the two is a folder move plus a registry repoint.**
+  Nothing is re-encoded, re-keyed, or re-imported. That is the parity
+  requirement made literal.
+- **Handoff** falls out for free: point a second Hush install (or a second
+  device, via a synced folder) at an existing desk root and it adopts the
+  desk wholesale — identity, ordering, version history and all.
 
-### A. Promote a Local Folder mount to desk level — rejected
+Sync itself is delegated to the file provider (iCloud, Dropbox-the-folder,
+Syncthing, a USB stick). Hush's job shrinks from *being* a sync engine to
+being a **well-behaved citizen of a synced folder** — which is a much
+smaller, much more testable job.
 
-Today's Local Folders live entirely on disk: no `fileId`s, no snapshot
-history, `ls:` sentinel ids threaded through the notebook/stack bridges.
-Making a whole desk work that way means re-keying every fileId-shaped
-subsystem (snapshots.rs, wikilink index, panes.json, versions, multi-window
-badges, Google links, Zotero PDF registry…) to a second id scheme — a
-sprawling change that *still* loses features wherever we miss a spot. It
-directly violates requirement 1.
+## Assessment: does this complicate or clarify?
 
-### B. The desk keeps its internal store; a **local mirror** reflects it to the folder — recommended
+**It clarifies — decisively — provided two design rules hold.** What it
+removes is bigger than what it adds:
 
-This is the Dropbox sync architecture with `std::fs` as the backend, which
-is why most of the work is already done:
+- The three-way storage split (VC store / Local Folder mounts / Dropbox
+  mirror) collapses to one model. The `ls:` sentinel-id scheme, the
+  mirror-map translation layer proposed in v1, and the entire Dropbox
+  engine (op-log, cursor, rev-gating, initial sync, desk-sync wire format,
+  reseed barriers) all go away. That is thousands of lines of the most
+  delicate code in the app.
+- "Local Desk" stops being a feature bolted onto the store and becomes a
+  non-feature: every desk already operates from a folder; "local" only
+  changes *which* folder.
 
-- Files keep living in `{data_dir}/files/` with normal `fileId`s. Every
-  feature keeps working *by construction* — a Local Desk is
-  indistinguishable from a normal desk to the rest of the app.
-- A per-desk mirror engine keeps the folder in step, using the **same wire
-  format Dropbox sync writes**: docs as `.md` (first-line names, 50-char
-  cap, collision suffixes), notebooks as `.hushnote` zips, stacks as
-  `.hushstack`, images under `Images/`, project directories with their
-  ordering meta, and the desk's `.hushdesk` identity file at the root.
-- Inbound changes (user edits the folder from another app) arrive through
-  the **existing** `notify` watcher (`LocalSyncManager`), flow through the
-  **existing** `apply-external.js` shared apply layer, and are
-  echo-suppressed by the **existing** content-hash ring (`echo-ring.js`) —
-  exactly the machinery Local Folders and Dropbox already share.
+The two rules that keep it from complicating instead:
 
-### C. Move the whole library into a user-visible folder (Obsidian-style vault) — rejected for now
+1. **File identity must travel with the desk.** `fileId`s remain the join
+   key for everything (versions, panes, wikilinks-by-rename, recent files,
+   window badges) — but the `fileId ↔ path` map moves from a central
+   SQLite table into the desk's own `.hush/index.json`. Hush performs its
+   own renames, so the map stays exact in normal use; external renames
+   (Finder) are re-paired by content hash, exactly the trick planned for
+   v1's mirror. Frontmatter-embedded ids were considered and rejected:
+   they pollute user-visible files and don't cover binaries.
+2. **Nothing in a desk folder may be shared *mutable binary* state.** This
+   is the crux of "multiple devices see the correct version." File-sync
+   providers merge nothing — they detect conflicts at whole-file
+   granularity and either last-writer-win or fork a "conflicted copy."
+   A shared SQLite DB in a synced folder is therefore a corruption
+   generator. So everything inside the desk is one of:
+   - a **content file**, written atomically and whole (docs, notebooks);
+   - an **append-only file**, never rewritten (snapshots — one file per
+     snapshot, device-suffixed, so two devices can never contend);
+   - a **small JSON** applied field-by-field on read (`.hushdesk`,
+     `tree.json`, `panes.json`), where a lost race costs a preference,
+     never content.
 
-Solves the same need globally instead of per-desk, but it's a migration of
-every install rather than an opt-in per-desk feature, and it forecloses the
-"one desk local, one desk Dropbox-synced, one desk internal" mix that desks
-exist to support.
+   Derived state that *wants* to be a database (the wikilink index, a
+   versions listing cache) is rebuilt locally per device and never synced.
 
-## Design (Option B)
+## What changes where
 
-### Registration
+### Versions move into the desk
 
-- `settings.localDesks: [{ deskId, path, bookmark?, addedAt }]` — parallel
-  to `localSyncFolders`, persisted by Rust the same way (`local_desk_add` /
-  `local_desk_remove` write settings.json directly; JS mirrors the result).
-  `bookmark` is the iOS security-scoped bookmark, `None` on desktop.
-- The folder **is** the desk root (no `<DeskName>/` nesting — the user
-  picked the folder; its name need not match the desk's).
-- Phase 1 rule: a desk is *either* Dropbox-synced *or* local-mirrored,
-  never both. Composing the two means three-way reconciliation; revisit
-  only if there's real demand.
+`snapshots.db` is replaced by `.hush/versions/<fileId>/<timestamp>-<deviceId>.snap`
+(zstd-compressed content; notebooks store the same envelope they autosave).
+Append-only and device-suffixed → sync-safe by construction, and history
+rides along when a desk is handed off. The existing cadence (30 dirty
+keystrokes / notebook autosave) and pruning policy carry over; the Versions
+modal reads a per-device index cache rebuilt from the directory listing.
+Snapshots of *both sides* of a detected conflict keep their role as the
+safety net.
 
-### Identity mapping
+### The tree derives from the filesystem
 
-A mirror map — per-file `{ fileId, relativePath, lastSyncedHash }` — in the
-existing SQLite `synced_files` table, namespaced by
-`syncFolderId = "__local_desk__:<deskId>"` (the table and its commands
-already take a `syncFolderId`). This is the local analog of Dropbox's
-`remote_id`/`rev` slots, with content hashes standing in for revs (a plain
-folder has no revs — same reasoning as the Local Folders echo ring).
+Directories are the structure; `tree.json` holds only what a filesystem
+can't: sibling ordering, flags, row tints, `useAsNote`, `showNumbers`,
+gutter pairing, project-vs-folder type. Reconciliation rule: **disk wins on
+existence, tree.json wins on decoration** — a file present on disk but
+missing from the sidecar appears (sorted last), a sidecar entry with no
+file is dropped. This is what makes another app (or another device) adding
+files to the folder just *work*.
 
-### Outbound (Hush → folder)
+### Change detection
 
-Write-through on every mutation: save, rename, delete, create-folder,
-image save, notebook autosave. Unlike Dropbox there's no network to
-survive, so Phase 1 skips the durable op queue and writes directly,
-marking every write in the per-desk echo ring before it lands (same
-ordering rule as `saveCurrentLocalSync`). The three "don't push unchanged
-content" gates carry over as one: compare `lastSyncedHash` before writing.
-A failed write (unplugged drive, evicted iCloud file) flips the desk into
-a visible "mirror stale" state and a reconcile repairs it later — that's
-the moment to add the op queue if it proves insufficient.
+The existing `notify` watcher — today armed per Local Folder mount — arms
+per desk root instead, internal desks included (cheap, and it makes
+multi-install-on-one-Mac coherent). Inbound changes flow through the
+existing `apply-external.js` layer with the existing content-hash echo
+ring; the dirty-buffer-wins rule is unchanged. On iPad there is no
+watcher: foreground reconcile (today's behaviour) is the baseline, and an
+`NSMetadataQuery` listener in the icloud-folder plugin is the stretch that
+makes iCloud changes land live.
 
-### Inbound (folder → Hush)
+### Conflicted copies
 
-The existing per-mount `notify` watcher, reused as-is:
+We don't control the transport, so we handle its one failure mode
+explicitly: a reconcile pass recognizes provider conflict siblings
+(`Doc (conflicted copy).md`, `Doc (Nate's iPad).md`) next to a mapped
+file, snapshots both sides to Versions, keeps the newer as the file, and
+surfaces a toast linking to the Versions modal. That plus append-only
+snapshots is the whole "correct version" story — honest and inspectable,
+rather than a bespoke protocol pretending the transport is reliable.
 
-- Content change on a mapped path → hash → echo ring check → map to
-  `fileId` → `applyExternalDocContent` (`skipWhenDirty: true` — unsaved
-  keystrokes always win, next autosave reasserts them; identical policy to
-  Local Folders today).
-- New file → import into the desk at the matching tree position (minting a
-  fileId + mirror-map row).
-- Removed file → move the internal copy to the desk's Trash (recoverable —
-  never a hard delete on an event we inferred from the filesystem).
-- Renames arrive as remove+create pairs (fs events carry no stable id, the
-  one thing Dropbox has that a folder hasn't) — pair them by content hash
-  before falling back to trash+import so history survives a Finder rename.
-- iPad has no watcher → reconcile on app-foreground, exactly like
-  `refreshOpenLocalSyncFile` today.
+### Dropbox sync is removed
 
-### Reconcile
+Deleted: `sync/dropbox.js`, `dropbox-browser.js`, `dropbox-cursor.js`,
+`op-log.js`, `initial-sync.js`, `desks-migration.js`, the desk/project/
+style/pane *wire* modules, `sync_db.rs`'s Dropbox tables, the Settings >
+Sync > Dropbox tab, OAuth plumbing, and the sync-gate/reseed machinery.
+Kept and repurposed: `echo-ring.js`, `apply-external.js`, the conflict
+modal (now fed by conflicted-copy detection), the sync log UI (now the
+desk-reconcile log), and `meta-sync.js`'s hash-dedup idea (now the
+don't-rewrite-unchanged-files gate). The Sync settings tab becomes a
+**Desks** tab: each desk's location, Make Local / Make Internal, Reveal,
+Reconcile now, last-reconcile status.
 
-One pass — on attach, on boot, and on demand ("Reconcile now" in the desk
-menu): walk tree and disk, diff by mirror map + hashes, emit
-imports/exports/trashes for the differences. This is `reconcileSync` +
-`initial-sync.js` shrunk to a filesystem backend, and it doubles as the
-attach-time initial sync (below). Newest wins on both-changed conflicts,
-with the losing side snapshotted to Versions first (Dropbox's policy).
+### App-wide vs desk-scoped
 
-### Conversion flows (the "painless back and forth")
+| Stays app-wide (`{data_dir}`)                 | Moves into the desk           |
+| --------------------------------------------- | ----------------------------- |
+| settings.json (options, shortcuts, window)    | content files + Images        |
+| styles (list is shared across desks today)    | `.hush/index.json`, `tree.json` |
+| Zotero credentials + reference/annotation cache | `.hush/versions/`           |
+| PDF binary cache (re-downloadable)            | `.hush/pdf.json` registry     |
+| per-device caches (wikilink index, versions index) | `.hushdesk` (style choice, last file) |
+| global/file/project sticky notes*             | `panes.json` (desk-scoped now) |
 
-- **Make Desk Local** (desk row menu + command palette): pick a folder.
-  Empty folder → export walk seeds it. Non-empty folder → merge: matching
-  names link up (content diff → newest wins, loser snapshotted),
-  disk-only entries import, Hush-only entries export. Collisions suffix
-  `Foo (2)` — the initial-sync rules verbatim.
-- **Make Desk Internal** (detach): drop the watcher + mirror map. The
-  internal copies *are* the desk — nothing to import. The folder stays on
-  disk untouched (the Local Folders unlink invariant). Optional "…and
-  delete folder" checkbox, default off.
-- **Convert a Local Folder mount into a Local Desk**: create the desk,
-  attach it to the mount's path (the non-empty-folder flow imports
-  everything, minting fileIds), remove the plain mount. The reverse —
-  desk → plain mount — is Make Desk Internal plus adding the folder as a
-  Local Folder, and can ship as a one-click convenience later.
+\* Desk stickies could move into `.hushdesk` so they ride along — cheap,
+decide during implementation.
 
-Because attach/detach only adds/removes the mirror — never relocates the
-authoritative store — round-tripping any number of times is lossless.
+Cross-desk features keep working because the app still mounts every
+registered desk at boot: `settings.deskRoots: [{ deskId, path | "internal",
+bookmark? }]` is the only global registry left.
 
-### What stays internal (and why that's fine)
+### Local Folder mounts
 
-Snapshots/Versions, the sync DBs, panes.json, stickies, styles: session and
-history state, not content. The folder holds everything needed to *read and
-edit* the work from outside; Hush-specific machinery stays in the app dir.
-(A future `.hush/` subfolder inside the desk could carry per-desk meta so a
-second machine pointing at the same folder — via iCloud/Syncthing — adopts
-the desk wholesale. That's the Phase 3 stretch, not the core feature.)
-
-### UI
-
-- **Add (+)** popover: **New Local Desk…** (pick folder → new desk attached
-  to it). Desk row menu / switcher: **Make Desk Local… / Make Desk
-  Internal**, plus **Reveal in Finder** and **Reconcile now** when local.
-- The desk switcher and all-desks rows badge local desks with the
-  outline-square Local glyph.
-- Settings > Sync gains a **Local Desks** block: path per desk, last
-  reconcile, stale-mirror warnings.
+Unchanged and still useful for ad-hoc folders that shouldn't become desks.
+"Convert Local Folder to Desk" becomes trivial: write `.hushdesk` +
+`.hush/` into the folder (or decline if it's someone else's directory and
+copy instead), register it as a desk root, drop the mount.
 
 ## Phasing
 
-1. **Core mirror (desktop, docs + folders):** registry + attach/detach
-   commands, export walk, write-through outbound, watcher inbound, mirror
-   map, Make Local / Make Internal UI. Docs and folder structure only.
-2. **Full type coverage + reconcile:** notebooks, images, stacks, project
-   directories + ordering, `.hushdesk`, boot/foreground reconcile, rename
-   pairing, conflict snapshots, mount→desk conversion.
-3. **iPad + shared-folder stretch:** bookmarks via the icloud-folder
-   plugin, foreground reconcile, optional `.hush/` per-desk meta for
-   multi-device use over a synced folder.
+0. **Delete Dropbox sync.** First, not last — no compatibility burden, and
+   every subsequent refactor gets simpler when the op-log/cursor/reseed
+   invariants stop needing to be preserved. (Code stays in git history as
+   reference.)
+1. **Desk-folder storage for internal desks.** Move `{data_dir}/files/` +
+   `file_tree.json` into per-desk folders with `.hush/index.json` +
+   `tree.json`; loaders/savers go path-through-index; one-shot migration
+   (the Dropbox manifest/export code is the serializer, one last time).
+   No user-visible change when this phase lands — that's the test.
+2. **Versions into desk data.** File-per-snapshot store, migration from
+   snapshots.db, prune policy, Versions modal on the new store.
+3. **Local desks.** Desk root = user-picked folder (bookmark on iOS);
+   watcher per desk root; Make Local / Make Internal (= move folder,
+   repoint registry); adopt-existing-desk-folder flow; New Local Desk in
+   the Add menu.
+4. **Multi-device hardening.** Conflicted-copy detection + adoption,
+   eviction-tolerant reads (NSFileCoordinator already in the plugin),
+   foreground reconcile on iPad, `NSMetadataQuery` live updates, then real
+   two-device soak tests over iCloud Drive and a Dropbox folder.
+
+Phases 1–2 are the overhaul's risk concentrated where it's cheapest: still
+single-device, still internal, fully testable before any folder is shared.
 
 ## Open questions
 
-1. Dropbox + Local on the same desk: keep mutually exclusive (recommended)
-   or allow both?
-2. On inbound *deletes* from disk: trash the internal copy (recommended) or
-   mirror the hard delete?
-3. Should PDFs mirror as binaries in the folder, or stay registry-only like
-   Dropbox sync (recommended: registry-only, folder stays light)?
-4. Naming: "Local Desk" vs "Folder-backed desk" in UI copy?
-5. From the improvements list: is "pin the Inbox while dragging" still
-   wanted now that drag auto-scroll exists, or should the desk's Inbox row
-   stick to the top of the panel during any drag?
+1. **Snapshot format**: one file per snapshot (recommended: simplest,
+   most sync-tolerant, human-recoverable) vs per-device append-only
+   journal (fewer inodes; slightly more code)?
+2. **Styles**: the list is app-wide today. Portable desks make a case for
+   embedding *used* styles into `.hushdesk` on handoff so a desk arrives
+   looking right. Copy-on-handoff, reference-only, or full per-desk styles?
+3. **PDF binaries**: registry-only in the desk (recommended — devices
+   re-download from Zotero) or store binaries under `PDFs/` so a desk is
+   complete offline?
+4. **Google Docs links**: per-doc links reference OAuth credentials that
+   are per-install. Keep the link map in the desk (`.hush/`) but degrade
+   gracefully when the receiving install has no Google credentials?
+5. Desk stickies into `.hushdesk` — yes/no (leaning yes).
