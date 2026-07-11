@@ -2,7 +2,7 @@
 // per-document link map (`{ hushFileId: { docId, title, linkedAt } }`)
 // stored alongside settings. There's intentionally no auto-sync engine
 // here: push/pull are user-driven whole-document replaces, modelled on
-// the link bar UI rather than the Dropbox cursor pipeline.
+// the link bar UI.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;

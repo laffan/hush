@@ -101,7 +101,7 @@ export function createSelectionStyleSession(deps: {
       }
     }
     // Sync the shim so state.shapes reflects the style change —
-    // autosave, Dropbox, panes all pick it up.
+    // autosave and panes all pick it up.
     const shim = shimBox.current;
     if (shim) shim.onEngineStrokesTransformed(Array.from(ids));
     selectionEngine.refreshBBox();

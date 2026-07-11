@@ -539,14 +539,11 @@ export async function savePaneContent(pane) {
         await writeFile(pane.localSync.folderId, pane.localSync.relPath, content);
       } else {
         await tauriInvoke("save_file", { id: pane.fileId, content });
-        // Mirror the main editor's save path so pane edits ride Dropbox
-        // sync. syncFileToExternal short-circuits when Dropbox isn't
-        // enabled and derives .md vs .hushnote from the tree node type,
-        // so this one call covers both doc and notebook panes. When the
-        // same file is also open in the main editor, syncDocFromPane
+        // Report through the external-store content hook (no-op today;
+        // the desk-folder write-through re-attaches here). When the same
+        // file is also open in the main editor, syncDocFromPane
         // propagates the pane's content under a pull lock — the main
-        // editor's autosave stays quiet for this file, so there's no
-        // double-push.
+        // editor's autosave stays quiet for this file.
         if (appState) appState.syncFileToExternal(pane.fileId, content);
       }
       // Mirror the main editor's "name follows first line" behaviour for

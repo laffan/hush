@@ -279,15 +279,12 @@ export function applyActiveStyle(state) {
   }
 }
 
-/** Handle an OAuth authorization code from a deep-link callback.
- *  `provider` is "dropbox" or "google"; defaults to dropbox for old call sites. */
-export async function handleOAuthCode(state, invoke, code, provider = "dropbox") {
+/** Handle a Google OAuth authorization code from the loopback callback. */
+export async function handleOAuthCode(state, invoke, code) {
   try {
     const verifier = sessionStorage.getItem("hush_oauth_verifier");
     if (!verifier) return;
-    const mod = provider === "google"
-      ? await import("./google-docs/auth.js")
-      : await import("./sync/dropbox.js");
+    const mod = await import("./google-docs/auth.js");
     const redirectUri = sessionStorage.getItem("hush_oauth_redirect") || mod.getRedirectUri();
     await mod.completeOAuthFlow(code, verifier, redirectUri);
     sessionStorage.removeItem("hush_oauth_verifier");

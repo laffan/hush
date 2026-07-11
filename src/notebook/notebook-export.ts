@@ -209,7 +209,7 @@ function computeContentBounds(shapes: { pocketed?: boolean }[], fontFamily: stri
 // ───────────────────── encoders ─────────────────────
 
 async function encodeHushnote(canvas: NotesCanvas): Promise<Uint8Array> {
-  // Route through the same zip writer the Dropbox sync uses
+  // Route through the shared notebook-sync zip writer
   // (sync/notebook-sync.js) so the on-disk .hushnote wire format is a
   // single thing — a zip with data.json + an images/ folder. Image
   // data URLs get extracted into the zip so big binaries don't live

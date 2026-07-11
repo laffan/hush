@@ -1,11 +1,10 @@
 //! Local Sync — desktop-only direct-filesystem folder mounting.
 //!
-//! Unlike Dropbox sync (which mirrors the internal file tree to a cloud
-//! folder) or the external-folder sync (which imports files into the
-//! internal store with version control), Local Sync folders are *reflected*:
-//! the sidebar shows whatever is on disk under the mounted path, edits
-//! write straight back, and `notify`-crate watchers push filesystem
-//! changes into the UI as soon as they happen.
+//! Unlike the internal file store (which the tree owns, with version
+//! control), Local Sync folders are *reflected*: the sidebar shows
+//! whatever is on disk under the mounted path, edits write straight
+//! back, and `notify`-crate watchers push filesystem changes into the
+//! UI as soon as they happen.
 //!
 //! Unsyncing a folder is strictly non-destructive — the only thing that
 //! changes is that the folder disappears from the sidebar.

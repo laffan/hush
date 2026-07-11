@@ -71,17 +71,10 @@ pub struct AppSettings {
     #[serde(default = "default_padding")]
     pub padding: u32,
 
-    // Dropbox sync (OAuth PKCE)
+    // Persistent sync-adjacent activity log (Settings > Sync > Log) —
+    // Local Folder / desk reconcile activity and background-task errors.
     #[serde(default)]
-    pub dropbox_access_token: Option<String>,
-    #[serde(default)]
-    pub dropbox_refresh_token: Option<String>,
-    #[serde(default)]
-    pub dropbox_sync_path: Option<String>, // Dropbox folder path to sync to
-    #[serde(default)]
-    pub dropbox_enabled: bool,
-    #[serde(default)]
-    pub dropbox_sync_log: Vec<String>, // Recent sync events for display
+    pub sync_log: Vec<String>,
 
     // Google Docs (OAuth PKCE) — per-document link, no auto-sync. Tokens
     // and per-doc links (`google_doc_links`) live here, as do the client
@@ -107,8 +100,6 @@ pub struct AppSettings {
     // Legacy fields — kept for serde backward-compat (ignored)
     #[serde(default)]
     pub sync_folders: Vec<SyncFolder>,
-    #[serde(default)]
-    pub dropbox_token: Option<String>,
 
     // Local Sync (desktop-only) — mounted folders reflected live in the
     // sidebar. Writes go straight to disk; unsyncing is non-destructive.
@@ -532,11 +523,7 @@ impl Default for AppSettings {
             comment_opacity: default_comment_opacity(),
             focus_mode_opacity: default_focus_mode_opacity(),
             padding: default_padding(),
-            dropbox_access_token: None,
-            dropbox_refresh_token: None,
-            dropbox_sync_path: None,
-            dropbox_enabled: false,
-            dropbox_sync_log: Vec::new(),
+            sync_log: Vec::new(),
             google_client_id: None,
             google_client_secret: None,
             google_access_token: None,
@@ -546,7 +533,6 @@ impl Default for AppSettings {
             google_doc_links: std::collections::HashMap::new(),
             google_sync_log: Vec::new(),
             sync_folders: Vec::new(),
-            dropbox_token: None,
             local_sync_folders: Vec::new(),
             collapsed_folder_ids: None,
             local_sync_expanded: Vec::new(),

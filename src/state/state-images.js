@@ -123,14 +123,6 @@ export async function createImageFromDataUrl(state, dataUrl, requestedName) {
       isNew = true;
     }
   }
-  if (isNew && IS_TAURI && state.settings?.dropboxEnabled) {
-    try {
-      const { syncCreateImage } = await import("../sync/sync-state.js");
-      // Route the upload under the active desk's `Images/` folder so
-      // it mirrors the per-desk `__images__:<deskId>` tree node.
-      await syncCreateImage(state, finalName, state.settings?.activeDeskId || null);
-    } catch (e) { console.error("Sync image upload:", e); }
-  }
   return { filename: finalName, alt: altFromFilename(finalName), dataUrl };
 }
 

@@ -74,7 +74,7 @@ export function createEditor(container, state) {
   // user moves off line 1. First-line rename is the "filename follows
   // title" behavior users expected — gated on cursor leaving the title
   // to avoid the per-keystroke sync churn the old always-rename path
-  // caused on Dropbox.
+  // used to cause on the sync layer.
   let prevCursorLine = 1;
   // Debounced first-line rename. The cursor-leaves-line-1 / blur /
   // autosave-not-on-line-1 triggers below cover most cases, but a user

@@ -5,7 +5,7 @@
  * A style's `backgroundImage` is `{ enabled, src, fit, repeat, blend,
  * lightOpacity, darkOpacity, lightInvert, darkInvert }` (the legacy
  * single `opacity` is still honoured as a fallback for both modes).
- * `src` is a data-URL so the image rides Dropbox sync and JSON export
+ * `src` is a data-URL so the image rides JSON export
  * without a separate asset. The editor applies it as a blended layer
  * behind the text (see style-application.js); opacity + invert resolve
  * per light / dark appearance.

@@ -90,7 +90,7 @@ pub struct CustomFlag {
 pub struct SyncFolder {
     pub id: String,
     pub path: String,
-    pub sync_type: String, // "local" or "dropbox"
+    pub sync_type: String, // legacy synced-folder kind
     pub name: String,
 }
 

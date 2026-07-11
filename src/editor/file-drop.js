@@ -343,7 +343,7 @@ export function setupFileDrop(state) {
 
 /** Import a single dropped file into the tree under `parentId`. Handles
  *  both plain-text docs (`.md`, `.txt`) and notebooks (`.hushnote` —
- *  unpacked via the same sync helper Dropbox uses). */
+ *  unpacked via the shared notebook-sync zip helper). */
 async function importFileIntoTree(state, file, parentId) {
   const baseName = file.name.replace(/\.[^.]+$/, "") || "Imported";
   if (isNotebookFile(file)) {

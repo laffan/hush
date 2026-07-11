@@ -33,7 +33,7 @@ const HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t]*$/;
 /** A level-1 heading specifically (exactly one `#`). */
 const H1_RE = /^#[ \t]+(.+?)[ \t]*$/;
 
-/** Filenames map to Dropbox / disk paths, so slashes can't survive in a
+/** Filenames map to on-disk paths, so slashes can't survive in a
  *  section name. Everything else (spaces, punctuation) is fine — match
  *  the directness of the project<->doc conversion. */
 function sanitizeName(name) {

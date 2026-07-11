@@ -53,12 +53,12 @@ async function flushSyncLog() {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const s = await invoke("get_settings");
-    const log = s.dropboxSyncLog || [];
+    const log = s.syncLog || [];
     const now = new Date();
     const ts = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
     for (const msg of messages) log.push(`${ts}  ${msg}`);
     if (log.length > 50) log.splice(0, log.length - 50);
-    s.dropboxSyncLog = log;
+    s.syncLog = log;
     await invoke("save_settings", { settings: s });
   } catch (_) {}
 }

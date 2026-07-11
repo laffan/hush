@@ -15,7 +15,7 @@ async function tauriInvoke(cmd, args) {
 export async function createTreeNode(state, command, type, name, parentId) {
   const { AppState } = await import("./state.js");
   // Avoid same-type sibling collisions so two folders/projects can't
-  // share a name (which would map to the same Dropbox path).
+  // share a name (names map to on-disk paths).
   const parentNode = parentId ? findNode(state.fileTree, parentId) : { children: state.fileTree };
   const finalName = uniqueChildName(parentNode, name, type);
   if (IS_TAURI) {
@@ -199,20 +199,10 @@ async function deleteDocFilesByIds(state, fileIds) {
 async function deleteImageFilesByIds(state, fileIds) {
   if (!fileIds.length) return;
   const { clearImageCache } = await import("./state-images.js");
-  let syncDeleteImage = null;
-  if (IS_TAURI && state?.settings?.dropboxEnabled) {
-    try {
-      const mod = await import("../sync/sync-state.js");
-      syncDeleteImage = mod.syncDeleteImage;
-    } catch (_) {}
-  }
   for (const fid of fileIds) {
     clearImageCache(fid);
     if (IS_TAURI) {
       try { await tauriInvoke("delete_image", { filename: fid }); } catch (e) { console.error("Delete image:", e); }
-      if (syncDeleteImage) {
-        try { await syncDeleteImage(state, fid); } catch (e) { console.error("Sync image delete:", e); }
-      }
     }
   }
 }
@@ -277,7 +267,7 @@ export async function renameTreeNode(state, nodeId, newName) {
     return;
   }
   // Same-type siblings can't share a name (would map to the same
-  // Dropbox path). Auto-suffix on collision; the node's own id is
+  // on-disk path). Auto-suffix on collision; the node's own id is
   // excluded from the check so the rename is a no-op when the user
   // re-types the existing name.
   const parent = findParentOfNode(state.fileTree, nodeId);

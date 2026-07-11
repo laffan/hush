@@ -195,18 +195,14 @@ copy instead), register it as a desk root, drop the mount.
 Phases 1–2 are the overhaul's risk concentrated where it's cheapest: still
 single-device, still internal, fully testable before any folder is shared.
 
-## Open questions
+## Resolved questions (2026-07)
 
-1. **Snapshot format**: one file per snapshot (recommended: simplest,
-   most sync-tolerant, human-recoverable) vs per-device append-only
-   journal (fewer inodes; slightly more code)?
-2. **Styles**: the list is app-wide today. Portable desks make a case for
-   embedding *used* styles into `.hushdesk` on handoff so a desk arrives
-   looking right. Copy-on-handoff, reference-only, or full per-desk styles?
-3. **PDF binaries**: registry-only in the desk (recommended — devices
-   re-download from Zotero) or store binaries under `PDFs/` so a desk is
-   complete offline?
-4. **Google Docs links**: per-doc links reference OAuth credentials that
-   are per-install. Keep the link map in the desk (`.hush/`) but degrade
-   gracefully when the receiving install has no Google credentials?
-5. Desk stickies into `.hushdesk` — yes/no (leaning yes).
+1. **Snapshot format** → one file per snapshot.
+2. **Styles** → stay app-wide; nothing style-related is embedded in the
+   desk beyond the per-desk *choice* already in `.hushdesk`.
+3. **PDF binaries** → registry-only (`.hush/pdf.json`); devices
+   re-download from Zotero, binary cache stays per-device app data.
+4. **Google Docs links** → link map lives in the desk (`.hush/`), and an
+   install without Google credentials shows the link bar in a disabled
+   "connect Google to use" state rather than dropping the links.
+5. **Desk stickies** → move into `.hushdesk` so they ride along.

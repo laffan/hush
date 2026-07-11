@@ -45,7 +45,6 @@ export function createDefaultSettings() {
     commentOpacity: 0.5,
     padding: 50,
     syncFolders: [],
-    dropboxToken: null,
     alwaysOnTop: false,
     columnWidth: 800,
     // Zen mode keeps its own column width so resizing inside the

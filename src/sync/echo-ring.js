@@ -4,14 +4,13 @@
  * Every sync provider needs to answer the same question when an
  * external-change event arrives: "is this our own write echoing back?"
  * The answer must be identity-based (a server rev, a content hash) —
- * never time-based. Echoes can arrive seconds late: Dropbox's index is
- * eventually consistent, and iCloud's bird daemon re-touches files long
- * after Hush wrote them, so any timestamp window is a race waiting to
- * be lost.
+ * never time-based. Echoes can arrive seconds late: iCloud's bird
+ * daemon re-touches files long after Hush wrote them, so any timestamp
+ * window is a race waiting to be lost.
  *
- * The identity token differs per provider — Dropbox marks the server
- * rev of each upload (meta-sync.js), Local Sync marks a SHA-256 of the
- * content it wrote (local-sync.js) — but the structure is shared:
+ * The identity token can differ per provider (a server rev, a SHA-256
+ * of the written content — see local-sync.js) but the structure is
+ * shared:
  * remember the last N tokens we produced, and treat any match as our
  * own echo. A bounded ring rather than a single slot, because a fast
  * write → write sequence can overwrite a single slot before the first
@@ -34,6 +33,19 @@ export function createRing(max = 64) {
       return !!token && set.has(token);
     },
   };
+}
+
+/** SHA-256 of a UTF-8 string as lowercase hex — the identity token for
+ *  filesystem providers (a plain folder has no server revs). Matches the
+ *  Rust side's hash format so the two compare directly. */
+export async function sha256Hex(text) {
+  if (typeof text !== "string") return "";
+  const buf = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  const bytes = new Uint8Array(digest);
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  return hex;
 }
 
 /** Per-key family of rings — `mark(key, token)` / `has(key, token)`.

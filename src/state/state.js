@@ -18,13 +18,6 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-const _STYLE_SYNCED_KEYS = new Set(["styles", "activeStyleId", "globalStyleId"]);
-function _isStyleRelevant(partial) {
-  if (!partial) return false;
-  for (const k of Object.keys(partial)) if (_STYLE_SYNCED_KEYS.has(k)) return true;
-  return false;
-}
-
 // Settings keys that belong to whichever window the user is currently
 // looking at, not to the shared app config. Secondary windows skip
 // disk-writing these (and the main window's on-disk values are
@@ -148,8 +141,8 @@ export class AppState {
      *  - `localSyncWriteFlag`  — short-lived timestamp set when Hush writes
      *    to a Local Sync file; the watcher uses it to suppress its own
      *    echo within ~500ms.
-     *  - `syncPulling`         — true while a sync layer (Dropbox poll,
-     *    Local Sync watcher, pane sync) is pulling remote content for the
+     *  - `syncPulling`         — true while a sync layer (Local Sync
+     *    watcher, multi-window broadcast) is pulling external content for the
      *    file in `syncPullingFileId`. Blocks both `markDirty` *and*
      *    `saveCurrentFile` for that file so a keystroke or autosave
      *    during the pull window can't upload the editor's pre-pull
@@ -167,13 +160,6 @@ export class AppState {
       localSyncWriteFlag: 0,
       syncPulling: false,
       syncPullingFileId: null,
-      // Set true for the entire duration of a Clear Local Versions
-      // reseed. Every Dropbox-writing path (autosave, op-log enqueue,
-      // reconcileSync, pushDesks/Projects/Styles, applyDesksFile's
-      // merge-back) must check this flag and bail. Without the gate,
-      // half-built tree state leaks back to Dropbox mid-reseed and
-      // corrupts the source of truth we're trying to mirror from.
-      reseedActive: false,
     };
   }
 
@@ -339,11 +325,6 @@ export class AppState {
 
   markDirty() {
     if (this._isPullLockedForCurrent()) return;
-    // Reseed in flight: any setContent() the reseed performs (clearing
-    // the editor, swapping in fresh content) is system-driven, not a
-    // user edit. Marking dirty here would queue a phantom autosave the
-    // moment reseedActive flips back to false.
-    if (this.runtime?.reseedActive) return;
     this.dirty = true;
   }
 
@@ -564,14 +545,19 @@ export class AppState {
   // ===== Pane visibility (delegated to state-panes.js) =====
   async hidePanesForActive() { const m = await import("./state-panes.js"); return m.hidePanesForActive(this); }
   async showPanesForActive() { const m = await import("./state-panes.js"); return m.showPanesForActive(this); }
-  async _syncOp(fn, ...a) { const m = await import("../sync/sync-state.js"); return m[fn](this, ...a); }
-  async syncFileToExternal(fid, c) { return this._syncOp("syncFileToExternal", fid, c); }
-  async syncRenameNode(nid, old, t) { return this._syncOp("syncRenameNode", nid, old, t); }
-  async syncDeleteNode(nid) { return this._syncOp("syncDeleteNode", nid); }
-  async syncCreateNode(nid, t) { return this._syncOp("syncCreateNode", nid, t); }
-  async syncCreateFile(nid, fid, c) { return this._syncOp("syncCreateFile", nid, fid, c); }
-  async syncProjectOrdering(pid) { return this._syncOp("syncProjectOrdering", pid); }
-  async reconcileSync() { return this._syncOp("reconcileSync"); }
+  // ===== External-store mutation hooks =====
+  // Dropbox sync is gone (see LOCAL-DESKS-PLANNING.md). These hooks are
+  // intentionally kept as no-ops: every mutation path in the app already
+  // reports through them, and the desk-folder write-through (Phase 1 of
+  // the Local Desks plan) re-attaches here rather than re-plumbing every
+  // call site.
+  async syncFileToExternal() {}
+  async syncRenameNode() {}
+  async syncDeleteNode() {}
+  async syncCreateNode() {}
+  async syncCreateFile() {}
+  async syncProjectOrdering() {}
+  async reconcileSync() {}
 
   /** One-time keybinding migration: Reduce-sentence selection moved onto
    *  Cmd+Shift+L (paired with Cmd+L grow) and Select-paragraph took the
@@ -620,17 +606,6 @@ export class AppState {
     } else { localStorage.setItem("hush_settings", JSON.stringify(this.settings)); }
     this._broadcastCrossWindow("settings");
     this.emit("settings-changed");
-
-    // Push style changes to `.hush/styles.json` when style-relevant fields
-    // changed and this update didn't originate from a sync apply (which
-    // would loop). Fire-and-forget — the op-log handles retry.
-    if (!opts.fromSync && IS_TAURI && this.settings?.dropboxEnabled
-        && this.settings?.dropboxSyncPath
-        && _isStyleRelevant(partial)) {
-      import("../sync/style-sync.js")
-        .then(m => m.pushStylesToDropbox(this))
-        .catch(e => console.warn("style sync upload failed:", e));
-    }
   }
 
   /** Fire-and-forget broadcast helper — tells sibling windows that

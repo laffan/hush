@@ -4,7 +4,7 @@
  * into sibling files and re-exported here so settings-window.js can
  * import everything from one place:
  *   - settings-tabs-shortcuts.js   (Shortcuts tab + categories)
- *   - settings-tabs-sync.js        (Dropbox + Local Sync tab)
+ *   - settings-tabs-sync.js        (Google Sync / iCloud / Log tab)
  *   - settings-tabs-zotero.js      (Zotero tab)
  */
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";

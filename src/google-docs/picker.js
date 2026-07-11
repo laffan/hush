@@ -8,7 +8,7 @@
  *   { create: true, title }              when the user chooses "Create new"
  *   null                                  when the user cancels
  *
- * Reuses the same modal styling primitives as the Dropbox browser
+ * Reuses the app's shared modal styling primitives
  * (`gdoc-picker-*` classes; CSS lives alongside the link bar in
  * `styles/google-docs.css`).
  */

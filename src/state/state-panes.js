@@ -46,13 +46,6 @@ async function _setHiddenForContext(state, contextId, hidden) {
   else delete current[contextId];
   await state.updateSettings({ panesHiddenByContext: current });
   await _applyHiddenState(state);
-  // Hidden-context flips ride cross-device alongside the panes
-  // themselves — `serializePanesForSync` reads the map and embeds
-  // a `hiddenOwners` list into `.hush/panes.json` on its next push.
-  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
-    const { schedulePersist } = await import("../pane/pane-persistence.js");
-    schedulePersist();
-  }
 }
 
 export async function hidePanesForActive(state) {

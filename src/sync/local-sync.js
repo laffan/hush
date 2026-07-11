@@ -13,16 +13,14 @@
  */
 
 import { applyExternalDocContent } from "./apply-external.js";
-import { createKeyedRing } from "./echo-ring.js";
-import { sha256Hex } from "./meta-sync.js";
+import { createKeyedRing, sha256Hex } from "./echo-ring.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 // ===== Echo suppression — content-hash ring =====
 //
-// The direct analog of Dropbox's per-file recent-revs ring
-// (meta-sync.js#markOurFileRev), with a SHA-256 of the written content
-// standing in for the server rev — a plain folder on disk has no revs.
+// A per-file ring of SHA-256 hashes of the content we wrote — the
+// identity token for a plain folder on disk, which has no server revs.
 // Identity-based detection is load-bearing here: a timestamp window
 // cannot work, because iCloud's bird daemon re-touches a mounted file
 // *seconds* after our autosave (upload + xattr bookkeeping) and the
@@ -611,7 +609,7 @@ export async function refreshOpenLocalSyncFile(state) {
     // Still on the same file after the async read.
     if (!state.currentLocalSync || state.currentLocalSync.relPath !== relPath) return;
     // Content we ourselves wrote — however long ago — is an echo, not a
-    // remote change. Same policy as Dropbox's recent-revs ring.
+    // remote change.
     if (await wasOurLocalWrite(folderId, relPath, content)) return;
     if (!state.currentLocalSync || state.currentLocalSync.relPath !== relPath) return;
     applyExternalDocContent(state, {

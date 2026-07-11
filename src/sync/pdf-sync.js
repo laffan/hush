@@ -1,9 +1,9 @@
 /**
- * PDF registry — manages `.hush/pdf.json`, the cross-device manifest of
- * PDF files in the workspace. Actual PDF binary data is NOT synced via
- * Dropbox; only this JSON file travels. When a remote device adds an
- * entry the local device sees it arrive via the cursor consumer and
- * automatically downloads the PDF from Zotero in the background.
+ * PDF registry — the manifest of PDF files in the workspace. PDF binary
+ * data stays a per-device cache (re-downloaded from Zotero on demand);
+ * only this JSON registry describes the set. Under the Local Desks plan
+ * the registry becomes per-desk (`.hush/pdf.json` inside the desk
+ * folder) so a desk handed to another install re-downloads its PDFs.
  *
  * Schema (pdf.json):
  * {
@@ -25,7 +25,6 @@
  * }
  */
 
-import { enqueueMetaUpload } from "./meta-sync.js";
 import { appendSyncError } from "./sync-feedback.js";
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
@@ -37,7 +36,6 @@ async function tauriInvoke(cmd, args) {
 
 let _registry = null;
 let _state = null;
-let _persistTimer = null;
 const _downloadProgress = new Map();
 
 let _batchTotal = 0;
@@ -128,103 +126,6 @@ async function persistRegistry() {
     try {
       await tauriInvoke("save_pdf_registry", { content: payload });
     } catch (e) { appendSyncError(`Failed to save pdf.json: ${e?.message || e}`); }
-  }
-  scheduleSyncUpload();
-}
-
-function scheduleSyncUpload() {
-  if (_persistTimer) clearTimeout(_persistTimer);
-  _persistTimer = setTimeout(async () => {
-    _persistTimer = null;
-    if (!_registry) return;
-    const payload = JSON.stringify(_registry, null, 2);
-    await enqueueMetaUpload("pdf.json", payload);
-  }, 500);
-}
-
-export async function applyPdfFile(state, payload) {
-  if (!payload) return;
-  let remote;
-  try { remote = JSON.parse(payload); } catch { return; }
-  if (!remote?.items) return;
-
-  _state = state;
-  if (!_registry) _registry = { format: "hush-pdfs", version: 1, items: {} };
-
-  const localIds = new Set(Object.keys(_registry.items));
-  const remoteIds = new Set(Object.keys(remote.items));
-
-  for (const fileId of remoteIds) {
-    if (!localIds.has(fileId)) {
-      _registry.items[fileId] = remote.items[fileId];
-      await ensurePdfTreeNode(state, fileId);
-      triggerBackgroundDownload(fileId, state);
-    }
-  }
-
-  for (const fileId of localIds) {
-    if (!remoteIds.has(fileId)) {
-      delete _registry.items[fileId];
-      _downloadedSet.delete(fileId);
-      _downloadProgress.delete(fileId);
-      if (IS_TAURI) {
-        try { await tauriInvoke("delete_pdf", { fileId }); } catch {}
-      }
-      await removePdfTreeNode(state, fileId);
-    }
-  }
-
-  if (IS_TAURI) {
-    try {
-      const p = JSON.stringify(_registry, null, 2);
-      await tauriInvoke("save_pdf_registry", { content: p });
-    } catch {}
-  }
-  state.emit("files-changed");
-}
-
-async function ensurePdfTreeNode(state, fileId) {
-  const { findNodeByFileId, findNode } = await import("../state/tree-helpers.js");
-  if (findNodeByFileId(state.fileTree, fileId)) return;
-
-  const meta = _registry.items[fileId];
-  if (!meta) return;
-
-  const pdfsId = state.getPdfsId();
-  let pdfsNode = findNode(state.fileTree, pdfsId);
-  if (!pdfsNode) {
-    await state.ensurePdfsFolder();
-    pdfsNode = findNode(state.fileTree, pdfsId);
-  }
-  if (!pdfsNode) return;
-
-  const treeNode = {
-    id: crypto.randomUUID(),
-    type: "pdf",
-    name: meta.title || "Untitled",
-    fileId,
-    children: [],
-    flagged: false,
-    zoteroAttKey: meta.zoteroAttKey || undefined,
-  };
-  pdfsNode.children.push(treeNode);
-  await state.saveFileTree();
-}
-
-async function removePdfTreeNode(state, fileId) {
-  const { findNodeByFileId } = await import("../state/tree-helpers.js");
-  const removeFromChildren = (nodes) => {
-    for (let i = 0; i < nodes.length; i++) {
-      if (nodes[i].fileId === fileId && nodes[i].type === "pdf") {
-        nodes.splice(i, 1);
-        return true;
-      }
-      if (nodes[i].children && removeFromChildren(nodes[i].children)) return true;
-    }
-    return false;
-  };
-  if (removeFromChildren(state.fileTree)) {
-    await state.saveFileTree();
   }
 }
 

@@ -12,7 +12,7 @@ pub fn save_image(state: State<AppState>, filename: String, data_url: String) ->
         .map_err(|e| e.to_string())
 }
 
-/// Save raw image bytes — used by Dropbox sync to land downloaded image
+/// Save raw image bytes — used to land externally-sourced image
 /// binaries without round-tripping through a base64 data URL. Returns the
 /// final filename (auto-suffixed on collision).
 #[tauri::command]
@@ -22,7 +22,7 @@ pub fn save_image_bytes(state: State<AppState>, filename: String, bytes: Vec<u8>
         .map_err(|e| e.to_string())
 }
 
-/// Read an image's raw bytes — used by Dropbox sync to upload an image
+/// Read an image's raw bytes — used to hand an image
 /// binary without round-tripping through a base64 data URL.
 #[tauri::command]
 pub fn load_image_bytes(state: State<AppState>, filename: String) -> Result<Vec<u8>, String> {

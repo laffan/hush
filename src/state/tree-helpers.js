@@ -172,37 +172,6 @@ export function findAncestorIds(nodes, targetId, path = []) {
 }
 
 /**
- * Find the sync context for a node — returns { syncFolderId, relativePath }
- * or null if the node is not found.
- * In the new full-tree sync model, every node has a sync context.
- * relativePath is built from the node's position in the tree using node names.
- * For legacy synced folders (with syncFolderId), the old behavior is preserved.
- */
-export function findSyncContext(nodes, targetId) {
-  function search(nodes, syncFolderId, pathParts) {
-    for (const node of nodes) {
-      const curSyncId = node.syncFolderId || syncFolderId;
-      // If this node IS a legacy synced folder root, path resets to empty
-      const curPath = node.syncFolderId ? [] : [...pathParts, node.name];
-
-      if (node.id === targetId) {
-        if (node.syncFolderId) return { syncFolderId: node.syncFolderId, relativePath: "" };
-        // In full-tree sync mode, return the path from tree root
-        return { syncFolderId: curSyncId || "__dropbox_sync__", relativePath: curPath.join("/") };
-      }
-
-      if (node.children?.length) {
-        const result = search(node.children, curSyncId, curPath);
-        if (result !== undefined) return result;
-      }
-    }
-    return undefined; // not found in this branch
-  }
-  const result = search(nodes, null, []);
-  return result === undefined ? null : result;
-}
-
-/**
  * Inside every user project, push notebook children to the bottom while
  * preserving the user's order within each group. Documents first (they
  * feed the joined editor buffer), notebooks second (the supplementary
@@ -317,7 +286,7 @@ export function findParentOfNode(nodes, targetId) {
  *  inside `parent`. If `baseName` is free we return it unchanged;
  *  otherwise we append " (2)" / " (3)" until something fits. Used
  *  on create + rename so a folder can't end up with two children of
- *  the same type sharing a name (which would map to the same Dropbox
+ *  the same type sharing a name (which would map to the same on-disk
  *  path). `excludeId` skips one child from the check — used by rename
  *  so a node doesn't see itself as a conflict. */
 export function uniqueChildName(parent, baseName, type, excludeId = null) {

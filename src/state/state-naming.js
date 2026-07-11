@@ -44,7 +44,7 @@ export function cursorOnFirstLine(state) {
 /**
  * Sync a tree node's name to whatever `state.files` currently says for
  * the given fileId. Returns true when an update was made (and emits a
- * Dropbox rename op). Caller is responsible for emitting "files-changed".
+ * external-store rename hook). Caller is responsible for emitting "files-changed".
  */
 export function updateTreeNodeNameByFileId(state, fileId) {
   const file = state.files.find((f) => f.id === fileId);

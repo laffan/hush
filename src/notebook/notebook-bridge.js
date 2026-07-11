@@ -19,7 +19,7 @@ let _mainDragCleanup = null;
 let _notebookBackground = null;
 /** Last content we successfully wrote to disk for the open notebook.
  *  Compared byte-for-byte against incoming sync-reload payloads so an
- *  echoed pull (Dropbox cursor reporting our own write back to us) is
+ *  echoed pull (a sync layer reporting our own write back to us) is
  *  a no-op rather than a destructive `loadShapes` that re-IDs every
  *  stroke and clobbers the engine's selection / undo state. */
 let _lastSavedContent = null;

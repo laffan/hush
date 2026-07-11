@@ -31,11 +31,6 @@ export async function saveCurrentFile(state) {
     return m.saveCurrentLocalSync(state);
   }
   if (!state.currentFileId || !state.editor) return;
-  // Clear-and-reseed is in flight: the local file pointer is being
-  // rebuilt from Dropbox. An autosave here would push the editor's
-  // pre-reseed buffer over the just-pulled remote content (or, worse,
-  // resurrect a file we just wiped from the sync map).
-  if (state.runtime?.reseedActive) return;
   // A pull is in flight for the current file: don't upload the editor's
   // pre-pull buffer over the just-arriving remote content. The pull
   // releases the lock and clears `dirty`, so we'll resume normally.
@@ -71,8 +66,8 @@ export async function saveCurrentFile(state) {
   // Autosave-path rename: update the filename to track the first line,
   // but only when the cursor has moved off it. While the user is still
   // typing in the title, we deliberately skip — preserves the old
-  // behavior's "name follows first line" feel without the per-keystroke
-  // sync churn that made Dropbox see phantom new files.
+  // behavior's "name follows first line" feel without per-keystroke
+  // rename churn.
   if (!_naming.cursorOnFirstLine(state)) {
     await state.maybeRenameFromFirstLine();
   }
@@ -111,10 +106,10 @@ export async function newFile(state, parentId = null, opts = {}) {
   const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
   insertNode(state.fileTree, treeNode, targetParent, findNode);
   await state.saveFileTree();
-  // Propagate new file to external filesystem if inside a synced folder.
-  // Brand-new empty Untitled docs are skipped so they don't pollute Dropbox
-  // until the user actually puts something in them; the first non-empty
-  // save will create the remote file via syncFileToExternal.
+  // Report through the external-store creation hook (no-op today; the
+  // desk-folder write-through re-attaches here). Brand-new empty
+  // Untitled docs are skipped — the first non-empty save reports via
+  // syncFileToExternal instead.
   if (!isEmptyUntitled(initialName, initialContent)) {
     state.syncCreateFile(treeNode.id, fileId, initialContent);
   }
@@ -335,7 +330,8 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
       state.files = await tauriInvoke("list_files");
       state.fileTree = await tauriInvoke("get_file_tree");
       state.emit("files-changed");
-      // Propagate new notebook to Dropbox sync
+      // Report through the external-store creation hook (no-op today;
+      // the desk-folder write-through re-attaches here).
       const nbNode = findNodeByFileId(state.fileTree, result.file.id);
       if (nbNode) state.syncCreateFile(nbNode.id, result.file.id, initialContent);
       if (openImmediately) await state.openNotebook(result.file.id);

@@ -11,10 +11,7 @@
  *     Images survive the collapse as a plain folder so existing
  *     image refs still resolve.
  *
- * Both operations:
- *   - update `settings.desks` and the file tree,
- *   - push `.hush/desks.json` so other devices learn the new shape,
- *   - enqueue Dropbox path renames so the remote layout follows.
+ * Both operations update `settings.desks` and the file tree.
  *
  * `convertFolderToDesk` only supports direct desk-children for now —
  * nested-folder converts would need multi-segment path rewrites we
@@ -23,15 +20,8 @@
 
 import { specialNodeId, isSpecialNodeId, parseSpecialNodeId, ensureDeskSpecials } from "./state-desks.js";
 
-const SYNC_FOLDER_ID = "__dropbox_sync__";
-
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-}
-
-async function tauriInvoke(cmd, args) {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke(cmd, args);
 }
 
 /** Promote a folder/project (direct child of a desk) into its own
@@ -88,16 +78,6 @@ export async function convertFolderToDesk(state, folderId) {
   await state.saveFileTree();
   state.emit("desks-changed");
   state.emit("files-changed");
-
-  // Dropbox: paths like "<parentDeskName>/<folderName>/..." become
-  // "<folderName>/...". Skip when Dropbox isn't connected.
-  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
-    const oldPrefix = `${parentDesk.name}/${deskName}/`;
-    const newPrefix = `${deskName}/`;
-    await rewriteSyncPaths(state, (p) => p.startsWith(oldPrefix) ? newPrefix + p.slice(oldPrefix.length) : null);
-  }
-
-  pushDesksJson(state);
 }
 
 /** Returns the per-desk specials that still hold items, keyed by the
@@ -180,52 +160,6 @@ export async function collapseDeskToFolder(state, deskId) {
   state.emit("desks-changed");
   state.emit("files-changed");
   if (activeDeskId !== deskId) state.emit("active-desk-changed", activeDeskId);
-
-  // Dropbox: paths under "<deskName>/..." gain a "<targetDeskName>/" prefix.
-  if (state.settings?.dropboxEnabled && state.settings?.dropboxSyncPath) {
-    const oldPrefix = `${desk.name}/`;
-    const newPrefix = `${target.name}/${desk.name}/`;
-    await rewriteSyncPaths(state, (p) => p.startsWith(oldPrefix) ? newPrefix + p.slice(oldPrefix.length) : null);
-  }
-
-  pushDesksJson(state);
-}
-
-/** Generic Dropbox path rewriter. `transform(oldPath)` returns the new
- *  path or null/undefined to skip. Each non-skip becomes one
- *  `enqueueRename` op so the existing op-log handles retries / drain. */
-async function rewriteSyncPaths(state, transform) {
-  try {
-    const files = await tauriInvoke("get_synced_files", { syncFolderId: SYNC_FOLDER_ID }) || [];
-    if (files.length === 0) return 0;
-    const { enqueueRename, triggerDrain } = await import("../sync/op-log.js");
-    let moved = 0;
-    for (const f of files) {
-      const oldPath = f.relativePath || "";
-      if (!oldPath) continue;
-      const newPath = transform(oldPath);
-      if (!newPath || newPath === oldPath) continue;
-      try {
-        await enqueueRename({ internalId: f.internalId, fromPath: oldPath, toPath: newPath });
-        await tauriInvoke("rename_sync_file", {
-          folderPath: state.settings.dropboxSyncPath || "",
-          oldRelative: oldPath, newRelative: newPath, internalId: f.internalId,
-        });
-        moved++;
-      } catch (e) { console.warn("desk op: rename enqueue failed:", oldPath, e); }
-    }
-    if (moved > 0 && typeof triggerDrain === "function") triggerDrain(state);
-    return moved;
-  } catch (e) {
-    console.warn("desk op: get_synced_files failed:", e);
-    return 0;
-  }
-}
-
-function pushDesksJson(state) {
-  import("../sync/desk-sync.js")
-    .then((m) => m.pushAllDesks(state))
-    .catch((e) => console.warn("desk op: meta push failed:", e));
 }
 
 // ===== Command-palette pickers =====
@@ -324,7 +258,6 @@ export async function reorderDesks(state, orderedIds) {
   await state.updateSettings({ desks: newReg });
   await state.saveFileTree();
   state.emit("desks-changed");
-  pushDesksJson(state);
 }
 
 /** Drive the editor view to the desk's last-opened file when the user

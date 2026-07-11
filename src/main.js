@@ -16,7 +16,7 @@ import { toggleCommandPalette, openFilePalette } from "./command-palette.js";
 import { fontFallbacks, themeBackgrounds, themeForegrounds, hexLuminance, updatePrivateBoxColor, applyFontFamily } from "./theme-colors.js";
 import { applyNotebookSettings, previewNotebookStyle, setNotebookLeftInset } from "./notebook/notebook-bridge.js";
 import { setupModeSwitching } from "./main-modes.js";
-import { installNotebookAppearanceSync, installDropboxSyncLifecycle } from "./main-listeners.js";
+import { installNotebookAppearanceSync } from "./main-listeners.js";
 import { initPaneManager } from "./pane/pane-manager.js";
 import { initCmdButton } from "./cmd-button.js";
 import { initCmdHeldSliders } from "./cmd-held-sliders.js";
@@ -469,29 +469,12 @@ async function init() {
       updatePrivateBoxColor(state);
     });
 
-    // Sync event listeners (dropbox-sync-start/stop, clear, force,
-    // retry) live in sync/sync-event-bindings.js to keep this file
-    // under the 700-line build cap.
-    try {
-      const { wireSyncEventBindings } = await import("./sync/sync-event-bindings.js");
-      await wireSyncEventBindings(state);
-    } catch (e) { console.error("sync event bindings failed:", e); }
-
-    // Dropbox OAuth callback (deep link). Google uses a loopback HTTP
-    // listener (see commands/google_docs.rs) instead — its code arrives
-    // via the same `oauth-callback` event below, no deep-link needed.
-    // iOS fires both paths for the same code; the second `handleOAuthCode`
-    // sees "code already used" and we swallow that rather than bubble up.
+    // Deep-link handler. Google OAuth uses a loopback HTTP listener
+    // (see commands/google_docs.rs) — its code arrives via the
+    // `oauth-callback` event below, no deep-link needed.
     try {
       const { onOpenUrl, getCurrent } = await import("@tauri-apps/plugin-deep-link");
       const handleUrl = async (url) => {
-        if (url.startsWith("hushwriter://auth/callback")) {
-          const code = new URLSearchParams(url.split("?")[1] || "").get("code");
-          if (code) {
-            try { await handleOAuthCode(state, invoke, code, "dropbox"); } catch (e) { console.warn("OAuth deep-link completion failed:", e); }
-          }
-          return;
-        }
         // iPadOS hands externally-opened .hushnote / .hushstack /
         // .hushproject / .md files to the app as file:// URLs (cold launch surfaces
         // through getCurrent(); already-running launches through
@@ -523,10 +506,12 @@ async function init() {
       });
     } catch (e) { console.error("Deep-link setup failed:", e); }
 
-    // Also listen for oauth-callback event (from Rust deep-link handler).
+    // OAuth callback event (from the Rust loopback listener).
     await listen("oauth-callback", async (event) => {
       const { code, provider } = event.payload || {};
-      if (code) { try { await handleOAuthCode(state, invoke, code, provider || "dropbox"); } catch (e) { console.warn("OAuth event completion failed:", e); } }
+      if (code && provider === "google") {
+        try { await handleOAuthCode(state, invoke, code); } catch (e) { console.warn("OAuth event completion failed:", e); }
+      }
     });
   }
 
@@ -625,10 +610,9 @@ async function init() {
     if (state.currentNotebookFileId) applyNotebookSettings(state);
   });
 
-  // Notebook/appearance sync + Dropbox sync lifecycle (extracted to
-  // main-listeners.js to keep init() under the line limit).
+  // Notebook/appearance sync (extracted to main-listeners.js to keep
+  // init() under the line limit).
   installNotebookAppearanceSync(state);
-  installDropboxSyncLifecycle(state);
 }
 
 init().catch(console.error);

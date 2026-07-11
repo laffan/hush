@@ -92,9 +92,8 @@ export async function setupModeSwitching(state) {
     const victims = inst._items.filter(i => i.fileType === "project" && i.fileId === projectId);
     for (const v of victims) inst.removeItem(v.id);
   });
-  // Notebook minimap + desks toggle bridge — both wire themselves to AppState.
+  // Notebook minimap — wires itself to AppState.
   import("./notebook/minimap.js").then(m => m.wireMinimap(state));
-  import("./state/state-desks.js").then(m => m.wireDesksTauri(state));
   state.on("notebook-autosave", async () => {
     const result = await saveNotebook();
     if (result) {

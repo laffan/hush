@@ -1,13 +1,10 @@
 /**
- * Google OAuth 2.0 PKCE flow + token cache. Structurally similar to
- * `sync/dropbox.js`, but the redirect channel is different: Google's
- * OAuth-for-Desktop policy requires *loopback* redirects (custom URI
- * schemes are only supported on iOS / Android / UWP), so Hush spins up
- * a one-shot HTTP listener on `127.0.0.1:<random>` in Rust for the
- * duration of the flow. The listener catches Google's redirect, parses
- * the `code`, and emits `oauth-callback` — exactly the same event the
- * Dropbox deep-link path emits — so the settings-window dispatcher's
- * downstream logic doesn't care which transport delivered the code.
+ * Google OAuth 2.0 PKCE flow + token cache. Google's OAuth-for-Desktop
+ * policy requires *loopback* redirects (custom URI schemes are only
+ * supported on iOS / Android / UWP), so Hush spins up a one-shot HTTP
+ * listener on `127.0.0.1:<random>` in Rust for the duration of the
+ * flow. The listener catches Google's redirect, parses the `code`, and
+ * emits `oauth-callback` for the settings-window dispatcher.
  *
  * Credentials live in `AppSettings` (entered by the user in Settings >
  * Sync > Google Sync — Client ID + optional Client Secret), so each

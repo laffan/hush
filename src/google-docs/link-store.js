@@ -40,13 +40,6 @@ export async function setLink(state, fileId, link) {
     title: link.title || "Untitled",
   });
   await refreshSettings(state);
-  // Mirror the change to Dropbox so other devices pick it up via
-  // `.hush/gdocs.json`. Best-effort — the local set above is the
-  // source of truth; the meta upload is the cross-device courier.
-  try {
-    const m = await import("../sync/gdocs-sync.js");
-    await m.pushGoogleLinksToDropbox(state);
-  } catch (e) { console.warn("[google-docs] gdocs sync push failed:", e); }
 }
 
 export async function clearLink(state, fileId) {
@@ -54,10 +47,6 @@ export async function clearLink(state, fileId) {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("clear_google_doc_link", { fileId });
   await refreshSettings(state);
-  try {
-    const m = await import("../sync/gdocs-sync.js");
-    await m.pushGoogleLinksToDropbox(state);
-  } catch (e) { console.warn("[google-docs] gdocs sync push failed:", e); }
 }
 
 // Append to the persisted Google sync log. Used by import / push / pull

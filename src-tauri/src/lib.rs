@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Listener, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(desktop)]
 use tauri::{
@@ -20,9 +20,6 @@ mod multi_window;
 mod pdfs;
 mod settings;
 mod snapshots;
-mod sync;
-mod sync_commands;
-mod sync_db;
 pub mod typst_export;
 mod zotero;
 
@@ -33,7 +30,6 @@ use multi_window::WindowRegistry;
 use pdfs::PdfManager;
 use settings::AppSettings;
 use snapshots::SnapshotManager;
-use sync::SyncManager;
 use zotero::ZoteroManager;
 
 pub struct AppState {
@@ -42,7 +38,6 @@ pub struct AppState {
     pub image_manager: Mutex<ImageManager>,
     pub pdf_manager: Mutex<PdfManager>,
     pub snapshot_manager: Mutex<SnapshotManager>,
-    pub sync_manager: Mutex<SyncManager>,
     pub zotero_manager: Mutex<ZoteroManager>,
     pub local_sync_manager: LocalSyncManager,
     pub window_registry: WindowRegistry,
@@ -166,7 +161,6 @@ pub fn run() {
     let file_manager = FileManager::new(data_dir.join("files"));
     let image_manager = ImageManager::new(data_dir.join("files").join("images"));
     let snapshot_manager = SnapshotManager::new(&data_dir);
-    let sync_manager = SyncManager::new(&data_dir);
     let zotero_manager = ZoteroManager::new(&data_dir);
     let local_sync_manager = LocalSyncManager::new();
 
@@ -214,7 +208,6 @@ pub fn run() {
             image_manager: Mutex::new(image_manager),
             pdf_manager: Mutex::new(PdfManager::new(&data_dir)),
             snapshot_manager: Mutex::new(snapshot_manager),
-            sync_manager: Mutex::new(sync_manager),
             zotero_manager: Mutex::new(zotero_manager),
             local_sync_manager,
             window_registry: WindowRegistry::new(),
@@ -235,34 +228,6 @@ pub fn run() {
                         let _ = app_state.local_sync_manager.watch(handle.clone(), folder);
                     }
                 }
-            }
-
-            // Dropbox OAuth callback via deep link. Google uses a
-            // loopback HTTP listener instead (see
-            // commands::google_docs::start_google_oauth_listener), so
-            // only the Dropbox URL prefix is recognised here.
-            // Must be set up before the desktop block borrows _app.
-            {
-                let handle = _app.handle().clone();
-                _app.listen("deep-link://new-url", move |event| {
-                    if let Some(urls) = event.payload().strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-                        for url_str in urls.split(',') {
-                            let url_str = url_str.trim().trim_matches('"');
-                            if url_str.starts_with("hushwriter://auth/callback") {
-                                if let Some(query) = url_str.split('?').nth(1) {
-                                    for param in query.split('&') {
-                                        if let Some(code) = param.strip_prefix("code=") {
-                                            let _ = handle.emit(
-                                                "oauth-callback",
-                                                serde_json::json!({ "code": code, "provider": "dropbox" }),
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
             }
 
             #[cfg(desktop)]
@@ -420,8 +385,6 @@ pub fn run() {
             commands::snapshots::get_snapshots,
             commands::snapshots::get_snapshot,
             commands::snapshots::delete_document_snapshots,
-            sync_commands::exchange_dropbox_token,
-            sync_commands::refresh_dropbox_token,
             commands::google_docs::start_google_oauth_listener,
             commands::google_docs::exchange_google_token,
             commands::google_docs::refresh_google_token,
@@ -433,38 +396,6 @@ pub fn run() {
             commands::google_docs::list_google_doc_links,
             commands::google_docs::append_google_sync_log,
             commands::google_docs::clear_google_sync_log,
-            sync_commands::scan_sync_folder,
-            sync_commands::register_synced_file,
-            sync_commands::register_synced_image,
-            sync_commands::update_sync_image_hash,
-            sync_commands::unregister_synced_image,
-            sync_commands::unregister_sync_folder,
-            sync_commands::write_sync_file,
-            sync_commands::get_synced_files,
-            sync_commands::get_sync_file_info,
-            sync_commands::rename_sync_file,
-            sync_commands::delete_sync_file,
-            sync_commands::create_sync_directory,
-            sync_commands::rename_sync_directory,
-            sync_commands::delete_sync_directory,
-            sync_commands::create_sync_file,
-            sync_commands::check_sync_changes,
-            sync_commands::diff_sync_folder,
-            sync_commands::accept_external_change,
-            sync_commands::reject_external_change,
-            sync_commands::enqueue_sync_op,
-            sync_commands::peek_pending_ops,
-            sync_commands::pending_op_succeeded,
-            sync_commands::pending_op_failed,
-            sync_commands::get_dropbox_cursor,
-            sync_commands::set_dropbox_cursor,
-            sync_commands::clear_dropbox_cursor,
-            sync_commands::clear_local_data,
-            sync_commands::find_synced_file_by_remote_id,
-            sync_commands::find_synced_file_by_path,
-            sync_commands::backfill_remote_id,
-            sync_commands::update_sync_state,
-            sync_commands::register_synced_file_full,
             commands::pdfs::save_pdf,
             commands::pdfs::load_pdf,
             commands::pdfs::delete_pdf,

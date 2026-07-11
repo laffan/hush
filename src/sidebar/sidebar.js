@@ -17,7 +17,6 @@ import { mountDeskSwitcher } from "./desk-switcher.js";
 import { mountAddPopup } from "./add-popup.js";
 import { mountProgressCenter } from "./sidebar-progress.js";
 import { createRecentFilesPanel } from "./recent-files-panel.js";
-import refreshCircleRaw from "./sidebar_icons/refresh-circle.svg?raw";
 import settingsRaw from "./sidebar_icons/settings.svg?raw";
 
 function svgInner(raw) {
@@ -154,42 +153,9 @@ export function createSidebar(state) {
   new MutationObserver(syncGripGlyph).observe(panelOverlay, { attributes: true, attributeFilter: ["class"] });
   syncGripGlyph();
 
-  // Zotero progress center sits left of the Dropbox icon so Dropbox
-  // stays farthest right in the sync group.
+  // Zotero progress center — background-task ring in the footer's
+  // sync group.
   mountProgressCenter(syncGroup, state);
-
-  // Dropbox sync indicator — refresh-circle icon that rotates on sync.
-  // Click drops the user on Settings > Sync > Dropbox, mirroring the
-  // gear icon's general-settings entry point.
-  const syncDot = document.createElement("div");
-  syncDot.className = "sidebar-sync-dot";
-  syncDot.setAttribute("role", "button");
-  syncDot.setAttribute("tabindex", "0");
-  syncDot.setAttribute("title", "Dropbox sync settings");
-  syncDot.style.cursor = "pointer";
-  syncDot.innerHTML = refreshCircleRaw;
-  syncDot.addEventListener("click", () => {
-    openSettingsWindow(state, { tab: "sync", subTab: "dropbox" });
-  });
-  syncGroup.appendChild(syncDot);
-  function syncDotVisible() {
-    return !!(state.settings.dropboxEnabled && state.settings.dropboxSyncPath);
-  }
-  function refreshSyncDot() {
-    syncDot.classList.toggle("visible", syncDotVisible());
-  }
-  let _syncPulseTimer = null;
-  function pulseSyncDot() {
-    if (!syncDotVisible()) return;
-    syncDot.classList.remove("pulse");
-    void syncDot.offsetWidth;
-    syncDot.classList.add("pulse");
-    if (_syncPulseTimer) clearTimeout(_syncPulseTimer);
-    _syncPulseTimer = setTimeout(() => syncDot.classList.remove("pulse"), 900);
-  }
-  state.on("settings-changed", refreshSyncDot);
-  state.on("dropbox-sync-success", pulseSyncDot);
-  refreshSyncDot();
 
   // Typing-fade — hide the create / add affordances while the user is
   // actively typing in the doc editor. Pointer activity (mousemove /
@@ -399,7 +365,6 @@ export function createSidebar(state) {
   state.on("pdf-open", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("panes-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("panes-hidden-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
-  state.on("dropbox-status-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
   state.on("windows-changed", () => { if (panelOpen && panelMode === "files") refreshFilesPanel(state); });
 
   // Replay persisted open state. Any truthy value reopens the Files

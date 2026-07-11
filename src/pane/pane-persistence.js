@@ -117,19 +117,6 @@ export function persistPanesNow() {
   if (_persistSuppressDepth > 0) return;
   const serialized = serializePanes();
   appState.updateSettings({ persistedPanes: serialized });
-
-  // Cross-device pane sync — fire-and-forget; the op log handles retry.
-  // Only the platform-stable subset of fields (anchoring + identity, no
-  // pixel layout) gets uploaded; see pane-sync.js.
-  if (appState.settings?.dropboxEnabled && appState.settings?.dropboxSyncPath && !appState.runtime?.reseedActive) {
-    pushPanesToDropbox().catch((e) => console.warn("pane sync upload failed:", e));
-  }
-}
-
-async function pushPanesToDropbox() {
-  const { serializePanesForSync, enqueuePaneUpload } = await import("../sync/pane-sync.js");
-  const payload = await serializePanesForSync(panes, appState);
-  await enqueuePaneUpload(payload);
 }
 
 export async function restorePanes(deps, listOverride) {

@@ -63,8 +63,7 @@ function readTabFromLocation() {
 export async function initSettingsInto(rootEl, saveCallback) {
   settingsRootEl = rootEl;
   onSaveCallback = saveCallback || null;
-  // Honour a `#sync/dropbox`-style deep link (set by the sidebar sync
-  // icon on the desktop path). The iOS modal path passes the tab in
+  // Honour a `#sync/google`-style deep link. The iOS modal path passes the tab in
   // via setActiveTab() before this runs, so the hash check there is a
   // no-op (the page URL never carries one).
   const fromHash = readTabFromLocation();

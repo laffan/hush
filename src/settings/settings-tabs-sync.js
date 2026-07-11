@@ -1,11 +1,8 @@
 /**
- * Sync settings tab — split into two sub-tabs (Dropbox / Google). Local
- * Sync used to live here as a third sub-tab; it now mounts directly from
- * the sidebar's Add (+) menu (entry: "Local Folder"), so this file no
- * longer renders it. The outer `renderSyncTab` paints the sub-nav at
- * the top and delegates the body to the active sub-tab's renderer;
- * bindings live in `settings-sync-tab.js` (Dropbox) and the same file's
- * `bindGoogleSubTab` (Google).
+ * Sync settings tab — sub-tabs: Google Sync, iCloud (debug), and the
+ * sync Log. Dropbox sync was removed (see LOCAL-DESKS-PLANNING.md) —
+ * folder-based desks over the user's own file provider replace it.
+ * Local Folder mounts live in the sidebar's Add (+) menu, not here.
  *
  * Active sub-tab is module-local — the binding side calls
  * `setSyncSubTab(id)` followed by the parent `render()` to switch.
@@ -30,144 +27,51 @@ function renderSyncLogEntry(entry) {
   return `<div class="sync-log-entry">${escHtml(raw)}</div>`;
 }
 
-let _activeSubTab = "dropbox"; // "dropbox" | "google" | "icloud"
+let _activeSubTab = "google"; // "google" | "icloud" | "log"
 
 export function getSyncSubTab() { return _activeSubTab; }
 export function setSyncSubTab(id) {
-  if (id === "dropbox" || id === "google" || id === "icloud") _activeSubTab = id;
+  if (id === "google" || id === "icloud" || id === "log") _activeSubTab = id;
 }
 
 function subTabNav() {
   const tab = (id, label) => `<button class="sync-subtab${_activeSubTab === id ? " active" : ""}" data-sync-subtab="${id}">${label}</button>`;
   return `<div class="sync-subtab-nav">
-    ${tab("dropbox", "Dropbox Sync")}
     ${tab("google", "Google Sync")}
     ${tab("icloud", "iCloud")}
+    ${tab("log", "Log")}
   </div>`;
 }
 
 export function renderSyncTab(settings) {
   let body = "";
-  if (_activeSubTab === "dropbox") body = renderDropboxSubTab(settings);
-  else if (_activeSubTab === "icloud") body = renderICloudSubTab();
+  if (_activeSubTab === "icloud") body = renderICloudSubTab();
+  else if (_activeSubTab === "log") body = renderLogSubTab(settings);
   else body = renderGoogleSubTab(settings);
   return subTabNav() + `<div class="sync-subtab-body">${body}</div>`;
 }
 
-// ===== Dropbox =====
+// ===== Log =====
 
-function renderDropboxSubTab(settings) {
-  const isConnected = !!settings.dropboxAccessToken;
-  const isEnabled = !!settings.dropboxEnabled;
-  const syncPath = settings.dropboxSyncPath || "";
-  const syncLog = settings.dropboxSyncLog || [];
-  let html = "";
-  if (!isConnected) {
-    html += `
-      <div class="settings-section">
-        <h2>Dropbox Sync</h2>
-        <p class="settings-help">
-          Connect your Dropbox account to sync all your documents, projects, and folders
-          across devices. Hush mirrors your entire library to a Dropbox folder as a backup.
-        </p>
-        <button id="sync-connect-dropbox" class="sync-action-btn">Connect to Dropbox</button>
-        <div id="sync-auth-status" class="sync-status"></div>
+/** Persistent sync-adjacent activity log (`settings.syncLog`) — Local
+ *  Folder / desk reconcile activity and background-task errors (e.g.
+ *  Zotero PDF downloads) land here via sync-feedback.js. */
+function renderLogSubTab(settings) {
+  const syncLog = settings.syncLog || [];
+  return `
+    <div class="settings-section">
+      <h2>Sync Log</h2>
+      <div class="sync-log-box" id="sync-log-box">
+        ${syncLog.length > 0
+          ? syncLog.slice(-20).reverse().map(renderSyncLogEntry).join("")
+          : `<div class="sync-log-empty">No sync activity yet.</div>`
+        }
       </div>
-    `;
-  } else if (!isEnabled || !syncPath) {
-    html += `
-      <div class="settings-section">
-        <h2>Dropbox Sync</h2>
-        <p class="settings-help">
-          Connected to Dropbox. Select a folder to sync your library to.
-          All documents, projects, and folders will be mirrored automatically.
-        </p>
-        <div class="settings-row">
-          <label>Sync folder</label>
-          <div class="sync-path-row">
-            <span id="sync-selected-path" class="sync-path-display">${syncPath ? escHtml(syncPath) : "None"}</span>
-            <button id="sync-browse-folder" class="sync-inline-btn">Browse</button>
-          </div>
-        </div>
-        <div id="sync-preview" class="sync-preview-box" style="display:none;"></div>
-        <div id="sync-auth-status" class="sync-status"></div>
+      <div class="sync-btn-row" style="margin-top:8px;">
+        <button id="sync-clear-log" class="sync-inline-btn">Clear log</button>
       </div>
-      <div class="settings-section">
-        <button id="sync-disconnect" class="sync-danger-btn">Disconnect Dropbox</button>
-      </div>
-    `;
-  } else {
-    html += `
-      <div class="settings-section">
-        <h2>Dropbox Sync</h2>
-        <div class="sync-info-box">
-          <div class="sync-info-row">
-            <span class="sync-info-label">Status</span>
-            <span class="sync-info-value" id="sync-connection-status">Active</span>
-          </div>
-          <div class="sync-info-row">
-            <span class="sync-info-label">Folder</span>
-            <span class="sync-info-value">${escHtml(syncPath)}</span>
-          </div>
-        </div>
-        <div class="sync-btn-row">
-          <button id="sync-test-connection" class="sync-inline-btn">Test Connection</button>
-          <button id="sync-change-folder" class="sync-inline-btn">Change Folder</button>
-        </div>
-        <div id="sync-auth-status" class="sync-status"></div>
-      </div>
-      <div class="settings-section">
-        <h2>Sync Log</h2>
-        <div class="sync-log-box" id="sync-log-box">
-          ${syncLog.length > 0
-            ? syncLog.slice(-20).reverse().map(renderSyncLogEntry).join("")
-            : `<div class="sync-log-empty">No sync activity yet.</div>`
-          }
-        </div>
-      </div>
-      <div class="settings-section">
-        <h2>Pending sync queue</h2>
-        <p class="settings-help">
-          Operations queued for Dropbox. Rows with attempts &gt; 0 or an
-          error are waiting on a retry — usually because the network was
-          down. Click <strong>Retry now</strong> to kick the drain.
-        </p>
-        <div class="sync-log-box" id="sync-pending-box">
-          <div class="sync-log-empty">Loading…</div>
-        </div>
-        <div class="sync-btn-row" style="margin-top:8px;">
-          <button id="sync-retry-pending" class="sync-inline-btn">Retry now</button>
-        </div>
-      </div>
-      <div class="settings-section">
-        <h2>Force sync</h2>
-        <p class="settings-help">
-          Run the standard reconcile + cursor pull right now instead of
-          waiting for the next 10-second poll. A progress bar tracks the
-          check so you can see when it finishes.
-        </p>
-        <button id="sync-force" class="sync-action-btn">Force sync now</button>
-      </div>
-      <div class="settings-section">
-        <h2>Disconnect</h2>
-        <p class="settings-help">Stop syncing and return to local-only mode.</p>
-        <button id="sync-unsync" class="sync-danger-btn">Stop Syncing</button>
-      </div>
-      <div class="settings-section">
-        <h2>Clear local versions</h2>
-        <p class="settings-help">
-          Wipe every locally-stored doc, notebook, image, and sync record
-          on this device, then reseed from Dropbox. You'll see a preview
-          of what's on Dropbox (including which top-level folders will
-          become desks) before anything is touched, and a progress bar
-          while the reseed runs. Anything that exists only on this device
-          and hasn't been pushed will be lost.
-        </p>
-        <button id="sync-clear-local" class="sync-danger-btn">Clear local versions…</button>
-      </div>
-    `;
-  }
-  return html;
+    </div>
+  `;
 }
 
 // ===== Google =====

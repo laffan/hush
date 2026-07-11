@@ -48,7 +48,7 @@ impl ImageManager {
 
     /// Write raw image bytes keeping the caller-supplied filename
     /// (auto-suffixing on collision). The MIME type is inferred from the
-    /// filename extension. Used by Dropbox sync to land downloaded image
+    /// filename extension. Used to land externally-sourced image
     /// binaries without round-tripping through a data URL.
     pub fn save_from_bytes(
         &self,

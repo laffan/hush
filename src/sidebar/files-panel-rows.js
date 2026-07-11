@@ -8,7 +8,6 @@
 
 import { AppState } from "../state/state.js";
 import { findParentOfNode } from "../state/tree-helpers.js";
-import { isDropboxConnected } from "../sync/sync-polling.js";
 import { typeIcons, escHtml } from "./files-panel-shared.js";
 import { renderRowMenuButton, renderFlagOnlyMenuButton } from "./files-panel-row-menu.js";
 import { isTabMarkerItem } from "./files-panel-tabs.js";
@@ -68,11 +67,6 @@ export function getIcon(item) {
   // directly beneath — its icon is the notebook dot-grid bracketed by a
   // vertical rule on each side.
   if (item.type === "notebook" && item.gutter) return typeIcons.gutter;
-  if (item.syncFolderId && item.type === "folder") {
-    // Legacy synced folder nodes — show broken icon if Dropbox disconnected
-    if (!isDropboxConnected()) return typeIcons.syncedFolderBroken;
-    return typeIcons.syncedFolder;
-  }
   // Plain folders read fine without a leading glyph — the disclosure
   // arrow alone signals containerhood.
   if (item.type === "folder") return "";

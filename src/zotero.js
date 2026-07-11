@@ -425,7 +425,7 @@ async function handleInsert(view, ref, detailEl, state, notebookTextHandle) {
     insertIntoNotebookCanvas(ctx.canvas, link.text, snapshot);
   } else if (ctx.kind === "doc") {
     // Doc: persist to the global Images store so the markdown ref
-    // resolves and the binary syncs with Dropbox.
+    // resolves like any other stored image.
     let docSnapshot = snapshot;
     if (snapshot) {
       const saved = await state.createImageFromDataUrl(snapshot.dataUrl, snapshot.filename);
