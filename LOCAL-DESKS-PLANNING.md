@@ -172,15 +172,21 @@ copy instead), register it as a desk root, drop the mount.
 
 ## Phasing
 
-0. **Delete Dropbox sync.** First, not last — no compatibility burden, and
-   every subsequent refactor gets simpler when the op-log/cursor/reseed
-   invariants stop needing to be preserved. (Code stays in git history as
-   reference.)
-1. **Desk-folder storage for internal desks.** Move `{data_dir}/files/` +
-   `file_tree.json` into per-desk folders with `.hush/index.json` +
-   `tree.json`; loaders/savers go path-through-index; one-shot migration
-   (the Dropbox manifest/export code is the serializer, one last time).
-   No user-visible change when this phase lands — that's the test.
+0. **Delete Dropbox sync.** ✅ *Shipped 2026-07.* Engine, Rust backend,
+   settings tab, OAuth deep-link path all removed; echo-ring /
+   apply-external / Local Sync / notebook-sync kept and repurposed.
+1. **Desk-folder storage for internal desks.** ✅ *Shipped 2026-07.*
+   `{data_dir}/desks/<deskId>/` with `.hushdesk` + `.hush/index.json` +
+   `.hush/tree.json`; content as real files (`.md` / `.hushnote` zips
+   packed in Rust / `.hushstack` / `Images/`); path reconciliation on
+   every tree save (staging → placement, moves, orphan parking, desk
+   retirement to `.deleted/`); images resolve across desks with the
+   active desk as save target; one-shot boot migration leaves the flat
+   store as an inert backup. Command surface unchanged — zero frontend
+   changes. Notes: desk dirs are keyed by desk *id* (renames move
+   nothing); tree.json stays authoritative for structure until the
+   fs-wins reconciler lands with local desks; snapshots stay central
+   until Phase 2.
 2. **Versions into desk data.** File-per-snapshot store, migration from
    snapshots.db, prune policy, Versions modal on the new store.
 3. **Local desks.** Desk root = user-picked folder (bookmark on iOS);

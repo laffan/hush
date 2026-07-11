@@ -13,7 +13,10 @@ use tauri::{
 
 mod atomic;
 mod commands;
+mod desk_migrate;
+mod desk_store;
 mod files;
+mod hushnote;
 mod images;
 mod local_sync;
 mod multi_window;
@@ -149,6 +152,13 @@ pub fn run() {
 
     let settings = AppSettings::load(&data_dir).unwrap_or_default();
 
+    // One-shot migration from the flat store (files/*.json +
+    // file_tree.json) into per-desk folders. Runs before any manager
+    // reads; a no-op once `desks/order.json` exists.
+    if let Err(e) = desk_migrate::migrate_from_flat(&data_dir) {
+        eprintln!("desk-store migration failed: {}", e);
+    }
+
     #[cfg(desktop)]
     let shortcut_label = settings.shortcut_open_editor.clone()
         .replace("CmdOrCtrl", "⌘")
@@ -158,8 +168,11 @@ pub fn run() {
     #[cfg(desktop)]
     let initial_visibility = settings.visibility.clone();
 
-    let file_manager = FileManager::new(data_dir.join("files"));
-    let image_manager = ImageManager::new(data_dir.join("files").join("images"));
+    let file_manager = FileManager::new(&data_dir);
+    let image_manager = ImageManager::new(
+        data_dir.join("files").join("images"),
+        data_dir.join("desks"),
+    );
     let snapshot_manager = SnapshotManager::new(&data_dir);
     let zotero_manager = ZoteroManager::new(&data_dir);
     let local_sync_manager = LocalSyncManager::new();

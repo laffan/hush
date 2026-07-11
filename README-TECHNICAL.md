@@ -34,6 +34,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │   ├── pdf-bridge.js                  ├── pdfs.rs
 │   └── zotero-save-pdf.js             (single + batch save with checkbox multi-select)
 │                                      ├── snapshots.rs
+│                                      ├── desk_store.rs / desk_migrate.rs
+│                                      ├── hushnote.rs
 │                                      ├── local_sync.rs
 │                                      ├── zotero.rs
 │                                      └── typst_export/         (PDF pipeline)
@@ -1169,17 +1171,17 @@ Key fields beyond basics: `privacy_mode` (String: "blackout" or "dummy"), `dummy
 
 `Style` struct: `{ id, name, theme_id, font_family, font_size, line_height, color_overrides, light/dark variants, block_cursor overrides, cursor_mode, header suppression flags }`.
 
-### `files.rs`
+### `desk_store.rs` + `desk_migrate.rs` + `hushnote.rs` — the desk-folder store
 
-Files stored as individual JSON files (`{uuid}.json`) in `{data_dir}/files/`. Each: `{ id, name, content, modified }`.
+Phase 1 of LOCAL-DESKS-PLANNING.md: every desk is a self-contained directory at `{data_dir}/desks/<deskId>/` holding its content as real files — docs as `<Name>.md`, notebooks as `<Name>.hushnote` (zip envelope, packed/unpacked in Rust by `hushnote.rs`, wire-compatible with `sync/notebook-sync.js`), stacks as `<Name>.hushstack`, images under `Images/`, folders and projects as directories — plus a `.hushdesk` identity file and a `.hush/` sidecar (`index.json` mapping fileId ↔ relative path; `tree.json` carrying the desk's TreeNode for structure, ordering, and row decoration). `desks/order.json` holds desk ordering plus transient straggler nodes.
 
-**File tree:** `{data_dir}/file_tree.json`. Each `TreeNode`: `{ id, name, type, fileId?, children[] }` where type is `document`, `notebook`, `folder`, `project`, or `image`. Documents and notebooks have a `fileId` pointing to `files/{uuid}.json`; image nodes have a `fileId` pointing to `files/images/{uuid}.{ext}` (see `images.rs`). Auto-migrates from flat file list on first load.
+The tree is authoritative for structure in this phase; the folder mirrors it. **`save_forest` reconciles paths on every tree save**: each file-backed node's expected path is computed from the tree (names sanitised to single path segments, sibling collisions deduped with ` (2)`), compared against the index, and files are moved (`fs::rename`, cross-desk included), created, or adopted-if-already-present to match. Desk directories are keyed by desk *id*, so renaming a desk moves nothing. New files are minted into `desks/.staging/<fileId>` by `create_file` (the frontend creates the id before the tree node exists) and placed at their real path by the next tree save. Files whose node vanishes without a delete are parked in `.hush/orphans/`, never destroyed; deleting a desk *retires* its folder to `desks/.deleted/` rather than wiping it. Empty directories that no longer correspond to tree containers are pruned. PDFs are absent from desk folders by design (registry-only; binaries stay a per-device cache).
 
-`save_to_external()` writes `.md` to a user-chosen folder, tracking ID mappings in a `.hush/` subdirectory for Obsidian vault integration.
+`FileManager` (`files.rs`) keeps its pre-desks command surface — `load_file` / `save_file` / `rename_file` / tree ops, all keyed by fileId — and resolves ids to paths through the per-desk indexes, so the frontend is agnostic to the layout. `load_forest` assembles the tree from `order.json` + per-desk `tree.json`, appending any desk folder found on disk that the order file doesn't know about (the adopt seam for handed-off desks). `desk_migrate.rs` runs once at boot: it stages every legacy `files/{uuid}.json` payload, copies image binaries into each desk's `Images/`, runs the normal `save_forest` placement, and renames `file_tree.json` to `.pre-desks.bak` (the old `files/*.json` payloads stay in place as an inert backup). Unit tests (`desk_store_tests.rs`) cover placement, moves/renames, cross-desk moves, desk retirement, orphaning, straggler preservation, dedupe, and the migration end-to-end.
 
 ### `images.rs`
 
-Binary image storage for the doc image feature. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload and writes the raw bytes to `{data_dir}/files/images/{filename}`, keeping the caller-supplied filename as-is and auto-suffixing with ` (2)`, ` (3)`, ... on collision. The filename *is* the stable id: markdown refs use the bare filename (or a double-quoted URL when the filename contains spaces or parens) and the Rust `load_image` command reads directly by name. `save_from_data_url` and `save_from_bytes` share a private `save_bytes_with_mime` core; the latter is what image-byte calls so a downloaded binary can land without first being base64-encoded.
+Binary image storage for the doc image feature. Images live inside their desk's folder — `{data_dir}/desks/<id>/Images/{filename}` — with the pre-desks `{data_dir}/files/images/` kept as a read-only legacy fallback. Reads resolve by *searching* every desk's `Images/` (markdown refs are desk-agnostic bare filenames); new saves land in the **active desk's** `Images/` (the command layer passes `settings.activeDeskId`); `unique_filename` checks all locations so two desks can't mint the same ambiguous name. `ImageManager::save_from_data_url()` parses a `data:image/*;base64,...` payload, keeping the caller-supplied filename and auto-suffixing on collision; the filename *is* the stable id. `rename` keeps the file in its current directory.
 
 The Tauri command layer exposes `save_image` (data-URL ingest, returns the possibly-suffixed final filename), `save_image_bytes` (raw-byte ingest), `load_image` (returns a data URL), `load_image_bytes` (returns raw bytes), `delete_image`, `rename_image` (renames on disk, auto-suffixes on collision, preserves the original extension if the new name drops it), `list_images`, and `export_with_images` (writes `text.md` + `images/<filename>` into a user-chosen folder).
 
@@ -1232,14 +1234,27 @@ Open the Xcode project to configure signing before building.
 ```
 {data_dir}/com.hush.app/
 ├── settings.json
-├── file_tree.json
-├── snapshots.db
-├── files/
+├── snapshots.db                  (version history — desk-local in Phase 2)
+├── desks/
+│   ├── order.json                (desk ordering + transient stragglers)
+│   ├── .staging/                 (files created before they have a tree position)
+│   └── <deskId>/
+│       ├── .hushdesk             (desk identity)
+│       ├── .hush/
+│       │   ├── index.json        (fileId ↔ relative path)
+│       │   ├── tree.json         (structure + ordering + row decoration)
+│       │   └── orphans/
+│       ├── Inbox/  Trash/  Images/
+│       ├── <Doc>.md  <Notebook>.hushnote  <Stack>.hushstack
+│       └── <Project>/…
+├── files/                        (legacy flat store — inert backup after migration)
 │   ├── {uuid}.json
-│   ├── pdfs/
-│   │   ├── {uuid}.pdf
-│   │   ├── {uuid}.meta.json
-│   │   └── _registry.json        (PDF metadata registry)
+│   ├── images/                   (legacy image fallback, read-only)
+│   └── pdfs/
+│       ├── {uuid}.pdf
+│       ├── {uuid}.meta.json
+│       └── _registry.json        (PDF metadata registry)
+├── file_tree.json.pre-desks.bak  (pre-migration tree backup)
 ├── zotero_references.json
 ├── zotero_pdfs/
 └── zotero_annotations/

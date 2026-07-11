@@ -17,9 +17,11 @@ fn main() {
     );
     let style = styles::lookup("formal").unwrap();
     let wrap_opts = styles::WrapOptions {
-        with_bibliography: false,
+        bibliography: None,
         number_headings: true,
         page_numbers: true,
+        line_spacing: 1.5,
+        header_scale: 1.0,
     };
     let main = styles::wrap(style, &body, &wrap_opts);
 
@@ -39,6 +41,9 @@ fn main() {
         strip_flags: true,
         number_headings: true,
         page_numbers: true,
+        include_tabs: true,
+        line_spacing: 1.5,
+        header_scale: 1.0,
         references: vec![ZoteroRef {
             key: "K1".into(),
             citekey: "halbwachs1992".into(),

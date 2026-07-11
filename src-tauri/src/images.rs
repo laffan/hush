@@ -1,15 +1,17 @@
 /*!
  * Image file storage for doc image support.
  *
- * Images live under `{data_dir}/files/images/{filename}` as raw binary —
- * the on-disk filename *is* the stable id referenced from markdown. A file
- * dropped as `brown-cow.png` lands at `files/images/brown-cow.png` and is
- * referenced in docs as plain `![alt](brown-cow.png)`. If a file with the
- * same name already exists, we auto-suffix (`brown-cow (2).png`) so we
- * never clobber.
+ * Images live inside their desk's folder — `{data_dir}/desks/<id>/Images/{filename}`
+ * — as raw binary; the filename *is* the stable id referenced from
+ * markdown (`![alt](brown-cow.png)`). Reads resolve by searching every
+ * desk's `Images/` directory (refs are desk-agnostic filenames), with the
+ * pre-desks `{data_dir}/files/images/` location kept as a read-only
+ * legacy fallback. New saves land in the active desk's `Images/`; the
+ * filename is auto-suffixed (`brown-cow (2).png`) across *all* locations
+ * so two desks can never mint the same ambiguous name.
  *
- * Renames move the on-disk file in-place; the caller is responsible for
- * rewriting any doc references.
+ * Renames move the on-disk file in place (same directory); the caller is
+ * responsible for rewriting any doc references.
  */
 
 use crate::atomic::write_atomic;
@@ -18,7 +20,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct ImageManager {
-    images_dir: PathBuf,
+    legacy_dir: PathBuf,
+    desks_dir: PathBuf,
 }
 
 #[derive(serde::Serialize)]
@@ -30,9 +33,50 @@ pub struct ImageSaved {
 }
 
 impl ImageManager {
-    pub fn new(images_dir: PathBuf) -> Self {
-        fs::create_dir_all(&images_dir).ok();
-        Self { images_dir }
+    pub fn new(legacy_dir: PathBuf, desks_dir: PathBuf) -> Self {
+        fs::create_dir_all(&legacy_dir).ok();
+        Self { legacy_dir, desks_dir }
+    }
+
+    /// Every directory that may hold image binaries: each desk's Images/
+    /// plus the legacy flat location.
+    fn search_dirs(&self) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        if let Ok(rd) = fs::read_dir(&self.desks_dir) {
+            for entry in rd.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') || !entry.path().is_dir() {
+                    continue;
+                }
+                let images = entry.path().join("Images");
+                if images.is_dir() {
+                    out.push(images);
+                }
+            }
+        }
+        out.push(self.legacy_dir.clone());
+        out
+    }
+
+    /// Resolve a filename to its on-disk path, searching desks then legacy.
+    fn find(&self, filename: &str) -> Option<PathBuf> {
+        validate_filename(filename).ok()?;
+        self.search_dirs()
+            .into_iter()
+            .map(|d| d.join(filename))
+            .find(|p| p.exists())
+    }
+
+    /// Directory new saves land in: the given desk's Images/ (created on
+    /// demand), else the legacy dir (fresh installs before a desk exists).
+    fn target_dir(&self, desk_id: Option<&str>) -> PathBuf {
+        if let Some(id) = desk_id {
+            let dir = self.desks_dir.join(id).join("Images");
+            if fs::create_dir_all(&dir).is_ok() {
+                return dir;
+            }
+        }
+        self.legacy_dir.clone()
     }
 
     /// Write an image from a data URL keeping the caller-supplied filename
@@ -41,21 +85,22 @@ impl ImageManager {
         &self,
         filename: &str,
         data_url: &str,
+        desk_id: Option<&str>,
     ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
         let (mime, bytes) = decode_data_url(data_url)?;
-        self.save_bytes_with_mime(filename, &bytes, Some(&mime))
+        self.save_bytes_with_mime(filename, &bytes, Some(&mime), desk_id)
     }
 
     /// Write raw image bytes keeping the caller-supplied filename
     /// (auto-suffixing on collision). The MIME type is inferred from the
-    /// filename extension. Used to land externally-sourced image
-    /// binaries without round-tripping through a data URL.
+    /// filename extension.
     pub fn save_from_bytes(
         &self,
         filename: &str,
         bytes: &[u8],
+        desk_id: Option<&str>,
     ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
-        self.save_bytes_with_mime(filename, bytes, None)
+        self.save_bytes_with_mime(filename, bytes, None, desk_id)
     }
 
     fn save_bytes_with_mime(
@@ -63,6 +108,7 @@ impl ImageManager {
         filename: &str,
         bytes: &[u8],
         mime_hint: Option<&str>,
+        desk_id: Option<&str>,
     ) -> Result<ImageSaved, Box<dyn std::error::Error>> {
         let base = sanitize_filename(filename);
         let (stem, mut ext) = split_name(&base);
@@ -73,7 +119,7 @@ impl ImageManager {
                 .unwrap_or_else(|| "bin".to_string());
         }
         let final_name = self.unique_filename(&stem, &ext);
-        let path = self.resolve_path(&final_name)?;
+        let path = self.target_dir(desk_id).join(&final_name);
         write_atomic(&path, bytes)?;
         let mime = mime_hint
             .map(|s| s.to_string())
@@ -86,25 +132,29 @@ impl ImageManager {
         })
     }
 
-    /// Return all filenames currently stored on disk, sorted.
+    /// Return all filenames currently stored on disk (all desks + legacy),
+    /// deduped and sorted.
     pub fn list(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Ok(rd) = fs::read_dir(&self.images_dir) {
-            for entry in rd.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    if !name.starts_with('.') && entry.path().is_file() {
-                        out.push(name.to_string());
+        let mut out: Vec<String> = Vec::new();
+        for dir in self.search_dirs() {
+            if let Ok(rd) = fs::read_dir(&dir) {
+                for entry in rd.flatten() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if !name.starts_with('.') && entry.path().is_file() {
+                            out.push(name.to_string());
+                        }
                     }
                 }
             }
         }
         out.sort();
+        out.dedup();
         out
     }
 
     /// Read an image by filename and return it as a data URL.
     pub fn load_as_data_url(&self, filename: &str) -> Result<String, Box<dyn std::error::Error>> {
-        let path = self.resolve_path(filename)?;
+        let path = self.find(filename).ok_or("image not found")?;
         let bytes = fs::read(&path)?;
         let mime = ext_for_path(&path).and_then(mime_for_ext)
             .unwrap_or_else(|| "application/octet-stream".to_string());
@@ -115,7 +165,7 @@ impl ImageManager {
         &self,
         filename: &str,
     ) -> Result<(Vec<u8>, String), Box<dyn std::error::Error>> {
-        let path = self.resolve_path(filename)?;
+        let path = self.find(filename).ok_or("image not found")?;
         let bytes = fs::read(&path)?;
         let mime = ext_for_path(&path).and_then(mime_for_ext)
             .unwrap_or_else(|| "application/octet-stream".to_string());
@@ -123,35 +173,22 @@ impl ImageManager {
     }
 
     pub fn delete(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let path = self.resolve_path(filename)?;
-        if path.exists() { fs::remove_file(&path)?; }
-        Ok(())
-    }
-
-    /// Wipe every image on disk. Used by the "Clear local versions"
-    /// recovery in Settings → Sync. The directory itself is preserved
-    /// so the manager doesn't need re-init.
-    pub fn clear_all(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Ok(rd) = fs::read_dir(&self.images_dir) {
-            for entry in rd.flatten() {
-                let path = entry.path();
-                if path.is_file() { let _ = fs::remove_file(&path); }
-            }
+        if let Some(path) = self.find(filename) {
+            fs::remove_file(&path)?;
         }
         Ok(())
     }
 
-    /// Rename an image on disk. Returns the final name used (auto-suffixed
-    /// if `new_name` already exists). Returns the existing name unchanged
-    /// when rename is a no-op.
+    /// Rename an image on disk, keeping it in its current directory.
+    /// Returns the final name used (auto-suffixed if `new_name` already
+    /// exists anywhere). Returns the existing name unchanged on a no-op.
     pub fn rename(
         &self,
         old_name: &str,
         new_name: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
         if old_name == new_name { return Ok(old_name.to_string()); }
-        let src = self.resolve_path(old_name)?;
-        if !src.exists() { return Err("image not found".into()); }
+        let src = self.find(old_name).ok_or("image not found")?;
         let sanitized = sanitize_filename(new_name);
         let (stem, mut ext) = split_name(&sanitized);
         if ext.is_empty() {
@@ -159,32 +196,36 @@ impl ImageManager {
             ext = ext_for_path(&src).unwrap_or_default();
         }
         let final_name = self.unique_filename(&stem, &ext);
-        let dst = self.resolve_path(&final_name)?;
+        validate_filename(&final_name)?;
+        let dst = src.parent().ok_or("bad image path")?.join(&final_name);
         fs::rename(&src, &dst)?;
         Ok(final_name)
     }
 
+    /// A name unused in *every* image location — refs are desk-agnostic
+    /// filenames, so uniqueness has to be global.
     fn unique_filename(&self, base: &str, ext: &str) -> String {
+        let taken = |name: &str| self.find(name).is_some();
         let first = if ext.is_empty() { base.to_string() } else { format!("{}.{}", base, ext) };
-        if !self.images_dir.join(&first).exists() { return first; }
+        if !taken(&first) { return first; }
         for i in 2..u32::MAX {
             let candidate = if ext.is_empty() {
                 format!("{} {}", base, i)
             } else {
-                format!("{} {}.{}", base, i, ext)
+                format!("{} ({}).{}", base, i, ext)
             };
-            if !self.images_dir.join(&candidate).exists() { return candidate; }
+            if !taken(&candidate) { return candidate; }
         }
         first
     }
+}
 
-    fn resolve_path(&self, filename: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
-            return Err("invalid image filename".into());
-        }
-        if filename.starts_with('.') { return Err("invalid image filename".into()); }
-        Ok(self.images_dir.join(filename))
+fn validate_filename(filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err("invalid image filename".into());
     }
+    if filename.starts_with('.') { return Err("invalid image filename".into()); }
+    Ok(())
 }
 
 /// Strip path separators and OS-sensitive characters from a filename.

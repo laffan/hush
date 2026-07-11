@@ -69,6 +69,9 @@ and some _emphasis_ for good measure.
         strip_flags: true,
         number_headings: false,
         page_numbers: true,
+        include_tabs: true,
+        line_spacing: 1.5,
+        header_scale: 1.0,
         references: refs,
         images: vec![],
     };

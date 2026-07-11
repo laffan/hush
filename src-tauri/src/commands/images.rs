@@ -5,10 +5,16 @@ use tauri::State;
 use crate::images::ImageSaved;
 use crate::AppState;
 
+/// The desk new image saves land in: the active desk (from settings).
+fn active_desk_id(state: &State<AppState>) -> Option<String> {
+    state.settings.lock().unwrap().active_desk_id.clone()
+}
+
 #[tauri::command]
 pub fn save_image(state: State<AppState>, filename: String, data_url: String) -> Result<ImageSaved, String> {
+    let desk = active_desk_id(&state);
     state.image_manager.lock().unwrap()
-        .save_from_data_url(&filename, &data_url)
+        .save_from_data_url(&filename, &data_url, desk.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -17,8 +23,9 @@ pub fn save_image(state: State<AppState>, filename: String, data_url: String) ->
 /// final filename (auto-suffixed on collision).
 #[tauri::command]
 pub fn save_image_bytes(state: State<AppState>, filename: String, bytes: Vec<u8>) -> Result<ImageSaved, String> {
+    let desk = active_desk_id(&state);
     state.image_manager.lock().unwrap()
-        .save_from_bytes(&filename, &bytes)
+        .save_from_bytes(&filename, &bytes, desk.as_deref())
         .map_err(|e| e.to_string())
 }
 
