@@ -54,6 +54,14 @@ impl ImageManager {
                 }
             }
         }
+        // Local desks live outside desks_dir — resolve their Images/
+        // through the same roots map DeskStore uses.
+        for (_desk_id, root) in crate::desk_roots::load_roots(&self.desks_dir) {
+            let images = PathBuf::from(root).join("Images");
+            if images.is_dir() && !out.contains(&images) {
+                out.push(images);
+            }
+        }
         out.push(self.legacy_dir.clone());
         out
     }
@@ -71,7 +79,10 @@ impl ImageManager {
     /// demand), else the legacy dir (fresh installs before a desk exists).
     fn target_dir(&self, desk_id: Option<&str>) -> PathBuf {
         if let Some(id) = desk_id {
-            let dir = self.desks_dir.join(id).join("Images");
+            // Local desks resolve through roots.json, same as DeskStore.
+            let base = crate::desk_roots::root_for(&self.desks_dir, id)
+                .unwrap_or_else(|| self.desks_dir.join(id));
+            let dir = base.join("Images");
             if fs::create_dir_all(&dir).is_ok() {
                 return dir;
             }

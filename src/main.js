@@ -613,6 +613,12 @@ async function init() {
   // Notebook/appearance sync (extracted to main-listeners.js to keep
   // init() under the line limit).
   installNotebookAppearanceSync(state);
+
+  // Local desk roots: load the deskId → folder map for UI badges and
+  // subscribe to the per-root filesystem watcher (disk-wins reconcile).
+  import("./sync/desk-roots.js")
+    .then((m) => m.installDeskRootsLifecycle(state))
+    .catch((e) => console.warn("desk roots lifecycle failed:", e));
 }
 
 init().catch(console.error);

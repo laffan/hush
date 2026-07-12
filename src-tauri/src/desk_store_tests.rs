@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::desk_migrate::migrate_from_flat;
+use crate::desk_paths::{dedupe, sanitize_segment};
 use crate::TreeNode;
 
 fn node(id: &str, node_type: &str, name: &str, file_id: Option<&str>, children: Vec<TreeNode>) -> TreeNode {
@@ -321,4 +322,140 @@ fn migrates_flat_store_end_to_end() {
     assert_eq!(forest[0].children[0].children[0].name, "Doc");
     let (content, _, _) = store.read_by_id("f1").unwrap();
     assert_eq!(content, "# Hi");
+}
+
+// ===== Phase 3: local desk roots =====
+
+#[test]
+fn make_local_redirects_everything_and_round_trips() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("My Desk");
+    let store = seed_simple_desk(dir.path());
+
+    store.make_desk_local("d1", &target).unwrap();
+    // Folder moved wholesale; internal dir gone.
+    assert!(target.join(".hush/tree.json").exists());
+    assert!(target.join("Doc.md").exists());
+    assert!(!dir.path().join("desks/d1").exists());
+
+    // Reads, writes, and tree saves all resolve through the redirect.
+    let (content, _, _) = store.read_by_id("f1").unwrap();
+    assert_eq!(content, "body");
+    store.write_by_id("f1", "edited").unwrap();
+    assert_eq!(fs::read_to_string(target.join("Doc.md")).unwrap(), "edited");
+    let tree = vec![desk_with_id("d1", vec![node("n1", "document", "Renamed", Some("f1"), Vec::new())])];
+    store.save_forest(&tree).unwrap();
+    assert!(target.join("Renamed.md").exists());
+
+    // Back to internal.
+    let internal = store.make_desk_internal("d1").unwrap();
+    assert!(internal.join("Renamed.md").exists());
+    assert!(!target.exists(), "emptied external folder is removed");
+    assert!(store.list_roots().is_empty());
+    let (content, _, _) = store.read_by_id("f1").unwrap();
+    assert_eq!(content, "edited");
+}
+
+#[test]
+fn make_local_refuses_bad_targets() {
+    let dir = tmp();
+    let store = seed_simple_desk(dir.path());
+    // Inside app data.
+    let inside = dir.path().join("nested");
+    assert!(store.make_desk_local("d1", &inside).is_err());
+    // Non-empty target.
+    let external = tmp();
+    fs::write(external.path().join("occupied.txt"), "x").unwrap();
+    assert!(store.make_desk_local("d1", external.path()).is_err());
+}
+
+#[test]
+fn adopt_registers_a_foreign_desk_folder() {
+    // Build a desk in one install...
+    let install_a = tmp();
+    let store_a = seed_simple_desk(install_a.path());
+    let external = tmp();
+    let target = external.path().join("Shared Desk");
+    store_a.make_desk_local("d1", &target).unwrap();
+
+    // ...and adopt it from a second install.
+    let install_b = tmp();
+    let store_b = DeskStore::new(install_b.path());
+    let desk_id = store_b.adopt_desk_folder(&target).unwrap();
+    assert_eq!(desk_id, "d1");
+    let forest = store_b.load_forest().unwrap();
+    assert_eq!(forest.len(), 1);
+    assert_eq!(forest[0].name, "Personal");
+    let (content, _, _) = store_b.read_by_id("f1").unwrap();
+    assert_eq!(content, "body");
+    // Double-adopt refuses.
+    assert!(store_b.adopt_desk_folder(&target).is_err());
+}
+
+#[test]
+fn deleting_a_local_desk_unregisters_without_touching_the_folder() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target).unwrap();
+
+    // Desk vanishes from the tree (deleted) while another desk remains.
+    let tree = vec![node("d2", "desk", "Other", None, Vec::new())];
+    store.save_forest(&tree).unwrap();
+    assert!(target.join("Doc.md").exists(), "user folder untouched");
+    assert!(store.list_roots().is_empty(), "root unregistered");
+}
+
+#[test]
+fn reconcile_from_disk_follows_external_adds_and_removes() {
+    let dir = tmp();
+    let external = tmp();
+    let target = external.path().join("Desk");
+    let store = seed_simple_desk(dir.path());
+    store.make_desk_local("d1", &target).unwrap();
+
+    // No-op on an unchanged folder.
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert!(!report.changed());
+
+    // Another app drops files in (root + nested new folder)...
+    fs::write(target.join("From Finder.md"), "external").unwrap();
+    fs::create_dir_all(target.join("Research/Papers")).unwrap();
+    fs::write(target.join("Research/Papers/notes.txt"), "n").unwrap();
+    // ...and deletes the original doc.
+    fs::remove_file(target.join("Doc.md")).unwrap();
+
+    let report = store.reconcile_desk_from_disk("d1").unwrap();
+    assert_eq!(report.added, 2);
+    assert_eq!(report.removed, 1);
+
+    let forest = store.load_forest().unwrap();
+    let desk = &forest[0];
+    assert!(desk.children.iter().any(|n| n.name == "From Finder"));
+    let research = desk.children.iter().find(|n| n.name == "Research").unwrap();
+    assert_eq!(research.node_type, "folder");
+    assert_eq!(research.children[0].name, "Papers");
+    assert_eq!(research.children[0].children[0].name, "notes");
+    assert!(!desk.children.iter().any(|n| n.name == "Doc"));
+
+    // The adopted files read back through the normal id path.
+    let added = desk.children.iter().find(|n| n.name == "From Finder").unwrap();
+    let (content, _, _) = store.read_by_id(added.file_id.as_ref().unwrap()).unwrap();
+    assert_eq!(content, "external");
+}
+
+/// A one-desk store with a single placed doc `f1` ("body") named Doc.
+fn seed_simple_desk(data_dir: &std::path::Path) -> DeskStore {
+    let store = DeskStore::new(data_dir);
+    store.stage_new("f1").unwrap();
+    store.write_by_id("f1", "body").unwrap();
+    let tree = vec![desk_with_id("d1", vec![node("n1", "document", "Doc", Some("f1"), Vec::new())])];
+    store.save_forest(&tree).unwrap();
+    store
+}
+
+fn desk_with_id(id: &str, children: Vec<TreeNode>) -> TreeNode {
+    node(id, "desk", "Personal", None, children)
 }

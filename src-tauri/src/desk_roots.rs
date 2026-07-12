@@ -1,0 +1,225 @@
+//! Local desk roots — pointing a desk at a folder outside app data.
+//!
+//! Phase 3 of LOCAL-DESKS-PLANNING.md. `{data_dir}/desks/roots.json`
+//! maps deskId → absolute folder path; `DeskStore::desk_dir` consults it,
+//! which is the *entire* redirection — files, images, snapshots, and the
+//! tree all resolve through that one seam, so a local desk behaves
+//! identically to an internal one.
+//!
+//! - **Make Desk Local** moves the desk's folder contents to a
+//!   user-picked directory (same-volume rename with a recursive
+//!   copy+delete fallback for cross-volume targets) and registers the
+//!   root.
+//! - **Make Desk Internal** moves the contents back under
+//!   `{data_dir}/desks/<id>/` and unregisters; the emptied external
+//!   folder is removed only when nothing (beyond `.DS_Store`) remains.
+//! - **Adopt** registers an existing desk folder (it must carry
+//!   `.hushdesk` + `.hush/tree.json`) — the handoff seam: any Hush
+//!   install can open a desk another install produced.
+//!
+//! Paths are per-device state (roots.json never travels). The map is
+//! mtime-cached because `desk_dir` sits on every storage hot path.
+
+use crate::desk_store::DeskStore;
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
+
+type BoxError = Box<dyn std::error::Error>;
+
+fn roots_path(desks_dir: &Path) -> PathBuf {
+    desks_dir.join("roots.json")
+}
+
+type CacheMap = HashMap<PathBuf, (Option<SystemTime>, HashMap<String, String>)>;
+static CACHE: OnceLock<Mutex<CacheMap>> = OnceLock::new();
+
+fn cache() -> &'static Mutex<CacheMap> {
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The deskId → root map, re-read only when roots.json's mtime moves.
+pub fn load_roots(desks_dir: &Path) -> HashMap<String, String> {
+    let path = roots_path(desks_dir);
+    let mtime = fs::metadata(&path).and_then(|m| m.modified()).ok();
+    let mut guard = cache().lock().unwrap();
+    if let Some((cached_mtime, map)) = guard.get(desks_dir) {
+        if *cached_mtime == mtime {
+            return map.clone();
+        }
+    }
+    let map: HashMap<String, String> = fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("roots")
+                .and_then(|r| serde_json::from_value(r.clone()).ok())
+        })
+        .unwrap_or_default();
+    guard.insert(desks_dir.to_path_buf(), (mtime, map.clone()));
+    map
+}
+
+fn save_roots(desks_dir: &Path, map: &HashMap<String, String>) -> Result<(), BoxError> {
+    let payload = serde_json::json!({ "format": "hush-desk-roots", "version": 1, "roots": map });
+    crate::atomic::write_atomic_str(
+        &roots_path(desks_dir),
+        &serde_json::to_string_pretty(&payload)?,
+    )?;
+    cache().lock().unwrap().remove(desks_dir);
+    Ok(())
+}
+
+/// External root for `desk_id`, when one is registered.
+pub fn root_for(desks_dir: &Path, desk_id: &str) -> Option<PathBuf> {
+    load_roots(desks_dir).get(desk_id).map(PathBuf::from)
+}
+
+/// Drop a desk's root registration (leaves the folder untouched).
+pub fn unregister(desks_dir: &Path, desk_id: &str) {
+    let mut map = load_roots(desks_dir);
+    if map.remove(desk_id).is_some() {
+        let _ = save_roots(desks_dir, &map);
+    }
+}
+
+impl DeskStore {
+    pub fn list_roots(&self) -> HashMap<String, String> {
+        load_roots(&self.desks_dir)
+    }
+
+    /// Move a desk's folder to `target` and register the root. `target`
+    /// must be absolute, outside app data, and empty (or missing).
+    pub fn make_desk_local(&self, desk_id: &str, target: &Path) -> Result<(), BoxError> {
+        if !target.is_absolute() {
+            return Err("target must be an absolute path".into());
+        }
+        let data_dir = self.desks_dir.parent().unwrap_or(&self.desks_dir);
+        if target.starts_with(data_dir) {
+            return Err("target must live outside Hush's app data".into());
+        }
+        let mut roots = load_roots(&self.desks_dir);
+        if roots.contains_key(desk_id) {
+            return Err("desk is already local".into());
+        }
+        let src = self.desks_dir.join(desk_id);
+        if !src.join(".hush").join("tree.json").exists() {
+            return Err(format!("no internal desk folder for {}", desk_id).into());
+        }
+        if target.exists() {
+            if !target.is_dir() {
+                return Err("target exists and is not a directory".into());
+            }
+            if !dir_is_effectively_empty(target)? {
+                return Err("target folder is not empty".into());
+            }
+        } else {
+            fs::create_dir_all(target)?;
+        }
+
+        move_dir_contents(&src, target)?;
+        let _ = fs::remove_dir(&src);
+        roots.insert(desk_id.to_string(), target.to_string_lossy().into_owned());
+        save_roots(&self.desks_dir, &roots)?;
+        Ok(())
+    }
+
+    /// Move a local desk's contents back into app data and unregister.
+    /// Returns the now-internal folder path.
+    pub fn make_desk_internal(&self, desk_id: &str) -> Result<PathBuf, BoxError> {
+        let mut roots = load_roots(&self.desks_dir);
+        let Some(root) = roots.get(desk_id).map(PathBuf::from) else {
+            return Err("desk is not local".into());
+        };
+        let dst = self.desks_dir.join(desk_id);
+        if dst.exists() && !dir_is_effectively_empty(&dst)? {
+            return Err("internal desk folder unexpectedly occupied".into());
+        }
+        fs::create_dir_all(&dst)?;
+        move_dir_contents(&root, &dst)?;
+        // Remove the emptied external folder; if the user had unrelated
+        // files in it they survive and the folder stays.
+        if dir_is_effectively_empty(&root).unwrap_or(false) {
+            let _ = fs::remove_dir_all(&root);
+        }
+        roots.remove(desk_id);
+        save_roots(&self.desks_dir, &roots)?;
+        Ok(dst)
+    }
+
+    /// Register an existing desk folder produced by any Hush install.
+    /// Returns the adopted desk's id.
+    pub fn adopt_desk_folder(&self, path: &Path) -> Result<String, BoxError> {
+        if !path.is_absolute() {
+            return Err("path must be absolute".into());
+        }
+        let meta_raw = fs::read_to_string(path.join(".hushdesk"))
+            .map_err(|_| "not a desk folder (missing .hushdesk)")?;
+        let meta: serde_json::Value = serde_json::from_str(&meta_raw)?;
+        let desk_id = meta
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or("malformed .hushdesk (no id)")?
+            .to_string();
+        if !path.join(".hush").join("tree.json").exists() {
+            return Err("not a desk folder (missing .hush/tree.json)".into());
+        }
+        let mut roots = load_roots(&self.desks_dir);
+        if roots.contains_key(&desk_id)
+            || self.desks_dir.join(&desk_id).join(".hush").join("tree.json").exists()
+        {
+            return Err(format!("desk {} is already registered", desk_id).into());
+        }
+        roots.insert(desk_id.clone(), path.to_string_lossy().into_owned());
+        save_roots(&self.desks_dir, &roots)?;
+        self.append_to_order(&desk_id)?;
+        Ok(desk_id)
+    }
+}
+
+/// Empty, or nothing but `.DS_Store` junk.
+fn dir_is_effectively_empty(dir: &Path) -> Result<bool, BoxError> {
+    for entry in fs::read_dir(dir)?.flatten() {
+        if entry.file_name().to_string_lossy() != ".DS_Store" {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Move every entry of `src` into `dst` (which exists and is empty).
+/// Per-entry `fs::rename` with a recursive copy+delete fallback so
+/// cross-volume targets work.
+fn move_dir_contents(src: &Path, dst: &Path) -> Result<(), BoxError> {
+    for entry in fs::read_dir(src)?.flatten() {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if fs::rename(&from, &to).is_ok() {
+            continue;
+        }
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+            fs::remove_dir_all(&from)?;
+        } else {
+            fs::copy(&from, &to)?;
+            fs::remove_file(&from)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), BoxError> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)?.flatten() {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}

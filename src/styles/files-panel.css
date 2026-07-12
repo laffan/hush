@@ -917,6 +917,16 @@ button.desk-switcher-row.desk-switcher-add {
   white-space: nowrap;
 }
 
+/* Outline-square marker on desks operating from a local folder —
+   matches the Local Folder mount icon in the files tree. */
+.desk-switcher-local-glyph {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  margin-left: 6px;
+  opacity: 0.55;
+}
+
 .desk-switcher-row-actions {
   display: inline-flex;
   gap: 2px;

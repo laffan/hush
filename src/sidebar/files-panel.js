@@ -396,6 +396,12 @@ function dispatchRowAction(action, nodeId, opts) {
     handlePermanentDelete(nodeId, storedState, refresh);
   } else if (action === "set-active-desk" || action === "rename-desk" || action === "delete-desk") {
     handleDeskAction(action, nodeId, storedState);
+  } else if (action === "make-desk-local") {
+    import("../sync/desk-roots.js").then((m) => m.makeDeskLocal(storedState, nodeId).then(refresh));
+  } else if (action === "make-desk-internal") {
+    import("../sync/desk-roots.js").then((m) => m.makeDeskInternal(storedState, nodeId).then(refresh));
+  } else if (action === "reveal-desk-folder") {
+    import("../sync/desk-roots.js").then((m) => m.revealDeskRoot(storedState, nodeId));
   }
 }
 

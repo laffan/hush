@@ -14,6 +14,9 @@ use tauri::{
 mod atomic;
 mod commands;
 mod desk_migrate;
+mod desk_paths;
+mod desk_roots;
+mod desk_scan;
 mod desk_store;
 mod files;
 mod hushnote;
@@ -43,6 +46,7 @@ pub struct AppState {
     pub snapshot_manager: Mutex<SnapshotManager>,
     pub zotero_manager: Mutex<ZoteroManager>,
     pub local_sync_manager: LocalSyncManager,
+    pub desk_watch_manager: LocalSyncManager,
     pub window_registry: WindowRegistry,
 }
 
@@ -182,6 +186,7 @@ pub fn run() {
     let snapshot_manager = SnapshotManager::new(&data_dir);
     let zotero_manager = ZoteroManager::new(&data_dir);
     let local_sync_manager = LocalSyncManager::new();
+    let desk_watch_manager = LocalSyncManager::new();
 
     // Snapshot of persisted local-sync folders so we can re-arm watchers
     // after the app state is managed. Clone here while the settings
@@ -229,6 +234,7 @@ pub fn run() {
             snapshot_manager: Mutex::new(snapshot_manager),
             zotero_manager: Mutex::new(zotero_manager),
             local_sync_manager,
+            desk_watch_manager,
             window_registry: WindowRegistry::new(),
         })
         .setup(move |_app| {
@@ -246,6 +252,16 @@ pub fn run() {
                     if folder.bookmark.is_none() {
                         let _ = app_state.local_sync_manager.watch(handle.clone(), folder);
                     }
+                }
+                // Arm watchers on every local desk root so external
+                // edits reach the UI while the app runs.
+                for (desk_id, root) in desk_roots::load_roots(&crate::get_data_dir().join("desks")) {
+                    let _ = app_state.desk_watch_manager.watch_path(
+                        handle.clone(),
+                        &desk_id,
+                        std::path::Path::new(&root),
+                        "desk-changed",
+                    );
                 }
             }
 
@@ -432,6 +448,11 @@ pub fn run() {
             commands::zotero::save_zotero_annotations,
             commands::zotero::load_zotero_annotations,
             commands::zotero::fetch_zotero_annotations,
+            commands::desks::desk_list_roots,
+            commands::desks::desk_make_local,
+            commands::desks::desk_make_internal,
+            commands::desks::desk_adopt_folder,
+            commands::desks::desk_reconcile,
             commands::local_sync::local_sync_add,
             commands::local_sync::local_sync_remove,
             commands::local_sync::local_sync_list,

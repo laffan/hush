@@ -195,10 +195,24 @@ copy instead), register it as a desk root, drop the mount.
    rides along on cross-desk file moves, one-shot migration renames
    snapshots.db to `.pre-desks.bak`. Command surface unchanged — zero
    frontend changes. Backups exclude version history and retired desks.
-3. **Local desks.** Desk root = user-picked folder (bookmark on iOS);
-   watcher per desk root; Make Local / Make Internal (= move folder,
-   repoint registry); adopt-existing-desk-folder flow; New Local Desk in
-   the Add menu.
+3. **Local desks.** ✅ *Shipped 2026-07 (desktop).* `desks/roots.json`
+   maps deskId → external folder and `DeskStore::desk_dir` consults it —
+   the single redirect seam that makes files, images, snapshots, and the
+   tree all resolve identically for local desks. **Make Desk Local…**
+   moves the folder out (cross-volume-safe), **Make Desk Internal**
+   moves it back, **Open Desk Folder…** adopts a desk another install
+   produced (the handoff flow), **Reveal Desk Folder** opens Finder —
+   all in the command palette + the desk row menu, with an
+   outline-square badge in the desk switcher. A `notify` watcher per
+   local root feeds a debounced **disk-wins reconcile**
+   (`desk_reconcile`): files added to the folder become tree nodes
+   (directories mirrored as containers), files deleted on disk drop
+   their nodes (Versions is the recovery path), and the open doc reloads
+   through the guarded external-apply. Deleting a local desk only
+   unregisters — the user's folder is never moved or modified. Deferred
+   to Phase 4: iPad (security-scoped bookmarks), external-rename pairing
+   by content hash (today a rename arrives as remove + add with a fresh
+   fileId).
 4. **Multi-device hardening.** Conflicted-copy detection + adoption,
    eviction-tolerant reads (NSFileCoordinator already in the plugin),
    foreground reconcile on iPad, `NSMetadataQuery` live updates, then real

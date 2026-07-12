@@ -28,6 +28,7 @@
 //! binaries stay a per-device cache (`files/pdfs/`).
 
 use crate::atomic::{write_atomic, write_atomic_str};
+use crate::desk_paths::{collect_expected, sanitize_segment};
 use crate::hushnote;
 use crate::TreeNode;
 use std::collections::{HashMap, HashSet};
@@ -65,12 +66,17 @@ impl DeskStore {
     // ===== Paths =====
 
     pub(crate) fn desk_dir(&self, desk_id: &str) -> PathBuf {
+        // Local desks resolve through roots.json — the single seam that
+        // makes an external folder behave exactly like an internal desk.
+        if let Some(root) = crate::desk_roots::root_for(&self.desks_dir, desk_id) {
+            return root;
+        }
         self.desks_dir.join(desk_id)
     }
-    fn index_path(&self, desk_id: &str) -> PathBuf {
+    pub(crate) fn index_path(&self, desk_id: &str) -> PathBuf {
         self.desk_dir(desk_id).join(".hush").join("index.json")
     }
-    fn tree_path(&self, desk_id: &str) -> PathBuf {
+    pub(crate) fn tree_path(&self, desk_id: &str) -> PathBuf {
         self.desk_dir(desk_id).join(".hush").join("tree.json")
     }
     fn order_path(&self) -> PathBuf {
@@ -86,7 +92,7 @@ impl DeskStore {
 
     // ===== Index IO =====
 
-    fn load_index(&self, desk_id: &str) -> HashMap<String, String> {
+    pub(crate) fn load_index(&self, desk_id: &str) -> HashMap<String, String> {
         fs::read_to_string(self.index_path(desk_id))
             .ok()
             .and_then(|s| serde_json::from_str::<IndexFile>(&s).ok())
@@ -94,7 +100,7 @@ impl DeskStore {
             .unwrap_or_default()
     }
 
-    fn save_index(&self, desk_id: &str, files: &HashMap<String, String>) -> Result<(), BoxError> {
+    pub(crate) fn save_index(&self, desk_id: &str, files: &HashMap<String, String>) -> Result<(), BoxError> {
         let path = self.index_path(desk_id);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -106,7 +112,8 @@ impl DeskStore {
         Ok(())
     }
 
-    /// Every desk id that has a folder with an index or tree.
+    /// Every desk id with a resolvable folder: internal subdirectories
+    /// plus registered local roots (both validated by their tree.json).
     pub(crate) fn desk_ids_on_disk(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Ok(rd) = fs::read_dir(&self.desks_dir) {
@@ -120,7 +127,30 @@ impl DeskStore {
                 }
             }
         }
+        for (desk_id, root) in crate::desk_roots::load_roots(&self.desks_dir) {
+            if out.contains(&desk_id) {
+                continue;
+            }
+            if Path::new(&root).join(".hush").join("tree.json").exists() {
+                out.push(desk_id);
+            }
+        }
         out
+    }
+
+    /// Append a desk id to order.json (used by the adopt flow so a newly
+    /// registered desk lands at a stable position instead of re-sorting
+    /// on every load).
+    pub(crate) fn append_to_order(&self, desk_id: &str) -> Result<(), BoxError> {
+        let mut order: OrderFile = fs::read_to_string(self.order_path())
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        if !order.order.iter().any(|d| d == desk_id) {
+            order.order.push(desk_id.to_string());
+            write_atomic_str(&self.order_path(), &serde_json::to_string_pretty(&order)?)?;
+        }
+        Ok(())
     }
 
     /// fileId -> (deskId, relPath) across every desk.
@@ -180,7 +210,7 @@ impl DeskStore {
         Ok(forest)
     }
 
-    fn load_desk_tree(&self, desk_id: &str) -> Option<TreeNode> {
+    pub(crate) fn load_desk_tree(&self, desk_id: &str) -> Option<TreeNode> {
         let s = fs::read_to_string(self.tree_path(desk_id)).ok()?;
         serde_json::from_str::<TreeNode>(&s).ok()
     }
@@ -243,8 +273,15 @@ impl DeskStore {
         for files in new_indexes.values() {
             all_new.extend(files.keys());
         }
+        let live_ids: HashSet<&str> = desks.iter().map(|d| d.id.as_str()).collect();
         for (id, (desk_id, rel)) in &old_global {
             if all_new.contains(id) {
+                continue;
+            }
+            // The whole desk is vanishing — retirement (or, for local
+            // desks, unregistration) owns its folder; shuffling files
+            // into orphans first would rearrange a user's directory.
+            if !live_ids.contains(desk_id.as_str()) {
                 continue;
             }
             let src = self.abs_path(desk_id, rel);
@@ -292,13 +329,22 @@ impl DeskStore {
         // the whole library.
         if !desks.is_empty() {
             let live: HashSet<&str> = desks.iter().map(|d| d.id.as_str()).collect();
+            let roots = crate::desk_roots::load_roots(&self.desks_dir);
             for desk_id in self.desk_ids_on_disk() {
-                if !live.contains(desk_id.as_str()) {
-                    let trash = self.desks_dir.join(".deleted");
-                    fs::create_dir_all(&trash).ok();
-                    let dst = trash.join(format!("{}-{}", desk_id, now_secs()));
-                    let _ = fs::rename(self.desk_dir(&desk_id), &dst);
+                if live.contains(desk_id.as_str()) {
+                    continue;
                 }
+                if roots.contains_key(&desk_id) {
+                    // A local desk's folder belongs to the user — never
+                    // relocate it into app data. Deleting the desk just
+                    // unregisters the root.
+                    crate::desk_roots::unregister(&self.desks_dir, &desk_id);
+                    continue;
+                }
+                let trash = self.desks_dir.join(".deleted");
+                fs::create_dir_all(&trash).ok();
+                let dst = trash.join(format!("{}-{}", desk_id, now_secs()));
+                let _ = fs::rename(self.desk_dir(&desk_id), &dst);
             }
         }
 
@@ -517,91 +563,6 @@ impl DeskStore {
         }
         (indexed, self.staged_ids())
     }
-}
-
-// ===== Path computation =====
-
-/// Walk a desk's children computing each file-backed node's relative path
-/// and the set of expected directories. Sibling filenames are deduped with
-/// " (n)" so two same-named nodes of different types can't collide.
-fn collect_expected(
-    nodes: &[TreeNode],
-    dir_stack: &mut Vec<String>,
-    files: &mut HashMap<String, String>,
-    dirs: &mut HashSet<PathBuf>,
-) {
-    let mut used: HashSet<String> = HashSet::new();
-    for node in nodes {
-        match node.node_type.as_str() {
-            "folder" | "project" | "desk" => {
-                let seg = dedupe(&sanitize_segment(&node.name), "", &mut used);
-                dir_stack.push(seg);
-                dirs.insert(PathBuf::from(dir_stack.join("/")));
-                collect_expected(&node.children, dir_stack, files, dirs);
-                dir_stack.pop();
-            }
-            "document" | "notebook" | "stack" | "image" => {
-                let Some(id) = node.file_id.as_ref() else { continue };
-                let (base, ext) = match node.node_type.as_str() {
-                    "document" => (sanitize_segment(&node.name), ".md"),
-                    "notebook" => (sanitize_segment(&node.name), ".hushnote"),
-                    "stack" => (sanitize_segment(&node.name), ".hushstack"),
-                    // Image names already carry their extension (the
-                    // filename IS the id).
-                    _ => (sanitize_segment(&node.name), ""),
-                };
-                let filename = dedupe(&base, ext, &mut used);
-                let rel = if dir_stack.is_empty() {
-                    filename
-                } else {
-                    format!("{}/{}", dir_stack.join("/"), filename)
-                };
-                files.insert(id.clone(), rel);
-            }
-            _ => {} // pdf (registry-only) and anything unknown
-        }
-    }
-}
-
-fn dedupe(base: &str, ext: &str, used: &mut HashSet<String>) -> String {
-    // Avoid double extensions when the display name already carries one.
-    let base = if !ext.is_empty() && base.to_lowercase().ends_with(ext) {
-        &base[..base.len() - ext.len()]
-    } else {
-        base
-    };
-    let mut candidate = format!("{}{}", base, ext);
-    let mut i = 2;
-    while !used.insert(candidate.to_lowercase()) {
-        candidate = format!("{} ({}){}", base, i, ext);
-        i += 1;
-    }
-    candidate
-}
-
-/// A tree name as a single path segment: no separators, no leading dot,
-/// never empty, bounded length.
-pub fn sanitize_segment(name: &str) -> String {
-    let mut cleaned: String = name
-        .trim()
-        .chars()
-        .map(|c| {
-            if c == '/' || c == '\\' || c == ':' || c.is_control() {
-                '-'
-            } else {
-                c
-            }
-        })
-        .collect();
-    while cleaned.starts_with('.') {
-        cleaned.remove(0);
-    }
-    let cleaned = cleaned.trim().to_string();
-    let mut out = if cleaned.is_empty() { "Untitled".to_string() } else { cleaned };
-    if out.chars().count() > 150 {
-        out = out.chars().take(150).collect();
-    }
-    out
 }
 
 // ===== Content IO by extension =====

@@ -203,6 +203,19 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
     const inProject = !!parent && parent.type === "project"
       && parent.id !== "__inbox__" && !parent.id?.startsWith("__inbox__:");
     entries = getMenuEntries(nodeId, node.type, inTrash, node, inProject);
+    // Local-desk actions need runtime state (the roots map), so they
+    // join here rather than in the static entry builder. Desktop only.
+    if (node.type === "desk" && typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
+      const isLocal = !!state.deskRoots?.[nodeId];
+      const insertAt = entries.findIndex((e) => e.action === "delete-desk");
+      const extra = isLocal
+        ? [
+            { action: "reveal-desk-folder", label: "Reveal Folder" },
+            { action: "make-desk-internal", label: "Make Internal" },
+          ]
+        : [{ action: "make-desk-local", label: "Make Local…" }];
+      entries.splice(insertAt < 0 ? entries.length : insertAt, 0, ...extra);
+    }
   }
   if (!entries.length) return;
 

@@ -584,6 +584,30 @@ function buildCommands(state) {
         const m = await import("./sidebar/send-to-desk-modal.js");
         m.openSendToDeskModal(s, id, "copy");
       } },
+    // Local desks (desktop only until the iPad bookmark path lands):
+    // move the active desk's folder out of app data / back in, reveal
+    // it, or adopt a desk folder another install produced.
+    { id: "desk-make-local", label: "Make Desk Local…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !desktop || !s.getActiveDesk?.() || !!s.deskRoots?.[s.getActiveDesk()?.id],
+      action: async (s) => {
+        const desk = s.getActiveDesk();
+        if (desk) await (await import("./sync/desk-roots.js")).makeDeskLocal(s, desk.id);
+      } },
+    { id: "desk-make-internal", label: "Make Desk Internal", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !desktop || !s.deskRoots?.[s.getActiveDesk?.()?.id],
+      action: async (s) => {
+        const desk = s.getActiveDesk();
+        if (desk) await (await import("./sync/desk-roots.js")).makeDeskInternal(s, desk.id);
+      } },
+    { id: "desk-reveal-folder", label: "Reveal Desk Folder", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      hiddenIf: (s) => !desktop || !s.deskRoots?.[s.getActiveDesk?.()?.id],
+      action: async (s) => {
+        const desk = s.getActiveDesk();
+        if (desk) await (await import("./sync/desk-roots.js")).revealDeskRoot(s, desk.id);
+      } },
+    { id: "desk-adopt", label: "Open Desk Folder…", icon: icons.desk, shortcutKey: null, ctx: "shared",
+      hiddenIf: () => !desktop,
+      action: async (s) => (await import("./sync/desk-roots.js")).adoptDeskFolder(s) },
     { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keepOpen: true,
       action: async (s, p) => (await import("./state/state-desks-ops.js")).enterConvertFolderPicker(p, s, { typeIcons, fallbackIcon: icons.desk }) },

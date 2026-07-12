@@ -54,6 +54,7 @@ function attachListeners() {
   _state.on("desks-changed", onDesks);
   _state.on("active-desk-changed", onActive);
   _state.on("settings-changed", onSettings);
+  _state.on("desk-roots-changed", onDesks);
   _refreshHandlers = { onDesks, onActive, onSettings };
 }
 
@@ -62,6 +63,7 @@ function detachListeners() {
   _state.off("desks-changed", _refreshHandlers.onDesks);
   _state.off("active-desk-changed", _refreshHandlers.onActive);
   _state.off("settings-changed", _refreshHandlers.onSettings);
+  _state.off("desk-roots-changed", _refreshHandlers.onDesks);
   _refreshHandlers = null;
   closePopover();
 }
@@ -142,13 +144,20 @@ function buildPopoverBody(state) {
   const canDelete = desks.length > 1;
   const wrap = document.createElement("div");
   wrap.className = "desk-switcher-popover-body";
-  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canDelete)).join("") + addRowHtml();
+  const roots = _state?.deskRoots || {};
+  wrap.innerHTML = desks.map((d) => deskRowHtml(d, activeId, canDelete, !!roots[d.id])).join("") + addRowHtml();
   return wrap;
 }
 
-function deskRowHtml(d, activeId, canDelete) {
+function deskRowHtml(d, activeId, canDelete, isLocal = false) {
   const isActive = d.id === activeId;
   const mark = isActive ? CHECK : "";
+  // Local desks (operating from a user-picked folder) wear a small
+  // outline-square glyph after the name — the same shape Local Folder
+  // mounts use in the files tree.
+  const localGlyph = isLocal
+    ? `<svg viewBox="0 0 16 16" class="desk-switcher-local-glyph" data-tooltip="Local desk"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`
+    : "";
   const pencilBtn = `<button class="desk-switcher-action" type="button" data-action="rename" data-tooltip="Rename">${PENCIL}</button>`;
   const trashBtn = canDelete
     ? `<button class="desk-switcher-action" type="button" data-action="delete" data-tooltip="Delete">${TRASH}</button>`
@@ -157,7 +166,7 @@ function deskRowHtml(d, activeId, canDelete) {
   return `<div class="desk-switcher-row${isActive ? " active" : ""}" data-desk-id="${d.id}">
     <button class="desk-switcher-row-pick" type="button" data-action="pick">
       <span class="desk-switcher-row-mark">${mark}</span>
-      <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>
+      <span class="desk-switcher-row-name">${escHtml(d.name || "Untitled desk")}</span>${localGlyph}
     </button>
     <span class="desk-switcher-row-actions">${handle}${pencilBtn}${trashBtn}</span>
   </div>`;

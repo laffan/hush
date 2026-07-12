@@ -92,10 +92,24 @@ impl LocalSyncManager {
     /// mounted root. Idempotent — reinstalling replaces any previous
     /// watcher for the same id.
     pub fn watch(&self, app: AppHandle, folder: &LocalSyncFolder) -> Result<(), String> {
-        let id = folder.id.clone();
-        let path = PathBuf::from(&folder.path);
+        self.watch_path(app, &folder.id, Path::new(&folder.path), "local-sync-changed")
+    }
+
+    /// Generic form: watch `path`, emitting `event` with `{ id, paths }`
+    /// on every content-affecting change. Used both for Local Folder
+    /// mounts (`local-sync-changed`) and local desk roots
+    /// (`desk-changed`, keyed by desk id).
+    pub fn watch_path(
+        &self,
+        app: AppHandle,
+        id: &str,
+        path: &Path,
+        event: &'static str,
+    ) -> Result<(), String> {
+        let id = id.to_string();
+        let path = path.to_path_buf();
         if !path.is_dir() {
-            return Err(format!("Not a directory: {}", folder.path));
+            return Err(format!("Not a directory: {}", path.display()));
         }
 
         let id_for_cb = id.clone();
@@ -127,7 +141,7 @@ impl LocalSyncManager {
                                 .map(|p| p.to_string_lossy().into_owned())
                                 .collect::<Vec<_>>(),
                         });
-                        let _ = app.emit("local-sync-changed", payload);
+                        let _ = app.emit(event, payload);
                     }
                 }
             },
