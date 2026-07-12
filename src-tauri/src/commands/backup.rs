@@ -60,6 +60,23 @@ fn collect_files(root: &Path) -> std::io::Result<Vec<(PathBuf, String)>> {
                 if name.ends_with(".tmp") || name.ends_with(".bak") {
                     continue;
                 }
+                // Desk-folder era: per-desk version history lives under
+                // .hush/versions/, unplaced history under
+                // .versions-unplaced/, and retired desks under .deleted/.
+                // All are excluded so the archive stays authored content.
+                if p.is_dir() {
+                    let parent_is_hush = p
+                        .parent()
+                        .and_then(|d| d.file_name())
+                        .and_then(|n| n.to_str())
+                        == Some(".hush");
+                    if (name == "versions" && parent_is_hush)
+                        || name == ".versions-unplaced"
+                        || name == ".deleted"
+                    {
+                        continue;
+                    }
+                }
             }
             if p.is_dir() {
                 stack.push(p);

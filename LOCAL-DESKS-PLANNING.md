@@ -187,8 +187,14 @@ copy instead), register it as a desk root, drop the mount.
    nothing); tree.json stays authoritative for structure until the
    fs-wins reconciler lands with local desks; snapshots stay central
    until Phase 2.
-2. **Versions into desk data.** File-per-snapshot store, migration from
-   snapshots.db, prune policy, Versions modal on the new store.
+2. **Versions into desk data.** ✅ *Shipped 2026-07.* File-per-snapshot
+   store at `.hush/versions/<fileId>/<createdAtMs>-<deviceId>.snap`
+   (plain bytes for inspectability; compression can layer on later if
+   size warrants), device id persisted at `{data_dir}/device_id`,
+   identical decay policy, unplaced-file fallback area, version history
+   rides along on cross-desk file moves, one-shot migration renames
+   snapshots.db to `.pre-desks.bak`. Command surface unchanged — zero
+   frontend changes. Backups exclude version history and retired desks.
 3. **Local desks.** Desk root = user-picked folder (bookmark on iOS);
    watcher per desk root; Make Local / Make Internal (= move folder,
    repoint registry); adopt-existing-desk-folder flow; New Local Desk in

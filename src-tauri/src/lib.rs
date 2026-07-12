@@ -158,6 +158,12 @@ pub fn run() {
     if let Err(e) = desk_migrate::migrate_from_flat(&data_dir) {
         eprintln!("desk-store migration failed: {}", e);
     }
+    // Same deal for version history: snapshots.db rows become per-desk
+    // .hush/versions/<fileId>/*.snap files. Runs after the desk store
+    // exists so each document's snapshots land in its desk.
+    if let Err(e) = snapshots::migrate_snapshots_db(&data_dir) {
+        eprintln!("snapshot migration failed: {}", e);
+    }
 
     #[cfg(desktop)]
     let shortcut_label = settings.shortcut_open_editor.clone()

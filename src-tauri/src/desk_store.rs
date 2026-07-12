@@ -107,7 +107,7 @@ impl DeskStore {
     }
 
     /// Every desk id that has a folder with an index or tree.
-    fn desk_ids_on_disk(&self) -> Vec<String> {
+    pub(crate) fn desk_ids_on_disk(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Ok(rd) = fs::read_dir(&self.desks_dir) {
             for entry in rd.flatten() {
@@ -337,6 +337,20 @@ impl DeskStore {
                     return Ok(());
                 }
                 fs::rename(&src, &dst)?;
+                // A cross-desk move carries the file's version history
+                // along so a handed-off desk stays complete.
+                if old_desk != desk_id {
+                    let old_versions = self.desk_dir(old_desk).join(".hush").join("versions").join(id);
+                    if old_versions.is_dir() {
+                        let new_versions = self.desk_dir(desk_id).join(".hush").join("versions").join(id);
+                        if let Some(parent) = new_versions.parent() {
+                            let _ = fs::create_dir_all(parent);
+                        }
+                        if !new_versions.exists() {
+                            let _ = fs::rename(&old_versions, &new_versions);
+                        }
+                    }
+                }
                 return Ok(());
             }
         }

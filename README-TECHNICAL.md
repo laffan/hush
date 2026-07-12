@@ -1156,7 +1156,7 @@ Command handlers are grouped by domain. Each module exports `pub fn` items decor
 - **`commands/local_sync.rs`** — `local_sync_add` / `_remove` / `_list` / `_read_dir` / `_read_file` / `_write_file` / `_read_file_bytes` / `_write_file_bytes`. `local_sync_add` takes optional `desk_id` and `bookmark` parameters: `desk_id` stamps the mount with the currently active desk; `bookmark` (iOS only) carries the security-scoped bookmark and, when present, makes the command skip the `std::fs` `is_dir` check and the `notify` watcher (both desktop-only — iOS reads/writes route through `tauri-plugin-icloud-folder` from the JS side instead). The byte variants surface image binaries that live next to a Local Sync `.md` file (`_write_file_bytes` auto-suffixes on collision, mirroring `ImageManager::unique_filename`). Includes the local-only `find_local_sync_folder` helper and a small `uuid_like()` ID generator
 - **`commands/zotero.rs`** — `save_zotero_references`, `load_zotero_references`, `save_zotero_pdf`, `load_zotero_pdf`, `zotero_pdf_exists`, `download_zotero_pdf` (server-side fetch + cache for the snapshot pipeline), `save_zotero_annotations`, `load_zotero_annotations` (Option-returning), `fetch_zotero_annotations` (server-side paginated fetch + cache for the highlight browser pane)
 - **`commands/window.rs`** — `set_always_on_top` (desktop), `set_activation_policy`, `set_traffic_lights_visible(label, visible)` (macOS — walks `ns_window().standardWindowButton:` for kinds 0/1/2 and calls `setHidden:` via `objc2::msg_send!`; no-op on every other platform). `src/traffic-lights.js` mounts a 90×32 pixel `pointer-events: none` hot-zone in the top-left and tracks `pointermove` on the document, calling the command with `visible: true` when the cursor enters the zone and `false` when it leaves so the buttons fade in only on hover. The hot-zone doesn't intercept clicks, so revealed buttons stay clickable
-- **`commands/backup.rs`** — `backup_app_data(destination)` zips the contents of `{data_dir}` into a single archive at the user-chosen path (using the `zip` crate, `Deflated` compression). `snapshots.db`, `.tmp`, and `.bak` files are excluded so the backup is self-contained authored content + settings + Zotero / sync metadata, not version history. Per-file progress is reported to the JS frontend via `app.emit("backup-progress", { processed, total, currentFile })`
+- **`commands/backup.rs`** — `backup_app_data(destination)` zips the contents of `{data_dir}` into a single archive at the user-chosen path (using the `zip` crate, `Deflated` compression). Version history (per-desk `.hush/versions/` snapshot files, the unplaced fallback, the legacy `snapshots.db`), retired desks (`desks/.deleted/`), and `.tmp` / `.bak` files are excluded so the backup is self-contained authored content + settings + Zotero metadata, not history. Per-file progress is reported to the JS frontend via `app.emit("backup-progress", { processed, total, currentFile })`
 - **`commands/grammar.rs`** — `check_grammar(text, disabled_rules)` is an `async` Tauri command that hops to the blocking thread pool via `tauri::async_runtime::spawn_blocking`, builds `LintGroup::new_curated(FstDictionary::curated(), Dialect::American)` over `Document::new_markdown_default_curated(&text)`, disables every rule named in `disabled_rules` via `LintGroup::config.set_rule_enabled(rule, false)`, and returns `Vec<GrammarIssue>` (`{ from, to, message, suggestions }`). The async + spawn_blocking shape keeps the JS UI thread free for the multi-second cold-start dictionary build — a sync command would freeze the WebView (beach ball cursor) and prevent the loading modal from painting. Spans are converted from harper's Unicode-scalar offsets to UTF-16 code-unit offsets so the JS frontend can apply them directly to CodeMirror positions without re-walking the buffer. `list_grammar_rules()` returns a curated rule list so the Proofread settings tab can render checkboxes without hard-coding rule names
 - **`commands/spellcheck.rs`** — `check_spelling(text)` and `spelling_suggestions(word)`, both `async` + `spawn_blocking` for the same UI-thread reasons as `check_grammar`. Backed by the [`spellbook`](https://github.com/helix-editor/spellbook) crate (pure-Rust Hunspell). The en_US dictionary files (`src-tauri/dictionaries/en_US.aff`, `en_US.dic`, sourced from `wooorm/dictionaries` — MIT/MPL) are embedded via `include_str!` and parsed once into a process-wide `OnceLock<Dictionary>` so cold load is a single ~10 ms hit. `check_spelling` walks the buffer with a Unicode-aware tokenizer (alphabetic runs plus inline `'` / `'` so "don't" stays one word; digits and standalone punctuation skipped) and returns `Vec<SpellingIssue> { from, to, word }` with UTF-16 spans converted through the same `char_to_utf16_range` helper grammar.rs uses. `spelling_suggestions` is invoked lazily per-click from the suggestion popover and returns up to 8 `dict.suggest(word, …)` results, so we never spend suggestion time on words the user never clicks
 - **`commands/pdf_export.rs`** — `render_doc_pdf(args)` runs the Typst-backed PDF pipeline for docs and projects (markdown → cleanup passes → Typst source → in-memory `World` → `typst::compile` → `typst_pdf::pdf`). The companion `list_doc_styles()` returns `[{ id, name }]` so the frontend modal can populate its style dropdown without hard-coding the registry. Bytes come back as `Vec<u8>` which the JS side hands to `write_binary_file` (desktop) or `navigator.share` (iOS). All the heavy lifting lives in the `typst_export/` module — see "Doc / Project PDF Export" upstream.
@@ -1187,7 +1187,7 @@ The Tauri command layer exposes `save_image` (data-URL ingest, returns the possi
 
 ### `snapshots.rs`
 
-Document version history stored in SQLite (`{data_dir}/snapshots.db`). Creates timestamped snapshots of file content. Supports listing, loading, and restoring snapshots.
+Version history — **one file per snapshot, stored inside the desk** (Phase 2 of LOCAL-DESKS-PLANNING.md): `{desk}/.hush/versions/<fileId>/<createdAtMs>-<deviceId>.snap`, plain bytes (doc markdown / notebook envelope JSON), append-only, and suffixed with a stable per-install id (`{data_dir}/device_id`) so two devices writing into a shared desk folder can never contend over the same file. Snapshots for a not-yet-placed (staged) file land under `desks/.versions-unplaced/<fileId>/`; reads aggregate across every desk plus that fallback, and a cross-desk file move carries the file's version directory along (`desk_store::place_file`). The command surface is unchanged (`create_snapshot` / `get_snapshots` / `get_snapshot` / `delete_document_snapshots`; ids are now created-at milliseconds, bumped on collision). The decay policy carries over verbatim — keep everything for 30 min, then 1/min to 2 h, 1/10 min to 24 h, 1/hour to 7 days, 1/day beyond — applied on every create and in a startup sweep. `migrate_snapshots_db` runs once at boot: every legacy SQLite row becomes a snapshot file in its document's desk, then `snapshots.db` is renamed to `.pre-desks.bak` (rusqlite survives in the crate only for this migration). Tests in `snapshots_tests.rs`.
 
 ### `zotero.rs`
 
@@ -1234,7 +1234,7 @@ Open the Xcode project to configure signing before building.
 ```
 {data_dir}/com.hush.app/
 ├── settings.json
-├── snapshots.db                  (version history — desk-local in Phase 2)
+├── device_id                     (stable per-install id — suffixes snapshot filenames)
 ├── desks/
 │   ├── order.json                (desk ordering + transient stragglers)
 │   ├── .staging/                 (files created before they have a tree position)
@@ -1243,6 +1243,7 @@ Open the Xcode project to configure signing before building.
 │       ├── .hush/
 │       │   ├── index.json        (fileId ↔ relative path)
 │       │   ├── tree.json         (structure + ordering + row decoration)
+│       │   ├── versions/<fileId>/<ms>-<device>.snap   (version history)
 │       │   └── orphans/
 │       ├── Inbox/  Trash/  Images/
 │       ├── <Doc>.md  <Notebook>.hushnote  <Stack>.hushstack
@@ -1255,6 +1256,7 @@ Open the Xcode project to configure signing before building.
 │       ├── {uuid}.meta.json
 │       └── _registry.json        (PDF metadata registry)
 ├── file_tree.json.pre-desks.bak  (pre-migration tree backup)
+├── snapshots.db.pre-desks.bak    (pre-migration version history backup)
 ├── zotero_references.json
 ├── zotero_pdfs/
 └── zotero_annotations/
