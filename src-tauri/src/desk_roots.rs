@@ -19,8 +19,15 @@
 //!
 //! Paths are per-device state (roots.json never travels). The map is
 //! mtime-cached because `desk_dir` sits on every storage hot path.
+//!
+//! On iOS a folder can only be re-opened across launches through a
+//! security-scoped bookmark, so a root entry optionally carries one
+//! (`{ "path": …, "bookmark": … }`); desktop entries stay bare strings.
+//! Bookmarked roots get no filesystem watcher — iOS has none — and are
+//! instead reconciled on app foreground.
 
 use crate::desk_store::DeskStore;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,19 +36,52 @@ use std::time::SystemTime;
 
 type BoxError = Box<dyn std::error::Error>;
 
+/// One registered local-desk root. `bookmark` is a base64
+/// security-scoped bookmark, present only for roots picked on iOS.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum RootEntry {
+    /// Desktop form — just the absolute path.
+    Path(String),
+    /// iOS form — path plus the bookmark that re-grants access to it.
+    Bookmarked { path: String, bookmark: String },
+}
+
+impl RootEntry {
+    pub fn path(&self) -> &str {
+        match self {
+            RootEntry::Path(p) => p,
+            RootEntry::Bookmarked { path, .. } => path,
+        }
+    }
+    pub fn bookmark(&self) -> Option<&str> {
+        match self {
+            RootEntry::Path(_) => None,
+            RootEntry::Bookmarked { bookmark, .. } => Some(bookmark),
+        }
+    }
+    pub fn new(path: String, bookmark: Option<String>) -> Self {
+        match bookmark {
+            Some(b) => RootEntry::Bookmarked { path, bookmark: b },
+            None => RootEntry::Path(path),
+        }
+    }
+}
+
 fn roots_path(desks_dir: &Path) -> PathBuf {
     desks_dir.join("roots.json")
 }
 
-type CacheMap = HashMap<PathBuf, (Option<SystemTime>, HashMap<String, String>)>;
+type CacheMap = HashMap<PathBuf, (Option<SystemTime>, HashMap<String, RootEntry>)>;
 static CACHE: OnceLock<Mutex<CacheMap>> = OnceLock::new();
 
 fn cache() -> &'static Mutex<CacheMap> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The deskId → root map, re-read only when roots.json's mtime moves.
-pub fn load_roots(desks_dir: &Path) -> HashMap<String, String> {
+/// The full deskId → entry map, re-read only when roots.json's mtime
+/// moves.
+pub fn load_entries(desks_dir: &Path) -> HashMap<String, RootEntry> {
     let path = roots_path(desks_dir);
     let mtime = fs::metadata(&path).and_then(|m| m.modified()).ok();
     let mut guard = cache().lock().unwrap();
@@ -50,7 +90,7 @@ pub fn load_roots(desks_dir: &Path) -> HashMap<String, String> {
             return map.clone();
         }
     }
-    let map: HashMap<String, String> = fs::read_to_string(&path)
+    let map: HashMap<String, RootEntry> = fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| {
@@ -62,8 +102,17 @@ pub fn load_roots(desks_dir: &Path) -> HashMap<String, String> {
     map
 }
 
-fn save_roots(desks_dir: &Path, map: &HashMap<String, String>) -> Result<(), BoxError> {
-    let payload = serde_json::json!({ "format": "hush-desk-roots", "version": 1, "roots": map });
+/// The deskId → root path map (bookmarks dropped) — what most callers
+/// need.
+pub fn load_roots(desks_dir: &Path) -> HashMap<String, String> {
+    load_entries(desks_dir)
+        .into_iter()
+        .map(|(id, e)| (id, e.path().to_string()))
+        .collect()
+}
+
+fn save_entries(desks_dir: &Path, map: &HashMap<String, RootEntry>) -> Result<(), BoxError> {
+    let payload = serde_json::json!({ "format": "hush-desk-roots", "version": 2, "roots": map });
     crate::atomic::write_atomic_str(
         &roots_path(desks_dir),
         &serde_json::to_string_pretty(&payload)?,
@@ -74,15 +123,35 @@ fn save_roots(desks_dir: &Path, map: &HashMap<String, String>) -> Result<(), Box
 
 /// External root for `desk_id`, when one is registered.
 pub fn root_for(desks_dir: &Path, desk_id: &str) -> Option<PathBuf> {
-    load_roots(desks_dir).get(desk_id).map(PathBuf::from)
+    load_entries(desks_dir)
+        .get(desk_id)
+        .map(|e| PathBuf::from(e.path()))
 }
 
 /// Drop a desk's root registration (leaves the folder untouched).
 pub fn unregister(desks_dir: &Path, desk_id: &str) {
-    let mut map = load_roots(desks_dir);
+    let mut map = load_entries(desks_dir);
     if map.remove(desk_id).is_some() {
-        let _ = save_roots(desks_dir, &map);
+        let _ = save_entries(desks_dir, &map);
     }
+}
+
+/// Repoint a registered root — the iOS boot path, where a bookmark can
+/// resolve to a different container path than the one it was minted at.
+/// A `bookmark` of `None` keeps the stored one.
+pub fn update_root(
+    desks_dir: &Path,
+    desk_id: &str,
+    new_path: &str,
+    bookmark: Option<String>,
+) -> Result<(), BoxError> {
+    let mut map = load_entries(desks_dir);
+    let Some(existing) = map.get(desk_id) else {
+        return Err(format!("desk {} is not local", desk_id).into());
+    };
+    let kept = bookmark.or_else(|| existing.bookmark().map(str::to_string));
+    map.insert(desk_id.to_string(), RootEntry::new(new_path.to_string(), kept));
+    save_entries(desks_dir, &map)
 }
 
 impl DeskStore {
@@ -92,7 +161,14 @@ impl DeskStore {
 
     /// Move a desk's folder to `target` and register the root. `target`
     /// must be absolute, outside app data, and empty (or missing).
-    pub fn make_desk_local(&self, desk_id: &str, target: &Path) -> Result<(), BoxError> {
+    /// `bookmark` is the iOS security-scoped bookmark for the target,
+    /// when there is one.
+    pub fn make_desk_local(
+        &self,
+        desk_id: &str,
+        target: &Path,
+        bookmark: Option<String>,
+    ) -> Result<(), BoxError> {
         if !target.is_absolute() {
             return Err("target must be an absolute path".into());
         }
@@ -100,7 +176,7 @@ impl DeskStore {
         if target.starts_with(data_dir) {
             return Err("target must live outside Hush's app data".into());
         }
-        let mut roots = load_roots(&self.desks_dir);
+        let mut roots = load_entries(&self.desks_dir);
         if roots.contains_key(desk_id) {
             return Err("desk is already local".into());
         }
@@ -121,16 +197,19 @@ impl DeskStore {
 
         move_dir_contents(&src, target)?;
         let _ = fs::remove_dir(&src);
-        roots.insert(desk_id.to_string(), target.to_string_lossy().into_owned());
-        save_roots(&self.desks_dir, &roots)?;
+        roots.insert(
+            desk_id.to_string(),
+            RootEntry::new(target.to_string_lossy().into_owned(), bookmark),
+        );
+        save_entries(&self.desks_dir, &roots)?;
         Ok(())
     }
 
     /// Move a local desk's contents back into app data and unregister.
     /// Returns the now-internal folder path.
     pub fn make_desk_internal(&self, desk_id: &str) -> Result<PathBuf, BoxError> {
-        let mut roots = load_roots(&self.desks_dir);
-        let Some(root) = roots.get(desk_id).map(PathBuf::from) else {
+        let mut roots = load_entries(&self.desks_dir);
+        let Some(root) = roots.get(desk_id).map(|e| PathBuf::from(e.path())) else {
             return Err("desk is not local".into());
         };
         let dst = self.desks_dir.join(desk_id);
@@ -145,13 +224,18 @@ impl DeskStore {
             let _ = fs::remove_dir_all(&root);
         }
         roots.remove(desk_id);
-        save_roots(&self.desks_dir, &roots)?;
+        save_entries(&self.desks_dir, &roots)?;
         Ok(dst)
     }
 
     /// Register an existing desk folder produced by any Hush install.
-    /// Returns the adopted desk's id.
-    pub fn adopt_desk_folder(&self, path: &Path) -> Result<String, BoxError> {
+    /// Returns the adopted desk's id. `bookmark` is the iOS
+    /// security-scoped bookmark for the folder, when there is one.
+    pub fn adopt_desk_folder(
+        &self,
+        path: &Path,
+        bookmark: Option<String>,
+    ) -> Result<String, BoxError> {
         if !path.is_absolute() {
             return Err("path must be absolute".into());
         }
@@ -166,14 +250,17 @@ impl DeskStore {
         if !path.join(".hush").join("tree.json").exists() {
             return Err("not a desk folder (missing .hush/tree.json)".into());
         }
-        let mut roots = load_roots(&self.desks_dir);
+        let mut roots = load_entries(&self.desks_dir);
         if roots.contains_key(&desk_id)
             || self.desks_dir.join(&desk_id).join(".hush").join("tree.json").exists()
         {
             return Err(format!("desk {} is already registered", desk_id).into());
         }
-        roots.insert(desk_id.clone(), path.to_string_lossy().into_owned());
-        save_roots(&self.desks_dir, &roots)?;
+        roots.insert(
+            desk_id.clone(),
+            RootEntry::new(path.to_string_lossy().into_owned(), bookmark),
+        );
+        save_entries(&self.desks_dir, &roots)?;
         self.append_to_order(&desk_id)?;
         Ok(desk_id)
     }

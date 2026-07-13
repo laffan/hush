@@ -204,13 +204,16 @@ export function openRowMenu(anchorBtn, nodeId, state, flagOnly, dispatchRowActio
       && parent.id !== "__inbox__" && !parent.id?.startsWith("__inbox__:");
     entries = getMenuEntries(nodeId, node.type, inTrash, node, inProject);
     // Local-desk actions need runtime state (the roots map), so they
-    // join here rather than in the static entry builder. Desktop only.
+    // join here rather than in the static entry builder.
     if (node.type === "desk" && typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
       const isLocal = !!state.deskRoots?.[nodeId];
+      // No Finder to reveal into on iOS.
+      const canReveal = !/iPad|iPhone|iPod/.test(navigator.userAgent || "")
+        && !(/Mac/i.test(navigator.platform || "") && (navigator.maxTouchPoints || 0) > 0);
       const insertAt = entries.findIndex((e) => e.action === "delete-desk");
       const extra = isLocal
         ? [
-            { action: "reveal-desk-folder", label: "Reveal Folder" },
+            ...(canReveal ? [{ action: "reveal-desk-folder", label: "Reveal Folder" }] : []),
             { action: "make-desk-internal", label: "Make Internal" },
           ]
         : [{ action: "make-desk-local", label: "Make Local…" }];

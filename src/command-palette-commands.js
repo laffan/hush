@@ -588,13 +588,13 @@ function buildCommands(state) {
     // move the active desk's folder out of app data / back in, reveal
     // it, or adopt a desk folder another install produced.
     { id: "desk-make-local", label: "Make Desk Local…", icon: icons.desk, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !desktop || !s.getActiveDesk?.() || !!s.deskRoots?.[s.getActiveDesk()?.id],
+      hiddenIf: (s) => (!desktop && !ipad) || !s.getActiveDesk?.() || !!s.deskRoots?.[s.getActiveDesk()?.id],
       action: async (s) => {
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).makeDeskLocal(s, desk.id);
       } },
     { id: "desk-make-internal", label: "Make Desk Internal", icon: icons.desk, shortcutKey: null, ctx: "shared",
-      hiddenIf: (s) => !desktop || !s.deskRoots?.[s.getActiveDesk?.()?.id],
+      hiddenIf: (s) => (!desktop && !ipad) || !s.deskRoots?.[s.getActiveDesk?.()?.id],
       action: async (s) => {
         const desk = s.getActiveDesk();
         if (desk) await (await import("./sync/desk-roots.js")).makeDeskInternal(s, desk.id);
@@ -606,7 +606,7 @@ function buildCommands(state) {
         if (desk) await (await import("./sync/desk-roots.js")).revealDeskRoot(s, desk.id);
       } },
     { id: "desk-adopt", label: "Open Desk Folder…", icon: icons.desk, shortcutKey: null, ctx: "shared",
-      hiddenIf: () => !desktop,
+      hiddenIf: () => !desktop && !ipad,
       action: async (s) => (await import("./sync/desk-roots.js")).adoptDeskFolder(s) },
     { id: "desk-convert-folder", label: "Convert folder to desk", icon: icons.desk, shortcutKey: null, ctx: "shared",
       keepOpen: true,

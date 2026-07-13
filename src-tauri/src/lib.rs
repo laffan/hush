@@ -13,6 +13,8 @@ use tauri::{
 
 mod atomic;
 mod commands;
+mod desk_conflicts;
+mod desk_hashes;
 mod desk_migrate;
 mod desk_paths;
 mod desk_roots;
@@ -254,12 +256,19 @@ pub fn run() {
                     }
                 }
                 // Arm watchers on every local desk root so external
-                // edits reach the UI while the app runs.
-                for (desk_id, root) in desk_roots::load_roots(&crate::get_data_dir().join("desks")) {
+                // edits reach the UI while the app runs. Bookmarked
+                // (iOS) roots get no watcher — the JS layer re-resolves
+                // the bookmark and reconciles on foreground instead.
+                for (desk_id, entry) in
+                    desk_roots::load_entries(&crate::get_data_dir().join("desks"))
+                {
+                    if entry.bookmark().is_some() {
+                        continue;
+                    }
                     let _ = app_state.desk_watch_manager.watch_path(
                         handle.clone(),
                         &desk_id,
-                        std::path::Path::new(&root),
+                        std::path::Path::new(entry.path()),
                         "desk-changed",
                     );
                 }
@@ -449,6 +458,8 @@ pub fn run() {
             commands::zotero::load_zotero_annotations,
             commands::zotero::fetch_zotero_annotations,
             commands::desks::desk_list_roots,
+            commands::desks::desk_list_root_entries,
+            commands::desks::desk_update_root_path,
             commands::desks::desk_make_local,
             commands::desks::desk_make_internal,
             commands::desks::desk_adopt_folder,

@@ -418,7 +418,8 @@ impl DeskStore {
         if is_image_rel(rel) {
             return Ok(());
         }
-        write_content_at(&dst, "")
+        write_content_at(&dst, "")?;
+        Ok(())
     }
 
     /// Remove directories that are now empty and no longer expected.
@@ -486,7 +487,12 @@ impl DeskStore {
 
     pub fn write_by_id(&self, id: &str, content: &str) -> Result<(), BoxError> {
         if let Some((desk_id, rel)) = self.locate(id) {
-            return write_content_at(&self.abs_path(&desk_id, &rel), content);
+            let abs = self.abs_path(&desk_id, &rel);
+            let hash = write_content_at(&abs, content)?;
+            if !is_image_rel(&rel) {
+                self.record_hash(&desk_id, id, &hash, crate::desk_hashes::mtime_ms(&abs));
+            }
+            return Ok(());
         }
         // Not placed yet — keep (or put) it in staging; the next tree save
         // moves it to its real path.
@@ -592,17 +598,20 @@ pub fn read_content_at(path: &Path) -> Result<String, BoxError> {
     Ok(fs::read_to_string(path)?)
 }
 
-pub fn write_content_at(path: &Path, content: &str) -> Result<(), BoxError> {
+/// Write content in its on-disk form; returns the FNV-1a hash of the
+/// bytes actually written (which differ from `content` for hushnotes),
+/// so callers can feed the rename-pairing cache without a re-read.
+pub fn write_content_at(path: &Path, content: &str) -> Result<String, BoxError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     if is_hushnote(path) {
         let bytes = hushnote::pack(content)?;
         write_atomic(path, &bytes)?;
-        return Ok(());
+        return Ok(crate::desk_hashes::fnv1a_hex(&bytes));
     }
     write_atomic_str(path, content)?;
-    Ok(())
+    Ok(crate::desk_hashes::fnv1a_hex(content.as_bytes()))
 }
 
 // ===== Small helpers =====
@@ -651,3 +660,7 @@ pub(crate) fn collect_file_ids(nodes: &[TreeNode], out: &mut Vec<(String, String
 #[cfg(test)]
 #[path = "desk_store_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "desk_soak_tests.rs"]
+mod soak_tests;

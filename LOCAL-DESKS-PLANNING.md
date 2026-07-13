@@ -213,10 +213,26 @@ copy instead), register it as a desk root, drop the mount.
    to Phase 4: iPad (security-scoped bookmarks), external-rename pairing
    by content hash (today a rename arrives as remove + add with a fresh
    fileId).
-4. **Multi-device hardening.** Conflicted-copy detection + adoption,
-   eviction-tolerant reads (NSFileCoordinator already in the plugin),
-   foreground reconcile on iPad, `NSMetadataQuery` live updates, then real
-   two-device soak tests over iCloud Drive and a Dropbox folder.
+4. **Multi-device hardening.** ✅ *Shipped 2026-07.* External renames
+   pair by content hash (`.hush/hashes.json` — FNV-1a over disk bytes,
+   refreshed on save and on a reconcile pre-pass), so a Finder/provider
+   rename keeps its fileId: version history, panes, recents all survive;
+   changed-content renames fall back to remove + add. Conflicted copies
+   (Dropbox `… (conflicted copy …)`, Syncthing `….sync-conflict-…`;
+   iCloud's ambiguous `Name 2` pattern deliberately unmatched) are
+   adopted: both sides snapshot to Versions under the same fileId, the
+   newer bytes keep the real path, and the sidebar toasts + logs the
+   resolution. iPad local desks work through security-scoped bookmarks
+   (`roots.json` v2 entries optionally carry one; boot re-resolves it —
+   re-acquiring folder access for Rust's std::fs — and repoints stale
+   container paths via `desk_update_root_path`); with no watcher on iOS,
+   every local desk reconciles at boot and on each return to foreground.
+   A two-install soak test drives adopt / edit / add / rename / conflict
+   / delete through two data dirs sharing one desk folder. Still on the
+   user: real two-device runs over iCloud Drive and a Dropbox folder.
+   Deferred: `NSMetadataQuery` live updates on iPad; desk stickies +
+   Google-Docs link map + per-desk meta (style, last file) still live in
+   app-wide settings rather than `.hushdesk`/`.hush/`.
 
 Phases 1–2 are the overhaul's risk concentrated where it's cheapest: still
 single-device, still internal, fully testable before any folder is shared.
