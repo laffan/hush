@@ -98,7 +98,7 @@ pub struct SyncFolder {
 // `google_doc_links` map on `AppSettings`. There's intentionally no
 // `last_synced_*` here — push/pull are user-driven whole-doc replaces,
 // so no automatic conflict-detection state is needed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleDocLink {
     pub doc_id: String,        // Google Drive file id

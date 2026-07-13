@@ -22,6 +22,15 @@
 
 const SPECIAL_KINDS = ["__inbox__", "__images__", "__pdfs__", "__trash__"];
 
+/** Fire-and-forget write-through of a desk's portable meta (style,
+ *  last file, stickies) into its `.hushdesk` — see sync/desk-meta.js. */
+function mirrorDeskMeta(state, deskId) {
+  if (!deskId) return;
+  import("../sync/desk-meta.js")
+    .then(({ pushDeskMeta }) => pushDeskMeta(state, deskId))
+    .catch(() => {});
+}
+
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -420,6 +429,7 @@ export async function recordActiveDeskLastFile(state, fileId, type) {
     patch.desksMeta = meta;
   }
   await state.updateSettings(patch);
+  if (!metaUnchanged) mirrorDeskMeta(state, desk.id);
 }
 
 /** Record that a Local Folder file is the active desk's most-recent open.
@@ -447,6 +457,7 @@ export async function recordLocalSyncOpen(state, folderId, relPath, name) {
     }
   }
   await state.updateSettings(patch);
+  if (patch.desksMeta && desk) mirrorDeskMeta(state, desk.id);
 }
 
 /** Read the active desk's saved global style id. Falls back to the
@@ -473,6 +484,7 @@ export async function setDeskGlobalStyleId(state, styleId) {
   const meta = { ...(state.settings?.desksMeta || {}) };
   meta[desk.id] = { ...(meta[desk.id] || {}), globalStyleId: styleId || null };
   await state.updateSettings({ desksMeta: meta });
+  mirrorDeskMeta(state, desk.id);
 }
 
 /** Boot migration. Pre-always-on installs persist a flat tree with

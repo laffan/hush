@@ -15,6 +15,7 @@ mod atomic;
 mod commands;
 mod desk_conflicts;
 mod desk_hashes;
+mod desk_meta;
 mod desk_migrate;
 mod desk_paths;
 mod desk_roots;
@@ -272,6 +273,10 @@ pub fn run() {
                         "desk-changed",
                     );
                 }
+                // Merge per-desk Google-Doc-link sidecars into the
+                // settings cache (and migrate settings-only entries down
+                // into their desks) so links ride desk handoffs.
+                commands::google_docs::refresh_gdoc_link_cache(&app_state);
             }
 
             #[cfg(desktop)]
@@ -460,6 +465,8 @@ pub fn run() {
             commands::desks::desk_list_roots,
             commands::desks::desk_list_root_entries,
             commands::desks::desk_update_root_path,
+            commands::desks::desk_meta_get,
+            commands::desks::desk_meta_set,
             commands::desks::desk_make_local,
             commands::desks::desk_make_internal,
             commands::desks::desk_adopt_folder,

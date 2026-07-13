@@ -156,8 +156,9 @@ Reconcile now, last-reconcile status.
 | per-device caches (wikilink index, versions index) | `.hushdesk` (style choice, last file) |
 | global/file/project sticky notes*             | `panes.json` (desk-scoped now) |
 
-\* Desk stickies could move into `.hushdesk` so they ride along — cheap,
-decide during implementation.
+\* Desk stickies ride in `.hushdesk`'s `meta` object (shipped with the
+Phase 4 follow-ups), alongside the per-desk style choice and last-open
+file; global/file/project stickies stay app-wide.
 
 Cross-desk features keep working because the app still mounts every
 registered desk at boot: `settings.deskRoots: [{ deskId, path | "internal",
@@ -228,11 +229,18 @@ copy instead), register it as a desk root, drop the mount.
    container paths via `desk_update_root_path`); with no watcher on iOS,
    every local desk reconciles at boot and on each return to foreground.
    A two-install soak test drives adopt / edit / add / rename / conflict
-   / delete through two data dirs sharing one desk folder. Still on the
-   user: real two-device runs over iCloud Drive and a Dropbox folder.
-   Deferred: `NSMetadataQuery` live updates on iPad; desk stickies +
-   Google-Docs link map + per-desk meta (style, last file) still live in
-   app-wide settings rather than `.hushdesk`/`.hush/`.
+   / delete through two data dirs sharing one desk folder.
+   *Follow-up niceties, shipped 2026-07:* per-desk meta — style choice,
+   last-open file, desk stickies — mirrors into `.hushdesk`'s `meta`
+   object (JS write-through on change, disk-wins pull at boot / adopt /
+   reconcile), the Google-Docs link map moves into each desk's
+   `.hush/gdoc-links.json` (settings keeps the merged read cache, and
+   an install without Google credentials degrades to the disabled link
+   bar), and `NSMetadataQuery` live updates land on iPad (an
+   icloud-folder plugin watch per local desk root emits `watch-changed`
+   while the app is frontmost; foreground reconcile stays the fallback
+   for non-iCloud providers). Still on the user: real two-device runs
+   over iCloud Drive and a Dropbox folder.
 
 Phases 1–2 are the overhaul's risk concentrated where it's cheapest: still
 single-device, still internal, fully testable before any folder is shared.

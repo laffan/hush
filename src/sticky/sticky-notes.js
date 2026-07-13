@@ -97,6 +97,11 @@ export function initStickyNotes(state) {
   // no longer exists in the tree.
   state.on("files-changed", () => { pruneOrphans(); refreshLabels(); refreshVisibility(); });
 
+  // Desk stickies travel inside `.hushdesk` (sync/desk-meta.js). When a
+  // pull lands newer notes for a desk, rebuild that desk's notes from
+  // the freshly-merged settings list.
+  state.on("desk-meta-pulled", ({ deskId }) => rebuildDeskNotes(deskId));
+
   // Click anywhere outside a sticky drops the active highlight.
   window.addEventListener("pointerdown", (e) => {
     if (e.target instanceof Element && e.target.closest(".sticky-note")) return;
@@ -129,8 +134,45 @@ function schedulePersist() {
         createdAt: n.createdAt || Date.now(),
       });
     }
-    appState.updateSettings({ stickyNotes: serialized });
+    appState.updateSettings({ stickyNotes: serialized }).then(() => {
+      // Mirror desk-scoped notes into their desks' .hushdesk so they
+      // ride desk handoffs (no-op for desks whose notes didn't change).
+      import("../sync/desk-meta.js")
+        .then(({ pushAllDeskMeta }) => pushAllDeskMeta(appState))
+        .catch(() => {});
+    });
   }, 500);
+}
+
+/** Drop and re-create one desk's notes from `settings.stickyNotes` —
+ *  called after a desk-meta pull replaced that desk's entries. */
+function rebuildDeskNotes(deskId) {
+  if (!deskId) return;
+  for (const [id, n] of [...notes]) {
+    if (n.kind === "desk" && n.target === deskId) {
+      n.el.remove();
+      notes.delete(id);
+    }
+  }
+  const list = appState?.settings?.stickyNotes || [];
+  for (const s of list) {
+    if (!s || s.kind !== "desk" || s.target !== deskId || notes.has(s.id)) continue;
+    const width = clampSize(s.width);
+    const height = clampSize(s.height);
+    const note = {
+      id: s.id, kind: s.kind, target: s.target,
+      x: clampAxis(s.x ?? 40, width, window.innerWidth),
+      y: clampAxis(s.y ?? 40, HEADER_HEIGHT, window.innerHeight),
+      width, height,
+      collapsed: !!s.collapsed,
+      fontSize: clampFont(s.fontSize),
+      text: typeof s.text === "string" ? s.text : "",
+      createdAt: s.createdAt || Date.now(),
+    };
+    buildNoteDOM(note);
+    notes.set(note.id, note);
+  }
+  refreshVisibility();
 }
 
 function restoreNotes() {

@@ -2,6 +2,8 @@ const COMMANDS: &[&str] = &[
     "pick_folder",
     "resolve_bookmark",
     "stop_access",
+    "start_watch",
+    "stop_watch",
     "reveal_in_files",
     "list_dir",
     "read_file",

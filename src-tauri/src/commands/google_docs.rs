@@ -336,6 +336,40 @@ pub fn set_google_account_email(
 }
 
 // ===== Per-document link map =====
+//
+// The durable home of a link is its file's desk (`.hush/gdoc-links.json`
+// — see desk_meta.rs) so links ride along when a desk is handed off or
+// synced. `settings.google_doc_links` stays as the merged read cache the
+// whole frontend renders from, and as the fallback store for links whose
+// file isn't placed in any desk yet.
+
+/// Rebuild the settings link cache as: desk sidecars ∪ settings-only
+/// leftovers (desk entries win). Also migrates any settings-only entry
+/// whose file *is* placed into its desk sidecar — the one-shot boot
+/// migration, kept idempotent and re-run after adopt/reconcile.
+pub fn refresh_gdoc_link_cache(state: &AppState) {
+    let store = crate::desk_store::DeskStore::new(&crate::get_data_dir());
+    let mut settings = state.settings.lock().unwrap();
+    let mut changed = false;
+    // Push settings-only entries down into their desks.
+    for (file_id, link) in settings.google_doc_links.clone() {
+        if let Ok(value) = serde_json::to_value(&link) {
+            let _ = store.set_desk_gdoc_link(&file_id, &value);
+        }
+    }
+    // Fold every desk sidecar back into the cache.
+    for (file_id, value) in store.all_desk_gdoc_links() {
+        if let Ok(link) = serde_json::from_value::<GoogleDocLink>(value) {
+            if settings.google_doc_links.get(&file_id) != Some(&link) {
+                settings.google_doc_links.insert(file_id, link);
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        let _ = settings.save();
+    }
+}
 
 #[tauri::command]
 pub fn set_google_doc_link(
@@ -344,16 +378,18 @@ pub fn set_google_doc_link(
     doc_id: String,
     title: String,
 ) -> Result<(), String> {
-    let mut settings = state.settings.lock().unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    settings.google_doc_links.insert(file_id, GoogleDocLink {
-        doc_id,
-        title,
-        linked_at: now,
-    });
+    let link = GoogleDocLink { doc_id, title, linked_at: now };
+    // Desk sidecar first (the durable copy), settings cache second.
+    let store = crate::desk_store::DeskStore::new(&crate::get_data_dir());
+    if let Ok(value) = serde_json::to_value(&link) {
+        let _ = store.set_desk_gdoc_link(&file_id, &value);
+    }
+    let mut settings = state.settings.lock().unwrap();
+    settings.google_doc_links.insert(file_id, link);
     settings.save().map_err(|e| e.to_string())
 }
 
@@ -373,6 +409,8 @@ pub fn clear_google_doc_link(
     state: State<AppState>,
     file_id: String,
 ) -> Result<(), String> {
+    let store = crate::desk_store::DeskStore::new(&crate::get_data_dir());
+    let _ = store.clear_desk_gdoc_link(&file_id);
     let mut settings = state.settings.lock().unwrap();
     settings.google_doc_links.remove(&file_id);
     settings.save().map_err(|e| e.to_string())

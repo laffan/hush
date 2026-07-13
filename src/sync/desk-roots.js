@@ -83,12 +83,19 @@ export async function makeDeskLocal(state, deskId) {
     return false;
   }
   await refreshDeskRoots(state);
+  if (isIOSTauri()) {
+    try { await plugin("start_watch", { path: picked.path }); } catch (_) {}
+  }
   return true;
 }
 
 /** Move a local desk's folder back into app data. */
 export async function makeDeskInternal(state, deskId) {
   if (!IS_TAURI) return false;
+  const oldPath = state.deskRoots?.[deskId];
+  if (oldPath && isIOSTauri()) {
+    try { await plugin("stop_watch", { path: oldPath }); } catch (_) {}
+  }
   try {
     await invoke("desk_make_internal", { deskId });
   } catch (e) {
@@ -121,6 +128,15 @@ export async function adoptDeskFolder(state) {
     const desks = [...(state.settings.desks || []), { id: deskId, name: desk.name, createdAt: desk.createdAt }];
     const meta = { ...(state.settings.desksMeta || {}), [deskId]: { globalStyleId: null } };
     await state.updateSettings({ desks, desksMeta: meta });
+  }
+  // The adopted .hushdesk carries the desk's portable meta (style
+  // choice, last file, stickies) — fold it in over the null seed.
+  try {
+    const { pullDeskMeta } = await import("./desk-meta.js");
+    await pullDeskMeta(state, deskId);
+  } catch (_) {}
+  if (isIOSTauri()) {
+    try { await plugin("start_watch", { path: picked.path }); } catch (_) {}
   }
   state.emit("desks-changed");
   if (deskId) await state.setActiveDesk(deskId);
@@ -178,6 +194,12 @@ export async function reconcileDesk(state, deskId) {
       );
     } catch (_) {}
   }
+  // An external change may include the desk's portable meta (style,
+  // last file, stickies riding in .hushdesk) — pull it, disk wins.
+  try {
+    const { pullDeskMeta } = await import("./desk-meta.js");
+    await pullDeskMeta(state, deskId);
+  } catch (_) {}
   await maybeReloadOpenDoc(state, deskId);
 }
 
@@ -237,11 +259,44 @@ async function resolveBookmarkedRoots() {
   }
 }
 
-/** Reconcile every local desk — the iOS substitute for the desktop
- *  filesystem watcher, run at boot and on each return to foreground. */
+/** Reconcile every local desk — the iOS baseline in place of the
+ *  desktop filesystem watcher, run at boot and on each return to
+ *  foreground. */
 async function reconcileAllLocalDesks(state) {
   for (const deskId of Object.keys(state.deskRoots || {})) {
     await reconcileDesk(state, deskId).catch((e) => console.warn("desk reconcile failed:", e));
+  }
+}
+
+/** iOS live updates: an NSMetadataQuery per local desk root makes
+ *  iCloud-synced changes land while the app is frontmost, instead of
+ *  waiting for the next foreground reconcile. Non-iCloud provider
+ *  folders emit nothing — the foreground reconcile stays the fallback
+ *  for those. Errors are quietly ignored for the same reason. */
+async function armIOSLiveUpdates(state) {
+  const timers = new Map();
+  try {
+    const { addPluginListener } = await import("@tauri-apps/api/core");
+    await addPluginListener("icloud-folder", "watch-changed", (payload) => {
+      const path = payload?.path;
+      if (!path) return;
+      const deskId = Object.keys(state.deskRoots || {})
+        .find((id) => state.deskRoots[id] === path);
+      if (!deskId) return;
+      clearTimeout(timers.get(deskId));
+      timers.set(deskId, setTimeout(() => {
+        timers.delete(deskId);
+        reconcileDesk(state, deskId).catch(() => {});
+      }, 400));
+    });
+  } catch (e) {
+    console.warn("desk live-update listener failed:", e);
+    return;
+  }
+  for (const path of Object.values(state.deskRoots || {})) {
+    try {
+      await plugin("start_watch", { path });
+    } catch (_) { /* non-iCloud folder or older plugin — fallback covers it */ }
   }
 }
 
@@ -250,10 +305,13 @@ async function reconcileAllLocalDesks(state) {
  *  short debounce per desk), foreground reconcile on iOS. */
 export async function installDeskRootsLifecycle(state) {
   if (!IS_TAURI) return;
+  const { pullAllDeskMeta } = await import("./desk-meta.js");
   if (isIOSTauri()) {
     await resolveBookmarkedRoots();
     await refreshDeskRoots(state);
+    await pullAllDeskMeta(state);
     await reconcileAllLocalDesks(state);
+    await armIOSLiveUpdates(state);
     let last = 0;
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") return;
@@ -265,6 +323,7 @@ export async function installDeskRootsLifecycle(state) {
     return;
   }
   await refreshDeskRoots(state);
+  await pullAllDeskMeta(state);
   const { listen } = await import("@tauri-apps/api/event");
   const timers = new Map();
   await listen("desk-changed", (event) => {

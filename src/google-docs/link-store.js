@@ -1,8 +1,10 @@
 /**
  * Per-document Google Doc link store. Thin JS wrapper over the four
- * Rust commands that read / write the `google_doc_links` map on
- * `AppSettings`. The map is keyed by Hush fileId; each entry is
- * `{ docId, title, linkedAt }`.
+ * Rust commands. The durable copy of each link lives in its file's desk
+ * (`.hush/gdoc-links.json`) so links travel when a desk is handed off;
+ * the `google_doc_links` map on `AppSettings` is the merged read cache
+ * the Rust side maintains. The map is keyed by Hush fileId; each entry
+ * is `{ docId, title, linkedAt }`.
  *
  * The link state is read-through cached in `state.settings.googleDocLinks`
  * so the link bar can render synchronously off `file-opened`. Mutations

@@ -180,6 +180,47 @@ async fn stop_access<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), 
     }
 }
 
+/// Arm an NSMetadataQuery under `path` (a resolved iCloud folder). The
+/// Swift side emits a `watch-changed` plugin event — payload
+/// `{ path }` — whenever items under the folder change, including
+/// changes synced in from another device. Non-iCloud provider folders
+/// produce no events; callers keep their foreground-reconcile fallback.
+#[tauri::command]
+async fn start_watch<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<serde_json::Value>("startWatch", PathArgs { path })
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err(IOS_ONLY.into())
+    }
+}
+
+#[tauri::command]
+async fn stop_watch<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let plugin = app.state::<IcloudFolder<R>>();
+        let handle = plugin.0.as_ref().ok_or("plugin not initialised")?;
+        handle
+            .run_mobile_plugin::<serde_json::Value>("stopWatch", PathArgs { path })
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, path);
+        Err(IOS_ONLY.into())
+    }
+}
+
 #[tauri::command]
 async fn reveal_in_files<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
     #[cfg(target_os = "ios")]
@@ -420,6 +461,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             pick_folder,
             resolve_bookmark,
             stop_access,
+            start_watch,
+            stop_watch,
             reveal_in_files,
             list_dir,
             read_file,

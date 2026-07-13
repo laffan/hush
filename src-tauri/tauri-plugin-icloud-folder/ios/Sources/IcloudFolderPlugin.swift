@@ -130,6 +130,72 @@ class IcloudFolderPlugin: Plugin, UIDocumentPickerDelegate {
     invoke.resolve()
   }
 
+  // MARK: - Live updates (NSMetadataQuery over an iCloud folder)
+  //
+  // iOS has no filesystem watcher, but iCloud items are indexed by the
+  // metadata daemon: an NSMetadataQuery scoped under a folder fires
+  // NSMetadataQueryDidUpdate whenever items under it change — including
+  // changes synced *in* from another device. Only ubiquitous (iCloud)
+  // items are covered; folders from other Files providers stay on the
+  // foreground-reconcile fallback.
+
+  private var watchQueries: [String: NSMetadataQuery] = [:]
+  private var watchDebounce: [String: DispatchWorkItem] = [:]
+
+  @objc public func startWatch(_ invoke: Invoke) throws {
+    struct Args: Decodable { let path: String }
+    let args = try invoke.parseArgs(Args.self)
+    DispatchQueue.main.async {
+      if self.watchQueries[args.path] != nil {
+        invoke.resolve()
+        return
+      }
+      let query = NSMetadataQuery()
+      query.searchScopes = [
+        NSMetadataQueryUbiquitousDocumentsScope,
+        NSMetadataQueryUbiquitousDataScope,
+      ]
+      query.predicate = NSPredicate(
+        format: "%K BEGINSWITH %@", NSMetadataItemPathKey, args.path + "/")
+      // The query batches its own bursts (an iCloud sync pass touches
+      // many files); the debounce below folds the remainder.
+      query.notificationBatchingInterval = 2.0
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(self.metadataQueryDidUpdate(_:)),
+        name: .NSMetadataQueryDidUpdate, object: query)
+      self.watchQueries[args.path] = query
+      query.start()
+      invoke.resolve()
+    }
+  }
+
+  @objc public func stopWatch(_ invoke: Invoke) throws {
+    struct Args: Decodable { let path: String }
+    let args = try invoke.parseArgs(Args.self)
+    DispatchQueue.main.async {
+      if let query = self.watchQueries.removeValue(forKey: args.path) {
+        NotificationCenter.default.removeObserver(
+          self, name: .NSMetadataQueryDidUpdate, object: query)
+        query.stop()
+      }
+      self.watchDebounce.removeValue(forKey: args.path)?.cancel()
+      invoke.resolve()
+    }
+  }
+
+  @objc private func metadataQueryDidUpdate(_ note: Notification) {
+    guard let query = note.object as? NSMetadataQuery else { return }
+    guard let path = watchQueries.first(where: { $0.value === query })?.key else { return }
+    watchDebounce[path]?.cancel()
+    let work = DispatchWorkItem { [weak self] in
+      var payload = JSObject()
+      payload["path"] = path
+      self?.trigger("watch-changed", data: payload)
+    }
+    watchDebounce[path] = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+  }
+
   // MARK: - Reveal in the Files app
 
   /// Open the Files app at `path`. There is no UIKit "reveal" API (the

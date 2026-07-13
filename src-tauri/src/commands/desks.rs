@@ -101,6 +101,9 @@ pub fn desk_adopt_folder(
         .adopt_desk_folder(Path::new(&path), bookmark)
         .map_err(|e| e.to_string())?;
     let _ = s.reconcile_desk_from_disk(&desk_id);
+    // The adopted desk may carry Google Doc links — fold them into the
+    // app-wide cache so the link bar sees them immediately.
+    crate::commands::google_docs::refresh_gdoc_link_cache(&state);
     if watch {
         if let Err(e) =
             state
@@ -133,10 +136,30 @@ pub fn desk_update_root_path(
 }
 
 /// Disk-wins reconcile: make the desk's tree follow its folder. Returns
-/// counts so the frontend can skip refreshes on no-ops.
+/// counts so the frontend can skip refreshes on no-ops. Also refreshes
+/// the app-wide Google-Doc-link cache — the desk's link sidecar may
+/// have changed with the rest of the folder.
 #[tauri::command]
-pub fn desk_reconcile(desk_id: String) -> Result<ScanReport, String> {
-    store()
+pub fn desk_reconcile(state: State<AppState>, desk_id: String) -> Result<ScanReport, String> {
+    let report = store()
         .reconcile_desk_from_disk(&desk_id)
+        .map_err(|e| e.to_string())?;
+    crate::commands::google_docs::refresh_gdoc_link_cache(&state);
+    Ok(report)
+}
+
+/// The desk's portable `meta` object from `.hushdesk` — style choice,
+/// last-open file, desk stickies.
+#[tauri::command]
+pub fn desk_meta_get(desk_id: String) -> serde_json::Value {
+    store().load_desk_meta(&desk_id)
+}
+
+/// Field-merge `patch` into the desk's `.hushdesk` meta (values stored
+/// verbatim, null included).
+#[tauri::command]
+pub fn desk_meta_set(desk_id: String, patch: serde_json::Value) -> Result<(), String> {
+    store()
+        .merge_desk_meta(&desk_id, &patch)
         .map_err(|e| e.to_string())
 }

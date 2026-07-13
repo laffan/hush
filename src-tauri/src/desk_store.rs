@@ -306,19 +306,20 @@ impl DeskStore {
                 &self.tree_path(&desk.id),
                 &serde_json::to_string_pretty(desk)?,
             )?;
-            let meta = serde_json::json!({
-                "format": "hush-desk", "version": 1,
-                "id": desk.id, "name": desk.name,
-                "createdAt": now_secs(),
-            });
             let meta_path = self.desk_dir(&desk.id).join(".hushdesk");
-            // Preserve the original createdAt across rewrites.
-            let existing: Option<serde_json::Value> = fs::read_to_string(&meta_path)
+            // Start from the existing file so createdAt and any fields
+            // other writers own (the per-desk "meta" object — style,
+            // last file, stickies) survive the rewrite.
+            let mut meta: serde_json::Value = fs::read_to_string(&meta_path)
                 .ok()
-                .and_then(|s| serde_json::from_str(&s).ok());
-            let mut meta = meta;
-            if let Some(prev) = existing.as_ref().and_then(|v| v.get("createdAt")).cloned() {
-                meta["createdAt"] = prev;
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            meta["format"] = "hush-desk".into();
+            meta["version"] = 1.into();
+            meta["id"] = desk.id.clone().into();
+            meta["name"] = desk.name.clone().into();
+            if meta.get("createdAt").is_none() {
+                meta["createdAt"] = now_secs().into();
             }
             write_atomic_str(&meta_path, &serde_json::to_string_pretty(&meta)?)?;
             self.prune_empty_dirs(&desk.id, &expected_dirs[&desk.id]);
