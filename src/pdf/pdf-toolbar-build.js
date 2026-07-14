@@ -10,7 +10,25 @@
 import {
   VERTICAL_ICON, HORIZONTAL_ICON, THUMBNAIL_ICON,
   FIT_ONE_ICON, FIT_TWO_ICON, FIT_THREE_ICON,
+  FOLD_ICON, FILTER_ICON,
 } from "./pdf-viewer-icons.js";
+
+/** Fill the toolbar's centered title/author slot (Zotero metadata). */
+export function applyToolbarInfo(toolbarInfo, title, author) {
+  if (!title) { toolbarInfo.textContent = ""; toolbarInfo.style.display = "none"; return; }
+  toolbarInfo.style.display = "";
+  toolbarInfo.innerHTML = "";
+  const t = document.createElement("span");
+  t.className = "pdf-toolbar-info-title";
+  t.textContent = title;
+  toolbarInfo.appendChild(t);
+  if (author) {
+    const a = document.createElement("span");
+    a.className = "pdf-toolbar-info-author";
+    a.textContent = author;
+    toolbarInfo.appendChild(a);
+  }
+}
 
 function btn(cls, text, title) {
   const b = document.createElement("button");
@@ -52,6 +70,13 @@ export function buildPdfToolbar() {
   const fitThreeBtn = svgBtn("pdf-toggle-option", "Fit three pages", FIT_THREE_ICON);
   fitToggleWrap.append(fitOneBtn, fitTwoBtn, fitThreeBtn);
 
+  // Folded view: always available — entering it switches the viewer to
+  // vertical scroll at single-page width. The filter button only shows
+  // while folded; it picks which annotations make folds.
+  const foldBtn = svgBtn("pdf-zoom-btn pdf-fold-btn", "Folded view — collapse to annotated regions", FOLD_ICON);
+  const foldFilterBtn = svgBtn("pdf-zoom-btn pdf-fold-filter-btn", "Filter fold annotations", FILTER_ICON);
+  foldFilterBtn.style.display = "none";
+
   const pageIndicator = document.createElement("span");
   pageIndicator.className = "pdf-page-indicator";
 
@@ -68,6 +93,7 @@ export function buildPdfToolbar() {
   toolbar.append(
     zoomOutBtn, zoomLabel, zoomInBtn,
     scrollToggleWrap, fitToggleWrap,
+    foldBtn, foldFilterBtn,
     thumbnailBtn, toolbarInfo, pageIndicator, zoteroLink,
   );
 
@@ -76,6 +102,7 @@ export function buildPdfToolbar() {
     zoomOutBtn, zoomLabel, zoomInBtn,
     scrollHBtn, scrollVBtn,
     fitOneBtn, fitTwoBtn, fitThreeBtn, fitToggleWrap,
+    foldBtn, foldFilterBtn,
     pageIndicator, zoteroLink, thumbnailBtn, toolbarInfo,
   };
 }

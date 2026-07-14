@@ -1,20 +1,13 @@
 import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
+import { createFoldLayer } from "./pdf-viewer-folds.js";
+import { createPdfSuspendManager } from "./pdf-viewer-suspend.js";
 import { createThumbnailManager } from "./pdf-viewer-thumbnails.js";
 import { POPOUT_ICON } from "./pdf-viewer-icons.js";
-import { buildPdfToolbar } from "./pdf-toolbar-build.js";
+import { buildPdfToolbar, applyToolbarInfo } from "./pdf-toolbar-build.js";
+import { getPdfjs } from "./pdfjs-loader.js";
 
-let pdfjsPromise = null;
-
-export async function getPdfjs() {
-  if (pdfjsPromise) return pdfjsPromise;
-  pdfjsPromise = (async () => {
-    const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
-    const workerUrl = (await import("pdfjs-dist/build/pdf.worker.mjs?url")).default;
-    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-    return pdfjs;
-  })();
-  return pdfjsPromise;
-}
+// Re-exported for existing consumers (doc-export-render.js).
+export { getPdfjs };
 
 const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const RENDER_BUFFER = 2;
@@ -37,6 +30,7 @@ export function createPdfViewer(container, opts = {}) {
   let pages = [];
   let layoutMode = MODE_HORIZONTAL;
   let fitMode = MODE_FIT;
+  let folded = false; // folded view rides on vertical + fit (encoded as zoom -5)
   let fixedZoom = 1.0;
   let scrollListeners = [];
   let destroyed = false;
@@ -58,8 +52,18 @@ export function createPdfViewer(container, opts = {}) {
     getEffectiveZoom: () => getEffectiveZoom(),
     getLayoutMode: () => layoutMode,
     goToPage: (n) => goToPage(n),
+    scrollToFold: (annot) => (folded ? foldLayer.scrollToAnnotation(annot) : false),
   };
   const annotLayer = createAnnotationLayer(scrollArea, body, viewerState);
+
+  // ── Folded view (annotation-only regions) ─────────────────────────
+  const foldLayer = createFoldLayer(scrollArea, {
+    getPages: () => pages,
+    getPdfDoc: () => pdfDoc,
+    getAnnotations: () => annotLayer.getAnnotations(),
+    getEffectiveZoom: () => getEffectiveZoom(),
+    isDestroyed: () => destroyed,
+  });
 
   root.appendChild(body);
 
@@ -69,10 +73,12 @@ export function createPdfViewer(container, opts = {}) {
     zoomOutBtn, zoomLabel, zoomInBtn,
     scrollHBtn, scrollVBtn,
     fitOneBtn, fitTwoBtn, fitThreeBtn, fitToggleWrap,
+    foldBtn, foldFilterBtn,
     pageIndicator, zoteroLink, thumbnailBtn, toolbarInfo,
   } = buildPdfToolbar();
   root.appendChild(toolbar);
   container.appendChild(root);
+  foldLayer.attachFilterUI(foldFilterBtn, root);
 
   // ── Zotero link setup ────────────────────────────────────────────
   function setZoteroAttKey(attKey) {
@@ -136,11 +142,11 @@ export function createPdfViewer(container, opts = {}) {
     switchToScrollDir("horizontal");
   });
   scrollVBtn.addEventListener("click", () => {
-    if (layoutMode === MODE_VERTICAL) return;
+    if (layoutMode === MODE_VERTICAL && !folded) return;
     switchToScrollDir("vertical");
   });
   fitOneBtn.addEventListener("click", () => {
-    if (fitMode === MODE_FIT && layoutMode !== MODE_FIXED) return;
+    if (!folded && fitMode === MODE_FIT && layoutMode !== MODE_FIXED) return;
     fitMode = MODE_FIT;
     switchToFitMode();
   });
@@ -155,12 +161,39 @@ export function createPdfViewer(container, opts = {}) {
     switchToFitMode();
   });
 
+  // ── Folded view (annotation-only regions) ─────────────────────────
+  function enterFolded() {
+    if (folded) return;
+    folded = true;
+    layoutMode = MODE_VERTICAL;
+    fitMode = MODE_FIT;
+    applyLayoutClass();
+    foldLayer.enable();
+    updateToolbarState();
+    updatePageIndicator();
+  }
+
+  function exitFolded(skipRelayout = false) {
+    if (!folded) return;
+    folded = false;
+    foldLayer.disable();
+    applyLayoutClass();
+    updateToolbarState();
+    if (!skipRelayout) relayoutPages();
+    updatePageIndicator();
+  }
+
+  foldBtn.addEventListener("click", () => {
+    if (folded) exitFolded();
+    else enterFolded();
+  });
+
   // ── Keyboard zoom (Cmd+/- while viewer is mounted) ──────────────
   function onKeydown(e) {
     if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
     if (e.key === "=" || e.key === "+") { e.preventDefault(); stepZoomIn(); }
     else if (e.key === "-") { e.preventDefault(); stepZoomOut(); }
-    else if (e.key === "0") { e.preventDefault(); fitMode = MODE_FIT; layoutMode = MODE_HORIZONTAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); }
+    else if (e.key === "0") { e.preventDefault(); exitFolded(true); fitMode = MODE_FIT; layoutMode = MODE_HORIZONTAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); }
   }
   window.addEventListener("keydown", onKeydown);
 
@@ -189,6 +222,9 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function renderVisiblePages() {
+    // Page wrappers are display:none while folded — their zero rects
+    // would otherwise pass the visibility check and render every page.
+    if (folded) return;
     if (!pages.length || !scrollArea.clientHeight) return;
     const areaRect = scrollArea.getBoundingClientRect();
     if (areaRect.width === 0 && areaRect.height === 0) return;
@@ -225,7 +261,9 @@ export function createPdfViewer(container, opts = {}) {
     const isFit = layoutMode !== MODE_FIXED;
     const isVert = layoutMode === MODE_VERTICAL;
     const isHoriz = layoutMode === MODE_HORIZONTAL;
-    if (isFit) {
+    if (folded) {
+      zoomLabel.textContent = "Folded";
+    } else if (isFit) {
       const labels = { [MODE_FIT]: "Fit", [MODE_FIT_2]: "Fit 2", [MODE_FIT_3]: "Fit 3" };
       zoomLabel.textContent = (isVert ? labels[fitMode] : "Fit") || "Fit";
     } else {
@@ -234,17 +272,25 @@ export function createPdfViewer(container, opts = {}) {
     scrollHBtn.classList.toggle("active", isHoriz);
     scrollVBtn.classList.toggle("active", isVert);
     fitToggleWrap.style.display = isVert ? "" : "none";
-    fitOneBtn.classList.toggle("active", fitMode === MODE_FIT);
+    fitOneBtn.classList.toggle("active", fitMode === MODE_FIT && !folded);
     fitTwoBtn.classList.toggle("active", fitMode === MODE_FIT_2);
     fitThreeBtn.classList.toggle("active", fitMode === MODE_FIT_3);
+    // Folded view is always offered — entering it switches to vertical
+    // scroll at single-page width as part of its initialization.
+    foldBtn.classList.toggle("active", folded);
+    foldFilterBtn.style.display = folded ? "" : "none";
     // Persist view-state changes (fit / direction / fixed zoom) the instant
     // they happen, not only on a later scroll. Guarded so restore + initial
     // load don't echo back.
-    if (!suspended && !resuming) for (const cb of scrollListeners) cb();
+    if (!suspendMgr.isSuspended() && !suspendMgr.isResuming()) for (const cb of scrollListeners) cb();
   }
 
   function updatePageIndicator() {
     if (!pages.length) { pageIndicator.textContent = ""; return; }
+    if (folded) {
+      pageIndicator.textContent = `${foldLayer.getCurrentPage()} / ${pages.length}`;
+      return;
+    }
     if (layoutMode === MODE_HORIZONTAL) {
       const scrollMid = scrollArea.scrollLeft + scrollArea.clientWidth / 2;
       let cur = 1;
@@ -267,13 +313,14 @@ export function createPdfViewer(container, opts = {}) {
     // scrollArea.innerHTML resets scrollTop to 0, and we don't want
     // that synthetic 0 to leak out and overwrite the host pane's saved
     // scroll position before resume has put it back.
-    if (suspended || resuming) return;
+    if (suspendMgr.isSuspended() || suspendMgr.isResuming()) return;
     updatePageIndicator();
     for (const cb of scrollListeners) cb();
   });
 
   // ── Mode switching ───────────────────────────────────────────────
   function switchToScrollDir(dir) {
+    exitFolded(true);
     if (dir === "horizontal") {
       layoutMode = MODE_HORIZONTAL;
     } else {
@@ -285,6 +332,7 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function switchToFitMode() {
+    exitFolded(true);
     if (layoutMode === MODE_FIXED) {
       layoutMode = MODE_VERTICAL;
     }
@@ -294,6 +342,7 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function applyFixedZoom(level) {
+    exitFolded(true);
     fixedZoom = level;
     layoutMode = MODE_FIXED;
     applyLayoutClass();
@@ -302,7 +351,11 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function applyLayoutClass() {
-    scrollArea.classList.remove("pdf-layout-fit", "pdf-layout-fixed", "pdf-layout-horizontal");
+    scrollArea.classList.remove("pdf-layout-fit", "pdf-layout-fixed", "pdf-layout-horizontal", "pdf-layout-folded");
+    if (folded) {
+      scrollArea.classList.add("pdf-layout-folded");
+      return;
+    }
     if (layoutMode === MODE_VERTICAL) {
       if (fitMode === MODE_FIT_2 || fitMode === MODE_FIT_3) {
         scrollArea.classList.add("pdf-layout-fixed");
@@ -373,7 +426,8 @@ export function createPdfViewer(container, opts = {}) {
 
   let relayoutGuard = false;
   function relayoutPages() {
-    if (relayoutGuard || !pdfDoc || !pages.length || suspended) return;
+    if (relayoutGuard || !pdfDoc || !pages.length || suspendMgr.isSuspended()) return;
+    if (folded) { foldLayer.refresh(); return; }
     relayoutGuard = true;
     try {
       const scale = getEffectiveZoom();
@@ -468,11 +522,16 @@ export function createPdfViewer(container, opts = {}) {
     }
 
     setupObserver();
+    // A reload while folded (e.g. resume) wiped the fold DOM with
+    // scrollArea.innerHTML above — rebuild it against the new pages.
+    if (folded) foldLayer.enable();
     updateToolbarState();
     updatePageIndicator();
   }
 
   function setZoom(level) {
+    if (level === -5) { enterFolded(); return; }
+    exitFolded(true);
     if (level === -1) { fitMode = MODE_FIT; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
     if (level === -2) { fitMode = MODE_FIT; layoutMode = MODE_HORIZONTAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
     if (level === -3) { fitMode = MODE_FIT_2; layoutMode = MODE_VERTICAL; applyLayoutClass(); updateToolbarState(); relayoutPages(); return; }
@@ -480,6 +539,7 @@ export function createPdfViewer(container, opts = {}) {
     applyFixedZoom(level);
   }
   function getZoom() {
+    if (folded) return -5;
     if (layoutMode === MODE_HORIZONTAL) return -2;
     if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT) return -1;
     if (layoutMode === MODE_VERTICAL && fitMode === MODE_FIT_2) return -3;
@@ -488,6 +548,7 @@ export function createPdfViewer(container, opts = {}) {
   }
 
   function goToPage(n) {
+    if (folded) { foldLayer.goToPage(n); return; }
     const idx = Math.max(0, Math.min(n - 1, pages.length - 1));
     if (pages[idx]?.wrapper) {
       if (layoutMode === MODE_HORIZONTAL) {
@@ -504,137 +565,76 @@ export function createPdfViewer(container, opts = {}) {
   function getScrollLeft() { return scrollArea.scrollLeft; }
   function setScrollLeft(v) { scrollArea.scrollLeft = v; }
 
-  /** Restore zoom mode + scroll. Fit-mode page heights derive from the
-   *  container's measured size, often unsettled at mount/resume — a single
-   *  scrollTop then clamps to 0. Re-flex + re-assert until it sticks. */
-  function restoreView(zoomLevel, scrollTop, scrollLeft) {
-    if (typeof zoomLevel === "number") { try { setZoom(zoomLevel); } catch (_) {} }
-    const top = scrollTop || 0;
-    const left = scrollLeft || 0;
-    if (top <= 0 && left <= 0) return;
-    let attempts = 0;
-    resuming = true;
-    const tick = () => {
-      if (destroyed || suspended) { resuming = false; return; }
-      relayoutPages(); // re-flex so scrollHeight reflects the real layout
-      scrollArea.scrollTop = top;
-      scrollArea.scrollLeft = left;
-      const okTop = top <= 0 || Math.abs(scrollArea.scrollTop - top) <= 2;
-      const okLeft = left <= 0 || Math.abs(scrollArea.scrollLeft - left) <= 2;
-      if ((okTop && okLeft) || attempts >= 12) { resuming = false; return; }
-      attempts++;
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
   function onScroll(cb) {
     scrollListeners.push(cb);
     return () => { scrollListeners = scrollListeners.filter(c => c !== cb); };
   }
 
   // ── Suspend / Resume (lightweight snapshot for inactive panes) ────
-  // _suspend* values let resume() restore the pre-suspend viewport.
-  let suspended = false;
-  let resuming = false;
-  let suspendImg = null;
-  let _suspendScrollTop = 0;
-  let _suspendScrollLeft = 0;
-  let _suspendZoomLevel = null;
-  let cachedPdfData = null;
-
-  function suspend() {
-    if (suspended || destroyed || !pdfDoc) return;
-    _suspendScrollTop = scrollArea.scrollTop;
-    _suspendScrollLeft = scrollArea.scrollLeft;
-    try { _suspendZoomLevel = getZoom(); } catch (_) { _suspendZoomLevel = null; }
-    suspended = true;
-    thumbs.destroy();
-    window.removeEventListener("keydown", onKeydown);
-    if (resizeObserver) resizeObserver.disconnect();
-    if (observer) { observer.disconnect(); observer = null; }
-
-    const savedScroll = _suspendScrollTop;
-    const savedScrollLeft = _suspendScrollLeft;
-
-    try {
-      const snapshot = document.createElement("canvas");
-      const w = scrollArea.clientWidth;
-      const h = scrollArea.clientHeight;
-      if (w > 0 && h > 0) {
-        snapshot.width = w;
-        snapshot.height = h;
-        const ctx = snapshot.getContext("2d");
-        ctx.fillStyle = "#f5f5f5";
-        ctx.fillRect(0, 0, w, h);
-        for (const p of pages) {
-          if (!p.rendered || !p.canvas) continue;
-          const rect = p.wrapper.getBoundingClientRect();
-          const areaRect = scrollArea.getBoundingClientRect();
-          const dx = rect.left - areaRect.left;
-          const dy = rect.top - areaRect.top;
-          if (dy + rect.height < 0 || dy > h) continue;
-          ctx.drawImage(p.canvas, dx, dy, rect.width, rect.height);
-        }
-        suspendImg = document.createElement("img");
-        suspendImg.className = "pdf-suspend-snapshot";
-        suspendImg.src = snapshot.toDataURL("image/jpeg", 0.85);
-        suspendImg.style.width = w + "px";
-        suspendImg.style.height = h + "px";
+  // Extracted to pdf-viewer-suspend.js; env callbacks bridge into the
+  // factory's closure state. Declared before first use — everything
+  // that reads suspendMgr runs after the factory finishes.
+  const suspendMgr = createPdfSuspendManager(scrollArea, {
+    isDestroyed: () => destroyed,
+    hasDoc: () => !!pdfDoc,
+    getZoom: () => getZoom(),
+    setZoom: (level) => setZoom(level),
+    relayoutPages: () => relayoutPages(),
+    drawSnapshot: (ctx, w, h) => {
+      if (folded) { foldLayer.drawSnapshot(ctx, w, h); return; }
+      for (const p of pages) {
+        if (!p.rendered || !p.canvas) continue;
+        const rect = p.wrapper.getBoundingClientRect();
+        const areaRect = scrollArea.getBoundingClientRect();
+        const dx = rect.left - areaRect.left;
+        const dy = rect.top - areaRect.top;
+        if (dy + rect.height < 0 || dy > h) continue;
+        ctx.drawImage(p.canvas, dx, dy, rect.width, rect.height);
       }
-    } catch (_) {}
-
-    for (let i = 0; i < pages.length; i++) clearPage(i);
-    if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) {} pdfDoc = null; }
-    pages = [];
-    scrollArea.innerHTML = "";
-
-    if (suspendImg) {
-      scrollArea.appendChild(suspendImg);
-      scrollArea.classList.add("pdf-suspended");
-    }
-
-    scrollArea.scrollTop = savedScroll;
-    scrollArea.scrollLeft = savedScrollLeft;
-  }
-
-  async function resume() {
-    if (!suspended || destroyed) return;
-    suspended = false;
-    resuming = true;
-    scrollArea.classList.remove("pdf-suspended");
-    if (suspendImg) { suspendImg.remove(); suspendImg = null; }
-
-    window.addEventListener("keydown", onKeydown);
-    if (resizeObserver) {
-      try { resizeObserver.observe(scrollArea); } catch (_) {}
-    }
-
-    if (cachedPdfData) {
+    },
+    onSuspendStart: () => {
+      thumbs.destroy();
+      window.removeEventListener("keydown", onKeydown);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (observer) { observer.disconnect(); observer = null; }
+    },
+    teardownContent: () => {
+      // Folded state was captured via getZoom (-5) already; drop the
+      // live fold DOM with everything else. Resume's restoreView(-5)
+      // re-enters folded mode after the reload.
+      if (folded) {
+        folded = false;
+        foldLayer.disable();
+        applyLayoutClass();
+      }
+      for (let i = 0; i < pages.length; i++) clearPage(i);
+      if (pdfDoc) { try { pdfDoc.destroy(); } catch (_) {} pdfDoc = null; }
+      pages = [];
+      scrollArea.innerHTML = "";
+    },
+    onResumeStart: () => {
+      window.addEventListener("keydown", onKeydown);
+      if (resizeObserver) {
+        try { resizeObserver.observe(scrollArea); } catch (_) {}
+      }
+    },
+    reload: async (data) => {
       const savedAnnotations = annotLayer.getAnnotations().slice();
-      await loadPdf(cachedPdfData);
+      await loadPdf(data);
       if (savedAnnotations.length) annotLayer.setAnnotations(savedAnnotations);
-    }
-
-    // restoreView re-applies zoom (a horizontal layout clamps scrollTop to
-    // 0 and vice versa, so the mode must match first) then re-asserts the
-    // scroll across frames so a not-yet-settled container size can't clamp
-    // the position to the top.
-    restoreView(_suspendZoomLevel, _suspendScrollTop, _suspendScrollLeft);
-    if (_suspendScrollTop <= 0 && _suspendScrollLeft <= 0) resuming = false;
-  }
+    },
+  });
 
   // Wrap loadPdf to cache the raw data for resume
-  const _origLoadPdf = loadPdf;
   async function loadPdfAndCache(data) {
-    if (data instanceof Uint8Array) cachedPdfData = new Uint8Array(data);
-    else if (Array.isArray(data)) cachedPdfData = new Uint8Array(data);
-    else cachedPdfData = data;
-    await _origLoadPdf(data);
+    suspendMgr.cacheData(data);
+    await loadPdf(data);
   }
 
   // ── Cleanup ──────────────────────────────────────────────────────
   async function destroy() {
     destroyed = true;
+    foldLayer.destroy();
     thumbs.destroy();
     window.removeEventListener("keydown", onKeydown);
     if (observer) { observer.disconnect(); observer = null; }
@@ -648,7 +648,7 @@ export function createPdfViewer(container, opts = {}) {
   let resizeTimer = null;
   try {
     resizeObserver = new ResizeObserver(() => {
-      if (layoutMode === MODE_FIXED || !pages.length || suspended) return;
+      if (layoutMode === MODE_FIXED || !pages.length || suspendMgr.isSuspended()) return;
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => { resizeTimer = null; relayoutPages(); }, 80);
     });
@@ -661,9 +661,9 @@ export function createPdfViewer(container, opts = {}) {
       if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
       await destroy();
     },
-    suspend,
-    resume,
-    get suspended() { return suspended; },
+    suspend: suspendMgr.suspend,
+    resume: suspendMgr.resume,
+    get suspended() { return suspendMgr.isSuspended(); },
     setZoom,
     getZoom,
     goToPage,
@@ -672,26 +672,18 @@ export function createPdfViewer(container, opts = {}) {
     setScrollTop,
     getScrollLeft,
     setScrollLeft,
-    restoreView,
+    restoreView: suspendMgr.restoreView,
     onScroll,
-    setAnnotations: annotLayer.setAnnotations,
-    refreshAnnotations: annotLayer.refreshAnnotations,
-    setZoteroAttKey,
-    setToolbarInfo: (title, author) => {
-      if (!title) { toolbarInfo.textContent = ""; toolbarInfo.style.display = "none"; return; }
-      toolbarInfo.style.display = "";
-      toolbarInfo.innerHTML = "";
-      const t = document.createElement("span");
-      t.className = "pdf-toolbar-info-title";
-      t.textContent = title;
-      toolbarInfo.appendChild(t);
-      if (author) {
-        const a = document.createElement("span");
-        a.className = "pdf-toolbar-info-author";
-        a.textContent = author;
-        toolbarInfo.appendChild(a);
-      }
+    setAnnotations: (annots) => {
+      annotLayer.setAnnotations(annots);
+      foldLayer.onAnnotationsChanged();
     },
+    refreshAnnotations: () => {
+      annotLayer.refreshAnnotations();
+      foldLayer.refresh(true);
+    },
+    setZoteroAttKey,
+    setToolbarInfo: (title, author) => applyToolbarInfo(toolbarInfo, title, author),
     toggleShelf: annotLayer.toggleShelf,
     get element() { return root; },
   };
