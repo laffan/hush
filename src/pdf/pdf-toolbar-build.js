@@ -70,10 +70,10 @@ export function buildPdfToolbar() {
   const fitThreeBtn = svgBtn("pdf-toggle-option", "Fit three pages", FIT_THREE_ICON);
   fitToggleWrap.append(fitOneBtn, fitTwoBtn, fitThreeBtn);
 
-  // Folded view: only shown while scrolling vertically at single-page
-  // width (or while folded). Filter picks which annotations make folds.
+  // Folded view: always available — entering it switches the viewer to
+  // vertical scroll at single-page width. The filter button only shows
+  // while folded; it picks which annotations make folds.
   const foldBtn = svgBtn("pdf-zoom-btn pdf-fold-btn", "Folded view — collapse to annotated regions", FOLD_ICON);
-  foldBtn.style.display = "none";
   const foldFilterBtn = svgBtn("pdf-zoom-btn pdf-fold-filter-btn", "Filter fold annotations", FILTER_ICON);
   foldFilterBtn.style.display = "none";
 

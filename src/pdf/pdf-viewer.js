@@ -275,10 +275,8 @@ export function createPdfViewer(container, opts = {}) {
     fitOneBtn.classList.toggle("active", fitMode === MODE_FIT && !folded);
     fitTwoBtn.classList.toggle("active", fitMode === MODE_FIT_2);
     fitThreeBtn.classList.toggle("active", fitMode === MODE_FIT_3);
-    // Folded view only offers itself while scrolling vertically at
-    // single-page width (or while already folded).
-    const canFold = folded || (isVert && fitMode === MODE_FIT);
-    foldBtn.style.display = canFold ? "" : "none";
+    // Folded view is always offered — entering it switches to vertical
+    // scroll at single-page width as part of its initialization.
     foldBtn.classList.toggle("active", folded);
     foldFilterBtn.style.display = folded ? "" : "none";
     // Persist view-state changes (fit / direction / fixed zoom) the instant
