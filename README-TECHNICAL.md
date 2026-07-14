@@ -31,6 +31,8 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 ├── pdf/                               ├── files.rs
 │   ├── pdf-viewer.js                  ├── images.rs
 │   ├── pdf-viewer-annotations.js      (annotation shelf + page overlay rendering; scale derived from wrapper dims)
+│   ├── pdf-viewer-folds.js            (folded view: annotation-region folds + type/colour filter, default red ink + red highlights)
+│   ├── pdf-viewer-suspend.js          (suspend/resume JPEG snapshot + restoreView, extracted from pdf-viewer.js)
 │   ├── pdf-bridge.js                  ├── pdfs.rs
 │   └── zotero-save-pdf.js             (single + batch save with checkbox multi-select)
 │                                      ├── snapshots.rs
