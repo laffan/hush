@@ -13,6 +13,8 @@ let notebookDirty = false;
 let cameraDirty = false;
 let _appState = null;
 let _mainDragCleanup = null;
+/** TEMPORARY: stroke-perf harness panel handle (see ui/perf-panel.ts). */
+let _perfPanel = null;
 /** Cached per-notebook background overrides for the open notebook. Re-applied
  *  after every `applyNotebookSettings` so a global settings refresh (theme
  *  switch, style change) doesn't wipe the user's per-notebook bg choice. */
@@ -87,6 +89,7 @@ export async function mountNotebook(container, fileId, state) {
     canvasInstance = null;
   }
   if (_mainDragCleanup) { _mainDragCleanup(); _mainDragCleanup = null; }
+  if (_perfPanel) { _perfPanel.destroy(); _perfPanel = null; }
   _unmountLoadingOverlay();
 
   currentNotebookFileId = fileId;
@@ -260,6 +263,17 @@ export async function mountNotebook(container, fileId, state) {
   await Promise.resolve();
   notebookDirty = false;
   cameraDirty = false;
+
+  // TEMPORARY: stroke-perf harness — collapsed "PERF" pill in the
+  // top-left; main canvas only (panes don't mount it). Remove with
+  // ui/perf-panel.ts + perf-harness.ts when the perf work lands.
+  try {
+    const { createPerfPanel } = await import("./ui/perf-panel.ts");
+    _perfPanel = createPerfPanel(canvasInstance.state);
+    container.appendChild(_perfPanel.el);
+  } catch (e) {
+    console.error("Failed to mount perf panel:", e);
+  }
 
   return canvasInstance;
 }
@@ -460,6 +474,8 @@ export async function saveNotebook() {
   notebookDirty = false;
   cameraDirty = false;
   const { encodeNotebookContent } = await import("./notebook-content.ts");
+  // TEMPORARY perf instrumentation — consumed by ui/perf-panel.ts.
+  const _perfEnc0 = performance.now();
   const content = encodeNotebookContent({
     shapes: canvasInstance.getShapes(),
     layers: canvasInstance.state.layers,
@@ -472,6 +488,12 @@ export async function saveNotebook() {
       opacity: canvasInstance.state.gridOpacity,
     },
   });
+  const _perf = { encodeMs: performance.now() - _perfEnc0, bytes: content.length, saveMs: 0, snapshotMs: 0 };
+  const _emitSavePerf = () => {
+    try {
+      document.dispatchEvent(new CustomEvent("hush-notebook-save-perf", { detail: _perf }));
+    } catch (_) {}
+  };
   try {
     const { parseLocalSentinel } = await import("../sync/local-sync.js");
     const local = parseLocalSentinel(currentNotebookFileId);
@@ -484,31 +506,42 @@ export async function saveNotebook() {
       // Flag our own write so the desktop fs watcher skips the echo event
       // (and its sidebar repaint) for the next ~500 ms.
       if (_appState?.runtime) _appState.runtime.localSyncWriteFlag = Date.now();
+      const _perfSave0 = performance.now();
       await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
+      _perf.saveMs = performance.now() - _perfSave0;
       _lastSavedContent = content;
       // Version snapshots key on the `ls:` sentinel id, so Local Folder
       // notebooks get the same content history internal ones do.
       if (IS_TAURI && wasContentDirty) {
+        const _perfSnap0 = performance.now();
         try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
         catch (e) { console.error("Notebook snapshot failed:", e); }
+        _perf.snapshotMs = performance.now() - _perfSnap0;
       }
+      _emitSavePerf();
       return null;
     }
     if (IS_TAURI) {
+      const _perfSave0 = performance.now();
       await tauriInvoke("save_file", { id: currentNotebookFileId, content });
+      _perf.saveMs = performance.now() - _perfSave0;
       _lastSavedContent = content;
       // Mirror the doc-side cadence: snapshot every successful autosave
       // write — but only when the write covers a real content change.
       // Camera-only saves don't earn a version slot.
       if (wasContentDirty) {
+        const _perfSnap0 = performance.now();
         try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
         catch (e) { console.error("Notebook snapshot failed:", e); }
+        _perf.snapshotMs = performance.now() - _perfSnap0;
       }
+      _emitSavePerf();
       return { fileId: currentNotebookFileId, content };
     }
   } catch (e) {
     console.error("Failed to save notebook:", e);
   }
+  _emitSavePerf();
   return null;
 }
 
@@ -521,6 +554,7 @@ export async function unmountNotebook() {
   if (notebookDirty || cameraDirty) {
     saveResult = await saveNotebook();
   }
+  if (_perfPanel) { _perfPanel.destroy(); _perfPanel = null; }
   if (canvasInstance) {
     if (canvasInstance._bgChangeListener) {
       document.removeEventListener("notebook-bg-changed", canvasInstance._bgChangeListener);
