@@ -368,6 +368,25 @@ export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape
     roundRect(ctx, position.x, position.y, width, height, borderRadius);
     ctx.stroke(); ctx.restore();
   }
+  // Pinned badge — a small pushpin in the top-right corner so a
+  // screen-anchored box is recognizable at a glance.
+  if (shape.pinned) {
+    const px = position.x + width - 14;
+    const py = position.y + 14;
+    const c = theme?.accent || strokeColor;
+    ctx.save();
+    ctx.fillStyle = c;
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(px, py - 2, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(px, py + 1);
+    ctx.lineTo(px, py + 7);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 export function drawStroke(ctx: CanvasRenderingContext2D, points: Point[], color: string, width: number) {

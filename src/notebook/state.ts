@@ -682,6 +682,86 @@ export class DrawingState extends EventTarget {
     }
   }
 
+  constructor() {
+    super();
+    // Screen-pinned drag boxes ride camera notifications: registered
+    // first (before any UI listener) so the compensation lands before
+    // same-batch subscribers read shapes.
+    this.addEventListener("change", ((e: CustomEvent) => {
+      const keys: string[] = e.detail?.keys || [];
+      if (keys.includes("camera")) this._compensatePinnedForCamera();
+    }) as EventListener);
+  }
+
+  // === Pinned drag boxes ===
+  // A pinned drag-area holds its on-screen position while the camera
+  // pans — the canvas scrolls beneath it. Implemented as a world-space
+  // compensation: on every camera pan, the pinned box (and its
+  // transitive contents) is translated by the pan's world delta, so
+  // hit-testing, selection, rendering, and persistence all keep
+  // working on plain world coordinates.
+  private _pinCamera: Camera = { x: 0, y: 0, zoom: 1 };
+
+  /** Re-anchor pin compensation to the current camera without moving
+   *  any shapes. Called after programmatic camera jumps that restore a
+   *  saved viewport (mount restore), where the saved world positions
+   *  are already consistent with the incoming camera. */
+  rebasePinAnchor() {
+    this._pinCamera = { ...this.camera };
+  }
+
+  private _compensatePinnedForCamera() {
+    const prev = this._pinCamera;
+    const cam = this.camera;
+    this._pinCamera = { x: cam.x, y: cam.y, zoom: cam.zoom };
+    // Zoom changes rebase instead of compensating — pinning is a
+    // scroll anchor, not a screen-space HUD, so pinch-zoom treats the
+    // box like ordinary content.
+    if (prev.zoom !== cam.zoom) return;
+    const dx = (prev.x - cam.x) / cam.zoom;
+    const dy = (prev.y - cam.y) / cam.zoom;
+    if (dx === 0 && dy === 0) return;
+    const pinnedAreaIds = new Set<string>();
+    for (const s of this.shapes) {
+      if (s.type === "drag-area" && s.pinned && !s.pocketed) pinnedAreaIds.add(s.id);
+    }
+    if (pinnedAreaIds.size === 0) return;
+    // Transitive contents follow the box (nested drag-areas included).
+    const moving = new Set<string>(pinnedAreaIds);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const s of this.shapes) {
+        if (s.parentId && moving.has(s.parentId) && !moving.has(s.id)) {
+          moving.add(s.id);
+          grew = true;
+        }
+      }
+    }
+    this.shapes = this.shapes.map((s) => {
+      if (!moving.has(s.id) || s.pocketed) return s;
+      if (s.type === "draw") {
+        return { ...s, points: s.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })) };
+      }
+      return { ...s, position: { x: s.position.x + dx, y: s.position.y + dy } };
+    });
+    this.notify("shapes");
+  }
+
+  /** Flip a drag-area's pinned flag. One undo entry per toggle. */
+  togglePinDragArea(dragAreaId: string) {
+    let found = false;
+    this.shapes = this.shapes.map((s) => {
+      if (s.id !== dragAreaId || s.type !== "drag-area") return s;
+      found = true;
+      return { ...s, pinned: !s.pinned };
+    });
+    if (!found) return;
+    this._pinCamera = { ...this.camera };
+    this.recordHistory();
+    this.notify("shapes");
+  }
+
   // === Text ===
   commitText(editing: EditingText): string | null {
     const trimmed = editing.text.trim();

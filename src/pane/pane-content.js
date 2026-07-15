@@ -258,6 +258,7 @@ async function loadNotebookPane(pane) {
     if (pane.notebookCamera) {
       canvas.state.camera = { ...pane.notebookCamera };
       canvas.state.notify("camera");
+      canvas.state.rebasePinAnchor?.();
       return;
     }
     const mainC = document.getElementById("notebook-container");
@@ -267,6 +268,9 @@ async function loadNotebookPane(pane) {
     const paneH = pane._content.clientHeight || pane.height;
     canvas.state.camera = { x: (paneW - mainW) / 2, y: (paneH - mainH) / 2, zoom: 1 };
     canvas.state.notify("camera");
+    // Initial centring is a viewport placement, not a user pan — don't
+    // let it drag pinned boxes along.
+    canvas.state.rebasePinAnchor?.();
   });
 
   // Capture pan / zoom changes so they survive app open/close. Gutter

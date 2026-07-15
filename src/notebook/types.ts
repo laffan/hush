@@ -145,6 +145,10 @@ export interface DragAreaShape extends ShapeBase {
   borderRadius: number;
   borderColor?: string;
   borderWidth?: number;
+  /** Screen-pinned: the box (and its contents) holds its on-screen
+   *  position while the camera pans — the canvas scrolls beneath it.
+   *  Zoom changes rebase the anchor instead of compensating. */
+  pinned?: boolean;
 }
 
 export type Shape = DrawShape | TextShape | ImageShape | DragAreaShape;

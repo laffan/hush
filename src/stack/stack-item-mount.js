@@ -195,6 +195,9 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
         canvas.state.camera = { x: -w / 4, y: -h / 4, zoom: 0.75 };
       }
       canvas.state.notify("camera");
+      // Initial viewport placement, not a user pan — don't drag pinned
+      // drag-boxes along with it.
+      canvas.state.rebasePinAnchor?.();
     });
 
     // Autosave on changes

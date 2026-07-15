@@ -177,6 +177,10 @@ export async function mountNotebook(container, fileId, state) {
     if (snapshot.camera) {
       canvasInstance.state.camera = { ...snapshot.camera };
       canvasInstance.state.notify("camera");
+      // Saved world positions are already consistent with the saved
+      // camera — rebase pinned-box compensation instead of letting the
+      // restore read as a giant pan.
+      canvasInstance.state.rebasePinAnchor();
     }
   }
 

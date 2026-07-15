@@ -1,4 +1,5 @@
 import type { DrawingState } from "../state";
+import type { DragAreaShape } from "../types";
 import type { DrawingLayer } from "../drawing/drawing-layer-types";
 import { canvasToScreen, computePocketLayout, getShapeBounds } from "../utils";
 import { rasterizeSelectionToImage, recognizeSelection, canRecognizeSelection } from "../selection-raster";
@@ -30,7 +31,7 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     },
   });
 
-  type PopupType = "colors" | "size" | "align" | "grid";
+  type PopupType = "colors" | "size" | "align" | "arrange";
   let activePopup: PopupType | null = null;
   let popupEl: HTMLElement | null = null;
   let popupWrapper: HTMLElement | null = null;
@@ -110,13 +111,6 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     return panel;
   }
 
-  function makeColsStepper(currentCols: number, maxCols: number, onChange: (cols: number) => void): HTMLElement {
-    return makeStepperPanel({
-      current: currentCols, min: 1, max: maxCols, step: 1,
-      format: (n) => `${n} cols`, labelMinWidth: "44px", onChange,
-    });
-  }
-
   function makeSizeStepper(currentSize: number, onChange: (size: number) => void): HTMLElement {
     return makeStepperPanel({
       current: currentSize, min: 6, max: 30, step: 1,
@@ -164,6 +158,104 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       }),
     });
     panel.addEventListener("pointerdown", (e) => e.stopPropagation());
+    return panel;
+  }
+
+  /** Arrangement flyout for a single selected drag-area. Gathers the
+   *  container-layout actions — arrange-as-grid (with its column
+   *  stepper inline) and the two reorder modes — into one popup so
+   *  they stop crowding the toolbar (mirrors the Colors popup
+   *  pattern). Sticky like Colors: state changes rebuild the toolbar
+   *  and the saved-popup logic reopens it with fresh active states. */
+  function makeArrangeMenu(dragArea: DragAreaShape): HTMLElement {
+    const theme = state.theme;
+    const muted = theme.variant === "dark" ? "rgba(255,255,255,0.5)" : "#666";
+    const rowBtnStyle: Partial<CSSStyleDeclaration> = {
+      width: "26px", height: "26px", border: "none", borderRadius: "4px",
+      background: "transparent", cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "0", color: theme.foreground,
+    };
+    const panel = h("div", {
+      style: {
+        position: "absolute", top: "-84px", left: "50%", transform: "translateX(-50%)",
+        display: "flex", flexDirection: "column", gap: "4px", padding: "6px 8px",
+        background: theme.uiBackground, borderRadius: "8px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.15)", border: `1px solid ${theme.uiBorder}`,
+        zIndex: "300", whiteSpace: "nowrap",
+      },
+    });
+    panel.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+    const rowLabel = (text: string) => h("span", {
+      text,
+      style: { fontSize: "11px", color: muted, minWidth: "48px", lineHeight: "26px" },
+    });
+
+    // Grid row — apply + column stepper inline.
+    const n = countDragAreaUnits(dragArea.id);
+    const gridRow = h("div", { style: { display: "flex", alignItems: "center", gap: "4px" } });
+    gridRow.appendChild(rowLabel("Grid"));
+    if (n < 2) {
+      gridRow.appendChild(h("span", { text: "needs 2+ items", style: { fontSize: "11px", color: muted, lineHeight: "26px" } }));
+    } else {
+      let cols = Math.max(1, Math.min(n, lastGridCols.get(dragArea.id) ?? Math.ceil(Math.sqrt(n))));
+      const applyGrid = () => {
+        lastGridCols.set(dragArea.id, cols);
+        state.arrangeDragAreaAsGrid(dragArea.id, cols);
+      };
+      const gridBtn = h("button", { title: "Arrange children as grid", style: { ...rowBtnStyle }, onClick: applyGrid });
+      gridBtn.appendChild(icon("grid-mode", 18));
+      const colsLabel = h("span", { text: `${cols} cols`, style: { fontSize: "11px", color: muted, minWidth: "44px", textAlign: "center" } });
+      const makeStep = (symbol: string, delta: number) => {
+        const btn = h("button", {
+          text: symbol,
+          style: {
+            width: "26px", height: "26px", display: "inline-flex", alignItems: "center", justifyContent: "center",
+            background: "transparent", color: theme.foreground, border: `1px solid ${theme.uiBorder}`,
+            borderRadius: "6px", cursor: "pointer", fontSize: "14px", fontWeight: "600", lineHeight: "1", padding: "0",
+          },
+        });
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const next = Math.max(1, Math.min(n, cols + delta));
+          if (next === cols) return;
+          cols = next;
+          colsLabel.textContent = `${cols} cols`;
+          applyGrid();
+        });
+        return btn;
+      };
+      gridRow.appendChild(gridBtn);
+      gridRow.appendChild(makeStep("−", -1));
+      gridRow.appendChild(colsLabel);
+      gridRow.appendChild(makeStep("+", 1));
+    }
+    panel.appendChild(gridRow);
+
+    // Reorder row — swap / ripple mode toggles.
+    const reorderRow = h("div", { style: { display: "flex", alignItems: "center", gap: "4px" } });
+    reorderRow.appendChild(rowLabel("Reorder"));
+    const swapActive = state.reorderDragAreaId === dragArea.id && state.reorderMode === "swap";
+    const swapBtn = h("button", {
+      title: swapActive ? "Exit swap-reorder mode" : "Swap-reorder children (drop swaps two items)",
+      style: { ...rowBtnStyle },
+      onClick: () => state.toggleReorderMode(dragArea.id, "swap"),
+    });
+    swapBtn.appendChild(icon("item-swap", 18));
+    if (swapActive) { swapBtn.style.background = theme.accent; swapBtn.style.color = "#fff"; }
+    const rippleActive = state.reorderDragAreaId === dragArea.id && state.reorderMode === "ripple";
+    const rippleBtn = h("button", {
+      title: rippleActive ? "Exit ripple-reorder mode" : "Ripple-reorder children (drop inserts at target slot)",
+      style: { ...rowBtnStyle },
+      onClick: () => state.toggleReorderMode(dragArea.id, "ripple"),
+    });
+    rippleBtn.appendChild(icon("item-reorder", 18));
+    if (rippleActive) { rippleBtn.style.background = theme.accent; rippleBtn.style.color = "#fff"; }
+    reorderRow.appendChild(swapBtn);
+    reorderRow.appendChild(rippleBtn);
+    panel.appendChild(reorderRow);
+
     return panel;
   }
 
@@ -303,17 +395,6 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       container.appendChild(btn);
     }
 
-    // Rasterize: bake the whole selection (groups, drag-areas with
-    // their contents, mixed shapes) into a single image. Pointless for
-    // a lone image shape, so it's hidden there.
-    if (access && !(selected.length === 1 && selected[0].type === "image")) {
-      container.appendChild(makeIconBtn("rasterize", "Rasterize as image", () => {
-        rasterizeSelectionToImage({
-          state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),
-        });
-      }));
-    }
-
     if (hasImage && selected.length === 1) {
       const isCropping = state.croppingImageId === selected[0].id;
       container.appendChild(makeIconBtn("crop", isCropping ? "Finish crop" : "Crop image", () => {
@@ -370,55 +451,40 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
       }));
     }
 
-    // Drag-area-only actions: arranging the children in a grid, plus
-    // two flavours of reorder mode — swap (trade two units' slots) and
-    // ripple (remove the dragged unit, re-insert at the target's
-    // reading-order slot). Both reorder buttons are mutually exclusive
-    // — activating one while the other is active just switches mode.
+    // Drag-area-only actions. Pinning keeps the box screen-anchored
+    // while the canvas scrolls beneath it; the arrangement features
+    // (grid layout + the two reorder modes) live together in one
+    // flyout so they stop crowding the toolbar.
     if (selected.length === 1 && selected[0].type === "drag-area") {
-      const dragArea = selected[0];
-      const gridWrapper = h("div", { style: { position: "relative" } });
-      const openGridFlyout = () => {
-        const n = countDragAreaUnits(dragArea.id);
-        if (n < 2) return;
-        const cols = Math.max(1, Math.min(n, lastGridCols.get(dragArea.id) ?? Math.ceil(Math.sqrt(n))));
-        lastGridCols.set(dragArea.id, cols);
-        state.arrangeDragAreaAsGrid(dragArea.id, cols);
-        togglePopup("grid", gridWrapper, () => makeColsStepper(cols, n, (next) => {
-          lastGridCols.set(dragArea.id, next);
-          state.arrangeDragAreaAsGrid(dragArea.id, next);
-        }));
-      };
-      gridWrapper.appendChild(makeIconBtn("grid-mode", "Arrange children as grid", openGridFlyout));
-      container.appendChild(gridWrapper);
-      if (savedPopup === "grid") {
-        const n = countDragAreaUnits(dragArea.id);
-        if (n >= 2) {
-          const cols = Math.max(1, Math.min(n, lastGridCols.get(dragArea.id) ?? Math.ceil(Math.sqrt(n))));
-          togglePopup("grid", gridWrapper, () => makeColsStepper(cols, n, (next) => {
-            lastGridCols.set(dragArea.id, next);
-            state.arrangeDragAreaAsGrid(dragArea.id, next);
-          }));
-        }
-      }
-      const swapActive = state.reorderDragAreaId === dragArea.id && state.reorderMode === "swap";
-      const swapBtn = makeIconBtn("item-swap", swapActive ? "Exit swap-reorder mode" : "Swap-reorder children (drop swaps two items)", () => {
-        state.toggleReorderMode(dragArea.id, "swap");
+      const dragArea = selected[0] as DragAreaShape;
+
+      const pinBtn = makeIconBtn("pin", dragArea.pinned ? "Unpin" : "Pin (canvas scrolls beneath)", () => {
+        state.togglePinDragArea(dragArea.id);
       });
-      if (swapActive) {
-        swapBtn.style.background = state.theme.accent;
-        swapBtn.style.color = "#fff";
+      if (dragArea.pinned) {
+        pinBtn.style.background = state.theme.accent;
+        pinBtn.style.color = "#fff";
       }
-      container.appendChild(swapBtn);
-      const rippleActive = state.reorderDragAreaId === dragArea.id && state.reorderMode === "ripple";
-      const rippleBtn = makeIconBtn("item-reorder", rippleActive ? "Exit ripple-reorder mode" : "Ripple-reorder children (drop inserts at target slot)", () => {
-        state.toggleReorderMode(dragArea.id, "ripple");
-      });
-      if (rippleActive) {
-        rippleBtn.style.background = state.theme.accent;
-        rippleBtn.style.color = "#fff";
-      }
-      container.appendChild(rippleBtn);
+      container.appendChild(pinBtn);
+
+      const arrangeWrapper = h("div", { style: { position: "relative" } });
+      arrangeWrapper.appendChild(makeIconBtn("grid-mode", "Arrange children (grid / reorder)", () => {
+        togglePopup("arrange", arrangeWrapper, () => makeArrangeMenu(dragArea));
+      }));
+      container.appendChild(arrangeWrapper);
+      if (savedPopup === "arrange") togglePopup("arrange", arrangeWrapper, () => makeArrangeMenu(dragArea));
+    }
+
+    // Rasterize: bake the whole selection (groups, drag-areas with
+    // their contents, mixed shapes) into a single image. Pointless for
+    // a lone image shape, so it's hidden there. Sits at the end of the
+    // feature icons, right before Delete, for every object type.
+    if (access && !(selected.length === 1 && selected[0].type === "image")) {
+      container.appendChild(makeIconBtn("rasterize", "Rasterize as image", () => {
+        rasterizeSelectionToImage({
+          state, imageCache: access.getImageCache(), drawingLayer: access.getDrawingLayer(),
+        });
+      }));
     }
 
     container.appendChild(makeIconBtn("trash", "Delete", () => state.deleteSelected()));
