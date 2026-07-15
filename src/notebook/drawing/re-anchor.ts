@@ -91,6 +91,11 @@ export interface ReanchorController {
   /** Forced re-anchor (used only by the drawing layer for tests /
    *  edge cases — normal flow goes through ensureCoverage). */
   reAnchor(cam: Camera): void;
+  /** Repaint every pocketed stroke into the pocket stash from scratch.
+   *  Runs internally after each re-anchor; also exposed so the sync
+   *  shim's bulk-replace path can restore stash pixels for pocketed
+   *  strokes that were never painted to the done canvas. */
+  restashPocketedStrokes(): void;
 }
 
 export function createReanchor(opts: ReanchorOptions): ReanchorController {
@@ -182,5 +187,5 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     reAnchor(cam);
   }
 
-  return { ensureCoverage, reAnchor };
+  return { ensureCoverage, reAnchor, restashPocketedStrokes };
 }

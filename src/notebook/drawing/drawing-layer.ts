@@ -465,7 +465,7 @@ export function createDrawingLayer({
   // changes flow into newly-created strokes immediately.
   const engineAdapter: EngineAdapter = {
     getStrokes: () => strokeEngine.getStrokes() as EngineStroke[],
-    insertStrokeAt: (stroke, index) => strokeEngine.insertStrokeAt(stroke, index),
+    insertStrokeAt: (stroke, index, opts) => strokeEngine.insertStrokeAt(stroke, index, opts),
     removeStrokes: (ids) => strokeEngine.removeStrokes(ids as number[]),
     setStrokesStyleMap: (m) => strokeEngine.setStrokesStyleMap(m as Map<number, object>),
     setStrokePoints: (id, points) => strokeEngine.setStrokePoints(id, points),
@@ -482,6 +482,10 @@ export function createDrawingLayer({
     moveLayer: (from, to) => strokeEngine.moveLayer(from, to),
     stashPocketRegion,
     unstashPocketRegion,
+    // Bulk replaces skip the incremental pocket stash/unstash dance,
+    // so the shim repaints pocketed strokes into the stash wholesale
+    // afterwards (same rebuild a re-anchor performs).
+    rebuildPocketStash: () => reanchorCtl.restashPocketedStrokes(),
   };
   const shim = createSyncShim({
     state,

@@ -26,6 +26,9 @@
  *      so the host can re-anchor the wrapper world-origin (canvas
  *      backing follows the camera) without losing strokes outside the
  *      original 2048-px box.
+ *  22. `insertStrokeAt(stroke, index, opts)` accepts `opts.skipRebake`
+ *      so bulk loads can insert N strokes without N tile rebakes and
+ *      fullRebake() once at the end (per-insert rebakes are quadratic).
  *   (Deltas 4 + 5 live in selection.js + gestures.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
@@ -761,10 +764,17 @@ export function createStrokeEngine({
       renderer.rebakeTiles(dirty);
       if (onStrokesRemoved) onStrokesRemoved(removed);
     },
-    insertStrokeAt(stroke, index) {
+    // Hush delta #22: optional `opts.skipRebake` suppresses the
+    // per-insert tile rebake. A bulk load inserts N strokes and every
+    // rebake walks the whole stroke list (and repaints tiles that
+    // later inserts will repaint again) — quadratic in N. The sync
+    // shim's bulk path passes skipRebake and issues one fullRebake()
+    // at the end instead. Default behavior is unchanged.
+    insertStrokeAt(stroke, index, opts) {
       const clamped = max(0, min(index, state.strokes.length));
       state.strokes.splice(clamped, 0, stroke);
       renderer.addToIndex(stroke);
+      if (opts && opts.skipRebake) return;
       // Everything in these tiles may need to re-layer with the inserted one.
       renderer.rebakeTiles(stroke.tiles);
     },

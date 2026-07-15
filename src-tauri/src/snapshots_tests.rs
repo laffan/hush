@@ -112,7 +112,7 @@ fn prune_thins_old_buckets_but_keeps_recent_snapshots() {
     let mgr = SnapshotManager::new(dir.path());
 
     // Hand-write snapshots: three within one old minute-bucket (in the
-    // 30min–2h window where policy keeps 1/min), plus two fresh ones.
+    // 5min–2h window where policy keeps 1/min), plus two fresh ones.
     let versions = dir.path().join("desks/d1/.hush/versions/f1");
     fs::create_dir_all(&versions).unwrap();
     let now = now_ms();
@@ -127,7 +127,7 @@ fn prune_thins_old_buckets_but_keeps_recent_snapshots() {
     mgr.create_snapshot("f1", "fresh2").unwrap();
 
     let entries = mgr.get_snapshots("f1").unwrap();
-    // 2 fresh (kept: <30min window keeps all) + 1 survivor of the old bucket.
+    // 2 fresh (kept: <5min window keeps all) + 1 survivor of the old bucket.
     assert_eq!(entries.len(), 3);
     assert_eq!(entries[0].content, "fresh2");
     assert_eq!(entries[2].content, "old2"); // newest of the old bucket survives

@@ -144,7 +144,12 @@ function applyAnchors(pane) {
   let anchors = pane._shapeAnchors;
   if (!anchors) anchors = pane._shapeAnchors = new Map();
   const shapes = pane.notebook.state.shapes;
-  let mutated = false;
+  // Collect id → newY first, then rebuild the array immutably. Shapes
+  // must never be mutated in place once they're in state.shapes — the
+  // undo manager shares shape references across checkpoints (see
+  // notebook/undo-manager.ts), so an in-place write would silently
+  // rewrite history entries that hold the same object.
+  const newYs = new Map();
   for (const s of shapes) {
     // DrawShapes (strokes) carry their geometry in `points[]` rather
     // than a single `position`. Skipping them here is correct AND
@@ -169,12 +174,16 @@ function applyAnchors(pane) {
     if (a.idx >= headers.length) continue;
     const newY = headers[a.idx].y + a.offset;
     if (s.position.y !== newY) {
-      s.position = { x: s.position.x, y: newY };
+      newYs.set(s.id, newY);
       a.lastY = newY;
-      mutated = true;
     }
   }
-  if (mutated) pane.notebook.state.notify("shapes");
+  if (newYs.size) {
+    pane.notebook.state.shapes = shapes.map((s) =>
+      newYs.has(s.id) ? { ...s, position: { x: s.position.x, y: newYs.get(s.id) } } : s,
+    );
+    pane.notebook.state.notify("shapes");
+  }
 }
 
 /** Rescan headers, push them into the renderer, and reapply anchors so

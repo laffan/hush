@@ -26,6 +26,37 @@ let _notebookBackground = null;
  *  stroke and clobbers the engine's selection / undo state. */
 let _lastSavedContent = null;
 
+/** Version snapshots are throttled independently of the 2-second
+ *  autosave: continuous writing keeps the notebook dirty on every
+ *  tick, and snapshotting each one wrote a full multi-MB copy of the
+ *  notebook to disk every 2 s for the whole session. The file write
+ *  itself still happens on every dirty tick — only the version-history
+ *  slot is rate-limited. `_snapshotPending` tracks content that was
+ *  saved without earning a slot, so unmount (and the next eligible
+ *  save) can flush it — the last state of a session always lands in
+ *  history. */
+const NOTEBOOK_SNAPSHOT_MIN_MS = 45_000;
+let _lastSnapshotAtMs = 0;
+let _snapshotPending = false;
+
+/** Create a version snapshot for the open notebook if the throttle
+ *  window has elapsed (or `force` is set). Never throws. */
+async function _maybeSnapshot(content, force) {
+  if (!IS_TAURI || !currentNotebookFileId) return;
+  const now = Date.now();
+  if (!force && now - _lastSnapshotAtMs < NOTEBOOK_SNAPSHOT_MIN_MS) {
+    _snapshotPending = true;
+    return;
+  }
+  try {
+    await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content });
+    _lastSnapshotAtMs = now;
+    _snapshotPending = false;
+  } catch (e) {
+    console.error("Notebook snapshot failed:", e);
+  }
+}
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function tauriInvoke(cmd, args) {
@@ -97,6 +128,10 @@ export async function mountNotebook(container, fileId, state) {
   cameraDirty = false;
   _lastSavedContent = null;
   _notebookBackground = null;
+  // Fresh notebook, fresh snapshot throttle — the first content change
+  // after a mount earns a version slot immediately.
+  _lastSnapshotAtMs = 0;
+  _snapshotPending = false;
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
   const { NotesCanvas } = await import("./notes-canvas.ts");
@@ -470,8 +505,10 @@ function applyNotebookBackground(bg) {
  * Save the current notebook shapes to the backing file.
  * Called by the autosave interval and on notebook switch.
  * Returns { fileId, content } when a save occurs, or null if nothing to save.
+ * `opts.forceSnapshot` bypasses the version-snapshot throttle — used by
+ * unmount so the session's final state always lands in history.
  */
-export async function saveNotebook() {
+export async function saveNotebook(opts = {}) {
   if (!canvasInstance || !currentNotebookFileId) return null;
   if (!notebookDirty && !cameraDirty) return null;
   const wasContentDirty = notebookDirty;
@@ -516,10 +553,11 @@ export async function saveNotebook() {
       _lastSavedContent = content;
       // Version snapshots key on the `ls:` sentinel id, so Local Folder
       // notebooks get the same content history internal ones do.
+      // Throttled — see _maybeSnapshot; camera-only saves never earn
+      // a version slot.
       if (IS_TAURI && wasContentDirty) {
         const _perfSnap0 = performance.now();
-        try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
-        catch (e) { console.error("Notebook snapshot failed:", e); }
+        await _maybeSnapshot(content, !!opts.forceSnapshot);
         _perf.snapshotMs = performance.now() - _perfSnap0;
       }
       _emitSavePerf();
@@ -530,13 +568,13 @@ export async function saveNotebook() {
       await tauriInvoke("save_file", { id: currentNotebookFileId, content });
       _perf.saveMs = performance.now() - _perfSave0;
       _lastSavedContent = content;
-      // Mirror the doc-side cadence: snapshot every successful autosave
-      // write — but only when the write covers a real content change.
-      // Camera-only saves don't earn a version slot.
+      // Content changes are version-snapshotted through the throttle
+      // (one slot per NOTEBOOK_SNAPSHOT_MIN_MS of active writing, not
+      // one per 2-second autosave tick). Camera-only saves don't earn
+      // a version slot.
       if (wasContentDirty) {
         const _perfSnap0 = performance.now();
-        try { await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content }); }
-        catch (e) { console.error("Notebook snapshot failed:", e); }
+        await _maybeSnapshot(content, !!opts.forceSnapshot);
         _perf.snapshotMs = performance.now() - _perfSnap0;
       }
       _emitSavePerf();
@@ -556,7 +594,14 @@ export async function saveNotebook() {
 export async function unmountNotebook() {
   let saveResult = null;
   if (notebookDirty || cameraDirty) {
-    saveResult = await saveNotebook();
+    // Force a version snapshot past the throttle so the state the user
+    // walks away from is always in history.
+    saveResult = await saveNotebook({ forceSnapshot: true });
+  } else if (_snapshotPending && _lastSavedContent && IS_TAURI && currentNotebookFileId) {
+    // Everything is already on disk but the last save(s) fell inside
+    // the snapshot throttle window — flush the pending version slot
+    // from the cached content without re-encoding.
+    await _maybeSnapshot(_lastSavedContent, true);
   }
   if (_perfPanel) { _perfPanel.destroy(); _perfPanel = null; }
   if (canvasInstance) {

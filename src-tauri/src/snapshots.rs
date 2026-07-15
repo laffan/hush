@@ -12,9 +12,9 @@
 //! The command surface is unchanged: `create_snapshot` /
 //! `get_snapshots` / `get_snapshot` / `delete_document_snapshots`, ids
 //! remain i64 (now the snapshot's created-at in milliseconds, unique per
-//! document directory). The decay/prune policy carries over verbatim:
-//! keep everything for 30 min, then 1/min to 2 h, 1/10 min to 24 h,
-//! 1/hour to 7 days, 1/day beyond.
+//! document directory). The decay/prune policy: keep everything for
+//! 5 min, then 1/min to 2 h, 1/10 min to 24 h, 1/hour to 7 days,
+//! 1/day beyond.
 //!
 //! Snapshots for a file that hasn't been placed in a desk yet (staged
 //! ids) land under `desks/.versions-unplaced/<fileId>/`; reads aggregate
@@ -185,13 +185,19 @@ impl SnapshotManager {
             .collect();
 
         let now = now_ms() / 1000;
-        let thirty_min = now - 30 * 60;
+        // Keep-all window is 5 minutes. It was 30, but notebooks used
+        // to snapshot on every 2-second autosave — a long writing
+        // session accumulated hundreds of multi-MB copies before the
+        // thinning even started. Notebook snapshots are now throttled
+        // client-side too (see notebook-bridge.js); the tighter window
+        // keeps doc-side bursts from piling up the same way.
+        let five_min = now - 5 * 60;
         let two_hours = now - 2 * 60 * 60;
         let twenty_four_hours = now - 24 * 60 * 60;
         let seven_days = now - 7 * 24 * 60 * 60;
 
         let mut doomed: Vec<usize> = Vec::new();
-        doomed.extend(thin_window(&secs, two_hours, thirty_min, 60));
+        doomed.extend(thin_window(&secs, two_hours, five_min, 60));
         doomed.extend(thin_window(&secs, twenty_four_hours, two_hours, 600));
         doomed.extend(thin_window(&secs, seven_days, twenty_four_hours, 3600));
         doomed.extend(thin_window(&secs, 0, seven_days, 86400));

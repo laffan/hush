@@ -54,7 +54,7 @@ export function createStrokeEngine(opts: {
   getStrokes(): any[];
   getStrokeNode(): null;
   removeStrokes(ids: number[] | Set<number>): void;
-  insertStrokeAt(stroke: any, index: number): void;
+  insertStrokeAt(stroke: any, index: number, opts?: { skipRebake?: boolean }): void;
   setStrokePoints(id: number, points: any[]): void;
   setStrokesStyle(ids: number[] | Set<number>, patch: object): void;
   setStrokesStyleMap(map: Map<number, object>): void;

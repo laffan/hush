@@ -60,7 +60,7 @@ The notebook does **not** run as a separate window or webview. It mounts into th
 **notebook-bridge.js** is the JS glue layer between Hush's `AppState` and the notebook's `DrawingState`. It handles:
 
 - **Mounting** — dynamically imports `NotesCanvas`, passes shortcut settings, loads shapes from the backing file. `main-modes.js` switches `#app` into `.notebook-mode` *before* awaiting the (async) mount so a large notebook never leaves the doc editor's "Start writing…" placeholder on screen while shapes decode. When the decoded snapshot carries more than `LARGE_NOTEBOOK_SHAPE_COUNT` (60) shapes, `mountNotebook` mounts a "Loading Notebook…" overlay (`.notebook-loading-overlay`, themed background + indeterminate progress bar) **and awaits a paint** (`_nextPaint`, double-rAF) *before* the synchronous `loadShapes` engine-sync pass — that pass blocks the event loop, so without forcing the paint first the overlay would never render (a `setTimeout`-gated overlay can't fire while the main thread is busy). It's torn down once shapes are loaded and the first render is queued. Small notebooks skip the overlay entirely — they finish in a frame and it would only flash.
-- **Autosave** — the Hush 2-second autosave interval fires `notebook-autosave` events; the bridge serializes shapes to JSON and saves via the existing `save_file` Tauri command.
+- **Autosave** — the Hush 2-second autosave interval fires `notebook-autosave` events; the bridge serializes shapes to JSON and saves via the existing `save_file` Tauri command. Version snapshots are throttled independently of the file write: continuous writing earns at most one `create_snapshot` per ~45 s (`NOTEBOOK_SNAPSHOT_MIN_MS`), with a pending-flag so unmount flushes a final version slot — every 2-second tick used to snapshot too, which wrote a full multi-MB copy of the notebook to disk every 2 s for the whole session.
 - **Settings sync** — appearance, theme, and font are derived from the current Hush editor style (with a camelCase → kebab-case theme ID mapping in `HUSH_TO_NOTEBOOK_THEME`). Grid pattern, spacing, and opacity use dedicated notebook settings.
 - **Left inset** — a `MutationObserver` on the sidebar/panel DOM classes pushes the current sidebar width (0/50/350px) to `DrawingState.leftInset`, which offsets the pocket tray and toolbar position.
 
@@ -203,7 +203,7 @@ A temporary stash on the **right edge** of the canvas, flush against the shape s
 
 ### Undo/redo
 
-`UndoManager` stores up to 100 shape array snapshots. `recordHistory()` is called after each completed user action (not during continuous drag/resize — only on pointer-up).
+`UndoManager` stores up to 100 checkpoints. `recordHistory()` is called after each completed user action (not during continuous drag/resize — only on pointer-up). Checkpoints use **structural sharing**: shapes are shared by reference across checkpoints and with the live `state.shapes` array (only the array itself is copied), so recording after a pen-up costs one array copy instead of a deep clone of every stroke point in the notebook — the clone was the dominant per-stroke cost (and, retained ×100, the memory blow-up) in long handwriting sessions. This makes shape immutability **load-bearing**: a `Shape` must never be mutated in place once it's in `state.shapes` — every mutation replaces the object (`shapes.map((s) => ({ ...s, ... }))`). The drawing engine's sync shim already required this (its diff is identity-based); the undo manager now does too. Layers and flow edges are tiny and defensively copied per element in both directions. A side benefit: after undo/redo, unchanged shapes keep their identity, so the shim re-applies only the strokes that actually differ.
 
 ### Brainstorm mode
 
@@ -306,6 +306,7 @@ The same rules from the main Hush codebase apply:
 - **No framework dependencies** in the notebook modules.
 - **Pure rendering** — `renderer.ts` functions must not access global state or DOM.
 - **State mutations go through DrawingState** — never mutate shapes from UI or input handlers directly.
+- **Shapes are immutable once in `state.shapes`** — mutations replace the shape object, never write fields in place. Two subsystems depend on this: the sync shim's identity diff, and the undo manager's structurally-shared checkpoints (an in-place write would silently rewrite history entries holding the same reference).
 
 ### Adding a new shape type
 

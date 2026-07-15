@@ -34,102 +34,13 @@
  * mutations, do it outside the shim.
  */
 
-import type { DrawShape, DrawPoint, Layer, Shape } from "../types";
+import type { DrawShape, DrawPoint, Layer } from "../types";
+import type { EngineStroke, EngineAdapter, ShimState } from "./sync-shim-types";
 import { generateId } from "../utils";
 
-/** Engine stroke shape (mirrors engine/stroke.js's stroke object).
- *  Not imported from the engine because it's pure-JS; we describe
- *  the fields we use structurally. Engine ignores extras. */
-export interface EngineStroke {
-  id: number;
-  tool: "draw";
-  color: string;
-  size: number;
-  brush: string;                       // engine uses `brush`; we map to `brushId` at the boundary
-  mode: "normal" | "highlighter";
-  layerId: number;
-  isPen: boolean;
-  points: DrawPoint[];
-  // Custom fields the engine passes through untouched:
-  colorIsAuto?: boolean;
-  colorIsHeading?: boolean;
-  groupId?: string;
-  parentId?: string;
-  pocketed?: boolean;
-  // Internal bookkeeping, set by the engine renderer:
-  bbox?: { minX: number; minY: number; maxX: number; maxY: number };
-  tiles?: string[];
-}
-
-/** The subset of the engine's public API the shim needs. */
-export interface EngineAdapter {
-  getStrokes(): EngineStroke[];
-  insertStrokeAt(stroke: EngineStroke, index: number): void;
-  removeStrokes(ids: number[] | Set<number>): void;
-  setStrokesStyleMap(styleMap: Map<number, {
-    color?: string; size?: number; brushId?: string;
-    mode?: "normal" | "highlighter";
-  }>): void;
-  setStrokePoints(id: number, points: DrawPoint[]): void;
-  fullRebake(): void;
-  getActiveLayerId(): number;
-  setActiveLayer(id: number): void;
-  getLayerById(id: number): { id: number; name: string; locked: boolean; hidden: boolean } | null;
-  getLayers(): { id: number; name: string; locked: boolean; hidden: boolean }[];
-  createLayer(opts?: {
-    idHint?: number; name?: string; atIndex?: number;
-    locked?: boolean; hidden?: boolean;
-  }): { layer: object; index: number } | null;
-  deleteLayer(id: number): object | null;
-  renameLayer(id: number, name: string): boolean;
-  setLayerLocked(id: number, locked: boolean): boolean;
-  setLayerHidden(id: number, hidden: boolean): boolean;
-  moveLayer(fromIdx: number, toIdx: number): boolean;
-  /** Capture a world-bbox region of the done canvas into a separate
-   *  "pocket stash" canvas. Called BEFORE the engine rebake removes
-   *  pocketed strokes from the done canvas, so the pocket tray has
-   *  a frozen copy to display. */
-  stashPocketRegion(worldBbox: { minX: number; minY: number; maxX: number; maxY: number }): void;
-  /** Release the stash region for a world-bbox (called on unpocket). */
-  unstashPocketRegion(worldBbox: { minX: number; minY: number; maxX: number; maxY: number }): void;
-}
-
-/** Minimum state surface we need from Hush's DrawingState. Kept as
- *  a structural type so we don't import the whole class here. */
-export interface ShimState {
-  shapes: Shape[];
-  layers: Layer[];
-  activeLayerId: string;
-  /** Mutable; the drawing layer bridges engine-side selection
-   *  changes into this set so hush-level ops (Cmd+G, selection
-   *  toolbar, Delete) see the same selection. */
-  selectedIds: Set<string>;
-  /** Outer tool (the bottom-toolbar selection: select / pen / text /
-   *  drag-area / brainstorm). Drawing-layer reads this so it can keep
-   *  the engine bbox in sync when Hush selects strokes outside pen
-   *  mode (the rectangular-select case). */
-  tool: string;
-  /** Current drawing sub-tool. The long-press → lasso handoff flips
-   *  this to "select" so the stroke engine stops accepting draws for
-   *  the duration of the selection, and restores on deselect. */
-  drawingSubTool: "draw" | "erase" | "slice" | "select";
-  /** True while the drawing engine is mid-transform on its own bbox.
-   *  Set by drawing-layer's onDragStart hook; cleared on onDragEnd.
-   *  Hush hides its group highlight + selection toolbar while this
-   *  is true so the engine bbox is the only chrome moving during the
-   *  gesture. */
-  strokeEngineDragging: boolean;
-  setDrawingSubTool(sub: "draw" | "erase" | "slice" | "select"): void;
-  addEventListener(type: string, listener: (e: CustomEvent) => void): void;
-  removeEventListener(type: string, listener: (e: CustomEvent) => void): void;
-  notify(key: string): void;
-  /** Hush's snapshot-based undo manager. Drawing-mode actions feed
-   *  into this so 2-finger taps, ⌘Z, and engine-driven mutations all
-   *  share one history. */
-  recordHistory(): void;
-  undo(): void;
-  redo(): void;
-}
+// Interface surface lives in sync-shim-types.ts (700-line cap);
+// re-exported here so existing importers keep working.
+export type { EngineStroke, EngineAdapter, ShimState } from "./sync-shim-types";
 
 /** Create the shim. Subscribes to state's `"change"` events and
  *  reconciles DrawShapes into the engine. Returns a handle with:
@@ -331,6 +242,16 @@ export function createSyncShim({
 
   // ---------- internal: state → engine ----------
 
+  /** Churn count at (and above) which — provided it's also a large
+   *  share of the notebook's strokes — the diff abandons incremental
+   *  per-stroke engine updates for one wholesale rebuild. Each
+   *  incremental update triggers its own tile rebake (a walk over
+   *  every stroke), so applying N of them is O(N²): a notebook-wide
+   *  identity change (file load, pane mirror, undo/redo across a big
+   *  action) used to take seconds at a few thousand strokes. The bulk
+   *  path is one clear + N inserts + a single fullRebake. */
+  const BULK_SYNC_MIN = 50;
+
   function diffAndApply() {
     inDiff = true;
     try { _diffAndApply(); } finally { inDiff = false; }
@@ -360,6 +281,16 @@ export function createSyncShim({
 
     // Fast path: nothing changed.
     if (!toAdd.length && !toUpdate.length && !toRemove.length) return;
+
+    // Bulk path: when most of the notebook's strokes changed identity
+    // at once, one rebuild + single rebake beats per-stroke updates
+    // (each of which rebakes its own tiles — O(N²) in aggregate).
+    // Small diffs — the per-pen-up steady state — stay incremental.
+    const churn = toAdd.length + toUpdate.length + toRemove.length;
+    if (churn >= BULK_SYNC_MIN && churn * 4 >= currentHushIds.size) {
+      _bulkReplace();
+      return;
+    }
 
     // Apply removes first, then adds/updates. Removes by engine id;
     // the engine rebakes affected tiles internally.
@@ -486,28 +417,43 @@ export function createSyncShim({
     batching = true;
     inDiff = true;
     try {
-      // Clear everything the engine knows.
-      const existingEngineIds = engine.getStrokes().map((s) => s.id);
-      if (existingEngineIds.length) engine.removeStrokes(existingEngineIds);
-      lastSeen.clear();
-      hushToEngine.clear();
-      engineToHush.clear();
-
-      for (const s of state.shapes) {
-        if (s.type !== "draw") continue;
-        const ds = s as DrawShape;
-        const engineStroke = hushToEngineStroke(ds);
-        hushToEngine.set(ds.id, engineStroke.id);
-        engineToHush.set(engineStroke.id, ds.id);
-        lastSeen.set(ds.id, ds);
-        engine.insertStrokeAt(engineStroke, engine.getStrokes().length);
-      }
-      // One repaint at the end rather than per-insert.
-      engine.fullRebake();
+      _bulkReplace();
     } finally {
       batching = false;
       inDiff = false;
     }
+  }
+
+  /** Bulk-replace body without flag management, so `_diffAndApply`
+   *  (which already holds `inDiff`) can invoke it directly for
+   *  large-churn diffs. Engine callbacks fired inside (removeStrokes →
+   *  onStrokesRemoved) check `isDiffing()` and skip Hush-side history
+   *  recording, same as the incremental path. */
+  function _bulkReplace() {
+    // Clear everything the engine knows.
+    const existingEngineIds = engine.getStrokes().map((s) => s.id);
+    if (existingEngineIds.length) engine.removeStrokes(existingEngineIds);
+    lastSeen.clear();
+    hushToEngine.clear();
+    engineToHush.clear();
+
+    for (const s of state.shapes) {
+      if (s.type !== "draw") continue;
+      const ds = s as DrawShape;
+      const engineStroke = hushToEngineStroke(ds);
+      hushToEngine.set(ds.id, engineStroke.id);
+      engineToHush.set(engineStroke.id, ds.id);
+      lastSeen.set(ds.id, ds);
+      // skipRebake (engine delta #22): per-insert tile rebakes are
+      // quadratic across a bulk load; one fullRebake below covers it.
+      engine.insertStrokeAt(engineStroke, engine.getStrokes().length, { skipRebake: true });
+    }
+    // One repaint at the end rather than per-insert.
+    engine.fullRebake();
+    // Pocketed strokes are excluded from the done canvas, so the
+    // incremental stash flow never saw them — repaint the stash
+    // wholesale so pocket-tray thumbnails survive the rebuild.
+    engine.rebuildPocketStash();
   }
 
   /** Stroke id generation for external adds. The engine's internal
