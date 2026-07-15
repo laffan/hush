@@ -21,6 +21,7 @@
 
 import type { DrawingState } from "./state";
 import type { DrawingLayer } from "./drawing/drawing-layer-types";
+import type { CanvasTheme } from "./themes";
 import type { Bounds, DrawShape, Shape } from "./types";
 import { renderForExport } from "./renderer-export";
 import { getShapeBounds } from "./utils";
@@ -95,7 +96,12 @@ export function rasterBounds(shapes: Shape[], fontFamily: string): Bounds | null
 export function rasterizeShapes(
   source: RasterSource,
   shapes: Shape[],
-  opts: { includeBackground: boolean; scale?: number; margin?: number },
+  opts: {
+    includeBackground: boolean; scale?: number; margin?: number;
+    /** Render with a specific theme (defaults to the live one). The
+     *  dual-appearance raster path passes the light / dark variants. */
+    theme?: CanvasTheme;
+  },
 ): SelectionRaster | null {
   const { state, imageCache, drawingLayer } = source;
   if (!shapes.length) return null;
@@ -107,6 +113,7 @@ export function rasterizeShapes(
     maxX: contentBounds.maxX + m, maxY: contentBounds.maxY + m,
   };
   const scale = opts.scale ?? RASTER_SCALE;
+  const theme = opts.theme ?? state.theme;
 
   const cssW = Math.max(1, Math.ceil(bounds.maxX - bounds.minX));
   const cssH = Math.max(1, Math.ceil(bounds.maxY - bounds.minY));
@@ -123,23 +130,28 @@ export function rasterizeShapes(
     shapes,
     camera,
     imageCache,
-    theme: state.theme,
+    theme,
     backgroundPattern: "blank",
     gridSpacing: state.gridSpacing,
     gridOpacity: 0,
     fontFamily: state.fontFamily,
     layers: state.layers,
     includeBackground: opts.includeBackground,
-    canvasBackgroundOverride: state.canvasBackgroundOverride,
+    canvasBackgroundOverride: opts.theme ? undefined : state.canvasBackgroundOverride,
     flowchart: state.flowchart,
   });
 
   // Strokes render above shapes in the live view — match that here.
+  // When rendering for a non-live theme, retint theme-tracking strokes
+  // to that theme's colours.
   const drawIds = shapes.filter((s) => s.type === "draw").map((s) => s.id);
   if (drawIds.length && drawingLayer) {
     ctx.save();
     ctx.translate(camera.x, camera.y);
-    drawingLayer.renderStrokesTo(ctx, drawIds);
+    drawingLayer.renderStrokesTo(
+      ctx, drawIds,
+      opts.theme ? { foreground: theme.foreground, headingColor: theme.headingColor } : undefined,
+    );
     ctx.restore();
   }
 
@@ -154,17 +166,53 @@ function rasterFileName(): string {
   return `Raster-${p(d.getDate())}${p(d.getMonth() + 1)}${String(d.getFullYear()).slice(2)}-${p(d.getHours())}${p(d.getMinutes())}.png`;
 }
 
+/** True when any shape's colour tracks the theme — auto/heading
+ *  strokes, or text / drag-area colour sentinels — i.e. content whose
+ *  baked pixels would go stale on a light/dark appearance switch. */
+function selectionIsThemeTracking(shapes: Shape[]): boolean {
+  for (const s of shapes) {
+    if (s.type === "draw" && (s.colorIsAuto || s.colorIsHeading)) return true;
+    if (s.color === "auto" || s.color === "heading") return true;
+    if (s.type === "text" && (s.backgroundColor === "auto" || s.backgroundColor === "heading"
+      || s.borderColor === "auto" || s.borderColor === "heading")) return true;
+    if (s.type === "drag-area" && (s.borderColor === "auto" || s.borderColor === "heading")) return true;
+  }
+  return false;
+}
+
 /** "Rasterize group": bake the current selection — plus any selected
  *  drag-area's contents — into a single ImageShape. Rendered at 2× and
  *  sized back to the original bounding box so it stays crisp on HiDPI.
- *  Transparent background so the canvas shows through. */
+ *  Transparent background so the canvas shows through.
+ *
+ *  Theme-tracking content (auto/heading strokes and text) is baked
+ *  TWICE — once per appearance — and the result becomes an
+ *  appearance-aware image (`dataUrl` light, `dataUrlDark` dark) so the
+ *  raster keeps following light/dark switches instead of freezing at
+ *  the colour it happened to be rasterized under. */
 export function rasterizeSelectionToImage(source: RasterSource): void {
-  const shapes = collectRasterShapes(source.state);
+  const { state } = source;
+  const shapes = collectRasterShapes(state);
   if (!shapes.length) return;
+
+  if (selectionIsThemeTracking(shapes)) {
+    const light = rasterizeShapes(source, shapes, { includeBackground: false, theme: state.themeForVariant("light") });
+    const dark = rasterizeShapes(source, shapes, { includeBackground: false, theme: state.themeForVariant("dark") });
+    if (!light || !dark) return;
+    state.replaceShapesWithImage(
+      new Set(shapes.map((s) => s.id)),
+      light.canvas.toDataURL("image/png"),
+      rasterFileName(),
+      light.bounds,
+      dark.canvas.toDataURL("image/png"),
+    );
+    return;
+  }
+
   const raster = rasterizeShapes(source, shapes, { includeBackground: false });
   if (!raster) return;
   const dataUrl = raster.canvas.toDataURL("image/png");
-  source.state.replaceShapesWithImage(
+  state.replaceShapesWithImage(
     new Set(shapes.map((s) => s.id)), dataUrl, rasterFileName(), raster.bounds,
   );
 }

@@ -821,15 +821,26 @@ export class NotesCanvas {
   }
 
   private _syncImageCache() {
+    // Appearance-aware images (dataUrlDark present) load the variant
+    // matching the active theme; a light/dark switch swaps the src in
+    // place. The loaded variant is tracked on the element so the check
+    // is a cheap string compare rather than a data-URL diff.
+    const variant = this.state.theme.variant;
     for (const shape of this.state.shapes) {
-      if (shape.type === "image" && !this._imageCache.has(shape.id)) {
-        const img = new Image();
+      if (shape.type !== "image") continue;
+      const cached = this._imageCache.get(shape.id) as (HTMLImageElement & { _hushVariant?: string }) | undefined;
+      if (!cached) {
+        const img = new Image() as HTMLImageElement & { _hushVariant?: string };
         // Repaint once the bytes decode — the loop is dirty-driven now,
         // so without this an async-loaded image wouldn't appear until the
         // next unrelated state change.
         img.addEventListener("load", this._scheduleRender);
-        img.src = shape.dataUrl;
+        img.src = shape.dataUrlDark && variant === "dark" ? shape.dataUrlDark : shape.dataUrl;
+        img._hushVariant = variant;
         this._imageCache.set(shape.id, img);
+      } else if (shape.dataUrlDark && cached._hushVariant !== variant) {
+        cached.src = variant === "dark" ? shape.dataUrlDark : shape.dataUrl;
+        cached._hushVariant = variant;
       }
     }
     const ids = new Set(this.state.shapes.filter((s) => s.type === "image").map((s) => s.id));

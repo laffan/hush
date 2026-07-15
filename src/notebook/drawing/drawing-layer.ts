@@ -547,7 +547,11 @@ export function createDrawingLayer({
   // this paints through the atlas renderer, so strokes that merely
   // overlap the same region don't leak into the output — that's what
   // the selection rasterizer needs.
-  function renderStrokesTo(ctx: CanvasRenderingContext2D, hushIds: Iterable<string>): void {
+  function renderStrokesTo(
+    ctx: CanvasRenderingContext2D,
+    hushIds: Iterable<string>,
+    colorOverrides?: { foreground: string; headingColor: string },
+  ): void {
     const wanted = new Set<number>();
     for (const hid of hushIds) {
       const eid = shim.getEngineStrokeId(hid);
@@ -562,7 +566,18 @@ export function createDrawingLayer({
     ctx.save();
     ctx.translate(anchor.originX, anchor.originY);
     for (const s of strokeEngine.getStrokes() as EngineStroke[]) {
-      if (wanted.has(s.id)) engine.renderStrokeTo(ctx, s);
+      if (!wanted.has(s.id)) continue;
+      // Theme-tracking strokes can be retinted for a specific
+      // appearance (the dual light/dark rasterizer); a shallow copy
+      // keeps the engine's stored colour untouched.
+      if (colorOverrides && (s.colorIsAuto || s.colorIsHeading)) {
+        engine.renderStrokeTo(ctx, {
+          ...s,
+          color: s.colorIsHeading ? colorOverrides.headingColor : colorOverrides.foreground,
+        });
+      } else {
+        engine.renderStrokeTo(ctx, s);
+      }
     }
     ctx.restore();
   }

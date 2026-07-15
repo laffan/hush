@@ -83,8 +83,15 @@ export interface DrawingLayer {
    *  `ctx` (whose transform must already map world coords → target
    *  pixels), in canonical z-order. Unlike the done-canvas blits this
    *  re-renders each stroke through the atlas, so nothing that overlaps
-   *  the same region leaks in. Used by the selection rasterizer. */
-  renderStrokesTo(ctx: CanvasRenderingContext2D, hushIds: Iterable<string>): void;
+   *  the same region leaks in. Used by the selection rasterizer.
+   *  `colorOverrides` retints theme-tracking strokes (colorIsAuto /
+   *  colorIsHeading) for a specific appearance without touching the
+   *  engine's stored colours — the dual light/dark raster path. */
+  renderStrokesTo(
+    ctx: CanvasRenderingContext2D,
+    hushIds: Iterable<string>,
+    colorOverrides?: { foreground: string; headingColor: string },
+  ): void;
 
   // ----- hush select-drag integration -----
   //

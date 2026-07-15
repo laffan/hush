@@ -295,6 +295,20 @@ export class DrawingState extends EventTarget {
   setTheme(id: string) { this.themeId = id; this.notify("theme"); }
   setAppearance(mode: AppearanceMode) { this.appearanceMode = mode; this.notify("theme"); }
 
+  /** Resolve the theme this notebook would use under an explicit
+   *  light/dark variant. Mirrors the `theme` getter's fallback (the
+   *  active themeId when its variant matches, else the first theme of
+   *  the requested variant); the active style's colour overrides are
+   *  layered on only for the variant currently in effect, since
+   *  overrides belong to the current style + appearance pair. Used by
+   *  the dual-appearance rasterizer. */
+  themeForVariant(variant: "light" | "dark"): CanvasTheme {
+    if (variant === getEffectiveVariant(this.appearanceMode)) return this.theme;
+    const t = THEMES[this.themeId];
+    if (t && t.variant === variant) return t;
+    return Object.values(THEMES).find((th) => th.variant === variant) || THEMES["default"];
+  }
+
   // === Drawing mode ===
   get drawingMode(): boolean { return this.tool === "pen"; }
 
@@ -2584,7 +2598,7 @@ export class DrawingState extends EventTarget {
    *  replaced shape's layer, and lands at the end of the shapes array
    *  (top of the stack) — where the eye already reads the selection,
    *  since it was frontmost while selected. One undo entry. */
-  replaceShapesWithImage(ids: Set<string>, dataUrl: string, name: string, bounds: Bounds) {
+  replaceShapesWithImage(ids: Set<string>, dataUrl: string, name: string, bounds: Bounds, dataUrlDark?: string) {
     const replaced = this.shapes.filter((s) => ids.has(s.id));
     if (replaced.length === 0) return;
     const sharedParent = replaced[0].parentId;
@@ -2599,6 +2613,7 @@ export class DrawingState extends EventTarget {
       width: bounds.maxX - bounds.minX,
       height: bounds.maxY - bounds.minY,
       dataUrl, name, color: "#000000",
+      ...(dataUrlDark ? { dataUrlDark } : {}),
       parentId, layerId,
     };
     this.shapes = [

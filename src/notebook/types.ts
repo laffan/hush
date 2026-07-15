@@ -131,6 +131,12 @@ export interface ImageShape extends ShapeBase {
   width: number;
   height: number;
   dataUrl: string;
+  /** Appearance-aware image: when present, `dataUrl` holds the
+   *  light-appearance raster and `dataUrlDark` the dark one; render
+   *  paths pick by the active theme variant. Produced by rasterizing
+   *  theme-tracking content (auto/heading-coloured strokes and text)
+   *  so the bake keeps following light/dark switches. */
+  dataUrlDark?: string;
   name: string;
   crop?: ImageCrop;
 }
