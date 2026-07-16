@@ -26,43 +26,27 @@ let _notebookBackground = null;
  *  stroke and clobbers the engine's selection / undo state. */
 let _lastSavedContent = null;
 
-/** Version snapshots are throttled independently of the 2-second
- *  autosave: continuous writing keeps the notebook dirty on every
- *  tick, and snapshotting each one wrote a full multi-MB copy of the
- *  notebook to disk every 2 s for the whole session. The file write
- *  itself still happens on every dirty tick — only the version-history
- *  slot is rate-limited. `_snapshotPending` tracks content that was
- *  saved without earning a slot, so unmount (and the next eligible
- *  save) can flush it — the last state of a session always lands in
- *  history. */
-const NOTEBOOK_SNAPSHOT_MIN_MS = 45_000;
-let _lastSnapshotAtMs = 0;
-let _snapshotPending = false;
-
-/** Save serialization + adaptive backpressure. Saves are async on the
- *  Rust side now, so two could overlap and land out of order — the
- *  in-flight promise serializes them. Backpressure keeps a slow pipe
- *  from being saturated: a save that took X ms doesn't run again for
- *  at least 4X (never below the 2 s autosave tick, capped at 10 s).
- *  Skipped ticks lose nothing — dirty flags stay set and the next
- *  eligible tick writes; unmount bypasses the gate entirely. */
+/** Save gating (quiet-moment deferral, snapshot throttle, adaptive
+ *  backpressure) lives in NotebookSaveGate — see its module docs.
+ *  `_saveInFlight` stays here: saves are async on the Rust side, so
+ *  two could overlap and land out of order — the in-flight promise
+ *  serializes them. */
+const _saveGate = new NotebookSaveGate();
 let _saveInFlight = null;
-let _lastSaveEndAt = 0;
-let _lastSaveDurationMs = 0;
 
 /** Create a version snapshot for the open notebook if the throttle
- *  window has elapsed (or `force` is set). Never throws. */
+ *  window has elapsed (or `force` is set). Never throws. Used by the
+ *  Local Folder save branch and the unmount pending-flush; the main
+ *  save path folds the snapshot into save_file_raw instead. */
 async function _maybeSnapshot(content, force) {
   if (!IS_TAURI || !currentNotebookFileId) return;
-  const now = Date.now();
-  if (!force && now - _lastSnapshotAtMs < NOTEBOOK_SNAPSHOT_MIN_MS) {
-    _snapshotPending = true;
+  if (!_saveGate.snapshotDue(force)) {
+    _saveGate.snapshotPending = true;
     return;
   }
   try {
     await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content });
-    _lastSnapshotAtMs = now;
-    _snapshotPending = false;
+    _saveGate.markSnapshotTaken();
   } catch (e) {
     console.error("Notebook snapshot failed:", e);
   }
@@ -70,18 +54,20 @@ async function _maybeSnapshot(content, force) {
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-async function tauriInvoke(cmd, args) {
+async function tauriInvoke(cmd, args, options) {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke(cmd, args);
+  return invoke(cmd, args, options);
 }
 
-// Loading-overlay helpers live in their own module (700-line cap).
+// Loading-overlay + save-gate helpers live in their own modules
+// (700-line cap).
 import {
   LARGE_NOTEBOOK_SHAPE_COUNT,
   mountLoadingOverlay as _mountLoadingOverlay,
   unmountLoadingOverlay as _unmountLoadingOverlay,
   nextPaint as _nextPaint,
 } from "./notebook-loading-overlay.js";
+import { NotebookSaveGate } from "./notebook-save-gate.js";
 
 /**
  * Mount or re-mount the NotesCanvas into the notebook container.
@@ -102,12 +88,7 @@ export async function mountNotebook(container, fileId, state) {
   cameraDirty = false;
   _lastSavedContent = null;
   _notebookBackground = null;
-  // Fresh notebook, fresh snapshot throttle — the first content change
-  // after a mount earns a version slot immediately.
-  _lastSnapshotAtMs = 0;
-  _snapshotPending = false;
-  _lastSaveEndAt = 0;
-  _lastSaveDurationMs = 0;
+  _saveGate.reset();
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
   const { NotesCanvas } = await import("./notes-canvas.ts");
@@ -231,6 +212,8 @@ export async function mountNotebook(container, fileId, state) {
   // is created — pan / zoom isn't content history.
   container.addEventListener("notebook-camera-change", () => {
     cameraDirty = true;
+    // Feeds the quiet-moment save gate — saves wait out active panning.
+    _saveGate.noteCameraChange();
   });
 
   // Wire cmd-drag of text and image shapes out of the main notebook.
@@ -493,10 +476,12 @@ export async function saveNotebook(opts = {}) {
   }
   if (!canvasInstance || !currentNotebookFileId) return null;
   if (!notebookDirty && !cameraDirty) return null;
-  // Adaptive backpressure — see the declaration block above.
   if (!opts.forceSnapshot) {
-    const minGap = Math.min(10_000, _lastSaveDurationMs * 4);
-    if (performance.now() - _lastSaveEndAt < minGap) return null;
+    // Quiet-moment gate: never save mid-stroke or mid-pan.
+    if (_saveGate.shouldDefer(!!canvasInstance.isStrokeInFlight?.())) return null;
+    // Camera-only saves are capped hard — see NotebookSaveGate.
+    if (!notebookDirty && _saveGate.cameraOnlyTooSoon()) return null;
+    if (_saveGate.backpressureTooSoon()) return null;
   }
   const saveStart = performance.now();
   const p = _saveNotebookInner(opts);
@@ -505,8 +490,7 @@ export async function saveNotebook(opts = {}) {
     return await p;
   } finally {
     if (_saveInFlight === p) _saveInFlight = null;
-    _lastSaveEndAt = performance.now();
-    _lastSaveDurationMs = _lastSaveEndAt - saveStart;
+    _saveGate.noteSaveEnded(performance.now() - saveStart);
   }
 }
 
@@ -564,24 +548,35 @@ async function _saveNotebookInner(opts) {
       return null;
     }
     if (IS_TAURI) {
+      // Raw-body invoke: JSON-args would JSON.stringify (escape) the
+      // whole multi-MB content on this thread — that marshal was the
+      // per-save frame stall that dropped stroke points. Bytes ride the
+      // IPC protocol untouched; the eligible version snapshot folds
+      // into the same invoke so the payload never crosses twice.
+      const wantSnapshot = wasContentDirty && _saveGate.snapshotDue(!!opts.forceSnapshot);
       const _perfSave0 = performance.now();
-      await tauriInvoke("save_file", { id: currentNotebookFileId, content });
+      await tauriInvoke("save_file_raw", new TextEncoder().encode(content), {
+        headers: {
+          "file-id": currentNotebookFileId,
+          ...(wantSnapshot ? { "with-snapshot": "1" } : {}),
+        },
+      });
       _perf.saveMs = performance.now() - _perfSave0;
       _lastSavedContent = content;
-      // Content changes are version-snapshotted through the throttle
-      // (one slot per NOTEBOOK_SNAPSHOT_MIN_MS of active writing, not
-      // one per 2-second autosave tick). Camera-only saves don't earn
-      // a version slot.
       if (wasContentDirty) {
-        const _perfSnap0 = performance.now();
-        await _maybeSnapshot(content, !!opts.forceSnapshot);
-        _perf.snapshotMs = performance.now() - _perfSnap0;
+        if (wantSnapshot) _saveGate.markSnapshotTaken();
+        else _saveGate.snapshotPending = true;
       }
       _emitSavePerf();
       return { fileId: currentNotebookFileId, content };
     }
   } catch (e) {
     console.error("Failed to save notebook:", e);
+    // The dirty flags were cleared optimistically at entry — restore
+    // them so the next tick retries instead of stranding unsaved
+    // content until the next edit.
+    if (wasContentDirty) notebookDirty = true;
+    cameraDirty = true;
   }
   _emitSavePerf();
   return null;
@@ -603,7 +598,7 @@ export async function unmountNotebook() {
     // Force a version snapshot past the throttle so the state the user
     // walks away from is always in history.
     saveResult = await saveNotebook({ forceSnapshot: true });
-  } else if (_snapshotPending && _lastSavedContent && IS_TAURI && currentNotebookFileId) {
+  } else if (_saveGate.snapshotPending && _lastSavedContent && IS_TAURI && currentNotebookFileId) {
     // Everything is already on disk but the last save(s) fell inside
     // the snapshot throttle window — flush the pending version slot
     // from the cached content without re-encoding.

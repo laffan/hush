@@ -28,6 +28,51 @@ pub async fn save_file(state: State<'_, AppState>, id: String, content: String) 
     Ok(())
 }
 
+/// Raw-body variant of `save_file` for large payloads (notebook
+/// autosave). A JSON-args invoke pays a `JSON.stringify` of the whole
+/// content on the webview's JS thread — escaping a multi-MB JSON string
+/// costs hundreds of milliseconds and starved pointer events mid-write.
+/// A raw byte body rides the IPC custom protocol untouched (the JS side
+/// only pays a `TextEncoder.encode`). The file id and the optional
+/// fold-in version snapshot arrive as headers so a snapshot-earning
+/// save is ONE invoke instead of marshalling the same payload twice.
+#[tauri::command]
+pub async fn save_file_raw(
+    state: State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("save_file_raw expects a raw request body".into());
+    };
+    let id = request
+        .headers()
+        .get("file-id")
+        .and_then(|v| v.to_str().ok())
+        .ok_or("save_file_raw: missing file-id header")?
+        .to_string();
+    let with_snapshot = request
+        .headers()
+        .get("with-snapshot")
+        .and_then(|v| v.to_str().ok())
+        == Some("1");
+    let content = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+    state
+        .file_manager
+        .lock()
+        .unwrap()
+        .save_file(&id, content)
+        .map_err(|e| e.to_string())?;
+    if with_snapshot {
+        state
+            .snapshot_manager
+            .lock()
+            .unwrap()
+            .create_snapshot(&id, content)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_file(state: State<AppState>) -> Result<FileEntry, String> {
     state.file_manager.lock().unwrap().create_file().map_err(|e| e.to_string())

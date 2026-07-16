@@ -93,6 +93,11 @@ export interface DrawingLayer {
     colorOverrides?: { foreground: string; headingColor: string },
   ): void;
 
+  /** True while a stroke is in flight. The autosave pipeline defers
+   *  writes until pen-up so the IPC marshal can't starve pointer
+   *  events mid-stroke. */
+  hasActiveStroke(): boolean;
+
   // ----- hush select-drag integration -----
   //
   // For DrawShape selections, Hush's select-drag routes move updates

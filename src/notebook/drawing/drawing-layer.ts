@@ -674,6 +674,7 @@ export function createDrawingLayer({
     blitWorldRegion,
     blitDoneCanvasAtWorldOrigin,
     renderStrokesTo,
+    hasActiveStroke: () => strokeEngine.hasActiveStroke(),
     beginSelectionDrag,
     updateSelectionDrag,
     endSelectionDrag,

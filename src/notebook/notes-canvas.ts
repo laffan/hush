@@ -605,6 +605,14 @@ export class NotesCanvas {
     return this.state.shapes;
   }
 
+  /** True while a stroke is being drawn on this canvas. The bridge's
+   *  autosave defers file writes until pen-up — the save's IPC marshal
+   *  blocks the JS thread long enough to drop pointer samples, which
+   *  read as straight-line gaps in whatever stroke was in flight. */
+  isStrokeInFlight(): boolean {
+    return this._drawingLayer?.hasActiveStroke() ?? false;
+  }
+
   /** Apply notebook settings from Hush settings */
   applySettings(opts: {
     appearanceMode?: AppearanceMode;

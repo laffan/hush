@@ -29,6 +29,8 @@
  *  22. `insertStrokeAt(stroke, index, opts)` accepts `opts.skipRebake`
  *      so bulk loads can insert N strokes without N tile rebakes and
  *      fullRebake() once at the end (per-insert rebakes are quadratic).
+ *  23. `hasActiveStroke()` — true while a stroke is in flight, so the
+ *      autosave pipeline can defer writes until pen-up.
  *   (Deltas 4 + 5 live in selection.js + gestures.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
@@ -744,6 +746,10 @@ export function createStrokeEngine({
     // --- queries ---
     getStrokes() { return state.strokes; },
     getStrokeNode() { return null; },  // no per-stroke DOM node
+    // Hush delta #23: true while a stroke is being drawn. The autosave
+    // pipeline defers file writes while the pen is down so the IPC
+    // marshal can't starve pointer events mid-stroke.
+    hasActiveStroke() { return !!state.active; },
 
     // --- mutations (used by erase, selection, history) ---
     removeStrokes(ids) {

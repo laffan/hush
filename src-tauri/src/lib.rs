@@ -409,6 +409,7 @@ pub fn run() {
             commands::files::list_files,
             commands::files::load_file,
             commands::files::save_file,
+            commands::files::save_file_raw,
             commands::files::create_file,
             commands::files::delete_file,
             commands::files::rename_file,
