@@ -56,7 +56,13 @@ export async function setupModeSwitching(state) {
   state.on("notebook-unmount", async () => {
     const result = await unmountNotebook();
     if (result) state.syncFileToExternal(result.fileId, result.content);
-    showEditor();
+    // Notebook→notebook switches re-set currentNotebookFileId right
+    // after emitting this event, and the next mount (serialized behind
+    // this unmount in the bridge) shows notebook mode — don't yank the
+    // freshly opened notebook back to the editor. Every non-notebook
+    // open path nulls the id before this handler resumes, so the
+    // editor still comes back for docs / stacks / PDFs / deletes.
+    if (!state.currentNotebookFileId) showEditor();
   });
   state.on("pdf-open", async (fileId) => {
     const { mountPdf } = await import("./pdf/pdf-bridge.js");

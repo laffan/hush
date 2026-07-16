@@ -32,18 +32,30 @@ let _lastSavedContent = null;
 const _saveGate = new NotebookSaveGate();
 let _saveInFlight = null;
 
-/** Create a version snapshot for the open notebook if the throttle
- *  window has elapsed (or `force` is set). Never throws. Used by the
- *  Local Folder save branch and the unmount pending-flush; the main
- *  save path folds the snapshot into save_file_raw instead. */
-async function _maybeSnapshot(content, force) {
-  if (!IS_TAURI || !currentNotebookFileId) return;
+/** Shape count the current mount loaded from disk: 0 = genuinely
+ *  new/empty file, N > 0 = loaded content, -1 = load failed or content
+ *  didn't decode. The empty-save guard below uses it to refuse to
+ *  overwrite a file that had content from a canvas that is empty
+ *  without any user edits (a failed load, or a canvas swapped mid-save
+ *  by a lifecycle race). */
+let _loadedShapeCount = -1;
+let _emptySaveGuardTripped = false;
+
+/** Create a version snapshot for `fileId` if the throttle window has
+ *  elapsed (or `force` is set). Never throws. Used by the Local Folder
+ *  save branch and the unmount pending-flush; the main save path folds
+ *  the snapshot into save_file_raw instead. Takes the file id
+ *  explicitly (never the mutable module global) so a save spanning a
+ *  lifecycle change can't snapshot one notebook's content under
+ *  another notebook's id. */
+async function _maybeSnapshot(fileId, content, force) {
+  if (!IS_TAURI || !fileId) return;
   if (!_saveGate.snapshotDue(force)) {
     _saveGate.snapshotPending = true;
     return;
   }
   try {
-    await tauriInvoke("create_snapshot", { documentId: currentNotebookFileId, content });
+    await tauriInvoke("create_snapshot", { documentId: fileId, content });
     _saveGate.markSnapshotTaken();
   } catch (e) {
     console.error("Notebook snapshot failed:", e);
@@ -66,12 +78,38 @@ import {
   nextPaint as _nextPaint,
 } from "./notebook-loading-overlay.js";
 import { NotebookSaveGate } from "./notebook-save-gate.js";
+import { loadNotebookSnapshot } from "./notebook-load.js";
+import { computeNotebookSettings } from "./notebook-style-settings.js";
+export { computeNotebookSettings } from "./notebook-style-settings.js";
+
+/** Lifecycle serialization. `openNotebook` (and every other file-open
+ *  path) fires `notebook-unmount` and the next mount as EVENTS whose
+ *  async handlers race on the event loop. Unmount legitimately awaits
+ *  in-flight saves now, so an unserialized mount could reset the
+ *  module state (fresh empty canvas, new file id) while the previous
+ *  unmount was still mid-save — which force-saved an EMPTY canvas
+ *  over the newly opened file (with a forced version snapshot), and
+ *  could destroy the freshly mounted canvas. Every mount/unmount now
+ *  queues behind the previous lifecycle operation, whatever the
+ *  caller. */
+let _lifecycle = Promise.resolve();
+function _serializedLifecycle(fn) {
+  const run = _lifecycle.then(fn, fn);
+  // Keep the chain alive even when an operation rejects.
+  _lifecycle = run.then(() => {}, () => {});
+  return run;
+}
 
 /**
  * Mount or re-mount the NotesCanvas into the notebook container.
  * If already mounted, destroys the previous instance first.
+ * Serialized against unmountNotebook — see _serializedLifecycle.
  */
-export async function mountNotebook(container, fileId, state) {
+export function mountNotebook(container, fileId, state) {
+  return _serializedLifecycle(() => _mountNotebookImpl(container, fileId, state));
+}
+
+async function _mountNotebookImpl(container, fileId, state) {
   // Destroy previous canvas if exists
   if (canvasInstance) {
     canvasInstance.destroy();
@@ -85,6 +123,11 @@ export async function mountNotebook(container, fileId, state) {
   cameraDirty = false;
   _lastSavedContent = null;
   _notebookBackground = null;
+  // Pessimistic until a load succeeds: -1 means "unknown / failed", and
+  // the empty-save guard in saveNotebook refuses to overwrite the file
+  // from a pristine empty canvas while it's not 0.
+  _loadedShapeCount = -1;
+  _emptySaveGuardTripped = false;
   _saveGate.reset();
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
@@ -113,34 +156,10 @@ export async function mountNotebook(container, fileId, state) {
   } catch (_) {}
 
   // Load notebook contents (shapes + layers + flowchart edges) from the
-  // backing file. The envelope format is parsed by `decodeNotebookContent`,
-  // which tolerates the legacy bare-Shape[] form for older notebooks.
-  let snapshot = null;
-  try {
-    const { parseLocalSentinel } = await import("../sync/local-sync.js");
-    const local = parseLocalSentinel(fileId);
-    if (local) {
-      // Local Sync notebook — read the `.hushnote` zip straight off disk,
-      // unpack it to the JSON envelope, then decode like any notebook.
-      const { readFileBytes } = await import("../sync/local-sync.js");
-      const bytes = await readFileBytes(local.folderId, local.relPath);
-      if (bytes) {
-        const { unpackNotebook } = await import("../sync/notebook-sync.js");
-        const json = await unpackNotebook(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes));
-        const { decodeNotebookContent } = await import("./notebook-content.ts");
-        snapshot = decodeNotebookContent(json);
-      } else {
-        const { decodeNotebookContent } = await import("./notebook-content.ts");
-        snapshot = decodeNotebookContent(null);
-      }
-    } else if (IS_TAURI) {
-      const file = await tauriInvoke("load_file", { id: fileId });
-      const { decodeNotebookContent } = await import("./notebook-content.ts");
-      snapshot = decodeNotebookContent(file.content);
-    }
-  } catch (e) {
-    console.error("Failed to load notebook shapes:", e);
-  }
+  // backing file — see notebook-load.js for the source branches and the
+  // loadedShapeCount semantics feeding the empty-save guard.
+  const { snapshot, loadedShapeCount } = await loadNotebookSnapshot(fileId);
+  _loadedShapeCount = loadedShapeCount;
 
   if (snapshot) {
     // For a large notebook, `loadShapes` (engine stroke sync) runs long
@@ -265,148 +284,8 @@ export async function mountNotebook(container, fileId, state) {
   return canvasInstance;
 }
 
-// Map Hush camelCase theme IDs to notebook kebab-case IDs.
-// Keys that are identical (amy, barf, bespin, cobalt, dracula, clouds) are
-// still listed for clarity.
-const HUSH_TO_NOTEBOOK_THEME = {
-  ayuLight: "ayu-light",
-  clouds: "clouds",
-  noctisLilac: "noctis-lilac",
-  rosePineDawn: "rose-pine-dawn",
-  solarizedLight: "solarized-light",
-  smoothy: "default",          // no Smoothy in notebook — fall back
-  amy: "amy",
-  barf: "barf",
-  bespin: "bespin",
-  birdsOfParadise: "birds-of-paradise",
-  boysAndGirls: "boys-and-girls",
-  cobalt: "cobalt",
-  coolGlow: "cool-glow",
-  dracula: "dracula",
-  espresso: "espresso",
-  tomorrow: "tomorrow",
-};
-
-/**
- * Resolve the notebook theme ID from the current Hush style settings.
- * Uses the active Hush theme (respecting appearance + styles) and maps
- * it to the corresponding notebook canvas theme.
- */
-function resolveNotebookTheme(state) {
-  const s = state.settings;
-
-  // Determine effective appearance
-  let appearance = s.appearance || "dark";
-  if (appearance === "auto") {
-    appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-
-  // Check if an active style overrides the theme
-  let hushThemeId = appearance === "dark" ? s.darkTheme : s.lightTheme;
-  if (s.activeStyleId && s.styles) {
-    const style = s.styles.find(st => st.id === s.activeStyleId);
-    if (style) {
-      if (style.lightThemeId || style.darkThemeId) {
-        const resolved = appearance === "dark" ? style.darkThemeId : style.lightThemeId;
-        if (resolved) hushThemeId = resolved;
-      } else if (style.themeId) {
-        hushThemeId = style.themeId;
-      }
-    }
-  }
-
-  return HUSH_TO_NOTEBOOK_THEME[hushThemeId] || "default";
-}
-
-/**
- * Compute the NotesCanvas settings bundle derived from the current Hush
- * editor style. Exported so notebook panes can adopt the same style.
- * When `lockedStyleId` is provided, the pane's notebook uses that style
- * instead of whichever style is currently session-active.
- */
-export function computeNotebookSettings(state, lockedStyleId) {
-  let s = state.settings;
-  if (lockedStyleId) {
-    if (lockedStyleId === "__default__") {
-      s = { ...s, activeStyleId: null };
-    } else if ((s.styles || []).some(st => st.id === lockedStyleId)) {
-      s = { ...s, activeStyleId: lockedStyleId };
-    }
-  }
-
-  // Derive appearance from Hush settings
-  let appearance = s.appearance || "dark";
-  if (appearance === "auto") {
-    appearance = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-
-  // Font: use active style font if set, otherwise editor default
-  let fontFamily = s.fontFamily || "Inter";
-  if (s.activeStyleId && s.styles) {
-    const style = s.styles.find(st => st.id === s.activeStyleId);
-    if (style?.fontFamily) fontFamily = style.fontFamily;
-  }
-
-  const overrideState = s === state.settings ? state : { ...state, settings: s };
-
-  // Style background override — when the active style has a `bg` set,
-  // pipe it through so the canvas paints the user-chosen background
-  // instead of the resolved notebook theme's stock canvasBackground.
-  // Empty string = no override. The Default style's `bg` lives on
-  // AppSettings.defaultLight/DarkColors instead of a style entry, so
-  // handle that branch explicitly.
-  let canvasBackgroundOverride = "";
-  let bgColors = null;
-  let styleBackgroundImage = null;
-  if (s.activeStyleId && s.styles) {
-    const style = s.styles.find((st) => st.id === s.activeStyleId);
-    if (style) {
-      bgColors = appearance === "dark" ? style.darkColors : style.lightColors;
-      styleBackgroundImage = style.backgroundImage || null;
-    }
-  } else {
-    bgColors = appearance === "dark" ? s.defaultDarkColors : s.defaultLightColors;
-  }
-  // Resolve the background image's per-appearance opacity + invert so the
-  // canvas matches the editor. Light/dark each carry their own opacity and
-  // invert flag; the legacy single `opacity` is the fallback for both.
-  let resolvedBackgroundImage = null;
-  if (styleBackgroundImage && styleBackgroundImage.enabled && styleBackgroundImage.src) {
-    const isDark = appearance === "dark";
-    const legacy = styleBackgroundImage.opacity != null ? styleBackgroundImage.opacity : 1;
-    const opacity = isDark
-      ? (styleBackgroundImage.darkOpacity != null ? styleBackgroundImage.darkOpacity : legacy)
-      : (styleBackgroundImage.lightOpacity != null ? styleBackgroundImage.lightOpacity : legacy);
-    const invert = isDark ? !!styleBackgroundImage.darkInvert : !!styleBackgroundImage.lightInvert;
-    resolvedBackgroundImage = { ...styleBackgroundImage, opacity, invert };
-  }
-  if (bgColors?.bg) canvasBackgroundOverride = bgColors.bg;
-  // Foreground override — same source as the bg override. Lets default /
-  // auto-coloured text shapes and the toolbar icons follow the style's
-  // text colour instead of the notebook theme's stock foreground.
-  const foregroundOverride = bgColors?.fg || "";
-  // Header override — markdown headings inside text shapes track it.
-  const headingColorOverride = bgColors?.header || "";
-  // Link override — text-shape links track it; defaults to the text colour.
-  const linkColorOverride = bgColors?.links || "";
-
-  return {
-    appearanceMode: appearance,
-    themeId: resolveNotebookTheme(overrideState),
-    backgroundPattern: s.notebookBackgroundPattern || "dot-grid",
-    gridSpacing: s.notebookGridSpacing || 25,
-    gridOpacity: s.notebookGridOpacity != null ? s.notebookGridOpacity : 0.20,
-    fontFamily,
-    fontSize: s.notebookFontSize || 16,
-    canvasBackgroundOverride,
-    backgroundImage: resolvedBackgroundImage,
-    foregroundOverride,
-    headingColorOverride,
-    linkColorOverride,
-    maxTextWidth: s.notebookTextMaxWidth || 350,
-    flowConnectMode: s.flowConnectMode === "horizontal" ? "horizontal" : "closest",
-  };
-}
+// Hush style -> settings derivation lives in notebook-style-settings.js
+// (700-line cap); re-exported below so existing importers keep working.
 
 /**
  * Apply Hush settings to the active NotesCanvas.
@@ -465,6 +344,25 @@ export async function saveNotebook(opts = {}) {
   }
   if (!canvasInstance || !currentNotebookFileId) return null;
   if (!notebookDirty && !cameraDirty) return null;
+  // Data-loss guard — checked BEFORE the force bypass so unmount can't
+  // skip it either: a canvas that is empty with no user edits in its
+  // undo history (pristine) while the file on disk had content (or the
+  // load failed outright) must never write. This is the state a failed
+  // load — or a mount racing an unmount — leaves behind; saving it
+  // overwrites a real notebook with an empty envelope. A user who
+  // intentionally deletes everything has undo history (or a redo stack
+  // after undoing back to the start), so legitimate empty saves pass.
+  const pristine = !canvasInstance.state.canUndo && !canvasInstance.state.canRedo;
+  if (pristine && _loadedShapeCount !== 0 && canvasInstance.getShapes().length === 0) {
+    if (!_emptySaveGuardTripped) {
+      _emptySaveGuardTripped = true;
+      console.error(
+        `Refusing to save notebook ${currentNotebookFileId}: canvas is empty with no user edits ` +
+        `but the file ${_loadedShapeCount === -1 ? "failed to load" : `had ${_loadedShapeCount} shapes`} — blocking to prevent data loss.`,
+      );
+    }
+    return null;
+  }
   if (!opts.forceSnapshot) {
     // Quiet-moment gate: never save mid-stroke or mid-pan.
     if (_saveGate.shouldDefer(!!canvasInstance.isStrokeInFlight?.())) return null;
@@ -484,42 +382,54 @@ export async function saveNotebook(opts = {}) {
 }
 
 async function _saveNotebookInner(opts) {
+  // Capture the mount this save belongs to. mount/unmount are
+  // serialized against each other, but a save promise still spans
+  // awaits — if a lifecycle change swaps the module state underneath
+  // us, writing would target the WRONG file with the wrong canvas's
+  // content. Everything below uses these captures, and each write is
+  // preceded by a swap check.
+  const canvas = canvasInstance;
+  const fileId = currentNotebookFileId;
+  const mountSwapped = () => canvas !== canvasInstance || fileId !== currentNotebookFileId;
   const wasContentDirty = notebookDirty;
   notebookDirty = false;
   cameraDirty = false;
   const { encodeNotebookContent } = await import("./notebook-content.ts");
+  if (mountSwapped()) return null;
   const content = encodeNotebookContent({
-    shapes: canvasInstance.getShapes(),
-    layers: canvasInstance.state.layers,
-    flowEdges: canvasInstance.state.flowchart.serialize(),
-    bookmarks: canvasInstance.state.bookmarks,
-    camera: canvasInstance.state.camera,
+    shapes: canvas.getShapes(),
+    layers: canvas.state.layers,
+    flowEdges: canvas.state.flowchart.serialize(),
+    bookmarks: canvas.state.bookmarks,
+    camera: canvas.state.camera,
     background: {
-      pattern: canvasInstance.state.backgroundPattern,
-      spacing: canvasInstance.state.gridSpacing,
-      opacity: canvasInstance.state.gridOpacity,
+      pattern: canvas.state.backgroundPattern,
+      spacing: canvas.state.gridSpacing,
+      opacity: canvas.state.gridOpacity,
     },
   });
   try {
     const { parseLocalSentinel } = await import("../sync/local-sync.js");
-    const local = parseLocalSentinel(currentNotebookFileId);
+    if (mountSwapped()) return null;
+    const local = parseLocalSentinel(fileId);
     if (local) {
       // Local Sync notebook — pack the JSON envelope into a `.hushnote`
       // zip and overwrite the file on disk. No sync push.
       const { packNotebook } = await import("../sync/notebook-sync.js");
       const { writeFileBytes } = await import("../sync/local-sync.js");
       const bytes = await packNotebook(content);
+      if (mountSwapped()) return null;
       // Flag our own write so the desktop fs watcher skips the echo event
       // (and its sidebar repaint) for the next ~500 ms.
       if (_appState?.runtime) _appState.runtime.localSyncWriteFlag = Date.now();
       await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
-      _lastSavedContent = content;
+      if (!mountSwapped()) _lastSavedContent = content;
       // Version snapshots key on the `ls:` sentinel id, so Local Folder
       // notebooks get the same content history internal ones do.
       // Throttled — see _maybeSnapshot; camera-only saves never earn
       // a version slot.
       if (IS_TAURI && wasContentDirty) {
-        await _maybeSnapshot(content, !!opts.forceSnapshot);
+        await _maybeSnapshot(fileId, content, !!opts.forceSnapshot);
       }
       return null;
     }
@@ -532,24 +442,28 @@ async function _saveNotebookInner(opts) {
       const wantSnapshot = wasContentDirty && _saveGate.snapshotDue(!!opts.forceSnapshot);
       await tauriInvoke("save_file_raw", new TextEncoder().encode(content), {
         headers: {
-          "file-id": currentNotebookFileId,
+          "file-id": fileId,
           ...(wantSnapshot ? { "with-snapshot": "1" } : {}),
         },
       });
+      if (mountSwapped()) return null;
       _lastSavedContent = content;
       if (wasContentDirty) {
         if (wantSnapshot) _saveGate.markSnapshotTaken();
         else _saveGate.snapshotPending = true;
       }
-      return { fileId: currentNotebookFileId, content };
+      return { fileId, content };
     }
   } catch (e) {
     console.error("Failed to save notebook:", e);
     // The dirty flags were cleared optimistically at entry — restore
     // them so the next tick retries instead of stranding unsaved
-    // content until the next edit.
-    if (wasContentDirty) notebookDirty = true;
-    cameraDirty = true;
+    // content until the next edit. Skip when the mount was swapped
+    // underneath us: the flags belong to the NEW notebook now.
+    if (!mountSwapped()) {
+      if (wasContentDirty) notebookDirty = true;
+      cameraDirty = true;
+    }
   }
   return null;
 }
@@ -557,8 +471,13 @@ async function _saveNotebookInner(opts) {
 /**
  * Destroy the current NotesCanvas and save if dirty.
  * Returns { fileId, content } if a save occurred, or null otherwise.
+ * Serialized against mountNotebook — see _serializedLifecycle.
  */
-export async function unmountNotebook() {
+export function unmountNotebook() {
+  return _serializedLifecycle(() => _unmountNotebookImpl());
+}
+
+async function _unmountNotebookImpl() {
   // Let any in-flight autosave land before deciding what still needs
   // flushing (saveNotebook also self-serializes, but the pending-
   // snapshot branch below reads _lastSavedContent directly).
@@ -574,7 +493,7 @@ export async function unmountNotebook() {
     // Everything is already on disk but the last save(s) fell inside
     // the snapshot throttle window — flush the pending version slot
     // from the cached content without re-encoding.
-    await _maybeSnapshot(_lastSavedContent, true);
+    await _maybeSnapshot(currentNotebookFileId, _lastSavedContent, true);
   }
   if (canvasInstance) {
     if (canvasInstance._bgChangeListener) {
