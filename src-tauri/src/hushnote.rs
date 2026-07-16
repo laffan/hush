@@ -24,6 +24,20 @@ type BoxError = Box<dyn std::error::Error>;
 /// `Shape[]`) into `.hushnote` zip bytes. Always emits the envelope form
 /// inside the zip.
 pub fn pack(json_content: &str) -> Result<Vec<u8>, BoxError> {
+    // Fast path: the autosave pipeline hands us content that is already
+    // in envelope form (encodeNotebookContent emits `{"format":"hushnote"`
+    // first), and when it embeds no data-URL images there is nothing to
+    // extract into the zip. Skip the parse → rewrite → re-serialize round
+    // trip in that case — on a stroke-heavy multi-MB notebook that round
+    // trip costs upward of a second per save, and it runs on every
+    // 2-second autosave tick. A `"data:` substring anywhere (e.g. inside
+    // a text shape's body) merely falls back to the slow path, which is
+    // always correct.
+    let trimmed = json_content.trim_start();
+    if trimmed.starts_with("{\"format\":\"hushnote\"") && !json_content.contains("\"data:") {
+        return zip_envelope(trimmed.as_bytes(), &[]);
+    }
+
     let parsed: Value = if json_content.trim().is_empty() {
         Value::Array(Vec::new())
     } else {
@@ -69,17 +83,27 @@ pub fn pack(json_content: &str) -> Result<Vec<u8>, BoxError> {
         }
     }
 
+    zip_envelope(serde_json::to_string(&envelope)?.as_bytes(), &images)
+}
+
+/// Write the envelope JSON (+ extracted image entries) into `.hushnote`
+/// zip bytes. Shared by pack()'s fast and slow paths.
+fn zip_envelope(data_json: &[u8], images: &[(String, Vec<u8>)]) -> Result<Vec<u8>, BoxError> {
     let mut cursor = Cursor::new(Vec::new());
     {
         let mut zip = zip::ZipWriter::new(&mut cursor);
-        let opts: FileOptions =
-            FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        // Fast deflate: this runs on every notebook autosave, and JSON
+        // deflates well even at low effort — level 1 is ~3-4× faster
+        // than the default for a modest size cost.
+        let opts: FileOptions = FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .compression_level(Some(1));
         zip.start_file("data.json", opts)?;
-        zip.write_all(serde_json::to_string(&envelope)?.as_bytes())?;
+        zip.write_all(data_json)?;
         // Images are already compressed formats — store them raw.
         let raw: FileOptions =
             FileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        for (name, bytes) in &images {
+        for (name, bytes) in images {
             zip.start_file(format!("images/{}", name), raw)?;
             zip.write_all(bytes)?;
         }
@@ -97,9 +121,17 @@ pub fn unpack(bytes: &[u8]) -> Result<String, BoxError> {
         return Ok(String::from_utf8_lossy(bytes).into_owned());
     }
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
+    let has_images = zip.file_names().any(|n| n.starts_with("images/"));
 
     let mut data = String::new();
     zip.by_name("data.json")?.read_to_string(&mut data)?;
+    // Fast path (mirror of pack()'s): no image entries means nothing to
+    // re-inline — skip the parse → re-serialize round trip, which costs
+    // upward of a second on a multi-MB stroke-heavy notebook at load
+    // time, and return data.json verbatim.
+    if !has_images {
+        return Ok(data);
+    }
     let mut envelope: Value = serde_json::from_str(&data)?;
 
     // Collect the image entries once, then rewrite refs.
@@ -187,6 +219,24 @@ mod tests {
         assert_eq!(shapes.len(), 2);
         assert!(shapes[0]["dataUrl"].as_str().unwrap().starts_with("data:image/png;base64,"));
         assert_eq!(shapes[1]["text"], "hi");
+    }
+
+    #[test]
+    fn fast_path_round_trips_imageless_envelope_verbatim() {
+        // Envelope-form content with no data-URLs takes pack()'s fast
+        // path (no parse → re-serialize) — the stored data.json must be
+        // the input string byte-for-byte.
+        let content = r#"{"format":"hushnote","version":1,"shapes":[{"id":"s1","type":"draw","points":[{"x":1,"y":2,"pressure":0.5}]},{"id":"t1","type":"text","text":"note about data: URLs"}],"layers":[]}"#;
+        let zipped = pack(content).unwrap();
+        assert!(zipped.starts_with(b"PK"));
+        assert_eq!(unpack(&zipped).unwrap(), content);
+
+        // A text body merely *mentioning* a quoted data: URL falls back
+        // to the slow path — still correct, just re-serialized.
+        let with_quoted = r#"{"format":"hushnote","version":1,"shapes":[{"id":"t2","type":"text","text":"see \"data:foo\""}]}"#;
+        let back = unpack(&pack(with_quoted).unwrap()).unwrap();
+        let v: Value = serde_json::from_str(&back).unwrap();
+        assert_eq!(v["shapes"][0]["id"], "t2");
     }
 
     #[test]

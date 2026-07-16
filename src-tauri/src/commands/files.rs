@@ -9,12 +9,20 @@ pub fn list_files(state: State<AppState>) -> Result<Vec<FileEntry>, String> {
 }
 
 #[tauri::command]
-pub fn load_file(state: State<AppState>, id: String) -> Result<FileEntry, String> {
+// Async: reading a large `.hushnote` inflates the zip on the way up —
+// keep that off the main thread too (see save_file below).
+pub async fn load_file(state: State<'_, AppState>, id: String) -> Result<FileEntry, String> {
     state.file_manager.lock().unwrap().load_file(&id).map_err(|e| e.to_string())
 }
 
+// Async so the write runs on the async runtime's worker pool instead of
+// the main thread. Notebook autosave ships the full multi-MB envelope
+// every couple of seconds, and for `.hushnote` files the store deflates
+// it into a zip on the way down — as a sync command that work froze the
+// webview for the whole write (frame stalls exactly matching the save
+// duration in stroke-heavy sessions).
 #[tauri::command]
-pub fn save_file(state: State<AppState>, id: String, content: String) -> Result<(), String> {
+pub async fn save_file(state: State<'_, AppState>, id: String, content: String) -> Result<(), String> {
     let fm = state.file_manager.lock().unwrap();
     fm.save_file(&id, &content).map_err(|e| e.to_string())?;
     Ok(())

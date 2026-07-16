@@ -39,6 +39,17 @@ const NOTEBOOK_SNAPSHOT_MIN_MS = 45_000;
 let _lastSnapshotAtMs = 0;
 let _snapshotPending = false;
 
+/** Save serialization + adaptive backpressure. Saves are async on the
+ *  Rust side now, so two could overlap and land out of order — the
+ *  in-flight promise serializes them. Backpressure keeps a slow pipe
+ *  from being saturated: a save that took X ms doesn't run again for
+ *  at least 4X (never below the 2 s autosave tick, capped at 10 s).
+ *  Skipped ticks lose nothing — dirty flags stay set and the next
+ *  eligible tick writes; unmount bypasses the gate entirely. */
+let _saveInFlight = null;
+let _lastSaveEndAt = 0;
+let _lastSaveDurationMs = 0;
+
 /** Create a version snapshot for the open notebook if the throttle
  *  window has elapsed (or `force` is set). Never throws. */
 async function _maybeSnapshot(content, force) {
@@ -64,50 +75,13 @@ async function tauriInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
-/** Element ref for the active "Loading Notebook…" overlay, if any. */
-let _loadingOverlayEl = null;
-
-/** Shape count above which a notebook is treated as "large" enough to
- *  warrant the loading overlay. Below this, `loadShapes` finishes in a
- *  frame or two and showing the overlay would just flash. */
-const LARGE_NOTEBOOK_SHAPE_COUNT = 60;
-
-/** Mount the "Loading Notebook…" overlay into the notebook container.
- *  Idempotent. Painted at full opacity so it's visible on the very next
- *  frame — the caller yields a frame (`_nextPaint`) before kicking off the
- *  synchronous `loadShapes` work, which would otherwise block the event
- *  loop (and any paint) until it finished. */
-function _mountLoadingOverlay(container) {
-  if (_loadingOverlayEl) return;
-  const overlay = document.createElement("div");
-  overlay.className = "notebook-loading-overlay";
-  const label = document.createElement("div");
-  label.className = "notebook-loading-label";
-  label.textContent = "Loading Notebook…";
-  const bar = document.createElement("div");
-  bar.className = "notebook-loading-bar";
-  overlay.appendChild(label);
-  overlay.appendChild(bar);
-  container.appendChild(overlay);
-  _loadingOverlayEl = overlay;
-}
-
-function _unmountLoadingOverlay() {
-  if (_loadingOverlayEl && _loadingOverlayEl.parentNode) {
-    _loadingOverlayEl.parentNode.removeChild(_loadingOverlayEl);
-  }
-  _loadingOverlayEl = null;
-}
-
-/** Resolve after the browser has had a chance to paint (two rAFs: the
- *  first runs before the next paint, the second after it). Used to
- *  guarantee the loading overlay actually renders before the blocking
- *  `loadShapes` pass starts. */
-function _nextPaint() {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
-}
+// Loading-overlay helpers live in their own module (700-line cap).
+import {
+  LARGE_NOTEBOOK_SHAPE_COUNT,
+  mountLoadingOverlay as _mountLoadingOverlay,
+  unmountLoadingOverlay as _unmountLoadingOverlay,
+  nextPaint as _nextPaint,
+} from "./notebook-loading-overlay.js";
 
 /**
  * Mount or re-mount the NotesCanvas into the notebook container.
@@ -132,6 +106,8 @@ export async function mountNotebook(container, fileId, state) {
   // after a mount earns a version slot immediately.
   _lastSnapshotAtMs = 0;
   _snapshotPending = false;
+  _lastSaveEndAt = 0;
+  _lastSaveDurationMs = 0;
 
   // Dynamically import the NotesCanvas class (TypeScript, handled by Vite)
   const { NotesCanvas } = await import("./notes-canvas.ts");
@@ -505,12 +481,36 @@ function applyNotebookBackground(bg) {
  * Save the current notebook shapes to the backing file.
  * Called by the autosave interval and on notebook switch.
  * Returns { fileId, content } when a save occurs, or null if nothing to save.
- * `opts.forceSnapshot` bypasses the version-snapshot throttle — used by
- * unmount so the session's final state always lands in history.
+ * `opts.forceSnapshot` bypasses the version-snapshot throttle AND the
+ * save backpressure — used by unmount so the session's final state
+ * always lands on disk and in history.
  */
 export async function saveNotebook(opts = {}) {
+  // Serialize with any in-flight save so two async writes of the same
+  // file can't land out of order (the older content would win).
+  if (_saveInFlight) {
+    try { await _saveInFlight; } catch (_) {}
+  }
   if (!canvasInstance || !currentNotebookFileId) return null;
   if (!notebookDirty && !cameraDirty) return null;
+  // Adaptive backpressure — see the declaration block above.
+  if (!opts.forceSnapshot) {
+    const minGap = Math.min(10_000, _lastSaveDurationMs * 4);
+    if (performance.now() - _lastSaveEndAt < minGap) return null;
+  }
+  const saveStart = performance.now();
+  const p = _saveNotebookInner(opts);
+  _saveInFlight = p;
+  try {
+    return await p;
+  } finally {
+    if (_saveInFlight === p) _saveInFlight = null;
+    _lastSaveEndAt = performance.now();
+    _lastSaveDurationMs = _lastSaveEndAt - saveStart;
+  }
+}
+
+async function _saveNotebookInner(opts) {
   const wasContentDirty = notebookDirty;
   notebookDirty = false;
   cameraDirty = false;
@@ -592,6 +592,12 @@ export async function saveNotebook(opts = {}) {
  * Returns { fileId, content } if a save occurred, or null otherwise.
  */
 export async function unmountNotebook() {
+  // Let any in-flight autosave land before deciding what still needs
+  // flushing (saveNotebook also self-serializes, but the pending-
+  // snapshot branch below reads _lastSavedContent directly).
+  if (_saveInFlight) {
+    try { await _saveInFlight; } catch (_) {}
+  }
   let saveResult = null;
   if (notebookDirty || cameraDirty) {
     // Force a version snapshot past the throttle so the state the user

@@ -3,9 +3,13 @@ use tauri::State;
 use crate::snapshots::SnapshotEntry;
 use crate::AppState;
 
+// Async for the same reason as `save_file`: a version snapshot writes
+// the full notebook envelope (multi-MB in long handwriting sessions)
+// plus a prune pass; as a sync command that blocked the main thread —
+// and the webview — for the duration.
 #[tauri::command]
-pub fn create_snapshot(
-    state: State<AppState>,
+pub async fn create_snapshot(
+    state: State<'_, AppState>,
     document_id: String,
     content: String,
 ) -> Result<i64, String> {
