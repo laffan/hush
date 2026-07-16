@@ -13,8 +13,6 @@ let notebookDirty = false;
 let cameraDirty = false;
 let _appState = null;
 let _mainDragCleanup = null;
-/** TEMPORARY: stroke-perf harness panel handle (see ui/perf-panel.ts). */
-let _perfPanel = null;
 /** Cached per-notebook background overrides for the open notebook. Re-applied
  *  after every `applyNotebookSettings` so a global settings refresh (theme
  *  switch, style change) doesn't wipe the user's per-notebook bg choice. */
@@ -80,7 +78,6 @@ export async function mountNotebook(container, fileId, state) {
     canvasInstance = null;
   }
   if (_mainDragCleanup) { _mainDragCleanup(); _mainDragCleanup = null; }
-  if (_perfPanel) { _perfPanel.destroy(); _perfPanel = null; }
   _unmountLoadingOverlay();
 
   currentNotebookFileId = fileId;
@@ -264,17 +261,6 @@ export async function mountNotebook(container, fileId, state) {
   await Promise.resolve();
   notebookDirty = false;
   cameraDirty = false;
-
-  // TEMPORARY: stroke-perf harness — collapsed "PERF" pill in the
-  // top-left; main canvas only (panes don't mount it). Remove with
-  // ui/perf-panel.ts + perf-harness.ts when the perf work lands.
-  try {
-    const { createPerfPanel } = await import("./ui/perf-panel.ts");
-    _perfPanel = createPerfPanel(canvasInstance.state);
-    container.appendChild(_perfPanel.el);
-  } catch (e) {
-    console.error("Failed to mount perf panel:", e);
-  }
 
   return canvasInstance;
 }
@@ -502,8 +488,6 @@ async function _saveNotebookInner(opts) {
   notebookDirty = false;
   cameraDirty = false;
   const { encodeNotebookContent } = await import("./notebook-content.ts");
-  // TEMPORARY perf instrumentation — consumed by ui/perf-panel.ts.
-  const _perfEnc0 = performance.now();
   const content = encodeNotebookContent({
     shapes: canvasInstance.getShapes(),
     layers: canvasInstance.state.layers,
@@ -516,12 +500,6 @@ async function _saveNotebookInner(opts) {
       opacity: canvasInstance.state.gridOpacity,
     },
   });
-  const _perf = { encodeMs: performance.now() - _perfEnc0, bytes: content.length, saveMs: 0, snapshotMs: 0, blockMs: 0 };
-  const _emitSavePerf = () => {
-    try {
-      document.dispatchEvent(new CustomEvent("hush-notebook-save-perf", { detail: _perf }));
-    } catch (_) {}
-  };
   try {
     const { parseLocalSentinel } = await import("../sync/local-sync.js");
     const local = parseLocalSentinel(currentNotebookFileId);
@@ -534,49 +512,35 @@ async function _saveNotebookInner(opts) {
       // Flag our own write so the desktop fs watcher skips the echo event
       // (and its sidebar repaint) for the next ~500 ms.
       if (_appState?.runtime) _appState.runtime.localSyncWriteFlag = Date.now();
-      const _perfSave0 = performance.now();
       await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
-      _perf.saveMs = performance.now() - _perfSave0;
       _lastSavedContent = content;
       // Version snapshots key on the `ls:` sentinel id, so Local Folder
       // notebooks get the same content history internal ones do.
       // Throttled — see _maybeSnapshot; camera-only saves never earn
       // a version slot.
       if (IS_TAURI && wasContentDirty) {
-        const _perfSnap0 = performance.now();
         await _maybeSnapshot(content, !!opts.forceSnapshot);
-        _perf.snapshotMs = performance.now() - _perfSnap0;
       }
-      _emitSavePerf();
       return null;
     }
     if (IS_TAURI) {
       // Raw-body invoke: JSON-args would JSON.stringify (escape) the
-      // whole multi-MB content on this thread — that marshal was the
+      // whole multi-MB content on this thread — that marshal was a
       // per-save frame stall that dropped stroke points. Bytes ride the
       // IPC protocol untouched; the eligible version snapshot folds
       // into the same invoke so the payload never crosses twice.
       const wantSnapshot = wasContentDirty && _saveGate.snapshotDue(!!opts.forceSnapshot);
-      const _perfSave0 = performance.now();
-      // JS-thread block probe: a zero-delay timer armed at save start
-      // fires the moment the thread frees up, so the delta is the
-      // synchronous portion of the save (byte encode + invoke marshal)
-      // — the part the user can actually feel as a stall.
-      const _blockProbe = new Promise((r) => setTimeout(() => r(performance.now() - _perfSave0), 0));
       await tauriInvoke("save_file_raw", new TextEncoder().encode(content), {
         headers: {
           "file-id": currentNotebookFileId,
           ...(wantSnapshot ? { "with-snapshot": "1" } : {}),
         },
       });
-      _perf.saveMs = performance.now() - _perfSave0;
-      _perf.blockMs = await _blockProbe;
       _lastSavedContent = content;
       if (wasContentDirty) {
         if (wantSnapshot) _saveGate.markSnapshotTaken();
         else _saveGate.snapshotPending = true;
       }
-      _emitSavePerf();
       return { fileId: currentNotebookFileId, content };
     }
   } catch (e) {
@@ -587,7 +551,6 @@ async function _saveNotebookInner(opts) {
     if (wasContentDirty) notebookDirty = true;
     cameraDirty = true;
   }
-  _emitSavePerf();
   return null;
 }
 
@@ -613,7 +576,6 @@ export async function unmountNotebook() {
     // from the cached content without re-encoding.
     await _maybeSnapshot(_lastSavedContent, true);
   }
-  if (_perfPanel) { _perfPanel.destroy(); _perfPanel = null; }
   if (canvasInstance) {
     if (canvasInstance._bgChangeListener) {
       document.removeEventListener("notebook-bg-changed", canvasInstance._bgChangeListener);
