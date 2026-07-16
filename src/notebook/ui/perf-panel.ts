@@ -184,6 +184,10 @@ export function createPerfPanel(state: DrawingState): PerfPanelHandle {
     m.pointsK = points / 1000;
     const perf = performance as unknown as { memory?: { usedJSHeapSize: number } };
     if (perf.memory) m.heapMB = perf.memory.usedJSHeapSize / 1048576;
+    // The files sidebar floats over the canvas's left edge — keep the
+    // pill inboard of it (leftInset tracks the sidebar width).
+    const inset = (state as unknown as { leftInset?: number }).leftInset || 0;
+    root.style.left = `${inset + 8}px`;
     if (open) renderMetrics();
   }, 500);
 
@@ -374,6 +378,7 @@ export function createPerfPanel(state: DrawingState): PerfPanelHandle {
   }
 
   log("perf panel ready — Create Template, handwrite a–z, then Generate Text");
+  root.style.left = `${((state as unknown as { leftInset?: number }).leftInset || 0) + 8}px`;
   renderMetrics();
 
   // ---------- teardown ----------

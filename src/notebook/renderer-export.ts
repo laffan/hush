@@ -70,7 +70,9 @@ export function renderForExport(
     const layerShapes = shapesByLayer.get(layer.id);
     if (!layerShapes || !layerShapes.length) continue;
     for (const shape of layerShapes) {
-      if (shape.type === "drag-area") drawDragArea(ctx, shape);
+      // Theme rides along so pinned boxes keep their opaque backing in
+      // exports and rasters.
+      if (shape.type === "drag-area") drawDragArea(ctx, shape, false, undefined, theme);
     }
   }
 

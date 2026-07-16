@@ -351,10 +351,20 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 export function drawDragArea(ctx: CanvasRenderingContext2D, shape: DragAreaShape, reorderActive = false, reorderAccent?: string, theme?: CanvasTheme) {
   const { position, width, height, strokeColor, backgroundColor, borderRadius } = shape;
+  const pinned = !!shape.pinned;
   ctx.save();
+  // Pinned boxes float over scrolling canvas content, so they get an
+  // opaque canvas-coloured backing (the usual translucent tint still
+  // paints on top) and a thin solid border instead of the dashed one.
+  if (pinned && theme) {
+    ctx.fillStyle = theme.canvasBackground;
+    ctx.beginPath();
+    roundRect(ctx, position.x, position.y, width, height, borderRadius);
+    ctx.fill();
+  }
   ctx.strokeStyle = reorderActive ? (reorderAccent || strokeColor) : strokeColor;
-  ctx.lineWidth = reorderActive ? 3 : 2;
-  if (!reorderActive) ctx.setLineDash([8, 4]);
+  ctx.lineWidth = reorderActive ? 3 : pinned ? 1 : 2;
+  if (!reorderActive && !pinned) ctx.setLineDash([8, 4]);
   ctx.fillStyle = backgroundColor;
   ctx.beginPath();
   roundRect(ctx, position.x, position.y, width, height, borderRadius);
