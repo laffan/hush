@@ -187,15 +187,20 @@ export async function broadcastDocChanged(fileId, content) {
   }
 }
 
-/** Push a notebook envelope (JSON) to other windows. Fired from the
- *  2 s notebook autosave so siblings can `reloadNotebookShapes`. */
-export async function broadcastNotebookChanged(fileId, content) {
+/** Notify other windows that a notebook was saved so siblings showing
+ *  it can reload from disk. Id-only on purpose: the envelope is
+ *  multi-MB for stroke-heavy notebooks, and marshalling it through the
+ *  invoke + event fan-out blocked the saving window's JS thread for
+ *  ~60 ms/MB on every autosave — the mid-writing frame stall the perf
+ *  harness kept catching. The save has already landed when this fires,
+ *  so disk is authoritative for receivers. */
+export async function broadcastNotebookChanged(fileId) {
   if (!IS_TAURI) return;
   if (!fileId) return;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const originator = await getLabel();
-    await invoke("broadcast_notebook_changed", { fileId, content, originator });
+    await invoke("broadcast_notebook_changed", { fileId, originator });
   } catch (e) {
     console.warn("broadcast_notebook_changed failed:", e);
   }
@@ -227,9 +232,9 @@ export async function subscribeCrossWindow({
     if (typeof onDocChanged === "function") onDocChanged(fileId, content);
   }));
   us.push(await listen("cross-window-notebook-changed", (event) => {
-    const { fileId, content, originator } = event.payload || {};
+    const { fileId, originator } = event.payload || {};
     if (originator === myLabel) return;
-    if (typeof onNotebookChanged === "function") onNotebookChanged(fileId, content);
+    if (typeof onNotebookChanged === "function") onNotebookChanged(fileId);
   }));
   return () => { for (const u of us) { try { u(); } catch (_) {} } };
 }
@@ -252,10 +257,10 @@ function currentFileFromState(state) {
  *
  *  Beyond registry maintenance, this helper also drives live content
  *  sync: doc keystrokes broadcast (debounced 250 ms) so siblings can
- *  apply the buffer in place; notebook autosaves broadcast their JSON
- *  envelope so siblings can `reloadNotebookShapes`. The helper lives
- *  in this module rather than inline in `main.js` to keep the entry
- *  point under the project's 700-line cap. */
+ *  apply the buffer in place; notebook autosaves broadcast the saved
+ *  file's id so siblings can reload the fresh envelope from disk. The
+ *  helper lives in this module rather than inline in `main.js` to keep
+ *  the entry point under the project's 700-line cap. */
 export async function setupMultiWindow(state) {
   if (!IS_TAURI) return;
 
@@ -295,7 +300,7 @@ export async function setupMultiWindow(state) {
       }
     },
     onDocChanged: (fileId, content) => applyRemoteDocChange(state, fileId, content),
-    onNotebookChanged: (fileId, content) => applyRemoteNotebookChange(state, fileId, content),
+    onNotebookChanged: (fileId) => applyRemoteNotebookChange(state, fileId),
   });
 
   try {
@@ -332,13 +337,14 @@ export async function setupMultiWindow(state) {
     }, 250);
   });
 
-  // Notebook envelopes ride the existing 2 s autosave — main.js calls
+  // Notebook saves ride the existing 2 s autosave — main.js calls
   // `saveNotebook()` on the `notebook-autosave` event and re-emits the
-  // result through `notebook-cross-window-broadcast` for us to pick up.
-  state.on("notebook-cross-window-broadcast", ({ fileId, content }) => {
+  // saved file's id through `notebook-cross-window-broadcast` for us to
+  // pick up (id-only; siblings reload from disk).
+  state.on("notebook-cross-window-broadcast", ({ fileId }) => {
     if (state.runtime.syncPulling) return;
     if (!fileId) return;
-    broadcastNotebookChanged(fileId, content);
+    broadcastNotebookChanged(fileId);
   });
 
   // Best-effort cleanup — Rust drops us from the registry on
@@ -361,15 +367,19 @@ function applyRemoteDocChange(state, fileId, content) {
 }
 
 /** Apply a sibling notebook save to our open canvas via the lazy
- *  notebook bridge. Acquires the pull lock so the reload doesn't loop
- *  back through the autosave path. */
-async function applyRemoteNotebookChange(state, fileId, content) {
+ *  notebook bridge. The broadcast is id-only (see
+ *  broadcastNotebookChanged) — the sibling's save has already landed,
+ *  so read the fresh envelope from disk here. Acquires the pull lock so
+ *  the reload doesn't loop back through the autosave path. */
+async function applyRemoteNotebookChange(state, fileId) {
   if (state.currentNotebookFileId !== fileId) return;
   state.acquirePullLock(fileId);
   try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const file = await invoke("load_file", { id: fileId });
     const m = await import("./notebook/notebook-bridge.js");
-    if (typeof m.reloadNotebookShapes === "function") {
-      await m.reloadNotebookShapes(content);
+    if (file && typeof m.reloadNotebookShapes === "function") {
+      await m.reloadNotebookShapes(file.content);
     }
   } catch (e) {
     console.warn("Failed to apply remote notebook change:", e);

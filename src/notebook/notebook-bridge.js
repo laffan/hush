@@ -190,6 +190,9 @@ export async function mountNotebook(container, fileId, state) {
   // Listen for shape changes to mark dirty + notify panes
   container.addEventListener("notebook-change", () => {
     notebookDirty = true;
+    // Feeds the quiet-moment save gate — saves wait for a real pause
+    // in writing, not just the gap between two letters.
+    _saveGate.noteContentChange();
     if (_appState) _appState.emit("notebook-shapes-changed");
   });
 
@@ -513,7 +516,7 @@ async function _saveNotebookInner(opts) {
       opacity: canvasInstance.state.gridOpacity,
     },
   });
-  const _perf = { encodeMs: performance.now() - _perfEnc0, bytes: content.length, saveMs: 0, snapshotMs: 0 };
+  const _perf = { encodeMs: performance.now() - _perfEnc0, bytes: content.length, saveMs: 0, snapshotMs: 0, blockMs: 0 };
   const _emitSavePerf = () => {
     try {
       document.dispatchEvent(new CustomEvent("hush-notebook-save-perf", { detail: _perf }));
@@ -555,6 +558,11 @@ async function _saveNotebookInner(opts) {
       // into the same invoke so the payload never crosses twice.
       const wantSnapshot = wasContentDirty && _saveGate.snapshotDue(!!opts.forceSnapshot);
       const _perfSave0 = performance.now();
+      // JS-thread block probe: a zero-delay timer armed at save start
+      // fires the moment the thread frees up, so the delta is the
+      // synchronous portion of the save (byte encode + invoke marshal)
+      // — the part the user can actually feel as a stall.
+      const _blockProbe = new Promise((r) => setTimeout(() => r(performance.now() - _perfSave0), 0));
       await tauriInvoke("save_file_raw", new TextEncoder().encode(content), {
         headers: {
           "file-id": currentNotebookFileId,
@@ -562,6 +570,7 @@ async function _saveNotebookInner(opts) {
         },
       });
       _perf.saveMs = performance.now() - _perfSave0;
+      _perf.blockMs = await _blockProbe;
       _lastSavedContent = content;
       if (wasContentDirty) {
         if (wantSnapshot) _saveGate.markSnapshotTaken();

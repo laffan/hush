@@ -98,13 +98,11 @@ export async function setupModeSwitching(state) {
     const result = await saveNotebook();
     if (result) {
       state.syncFileToExternal(result.fileId, result.content);
-      // Fan the fresh envelope out to sibling windows so any one of them
-      // currently displaying the same notebook can `reloadNotebookShapes`
-      // and pick up the new shape set without remounting.
-      state.emit("notebook-cross-window-broadcast", {
-        fileId: result.fileId,
-        content: result.content,
-      });
+      // Nudge sibling windows showing the same notebook to reload it
+      // from disk. Id-only: shipping the multi-MB envelope through the
+      // broadcast marshalled it on this thread right after every save —
+      // the post-save frame stall that ate stroke points.
+      state.emit("notebook-cross-window-broadcast", { fileId: result.fileId });
     }
   });
   state.on("notebook-sync-reload", (content) => {

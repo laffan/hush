@@ -88,13 +88,13 @@ export function createPerfPanel(state: DrawingState): PerfPanelHandle {
     strokes: number; pointsK: number;
     histMs: number; histCalls: number;
     undoMs: number;
-    encodeMs: number; saveMs: number; snapMs: number; bytes: number;
+    encodeMs: number; saveMs: number; snapMs: number; blockMs: number; bytes: number;
     heapMB: number;
     errors: number;
   }
   const m: Metrics = {
     fps: 0, worstMs: 0, strokes: 0, pointsK: 0, histMs: 0, histCalls: 0,
-    undoMs: 0, encodeMs: 0, saveMs: 0, snapMs: 0, bytes: 0, heapMB: 0, errors: 0,
+    undoMs: 0, encodeMs: 0, saveMs: 0, snapMs: 0, blockMs: 0, bytes: 0, heapMB: 0, errors: 0,
   };
 
   function metricRows(): [string, string][] {
@@ -104,7 +104,7 @@ export function createPerfPanel(state: DrawingState): PerfPanelHandle {
       ["undo snapshot", `${m.histMs.toFixed(1)}ms × ${m.histCalls} commits`],
       ["undo/redo", m.undoMs ? `${m.undoMs.toFixed(0)}ms` : "—"],
       ["autosave", m.bytes
-        ? `enc ${m.encodeMs.toFixed(0)}ms · ${(m.bytes / 1048576).toFixed(2)}MB · write ${m.saveMs.toFixed(0)}ms · ver ${m.snapMs.toFixed(0)}ms`
+        ? `enc ${m.encodeMs.toFixed(0)}ms · ${(m.bytes / 1048576).toFixed(2)}MB · write ${m.saveMs.toFixed(0)}ms (block ${m.blockMs.toFixed(0)}ms) · ver ${m.snapMs.toFixed(0)}ms`
         : "—"],
       ["js heap", m.heapMB ? `${m.heapMB.toFixed(0)}MB` : "n/a"],
       ["errors", `${m.errors}`],
@@ -221,9 +221,10 @@ export function createPerfPanel(state: DrawingState): PerfPanelHandle {
     m.encodeMs = d.encodeMs ?? 0;
     m.saveMs = d.saveMs ?? 0;
     m.snapMs = d.snapshotMs ?? 0;
+    m.blockMs = d.blockMs ?? 0;
     m.bytes = d.bytes ?? 0;
     if (m.encodeMs + m.saveMs + m.snapMs > 250) {
-      log(`slow autosave: enc ${m.encodeMs.toFixed(0)}ms · write ${m.saveMs.toFixed(0)}ms · ver ${m.snapMs.toFixed(0)}ms · ${(m.bytes / 1048576).toFixed(2)}MB`);
+      log(`slow autosave: enc ${m.encodeMs.toFixed(0)}ms · write ${m.saveMs.toFixed(0)}ms (block ${m.blockMs.toFixed(0)}ms) · ver ${m.snapMs.toFixed(0)}ms · ${(m.bytes / 1048576).toFixed(2)}MB`);
     }
   };
   document.addEventListener("hush-notebook-save-perf", onSavePerf);
@@ -243,6 +244,14 @@ export function createPerfPanel(state: DrawingState): PerfPanelHandle {
     m.errors++;
     try { log(`console.error: ${args.map((a) => String(a)).join(" ").slice(0, 300)}`); } catch { /* noop */ }
     origConsoleError.apply(console, args);
+  };
+  // Warnings matter too — e.g. Tauri logs its silent IPC
+  // custom-protocol → postMessage fallback via console.warn, which
+  // changes the whole cost model of every invoke.
+  const origConsoleWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    try { log(`console.warn: ${args.map((a) => String(a)).join(" ").slice(0, 300)}`); } catch { /* noop */ }
+    origConsoleWarn.apply(console, args);
   };
 
   // ---------- buttons ----------
@@ -389,6 +398,7 @@ export function createPerfPanel(state: DrawingState): PerfPanelHandle {
     window.removeEventListener("error", onError);
     window.removeEventListener("unhandledrejection", onRejection);
     console.error = origConsoleError;
+    console.warn = origConsoleWarn;
     if (cancelToken) cancelToken.cancelled = true;
     delete stateAny.recordHistory;
     delete stateAny.undo;

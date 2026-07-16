@@ -16,14 +16,19 @@
  *  history. */
 const NOTEBOOK_SNAPSHOT_MIN_MS = 45_000;
 
-/** Quiet-moment gating: a save's IPC marshal blocks the JS thread long
- *  enough to drop pointer samples, so never save while a stroke is in
- *  flight or the camera moved in the last few hundred ms (covers every
- *  pan source — wheel, pinch, space-drag, two-finger — since they all
- *  notify the camera). A starvation guard saves anyway after 15 s of
- *  continuous deferral so an endless doodle can't block persistence
- *  forever. */
+/** Quiet-moment gating: whatever a save costs, it shouldn't cost it
+ *  while the user is mid-gesture. Saves wait until ALL of:
+ *    - no stroke in flight,
+ *    - no camera movement in the last 400 ms (covers every pan source —
+ *      wheel, pinch, space-drag, two-finger — they all notify camera),
+ *    - no content change in the last 1.5 s — i.e. the user paused
+ *      writing, not just lifted the pen between letters. This is what
+ *      makes saves land between *sections* of writing instead of
+ *      between strokes, where even a small hitch reads as a skip.
+ *  A starvation guard saves anyway after 15 s of continuous deferral so
+ *  an endless doodle can't block persistence forever. */
 const SAVE_QUIET_PAN_MS = 400;
+const SAVE_QUIET_CONTENT_MS = 1500;
 const SAVE_DEFER_MAX_MS = 15_000;
 
 /** Camera-only saves ship the full envelope just to persist a
@@ -37,6 +42,7 @@ export class NotebookSaveGate {
   lastSaveEndAt = 0;
   lastSaveDurationMs = 0;
   _lastCameraChangeAt = 0;
+  _lastContentChangeAt = 0;
   _deferredSince = 0;
 
   /** Fresh notebook, fresh gates — the first content change after a
@@ -47,6 +53,7 @@ export class NotebookSaveGate {
     this.lastSaveEndAt = 0;
     this.lastSaveDurationMs = 0;
     this._lastCameraChangeAt = 0;
+    this._lastContentChangeAt = 0;
     this._deferredSince = 0;
   }
 
@@ -54,16 +61,21 @@ export class NotebookSaveGate {
     this._lastCameraChangeAt = performance.now();
   }
 
+  noteContentChange() {
+    this._lastContentChangeAt = performance.now();
+  }
+
   noteSaveEnded(durationMs) {
     this.lastSaveEndAt = performance.now();
     this.lastSaveDurationMs = durationMs;
   }
 
-  /** Quiet-moment gate — see SAVE_QUIET_PAN_MS above. */
+  /** Quiet-moment gate — see the constants block above. */
   shouldDefer(strokeActive) {
     const now = performance.now();
     const panActive = now - this._lastCameraChangeAt < SAVE_QUIET_PAN_MS;
-    if (!strokeActive && !panActive) {
+    const writingActive = now - this._lastContentChangeAt < SAVE_QUIET_CONTENT_MS;
+    if (!strokeActive && !panActive && !writingActive) {
       this._deferredSince = 0;
       return false;
     }

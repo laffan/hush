@@ -86,21 +86,24 @@ pub fn broadcast_doc_changed(
     .map_err(|e| e.to_string())
 }
 
-/// Broadcast a notebook save (JSON envelope) so other windows showing
-/// the same notebook can call `reloadNotebookShapes` and reflect the
-/// new shape set without remounting the canvas.
+/// Broadcast a notebook save so other windows showing the same notebook
+/// can reload it FROM DISK. Deliberately id-only: the envelope is
+/// multi-MB for stroke-heavy notebooks, and shipping it through the
+/// invoke marshal + event fan-out froze the saving window's webview for
+/// the marshal duration on every autosave — and every receiver
+/// (including the originator's own echo) paid a full parse before the
+/// originator filter even ran. The save completed before the broadcast
+/// fired, so disk is always authoritative by the time receivers read.
 #[tauri::command]
 pub fn broadcast_notebook_changed(
     app: AppHandle,
     file_id: String,
-    content: String,
     originator: String,
 ) -> Result<(), String> {
     app.emit(
         "cross-window-notebook-changed",
         serde_json::json!({
             "fileId": file_id,
-            "content": content,
             "originator": originator,
         }),
     )
