@@ -8,6 +8,8 @@ import { flashRecognitionNotice, describeRecognitionError } from "../../recognit
 import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
 import { makeColorsMenu } from "./selection-colors-menu";
+// PERF-HUD (temporary): tracer singleton — see ../perf-hud.ts.
+import { perf } from "../perf-hud";
 
 /** Accessors the toolbar needs from the owning NotesCanvas for the
  *  raster-backed actions (Rasterize group, Recognize handwriting).
@@ -546,7 +548,13 @@ export function createSelectionToolbar(state: DrawingState, access?: SelectionRa
     }
   }
 
-  state.addEventListener("change", update);
+  // PERF-HUD (temporary): time the rebuild — it runs on EVERY change
+  // event, so with a live selection every camera notify during a pan
+  // re-renders this toolbar's DOM.
+  state.addEventListener("change", () => {
+    perf.begin("ui:selToolbar");
+    try { update(); } finally { perf.end("ui:selToolbar"); }
+  });
   update();
   return container;
 }

@@ -37,6 +37,8 @@
 import type { DrawShape, DrawPoint, Layer } from "../types";
 import type { EngineStroke, EngineAdapter, ShimState } from "./sync-shim-types";
 import { generateId } from "../utils";
+// PERF-HUD (temporary): boundary timing only — nothing inside the diff loop.
+import { perf } from "../perf-hud";
 
 // Interface surface lives in sync-shim-types.ts (700-line cap);
 // re-exported here so existing importers keep working.
@@ -254,7 +256,8 @@ export function createSyncShim({
 
   function diffAndApply() {
     inDiff = true;
-    try { _diffAndApply(); } finally { inDiff = false; }
+    perf.begin("shim:diff"); // PERF-HUD (temporary)
+    try { _diffAndApply(); } finally { perf.end("shim:diff"); inDiff = false; }
   }
   function _diffAndApply() {
     // Walk state.shapes once. For each DrawShape compare against
@@ -416,9 +419,11 @@ export function createSyncShim({
   function bulkReplaceFromState() {
     batching = true;
     inDiff = true;
+    perf.begin("shim:bulk"); // PERF-HUD (temporary)
     try {
       _bulkReplace();
     } finally {
+      perf.end("shim:bulk"); // PERF-HUD (temporary)
       batching = false;
       inDiff = false;
     }

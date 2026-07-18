@@ -3,6 +3,7 @@ import type { Shape, TextShape } from "../types";
 import { getShapeBounds } from "../utils";
 import { h, clearChildren } from "./dom-helpers";
 import { icon } from "./icons";
+import { perf } from "../perf-hud"; // PERF-HUD (temporary)
 
 interface ShelfNode {
   id: string; type: string; label: string; excerpt: string;
@@ -345,7 +346,11 @@ export function createShelfPanel(
     }
   }
 
-  function rebuild() {
+  function rebuild() { // PERF-HUD (temporary) wrapper — runs on EVERY change event
+    perf.begin("ui:shelf"); try { rebuildInner(); } finally { perf.end("ui:shelf"); }
+  }
+
+  function rebuildInner() {
     applyTheme();
 
     panel.style.width = isOpen ? `${openWidth}px` : "24px";

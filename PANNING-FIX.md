@@ -67,6 +67,46 @@ all fixed in this branch:
    reassembly at 5k strokes. Cache invalidated on mount / unmount /
    sync reload; content-dirty saves re-encode.
 
+## ROUND 3 — on-device diagnostics (PERF HUD, temporary)
+
+The lag reportedly survived rounds 1 + 2, so this branch now ships an
+**on-canvas perf overlay** (`src/notebook/perf-hud.ts`, mounted by the
+bridge on every main-canvas notebook) to attribute the stall on the
+iPad itself — no console needed. Remove later by deleting perf-hud.ts
+and every line tagged `PERF-HUD` (grep for it).
+
+**How to use it:**
+1. Open the laggy notebook — a dark `PERF …fps stalls N` pill sits in
+   the top-left of the canvas (drag its header to move it).
+2. Pan around for 15-30 s the way that feels laggy. The pill flashes
+   red on every main-thread stall ≥ 50 ms.
+3. Tap `▸` to expand, then `copy`, and paste the report back into the
+   session. If copy fails, the expanded text is selectable — long-press
+   → Select All → Copy.
+4. `reset` zeroes everything for a clean capture.
+
+**How to read it (for whoever gets the report):**
+- `PAN fps` is the number that matters — FPS measured only over
+  seconds where the camera was actually moving, next to the input
+  event rate. **60 fps + high input rate + visible jank ⇒ the main
+  thread is innocent and the problem is compositor/GPU-side** (canvas
+  layer re-raster, IOSurface traffic) — a completely different fix.
+- `stalls` lines break each ≥50 ms main-thread gap into the
+  instrumented sections that ran inside it; `other` is uninstrumented
+  JS / GC / WebKit layout+paint.
+- Instrumented sections: `render:frame` (main-canvas 2D repaint —
+  text layout runs per frame), `engine:setCamera` (re-anchor predicate
+  + wrapper transform), `reanchor` (+ `reanchor:blit` / `:resize`
+  counters), `save:encodeBody` / `save:utf8` / `save:zipPack` /
+  `save:bytesToArray`, `shim:diff` / `shim:bulk`, `state:pinComp`
+  (pinned-box camera compensation), `ui:shelf` (shelf rebuild — fires
+  on EVERY change event while open), `ui:selToolbar` (selection
+  toolbar rebuild — every change event while a selection exists).
+- Counters verify rounds 1 + 2 on-device: during a pan-only session
+  `dirty:content` should stay flat, `save:run:cameraOnly` should be
+  rare with `save:bodyReused` matching it, and `save:skip:*` shows the
+  gate working.
+
 Still open (known, deliberately not in this round):
 - **Text tool eats two-finger pan** ("fix 2"): `handlePointerDown`
   opens the inline editor on pointerDOWN, so the first finger of a pan

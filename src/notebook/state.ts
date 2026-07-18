@@ -28,6 +28,8 @@ import {
   applyResize, applyCropResize, openExternalUrl,
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
+// PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
+import { perf } from "./perf-hud";
 
 export interface EditingText {
   shapeId: string | null;
@@ -734,7 +736,11 @@ export class DrawingState extends EventTarget {
     // same-batch subscribers read shapes.
     this.addEventListener("change", ((e: CustomEvent) => {
       const keys: string[] = e.detail?.keys || [];
-      if (keys.includes("camera")) this._compensatePinnedForCamera();
+      if (keys.includes("camera")) {
+        perf.begin("state:pinComp"); // PERF-HUD (temporary)
+        this._compensatePinnedForCamera();
+        perf.end("state:pinComp"); // PERF-HUD (temporary)
+      }
     }) as EventListener);
   }
 

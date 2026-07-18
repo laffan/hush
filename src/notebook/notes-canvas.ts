@@ -17,6 +17,8 @@ import { registerNotebookDropTarget } from "../pane/text-drag.js";
 import { getNotebookCanvasPanes, focusAndCenterPaneById, scrollPaneToMatch } from "../pane/pane-manager.js";
 import { createDrawingLayer } from "./drawing/drawing-layer";
 import type { DrawingLayer } from "./drawing/drawing-layer";
+// PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
+import { perf } from "./perf-hud";
 import { createDrawingToolPanel } from "./drawing/tool-panel";
 import { createBgSettingsFixedButton } from "./ui/bg-settings-fixed-button";
 
@@ -374,7 +376,12 @@ export class NotesCanvas {
     this.state.addEventListener("change", ((e: CustomEvent) => {
       const keys: string[] = (e.detail && e.detail.keys) || [];
       if (!this._drawingLayer) return;
-      if (keys.includes("camera")) this._drawingLayer.setCamera(this.state.camera);
+      if (keys.includes("camera")) {
+        // PERF-HUD (temporary): covers ensureCoverage + wrapper transform.
+        perf.begin("engine:setCamera");
+        this._drawingLayer.setCamera(this.state.camera);
+        perf.end("engine:setCamera");
+      }
       if (keys.includes("theme")) this._drawingLayer.setTheme(this.state.theme);
       if (keys.includes("drawingMode") || keys.includes("tool") || keys.includes("isPanning")) {
         // Pen tool on ⇒ engine SVG captures pointers. Anything else —
@@ -846,6 +853,15 @@ export class NotesCanvas {
   }
 
   private _renderFrame() {
+    perf.begin("render:frame"); // PERF-HUD (temporary)
+    try {
+      this._renderFrameInner();
+    } finally {
+      perf.end("render:frame"); // PERF-HUD (temporary)
+    }
+  }
+
+  private _renderFrameInner() {
     render(this._canvas, {
         shapes: this.state.shapes,
         selectedIds: this.state.selectedIds,

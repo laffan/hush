@@ -31,6 +31,8 @@ let _lastSavedContent = null;
  *  stroke-heavy notebooks — the felt stall at pan pauses). Invalidated
  *  on mount / unmount / sync reload; content-dirty saves re-encode. */
 let _lastEncodedBody = null;
+/** PERF-HUD (temporary): overlay handle, torn down on unmount. */
+let _perfHud = null;
 
 /** Save gating (quiet-moment deferral, snapshot throttle, adaptive
  *  backpressure) lives in NotebookSaveGate — see its module docs.
@@ -86,6 +88,8 @@ import {
   nextPaint as _nextPaint,
 } from "./notebook-loading-overlay.js";
 import { NotebookSaveGate } from "./notebook-save-gate.js";
+// PERF-HUD (temporary): tracer singleton — see perf-hud.ts / PANNING-FIX.md.
+import { perf } from "./perf-hud.ts";
 import { loadNotebookSnapshot } from "./notebook-load.js";
 import { computeNotebookSettings } from "./notebook-style-settings.js";
 export { computeNotebookSettings } from "./notebook-style-settings.js";
@@ -215,6 +219,7 @@ async function _mountNotebookImpl(container, fileId, state) {
   // Listen for shape changes to mark dirty + notify panes
   container.addEventListener("notebook-change", () => {
     notebookDirty = true;
+    perf.count("dirty:content"); // PERF-HUD (temporary)
     // Feeds the quiet-moment save gate — saves wait for a real pause
     // in writing, not just the gap between two letters.
     _saveGate.noteContentChange();
@@ -240,9 +245,29 @@ async function _mountNotebookImpl(container, fileId, state) {
   // is created — pan / zoom isn't content history.
   container.addEventListener("notebook-camera-change", () => {
     cameraDirty = true;
+    perf.count("dirty:camera"); // PERF-HUD (temporary)
     // Feeds the quiet-moment save gate — saves wait out active panning.
     _saveGate.noteCameraChange();
   });
+
+  // PERF-HUD (temporary): mount the on-canvas diagnostics overlay so
+  // the panning lag can be attributed on-device (no console on iPad).
+  try {
+    const { mountPerfHud } = await import("./perf-hud.ts");
+    if (_perfHud) _perfHud.destroy();
+    _perfHud = mountPerfHud({
+      container,
+      state: canvasInstance.state,
+      getExtra: () => ({
+        fileId: currentNotebookFileId,
+        contentDirty: notebookDirty,
+        cameraDirty,
+        bodyCached: _lastEncodedBody != null,
+      }),
+    });
+  } catch (e) {
+    console.error("perf-hud mount failed:", e);
+  }
 
   // Wire cmd-drag of text and image shapes out of the main notebook.
   try {
@@ -377,11 +402,21 @@ export async function saveNotebook(opts = {}) {
   }
   if (!opts.forceSnapshot) {
     // Quiet-moment gate: never save mid-stroke or mid-pan.
-    if (_saveGate.shouldDefer(!!canvasInstance.isStrokeInFlight?.())) return null;
+    if (_saveGate.shouldDefer(!!canvasInstance.isStrokeInFlight?.())) {
+      perf.count("save:skip:deferred"); // PERF-HUD (temporary)
+      return null;
+    }
     // Camera-only saves are capped hard — see NotebookSaveGate.
-    if (!notebookDirty && _saveGate.cameraOnlyTooSoon()) return null;
-    if (_saveGate.backpressureTooSoon()) return null;
+    if (!notebookDirty && _saveGate.cameraOnlyTooSoon()) {
+      perf.count("save:skip:cameraCap"); // PERF-HUD (temporary)
+      return null;
+    }
+    if (_saveGate.backpressureTooSoon()) {
+      perf.count("save:skip:backpressure"); // PERF-HUD (temporary)
+      return null;
+    }
   }
+  perf.count(notebookDirty ? "save:run:content" : "save:run:cameraOnly"); // PERF-HUD (temporary)
   const saveStart = performance.now();
   const p = _saveNotebookInner(opts);
   _saveInFlight = p;
@@ -415,13 +450,17 @@ async function _saveNotebookInner(opts) {
   // the mountSwapped check and the cache write, so the capture is safe.
   let body = !wasContentDirty && _lastEncodedBody != null ? _lastEncodedBody : null;
   if (body == null) {
+    perf.begin("save:encodeBody"); // PERF-HUD (temporary)
     body = encodeNotebookBody({
       shapes: canvas.getShapes(),
       layers: canvas.state.layers,
       flowEdges: canvas.state.flowchart.serialize(),
       bookmarks: canvas.state.bookmarks,
     });
+    perf.end("save:encodeBody"); // PERF-HUD (temporary)
     _lastEncodedBody = body;
+  } else {
+    perf.count("save:bodyReused"); // PERF-HUD (temporary)
   }
   const content = assembleNotebookContent(body, canvas.state.camera, {
     pattern: canvas.state.backgroundPattern,
@@ -438,12 +477,19 @@ async function _saveNotebookInner(opts) {
       // zip and overwrite the file on disk. No sync push.
       const { packNotebook } = await import("../sync/notebook-sync.js");
       const { writeFileBytes } = await import("../sync/local-sync.js");
+      const tZip = performance.now(); // PERF-HUD (temporary)
       const bytes = await packNotebook(content);
+      perf.asyncSpan("save:zipPack", performance.now() - tZip); // PERF-HUD (temporary)
       if (mountSwapped()) return null;
       // Flag our own write so the desktop fs watcher skips the echo event
       // (and its sidebar repaint) for the next ~500 ms.
       if (_appState?.runtime) _appState.runtime.localSyncWriteFlag = Date.now();
-      await writeFileBytes(local.folderId, local.relPath, Array.from(bytes), true);
+      perf.begin("save:bytesToArray"); // PERF-HUD (temporary)
+      const byteArr = Array.from(bytes);
+      perf.end("save:bytesToArray"); // PERF-HUD (temporary)
+      const tWrite = performance.now(); // PERF-HUD (temporary)
+      await writeFileBytes(local.folderId, local.relPath, byteArr, true);
+      perf.asyncSpan("save:writeLocal", performance.now() - tWrite); // PERF-HUD (temporary)
       if (!mountSwapped()) _lastSavedContent = content;
       // Version snapshots key on the `ls:` sentinel id, so Local Folder
       // notebooks get the same content history internal ones do.
@@ -461,12 +507,17 @@ async function _saveNotebookInner(opts) {
       // IPC protocol untouched; the eligible version snapshot folds
       // into the same invoke so the payload never crosses twice.
       const wantSnapshot = wasContentDirty && _saveGate.snapshotDue(!!opts.forceSnapshot);
-      await tauriInvoke("save_file_raw", new TextEncoder().encode(content), {
+      perf.begin("save:utf8"); // PERF-HUD (temporary)
+      const contentBytes = new TextEncoder().encode(content);
+      perf.end("save:utf8"); // PERF-HUD (temporary)
+      const tInvoke = performance.now(); // PERF-HUD (temporary)
+      await tauriInvoke("save_file_raw", contentBytes, {
         headers: {
           "file-id": fileId,
           ...(wantSnapshot ? { "with-snapshot": "1" } : {}),
         },
       });
+      perf.asyncSpan("save:invoke", performance.now() - tInvoke); // PERF-HUD (temporary)
       if (mountSwapped()) return null;
       _lastSavedContent = content;
       if (wasContentDirty) {
@@ -516,6 +567,7 @@ async function _unmountNotebookImpl() {
     // from the cached content without re-encoding.
     await _maybeSnapshot(currentNotebookFileId, _lastSavedContent, true);
   }
+  if (_perfHud) { _perfHud.destroy(); _perfHud = null; } // PERF-HUD (temporary)
   if (canvasInstance) {
     if (canvasInstance._bgChangeListener) {
       document.removeEventListener("notebook-bg-changed", canvasInstance._bgChangeListener);

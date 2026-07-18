@@ -23,6 +23,8 @@
 
 import type { Camera } from "../types";
 import type { EngineStroke } from "./sync-shim";
+// PERF-HUD (temporary): tracer singleton — see ../perf-hud.ts.
+import { perf } from "../perf-hud";
 
 /** Smallest world-space side length the canvas backing will use. At
  *  zoom=1 with a viewport of 1280 px or smaller this gives DPR=2 on
@@ -206,6 +208,8 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     // call through; the early return keeps the steady-state path
     // free of canvas operations.
     if (!sizeChanged && Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    perf.begin("reanchor"); // PERF-HUD (temporary)
+    perf.count(sizeChanged ? "reanchor:resize" : "reanchor:blit"); // PERF-HUD (temporary)
     if (sizeChanged) {
       strokeEngine.translateAllStrokePoints(dx, dy);
     } else {
@@ -226,6 +230,7 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     }
     restashPocketedStrokes();
     refreshSelectionBBox();
+    perf.end("reanchor"); // PERF-HUD (temporary)
   }
 
   function ensureCoverage(cam: Camera): void {
