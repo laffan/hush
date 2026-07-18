@@ -1,5 +1,37 @@
 # Panning Hitch — Findings & Recommended Fix
 
+> **STATUS: IMPLEMENTED** (branch `claude/notebook-panning-lag-56okul`).
+> Both recommended fixes landed as engine deltas #25 (blit-forward
+> re-anchor) + #26 (per-stroke streamline cache) — see the delta list in
+> README-DRAWING.md and the header log in `engine/stroke.js`. Three
+> refinements over the plan below, discovered during implementation:
+>
+> 1. **Device-pixel snap.** The re-anchor origin delta is snapped to the
+>    device-pixel grid on the same-size path — a fractional device-pixel
+>    blit would resample (and, re-anchor after re-anchor, progressively
+>    blur) the baked ink.
+> 2. **Exact-rect strip rebake, not tile keys.** Snapping a ~200-400 px
+>    exposed strip outward to 512-px tiles repaints up to 12 of 16 tiles
+>    on a diagonal re-anchor (measured *slower* than the old full
+>    rebake). `renderer.rebakeRects` clears + repaints the literal strip
+>    rects instead; seams are safe because the snap in (1) puts strip
+>    edges on pixel boundaries.
+> 3. **Preview-in-flight fallback.** If a preview transform is live at
+>    re-anchor time, the done canvas has holes where the previewed
+>    strokes' tiles are held out; the blit would carry the holes
+>    forward, so that case falls back to a full repaint.
+>
+> Verified in a headless-Chromium harness driving the real engine
+> modules (5k strokes × 26 pts, DPR 2): blit-forward re-anchor vs full
+> rebake pixel-compares clean (identical up to sub-perceptual AA fringe,
+> ≤0.01% of pixels at ≤25/255 premultiplied); streamline-cache render,
+> streamline-value change, and preview-fallback compares are bit-exact;
+> live-draw commit and slice through real pointer events match
+> cache-cleared rebakes. Perf on the harness (software raster, so
+> conservative): same-size re-anchor mean 538 ms vs 2226 ms full rebake
+> (4.1×), single-axis 6.4×. On-device feel (iPad) still needs a manual
+> pass — see the verification recipe below.
+
 Handoff for the next session. Supersedes `PANNING-JUMP-FIX.md` (kept for
 history): this doc folds in what the notebook-improvements session
 (branch `claude/notebook-improvements-cr80bp`) fixed, measured, and

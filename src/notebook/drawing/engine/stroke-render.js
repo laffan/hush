@@ -81,8 +81,34 @@ export function stampStream(ctx, streamPts, size, tinted, spacingFrac, xform) {
   }
 }
 
-export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible }) {
+export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible, isActive }) {
   const visible = isVisible || (() => true);
+  const activeFn = isActive || (() => false);
+
+  // Hush delta #26: per-stroke streamline cache. getStrokePoints used to
+  // be recomputed from scratch on EVERY render of every stroke — on a
+  // full rebake of a dense notebook that pass alone costs milliseconds
+  // and allocates two objects per point (GC pressure, worst on iPad
+  // JSC). Geometry mutations replace the points array (setStrokePoints,
+  // commitTransform, slice), so caching on points-array identity + the
+  // streamline value in effect is sound. Two traps, both handled:
+  //   - the ACTIVE stroke's points array grows / mutates in place while
+  //     its identity stays stable — never cache it (`isActive`);
+  //   - translateAllStrokePoints shifts raw points in place (identity
+  //     unchanged); it shifts the cached streamline points alongside
+  //     (streamlining is translation-invariant) so the cache stays warm
+  //     across re-anchors.
+  // `_streamCache` lives only on engine-private strokes — the sync shim
+  // builds fresh objects at both boundaries, so it can never leak into
+  // DrawShapes or serialization.
+  function streamPtsFor(stroke) {
+    if (activeFn(stroke)) return getStrokePoints(stroke.points, options.streamline);
+    const c = stroke._streamCache;
+    if (c && c.pointsRef === stroke.points && c.streamline === options.streamline) return c.pts;
+    const pts = getStrokePoints(stroke.points, options.streamline);
+    stroke._streamCache = { pts, pointsRef: stroke.points, streamline: options.streamline };
+    return pts;
+  }
 
   // Scratch canvas used by the flatten path (highlighter-family brushes).
   // A single canvas is shared across all target contexts — done/preview/live
@@ -150,7 +176,7 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   }
 
   function renderStroke(ctx, stroke, xform) {
-    const streamPts = getStrokePoints(stroke.points, options.streamline);
+    const streamPts = streamPtsFor(stroke);
     const brushId = stroke.brush || BRUSH_DEFS[0].id;
     const tinted = getTintedAtlas(brushId, stroke.color);
     const { composite, strokeAlpha } = getModeComposite(stroke.mode || 'normal');
@@ -263,6 +289,74 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     repaintAll();
   }
 
+  // Hush delta #25 (support): clear + repaint exact CSS-px rects on the
+  // done canvas. Like rebakeTiles, but takes literal rects instead of
+  // tile keys — the re-anchor's exposed edge strips are typically a
+  // 200-400 px band, and snapping that outward to 512-px tile
+  // granularity re-stamps up to three quarters of the backing (an
+  // L-shaped two-axis strip can touch 12 of 16 tiles), which would eat
+  // most of the blit's win. The strip edges land on device-pixel
+  // boundaries (the re-anchor delta is snapped to the device grid), so
+  // the clip seam against blitted pixels is exact. Strokes are matched
+  // by bbox intersection and painted in canonical order under a clip
+  // of the rect union, so z-order and spill containment match
+  // rebakeTiles semantics.
+  function rebakeRects(rects) {
+    if (!rects || !rects.length) return;
+    doneCtx.save();
+    doneCtx.beginPath();
+    for (const r of rects) {
+      doneCtx.rect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
+    }
+    doneCtx.clip();
+    for (const r of rects) {
+      doneCtx.clearRect(r.minX, r.minY, r.maxX - r.minX, r.maxY - r.minY);
+    }
+    for (const s of getStrokes()) {
+      if (!visible(s)) continue;
+      const b = s.bbox;
+      if (!b) { renderStroke(doneCtx, s); continue; }
+      let hit = false;
+      for (const r of rects) {
+        if (b.minX <= r.maxX && b.maxX >= r.minX && b.minY <= r.maxY && b.maxY >= r.minY) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) renderStroke(doneCtx, s);
+    }
+    doneCtx.restore();
+  }
+
+  // Hush delta #25 (support): slide the done canvas's pixels by (dx, dy)
+  // CSS px. Used by the blit-forward re-anchor — on a same-size re-anchor
+  // the old backing already holds almost everything the new one needs, so
+  // the pixels are copied across and only the newly exposed edge strips
+  // get repainted. Routed through the shared scratch canvas rather than a
+  // self-drawImage: the spec defines self-blits (source snapshotted before
+  // painting) but historical WebKit vintages have misbehaved, and the
+  // scratch already exists for the highlighter flatten path. The caller
+  // guarantees dx·dpr / dy·dpr are integers so the copy is pixel-exact
+  // (a fractional device-pixel shift would resample — and, re-anchor
+  // after re-anchor, progressively blur — the baked ink).
+  function shiftDoneCanvas(dx, dy) {
+    const t = doneCtx.getTransform();
+    const dpr = t.a || 1;
+    const w = doneCtx.canvas.width;
+    const h = doneCtx.canvas.height;
+    const sCtx = ensureScratch(doneCtx);
+    sCtx.save();
+    sCtx.setTransform(1, 0, 0, 1, 0, 0);
+    sCtx.clearRect(0, 0, w, h);
+    sCtx.drawImage(doneCtx.canvas, 0, 0);
+    sCtx.restore();
+    doneCtx.save();
+    doneCtx.setTransform(1, 0, 0, 1, 0, 0);
+    doneCtx.clearRect(0, 0, w, h);
+    doneCtx.drawImage(scratchCanvas, Math.round(dx * dpr), Math.round(dy * dpr));
+    doneCtx.restore();
+  }
+
   // Collect the union of tile keys for an iterable of strokes.
   function tilesForStrokes(strokes) {
     const out = new Set();
@@ -283,6 +377,8 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     rebakeTiles,
     repaintAll,
     fullRebake,
+    rebakeRects,
+    shiftDoneCanvas,
     tilesForStrokes,
     clearIndex,
   };

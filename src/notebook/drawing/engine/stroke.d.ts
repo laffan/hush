@@ -63,6 +63,9 @@ export function createStrokeEngine(opts: {
   commitTransform(idsSet: Set<number>, fn: (x: number, y: number) => [number, number], sizeScale?: number): void;
   clear(): void;
   fullRebake(): void;
+  translateAllStrokePoints(dx: number, dy: number): void;
+  reAnchorTranslate(dx: number, dy: number): void;
+  renderStrokeTo(ctx: CanvasRenderingContext2D, stroke: any): void;
   getLayers(): { id: number; name: string; locked: boolean; hidden: boolean }[];
   getLayerById(id: number): { id: number; name: string; locked: boolean; hidden: boolean } | null;
   getActiveLayerId(): number;

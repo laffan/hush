@@ -14,8 +14,11 @@
  * fast when the camera is well inside the canvas. It only triggers
  * a `reAnchor` when the viewport drifts past `REANCHOR_MARGIN_FRAC ×
  * worldSize` of the canvas edge or when zoom wants a different size
- * (`RESIZE_RATIO_THRESHOLD`). Re-anchor cost is O(N strokes); the
- * margin keeps it amortized cheap.
+ * (`RESIZE_RATIO_THRESHOLD`). A same-size re-anchor (pan at fixed
+ * zoom) blits the done canvas forward and repaints only the newly
+ * exposed edge strips (engine delta #25) — O(edge-strip ink). Only a
+ * size-changed re-anchor (zoom crossed the resize threshold) still
+ * pays a full O(visible ink) rebake.
  */
 
 import type { Camera } from "../types";
@@ -64,6 +67,12 @@ export interface AnchorState {
  *  binding through without a cast on the call site. */
 export interface ReanchorEngine {
   translateAllStrokePoints(dx: number, dy: number): void;
+  /** Engine delta #25 — same-size re-anchor in one call: translate
+   *  points, rebuild the tile index, blit the done canvas by the same
+   *  delta, and repaint only the newly exposed edge strips. dx / dy
+   *  must be snapped to the device-pixel grid by the caller so the
+   *  blit is pixel-exact. */
+  reAnchorTranslate(dx: number, dy: number): void;
   fullRebake(): void;
   resize(width: number, height: number): void;
   getStrokes(): EngineStroke[];
@@ -172,11 +181,24 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     const vp = viewportWorldBounds(cam);
     const vpCenterX = (vp.left + vp.right) / 2;
     const vpCenterY = (vp.top + vp.bottom) / 2;
-    const newOriginX = vpCenterX - newSize / 2;
-    const newOriginY = vpCenterY - newSize / 2;
-    const dx = anchor.originX - newOriginX;
-    const dy = anchor.originY - newOriginY;
+    let newOriginX = vpCenterX - newSize / 2;
+    let newOriginY = vpCenterY - newSize / 2;
+    let dx = anchor.originX - newOriginX;
+    let dy = anchor.originY - newOriginY;
     const sizeChanged = Math.abs(newSize - anchor.worldSize) > 0.5;
+    if (!sizeChanged) {
+      // Same-size path blits the done canvas forward (delta #25), so
+      // snap the shift to the device-pixel grid — a fractional
+      // device-pixel blit would resample (and, re-anchor after
+      // re-anchor, progressively blur) the baked ink. The origin is
+      // only "centered-ish" anyway; a sub-pixel nudge is far inside
+      // the coverage margins.
+      const dpr = getDpr();
+      dx = Math.round(dx * dpr) / dpr;
+      dy = Math.round(dy * dpr) / dpr;
+      newOriginX = anchor.originX - dx;
+      newOriginY = anchor.originY - dy;
+    }
     // No-op skip: if the camera lands exactly where we are anchored
     // and worldSize doesn't want to change, the translate / rebake
     // would all be busy work. ensureCoverage's predicate normally
@@ -184,7 +206,16 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     // call through; the early return keeps the steady-state path
     // free of canvas operations.
     if (!sizeChanged && Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-    strokeEngine.translateAllStrokePoints(dx, dy);
+    if (sizeChanged) {
+      strokeEngine.translateAllStrokePoints(dx, dy);
+    } else {
+      // Same canvas dimensions — only the local-coord frame moved.
+      // Delta #25 blit-forward path: translate points, rebuild the
+      // tile index, slide the done canvas's pixels, and repaint only
+      // the newly exposed edge strips — O(edge-strip ink) instead of
+      // the full repaint that used to stall stroke-heavy pans.
+      strokeEngine.reAnchorTranslate(dx, dy);
+    }
     anchor.originX = newOriginX;
     anchor.originY = newOriginY;
     anchor.worldSize = newSize;
@@ -192,12 +223,6 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
       sizeCanvases();
       // engine.resize() also clears live + preview and rebakes.
       strokeEngine.resize(anchor.worldSize, anchor.worldSize);
-    } else {
-      // Same canvas dimensions — only the local-coord frame moved.
-      // `translateAllStrokePoints` already cleared the live + preview
-      // overlays (their stamps were at OLD local coords); fullRebake
-      // repaints the done canvas at the new local positions.
-      strokeEngine.fullRebake();
     }
     restashPocketedStrokes();
     refreshSelectionBBox();

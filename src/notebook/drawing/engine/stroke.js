@@ -31,7 +31,18 @@
  *      fullRebake() once at the end (per-insert rebakes are quadratic).
  *  23. `hasActiveStroke()` — true while a stroke is in flight, so the
  *      autosave pipeline can defer writes until pen-up.
- *   (Deltas 4 + 5 live in selection.js + gestures.js.)
+ *  25. `reAnchorTranslate(dx, dy)` — blit-forward re-anchor. Same-size
+ *      re-anchors (pan at fixed zoom) used to repaint every visible
+ *      stroke via fullRebake — the periodic "panning hitch" on
+ *      stroke-heavy notebooks. Now: translate points, rebuild the tile
+ *      index, slide the done canvas's pixels by the same delta
+ *      (renderer.shiftDoneCanvas), and repaint only the newly exposed
+ *      edge strips. Falls back to a full repaint when a preview
+ *      transform is in flight (the done canvas has holes for the
+ *      previewed strokes' tiles that a blit would carry forward).
+ *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
+ *    gestures.js; #26 — the per-stroke streamline cache — in
+ *    stroke-render.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
  *
@@ -246,6 +257,11 @@ export function createStrokeEngine({
     getTintedAtlas: (brushId, color) => atlas.getTintedAtlas(brushId, color),
     options: OPTIONS,
     isVisible: (s) => !isStrokeHidden(s),
+    // Hush delta #26: the streamline cache must never serve the active
+    // stroke — its points array grows (and its last point mutates) in
+    // place while the array identity stays stable, which is exactly the
+    // case identity keying can't see.
+    isActive: (s) => s === state.active,
   });
 
   const eraser = createEraseController({
@@ -633,6 +649,78 @@ export function createStrokeEngine({
     if (entries.length && onStrokesTransformed) onStrokesTransformed(entries);
   }
 
+  // Hush delta #20: shift every stored stroke's points by (dx, dy)
+  // in engine-local coords. The host calls this when it re-anchors
+  // the wrapper world-origin so the canvas backing follows the
+  // camera; the world positions stay constant because the host also
+  // shifts originX/originY by (-dx, -dy) at the same time. Active
+  // stroke + lastRecorded + longPressAnchor get the same shift so a
+  // re-anchor that lands mid-stroke (rare — gesture-pan cancels the
+  // active stroke first) doesn't snap the live overlay. The caller
+  // is expected to follow up with `fullRebake()` (or the delta #25
+  // blit path below); we drop preview bookkeeping here because the
+  // cached tile keys are stale at the new origin, and clear the live
+  // + preview canvases because their pixels were stamped at the OLD
+  // local coords. If an active stroke is in flight, scheduleRender()
+  // so the next rAF re-stamps it at the new local coords — without
+  // that the user's last committed line would visibly smear for a
+  // frame against the world during a camera pan that triggers a
+  // re-anchor.
+  function translateAllStrokePoints(dx, dy) {
+    if (dx === 0 && dy === 0) return;
+    for (const s of state.strokes) {
+      const pts = s.points;
+      for (let i = 0; i < pts.length; i++) {
+        pts[i].x += dx;
+        pts[i].y += dy;
+      }
+      // Hush delta #26: the streamline cache keys on points-array
+      // identity, and the in-place shift above is exactly the case
+      // identity keying can't see. Streamlining is translation-
+      // invariant, so shift the cached streamline points alongside —
+      // deleting the cache here instead would forfeit the win on the
+      // very path (re-anchor) that needs it most.
+      const c = s._streamCache;
+      if (c) {
+        if (c.pointsRef === pts) {
+          const cp = c.pts;
+          for (let i = 0; i < cp.length; i++) {
+            cp[i].point[0] += dx;
+            cp[i].point[1] += dy;
+          }
+        } else {
+          s._streamCache = null;
+        }
+      }
+    }
+    if (state.active) {
+      const pts = state.active.points;
+      for (let i = 0; i < pts.length; i++) {
+        pts[i].x += dx;
+        pts[i].y += dy;
+      }
+      // The active stroke is never cached (see isActive above), but a
+      // stale cache from before it went active would now be wrong.
+      if (state.active._streamCache) state.active._streamCache = null;
+    }
+    if (state.lastRecorded) {
+      state.lastRecorded.x += dx;
+      state.lastRecorded.y += dy;
+    }
+    if (state.longPressAnchor) {
+      state.longPressAnchor.x += dx;
+      state.longPressAnchor.y += dy;
+    }
+    state.previewingIds = null;
+    state.previewingTiles = null;
+    clearCtx(liveCtx);
+    clearCtx(previewCtx);
+    if (state.active) {
+      state.dirty = true;
+      scheduleRender();
+    }
+  }
+
   // Fire off PNG atlas loads. Procedural fallbacks carry the engine until the
   // PNGs finish decoding; as each lands the affected strokes repaint in place.
   atlas.loadPngBrushes();
@@ -866,54 +954,47 @@ export function createStrokeEngine({
       renderer.fullRebake();
     },
 
-    // Hush delta #20: shift every stored stroke's points by (dx, dy)
-    // in engine-local coords. The host calls this when it re-anchors
-    // the wrapper world-origin so the canvas backing follows the
-    // camera; the world positions stay constant because the host also
-    // shifts originX/originY by (-dx, -dy) at the same time. Active
-    // stroke + lastRecorded + longPressAnchor get the same shift so a
-    // re-anchor that lands mid-stroke (rare — gesture-pan cancels the
-    // active stroke first) doesn't snap the live overlay. The caller
-    // is expected to follow up with `fullRebake()`; we drop preview
-    // bookkeeping here because the cached tile keys are stale at the
-    // new origin, and clear the live + preview canvases because their
-    // pixels were stamped at the OLD local coords. If an active
-    // stroke is in flight, scheduleRender() so the next rAF re-stamps
-    // it at the new local coords — without that the user's last
-    // committed line would visibly smear for a frame against the
-    // world during a camera pan that triggers a re-anchor.
-    translateAllStrokePoints(dx, dy) {
+    // Hush delta #20 — hoisted to a named function above so the
+    // delta #25 blit-forward path can compose with it.
+    translateAllStrokePoints,
+
+    // Hush delta #25: blit-forward re-anchor for the same-canvas-size
+    // case (pan at fixed zoom — the overwhelmingly common re-anchor).
+    // The old done canvas already holds almost everything the new one
+    // needs, so instead of repainting every visible stroke (the felt
+    // "panning hitch" on stroke-heavy notebooks) we translate the
+    // points, rebuild the tile index (tile keys are local-coord),
+    // slide the done canvas's pixels by the same delta, and clear +
+    // repaint only the newly exposed edge strips (rebakeRects clears
+    // the exact strip rects and repaints every stroke whose bbox
+    // touches them from the already-translated points, so seams are
+    // handled by construction). The caller must snap dx / dy to the
+    // device-pixel grid so the blit is a pixel-exact copy and the
+    // strip edges land on pixel boundaries (see re-anchor.ts). If a preview
+    // transform is in flight, the done canvas has holes where the
+    // previewed strokes' tiles were held out — a blit would carry the
+    // holes forward, so that (rare) case falls back to a full repaint.
+    reAnchorTranslate(dx, dy) {
       if (dx === 0 && dy === 0) return;
-      for (const s of state.strokes) {
-        const pts = s.points;
-        for (let i = 0; i < pts.length; i++) {
-          pts[i].x += dx;
-          pts[i].y += dy;
-        }
+      const hadPreview = !!state.previewingIds;
+      translateAllStrokePoints(dx, dy);
+      renderer.rebuildIndex();
+      if (hadPreview) {
+        renderer.repaintAll();
+        return;
       }
-      if (state.active) {
-        const pts = state.active.points;
-        for (let i = 0; i < pts.length; i++) {
-          pts[i].x += dx;
-          pts[i].y += dy;
-        }
-      }
-      if (state.lastRecorded) {
-        state.lastRecorded.x += dx;
-        state.lastRecorded.y += dy;
-      }
-      if (state.longPressAnchor) {
-        state.longPressAnchor.x += dx;
-        state.longPressAnchor.y += dy;
-      }
-      state.previewingIds = null;
-      state.previewingTiles = null;
-      clearCtx(liveCtx);
-      clearCtx(previewCtx);
-      if (state.active) {
-        state.dirty = true;
-        scheduleRender();
-      }
+      renderer.shiftDoneCanvas(dx, dy);
+      // Newly exposed edge strips: content moved by (dx, dy), so the
+      // leading edges show regions the old backing never covered.
+      // Rebaked as exact rects (rebakeRects) rather than tile keys —
+      // strips are a few hundred px wide, and 512-px tile snapping
+      // would inflate them to a large fraction of the backing.
+      const strips = [];
+      if (dx > 0) strips.push({ minX: 0, minY: 0, maxX: dx, maxY: cssHeight });
+      else if (dx < 0) strips.push({ minX: cssWidth + dx, minY: 0, maxX: cssWidth, maxY: cssHeight });
+      if (dy > 0) strips.push({ minX: 0, minY: 0, maxX: cssWidth, maxY: dy });
+      else if (dy < 0) strips.push({ minX: 0, minY: cssHeight + dy, maxX: cssWidth, maxY: cssHeight });
+      renderer.rebakeRects(strips);
     },
 
     // Hush delta #20: render a single stroke into an arbitrary ctx.
