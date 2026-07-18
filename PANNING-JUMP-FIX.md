@@ -1,5 +1,10 @@
 # Panning Jumpiness — Diagnosis & Fix Plan
 
+> **Superseded by `PANNING-FIX.md`** (notebook-improvements session):
+> that doc folds in newer measurements, the gesture fixes that already
+> landed, and corrected delta numbering (#24 is now taken — the cache
+> described below becomes #25). Kept for history.
+
 Handoff notes for the remaining notebook performance issue after the
 stroke-optimization session (branch `claude/notebooks-stroke-optimization-2t12yz`,
 commits `04ddd49..3a29614`). Writing at 5k+ strokes now holds 60–120 fps with
