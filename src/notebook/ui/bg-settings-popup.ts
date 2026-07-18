@@ -42,23 +42,29 @@ export interface BgSettingsHandle {
   setAnchor(el: HTMLElement | null, opts?: { mode?: "auto" | "above-right" }): void;
 }
 
+/** Notify the bridge so the per-notebook bg fields ride the next save.
+ *  Event fires on document so the bridge can listen at one root
+ *  regardless of which container the emitter mounted into. Shared with
+ *  the fixed bottom-right chrome (bg-settings-fixed-button.ts), which
+ *  owns the canvas-rotation toggle — always sends the FULL field set so
+ *  a partial emitter can't clobber the bridge's cached copy of the
+ *  others. */
+export function emitNotebookBgChange(state: DrawingState): void {
+  document.dispatchEvent(new CustomEvent("notebook-bg-changed", {
+    detail: {
+      state,
+      pattern: state.backgroundPattern,
+      spacing: state.gridSpacing,
+      opacity: state.gridOpacity,
+      rotationEnabled: state.canvasRotationEnabled,
+    },
+  }));
+}
+
 export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
   let popupOpen = false;
 
-  // Notify the bridge so the per-notebook bg fields ride the next save.
-  // Event fires on document so the bridge can listen at one root regardless
-  // of which container the popup mounted into.
-  function emitBgChange(): void {
-    document.dispatchEvent(new CustomEvent("notebook-bg-changed", {
-      detail: {
-        state,
-        pattern: state.backgroundPattern,
-        spacing: state.gridSpacing,
-        opacity: state.gridOpacity,
-        rotationEnabled: state.canvasRotationEnabled,
-      },
-    }));
-  }
+  const emitBgChange = () => emitNotebookBgChange(state);
 
   const tab = h("button", {
     title: "Background settings",
@@ -213,33 +219,6 @@ export function createBgSettingsPopup(state: DrawingState): BgSettingsHandle {
       opacityRow.appendChild(opacityLabel);
       popup.appendChild(opacityRow);
     }
-
-    // Canvas rotation — opt-in: when on, two-finger pan/zoom gestures
-    // can also rotate the canvas (twist to turn). Turning it off snaps
-    // the view back to axis-aligned (handled by the state setter).
-    popup.appendChild(h("div", { text: "Rotation", style: { ...labelStyle, marginTop: "10px" } }));
-    const rotOn = state.canvasRotationEnabled;
-    const rotRow = h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } });
-    rotRow.appendChild(h("button", {
-      text: rotOn ? "On" : "Off",
-      title: "Allow rotating the canvas while pan/zooming with two fingers",
-      style: {
-        padding: "3px 14px", border: `1px solid ${rotOn ? theme.accent : theme.uiBorder}`,
-        borderRadius: "4px", background: rotOn ? theme.accent : "transparent",
-        color: rotOn ? "#fff" : theme.foreground, cursor: "pointer",
-        fontFamily: "inherit", fontSize: "11px", fontWeight: rotOn ? "600" : "400",
-      },
-      onClick: () => {
-        state.setCanvasRotationEnabled(!state.canvasRotationEnabled);
-        emitBgChange();
-        render();
-      },
-    }));
-    rotRow.appendChild(h("span", {
-      text: "Rotate canvas with 2-finger pan/zoom",
-      style: { fontSize: "11px", color: theme.foreground, opacity: "0.6" },
-    }));
-    popup.appendChild(rotRow);
     reposition();
   }
 
