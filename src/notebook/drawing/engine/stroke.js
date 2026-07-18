@@ -40,6 +40,12 @@
  *      edge strips. Falls back to a full repaint when a preview
  *      transform is in flight (the done canvas has holes for the
  *      previewed strokes' tiles that a blit would carry forward).
+ *  27. `resize()` skips the canvas backing-store write when the pixel
+ *      size is unchanged. Assigning canvas.width always clears and can
+ *      reallocate the backing; with the host capping DPR against
+ *      MAX_BACKING_PIXELS the pixel size is constant across worldSize
+ *      changes, so re-anchor resizes were paying huge IOSurface
+ *      reallocation churn for a no-op dimension change.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js.)
@@ -204,9 +210,21 @@ export function createStrokeEngine({
     dpr = getDprFn();
     cssWidth = width;
     cssHeight = height;
+    const pxW = Math.max(1, Math.round(width * dpr));
+    const pxH = Math.max(1, Math.round(height * dpr));
     for (const canvas of [doneCanvas, previewCanvas, liveCanvas]) {
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
+      // Hush delta #27: skip the backing-store write when the pixel
+      // size is unchanged — assigning canvas.width always clears the
+      // canvas AND can reallocate the backing (multi-hundred-MB
+      // IOSurface churn on iPad at 4096² × three stage canvases; a
+      // measured 0.8-1.5 s stall per re-anchor resize). With the DPR
+      // capped against MAX_BACKING_PIXELS the pixel size is constant
+      // across worldSize changes on high-DPR devices, so most resizes
+      // only need the transform + rebake below. The skipped implicit
+      // clear is covered: fullRebake clears the done canvas and the
+      // preview/live canvases are cleared explicitly.
+      if (canvas.width !== pxW) canvas.width = pxW;
+      if (canvas.height !== pxH) canvas.height = pxH;
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
     }

@@ -52,6 +52,19 @@ const REANCHOR_MARGIN_FRAC = 0.10;
  *  one by more than this ratio. Avoids re-bakes for tiny zoom
  *  nudges that don't actually need a different size. */
 const RESIZE_RATIO_THRESHOLD = 1.4;
+/** reAnchor keeps the CURRENT worldSize (the cheap blit path) unless
+ *  coverage is genuinely inadequate. Without this hysteresis, any zoom
+ *  drift between re-anchors — a pinch that engaged for a moment mid-
+ *  pan — changed `wantWorldSize` by more than the 0.5 px equality
+ *  tolerance, and the next margin-breach re-anchor took the RESIZE
+ *  path: full canvas resize + O(visible ink) rebake. On-device (round
+ *  3 HUD capture) that was 10 of 16 re-anchors, at up to 1.5 s each.
+ *  Must stay above 1 / (1 − 2·REANCHOR_MARGIN_FRAC) = 1.25, or a
+ *  kept-size re-anchor would re-breach the margin immediately and
+ *  re-anchor every frame; 1.35 keeps ≥ ~60 px of pan between blits in
+ *  the worst drift band while tolerating ~10% of zoom-out drift
+ *  before a real resize. */
+const MIN_KEEP_COVERAGE = 1.35;
 
 /** Mutable holder for the canvas backing's world-space anchor +
  *  side length. Owned by the drawing layer so its closures
@@ -140,10 +153,12 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     return { left, top, right, bottom };
   }
 
+  function viewportSide(vp: { left: number; top: number; right: number; bottom: number }): number {
+    return Math.max(vp.right - vp.left, vp.bottom - vp.top);
+  }
+
   function wantWorldSize(cam: Camera): number {
-    const vp = viewportWorldBounds(cam);
-    const longestVisibleWorldSide = Math.max(vp.right - vp.left, vp.bottom - vp.top);
-    return Math.max(WORLD_SIZE_MIN, longestVisibleWorldSide * VIEWPORT_COVERAGE_FACTOR);
+    return Math.max(WORLD_SIZE_MIN, viewportSide(viewportWorldBounds(cam)) * VIEWPORT_COVERAGE_FACTOR);
   }
 
   function needsReanchor(cam: Camera): boolean {
@@ -179,8 +194,19 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
   }
 
   function reAnchor(cam: Camera): void {
-    const newSize = wantWorldSize(cam);
     const vp = viewportWorldBounds(cam);
+    const vpSide = viewportSide(vp);
+    const want = Math.max(WORLD_SIZE_MIN, vpSide * VIEWPORT_COVERAGE_FACTOR);
+    // Size hysteresis — keep the current worldSize (blit path) unless
+    // it's genuinely wrong for the camera: too tight to buy real pan
+    // slack (MIN_KEEP_COVERAGE), or oversized past the same ratio the
+    // ensureCoverage predicate uses. `mustGrow` only matters while
+    // `want` is clamped at WORLD_SIZE_MIN; the coverage check is the
+    // effective growth trigger otherwise.
+    const mustGrow = want > anchor.worldSize * RESIZE_RATIO_THRESHOLD;
+    const shouldShrink = anchor.worldSize > want * RESIZE_RATIO_THRESHOLD && anchor.worldSize > WORLD_SIZE_MIN;
+    const coverageTooTight = anchor.worldSize < vpSide * MIN_KEEP_COVERAGE;
+    const newSize = (mustGrow || shouldShrink || coverageTooTight) ? want : anchor.worldSize;
     const vpCenterX = (vp.left + vp.right) / 2;
     const vpCenterY = (vp.top + vp.bottom) / 2;
     let newOriginX = vpCenterX - newSize / 2;

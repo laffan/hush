@@ -75,6 +75,39 @@ bridge on every main-canvas notebook) to attribute the stall on the
 iPad itself — no console needed. Remove later by deleting perf-hud.ts
 and every line tagged `PERF-HUD` (grep for it).
 
+**Round 3 findings (first on-device HUD capture, iPad, 390 strokes,
+zoom 0.896):** PAN fps 31 with stalls up to 1.7 s, and the attribution
+was unambiguous — `reanchor` ate 3.7 s of main-thread time in 53 s of
+panning, with **10 of 16 re-anchors taking the RESIZE path** (only 6
+blits). Two compounding bugs in the round-1 implementation, both fixed:
+
+1. **Resize hair-trigger.** `reAnchor` recomputed `wantWorldSize`
+   unconditionally and treated any >0.5 px difference as a size change,
+   so the tiniest pinch-drift in zoom between re-anchors forced the
+   full-resize path. Now hysteresis-gated (`MIN_KEEP_COVERAGE = 1.35`):
+   the current worldSize is kept — blit path — unless coverage is
+   genuinely inadequate or oversized past `RESIZE_RATIO_THRESHOLD`.
+2. **No-op canvas reallocation** (engine delta #27). Even a "real"
+   resize re-assigned `canvas.width` on three 4096×4096 canvases —
+   ~200 MB of IOSurface churn per resize on the capture device — when
+   the DPR cap makes the pixel size CONSTANT across worldSize changes
+   (px = round(W × 4096/W) = 4096, always). `resize()` and
+   `sizeCanvases` now skip the backing write when dimensions are
+   unchanged; a resize re-anchor costs a rebake, not a reallocation.
+
+The capture also cleared several suspects: the round-2 fixes verified
+on-device (`dirty:content` 4 in 53 s, `save:bodyReused` matching
+camera saves, no mid-pan saves), `render:frame` averaged <1 ms,
+`ui:shelf` / `ui:selToolbar` / `shim:diff` / `state:pinComp` all noise.
+Several large `other` stalls (240-790 ms) clustered around the
+re-anchor stalls — consistent with WebKit-side IOSurface/commit work
+from the reallocation churn; expected to shrink with fix 2, and the
+next capture will confirm. Known tradeoff: keeping worldSize across
+zoom drift means effective DPR can sit below native after zooming out
+and back in (mildly softer ink until a ≥1.4× shrink triggers); if that
+reads badly on-device, the follow-up is an idle-time re-sharpen —
+adopt the wanted size during a quiet moment instead of mid-pan.
+
 **How to use it:**
 1. Open the laggy notebook — a dark `PERF …fps stalls N` pill sits in
    the top-left of the canvas (drag its header to move it).

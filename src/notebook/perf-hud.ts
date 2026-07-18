@@ -263,7 +263,8 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
   const root = document.createElement("div");
   root.className = "nb-perf-hud";
   Object.assign(root.style, {
-    position: "absolute", left: "8px", top: "8px", zIndex: "10000",
+    // top clears the reserved iOS status-bar band.
+    position: "absolute", left: "8px", top: "38px", zIndex: "10000",
     background: "rgba(12,12,16,0.88)", color: "#d6f5d6",
     font: "10px/1.45 ui-monospace, Menlo, monospace",
     borderRadius: "8px", boxShadow: "0 2px 10px rgba(0,0,0,0.35)",

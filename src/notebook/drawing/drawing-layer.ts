@@ -427,8 +427,14 @@ export function createDrawingLayer({
     const w = anchor.worldSize;
     const px = Math.round(w * dpr);
     for (const c of [doneCanvas, previewCanvas, liveCanvas]) {
-      c.width = px;
-      c.height = px;
+      // Skip the backing-store write when the pixel size is unchanged
+      // (mirrors engine delta #27) — with DPR capped against
+      // MAX_BACKING_PIXELS, `px` is constant across worldSize changes
+      // on high-DPR devices, and re-assigning the same dimensions
+      // still clears + can reallocate the backing (IOSurface churn,
+      // the dominant cost of a resize re-anchor on iPad).
+      if (c.width !== px) c.width = px;
+      if (c.height !== px) c.height = px;
       c.style.left = "0px";
       c.style.top = "0px";
       c.style.width = w + "px";
