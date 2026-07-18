@@ -51,7 +51,17 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingToolbarMinimized" | "drawingToolbarOffset" | "drawingToolbarPosition"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
   | "strokeEngineDragging" | "reorderDragAreaId" | "reorderMode"
-  | "reorderHoverTargetId" | "reorderPreview" | "canvasRotationEnabled";
+  | "reorderHoverTargetId" | "reorderPreview" | "canvasRotationEnabled"
+  // Repaint-only keys. Every notify key schedules a render (the render
+  // loop subscribes to all change events), but "shapes" additionally
+  // means "content changed" downstream: notes-canvas forwards it as a
+  // `notebook-change` event, which marks the notebook dirty for
+  // autosave (a multi-MB serialize on stroke-heavy notebooks), emits
+  // pane syncs, and runs the drawing engine's diff. Transient UI state
+  // — a hover highlight, a gesture promotion to two-finger pan — must
+  // repaint through these keys instead so pan-only sessions never
+  // trigger content saves.
+  | "flowHoveredEdgeId" | "interaction";
 
 export type ReorderMode = "swap" | "ripple";
 
@@ -1162,17 +1172,19 @@ export class DrawingState extends EventTarget {
           this.flowchart.removeEdge(hitId);
           this.flowHoveredEdgeId = null;
           this.recordHistory();
+          // Real content change — an edge was deleted.
           this.notify("shapes");
         } else {
           this.flowHoveredEdgeId = hitId;
-          this.notify("shapes");
+          // Hover reveal only — repaint without marking content dirty.
+          this.notify("flowHoveredEdgeId");
         }
         return;
       }
       if (this.flowHoveredEdgeId) {
         // Tap landed elsewhere — collapse the revealed X back to a dot.
         this.flowHoveredEdgeId = null;
-        this.notify("shapes");
+        this.notify("flowHoveredEdgeId");
       }
     }
 
@@ -1665,7 +1677,10 @@ export class DrawingState extends EventTarget {
       const newId = edge ? edge.id : null;
       if (newId !== this.flowHoveredEdgeId) {
         this.flowHoveredEdgeId = newId;
-        this.notify("shapes"); // triggers re-render of the badge
+        // Repaint-only: the badge is hover chrome, not content. Keying
+        // this "shapes" marked the notebook dirty (and triggered a full
+        // autosave serialize) every time the cursor crossed an edge.
+        this.notify("flowHoveredEdgeId");
       }
     }
   }
@@ -2067,7 +2082,19 @@ export class DrawingState extends EventTarget {
       this._panPointerId = null;
       changed = true;
     }
-    if (changed) this.notify("shapes");
+    // Repaint-only notify. Every branch above either reset transient
+    // gesture state or already fired its own precise key (selectedIds,
+    // selectionBox, creatingDragArea) — no shape content changed here.
+    // This used to be notify("shapes"), which meant EVERY two-finger
+    // pan flick (whose first finger arms a marquee / drag / resize
+    // before the second finger promotes the gesture) marked the
+    // notebook content-dirty: the autosave then ran a full multi-MB
+    // envelope serialize at the next pause — the felt "pan freezes for
+    // a second" hitch on stroke-heavy notebooks. Note a drag that got
+    // far enough to actually move shapes (>1 px before the second
+    // finger landed) has already fired real "shapes" notifies from its
+    // move handler; those are genuine content changes and still save.
+    if (changed) this.notify("interaction");
   }
 
   handleWheel(e: WheelEvent) {

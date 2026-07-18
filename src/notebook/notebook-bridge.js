@@ -23,6 +23,14 @@ let _notebookBackground = null;
  *  a no-op rather than a destructive `loadShapes` that re-IDs every
  *  stroke and clobbers the engine's selection / undo state. */
 let _lastSavedContent = null;
+/** Last envelope BODY fragment (shapes / layers / flowEdges / bookmarks
+ *  via `encodeNotebookBody`) this mount encoded. Valid as long as no
+ *  content change has been flagged since — camera-only saves reuse it,
+ *  so persisting a pan position costs an envelope reassembly instead of
+ *  re-serializing every shape (a multi-MB main-thread JSON.stringify on
+ *  stroke-heavy notebooks — the felt stall at pan pauses). Invalidated
+ *  on mount / unmount / sync reload; content-dirty saves re-encode. */
+let _lastEncodedBody = null;
 
 /** Save gating (quiet-moment deferral, snapshot throttle, adaptive
  *  backpressure) lives in NotebookSaveGate — see its module docs.
@@ -122,6 +130,7 @@ async function _mountNotebookImpl(container, fileId, state) {
   notebookDirty = false;
   cameraDirty = false;
   _lastSavedContent = null;
+  _lastEncodedBody = null;
   _notebookBackground = null;
   // Pessimistic until a load succeeds: -1 means "unknown / failed", and
   // the empty-save guard in saveNotebook refuses to overwrite the file
@@ -397,20 +406,28 @@ async function _saveNotebookInner(opts) {
   const wasContentDirty = notebookDirty;
   notebookDirty = false;
   cameraDirty = false;
-  const { encodeNotebookContent } = await import("./notebook-content.ts");
+  const { encodeNotebookBody, assembleNotebookContent } = await import("./notebook-content.ts");
   if (mountSwapped()) return null;
-  const content = encodeNotebookContent({
-    shapes: canvas.getShapes(),
-    layers: canvas.state.layers,
-    flowEdges: canvas.state.flowchart.serialize(),
-    bookmarks: canvas.state.bookmarks,
-    camera: canvas.state.camera,
-    background: {
-      pattern: canvas.state.backgroundPattern,
-      spacing: canvas.state.gridSpacing,
-      opacity: canvas.state.gridOpacity,
-      rotationEnabled: canvas.state.canvasRotationEnabled,
-    },
+  // Camera-only saves reuse the cached body — re-serializing every
+  // shape just to persist a pan position was a felt main-thread stall
+  // at pan pauses on stroke-heavy notebooks. Content-dirty saves (or a
+  // cold cache) encode fresh; nothing below this point awaits between
+  // the mountSwapped check and the cache write, so the capture is safe.
+  let body = !wasContentDirty && _lastEncodedBody != null ? _lastEncodedBody : null;
+  if (body == null) {
+    body = encodeNotebookBody({
+      shapes: canvas.getShapes(),
+      layers: canvas.state.layers,
+      flowEdges: canvas.state.flowchart.serialize(),
+      bookmarks: canvas.state.bookmarks,
+    });
+    _lastEncodedBody = body;
+  }
+  const content = assembleNotebookContent(body, canvas.state.camera, {
+    pattern: canvas.state.backgroundPattern,
+    spacing: canvas.state.gridSpacing,
+    opacity: canvas.state.gridOpacity,
+    rotationEnabled: canvas.state.canvasRotationEnabled,
   });
   try {
     const { parseLocalSentinel } = await import("../sync/local-sync.js");
@@ -510,6 +527,7 @@ async function _unmountNotebookImpl() {
   currentNotebookFileId = null;
   notebookDirty = false;
   cameraDirty = false;
+  _lastEncodedBody = null;
   _notebookBackground = null;
   return saveResult;
 }
@@ -575,6 +593,10 @@ export async function reloadNotebookShapes(jsonContent) {
         applyNotebookBackground(_notebookBackground);
       }
       _lastSavedContent = jsonContent;
+      // The canvas now holds externally-produced content the cached
+      // body fragment doesn't match — drop it so the next camera-only
+      // save re-encodes instead of persisting the pre-sync shapes.
+      _lastEncodedBody = null;
       notebookDirty = false;
       cameraDirty = false;
     }

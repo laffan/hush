@@ -25,8 +25,17 @@ const NOTEBOOK_SNAPSHOT_MIN_MS = 45_000;
  *      writing, not just lifted the pen between letters. This is what
  *      makes saves land between *sections* of writing instead of
  *      between strokes, where even a small hitch reads as a skip.
- *  A starvation guard saves anyway after 15 s of continuous deferral so
- *  an endless doodle can't block persistence forever. */
+ *  A starvation guard overrides the WRITING-quiet window after 15 s of
+ *  continuous deferral so an endless writing session can't block
+ *  persistence forever — but it never fires while a stroke is in
+ *  flight (the save's main-thread cost drops pointer samples, read as
+ *  straight-line gaps in the stroke) or while the camera is moving
+ *  (the full-envelope serialize is the felt "pan freezes for a
+ *  second" hitch on stroke-heavy notebooks). Writing sessions give
+ *  the override its window at every pen-up gap; a marathon pan just
+ *  waits for the first ≥400 ms pause, which flick-style panning
+ *  produces constantly — and a pan-only session has no content to
+ *  lose anyway. */
 const SAVE_QUIET_PAN_MS = 400;
 const SAVE_QUIET_CONTENT_MS = 1500;
 const SAVE_DEFER_MAX_MS = 15_000;
@@ -80,7 +89,11 @@ export class NotebookSaveGate {
       return false;
     }
     if (!this._deferredSince) this._deferredSince = now;
-    if (now - this._deferredSince > SAVE_DEFER_MAX_MS) {
+    // Starvation override: only the writing-quiet window may be
+    // overridden. A save mid-stroke or mid-pan is exactly the stall
+    // the gate exists to prevent, so those two conditions always
+    // defer — see the constants block for why nothing is lost.
+    if (!strokeActive && !panActive && now - this._deferredSince > SAVE_DEFER_MAX_MS) {
       this._deferredSince = 0;
       return false;
     }

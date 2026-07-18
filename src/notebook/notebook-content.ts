@@ -62,19 +62,52 @@ export interface NotebookSnapshotInput {
  *  halfSize, well below brush noise — and the byte savings on dense
  *  Pencil strokes are large (~50%). Serializing the quantized shape is
  *  the only place this lossy rounding happens; in-memory points keep
- *  their original precision while drawing. */
+ *  their original precision while drawing.
+ *
+ *  The encode is split in two so camera-only autosaves can skip the
+ *  expensive half: `encodeNotebookBody` serializes the content fields
+ *  (shapes / layers / flowEdges / bookmarks — the multi-MB part on a
+ *  stroke-heavy notebook, and a felt main-thread stall when it ran on
+ *  every pan-position save), and `assembleNotebookContent` wraps a body
+ *  — fresh or cached — with the envelope header and the cheap
+ *  per-save tail (camera + background). `encodeNotebookContent`
+ *  composes the two, so all three emit byte-identical envelopes for
+ *  identical input. */
 export function encodeNotebookContent(snapshot: NotebookSnapshotInput): string {
+  return assembleNotebookContent(
+    encodeNotebookBody(snapshot),
+    snapshot.camera,
+    snapshot.background,
+  );
+}
+
+/** Serialize the content fields to an envelope fragment (the object
+ *  body text without braces, e.g. `"shapes":[...],"layers":[...]`).
+ *  `undefined` fields are omitted, matching JSON.stringify. `shapes`
+ *  is required, so the fragment is never empty. */
+export function encodeNotebookBody(
+  snapshot: Pick<NotebookSnapshotInput, "shapes" | "layers" | "flowEdges" | "bookmarks">,
+): string {
   const payload = {
-    format: "hushnote",
-    version: 1,
     shapes: snapshot.shapes.map(quantizeShape),
     layers: snapshot.layers,
     flowEdges: snapshot.flowEdges,
     bookmarks: snapshot.bookmarks,
-    camera: snapshot.camera,
-    background: snapshot.background,
   };
-  return JSON.stringify(payload);
+  return JSON.stringify(payload).slice(1, -1);
+}
+
+/** Wrap a body fragment from `encodeNotebookBody` with the envelope
+ *  header and the per-save tail. The tail is tiny (camera + background)
+ *  so callers holding a cached body pay only this on a camera-only
+ *  save instead of re-serializing every shape. */
+export function assembleNotebookContent(
+  body: string,
+  camera?: Camera,
+  background?: NotebookBackground,
+): string {
+  const tail = JSON.stringify({ camera, background }).slice(1, -1);
+  return `{"format":"hushnote","version":1,${body}${tail ? "," + tail : ""}}`;
 }
 
 function parseBackground(v: unknown): NotebookBackground | undefined {

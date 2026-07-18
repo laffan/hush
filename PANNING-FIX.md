@@ -32,6 +32,60 @@
 > (4.1×), single-axis 6.4×. On-device feel (iPad) still needs a manual
 > pass — see the verification recipe below.
 
+## ROUND 2 — the stall that survived the engine fix
+
+On-device testing showed panning still hitching after the re-anchor
+blit landed. Re-diagnosis found the dominant *felt* stall was never
+(only) the rebake: it's the **autosave pipeline running a full-notebook
+JSON serialize on the main thread at pan boundaries** — ~11.6 MB /
+~250 ms on desktop V8 for a 5k-stroke notebook (measured; iPad JSC
+2-4× worse, embedded images additional). Three compounding causes,
+all fixed in this branch:
+
+1. **Every two-finger pan flick marked the notebook content-dirty.**
+   The first finger's pointerdown arms a marquee / drag / resize; the
+   second finger promotes to pan via `cancelActiveInteraction()`, whose
+   blanket `notify("shapes")` rode the `notebook-change` event into
+   `notebookDirty = true` + the "user is writing" quiet-timer. The
+   flowchart edge-hover badge did the same on plain cursor movement.
+   Both now repaint through dedicated transient keys (`"interaction"`,
+   `"flowHoveredEdgeId"` — see the StateKey union in `state.ts`) that
+   the bridge / sync-shim / pane-sync ignore. Pan-only sessions no
+   longer trigger content saves (or burn version snapshots).
+2. **The 15 s starvation guard fired mid-pan.** `NotebookSaveGate.
+   shouldDefer` now lets the guard override only the content-quiet
+   window — never while a stroke is in flight or the camera moved in
+   the last 400 ms. Writing sessions still persist (pen-up gaps give
+   the override its window); a marathon pan saves at its first ≥400 ms
+   pause.
+3. **Camera-only saves re-serialized every shape.** `encodeNotebook-
+   Content` is now split into `encodeNotebookBody` (shapes / layers /
+   flowEdges / bookmarks) + `assembleNotebookContent` (header + camera
+   + background), byte-identical composition verified against the old
+   encoder. The bridge caches the body fragment and reuses it while no
+   content change is flagged: measured 231 ms full encode → 0.09 ms
+   reassembly at 5k strokes. Cache invalidated on mount / unmount /
+   sync reload; content-dirty saves re-encode.
+
+Still open (known, deliberately not in this round):
+- **Text tool eats two-finger pan** ("fix 2"): `handlePointerDown`
+  opens the inline editor on pointerDOWN, so the first finger of a pan
+  spawns an editor (iPad keyboard pops; the textarea swallows the
+  second finger's touches) and the next gesture is consumed by
+  `endEditingText`. Fix: create/edit on pointerUP-tap, suppressed when
+  the gesture went multi-touch.
+- A pan whose first finger lands ON a shape still nudges it >1 px
+  before promotion (the drag's per-move mutations are real "shapes"
+  notifies) — both a subtle position drift and a residual dirty-mark.
+  Restoring pre-gesture positions in `cancelActiveInteraction` needs
+  care around the engine preview pipeline.
+- Local Folder notebooks still pack a JSZip + `Array.from(bytes)` on
+  the main thread per save; content-dirty saves still stringify on the
+  main thread (worker offload is the long-term fix).
+- Desktop trackpad has no wheel-pan at all (`handleWheel` zooms only);
+  space-drag is the only mouse-free pan. Wheel-pan (plain scroll pans,
+  ctrl/pinch zooms) is an easy follow-up if desired.
+
 Handoff for the next session. Supersedes `PANNING-JUMP-FIX.md` (kept for
 history): this doc folds in what the notebook-improvements session
 (branch `claude/notebook-improvements-cr80bp`) fixed, measured, and
