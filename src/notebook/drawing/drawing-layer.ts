@@ -40,21 +40,15 @@ import type { AnchorState } from "./re-anchor";
 export type { DrawingLayer, SelectionStyleEntry, SelectionStylePatch };
 
 
-/** Per-canvas memory cap. The re-anchor controller (`re-anchor.ts`)
- *  picks worldSize relative to the camera; DPR follows from this cap.
- *
- *  ROUND-4C EXPERIMENT (see PANNING-FIX.md): halved from 4096×4096
- *  (16.8 MP) to 2896×2896 (8.4 MP). On-device probing measured every
- *  full-surface canvas op costing ~240 ms at commit on iPad-class
- *  WebKit (~280 MB/s — CPU-side raster/transfer), making each
- *  re-anchor a ~470 ms felt stall. The cost is linear in surface
- *  pixels, so this should halve the stall — and if the GPU demotion
- *  is a total-canvas-memory budget, halving may flip Canvas2D back
- *  onto the GPU entirely (the HUD's reanchor:*FlushGap rows answer
- *  both). KNOWN COST: effective ink DPR drops (~1.72 → ~1.21 at a
- *  2400 px backing; 2.0 → 1.41 at the 2048 minimum) — visibly softer
- *  ink at 100% zoom on Retina. Revert to 4096 × 4096 if the tiled
- *  backing lands or the experiment disappoints. */
+/** Per-canvas memory cap; DPR degrades against it as worldSize grows.
+ *  ROUND-4C EXPERIMENT (PANNING-FIX.md): halved from 4096² — on-device
+ *  probing showed ~240 ms of commit-side cost per full-surface op on
+ *  the 16.8 MP canvas (~280 MB/s, CPU-bound), so halving the pixels
+ *  should halve the re-anchor stall — and may flip Canvas2D back onto
+ *  the GPU if the demotion is a total-memory budget (the HUD's
+ *  reanchor:*FlushGap rows answer both). Cost while active: softer ink
+ *  (~1.72 → ~1.21 effective DPR at a 2400 px backing). Revert to
+ *  4096 × 4096 when the tiled backing lands or if this disappoints. */
 const MAX_BACKING_PIXELS = 2896 * 2896;
 const MAX_DPR = 2;
 
@@ -438,12 +432,9 @@ export function createDrawingLayer({
     const w = anchor.worldSize;
     const px = Math.round(w * dpr);
     for (const c of [doneCanvas, previewCanvas, liveCanvas]) {
-      // Skip the backing-store write when the pixel size is unchanged
-      // (mirrors engine delta #27) — with DPR capped against
-      // MAX_BACKING_PIXELS, `px` is constant across worldSize changes
-      // on high-DPR devices, and re-assigning the same dimensions
-      // still clears + can reallocate the backing (IOSurface churn,
-      // the dominant cost of a resize re-anchor on iPad).
+      // Mirror engine delta #27: skip the backing write when unchanged —
+      // re-assigning identical dimensions still clears + can reallocate
+      // (the IOSurface churn that dominated resize re-anchors on iPad).
       if (c.width !== px) c.width = px;
       if (c.height !== px) c.height = px;
       c.style.left = "0px";
