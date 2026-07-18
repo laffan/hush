@@ -178,7 +178,31 @@ Verdict: with a monolithic 4096² canvas on this hardware, every
 re-anchor inherently costs ~2 × 240 ms of commit work. Architecture
 change required.
 
-## ROUND 4C — backing-size experiment (ACTIVE)
+## ROUND 4C — backing-size experiment (RUN + REVERTED)
+
+**Outcome (fifth capture, 2896² backing):** mixed, and it reshapes the
+tile plan. Re-anchor stalls DID halve (~470 → ~245 ms per stall; the
+≥500 ms frame bucket emptied entirely, worst frame 1785 → 488 ms) —
+linear in pixels as modeled. But the probe's full-surface self-copy
+did NOT scale: ~243 ms on 8.4 MP vs ~234 ms on 16.8 MP — **full-
+surface ops carry a ~240 ms floor independent of surface size**, while
+small dirty regions (the strip rebakes) flush cheap. The felt pan
+didn't meaningfully improve and the ink softening wasn't worth it →
+cap reverted to 4096².
+
+**Implication for the tile plan:** if tile-sized canvases inherit
+anything like that per-surface floor, baking a tile would cost ~240 ms
+and tiling would make panning WORSE. The floor must be measured at
+tile sizes before the rewrite is green-lit — that's the HUD v4 `tiles`
+button: it mounts composited test canvases at 512 / 1024 / 2048 CSS px,
+fills their full surface, and records `tileProbe:<size>:opGap` rows.
+Cheap floors (< ~40 ms) green-light tiles; a flat ~240 ms floor kills
+them and redirects the effort (likely toward a WebGL ink presenter or
+keeping the surface untouched during pans, Option E). The `probe`
+button also gained a clipped 1×1 `probe:smallDirtyGap` control row for
+the small-dirty-rect cost on the big surface.
+
+## ROUND 4C ORIGINAL NOTES (for reference)
 
 `MAX_BACKING_PIXELS` halved 4096² → 2896² (see the constant's comment
 in `drawing-layer.ts`). Two things the next HUD capture answers:

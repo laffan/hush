@@ -40,16 +40,14 @@ import type { AnchorState } from "./re-anchor";
 export type { DrawingLayer, SelectionStyleEntry, SelectionStylePatch };
 
 
-/** Per-canvas memory cap; DPR degrades against it as worldSize grows.
- *  ROUND-4C EXPERIMENT (PANNING-FIX.md): halved from 4096² — on-device
- *  probing showed ~240 ms of commit-side cost per full-surface op on
- *  the 16.8 MP canvas (~280 MB/s, CPU-bound), so halving the pixels
- *  should halve the re-anchor stall — and may flip Canvas2D back onto
- *  the GPU if the demotion is a total-memory budget (the HUD's
- *  reanchor:*FlushGap rows answer both). Cost while active: softer ink
- *  (~1.72 → ~1.21 effective DPR at a 2400 px backing). Revert to
- *  4096 × 4096 when the tiled backing lands or if this disappoints. */
-const MAX_BACKING_PIXELS = 2896 * 2896;
+/** Per-canvas memory cap. 4096×4096 = 16 MP. iPad-safe across the
+ *  range; beyond it the backing DPR degrades rather than the canvas
+ *  blowing up its context. The re-anchor controller (`re-anchor.ts`)
+ *  picks worldSize relative to the camera; DPR follows from this cap.
+ *  (A round-4C experiment halved this to 2896²: re-anchor stalls
+ *  halved with the pixels, but full-surface ops kept a ~240 ms floor
+ *  and the felt pan didn't improve — reverted; see PANNING-FIX.md.) */
+const MAX_BACKING_PIXELS = 4096 * 4096;
 const MAX_DPR = 2;
 
 // Brush-runtime helpers (slot colour resolution, applySlot, renderSwatch,

@@ -256,7 +256,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     const st = shapeStats();
     const done = container.querySelector<HTMLCanvasElement>(".drawing-done");
     const lines: string[] = [];
-    lines.push(`== Notebook Perf Report (hud v3) ==`);
+    lines.push(`== Notebook Perf Report (hud v4) ==`);
     lines.push(`uptime ${f1((performance.now() - perf.startedAt) / 1000)}s · dpr ${window.devicePixelRatio} · zoom ${state.camera.zoom.toFixed(3)} · sel ${state.selectedIds.size}`);
     lines.push(`shapes ${st.total} (draw ${st.draw} · ${st.pts} pts, text ${st.text}, img ${st.img}, other ${st.other})`);
     if (done) lines.push(`backing ${done.width}×${done.height}px (css ${done.style.width})`);
@@ -392,6 +392,26 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
       const f2t = await nextFrame();
       perf.asyncSpan("probe:nextFrameGap", f2t - f1t);
     }
+    // Small-dirty-region control: replace ONE corner pixel with itself
+    // (clip + 'copy' + 1×1 source/dest = exactly non-destructive; the
+    // clip is load-bearing — unclipped 'copy' clears the whole surface
+    // outside the drawn rect). Shows what a tiny dirty rect on the big
+    // surface costs next to a full-surface op.
+    {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.beginPath();
+      ctx.rect(0, 0, 1, 1);
+      ctx.clip();
+      ctx.globalCompositeOperation = "copy";
+      const sT0 = performance.now();
+      ctx.drawImage(done, 0, 0, 1, 1, 0, 0, 1, 1);
+      ctx.restore();
+      const sEnd = performance.now();
+      const fs = await nextFrame();
+      perf.asyncSpan("probe:smallDirtyJs", sEnd - sT0);
+      perf.asyncSpan("probe:smallDirtyGap", fs - sEnd);
+    }
     // Allocation probe: a fresh same-size surface + first draw.
     const t0 = performance.now();
     const c = document.createElement("canvas");
@@ -401,6 +421,46 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     perf.asyncSpan("probe:allocFirstDraw", performance.now() - t0);
     probeBtn.textContent = "probe ✓";
     setTimeout(() => { probeBtn.textContent = "probe"; }, 1500);
+  });
+
+  // Tile-cost probe. Round-4C showed full-surface ops on the big canvas
+  // carry a ~240 ms commit floor that did NOT scale down with pixel
+  // count, while small dirty regions flush cheap — so whether a TILED
+  // backing (the round-A plan) is viable hangs on what a full-surface
+  // op costs on tile-sized COMPOSITED canvases. This mounts a test
+  // canvas per candidate size, fills its full surface twice, and
+  // records op→frame gaps as tileProbe:<css px> rows. Cheap floors
+  // (<~40 ms) green-light tiles; a flat ~240 ms floor kills them.
+  const tileBtn = mkBtn("tiles", async () => {
+    tileBtn.textContent = "…";
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    for (const cssSize of [512, 1024, 2048]) {
+      const c = document.createElement("canvas");
+      c.width = Math.round(cssSize * dpr);
+      c.height = Math.round(cssSize * dpr);
+      Object.assign(c.style, {
+        position: "absolute", left: "0px", top: "0px",
+        width: `${cssSize}px`, height: `${cssSize}px`,
+        opacity: "0.02", pointerEvents: "none", zIndex: "1",
+      } as Partial<CSSStyleDeclaration>);
+      container.appendChild(c);
+      const ctx = c.getContext("2d")!;
+      await nextFrame(); await nextFrame(); // let attach + first commit settle
+      for (let i = 0; i < 2; i++) {
+        const t0 = performance.now();
+        ctx.fillStyle = i ? "#182838" : "#283848";
+        ctx.fillRect(0, 0, c.width, c.height);
+        const opEnd = performance.now();
+        const f1t = await nextFrame();
+        perf.asyncSpan(`tileProbe:${cssSize}:opGap`, f1t - opEnd);
+        perf.asyncSpan(`tileProbe:${cssSize}:js`, opEnd - t0);
+        await nextFrame();
+      }
+      c.remove();
+      await nextFrame();
+    }
+    tileBtn.textContent = "tiles ✓";
+    setTimeout(() => { tileBtn.textContent = "tiles"; }, 1500);
   });
 
   // A/B toggle for the drawing layer's SVG overlay — if pan/pinch
@@ -415,12 +475,14 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     perf.count(hidden ? "probe:svgShown" : "probe:svgHidden");
   });
 
+  header.style.flexWrap = "wrap";
   header.appendChild(live);
   header.appendChild(toggleBtn);
   header.appendChild(copyBtn);
   header.appendChild(resetBtn);
   header.appendChild(probeBtn);
   header.appendChild(svgBtn);
+  header.appendChild(tileBtn);
   root.appendChild(header);
   root.appendChild(body);
   container.appendChild(root);
