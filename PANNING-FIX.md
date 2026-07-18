@@ -108,6 +108,43 @@ and back in (mildly softer ink until a ≥1.4× shrink triggers); if that
 reads badly on-device, the follow-up is an idle-time re-sharpen —
 adopt the wanted size during a quiet moment instead of mid-pan.
 
+**Second capture (post-hysteresis):** the round-3 fixes verified
+on-device — `reanchor:blit 8 / resize 1`, reanchor JS time 3.7 s →
+0.26 s, PAN fps 31 → 50 — but the big stalls moved wholesale into
+`other`: 1785 ms and 1191 ms with every instrumented section at ~zero,
+plus repeating ~245-280 ms stalls right after blit re-anchors. That
+pattern is the signature of WebKit paying for canvas rasterization at
+COMMIT time (the JS just records display-list commands; a
+software-rasterized — likely GPU-demoted — canvas plays them back on
+the main thread after our spans close). Suspect: five 4096×4096
+surfaces ≈ 335 MB of canvas backing. Round-3b changes on this theory:
+
+- `shiftDoneCanvas` now prefers a single self-`drawImage` under the
+  `'copy'` composite (source is snapshotted per spec; `'copy'` replaces
+  the whole surface so trailing edges clear in the same op) — ONE
+  full-surface raster instead of the scratch route's two, and the
+  fourth world-sized surface is no longer forced into existence on
+  first pan. `'copy'` semantics are verified once at runtime on a tiny
+  canvas; misbehaving engines fall back to the scratch route. Chromium
+  harness re-run pixel-identical via the new path.
+- **HUD v2**: stall lines now carry camera annotations
+  (`z… Δz… pan…px reA←…s`) so "flush after a re-anchor" vs "stall
+  during a pinch" vs "pure pan" is readable from the paste-back; a
+  `probe` button measures an identity full-surface self-copy on the
+  real done canvas — JS ms vs the post-op frame gap (`probe:*` rows in
+  the awaited table; near-zero JS + a huge post-op gap = software
+  playback at commit, proving the theory); an `svg` button toggles the
+  drawing layer's world-sized SVG overlay for an A/B pan test (stalls
+  vanishing with it hidden would implicate compositor re-raster of
+  that layer instead — pen input needs it back on afterwards).
+
+Next capture wants: a normal 20-30 s pan (with a pinch or two), then
+2-3 `probe` presses while idle, then — if stalls persist — the same
+pan with `svg✕`. If the probe confirms software playback, the next
+lever is cutting canvas memory for real: smaller `MAX_BACKING_PIXELS`
+(sharpness tradeoff), viewport-sized live/preview canvases, or an
+idle-time re-anchor cadence that tolerates a smaller backing.
+
 **How to use it:**
 1. Open the laggy notebook — a dark `PERF …fps stalls N` pill sits in
    the top-left of the canvas (drag its header to move it).

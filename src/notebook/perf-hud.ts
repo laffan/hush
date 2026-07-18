@@ -22,7 +22,15 @@
 
 interface SectionStat { count: number; totalMs: number; maxMs: number; lastMs: number }
 interface Span { name: string; t0: number; t1: number }
-interface Stall { atMs: number; gapMs: number; parts: [string, number][]; otherMs: number }
+interface Stall {
+  atMs: number; gapMs: number; parts: [string, number][]; otherMs: number;
+  /** Camera annotations added by the HUD's frame monitor: zoom at the
+   *  stall, zoom/pan change across the gap, and how long before the
+   *  stall the last re-anchor finished (undefined = none seen). Lets a
+   *  paste-back report distinguish "stall during pure pan" from "stall
+   *  during pinch" from "flush right after a re-anchor". */
+  zoom?: number; dz?: number; panPx?: number; sinceReanchorMs?: number;
+}
 
 const SPAN_RING_MAX = 500;
 const STALL_MS = 50;
@@ -162,6 +170,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
   container.addEventListener("pointermove", onInput, { passive: true });
   container.addEventListener("touchmove", onInput, { passive: true });
 
+  let prevCam = { x: state.camera.x, y: state.camera.y, zoom: state.camera.zoom };
   function frame(now: number) {
     rafId = requestAnimationFrame(frame);
     if (lastFrameAt) {
@@ -175,10 +184,24 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
       if (gap > 1000) gapHisto.g1000++;
       if (gap > bucket.worstGap) bucket.worstGap = gap;
       if (gap > STALL_MS) {
-        perf.attribute(lastFrameAt, now);
+        const stall = perf.attribute(lastFrameAt, now);
+        // Annotate with camera motion across the gap + re-anchor
+        // proximity so "flush after a re-anchor" and "stall during a
+        // pinch" are distinguishable in the paste-back report.
+        const cam = state.camera;
+        stall.zoom = cam.zoom;
+        stall.dz = cam.zoom - prevCam.zoom;
+        stall.panPx = Math.hypot(cam.x - prevCam.x, cam.y - prevCam.y);
+        for (let i = perf.spanRing.length - 1; i >= 0; i--) {
+          if (perf.spanRing[i].name === "reanchor") {
+            stall.sinceReanchorMs = now - perf.spanRing[i].t1;
+            break;
+          }
+        }
         flashUntil = now + 600;
       }
     }
+    prevCam = { x: state.camera.x, y: state.camera.y, zoom: state.camera.zoom };
     lastFrameAt = now;
     bucket.frames++;
     if (!bucketStarted) bucketStarted = now;
@@ -233,7 +256,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     const st = shapeStats();
     const done = container.querySelector<HTMLCanvasElement>(".drawing-done");
     const lines: string[] = [];
-    lines.push(`== Notebook Perf Report (hud v1) ==`);
+    lines.push(`== Notebook Perf Report (hud v2) ==`);
     lines.push(`uptime ${f1((performance.now() - perf.startedAt) / 1000)}s · dpr ${window.devicePixelRatio} · zoom ${state.camera.zoom.toFixed(3)} · sel ${state.selectedIds.size}`);
     lines.push(`shapes ${st.total} (draw ${st.draw} · ${st.pts} pts, text ${st.text}, img ${st.img}, other ${st.other})`);
     if (done) lines.push(`backing ${done.width}×${done.height}px (css ${done.style.width})`);
@@ -253,7 +276,11 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     if (!perf.stalls.length) lines.push("  (none)");
     for (const s of perf.stalls) {
       const parts = s.parts.slice(0, 4).map(([n, ms]) => `${n} ${f1(ms)}`).join(", ");
-      lines.push(`  t+${f1(s.atMs / 1000)}s ${f1(s.gapMs)}ms → ${parts}${parts ? ", " : ""}other ${f1(s.otherMs)}`);
+      const cam = s.zoom !== undefined
+        ? ` z${s.zoom.toFixed(2)}${s.dz ? ` Δz${s.dz > 0 ? "+" : ""}${s.dz.toFixed(3)}` : ""} pan${Math.round(s.panPx || 0)}` +
+          (s.sinceReanchorMs !== undefined && s.sinceReanchorMs < 3000 ? ` reA←${f1(s.sinceReanchorMs / 1000)}s` : "")
+        : "";
+      lines.push(`  t+${f1(s.atMs / 1000)}s ${f1(s.gapMs)}ms${cam} → ${parts}${parts ? ", " : ""}other ${f1(s.otherMs)}`);
     }
     lines.push(`ua ${navigator.userAgent}`);
     return lines.join("\n");
@@ -329,10 +356,65 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     for (const k of Object.keys(gapHisto)) (gapHisto as Record<string, number>)[k] = 0;
   });
 
+  // Canvas probe: measures what a full-surface canvas op costs on THIS
+  // device — both the JS side and, crucially, the frame gap right
+  // after it (WebKit plays canvas display lists back at commit time,
+  // so a software-rasterized canvas shows near-zero JS cost and a huge
+  // post-op frame gap). The op is an identity self-copy ('copy'
+  // composite, zero offset): every pixel is replaced by itself, so
+  // it's non-destructive regardless of how the engine implements it.
+  // Results land in the "awaited" table as probe:* rows; run it 2-3
+  // times while the canvas is idle.
+  const nextFrame = () => new Promise<number>((r) => requestAnimationFrame(r));
+  const probeBtn = mkBtn("probe", async () => {
+    const done = container.querySelector<HTMLCanvasElement>(".drawing-done");
+    if (!done || !done.width) { probeBtn.textContent = "no canvas"; return; }
+    probeBtn.textContent = "…";
+    const ctx = done.getContext("2d")!;
+    await nextFrame(); await nextFrame();
+    for (let i = 0; i < 2; i++) {
+      const t0 = performance.now();
+      perf.begin("probe:selfCopy");
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = "copy";
+      ctx.drawImage(done, 0, 0);
+      ctx.restore();
+      perf.end("probe:selfCopy");
+      perf.asyncSpan("probe:selfCopyJs", performance.now() - t0);
+      const f1t = await nextFrame();
+      const f2t = await nextFrame();
+      perf.asyncSpan("probe:postOpFrameGap", f2t - f1t);
+    }
+    // Allocation probe: a fresh same-size surface + first draw.
+    const t0 = performance.now();
+    const c = document.createElement("canvas");
+    c.width = done.width;
+    c.height = done.height;
+    c.getContext("2d")!.fillRect(0, 0, 8, 8);
+    perf.asyncSpan("probe:allocFirstDraw", performance.now() - t0);
+    probeBtn.textContent = "probe ✓";
+    setTimeout(() => { probeBtn.textContent = "probe"; }, 1500);
+  });
+
+  // A/B toggle for the drawing layer's SVG overlay — if pan/pinch
+  // stalls vanish with the SVG hidden, the compositor is re-rastering
+  // its (world-sized) layer. Pen input needs it back on afterwards.
+  const svgBtn = mkBtn("svg", () => {
+    const svg = container.querySelector<SVGElement>(".notebook-drawing-wrapper svg");
+    if (!svg) return;
+    const hidden = svg.style.display === "none";
+    svg.style.display = hidden ? "" : "none";
+    svgBtn.textContent = hidden ? "svg" : "svg✕";
+    perf.count(hidden ? "probe:svgShown" : "probe:svgHidden");
+  });
+
   header.appendChild(live);
   header.appendChild(toggleBtn);
   header.appendChild(copyBtn);
   header.appendChild(resetBtn);
+  header.appendChild(probeBtn);
+  header.appendChild(svgBtn);
   root.appendChild(header);
   root.appendChild(body);
   container.appendChild(root);

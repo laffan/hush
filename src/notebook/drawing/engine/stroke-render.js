@@ -332,16 +332,50 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // CSS px. Used by the blit-forward re-anchor — on a same-size re-anchor
   // the old backing already holds almost everything the new one needs, so
   // the pixels are copied across and only the newly exposed edge strips
-  // get repainted. Routed through the shared scratch canvas rather than a
-  // self-drawImage: the spec defines self-blits (source snapshotted before
-  // painting) but historical WebKit vintages have misbehaved, and the
-  // scratch already exists for the highlighter flatten path. The caller
-  // guarantees dx·dpr / dy·dpr are integers so the copy is pixel-exact
-  // (a fractional device-pixel shift would resample — and, re-anchor
-  // after re-anchor, progressively blur — the baked ink).
+  // get repainted. Preferred path is a single self-drawImage under the
+  // 'copy' composite: the spec snapshots the source before painting, and
+  // 'copy' replaces the whole surface so the trailing edges clear in the
+  // same op — ONE full-surface raster instead of the two a scratch
+  // round-trip costs (which is what lands on the compositor flush as a
+  // frame stall on iPad, and forces a fourth world-sized surface into
+  // existence). 'copy' semantics are verified once at runtime on a tiny
+  // canvas; a misbehaving engine falls back to the scratch route. The
+  // caller guarantees dx·dpr / dy·dpr are integers so the copy is
+  // pixel-exact (a fractional device-pixel shift would resample — and,
+  // re-anchor after re-anchor, progressively blur — the baked ink).
+  let selfBlitOk = null;
+  function testSelfBlit() {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 4;
+      const x = c.getContext('2d');
+      x.fillStyle = '#f00';
+      x.fillRect(0, 0, 1, 1);
+      x.globalCompositeOperation = 'copy';
+      x.drawImage(c, 1, 0);
+      const moved = x.getImageData(1, 0, 1, 1).data;   // red must land at (1,0)
+      const vacated = x.getImageData(0, 0, 1, 1).data; // (0,0) must be cleared
+      return moved[0] === 255 && moved[3] === 255 && vacated[3] === 0;
+    } catch {
+      return false;
+    }
+  }
   function shiftDoneCanvas(dx, dy) {
     const t = doneCtx.getTransform();
     const dpr = t.a || 1;
+    const devX = Math.round(dx * dpr);
+    const devY = Math.round(dy * dpr);
+    if (selfBlitOk === null) selfBlitOk = testSelfBlit();
+    if (selfBlitOk) {
+      doneCtx.save();
+      doneCtx.setTransform(1, 0, 0, 1, 0, 0);
+      doneCtx.globalCompositeOperation = 'copy';
+      doneCtx.drawImage(doneCtx.canvas, devX, devY);
+      doneCtx.restore();
+      return;
+    }
+    // Fallback: scratch round-trip (two full-surface copies).
     const w = doneCtx.canvas.width;
     const h = doneCtx.canvas.height;
     const sCtx = ensureScratch(doneCtx);
@@ -353,7 +387,7 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     doneCtx.save();
     doneCtx.setTransform(1, 0, 0, 1, 0, 0);
     doneCtx.clearRect(0, 0, w, h);
-    doneCtx.drawImage(scratchCanvas, Math.round(dx * dpr), Math.round(dy * dpr));
+    doneCtx.drawImage(scratchCanvas, devX, devY);
     doneCtx.restore();
   }
 
