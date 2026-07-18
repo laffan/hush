@@ -17,16 +17,16 @@
 import type { DrawingState } from "../state";
 import type { DrawingLayer } from "./drawing-layer";
 import type { DrawingSlot } from "../types";
+import { PEN_COLORS } from "../types";
 import { h } from "../ui/dom-helpers";
 import { createMiniPalette } from "./mini-palette";
 import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
 
-const SLOT_COUNT = 3;
-// Default color sentinels + explicit palette. "auto" resolves to the
+// Color sentinels + explicit palette (PEN_COLORS in types.ts — shared
+// with the mini-palette's secondary selector). "auto" resolves to the
 // current theme's foreground (text colour) at paint time; "heading"
 // resolves to theme.headingColor (the same colour markdown headings
 // pick up in the editor). Both retint live when the theme changes.
-const COLORS = ["auto", "heading", "#111111", "#e11d48", "#f59e0b", "#16a34a", "#2563eb", "#7c3aed", "#fde047"];
 const BRUSH_IDS = ["brush-1", "brush-2", "brush-3", "brush-4", "brush-5", "brush-highlighter"];
 const MODES: { id: "normal" | "highlighter"; label: string }[] = [
   { id: "normal", label: "Pen" },
@@ -116,7 +116,8 @@ export function createBrushSlots(
   // tap target hasn't shrunk.
   const slotBtns: HTMLButtonElement[] = [];
   const slotThumbs: HTMLCanvasElement[] = [];
-  for (let i = 0; i < SLOT_COUNT; i++) {
+  // One button per state slot (4 by default — pen ×3 + highlighter).
+  for (let i = 0; i < state.brushSlots.length; i++) {
     const thumb = document.createElement("canvas");
     thumb.width = 26; thumb.height = 26;
     Object.assign(thumb.style, {
@@ -230,7 +231,7 @@ export function createBrushSlots(
     style: { display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: "4px" },
   });
   const colorBtns: { value: string; btn: HTMLButtonElement }[] = [];
-  for (const value of COLORS) {
+  for (const value of PEN_COLORS) {
     const isAuto = value === "auto" || value === "heading";
     const btn = h("button", {
       title: value === "auto"

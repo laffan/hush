@@ -24,6 +24,13 @@ export interface Camera {
   x: number;
   y: number;
   zoom: number;
+  /** View rotation in radians. Applied after zoom, before the x/y
+   *  translation: screen = (x, y) + R(rotation) · (zoom · world).
+   *  Absent / 0 = axis-aligned. Only produced by the two-finger
+   *  rotate gesture, which is opt-in via the canvas settings menu;
+   *  pan / zoom code must carry the field through when rebuilding
+   *  the camera object. */
+  rotation?: number;
 }
 
 export interface CameraBookmark {
@@ -184,6 +191,12 @@ export const COLOR_PALETTE: Record<string, string> = {
 
 export const BACKGROUND_COLORS = ["reset", "auto", "heading", "black", "white", "red", "light-blue", "green"] as const;
 export const TEXT_COLORS = ["reset", "auto", "heading", "black", "white", "red", "light-blue", "green"] as const;
+
+/** Pen palette shared by the brush flyout's color row and the
+ *  mini-palette's secondary color selector. "auto" tracks the theme
+ *  foreground and "heading" the theme heading colour; the rest are
+ *  explicit hex values. */
+export const PEN_COLORS = ["auto", "heading", "#111111", "#e11d48", "#f59e0b", "#16a34a", "#2563eb", "#7c3aed", "#fde047"];
 
 // === Shelf ===
 export interface ShelfNode {

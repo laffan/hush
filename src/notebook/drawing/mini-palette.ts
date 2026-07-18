@@ -7,6 +7,17 @@
  * (number; press-and-drag changes the value). Hidden when the full
  * brush flyout is open or the user isn't on the brush sub-tool.
  *
+ * Two satellite popups hang off the strip (both siblings of the strip
+ * in the flyout group, since the strip itself clips via overflow:
+ * hidden):
+ *   - Tapping the color square that is ALREADY selected opens a
+ *     secondary color selector on the strip's canvas-facing side —
+ *     the full pen palette as 14 px circle swatches, same style as
+ *     the text color picker rows.
+ *   - While the size number is being dragged, a live preview stroke
+ *     floats beside the number (to its right) showing the brush at
+ *     its current true size; it disappears on release.
+ *
  * The strip's long axis runs parallel to the toolbar — horizontal
  * mode → 15 px tall, vertical mode → 15 px wide. The corner touching
  * the toolbar paints square; the canvas-side corners stay rounded so
@@ -17,6 +28,7 @@
 
 import type { DrawingState } from "../state";
 import type { DrawingLayer } from "./drawing-layer";
+import { PEN_COLORS } from "../types";
 import { h } from "../ui/dom-helpers";
 
 const MINI_COLORS: { value: string; label?: string }[] = [
@@ -88,18 +100,146 @@ export function createMiniPalette(opts: {
         e.stopPropagation();
         const idx = state.activeBrushSlot;
         const slot = state.brushSlots[idx];
-        if (slot.color === c.value) return;
-        if (drawingLayer.hasSelection()) {
-          const before = drawingLayer.snapshotSelectedStyle();
-          drawingLayer.applyStyleToSelection({ color: c.value });
-          drawingLayer.commitStyleHistory(before);
+        if (slot.color === c.value) {
+          // Re-tapping the selected square opens the secondary color
+          // selector (full pen palette, circle swatches) beneath it.
+          if (colorFlyoutOpen) closeColorFlyout(); else openColorFlyout(el);
+          return;
         }
-        state.updateBrushSlot(idx, { color: c.value });
+        closeColorFlyout();
+        applyColor(c.value);
       },
     }) as HTMLButtonElement;
     colorBtns.push({ value: c.value, el });
     root.appendChild(el);
   }
+
+  /** Shared color application — retroactively restyles a live
+   *  selection (one undo entry) and updates the active slot. */
+  function applyColor(value: string): void {
+    const idx = state.activeBrushSlot;
+    if (state.brushSlots[idx].color === value) return;
+    if (drawingLayer.hasSelection()) {
+      const before = drawingLayer.snapshotSelectedStyle();
+      drawingLayer.applyStyleToSelection({ color: value });
+      drawingLayer.commitStyleHistory(before);
+    }
+    state.updateBrushSlot(idx, { color: value });
+  }
+
+  // ---------- secondary color flyout ----------
+  // Circle swatches matching the text color picker's row style
+  // (14 px circles, A / H sentinels lettered in the theme colours).
+  // A sibling of the strip — the strip's overflow: hidden would clip
+  // anything nested inside it — mounted lazily into the flyout group.
+  let colorFlyoutOpen = false;
+  const colorFlyout = h("div", {
+    style: {
+      position: "absolute",
+      display: "none",
+      alignItems: "center",
+      gap: "6px",
+      padding: "8px 10px",
+      borderRadius: "8px",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+      zIndex: "200",
+      userSelect: "none",
+    },
+  });
+  colorFlyout.addEventListener("pointerdown", (e) => e.stopPropagation());
+  const flyoutSwatches: { value: string; el: HTMLButtonElement }[] = [];
+  for (const value of PEN_COLORS) {
+    const isSentinel = value === "auto" || value === "heading";
+    const sw = h("button", {
+      title: value === "auto"
+        ? "Default (text colour, follows theme)"
+        : value === "heading"
+          ? "Heading colour (follows theme)"
+          : value,
+      style: {
+        width: "14px", height: "14px", padding: "0",
+        borderRadius: "50%",
+        border: "1px solid #ccc",
+        cursor: "pointer",
+        flex: "0 0 14px",
+        ...(isSentinel
+          ? { display: "flex", alignItems: "center", justifyContent: "center", font: "700 8px/1 system-ui, sans-serif" }
+          : { background: value }),
+      },
+      text: value === "auto" ? "A" : value === "heading" ? "H" : undefined,
+      onClick: (e) => {
+        e.stopPropagation();
+        applyColor(value);
+        closeColorFlyout();
+      },
+    }) as HTMLButtonElement;
+    flyoutSwatches.push({ value, el: sw });
+    colorFlyout.appendChild(sw);
+  }
+
+  function syncColorFlyout(): void {
+    const theme = state.theme;
+    const slot = state.brushSlots[state.activeBrushSlot];
+    colorFlyout.style.background = theme.uiBackground;
+    colorFlyout.style.border = `1px solid ${theme.uiBorder}`;
+    for (const { value, el } of flyoutSwatches) {
+      if (value === "auto") {
+        el.style.background = theme.foreground;
+        el.style.color = theme.variant === "dark" ? "#000" : "#fff";
+      } else if (value === "heading") {
+        el.style.background = theme.headingColor;
+        el.style.color = theme.variant === "dark" ? "#000" : "#fff";
+      }
+      el.style.boxShadow = slot.color === value ? `0 0 0 2px ${theme.accent}` : "none";
+    }
+  }
+
+  function openColorFlyout(anchorSquare: HTMLElement): void {
+    const parent = root.parentElement;
+    if (!parent) return;
+    if (!colorFlyout.parentElement) parent.appendChild(colorFlyout);
+    colorFlyoutOpen = true;
+    colorFlyout.style.display = "flex";
+    syncColorFlyout();
+    // Sit on the strip's canvas-facing side, centered on the tapped
+    // square — "beneath it" relative to wherever the strip attaches.
+    const parentRect = parent.getBoundingClientRect();
+    const stripRect = root.getBoundingClientRect();
+    const sqRect = anchorSquare.getBoundingClientRect();
+    const side = attachSide(sqRect);
+    colorFlyout.style.left = "auto";
+    colorFlyout.style.right = "auto";
+    colorFlyout.style.top = "auto";
+    colorFlyout.style.bottom = "auto";
+    colorFlyout.style.transform = "none";
+    if (side === "below" || side === "above") {
+      colorFlyout.style.left = `${sqRect.left + sqRect.width / 2 - parentRect.left}px`;
+      colorFlyout.style.transform = "translateX(-50%)";
+      if (side === "below") colorFlyout.style.top = `${stripRect.bottom - parentRect.top + 4}px`;
+      else colorFlyout.style.bottom = `${parentRect.bottom - stripRect.top + 4}px`;
+    } else {
+      colorFlyout.style.top = `${sqRect.top + sqRect.height / 2 - parentRect.top}px`;
+      colorFlyout.style.transform = "translateY(-50%)";
+      if (side === "right") colorFlyout.style.left = `${stripRect.right - parentRect.left + 4}px`;
+      else colorFlyout.style.right = `${parentRect.right - stripRect.left + 4}px`;
+    }
+  }
+
+  function closeColorFlyout(): void {
+    if (!colorFlyoutOpen) return;
+    colorFlyoutOpen = false;
+    colorFlyout.style.display = "none";
+  }
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!colorFlyoutOpen) return;
+    const t = e.target as Node;
+    if (colorFlyout.contains(t) || root.contains(t)) return;
+    closeColorFlyout();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (colorFlyoutOpen && e.key === "Escape") closeColorFlyout();
+  });
 
   const sizeCell = h("div", {
     style: {
@@ -117,6 +257,65 @@ export function createMiniPalette(opts: {
     },
   }) as HTMLElement;
   root.appendChild(sizeCell);
+
+  // Live size preview — floats beside the number (to its right) for
+  // the duration of a size drag, showing a short demo stroke at the
+  // brush's current TRUE pixel size (renderDemoStroke only caps at
+  // the canvas height, and 56 px of headroom clears the 48 px max).
+  // A sibling of the strip for the same overflow reason as the
+  // secondary color flyout; mounted lazily on first drag.
+  const sizePreviewCanvas = document.createElement("canvas");
+  Object.assign(sizePreviewCanvas.style, {
+    width: "72px", height: "56px", display: "block", borderRadius: "6px",
+  });
+  const sizePreview = h("div", {
+    style: {
+      position: "absolute",
+      display: "none",
+      padding: "2px",
+      borderRadius: "8px",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+      zIndex: "200",
+      pointerEvents: "none",
+    },
+    children: [sizePreviewCanvas],
+  });
+
+  function redrawSizePreview(): void {
+    drawingLayer.renderDemoStroke(sizePreviewCanvas, state.brushSlots[state.activeBrushSlot]);
+  }
+
+  function showSizePreview(): void {
+    const parent = root.parentElement;
+    if (!parent) return;
+    if (!sizePreview.parentElement) parent.appendChild(sizePreview);
+    const theme = state.theme;
+    sizePreview.style.background = theme.uiBackground;
+    sizePreview.style.border = `1px solid ${theme.uiBorder}`;
+    // The demo canvas tints to the canvas background so the stroke
+    // reads exactly as it would on the writing surface.
+    sizePreviewCanvas.style.background = theme.canvasBackground;
+    sizePreview.style.display = "block";
+    // To the right of the number, vertically centered on it; flip to
+    // the strip's left when the right edge would leave the window.
+    const parentRect = parent.getBoundingClientRect();
+    const cellRect = sizeCell.getBoundingClientRect();
+    const stripRect = root.getBoundingClientRect();
+    sizePreview.style.left = "auto";
+    sizePreview.style.right = "auto";
+    sizePreview.style.top = `${cellRect.top + cellRect.height / 2 - parentRect.top}px`;
+    sizePreview.style.transform = "translateY(-50%)";
+    if (cellRect.right + 8 + 80 <= window.innerWidth) {
+      sizePreview.style.left = `${cellRect.right - parentRect.left + 8}px`;
+    } else {
+      sizePreview.style.right = `${parentRect.right - stripRect.left + 8}px`;
+    }
+    redrawSizePreview();
+  }
+
+  function hideSizePreview(): void {
+    sizePreview.style.display = "none";
+  }
 
   // Size cell drag — vertical drag in horizontal mode, horizontal drag
   // in vertical mode. Either way, "outward from the bar's near edge"
@@ -136,6 +335,7 @@ export function createMiniPalette(opts: {
     }
     try { sizeCell.setPointerCapture(e.pointerId); } catch { /* noop */ }
     e.preventDefault();
+    showSizePreview();
   });
   sizeCell.addEventListener("pointermove", (e) => {
     if (!sizeDragStart) return;
@@ -146,6 +346,7 @@ export function createMiniPalette(opts: {
     if (state.brushSlots[idx].size === v) return;
     state.updateBrushSlot(idx, { size: v });
     if (sizeSessionBefore) drawingLayer.applyStyleToSelection({ size: v });
+    redrawSizePreview();
   });
   function endSizeDrag(e: PointerEvent) {
     if (!sizeDragStart) return;
@@ -155,6 +356,7 @@ export function createMiniPalette(opts: {
       drawingLayer.commitStyleHistory(sizeSessionBefore);
       sizeSessionBefore = null;
     }
+    hideSizePreview();
   }
   sizeCell.addEventListener("pointerup", endSizeDrag);
   sizeCell.addEventListener("pointercancel", endSizeDrag);
@@ -241,8 +443,11 @@ export function createMiniPalette(opts: {
     const live = state.tool === "pen" && state.drawingSubTool === "draw" && !isFlyoutOpen();
     if (!live) {
       root.style.display = "none";
+      closeColorFlyout();
+      hideSizePreview();
       return;
     }
+    if (colorFlyoutOpen) syncColorFlyout();
     root.style.display = "flex";
     root.style.flexDirection = state.drawingToolbarVertical ? "column" : "row";
     const activeBtn = slotBtns[state.activeBrushSlot];

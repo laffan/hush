@@ -23,6 +23,21 @@
  *      older than STALE_ENTRY_MS (5 s) is dropped before the new
  *      contact is processed. Backstop against missed pointerup /
  *      pointercancel events under iPad palm rejection.
+ *  24. Pan / pinch evaluation is coalesced into one rAF flush per
+ *      frame instead of firing per pointermove. Each finger's moves
+ *      arrive as separate pointer events, so evaluating mid-burst
+ *      saw one finger's fresh sample paired with the other's stale
+ *      one — the finger-pair distance wobbled by up to a full frame
+ *      of finger travel, spuriously engaging pinch during a parallel
+ *      two-finger pan and yanking the zoom around ("panning doesn't
+ *      work in pen mode"). By rAF time both fingers' samples for the
+ *      frame are in, so mid + spread + angle are coherent pairs —
+ *      the same guarantee the notebook canvas's touchmove handler
+ *      gets from e.targetTouches for free. onPinchStart also
+ *      rebaselines: it now reports the spread at the engage frame
+ *      (not the burst-start latch) so callers ratio from ~1 with no
+ *      zoom jump, and both pinch callbacks carry the finger-pair
+ *      angle so the notebook can drive opt-in canvas rotation.
  * ============================================================
  *
  * gestures.js — two-/three-finger tap recogniser + two-finger pan.
@@ -67,6 +82,12 @@ const PAN_START_2 = 144;           // (12 CSS px)^2
 // the burst into pinch-zoom mode. Mirrors PAN_START in spirit — a
 // little hand jitter shouldn't fire a zoom.
 const PINCH_START = 12;
+// Minimum change in the finger-pair angle (radians) that also engages
+// the pinch callbacks — a two-finger twist with constant spread is a
+// rotation gesture, and the notebook's rotation handler lives behind
+// onPinchMove's angle parameter. ~7°: below natural pan wobble stays
+// inert, a deliberate twist engages quickly. (Hush delta #24.)
+const PINCH_ANGLE_START = 0.12;
 const MIN_PAIR_DIST = 25;          // min distance between two fingertips (prevents accidental doubles)
 const MAX_PAIR_DIST = 320;         // max distance (rejects spread palm contacts)
 // iPadOS reports contact ellipses larger than iPhone: ~40–80 CSS px for
@@ -90,8 +111,11 @@ export function createGestures({
   onPanStart,      // Hush delta #10: () => void — two-finger drift crossed PAN_START_2
   onPanMove,       // Hush delta #10: (dx, dy) => void — midpoint delta from pan-start, in client px
   onPanEnd,        // Hush delta #10: () => void — every touch has lifted after a pan
-  onPinchStart,    // Hush delta #12: (mid, dist) => void — finger spread changed past PINCH_START
-  onPinchMove,     // Hush delta #12: (mid, dist) => void — current midpoint + spread (client px)
+  onPinchStart,    // Hush delta #12/#24: (mid, dist, angle) => void — spread drifted past
+                   //   PINCH_START or pair angle past PINCH_ANGLE_START. dist + angle are
+                   //   the engage-frame baseline (already rebaselined — ratio from ~1).
+  onPinchMove,     // Hush delta #12/#24: (mid, dist, angle) => void — current midpoint,
+                   //   spread (client px), and pair angle (radians)
   onPinchEnd,      // Hush delta #12: () => void — every touch has lifted after a pinch
 }) {
   const toLocal = pointToLocal || ((p) => {
@@ -112,13 +136,20 @@ export function createGestures({
   // Client-space midpoint snapshot at pan-start, used as the frame of
   // reference for subsequent onPanMove deltas.
   let panStartMid = null;
-  // True once the finger-spread has changed past PINCH_START. Pinch
-  // runs in parallel with pan — the user is typically doing both — so
-  // we don't gate one on the other; both fire while two fingers move.
+  // True once the finger-spread has changed past PINCH_START (or the
+  // pair angle past PINCH_ANGLE_START). Pinch runs in parallel with
+  // pan — the user is typically doing both — so we don't gate one on
+  // the other; both fire while two fingers move.
   let pinching = false;
-  // Spread distance at pinch-start; the client of onPinchMove computes
-  // its own ratio against the start dist it captured in onPinchStart.
+  // Spread distance baseline. Latched at the first coherent two-finger
+  // frame for the engage-threshold check, then REBASELINED to the
+  // engage-frame spread when pinching flips on — onPinchStart reports
+  // that rebaselined value so callers ratio from ~1 (Hush delta #24).
   let pinchStartDist = 0;
+  // Finger-pair angle baseline, latched alongside pinchStartDist.
+  let pinchStartAngle = 0;
+  // Pending rAF id for the coalesced pan/pinch flush (Hush delta #24).
+  let flushRaf = 0;
 
   function now() { return performance.now(); }
 
@@ -137,6 +168,15 @@ export function createGestures({
     panStartMid = null;
     pinching = false;
     pinchStartDist = 0;
+    pinchStartAngle = 0;
+    cancelFlush();
+  }
+
+  function cancelFlush() {
+    if (flushRaf) {
+      cancelAnimationFrame(flushRaf);
+      flushRaf = 0;
+    }
   }
 
   /** Average clientX/clientY of currently-active contacts. Returns
@@ -156,6 +196,23 @@ export function createGestures({
     const a = it.next().value, b = it.next().value;
     const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
     return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /** Angle (radians) of the segment between the first two active
+   *  contacts. `active` is a Map, so iteration order — and therefore
+   *  the segment's direction — is stable for the life of the burst.
+   *  Returns 0 if fewer than 2 fingers down. (Hush delta #24.) */
+  function pairAngleClient() {
+    if (active.size < 2) return 0;
+    const it = active.values();
+    const a = it.next().value, b = it.next().value;
+    return Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
+  }
+
+  /** Smallest signed difference between two angles, in (-π, π]. */
+  function angleDelta(a, b) {
+    const d = a - b;
+    return Math.atan2(Math.sin(d), Math.cos(d));
   }
 
   function qualifiesAsTap(rec) {
@@ -298,12 +355,32 @@ export function createGestures({
     if ((e.width || 0) > MAX_CONTACT_SIZE || (e.height || 0) > MAX_CONTACT_SIZE) {
       rec.tooBig = true;
     }
+    // Hush delta #24: pan / pinch promotion + move callbacks are
+    // deferred to one rAF flush per frame rather than firing here.
+    // Each finger's pointermoves arrive as separate events, so an
+    // in-event evaluation pairs one finger's fresh position with the
+    // other's stale one — the spread wobbles by a frame of finger
+    // travel and a parallel-finger pan reads as a pinch. By flush
+    // time both fingers' samples for the frame have landed.
+    if (gestureMode && active.size >= 2) scheduleFlush();
+  }
+
+  function scheduleFlush() {
+    if (!flushRaf) flushRaf = requestAnimationFrame(flushGesture);
+  }
+
+  /** Per-frame pan/pinch evaluation over coherent finger positions.
+   *  (Hush delta #24 — see onPointerMove.) */
+  function flushGesture() {
+    flushRaf = 0;
+    if (!gestureMode || active.size < 2) return;
+
     // Promote to pan the first time any two-finger contact drifts past
     // the pan threshold. The drift check uses engine-local coords (it's
     // fine — we just need "did fingers move meaningfully?"); pan
     // deltas themselves are computed in client space so the notebook
     // camera translates 1:1 with the user's finger motion.
-    if (gestureMode && !panning && active.size >= 2) {
+    if (!panning) {
       let trigger = false;
       for (const r of active.values()) {
         if (r.moved2 > PAN_START_2) { trigger = true; break; }
@@ -321,31 +398,31 @@ export function createGestures({
       }
     }
 
-    // Pinch: kicks in once the spread has drifted past PINCH_START.
-    // Captures the start distance the first time it fires so callers
-    // can compute their own scale factor. Runs alongside pan — a
-    // typical iPad zoom is "spread + drift" simultaneously.
-    if (gestureMode && active.size >= 2) {
-      const dist = pairDistClient();
-      if (!pinching) {
-        // Need a non-trivial reference so the ratio is meaningful;
-        // pairDistClient is recomputed each move so we don't latch a
-        // start distance until two fingers have separated a bit.
-        if (dist > 0) {
-          // Latch the very first non-zero spread reading as the
-          // baseline. Subsequent moves measure their drift against it.
-          if (pinchStartDist === 0) pinchStartDist = dist;
-          if (Math.abs(dist - pinchStartDist) > PINCH_START) {
-            pinching = true;
-            const mid = midClient();
-            onPinchStart && onPinchStart(mid, pinchStartDist);
-          }
-        }
+    // Pinch: kicks in once the spread has drifted past PINCH_START or
+    // the pair angle has twisted past PINCH_ANGLE_START. Runs
+    // alongside pan — a typical iPad zoom is "spread + drift"
+    // simultaneously; a twist with constant spread is a rotation.
+    const dist = pairDistClient();
+    if (!pinching && dist > 0) {
+      // Latch the first coherent reading as the drift baseline.
+      if (pinchStartDist === 0) {
+        pinchStartDist = dist;
+        pinchStartAngle = pairAngleClient();
       }
-      if (pinching) {
+      const angDrift = Math.abs(angleDelta(pairAngleClient(), pinchStartAngle));
+      if (Math.abs(dist - pinchStartDist) > PINCH_START || angDrift > PINCH_ANGLE_START) {
+        pinching = true;
+        // Rebaseline to the engage frame so the caller's zoom ratio
+        // starts at ~1 — reporting the burst-start latch here made
+        // the camera jump by the accumulated drift on engage.
+        pinchStartDist = dist;
         const mid = midClient();
-        onPinchMove && onPinchMove(mid, dist);
+        onPinchStart && onPinchStart(mid, dist, pairAngleClient());
       }
+    }
+    if (pinching) {
+      const mid = midClient();
+      onPinchMove && onPinchMove(mid, dist, pairAngleClient());
     }
   }
 
@@ -375,8 +452,12 @@ export function createGestures({
     if (pinching) {
       pinching = false;
       pinchStartDist = 0;
+      pinchStartAngle = 0;
       onPinchEnd && onPinchEnd();
     }
+    // Don't let a queued flush fire a stray move after the end
+    // callbacks above.
+    cancelFlush();
 
     if (active.size === 0) {
       if (gestureMode) evaluateBurst();

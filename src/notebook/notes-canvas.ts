@@ -1,4 +1,4 @@
-import type { Shape } from "./types";
+import type { Camera, Shape } from "./types";
 import type { BackgroundPattern } from "./state";
 import type { AppearanceMode } from "./themes";
 import { DrawingState } from "./state";
@@ -240,11 +240,26 @@ export class NotesCanvas {
     // combined spread+drift produces one coherent transform — the
     // world point under the gesture's start midpoint stays under the
     // user's current midpoint.
-    let touchGestureCamStart: { x: number; y: number; zoom: number } | null = null;
+    let touchGestureCamStart: Camera | null = null;
     let touchGestureScrollTop = 0;
     let touchPinchStartMid = { x: 0, y: 0 };
     let touchPinchStartDist = 0;
+    let touchPinchStartAngle = 0;
     let touchPinching = false;
+    // Zoom + rotation each engage with their own hysteresis inside the
+    // pinch stream, mirroring input-handler.ts's PINCH_ENGAGE_PX: until
+    // the spread (or pair angle) drifts deliberately, the gesture is a
+    // pure midpoint pan. Every engagement rebaselines the start refs to
+    // the current frame so the camera continues from where it is — no
+    // snap-back to the gesture-start position.
+    let touchZoomEngaged = false;
+    let touchRotateEngaged = false;
+    const TOUCH_ZOOM_ENGAGE_PX = 12;
+    const TOUCH_ROTATE_ENGAGE_RAD = 0.15;
+    const angDelta = (a: number, b: number) => {
+      const d = a - b;
+      return Math.atan2(Math.sin(d), Math.cos(d));
+    };
     this._drawingLayer = createDrawingLayer({
       container,
       state: this.state as unknown as import("./drawing/sync-shim").ShimState,
@@ -271,25 +286,36 @@ export class NotesCanvas {
           x: touchGestureCamStart.x + dx,
           y: touchGestureCamStart.y + dy,
           zoom: touchGestureCamStart.zoom,
+          rotation: touchGestureCamStart.rotation,
         };
         this.state.notify("camera");
       },
       onTouchPanEnd: () => {
         if (!touchPinching) touchGestureCamStart = null;
       },
-      onTouchPinchStart: (mid, dist) => {
-        if (!touchGestureCamStart) touchGestureCamStart = { ...this.state.camera };
+      onTouchPinchStart: (mid, dist, angle) => {
+        // Rebaseline the shared gesture frame at the engage instant.
+        // The pan path has usually been moving the camera since
+        // pan-start; keeping the original camStart here snapped the
+        // camera back to its pre-pan position the moment the spread
+        // drifted 12 px — the "two-finger pan doesn't work in pen
+        // mode" bug.
+        touchGestureCamStart = { ...this.state.camera };
+        touchGestureScrollTop = this.state.gutterScrollDOM?.scrollTop || 0;
         touchPinchStartMid = mid;
         touchPinchStartDist = dist;
+        touchPinchStartAngle = angle;
+        touchZoomEngaged = false;
+        touchRotateEngaged = false;
         touchPinching = true;
       },
-      onTouchPinchMove: (mid, dist) => {
+      onTouchPinchMove: (mid, dist, angle) => {
         if (!touchGestureCamStart || touchPinchStartDist <= 0) return;
-        const cs = touchGestureCamStart;
         // Gutter mode: zoom is disabled. Pinch becomes pure pan —
         // midpoint dy → doc scroll, dx → camera.x. Camera.y tracks the
         // live scrollTop.
         if (this.state.gutterScrollDOM) {
+          const cs = touchGestureCamStart;
           const dx = mid.x - touchPinchStartMid.x;
           const dy = mid.y - touchPinchStartMid.y;
           this.state.gutterScrollDOM.scrollTop = touchGestureScrollTop - dy;
@@ -297,19 +323,49 @@ export class NotesCanvas {
           this.state.notify("camera");
           return;
         }
-        const rawScale = dist / touchPinchStartDist;
+        // Zoom + rotation hysteresis. Each engagement rebaselines every
+        // start ref to the current frame so the transform continues
+        // seamlessly from the camera's present state.
+        const rebase = () => {
+          touchGestureCamStart = { ...this.state.camera };
+          touchPinchStartMid = mid;
+          touchPinchStartDist = dist;
+          touchPinchStartAngle = angle;
+        };
+        if (!touchZoomEngaged && Math.abs(dist - touchPinchStartDist) > TOUCH_ZOOM_ENGAGE_PX) {
+          rebase();
+          touchZoomEngaged = true;
+        }
+        if (this.state.canvasRotationEnabled && !touchRotateEngaged &&
+            Math.abs(angDelta(angle, touchPinchStartAngle)) > TOUCH_ROTATE_ENGAGE_RAD) {
+          rebase();
+          touchRotateEngaged = true;
+        }
+        const cs = touchGestureCamStart;
         // Match the wheel handler's zoom envelope: [0.25, 1].
+        const rawScale = touchZoomEngaged && touchPinchStartDist > 1 ? dist / touchPinchStartDist : 1;
         const newZoom = Math.min(1, Math.max(0.25, cs.zoom * rawScale));
-        const effectiveScale = newZoom / cs.zoom;
+        const k = newZoom / cs.zoom;
+        const dTheta = touchRotateEngaged ? angDelta(angle, touchPinchStartAngle) : 0;
+        // One coherent transform: the world point that was under the
+        // start midpoint stays under the current midpoint while zoom
+        // scales and (opt-in) rotation turns about it. With k = 1 and
+        // dTheta = 0 this reduces to a pure midpoint pan.
+        const vx = touchPinchStartMid.x - cs.x;
+        const vy = touchPinchStartMid.y - cs.y;
+        const cos = Math.cos(dTheta), sin = Math.sin(dTheta);
         this.state.camera = {
-          x: mid.x - effectiveScale * (touchPinchStartMid.x - cs.x),
-          y: mid.y - effectiveScale * (touchPinchStartMid.y - cs.y),
+          x: mid.x - k * (vx * cos - vy * sin),
+          y: mid.y - k * (vx * sin + vy * cos),
           zoom: newZoom,
+          rotation: dTheta !== 0 ? (cs.rotation || 0) + dTheta : cs.rotation,
         };
         this.state.notify("camera");
       },
       onTouchPinchEnd: () => {
         touchPinching = false;
+        touchZoomEngaged = false;
+        touchRotateEngaged = false;
         touchGestureCamStart = null;
       },
     });

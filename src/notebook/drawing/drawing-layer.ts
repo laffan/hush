@@ -20,6 +20,7 @@
 
 import type { Camera, DrawingSlot } from "../types";
 import type { CanvasTheme } from "../themes";
+import { canvasToScreen, screenToCanvas } from "../utils";
 import { createStrokeEngine } from "./engine/stroke.js";
 import { createSelectionEngine } from "./engine/selection.js";
 import { createGestures } from "./engine/gestures.js";
@@ -78,10 +79,11 @@ export function createDrawingLayer({
   onTouchPanMove?: (dx: number, dy: number) => void;
   onTouchPanEnd?: () => void;
   /** Two-finger pinch hooks — fired alongside the pan hooks when the
-   *  user spreads / squeezes two fingers. Notebook drives the camera
-   *  zoom from these. mid + dist are in client (screen) px. */
-  onTouchPinchStart?: (mid: { x: number; y: number }, dist: number) => void;
-  onTouchPinchMove?: (mid: { x: number; y: number }, dist: number) => void;
+   *  user spreads / squeezes / twists two fingers. Notebook drives the
+   *  camera zoom (and opt-in rotation) from these. mid + dist are in
+   *  client (screen) px; angle is the finger-pair angle in radians. */
+  onTouchPinchStart?: (mid: { x: number; y: number }, dist: number, angle: number) => void;
+  onTouchPinchMove?: (mid: { x: number; y: number }, dist: number, angle: number) => void;
   onTouchPinchEnd?: () => void;
 }): DrawingLayer {
   // Mutable theme object: we mutate in place on setTheme so the
@@ -126,8 +128,8 @@ export function createDrawingLayer({
   let selectHintTimer: ReturnType<typeof setTimeout> | null = null;
   function flashSelectHint(localPt: { x: number; y: number }): void {
     // engine-local → container-screen coords: reverse of pointToLocal.
-    const cx = (localPt.x + anchor.originX) * cameraRef.zoom + cameraRef.x;
-    const cy = (localPt.y + anchor.originY) * cameraRef.zoom + cameraRef.y;
+    const { x: cx, y: cy } = canvasToScreen(
+      { x: localPt.x + anchor.originX, y: localPt.y + anchor.originY }, cameraRef);
     // Small gap so the pill doesn't overlap the cursor anchor.
     selectHint.style.left = (cx - 10) + "px";
     selectHint.style.top = cy + "px";
@@ -140,7 +142,7 @@ export function createDrawingLayer({
 
   // ---------- camera + transforms ----------
 
-  const cameraRef = { x: camera.x, y: camera.y, zoom: camera.zoom };
+  const cameraRef: Camera = { x: camera.x, y: camera.y, zoom: camera.zoom, rotation: camera.rotation };
 
   function currentDpr(): number {
     const native = Math.min(window.devicePixelRatio || 1, MAX_DPR);
@@ -163,23 +165,26 @@ export function createDrawingLayer({
 
   function pointToLocal(clientPt: { x: number; y: number }): { x: number; y: number } {
     const rect = container.getBoundingClientRect();
-    const screenX = clientPt.x - rect.left;
-    const screenY = clientPt.y - rect.top;
-    const worldX = (screenX - cameraRef.x) / cameraRef.zoom;
-    const worldY = (screenY - cameraRef.y) / cameraRef.zoom;
-    return { x: worldX - anchor.originX, y: worldY - anchor.originY };
+    // screenToCanvas handles the camera's optional rotation; local
+    // coords are world coords shifted by the wrapper's anchor origin.
+    const world = screenToCanvas({ x: clientPt.x - rect.left, y: clientPt.y - rect.top }, cameraRef);
+    return { x: world.x - anchor.originX, y: world.y - anchor.originY };
   }
 
   function applyWrapperTransform(cam: Camera): void {
-    const tx = cam.x + anchor.originX * cam.zoom;
-    const ty = cam.y + anchor.originY * cam.zoom;
-    wrapper.style.transform = `translate(${tx}px, ${ty}px) scale(${cam.zoom})`;
+    // translate(camera) · rotate · scale(zoom) · translate(origin) —
+    // matches canvasToScreen: screen = c + R·(zoom·world). rotate(0)
+    // is a no-op so the unrotated case is unchanged.
+    wrapper.style.transform =
+      `translate(${cam.x}px, ${cam.y}px) rotate(${cam.rotation || 0}rad) ` +
+      `scale(${cam.zoom}) translate(${anchor.originX}px, ${anchor.originY}px)`;
   }
 
   function setCamera(next: Camera): void {
     cameraRef.x = next.x;
     cameraRef.y = next.y;
     cameraRef.zoom = next.zoom;
+    cameraRef.rotation = next.rotation;
     // Hot path on every pan/zoom frame: see whether the camera
     // viewport is still well inside the canvas backing. If yes, just
     // update the wrapper's CSS transform — GPU-composited and free.
@@ -389,8 +394,8 @@ export function createDrawingLayer({
     onPanStart: () => { onTouchPanStart && onTouchPanStart(); },
     onPanMove: (dx: number, dy: number) => { onTouchPanMove && onTouchPanMove(dx, dy); },
     onPanEnd: () => { onTouchPanEnd && onTouchPanEnd(); },
-    onPinchStart: (mid: { x: number; y: number }, dist: number) => { onTouchPinchStart && onTouchPinchStart(mid, dist); },
-    onPinchMove: (mid: { x: number; y: number }, dist: number) => { onTouchPinchMove && onTouchPinchMove(mid, dist); },
+    onPinchStart: (mid: { x: number; y: number }, dist: number, angle: number) => { onTouchPinchStart && onTouchPinchStart(mid, dist, angle); },
+    onPinchMove: (mid: { x: number; y: number }, dist: number, angle: number) => { onTouchPinchMove && onTouchPinchMove(mid, dist, angle); },
     onPinchEnd: () => { onTouchPinchEnd && onTouchPinchEnd(); },
   });
 

@@ -7,17 +7,32 @@ export function generateId(): string {
   return `shape_${Date.now()}_${nextId++}`;
 }
 
+// Screen ↔ world mapping: screen = (camera.x, camera.y) + R(rotation) ·
+// (zoom · world). Rotation is optional (two-finger rotate gesture) and
+// both helpers keep the rotation-free fast path allocation-identical to
+// the original.
 export function screenToCanvas(screenPoint: Point, camera: Camera): Point {
+  const sx = screenPoint.x - camera.x;
+  const sy = screenPoint.y - camera.y;
+  const rot = camera.rotation || 0;
+  if (!rot) return { x: sx / camera.zoom, y: sy / camera.zoom };
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  // Inverse rotation: R(-rot) · (screen - c), then unscale.
   return {
-    x: (screenPoint.x - camera.x) / camera.zoom,
-    y: (screenPoint.y - camera.y) / camera.zoom,
+    x: (sx * cos + sy * sin) / camera.zoom,
+    y: (-sx * sin + sy * cos) / camera.zoom,
   };
 }
 
 export function canvasToScreen(canvasPoint: Point, camera: Camera): Point {
+  const zx = canvasPoint.x * camera.zoom;
+  const zy = canvasPoint.y * camera.zoom;
+  const rot = camera.rotation || 0;
+  if (!rot) return { x: zx + camera.x, y: zy + camera.y };
+  const cos = Math.cos(rot), sin = Math.sin(rot);
   return {
-    x: canvasPoint.x * camera.zoom + camera.x,
-    y: canvasPoint.y * camera.zoom + camera.y,
+    x: zx * cos - zy * sin + camera.x,
+    y: zx * sin + zy * cos + camera.y,
   };
 }
 

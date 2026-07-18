@@ -30,6 +30,10 @@ export interface NotebookBackground {
   pattern?: BackgroundPattern;
   spacing?: number;
   opacity?: number;
+  /** Two-finger canvas-rotation gesture opt-in (canvas settings menu).
+   *  Rides the background envelope so it stays per-notebook like the
+   *  rest of the canvas-surface options. */
+  rotationEnabled?: boolean;
 }
 
 export interface NotebookContent {
@@ -80,6 +84,7 @@ function parseBackground(v: unknown): NotebookBackground | undefined {
   if (typeof b.pattern === "string") out.pattern = b.pattern as BackgroundPattern;
   if (typeof b.spacing === "number") out.spacing = b.spacing;
   if (typeof b.opacity === "number") out.opacity = b.opacity;
+  if (typeof b.rotationEnabled === "boolean") out.rotationEnabled = b.rotationEnabled;
   return Object.keys(out).length ? out : undefined;
 }
 

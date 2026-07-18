@@ -1,4 +1,5 @@
 import type { DrawingState } from "./state";
+import type { Camera } from "./types";
 import {
   cleanLineBreaks, extractDroppedText, extractTextFromDataTransfer,
   fileToDataUrl, getImageDimensions, isImageFile, isTextFile,
@@ -129,7 +130,7 @@ export function bindInputEvents(
   let twoFingerActive = false;
   let twoFingerStartMid = { x: 0, y: 0 };
   let twoFingerStartDist = 0;
-  let cameraAtTwoFingerStart = { x: 0, y: 0, zoom: 1 };
+  let cameraAtTwoFingerStart: Camera = { x: 0, y: 0, zoom: 1 };
   let scrollTopAtTwoFingerStart = 0;
   // Pinch hysteresis: until the finger spread drifts past this many CSS px
   // the gesture is treated as a pure pan (zoom locked). Without it, the
@@ -139,6 +140,12 @@ export function bindInputEvents(
   // Mirrors the drawing engine's PINCH_START (gestures.js).
   const PINCH_ENGAGE_PX = 12;
   let twoFingerZoomEngaged = false;
+  // Rotation hysteresis (only consulted when state.canvasRotationEnabled):
+  // the pair angle must twist deliberately before the canvas starts
+  // turning, so ordinary pans don't wobble the horizon.
+  const ROTATE_ENGAGE_RAD = 0.15;
+  let twoFingerRotateEngaged = false;
+  let twoFingerStartAngle = 0;
 
   function pinchMid(t0: Touch, t1: Touch) {
     return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
@@ -146,6 +153,22 @@ export function bindInputEvents(
   function pinchDist(t0: Touch, t1: Touch) {
     const dx = t0.clientX - t1.clientX, dy = t0.clientY - t1.clientY;
     return Math.sqrt(dx * dx + dy * dy);
+  }
+  function pinchAngle(t0: Touch, t1: Touch) {
+    return Math.atan2(t1.clientY - t0.clientY, t1.clientX - t0.clientX);
+  }
+  /** The two target touches in identifier order. Mid + dist are
+   *  symmetric so TouchList order never mattered before, but the pair
+   *  angle flips by π if the list reorders mid-gesture — sort by
+   *  identifier so the segment's direction is stable. */
+  function orderedPair(list: TouchList): [Touch, Touch] {
+    const a = list[0], b = list[1];
+    return a.identifier <= b.identifier ? [a, b] : [b, a];
+  }
+  /** Smallest signed difference between two angles, in (-π, π]. */
+  function angDelta(a: number, b: number) {
+    const d = a - b;
+    return Math.atan2(Math.sin(d), Math.cos(d));
   }
 
   on(canvas, "touchstart", (e) => {
@@ -159,10 +182,13 @@ export function bindInputEvents(
       // marquee / drag / resize / drag-area on the canvas. Drop it
       // so the chrome doesn't render between the user's fingers.
       state.cancelActiveInteraction();
+      const [t0, t1] = orderedPair(e.targetTouches);
       twoFingerActive = true;
       twoFingerZoomEngaged = false;
-      twoFingerStartMid = pinchMid(e.targetTouches[0], e.targetTouches[1]);
-      twoFingerStartDist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
+      twoFingerRotateEngaged = false;
+      twoFingerStartMid = pinchMid(t0, t1);
+      twoFingerStartDist = pinchDist(t0, t1);
+      twoFingerStartAngle = pinchAngle(t0, t1);
       cameraAtTwoFingerStart = { ...state.camera };
       scrollTopAtTwoFingerStart = state.gutterScrollDOM?.scrollTop || 0;
     }
@@ -171,8 +197,10 @@ export function bindInputEvents(
   on(canvas, "touchmove", (e) => {
     if (twoFingerActive && e.targetTouches.length === 2) {
       e.preventDefault();
-      const mid = pinchMid(e.targetTouches[0], e.targetTouches[1]);
-      const dist = pinchDist(e.targetTouches[0], e.targetTouches[1]);
+      const [t0, t1] = orderedPair(e.targetTouches);
+      const mid = pinchMid(t0, t1);
+      const dist = pinchDist(t0, t1);
+      const angle = pinchAngle(t0, t1);
       // Gutter mode: zoom is disabled; vertical midpoint delta scrolls
       // the host doc 1:1, horizontal delta still pans camera.x.
       // Camera.y tracks the live scrollTop so the engine sees the
@@ -185,42 +213,48 @@ export function bindInputEvents(
         state.notify("camera");
         return;
       }
-      // Pinch hysteresis. Until the spread drifts past PINCH_ENGAGE_PX the
-      // gesture is a pure pan at locked zoom — this kills the per-frame
-      // micro-zoom jitter that two-finger panning otherwise produces. Once
-      // it engages, rebaseline the start references to the current frame so
-      // zoom ramps up from the present state with no visible jump.
-      if (!twoFingerZoomEngaged && Math.abs(dist - twoFingerStartDist) > PINCH_ENGAGE_PX) {
-        twoFingerZoomEngaged = true;
+      // Zoom + rotation hysteresis. Until the spread drifts past
+      // PINCH_ENGAGE_PX (or, with the canvas-rotation option on, the
+      // pair angle past ROTATE_ENGAGE_RAD) the gesture is a pure pan —
+      // this kills the per-frame micro-zoom jitter that two-finger
+      // panning otherwise produces. Every engagement rebaselines the
+      // start references to the current frame so the new axis ramps up
+      // from the present state with no visible jump.
+      const rebase = () => {
         cameraAtTwoFingerStart = { ...state.camera };
         twoFingerStartMid = mid;
         twoFingerStartDist = dist;
+        twoFingerStartAngle = angle;
+      };
+      if (!twoFingerZoomEngaged && Math.abs(dist - twoFingerStartDist) > PINCH_ENGAGE_PX) {
+        rebase();
+        twoFingerZoomEngaged = true;
+      }
+      if (state.canvasRotationEnabled && !twoFingerRotateEngaged &&
+          Math.abs(angDelta(angle, twoFingerStartAngle)) > ROTATE_ENGAGE_RAD) {
+        rebase();
+        twoFingerRotateEngaged = true;
       }
       const cs = cameraAtTwoFingerStart;
-      if (!twoFingerZoomEngaged) {
-        // Pure pan — midpoint delta only, zoom held at the gesture's start.
-        state.camera = {
-          x: cs.x + (mid.x - twoFingerStartMid.x),
-          y: cs.y + (mid.y - twoFingerStartMid.y),
-          zoom: cs.zoom,
-        };
-        state.notify("camera");
-        return;
-      }
-      // Need a non-zero start distance to compute a ratio. If two
-      // fingers landed at the exact same point, fall back to pure pan
-      // until they separate.
-      const rawScale = twoFingerStartDist > 1 ? dist / twoFingerStartDist : 1;
-      // Match the wheel handler's zoom envelope exactly: [0.25, 1].
+      // One coherent transform — "the world point that was under the
+      // start midpoint stays under the current midpoint" — with zoom
+      // scaling and (opt-in) rotation turning about that midpoint.
+      // With k = 1 and dTheta = 0 this reduces to a pure midpoint pan.
+      // Need a non-zero start distance to compute a ratio; if two
+      // fingers landed at the exact same point, hold zoom until they
+      // separate. Zoom envelope matches the wheel handler: [0.25, 1].
+      const rawScale = twoFingerZoomEngaged && twoFingerStartDist > 1 ? dist / twoFingerStartDist : 1;
       const newZoom = Math.min(1, Math.max(0.25, cs.zoom * rawScale));
-      const effectiveScale = newZoom / cs.zoom;
-      // Pivot zoom around the *initial* midpoint (M0) and translate
-      // by (M1 - M0) — equivalent to "the world point that was under
-      // the start midpoint stays under the current midpoint".
+      const k = newZoom / cs.zoom;
+      const dTheta = twoFingerRotateEngaged ? angDelta(angle, twoFingerStartAngle) : 0;
+      const vx = twoFingerStartMid.x - cs.x;
+      const vy = twoFingerStartMid.y - cs.y;
+      const cos = Math.cos(dTheta), sin = Math.sin(dTheta);
       state.camera = {
-        x: mid.x - effectiveScale * (twoFingerStartMid.x - cs.x),
-        y: mid.y - effectiveScale * (twoFingerStartMid.y - cs.y),
+        x: mid.x - k * (vx * cos - vy * sin),
+        y: mid.y - k * (vx * sin + vy * cos),
         zoom: newZoom,
+        rotation: dTheta !== 0 ? (cs.rotation || 0) + dTheta : cs.rotation,
       };
       state.notify("camera");
     }
@@ -335,7 +369,9 @@ export function bindInputEvents(
     if (matchesKey(e, sc.shortcutNbUndo)) { e.preventDefault(); state.undo(); return; }
     if (matchesKey(e, sc.shortcutNbResetZoom)) {
       e.preventDefault();
-      state.camera = { ...state.camera, zoom: 1 };
+      // Reset zoom also squares up any two-finger canvas rotation —
+      // it's the "straighten everything out" escape hatch.
+      state.camera = { ...state.camera, zoom: 1, rotation: 0 };
       state.notify("camera");
       return;
     }

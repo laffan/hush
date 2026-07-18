@@ -88,8 +88,8 @@ Notebooks are stored as `files/{uuid}.json` in the app data directory. The `cont
   "layers":    [...],   // ordered, top-first
   "flowEdges": [...],   // flowchart edges between text shapes
   "bookmarks": [...],   // optional camera bookmarks; same shape as DrawingState
-  "camera":    {...},   // optional saved viewport — { x, y, zoom }
-  "background": {...}   // optional per-notebook bg — { pattern, spacing, opacity }
+  "camera":    {...},   // optional saved viewport — { x, y, zoom, rotation? }
+  "background": {...}   // optional per-notebook bg — { pattern, spacing, opacity, rotationEnabled? }
 }
 ```
 
@@ -153,7 +153,9 @@ File drops have three independent targets:
 
 ### Touch handling
 
-Pinch-zoom + two-finger pan are detected via `touchstart` / `touchmove` / `touchend` on the canvas element. The handlers count touches via `e.targetTouches.length` (touches whose `target` is the canvas) rather than `e.touches.length` (every touch on screen). Zoom engages only after the finger spread drifts past a 12 px dead-zone (`PINCH_ENGAGE_PX`, mirroring the drawing engine's `PINCH_START`); below it the gesture is a pure pan at locked zoom, so the natural wobble of two fingers no longer produces a stream of per-frame micro-zooms that rescale (and visibly shimmer) every stroke. On engage the start references rebaseline to the current frame so zoom ramps up with no jump. The drawing wrapper carries `will-change: transform` so the pan is a stable GPU-composited transform with no per-frame repaint of the baked strokes. That distinction matters with iOS Touch mode on: a finger holding the floating ⌘ pill in the bottom-left has the button as its target, so it isn't counted as a second canvas touch and doesn't kick the canvas into pinch-zoom while the other hand drags content out.
+Pinch-zoom + two-finger pan are detected via `touchstart` / `touchmove` / `touchend` on the canvas element. The handlers count touches via `e.targetTouches.length` (touches whose `target` is the canvas) rather than `e.touches.length` (every touch on screen). Zoom engages only after the finger spread drifts past a 12 px dead-zone (`PINCH_ENGAGE_PX`, mirroring the drawing engine's `PINCH_START`); below it the gesture is a pure pan at locked zoom, so the natural wobble of two fingers no longer produces a stream of per-frame micro-zooms that rescale (and visibly shimmer) every stroke. On engage the start references rebaseline to the current frame so zoom ramps up with no jump. In pen mode the same gesture arrives through the drawing engine's recognizer instead (`gestures.js` — the SVG overlay owns the touches there); its pan/pinch evaluation is rAF-coalesced and its camera handler in `notes-canvas.ts` rebaselines at pinch engage, so pen-mode panning matches the canvas handler's feel (engine delta #24 in README-DRAWING.md).
+
+**Canvas rotation (opt-in).** The canvas settings menu (bottom-right background button) carries a Rotation toggle. When on, twisting during a two-finger pan/zoom also rotates the canvas about the finger midpoint — `Camera` gains an optional `rotation` (radians), applied between zoom and translation (`screen = c + R(rotation) · zoom · world`). Rotation engages with its own hysteresis (~8.6°) and every engagement rebaselines, so plain pans never wobble the horizon. All screen↔world math funnels through `screenToCanvas` / `canvasToScreen` in `utils.ts` (both rotation-aware); the renderer, background patterns, drawing-layer wrapper transform, re-anchor viewport math, minimap, and pinned-box compensation handle the rotated frame explicitly. Turning the toggle off — or `Mod+0` reset zoom — snaps rotation back to 0. Exports and gutter mode always render axis-aligned. The flag persists per-notebook as `background.rotationEnabled`. The drawing wrapper carries `will-change: transform` so the pan is a stable GPU-composited transform with no per-frame repaint of the baked strokes. That distinction matters with iOS Touch mode on: a finger holding the floating ⌘ pill in the bottom-left has the button as its target, so it isn't counted as a second canvas touch and doesn't kick the canvas into pinch-zoom while the other hand drags content out.
 
 ### Copy / paste
 

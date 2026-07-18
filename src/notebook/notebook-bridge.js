@@ -220,7 +220,7 @@ async function _mountNotebookImpl(container, fileId, state) {
     // popups dispatch the same event but carry their own state ref, so
     // we filter to the main canvas instance.
     if (d.state && d.state !== canvasInstance.state) return;
-    _notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity };
+    _notebookBackground = { pattern: d.pattern, spacing: d.spacing, opacity: d.opacity, rotationEnabled: d.rotationEnabled };
     notebookDirty = true;
   };
   document.addEventListener("notebook-bg-changed", onBgChange);
@@ -325,6 +325,9 @@ function applyNotebookBackground(bg) {
   if (bg.pattern) s.backgroundPattern = bg.pattern;
   if (typeof bg.spacing === "number") s.gridSpacing = bg.spacing;
   if (typeof bg.opacity === "number") s.gridOpacity = bg.opacity;
+  // Setter no-ops when unchanged; when flipping to off it also snaps
+  // any live camera rotation back to 0.
+  if (typeof bg.rotationEnabled === "boolean") s.setCanvasRotationEnabled(bg.rotationEnabled);
   s.notify("theme");
 }
 
@@ -406,6 +409,7 @@ async function _saveNotebookInner(opts) {
       pattern: canvas.state.backgroundPattern,
       spacing: canvas.state.gridSpacing,
       opacity: canvas.state.gridOpacity,
+      rotationEnabled: canvas.state.canvasRotationEnabled,
     },
   });
   try {

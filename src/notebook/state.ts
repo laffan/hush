@@ -51,18 +51,20 @@ type StateKey = "shapes" | "selectedIds" | "tool" | "color"
   | "drawingToolbarMinimized" | "drawingToolbarOffset" | "drawingToolbarPosition"
   | "drawingToolbarVertical" | "drawingToolbarCollapsed"
   | "strokeEngineDragging" | "reorderDragAreaId" | "reorderMode"
-  | "reorderHoverTargetId" | "reorderPreview";
+  | "reorderHoverTargetId" | "reorderPreview" | "canvasRotationEnabled";
 
 export type ReorderMode = "swap" | "ripple";
 
-/** Default brush-slot preset. Slot 1 stays on "auto" so it tracks
- *  the active theme's foreground. Slots 2 and 3 carry an explicit
- *  red and blue so a fresh notebook offers a useful palette out of
- *  the box. */
+/** Default brush-slot presets. Slot 1 stays on "auto" so it tracks
+ *  the active theme's foreground; slot 2 follows the heading colour.
+ *  Slot 3 carries an explicit blue so a fresh notebook offers a
+ *  useful palette out of the box, and slot 4 is a yellow highlighter
+ *  (chisel-tip atlas + the multiply/alpha highlighter mode). */
 const DEFAULT_BRUSH_SLOTS: DrawingSlot[] = [
   { brushId: "brush-1", color: "auto",    size: 3,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-2", color: "heading", size: 6,  streamline: 0.35, spacing: 0.12, mode: "normal" },
   { brushId: "brush-3", color: "#3b82f6", size: 25, streamline: 0.35, spacing: 0.12, mode: "normal" },
+  { brushId: "brush-highlighter", color: "#fde047", size: 20, streamline: 0.35, spacing: 0.12, mode: "highlighter" },
 ];
 
 export class DrawingState extends EventTarget {
@@ -75,6 +77,11 @@ export class DrawingState extends EventTarget {
   // notebook opened before settings load still uses 16 px text.
   fontSize = 16;
   camera: Camera = { x: 0, y: 0, zoom: 1 };
+  /** Opt-in: two-finger pan / zoom gestures may also rotate the canvas
+   *  (camera.rotation). Toggled from the canvas settings menu and
+   *  persisted per-notebook alongside the background overrides.
+   *  Turning it off snaps any live rotation back to 0. */
+  canvasRotationEnabled = false;
   selectionBox: SelectionBox | null = null;
   editingText: EditingText | null = null;
   bookmarks: CameraBookmark[] = [];
@@ -402,6 +409,20 @@ export class DrawingState extends EventTarget {
     this.notify("lassoHoldMs");
   }
 
+  setCanvasRotationEnabled(on: boolean) {
+    const v = !!on;
+    if (this.canvasRotationEnabled === v) return;
+    this.canvasRotationEnabled = v;
+    // Turning the option off snaps the view back to axis-aligned so the
+    // user can't be stranded in a rotation they can no longer undo by
+    // gesture.
+    if (!v && (this.camera.rotation || 0) !== 0) {
+      this.camera = { ...this.camera, rotation: 0 };
+      this.notify("camera");
+    }
+    this.notify("canvasRotationEnabled");
+  }
+
   setActiveBrushSlot(i: number) {
     if (i < 0 || i >= this.brushSlots.length) return;
     if (this.activeBrushSlot === i) return;
@@ -727,13 +748,22 @@ export class DrawingState extends EventTarget {
   private _compensatePinnedForCamera() {
     const prev = this._pinCamera;
     const cam = this.camera;
-    this._pinCamera = { x: cam.x, y: cam.y, zoom: cam.zoom };
+    this._pinCamera = { x: cam.x, y: cam.y, zoom: cam.zoom, rotation: cam.rotation };
     // Zoom changes rebase instead of compensating — pinning is a
     // scroll anchor, not a screen-space HUD, so pinch-zoom treats the
-    // box like ordinary content.
+    // box like ordinary content. Rotation changes rebase for the same
+    // reason: the twist pivots the world around the fingers, and a
+    // pinned box should turn with the content rather than fight it.
     if (prev.zoom !== cam.zoom) return;
-    const dx = (prev.x - cam.x) / cam.zoom;
-    const dy = (prev.y - cam.y) / cam.zoom;
+    const rot = cam.rotation || 0;
+    if ((prev.rotation || 0) !== rot) return;
+    // Screen-space pan delta → world delta is the inverse rotation of
+    // the screen vector (identity when unrotated).
+    const sx = prev.x - cam.x;
+    const sy = prev.y - cam.y;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const dx = rot === 0 ? sx / cam.zoom : (sx * cos + sy * sin) / cam.zoom;
+    const dy = rot === 0 ? sy / cam.zoom : (-sx * sin + sy * cos) / cam.zoom;
     if (dx === 0 && dy === 0) return;
     const pinnedAreaIds = new Set<string>();
     for (const s of this.shapes) {
@@ -1403,7 +1433,7 @@ export class DrawingState extends EventTarget {
         this.notify("camera");
         return;
       }
-      this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom };
+      this.camera = { x: this._cameraStart.x + dx, y: this._cameraStart.y + dy, zoom: this._cameraStart.zoom, rotation: this._cameraStart.rotation };
       this.notify("camera");
       return;
     }
@@ -2073,10 +2103,13 @@ export class DrawingState extends EventTarget {
     // lower-bound for a still-legible overview.
     const newZoom = Math.min(1, Math.max(0.25, this.camera.zoom * (1 + delta)));
     const scale = newZoom / this.camera.zoom;
+    // Pivot-zoom scales the camera-relative screen vector uniformly, so
+    // it stays correct under a rotated camera — carry rotation through.
     this.camera = {
       x: mouseX - scale * (mouseX - this.camera.x),
       y: mouseY - scale * (mouseY - this.camera.y),
       zoom: newZoom,
+      rotation: this.camera.rotation,
     };
     this.notify("camera");
   }
@@ -3081,10 +3114,17 @@ export class DrawingState extends EventTarget {
         zoom: 1,
       };
     } else {
+      // Land the shape's centre at the visible-viewport centre. Under a
+      // rotated camera the world point maps through R(rotation)·zoom,
+      // so subtract the rotated vector (identity when unrotated).
+      const rot = this.camera.rotation || 0;
+      const zx = cx * zoom, zy = cy * zoom;
+      const cos = Math.cos(rot), sin = Math.sin(rot);
       this.camera = {
-        x: (left + w - right) / 2 - cx * zoom,
-        y: (top + h - bottom) / 2 - cy * zoom,
+        x: (left + w - right) / 2 - (rot === 0 ? zx : zx * cos - zy * sin),
+        y: (top + h - bottom) / 2 - (rot === 0 ? zy : zx * sin + zy * cos),
         zoom,
+        rotation: this.camera.rotation,
       };
     }
     this.selectedIds = new Set([shapeId]);

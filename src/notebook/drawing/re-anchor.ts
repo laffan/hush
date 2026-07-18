@@ -101,29 +101,51 @@ export interface ReanchorController {
 export function createReanchor(opts: ReanchorOptions): ReanchorController {
   const { anchor, strokeEngine, refreshSelectionBBox, pocketStash, pocketStashCtx, sizeCanvases, getDpr } = opts;
 
-  function wantWorldSize(zoom: number): number {
+  /** World-space axis-aligned bbox of the visible viewport. For an
+   *  unrotated camera this is the plain rect the old inline math
+   *  produced; a rotated camera maps the four screen corners through
+   *  the inverse transform and takes their AABB (up to √2× larger at
+   *  45°, which the coverage math absorbs like any other size). */
+  function viewportWorldBounds(cam: Camera): { left: number; top: number; right: number; bottom: number } {
     const vw = window.innerWidth || 1200;
     const vh = window.innerHeight || 800;
-    const longestVisibleWorldSide = Math.max(vw, vh) / Math.max(zoom, 0.01);
+    const rot = cam.rotation || 0;
+    if (!rot) {
+      const left = -cam.x / cam.zoom;
+      const top = -cam.y / cam.zoom;
+      return { left, top, right: left + vw / cam.zoom, bottom: top + vh / cam.zoom };
+    }
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const [px, py] of [[0, 0], [vw, 0], [0, vh], [vw, vh]] as const) {
+      const sx = px - cam.x, sy = py - cam.y;
+      const wx = (sx * cos + sy * sin) / cam.zoom;
+      const wy = (-sx * sin + sy * cos) / cam.zoom;
+      if (wx < left) left = wx;
+      if (wx > right) right = wx;
+      if (wy < top) top = wy;
+      if (wy > bottom) bottom = wy;
+    }
+    return { left, top, right, bottom };
+  }
+
+  function wantWorldSize(cam: Camera): number {
+    const vp = viewportWorldBounds(cam);
+    const longestVisibleWorldSide = Math.max(vp.right - vp.left, vp.bottom - vp.top);
     return Math.max(WORLD_SIZE_MIN, longestVisibleWorldSide * VIEWPORT_COVERAGE_FACTOR);
   }
 
   function needsReanchor(cam: Camera): boolean {
-    const want = wantWorldSize(cam.zoom);
+    const want = wantWorldSize(cam);
     if (want > anchor.worldSize * RESIZE_RATIO_THRESHOLD) return true;
     if (anchor.worldSize > want * RESIZE_RATIO_THRESHOLD && anchor.worldSize > WORLD_SIZE_MIN) return true;
-    const vw = window.innerWidth || 1200;
-    const vh = window.innerHeight || 800;
-    const vpLeft = -cam.x / cam.zoom;
-    const vpTop = -cam.y / cam.zoom;
-    const vpRight = vpLeft + vw / cam.zoom;
-    const vpBottom = vpTop + vh / cam.zoom;
+    const vp = viewportWorldBounds(cam);
     const margin = anchor.worldSize * REANCHOR_MARGIN_FRAC;
     return (
-      vpLeft   < anchor.originX + margin ||
-      vpTop    < anchor.originY + margin ||
-      vpRight  > anchor.originX + anchor.worldSize - margin ||
-      vpBottom > anchor.originY + anchor.worldSize - margin
+      vp.left   < anchor.originX + margin ||
+      vp.top    < anchor.originY + margin ||
+      vp.right  > anchor.originX + anchor.worldSize - margin ||
+      vp.bottom > anchor.originY + anchor.worldSize - margin
     );
   }
 
@@ -146,11 +168,10 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
   }
 
   function reAnchor(cam: Camera): void {
-    const newSize = wantWorldSize(cam.zoom);
-    const vw = window.innerWidth || 1200;
-    const vh = window.innerHeight || 800;
-    const vpCenterX = -cam.x / cam.zoom + (vw / cam.zoom) / 2;
-    const vpCenterY = -cam.y / cam.zoom + (vh / cam.zoom) / 2;
+    const newSize = wantWorldSize(cam);
+    const vp = viewportWorldBounds(cam);
+    const vpCenterX = (vp.left + vp.right) / 2;
+    const vpCenterY = (vp.top + vp.bottom) / 2;
     const newOriginX = vpCenterX - newSize / 2;
     const newOriginY = vpCenterY - newSize / 2;
     const dx = anchor.originX - newOriginX;

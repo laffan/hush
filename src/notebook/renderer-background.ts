@@ -73,25 +73,49 @@ export function drawBackground(ctx: CanvasRenderingContext2D, camera: Camera, w:
   if (pattern === "blank") return;
   const scaledSize = spacing * camera.zoom;
   if (scaledSize < 6) return;
-  const offsetX = camera.x % scaledSize;
-  const offsetY = camera.y % scaledSize;
   ctx.save();
   ctx.globalAlpha = opacity;
+  // "Pattern space" is screen space counter-rotated by the camera's
+  // rotation: the world grid is axis-aligned there and scaled by zoom.
+  // Unrotated cameras keep the identity frame — px0..py1 collapse to
+  // the plain viewport and the loops below match the original code.
+  const rot = camera.rotation || 0;
+  let px0 = 0, py0 = 0, px1 = w, py1 = h;   // pattern-space viewport AABB
+  let anchorX = camera.x, anchorY = camera.y; // world origin in pattern space
+  if (rot) {
+    ctx.rotate(rot);
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    px0 = Infinity; py0 = Infinity; px1 = -Infinity; py1 = -Infinity;
+    for (const [sx, sy] of [[0, 0], [w, 0], [0, h], [w, h]] as const) {
+      const x = sx * cos + sy * sin;
+      const y = -sx * sin + sy * cos;
+      if (x < px0) px0 = x; if (x > px1) px1 = x;
+      if (y < py0) py0 = y; if (y > py1) py1 = y;
+    }
+    anchorX = camera.x * cos + camera.y * sin;
+    anchorY = -camera.x * sin + camera.y * cos;
+  }
+  // First grid line at or below the AABB's min edge, phase-locked to
+  // the world origin (anchor ≡ world 0,0 in pattern space).
+  const gridStart = (min: number, anchor: number) =>
+    min + ((((anchor - min) % scaledSize) + scaledSize) % scaledSize) - scaledSize;
+  const startX = gridStart(px0, anchorX);
+  const startY = gridStart(py0, anchorY);
   if (pattern === "grid") {
     ctx.strokeStyle = color;
     ctx.lineWidth = 0.5;
-    for (let x = offsetX; x < w; x += scaledSize) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    for (let x = startX; x < px1; x += scaledSize) {
+      ctx.beginPath(); ctx.moveTo(x, py0); ctx.lineTo(x, py1); ctx.stroke();
     }
-    for (let y = offsetY; y < h; y += scaledSize) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    for (let y = startY; y < py1; y += scaledSize) {
+      ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px1, y); ctx.stroke();
     }
   } else if (pattern === "lined") {
     // Lined paper: horizontal rule lines only, like a notebook page.
     ctx.strokeStyle = color;
     ctx.lineWidth = 0.5;
-    for (let y = offsetY; y < h; y += scaledSize) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    for (let y = startY; y < py1; y += scaledSize) {
+      ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px1, y); ctx.stroke();
     }
   } else if (pattern === "isometric") {
     // Isometric grid: two sets of diagonals at ±30° from horizontal,
@@ -101,29 +125,29 @@ export function drawBackground(ctx: CanvasRenderingContext2D, camera: Camera, w:
     ctx.strokeStyle = color;
     ctx.lineWidth = 0.5;
     const tan30 = Math.tan(Math.PI / 6); // ≈ 0.5774
-    // Vertical step between parallel diagonals — measured along y at x=0.
-    // Lines slope at ±tan30 so an x-shift of w moves y by w * tan30.
-    const stepY = scaledSize;
-    const slack = w * tan30;
-    const startY = Math.floor((-slack + (camera.y % stepY)) / stepY) * stepY - (camera.y % stepY);
-    for (let y = startY; y < h + slack; y += stepY) {
+    // Vertical step between parallel diagonals — measured along y at
+    // the AABB's left edge. Lines slope at ±tan30 so an x-span of
+    // (px1 - px0) moves y by that span * tan30.
+    const span = px1 - px0;
+    const slack = span * tan30;
+    for (let y = startY - Math.ceil(slack / scaledSize) * scaledSize; y < py1 + slack; y += scaledSize) {
       // line going right and down (positive slope, y increases as x grows)
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y + w * tan30);
+      ctx.moveTo(px0, y);
+      ctx.lineTo(px1, y + slack);
       ctx.stroke();
       // line going right and up (negative slope)
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y - w * tan30);
+      ctx.moveTo(px0, y);
+      ctx.lineTo(px1, y - slack);
       ctx.stroke();
     }
   } else {
     // dot-grid (default fallback)
     ctx.fillStyle = color;
     const radius = Math.max(0.8, scaledSize / 25);
-    for (let x = offsetX; x < w; x += scaledSize) {
-      for (let y = offsetY; y < h; y += scaledSize) {
+    for (let x = startX; x < px1; x += scaledSize) {
+      for (let y = startY; y < py1; y += scaledSize) {
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();

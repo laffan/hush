@@ -287,10 +287,29 @@ function startViewportLoop() {
       const liveCanvas = live.state.canvasEl;
       const liveW = liveCanvas.clientWidth || liveCanvas.getBoundingClientRect().width || window.innerWidth;
       const liveH = liveCanvas.clientHeight || liveCanvas.getBoundingClientRect().height || window.innerHeight;
-      const worldX = -liveCam.x / liveCam.zoom;
-      const worldY = -liveCam.y / liveCam.zoom;
-      const worldW = liveW / liveCam.zoom;
-      const worldH = liveH / liveCam.zoom;
+      // World-space AABB of the live viewport. With the (opt-in)
+      // camera rotation active the viewport is a rotated rect, so we
+      // take the axis-aligned bbox of its four corners — the minimap's
+      // echo rect stays axis-aligned either way.
+      const rot = liveCam.rotation || 0;
+      let worldX, worldY, worldW, worldH;
+      if (rot) {
+        const cos = Math.cos(rot), sin = Math.sin(rot);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const [px, py] of [[0, 0], [liveW, 0], [0, liveH], [liveW, liveH]]) {
+          const dx = px - liveCam.x, dy = py - liveCam.y;
+          const wx = (dx * cos + dy * sin) / liveCam.zoom;
+          const wy = (-dx * sin + dy * cos) / liveCam.zoom;
+          if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
+          if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+        }
+        worldX = minX; worldY = minY; worldW = maxX - minX; worldH = maxY - minY;
+      } else {
+        worldX = -liveCam.x / liveCam.zoom;
+        worldY = -liveCam.y / liveCam.zoom;
+        worldW = liveW / liveCam.zoom;
+        worldH = liveH / liveCam.zoom;
+      }
       const cam = _canvas._snapshotCamera;
       const cssW = _canvas._snapshotCssW || 1;
       const cssH = _canvas._snapshotCssH || 1;
@@ -370,10 +389,17 @@ async function panLiveCameraTo(worldX, worldY) {
     const liveW = canvasEl.clientWidth || canvasEl.getBoundingClientRect().width || window.innerWidth;
     const liveH = canvasEl.clientHeight || canvasEl.getBoundingClientRect().height || window.innerHeight;
     const zoom = live.state.camera.zoom;
+    // Land the clicked world point at the viewport centre. Under the
+    // opt-in camera rotation the world point maps through R·zoom, so
+    // rotate the vector before subtracting (identity when unrotated).
+    const rot = live.state.camera.rotation || 0;
+    const zx = worldX * zoom, zy = worldY * zoom;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
     live.state.camera = {
-      x: liveW / 2 - worldX * zoom,
-      y: liveH / 2 - worldY * zoom,
+      x: liveW / 2 - (rot ? zx * cos - zy * sin : zx),
+      y: liveH / 2 - (rot ? zx * sin + zy * cos : zy),
       zoom,
+      rotation: live.state.camera.rotation,
     };
     live.state.notify("camera");
     return true;

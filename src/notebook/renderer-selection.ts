@@ -146,17 +146,23 @@ export function drawGroupHighlight(ctx: CanvasRenderingContext2D, bounds: { minX
 }
 
 export function drawSelectionBox(ctx: CanvasRenderingContext2D, box: SelectionBox, camera: Camera) {
-  const x1 = box.start.x * camera.zoom + camera.x;
-  const y1 = box.start.y * camera.zoom + camera.y;
-  const x2 = box.end.x * camera.zoom + camera.x;
-  const y2 = box.end.y * camera.zoom + camera.y;
+  // The marquee is axis-aligned in *world* space, so paint it under the
+  // full camera transform (which may include rotation) with widths
+  // divided back out of the zoom.
   ctx.save();
+  ctx.translate(camera.x, camera.y);
+  if (camera.rotation) ctx.rotate(camera.rotation);
+  ctx.scale(camera.zoom, camera.zoom);
+  const x = Math.min(box.start.x, box.end.x);
+  const y = Math.min(box.start.y, box.end.y);
+  const w = Math.abs(box.end.x - box.start.x);
+  const h = Math.abs(box.end.y - box.start.y);
   ctx.fillStyle = "rgba(66, 133, 244, 0.08)";
   ctx.strokeStyle = "#4285f4";
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
-  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  ctx.lineWidth = 1 / camera.zoom;
+  ctx.setLineDash([4 / camera.zoom, 4 / camera.zoom]);
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeRect(x, y, w, h);
   ctx.setLineDash([]);
   ctx.restore();
 }

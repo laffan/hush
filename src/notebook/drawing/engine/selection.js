@@ -46,11 +46,13 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const HANDLE_SIZE = 10;   // comfortable touch target; slightly larger than hush's canvas 7px
 const HANDLE_HALF = HANDLE_SIZE / 2;
 const MIN_SCALE = 0.05;
-// Rotation handle: a small circle floating above the top edge of the
-// bbox. ROTATE_OFFSET is the pixel gap between the bbox top and the
-// handle's center. Sized a touch larger than the resize handles so
-// it reads as a different affordance, and far enough above the bbox
-// that a finger can grab it without overlapping the top resize row.
+// Rotation handle: a small circle floating off the LEFT edge of the
+// bbox. ROTATE_OFFSET is the pixel gap between the bbox's left edge
+// and the handle's center. Sized a touch larger than the resize
+// handles so it reads as a different affordance, and far enough out
+// that a finger can grab it without overlapping the left resize
+// column. It used to float above the top edge, but the selection
+// toolbar hovers there and kept hiding it.
 const ROTATE_HANDLE_R = 8;
 const ROTATE_OFFSET = 48;
 
@@ -137,8 +139,8 @@ export function createSelectionEngine({
     handleNodes[spec.name] = c;
   }
 
-  // Rotation handle — circle hovering above the top edge with a thin
-  // tether down to the bbox so it reads as part of the selection
+  // Rotation handle — circle hovering off the left edge with a thin
+  // tether back to the bbox so it reads as part of the selection
   // chrome. Drag rotates the selected strokes around the bbox center.
   const rotateTether = document.createElementNS(SVG_NS, 'line');
   rotateTether.setAttribute('class', 'handle-tether');
@@ -214,15 +216,16 @@ export function createSelectionEngine({
       n.setAttribute('x', hx - HANDLE_HALF);
       n.setAttribute('y', hy - HANDLE_HALF);
     }
-    // Rotation handle floats above the top-center edge.
-    const rcx = x + w / 2;
-    const rcy = y - ROTATE_OFFSET;
+    // Rotation handle floats off the left-center edge (the top edge
+    // sits under the hovering selection toolbar).
+    const rcx = x - ROTATE_OFFSET;
+    const rcy = y + h / 2;
     rotateHandle.setAttribute('cx', rcx);
     rotateHandle.setAttribute('cy', rcy);
-    rotateTether.setAttribute('x1', rcx);
-    rotateTether.setAttribute('y1', y);
-    rotateTether.setAttribute('x2', rcx);
-    rotateTether.setAttribute('y2', rcy + ROTATE_HANDLE_R);
+    rotateTether.setAttribute('x1', x);
+    rotateTether.setAttribute('y1', rcy);
+    rotateTether.setAttribute('x2', rcx + ROTATE_HANDLE_R);
+    rotateTether.setAttribute('y2', rcy);
     deleteBtn.setAttribute('transform', `translate(${x + w + 14}, ${y - 14})`);
   }
 

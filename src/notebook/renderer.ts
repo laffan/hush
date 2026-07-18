@@ -1,7 +1,7 @@
 import { FONT_FAMILY, LINE_HEIGHT_RATIO, COLOR_PALETTE } from "./types";
 import type { Bounds, Camera, DragAreaShape, ImageShape, Layer, Point, SelectionBox, Shape, TextShape } from "./types";
 import type { CanvasTheme } from "./themes";
-import { computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
+import { canvasToScreen, computePocketLayout, getShapeBounds, POCKET_ZONE_WIDTH, POCKET_TRAY_WIDTH } from "./utils";
 import type { PocketEntry } from "./utils";
 import { parseText } from "./markdown";
 import { drawSelectionHighlight, drawGroupHighlight, drawSelectionBox, drawCropOverlay, drawEdgeDeleteButton, drawEdgeDeleteDot, drawReorderPreview, drawShadowHeaders } from "./renderer-selection";
@@ -128,6 +128,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
 
   ctx.save();
   ctx.translate(camera.x, camera.y);
+  if (camera.rotation) ctx.rotate(camera.rotation);
   ctx.scale(camera.zoom, camera.zoom);
   // Build layer order (bottom-first for paint order). If no layers
   // were provided, fall back to a single synthetic layer that contains
@@ -306,8 +307,7 @@ export function render(canvas: HTMLCanvasElement, state: RenderState): void {
     for (const e of state.flowchart.edges) {
       const mid = state.flowchart.getEdgeMidpoint(e.id, shapes);
       if (!mid) continue;
-      const sx = mid.x * camera.zoom + camera.x;
-      const sy = mid.y * camera.zoom + camera.y;
+      const { x: sx, y: sy } = canvasToScreen(mid, camera);
       // Hovered edges always paint the X (mouse hover or touch tap).
       // The persistent dot is only a touch affordance — mouse users
       // discover the X via hover so the dot just adds visual noise.

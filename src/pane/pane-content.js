@@ -231,6 +231,7 @@ async function loadNotebookPane(pane) {
       if (bg.pattern) canvas.state.backgroundPattern = bg.pattern;
       if (typeof bg.spacing === "number") canvas.state.gridSpacing = bg.spacing;
       if (typeof bg.opacity === "number") canvas.state.gridOpacity = bg.opacity;
+      if (typeof bg.rotationEnabled === "boolean") canvas.state.setCanvasRotationEnabled(bg.rotationEnabled);
       canvas.state.notify("theme");
       pane._notebookBackground = { ...bg };
     }
@@ -530,6 +531,7 @@ export async function savePaneContent(pane) {
             pattern: pane.notebook.state.backgroundPattern,
             spacing: pane.notebook.state.gridSpacing,
             opacity: pane.notebook.state.gridOpacity,
+            rotationEnabled: pane.notebook.state.canvasRotationEnabled,
           },
         });
       }
