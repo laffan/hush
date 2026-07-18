@@ -166,12 +166,81 @@ Round-4 changes on those numbers:
   `reanchor:resizeFlushGap` in the awaited table), so the next capture
   quantifies both fixes directly.
 
-The structural options if ~250 ms per re-anchor is still too rough
-(in rough order of value): tile the backing into a grid of small
-canvases so panning never moves pixels at all (kills the re-anchor
-concept; the real fix, but engine-sized work); time-slice the resize
-rebake across frames (bounds the zoom-crossing flush); shrink the
-backing / DPR (linear stall reduction, costs ink sharpness).
+**Fourth capture (post delta #28 + margin 0.07): op-shaving is
+exhausted.** The fixed probe cleanly measured ~235 ms per full-surface
+op (`probe:opToFrameGap`), yet pan stalls held at ~470 ms per
+re-anchor — i.e. ~TWO full-surface costs per cycle even with the
+clears skipped. The stall pairs (`reA←0.0s` then `reA←0.5s` with no
+new re-anchor between) point at WebKit's own follow-on surface work
+(copy-back / texture upload after a content change), which is outside
+our reach. Idle is a clean 58.8 fps; all JS sections are noise.
+Verdict: with a monolithic 4096² canvas on this hardware, every
+re-anchor inherently costs ~2 × 240 ms of commit work. Architecture
+change required.
+
+## ROUND 4C — backing-size experiment (ACTIVE)
+
+`MAX_BACKING_PIXELS` halved 4096² → 2896² (see the constant's comment
+in `drawing-layer.ts`). Two things the next HUD capture answers:
+
+1. **Linear model check** — `reanchor:blitFlushGap` / stall sizes
+   should halve (~470 → ~235 ms). If they don't scale, the cost model
+   is wrong and the tile design below needs rethinking.
+2. **GPU-demotion wildcard** — if the demotion is a total-canvas-
+   memory budget, halving may flip Canvas2D back onto the GPU and
+   flush gaps collapse to ~0. That would redirect the whole effort
+   toward staying under the budget rather than tiling.
+
+Known cost while active: effective ink DPR ~1.72 → ~1.21 (softer ink
+at 100% zoom on Retina). This is an experiment, not a destination.
+Option E (defer re-anchors to gesture end — the stall moves to finger-
+lift instead of mid-gesture, at the price of edge blanking on long
+pans) is held in reserve as a comfort patch depending on how C feels.
+
+## NEXT SESSION — tiled backing (Option A, the real fix)
+
+Replace the monolithic done canvas with a grid of fixed-size canvas
+tiles (start at 1024 CSS px/tile; round-4C's numbers may tune this)
+inside the same GPU-transformed wrapper. Each tile is permanently
+bound to a world-space cell; panning never moves pixels. Coverage
+manager creates/bakes tiles entering a ring around the viewport
+(one per frame, or prefetched during idle) and LRU-releases distant
+ones into a reuse pool (no realloc churn). Per-tile bake at the
+measured 280 MB/s ≈ ~40 ms — and usually off the interaction path
+entirely.
+
+What it buys beyond pan: zoom resizes become progressive per-tile
+rebakes (no more 776 ms atomic fullRebake flush), and many small
+canvases are less likely to trip whatever budget demoted the big one
+off the GPU.
+
+Design notes / inventory for the session:
+- Engine `stroke-render.js`: per-tile contexts; the existing 512-px
+  tile INDEX maps nearly 1:1 (align canvas-tile size to a multiple).
+  Stamp clipping at tile edges reuses the proven rebakeTiles
+  clip-at-boundary machinery (seam-safe by construction).
+- `stroke.js`: endStroke / erase / slice / previewTransform write into
+  every tile the stroke touches (ctx.translate(-tileOrigin) per tile);
+  `translateAllStrokePoints`, `reAnchorTranslate` (delta #25), and
+  `shiftDoneCanvas` are deleted — local coords become one stable frame.
+- Live + preview overlays become VIEWPORT-sized layers counter-
+  positioned against the wrapper transform (~3.4 MP each instead of
+  world-sized; they redraw per frame during use anyway).
+- `re-anchor.ts` → a much simpler coverage manager (which tiles exist
+  for this camera); `sizeCanvases`, origin shifting, and the anchor
+  record go away. Sync-shim world↔local translation simplifies.
+- Pocket stash / export (`blitDoneCanvasAtWorldOrigin`) /
+  `blitWorldRegion` / `renderStrokesTo` iterate tiles.
+- Verification: the existing Chromium harness pixel-compares tiled
+  output against the monolithic renderer (fringe-level tolerance
+  already characterized); the HUD measures on-device flush per tile.
+- Engine philosophy: this is the point where the engine becomes
+  properly Hush's own — document as a major delta series (#29+) with
+  the upstream-diff note updated in README-DRAWING.md.
+
+Keep from this branch regardless of path: save-pipeline fixes (rounds
+1-2), resize hysteresis + no-op realloc guard (round 3), delta #28,
+the streamline cache, and the HUD.
 
 **How to use it:**
 1. Open the laggy notebook — a dark `PERF …fps stalls N` pill sits in
