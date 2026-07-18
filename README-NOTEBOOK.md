@@ -46,7 +46,7 @@ src/notebook/
     bg-settings-fixed-button.ts  Fixed bottom-right Background settings button (pattern / spacing / opacity); wraps bg-settings-popup.ts and anchors its flyout above + right-aligned so it never clips the window edge
     pocket-blit.ts         Pocket / done-canvas blit helpers (4 functions) extracted from drawing-layer.ts
     selection-drag.ts      Hush↔engine select-drag controller — pause-shim, hide-chrome, commit-on-release ladder
-    flyout-styles.ts       Injects the 15-px-thick squared-thumb stylesheet that brush + lasso flyout sliders share
+    flyout-styles.ts       Injects the shared flyout stylesheets — 15-px-thick slider chrome (brush + lasso flyouts, dark-aware track) and the brush panel's themed component classes
     mini-palette.ts        15-px-thick A/H/Red + size shortcut strip pinned to the active brush slot
     layers-panel.ts        Layers dropdown (notebook-level, used by every shape type)
     engine/                Stroke engine (ported; ~18 documented deltas — see README-DRAWING.md)

@@ -427,7 +427,7 @@ export function createDrawingToolPanel(
     lassoFlyout.style.background = theme.uiBackground;
     lassoFlyout.style.border = `1px solid ${theme.uiBorder}`;
     lassoFlyout.style.color = theme.foreground;
-    applyFlyoutSliderTheme(lassoSlider, theme.accent);
+    applyFlyoutSliderTheme(lassoSlider, theme.accent, theme.variant);
   }
 
   function positionLassoFlyout(): void {

@@ -20,7 +20,7 @@ import type { DrawingSlot } from "../types";
 import { PEN_COLORS } from "../types";
 import { h } from "../ui/dom-helpers";
 import { createMiniPalette } from "./mini-palette";
-import { ensureFlyoutSliderStyle, applyFlyoutSliderTheme } from "./flyout-styles";
+import { ensureFlyoutSliderStyle, ensureBrushFlyoutStyle, applyFlyoutSliderTheme, accentTint } from "./flyout-styles";
 
 // Color sentinels + explicit palette (PEN_COLORS in types.ts — shared
 // with the mini-palette's secondary selector). "auto" resolves to the
@@ -53,6 +53,7 @@ export function createBrushSlots(
   drawingLayer: DrawingLayer,
 ): BrushSlotsHandle {
   ensureFlyoutSliderStyle();
+  ensureBrushFlyoutStyle();
   const root = h("div", {
     style: { display: "flex", alignItems: "center", gap: "6px" },
   });
@@ -63,14 +64,15 @@ export function createBrushSlots(
       display: "none",
       minWidth: "280px",
       maxWidth: "320px",
-      padding: "12px 14px",
+      padding: "14px",
       borderRadius: "12px",
-      boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+      boxShadow: "0 10px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08)",
       zIndex: "200",
       backdropFilter: "blur(8px)",
       userSelect: "none",
     },
   });
+  flyout.classList.add("notebook-brush-flyout");
   flyout.addEventListener("pointerdown", (e) => e.stopPropagation());
 
   let flyoutOpen = false;
@@ -193,22 +195,15 @@ export function createBrushSlots(
   const spacingRow = makeSliderRow("Spacing", 5, 50, 1, 12);
 
   const brushGrid = h("div", {
-    style: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "4px" },
+    style: { display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "6px", justifyItems: "center" },
   });
   const brushCells: { id: string; cell: HTMLButtonElement; canvas: HTMLCanvasElement }[] = [];
   for (const id of BRUSH_IDS) {
     const c = document.createElement("canvas");
     c.width = 36; c.height = 36;
-    Object.assign(c.style, { width: "36px", height: "36px", display: "block", borderRadius: "4px", background: "rgba(255,255,255,0.5)" });
+    Object.assign(c.style, { width: "36px", height: "36px", display: "block", borderRadius: "6px", pointerEvents: "none" });
     const cell = h("button", {
-      title: id,
-      style: {
-        width: "40px", height: "40px", padding: "0",
-        border: "2px solid transparent", borderRadius: "6px",
-        background: "rgba(0,0,0,0.03)",
-        cursor: "pointer",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      },
+      title: id === "brush-highlighter" ? "Highlighter" : `Brush ${id.replace("brush-", "")}`,
       children: [c],
       onClick: (e) => {
         e.stopPropagation();
@@ -223,12 +218,13 @@ export function createBrushSlots(
         state.updateBrushSlot(idx, { brushId: id });
       },
     }) as HTMLButtonElement;
+    cell.classList.add("nbf-cell");
     brushCells.push({ id, cell, canvas: c });
     brushGrid.appendChild(cell);
   }
 
   const colorRow = h("div", {
-    style: { display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: "4px" },
+    style: { display: "grid", gridTemplateColumns: "repeat(9, 1fr)", justifyItems: "center", rowGap: "6px" },
   });
   const colorBtns: { value: string; btn: HTMLButtonElement }[] = [];
   for (const value of PEN_COLORS) {
@@ -239,15 +235,7 @@ export function createBrushSlots(
         : value === "heading"
           ? "Heading colour (follows theme)"
           : value,
-      style: {
-        width: "24px", height: "24px", padding: "0",
-        borderRadius: "50%",
-        border: "2px solid transparent",
-        cursor: "pointer",
-        ...(isAuto
-          ? { fontSize: "10px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center" }
-          : { background: value }),
-      },
+      style: isAuto ? {} : { background: value },
       text: value === "auto" ? "A" : value === "heading" ? "H" : undefined,
       onClick: (e) => {
         e.stopPropagation();
@@ -262,23 +250,20 @@ export function createBrushSlots(
         state.updateBrushSlot(idx, { color: value });
       },
     }) as HTMLButtonElement;
+    btn.classList.add("nbf-swatch");
     colorBtns.push({ value, btn });
     colorRow.appendChild(btn);
   }
 
-  const modeRow = h("div", {
-    style: { display: "flex", gap: "6px" },
-  });
+  // Mode — a two-segment control rather than two free-floating
+  // buttons; the active segment fills with the theme accent (same
+  // treatment as the bg-settings pattern buttons).
+  const modeRow = h("div");
+  modeRow.classList.add("nbf-mode");
   const modeBtns: { id: "normal" | "highlighter"; btn: HTMLButtonElement }[] = [];
   for (const m of MODES) {
     const btn = h("button", {
       text: m.label,
-      style: {
-        flex: "1", padding: "6px 10px",
-        border: "1px solid rgba(0,0,0,0.12)", borderRadius: "6px",
-        background: "#fff", color: "#333",
-        font: "inherit", cursor: "pointer",
-      },
       onClick: (e) => {
         e.stopPropagation();
         const idx = state.activeBrushSlot;
@@ -292,6 +277,7 @@ export function createBrushSlots(
         state.updateBrushSlot(idx, { mode: m.id });
       },
     }) as HTMLButtonElement;
+    btn.classList.add("nbf-seg");
     modeBtns.push({ id: m.id, btn });
     modeRow.appendChild(btn);
   }
@@ -302,12 +288,15 @@ export function createBrushSlots(
   const demoStroke = document.createElement("canvas");
   Object.assign(demoStroke.style, {
     width: "100%", height: "48px", display: "block",
-    marginBottom: "10px", borderRadius: "6px",
+    marginBottom: "12px", borderRadius: "8px",
   });
   flyout.appendChild(demoStroke);
   flyout.appendChild(section(null, [sizeRow.root, streamRow.root, spacingRow.root]));
+  flyout.appendChild(divider());
   flyout.appendChild(section("Brush", [brushGrid]));
+  flyout.appendChild(divider());
   flyout.appendChild(section("Color", [colorRow]));
+  flyout.appendChild(divider());
   flyout.appendChild(section("Mode", [modeRow]));
 
   function redrawDemoStroke(): void {
@@ -373,16 +362,27 @@ export function createBrushSlots(
 
   function applyFlyoutTheme(): void {
     const theme = state.theme;
+    const dark = theme.variant === "dark";
     flyout.style.background = theme.uiBackground;
     flyout.style.border = `1px solid ${theme.uiBorder}`;
     flyout.style.color = theme.foreground;
+    // Theme surface for the component classes in flyout-styles.ts —
+    // every `--nbf-*` reference in the injected sheet resolves against
+    // these, so a theme switch restyles the panel in one place.
+    flyout.style.setProperty("--nbf-border", theme.uiBorder);
+    flyout.style.setProperty("--nbf-accent", theme.accent);
+    flyout.style.setProperty("--nbf-panel", theme.uiBackground);
+    flyout.style.setProperty("--nbf-canvas", theme.canvasBackground);
+    flyout.style.setProperty("--nbf-subtle", dark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.045)");
+    flyout.style.setProperty("--nbf-swatch-edge", dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.12)");
+    flyout.style.setProperty("--nbf-accent-tint", accentTint(theme.accent, 0.12));
     // Tint the demo canvas to match the canvas background so the
     // stroke reads exactly as it would on the real surface.
     demoStroke.style.background = theme.canvasBackground;
     demoStroke.style.border = `1px solid ${theme.uiBorder}`;
-    applyFlyoutSliderTheme(sizeRow.input, theme.accent);
-    applyFlyoutSliderTheme(streamRow.input, theme.accent);
-    applyFlyoutSliderTheme(spacingRow.input, theme.accent);
+    applyFlyoutSliderTheme(sizeRow.input, theme.accent, theme.variant);
+    applyFlyoutSliderTheme(streamRow.input, theme.accent, theme.variant);
+    applyFlyoutSliderTheme(spacingRow.input, theme.accent, theme.variant);
   }
 
   function syncFlyoutValues(): void {
@@ -393,12 +393,13 @@ export function createBrushSlots(
     streamRow.val.textContent = String(Math.round(slot.streamline * 100));
     spacingRow.input.value = String(Math.round(slot.spacing * 100));
     spacingRow.val.textContent = String(Math.round(slot.spacing * 100));
+    // Active states are class-driven; the sheet in flyout-styles.ts
+    // paints rings / fills from the --nbf-* theme variables.
     for (const { id, cell } of brushCells) {
-      cell.style.borderColor = id === slot.brushId ? state.theme.accent : "transparent";
-      cell.style.background = id === slot.brushId ? "rgba(66, 133, 244, 0.08)" : "rgba(0,0,0,0.03)";
+      cell.classList.toggle("nbf-active", id === slot.brushId);
     }
     for (const { value, btn } of colorBtns) {
-      btn.style.borderColor = value === slot.color ? state.theme.accent : "transparent";
+      btn.classList.toggle("nbf-active", value === slot.color);
       if (value === "auto") {
         btn.style.background = state.theme.canvasBackground;
         btn.style.color = state.theme.foreground;
@@ -408,10 +409,7 @@ export function createBrushSlots(
       }
     }
     for (const { id, btn } of modeBtns) {
-      const active = slot.mode === id;
-      btn.style.background = active ? state.theme.accent : "#fff";
-      btn.style.color = active ? "#fff" : "#333";
-      btn.style.borderColor = active ? state.theme.accent : "rgba(0,0,0,0.12)";
+      btn.classList.toggle("nbf-active", slot.mode === id);
     }
     redrawBrushCells();
     redrawDemoStroke();
@@ -520,35 +518,40 @@ export function createBrushSlots(
   // ---------- helpers ----------
 
   function section(title: string | null, children: HTMLElement[]): HTMLElement {
-    const sec = h("div", { style: { marginBottom: "12px" } });
+    const sec = h("div");
     if (title !== null) {
-      const t = h("div", {
-        text: title,
-        style: { fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.04em", opacity: "0.7", marginBottom: "6px" },
-      });
+      const t = h("div", { text: title });
+      t.classList.add("nbf-label");
       sec.appendChild(t);
     }
     for (const c of children) sec.appendChild(c);
     return sec;
   }
 
+  /** Hairline rule between sections — carries the 12 px section
+   *  rhythm on both sides (sections themselves have no margins). */
+  function divider(): HTMLElement {
+    const d = h("div");
+    d.classList.add("nbf-divider");
+    return d;
+  }
+
   function makeSliderRow(label: string, min: number, max: number, step: number, initial: number): {
     root: HTMLElement; input: HTMLInputElement; val: HTMLElement;
   } {
     const row = h("div", {
-      style: { display: "grid", gridTemplateColumns: "60px 1fr 32px", alignItems: "center", gap: "8px", marginBottom: "4px" },
+      style: { display: "grid", gridTemplateColumns: "52px 1fr 34px", alignItems: "center", gap: "10px", marginBottom: "6px" },
     });
-    const lbl = h("label", { text: label, style: { fontSize: "12px" } });
+    const lbl = h("label", { text: label });
+    lbl.classList.add("nbf-row-label");
     const input = h("input", {
       attrs: { type: "range", min: String(min), max: String(max), step: String(step) },
       style: { width: "100%" },
     }) as HTMLInputElement;
     input.classList.add("notebook-flyout-slider");
     input.value = String(initial);
-    const val = h("span", {
-      text: String(initial),
-      style: { fontSize: "11px", textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: "0.7" },
-    });
+    const val = h("span", { text: String(initial) });
+    val.classList.add("nbf-row-val");
     row.appendChild(lbl); row.appendChild(input); row.appendChild(val);
     return { root: row, input, val };
   }

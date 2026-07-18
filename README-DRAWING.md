@@ -22,7 +22,7 @@ src/notebook/drawing/
   mini-palette.ts        15-px-thick A/H/Red + size shortcut strip pinned to the active brush;
                          re-tapping the selected color square opens a secondary circle-swatch
                          palette, and dragging the size number floats a live true-size preview
-  flyout-styles.ts       15-px squared-thumb stylesheet shared by every drawing flyout slider
+  flyout-styles.ts       Shared flyout stylesheets: the 15-px chunky-thumb slider chrome (dark-aware track) + the brush panel's component classes (labels, dividers, cells, swatches, mode segments), themed via --nbf-* vars
   layers-panel.ts        Layers dropdown hung off the bottom toolbar — notebook-level, used by every shape type
   vite-assets.d.ts       `*.png?url` and `*.js` module declarations
   engine/
