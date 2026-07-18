@@ -38,16 +38,20 @@ export const WORLD_SIZE_MIN = 2048;
  *  has slack greater than the margin — otherwise `needsReanchor`
  *  fires immediately on the next frame and we re-anchor every pan
  *  step (the bug introduced in the first cut of this controller).
- *  With marginFrac = 0.10, factor must exceed 1.25; 1.5 leaves a
- *  comfortable buffer so each re-anchor buys ~17 % of viewport in
+ *  With marginFrac = 0.07, factor must exceed 1.163; 1.5 leaves a
+ *  comfortable buffer so each re-anchor buys ~14.5 % of viewport in
  *  pan distance before the next one. */
 const VIEWPORT_COVERAGE_FACTOR = 1.5;
 /** Re-anchor when the visible viewport's world bbox comes within
  *  REANCHOR_MARGIN_FRAC × current worldSize of any canvas edge.
- *  Smaller margin = more slack between re-anchors but less safety
- *  if the user pans faster than expected. 0.10 pairs with the
- *  factor above to put each re-anchor ~17% of viewport apart. */
-const REANCHOR_MARGIN_FRAC = 0.10;
+ *  Smaller margin = more pan distance between re-anchors but less
+ *  safety headroom if the camera outruns the backing (a blank strip
+ *  flashes until the re-anchor lands). Dropped 0.10 → 0.07 in round
+ *  4: each re-anchor's commit-side flush is the felt hitch on
+ *  iPad-class WebKit, so spacing them ~45% further apart at zero
+ *  quality cost is a straight win; ~168 px of world headroom remains
+ *  beyond the viewport edge at a 2400 px backing. */
+const REANCHOR_MARGIN_FRAC = 0.07;
 /** Re-resize when the wanted world size differs from the current
  *  one by more than this ratio. Avoids re-bakes for tiny zoom
  *  nudges that don't actually need a different size. */
@@ -59,11 +63,11 @@ const RESIZE_RATIO_THRESHOLD = 1.4;
  *  tolerance, and the next margin-breach re-anchor took the RESIZE
  *  path: full canvas resize + O(visible ink) rebake. On-device (round
  *  3 HUD capture) that was 10 of 16 re-anchors, at up to 1.5 s each.
- *  Must stay above 1 / (1 − 2·REANCHOR_MARGIN_FRAC) = 1.25, or a
+ *  Must stay above 1 / (1 − 2·REANCHOR_MARGIN_FRAC) = 1.163, or a
  *  kept-size re-anchor would re-breach the margin immediately and
- *  re-anchor every frame; 1.35 keeps ≥ ~60 px of pan between blits in
- *  the worst drift band while tolerating ~10% of zoom-out drift
- *  before a real resize. */
+ *  re-anchor every frame; 1.35 keeps a healthy pan distance between
+ *  blits in the worst drift band while tolerating ~10% of zoom-out
+ *  drift before a real resize. */
 const MIN_KEEP_COVERAGE = 1.35;
 
 /** Mutable holder for the canvas backing's world-space anchor +
@@ -257,6 +261,16 @@ export function createReanchor(opts: ReanchorOptions): ReanchorController {
     restashPocketedStrokes();
     refreshSelectionBBox();
     perf.end("reanchor"); // PERF-HUD (temporary)
+    // PERF-HUD (temporary): measure the commit-side flush directly —
+    // the gap between this re-anchor's synchronous end and the next
+    // animation frame is where WebKit pays for the recorded canvas
+    // work, which no JS span can see. Shows up in the "awaited" table
+    // per path.
+    if (typeof requestAnimationFrame === "function") {
+      const endAt = performance.now();
+      const path = sizeChanged ? "resize" : "blit";
+      requestAnimationFrame((t) => perf.asyncSpan(`reanchor:${path}FlushGap`, t - endAt));
+    }
   }
 
   function ensureCoverage(cam: Camera): void {

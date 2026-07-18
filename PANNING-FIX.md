@@ -138,12 +138,40 @@ surfaces ≈ 335 MB of canvas backing. Round-3b changes on this theory:
   vanishing with it hidden would implicate compositor re-raster of
   that layer instead — pen input needs it back on afterwards).
 
-Next capture wants: a normal 20-30 s pan (with a pinch or two), then
-2-3 `probe` presses while idle, then — if stalls persist — the same
-pan with `svg✕`. If the probe confirms software playback, the next
-lever is cutting canvas memory for real: smaller `MAX_BACKING_PIXELS`
-(sharpness tradeoff), viewport-sized live/preview canvases, or an
-idle-time re-anchor cadence that tolerates a smaller backing.
+**Third capture (probe run): the commit-cost theory is CONFIRMED.**
+The v2 probe's own `postOpFrameGap 15ms` row was a measurement bug
+(it timed the first→second frame gap; the flush lands between the op
+and the FIRST frame) — but the stall log caught the truth: every
+probe press produced a ~235-247 ms stall containing `probe:selfCopy
+1.0`. So on this device a full-surface op on the 4096² canvas costs
+**~0 ms of JS and ~240 ms at commit** (~280 MB/s — CPU-rasterizer
+speed). The re-anchor accounting follows exactly: a blit re-anchor
+did THREE full-surface ops (done self-copy + live clear + preview
+clear) ≈ the observed ~490 ms stalls; a resize re-anchor's fullRebake
+flush ≈ the 500-1300 ms ones (that capture's pinch sweep 1.0→0.65→1.0
+legitimately forced 5 resizes).
+
+Round-4 changes on those numbers:
+- **Delta #28** — `translateAllStrokePoints` / `resize()` only clear
+  the live / preview overlays when they can hold pixels (active
+  stroke / live preview). During plain pans both are always empty, so
+  a blit re-anchor drops from 3 full-surface ops to 1 (~490 → ~250 ms
+  expected).
+- **`REANCHOR_MARGIN_FRAC` 0.10 → 0.07** — re-anchors land ~45%
+  further apart at zero quality cost (~168 px of world headroom
+  remains past the viewport edge).
+- **HUD v3** — probe now measures the op→first-frame gap
+  (`probe:opToFrameGap`, the real flush), and every re-anchor records
+  its own commit flush (`reanchor:blitFlushGap` /
+  `reanchor:resizeFlushGap` in the awaited table), so the next capture
+  quantifies both fixes directly.
+
+The structural options if ~250 ms per re-anchor is still too rough
+(in rough order of value): tile the backing into a grid of small
+canvases so panning never moves pixels at all (kills the re-anchor
+concept; the real fix, but engine-sized work); time-slice the resize
+rebake across frames (bounds the zoom-crossing flush); shrink the
+backing / DPR (linear stall reduction, costs ink sharpness).
 
 **How to use it:**
 1. Open the laggy notebook — a dark `PERF …fps stalls N` pill sits in

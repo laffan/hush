@@ -46,6 +46,14 @@
  *      MAX_BACKING_PIXELS the pixel size is constant across worldSize
  *      changes, so re-anchor resizes were paying huge IOSurface
  *      reallocation churn for a no-op dimension change.
+ *  28. Empty-aware live/preview clears. `translateAllStrokePoints` and
+ *      `resize()` skip the full-surface clears of the live / preview
+ *      overlays when they can't hold pixels (no active stroke, no live
+ *      preview transform). On-device probing showed every full-surface
+ *      op on a world-sized canvas costs ~a quarter second at COMMIT
+ *      time on iPad-class WebKit regardless of its trivial JS cost, and
+ *      during plain pans both overlays are always empty — the
+ *      unconditional clears tripled the felt re-anchor stall.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js.)
@@ -234,11 +242,16 @@ export function createStrokeEngine({
     }
     // Rebake from the stored stroke list so resizing or first-paint matches.
     renderer.fullRebake();
-    // Preview/live are transient; clear them.
-    clearCtx(previewCtx);
-    clearCtx(liveCtx);
+    // Preview/live are transient; clear them — but only when they can
+    // hold pixels (Hush delta #28: a full-surface clear costs ~250 ms
+    // commit-side on iPad-class WebKit; when the backing was just
+    // reallocated the canvases are already blank, and when it wasn't,
+    // empty overlays have nothing to clear).
+    const hadPreviewPixels = !!state.previewingIds;
     state.previewingIds = null;
     state.previewingTiles = null;
+    if (hadPreviewPixels) clearCtx(previewCtx);
+    if (state.active) clearCtx(liveCtx);
   }
 
   // --------- wire up subsystems ---------
@@ -729,10 +742,22 @@ export function createStrokeEngine({
       state.longPressAnchor.x += dx;
       state.longPressAnchor.y += dy;
     }
+    // Hush delta #28: only clear the live / preview overlays when they
+    // can actually hold pixels (an active stroke / a live preview
+    // transform). Each full-surface clear on a world-sized canvas costs
+    // ~a quarter second at COMMIT time on iPad-class WebKit (the JS
+    // records cheaply; the rasterizer pays after we return), and during
+    // a plain pan — the overwhelmingly common re-anchor — both overlays
+    // are empty, so the old unconditional clears tripled the felt
+    // re-anchor stall for nothing. The emptiness signals are reliable:
+    // the live canvas only holds ink while `state.active` exists
+    // (endStroke / cancel clear it), and the preview canvas only while
+    // `previewingIds` is set (null-transform / commit clear it).
+    const hadPreviewPixels = !!state.previewingIds;
     state.previewingIds = null;
     state.previewingTiles = null;
-    clearCtx(liveCtx);
-    clearCtx(previewCtx);
+    if (state.active) clearCtx(liveCtx);
+    if (hadPreviewPixels) clearCtx(previewCtx);
     if (state.active) {
       state.dirty = true;
       scheduleRender();

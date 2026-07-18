@@ -241,7 +241,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     const worst = (arr: SecondBucket[]) => Math.max(0, ...arr.map((b) => b.worstGap));
     let out = "";
     if (pan.length) out += `PAN fps ${f1(avg(pan))} (worst frame ${f1(worst(pan))}ms, input ${f1(pan.reduce((a, b) => a + b.inputEvents, 0) / pan.length)}/s)`;
-    else out += "PAN fps – (no pan yet)";
+    else out += "PAN fps – (none in last 30 s)";
     if (idle.length) out += ` · idle fps ${f1(avg(idle))}`;
     return out;
   }
@@ -256,7 +256,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     const st = shapeStats();
     const done = container.querySelector<HTMLCanvasElement>(".drawing-done");
     const lines: string[] = [];
-    lines.push(`== Notebook Perf Report (hud v2) ==`);
+    lines.push(`== Notebook Perf Report (hud v3) ==`);
     lines.push(`uptime ${f1((performance.now() - perf.startedAt) / 1000)}s · dpr ${window.devicePixelRatio} · zoom ${state.camera.zoom.toFixed(3)} · sel ${state.selectedIds.size}`);
     lines.push(`shapes ${st.total} (draw ${st.draw} · ${st.pts} pts, text ${st.text}, img ${st.img}, other ${st.other})`);
     if (done) lines.push(`backing ${done.width}×${done.height}px (css ${done.style.width})`);
@@ -381,10 +381,16 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
       ctx.drawImage(done, 0, 0);
       ctx.restore();
       perf.end("probe:selfCopy");
-      perf.asyncSpan("probe:selfCopyJs", performance.now() - t0);
+      const opEnd = performance.now();
+      perf.asyncSpan("probe:selfCopyJs", opEnd - t0);
+      // The flush lands between the op and the FIRST frame after it —
+      // v2 measured the first→second frame gap and missed it entirely
+      // (the round-3 capture's stall log caught the real ~240 ms cost
+      // that this row reported as 15 ms).
       const f1t = await nextFrame();
+      perf.asyncSpan("probe:opToFrameGap", f1t - opEnd);
       const f2t = await nextFrame();
-      perf.asyncSpan("probe:postOpFrameGap", f2t - f1t);
+      perf.asyncSpan("probe:nextFrameGap", f2t - f1t);
     }
     // Allocation probe: a fresh same-size surface + first draw.
     const t0 = performance.now();
