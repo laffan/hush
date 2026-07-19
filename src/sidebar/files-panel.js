@@ -12,8 +12,9 @@ import { typeIcons, escHtml, attachLeafHoverHandlers, showPromptModal, googleLin
 import {
   isInboxId, isImagesId, isPdfsId, isTrashId, isAnySpecialId, allSpecialIds,
   visibleTopLevel, isAllDesksMode, numberSkip, hasPairedGutter, getIcon, windowBadgesHtml,
-  actionButtons, flagOnlyButton, getPdfSync, buildPdfRowHtml,
+  actionButtons, flagOnlyButton, getPdfSync, buildPdfRowHtml, sortFlaggedItems,
 } from "./files-panel-rows.js";
+import { normalizePdfProjectAliases } from "../state/state-pdf-aliases.js";
 import { refreshTooltips } from "../tooltips.js";
 import { renderLocalSyncSection, getLocalSyncContainer, onLocalDropExternal, positionLocalSync as positionLocalSyncImpl } from "./files-panel-local-sync.js";
 import { openRowMenu } from "./files-panel-row-menu.js";
@@ -92,14 +93,23 @@ export function createFilesPanel(container, state, hidePanel) {
       // Tab markers are synthetic — they can never be a drop target
       // and the dragged item can never be one (canDrag blocks them).
       if (isTabMarkerItem(targetItem)) return false;
-      // Images stay inside the Images folder; PDFs in __pdfs__ (no
-      // reparenting); desks can't nest (root-level drops only).
+      // Images stay inside the Images folder; desks can't nest
+      // (root-level drops only).
       if (draggedItem.type === "image") return !!targetItem && isImagesId(targetItem.id);
-      if (draggedItem.type === "pdf") return false;
+      // PDFs accept exactly one reparenting gesture: dropping on a real
+      // project (or a project's own PDFs folder) — the drop becomes an
+      // alias there and the original returns to the desk's PDFs folder
+      // (normalizePdfProjectAliases converts the move in onChange).
+      if (draggedItem.type === "pdf") {
+        if (!targetItem) return false;
+        if (targetItem.pdfFolder) return true;
+        return targetItem.type === "project" && !isInboxId(targetItem.id);
+      }
       if (draggedItem.type === "desk") return targetItem === null;
       if (targetItem === null) return false;
       if (isImagesId(targetItem.id)) return draggedItem.type === "image";
       if (isPdfsId(targetItem.id)) return false;
+      if (targetItem.pdfFolder) return false; // only PDFs (handled above)
       if (targetItem.type === "folder") return true;
       if (targetItem.type === "desk") return ["document", "notebook", "stack", "folder", "project"].includes(draggedItem.type);
       if (targetItem.type === "project") return ["document", "notebook", "stack", "project"].includes(draggedItem.type);
@@ -277,6 +287,7 @@ export function createFilesPanel(container, state, hidePanel) {
           normalizeProjectChildren(desk.children);
         }
         state.fileTree = cleaned;
+        normalizePdfProjectAliases(state.fileTree);
         // Mirror any desk-row reorder into the settings.desks registry.
         const orderedIds = cleaned.filter(n => n.type === "desk").map(n => n.id);
         const reg = state.settings?.desks || [];
@@ -296,6 +307,7 @@ export function createFilesPanel(container, state, hidePanel) {
       const active = state.fileTree.find(n => n.type === "desk" && n.id === state.settings?.activeDeskId)
         || state.fileTree.find(n => n.type === "desk");
       if (active) active.children = cleaned; else state.fileTree = cleaned;
+      normalizePdfProjectAliases(state.fileTree);
       state.saveFileTree();
       state.reconcileSync();
       state.syncProjectOrdering(state.currentProjectId || null);
@@ -350,6 +362,8 @@ function dispatchRowAction(action, nodeId, opts) {
     handleRevealInFinder(nodeId, storedState);
   } else if (action === "empty-trash") {
     handleEmptyTrash(storedState, refresh);
+  } else if (action === "view-shelf") {
+    import("../pdf/pdf-shelf.js").then((m) => m.openPdfShelf(storedState, nodeId));
   } else if (action === "open-as-stack") {
     handleOpenAsStack(nodeId, storedState, refresh);
   } else if (action === "convert-project-to-doc") {
@@ -597,19 +611,6 @@ function revealAndOpen(item, state) {
   }
 }
 
-
-function sortFlaggedItems(tree) {
-  return tree.map(node => {
-    if (!node.children || node.children.length === 0) return node;
-    const sortedChildren = sortFlaggedItems(node.children);
-    if (node.type === "folder") {
-      const flagged = sortedChildren.filter(c => c.flagged);
-      const unflagged = sortedChildren.filter(c => !c.flagged);
-      return { ...node, children: [...flagged, ...unflagged] };
-    }
-    return { ...node, children: sortedChildren };
-  });
-}
 
 function isItemActive(item, state) {
   if (item.type === "document" && item.fileId) {

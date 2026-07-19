@@ -116,6 +116,8 @@ export async function removePdfEntry(fileId) {
   if (IS_TAURI) {
     try { await tauriInvoke("delete_pdf", { fileId }); } catch {}
   }
+  // delete_pdf removed the on-disk cover too — drop the session URL.
+  try { (await import("../pdf/pdf-covers.js")).evictPdfCover(fileId); } catch {}
   await persistRegistry();
 }
 
@@ -152,6 +154,12 @@ export function triggerBackgroundDownload(fileId, state) {
       _downloadProgress.delete(fileId);
       state.emit("files-changed");
       _onBatchItemDone(state);
+      // Standard cover extraction: render the first page for the PDF
+      // Shelf as soon as the binary lands. Fire-and-forget.
+      import("../pdf/pdf-covers.js")
+        .then(({ ensurePdfCover }) => ensurePdfCover(fileId, { bytes: pdfBytes }))
+        .then(() => state.emit("pdf-cover-ready", fileId))
+        .catch(() => {});
       // Pre-warm the annotation cache for this attachment so opening the
       // PDF later (potentially on another device that just synced the
       // entry) doesn't need a network round-trip to paint annotations.

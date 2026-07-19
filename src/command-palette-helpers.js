@@ -48,6 +48,8 @@ export function collectFileLeaves(fileTree) {
     for (const n of nodes) {
       if (n.id === "__trash__" || n.id === "__images__"
           || n.id?.startsWith("__trash__:") || n.id?.startsWith("__images__:")) continue;
+      // Project PDF aliases mirror a desk PDF that's already listed.
+      if (n.pdfAlias) continue;
       if ((n.type === "document" || n.type === "notebook" || n.type === "stack" || n.type === "pdf") && n.fileId) {
         out.push({ id: n.id, name: n.name || "Untitled", type: n.type, fileId: n.fileId });
       }

@@ -67,6 +67,8 @@ export function getIcon(item) {
   // directly beneath — its icon is the notebook dot-grid bracketed by a
   // vertical rule on each side.
   if (item.type === "notebook" && item.gutter) return typeIcons.gutter;
+  // A project's own PDFs folder reads as a PDF container.
+  if (item.type === "folder" && item.pdfFolder) return typeIcons.pdf;
   // Plain folders read fine without a leading glyph — the disclosure
   // arrow alone signals containerhood.
   if (item.type === "folder") return "";
@@ -93,6 +95,21 @@ export function windowBadgesHtml(item, state) {
 
 export const actionButtons = renderRowMenuButton;
 export const flagOnlyButton = renderFlagOnlyMenuButton;
+
+/** Float flagged children to the top of each plain folder (projects
+ *  keep their user ordering). Pure — returns a shallow-cloned tree. */
+export function sortFlaggedItems(tree) {
+  return tree.map(node => {
+    if (!node.children || node.children.length === 0) return node;
+    const sortedChildren = sortFlaggedItems(node.children);
+    if (node.type === "folder") {
+      const flagged = sortedChildren.filter(c => c.flagged);
+      const unflagged = sortedChildren.filter(c => !c.flagged);
+      return { ...node, children: [...flagged, ...unflagged] };
+    }
+    return { ...node, children: sortedChildren };
+  });
+}
 
 let _pdfSyncModule = null;
 export async function getPdfSync() {

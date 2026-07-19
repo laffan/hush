@@ -180,6 +180,7 @@ fn new_node(node_type: &str, name: &str, file_id: Option<&str>) -> TreeNode {
         bg_color: None,
         show_numbers: false,
         gutter: false,
+        ..Default::default()
     }
 }
 

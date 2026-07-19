@@ -44,6 +44,11 @@ export async function convertProjectToDoc(state, nodeId) {
   for (const child of (node.children || [])) {
     if (child.type === "document" && child.fileId && !child.useAsNote) {
       docChildren.push(child);
+    } else if (child.type === "folder" && child.pdfFolder) {
+      // The project's PDFs folder holds aliases — project-scoped
+      // references that don't survive the project. Dropped; the desk's
+      // PDFs folder keeps the real entries.
+      continue;
     } else {
       nonDocChildren.push(child);
     }

@@ -45,6 +45,9 @@ export function getLinkableNotes(state) {
     const isProject = node.type === "project";
     if (!isFileBacked && !isProject) return;
     if (isFileBacked && !node.fileId) return;
+    // Project PDF aliases mirror a desk PDF that's already indexed —
+    // listing both would just duplicate the row.
+    if (node.pdfAlias) return;
     out.push({
       nodeId: node.id,
       // Projects have no fileId — they're keyed by node.id at open time.

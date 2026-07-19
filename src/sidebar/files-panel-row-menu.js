@@ -59,6 +59,7 @@ export function createColorPalette(currentKey, onPick) {
 
 const isInboxId = (id) => id === AppState.INBOX_ID || id?.startsWith(AppState.INBOX_ID + ":");
 const isImagesId = (id) => id === AppState.IMAGES_ID || id?.startsWith(AppState.IMAGES_ID + ":");
+const isPdfsId = (id) => id === AppState.PDFS_ID || id?.startsWith(AppState.PDFS_ID + ":");
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
 
 const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
@@ -106,7 +107,21 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     ];
   }
 
-  const isSpecial = isInboxId(nodeId) || isImagesId(nodeId);
+  // A project's own PDFs folder holds aliases only — the shelf is its
+  // one real affordance (Delete just drops the references).
+  if (item?.pdfFolder) {
+    return [
+      { action: "view-shelf", label: "View Shelf" },
+      { action: "delete", label: "Remove from Project" },
+    ];
+  }
+  // A PDF alias row is a reference — removing it never touches the
+  // desk's copy, so no Flag / Delete-to-Trash noise.
+  if (item?.pdfAlias) {
+    return [{ action: "delete", label: "Remove from Project" }];
+  }
+
+  const isSpecial = isInboxId(nodeId) || isImagesId(nodeId) || isPdfsId(nodeId);
   const isDoc = nodeType === "document";
   const isImage = nodeType === "image";
   const isPdf = nodeType === "pdf";
@@ -116,13 +131,19 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   const docRenameable = isDoc && item?.name && item.name !== "Untitled";
 
   const entries = [];
+  // The desk's PDFs folder leads with the shelf — a full-editor gallery
+  // of every PDF it holds.
+  if (isPdfsId(nodeId)) {
+    entries.push({ action: "view-shelf", label: "View Shelf" });
+  }
   // Containers carry the "New Doc / New Notebook" entries at the top so
   // the most common action on a folder/project is the first thing in
   // the menu. Inbox is internally typed as a project so it lands here
   // too — natural since it's where new files live by default. Images
   // is also typed as project but the new-here actions don't make sense
-  // there (it only holds image refs), so it's explicitly skipped.
-  if (isContainer && !isImagesId(nodeId)) {
+  // there (it only holds image refs), so it's explicitly skipped —
+  // as is the PDFs folder (PDFs arrive via Zotero only).
+  if (isContainer && !isImagesId(nodeId) && !isPdfsId(nodeId)) {
     entries.push({ action: "new-doc-here", label: "New Doc" });
     entries.push({ action: "new-notebook-here", label: "New Notebook" });
   }

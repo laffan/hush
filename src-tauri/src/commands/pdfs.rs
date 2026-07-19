@@ -43,6 +43,20 @@ pub fn load_pdf_meta(state: State<AppState>, file_id: String) -> Result<Option<P
 }
 
 #[tauri::command]
+pub fn save_pdf_cover(state: State<AppState>, file_id: String, bytes: Vec<u8>) -> Result<(), String> {
+    state.pdf_manager.lock().unwrap()
+        .save_cover(&file_id, &bytes)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_pdf_cover(state: State<AppState>, file_id: String) -> Result<Option<Vec<u8>>, String> {
+    state.pdf_manager.lock().unwrap()
+        .load_cover(&file_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn save_pdf_registry(state: State<AppState>, content: String) -> Result<(), String> {
     state.pdf_manager.lock().unwrap()
         .save_registry(&content)

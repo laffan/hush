@@ -48,6 +48,17 @@ export async function deleteTreeNode(state, nodeId) {
   if (!node) return;
   if (node.type === "desk") return;
   if (state.isInTrash(nodeId)) return permanentDeleteNode(state, nodeId);
+  // PDF aliases (and a project's own PDFs folder of aliases) are pure
+  // references — deleting one removes just the reference, never the desk
+  // copy, and references don't take a trip through Trash.
+  if (node.pdfAlias || node.pdfFolder) {
+    removeNode(state.fileTree, nodeId);
+    const { pruneEmptyPdfFolders } = await import("./state-pdf-aliases.js");
+    pruneEmptyPdfFolders(state.fileTree);
+    await state.saveFileTree();
+    state.emit("files-changed");
+    return;
+  }
   await state.syncDeleteNode(nodeId);
   // Purge any markdown refs to deleted images before detaching the node
   // so the regex still has the filenames in the tree snapshot.
@@ -66,8 +77,13 @@ export async function deleteTreeNode(state, nodeId) {
     const trash = findNode(state.fileTree, state.getTrashId());
     if (trash) (trash.children || (trash.children = [])).push(removed);
   }
-  await state.saveFileTree();
   const { docFileIds, pdfFileIds, stackFileIds } = collectTypedFileIds(node);
+  // A PDF removed from the desk takes its project aliases with it.
+  if (pdfFileIds.length) {
+    const { removeAliasesForFileIds } = await import("./state-pdf-aliases.js");
+    removeAliasesForFileIds(state.fileTree, pdfFileIds);
+  }
+  await state.saveFileTree();
   // Close any open panes backed by a file we just removed so they don't
   // linger orphaned — most importantly a gutter notebook: deleting the
   // gutter file detaches it from its doc (the node, with its `gutter`
@@ -116,6 +132,10 @@ async function permanentDeleteNode(state, nodeId) {
   await deletePdfFilesByIds(state, pdfFileIds);
   await deleteStackFilesByIds(state, stackFileIds);
   removeNode(state.fileTree, nodeId);
+  if (pdfFileIds.length) {
+    const { removeAliasesForFileIds } = await import("./state-pdf-aliases.js");
+    removeAliasesForFileIds(state.fileTree, pdfFileIds);
+  }
   await finalizeFileDeletion(state, docFileIds);
 }
 
@@ -161,6 +181,10 @@ export async function emptyTrash(state, deskId) {
   await deletePdfFilesByIds(state, pdfFileIds);
   await deleteStackFilesByIds(state, stackFileIds);
   trash.children = [];
+  if (pdfFileIds.length) {
+    const { removeAliasesForFileIds } = await import("./state-pdf-aliases.js");
+    removeAliasesForFileIds(state.fileTree, pdfFileIds);
+  }
   await finalizeFileDeletion(state, docFileIds);
 }
 
@@ -179,7 +203,9 @@ function collectTypedFileIds(node) {
     if (!n) return;
     if ((n.type === "document" || n.type === "notebook") && n.fileId) docFileIds.push(n.fileId);
     else if (n.type === "image" && n.fileId) imageFileIds.push(n.fileId);
-    else if (n.type === "pdf" && n.fileId) pdfFileIds.push(n.fileId);
+    // Aliases share the original's fileId — counting them here would
+    // let a deleted project purge the desk's actual PDF binary.
+    else if (n.type === "pdf" && n.fileId && !n.pdfAlias) pdfFileIds.push(n.fileId);
     else if (n.type === "stack" && n.fileId) stackFileIds.push(n.fileId);
     if (n.children) n.children.forEach(walk);
   }
@@ -349,6 +375,12 @@ export async function convertContainerType(state, nodeId, targetType) {
   if (wasProject && targetType === "folder") {
     for (const c of (node.children || [])) {
       if (c.gutter) delete c.gutter;
+    }
+    // The project's PDFs folder holds aliases — references that only
+    // make sense on a project — so demotion drops it (desk copies are
+    // untouched).
+    if (Array.isArray(node.children)) {
+      node.children = node.children.filter((c) => !(c?.type === "folder" && c.pdfFolder));
     }
     if (node.showNumbers) delete node.showNumbers;
     if (state.gutterAssignments) delete state.gutterAssignments[nodeId];

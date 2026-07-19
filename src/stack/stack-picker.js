@@ -24,6 +24,8 @@ export function openStackFilePicker(state, onPick) {
   function walk(nodes, breadcrumb) {
     for (const node of nodes) {
       if (node.id?.startsWith("__trash__") || node.id?.startsWith("__images__")) continue;
+      // Project PDF aliases mirror a desk PDF that's already listed.
+      if (node.pdfAlias) continue;
       const eligibleId = node.type === "project" ? node.id : node.fileId;
       if (ELIGIBLE_TYPES.has(node.type) && eligibleId) {
         leaves.push({

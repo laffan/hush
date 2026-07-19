@@ -1,0 +1,165 @@
+/* ===== PDF Shelf (editor-area gallery of a PDFs folder) =====
+   Same takeover pattern as the multi-select view: mounts inside #app,
+   `body.pdf-shelf-active` hides the editor surfaces underneath while
+   they keep their layout, so closing is a single class flip. */
+
+.pdf-shelf-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--theme-bg, var(--bg));
+  color: var(--fg);
+  overflow-y: auto;
+  font-family: var(--font-family);
+  padding-top: 30px; /* clear the drag region on macOS */
+}
+
+.pdf-shelf-view.hidden {
+  display: none;
+}
+
+body.pdf-shelf-active #editor-container,
+body.pdf-shelf-active #editor-empty-state,
+body.pdf-shelf-active #notebook-container,
+body.pdf-shelf-active #pdf-container,
+body.pdf-shelf-active #stack-container {
+  visibility: hidden;
+}
+
+.pdf-shelf-inner {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 32px 32px 64px;
+  box-sizing: border-box;
+}
+
+.pdf-shelf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.pdf-shelf-title {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.pdf-shelf-scope {
+  font-weight: 400;
+  opacity: 0.65;
+  margin-left: 8px;
+}
+
+.pdf-shelf-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pdf-shelf-count {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.pdf-shelf-btn {
+  background: transparent;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  color: var(--fg);
+  border-radius: 5px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pdf-shelf-btn:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.pdf-shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 26px 22px;
+}
+
+.pdf-shelf-card {
+  cursor: pointer;
+  min-width: 0;
+}
+
+.pdf-shelf-thumb {
+  aspect-ratio: 3 / 4;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.25));
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.07);
+}
+.pdf-shelf-card:hover .pdf-shelf-thumb {
+  border-color: var(--fg);
+}
+
+.pdf-shelf-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+
+/* Placeholder glyph while a cover renders / for pending downloads */
+.pdf-shelf-ph {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1;
+  opacity: 0.3;
+}
+
+.pdf-shelf-card-title {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pdf-shelf-card-sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  opacity: 0.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pdf-shelf-pending {
+  opacity: 0.55;
+  cursor: default;
+}
+.pdf-shelf-dl {
+  opacity: 0.8;
+  font-style: italic;
+}
+
+.pdf-shelf-empty {
+  padding: 48px 0;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.6;
+}

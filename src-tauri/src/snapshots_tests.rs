@@ -23,6 +23,7 @@ fn doc_node(id: &str, name: &str, file_id: &str) -> TreeNode {
         bg_color: None,
         show_numbers: false,
         gutter: false,
+        ..Default::default()
     }
 }
 
@@ -41,6 +42,7 @@ fn desk(id: &str, name: &str, children: Vec<TreeNode>) -> TreeNode {
         bg_color: None,
         show_numbers: false,
         gutter: false,
+        ..Default::default()
     }
 }
 

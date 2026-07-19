@@ -61,7 +61,7 @@ pub struct FileEntry {
     pub modified: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TreeNode {
     pub id: String,
@@ -105,6 +105,18 @@ pub struct TreeNode {
     // must survive the save_file_tree / get_file_tree round trip.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub gutter: bool,
+    // PDF-only — this node is an alias into a project's own PDFs folder:
+    // it shares the original's fileId (binary + registry metadata) but is
+    // just a reference, so deleting it never touches the desk copy.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pdf_alias: bool,
+    // Folder-only — a project's local "PDFs" folder holding pdf aliases.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pdf_folder: bool,
+    // PDF-alias-only — epoch seconds when the alias was added to its
+    // project (the alias's own metadata beyond what the registry holds).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<u64>,
 }
 
 pub fn get_data_dir() -> PathBuf {
@@ -452,6 +464,8 @@ pub fn run() {
             commands::pdfs::pdf_exists,
             commands::pdfs::save_pdf_meta,
             commands::pdfs::load_pdf_meta,
+            commands::pdfs::save_pdf_cover,
+            commands::pdfs::load_pdf_cover,
             commands::pdfs::save_pdf_registry,
             commands::pdfs::load_pdf_registry,
             commands::zotero::save_zotero_references,

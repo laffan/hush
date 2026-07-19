@@ -232,6 +232,8 @@ async function init() {
   initShuffleEditor(state);
   // Listing view shown when 2+ docs are multi-selected in the sidebar.
   import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
+  // PDF Shelf — editor-area gallery opened from a PDFs folder's row menu.
+  import("./pdf/pdf-shelf.js").then(({ initPdfShelf }) => initPdfShelf(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
   // Sticky notes — temporary reminders floating above every surface.

@@ -392,6 +392,14 @@ export async function importPdf(state, name, bytes, parentId = null, opts = {}) 
     } catch (e) { console.error("Save PDF failed:", e); return; }
   }
 
+  // Standard for every import: render the first-page cover for the PDF
+  // Shelf. Fire-and-forget — a failed cover never blocks the save (the
+  // shelf backfills missing covers lazily).
+  import("../pdf/pdf-covers.js")
+    .then(({ ensurePdfCover }) => ensurePdfCover(fileId, { bytes }))
+    .then(() => state.emit("pdf-cover-ready", fileId))
+    .catch(() => {});
+
   const { addPdfEntry } = await import("../sync/pdf-sync.js");
   await addPdfEntry(fileId, {
     title: opts.zoteroTitle || name,

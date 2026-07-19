@@ -203,7 +203,9 @@ export function normalizeProjectChildren(nodes) {
       const top = [], below = [];
       for (const c of n.children) {
         if (c.type === "notebook" && c.gutter) continue; // placed with its doc below
-        if (c.type === "stack" || c.type === "notebook" || (c.type === "document" && c.useAsNote)) {
+        // The project's own PDFs folder (pdf aliases) is supplementary
+        // material like notebooks/stacks — it never feeds the buffer.
+        if (c.type === "stack" || c.type === "notebook" || (c.type === "document" && c.useAsNote) || (c.type === "folder" && c.pdfFolder)) {
           below.push(c);
           continue;
         }

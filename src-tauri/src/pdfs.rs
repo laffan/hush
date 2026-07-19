@@ -50,7 +50,34 @@ impl PdfManager {
         if meta_path.exists() {
             fs::remove_file(&meta_path)?;
         }
+        let cover_path = self.pdfs_dir.join(format!("{}.cover", safe));
+        if cover_path.exists() {
+            fs::remove_file(&cover_path)?;
+        }
         Ok(())
+    }
+
+    // First-page cover thumbnail — a per-device cache beside the PDF
+    // binary (rendered by the frontend via pdfjs, stored as raw image
+    // bytes; the extension is codec-agnostic since WebKit may emit
+    // either WebP or PNG from the same canvas call).
+    pub fn save_cover(&self, file_id: &str, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        let safe = sanitize_id(file_id);
+        if safe.is_empty() {
+            return Err("pdf cover: empty file id".into());
+        }
+        let path = self.pdfs_dir.join(format!("{}.cover", safe));
+        write_atomic(&path, bytes)?;
+        Ok(())
+    }
+
+    pub fn load_cover(&self, file_id: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
+        let safe = sanitize_id(file_id);
+        let path = self.pdfs_dir.join(format!("{}.cover", safe));
+        if !path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(fs::read(path)?))
     }
 
     pub fn exists(&self, file_id: &str) -> bool {

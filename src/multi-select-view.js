@@ -243,9 +243,11 @@ async function runBatchAction(action, rows) {
     return;
   }
   if (action === "project") {
-    // Projects hold docs (joined buffer) plus supplementary notebooks;
-    // PDFs live exclusively in the desk's PDFs folder, so skip them.
+    // Projects hold docs (joined buffer) plus supplementary notebooks.
+    // Selected PDFs ride along as aliases in the project's own PDFs
+    // folder — the real node stays in the desk's PDFs folder.
     const movable = rows.filter((r) => r.type === "document" || r.type === "notebook");
+    const pdfRows = rows.filter((r) => r.type === "pdf");
     showPromptModal({
       title: "New project",
       label: "Name",
@@ -262,6 +264,13 @@ async function runBatchAction(action, rows) {
         for (const r of movable) {
           const removed = removeNode(_state.fileTree, r.nodeId);
           if (removed) target.children.push(removed);
+        }
+        if (pdfRows.length) {
+          const { addPdfAliasToProject } = await import("./state/state-pdf-aliases.js");
+          for (const r of pdfRows) {
+            const pdfNode = findNode(_state.fileTree, r.nodeId);
+            if (pdfNode) addPdfAliasToProject(target, pdfNode);
+          }
         }
         enforceSpecialPositions(_state.fileTree);
         normalizeProjectChildren(_state.fileTree);
