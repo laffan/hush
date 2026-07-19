@@ -7,7 +7,7 @@
  * singleton always records (spans/counters are cheap). To remove the
  * machinery entirely someday: delete this file and every line tagged
  * `PERF-HUD` (grep for it), plus the Debug-tab toggle.
- * See PANNING-FIX.md → "ROUND 3" for how to read the numbers.
+ * See NOTEBOOK-PERF.md for how to read the numbers.
  *
  * Two halves:
  *   - a tracer singleton (`perf`) that instrumented call sites feed

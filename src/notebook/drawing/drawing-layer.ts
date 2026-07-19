@@ -46,7 +46,7 @@ export type { DrawingLayer, SelectionStyleEntry, SelectionStylePatch };
  *  picks worldSize relative to the camera; DPR follows from this cap.
  *  (A round-4C experiment halved this to 2896²: re-anchor stalls
  *  halved with the pixels, but full-surface ops kept a ~240 ms floor
- *  and the felt pan didn't improve — reverted; see PANNING-FIX.md.) */
+ *  and the felt pan didn't improve — reverted; see NOTEBOOK-PERF.md.) */
 const MAX_BACKING_PIXELS = 4096 * 4096;
 const MAX_DPR = 2;
 

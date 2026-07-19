@@ -89,7 +89,7 @@ import {
 } from "./notebook-loading-overlay.js";
 import { NotebookSaveGate } from "./notebook-save-gate.js";
 // PERF-HUD: tracer singleton + overlay mount — see perf-hud.ts /
-// PANNING-FIX.md. The overlay is gated behind Settings > Debug.
+// NOTEBOOK-PERF.md. The overlay is gated behind Settings > Debug.
 import { perf, mountPerfHud } from "./perf-hud.ts";
 import { loadNotebookSnapshot } from "./notebook-load.js";
 import { computeNotebookSettings } from "./notebook-style-settings.js";
