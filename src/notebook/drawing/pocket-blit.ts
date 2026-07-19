@@ -21,7 +21,10 @@ export interface WorldBbox {
 }
 
 export interface PocketBlitOptions {
-  doneCanvas: HTMLCanvasElement;
+  /** Resolve the CURRENT done canvas per call — engine delta #31 swaps
+   *  the done role between two elements at each re-anchor, so a
+   *  captured reference goes stale. */
+  getDoneCanvas: () => HTMLCanvasElement;
   pocketStash: HTMLCanvasElement;
   pocketStashCtx: CanvasRenderingContext2D;
   /** Live world-space origin of the done / stash canvases. Both
@@ -57,7 +60,7 @@ export interface PocketBlit {
 }
 
 export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
-  const { doneCanvas, pocketStash, pocketStashCtx, getOriginX, getOriginY, getWorldSize, getDpr } = opts;
+  const { getDoneCanvas, pocketStash, pocketStashCtx, getOriginX, getOriginY, getWorldSize, getDpr } = opts;
 
   function blitWorldRegion(
     ctx: CanvasRenderingContext2D,
@@ -80,11 +83,13 @@ export function createPocketBlit(opts: PocketBlitOptions): PocketBlit {
   }
 
   function blitDoneCanvasAtWorldOrigin(ctx: CanvasRenderingContext2D): void {
+    const doneCanvas = getDoneCanvas();
     if (doneCanvas.width === 0 || doneCanvas.height === 0) return;
     ctx.drawImage(doneCanvas, getOriginX(), getOriginY(), getWorldSize(), getWorldSize());
   }
 
   function stashPocketRegion(worldBbox: WorldBbox): void {
+    const doneCanvas = getDoneCanvas();
     const dpr = getDpr();
     const sx = Math.max(0, Math.floor((worldBbox.minX - getOriginX()) * dpr));
     const sy = Math.max(0, Math.floor((worldBbox.minY - getOriginY()) * dpr));

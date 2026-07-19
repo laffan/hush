@@ -53,6 +53,7 @@ export function createStrokeEngine(opts: {
   ): void;
   resize(w: number, h: number): void;
   getStrokes(): any[];
+  getDoneCanvas(): HTMLCanvasElement;
   getStrokeNode(): null;
   hasActiveStroke(): boolean;
   removeStrokes(ids: number[] | Set<number>): void;

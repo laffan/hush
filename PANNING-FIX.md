@@ -322,8 +322,8 @@ A sliding monolithic backing MUST fully-dirty its visible canvas per
 re-anchor. Incremental fixes are exhausted by measurement — what
 remains is architectural:
 
-1. **Opacity-swap double buffer (delta #31 sketch, cheap experiment
-   first).** Write the shifted frame into the 1%-opacity helper
+1. **Opacity-swap double buffer (delta #31 — IMPLEMENTED, awaiting
+   on-device capture).** Write the shifted frame into the 1%-opacity helper
    (measured cheap — no upload while effectively invisible), then swap
    the two canvases' opacities + roles in the same commit as the
    transform change. IF WebKit uploads the newly-visible buffer

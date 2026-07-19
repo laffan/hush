@@ -159,7 +159,9 @@ export function createDrawingLayer({
   // Created up here so the sync-shim's `engineAdapter` (further down)
   // can wire stash / unstash directly into the pocket pipeline.
   const { blitWorldRegion, blitDoneCanvasAtWorldOrigin, stashPocketRegion, unstashPocketRegion } = createPocketBlit({
-    doneCanvas, pocketStash, pocketStashCtx,
+    // Per-call resolve — delta #31 swaps the done role each re-anchor.
+    getDoneCanvas: () => (strokeEngine ? strokeEngine.getDoneCanvas() : doneCanvas),
+    pocketStash, pocketStashCtx,
     getOriginX: () => anchor.originX,
     getOriginY: () => anchor.originY,
     getWorldSize: () => anchor.worldSize,

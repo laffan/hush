@@ -332,17 +332,30 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // CSS px. Used by the blit-forward re-anchor — on a same-size re-anchor
   // the old backing already holds almost everything the new one needs, so
   // the pixels are copied across and only the newly exposed edge strips
-  // get repainted. Preferred path is a single self-drawImage under the
-  // 'copy' composite: the spec snapshots the source before painting, and
-  // 'copy' replaces the whole surface so the trailing edges clear in the
-  // same op — ONE full-surface raster instead of the two a scratch
-  // round-trip costs (which is what lands on the compositor flush as a
-  // frame stall on iPad, and forces a fourth world-sized surface into
-  // existence). 'copy' semantics are verified once at runtime on a tiny
-  // canvas; a misbehaving engine falls back to the scratch route. The
-  // caller guarantees dx·dpr / dy·dpr are integers so the copy is
-  // pixel-exact (a fractional device-pixel shift would resample — and,
-  // re-anchor after re-anchor, progressively blur — the baked ink).
+  // get repainted.
+  //
+  // Hush delta #31 (preferred path): SWAP double buffer. On-device
+  // measurement pinned the irreducible re-anchor cost to WebKit
+  // uploading the full dirty region of a VISIBLE canvas at commit
+  // (~235 ms for 4096² at ~280 MB/s) — writes to the ~1%-opacity
+  // helper are upload-free, small dirty rects are cheap, and no JS-
+  // side variant escapes the full-surface upload while a single
+  // visible canvas must slide. So: draw the SHIFTED frame into the
+  // near-invisible spare with one cross-canvas 'copy' (no upload, no
+  // self-snapshot), then swap the two canvases' roles — opacity +
+  // class flips and the ctx rebind are compositor-cheap and land in
+  // the same commit as the wrapper-transform change. The visible
+  // canvas is never fully dirtied. `doneCtx` is a reassignable
+  // binding: every other renderer function reads the current target
+  // through it automatically.
+  //
+  // Fallbacks when no attached helper exists: self-drawImage under
+  // 'copy' (spec snapshots the source; verified once at runtime on a
+  // tiny canvas), else the detached-scratch round trip. The caller
+  // guarantees dx·dpr / dy·dpr are integers so the copy is pixel-exact
+  // (a fractional device-pixel shift would resample — and, re-anchor
+  // after re-anchor, progressively blur — the baked ink).
+  let spareCtx = blitCanvas ? blitCanvas.getContext('2d') : null;
   let selfBlitOk = null;
   function testSelfBlit() {
     try {
@@ -366,31 +379,34 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     const dpr = t.a || 1;
     const devX = Math.round(dx * dpr);
     const devY = Math.round(dy * dpr);
-    // Hush delta #29: preferred route — bounce through the host's
-    // ATTACHED (composited, GPU-backed) helper canvas with two
-    // cross-canvas 'copy' draws. Self-drawImage forces WebKit to
-    // snapshot the whole source surface (~230 ms GPU→CPU readback on
-    // iPad, measured — even a 1×1 self-read pays it), and a DETACHED
-    // scratch is CPU-backed, paying the same readback on its first
-    // leg. Cross-canvas draws between two composited canvases stay on
-    // the GPU (~1 frame at 4096², measured via the HUD tile probe).
-    if (blitCanvas) {
-      const bctx = blitCanvas.getContext('2d');
-      if (bctx) {
-        if (blitCanvas.width !== doneCtx.canvas.width) blitCanvas.width = doneCtx.canvas.width;
-        if (blitCanvas.height !== doneCtx.canvas.height) blitCanvas.height = doneCtx.canvas.height;
-        bctx.save();
-        bctx.setTransform(1, 0, 0, 1, 0, 0);
-        bctx.globalCompositeOperation = 'copy';
-        bctx.drawImage(doneCtx.canvas, 0, 0);
-        bctx.restore();
-        doneCtx.save();
-        doneCtx.setTransform(1, 0, 0, 1, 0, 0);
-        doneCtx.globalCompositeOperation = 'copy';
-        doneCtx.drawImage(blitCanvas, devX, devY);
-        doneCtx.restore();
-        return;
-      }
+    // Delta #31 swap path — see the comment block above.
+    if (spareCtx) {
+      const spare = spareCtx.canvas;
+      const current = doneCtx.canvas;
+      if (spare.width !== current.width) spare.width = current.width;
+      if (spare.height !== current.height) spare.height = current.height;
+      spareCtx.save();
+      spareCtx.setTransform(1, 0, 0, 1, 0, 0);
+      spareCtx.globalCompositeOperation = 'copy';
+      spareCtx.drawImage(current, devX, devY);
+      spareCtx.restore();
+      // Swap roles: the spare (holding the shifted frame) becomes the
+      // visible done canvas; the old done becomes the near-invisible
+      // spare. Class names follow the role so external queries (perf
+      // HUD, tooling) keep resolving; the DPR transform + smoothing
+      // carry over to the new target.
+      spare.style.opacity = '1';
+      current.style.opacity = '0.01';
+      const cls = spare.className;
+      spare.className = current.className;
+      current.className = cls;
+      const carried = doneCtx.getTransform();
+      const tmp = doneCtx;
+      doneCtx = spareCtx;
+      spareCtx = tmp;
+      doneCtx.setTransform(carried);
+      doneCtx.imageSmoothingEnabled = true;
+      return;
     }
     if (selfBlitOk === null) selfBlitOk = testSelfBlit();
     if (selfBlitOk) {
@@ -441,5 +457,11 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     shiftDoneCanvas,
     tilesForStrokes,
     clearIndex,
+    // Delta #31: the done target swaps between two canvases; every
+    // consumer that draws to or reads "the done canvas" must resolve
+    // it through these instead of a captured reference.
+    getDoneCtx: () => doneCtx,
+    getSpareCtx: () => spareCtx,
+    getDoneCanvas: () => doneCtx.canvas,
   };
 }

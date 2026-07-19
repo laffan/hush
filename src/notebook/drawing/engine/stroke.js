@@ -64,6 +64,14 @@
  *      composited canvas takes ~one frame. Two cross-canvas 'copy'
  *      draws through the attached helper avoid self-reference (and the
  *      CPU-backed detached scratch) entirely.
+ *  31. Opacity-swap double buffer. shiftDoneCanvas (stroke-render.js)
+ *      draws the SHIFTED frame into the near-invisible spare with one
+ *      cross-canvas 'copy', then swaps the two canvases' roles
+ *      (opacity + class + ctx rebind) — the visible canvas is never
+ *      fully dirtied, dodging WebKit's ~235 ms full-dirty-region
+ *      commit upload that survived every earlier variant. The done
+ *      target is therefore dynamic: consumers resolve it via
+ *      renderer.getDoneCtx() / engine.getDoneCanvas().
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp
@@ -217,7 +225,11 @@ export function createStrokeEngine({
   const doneCtx = doneCanvas.getContext('2d');
   const previewCtx = previewCanvas.getContext('2d');
   const liveCtx = liveCanvas.getContext('2d');
-  const ctxs = [doneCtx, previewCtx, liveCtx];
+  // Hush delta #31: the done target swaps between doneCanvas and
+  // blitCanvas at each re-anchor, so anything touching "the done
+  // canvas" after engine construction resolves it via
+  // renderer.getDoneCtx() / getSpareCtx() — the captured `doneCtx`
+  // is only the INITIAL binding handed to the renderer.
   let cssWidth = 0, cssHeight = 0, dpr = 1;
 
   function clearCtx(ctx) {
@@ -233,7 +245,9 @@ export function createStrokeEngine({
     cssHeight = height;
     const pxW = Math.max(1, Math.round(width * dpr));
     const pxH = Math.max(1, Math.round(height * dpr));
-    for (const canvas of [doneCanvas, previewCanvas, liveCanvas]) {
+    // Both members of the delta-#31 swap pair get sized (roles are
+    // irrelevant for sizing — identity-guarded either way).
+    for (const canvas of [doneCanvas, ...(blitCanvas ? [blitCanvas] : []), previewCanvas, liveCanvas]) {
       // Hush delta #27: skip the backing-store write when the pixel
       // size is unchanged — assigning canvas.width always clears the
       // canvas AND can reallocate the backing (multi-hundred-MB
@@ -249,7 +263,8 @@ export function createStrokeEngine({
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
     }
-    for (const ctx of ctxs) {
+    for (const ctx of [renderer.getDoneCtx(), renderer.getSpareCtx(), previewCtx, liveCtx]) {
+      if (!ctx) continue;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = true;
     }
@@ -560,7 +575,7 @@ export function createStrokeEngine({
       return;
     }
     // Commit: draw to done and clear live on the same frame so there's no gap.
-    renderer.renderStroke(doneCtx, a);
+    renderer.renderStroke(renderer.getDoneCtx(), a);
     clearCtx(liveCtx);
     const insertIdx = insertStrokeIntoLayer(a, a.layerId);
     renderer.addToIndex(a);
@@ -892,6 +907,10 @@ export function createStrokeEngine({
 
     // --- queries ---
     getStrokes() { return state.strokes; },
+    // Hush delta #31: the done target swaps between two canvases at
+    // each re-anchor — hosts reading "the done canvas" (pocket blit,
+    // export) must resolve it per call instead of capturing an element.
+    getDoneCanvas() { return renderer.getDoneCanvas(); },
     getStrokeNode() { return null; },  // no per-stroke DOM node
     // Hush delta #23: true while a stroke is being drawn. The autosave
     // pipeline defers file writes while the pen is down so the IPC
@@ -998,7 +1017,7 @@ export function createStrokeEngine({
     clear() {
       state.strokes = [];
       renderer.clearIndex();
-      clearCtx(doneCtx);
+      clearCtx(renderer.getDoneCtx());
       clearCtx(previewCtx);
       clearCtx(liveCtx);
       state.previewingIds = null;
