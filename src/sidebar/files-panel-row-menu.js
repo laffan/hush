@@ -63,16 +63,27 @@ const isPdfsId = (id) => id === AppState.PDFS_ID || id?.startsWith(AppState.PDFS
 const isTrashId = (id) => id === AppState.TRASH_ID || id?.startsWith(AppState.TRASH_ID + ":");
 
 const HAMBURGER_SVG = `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
+// temp/temp-icons/shelf-icon.svg, restroked to currentColor (2×2 grid).
+const SHELF_SVG = `<svg viewBox="0 0 24 24"><path d="M14 20.4V14.6C14 14.2686 14.2686 14 14.6 14H20.4C20.7314 14 21 14.2686 21 14.6V20.4C21 20.7314 20.7314 21 20.4 21H14.6C14.2686 21 14 20.7314 14 20.4Z"/><path d="M3 20.4V14.6C3 14.2686 3.26863 14 3.6 14H9.4C9.73137 14 10 14.2686 10 14.6V20.4C10 20.7314 9.73137 21 9.4 21H3.6C3.26863 21 3 20.7314 3 20.4Z"/><path d="M14 9.4V3.6C14 3.26863 14.2686 3 14.6 3H20.4C20.7314 3 21 3.26863 21 3.6V9.4C21 9.73137 20.7314 10 20.4 10H14.6C14.2686 10 14 9.73137 14 9.4Z"/><path d="M3 9.4V3.6C3 3.26863 3.26863 3 3.6 3H9.4C9.73137 3 10 3.26863 10 3.6V9.4C10 9.73137 9.73137 10 9.4 10H3.6C3.26863 10 3 9.73137 3 9.4Z"/></svg>`;
 
 /** Render the actions cell for a row — a single hamburger button when
  *  there's at least one entry, empty string otherwise. The button only
  *  carries the open-menu intent; the full entry list is rebuilt on
- *  demand inside `openRowMenu`. */
+ *  demand inside `openRowMenu`. PDFs folders (the desk special and a
+ *  project's own) additionally get a dedicated shelf button to the
+ *  left of the hamburger. */
 export function renderRowMenuButton(nodeId, nodeType, inTrash, item, inProject) {
   const entries = getMenuEntries(nodeId, nodeType, inTrash, item, inProject);
-  if (entries.length === 0) return "";
+  const isShelfRow = !inTrash && (isPdfsId(nodeId) || item?.pdfFolder === true);
+  const shelfBtn = isShelfRow
+    ? `<button class="tree-action-shelf" data-tree-action="view-shelf" data-tooltip="View Shelf" aria-label="View Shelf">${SHELF_SVG}</button>`
+    : "";
+  if (entries.length === 0 && !shelfBtn) return "";
+  const menuBtn = entries.length
+    ? `<button class="tree-action-menu" data-tree-action="open-menu" data-tooltip="Menu" aria-label="Menu">${HAMBURGER_SVG}</button>`
+    : "";
   return `<span class="tree-actions" data-node-id="${nodeId}">
-    <button class="tree-action-menu" data-tree-action="open-menu" data-tooltip="Menu" aria-label="Menu">${HAMBURGER_SVG}</button>
+    ${shelfBtn}${menuBtn}
   </span>`;
 }
 
@@ -107,13 +118,10 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
     ];
   }
 
-  // A project's own PDFs folder holds aliases only — the shelf is its
-  // one real affordance (Delete just drops the references).
+  // A project's own PDFs folder holds aliases only — the shelf lives on
+  // the row's dedicated button (Delete just drops the references).
   if (item?.pdfFolder) {
-    return [
-      { action: "view-shelf", label: "View Shelf" },
-      { action: "delete", label: "Remove from Project" },
-    ];
+    return [{ action: "delete", label: "Remove from Project" }];
   }
   // A PDF alias row is a reference — removing it never touches the
   // desk's copy, so no Flag / Delete-to-Trash noise.
@@ -131,11 +139,6 @@ function getMenuEntries(nodeId, nodeType, inTrash, item, inProject) {
   const docRenameable = isDoc && item?.name && item.name !== "Untitled";
 
   const entries = [];
-  // The desk's PDFs folder leads with the shelf — a full-editor gallery
-  // of every PDF it holds.
-  if (isPdfsId(nodeId)) {
-    entries.push({ action: "view-shelf", label: "View Shelf" });
-  }
   // Containers carry the "New Doc / New Notebook" entries at the top so
   // the most common action on a folder/project is the first thing in
   // the menu. Inbox is internally typed as a project so it lands here

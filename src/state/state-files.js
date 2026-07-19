@@ -349,6 +349,8 @@ export async function openPdf(state, fileId) {
     const mod = await import("../sync/pdf-sync.js");
     const exists = await mod.checkPdfExists(fileId);
     if (!exists) return;
+    // Stamp "last opened" for the shelf's open-date sort.
+    mod.touchPdfOpened(fileId);
   } catch {}
 
   if (state.dirty) await state.saveCurrentFile();

@@ -2,8 +2,8 @@ import { createAnnotationLayer } from "./pdf-viewer-annotations.js";
 import { createFoldLayer } from "./pdf-viewer-folds.js";
 import { createPdfSuspendManager } from "./pdf-viewer-suspend.js";
 import { createThumbnailManager } from "./pdf-viewer-thumbnails.js";
-import { POPOUT_ICON } from "./pdf-viewer-icons.js";
 import { buildPdfToolbar, applyToolbarInfo } from "./pdf-toolbar-build.js";
+import { attachPageHoverButtons, createToolbarBookmarkButton } from "./pdf-bookmarks.js";
 import { getPdfjs } from "./pdfjs-loader.js";
 
 // Re-exported for existing consumers (doc-export-render.js).
@@ -24,6 +24,7 @@ const MODE_VERTICAL = "vertical";
  * @param {object} opts
  * @param {string}  [opts.mode]          "main" or "pane"
  * @param {string}  [opts.zoteroAttKey]  Zotero attachment key
+ * @param {string}  [opts.fileId]        Hush fileId — enables bookmarks
  */
 export function createPdfViewer(container, opts = {}) {
   let pdfDoc = null;
@@ -35,6 +36,7 @@ export function createPdfViewer(container, opts = {}) {
   let scrollListeners = [];
   let destroyed = false;
   let _zoteroAttKey = opts.zoteroAttKey || null;
+  const _fileId = opts.fileId || null;
   const root = document.createElement("div");
   root.className = "pdf-viewer";
 
@@ -63,6 +65,7 @@ export function createPdfViewer(container, opts = {}) {
     getAnnotations: () => annotLayer.getAnnotations(),
     getEffectiveZoom: () => getEffectiveZoom(),
     isDestroyed: () => destroyed,
+    getFileId: () => _fileId,
   });
 
   root.appendChild(body);
@@ -76,6 +79,10 @@ export function createPdfViewer(container, opts = {}) {
     foldBtn, foldFilterBtn,
     pageIndicator, zoteroLink, thumbnailBtn, toolbarInfo,
   } = buildPdfToolbar();
+  // Bookmarks lead the toolbar; hidden for viewers with no fileId.
+  const bookmarksBtn = createToolbarBookmarkButton({ getFileId: () => _fileId, goToPage: (n) => goToPage(n) });
+  if (!_fileId) bookmarksBtn.style.display = "none";
+  toolbar.prepend(bookmarksBtn);
   root.appendChild(toolbar);
   container.appendChild(root);
   foldLayer.attachFilterUI(foldFilterBtn, root);
@@ -496,26 +503,9 @@ export function createPdfViewer(container, opts = {}) {
       placeholder.className = "pdf-page-placeholder";
       wrapper.appendChild(placeholder);
 
-      if (_zoteroAttKey) {
-        const pageNum = i + 1;
-        const zBtn = document.createElement("button");
-        zBtn.className = "pdf-page-zotero-btn";
-        zBtn.title = `Open page ${pageNum} in Zotero`;
-        zBtn.innerHTML = POPOUT_ICON;
-        zBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const url = `zotero://open-pdf/library/items/${_zoteroAttKey}?page=${pageNum}`;
-          import("@tauri-apps/plugin-opener").then(o => o.openUrl(url)).catch(() => window.open(url, "_blank"));
-        });
-        wrapper.appendChild(zBtn);
-
-        wrapper.addEventListener("mousemove", (e) => {
-          const r = wrapper.getBoundingClientRect();
-          const inZone = (r.right - e.clientX) < 100 && (r.bottom - e.clientY) < 100;
-          zBtn.classList.toggle("visible", inZone);
-        });
-        wrapper.addEventListener("mouseleave", () => zBtn.classList.remove("visible"));
-      }
+      // Hover buttons: bookmark (upper-right) + Zotero pop-out
+      // (bottom-right, Zotero-backed PDFs only).
+      attachPageHoverButtons(wrapper, i + 1, { zoteroAttKey: _zoteroAttKey, fileId: _fileId });
 
       scrollArea.appendChild(wrapper);
       pages.push({ wrapper, viewport, rendered: false, rendering: false, canvas: null, renderedZoom: null });

@@ -234,6 +234,8 @@ async function init() {
   import("./multi-select-view.js").then(({ initMultiSelectView }) => initMultiSelectView(state));
   // PDF Shelf — editor-area gallery opened from a PDFs folder's row menu.
   import("./pdf/pdf-shelf.js").then(({ initPdfShelf }) => initPdfShelf(state));
+  // PDF bookmarks — deep-link navigation + the notebook link-click hook.
+  import("./pdf/pdf-bookmarks.js").then(({ initPdfBookmarks }) => initPdfBookmarks(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
   // Sticky notes — temporary reminders floating above every surface.

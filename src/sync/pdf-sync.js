@@ -19,7 +19,11 @@
  *       "citekey": "smith2024",
  *       "zoteroItemKey": "ABC123",
  *       "zoteroAttKey": "XYZ789",
- *       "addedAt": 1716825600
+ *       "addedAt": 1716825600,
+ *       "openedAt": 1716825600,          // last time the PDF was opened (any surface)
+ *       "bookmarks": [                    // user deep-links into the document
+ *         { "id": "...", "name": "...", "color": "#ef5350", "page": 12, "addedAt": 1716825600 }
+ *       ]
  *     }
  *   }
  * }
@@ -129,6 +133,72 @@ async function persistRegistry() {
       await tauriInvoke("save_pdf_registry", { content: payload });
     } catch (e) { appendSyncError(`Failed to save pdf.json: ${e?.message || e}`); }
   }
+}
+
+/** Stamp "last opened" on a registry entry — powers the shelf's
+ *  open-date sort. Fire-and-forget persistence. */
+export function touchPdfOpened(fileId) {
+  const item = _registry?.items?.[fileId];
+  if (!item) return;
+  item.openedAt = Math.floor(Date.now() / 1000);
+  persistRegistry();
+}
+
+// ===== Bookmarks (deep links into a PDF, stored on the registry entry
+// so they ride wherever the metadata rides — aliases share them) =====
+
+export function getPdfBookmarks(fileId) {
+  return _registry?.items?.[fileId]?.bookmarks || [];
+}
+
+function _bookmarkItem(fileId) {
+  if (!_registry) _registry = { format: "hush-pdfs", version: 1, items: {} };
+  // Registry entries always exist for real PDFs; the skeleton guard just
+  // keeps a stray fileId from crashing the bookmark call.
+  let item = _registry.items[fileId];
+  if (!item) {
+    item = { fileId, title: "", authors: "", firstAuthor: "", year: "", citekey: "", zoteroItemKey: "", zoteroAttKey: "", addedAt: Math.floor(Date.now() / 1000) };
+    _registry.items[fileId] = item;
+  }
+  if (!Array.isArray(item.bookmarks)) item.bookmarks = [];
+  return item;
+}
+
+export async function addPdfBookmark(fileId, { name, color, page }) {
+  const item = _bookmarkItem(fileId);
+  const bookmark = {
+    id: crypto.randomUUID(),
+    name: (name || "").trim() || `Page ${page}`,
+    color: color || "#ef5350",
+    page: Math.max(1, page | 0),
+    addedAt: Math.floor(Date.now() / 1000),
+  };
+  item.bookmarks.push(bookmark);
+  await persistRegistry();
+  _state?.emit("pdf-bookmarks-changed", fileId);
+  return bookmark;
+}
+
+export async function updatePdfBookmark(fileId, bookmarkId, patch) {
+  const item = _registry?.items?.[fileId];
+  const bm = item?.bookmarks?.find((b) => b.id === bookmarkId);
+  if (!bm) return null;
+  if (typeof patch.name === "string" && patch.name.trim()) bm.name = patch.name.trim();
+  if (typeof patch.color === "string" && patch.color) bm.color = patch.color;
+  if (typeof patch.page === "number" && patch.page >= 1) bm.page = patch.page | 0;
+  await persistRegistry();
+  _state?.emit("pdf-bookmarks-changed", fileId);
+  return bm;
+}
+
+export async function removePdfBookmark(fileId, bookmarkId) {
+  const item = _registry?.items?.[fileId];
+  if (!item?.bookmarks) return;
+  const before = item.bookmarks.length;
+  item.bookmarks = item.bookmarks.filter((b) => b.id !== bookmarkId);
+  if (item.bookmarks.length === before) return;
+  await persistRegistry();
+  _state?.emit("pdf-bookmarks-changed", fileId);
 }
 
 export function triggerBackgroundDownload(fileId, state) {

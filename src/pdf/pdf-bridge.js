@@ -36,7 +36,7 @@ export async function mountPdf(container, fileId, state) {
   const node = findNodeByFileId(state.fileTree, fileId);
   const zoteroAttKey = node?.zoteroAttKey || null;
 
-  const viewer = createPdfViewer(container, { mode: "main", zoteroAttKey });
+  const viewer = createPdfViewer(container, { mode: "main", zoteroAttKey, fileId });
   currentViewer = viewer;
   currentFileId = fileId;
 
@@ -76,6 +76,9 @@ export async function mountPdf(container, fileId, state) {
   } catch {}
 
   await loadAnnotationsIfZotero(viewer, fileId, state);
+  // Bookmark deep links wait on this to know the viewer can take a
+  // goToPage jump (see pdf-bookmarks.js#openPdfAtBookmark).
+  state.emit("pdf-mounted", fileId);
 }
 
 export async function unmountPdf() {

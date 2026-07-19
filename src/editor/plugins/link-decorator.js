@@ -101,6 +101,15 @@ function buildDecorations(view, appState) {
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
 async function openUrl(url) {
+  // Internal PDF-bookmark deep links (`hush-pdf://<fileId>/<bookmarkId>`)
+  // navigate inside the app instead of hitting the OS opener.
+  if (url && url.startsWith("hush-pdf://")) {
+    try {
+      const { openPdfBookmarkUrl } = await import("../../pdf/pdf-bookmarks.js");
+      openPdfBookmarkUrl(url);
+    } catch (e) { console.warn("PDF bookmark link failed:", e); }
+    return;
+  }
   if (IS_TAURI) {
     try {
       // tauri-plugin-opener works on both macOS and iOS

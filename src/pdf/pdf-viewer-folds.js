@@ -16,6 +16,7 @@
  */
 
 import { parseAnnotationPosition, paintAnnotationsInto } from "./pdf-viewer-annotations.js";
+import { attachFoldBookmarkButton } from "./pdf-bookmarks.js";
 
 const FOLD_PAD = 28;   // page units (~2 text lines) above/below the annotation
 const MERGE_GAP = 16;  // merge folds whose padded regions come this close
@@ -50,6 +51,7 @@ function isRed(color) {
  * @param {function}    viewer.getAnnotations    () => normalized annotations[]
  * @param {function}    viewer.getEffectiveZoom  () => number (vertical-fit scale while folded)
  * @param {function}    viewer.isDestroyed       () => boolean
+ * @param {function}    viewer.getFileId         () => Hush fileId | null (bookmark button)
  */
 export function createFoldLayer(scrollArea, viewer) {
   let enabled = false;
@@ -217,6 +219,11 @@ export function createFoldLayer(scrollArea, viewer) {
       toggle.title = "Reveal full page";
       toggle.innerHTML = EXPAND_ICON;
       wrapper.appendChild(toggle);
+
+      // Bookmark button rides beside the expand toggle (same hover
+      // reveal) so folded reading can drop a deep link without leaving
+      // the mode.
+      attachFoldBookmarkButton(wrapper, spec.pageIndex + 1, viewer.getFileId);
 
       const fold = {
         ...spec, wrapper, inner, toggle, scale,

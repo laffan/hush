@@ -21,6 +21,15 @@
   display: none;
 }
 
+/* Inset sidebar: shift with the panel exactly like the multi-select
+   view (see multi-select.css for the reasoning). */
+#panel-overlay.panel-inset:not(.hidden) ~ .pdf-shelf-view {
+  left: var(--panel-width, 300px);
+}
+#panel-overlay.panel-inset.hidden ~ .pdf-shelf-view {
+  left: var(--sidebar-grip-width, 24px);
+}
+
 body.pdf-shelf-active #editor-container,
 body.pdf-shelf-active #editor-empty-state,
 body.pdf-shelf-active #notebook-container,

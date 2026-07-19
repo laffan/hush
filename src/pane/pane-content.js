@@ -354,7 +354,7 @@ async function loadPdfPane(pane) {
   const node = findNodeByFileId(appState.fileTree, pane.fileId);
   const zoteroAttKey = node?.zoteroAttKey || null;
 
-  const viewer = createPdfViewer(pane._content, { mode: "pane", zoteroAttKey });
+  const viewer = createPdfViewer(pane._content, { mode: "pane", zoteroAttKey, fileId: pane.fileId });
   pane.pdfViewer = viewer;
 
   let bytes;

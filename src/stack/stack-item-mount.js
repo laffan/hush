@@ -279,7 +279,7 @@ async function mountPdfContent(contentEl, item, state, liveData) {
     const node = findNodeByFileId(state.fileTree, item.fileId);
     const zoteroAttKey = node?.zoteroAttKey || null;
 
-    const viewer = createPdfViewer(wrapper, { mode: "pane", zoteroAttKey });
+    const viewer = createPdfViewer(wrapper, { mode: "pane", zoteroAttKey, fileId: item.fileId });
 
     let bytes;
     if (IS_TAURI) {

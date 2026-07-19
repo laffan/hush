@@ -25,6 +25,19 @@
   display: none;
 }
 
+/* Inset sidebar: the panel carves real width out of the editor area, so
+   the takeover view has to shift with it — open panel: start past the
+   panel's live width (var updates during grip drags); closed: past the
+   always-present grip strip. Overlay-mode panels float above instead,
+   so the default left: 0 stands. The view host is appended to #app
+   after the static #panel-overlay, so the sibling combinator holds. */
+#panel-overlay.panel-inset:not(.hidden) ~ .multi-select-view {
+  left: var(--panel-width, 300px);
+}
+#panel-overlay.panel-inset.hidden ~ .multi-select-view {
+  left: var(--sidebar-grip-width, 24px);
+}
+
 /* Hide the editor + notebook chrome while the listing is up. The
    underlying elements stay in place so clearing the selection just
    flips classes; no remount cost. */

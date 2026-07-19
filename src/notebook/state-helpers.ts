@@ -2,6 +2,13 @@
 
 /** Open a URL using Tauri's opener plugin (desktop) or window.open (web fallback). */
 export async function openExternalUrl(url: string) {
+  // PDF-bookmark deep links navigate inside the app. Routed through a
+  // window hook (registered by pdf-bookmarks.js) so the canvas module
+  // stays free of app-module imports — same pattern as wikilinks.
+  if (url.startsWith("hush-pdf://")) {
+    const hook = (window as unknown as { __hushOpenPdfBookmark?: (u: string) => void }).__hushOpenPdfBookmark;
+    if (typeof hook === "function") { hook(url); return; }
+  }
   try {
     const opener = await import("@tauri-apps/plugin-opener");
     await opener.openUrl(url);
