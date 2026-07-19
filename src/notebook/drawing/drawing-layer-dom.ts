@@ -15,6 +15,14 @@ export interface DrawingDom {
   doneCanvas: HTMLCanvasElement;
   previewCanvas: HTMLCanvasElement;
   liveCanvas: HTMLCanvasElement;
+  /** Attached (composited → GPU-backed) helper for the re-anchor blit
+   *  (engine delta #29). Self-drawImage forces WebKit to snapshot the
+   *  whole source surface — a ~230 ms GPU→CPU readback on iPad — and a
+   *  DETACHED scratch is CPU-backed, paying the same readback on its
+   *  first leg. Two cross-canvas 'copy' draws through this attached
+   *  helper stay on the GPU. Sits UNDER the done canvas at near-zero
+   *  opacity so it's composited but never visible. */
+  blitHelper: HTMLCanvasElement;
   pocketStash: HTMLCanvasElement;
   pocketStashCtx: CanvasRenderingContext2D;
   svg: SVGSVGElement;
@@ -67,6 +75,13 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
     return c;
   }
 
+  // Blit helper first so it sits UNDER the done canvas (its content is
+  // a stale copy of pre-shift ink; the 1% opacity keeps it composited
+  // — WebKit demotes fully-hidden canvases off the GPU — while staying
+  // imperceptible behind the real ink). See DrawingDom.blitHelper.
+  const blitHelper = mkStageCanvas("draw-canvas drawing-blit-helper");
+  blitHelper.style.opacity = "0.01";
+  wrapper.appendChild(blitHelper);
   const doneCanvas = mkStageCanvas("draw-canvas drawing-done");
   const previewCanvas = mkStageCanvas("draw-canvas drawing-preview");
   const liveCanvas = mkStageCanvas("draw-canvas drawing-live");
@@ -152,7 +167,7 @@ export function createDrawingDom(container: HTMLElement, worldSize: number): Dra
   container.appendChild(selectHint);
 
   return {
-    wrapper, doneCanvas, previewCanvas, liveCanvas,
+    wrapper, doneCanvas, previewCanvas, liveCanvas, blitHelper,
     pocketStash, pocketStashCtx,
     svg, eraserCursor, selectionLayer,
     selectHint,

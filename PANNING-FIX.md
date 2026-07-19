@@ -221,7 +221,48 @@ Option E (defer re-anchors to gesture end — the stall moves to finger-
 lift instead of mid-gesture, at the price of edge blanking on long
 pans) is held in reserve as a comfort patch depending on how C feels.
 
-## NEXT SESSION — tiled backing (Option A, the real fix)
+## ROUND 5 — the readback diagnosis (SOLVED, pending on-device confirm)
+
+**Sixth capture (tiles + probe + pan) named the true culprit.** Three
+rows together: `tileProbe:2048:opGap ~17 ms` — a full-surface fill on
+a fresh composited canvas of 4096×4096 DEVICE pixels (identical size
+to the done canvas) costs one frame, at every size; yet
+`probe:opToFrameGap ~230 ms` on the done canvas, and — the tell —
+`probe:smallDirtyGap 225 ms` for touching a SINGLE PIXEL. The common
+factor in every slow op was **`drawImage` with the done canvas as its
+own source**: the spec forces a source snapshot, and WebKit implements
+it as a whole-surface GPU→CPU readback (~230 ms at 4096²) no matter
+how little is drawn. Raster throughput was never the problem; the
+~280 MB/s "CPU rasterizer" model was wrong, the per-surface "floor"
+was wrong — it was the readback all along. (The old scratch route paid
+the same price differently: a DETACHED canvas is CPU-backed, so its
+first leg was the readback.)
+
+**The fix (engine delta #29):** `shiftDoneCanvas` now bounces through
+an ATTACHED, composited helper canvas (`drawing-layer-dom.ts` mounts
+it under the done canvas at 1% opacity — near-zero rather than zero
+because WebKit demotes fully-hidden canvases off the GPU) using two
+cross-canvas `'copy'` draws — no self-reference, no CPU-backed
+intermediary, no readback. Projected re-anchor cost: ~2 frames instead
+of ~480 ms. Self-blit and scratch remain as fallbacks. The `probe`
+button gained `probe:doneToHelperGap` / `probe:helperToDoneGap` rows
+measuring exactly the two production legs — the next capture should
+show those at ~1 frame each, `reanchor:blitFlushGap` collapsing, and
+pan stalls gone.
+
+Residual known readbacks (rare ops, acceptable): pocketing a stroke
+(`stashPocketRegion` reads the done canvas into the CPU-backed stash)
+and export (`blitDoneCanvasAtWorldOrigin`). If pocket-in ever reads as
+a hitch, attach the stash the same way.
+
+If confirmed, the tiled-backing rewrite below is DEFERRED — re-anchors
+at ~2 frames make it optional polish rather than a necessity. Its
+plan (and the tile probe that green-lit surface costs) stays here for
+the future; zoom-crossing resize rebakes remain the one occasional
+big flush (hysteresis keeps them rare; time-slicing is the follow-up
+if they ever dominate a capture).
+
+## DEFERRED — tiled backing (Option A, the structural end-state)
 
 Replace the monolithic done canvas with a grid of fixed-size canvas
 tiles (start at 1024 CSS px/tile; round-4C's numbers may tune this)

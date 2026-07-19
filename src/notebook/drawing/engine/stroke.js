@@ -54,6 +54,16 @@
  *      time on iPad-class WebKit regardless of its trivial JS cost, and
  *      during plain pans both overlays are always empty — the
  *      unconditional clears tripled the felt re-anchor stall.
+ *  29. `createStrokeEngine({ blitCanvas })` — optional ATTACHED
+ *      (composited, GPU-backed) helper canvas the renderer's
+ *      shiftDoneCanvas prefers over a self-drawImage. On-device
+ *      probing isolated the true re-anchor cost: reading a canvas as
+ *      its own drawImage source forces WebKit to snapshot the whole
+ *      surface — a ~230 ms GPU→CPU readback even for a 1×1 dirty rect
+ *      — while a full-surface fill on an equally-sized fresh
+ *      composited canvas takes ~one frame. Two cross-canvas 'copy'
+ *      draws through the attached helper avoid self-reference (and the
+ *      CPU-backed detached scratch) entirely.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js.)
@@ -120,6 +130,7 @@ export function createStrokeEngine({
   pointToLocal,          // Hush delta #1: optional (clientPt) => localPt for world-space hosts
   getDpr,                // Hush delta #2: optional () => number; defaults to window.devicePixelRatio
   brushUrl,              // Hush delta #3: optional brush-PNG resolver passed to createAtlasCache
+  blitCanvas,            // Hush delta #29: optional ATTACHED helper canvas for readback-free shifts
   onLongPress,
   onStrokeAdded,
   onStrokesRemoved,
@@ -293,6 +304,9 @@ export function createStrokeEngine({
     // place while the array identity stays stable, which is exactly the
     // case identity keying can't see.
     isActive: (s) => s === state.active,
+    // Hush delta #29: attached helper for readback-free done-canvas
+    // shifts — see shiftDoneCanvas in stroke-render.js.
+    blitCanvas,
   });
 
   const eraser = createEraseController({

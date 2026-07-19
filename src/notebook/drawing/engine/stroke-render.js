@@ -81,7 +81,7 @@ export function stampStream(ctx, streamPts, size, tinted, spacingFrac, xform) {
   }
 }
 
-export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible, isActive }) {
+export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, options, isVisible, isActive, blitCanvas }) {
   const visible = isVisible || (() => true);
   const activeFn = isActive || (() => false);
 
@@ -366,6 +366,32 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
     const dpr = t.a || 1;
     const devX = Math.round(dx * dpr);
     const devY = Math.round(dy * dpr);
+    // Hush delta #29: preferred route — bounce through the host's
+    // ATTACHED (composited, GPU-backed) helper canvas with two
+    // cross-canvas 'copy' draws. Self-drawImage forces WebKit to
+    // snapshot the whole source surface (~230 ms GPU→CPU readback on
+    // iPad, measured — even a 1×1 self-read pays it), and a DETACHED
+    // scratch is CPU-backed, paying the same readback on its first
+    // leg. Cross-canvas draws between two composited canvases stay on
+    // the GPU (~1 frame at 4096², measured via the HUD tile probe).
+    if (blitCanvas) {
+      const bctx = blitCanvas.getContext('2d');
+      if (bctx) {
+        if (blitCanvas.width !== doneCtx.canvas.width) blitCanvas.width = doneCtx.canvas.width;
+        if (blitCanvas.height !== doneCtx.canvas.height) blitCanvas.height = doneCtx.canvas.height;
+        bctx.save();
+        bctx.setTransform(1, 0, 0, 1, 0, 0);
+        bctx.globalCompositeOperation = 'copy';
+        bctx.drawImage(doneCtx.canvas, 0, 0);
+        bctx.restore();
+        doneCtx.save();
+        doneCtx.setTransform(1, 0, 0, 1, 0, 0);
+        doneCtx.globalCompositeOperation = 'copy';
+        doneCtx.drawImage(blitCanvas, devX, devY);
+        doneCtx.restore();
+        return;
+      }
+    }
     if (selfBlitOk === null) selfBlitOk = testSelfBlit();
     if (selfBlitOk) {
       doneCtx.save();

@@ -104,7 +104,7 @@ export function createDrawingLayer({
   // the live values without indirection through individual getters.
   const dom = createDrawingDom(container, WORLD_SIZE_MIN);
   const {
-    wrapper, doneCanvas, previewCanvas, liveCanvas,
+    wrapper, doneCanvas, previewCanvas, liveCanvas, blitHelper,
     pocketStash, pocketStashCtx,
     svg, eraserCursor, selectionLayer, selectHint,
   } = dom;
@@ -222,6 +222,7 @@ export function createDrawingLayer({
     pointToLocal,
     getDpr: currentDpr,
     brushUrl,
+    blitCanvas: blitHelper,
     onLongPress: ({ pointerId, point }) => {
       // 1.5s hold with no drift promotes the in-flight stroke into a
       // lasso — the user's "I want to select what I just drew" gesture.
@@ -429,10 +430,9 @@ export function createDrawingLayer({
     const dpr = currentDpr();
     const w = anchor.worldSize;
     const px = Math.round(w * dpr);
-    for (const c of [doneCanvas, previewCanvas, liveCanvas]) {
-      // Mirror engine delta #27: skip the backing write when unchanged —
-      // re-assigning identical dimensions still clears + can reallocate
-      // (the IOSurface churn that dominated resize re-anchors on iPad).
+    for (const c of [doneCanvas, previewCanvas, liveCanvas, blitHelper]) {
+      // Mirror engine delta #27: skip the backing write when unchanged
+      // (re-assigning identical dimensions clears + can reallocate).
       if (c.width !== px) c.width = px;
       if (c.height !== px) c.height = px;
       c.style.left = "0px";

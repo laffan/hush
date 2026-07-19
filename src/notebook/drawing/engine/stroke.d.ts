@@ -14,6 +14,7 @@ export function createStrokeEngine(opts: {
   pointToLocal?: (p: { x: number; y: number }) => { x: number; y: number };
   getDpr?: () => number;
   brushUrl?: (id: string) => string | null;
+  blitCanvas?: HTMLCanvasElement;
   onLongPress?: (e: { pointerId: number; point: { x: number; y: number } }) => void;
   onStrokeAdded?: (stroke: any, index: number) => void;
   onStrokesRemoved?: (removed: { stroke: any; index: number }[]) => void;

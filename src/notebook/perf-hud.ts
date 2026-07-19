@@ -256,7 +256,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     const st = shapeStats();
     const done = container.querySelector<HTMLCanvasElement>(".drawing-done");
     const lines: string[] = [];
-    lines.push(`== Notebook Perf Report (hud v4) ==`);
+    lines.push(`== Notebook Perf Report (hud v5) ==`);
     lines.push(`uptime ${f1((performance.now() - perf.startedAt) / 1000)}s · dpr ${window.devicePixelRatio} · zoom ${state.camera.zoom.toFixed(3)} · sel ${state.selectedIds.size}`);
     lines.push(`shapes ${st.total} (draw ${st.draw} · ${st.pts} pts, text ${st.text}, img ${st.img}, other ${st.other})`);
     if (done) lines.push(`backing ${done.width}×${done.height}px (css ${done.style.width})`);
@@ -411,6 +411,30 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
       const fs = await nextFrame();
       perf.asyncSpan("probe:smallDirtyJs", sEnd - sT0);
       perf.asyncSpan("probe:smallDirtyGap", fs - sEnd);
+    }
+    // Delta-#29 legs: the two cross-canvas 'copy' draws the readback-
+    // free blit uses (helper := done, then done := helper at zero
+    // offset — identity overall, non-destructive). If these rows are
+    // ~1 frame while probe:opToFrameGap stays ~230 ms, the readback
+    // diagnosis and the fix are both confirmed on-device.
+    const helper = container.querySelector<HTMLCanvasElement>(".drawing-blit-helper");
+    if (helper) {
+      const hctx = helper.getContext("2d")!;
+      if (helper.width !== done.width) { helper.width = done.width; helper.height = done.height; }
+      let t = performance.now();
+      hctx.save(); hctx.setTransform(1, 0, 0, 1, 0, 0);
+      hctx.globalCompositeOperation = "copy";
+      hctx.drawImage(done, 0, 0); hctx.restore();
+      let end = performance.now();
+      perf.asyncSpan("probe:doneToHelperJs", end - t);
+      perf.asyncSpan("probe:doneToHelperGap", (await nextFrame()) - end);
+      t = performance.now();
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = "copy";
+      ctx.drawImage(helper, 0, 0); ctx.restore();
+      end = performance.now();
+      perf.asyncSpan("probe:helperToDoneJs", end - t);
+      perf.asyncSpan("probe:helperToDoneGap", (await nextFrame()) - end);
     }
     // Allocation probe: a fresh same-size surface + first draw.
     const t0 = performance.now();
