@@ -303,8 +303,58 @@ opens). Both mount-path and unmount-path teardown now remove them
 (and the mount path now removes the `notebook-bg-changed` document
 listener too, a second pre-existing stack of the same kind).
 
-If confirmed, the tiled-backing rewrite below is DEFERRED — re-anchors
-at ~2 frames make it optional polish rather than a necessity. Its
+**Ninth capture: FINAL COST MODEL.** `doneFillGap 16 ms`,
+`doneFillPanGap 15 ms`, `transformOnlyGap 17 ms` — visible-canvas
+writes are cheap and the transform-collision theory is dead;
+`reanchor:blitFlushGap` averages ~7 ms; yet the ~235 ms stall still
+fires once per re-anchor. The one untested cell of the matrix is the
+one production hits: a FULL-SURFACE write to a VISIBLE 4096² canvas.
+Unified model consistent with every capture:
+
+> WebKit rasterizes Canvas2D CPU-side and, at commit, uploads the
+> canvas's DIRTY REGION to the display surface at ~280 MB/s.
+> Small dirty rects → cheap (ink stamps, 16 ms probes). Invisible /
+> ~1%-opacity canvases → no upload at all (every "fast" probe, the
+> blit helper). Fully-dirtying the visible 67 MB canvas → ~235 ms.
+> Self-drawImage additionally snapshots (readback) at the same rate.
+
+A sliding monolithic backing MUST fully-dirty its visible canvas per
+re-anchor. Incremental fixes are exhausted by measurement — what
+remains is architectural:
+
+1. **Opacity-swap double buffer (delta #31 sketch, cheap experiment
+   first).** Write the shifted frame into the 1%-opacity helper
+   (measured cheap — no upload while effectively invisible), then swap
+   the two canvases' opacities + roles in the same commit as the
+   transform change. IF WebKit uploads the newly-visible buffer
+   asynchronously (compositor-side), the stall vanishes for ~150 lines
+   of work; if it uploads synchronously at the swap, we're no worse
+   off. Requires the engine's done-target to be swappable (doneCtx
+   getter indirection; pocket-blit + HUD class queries follow the
+   role) — groundwork the tile renderer needs anyway.
+2. **Tiled backing (the deterministic fix).** Now fully de-risked by
+   on-device numbers: tile-sized canvas ops measured at ~17 ms even at
+   4096² device px when the surface isn't the visible monolith; a
+   512-768 CSS px tile uploads ~4-12 MB (~15-45 ms) ONCE at bake,
+   prefetchable off the pan path; steady-state panning does ZERO
+   canvas work. Bake tiles before attach (or attach at 1% opacity and
+   promote) so even the bake upload lands off the visible path.
+
+## OPEN — pen-mode two-finger pan (input routing, fix-2 family)
+
+Reported alongside capture 9: with a pen/brush tool selected,
+two-finger pan doesn't engage and the user must switch tools. Almost
+certainly the pre-existing input-routing family (the Text-tool
+editor-on-pointerdown "fix 2" was deliberately deferred in round 2;
+pen-mode pan rides engine `gestures.js` → `onTouchPan*`), not a
+regression from this branch's canvas work — nothing here touched
+gestures.js / stroke pointer handlers / setInputEnabled. Needs its own
+look in the next session: verify the gesture recogniser still receives
+the touches (the HUD's `svg` A/B toggle hides the overlay entirely —
+make sure it wasn't left hidden), then trace onPanStart delivery.
+
+If the swap experiment or tiles land, the rounds 1-8 fixes all remain
+load-bearing (saves, hysteresis, no-realloc, delta #28-#30 hygiene). Its
 plan (and the tile probe that green-lit surface costs) stays here for
 the future; zoom-crossing resize rebakes remain the one occasional
 big flush (hysteresis keeps them rare; time-slicing is the follow-up
