@@ -88,8 +88,9 @@ import {
   nextPaint as _nextPaint,
 } from "./notebook-loading-overlay.js";
 import { NotebookSaveGate } from "./notebook-save-gate.js";
-// PERF-HUD (temporary): tracer singleton — see perf-hud.ts / PANNING-FIX.md.
-import { perf } from "./perf-hud.ts";
+// PERF-HUD: tracer singleton + overlay mount — see perf-hud.ts /
+// PANNING-FIX.md. The overlay is gated behind Settings > Debug.
+import { perf, mountPerfHud } from "./perf-hud.ts";
 import { loadNotebookSnapshot } from "./notebook-load.js";
 import { computeNotebookSettings } from "./notebook-style-settings.js";
 export { computeNotebookSettings } from "./notebook-style-settings.js";
@@ -262,29 +263,47 @@ async function _mountNotebookImpl(container, fileId, state) {
     _saveGate.noteCameraChange();
   };
   container.addEventListener("notebook-camera-change", onNotebookCameraChange);
+
+  // PERF-HUD: on-canvas diagnostics overlay (frame/stall attribution
+  // with a copyable report — there's no console on iPad). Mounted only
+  // while Settings > Debug > Performance HUD is on; the toggle applies
+  // live through the settings-changed listener registered below. The
+  // `perf` tracer itself always records (its spans/counters are cheap);
+  // the setting only controls the overlay.
+  const canvasState = canvasInstance.state;
+  const syncPerfHud = () => {
+    const want = !!(state.settings && state.settings.debugPerfHud);
+    if (want && !_perfHud) {
+      try {
+        _perfHud = mountPerfHud({
+          container,
+          state: canvasState,
+          getExtra: () => ({
+            fileId: currentNotebookFileId,
+            contentDirty: notebookDirty,
+            cameraDirty,
+            bodyCached: _lastEncodedBody != null,
+          }),
+        });
+      } catch (e) {
+        console.error("perf-hud mount failed:", e);
+      }
+    } else if (!want && _perfHud) {
+      _perfHud.destroy();
+      _perfHud = null;
+    }
+  };
+  // A HUD left over from the previous notebook watches stale state —
+  // drop it before syncing against the setting for this mount.
+  if (_perfHud) { _perfHud.destroy(); _perfHud = null; }
+  syncPerfHud();
+  state.on("settings-changed", syncPerfHud);
+
   canvasInstance._bridgeContainerListeners = () => {
     container.removeEventListener("notebook-change", onNotebookChange);
     container.removeEventListener("notebook-camera-change", onNotebookCameraChange);
+    state.off("settings-changed", syncPerfHud);
   };
-
-  // PERF-HUD (temporary): mount the on-canvas diagnostics overlay so
-  // the panning lag can be attributed on-device (no console on iPad).
-  try {
-    const { mountPerfHud } = await import("./perf-hud.ts");
-    if (_perfHud) _perfHud.destroy();
-    _perfHud = mountPerfHud({
-      container,
-      state: canvasInstance.state,
-      getExtra: () => ({
-        fileId: currentNotebookFileId,
-        contentDirty: notebookDirty,
-        cameraDirty,
-        bodyCached: _lastEncodedBody != null,
-      }),
-    });
-  } catch (e) {
-    console.error("perf-hud mount failed:", e);
-  }
 
   // Wire cmd-drag of text and image shapes out of the main notebook.
   try {

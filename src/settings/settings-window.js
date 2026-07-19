@@ -1,7 +1,8 @@
 /**
  * Settings window — runs in a separate Tauri WebviewWindow.
  * Communicates with main window via Tauri events.
- * Tabbed layout: General, Editor, Shortcuts, D.R.Y., Flags
+ * Tabbed layout: General, Editor, Shortcuts, D.R.Y., Proofread,
+ * Flags, Privacy, Sync, Zotero, Debug
  */
 import { DEFAULT_STOPWORDS } from "../editor/plugins/dry-highlight.js";
 import { bindFlagsTab } from "../longview/longview-settings.js";
@@ -10,7 +11,7 @@ import {
   isIOSSettings,
   renderGeneralTab, renderEditorTab, renderShortcutsTab,
   renderDryTab, renderFlagsSettingsTab, renderSyncTab, renderPrivacyTab, renderZoteroTab,
-  renderProofreadTab, bindProofreadTab,
+  renderProofreadTab, bindProofreadTab, renderDebugTab,
 } from "./settings-tabs.js";
 import { setSyncSubTab } from "./settings-tabs-sync.js";
 
@@ -171,6 +172,7 @@ function render() {
     ["privacy", "Privacy"],
     ["sync", "Sync"],
     ["zotero", "Zotero"],
+    ["debug", "Debug"],
   ];
   root.innerHTML = `
     <div class="settings-layout">
@@ -208,6 +210,9 @@ function render() {
         <div class="settings-panel${activeTab === 'zotero' ? ' active' : ''}" id="panel-zotero">
           ${renderZoteroTab(settings)}
         </div>
+        <div class="settings-panel${activeTab === 'debug' ? ' active' : ''}" id="panel-debug">
+          ${renderDebugTab(settings)}
+        </div>
       </div>
     </div>
   `;
@@ -225,6 +230,7 @@ const tabIcons = {
   privacy: `<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="1" y1="1" x2="23" y2="23" stroke-width="2"/></svg>`,
   sync: `<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
   zotero: `<svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+  debug: `<svg viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="12" rx="4"/><path d="M9.5 8.5a2.5 2.5 0 0 1 5 0"/><path d="M8 12H4M8 16H5M16 12h4M16 16h3M9 8 7 5M15 8l2-3"/></svg>`,
 };
 
 function tabBtn(id, label, icon) {
@@ -312,6 +318,9 @@ function bindAll() {
       render();
     });
   }
+
+  // Debug tab
+  bindCheckbox("setting-debug-perf-hud", "debugPerfHud");
 
   // Flags tab
   bindFlagsTab(saveSetting, settings, render);

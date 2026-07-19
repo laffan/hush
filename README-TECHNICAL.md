@@ -233,7 +233,7 @@ main.js                  ←──IPC──→     lib.rs (app setup + run)
 │
 ├── settings/
 │   ├── settings-window.js
-│   ├── settings-tabs.js               (shared escapers + General/Editor/D.R.Y./Privacy/Flags tabs)
+│   ├── settings-tabs.js               (shared escapers + General/Editor/D.R.Y./Privacy/Flags/Debug tabs)
 │   ├── settings-tabs-shortcuts.js     (extracted: shortcutCategories + Shortcuts tab)
 │   ├── settings-tabs-sync.js          (extracted: Google / iCloud / Log sub-tabs)
 │   ├── settings-tabs-zotero.js        (extracted: Zotero tab)

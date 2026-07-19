@@ -400,6 +400,11 @@ pub struct AppSettings {
     /// choice rides across restarts.
     #[serde(default)]
     pub properties_visible: bool,
+    /// Settings > Debug — notebook performance HUD overlay. Off by
+    /// default; when on, opening a notebook mounts the on-canvas
+    /// frame/stall diagnostics overlay (src/notebook/perf-hud.ts).
+    #[serde(default)]
+    pub debug_perf_hud: bool,
     /// "Desks" — top-level containers above all other tree nodes.
     /// Always-on; kept as a deprecated boolean so older settings.json
     /// files still parse. The JS side treats desks as structural.
@@ -668,6 +673,7 @@ impl Default for AppSettings {
             desktop_file_id: None,
             minimap_visible: false,
             properties_visible: false,
+            debug_perf_hud: false,
             use_desks: true,
             desks: Vec::new(),
             desks_meta: serde_json::json!({}),

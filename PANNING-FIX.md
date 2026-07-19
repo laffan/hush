@@ -67,13 +67,16 @@ all fixed in this branch:
    reassembly at 5k strokes. Cache invalidated on mount / unmount /
    sync reload; content-dirty saves re-encode.
 
-## ROUND 3 — on-device diagnostics (PERF HUD, temporary)
+## ROUND 3 — on-device diagnostics (PERF HUD)
 
 The lag reportedly survived rounds 1 + 2, so this branch now ships an
-**on-canvas perf overlay** (`src/notebook/perf-hud.ts`, mounted by the
-bridge on every main-canvas notebook) to attribute the stall on the
-iPad itself — no console needed. Remove later by deleting perf-hud.ts
-and every line tagged `PERF-HUD` (grep for it).
+**on-canvas perf overlay** (`src/notebook/perf-hud.ts`) to attribute
+the stall on the iPad itself — no console needed. Kept post-fix as a
+debugging tool behind **Settings > Debug > Performance HUD**
+(`settings.debugPerfHud`, default off; the bridge mounts/unmounts the
+overlay live on toggle). To remove the machinery entirely someday,
+delete perf-hud.ts, every line tagged `PERF-HUD` (grep for it), and
+the Debug-tab toggle.
 
 **Round 3 findings (first on-device HUD capture, iPad, 390 strokes,
 zoom 0.896):** PAN fps 31 with stalls up to 1.7 s, and the attribution
@@ -432,14 +435,16 @@ Keep from this branch regardless of path: save-pipeline fixes (rounds
 the streamline cache, and the HUD.
 
 **How to use it:**
-1. Open the laggy notebook — a dark `PERF …fps stalls N` pill sits in
+1. Turn on **Settings > Debug > Performance HUD** (off by default; the
+   toggle applies to the open notebook immediately).
+2. Open the laggy notebook — a dark `PERF …fps stalls N` pill sits in
    the top-left of the canvas (drag its header to move it).
-2. Pan around for 15-30 s the way that feels laggy. The pill flashes
+3. Pan around for 15-30 s the way that feels laggy. The pill flashes
    red on every main-thread stall ≥ 50 ms.
-3. Tap `▸` to expand, then `copy`, and paste the report back into the
+4. Tap `▸` to expand, then `copy`, and paste the report back into the
    session. If copy fails, the expanded text is selectable — long-press
    → Select All → Copy.
-4. `reset` zeroes everything for a clean capture.
+5. `reset` zeroes everything for a clean capture.
 
 **How to read it (for whoever gets the report):**
 - `PAN fps` is the number that matters — FPS measured only over

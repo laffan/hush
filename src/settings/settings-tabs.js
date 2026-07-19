@@ -271,6 +271,21 @@ export function renderFlagsSettingsTab(settings) {
   return renderFlagsTab(settings);
 }
 
+// ===== Debug Tab =====
+export function renderDebugTab(settings) {
+  const s = settings;
+  return `
+    <div class="settings-section">
+      <h2>Notebook</h2>
+      <div class="settings-row">
+        <label>Performance HUD</label>
+        <input type="checkbox" id="setting-debug-perf-hud" ${s.debugPerfHud ? "checked" : ""} />
+      </div>
+      <p class="settings-help">Overlays live frame-rate, stall-attribution, and save-pipeline diagnostics on the notebook canvas. The HUD's <em>copy</em> button puts a plain-text report on the clipboard for sharing; <em>probe</em> and <em>tiles</em> run canvas micro-benchmarks. Applies to notebooks opened after toggling, and to the currently open notebook immediately.</p>
+    </div>
+  `;
+}
+
 // ===== Privacy Tab =====
 export function renderPrivacyTab(settings) {
   const s = settings;

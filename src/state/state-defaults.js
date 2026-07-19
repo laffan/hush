@@ -75,6 +75,10 @@ export function createDefaultSettings() {
     // the command palette toggles the integrated editing UI at the top
     // of every doc that carries a frontmatter block.
     propertiesVisible: false,
+    // Settings > Debug — notebook performance HUD overlay. Off by
+    // default; when on, opening a notebook mounts the on-canvas
+    // frame/stall diagnostics overlay (notebook/perf-hud.ts).
+    debugPerfHud: false,
     // "Desks" — top-level container above all other tree nodes. The
     // top level is always one or more desk nodes, each with its own
     // namespaced Inbox/Images/Trash. Sessions started before desks

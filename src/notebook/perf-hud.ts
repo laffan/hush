@@ -1,8 +1,12 @@
-/* PERF-HUD (temporary) — on-canvas performance diagnostics overlay.
+/* PERF-HUD — on-canvas performance diagnostics overlay.
  *
  * Built to chase the notebook panning lag on-device (iPad has no
- * console). Mounted by notebook-bridge.js on the main canvas; remove
- * by deleting this file and every line tagged `PERF-HUD` (grep for it).
+ * console), kept as a debugging tool behind **Settings > Debug >
+ * Performance HUD** (`settings.debugPerfHud`, default off). The
+ * overlay is mounted/unmounted by notebook-bridge.js; the tracer
+ * singleton always records (spans/counters are cheap). To remove the
+ * machinery entirely someday: delete this file and every line tagged
+ * `PERF-HUD` (grep for it), plus the Debug-tab toggle.
  * See PANNING-FIX.md → "ROUND 3" for how to read the numbers.
  *
  * Two halves:
