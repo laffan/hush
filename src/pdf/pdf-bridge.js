@@ -18,6 +18,15 @@ let panelObserver = null;
 
 const _scrollState = new Map();
 
+// Deep-link jump requested for the next mount of a given PDF (bookmark
+// links). Handled inside mountPdf — replacing the saved-scroll restore —
+// so the jump can't race it. See pdf-bookmarks.js#openPdfAtBookmark.
+let _pendingJump = null;
+
+export function requestPdfJump(fileId, page) {
+  _pendingJump = { fileId, page };
+}
+
 export async function mountPdf(container, fileId, state) {
   if (currentViewer && currentFileId) {
     _scrollState.set(currentFileId, {
@@ -58,9 +67,20 @@ export async function mountPdf(container, fileId, state) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   await viewer.loadPdf(data);
 
+  const jump = _pendingJump && _pendingJump.fileId === fileId ? _pendingJump : null;
+  _pendingJump = null;
   const saved = _scrollState.get(fileId);
-  if (saved) {
-    if (saved.zoom != null) viewer.setZoom(saved.zoom);
+  if (saved?.zoom != null) viewer.setZoom(saved.zoom);
+  if (jump) {
+    // Bookmark deep link: land on the bookmarked page instead of the
+    // saved scroll. Instant (a smooth scroll started this close to the
+    // container unhiding gets cancelled by the settling layout) and
+    // re-asserted once after the first renders land.
+    requestAnimationFrame(() => {
+      viewer.goToPage(jump.page, { instant: true });
+      setTimeout(() => viewer.goToPage(jump.page, { instant: true }), 180);
+    });
+  } else if (saved) {
     requestAnimationFrame(() => {
       viewer.setScrollTop(saved.top || 0);
       viewer.setScrollLeft(saved.left || 0);
@@ -76,9 +96,6 @@ export async function mountPdf(container, fileId, state) {
   } catch {}
 
   await loadAnnotationsIfZotero(viewer, fileId, state);
-  // Bookmark deep links wait on this to know the viewer can take a
-  // goToPage jump (see pdf-bookmarks.js#openPdfAtBookmark).
-  state.emit("pdf-mounted", fileId);
 }
 
 export async function unmountPdf() {

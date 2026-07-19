@@ -270,6 +270,12 @@
   opacity: 1;
 }
 
+/* Breathing room between the PDFs folder's shelf button and the
+   hamburger beside it. */
+.tree-action-shelf {
+  margin-right: 4px;
+}
+
 .tree-actions svg {
   width: 12px;
   height: 12px;

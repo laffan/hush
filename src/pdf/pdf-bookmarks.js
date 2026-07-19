@@ -42,50 +42,44 @@ export function initPdfBookmarks(state) {
 
 // ===== hush-pdf:// links =====
 
-export function bookmarkUrl(fileId, bookmarkId) {
-  return `hush-pdf://${fileId}/${bookmarkId}`;
+/** Links carry the page as a `?p=` fallback so they still land right
+ *  even if the bookmark is later deleted (or the registry isn't loaded
+ *  when the click fires). A live bookmark's current page wins. */
+export function bookmarkUrl(fileId, bm) {
+  return `hush-pdf://${fileId}/${bm.id}?p=${bm.page}`;
 }
 
 export function parseBookmarkUrl(url) {
-  const m = /^hush-pdf:\/\/([^/]+)\/([^/?#\s]+)/.exec(url || "");
-  return m ? { fileId: m[1], bookmarkId: m[2] } : null;
+  const m = /^hush-pdf:\/\/([^/]+)\/([^/?#\s]+?)(?:\?p=(\d+))?$/.exec((url || "").trim());
+  return m ? { fileId: m[1], bookmarkId: m[2], page: m[3] ? parseInt(m[3], 10) : 0 } : null;
 }
 
 export function bookmarkMarkdownLink(fileId, bm) {
   const name = (bm.name || `Page ${bm.page}`).replace(/[[\]]/g, "");
-  return `[${name}](${bookmarkUrl(fileId, bm.id)})`;
+  return `[${name}](${bookmarkUrl(fileId, bm)})`;
 }
 
 export function openPdfBookmarkUrl(url) {
   const parsed = parseBookmarkUrl(url);
-  if (parsed) openPdfAtBookmark(parsed.fileId, parsed.bookmarkId);
+  if (parsed) openPdfAtBookmark(parsed.fileId, parsed.bookmarkId, parsed.page);
 }
 
 /** Open the PDF in the main viewer and land on the bookmark's page.
- *  Already-open PDFs just jump; otherwise we open and wait for the
- *  bridge's `pdf-mounted` before jumping (with a settle delay so the
- *  mount's own saved-scroll restore can't clobber the jump). */
-export async function openPdfAtBookmark(fileId, bookmarkId) {
+ *  Already-open PDFs jump in place (smooth); otherwise the jump is
+ *  registered with the bridge (`requestPdfJump`) and performed inside
+ *  the mount itself, replacing the saved-scroll restore — no event /
+ *  timing race. */
+export async function openPdfAtBookmark(fileId, bookmarkId, fallbackPage = 0) {
   const state = _state;
   if (!state || !fileId) return;
   const bm = getPdfBookmarks(fileId).find((b) => b.id === bookmarkId) || null;
-  const page = bm?.page || 1;
-  const { getPdfInstance } = await import("./pdf-bridge.js");
+  const page = bm?.page || fallbackPage || 1;
+  const { getPdfInstance, requestPdfJump } = await import("./pdf-bridge.js");
   if (state.currentPdfFileId === fileId && getPdfInstance()) {
     getPdfInstance().goToPage(page);
     return;
   }
-  const onMounted = (fid) => {
-    if (fid !== fileId) return;
-    state.off("pdf-mounted", onMounted);
-    clearTimeout(giveUp);
-    setTimeout(async () => {
-      const { getPdfInstance: get } = await import("./pdf-bridge.js");
-      get()?.goToPage(page);
-    }, 90);
-  };
-  state.on("pdf-mounted", onMounted);
-  const giveUp = setTimeout(() => state.off("pdf-mounted", onMounted), 15000);
+  requestPdfJump(fileId, page);
   await state.openPdf(fileId);
 }
 

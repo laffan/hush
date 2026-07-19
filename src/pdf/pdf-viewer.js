@@ -537,15 +537,23 @@ export function createPdfViewer(container, opts = {}) {
     return fixedZoom;
   }
 
-  function goToPage(n) {
+  function goToPage(n, opts = {}) {
     if (folded) { foldLayer.goToPage(n); return; }
     const idx = Math.max(0, Math.min(n - 1, pages.length - 1));
-    if (pages[idx]?.wrapper) {
-      if (layoutMode === MODE_HORIZONTAL) {
-        pages[idx].wrapper.scrollIntoView({ behavior: "smooth", inline: "start" });
-      } else {
-        pages[idx].wrapper.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+    const w = pages[idx]?.wrapper;
+    if (!w) return;
+    if (opts.instant) {
+      // Deterministic positioning for deep links landing right after a
+      // mount — a smooth scrollIntoView started that early can be
+      // cancelled by the container unhiding / first renders.
+      if (layoutMode === MODE_HORIZONTAL) scrollArea.scrollLeft = w.offsetLeft - 20;
+      else scrollArea.scrollTop = w.offsetTop - 20;
+      return;
+    }
+    if (layoutMode === MODE_HORIZONTAL) {
+      w.scrollIntoView({ behavior: "smooth", inline: "start" });
+    } else {
+      w.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
