@@ -136,10 +136,22 @@ async function loadBrushAtlasPng(url) {
 
 // atlasMasks: brushId → { mask, fromPng, cell, variants } — cell+variants
 //   may be overridden by the loaded PNG (defaults to ATLAS_CELL/ATLAS_VARIANTS).
-// tintAtlasCache: brushId|color → canvas (tinted atlas).
+// tintAtlasCache: brushId|color → { canvas, bitmap? } (tinted atlas).
+//
+// Hush delta #30: each tinted atlas is asynchronously promoted to an
+// ImageBitmap, and getTintedAtlas hands the bitmap out once it
+// resolves. A canvas used as a drawImage SOURCE is mutable, so WebKit
+// re-converts / re-uploads it per draw — on iPad that made the
+// re-anchor's edge-strip rebake (hundreds of stamps) a ~220 ms
+// commit-side stall even after the blit itself went readback-free.
+// ImageBitmaps are immutable, so the engine can cache the texture and
+// repeated stamps stay on the GPU. The canvas remains the fallback
+// until the bitmap resolves (ms) and on engines without
+// createImageBitmap.
 export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
   const atlasMasks = new Map();
   const tintAtlasCache = new Map();
+  const canMakeBitmaps = typeof createImageBitmap === 'function';
   // Hush delta #1a: optional `brushUrl` resolver lets the caller supply
   // bundler-resolved URLs (Vite ?url imports). Reference default unchanged.
   const resolveBrushUrl = brushUrl || ((id) => `brushes/${id}.png`);
@@ -166,10 +178,19 @@ export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
     const key = `${brushId}|${color}`;
     let tinted = tintAtlasCache.get(key);
     if (!tinted) {
-      tinted = tintAtlasMask(entry.mask, color);
+      tinted = { canvas: tintAtlasMask(entry.mask, color), bitmap: null };
       tintAtlasCache.set(key, tinted);
+      if (canMakeBitmaps) {
+        // Promote to an immutable (texture-cacheable) source. Guard
+        // against the entry having been invalidated (PNG landed) by
+        // the time the promise resolves.
+        createImageBitmap(tinted.canvas).then((bmp) => {
+          if (tintAtlasCache.get(key) === tinted) tinted.bitmap = bmp;
+          else bmp.close();
+        }).catch(() => {});
+      }
     }
-    return { atlas: tinted, cell: entry.cell, variants: entry.variants };
+    return { atlas: tinted.bitmap || tinted.canvas, cell: entry.cell, variants: entry.variants };
   }
 
   // Async-load PNG atlases for each brush slot in the background. When a
@@ -189,7 +210,11 @@ export function createAtlasCache({ onAtlasReady, brushUrl } = {}) {
       const variants = Math.max(1, Math.floor(canvas.width / cell));
       atlasMasks.set(def.id, { mask: canvas, fromPng: true, cell, variants });
       for (const k of [...tintAtlasCache.keys()]) {
-        if (k.startsWith(`${def.id}|`)) tintAtlasCache.delete(k);
+        if (k.startsWith(`${def.id}|`)) {
+          const stale = tintAtlasCache.get(k);
+          if (stale && stale.bitmap) stale.bitmap.close();
+          tintAtlasCache.delete(k);
+        }
       }
       if (onAtlasReady) onAtlasReady(def.id);
     }));

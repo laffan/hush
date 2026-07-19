@@ -255,6 +255,22 @@ Residual known readbacks (rare ops, acceptable): pocketing a stroke
 and export (`blitDoneCanvasAtWorldOrigin`). If pocket-in ever reads as
 a hitch, attach the stash the same way.
 
+**Seventh capture: blit legs CONFIRMED fast (doneToHelper 9 ms,
+helperToDone 17 ms; many `reanchor:blitFlushGap` samples at ~15 ms),
+self-read still ~230 ms — diagnosis and fix both proven. But a
+~250 ms residual remains on stroke-crossing re-anchors, and the
+across-captures accounting shows it was always there UNDER the blit
+cost: the edge-strip rebake stamps hundreds of `drawImage` calls whose
+sources are DETACHED (CPU-backed, mutable) tinted-atlas canvases —
+per-draw source conversion/upload. Round 6 (delta #30) promotes every
+tinted atlas to an ImageBitmap (immutable → texture-cacheable, canvas
+fallback until resolved / where unsupported), and the HUD `probe`
+gained a stamp-source A/B (300 stamps canvas-source vs
+bitmap-source → `probe:stampCanvasGap` vs `probe:stampBitmapGap`).
+Cheap on-device empty-notebook test: pan a NEW empty notebook — no
+strokes means no strip stamping, so stall-free empty-notebook panning
+independently confirms the stamp theory.**
+
 If confirmed, the tiled-backing rewrite below is DEFERRED — re-anchors
 at ~2 frames make it optional polish rather than a necessity. Its
 plan (and the tile probe that green-lit surface costs) stays here for

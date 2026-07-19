@@ -66,7 +66,9 @@
  *      CPU-backed detached scratch) entirely.
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
- *    stroke-render.js.)
+ *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp
+ *    sources are immutable and texture-cacheable — in
+ *    stroke-atlas.js.)
  * All deltas are additive. Default behavior matches the reference.
  * ============================================================
  *

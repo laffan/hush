@@ -256,7 +256,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     const st = shapeStats();
     const done = container.querySelector<HTMLCanvasElement>(".drawing-done");
     const lines: string[] = [];
-    lines.push(`== Notebook Perf Report (hud v5) ==`);
+    lines.push(`== Notebook Perf Report (hud v6) ==`);
     lines.push(`uptime ${f1((performance.now() - perf.startedAt) / 1000)}s · dpr ${window.devicePixelRatio} · zoom ${state.camera.zoom.toFixed(3)} · sel ${state.selectedIds.size}`);
     lines.push(`shapes ${st.total} (draw ${st.draw} · ${st.pts} pts, text ${st.text}, img ${st.img}, other ${st.other})`);
     if (done) lines.push(`backing ${done.width}×${done.height}px (css ${done.style.width})`);
@@ -435,6 +435,40 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
       end = performance.now();
       perf.asyncSpan("probe:helperToDoneJs", end - t);
       perf.asyncSpan("probe:helperToDoneGap", (await nextFrame()) - end);
+    }
+    // Stamp-source comparison (delta #30): 300 small drawImages into
+    // the helper canvas from (a) a detached-canvas source — mutable, so
+    // WebKit may re-upload it per draw — vs (b) an ImageBitmap of the
+    // same pixels — immutable, texture-cacheable. This is the strip
+    // rebake's workload in miniature; if (a) is ~two hundred ms and (b)
+    // is ~a frame, the residual re-anchor stall is explained and the
+    // ImageBitmap atlases fix it.
+    if (helper) {
+      const hctx = helper.getContext("2d")!;
+      const src = document.createElement("canvas");
+      src.width = 128; src.height = 128;
+      const sctx = src.getContext("2d")!;
+      sctx.fillStyle = "#345";
+      sctx.beginPath(); sctx.arc(64, 64, 60, 0, Math.PI * 2); sctx.fill();
+      const stampRun = (image: CanvasImageSource) => {
+        for (let i = 0; i < 300; i++) {
+          hctx.drawImage(image, 0, 0, 128, 128, (i * 37) % 3800, (i * 53) % 3800, 64, 64);
+        }
+      };
+      let t = performance.now();
+      stampRun(src);
+      let end = performance.now();
+      perf.asyncSpan("probe:stampCanvasJs", end - t);
+      perf.asyncSpan("probe:stampCanvasGap", (await nextFrame()) - end);
+      try {
+        const bmp = await createImageBitmap(src);
+        t = performance.now();
+        stampRun(bmp);
+        end = performance.now();
+        perf.asyncSpan("probe:stampBitmapJs", end - t);
+        perf.asyncSpan("probe:stampBitmapGap", (await nextFrame()) - end);
+        bmp.close();
+      } catch { /* no createImageBitmap on this engine */ }
     }
     // Allocation probe: a fresh same-size surface + first draw.
     const t0 = performance.now();
