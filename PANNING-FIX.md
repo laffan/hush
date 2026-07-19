@@ -322,16 +322,16 @@ A sliding monolithic backing MUST fully-dirty its visible canvas per
 re-anchor. Incremental fixes are exhausted by measurement — what
 remains is architectural:
 
-1. **Opacity-swap double buffer (delta #31 — IMPLEMENTED, awaiting
-   on-device capture).** Write the shifted frame into the 1%-opacity helper
+1. **Opacity-swap double buffer (delta #31 — CONFIRMED on-device,
+   capture 10).** Write the shifted frame into the 1%-opacity helper
    (measured cheap — no upload while effectively invisible), then swap
    the two canvases' opacities + roles in the same commit as the
-   transform change. IF WebKit uploads the newly-visible buffer
-   asynchronously (compositor-side), the stall vanishes for ~150 lines
-   of work; if it uploads synchronously at the swap, we're no worse
-   off. Requires the engine's done-target to be swappable (doneCtx
-   getter indirection; pocket-blit + HUD class queries follow the
-   role) — groundwork the tile renderer needs anyway.
+   transform change. WebKit does upload the newly-visible buffer
+   asynchronously: user-reported "MUCH better", PAN fps 31 → 55,
+   `reanchor:blitFlushGap` typically ~9 ms. Requires the engine's
+   done-target to be swappable (doneCtx getter indirection;
+   pocket-blit + HUD class queries follow the role) — groundwork the
+   tile renderer needs anyway.
 2. **Tiled backing (the deterministic fix).** Now fully de-risked by
    on-device numbers: tile-sized canvas ops measured at ~17 ms even at
    4096² device px when the surface isn't the visible monolith; a
@@ -339,6 +339,31 @@ remains is architectural:
    prefetchable off the pan path; steady-state panning does ZERO
    canvas work. Bake tiles before attach (or attach at 1% opacity and
    promote) so even the bake upload lands off the visible path.
+
+**Tenth capture (round 8b): swap confirmed; residuals closed out.**
+Capture 10 validated delta #31 — PAN fps 55, most re-anchor flushes
+~9 ms. Two residual spikes, one now fixed:
+
+- `reanchor:resizeFlushGap max 895 ms` — zoom-crossing resize
+  re-anchors went through `repaintAll`, which still painted every
+  stroke into the VISIBLE canvas (full dirty → the same ~235 ms+
+  upload the blit path escaped). Round 8b routes `repaintAll` through
+  the spare too (size/transform-align the spare, paint there, swap
+  roles via the shared `swapRoles()` helper). Zoom-crossing resizes,
+  theme retints, and bulk loads now all avoid fully dirtying the
+  visible canvas. Remaining resize cost is the JS stamping itself
+  (`reanchor tot max 283 ms` on stroke-heavy notebooks) — a real but
+  much smaller stall; time-slicing the rebake is the follow-up if a
+  future capture shows it dominating.
+- `reanchor:blitFlushGap max 858 ms`, once, after a long idle in an
+  otherwise ~9 ms series — WATCH ITEM. Best theory: WebKit purged the
+  idle 1%-opacity spare's backing store, and the first blit after
+  idle pays a reallocation + full re-upload. If captures keep showing
+  one-off post-idle spikes, options are a periodic 1-px keep-alive
+  touch on the spare or accepting one slow re-anchor per idle-return.
+  Per-user framing ("lags after a while"), this — not steady-state
+  panning — is the likely remaining perceptible hitch, along with
+  resize-path JS above.
 
 ## OPEN — pen-mode two-finger pan (input routing, fix-2 family)
 
@@ -353,12 +378,13 @@ look in the next session: verify the gesture recogniser still receives
 the touches (the HUD's `svg` A/B toggle hides the overlay entirely —
 make sure it wasn't left hidden), then trace onPanStart delivery.
 
-If the swap experiment or tiles land, the rounds 1-8 fixes all remain
-load-bearing (saves, hysteresis, no-realloc, delta #28-#30 hygiene). Its
-plan (and the tile probe that green-lit surface costs) stays here for
-the future; zoom-crossing resize rebakes remain the one occasional
-big flush (hysteresis keeps them rare; time-slicing is the follow-up
-if they ever dominate a capture).
+With the swap landed (and extended to full repaints in round 8b), the
+rounds 1-8 fixes all remain load-bearing (saves, hysteresis,
+no-realloc, delta #28-#30 hygiene). The tiled-backing plan (and the
+tile probe that green-lit surface costs) stays below for the future;
+the known remaining costs are the resize-path JS stamping (~283 ms
+worst case; time-slicing if it ever dominates a capture) and the
+post-idle spare-purge watch item above.
 
 ## DEFERRED — tiled backing (Option A, the structural end-state)
 

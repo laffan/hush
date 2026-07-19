@@ -69,9 +69,11 @@
  *      cross-canvas 'copy', then swaps the two canvases' roles
  *      (opacity + class + ctx rebind) — the visible canvas is never
  *      fully dirtied, dodging WebKit's ~235 ms full-dirty-region
- *      commit upload that survived every earlier variant. The done
- *      target is therefore dynamic: consumers resolve it via
- *      renderer.getDoneCtx() / engine.getDoneCanvas().
+ *      commit upload that survived every earlier variant. repaintAll
+ *      (resize re-anchors, retints, bulk loads) paints into the spare
+ *      and swaps the same way. The done target is therefore dynamic:
+ *      consumers resolve it via renderer.getDoneCtx() /
+ *      engine.getDoneCanvas().
  *   (Deltas 4 + 5 live in selection.js + gestures.js; #24 in
  *    gestures.js; #26 — the per-stroke streamline cache — in
  *    stroke-render.js; #30 — ImageBitmap tinted atlases, so stamp

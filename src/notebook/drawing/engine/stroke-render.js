@@ -269,17 +269,54 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
   // computed bbox (newly inserted, pre-index) fall back to the unconditional
   // path so we don't silently drop them.
   function repaintAll() {
-    clearCtx(doneCtx);
-    const t = doneCtx.getTransform();
+    // Delta #31 extension: full repaints also go through the spare.
+    // Painting every stroke into the VISIBLE canvas fully dirties it —
+    // the ~235 ms commit upload — so resize re-anchors (zoom
+    // crossings), theme retints, and bulk loads paint into the
+    // near-invisible spare and swap roles instead, same as the shift.
+    let target = doneCtx;
+    if (spareCtx) {
+      const spare = spareCtx.canvas;
+      const current = doneCtx.canvas;
+      if (spare.width !== current.width) spare.width = current.width;
+      if (spare.height !== current.height) spare.height = current.height;
+      spareCtx.setTransform(doneCtx.getTransform());
+      spareCtx.imageSmoothingEnabled = true;
+      target = spareCtx;
+    }
+    clearCtx(target);
+    const t = target.getTransform();
     const dpr = t.a || 1;
-    const rectW = doneCtx.canvas.width / dpr;
-    const rectH = doneCtx.canvas.height / dpr;
+    const rectW = target.canvas.width / dpr;
+    const rectH = target.canvas.height / dpr;
     for (const s of getStrokes()) {
       if (!visible(s)) continue;
       const b = s.bbox;
       if (b && (b.maxX < 0 || b.maxY < 0 || b.minX > rectW || b.minY > rectH)) continue;
-      renderStroke(doneCtx, s);
+      renderStroke(target, s);
     }
+    if (target === spareCtx) swapRoles();
+  }
+
+  // Delta #31: swap the done/spare roles — opacity + class flips and a
+  // ctx rebind, all compositor-cheap. The caller has already painted
+  // the frame-to-display into the spare. Class names follow the role so
+  // external queries (perf HUD, tooling) keep resolving; the DPR
+  // transform + smoothing carry over to the new target.
+  function swapRoles() {
+    const spare = spareCtx.canvas;
+    const current = doneCtx.canvas;
+    spare.style.opacity = '1';
+    current.style.opacity = '0.01';
+    const cls = spare.className;
+    spare.className = current.className;
+    current.className = cls;
+    const carried = doneCtx.getTransform();
+    const tmp = doneCtx;
+    doneCtx = spareCtx;
+    spareCtx = tmp;
+    doneCtx.setTransform(carried);
+    doneCtx.imageSmoothingEnabled = true;
   }
 
   // Rebuild the index from the canonical stroke list and repaint. Used for
@@ -390,22 +427,7 @@ export function createRenderer({ doneCtx, clearCtx, getStrokes, getTintedAtlas, 
       spareCtx.globalCompositeOperation = 'copy';
       spareCtx.drawImage(current, devX, devY);
       spareCtx.restore();
-      // Swap roles: the spare (holding the shifted frame) becomes the
-      // visible done canvas; the old done becomes the near-invisible
-      // spare. Class names follow the role so external queries (perf
-      // HUD, tooling) keep resolving; the DPR transform + smoothing
-      // carry over to the new target.
-      spare.style.opacity = '1';
-      current.style.opacity = '0.01';
-      const cls = spare.className;
-      spare.className = current.className;
-      current.className = cls;
-      const carried = doneCtx.getTransform();
-      const tmp = doneCtx;
-      doneCtx = spareCtx;
-      spareCtx = tmp;
-      doneCtx.setTransform(carried);
-      doneCtx.imageSmoothingEnabled = true;
+      swapRoles();
       return;
     }
     if (selfBlitOk === null) selfBlitOk = testSelfBlit();
