@@ -271,6 +271,38 @@ Cheap on-device empty-notebook test: pan a NEW empty notebook — no
 strokes means no strip stamping, so stall-free empty-notebook panning
 independently confirms the stamp theory.**
 
+**Eighth capture (existing 88-stroke + EMPTY notebook): stamp theory
+falsified, suspect list down to two.** The empty notebook — zero
+strokes, nothing to stamp — stalls identically (~235 ms per re-anchor
+cadence), and the stamp A/B measured canvas-source = bitmap-source =
+17 ms (stamps were never the cost; delta #30 stays as good hygiene).
+`reanchor:blitFlushGap` now averages ~13 ms. The ~235 ms is attached
+to the re-anchor EVENT itself, independent of strokes / blits /
+clears / stamps. Remaining suspects, discriminated by the HUD v7
+probes (`probe:doneFillGap` / `doneFillPanGap` / `transformOnlyGap`):
+every earlier "cheap" probe ran on INVISIBLE (1-2% opacity) surfaces —
+either any write to the VISIBLE done canvas pays the upload (but then
+per-frame live-canvas ink redraws should stall too), or — the sharper
+theory — a canvas write COLLIDING with a wrapper-transform change in
+the same commit forces WebKit's synchronized slow path, which is the
+one combination unique to re-anchors. If the collision theory holds,
+the fix is a double-buffer swap: write the shifted content into the
+INVISIBLE buffer, then flip buffer opacities + transform together
+(compositor-only ops) in one frame — no visible-canvas write ever
+coincides with a transform change. That needs the engine's done-target
+to become swappable (mechanical: doneCtx getter indirection, pocket
+blit + HUD queries follow the role) — sketched as delta #31 if the
+probe confirms.
+
+Also fixed this round (real bug the HUD margins exposed):
+`dirty:camera 4743` vs `notify:camera 1198` — the bridge's container
+listeners (notebook-change / notebook-camera-change) were never
+removed and stacked across notebook switches within an app session,
+multiplying dirty-marking and the pane-sync emit (~4× after four
+opens). Both mount-path and unmount-path teardown now remove them
+(and the mount path now removes the `notebook-bg-changed` document
+listener too, a second pre-existing stack of the same kind).
+
 If confirmed, the tiled-backing rewrite below is DEFERRED — re-anchors
 at ~2 frames make it optional polish rather than a necessity. Its
 plan (and the tile probe that green-lit surface costs) stays here for

@@ -122,8 +122,14 @@ export function mountNotebook(container, fileId, state) {
 }
 
 async function _mountNotebookImpl(container, fileId, state) {
-  // Destroy previous canvas if exists
+  // Destroy previous canvas if exists — including the bridge's own
+  // container/document listeners, which otherwise stack across
+  // notebook switches (this path doesn't go through unmount).
   if (canvasInstance) {
+    if (canvasInstance._bgChangeListener) {
+      document.removeEventListener("notebook-bg-changed", canvasInstance._bgChangeListener);
+    }
+    if (canvasInstance._bridgeContainerListeners) canvasInstance._bridgeContainerListeners();
     canvasInstance.destroy();
     canvasInstance = null;
   }
@@ -216,15 +222,21 @@ async function _mountNotebookImpl(container, fileId, state) {
 
   _appState = state;
 
-  // Listen for shape changes to mark dirty + notify panes
-  container.addEventListener("notebook-change", () => {
+  // Listen for shape changes to mark dirty + notify panes. The
+  // listeners are kept on the instance and removed on unmount —
+  // `container` is the same DOM element across notebook switches, so
+  // un-removed listeners stack up mount after mount (each switch
+  // multiplied the dirty-marking and the pane-sync emit; the perf HUD
+  // exposed ~4× counts after four opens in one app session).
+  const onNotebookChange = () => {
     notebookDirty = true;
     perf.count("dirty:content"); // PERF-HUD (temporary)
     // Feeds the quiet-moment save gate — saves wait for a real pause
     // in writing, not just the gap between two letters.
     _saveGate.noteContentChange();
     if (_appState) _appState.emit("notebook-shapes-changed");
-  });
+  };
+  container.addEventListener("notebook-change", onNotebookChange);
 
   // Per-notebook background overrides — popup fires on document. Cache
   // the latest values and mark dirty so the next autosave persists them.
@@ -243,12 +255,17 @@ async function _mountNotebookImpl(container, fileId, state) {
   // Camera (pan / zoom) changes go through a separate dirty flag so the
   // file is rewritten with the new viewport but no version snapshot
   // is created — pan / zoom isn't content history.
-  container.addEventListener("notebook-camera-change", () => {
+  const onNotebookCameraChange = () => {
     cameraDirty = true;
     perf.count("dirty:camera"); // PERF-HUD (temporary)
     // Feeds the quiet-moment save gate — saves wait out active panning.
     _saveGate.noteCameraChange();
-  });
+  };
+  container.addEventListener("notebook-camera-change", onNotebookCameraChange);
+  canvasInstance._bridgeContainerListeners = () => {
+    container.removeEventListener("notebook-change", onNotebookChange);
+    container.removeEventListener("notebook-camera-change", onNotebookCameraChange);
+  };
 
   // PERF-HUD (temporary): mount the on-canvas diagnostics overlay so
   // the panning lag can be attributed on-device (no console on iPad).
@@ -572,6 +589,7 @@ async function _unmountNotebookImpl() {
     if (canvasInstance._bgChangeListener) {
       document.removeEventListener("notebook-bg-changed", canvasInstance._bgChangeListener);
     }
+    if (canvasInstance._bridgeContainerListeners) canvasInstance._bridgeContainerListeners();
     canvasInstance.destroy();
     canvasInstance = null;
   }

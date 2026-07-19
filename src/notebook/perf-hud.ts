@@ -256,7 +256,7 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
     const st = shapeStats();
     const done = container.querySelector<HTMLCanvasElement>(".drawing-done");
     const lines: string[] = [];
-    lines.push(`== Notebook Perf Report (hud v6) ==`);
+    lines.push(`== Notebook Perf Report (hud v7) ==`);
     lines.push(`uptime ${f1((performance.now() - perf.startedAt) / 1000)}s · dpr ${window.devicePixelRatio} · zoom ${state.camera.zoom.toFixed(3)} · sel ${state.selectedIds.size}`);
     lines.push(`shapes ${st.total} (draw ${st.draw} · ${st.pts} pts, text ${st.text}, img ${st.img}, other ${st.other})`);
     if (done) lines.push(`backing ${done.width}×${done.height}px (css ${done.style.width})`);
@@ -469,6 +469,49 @@ export function mountPerfHud(opts: PerfHudOptions): PerfHudHandle {
         perf.asyncSpan("probe:stampBitmapGap", (await nextFrame()) - end);
         bmp.close();
       } catch { /* no createImageBitmap on this engine */ }
+    }
+    // Round-6 discriminators. Every earlier "cheap" probe ran on
+    // INVISIBLE surfaces (1-2% opacity helper / tile canvases); the
+    // ~235 ms re-anchor residual survives with zero strokes, so the
+    // remaining suspects are (a) any write to the VISIBLE done canvas,
+    // or (b) a write COLLIDING with a wrapper-transform change in the
+    // same commit — the one combination unique to re-anchors. Three
+    // rows separate them:
+    //   probe:doneFillGap      write-only, visible canvas, no transform
+    //   probe:doneFillPanGap   same write + 1px wrapper-transform nudge
+    //   probe:transformOnlyGap transform nudge alone
+    // The write is an 8×8 fill at 0.4% alpha in the far corner of the
+    // backing (offscreen margin, invisible even over ink; the next
+    // rebake repaints it) — dirties the surface without self-reading.
+    {
+      const wrapper = container.querySelector<HTMLElement>(".notebook-drawing-wrapper");
+      const fill = () => {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = "rgba(0,0,0,0.004)";
+        ctx.fillRect(done.width - 8, done.height - 8, 8, 8);
+        ctx.restore();
+      };
+      let t = performance.now();
+      fill();
+      let end = performance.now();
+      perf.asyncSpan("probe:doneFillJs", end - t);
+      perf.asyncSpan("probe:doneFillGap", (await nextFrame()) - end);
+      await nextFrame();
+      if (wrapper) {
+        const savedTransform = wrapper.style.transform;
+        fill();
+        wrapper.style.transform = savedTransform + " translate(0.51px, 0px)";
+        end = performance.now();
+        perf.asyncSpan("probe:doneFillPanGap", (await nextFrame()) - end);
+        wrapper.style.transform = savedTransform;
+        await nextFrame();
+        wrapper.style.transform = savedTransform + " translate(0.51px, 0px)";
+        end = performance.now();
+        perf.asyncSpan("probe:transformOnlyGap", (await nextFrame()) - end);
+        wrapper.style.transform = savedTransform;
+        await nextFrame();
+      }
     }
     // Allocation probe: a fresh same-size surface + first draw.
     const t0 = performance.now();
