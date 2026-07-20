@@ -308,7 +308,7 @@ async function _mountNotebookImpl(container, fileId, state) {
   // Wire cmd-drag of text and image shapes out of the main notebook.
   try {
     const { attachNotebookTextShapeDrag, attachNotebookImageShapeDrag } = await import("../pane/text-drag.js");
-    const { findShapeAtPoint, hitTestLink } = await import("./state-helpers.ts");
+    const { findShapeAtPoint, hitTestLink, openSoleLinkOf } = await import("./state-helpers.ts");
     const canvasEl = container.querySelector("canvas");
     if (canvasEl) {
       const txtCleanup = attachNotebookTextShapeDrag(
@@ -321,6 +321,7 @@ async function _mountNotebookImpl(container, fileId, state) {
             return hit && hit.type === "text" ? hit : null;
           },
           hitTestLink,
+          openSoleLink: openSoleLinkOf,
         },
         () => { notebookDirty = true; },
       );

@@ -230,7 +230,7 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
     let unregImgDrag = null;
     if (nbCanvas) {
       import("../pane/text-drag.js").then(async ({ registerNotebookDropTarget, attachNotebookTextShapeDrag, attachNotebookImageShapeDrag }) => {
-        const { findShapeAtPoint, hitTestLink } = await import("../notebook/state-helpers.ts");
+        const { findShapeAtPoint, hitTestLink, openSoleLinkOf } = await import("../notebook/state-helpers.ts");
         unregDrop = registerNotebookDropTarget(nbCanvas, canvas.state);
         unregTxtDrag = attachNotebookTextShapeDrag(nbCanvas, wrapper, canvas.state, {
           findTextShapeAt: (shapes, pt) => {
@@ -238,6 +238,7 @@ async function mountNotebookContent(contentEl, item, state, liveData) {
             return hit && hit.type === "text" ? hit : null;
           },
           hitTestLink,
+          openSoleLink: openSoleLinkOf,
         }, () => { dirty = true; });
         unregImgDrag = attachNotebookImageShapeDrag(nbCanvas, wrapper, canvas.state, {
           findImageShapeAt: (shapes, pt) => {

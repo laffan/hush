@@ -25,7 +25,7 @@ import {
   autoFitWidth, findShapeAtPoint, findPocketedShapeAtScreen,
   hitTestLink, hitTestLinkRun, soleLinkRun, hitTestTaskCheckbox, toggleTaskLine,
   normalizeBox, moveShape,
-  applyResize, applyCropResize, openExternalUrl,
+  applyResize, applyCropResize, openLinkRun,
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
@@ -1291,26 +1291,8 @@ export class DrawingState extends EventTarget {
           // alongside the open, which surfaces the selection toolbar over
           // the just-opened note.
           e.preventDefault();
-          if (linkRun.kind === "url") { openExternalUrl(linkRun.target, { x: e.clientX, y: e.clientY }); return; }
-          if (linkRun.kind === "wikilink") {
-            const asPane = e.shiftKey;
-            const hookName = asPane ? "__hushOpenWikilinkAsPane" : "__hushOpenWikilink";
-            const w = window as unknown as Record<string, ((t: string) => void) | undefined>;
-            const hook = w[hookName];
-            if (typeof hook === "function") {
-              hook(linkRun.target);
-            } else {
-              // Late fallback: handler not yet registered (init race).
-              // Dynamic import keeps this branch out of the cold path.
-              import("../links/wikilink-index.js").then((m) => {
-                const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
-                if (!appState) return;
-                if (asPane) void m.openWikilinkAsPane(appState, linkRun.target);
-                else void m.openWikilink(appState, linkRun.target);
-              }).catch(() => {});
-            }
-            return;
-          }
+          openLinkRun(linkRun, e.clientX, e.clientY, e.shiftKey);
+          return;
         }
       }
 

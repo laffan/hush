@@ -22,6 +22,33 @@ export async function openExternalUrl(url: string, anchor?: { x: number; y: numb
     window.open(url, "_blank");
   }
 }
+
+/** Open a link/wikilink run resolved from a notebook text shape. URLs go
+ *  through openExternalUrl (routing zotero:// to the tooltip menu anchored
+ *  at the click point); wikilinks route through the app's window hooks,
+ *  opening as a floating pane when `asPane` is set. Shared by the canvas
+ *  Cmd+click handler and the text-drag sole-link click path. */
+export function openLinkRun(
+  linkRun: { kind: "url" | "wikilink"; target: string },
+  clientX: number,
+  clientY: number,
+  asPane = false,
+): void {
+  if (linkRun.kind === "url") { void openExternalUrl(linkRun.target, { x: clientX, y: clientY }); return; }
+  const hookName = asPane ? "__hushOpenWikilinkAsPane" : "__hushOpenWikilink";
+  const w = window as unknown as Record<string, ((t: string) => void) | undefined>;
+  const hook = w[hookName];
+  if (typeof hook === "function") { hook(linkRun.target); return; }
+  // Late fallback: hook not registered yet (init race).
+  // @ts-ignore — wikilink modules are plain JS without .d.ts
+  import("../links/wikilink-index.js").then((m: any) => {
+    const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
+    if (!appState) return;
+    if (asPane) void m.openWikilinkAsPane(appState, linkRun.target);
+    else void m.openWikilink(appState, linkRun.target);
+  }).catch(() => {});
+}
+
 import type { ImageShape, Point, SelectionBox, Shape, TextShape } from "./types";
 import { FONT_FAMILY, LINE_HEIGHT_RATIO } from "./types";
 import { computePocketLayout, getMeasureCtx, hitTestShape, pointInBounds } from "./utils";
@@ -140,6 +167,18 @@ export function soleLinkRun(shape: TextShape): { kind: "url" | "wikilink"; targe
     }
   }
   return found;
+}
+
+/** Open a shape's sole link (when it has exactly one). Returns whether it
+ *  opened. Used by the text-drag gesture: a Cmd+click that doesn't turn
+ *  into a drag opens the shape's link, so a single-link shape (e.g. a
+ *  dragged-in Zotero highlight) is Cmd-clickable anywhere while still
+ *  being Cmd-draggable out to a pane. */
+export function openSoleLinkOf(shape: TextShape, clientX: number, clientY: number, asPane = false): boolean {
+  const link = soleLinkRun(shape);
+  if (!link) return false;
+  openLinkRun(link, clientX, clientY, asPane);
+  return true;
 }
 
 export function hitTestLinkRun(
