@@ -116,13 +116,23 @@ export function initLinkDebug() {
   dlog("platform:", navigator.platform || "?", "maxTouchPoints:", navigator.maxTouchPoints);
 
   const report = (type, e) => {
-    const link = e.target?.closest?.(".cm-link-rendered");
-    if (!link) return;
-    dlog(`GLOBAL ${type}`, "meta:", !!e.metaKey, "ctrl:", !!e.ctrlKey,
-      "cmdHeld:", !!window.__hushCmdHeld, "url:", link.dataset.linkUrl || "?");
+    // Resolve to an element even if the event targeted a text node.
+    const raw = e.target;
+    const el = raw && raw.nodeType === 3 ? raw.parentElement : raw;
+    const tag = el?.tagName || "?";
+    let cls = "";
+    try { cls = (typeof el?.className === "string" ? el.className : el?.getAttribute?.("class")) || ""; } catch { cls = "?"; }
+    const link = el?.closest?.(".cm-link-rendered") || null;
+    const cite = el?.closest?.(".cm-citation-rendered") || null;
+    dlog(`GLOBAL ${type}`,
+      "tag:", tag, "cls:", `"${String(cls).slice(0, 60)}"`,
+      "LINK:", !!link, "CITE:", !!cite,
+      "meta:", !!e.metaKey, "ctrl:", !!e.ctrlKey, "cmdHeld:", !!window.__hushCmdHeld,
+      link ? "linkUrl: " + (link.dataset.linkUrl || "?") : "",
+      cite ? "citeUrl: " + (cite.dataset.citeUrl || cite.dataset.citekey || "?") : "");
   };
   document.addEventListener("pointerdown", (e) => report("pointerdown", e), true);
   document.addEventListener("mousedown", (e) => report("mousedown", e), true);
   document.addEventListener("click", (e) => report("click", e), true);
-  dlog("global capture listeners attached");
+  dlog("global capture listeners attached — tap a Zotero link now");
 }

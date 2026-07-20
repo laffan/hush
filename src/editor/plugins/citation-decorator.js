@@ -441,9 +441,12 @@ function hasModifier(e) {
 function createClickHandler() {
   return EditorView.domEventHandlers({
     mousedown(e, view) {
+      const onCite = !!e.target?.closest?.(".cm-citation-rendered"); // TEMP
+      if (onCite) import("../../debug/link-debug.js").then((m) => m.dlog("CITATION mousedown handler", "hasMod:", hasModifier(e))).catch(() => {}); // TEMP
       if (!hasModifier(e)) return false;
       const widget = e.target.closest?.(".cm-citation-rendered");
       if (widget?.dataset.citeUrl) {
+        if (onCite) import("../../debug/link-debug.js").then((m) => m.dlog("CITATION → openUrl (opens Zotero directly):", widget.dataset.citeUrl)).catch(() => {}); // TEMP
         e.preventDefault();
         void openUrl(widget.dataset.citeUrl);
         return true;
