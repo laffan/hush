@@ -119,17 +119,19 @@ export function createThumbnailManager(root, viewerState) {
           const pos = parseAnnotPos(ann);
           if (!pos || pos.pageIndex !== idx) continue;
 
+          // svp (the scaled viewport) maps PDF user space → canvas px,
+          // honouring crop-box origins / rotation — a bare
+          // `pageHeight − y` flip drifts on pages whose crop box
+          // doesn't start at (0,0).
           if (pos.rects?.length && ann.type !== "ink") {
             const color = ann.color || "#ffff00";
             ctx.fillStyle = color;
             ctx.globalAlpha = 0.3;
             for (const rect of pos.rects) {
               const [x1, y1, x2, y2] = rect;
-              const rx = x1 * scale;
-              const ry = (vp.height - y2) * scale;
-              const rw = (x2 - x1) * scale;
-              const rh = (y2 - y1) * scale;
-              ctx.fillRect(rx, ry, rw, rh);
+              const [ax, ay] = svp.convertToViewportPoint(x1, y1);
+              const [bx, by] = svp.convertToViewportPoint(x2, y2);
+              ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
             }
             ctx.globalAlpha = 1.0;
           }
@@ -143,8 +145,7 @@ export function createThumbnailManager(root, viewerState) {
               if (!pathPoints || pathPoints.length < 2) continue;
               ctx.beginPath();
               for (let pi = 0; pi < pathPoints.length; pi += 2) {
-                const px = pathPoints[pi] * scale;
-                const py = (vp.height - pathPoints[pi + 1]) * scale;
+                const [px, py] = svp.convertToViewportPoint(pathPoints[pi], pathPoints[pi + 1]);
                 if (pi === 0) ctx.moveTo(px, py);
                 else ctx.lineTo(px, py);
               }

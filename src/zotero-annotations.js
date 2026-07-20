@@ -93,6 +93,17 @@ async function fetchFromNetwork(attKey, userId, apiKey) {
   return all;
 }
 
+/** Cache-only read — never hits the network. Used by the PDF Shelf's
+ *  search to index annotation text without pinging the API per PDF. */
+export async function getCachedAnnotations(attKey) {
+  if (!attKey) return [];
+  try {
+    const cached = await readCache(attKey);
+    if (cached && Array.isArray(cached)) return sortAnnotations(cached.map(normalize));
+  } catch (_) {}
+  return [];
+}
+
 /**
  * Resolve the annotation list for a PDF attachment.
  * @param {string} attKey       Zotero attachment item key

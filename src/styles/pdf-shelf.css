@@ -56,15 +56,41 @@ body.pdf-shelf-active #stack-container {
 }
 
 .pdf-shelf-title {
-  font-size: 14px;
-  font-weight: 600;
-  opacity: 0.85;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 220px;
 }
 
 .pdf-shelf-scope {
-  font-weight: 400;
-  opacity: 0.65;
-  margin-left: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* Search input — filters cards by title/author plus bookmark names and
+   cached annotation text. */
+.pdf-shelf-search {
+  flex: 1;
+  max-width: 340px;
+  box-sizing: border-box;
+  padding: 5px 10px;
+  border: 1px solid var(--panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.pdf-shelf-search:focus {
+  border-color: var(--fg);
+}
+.pdf-shelf-search::placeholder {
+  color: var(--fg);
+  opacity: 0.4;
 }
 
 .pdf-shelf-actions {
@@ -164,6 +190,65 @@ body.pdf-shelf-active #stack-container {
 .pdf-shelf-dl {
   opacity: 0.8;
   font-style: italic;
+}
+
+/* Search-filtered cards drop out of the grid entirely. */
+.pdf-shelf-card.pdf-shelf-filtered {
+  display: none;
+}
+
+/* Why a card matched the search (bookmarks / annotations). */
+.pdf-shelf-card-match {
+  margin-top: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  font-style: italic;
+}
+.pdf-shelf-card-match:empty {
+  display: none;
+}
+
+/* Pin toggle — upper-left thumbnail corner; hover-revealed, persistent
+   (and filled) once pinned. */
+.pdf-shelf-pin-btn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+.pdf-shelf-card:hover .pdf-shelf-pin-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.pdf-shelf-pin-btn:hover { background: rgba(0, 0, 0, 0.78); }
+.pdf-shelf-pin-btn svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.pdf-shelf-pinned .pdf-shelf-pin-btn {
+  opacity: 1;
+  pointer-events: auto;
+  background: var(--fg);
+  color: var(--theme-bg, var(--bg));
 }
 
 .pdf-shelf-empty {

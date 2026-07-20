@@ -32,12 +32,44 @@ export const BOOKMARK_COLORS = [
 
 let _state = null;
 
+// Live page / fold bookmark buttons across every mounted viewer — kept
+// painted (persistent + colored on bookmarked pages) as the registry
+// changes. One listener + isConnected pruning keeps it leak-free
+// through viewer reloads and suspend/resume cycles.
+const _pageButtons = new Set();
+// The open list popup, so registry changes rebuild it in place (a
+// bookmark added from a pane appears in an already-open menu).
+let _openList = null;
+
+function paintPageBookmarkButton(entry) {
+  const marks = getPdfBookmarks(entry.fileId).filter((b) => b.page === entry.page);
+  const has = marks.length > 0;
+  entry.btn.classList.toggle("has-bookmark", has);
+  if (has) entry.btn.style.setProperty("--bm-color", marks[0].color || "#ef5350");
+  else entry.btn.style.removeProperty("--bm-color");
+}
+
+function registerPageButton(btn, fileId, page) {
+  const entry = { btn, fileId, page };
+  _pageButtons.add(entry);
+  paintPageBookmarkButton(entry);
+}
+
+function onBookmarksChanged(fileId) {
+  for (const entry of [..._pageButtons]) {
+    if (!entry.btn.isConnected) { _pageButtons.delete(entry); continue; }
+    if (entry.fileId === fileId) paintPageBookmarkButton(entry);
+  }
+  if (_openList && _openList.fileId === fileId) _openList.rebuild();
+}
+
 export function initPdfBookmarks(state) {
   _state = state;
   // Notebook text shapes route url-link clicks through a window hook
   // (the canvas module deliberately doesn't import app modules — same
   // pattern as __hushOpenWikilink).
   window.__hushOpenPdfBookmark = (url) => { openPdfBookmarkUrl(url); };
+  state.on("pdf-bookmarks-changed", onBookmarksChanged);
 }
 
 // ===== hush-pdf:// links =====
@@ -91,6 +123,7 @@ let _popupCleanup = null;
 export function closeBookmarkPopup() {
   if (_popupCleanup) { _popupCleanup(); _popupCleanup = null; }
   if (_popupEl) { _popupEl.remove(); _popupEl = null; }
+  _openList = null;
 }
 
 function mountPopup(el, anchor) {
@@ -261,6 +294,9 @@ export function openBookmarkListPopup({ anchor, fileId, onPick, onChanged }) {
 
   rebuild();
   mountPopup(el, anchor);
+  // Registry changes rebuild the open popup in place — e.g. a bookmark
+  // added from a page button in a pane while this menu is up.
+  _openList = { fileId, rebuild };
 }
 
 // ===== Page-hover buttons (viewer pages) =====
@@ -298,6 +334,9 @@ export function attachPageHoverButtons(wrapper, pageNum, { zoteroAttKey, fileId 
       openBookmarkEditor({ anchor: bmBtn, fileId, page: pageNum });
     });
     wrapper.appendChild(bmBtn);
+    // Pages that carry bookmarks keep the icon visible (filled with the
+    // bookmark's color) without hover — and stay live as bookmarks change.
+    registerPageButton(bmBtn, fileId, pageNum);
   }
 
   if (!zBtn && !bmBtn) return;
@@ -327,6 +366,7 @@ export function attachFoldBookmarkButton(wrapper, pageNum, getFileId) {
     openBookmarkEditor({ anchor: btn, fileId, page: pageNum });
   });
   wrapper.appendChild(btn);
+  registerPageButton(btn, fileId, pageNum);
 }
 
 /** The viewer toolbar's Bookmarks button — first control in the bar. */

@@ -29,6 +29,21 @@ export function parseAnnotationPosition(annot) {
   return pos;
 }
 
+/** Convert a PDF user-space point into top-left-origin page units for
+ *  the given (scale-1) viewport. Zotero stores annotation positions in
+ *  raw PDF user space; pdfjs renders the page's *CropBox*, whose origin
+ *  isn't always (0,0). Mapping through the viewport's own transform
+ *  honours that origin (and any page /Rotate) — a plain
+ *  `y → pageHeight − y` flip paints every annotation offset by the crop
+ *  origin on such documents: right relative to each other, wrong
+ *  against the page. */
+export function pdfPointToViewport(viewport, x, y) {
+  if (typeof viewport?.convertToViewportPoint === "function") {
+    return viewport.convertToViewportPoint(x, y);
+  }
+  return [x, viewport.height - y]; // fallback: unrotated, origin (0,0)
+}
+
 /** Paint a list of annotations into an overlay layer sized to a page.
  *  Shared between the page overlays and the folded view. */
 export function paintAnnotationsInto(layer, pageAnnots, viewport, scaleX, scaleY) {
@@ -41,12 +56,14 @@ export function paintAnnotationsInto(layer, pageAnnots, viewport, scaleX, scaleY
     } else if (pos.rects?.length) {
       for (const rect of pos.rects) {
         const [x1, y1, x2, y2] = rect;
+        const [ax, ay] = pdfPointToViewport(viewport, x1, y1);
+        const [bx, by] = pdfPointToViewport(viewport, x2, y2);
         const div = document.createElement("div");
         div.className = "pdf-annot-highlight";
-        div.style.left = `${x1 * scaleX}px`;
-        div.style.bottom = `${y1 * scaleY}px`;
-        div.style.width = `${(x2 - x1) * scaleX}px`;
-        div.style.height = `${(y2 - y1) * scaleY}px`;
+        div.style.left = `${Math.min(ax, bx) * scaleX}px`;
+        div.style.top = `${Math.min(ay, by) * scaleY}px`;
+        div.style.width = `${Math.abs(bx - ax) * scaleX}px`;
+        div.style.height = `${Math.abs(by - ay) * scaleY}px`;
         div.style.backgroundColor = annot.color || "#ffff00";
         if (annot.comment) div.title = annot.comment;
         layer.appendChild(div);
@@ -68,8 +85,9 @@ function paintInkAnnotation(layer, annot, pos, scaleX, scaleY, viewport) {
     if (!pathPoints || pathPoints.length < 2) continue;
     let d = "";
     for (let i = 0; i < pathPoints.length; i += 2) {
-      const x = pathPoints[i] * scaleX;
-      const y = (viewport.height - pathPoints[i + 1]) * scaleY;
+      const [vx, vy] = pdfPointToViewport(viewport, pathPoints[i], pathPoints[i + 1]);
+      const x = vx * scaleX;
+      const y = vy * scaleY;
       d += (i === 0 ? "M" : "L") + `${x},${y} `;
     }
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -229,15 +247,15 @@ export function createAnnotationLayer(scrollArea, body, viewer) {
       return;
     }
 
-    const [, y1, , y2] = firstRect;
-    const pageH = p.viewport.height;
-    const topInPage = (pageH - y2) * scale;
+    // Top-left corner of the annotation in top-origin page units —
+    // through the viewport transform so crop-box origins don't skew it.
+    const [vx, vy] = pdfPointToViewport(p.viewport, firstRect[0], firstRect[3]);
 
     if (viewer.getLayoutMode() === "horizontal") {
-      const targetLeft = p.wrapper.offsetLeft + firstRect[0] * scale - scrollArea.clientWidth / 3;
+      const targetLeft = p.wrapper.offsetLeft + vx * scale - scrollArea.clientWidth / 3;
       scrollArea.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
     } else {
-      const targetTop = p.wrapper.offsetTop + topInPage - scrollArea.clientHeight / 3;
+      const targetTop = p.wrapper.offsetTop + vy * scale - scrollArea.clientHeight / 3;
       scrollArea.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
     }
   }

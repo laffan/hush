@@ -176,6 +176,26 @@ export function normalizePdfProjectAliases(tree) {
   });
 
   if (pruneEmptyPdfFolders(tree)) changed = true;
+  if (enforcePinnedPdfOrder(tree)) changed = true;
+  return changed;
+}
+
+/** Keep pinned PDFs at the top of every PDFs folder (desk specials and
+ *  project pdfFolders) — stable within each group. Mutates in place;
+ *  returns true when any folder was reordered. */
+export function enforcePinnedPdfOrder(tree) {
+  let changed = false;
+  walkOutsideTrash(tree, (n) => {
+    if (!isPdfsSpecialId(n.id) && !isProjectPdfFolder(n)) return;
+    if (!Array.isArray(n.children) || n.children.length < 2) return;
+    const pinned = n.children.filter((c) => c?.pinned);
+    if (!pinned.length) return;
+    const reordered = [...pinned, ...n.children.filter((c) => !c?.pinned)];
+    if (reordered.some((c, i) => c !== n.children[i])) {
+      n.children = reordered;
+      changed = true;
+    }
+  });
   return changed;
 }
 

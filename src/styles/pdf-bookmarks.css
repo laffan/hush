@@ -65,6 +65,29 @@
 .pdf-fold-bm-btn:hover { background: rgba(0, 0, 0, 0.75); }
 .pdf-fold-bm-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
 
+/* Bookmarked pages keep the ribbon visible without hover, filled with
+   the bookmark's color; the dark button chrome only returns on hover. */
+.pdf-page-bookmark-btn.has-bookmark,
+.pdf-fold-bm-btn.has-bookmark {
+  opacity: 1;
+  pointer-events: auto;
+  background: transparent;
+}
+.pdf-page-bookmark-btn.has-bookmark svg path,
+.pdf-fold-bm-btn.has-bookmark svg path {
+  fill: var(--bm-color, #ef5350);
+  stroke: rgba(0, 0, 0, 0.45);
+  stroke-width: 1;
+}
+.pdf-page-bookmark-btn.has-bookmark svg {
+  width: 18px;
+  height: 18px;
+}
+.pdf-page-bookmark-btn.has-bookmark:hover,
+.pdf-fold-bm-btn.has-bookmark:hover {
+  background: rgba(0, 0, 0, 0.55);
+}
+
 /* Toolbar Bookmarks button (first control in the bottom bar). */
 .pdf-bookmark-btn svg {
   width: 13px;

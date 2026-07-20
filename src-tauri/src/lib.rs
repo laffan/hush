@@ -117,6 +117,10 @@ pub struct TreeNode {
     // project (the alias's own metadata beyond what the registry holds).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<u64>,
+    // PDF-only — pinned to the top of its PDFs folder (and the shelf).
+    // Per-context: the desk node and each project alias pin separately.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
 }
 
 pub fn get_data_dir() -> PathBuf {

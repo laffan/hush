@@ -15,7 +15,7 @@
  *   (ink) and red highlights.
  */
 
-import { parseAnnotationPosition, paintAnnotationsInto } from "./pdf-viewer-annotations.js";
+import { parseAnnotationPosition, paintAnnotationsInto, pdfPointToViewport } from "./pdf-viewer-annotations.js";
 import { attachFoldBookmarkButton } from "./pdf-bookmarks.js";
 
 const FOLD_PAD = 28;   // page units (~2 text lines) above/below the annotation
@@ -105,25 +105,31 @@ export function createFoldLayer(scrollArea, viewer) {
   }
 
   // ── Fold geometry ──────────────────────────────────────────────────
-  /** Vertical extent of an annotation in top-based page units, or null. */
-  function annotationExtent(annot, pageH) {
+  /** Vertical extent of an annotation in top-based page units, or null.
+   *  Points map through the viewport transform (pdfPointToViewport) so
+   *  crop-box origins / page rotation can't shift the fold regions off
+   *  the annotations they're built around. */
+  function annotationExtent(annot, viewport) {
     const pos = parseAnnotationPosition(annot);
     if (!pos) return null;
     let top = Infinity, bottom = -Infinity;
+    const take = (x, y) => {
+      const [, vy] = pdfPointToViewport(viewport, x, y);
+      top = Math.min(top, vy);
+      bottom = Math.max(bottom, vy);
+    };
     if (Array.isArray(pos.rects)) {
       for (const r of pos.rects) {
         if (!Array.isArray(r) || r.length < 4) continue;
-        top = Math.min(top, pageH - r[3]);
-        bottom = Math.max(bottom, pageH - r[1]);
+        take(r[0], r[1]);
+        take(r[2], r[3]);
       }
     }
     if (Array.isArray(pos.paths)) {
       for (const path of pos.paths) {
         if (!Array.isArray(path)) continue;
         for (let i = 1; i < path.length; i += 2) {
-          const y = pageH - path[i];
-          top = Math.min(top, y);
-          bottom = Math.max(bottom, y);
+          take(path[i - 1], path[i]);
         }
       }
     }
@@ -142,7 +148,7 @@ export function createFoldLayer(scrollArea, viewer) {
       if (!pos || typeof pos.pageIndex !== "number") continue;
       const p = pages[pos.pageIndex];
       if (!p?.viewport) continue;
-      const ext = annotationExtent(a, p.viewport.height);
+      const ext = annotationExtent(a, p.viewport);
       if (!ext) continue;
       const list = byPage.get(pos.pageIndex) || [];
       list.push({
