@@ -229,6 +229,7 @@ export async function openZoteroLinkMenu(url, anchor) {
   el.appendChild(zRow);
 
   mountMenu(el, anchor);
+  try { (await import("../debug/link-debug.js")).dumpMenu("menu MOUNTED", el); } catch {} // TEMP
   if (!parsed || !_state) return;
 
   // ── Hush row (async resolve) ──────────────────────────────────────
