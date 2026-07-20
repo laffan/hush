@@ -30,9 +30,26 @@ class LinkWidget extends WidgetType {
     span.textContent = this.text;
     span.title = this.url;
     span.dataset.linkUrl = this.url;
-    // Pointer cursor on iOS so a rendered link reads as tappable (the
-    // tap is handled by the editor-level pointerdown handler below).
-    if (isIOS()) span.style.cursor = "pointer";
+    if (isIOS()) span.style.cursor = "pointer"; // reads as tappable on touch
+    // Open on `pointerdown` directly on the widget element, not through a
+    // CodeMirror domEventHandler. Two reasons this is the reliable path,
+    // especially on iPad:
+    //   1. pointerdown is the gesture's first event — it fires before a
+    //      tap places the caret and re-renders the decoration (which
+    //      would tear this span down before a mousedown/click landed on
+    //      it), and before CodeMirror's own contentEditable handling.
+    //   2. The anchor rect is captured *now*, synchronously, so the menu
+    //      still positions correctly even though `openUrl` awaits a
+    //      dynamic import and this element may be gone by the time the
+    //      menu actually mounts.
+    const url = this.url;
+    span.addEventListener("pointerdown", (e) => {
+      if (!hasModifier(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const r = span.getBoundingClientRect();
+      openUrl(url, { left: r.left, top: r.top, bottom: r.bottom });
+    });
     return span;
   }
 
@@ -103,15 +120,16 @@ function buildDecorations(view, appState) {
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-// Dedupe: on iOS a single tap can surface both the document `mousedown`
-// path and the widget `click` handler (~10 ms apart). Suppressing a
-// repeat of the same URL inside a short window keeps them from opening
-// twice while staying well below any deliberate re-open cadence.
+// Dedupe: a single tap can surface both the widget's own `pointerdown`
+// handler and CodeMirror's `mousedown` handler for the same link. On
+// desktop those are ~0 ms apart; on iPad the compatibility `mousedown`
+// trails the tap by a few hundred ms, so the window is generous —
+// still well below any deliberate re-open cadence for the same URL.
 let _lastOpen = { url: null, t: 0 };
 
 async function openUrl(url, anchor) {
   const now = Date.now();
-  if (url === _lastOpen.url && now - _lastOpen.t < 150) return;
+  if (url === _lastOpen.url && now - _lastOpen.t < 600) return;
   _lastOpen = { url, t: now };
   // Internal PDF-bookmark deep links (`hush-pdf://<fileId>/<bookmarkId>`)
   // navigate inside the app instead of hitting the OS opener.
@@ -146,11 +164,13 @@ async function openUrl(url, anchor) {
 
 /** Try to find and open a link at the event coordinates. */
 function tryOpenLinkAt(e, view) {
-  // Case 1: clicked on a rendered widget
-  const target = e.target.closest(".cm-link-rendered");
+  // Case 1: clicked on a rendered widget. Capture the rect synchronously
+  // (the element can be torn down while openUrl awaits its import).
+  const target = e.target.closest?.(".cm-link-rendered");
   if (target && target.dataset.linkUrl) {
     e.preventDefault();
-    openUrl(target.dataset.linkUrl, target);
+    const r = target.getBoundingClientRect();
+    openUrl(target.dataset.linkUrl, { left: r.left, top: r.top, bottom: r.bottom });
     return true;
   }
 
@@ -196,19 +216,16 @@ function hasModifier(e) {
 }
 
 /**
- * Editor-level Cmd+click handler. Checks if the click lands on a
- * rendered link widget OR inside raw link syntax, and opens the URL.
- *
- * `pointerdown`, not `mousedown`: on iPad, tapping a rendered link
- * places the caret, which flips the decoration to "cursor inside" and
- * re-renders — tearing down the widget span *before* a `mousedown` /
- * `click` reaches it. `pointerdown` is the gesture's first event, so the
- * widget (and the tap's real target) is still intact when it fires.
- * Fires for mouse, pen, and touch alike. A no-op when the modifier
- * isn't held, so ordinary taps still place the caret to edit the link.
+ * Editor-level Cmd+click handler. Rendered link widgets are opened by
+ * their own `pointerdown` listener (see LinkWidget.toDOM — reliable on
+ * iPad, where a CM-routed handler races the widget's teardown). This
+ * handler covers the remaining case: the caret sits *inside* a link, so
+ * the raw `[text](url)` markdown is showing instead of a widget. `mousedown`
+ * is fine here — there's no widget to tear down. A no-op when the modifier
+ * isn't held, so ordinary clicks still place the caret.
  */
 const linkClickHandler = EditorView.domEventHandlers({
-  pointerdown(e, view) {
+  mousedown(e, view) {
     if (!hasModifier(e)) return false;
     return tryOpenLinkAt(e, view);
   },
