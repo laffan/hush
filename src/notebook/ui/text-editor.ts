@@ -65,12 +65,78 @@ export function createTextEditor(state: DrawingState): HTMLElement {
   let wikilinkPopup: { update: (q: string) => void; moveSelection: (d: number) => void; commit: () => void; destroy: () => void; isEmpty?: () => boolean } | null = null;
   let wikilinkOpenIdx = -1;
 
+  // Zotero `[@` citation autocomplete state. Unlike the wikilink popup
+  // (whose query lives in the textarea), the citation popup carries its
+  // own search input and steals focus — so we suspend commit-on-blur
+  // while it's open, exactly like the Zotero Insert Reference modal.
+  // `citationOpenIdx` is the offset just past `@` (the replacement anchor).
+  let citationPopup: { moveSelection: (d: number) => void; commit: () => void; destroy: () => void } | null = null;
+  let citationOpenIdx = -1;
+
   function closeWikilinkPopup() {
     if (wikilinkPopup) {
       wikilinkPopup.destroy();
       wikilinkPopup = null;
     }
     wikilinkOpenIdx = -1;
+  }
+
+  function closeCitationPopup() {
+    if (citationPopup) {
+      citationPopup.destroy();
+      citationPopup = null;
+    }
+    citationOpenIdx = -1;
+    commitSuspended = false; // resume blur-commit once the popup is gone
+  }
+
+  function commitCitation(ref: { key: string; citekey?: string } | null) {
+    if (citationOpenIdx < 0) { closeCitationPopup(); return; }
+    if (!ref) { closeCitationPopup(); return; }
+    const citekey = ref.citekey || ref.key;
+    const insert = `${citekey}](zotero://select/library/items/${ref.key})`;
+    const caret = textarea.selectionStart ?? textarea.value.length;
+    // Replace from just past `@` to the caret — leaving the `[@` intact so
+    // the result reads `[@citekey](zotero://…)`, matching the doc editor.
+    const before = textarea.value.slice(0, citationOpenIdx);
+    const after = textarea.value.slice(caret);
+    const next = before + insert + after;
+    textarea.value = next;
+    const newCaret = citationOpenIdx + insert.length;
+    textarea.setSelectionRange(newCaret, newCaret);
+    state.updateEditingText(next);
+    closeCitationPopup();
+    setTimeout(() => { textarea.focus(); textarea.setSelectionRange(newCaret, newCaret); }, 0);
+  }
+
+  async function maybeOpenCitationPopup() {
+    const value = textarea.value;
+    const caret = textarea.selectionStart ?? value.length;
+    if (caret < 2) return;
+    if (value.charAt(caret - 1) !== "@" || value.charAt(caret - 2) !== "[") return;
+    // Skip `[[@` (a wikilink is being typed) and `![@` (image-ish).
+    const prev = caret >= 3 ? value.charAt(caret - 3) : "";
+    if (prev === "[" || prev === "!" || wikilinkPopup) return;
+    const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
+    if (!appState) return;
+    const [zoteroMod, popupMod]: [any, any] = await Promise.all([
+      // @ts-ignore — plain JS modules without .d.ts
+      import("../../zotero.js"),
+      // @ts-ignore
+      import("../../links/citation-popup.js"),
+    ]);
+    const refs = await zoteroMod.loadReferences();
+    if (!refs || !refs.length) return; // Zotero not configured — stay inert
+    citationOpenIdx = caret; // just past `@`
+    commitSuspended = true;  // the popup steals focus; don't end editing on blur
+    const rect = textarea.getBoundingClientRect();
+    citationPopup = popupMod.openCitationPopup({
+      refs,
+      anchor: { left: rect.left, top: rect.top, bottom: rect.bottom },
+      initialQuery: "",
+      onPick: (r: { key: string; citekey?: string }) => commitCitation(r),
+      onDismiss: () => { closeCitationPopup(); setTimeout(() => textarea.focus(), 0); },
+    });
   }
 
   function commitWikilink(picked: { name: string } | null) {
@@ -135,6 +201,9 @@ export function createTextEditor(state: DrawingState): HTMLElement {
     // picks up any character that arrived in the same input event.
     if (!wikilinkPopup) void maybeOpenWikilinkPopup();
     else syncWikilinkQuery();
+    // `[@` opens the Zotero citation search (its own input takes over
+    // from here, so there's nothing to sync in the textarea).
+    if (!citationPopup) void maybeOpenCitationPopup();
   });
 
   // In brainstorm mode, Enter commits text (Shift+Enter for newline)
@@ -241,10 +310,11 @@ export function createTextEditor(state: DrawingState): HTMLElement {
       textarea.style.display = "none";
       if (_activeNotebookTextEditor === handle) setActiveHandle(null);
       commitSuspended = false;
-      // Tear down the wikilink popup alongside the editor — leaving it
-      // floating after the textarea unmounts would orphan the DOM and
-      // keep listening to clicks on a stale anchor.
+      // Tear down the autocomplete popups alongside the editor — leaving
+      // them floating after the textarea unmounts would orphan the DOM
+      // and keep listening to clicks on a stale anchor.
       closeWikilinkPopup();
+      closeCitationPopup();
       return;
     }
     // Register this editor as the globally-active notebook text editor so
