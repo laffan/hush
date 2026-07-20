@@ -1066,3 +1066,35 @@ body.stack-mode .column-resizer { display: none !important; }
   text-orientation: mixed;
   transform: rotate(180deg);
 }
+
+/* ================================================================
+   iPad safe zones (iPadOS 26)
+
+   The --ipad-safe-top/bottom tokens resolve to 0 off iPad, so every
+   rule below is inert on desktop and iPhone. Scoped to horizontal
+   stacks (vertical stacks scroll on the right edge and are left as-is):
+
+   - The spine's top file-type/flag icon is pushed clear of the
+     full-width top menu band.
+   - The bottom scrollbar band is *reserved* by shortening the scroll
+     viewport, so columns push up instead of hiding under the iPad
+     overlay scrollbar (matching macOS's in-flow 40px scrollbar). This
+     also lifts the spine's bottom button cluster — the reorder drag
+     handle, duplicate, pop-out, close — clear of the grab handle.
+   - The pills band and its border stripe lift above the bottom-centre
+     grab handle and paint opaque so the band reads as a solid
+     scrollbar zone rather than a transparent floating overlay.
+   ================================================================ */
+html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-spine-icon {
+  padding-top: calc(15px + var(--ipad-safe-top));
+}
+html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-scroll-area {
+  height: calc(100% - 40px - var(--ipad-safe-bottom));
+}
+html.ios:not(.phone) .stack-root:not(.stack-vertical)::after {
+  bottom: var(--ipad-safe-bottom);
+}
+html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-scrollbar-pills {
+  bottom: var(--ipad-safe-bottom);
+  background: var(--theme-bg, var(--bg));
+}

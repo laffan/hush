@@ -34,6 +34,7 @@ import {
   getBottomInset,
 } from "./pane-dock.js";
 import { detachInlinePane, syncInlinePaneSize } from "./pane-inline.js";
+import { applyPaneFontSize } from "./pane-size-popover.js";
 
 let _dockOverlay = null;
 
@@ -144,7 +145,7 @@ function highlightDockZone(edge) {
 }
 
 export function setupPaneDrag(pane, deps) {
-  const { createPane, getCurrentContext, schedulePersist } = deps;
+  const { createPane, getCurrentContext, schedulePersist, focusPane } = deps;
   let startX, startY, startLeft, startTop, startCanvasX, startCanvasY;
 
   pane._titlebar.addEventListener("pointerdown", (e) => {
@@ -177,10 +178,38 @@ export function setupPaneDrag(pane, deps) {
     }
     startLeft = pane.el.offsetLeft;
     startTop = pane.el.offsetTop;
+    // Alt/Option-drag duplicates the pane and drags the COPY, leaving the
+    // original untouched where it sat. `dragTarget` is what the rest of
+    // this gesture moves / docks / focuses.
+    let dragTarget = pane;
     if (e.altKey) {
+      // createPane runs its DOM build + `panes.set` synchronously before
+      // its first await, so the freshly-created clone is already in the
+      // `panes` map the instant the (un-awaited) call returns — capture it
+      // by diffing the key set.
+      const before = new Set(panes.keys());
       createPane(pane.fileId, pane.fileName, pane.fileType,
         startLeft + pane.width / 2, startTop + TITLEBAR_HEIGHT / 2,
         { allowDuplicate: true, ownerContext: getCurrentContext(), skipFocus: true });
+      let clone = null;
+      for (const [id, pv] of panes) { if (!before.has(id)) { clone = pv; break; } }
+      if (clone && clone.el) {
+        // Make the copy a faithful stand-in for the original — same size,
+        // same per-pane font size — and start it exactly on top of the
+        // original so it tracks the cursor seamlessly from the grab point.
+        clone.width = pane.width;
+        clone.height = pane.height;
+        clone.x = startLeft;
+        clone.y = startTop;
+        clone.fontSize = pane.fontSize; // undefined clears back to default
+        Object.assign(clone.el.style, {
+          left: clone.x + "px", top: clone.y + "px",
+          width: clone.width + "px", height: clone.height + "px",
+          zIndex: zForPane(clone),
+        });
+        applyPaneFontSize(clone);
+        dragTarget = clone;
+      }
       pane.el.style.zIndex = zForPane(pane);
     }
     if (pane.attached && appState.currentNotebookFileId) {
@@ -198,7 +227,12 @@ export function setupPaneDrag(pane, deps) {
       // detach, the rest of the drag pipeline runs as if the pane had
       // always been floating, so make-space (lateral column shift)
       // kicks in automatically through deps.notifyPaneDragMove().
-      if (pane.inline && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      // Branch on `dragTarget`: an Alt-drag clone is always a fresh
+      // floating pane (never inline / attached / docked), so it falls
+      // through to the plain-move `else` below and the original's
+      // inline/attached bodies (which reference `pane`) only run for a
+      // normal drag, where `dragTarget === pane`.
+      if (dragTarget.inline && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
         const rect = pane.el.getBoundingClientRect();
         // Keep the title bar pinned under the cursor by preserving the
         // pointer's offset relative to pane.el at drag start.
@@ -217,22 +251,22 @@ export function setupPaneDrag(pane, deps) {
         deps.notifyPaneDragMove?.();
         return;
       }
-      if (pane.attached && appState.currentNotebookFileId) {
+      if (dragTarget.attached && appState.currentNotebookFileId) {
         const canvas = notebookBridge?.getCanvasInstance();
         const zoom = canvas ? canvas.state.camera.zoom : 1;
         pane._canvasX = startCanvasX + dx / zoom;
         pane._canvasY = startCanvasY + dy / zoom;
-      } else if (pane.attached && !appState.currentNotebookFileId) {
+      } else if (dragTarget.attached && !appState.currentNotebookFileId) {
         pane.x = startLeft + dx;
         pane.y = startTop + dy;
         pane._scrollRelY = pane.y + (appState.editor?.view.scrollDOM.scrollTop || 0);
         pane.el.style.left = pane.x + "px";
         pane.el.style.top = pane.y + "px";
       } else {
-        pane.x = startLeft + dx;
-        pane.y = startTop + dy;
-        pane.el.style.left = pane.x + "px";
-        pane.el.style.top = pane.y + "px";
+        dragTarget.x = startLeft + dx;
+        dragTarget.y = startTop + dy;
+        dragTarget.el.style.left = dragTarget.x + "px";
+        dragTarget.el.style.top = dragTarget.y + "px";
       }
       updateDockZoneProximity(me.clientX, me.clientY);
       highlightDockZone(dropZoneAt(me.clientX, me.clientY));
@@ -247,11 +281,15 @@ export function setupPaneDrag(pane, deps) {
       pane._titlebar.removeEventListener("pointerup", onUp);
       // A still-inline pane on release means the pointer didn't travel
       // far enough to detach — treat as a click on the title bar (no
-      // dock attempt, no persist hit).
-      if (!pane.inline) {
+      // dock attempt, no persist hit). Dock the dragged target (the clone
+      // for an Alt-drag, otherwise the pane itself).
+      if (!dragTarget.inline) {
         const edge = dropZoneAt(ue.clientX, ue.clientY);
-        if (edge) dockPane(pane, edge);
+        if (edge) dockPane(dragTarget, edge);
       }
+      // Hand focus to the dragged copy so the pane the user just placed
+      // becomes the active one (the clone was created with skipFocus).
+      if (dragTarget !== pane && typeof focusPane === "function") focusPane(dragTarget.id);
       showDockOverlay(false);
       highlightDockZone(null);
       schedulePersist();

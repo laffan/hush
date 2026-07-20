@@ -368,7 +368,9 @@ async function loadPdfPane(pane) {
 
   if (bytes) {
     const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    await viewer.loadPdf(data);
+    // Contain a bad binary's pdf.js failure to this one pane — an unguarded
+    // throw would propagate out of the restore loop and blank the rest.
+    await viewer.loadPdf(data).catch((e) => console.error("Failed to render PDF pane:", e));
   }
 
   try {

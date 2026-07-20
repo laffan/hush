@@ -27,6 +27,14 @@
   --padding: 50px;
   --column-width: 800px;
 
+  /* iPadOS 26 reserves a ~30px full-width band at the top (its system
+     menu) and a ~30px band at the bottom-centre (the window grab handle,
+     only while the app is full screen). Floating chrome that would sit at
+     the very top/bottom edge folds these tokens into its offset so it
+     clears the zone. Zero everywhere except iPad (set on html.ios below). */
+  --ipad-safe-top: 0px;
+  --ipad-safe-bottom: 0px;
+
   /* ===== z-index scale =====
    *
    * Centralised so new modals don't pick a fresh "high enough" number
@@ -141,6 +149,14 @@ html.ios, html.ios body {
   /* Prevent unintended zoom when returning from another app */
   touch-action: pan-x pan-y;
   -webkit-text-size-adjust: 100%;
+}
+
+/* iPadOS 26 system safe zones (see token docs in :root). Scoped away from
+   phones, which run iOS and handle the notch/home-indicator through
+   env(safe-area-inset-*) rather than iPadOS's menu/grab-handle bands. */
+html.ios:not(.phone) {
+  --ipad-safe-top: 30px;
+  --ipad-safe-bottom: 30px;
 }
 
 #app {

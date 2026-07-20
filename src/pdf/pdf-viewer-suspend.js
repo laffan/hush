@@ -99,7 +99,16 @@ export function createPdfSuspendManager(scrollArea, env) {
 
     env.onResumeStart();
 
-    if (cachedPdfData) await env.reload(cachedPdfData);
+    // pdf.js's getDocument takes ownership of (neuters) the TypedArray it's
+    // handed, so passing `cachedPdfData` straight through would detach our
+    // master copy — the first resume would work but every resume after it
+    // would load an empty buffer and render a blank frame (the classic
+    // "survives one reopen, never more" symptom). Hand reload a throwaway
+    // copy and keep the cache intact for the next cycle.
+    if (cachedPdfData) {
+      const copy = cachedPdfData instanceof Uint8Array ? new Uint8Array(cachedPdfData) : cachedPdfData;
+      await env.reload(copy);
+    }
 
     // restoreView re-applies zoom (a horizontal layout clamps scrollTop to
     // 0 and vice versa, so the mode must match first) then re-asserts the

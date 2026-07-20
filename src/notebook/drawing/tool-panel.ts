@@ -595,10 +595,14 @@ export function createDrawingToolPanel(
       dragTab.style.left = `${Math.max(0, minimizedAxisCenter - handleW / 2)}px`;
       dragTab.style.width = `${handleW}px`;
       dragTab.style.height = `${DRAG_STRIP_THICKNESS}px`;
+      // Fold in the iPadOS 26 safe zones so the minimized toggle pill
+      // isn't swallowed by the top menu band (top-dock) or the
+      // bottom-centre grab handle (bottom-dock). The tokens resolve to 0
+      // off iPad, so `max(...)` collapses to the bare 15px offset there.
       if (minimizedEdge === "bottom") {
-        dragTab.style.bottom = `${MINIMIZED_EDGE_OFFSET}px`;
+        dragTab.style.bottom = `calc(max(env(safe-area-inset-bottom, 0px), var(--ipad-safe-bottom, 0px)) + ${MINIMIZED_EDGE_OFFSET}px)`;
       } else {
-        dragTab.style.top = `${MINIMIZED_EDGE_OFFSET}px`;
+        dragTab.style.top = `calc(max(env(safe-area-inset-top, 0px), var(--ipad-safe-top, 0px)) + ${MINIMIZED_EDGE_OFFSET}px)`;
       }
     }
   }

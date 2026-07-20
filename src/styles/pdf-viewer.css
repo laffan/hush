@@ -133,6 +133,18 @@
   color: var(--fg);
   flex-shrink: 0;
 }
+
+/* iPadOS 26: lift the *main* PDF viewer's bottom toolbar clear of both
+   the bottom-centre grab handle (blocks the centred formatting buttons)
+   and the always-present touch-mode ☰ command-palette pill at the
+   bottom-left (whose top edge sits ~47px up and would otherwise cover
+   the left-most Bookmarks button). 52px = 11px pill inset + 36px pill
+   height + a 5px gap. Scoped to #pdf-container: floating PDF panes sit
+   mid-screen and stack columns already reserve their own bottom band,
+   so neither should grow this padding. */
+html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 52px);
+}
 .pdf-zoom-btn {
   padding: 2px 8px;
   border-radius: 4px;

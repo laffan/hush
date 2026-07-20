@@ -57,6 +57,7 @@ import {
   foldCurrentSection, unfoldCurrentSection, foldSelection,
   foldAllSections, unfoldAllSections, foldAllAtLevel,
 } from "./editor/folding.js";
+import { insertDate, insertDateTime } from "./editor/insert-date.js";
 
 /** Resolve the editor view the fold commands should act on: the focused
  *  pane / stack column if one owns the active mode context, else the
@@ -140,6 +141,8 @@ const icons = {
   history: `<svg viewBox="0 0 24 24"><path d="M4 12 a8 8 0 1 0 2.5 -5.8 M4 4 v4 h4"/><path d="M12 8 v4 l3 2"/></svg>`,
   // Square note with a folded bottom-right corner — sticky note.
   sticky: `<svg viewBox="0 0 24 24"><path d="M4 4 h16 v10 l-6 6 H4 z"/><path d="M20 14 h-6 v6"/></svg>`,
+  // Calendar grid — Insert Date / Date-Time.
+  calendar: `<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>`,
 };
 
 /** Build the per-style "Use Style: <name>" command rows. Mirrors the
@@ -408,6 +411,12 @@ function buildCommands(state) {
         const { openBackupAppDataModal } = await import("./backup.js");
         openBackupAppDataModal(s);
       } },
+    // Drop the current date / date-time at the cursor of whatever editing
+    // surface is in focus (doc, pane, stack column, or notebook text shape).
+    { id: "insert-date", label: "Insert Date", icon: icons.calendar, shortcutKey: null, ctx: "shared",
+      action: (s) => insertDate(s) },
+    { id: "insert-date-time", label: "Insert Date/Time", icon: icons.calendar, shortcutKey: null, ctx: "shared",
+      action: (s) => insertDateTime(s) },
 
     // === DOC ONLY ===
     { id: "ratchet", label: "Ratchet mode", icon: icons.ratchet, shortcutKey: null, ctx: "doc",

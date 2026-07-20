@@ -263,10 +263,13 @@ export function nearestAncestorProjectId(nodes, nodeId) {
   return null;
 }
 
-export function insertNode(tree, node, parentId, findNodeFn) {
+export function insertNode(tree, node, parentId, findNodeFn, prepend = false) {
   if (!parentId) { insertBeforeTrash(tree, node); return; }
   const parent = findNodeFn(tree, parentId);
-  if (parent) { (parent.children || (parent.children = [])).push(node); }
+  if (parent) {
+    const kids = parent.children || (parent.children = []);
+    if (prepend) kids.unshift(node); else kids.push(node);
+  }
   else { insertBeforeTrash(tree, node); }
 }
 

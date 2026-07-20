@@ -209,7 +209,7 @@ export function buildPaneDOM(pane, deps) {
   pane._titlebar = titlebar;
 
   setupPaneDrag(pane, {
-    createPane, getCurrentContext, schedulePersist,
+    createPane, getCurrentContext, schedulePersist, focusPane,
     notifyPaneDragMove: deps.notifyPaneDragMove,
   });
   setupPaneResize(pane, {

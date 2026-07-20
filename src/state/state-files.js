@@ -120,7 +120,9 @@ export async function newFile(state, parentId = null, opts = {}) {
     catch (e) { console.error("Save initial content failed:", e); }
   }
   const treeNode = { id: crypto.randomUUID(), type: "document", name: initialName, fileId, children: [], flagged: false };
-  insertNode(state.fileTree, treeNode, targetParent, findNode);
+  // New files land at the *top* of the Inbox (newest-first); elsewhere
+  // they keep the tail position so project/folder ordering is untouched.
+  insertNode(state.fileTree, treeNode, targetParent, findNode, targetParent === state.getInboxId());
   await state.saveFileTree();
   // Report through the external-store creation hook (no-op today; the
   // desk-folder write-through re-attaches here). Brand-new empty
@@ -326,6 +328,21 @@ export async function duplicateFile(state, id) {
   }
 }
 
+/** Move a freshly-created Inbox child to the top of the Inbox so new
+ *  files read newest-first. Notebooks and stacks are inserted tree-side
+ *  by the Rust `create_*` commands (which append), so after the JS tree
+ *  is re-read we hoist the new node and persist. No-op when the node
+ *  isn't a direct Inbox child or is already first. */
+async function hoistInboxChildToTop(state, fileId) {
+  const inbox = findNode(state.fileTree, state.getInboxId());
+  if (!inbox || !Array.isArray(inbox.children)) return;
+  const idx = inbox.children.findIndex((c) => c.fileId === fileId);
+  if (idx <= 0) return;
+  const [node] = inbox.children.splice(idx, 1);
+  inbox.children.unshift(node);
+  await state.saveFileTree();
+}
+
 export async function createNotebook(state, name, parentId = null, opts = {}) {
   const openImmediately = opts.openImmediately !== false;
   if (openImmediately && state.dirty) await state.saveCurrentFile();
@@ -345,6 +362,8 @@ export async function createNotebook(state, name, parentId = null, opts = {}) {
       }
       state.files = await tauriInvoke("list_files");
       state.fileTree = await tauriInvoke("get_file_tree");
+      // New notebooks land at the top of the Inbox (newest-first).
+      if (targetParent === state.getInboxId()) await hoistInboxChildToTop(state, result.file.id);
       state.emit("files-changed");
       // Report through the external-store creation hook (no-op today;
       // the desk-folder write-through re-attaches here).
@@ -565,6 +584,8 @@ export async function createStack(state, name, parentId = null, opts = {}) {
       }
       state.files = await tauriInvoke("list_files");
       state.fileTree = await tauriInvoke("get_file_tree");
+      // New stacks land at the top of the Inbox (newest-first).
+      if (targetParent === state.getInboxId()) await hoistInboxChildToTop(state, result.file.id);
       state.emit("files-changed");
       const stNode = findNodeByFileId(state.fileTree, result.file.id);
       if (stNode) state.syncCreateFile(stNode.id, result.file.id, initialContent);
