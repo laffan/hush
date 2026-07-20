@@ -316,7 +316,7 @@ async function loadNotebookPane(pane) {
   const nbCanvas = pane._content.querySelector("canvas");
   if (nbCanvas && pane.notebook) {
     try {
-      const { findShapeAtPoint, hitTestLink } = await import("../notebook/state-helpers.ts");
+      const { findShapeAtPoint, hitTestLink, openSoleLinkOf } = await import("../notebook/state-helpers.ts");
       attachNotebookTextShapeDrag(
         nbCanvas,
         pane._content,
@@ -327,6 +327,7 @@ async function loadNotebookPane(pane) {
             return hit && hit.type === "text" ? hit : null;
           },
           hitTestLink,
+          openSoleLink: openSoleLinkOf,
         },
         () => { pane.dirty = true; },
       );

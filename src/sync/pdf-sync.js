@@ -236,6 +236,11 @@ export function triggerBackgroundDownload(fileId, state) {
       try {
         const { getAnnotations } = await import("../zotero-annotations.js");
         await getAnnotations(meta.zoteroAttKey, userId, apiKey);
+        // The cover rendered above predates the prefetch — re-bake it
+        // now that the page-1 annotation marks are known.
+        const { refreshPdfCoverIfStale } = await import("../pdf/pdf-covers.js");
+        const res = await refreshPdfCoverIfStale(fileId);
+        if (res.changed) state.emit("pdf-cover-ready", fileId);
       } catch (e) {
         appendSyncError(`Annotation prefetch failed for ${fileId}: ${e?.message || e}`);
       }

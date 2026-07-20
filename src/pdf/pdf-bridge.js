@@ -136,6 +136,13 @@ async function loadAnnotationsIfZotero(viewer, fileId, state, forceRefresh = fal
     const { getAnnotations } = await import("../zotero-annotations.js");
     const { annotations } = await getAnnotations(node.zoteroAttKey, userId, apiKey, { forceRefresh });
     viewer.setAnnotations(annotations);
+    // Keep the shelf cover's baked-in annotation marks current with
+    // what the viewer just loaded (first fetch or explicit refresh).
+    try {
+      const { refreshPdfCoverIfStale } = await import("./pdf-covers.js");
+      const res = await refreshPdfCoverIfStale(fileId);
+      if (res.changed) state.emit("pdf-cover-ready", fileId);
+    } catch { /* cover refresh is best-effort */ }
   } catch (e) {
     console.error("Failed to load PDF annotations:", e);
   }

@@ -1,13 +1,19 @@
 /** Helper functions for state operations (split from state.ts for file size). */
 
 /** Open a URL using Tauri's opener plugin (desktop) or window.open (web fallback). */
-export async function openExternalUrl(url: string) {
+export async function openExternalUrl(url: string, anchor?: { x: number; y: number }) {
   // PDF-bookmark deep links navigate inside the app. Routed through a
   // window hook (registered by pdf-bookmarks.js) so the canvas module
   // stays free of app-module imports — same pattern as wikilinks.
   if (url.startsWith("hush-pdf://")) {
     const hook = (window as unknown as { __hushOpenPdfBookmark?: (u: string) => void }).__hushOpenPdfBookmark;
     if (typeof hook === "function") { hook(url); return; }
+  }
+  // Zotero deep links open the "Open in Zotero" / "Open in Hush" tooltip
+  // menu at the click point (registered by zotero-link-menu.js).
+  if (url.startsWith("zotero://")) {
+    const hook = (window as unknown as { __hushOpenZoteroLink?: (u: string, a?: { x: number; y: number }) => void }).__hushOpenZoteroLink;
+    if (typeof hook === "function") { hook(url, anchor); return; }
   }
   try {
     const opener = await import("@tauri-apps/plugin-opener");
@@ -16,6 +22,33 @@ export async function openExternalUrl(url: string) {
     window.open(url, "_blank");
   }
 }
+
+/** Open a link/wikilink run resolved from a notebook text shape. URLs go
+ *  through openExternalUrl (routing zotero:// to the tooltip menu anchored
+ *  at the click point); wikilinks route through the app's window hooks,
+ *  opening as a floating pane when `asPane` is set. Shared by the canvas
+ *  Cmd+click handler and the text-drag sole-link click path. */
+export function openLinkRun(
+  linkRun: { kind: "url" | "wikilink"; target: string },
+  clientX: number,
+  clientY: number,
+  asPane = false,
+): void {
+  if (linkRun.kind === "url") { void openExternalUrl(linkRun.target, { x: clientX, y: clientY }); return; }
+  const hookName = asPane ? "__hushOpenWikilinkAsPane" : "__hushOpenWikilink";
+  const w = window as unknown as Record<string, ((t: string) => void) | undefined>;
+  const hook = w[hookName];
+  if (typeof hook === "function") { hook(linkRun.target); return; }
+  // Late fallback: hook not registered yet (init race).
+  // @ts-ignore — wikilink modules are plain JS without .d.ts
+  import("../links/wikilink-index.js").then((m: any) => {
+    const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
+    if (!appState) return;
+    if (asPane) void m.openWikilinkAsPane(appState, linkRun.target);
+    else void m.openWikilink(appState, linkRun.target);
+  }).catch(() => {});
+}
+
 import type { ImageShape, Point, SelectionBox, Shape, TextShape } from "./types";
 import { FONT_FAMILY, LINE_HEIGHT_RATIO } from "./types";
 import { computePocketLayout, getMeasureCtx, hitTestShape, pointInBounds } from "./utils";
@@ -106,6 +139,48 @@ export function hitTestLink(pt: Point, shape: TextShape): string | null {
  *  between regular markdown links (`[text](url)` → `kind: "url"`) and
  *  Obsidian-style wikilinks (`[[Title]]` → `kind: "wikilink"`). Callers
  *  that just want a yes/no can use {@link hitTestLink}. */
+/** The sole link / wikilink in a text shape, or null when it carries
+ *  zero or more than one distinct target. Lets a Cmd+click anywhere on a
+ *  single-link shape open it even when the precise {@link hitTestLinkRun}
+ *  geometry misses — the common case being a dragged-in Zotero highlight
+ *  (a blockquote plus one citation link) where wrap / blockquote layout
+ *  drifts the hit-zone away from the rendered link. */
+export function soleLinkRun(shape: TextShape): { kind: "url" | "wikilink"; target: string } | null {
+  const fs = shape.fontSize;
+  const measure = (t: string, s: number) => {
+    const c = getMeasureCtx();
+    c.font = `${s}px ${FONT_FAMILY}`;
+    return c.measureText(t).width;
+  };
+  const lines = parseText(shape.text, shape.width && shape.width > 0 ? shape.width : undefined, fs, measure);
+  let found: { kind: "url" | "wikilink"; target: string } | null = null;
+  for (const line of lines) {
+    for (const run of line.runs) {
+      const hit = run.wikilink
+        ? { kind: "wikilink" as const, target: run.wikilink }
+        : run.link
+          ? { kind: "url" as const, target: run.link }
+          : null;
+      if (!hit) continue;
+      if (found && found.target !== hit.target) return null; // more than one → ambiguous
+      found = hit;
+    }
+  }
+  return found;
+}
+
+/** Open a shape's sole link (when it has exactly one). Returns whether it
+ *  opened. Used by the text-drag gesture: a Cmd+click that doesn't turn
+ *  into a drag opens the shape's link, so a single-link shape (e.g. a
+ *  dragged-in Zotero highlight) is Cmd-clickable anywhere while still
+ *  being Cmd-draggable out to a pane. */
+export function openSoleLinkOf(shape: TextShape, clientX: number, clientY: number, asPane = false): boolean {
+  const link = soleLinkRun(shape);
+  if (!link) return false;
+  openLinkRun(link, clientX, clientY, asPane);
+  return true;
+}
+
 export function hitTestLinkRun(
   pt: Point,
   shape: TextShape,

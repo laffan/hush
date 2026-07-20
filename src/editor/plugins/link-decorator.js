@@ -30,6 +30,26 @@ class LinkWidget extends WidgetType {
     span.textContent = this.text;
     span.title = this.url;
     span.dataset.linkUrl = this.url;
+    if (isIOS()) span.style.cursor = "pointer"; // reads as tappable on touch
+    // Open on `pointerdown` directly on the widget element, not through a
+    // CodeMirror domEventHandler. Two reasons this is the reliable path,
+    // especially on iPad:
+    //   1. pointerdown is the gesture's first event — it fires before a
+    //      tap places the caret and re-renders the decoration (which
+    //      would tear this span down before a mousedown/click landed on
+    //      it), and before CodeMirror's own contentEditable handling.
+    //   2. The anchor rect is captured *now*, synchronously, so the menu
+    //      still positions correctly even though `openUrl` awaits a
+    //      dynamic import and this element may be gone by the time the
+    //      menu actually mounts.
+    const url = this.url;
+    span.addEventListener("pointerdown", (e) => {
+      if (!hasModifier(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const r = span.getBoundingClientRect();
+      openUrl(url, { left: r.left, top: r.top, bottom: r.bottom });
+    });
     return span;
   }
 
@@ -100,7 +120,17 @@ function buildDecorations(view, appState) {
 
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
 
-async function openUrl(url) {
+// Dedupe: a single tap can surface both the widget's own `pointerdown`
+// handler and CodeMirror's `mousedown` handler for the same link. On
+// desktop those are ~0 ms apart; on iPad the compatibility `mousedown`
+// trails the tap by a few hundred ms, so the window is generous —
+// still well below any deliberate re-open cadence for the same URL.
+let _lastOpen = { url: null, t: 0 };
+
+async function openUrl(url, anchor) {
+  const now = Date.now();
+  if (url === _lastOpen.url && now - _lastOpen.t < 600) return;
+  _lastOpen = { url, t: now };
   // Internal PDF-bookmark deep links (`hush-pdf://<fileId>/<bookmarkId>`)
   // navigate inside the app instead of hitting the OS opener.
   if (url && url.startsWith("hush-pdf://")) {
@@ -109,6 +139,15 @@ async function openUrl(url) {
       openPdfBookmarkUrl(url);
     } catch (e) { console.warn("PDF bookmark link failed:", e); }
     return;
+  }
+  // Zotero deep links get a tooltip menu at the click point — "Open in
+  // Zotero" vs "Open in Hush" / "Download to Hush" (see zotero-link-menu).
+  if (url && url.startsWith("zotero://")) {
+    try {
+      const { openZoteroLinkMenu } = await import("../../links/zotero-link-menu.js");
+      openZoteroLinkMenu(url, anchor);
+      return;
+    } catch (e) { console.warn("Zotero link menu failed:", e); /* fall through to opener */ }
   }
   if (IS_TAURI) {
     try {
@@ -125,11 +164,13 @@ async function openUrl(url) {
 
 /** Try to find and open a link at the event coordinates. */
 function tryOpenLinkAt(e, view) {
-  // Case 1: clicked on a rendered widget
-  const target = e.target.closest(".cm-link-rendered");
+  // Case 1: clicked on a rendered widget. Capture the rect synchronously
+  // (the element can be torn down while openUrl awaits its import).
+  const target = e.target.closest?.(".cm-link-rendered");
   if (target && target.dataset.linkUrl) {
     e.preventDefault();
-    openUrl(target.dataset.linkUrl);
+    const r = target.getBoundingClientRect();
+    openUrl(target.dataset.linkUrl, { left: r.left, top: r.top, bottom: r.bottom });
     return true;
   }
 
@@ -139,7 +180,7 @@ function tryOpenLinkAt(e, view) {
     const link = linkAtPos(view.state.doc, pos);
     if (link) {
       e.preventDefault();
-      openUrl(link.url);
+      openUrl(link.url, { x: e.clientX, y: e.clientY });
       return true;
     }
   }
@@ -165,12 +206,23 @@ if (isIOS()) {
 }
 
 function hasModifier(e) {
-  return e.metaKey || e.ctrlKey || _modifierHeld;
+  // `_modifierHeld` tracks a real (hardware) Cmd/Ctrl on iOS. The
+  // touch-mode ⌘ pill instead exposes `window.__hushCmdHeld` (its
+  // synthetic Meta keydown is dispatched on `window`, so a `document`
+  // keydown listener never sees it) — honour it the way the notebook
+  // canvas does.
+  return e.metaKey || e.ctrlKey || _modifierHeld ||
+    (typeof window !== "undefined" && !!window.__hushCmdHeld);
 }
 
 /**
- * Editor-level Cmd+click handler. Checks if the click lands on a
- * rendered link widget OR inside raw link syntax, and opens the URL.
+ * Editor-level Cmd+click handler. Rendered link widgets are opened by
+ * their own `pointerdown` listener (see LinkWidget.toDOM — reliable on
+ * iPad, where a CM-routed handler races the widget's teardown). This
+ * handler covers the remaining case: the caret sits *inside* a link, so
+ * the raw `[text](url)` markdown is showing instead of a widget. `mousedown`
+ * is fine here — there's no widget to tear down. A no-op when the modifier
+ * isn't held, so ordinary clicks still place the caret.
  */
 const linkClickHandler = EditorView.domEventHandlers({
   mousedown(e, view) {

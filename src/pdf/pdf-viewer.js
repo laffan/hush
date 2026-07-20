@@ -32,6 +32,7 @@ export function createPdfViewer(container, opts = {}) {
   let layoutMode = MODE_HORIZONTAL;
   let fitMode = MODE_FIT;
   let folded = false; // folded view rides on vertical + fit (encoded as zoom -5)
+  let foldedZoom = 1.0; // multiplier on the folded fit-width scale (zoom while folded)
   let fixedZoom = 1.0;
   let scrollListeners = [];
   let destroyed = false;
@@ -127,18 +128,20 @@ export function createPdfViewer(container, opts = {}) {
   thumbnailBtn.addEventListener("click", toggleThumbnails);
 
   // ── Zoom actions ──────────────────────────────────────────────────
-  function stepZoomOut() {
-    const cur = getEffectiveZoom();
-    for (let i = ZOOM_LEVELS.length - 1; i >= 0; i--) {
-      if (ZOOM_LEVELS[i] < cur - 0.01) { applyFixedZoom(ZOOM_LEVELS[i]); return; }
-    }
+  // While folded, a zoom step scales the folds in place (keeping the
+  // folded state) via a multiplier on the folded fit-width scale rather
+  // than dropping back to the normal fixed-zoom view.
+  function stepZoom(dir) {
+    const cur = folded ? foldedZoom : getEffectiveZoom();
+    const next = dir > 0
+      ? ZOOM_LEVELS.find((z) => z > cur + 0.01)
+      : [...ZOOM_LEVELS].reverse().find((z) => z < cur - 0.01);
+    if (next == null) return;
+    if (folded) { foldedZoom = next; foldLayer.refresh(); updateToolbarState(); }
+    else applyFixedZoom(next);
   }
-  function stepZoomIn() {
-    const cur = getEffectiveZoom();
-    for (let i = 0; i < ZOOM_LEVELS.length; i++) {
-      if (ZOOM_LEVELS[i] > cur + 0.01) { applyFixedZoom(ZOOM_LEVELS[i]); return; }
-    }
-  }
+  const stepZoomOut = () => stepZoom(-1);
+  const stepZoomIn = () => stepZoom(1);
 
   zoomOutBtn.addEventListener("click", stepZoomOut);
   zoomInBtn.addEventListener("click", stepZoomIn);
@@ -172,6 +175,7 @@ export function createPdfViewer(container, opts = {}) {
   function enterFolded() {
     if (folded) return;
     folded = true;
+    foldedZoom = 1.0;
     layoutMode = MODE_VERTICAL;
     fitMode = MODE_FIT;
     applyLayoutClass();
@@ -253,6 +257,8 @@ export function createPdfViewer(container, opts = {}) {
     const gap = 12;
     if (layoutMode === MODE_VERTICAL) {
       const availW = scrollArea.clientWidth - pad;
+      // Folded: fit-width scale × the folded zoom multiplier.
+      if (folded) return (availW / first.viewport.width) * foldedZoom;
       if (fitMode === MODE_FIT_2) return (availW - gap - 4) / (first.viewport.width * 2);
       if (fitMode === MODE_FIT_3) return (availW - gap * 2 - 4) / (first.viewport.width * 3);
       return availW / first.viewport.width;
@@ -269,7 +275,7 @@ export function createPdfViewer(container, opts = {}) {
     const isVert = layoutMode === MODE_VERTICAL;
     const isHoriz = layoutMode === MODE_HORIZONTAL;
     if (folded) {
-      zoomLabel.textContent = "Folded";
+      zoomLabel.textContent = Math.abs(foldedZoom - 1) < 0.01 ? "Folded" : `Folded ${Math.round(foldedZoom * 100)}%`;
     } else if (isFit) {
       const labels = { [MODE_FIT]: "Fit", [MODE_FIT_2]: "Fit 2", [MODE_FIT_3]: "Fit 3" };
       zoomLabel.textContent = (isVert ? labels[fitMode] : "Fit") || "Fit";

@@ -19,6 +19,37 @@ export async function testZoteroConnection(userId, apiKey) {
   return true;
 }
 
+/** Fetch a Zotero API page, retrying transient failures (the API rate-
+ *  limits with 429/503 and can hiccup on large libraries). Returns the
+ *  Response so callers can read headers; throws only after exhausting
+ *  retries so an incomplete fetch surfaces instead of silently dropping
+ *  data. */
+async function zoteroFetch(url, tries = 4) {
+  let lastErr = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) return resp;
+      // 429 / 5xx are transient; 4xx (bad key etc.) won't improve.
+      if (resp.status !== 429 && resp.status < 500) throw new Error(`HTTP ${resp.status}`);
+      lastErr = new Error(`HTTP ${resp.status}`);
+    } catch (e) { lastErr = e; }
+    await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i))); // 0.4s, 0.8s, 1.6s
+  }
+  throw lastErr || new Error("Zotero fetch failed");
+}
+
+/** Whether a Zotero attachment's data describes a PDF. Prefers the
+ *  content type but falls back to the filename / title extension, since
+ *  older imports and linked files sometimes carry an empty or unexpected
+ *  `contentType`. */
+function isPdfAttachment(d) {
+  const ct = (d?.contentType || "").toLowerCase();
+  if (ct.includes("pdf")) return true;
+  const name = (d?.filename || d?.title || "").toLowerCase();
+  return name.endsWith(".pdf");
+}
+
 export async function downloadZoteroReferences(userId, apiKey, onProgress) {
   // Step 1: Get total count of top-level items
   onProgress("Checking library size...", 0);
@@ -45,15 +76,17 @@ export async function downloadZoteroReferences(userId, apiKey, onProgress) {
   onProgress("Fetching attachments...", 0.6);
   const attachments = [];
   const attUrl = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=attachment&limit=1`;
-  const attCountResp = await fetch(attUrl);
+  const attCountResp = await zoteroFetch(attUrl);
   const totalAtt = parseInt(attCountResp.headers.get("Total-Results") || "0", 10);
   const attPages = Math.ceil(totalAtt / pageSize) || 1;
   for (let page = 0; page < attPages; page++) {
     const start = page * pageSize;
     onProgress(`Fetching attachments (${start + 1}–${Math.min(start + pageSize, totalAtt)} of ${totalAtt})...`, 0.6 + (page / attPages) * 0.2);
     const url = `${ZOTERO_API}/users/${userId}/items?key=${apiKey}&format=json&itemType=attachment&limit=${pageSize}&start=${start}`;
-    const resp = await fetch(url);
-    if (!resp.ok) break;
+    // Retry rather than `break` — a single transient page failure used to
+    // silently drop every attachment after it, so items further down the
+    // library lost their PDFs and the menu couldn't offer "Download to Hush".
+    const resp = await zoteroFetch(url);
     attachments.push(...(await resp.json()));
   }
 
@@ -67,7 +100,9 @@ export async function downloadZoteroReferences(userId, apiKey, onProgress) {
     attByParent[parent].push({
       key: att.key,
       title: att.data.title || "Attachment",
-      isPdf: (att.data.contentType || "").includes("pdf"),
+      filename: att.data.filename || "",
+      contentType: att.data.contentType || "",
+      isPdf: isPdfAttachment(att.data),
     });
   }
 

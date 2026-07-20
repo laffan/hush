@@ -45,7 +45,7 @@ export function registerNotebookDropTarget(canvasEl, state) {
  *   Called after a successful drop, with `true` when the source should be
  *   removed (Shift was held at pointerup).
  */
-export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop }) {
+export function startTextDrag({ text, shapes, anchorId, image, editorText, initialEvent, onDrop, onClickNoMove }) {
   // Normalise: derive the text payload from shapes when needed, ordered
   // top-to-bottom / left-to-right so CM drops land in reading order.
   const hasShapes = Array.isArray(shapes) && shapes.length > 0;
@@ -144,6 +144,8 @@ export function startTextDrag({ text, shapes, anchorId, image, editorText, initi
     // the pane and the drop silently no-ops.
     const target = moved ? findDropTarget(e.clientX, e.clientY) : null;
     cleanup();
+    // No movement = a click, not a drag: let the caller open the sole link.
+    if (!moved && onClickNoMove) { onClickNoMove(); return; }
     if (!target) { if (onDrop) onDrop(false); return; }
 
     // If the drop landed inside a floating pane, activate that pane first
@@ -256,6 +258,9 @@ export function attachNotebookTextShapeDrag(canvasEl, containerEl, state, helper
       anchorId: hit.id,
       editorText,
       initialEvent: e,
+      // Cmd+click (no drag) opens the shape's sole link even when the
+      // precise hit-test missed (canvas geometry drifts on wrapped text).
+      onClickNoMove: helpers.openSoleLink ? () => helpers.openSoleLink(hit, e.clientX, e.clientY, e.shiftKey) : null,
       onDrop: (deleteSource) => {
         if (!deleteSource) return;
         const ids = new Set(shapes.map((s) => s.id));
@@ -386,24 +391,18 @@ function buildFlowchartOutline(shapes, edges, anchorId) {
 
 /** Sort shapes top-to-bottom / left-to-right and join their text. */
 function joinShapesForText(shapes) {
-  const sorted = [...shapes].sort((a, b) =>
-    (a.position.y - b.position.y) || (a.position.x - b.position.x)
-  );
+  const sorted = [...shapes].sort((a, b) => (a.position.y - b.position.y) || (a.position.x - b.position.x));
   return sorted.map((s) => s.text || "").filter(Boolean).join("\n\n");
 }
 
 function targetElementOf(target) {
   if (!target) return null;
-  if (target.kind === "nb") return target.canvasEl;
-  if (target.kind === "cm") return target.view.dom;
-  return null;
+  return target.kind === "nb" ? target.canvasEl : target.kind === "cm" ? target.view.dom : null;
 }
 
 function findDropTarget(x, y) {
-  // Walk the whole stack at the drop point, not just the topmost element.
-  // The ghost (though pointer-events:none) and other siblings can still
-  // show up here, so we look for the first element that matches a known
-  // drop target type.
+  // Walk the whole stack at the drop point (the pointer-events:none ghost
+  // and siblings can show up), returning the first known drop-target type.
   const stack = document.elementsFromPoint(x, y);
   for (const el of stack) {
     if (!(el instanceof Element)) continue;

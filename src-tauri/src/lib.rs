@@ -117,8 +117,11 @@ pub struct TreeNode {
     // project (the alias's own metadata beyond what the registry holds).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<u64>,
-    // PDF-only — pinned to the top of its PDFs folder (and the shelf).
-    // Per-context: the desk node and each project alias pin separately.
+    // PDF-only, legacy — the shelf's "flag to top" feature originally
+    // shipped as `pinned`; it now rides the shared `flagged` field. Kept
+    // so existing trees deserialize and the JS side can migrate the
+    // marker (enforceFlaggedPdfOrder folds it into `flagged` and clears
+    // it, after which skip_serializing_if drops the key from disk).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
 }

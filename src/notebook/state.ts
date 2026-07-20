@@ -23,9 +23,9 @@ import type { AppearanceMode, CanvasTheme } from "./themes";
 import { THEMES, getEffectiveVariant } from "./themes";
 import {
   autoFitWidth, findShapeAtPoint, findPocketedShapeAtScreen,
-  hitTestLink, hitTestLinkRun, hitTestTaskCheckbox, toggleTaskLine,
+  hitTestLink, hitTestLinkRun, soleLinkRun, hitTestTaskCheckbox, toggleTaskLine,
   normalizeBox, moveShape,
-  applyResize, applyCropResize, openExternalUrl,
+  applyResize, applyCropResize, openLinkRun,
 } from "./state-helpers";
 import { computePocketLayout, POCKET_ZONE_WIDTH } from "./utils";
 // PERF-HUD (temporary): tracer singleton — see perf-hud.ts.
@@ -1280,33 +1280,19 @@ export class DrawingState extends EventTarget {
       // cmd / cmd+shift drag-and-clone paths still run normally.
       const cmdHeld = e.metaKey || e.ctrlKey || !!(window as unknown as { __hushCmdHeld?: boolean }).__hushCmdHeld;
       if (hitShape && hitShape.type === "text" && cmdHeld) {
-        const linkRun = hitTestLinkRun(canvasPt, hitShape);
+        // Precise hit-test first; if it misses (canvas link geometry drifts
+        // on wrapped / blockquote / styled text — e.g. a dragged-in Zotero
+        // highlight is a blockquote plus one citation), fall back to the
+        // shape's sole link so a Cmd+click anywhere on it still opens it.
+        const linkRun = hitTestLinkRun(canvasPt, hitShape) || soleLinkRun(hitShape);
         if (linkRun) {
           // Prevent the click from falling through to select / drag once
           // we've identified a link target — otherwise the shape selects
           // alongside the open, which surfaces the selection toolbar over
           // the just-opened note.
           e.preventDefault();
-          if (linkRun.kind === "url") { openExternalUrl(linkRun.target); return; }
-          if (linkRun.kind === "wikilink") {
-            const asPane = e.shiftKey;
-            const hookName = asPane ? "__hushOpenWikilinkAsPane" : "__hushOpenWikilink";
-            const w = window as unknown as Record<string, ((t: string) => void) | undefined>;
-            const hook = w[hookName];
-            if (typeof hook === "function") {
-              hook(linkRun.target);
-            } else {
-              // Late fallback: handler not yet registered (init race).
-              // Dynamic import keeps this branch out of the cold path.
-              import("../links/wikilink-index.js").then((m) => {
-                const appState = (window as unknown as { __hushState__?: unknown }).__hushState__;
-                if (!appState) return;
-                if (asPane) void m.openWikilinkAsPane(appState, linkRun.target);
-                else void m.openWikilink(appState, linkRun.target);
-              }).catch(() => {});
-            }
-            return;
-          }
+          openLinkRun(linkRun, e.clientX, e.clientY, e.shiftKey);
+          return;
         }
       }
 

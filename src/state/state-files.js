@@ -471,6 +471,11 @@ export async function importPdf(state, name, bytes, parentId = null, opts = {}) 
       try {
         const { getAnnotations } = await import("../zotero-annotations.js");
         await getAnnotations(opts.zoteroAttKey, userId, apiKey);
+        // The cover rendered at save time predates both the registry
+        // entry and this prefetch — re-bake it with the page-1 marks.
+        const { refreshPdfCoverIfStale } = await import("../pdf/pdf-covers.js");
+        const res = await refreshPdfCoverIfStale(fileId);
+        if (res.changed) state.emit("pdf-cover-ready", fileId);
       } catch (e) {
         console.error("Annotation prefetch failed:", e);
       }

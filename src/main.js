@@ -236,6 +236,9 @@ async function init() {
   import("./pdf/pdf-shelf.js").then(({ initPdfShelf }) => initPdfShelf(state));
   // PDF bookmarks — deep-link navigation + the notebook link-click hook.
   import("./pdf/pdf-bookmarks.js").then(({ initPdfBookmarks }) => initPdfBookmarks(state));
+  // Zotero link menu — Cmd+click on a zotero:// link offers "Open in
+  // Zotero" / "Open in Hush" / "Download to Hush" (+ notebook hook).
+  import("./links/zotero-link-menu.js").then(({ initZoteroLinkMenu }) => initZoteroLinkMenu(state));
   // Initialize floating pane system (includes global click-outside-to-deactivate)
   initPaneManager(state);
   // Sticky notes — temporary reminders floating above every surface.

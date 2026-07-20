@@ -12,9 +12,24 @@
  * Generation is standard for every import path (Zotero single save,
  * batch background download) and backfilled lazily by the shelf for
  * PDFs saved before covers shipped.
+ *
+ * Covers bake in the page's Zotero annotation marks (highlights,
+ * underlines, ink) from the local annotation cache, so an annotated
+ * first page reads as annotated on the shelf. A per-device signature of
+ * the baked page-1 annotations (localStorage) lets
+ * `refreshPdfCoverIfStale` re-render the cover when the cached
+ * annotations change — annotation prefetch after a download, the
+ * viewer's Update Annotations command, and shelf hydration all route
+ * through it.
  */
 
+import { parseAnnotationPosition } from "./pdf-viewer-annotations.js";
+
 const IS_TAURI = typeof window !== "undefined" && window.__TAURI_INTERNALS__;
+
+// localStorage map fileId → signature of the page-1 annotations baked
+// into the stored cover. Per-device, exactly like the covers themselves.
+const ANNOT_SIG_KEY = "hush_pdf_cover_annot_sigs";
 
 // Rendered pixel height of the stored cover. Shelf cards display at
 // ~200 px wide, so ~600 px tall covers stay crisp on 2× displays
@@ -66,9 +81,51 @@ function dataUrlToBytes(dataUrl) {
   return out;
 }
 
+/** Draw page-1 annotation marks onto the cover canvas — same painting
+ *  the thumbnail overlay uses: translucent fills for highlight rects,
+ *  stroked paths for ink. `viewport` maps PDF user space → canvas px
+ *  (honouring crop-box origins / rotation). */
+function drawCoverAnnotations(ctx, viewport, scale, annots) {
+  for (const ann of annots) {
+    const pos = parseAnnotationPosition(ann);
+    if (!pos || pos.pageIndex !== 0) continue;
+
+    if (pos.rects?.length && ann.type !== "ink") {
+      ctx.fillStyle = ann.color || "#ffff00";
+      ctx.globalAlpha = 0.3;
+      for (const rect of pos.rects) {
+        if (!Array.isArray(rect) || rect.length < 4) continue;
+        const [ax, ay] = viewport.convertToViewportPoint(rect[0], rect[1]);
+        const [bx, by] = viewport.convertToViewportPoint(rect[2], rect[3]);
+        ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    if (ann.type === "ink" && pos.paths?.length) {
+      ctx.strokeStyle = ann.color || "#ff0000";
+      ctx.lineWidth = Math.max(0.5, scale);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (const pathPoints of pos.paths) {
+        if (!pathPoints || pathPoints.length < 4) continue;
+        ctx.beginPath();
+        for (let i = 0; i < pathPoints.length; i += 2) {
+          const [px, py] = viewport.convertToViewportPoint(pathPoints[i], pathPoints[i + 1]);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+}
+
 /** Rasterize page 1 of `bytes` and return encoded image bytes (WebP
- *  where the platform canvas supports it, PNG otherwise). */
-export async function renderCoverFromPdfBytes(bytes) {
+ *  where the platform canvas supports it, PNG otherwise). `annots` is a
+ *  normalized annotation list (zotero-annotations.js) whose page-1
+ *  marks are baked into the raster. */
+export async function renderCoverFromPdfBytes(bytes, annots = []) {
   // pdfjs takes ownership of the buffer it parses — hand it a copy so
   // the caller can still save/reuse the original bytes.
   const data = new Uint8Array(bytes);
@@ -83,9 +140,49 @@ export async function renderCoverFromPdfBytes(bytes) {
     canvas.width = Math.round(viewport.width);
     canvas.height = Math.round(viewport.height);
     await page.render({ canvas, viewport, background: "#ffffff" }).promise;
+    if (annots.length) drawCoverAnnotations(canvas.getContext("2d"), viewport, scale, annots);
     return dataUrlToBytes(canvas.toDataURL("image/webp", COVER_QUALITY));
   } finally {
     await doc.destroy();
+  }
+}
+
+// ── Annotation signature bookkeeping ────────────────────────────────
+
+function readSigMap() {
+  try { return JSON.parse(localStorage.getItem(ANNOT_SIG_KEY)) || {}; } catch { return {}; }
+}
+
+function writeSig(fileId, sig) {
+  try {
+    const map = readSigMap();
+    if (sig) map[fileId] = sig;
+    else delete map[fileId];
+    localStorage.setItem(ANNOT_SIG_KEY, JSON.stringify(map));
+  } catch { /* best effort — worst case the cover re-renders */ }
+}
+
+/** Stable signature of the page-1 annotation marks in `annots`. */
+function annotSig(annots) {
+  const keys = [];
+  for (const a of annots) {
+    const pos = parseAnnotationPosition(a);
+    if (pos && pos.pageIndex === 0) keys.push(`${a.key}:${a.color}`);
+  }
+  return keys.sort().join("|");
+}
+
+/** Load the cached annotation list for a PDF's Zotero attachment —
+ *  local disk only, never the network. Empty for non-Zotero PDFs. */
+async function loadCoverAnnotations(fileId) {
+  try {
+    const { getPdfMeta } = await import("../sync/pdf-sync.js");
+    const attKey = getPdfMeta(fileId)?.zoteroAttKey;
+    if (!attKey) return [];
+    const { getCachedAnnotations } = await import("../zotero-annotations.js");
+    return await getCachedAnnotations(attKey);
+  } catch {
+    return [];
   }
 }
 
@@ -119,40 +216,72 @@ export async function ensurePdfCover(fileId, opts = {}) {
   if (existing) return existing;
   if (_inFlight.has(fileId)) return _inFlight.get(fileId);
 
-  const job = (async () => {
-    try {
-      let bytes = opts.bytes || null;
-      if (!bytes) {
-        if (!IS_TAURI) return null;
-        try {
-          bytes = await tauriInvoke("load_pdf", { fileId });
-        } catch {
-          return null; // binary not downloaded yet
-        }
-      }
-      if (!bytes || !bytes.length) return null;
-      const coverBytes = await renderCoverFromPdfBytes(
-        bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
-      );
-      if (IS_TAURI) {
-        try {
-          await tauriInvoke("save_pdf_cover", { fileId, bytes: Array.from(coverBytes) });
-        } catch (e) {
-          console.warn("save_pdf_cover failed:", e);
-        }
-      }
-      const url = bytesToObjectUrl(coverBytes);
-      _urlCache.set(fileId, url);
-      return url;
-    } catch (e) {
-      console.warn("PDF cover render failed:", e);
-      return null;
-    } finally {
-      _inFlight.delete(fileId);
-    }
-  })();
+  const job = renderAndStoreCover(fileId, opts.bytes || null);
   _inFlight.set(fileId, job);
   return job;
+}
+
+/** Render a fresh cover (page 1 + cached annotation marks), persist it,
+ *  and swap the session URL. Shared by ensure + refresh. */
+async function renderAndStoreCover(fileId, bytes) {
+  try {
+    if (!bytes) {
+      if (!IS_TAURI) return null;
+      try {
+        bytes = await tauriInvoke("load_pdf", { fileId });
+      } catch {
+        return null; // binary not downloaded yet
+      }
+    }
+    if (!bytes || !bytes.length) return null;
+    const annots = await loadCoverAnnotations(fileId);
+    const coverBytes = await renderCoverFromPdfBytes(
+      bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
+      annots,
+    );
+    if (IS_TAURI) {
+      try {
+        await tauriInvoke("save_pdf_cover", { fileId, bytes: Array.from(coverBytes) });
+      } catch (e) {
+        console.warn("save_pdf_cover failed:", e);
+      }
+    }
+    const old = _urlCache.get(fileId);
+    if (old) { try { URL.revokeObjectURL(old); } catch {} }
+    const url = bytesToObjectUrl(coverBytes);
+    _urlCache.set(fileId, url);
+    writeSig(fileId, annotSig(annots));
+    return url;
+  } catch (e) {
+    console.warn("PDF cover render failed:", e);
+    return null;
+  } finally {
+    _inFlight.delete(fileId);
+  }
+}
+
+/**
+ * Re-render the cover when the cached annotations for its page 1 no
+ * longer match what was baked in (covers rendered before annotations
+ * shipped count as stale too, once the page carries marks). Cheap when
+ * current: one local annotation-cache read, no pdf parse. Returns
+ * `{ url, changed }` (url null when the binary isn't on disk yet).
+ */
+export async function refreshPdfCoverIfStale(fileId) {
+  if (!fileId) return { url: null, changed: false };
+  const existing = await loadPdfCoverUrl(fileId);
+  if (!existing) {
+    const url = await ensurePdfCover(fileId);
+    return { url, changed: !!url };
+  }
+  const annots = await loadCoverAnnotations(fileId);
+  const sig = annotSig(annots);
+  if ((readSigMap()[fileId] || "") === sig) return { url: existing, changed: false };
+  if (_inFlight.has(fileId)) return { url: await _inFlight.get(fileId), changed: true };
+  const job = renderAndStoreCover(fileId, null);
+  _inFlight.set(fileId, job);
+  const url = await job;
+  return url ? { url, changed: true } : { url: existing, changed: false };
 }
 
 /** Drop a cover from the session cache (the on-disk file is removed by
@@ -163,4 +292,5 @@ export function evictPdfCover(fileId) {
     try { URL.revokeObjectURL(url); } catch {}
     _urlCache.delete(fileId);
   }
+  writeSig(fileId, "");
 }

@@ -328,6 +328,12 @@ export async function toggleFlagged(state, nodeId) {
   const node = findNode(state.fileTree, nodeId);
   if (!node) return;
   node.flagged = !node.flagged;
+  // Flagged PDFs float to the top of their PDFs folder (the shelf's
+  // flag feature) — keep that ordering current however the flag flips.
+  if (node.type === "pdf") {
+    const { enforceFlaggedPdfOrder } = await import("./state-pdf-aliases.js");
+    enforceFlaggedPdfOrder(state.fileTree);
+  }
   await state.saveFileTree();
 }
 

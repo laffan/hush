@@ -92,6 +92,54 @@
   to { transform: rotate(360deg); }
 }
 
+/* Zotero link menu — the Cmd+click tooltip on `[Title](zotero://…)`
+   links: "Open in Zotero" / "Open in Hush" / "Download to Hush". */
+.zotero-link-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  background: var(--bg, #1c1c1c);
+  color: var(--fg, #ddd);
+  border: 1px solid color-mix(in srgb, var(--fg, #888) 18%, transparent);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-family: var(--ui-font-family);
+  font-size: 12px;
+  padding: 4px;
+}
+
+.zotero-link-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg, #ddd);
+  font-family: var(--ui-font-family);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.zotero-link-menu-row:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #4a86e8) 16%, transparent);
+}
+.zotero-link-menu-row:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.zotero-link-menu-row svg {
+  margin-left: auto;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+.zotero-link-menu-label {
+  white-space: nowrap;
+}
+
 /* `[@` search popup — extends .wikilink-popup. The popup carries its
    own search input (focus jumps into it on open). */
 .citation-popup {
