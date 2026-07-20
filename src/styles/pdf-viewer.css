@@ -146,14 +146,16 @@ html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 52px);
   position: relative;
 }
-/* Ground the button row with a border directly beneath it (the opaque
-   fill below stays, so the bar reads as solid rather than floating). */
+/* Ground the button row with a border beneath it (the opaque fill below
+   stays, so the bar reads as solid rather than floating). Sits 6px under
+   the buttons to mirror the 6px top padding, so the top and bottom
+   borders are equidistant from the button row. */
 html.ios:not(.phone) #pdf-container .pdf-zoom-toolbar::after {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 52px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 46px);
   height: 1px;
   background: var(--panel-border);
 }

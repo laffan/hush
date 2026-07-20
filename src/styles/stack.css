@@ -1071,9 +1071,9 @@ body.stack-mode .column-resizer { display: none !important; }
    iPad safe zones (iPadOS 26)
 
    The --ipad-safe-top/bottom tokens resolve to 0 off iPad, so every
-   rule below is inert on desktop and iPhone. Scoped to horizontal
-   stacks (vertical stacks scroll on the right edge and are left as-is):
+   rule below is inert on desktop and iPhone.
 
+   Horizontal stacks (scroll along the bottom):
    - The spine's top file-type/flag icon is pushed clear of the
      full-width top menu band.
    - The bottom scrollbar band is *reserved* by shortening the scroll
@@ -1084,6 +1084,11 @@ body.stack-mode .column-resizer { display: none !important; }
    - The pills band and its border stripe lift above the bottom-centre
      grab handle and paint opaque so the band reads as a solid
      scrollbar zone rather than a transparent floating overlay.
+
+   Vertical stacks (scroll along the right edge) get the same right-band
+   reservation + opaque pills. Both orientations mount a custom draggable
+   thumb (see stack-scrollbar-pills.js) since WKWebView's native
+   scrollbar isn't grabbable.
    ================================================================ */
 html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-spine-icon {
   /* margin (not padding) so the whole icon box shifts down as a unit —
@@ -1102,10 +1107,22 @@ html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-scrollbar-pills {
   background: var(--theme-bg, var(--bg));
 }
 
+/* Vertical stacks: reserve the right-edge scrollbar band the same way —
+   shrink the scroll viewport's width so rows push inward instead of
+   sliding under the transparent overlay scrollbar, and paint the pills
+   band opaque. The right edge doesn't touch the bottom-centre grab
+   handle, so no safe-area offset is needed here. */
+html.ios:not(.phone) .stack-root.stack-vertical .stack-scroll-area {
+  width: calc(100% - 40px);
+}
+html.ios:not(.phone) .stack-root.stack-vertical .stack-scrollbar-pills {
+  background: var(--theme-bg, var(--bg));
+}
+
 /* Custom draggable scroll thumb for the reserved band (mounted only on
    iPad by stack-component.js — WKWebView's native scrollbar isn't
-   grabbable). Fills the band vertically like the native macOS thumb;
-   JS sets left/width and toggles display. */
+   grabbable). Fills the band like the native macOS thumb; JS sets the
+   along-axis position/size and toggles display + the -vertical variant. */
 .stack-scroll-thumb {
   display: none;
   position: absolute;
@@ -1117,6 +1134,13 @@ html.ios:not(.phone) .stack-root:not(.stack-vertical) .stack-scrollbar-pills {
   z-index: 3;
   cursor: grab;
   touch-action: none;
+}
+.stack-scroll-thumb-vertical {
+  bottom: auto;
+  right: 5px;
+  width: 30px;
+  min-width: 0;
+  min-height: 40px;
 }
 .stack-scroll-thumb.dragging {
   background: rgba(128, 128, 128, 0.55);
