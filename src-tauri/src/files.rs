@@ -140,9 +140,13 @@ impl FileManager {
     pub fn list_files(&self) -> Result<Vec<FileEntry>, Box<dyn std::error::Error>> {
         let (indexed, staged) = self.store.list_ids();
         let mut entries = Vec::new();
-        for (id, _desk, _rel) in indexed {
-            if let Ok(entry) = self.load_file(&id) {
-                entries.push(entry);
+        for (id, desk_id, rel) in indexed {
+            // Read straight from the (desk, rel) list_ids already
+            // resolved. Calling load_file(&id) here would re-`locate`
+            // each id, re-parsing every desk index once per file —
+            // O(N²) over the library.
+            if let Ok((content, modified, name)) = self.store.read_at(&desk_id, &rel) {
+                entries.push(FileEntry { id, name, content, modified });
             }
         }
         for id in staged {

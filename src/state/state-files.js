@@ -45,7 +45,23 @@ export async function saveCurrentFile(state) {
   if (IS_TAURI) {
     try {
       await tauriInvoke("save_file", { id: state.currentFileId, content });
-      state.files = await tauriInvoke("list_files");
+      // Patch just this file's entry in place rather than re-reading the
+      // whole library. `list_files` loads and re-parses every file (and
+      // every desk index, once per file) — an O(N²) whole-library scan
+      // that ran on every 2 s autosave and stalled typing on large
+      // libraries. A content save only changes this one file's content +
+      // mtime, so update that entry directly. (Local Folder and notebook
+      // saves take other paths that never called list_files — which is
+      // why they never lagged.)
+      const cached = state.files.find((f) => f.id === state.currentFileId);
+      if (cached) {
+        cached.content = content;
+        cached.modified = Math.floor(Date.now() / 1000);
+      } else {
+        // A freshly-created file not yet in the cache — one full refresh
+        // to pick it up. Rare, and off the steady-state typing hot path.
+        state.files = await tauriInvoke("list_files");
+      }
       state.syncFileToExternal(state.currentFileId, content);
     } catch (e) { console.error("Save failed:", e); }
   } else {

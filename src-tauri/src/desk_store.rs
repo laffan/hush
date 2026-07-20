@@ -465,18 +465,29 @@ impl DeskStore {
     }
 
     /// Read a file's content (unpacked to the internal string form), its
-    /// mtime, and a display name derived from the filename.
+    /// mtime, and a display name derived from the filename — from a known
+    /// desk id + relative path, skipping the id → location lookup.
+    /// `list_files` already holds (desk, rel) from `list_ids`, so it
+    /// reads directly instead of re-`locate`-ing every id — which
+    /// re-parses each desk's full index once per file (O(N²) over the
+    /// library, the cost that stalled autosave on large desks).
+    pub fn read_at(&self, desk_id: &str, rel: &str) -> Result<(String, u64, String), BoxError> {
+        let abs = self.abs_path(desk_id, rel);
+        let content = read_content_at(&abs)?;
+        let modified = mtime_secs(&abs);
+        let name = Path::new(rel)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        Ok((content, modified, name))
+    }
+
+    /// Same tuple as `read_at`, but locates the file by id first (for
+    /// single-file reads where the caller doesn't already know the path).
     pub fn read_by_id(&self, id: &str) -> Result<(String, u64, String), BoxError> {
         if let Some((desk_id, rel)) = self.locate(id) {
-            let abs = self.abs_path(&desk_id, &rel);
-            let content = read_content_at(&abs)?;
-            let modified = mtime_secs(&abs);
-            let name = Path::new(&rel)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Untitled")
-                .to_string();
-            return Ok((content, modified, name));
+            return self.read_at(&desk_id, &rel);
         }
         let staged = self.staging_path(id);
         if staged.exists() {
